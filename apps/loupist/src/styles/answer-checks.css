@@ -1,0 +1,145 @@
+/* Number chips (finance-show-the-math.md) and as-of answers (finance-point-in-time.md). */
+
+/* The number itself is the control: inline, inheriting the reading text, never shifting it. */
+.number-chip {
+  display: inline;
+  margin: 0 -2px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: var(--gg-radius-xs);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: inherit;
+  cursor: pointer;
+  /* Longhands: WebKit drops a text-decoration shorthand that carries a thickness. */
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--gg-color-border-strong);
+  text-underline-offset: 3px;
+  transition: background-color var(--gg-motion-fast) var(--gg-ease-out), text-decoration-color var(--gg-motion-fast) var(--gg-ease-out);
+}
+.number-chip:hover, .number-chip[aria-expanded="true"] { background: var(--gg-color-bg-hover); }
+.number-chip:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 1px; }
+.number-chip[data-status="differs"] { text-decoration-style: wavy; text-decoration-color: var(--gg-color-warning); }
+.number-chip[data-status="pending"] { cursor: text; text-decoration-color: var(--gg-color-border-subtle); }
+.number-chip[data-status="pending"]:hover { background: transparent; }
+td .number-chip { display: inline-block; min-height: 28px; line-height: 28px; font-variant-numeric: tabular-nums; }
+/* A Korean particle stays on the number's line ("8.4%였고"). */
+.number-keep { white-space: nowrap; }
+
+.number-chip-popover {
+  z-index: var(--gg-z-popover);
+  display: grid;
+  gap: var(--gg-space-2);
+  width: min(360px, calc(100vw - var(--gg-space-6)));
+  padding: var(--gg-space-3);
+  border: 1px solid var(--gg-color-border-subtle);
+  border-radius: var(--gg-radius-md);
+  background: var(--gg-color-bg-raised);
+  color: var(--gg-color-text-primary);
+  box-shadow: var(--gg-shadow-md);
+  font-size: var(--gg-text-meta);
+  line-height: var(--gg-leading-meta);
+  /* Never taller than the room Radix measured on its side: the content scrolls and the actions stay in view. */
+  max-height: var(--radix-popover-content-available-height, calc(100vh - var(--gg-space-6)));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  animation: number-chip-in var(--gg-motion-fast) var(--gg-ease-out);
+}
+@keyframes number-chip-in { from { opacity: 0; } }
+.number-chip-popover p { margin: 0; }
+.number-chip-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--gg-space-3); font-size: var(--gg-text-body); }
+.number-chip-head strong { display: -webkit-box; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-weight: var(--gg-weight-medium); }
+.number-chip-head .gg-num { flex: none; font-weight: var(--gg-weight-medium); }
+.number-chip-formula { display: grid; gap: 2px; padding: var(--gg-space-2) var(--gg-space-3); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-sunken); font-family: var(--gg-font-mono); font-size: var(--gg-text-meta); overflow-wrap: anywhere; }
+.number-chip-formula button { justify-self: start; }
+.number-chip-grid { color: var(--gg-color-text-secondary); }
+.number-chip-caption { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); letter-spacing: .04em; text-transform: uppercase; }
+.number-chip-here { letter-spacing: normal; text-transform: none; }
+.number-chip-inputs { display: grid; gap: var(--gg-space-1); margin: 0; }
+.number-chip-inputs > div { display: grid; grid-template-columns: 128px auto minmax(0, 1fr); align-items: baseline; gap: var(--gg-space-2); }
+.number-chip-inputs dt { overflow: hidden; color: var(--gg-color-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
+.number-chip-inputs dd { margin: 0; }
+.number-chip-source { min-width: 0; text-align: end; }
+.number-chip-source button { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 0 var(--gg-space-1); max-width: 100%; text-align: end; padding: 0; border: 0; background: transparent; color: var(--gg-color-accent-ink); font: inherit; cursor: pointer; }
+.number-chip-source button:hover { text-decoration: underline; }
+.number-chip-date { display: inline-flex; align-items: center; gap: var(--gg-space-1); white-space: nowrap; }
+.number-chip-unlinked { color: var(--gg-color-text-tertiary); }
+.number-chip-meta { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+.number-chip-passage { display: -webkit-box; overflow: hidden; -webkit-line-clamp: 4; -webkit-box-orient: vertical; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+.number-chip-popover mark { padding: 0 1px; border-radius: 2px; background: var(--gg-color-accent-soft); color: var(--gg-color-text-primary); }
+.number-chip-row { width: 100%; border-collapse: collapse; }
+.number-chip-row th { padding: 2px var(--gg-space-2) 2px 0; color: var(--gg-color-text-secondary); font-weight: var(--gg-weight-regular); text-align: start; vertical-align: top; }
+.number-chip-row td { padding: 2px 0; text-align: end; }
+.number-chip-status { display: flex; align-items: flex-start; gap: var(--gg-space-1); color: var(--gg-color-text-secondary); }
+.number-chip-status svg { width: 16px; height: 16px; flex: none; color: var(--gg-color-warning); }
+.number-chip-status[data-status="differs"] { color: var(--gg-color-warning); }
+.number-chip-status[data-status="rounded"] { color: var(--gg-color-text-tertiary); }
+.number-chip-foot {
+  position: sticky;
+  bottom: calc(-1 * var(--gg-space-3));
+  display: grid;
+  gap: var(--gg-space-2);
+  margin: 0 calc(-1 * var(--gg-space-3)) calc(-1 * var(--gg-space-3));
+  padding: 0 var(--gg-space-3) var(--gg-space-3);
+  background: var(--gg-color-bg-raised);
+}
+.number-chip-popover[data-overflow] .number-chip-foot { padding-top: var(--gg-space-2); border-top: 1px solid var(--gg-color-border-subtle); }
+.number-chip-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-1); margin-inline-start: calc(-1 * var(--gg-space-2)); }
+.chat-receipt-check { display: inline-flex; align-items: center; gap: var(--gg-space-1); color: var(--gg-color-text-secondary); }
+.chat-receipt-check svg { width: 16px; height: 16px; flex: none; color: var(--gg-color-warning); }
+
+/* As-of: info color only on as-of elements. */
+.as-of-tag { display: inline-flex; align-items: center; height: 20px; padding: 0 var(--gg-space-2); border-radius: var(--gg-radius-full); background: var(--gg-color-info-soft); color: var(--gg-color-info); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); white-space: nowrap; }
+.message.assistant .message-meta .as-of-tag { cursor: default; }
+.composer-asof-chip { gap: 2px; border-color: transparent; background: var(--gg-color-info-soft); color: var(--gg-color-info); }
+.composer-asof-chip button { color: var(--gg-color-info); }
+.composer-asof-chip .composer-asof-label { display: inline-flex; gap: 4px; width: auto; height: 20px; padding: 0 2px; border-radius: var(--gg-radius-full); color: var(--gg-color-info); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); cursor: pointer; }
+.composer-asof-chip .composer-asof-label svg { width: 12px; height: 12px; }
+.composer-asof-chip .composer-asof-label:hover { background: transparent; text-decoration: underline; }
+.composer-asof-chip > button:last-child { width: 20px; height: 20px; }
+.composer-asof-panel { display: grid; gap: var(--gg-space-3); padding: var(--gg-space-4); animation: number-chip-in var(--gg-motion-fast) var(--gg-ease-out); }
+.composer-asof-panel p { margin: 0; }
+.composer-asof-title { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+.composer-asof-field { height: var(--gg-size-field); padding: 0 var(--gg-space-3); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-app); color: var(--gg-color-text-primary); font: inherit; }
+.composer-asof-field:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 1px; }
+.composer-asof-field[aria-invalid="true"] { border-color: var(--gg-color-negative); }
+.composer-asof-error { color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
+.composer-asof-quick { display: flex; flex-wrap: wrap; gap: var(--gg-space-1); }
+.composer-asof-explain { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.composer-asof-actions { display: flex; justify-content: flex-end; gap: var(--gg-space-2); }
+.as-of-note { display: grid; gap: var(--gg-space-1); margin: var(--gg-space-3) 0 0; padding: var(--gg-space-3) var(--gg-space-4); border-radius: var(--gg-radius-md); background: var(--gg-color-info-soft); color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); animation: number-chip-in var(--gg-motion-fast) var(--gg-ease-out); }
+.as-of-note p { margin: 0; }
+.as-of-note ul { display: grid; gap: 2px; margin: 0; padding-inline-start: var(--gg-space-4); }
+.chat-progress-row.skipped .chat-progress-action { color: var(--gg-color-text-secondary); }
+.chat-progress-node[data-status="skipped"] > svg { width: 16px; height: 16px; color: var(--gg-color-text-tertiary); }
+.chat-progress-skipped-detail { grid-column: 2 / -1; margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.chat-progress-row[data-flash] { border-radius: var(--gg-radius-sm); background: var(--gg-color-accent-soft); transition: background-color var(--gg-motion-slow) var(--gg-ease-in-out); }
+.chat-artifact-block-asof { flex: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); }
+
+/* Then · Now in the Journal reader. */
+.journal-then-now { display: grid; margin: 0; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-sunken); }
+.journal-then-now .journal-outcome-card { display: grid; gap: var(--gg-space-1); padding: 0; border: 0; }
+.journal-then-now > section { display: grid; gap: var(--gg-space-2); padding: var(--gg-space-3) var(--gg-space-4); }
+.journal-then-now > section + section { border-top: 1px solid var(--gg-color-border-subtle); }
+.journal-then-now h3 { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); letter-spacing: .04em; text-transform: uppercase; }
+.journal-then-now p { margin: 0; }
+.journal-then-now-with { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-1); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.journal-then-now-empty { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+.journal-then-now-late, .journal-status.journal-status-late { color: var(--gg-color-warning); }
+.journal-then-now-reviewed { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.journal-then-now .composer-chip { cursor: pointer; }
+.journal-then-now > section > button { justify-self: start; }
+
+@media (max-width: 720px) {
+  .number-chip-popover { width: min(320px, calc(100vw - var(--gg-space-6))); }
+  .composer-asof-panel { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .number-chip, .number-chip-popover, .composer-asof-panel, .as-of-note { transition: none; animation: none; }
+  .chat-progress-row[data-flash] { background: transparent; outline: 2px solid var(--gg-color-accent); transition: none; }
+}

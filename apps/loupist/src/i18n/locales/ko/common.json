@@ -1,0 +1,33 @@
+{
+  "_status": "translated",
+  "shareCount": "{{value}}주",
+  "dialog": {
+    "close": "닫기"
+  },
+  "sheet": {
+    "close": "닫기"
+  },
+  "sidebar": {
+    "sidebar": "사이드바",
+    "displaysTheMobileSidebar": "모바일 사이드바를 표시해요.",
+    "toggleSidebar": "사이드바 열기/닫기"
+  },
+  "spinner": {
+    "loading": "불러오는 중"
+  },
+  "copyTextButton": {
+    "selectTheTextToCopyIt": "복사할 텍스트를 선택해 주세요.",
+    "copied": "복사했어요",
+    "copy": "{{label}} 복사",
+    "copiedLabel": "{{label}} 복사했어요"
+  },
+  "time": {
+    "am": "오전",
+    "pm": "오후"
+  },
+  "date": {
+    "year": "연",
+    "month": "월",
+    "day": "일"
+  }
+}

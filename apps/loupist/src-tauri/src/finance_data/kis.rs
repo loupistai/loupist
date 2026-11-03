@@ -1,0 +1,482 @@
+use super::*;
+
+mod manifest;
+mod protocol;
+
+pub(super) use manifest::*;
+pub(super) use protocol::*;
+
+/// Native-only values required by KIS account and profile-scoped reads.
+///
+/// This type intentionally has no `Debug` or serialization implementation.
+/// React and Pi cannot construct it; the broker may derive it only from the
+/// active credential bundle already verified by the native Marketplace flow.
+pub(crate) struct KisAccountProfile {
+    values: BTreeMap<String, String>,
+}
+
+impl KisAccountProfile {
+    pub(crate) fn from_values(values: BTreeMap<String, String>) -> Result<Self, FinanceDataError> {
+        const KEYS: [&str; 6] = [
+            "account_number",
+            "account_product_code",
+            "account_password",
+            "customer_identity_number",
+            "home_net_id",
+            "hts_id",
+        ];
+        if values.is_empty()
+            || values.len() > KEYS.len()
+            || values.keys().any(|key| !KEYS.contains(&key.as_str()))
+            || values.values().any(|value| {
+                value.len() > 128 || value.chars().any(|character| character.is_control())
+            })
+            || values.get("account_number").is_some_and(|value| {
+                value.len() != 8 || !value.bytes().all(|byte| byte.is_ascii_digit())
+            })
+            || values.get("account_product_code").is_some_and(|value| {
+                value.len() != 2 || !value.bytes().all(|byte| byte.is_ascii_alphanumeric())
+            })
+        {
+            return Err(FinanceDataError::InvalidQuery(
+                "KIS account profile is invalid",
+            ));
+        }
+        Ok(Self { values })
+    }
+
+    fn get(&self, key: &str) -> Option<&str> {
+        self.values.get(key).map(String::as_str)
+    }
+
+    fn has_required_values_for(&self, operation: &KisOperation) -> bool {
+        operation.parameters.iter().all(|parameter| {
+            if parameter.source != KisParameterSource::AccountProfile || !parameter.required {
+                return true;
+            }
+            parameter
+                .profile_key
+                .as_deref()
+                .and_then(|key| self.get(key))
+                .or_else(|| parameter.default.as_ref().and_then(Value::as_str))
+                .is_some_and(|value| !value.is_empty())
+        })
+    }
+
+    fn sensitive_echo_values(&self) -> impl Iterator<Item = &str> {
+        self.values.iter().filter_map(|(key, value)| {
+            (key != "account_product_code" && value.len() >= 4).then_some(value.as_str())
+        })
+    }
+}
+impl FinanceDataService {
+    /// How the reviewed catalog treats one KIS operation (holdings redaction).
+    pub(crate) fn kis_account_review(
+        &self,
+        operation_id: &str,
+    ) -> Option<crate::privacy::holdings::AccountReview> {
+        use crate::privacy::holdings::AccountReview;
+        let operation = self.kis_manifest.operation(operation_id)?;
+        Some(match operation.scope {
+            KisOperationScope::Market => AccountReview::Market,
+            KisOperationScope::Account => match &operation.holding_fields {
+                Some(fields) => AccountReview::Account(fields.clone()),
+                None => AccountReview::Unreviewed,
+            },
+        })
+    }
+
+    /// Explicit user-initiated factual import through the existing read-only adapter.
+    pub(crate) async fn kis_holdings_read(
+        &self,
+        environment: &str,
+        app_key: &str,
+        app_secret: &str,
+        profile: &KisAccountProfile,
+    ) -> Result<Vec<crate::store::user_context::HoldingsPosition>, FinanceDataError> {
+        let result = self
+            .kis_read_data(
+                kis_holdings_query(),
+                environment,
+                app_key,
+                app_secret,
+                Some(profile),
+                &fixed_request_spacing,
+            )
+            .await?;
+        kis_holdings_positions(&result)
+    }
+
+    pub(crate) fn kis_operation_search(
+        &self,
+        params: Value,
+        profile: Option<&KisAccountProfile>,
+    ) -> Result<Value, FinanceDataError> {
+        let object = params.as_object().ok_or(FinanceDataError::InvalidQuery(
+            "expected the KIS operation search schema",
+        ))?;
+        if object.keys().any(|key| {
+            !matches!(key.as_str(), "query" | "product" | "limit")
+                || !object.get(key).is_some_and(Value::is_string)
+        }) {
+            return Err(FinanceDataError::InvalidQuery(
+                "expected the KIS operation search schema",
+            ));
+        }
+        let query = object
+            .get("query")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
+        if query.len() > 128 || query.chars().any(char::is_control) {
+            return Err(FinanceDataError::InvalidQuery(
+                "KIS operation search text is invalid",
+            ));
+        }
+        let product = object
+            .get("product")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty());
+        if product.is_some_and(|value| {
+            value.len() > 64
+                || !value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+        }) {
+            return Err(FinanceDataError::InvalidQuery(
+                "KIS operation search product is invalid",
+            ));
+        }
+        let limit = object
+            .get("limit")
+            .and_then(Value::as_str)
+            .unwrap_or("10")
+            .parse::<usize>()
+            .ok()
+            .filter(|limit| (1..=MAX_KIS_OPERATION_SEARCH_RESULTS).contains(limit))
+            .ok_or(FinanceDataError::InvalidQuery(
+                "KIS operation search limit must be from 1 through 20",
+            ))?;
+        let query_terms = query
+            .split_whitespace()
+            .map(|term| term.to_lowercase())
+            .collect::<Vec<_>>();
+        let matches = self
+            .kis_manifest
+            .operations
+            .iter()
+            .filter(|operation| operation.available_to_agent(profile))
+            .filter(|operation| product.is_none_or(|product| operation.product == product))
+            .filter(|operation| {
+                let haystack = format!(
+                    "{} {} {} {}",
+                    operation.id, operation.product, operation.category, operation.name
+                )
+                .to_lowercase();
+                query_terms.iter().all(|term| haystack.contains(term))
+            })
+            .take(limit)
+            .map(kis_operation_descriptor)
+            .collect::<Vec<_>>();
+        let returned = matches.len();
+        let account_reads = self
+            .kis_manifest
+            .agent_scope_operation_count(profile, KisOperationScope::Account);
+        Ok(json!({
+            "schema_version": "loupist-kis-operation-search/1",
+            "source_id": KIS_SOURCE_ID,
+            "query": query,
+            "product": product,
+            "operations": matches,
+            "page": {
+                "returned": returned,
+                "limit": limit
+            },
+            "policy": {
+                "public_reads_available_v1": self.kis_manifest.public_operation_count(),
+                "profile_gated_market_reads": self.kis_manifest.profile_gated_market_operation_count(),
+                "account_reads_available_v1": account_reads,
+                "account_reads_need": (account_reads == 0).then_some(
+                    "Account and balance reads need the optional account profile on the Korea Investment connection in Settings; until then only public market reads are available."
+                ),
+                "agent_reads_available": self.kis_manifest.agent_operation_count(profile),
+                "orders_available": false
+            }
+        }))
+    }
+
+    pub(crate) async fn clear_kis_token_cache(&self) {
+        self.invalidate_kis_token_cache();
+        drop(self.kis_token_cache().await);
+    }
+
+    /// Configuration reconciliation is synchronous. Mark the cache unusable
+    /// immediately; the next async access clears it while holding its lock.
+    pub(crate) fn invalidate_kis_token_cache(&self) {
+        self.kis_tokens_invalidated
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    async fn kis_token_cache(&self) -> tokio::sync::MutexGuard<'_, KisTokenCache> {
+        let mut cache = self.kis_tokens.lock().await;
+        if self
+            .kis_tokens_invalidated
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
+            *cache = KisTokenCache::default();
+        }
+        cache
+    }
+
+    pub(in crate::finance_data) async fn remember_kis_access_token(
+        &self,
+        environment: KisEnvironment,
+        app_key: &str,
+        app_secret: &str,
+        token: KisAccessToken,
+    ) {
+        let fingerprint = kis_credential_fingerprint(environment, app_key, app_secret);
+        let mut cache = self.kis_token_cache().await;
+        cache.issuance_blocked_until.remove(&fingerprint);
+        if cache.tokens.len() >= MAX_KIS_TOKEN_CACHE_ENTRIES
+            && !cache.tokens.contains_key(&fingerprint)
+        {
+            cache.tokens.clear();
+        }
+        cache.tokens.insert(fingerprint, token);
+    }
+
+    pub(crate) async fn kis_read_data(
+        &self,
+        params: Value,
+        environment: &str,
+        app_key: &str,
+        app_secret: &str,
+        profile: Option<&KisAccountProfile>,
+        pacer: &RequestPacer<'_>,
+    ) -> Result<Value, FinanceDataError> {
+        let environment = KisEnvironment::parse(environment)?;
+        let query: KisToolQuery = strict_query(params, "expected the exact KIS read schema")?;
+        // Reject operations and parameters at the native authority boundary
+        // before credentials are used for a provider token request.
+        prepare_kis_request(
+            &self.kis_manifest,
+            &query,
+            environment,
+            profile,
+            KisRequestAuthority::AgentRead,
+        )?;
+        let token = self
+            .kis_access_token(environment, app_key, app_secret)
+            .await?;
+        let prepared = prepare_kis_request(
+            &self.kis_manifest,
+            &query,
+            token.environment,
+            profile,
+            KisRequestAuthority::AgentRead,
+        )?;
+        let fetch = |url: Url, continuing: bool| {
+            let prepared = &prepared;
+            let token = &token;
+            async move {
+                let raw = self
+                    .fetch_kis_request(prepared, url, continuing, token, app_key, app_secret)
+                    .await?;
+                reject_kis_credential_echo(&raw.bytes, app_key, app_secret, &token.value)?;
+                Ok(raw)
+            }
+        };
+        let pages = collect_kis_pages(&prepared, fetch, pacer).await?;
+        match prepared.operation.scope {
+            KisOperationScope::Market => normalize_kis_market_response(&prepared, &pages, profile),
+            KisOperationScope::Account => {
+                normalize_kis_account_response(&prepared, &pages, profile)
+            }
+        }
+    }
+
+    async fn fetch_kis_request(
+        &self,
+        prepared: &PreparedKisRequest<'_>,
+        url: Url,
+        continuing: bool,
+        token: &KisAccessToken,
+        app_key: &str,
+        app_secret: &str,
+    ) -> Result<RawProviderResponse, FinanceDataError> {
+        let mut request = self
+            .client
+            .get(url)
+            .header(
+                reqwest::header::AUTHORIZATION,
+                format!("Bearer {}", token.value),
+            )
+            .header("appkey", app_key)
+            .header("appsecret", app_secret)
+            .header("tr_id", prepared.tr_id)
+            .header("custtype", "P");
+        if let Some(header) = prepared
+            .operation
+            .continuation
+            .as_ref()
+            .and_then(|continuation| continuation.request_header.as_deref())
+        {
+            request = request.header(header, if continuing { "N" } else { "" });
+        }
+        self.fetch_provider(
+            request,
+            KIS_SOURCE_ID,
+            format!(
+                "{}{}",
+                prepared.url.origin().ascii_serialization(),
+                prepared.operation.path
+            ),
+            MAX_KIS_RESPONSE_BYTES,
+        )
+        .await
+    }
+
+    async fn kis_access_token(
+        &self,
+        environment: KisEnvironment,
+        app_key: &str,
+        app_secret: &str,
+    ) -> Result<KisAccessToken, FinanceDataError> {
+        validate_api_key(app_key, KIS_SOURCE_ID)?;
+        validate_api_key(app_secret, KIS_SOURCE_ID)?;
+        let fingerprint = kis_credential_fingerprint(environment, app_key, app_secret);
+        let mut cache = self.kis_token_cache().await;
+        if let Some(token) = cache
+            .tokens
+            .get(&fingerprint)
+            .filter(|token| token.expires_at > Utc::now() + ChronoDuration::seconds(30))
+        {
+            return Ok(token.clone());
+        }
+        cache.tokens.remove(&fingerprint);
+        // Keep issuance serialized with the cache, but pass the existing
+        // guard through: the public verification path acquires its own guard.
+        let token = self
+            .issue_kis_token_locked(environment, app_key, app_secret, &mut cache)
+            .await?;
+        cache.issuance_blocked_until.remove(&fingerprint);
+        if cache.tokens.len() >= MAX_KIS_TOKEN_CACHE_ENTRIES {
+            cache.tokens.clear();
+        }
+        cache.tokens.insert(fingerprint, token.clone());
+        Ok(token)
+    }
+
+    pub(super) async fn issue_kis_token(
+        &self,
+        environment: KisEnvironment,
+        app_key: &str,
+        app_secret: &str,
+    ) -> Result<KisAccessToken, FinanceDataError> {
+        let mut cache = self.kis_token_cache().await;
+        self.issue_kis_token_locked(environment, app_key, app_secret, &mut cache)
+            .await
+    }
+
+    async fn issue_kis_token_locked(
+        &self,
+        environment: KisEnvironment,
+        app_key: &str,
+        app_secret: &str,
+        cache: &mut KisTokenCache,
+    ) -> Result<KisAccessToken, FinanceDataError> {
+        #[cfg(feature = "eval-harness")]
+        if crate::eval_harness::replay::enabled() {
+            return Ok(KisAccessToken {
+                value: "eval-placeholder".into(),
+                environment,
+                expires_at: Utc::now() + ChronoDuration::hours(1),
+            });
+        }
+        let fingerprint = kis_credential_fingerprint(environment, app_key, app_secret);
+        if cache
+            .issuance_blocked_until
+            .get(&fingerprint)
+            .is_some_and(|until| *until > Utc::now())
+        {
+            return Err(FinanceDataError::KisRateLimited(
+                SafeProviderDiagnostic::bounded("EGW00133", "1분당 1회만 발급 가능합니다."),
+            ));
+        }
+        let mut url =
+            Url::parse(environment.api_root()).map_err(|_| FinanceDataError::InvalidResponse)?;
+        url.set_path(KIS_TOKEN_PATH);
+        url.set_query(None);
+        let (status, raw) = self
+            .send_provider_bounded(
+                self.client.post(url.clone()).json(&json!({
+                    "grant_type": "client_credentials",
+                    "appkey": app_key,
+                    "appsecret": app_secret
+                })),
+                KIS_SOURCE_ID,
+                url.to_string(),
+                64 * 1024,
+            )
+            .await?;
+        if !status.is_success() {
+            let error = classify_kis_token_error(status, &raw.bytes, app_key, app_secret);
+            if matches!(error, FinanceDataError::KisRateLimited(_)) {
+                cache
+                    .issuance_blocked_until
+                    .insert(fingerprint, Utc::now() + KIS_TOKEN_ISSUANCE_COOLDOWN);
+            }
+            return Err(error);
+        }
+        let token = parse_kis_token_response(&raw.bytes, environment, app_key, app_secret)?;
+        cache.issuance_blocked_until.remove(&fingerprint);
+        Ok(token)
+    }
+}
+
+fn kis_holdings_query() -> Value {
+    json!({"operation_id":"domestic_stock.inquire_balance","params":{
+        "afhr_flpr_yn":"N", "inqr_dvsn":"02", "unpr_dvsn":"01",
+        "fund_sttl_icld_yn":"N", "fncg_amt_auto_rdpt_yn":"N", "prcs_dvsn":"00"
+    }})
+}
+
+fn kis_holdings_positions(
+    result: &Value,
+) -> Result<Vec<crate::store::user_context::HoldingsPosition>, FinanceDataError> {
+    use crate::store::user_context::{decimal, HoldingsPosition, MAX_HOLDINGS_ROWS};
+    // A read stopped by the page or byte bound is partial. Never store it as a complete portfolio.
+    if result.pointer("/page/truncated").and_then(Value::as_bool) != Some(false) {
+        return Err(FinanceDataError::InvalidResponse);
+    }
+    let rows = result
+        .pointer("/data/response/output1")
+        .and_then(Value::as_array)
+        .ok_or(FinanceDataError::InvalidResponse)?;
+    if rows.len() > MAX_HOLDINGS_ROWS {
+        return Err(FinanceDataError::InvalidResponse);
+    }
+    rows.iter()
+        .map(|row| {
+            let get = |key| {
+                row.get(key)
+                    .and_then(Value::as_str)
+                    .ok_or(FinanceDataError::InvalidResponse)
+            };
+            let exact = |key| decimal(get(key)?).map_err(|_| FinanceDataError::InvalidResponse);
+            Ok(HoldingsPosition {
+                symbol: get("pdno")?.to_owned(),
+                market: "KRX".into(),
+                display_name: Some(get("prdt_name")?.to_owned()),
+                quantity: exact("hldg_qty")?,
+                cost_basis: Some(exact("pchs_avg_pric")?),
+                market_value: Some(exact("evlu_amt")?),
+                currency: "KRW".into(),
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests;

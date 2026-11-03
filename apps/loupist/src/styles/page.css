@@ -1,0 +1,47 @@
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gg-space-4) var(--gg-space-6);
+  margin-bottom: var(--gg-space-6);
+}
+
+.page-header-copy {
+  min-width: 0;
+}
+.page-header h1 {
+  margin: 0;
+  color: var(--gg-color-text-primary);
+  font-size: var(--gg-text-page);
+  font-weight: var(--gg-weight-semibold);
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+}
+.page-description {
+  margin: 6px 0 0;
+  color: var(--gg-color-text-secondary);
+  font-size: var(--gg-text-body);
+  line-height: 1.5;
+}
+.page-metadata {
+  margin-top: 6px;
+  color: var(--gg-color-text-secondary);
+  font-size: var(--gg-text-meta);
+  line-height: 1.5;
+}
+.page-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gg-space-2);
+}
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@media (max-width: 760px) {
+  :root {
+    --gg-page-padding: var(--gg-space-5) var(--gg-space-4) var(--gg-space-7);
+  }
+  .page-header {
+    flex-wrap: wrap;
+    gap: var(--gg-space-3);
+  }
+}

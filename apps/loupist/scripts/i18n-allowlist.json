@@ -1,0 +1,37 @@
+[
+  {
+    "file": "src/components/settings/SkillsSettings.tsx",
+    "text": "https://github.com/owner/repo/tree/main/skills/example",
+    "reason": "Example GitHub source URL is a literal file location syntax; URLs are not translated."
+  },
+  {
+    "file": "src/components/knowledge/ResearchReader.tsx",
+    "text": "World",
+    "reason": "World is a fixed product name; the saved evidence section keeps it unchanged in every locale."
+  },
+  {
+    "file": "src/components/knowledge/ResearchReader.tsx",
+    "text": "Lens",
+    "reason": "Lens is a fixed product name; the saved evidence section keeps it unchanged in every locale."
+  },
+  {
+    "file": "src/components/knowledge/WorldProcessingSettings.tsx",
+    "text": "Samsung Electronics | 삼성전자 | 005930",
+    "reason": "Example entity names, aliases, and ticker show the literal anchor syntax; these are user-data examples, not translated interface copy."
+  },
+  {
+    "file": "src/components/workspace/BrowserWorkspaceView.tsx",
+    "text": "https://example.com",
+    "reason": "A literal example web address is a locator and must retain valid URL syntax in every locale."
+  },
+  {
+    "file": "src/components/settings/CustomProviderForm.tsx",
+    "text": "http://localhost:11434/v1",
+    "reason": "Example local server address is literal URL syntax; URLs are not translated."
+  },
+  {
+    "file": "src/components/settings/CustomProviderForm.tsx",
+    "text": "qwen2.5:7b llama3.1:8b",
+    "reason": "Example model IDs must match what a server reports; they are not translated."
+  }
+]

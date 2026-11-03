@@ -1,0 +1,194 @@
+/* Grid answers (finance-grid-answers.md §2) and the conflict card (finance-korea-retail-disagreement.md §2.3). */
+
+.grid-card {
+  position: relative;
+  display: grid;
+  gap: var(--gg-space-2);
+  min-width: 0;
+  max-width: 100%;
+  margin-top: var(--gg-space-3);
+  padding: var(--gg-space-4);
+  border: 1px solid var(--gg-color-border-subtle);
+  border-radius: var(--gg-radius-md);
+  background: var(--gg-color-bg-raised);
+  color: var(--gg-color-text-primary);
+  animation: grid-card-in var(--gg-motion-normal) var(--gg-ease-out);
+}
+@keyframes grid-card-in { from { opacity: 0; } }
+.grid-card-header { display: flex; align-items: flex-start; gap: var(--gg-space-3); min-width: 0; }
+.grid-card-heading { flex: 1 1 auto; min-width: 0; }
+.grid-card-title { margin: 0; overflow: hidden; color: var(--gg-color-text-primary); font-size: var(--gg-text-subtitle); font-weight: var(--gg-weight-semibold); line-height: var(--gg-leading-subtitle); text-overflow: ellipsis; white-space: nowrap; }
+.grid-card-subtitle { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.grid-card-actions { flex: none; display: flex; align-items: center; gap: var(--gg-space-1); margin-top: calc(-1 * var(--gg-space-1)); }
+.grid-card-more { display: none; flex: none; margin-top: calc(-1 * var(--gg-space-1)); }
+.grid-card-menu { min-width: 180px; box-shadow: var(--gg-shadow-md); }
+.grid-card-error { margin: 0; color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
+
+/* The table scrolls inside the card; a 16 px fade marks a scrollable edge. */
+.grid-card-scroll {
+  position: relative;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border-radius: var(--gg-radius-xs);
+}
+.grid-card-scroll:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
+.grid-card-scroll[data-fade-end] { mask-image: linear-gradient(to left, transparent 0, var(--gg-color-bg-raised) 16px); }
+.grid-card-scroll[data-fade-start] .grid-card-asset,
+.grid-card-scroll[data-fade-start] .grid-card-asset-head { box-shadow: inset -1px 0 0 var(--gg-color-border-subtle); }
+
+.grid-card-table, .conflict-card-table { width: 100%; border-collapse: collapse; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+/* A fixed layout keeps the first column at its width; measures share the rest, at least 112 px each, and scroll below that. */
+.grid-card-table { --grid-first: 176px; table-layout: fixed; min-width: calc(var(--grid-first) + var(--grid-columns, 1) * 112px); }
+.grid-card-asset-col { width: var(--grid-first); }
+.grid-card-table thead th, .conflict-card-table thead th {
+  height: 48px;
+  padding: 0 var(--gg-space-2);
+  border-bottom: 1px solid var(--gg-color-border-subtle);
+  color: var(--gg-color-text-secondary);
+  font-size: var(--gg-text-meta);
+  font-weight: var(--gg-weight-medium);
+  line-height: var(--gg-leading-meta);
+  text-align: start;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+.grid-card-table tbody tr, .conflict-card-table tbody tr { height: 40px; border-bottom: 1px solid var(--gg-color-border-subtle); }
+.grid-card-table tbody tr:last-child, .conflict-card-table tbody tr:last-child { border-bottom: 0; }
+.grid-card-table tbody tr:hover > *, .conflict-card-table tbody tr:hover > * { background: var(--gg-color-bg-hover); }
+.grid-card-table td, .grid-card-table tbody th, .conflict-card-table td, .conflict-card-table tbody th { padding: var(--gg-space-1) var(--gg-space-2); vertical-align: middle; }
+
+/* First column: 176 px, sticky, the asset's name and symbol · market. */
+.grid-card-asset, .grid-card-asset-head {
+  position: sticky;
+  left: 0;
+  z-index: var(--gg-z-sticky);
+  width: 176px;
+  min-width: 176px;
+  max-width: 176px;
+  background: var(--gg-color-bg-raised);
+  text-align: start;
+}
+.grid-card-asset { display: table-cell; font-weight: var(--gg-weight-regular); }
+.grid-card-name {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--gg-color-text-primary);
+  font: inherit;
+  font-weight: var(--gg-weight-medium);
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+button.grid-card-name { min-height: 28px; cursor: pointer; }
+button.grid-card-name:hover { color: var(--gg-color-accent-ink); text-decoration: underline; }
+button.grid-card-name:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 1px; border-radius: var(--gg-radius-xs); }
+.grid-card-symbol { display: block; overflow: hidden; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); text-overflow: ellipsis; white-space: nowrap; }
+
+/* Measure columns: 112–168 px, values right-aligned. */
+.grid-card-table thead th:not(.grid-card-asset-head) { min-width: 112px; max-width: 168px; text-align: end; }
+.grid-card-sort {
+  display: inline-flex;
+  justify-content: flex-end;
+  width: 100%;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: end;
+  cursor: pointer;
+}
+.grid-card-sort:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 1px; border-radius: var(--gg-radius-xs); }
+.grid-card-measure { display: grid; justify-items: end; gap: 0; }
+/* A label wraps to two lines at most, only between words (slash terms carry their own joins). */
+.grid-card-measure-label { display: inline-flex; align-items: center; gap: var(--gg-space-1); white-space: normal; overflow-wrap: normal; word-break: keep-all; text-wrap: balance; }
+.grid-card-measure-label svg { width: 16px; height: 16px; flex: none; }
+.grid-card-period { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-regular); line-height: var(--gg-leading-caption); }
+.grid-card-value { min-width: 112px; max-width: 168px; text-align: end; white-space: nowrap; }
+.grid-card-value .number-chip { transition: text-decoration-color var(--gg-motion-fast) var(--gg-ease-out); }
+.grid-card-empty-cell { min-width: 112px; max-width: 168px; text-align: start; }
+.grid-card-empty {
+  display: inline-block;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--gg-color-text-tertiary);
+  font: inherit;
+  font-size: var(--gg-text-meta);
+  line-height: 28px;
+  text-align: start;
+}
+button.grid-card-empty { cursor: help; text-decoration-line: underline; text-decoration-style: dotted; text-decoration-thickness: 1px; text-decoration-color: var(--gg-color-border-default); text-underline-offset: 3px; }
+button.grid-card-empty:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 1px; border-radius: var(--gg-radius-xs); }
+.grid-card-note {
+  z-index: var(--gg-z-popover);
+  max-width: 280px;
+  padding: var(--gg-space-2) var(--gg-space-3);
+  border: 1px solid var(--gg-color-border-subtle);
+  border-radius: var(--gg-radius-sm);
+  background: var(--gg-color-bg-raised);
+  color: var(--gg-color-text-secondary);
+  box-shadow: var(--gg-shadow-md);
+  font-size: var(--gg-text-meta);
+  line-height: var(--gg-leading-meta);
+}
+
+.grid-card-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gg-space-1) var(--gg-space-3); min-width: 0; }
+.grid-card-caption { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); }
+/* "3 more →": columns hidden past the right edge, at that edge. */
+.grid-card-more-columns { display: inline-flex; flex: none; align-items: center; gap: var(--gg-space-1); min-height: 28px; margin-left: auto; padding: 0 var(--gg-space-1); border: 0; border-radius: var(--gg-radius-xs); background: transparent; color: var(--gg-color-accent-ink); font: inherit; font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); cursor: pointer; }
+.grid-card-more-columns:hover { background: var(--gg-color-bg-hover); }
+.grid-card-more-columns svg { width: 16px; height: 16px; }
+.grid-card-check { padding: 0; border: 0; background: transparent; color: var(--gg-color-text-secondary); font: inherit; text-decoration: underline; cursor: pointer; }
+.grid-card-check:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 1px; border-radius: var(--gg-radius-xs); }
+.grid-card-notes { display: grid; gap: 2px; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.grid-card-notes p { margin: 0; }
+
+/* Building, failed and unavailable states keep the reserved frame (S6). */
+.grid-card-reserved { align-content: start; }
+.grid-card-state { display: grid; place-items: center; min-height: 120px; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); text-align: center; }
+.grid-card-state p { display: inline-flex; align-items: center; gap: var(--gg-space-2); margin: 0; }
+.grid-card-state [role="alert"] { display: grid; justify-items: center; gap: var(--gg-space-2); }
+
+/* Conflict card: label, a five-column table, the why and the choice. No warning colors. */
+.conflict-card-label { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); letter-spacing: .04em; line-height: var(--gg-leading-caption); text-transform: uppercase; }
+.conflict-card-table { table-layout: fixed; min-width: 520px; }
+/* The label sits right above the table: a one-line header row, no reserved two-line height. */
+.conflict-card .grid-card-header { align-items: center; min-height: 28px; }
+.conflict-card-table thead th { height: auto; padding-bottom: var(--gg-space-2); }
+.conflict-card-table thead th:nth-child(2) { width: 96px; }
+.conflict-card-table thead th:nth-child(3) { width: 88px; }
+.conflict-card-table thead th:nth-child(5) { width: 56px; }
+.conflict-card-source { font-weight: var(--gg-weight-regular); text-align: start; }
+.conflict-card-source button { display: inline-flex; align-items: center; gap: var(--gg-space-1); max-width: 100%; min-height: 28px; padding: 0; border: 0; background: transparent; color: var(--gg-color-text-primary); font: inherit; text-align: start; cursor: pointer; }
+.conflict-card-source button:hover { text-decoration: underline; }
+.conflict-card-source button:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 1px; border-radius: var(--gg-radius-xs); }
+.conflict-card-claim { overflow-wrap: anywhere; }
+.conflict-card-table td { color: var(--gg-color-text-secondary); }
+.conflict-card-table td.gg-num { color: var(--gg-color-text-primary); }
+.conflict-card-dated { white-space: nowrap; }
+.conflict-card-used { color: var(--gg-color-text-primary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); text-align: end; }
+.conflict-card-why { margin: 0; color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+
+/* Opened from Work: the same card, full panel width, scrolling with the panel. */
+.workspace-artifact-view.workspace-grid-view { display: block; overflow: auto; padding: var(--gg-space-3); }
+.workspace-grid-view .grid-card { margin-top: 0; }
+
+@media (max-width: 720px) {
+  .grid-card-actions:not(.conflict-card-actions) { display: none; }
+  .grid-card-more { display: block; }
+  .grid-card-asset, .grid-card-asset-head { width: 128px; min-width: 128px; max-width: 128px; }
+  .grid-card-table { --grid-first: 128px; }
+  .grid-card-symbol { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grid-card, .grid-card-value .number-chip { animation: none; transition: none; }
+}

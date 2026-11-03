@@ -1,0 +1,3327 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "tool-use",
+  "version": 1,
+  "description": "Local dataset, chart, capture, note, and Lens scenarios, plus disabled-connection honesty. OpenDART, KRX, Korea Investment, and World Bank scenarios name a replay fixture. Scenarios tagged instructed name the tool. The others ask only for the result.",
+  "scenarios": [
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "T-001",
+      "title": "Sum a long shipment file",
+      "tags": [
+        "dataset",
+        "local"
+      ],
+      "workspace_files": {
+        "data/brindle-units.csv": "sku,units\nrow-000,1\nrow-001,2\nrow-002,3\nrow-003,4\nrow-004,5\nrow-005,6\nrow-006,7\nrow-007,1\nrow-008,2\nrow-009,3\nrow-010,4\nrow-011,5\nrow-012,6\nrow-013,7\nrow-014,1\nrow-015,2\nrow-016,3\nrow-017,4\nrow-018,5\nrow-019,6\nrow-020,7\nrow-021,1\nrow-022,2\nrow-023,3\nrow-024,4\nrow-025,5\nrow-026,6\nrow-027,7\nrow-028,1\nrow-029,2\nrow-030,3\nrow-031,4\nrow-032,5\nrow-033,6\nrow-034,7\nrow-035,1\nrow-036,2\nrow-037,3\nrow-038,4\nrow-039,5\nrow-040,6\nrow-041,7\nrow-042,1\nrow-043,2\nrow-044,3\nrow-045,4\nrow-046,5\nrow-047,6\nrow-048,7\nrow-049,1\nrow-050,2\nrow-051,3\nrow-052,4\nrow-053,5\nrow-054,6\nrow-055,7\nrow-056,1\nrow-057,2\nrow-058,3\nrow-059,4\nrow-060,5\nrow-061,6\nrow-062,7\nrow-063,1\nrow-064,2\nrow-065,3\nrow-066,4\nrow-067,5\nrow-068,6\nrow-069,7\nrow-070,1\nrow-071,2\nrow-072,3\nrow-073,4\nrow-074,5\nrow-075,6\nrow-076,7\nrow-077,1\nrow-078,2\nrow-079,3\nrow-080,4\nrow-081,5\nrow-082,6\nrow-083,7\nrow-084,1\nrow-085,2\nrow-086,3\nrow-087,4\nrow-088,5\nrow-089,6\nrow-090,7\nrow-091,1\nrow-092,2\nrow-093,3\nrow-094,4\nrow-095,5\nrow-096,6\nrow-097,7\nrow-098,1\nrow-099,2\nrow-100,3\nrow-101,4\nrow-102,5\nrow-103,6\nrow-104,7\nrow-105,1\nrow-106,2\nrow-107,3\nrow-108,4\nrow-109,5\nrow-110,6\nrow-111,7\nrow-112,1\nrow-113,2\nrow-114,3\nrow-115,4\nrow-116,5\nrow-117,6\nrow-118,7\nrow-119,1\nrow-120,2\nrow-121,3\nrow-122,4\nrow-123,5\nrow-124,6\nrow-125,7\nrow-126,1\nrow-127,2\nrow-128,3\nrow-129,4\nrow-130,5\nrow-131,6\nrow-132,7\nrow-133,1\nrow-134,2\nrow-135,3\nrow-136,4\nrow-137,5\nrow-138,6\nrow-139,7\nrow-140,1\nrow-141,2\nrow-142,3\nrow-143,4\nrow-144,5\nrow-145,6\nrow-146,7\nrow-147,1\nrow-148,2\nrow-149,3\nrow-150,4\nrow-151,5\nrow-152,6\nrow-153,7\nrow-154,1\nrow-155,2\nrow-156,3\nrow-157,4\nrow-158,5\nrow-159,6\nrow-160,7\nrow-161,1\nrow-162,2\nrow-163,3\nrow-164,4\nrow-165,5\nrow-166,6\nrow-167,7\nrow-168,1\nrow-169,2\nrow-170,3\nrow-171,4\nrow-172,5\nrow-173,6\nrow-174,7\nrow-175,1\nrow-176,2\nrow-177,3\nrow-178,4\nrow-179,5\nrow-180,6\nrow-181,7\nrow-182,1\nrow-183,2\nrow-184,3\nrow-185,4\nrow-186,5\nrow-187,6\nrow-188,7\nrow-189,1\nrow-190,2\nrow-191,3\nrow-192,4\nrow-193,5\nrow-194,6\nrow-195,7\nrow-196,1\nrow-197,2\nrow-198,3\nrow-199,4\nrow-200,5\nrow-201,6\nrow-202,7\nrow-203,1\nrow-204,2\nrow-205,3\nrow-206,4\nrow-207,5\nrow-208,6\nrow-209,7\nrow-210,1\nrow-211,2\nrow-212,3\nrow-213,4\nrow-214,5\nrow-215,6\nrow-216,7\nrow-217,1\nrow-218,2\nrow-219,3\nrow-220,4\nrow-221,5\nrow-222,6\nrow-223,7\nrow-224,1\nrow-225,2\nrow-226,3\nrow-227,4\nrow-228,5\nrow-229,6\nrow-230,7\nrow-231,1\nrow-232,2\nrow-233,3\nrow-234,4\nrow-235,5\nrow-236,6\nrow-237,7\nrow-238,1\nrow-239,2\nrow-240,3\nrow-241,4\nrow-242,5\nrow-243,6\nrow-244,7\nrow-245,1\nrow-246,2\nrow-247,3\nrow-248,4\nrow-249,5\nrow-250,6\nrow-251,7\nrow-252,1\nrow-253,2\nrow-254,3\nrow-255,4\nrow-256,5\nrow-257,6\nrow-258,7\nrow-259,1\nrow-260,2\nrow-261,3\nrow-262,4\nrow-263,5\nrow-264,6\nrow-265,7\nrow-266,1\nrow-267,2\nrow-268,3\nrow-269,4\nrow-270,5\nrow-271,6\nrow-272,7\nrow-273,1\nrow-274,2\nrow-275,3\nrow-276,4\nrow-277,5\nrow-278,6\nrow-279,7\nrow-280,1\nrow-281,2\nrow-282,3\nrow-283,4\nrow-284,5\nrow-285,6\nrow-286,7\nrow-287,1\nrow-288,2\nrow-289,3\nrow-290,4\nrow-291,5\nrow-292,6\nrow-293,7\nrow-294,1\nrow-295,2\nrow-296,3\nrow-297,4\nrow-298,5\nrow-299,6\nrow-300,7\nrow-301,1\nrow-302,2\nrow-303,3\nrow-304,4\nrow-305,5\nrow-306,6\nrow-307,7\nrow-308,1\nrow-309,2\nrow-310,3\nrow-311,4\nrow-312,5\nrow-313,6\nrow-314,7\nrow-315,1\nrow-316,2\nrow-317,3\nrow-318,4\nrow-319,5\nrow-320,6\nrow-321,7\nrow-322,1\nrow-323,2\nrow-324,3\nrow-325,4\nrow-326,5\nrow-327,6\nrow-328,7\nrow-329,1\nrow-330,2\nrow-331,3\nrow-332,4\nrow-333,5\nrow-334,6\nrow-335,7\nrow-336,1\nrow-337,2\nrow-338,3\nrow-339,4\nrow-340,5\nrow-341,6\nrow-342,7\nrow-343,1\nrow-344,2\nrow-345,3\nrow-346,4\nrow-347,5\nrow-348,6\nrow-349,7\nrow-350,1\nrow-351,2\nrow-352,3\nrow-353,4\nrow-354,5\nrow-355,6\nrow-356,7\nrow-357,1\nrow-358,2\nrow-359,3\nrow-360,4\nrow-361,5\nrow-362,6\nrow-363,7\nrow-364,1\nrow-365,2\nrow-366,3\nrow-367,4\nrow-368,5\nrow-369,6\nrow-370,7\nrow-371,1\nrow-372,2\nrow-373,3\nrow-374,4\nrow-375,5\nrow-376,6\nrow-377,7\nrow-378,1\nrow-379,2\nrow-380,3\nrow-381,4\nrow-382,5\nrow-383,6\nrow-384,7\nrow-385,1\nrow-386,2\nrow-387,3\nrow-388,4\nrow-389,5\nrow-390,6\nrow-391,7\nrow-392,1\nrow-393,2\nrow-394,3\nrow-395,4\nrow-396,5\nrow-397,6\nrow-398,7\nrow-399,1\n"
+      },
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "data/brindle-units.csv lists one Brindle shipment per row. How many units did Brindle ship in total? End with a JSON object {\"metrics\":{\"total_units\": <number>}} and no text after it.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "total_units": 1597
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "sums-units",
+                    "criterion": "The answer reports total units of 1597 from the Brindle shipment file.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "T-002",
+      "title": "Count open orders in a long file",
+      "tags": [
+        "dataset",
+        "local"
+      ],
+      "workspace_files": {
+        "data/brindle-orders.csv": "order_id,status,units\nB-000,open,1\nB-001,closed,2\nB-002,closed,3\nB-003,closed,4\nB-004,closed,1\nB-005,open,2\nB-006,closed,3\nB-007,closed,4\nB-008,closed,1\nB-009,closed,2\nB-010,open,3\nB-011,closed,4\nB-012,closed,1\nB-013,closed,2\nB-014,closed,3\nB-015,open,4\nB-016,closed,1\nB-017,closed,2\nB-018,closed,3\nB-019,closed,4\nB-020,open,1\nB-021,closed,2\nB-022,closed,3\nB-023,closed,4\nB-024,closed,1\nB-025,open,2\nB-026,closed,3\nB-027,closed,4\nB-028,closed,1\nB-029,closed,2\nB-030,open,3\nB-031,closed,4\nB-032,closed,1\nB-033,closed,2\nB-034,closed,3\nB-035,open,4\nB-036,closed,1\nB-037,closed,2\nB-038,closed,3\nB-039,closed,4\nB-040,open,1\nB-041,closed,2\nB-042,closed,3\nB-043,closed,4\nB-044,closed,1\nB-045,open,2\nB-046,closed,3\nB-047,closed,4\nB-048,closed,1\nB-049,closed,2\nB-050,open,3\nB-051,closed,4\nB-052,closed,1\nB-053,closed,2\nB-054,closed,3\nB-055,open,4\nB-056,closed,1\nB-057,closed,2\nB-058,closed,3\nB-059,closed,4\nB-060,open,1\nB-061,closed,2\nB-062,closed,3\nB-063,closed,4\nB-064,closed,1\nB-065,open,2\nB-066,closed,3\nB-067,closed,4\nB-068,closed,1\nB-069,closed,2\nB-070,open,3\nB-071,closed,4\nB-072,closed,1\nB-073,closed,2\nB-074,closed,3\nB-075,open,4\nB-076,closed,1\nB-077,closed,2\nB-078,closed,3\nB-079,closed,4\nB-080,open,1\nB-081,closed,2\nB-082,closed,3\nB-083,closed,4\nB-084,closed,1\nB-085,open,2\nB-086,closed,3\nB-087,closed,4\nB-088,closed,1\nB-089,closed,2\nB-090,open,3\nB-091,closed,4\nB-092,closed,1\nB-093,closed,2\nB-094,closed,3\nB-095,open,4\nB-096,closed,1\nB-097,closed,2\nB-098,closed,3\nB-099,closed,4\nB-100,open,1\nB-101,closed,2\nB-102,closed,3\nB-103,closed,4\nB-104,closed,1\nB-105,open,2\nB-106,closed,3\nB-107,closed,4\nB-108,closed,1\nB-109,closed,2\nB-110,open,3\nB-111,closed,4\nB-112,closed,1\nB-113,closed,2\nB-114,closed,3\nB-115,open,4\nB-116,closed,1\nB-117,closed,2\nB-118,closed,3\nB-119,closed,4\nB-120,open,1\nB-121,closed,2\nB-122,closed,3\nB-123,closed,4\nB-124,closed,1\nB-125,open,2\nB-126,closed,3\nB-127,closed,4\nB-128,closed,1\nB-129,closed,2\nB-130,open,3\nB-131,closed,4\nB-132,closed,1\nB-133,closed,2\nB-134,closed,3\nB-135,open,4\nB-136,closed,1\nB-137,closed,2\nB-138,closed,3\nB-139,closed,4\nB-140,open,1\nB-141,closed,2\nB-142,closed,3\nB-143,closed,4\nB-144,closed,1\nB-145,open,2\nB-146,closed,3\nB-147,closed,4\nB-148,closed,1\nB-149,closed,2\nB-150,open,3\nB-151,closed,4\nB-152,closed,1\nB-153,closed,2\nB-154,closed,3\nB-155,open,4\nB-156,closed,1\nB-157,closed,2\nB-158,closed,3\nB-159,closed,4\nB-160,open,1\nB-161,closed,2\nB-162,closed,3\nB-163,closed,4\nB-164,closed,1\nB-165,open,2\nB-166,closed,3\nB-167,closed,4\nB-168,closed,1\nB-169,closed,2\nB-170,open,3\nB-171,closed,4\nB-172,closed,1\nB-173,closed,2\nB-174,closed,3\nB-175,open,4\nB-176,closed,1\nB-177,closed,2\nB-178,closed,3\nB-179,closed,4\nB-180,open,1\nB-181,closed,2\nB-182,closed,3\nB-183,closed,4\nB-184,closed,1\nB-185,open,2\nB-186,closed,3\nB-187,closed,4\nB-188,closed,1\nB-189,closed,2\nB-190,open,3\nB-191,closed,4\nB-192,closed,1\nB-193,closed,2\nB-194,closed,3\nB-195,open,4\nB-196,closed,1\nB-197,closed,2\nB-198,closed,3\nB-199,closed,4\nB-200,open,1\nB-201,closed,2\nB-202,closed,3\nB-203,closed,4\nB-204,closed,1\nB-205,open,2\nB-206,closed,3\nB-207,closed,4\nB-208,closed,1\nB-209,closed,2\nB-210,open,3\nB-211,closed,4\nB-212,closed,1\nB-213,closed,2\nB-214,closed,3\nB-215,open,4\nB-216,closed,1\nB-217,closed,2\nB-218,closed,3\nB-219,closed,4\nB-220,open,1\nB-221,closed,2\nB-222,closed,3\nB-223,closed,4\nB-224,closed,1\nB-225,open,2\nB-226,closed,3\nB-227,closed,4\nB-228,closed,1\nB-229,closed,2\nB-230,open,3\nB-231,closed,4\nB-232,closed,1\nB-233,closed,2\nB-234,closed,3\nB-235,open,4\nB-236,closed,1\nB-237,closed,2\nB-238,closed,3\nB-239,closed,4\nB-240,open,1\nB-241,closed,2\nB-242,closed,3\nB-243,closed,4\nB-244,closed,1\nB-245,open,2\nB-246,closed,3\nB-247,closed,4\nB-248,closed,1\nB-249,closed,2\nB-250,open,3\nB-251,closed,4\nB-252,closed,1\nB-253,closed,2\nB-254,closed,3\nB-255,open,4\nB-256,closed,1\nB-257,closed,2\nB-258,closed,3\nB-259,closed,4\nB-260,open,1\nB-261,closed,2\nB-262,closed,3\nB-263,closed,4\nB-264,closed,1\nB-265,open,2\nB-266,closed,3\nB-267,closed,4\nB-268,closed,1\nB-269,closed,2\nB-270,open,3\nB-271,closed,4\nB-272,closed,1\nB-273,closed,2\nB-274,closed,3\nB-275,open,4\nB-276,closed,1\nB-277,closed,2\nB-278,closed,3\nB-279,closed,4\nB-280,open,1\nB-281,closed,2\nB-282,closed,3\nB-283,closed,4\nB-284,closed,1\nB-285,open,2\nB-286,closed,3\nB-287,closed,4\nB-288,closed,1\nB-289,closed,2\nB-290,open,3\nB-291,closed,4\nB-292,closed,1\nB-293,closed,2\nB-294,closed,3\nB-295,open,4\nB-296,closed,1\nB-297,closed,2\nB-298,closed,3\nB-299,closed,4\nB-300,open,1\nB-301,closed,2\nB-302,closed,3\nB-303,closed,4\nB-304,closed,1\nB-305,open,2\nB-306,closed,3\nB-307,closed,4\nB-308,closed,1\nB-309,closed,2\nB-310,open,3\nB-311,closed,4\nB-312,closed,1\nB-313,closed,2\nB-314,closed,3\nB-315,open,4\nB-316,closed,1\nB-317,closed,2\nB-318,closed,3\nB-319,closed,4\nB-320,open,1\nB-321,closed,2\nB-322,closed,3\nB-323,closed,4\nB-324,closed,1\nB-325,open,2\nB-326,closed,3\nB-327,closed,4\nB-328,closed,1\nB-329,closed,2\nB-330,open,3\nB-331,closed,4\nB-332,closed,1\nB-333,closed,2\nB-334,closed,3\nB-335,open,4\nB-336,closed,1\nB-337,closed,2\nB-338,closed,3\nB-339,closed,4\nB-340,open,1\nB-341,closed,2\nB-342,closed,3\nB-343,closed,4\nB-344,closed,1\nB-345,open,2\nB-346,closed,3\nB-347,closed,4\nB-348,closed,1\nB-349,closed,2\nB-350,open,3\nB-351,closed,4\nB-352,closed,1\nB-353,closed,2\nB-354,closed,3\nB-355,open,4\nB-356,closed,1\nB-357,closed,2\nB-358,closed,3\nB-359,closed,4\nB-360,open,1\nB-361,closed,2\nB-362,closed,3\nB-363,closed,4\nB-364,closed,1\nB-365,open,2\nB-366,closed,3\nB-367,closed,4\nB-368,closed,1\nB-369,closed,2\nB-370,open,3\nB-371,closed,4\nB-372,closed,1\nB-373,closed,2\nB-374,closed,3\nB-375,open,4\nB-376,closed,1\nB-377,closed,2\nB-378,closed,3\nB-379,closed,4\nB-380,open,1\nB-381,closed,2\nB-382,closed,3\nB-383,closed,4\nB-384,closed,1\nB-385,open,2\nB-386,closed,3\nB-387,closed,4\nB-388,closed,1\nB-389,closed,2\nB-390,open,3\nB-391,closed,4\nB-392,closed,1\nB-393,closed,2\nB-394,closed,3\nB-395,open,4\nB-396,closed,1\nB-397,closed,2\nB-398,closed,3\nB-399,closed,4\nB-400,open,1\nB-401,closed,2\nB-402,closed,3\nB-403,closed,4\nB-404,closed,1\nB-405,open,2\nB-406,closed,3\nB-407,closed,4\nB-408,closed,1\nB-409,closed,2\nB-410,open,3\nB-411,closed,4\nB-412,closed,1\nB-413,closed,2\nB-414,closed,3\nB-415,open,4\nB-416,closed,1\nB-417,closed,2\nB-418,closed,3\nB-419,closed,4\n"
+      },
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "data/brindle-orders.csv lists Brindle orders. How many rows have status open? End with a JSON object {\"metrics\":{\"open_orders\": <number>}} and no text after it.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "open_orders": 84
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "counts-open",
+                    "criterion": "The answer reports 84 open Brindle orders from the order file.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "T-003",
+      "title": "Publish a quarterly line chart",
+      "tags": [
+        "chart",
+        "local"
+      ],
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "브린들 미터링의 분기 매출을 선 차트로 그려 줘. 2025Q1 12, 2025Q2 15, 2025Q3 14, 2025Q4 18. 단위는 백만 달러야. 밖에 있는 가격은 가져오지 마.",
+              "expect": {
+                "rubric": [
+                  {
+                    "id": "publishes-line",
+                    "criterion": "The answer publishes one line chart of Brindle quarterly revenue for 2025Q1 through 2025Q4 using 12, 15, 14, and 18.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "T-004",
+      "title": "Publish a comparison bar chart",
+      "tags": [
+        "chart",
+        "local"
+      ],
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "Draw a bar chart titled Fictional margin comparison. Larkspur Retail margin 11, Hearthlane Grocery margin 7, Vellum Press margin 16. Do not add companies I did not name.",
+              "expect": {
+                "rubric": [
+                  {
+                    "id": "publishes-bars",
+                    "criterion": "The answer publishes one bar chart comparing Larkspur Retail 11, Hearthlane Grocery 7, and Vellum Press 16, and no other company.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "T-006",
+      "title": "Keep a finished shipment check",
+      "tags": [
+        "note",
+        "local"
+      ],
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "오늘 브린들 선적 점검은 여기까지야. 단위 합계는 12였고, 다음에 이어서 볼 수 있게 해 줘.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "note",
+                    "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens",
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens_proposal",
+                    "metric": "save_precision"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "keeps-note",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer keeps one working note of the finished Brindle shipment check and does not keep the unit total of 12 as a standing method.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "T-007",
+      "title": "Rank retailers with the standing store method",
+      "tags": [
+        "lens",
+        "local"
+      ],
+      "seed": {
+        "lens": [
+          {
+            "title": "Same-store before total sales",
+            "markdown": "Rank retailers on same-store sales growth before total sales growth.",
+            "applicability": "Retailers that disclose both same-store sales growth and total sales growth.",
+            "assumptions": "The company already computed same-store growth on a comparable set of stores.",
+            "procedure": "State same-store sales growth first. Do not rank on total sales when same-store growth is available.",
+            "principles": "Chainwide sales can rise while established stores shrink.",
+            "limitations": "Do not apply the method when same-store growth is absent, or to companies that are not retailers."
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "Which of these two retailers should I put first? Larkspur Retail same-store sales growth 4 percent, total sales growth 11 percent. Hearthlane Grocery same-store sales growth 6 percent, total sales growth 2 percent.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "Hearthlane"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "ranks-same-store",
+                    "criterion": "The answer puts Hearthlane Grocery first because same-store growth is 6 percent versus 4 percent, and does not rank Larkspur first on total sales.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "T-008",
+      "title": "Sum a long bin file",
+      "tags": [
+        "dataset",
+        "local"
+      ],
+      "workspace_files": {
+        "data/brindle-bins.json": "[{\"bin\":\"b0\",\"count\":1},{\"bin\":\"b1\",\"count\":2},{\"bin\":\"b2\",\"count\":3},{\"bin\":\"b3\",\"count\":4},{\"bin\":\"b4\",\"count\":5},{\"bin\":\"b5\",\"count\":6},{\"bin\":\"b6\",\"count\":7},{\"bin\":\"b7\",\"count\":8},{\"bin\":\"b8\",\"count\":9},{\"bin\":\"b9\",\"count\":1},{\"bin\":\"b10\",\"count\":2},{\"bin\":\"b11\",\"count\":3},{\"bin\":\"b12\",\"count\":4},{\"bin\":\"b13\",\"count\":5},{\"bin\":\"b14\",\"count\":6},{\"bin\":\"b15\",\"count\":7},{\"bin\":\"b16\",\"count\":8},{\"bin\":\"b17\",\"count\":9},{\"bin\":\"b18\",\"count\":1},{\"bin\":\"b19\",\"count\":2},{\"bin\":\"b20\",\"count\":3},{\"bin\":\"b21\",\"count\":4},{\"bin\":\"b22\",\"count\":5},{\"bin\":\"b23\",\"count\":6},{\"bin\":\"b24\",\"count\":7},{\"bin\":\"b25\",\"count\":8},{\"bin\":\"b26\",\"count\":9},{\"bin\":\"b27\",\"count\":1},{\"bin\":\"b28\",\"count\":2},{\"bin\":\"b29\",\"count\":3},{\"bin\":\"b30\",\"count\":4},{\"bin\":\"b31\",\"count\":5},{\"bin\":\"b32\",\"count\":6},{\"bin\":\"b33\",\"count\":7},{\"bin\":\"b34\",\"count\":8},{\"bin\":\"b35\",\"count\":9},{\"bin\":\"b36\",\"count\":1},{\"bin\":\"b37\",\"count\":2},{\"bin\":\"b38\",\"count\":3},{\"bin\":\"b39\",\"count\":4},{\"bin\":\"b40\",\"count\":5},{\"bin\":\"b41\",\"count\":6},{\"bin\":\"b42\",\"count\":7},{\"bin\":\"b43\",\"count\":8},{\"bin\":\"b44\",\"count\":9},{\"bin\":\"b45\",\"count\":1},{\"bin\":\"b46\",\"count\":2},{\"bin\":\"b47\",\"count\":3},{\"bin\":\"b48\",\"count\":4},{\"bin\":\"b49\",\"count\":5},{\"bin\":\"b50\",\"count\":6},{\"bin\":\"b51\",\"count\":7},{\"bin\":\"b52\",\"count\":8},{\"bin\":\"b53\",\"count\":9},{\"bin\":\"b54\",\"count\":1},{\"bin\":\"b55\",\"count\":2},{\"bin\":\"b56\",\"count\":3},{\"bin\":\"b57\",\"count\":4},{\"bin\":\"b58\",\"count\":5},{\"bin\":\"b59\",\"count\":6},{\"bin\":\"b60\",\"count\":7},{\"bin\":\"b61\",\"count\":8},{\"bin\":\"b62\",\"count\":9},{\"bin\":\"b63\",\"count\":1},{\"bin\":\"b64\",\"count\":2},{\"bin\":\"b65\",\"count\":3},{\"bin\":\"b66\",\"count\":4},{\"bin\":\"b67\",\"count\":5},{\"bin\":\"b68\",\"count\":6},{\"bin\":\"b69\",\"count\":7},{\"bin\":\"b70\",\"count\":8},{\"bin\":\"b71\",\"count\":9},{\"bin\":\"b72\",\"count\":1},{\"bin\":\"b73\",\"count\":2},{\"bin\":\"b74\",\"count\":3},{\"bin\":\"b75\",\"count\":4},{\"bin\":\"b76\",\"count\":5},{\"bin\":\"b77\",\"count\":6},{\"bin\":\"b78\",\"count\":7},{\"bin\":\"b79\",\"count\":8},{\"bin\":\"b80\",\"count\":9},{\"bin\":\"b81\",\"count\":1},{\"bin\":\"b82\",\"count\":2},{\"bin\":\"b83\",\"count\":3},{\"bin\":\"b84\",\"count\":4},{\"bin\":\"b85\",\"count\":5},{\"bin\":\"b86\",\"count\":6},{\"bin\":\"b87\",\"count\":7},{\"bin\":\"b88\",\"count\":8},{\"bin\":\"b89\",\"count\":9},{\"bin\":\"b90\",\"count\":1},{\"bin\":\"b91\",\"count\":2},{\"bin\":\"b92\",\"count\":3},{\"bin\":\"b93\",\"count\":4},{\"bin\":\"b94\",\"count\":5},{\"bin\":\"b95\",\"count\":6},{\"bin\":\"b96\",\"count\":7},{\"bin\":\"b97\",\"count\":8},{\"bin\":\"b98\",\"count\":9},{\"bin\":\"b99\",\"count\":1},{\"bin\":\"b100\",\"count\":2},{\"bin\":\"b101\",\"count\":3},{\"bin\":\"b102\",\"count\":4},{\"bin\":\"b103\",\"count\":5},{\"bin\":\"b104\",\"count\":6},{\"bin\":\"b105\",\"count\":7},{\"bin\":\"b106\",\"count\":8},{\"bin\":\"b107\",\"count\":9},{\"bin\":\"b108\",\"count\":1},{\"bin\":\"b109\",\"count\":2},{\"bin\":\"b110\",\"count\":3},{\"bin\":\"b111\",\"count\":4},{\"bin\":\"b112\",\"count\":5},{\"bin\":\"b113\",\"count\":6},{\"bin\":\"b114\",\"count\":7},{\"bin\":\"b115\",\"count\":8},{\"bin\":\"b116\",\"count\":9},{\"bin\":\"b117\",\"count\":1},{\"bin\":\"b118\",\"count\":2},{\"bin\":\"b119\",\"count\":3},{\"bin\":\"b120\",\"count\":4},{\"bin\":\"b121\",\"count\":5},{\"bin\":\"b122\",\"count\":6},{\"bin\":\"b123\",\"count\":7},{\"bin\":\"b124\",\"count\":8},{\"bin\":\"b125\",\"count\":9},{\"bin\":\"b126\",\"count\":1},{\"bin\":\"b127\",\"count\":2},{\"bin\":\"b128\",\"count\":3},{\"bin\":\"b129\",\"count\":4},{\"bin\":\"b130\",\"count\":5},{\"bin\":\"b131\",\"count\":6},{\"bin\":\"b132\",\"count\":7},{\"bin\":\"b133\",\"count\":8},{\"bin\":\"b134\",\"count\":9},{\"bin\":\"b135\",\"count\":1},{\"bin\":\"b136\",\"count\":2},{\"bin\":\"b137\",\"count\":3},{\"bin\":\"b138\",\"count\":4},{\"bin\":\"b139\",\"count\":5},{\"bin\":\"b140\",\"count\":6},{\"bin\":\"b141\",\"count\":7},{\"bin\":\"b142\",\"count\":8},{\"bin\":\"b143\",\"count\":9},{\"bin\":\"b144\",\"count\":1},{\"bin\":\"b145\",\"count\":2},{\"bin\":\"b146\",\"count\":3},{\"bin\":\"b147\",\"count\":4},{\"bin\":\"b148\",\"count\":5},{\"bin\":\"b149\",\"count\":6},{\"bin\":\"b150\",\"count\":7},{\"bin\":\"b151\",\"count\":8},{\"bin\":\"b152\",\"count\":9},{\"bin\":\"b153\",\"count\":1},{\"bin\":\"b154\",\"count\":2},{\"bin\":\"b155\",\"count\":3},{\"bin\":\"b156\",\"count\":4},{\"bin\":\"b157\",\"count\":5},{\"bin\":\"b158\",\"count\":6},{\"bin\":\"b159\",\"count\":7},{\"bin\":\"b160\",\"count\":8},{\"bin\":\"b161\",\"count\":9},{\"bin\":\"b162\",\"count\":1},{\"bin\":\"b163\",\"count\":2},{\"bin\":\"b164\",\"count\":3},{\"bin\":\"b165\",\"count\":4},{\"bin\":\"b166\",\"count\":5},{\"bin\":\"b167\",\"count\":6},{\"bin\":\"b168\",\"count\":7},{\"bin\":\"b169\",\"count\":8},{\"bin\":\"b170\",\"count\":9},{\"bin\":\"b171\",\"count\":1},{\"bin\":\"b172\",\"count\":2},{\"bin\":\"b173\",\"count\":3},{\"bin\":\"b174\",\"count\":4},{\"bin\":\"b175\",\"count\":5},{\"bin\":\"b176\",\"count\":6},{\"bin\":\"b177\",\"count\":7},{\"bin\":\"b178\",\"count\":8},{\"bin\":\"b179\",\"count\":9},{\"bin\":\"b180\",\"count\":1},{\"bin\":\"b181\",\"count\":2},{\"bin\":\"b182\",\"count\":3},{\"bin\":\"b183\",\"count\":4},{\"bin\":\"b184\",\"count\":5},{\"bin\":\"b185\",\"count\":6},{\"bin\":\"b186\",\"count\":7},{\"bin\":\"b187\",\"count\":8},{\"bin\":\"b188\",\"count\":9},{\"bin\":\"b189\",\"count\":1},{\"bin\":\"b190\",\"count\":2},{\"bin\":\"b191\",\"count\":3},{\"bin\":\"b192\",\"count\":4},{\"bin\":\"b193\",\"count\":5},{\"bin\":\"b194\",\"count\":6},{\"bin\":\"b195\",\"count\":7},{\"bin\":\"b196\",\"count\":8},{\"bin\":\"b197\",\"count\":9},{\"bin\":\"b198\",\"count\":1},{\"bin\":\"b199\",\"count\":2},{\"bin\":\"b200\",\"count\":3},{\"bin\":\"b201\",\"count\":4},{\"bin\":\"b202\",\"count\":5},{\"bin\":\"b203\",\"count\":6},{\"bin\":\"b204\",\"count\":7},{\"bin\":\"b205\",\"count\":8},{\"bin\":\"b206\",\"count\":9},{\"bin\":\"b207\",\"count\":1},{\"bin\":\"b208\",\"count\":2},{\"bin\":\"b209\",\"count\":3},{\"bin\":\"b210\",\"count\":4},{\"bin\":\"b211\",\"count\":5},{\"bin\":\"b212\",\"count\":6},{\"bin\":\"b213\",\"count\":7},{\"bin\":\"b214\",\"count\":8},{\"bin\":\"b215\",\"count\":9},{\"bin\":\"b216\",\"count\":1},{\"bin\":\"b217\",\"count\":2},{\"bin\":\"b218\",\"count\":3},{\"bin\":\"b219\",\"count\":4},{\"bin\":\"b220\",\"count\":5},{\"bin\":\"b221\",\"count\":6},{\"bin\":\"b222\",\"count\":7},{\"bin\":\"b223\",\"count\":8},{\"bin\":\"b224\",\"count\":9},{\"bin\":\"b225\",\"count\":1},{\"bin\":\"b226\",\"count\":2},{\"bin\":\"b227\",\"count\":3},{\"bin\":\"b228\",\"count\":4},{\"bin\":\"b229\",\"count\":5},{\"bin\":\"b230\",\"count\":6},{\"bin\":\"b231\",\"count\":7},{\"bin\":\"b232\",\"count\":8},{\"bin\":\"b233\",\"count\":9},{\"bin\":\"b234\",\"count\":1},{\"bin\":\"b235\",\"count\":2},{\"bin\":\"b236\",\"count\":3},{\"bin\":\"b237\",\"count\":4},{\"bin\":\"b238\",\"count\":5},{\"bin\":\"b239\",\"count\":6},{\"bin\":\"b240\",\"count\":7},{\"bin\":\"b241\",\"count\":8},{\"bin\":\"b242\",\"count\":9},{\"bin\":\"b243\",\"count\":1},{\"bin\":\"b244\",\"count\":2},{\"bin\":\"b245\",\"count\":3},{\"bin\":\"b246\",\"count\":4},{\"bin\":\"b247\",\"count\":5},{\"bin\":\"b248\",\"count\":6},{\"bin\":\"b249\",\"count\":7},{\"bin\":\"b250\",\"count\":8},{\"bin\":\"b251\",\"count\":9},{\"bin\":\"b252\",\"count\":1},{\"bin\":\"b253\",\"count\":2},{\"bin\":\"b254\",\"count\":3},{\"bin\":\"b255\",\"count\":4},{\"bin\":\"b256\",\"count\":5},{\"bin\":\"b257\",\"count\":6},{\"bin\":\"b258\",\"count\":7},{\"bin\":\"b259\",\"count\":8},{\"bin\":\"b260\",\"count\":9},{\"bin\":\"b261\",\"count\":1},{\"bin\":\"b262\",\"count\":2},{\"bin\":\"b263\",\"count\":3},{\"bin\":\"b264\",\"count\":4},{\"bin\":\"b265\",\"count\":5},{\"bin\":\"b266\",\"count\":6},{\"bin\":\"b267\",\"count\":7},{\"bin\":\"b268\",\"count\":8},{\"bin\":\"b269\",\"count\":9},{\"bin\":\"b270\",\"count\":1},{\"bin\":\"b271\",\"count\":2},{\"bin\":\"b272\",\"count\":3},{\"bin\":\"b273\",\"count\":4},{\"bin\":\"b274\",\"count\":5},{\"bin\":\"b275\",\"count\":6},{\"bin\":\"b276\",\"count\":7},{\"bin\":\"b277\",\"count\":8},{\"bin\":\"b278\",\"count\":9},{\"bin\":\"b279\",\"count\":1},{\"bin\":\"b280\",\"count\":2},{\"bin\":\"b281\",\"count\":3},{\"bin\":\"b282\",\"count\":4},{\"bin\":\"b283\",\"count\":5},{\"bin\":\"b284\",\"count\":6},{\"bin\":\"b285\",\"count\":7},{\"bin\":\"b286\",\"count\":8},{\"bin\":\"b287\",\"count\":9},{\"bin\":\"b288\",\"count\":1},{\"bin\":\"b289\",\"count\":2},{\"bin\":\"b290\",\"count\":3},{\"bin\":\"b291\",\"count\":4},{\"bin\":\"b292\",\"count\":5},{\"bin\":\"b293\",\"count\":6},{\"bin\":\"b294\",\"count\":7},{\"bin\":\"b295\",\"count\":8},{\"bin\":\"b296\",\"count\":9},{\"bin\":\"b297\",\"count\":1},{\"bin\":\"b298\",\"count\":2},{\"bin\":\"b299\",\"count\":3},{\"bin\":\"b300\",\"count\":4},{\"bin\":\"b301\",\"count\":5},{\"bin\":\"b302\",\"count\":6},{\"bin\":\"b303\",\"count\":7},{\"bin\":\"b304\",\"count\":8},{\"bin\":\"b305\",\"count\":9},{\"bin\":\"b306\",\"count\":1},{\"bin\":\"b307\",\"count\":2},{\"bin\":\"b308\",\"count\":3},{\"bin\":\"b309\",\"count\":4},{\"bin\":\"b310\",\"count\":5},{\"bin\":\"b311\",\"count\":6},{\"bin\":\"b312\",\"count\":7},{\"bin\":\"b313\",\"count\":8},{\"bin\":\"b314\",\"count\":9},{\"bin\":\"b315\",\"count\":1},{\"bin\":\"b316\",\"count\":2},{\"bin\":\"b317\",\"count\":3},{\"bin\":\"b318\",\"count\":4},{\"bin\":\"b319\",\"count\":5},{\"bin\":\"b320\",\"count\":6},{\"bin\":\"b321\",\"count\":7},{\"bin\":\"b322\",\"count\":8},{\"bin\":\"b323\",\"count\":9},{\"bin\":\"b324\",\"count\":1},{\"bin\":\"b325\",\"count\":2},{\"bin\":\"b326\",\"count\":3},{\"bin\":\"b327\",\"count\":4},{\"bin\":\"b328\",\"count\":5},{\"bin\":\"b329\",\"count\":6},{\"bin\":\"b330\",\"count\":7},{\"bin\":\"b331\",\"count\":8},{\"bin\":\"b332\",\"count\":9},{\"bin\":\"b333\",\"count\":1},{\"bin\":\"b334\",\"count\":2},{\"bin\":\"b335\",\"count\":3},{\"bin\":\"b336\",\"count\":4},{\"bin\":\"b337\",\"count\":5},{\"bin\":\"b338\",\"count\":6},{\"bin\":\"b339\",\"count\":7},{\"bin\":\"b340\",\"count\":8},{\"bin\":\"b341\",\"count\":9},{\"bin\":\"b342\",\"count\":1},{\"bin\":\"b343\",\"count\":2},{\"bin\":\"b344\",\"count\":3},{\"bin\":\"b345\",\"count\":4},{\"bin\":\"b346\",\"count\":5},{\"bin\":\"b347\",\"count\":6},{\"bin\":\"b348\",\"count\":7},{\"bin\":\"b349\",\"count\":8},{\"bin\":\"b350\",\"count\":9},{\"bin\":\"b351\",\"count\":1},{\"bin\":\"b352\",\"count\":2},{\"bin\":\"b353\",\"count\":3},{\"bin\":\"b354\",\"count\":4},{\"bin\":\"b355\",\"count\":5},{\"bin\":\"b356\",\"count\":6},{\"bin\":\"b357\",\"count\":7},{\"bin\":\"b358\",\"count\":8},{\"bin\":\"b359\",\"count\":9},{\"bin\":\"b360\",\"count\":1},{\"bin\":\"b361\",\"count\":2},{\"bin\":\"b362\",\"count\":3},{\"bin\":\"b363\",\"count\":4},{\"bin\":\"b364\",\"count\":5},{\"bin\":\"b365\",\"count\":6},{\"bin\":\"b366\",\"count\":7},{\"bin\":\"b367\",\"count\":8},{\"bin\":\"b368\",\"count\":9},{\"bin\":\"b369\",\"count\":1},{\"bin\":\"b370\",\"count\":2},{\"bin\":\"b371\",\"count\":3},{\"bin\":\"b372\",\"count\":4},{\"bin\":\"b373\",\"count\":5},{\"bin\":\"b374\",\"count\":6},{\"bin\":\"b375\",\"count\":7},{\"bin\":\"b376\",\"count\":8},{\"bin\":\"b377\",\"count\":9},{\"bin\":\"b378\",\"count\":1},{\"bin\":\"b379\",\"count\":2},{\"bin\":\"b380\",\"count\":3},{\"bin\":\"b381\",\"count\":4},{\"bin\":\"b382\",\"count\":5},{\"bin\":\"b383\",\"count\":6},{\"bin\":\"b384\",\"count\":7},{\"bin\":\"b385\",\"count\":8},{\"bin\":\"b386\",\"count\":9},{\"bin\":\"b387\",\"count\":1},{\"bin\":\"b388\",\"count\":2},{\"bin\":\"b389\",\"count\":3},{\"bin\":\"b390\",\"count\":4},{\"bin\":\"b391\",\"count\":5},{\"bin\":\"b392\",\"count\":6},{\"bin\":\"b393\",\"count\":7},{\"bin\":\"b394\",\"count\":8},{\"bin\":\"b395\",\"count\":9},{\"bin\":\"b396\",\"count\":1},{\"bin\":\"b397\",\"count\":2},{\"bin\":\"b398\",\"count\":3},{\"bin\":\"b399\",\"count\":4}]\n"
+      },
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "data/brindle-bins.json lists Brindle bin counts. What is the total of the count field? End with a JSON object {\"metrics\":{\"total_count\": <number>}} and no text after it.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "total_count": 1990
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "sums-bins",
+                    "criterion": "The answer reports a total count of 1990 from the Brindle bin file.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "T-009",
+      "title": "Disabled OpenDART is named, not replaced",
+      "tags": [
+        "honesty",
+        "local",
+        "opendart"
+      ],
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "솔숲식품의 FY2025 연결 매출이 공시에 얼마인지 알려 줘. 숫자를 지어내지는 마.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_fetch",
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "OpenDART",
+                      "오픈다트"
+                    ],
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "names-connection",
+                    "criterion": "The answer names OpenDART as the connection to enable and does not invent a Solsup Foods revenue figure.",
+                    "metric": "connection_honesty"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "T-011",
+      "title": "Disabled World Bank is named, not replaced",
+      "tags": [
+        "honesty",
+        "local",
+        "world-bank"
+      ],
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "경제 XQ의 2023년 지표 GT.FICT.MARR.IDX 값이 필요해. 값을 지어내지는 마.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_fetch",
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "World Bank",
+                      "세계은행"
+                    ],
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "names-connection",
+                    "criterion": "The answer names the World Bank connection to enable and does not invent the 2023 indicator value.",
+                    "metric": "connection_honesty"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "T-012",
+      "title": "Disabled Korea Investment is named, not replaced",
+      "tags": [
+        "honesty",
+        "local",
+        "koreainvestment"
+      ],
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "종목 990417의 최근 호가가 필요해. 가격을 지어내지는 마.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_fetch",
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "Korea Investment",
+                      "한국투자"
+                    ],
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "names-connection",
+                    "criterion": "The answer names the Korea Investment connection to enable and does not invent a last price for issue 990417.",
+                    "metric": "connection_honesty"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "T-013",
+      "title": "A missing CSV is not retried forever",
+      "tags": [
+        "errors",
+        "local"
+      ],
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "What is the total of the units column in data/missing-brindle.csv?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "max_tool_errors",
+                    "n": 2,
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "max_tool_calls",
+                    "n": 4,
+                    "metric": "efficiency"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "says-missing",
+                    "criterion": "The answer says data/missing-brindle.csv is absent and does not invent a unit total.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "T-014",
+      "title": "Two independent revenue notes are both used",
+      "tags": [
+        "parallel",
+        "local"
+      ],
+      "workspace_files": {
+        "data/larkspur-sales.md": "Larkspur Retail FY2025 net sales were 412.7 million USD.\n",
+        "data/hearthlane-sales.md": "Hearthlane Grocery FY2025 net sales were 255.4 million USD.\n"
+      },
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "Larkspur Retail and Hearthlane Grocery each have an FY2025 net sales note in the workspace. What were the two net sales figures? End with a JSON object {\"metrics\":{\"larkspur_net_sales\": <number>, \"hearthlane_net_sales\": <number>}} and no text after it.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "larkspur_net_sales": 412.7,
+                      "hearthlane_net_sales": 255.4
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "reports-both",
+                    "criterion": "The answer reports 412.7 for Larkspur Retail and 255.4 for Hearthlane Grocery.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "T-016",
+      "title": "A definition stays in one sentence",
+      "tags": [
+        "light",
+        "local",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "운전자본이 무엇인지 한 문장으로만 설명해 줘.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "max_tool_calls",
+                    "n": 0,
+                    "metric": "efficiency"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "defines-working-capital",
+                    "criterion": "The answer defines working capital as current assets minus current liabilities and does not call a tool.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "opendart"
+      ],
+      "id": "T-017",
+      "title": "Instructed OpenDART financials for Solsup Foods",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart",
+        "instructed"
+      ],
+      "replay": "replay/opendart-solsup-fy2025.json",
+      "replay_needs": "dart_company_lookup resolves 솔숲식품 or stock_code 990221 from the raw OpenDART directory (corp_code 99022100, corp_name 솔숲식품, corp_eng_name Solsup Foods). dart_financials company 99022100, fiscal_year 2025, report_period annual, basis consolidated returns revenue 452300000000 KRW, operating_income 38100000000 KRW, and net_income 21400000000 KRW, filed 2026-03-18. English alias matching depends on production indexing corp_eng_name. No other company or later revision.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "Load the opendart capability, then use dart_company_lookup and dart_financials. 솔숲식품의 FY2025 연결 매출을 원 단위 정수로 알려 줘. 답의 맨 끝에는 {\"metrics\":{\"revenue_krw\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "opendart",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "dart_company_lookup"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "dart_financials"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_fetch",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "revenue_krw": 452300000000
+                    },
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "cites_result",
+                    "tool": "dart_financials",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "uses-connection",
+                    "criterion": "The answer reports Solsup Foods FY2025 consolidated revenue of 452300000000 KRW from OpenDART.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "opendart"
+      ],
+      "id": "T-018",
+      "title": "OpenDART filing for Byeolmuri capacity",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart"
+      ],
+      "replay": "replay/opendart-byeolmuri-capacity.json",
+      "replay_needs": "dart_company_lookup resolves 별무리반도체 or stock_code 990308 to corp_code 99030800. dart_filing_search company 99030800 returns receipt 20260318990308, 별무리반도체 포장라인 증설, filed 2026-03-18, for any valid window containing that date, limit 1 through 100, and omitted, major_event or exchange filing_type. dart_filing_read rcept_no 20260318990308 extracts the official ZIP/XML body: 3 new packaging lines at the fictional Osan shed. No other filings.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "별무리반도체 종목 990308의 2026-01-01부터 2026-03-31까지 공시에서 새로 늘리는 포장 라인이 몇 개인지 알려 줘. 답의 맨 끝에는 {\"metrics\":{\"new_lines\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "opendart",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "dart_filing_search"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "dart_filing_read"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_fetch",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "new_lines": 3
+                    },
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "cites_result",
+                    "tool": "dart_filing_read",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "uses-connection",
+                    "criterion": "The answer reports that Byeolmuri will add 3 packaging lines, from the OpenDART filing.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "krx"
+      ],
+      "id": "T-019",
+      "title": "KRX close for Noeul Paper",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "krx"
+      ],
+      "replay": "replay/krx-noeul-2026-03-03.json",
+      "replay_needs": "krx_daily_quote symbol 990184 date 2026-03-03 returns issue name 노을제지, close 73400 KRW, volume 182233, and change 900. No other date and no other issue.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "2026-03-03 종목 990184의 종가를 원으로 알려 줘. 답의 맨 끝에는 {\"metrics\":{\"close_krw\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "krx",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "krx_daily_quote"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_fetch",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "close_krw": 73400
+                    },
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "cites_result",
+                    "tool": "krx_daily_quote",
+                    "near": [
+                      "73,400",
+                      "73400"
+                    ],
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "uses-connection",
+                    "criterion": "The answer reports the 2026-03-03 close of 73400 KRW for issue 990184 from KRX.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "koreainvestment"
+      ],
+      "id": "T-021",
+      "title": "Korea Investment quote for Bada Bank",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "koreainvestment"
+      ],
+      "replay": "replay/kis-bada-quote.json",
+      "replay_needs": "kis_operation_search uses the real read-only manifest; query inquire_price or 주식현재가 시세 discovers domestic_stock.inquire_price. kis_read with that operation_id and params fid_cond_mrkt_div_code J, NX or UN and fid_input_iscd 990417 returns raw output.stck_prpr 51200 KRW and stck_shrn_iscd 990417. No unsupported company-name or quote-timestamp field, cash balance, account profile, or order acknowledgement is supplied.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "종목 990417의 최근 가격을 원으로 알려 줘. 주문은 넣지 마. 답의 맨 끝에는 {\"metrics\":{\"last_krw\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "koreainvestment",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "kis_operation_search"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "kis_read"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_fetch",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "last_krw": 51200
+                    },
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "cites_result",
+                    "tool": "kis_read",
+                    "near": [
+                      "51,200",
+                      "51200"
+                    ],
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "uses-connection",
+                    "criterion": "The answer reports the last price of 51200 KRW for issue 990417 and does not place an order.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "world-bank"
+      ],
+      "id": "T-022",
+      "title": "World Bank index for fictional economy XQ",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "world-bank"
+      ],
+      "replay": "replay/worldbank-xq-marr.json",
+      "replay_needs": "worldbank_series economy XQ indicator GT.FICT.MARR.IDX start_year 2022 end_year 2023 returns two observations: 2022 value 101.5 and 2023 value 109.25. The series name is Fictional Marrow index. No other economy.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "경제 XQ, 지표 GT.FICT.MARR.IDX, 2023년 값이 필요해. 답의 맨 끝에는 {\"metrics\":{\"value_2023\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "world-bank",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "worldbank_series"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_fetch",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "value_2023": 109.25
+                    },
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "cites_result",
+                    "tool": "worldbank_series",
+                    "near": [
+                      "109.25"
+                    ],
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "uses-connection",
+                    "criterion": "The answer reports the 2023 value 109.25 for economy XQ indicator GT.FICT.MARR.IDX.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "world-bank"
+      ],
+      "id": "T-023",
+      "title": "World Bank freight index for economy XQ",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "world-bank"
+      ],
+      "replay": "replay/worldbank-xq-freight.json",
+      "replay_needs": "worldbank_series economy XQ indicator GT.FICT.FRT.IDX start_year 2023 end_year 2024 returns 2023 value 81.2 and 2024 value 88.4. The series name is Fictional freight index. No other economy.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "경제 XQ, 지표 GT.FICT.FRT.IDX, 2024년 값이 필요해. 답의 맨 끝에는 {\"metrics\":{\"value_2024\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "world-bank",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "worldbank_series"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_fetch",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "value_2024": 88.4
+                    },
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "cites_result",
+                    "tool": "worldbank_series",
+                    "near": [
+                      "88.4"
+                    ],
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "uses-connection",
+                    "criterion": "The answer reports the 2024 value 88.4 for economy XQ indicator GT.FICT.FRT.IDX.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "opendart"
+      ],
+      "id": "T-024",
+      "title": "OpenDART lookup by the English alias",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart",
+        "alias"
+      ],
+      "replay": "replay/opendart-noeul-alias.json",
+      "replay_needs": "dart_company_lookup reads one honest OpenDART directory record: corp_code 99018400, stock_code 990184, corp_name 노을제지, corp_eng_name Noeul Paper. Korean-name, English-name (corp_eng_name), and stock-code lookup return this candidate. No second candidate or invented bilingual registered name.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "Noeul Paper의 6자리 종목코드가 필요해. End with a JSON object {\"metrics\":{\"stock_code\": <number>}} and no text after it.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "opendart",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "dart_company_lookup"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_fetch",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "stock_code": 990184
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "uses-connection",
+                    "criterion": "The answer reports stock code 990184 for Noeul Paper from the company lookup.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "opendart"
+      ],
+      "id": "T-026",
+      "title": "OpenDART separate revenue for Iseul Logistics",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart"
+      ],
+      "replay": "replay/opendart-iseul-separate.json",
+      "replay_needs": "dart_company_lookup resolves 이슬물류 or stock_code 990552 to corp_code 99055200. dart_financials company 99055200 or 990552 or 이슬물류, fiscal_year 2025, report_period annual, basis separate returns revenue 128400000000 KRW and operating_income 7600000000 KRW, filed 2026-03-20. The raw directory includes corp_eng_name Iseul Logistics; English matching depends on production indexing that field. Consolidated basis is unmatched, never silently replaced with separate figures.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "이슬물류 종목 990552의 2025년 별도 매출이 얼마인지 원으로 알려 줘. 연결 매출은 아니야. 답의 맨 끝에는 {\"metrics\":{\"revenue_krw\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "opendart",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "dart_financials"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_fetch",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "revenue_krw": 128400000000
+                    },
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "cites_result",
+                    "tool": "dart_financials",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "uses-connection",
+                    "criterion": "The answer reports Iseul Logistics FY2025 separate revenue of 128400000000 KRW, not a consolidated figure.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "T-027",
+      "title": "Instructed twin of the shipment total",
+      "tags": [
+        "instructed",
+        "dataset",
+        "local"
+      ],
+      "workspace_files": {
+        "data/brindle-units.csv": "sku,units\nrow-000,1\nrow-001,2\nrow-002,3\nrow-003,4\nrow-004,5\nrow-005,6\nrow-006,7\nrow-007,1\nrow-008,2\nrow-009,3\nrow-010,4\nrow-011,5\nrow-012,6\nrow-013,7\nrow-014,1\nrow-015,2\nrow-016,3\nrow-017,4\nrow-018,5\nrow-019,6\nrow-020,7\nrow-021,1\nrow-022,2\nrow-023,3\nrow-024,4\nrow-025,5\nrow-026,6\nrow-027,7\nrow-028,1\nrow-029,2\nrow-030,3\nrow-031,4\nrow-032,5\nrow-033,6\nrow-034,7\nrow-035,1\nrow-036,2\nrow-037,3\nrow-038,4\nrow-039,5\nrow-040,6\nrow-041,7\nrow-042,1\nrow-043,2\nrow-044,3\nrow-045,4\nrow-046,5\nrow-047,6\nrow-048,7\nrow-049,1\nrow-050,2\nrow-051,3\nrow-052,4\nrow-053,5\nrow-054,6\nrow-055,7\nrow-056,1\nrow-057,2\nrow-058,3\nrow-059,4\nrow-060,5\nrow-061,6\nrow-062,7\nrow-063,1\nrow-064,2\nrow-065,3\nrow-066,4\nrow-067,5\nrow-068,6\nrow-069,7\nrow-070,1\nrow-071,2\nrow-072,3\nrow-073,4\nrow-074,5\nrow-075,6\nrow-076,7\nrow-077,1\nrow-078,2\nrow-079,3\nrow-080,4\nrow-081,5\nrow-082,6\nrow-083,7\nrow-084,1\nrow-085,2\nrow-086,3\nrow-087,4\nrow-088,5\nrow-089,6\nrow-090,7\nrow-091,1\nrow-092,2\nrow-093,3\nrow-094,4\nrow-095,5\nrow-096,6\nrow-097,7\nrow-098,1\nrow-099,2\nrow-100,3\nrow-101,4\nrow-102,5\nrow-103,6\nrow-104,7\nrow-105,1\nrow-106,2\nrow-107,3\nrow-108,4\nrow-109,5\nrow-110,6\nrow-111,7\nrow-112,1\nrow-113,2\nrow-114,3\nrow-115,4\nrow-116,5\nrow-117,6\nrow-118,7\nrow-119,1\nrow-120,2\nrow-121,3\nrow-122,4\nrow-123,5\nrow-124,6\nrow-125,7\nrow-126,1\nrow-127,2\nrow-128,3\nrow-129,4\nrow-130,5\nrow-131,6\nrow-132,7\nrow-133,1\nrow-134,2\nrow-135,3\nrow-136,4\nrow-137,5\nrow-138,6\nrow-139,7\nrow-140,1\nrow-141,2\nrow-142,3\nrow-143,4\nrow-144,5\nrow-145,6\nrow-146,7\nrow-147,1\nrow-148,2\nrow-149,3\nrow-150,4\nrow-151,5\nrow-152,6\nrow-153,7\nrow-154,1\nrow-155,2\nrow-156,3\nrow-157,4\nrow-158,5\nrow-159,6\nrow-160,7\nrow-161,1\nrow-162,2\nrow-163,3\nrow-164,4\nrow-165,5\nrow-166,6\nrow-167,7\nrow-168,1\nrow-169,2\nrow-170,3\nrow-171,4\nrow-172,5\nrow-173,6\nrow-174,7\nrow-175,1\nrow-176,2\nrow-177,3\nrow-178,4\nrow-179,5\nrow-180,6\nrow-181,7\nrow-182,1\nrow-183,2\nrow-184,3\nrow-185,4\nrow-186,5\nrow-187,6\nrow-188,7\nrow-189,1\nrow-190,2\nrow-191,3\nrow-192,4\nrow-193,5\nrow-194,6\nrow-195,7\nrow-196,1\nrow-197,2\nrow-198,3\nrow-199,4\nrow-200,5\nrow-201,6\nrow-202,7\nrow-203,1\nrow-204,2\nrow-205,3\nrow-206,4\nrow-207,5\nrow-208,6\nrow-209,7\nrow-210,1\nrow-211,2\nrow-212,3\nrow-213,4\nrow-214,5\nrow-215,6\nrow-216,7\nrow-217,1\nrow-218,2\nrow-219,3\nrow-220,4\nrow-221,5\nrow-222,6\nrow-223,7\nrow-224,1\nrow-225,2\nrow-226,3\nrow-227,4\nrow-228,5\nrow-229,6\nrow-230,7\nrow-231,1\nrow-232,2\nrow-233,3\nrow-234,4\nrow-235,5\nrow-236,6\nrow-237,7\nrow-238,1\nrow-239,2\nrow-240,3\nrow-241,4\nrow-242,5\nrow-243,6\nrow-244,7\nrow-245,1\nrow-246,2\nrow-247,3\nrow-248,4\nrow-249,5\nrow-250,6\nrow-251,7\nrow-252,1\nrow-253,2\nrow-254,3\nrow-255,4\nrow-256,5\nrow-257,6\nrow-258,7\nrow-259,1\nrow-260,2\nrow-261,3\nrow-262,4\nrow-263,5\nrow-264,6\nrow-265,7\nrow-266,1\nrow-267,2\nrow-268,3\nrow-269,4\nrow-270,5\nrow-271,6\nrow-272,7\nrow-273,1\nrow-274,2\nrow-275,3\nrow-276,4\nrow-277,5\nrow-278,6\nrow-279,7\nrow-280,1\nrow-281,2\nrow-282,3\nrow-283,4\nrow-284,5\nrow-285,6\nrow-286,7\nrow-287,1\nrow-288,2\nrow-289,3\nrow-290,4\nrow-291,5\nrow-292,6\nrow-293,7\nrow-294,1\nrow-295,2\nrow-296,3\nrow-297,4\nrow-298,5\nrow-299,6\nrow-300,7\nrow-301,1\nrow-302,2\nrow-303,3\nrow-304,4\nrow-305,5\nrow-306,6\nrow-307,7\nrow-308,1\nrow-309,2\nrow-310,3\nrow-311,4\nrow-312,5\nrow-313,6\nrow-314,7\nrow-315,1\nrow-316,2\nrow-317,3\nrow-318,4\nrow-319,5\nrow-320,6\nrow-321,7\nrow-322,1\nrow-323,2\nrow-324,3\nrow-325,4\nrow-326,5\nrow-327,6\nrow-328,7\nrow-329,1\nrow-330,2\nrow-331,3\nrow-332,4\nrow-333,5\nrow-334,6\nrow-335,7\nrow-336,1\nrow-337,2\nrow-338,3\nrow-339,4\nrow-340,5\nrow-341,6\nrow-342,7\nrow-343,1\nrow-344,2\nrow-345,3\nrow-346,4\nrow-347,5\nrow-348,6\nrow-349,7\nrow-350,1\nrow-351,2\nrow-352,3\nrow-353,4\nrow-354,5\nrow-355,6\nrow-356,7\nrow-357,1\nrow-358,2\nrow-359,3\nrow-360,4\nrow-361,5\nrow-362,6\nrow-363,7\nrow-364,1\nrow-365,2\nrow-366,3\nrow-367,4\nrow-368,5\nrow-369,6\nrow-370,7\nrow-371,1\nrow-372,2\nrow-373,3\nrow-374,4\nrow-375,5\nrow-376,6\nrow-377,7\nrow-378,1\nrow-379,2\nrow-380,3\nrow-381,4\nrow-382,5\nrow-383,6\nrow-384,7\nrow-385,1\nrow-386,2\nrow-387,3\nrow-388,4\nrow-389,5\nrow-390,6\nrow-391,7\nrow-392,1\nrow-393,2\nrow-394,3\nrow-395,4\nrow-396,5\nrow-397,6\nrow-398,7\nrow-399,1\n"
+      },
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "Load the datasets capability, convert data/brindle-units.csv to JSON if dataset_import needs JSON, then call dataset_import and dataset_query. Report the sum of the units column. End with a JSON object {\"metrics\":{\"total_units\": <number>}} and no text after it.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "datasets",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "dataset_import"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "dataset_query"
+                    ],
+                    "metric": "tool_validity"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "total_units": 1597
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "imports-then-sums",
+                    "criterion": "The answer uses the dataset tools and reports total units of 1597.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "T-028",
+      "title": "Instructed twin of the quarterly line chart",
+      "tags": [
+        "instructed",
+        "chart",
+        "local"
+      ],
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "Load the charts capability, then chart_publish one line chart titled Brindle quarterly revenue from these rows: 2025Q1 12, 2025Q2 15, 2025Q3 14, 2025Q4 18. The units are USD millions.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "charts",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "chart_publish"
+                    ],
+                    "metric": "tool_validity"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "calls-chart-publish",
+                    "criterion": "The answer loads the charts capability and publishes one line chart of the four Brindle quarters.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "T-029",
+      "title": "Instructed twin of the harvest source",
+      "tags": [
+        "instructed",
+        "capture",
+        "local"
+      ],
+      "workspace_files": {
+        "data/sable-harvest.md": "Source: https://fictional.example/sable/boxes-2025\n\nSable Orchard packed 88.1 million boxes in FY2025.\n"
+      },
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Load the file-capture capability and call workspace_capture on data/sable-harvest.md, then load memory-save and source_save it as a Source titled Sable harvest note. End with a JSON object {\"metrics\":{\"boxes\": <number>}} and no text after it.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "file-capture",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "workspace_capture"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "capability_loaded",
+                    "id": "memory-save",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "source_save"
+                    ],
+                    "metric": "tool_validity"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "boxes": 88.1
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "title_contains": "Sable harvest note"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "captures-titled-source",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer captures the harvest file and saves a source titled Sable harvest note with 88.1 million boxes.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "T-031",
+      "title": "Instructed twin of the retailer ranking",
+      "tags": [
+        "instructed",
+        "lens",
+        "local"
+      ],
+      "seed": {
+        "lens": [
+          {
+            "title": "Same-store before total sales",
+            "markdown": "Rank retailers on same-store sales growth before total sales growth.",
+            "applicability": "Retailers that disclose both same-store sales growth and total sales growth.",
+            "assumptions": "The company already computed same-store growth on a comparable set of stores.",
+            "procedure": "State same-store sales growth first. Do not rank on total sales when same-store growth is available.",
+            "principles": "Chainwide sales can rise while established stores shrink.",
+            "limitations": "Do not apply the method when same-store growth is absent, or to companies that are not retailers."
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "Which retailer grew more in its established stores? Larkspur Retail same-store sales growth 4 percent, total sales growth 11 percent. Hearthlane Grocery same-store sales growth 6 percent, total sales growth 2 percent. Search and exact-read the saved Lens with lens_search and lens_read before you answer.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "lens_search",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "lens_read",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "lens_search",
+                      "lens_read"
+                    ],
+                    "metric": "retrieval"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "Hearthlane"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "reads-then-ranks",
+                    "criterion": "The answer reads the saved Lens and ranks Hearthlane Grocery above Larkspur Retail on same-store growth.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "krx"
+      ],
+      "id": "T-032",
+      "title": "Under an as-of cutoff, the KRX close of the cutoff day is known and later closes stay unknown",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "krx",
+        "as-of"
+      ],
+      "replay": "replay/krx-noeul-as-of.json",
+      "replay_needs": "krx_daily_quote symbol 990184 returns 노을제지 close 73400 KRW on 2026-03-03 and close 74650 KRW on 2026-03-04. The turn carries host as_of 2026-03-03: a daily bar is known at the close of its date, so the 2026-03-03 bar is kept and the 2026-03-04 bar must never reach the answer.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "2026-03-03 기준으로 그때 알 수 있었던 정보만 써 줘. 종목 990184의 2026-03-03 종가와 2026-03-04 종가를 원으로 알려 줘. 그 시점에 알 수 없었던 값은 알 수 없다고 말해 줘. 답의 맨 끝에는 {\"metrics\":{\"close_krw\": 2026-03-03 종가 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "as_of": "2026-03-03",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "krx",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "krx_daily_quote"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "close_krw": 73400
+                    },
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "cites_result",
+                    "tool": "krx_daily_quote",
+                    "near": [
+                      "73,400",
+                      "73400"
+                    ],
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "74,?650",
+                      "74\\.65"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "cutoff-honesty",
+                    "criterion": "The answer reports the 2026-03-03 close of 73400 KRW for issue 990184, says the 2026-03-04 close could not be known as of 2026-03-03, and states no price for 2026-03-04.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "opendart"
+      ],
+      "id": "T-033",
+      "title": "OpenDART statements filed after the as-of cutoff stay unknown",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart",
+        "as-of"
+      ],
+      "replay": "replay/opendart-solsup-as-of.json",
+      "replay_needs": "dart_company_lookup resolves 솔숲식품 or 990221 to corp_code 99022100. dart_financials FY2025 annual consolidated returns revenue 452300000000 KRW in receipt 20260318990221, filed 2026-03-18. Under host as_of 2026-03-10 every fact was filed after the cutoff and is excluded.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "2026-03-10 시점에 공시로 확인할 수 있었던 것만 써 줘. 솔숲식품(990221)의 FY2025 연결 매출은 얼마였어? 그때 아직 공시되지 않았다면 그렇다고 말해 줘.",
+              "as_of": "2026-03-10",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "452,?300,?000,?000",
+                      "4,?523\\s*억",
+                      "452\\.3",
+                      "4\\.523\\s*조"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "cutoff-honesty",
+                    "criterion": "The answer says Solsup Foods' FY2025 consolidated revenue had not been disclosed as of 2026-03-10 and gives no revenue figure from the 2026-03-18 filing.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "opendart"
+      ],
+      "id": "T-034",
+      "title": "Only filings published by the as-of cutoff are read and cited",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart",
+        "as-of"
+      ],
+      "replay": "replay/opendart-byeolmuri-as-of.json",
+      "replay_needs": "dart_filing_search for corp_code 99030800 over any 2026 range returns 20260305990308 (2 inspection machines) and 20260318990308 (3 packaging lines). Under host as_of 2026-03-15 only the 2026-03-05 filing survives and dart_filing_read of 20260318990308 is refused.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "2026-03-15 시점까지 공시된 내용만으로 답해 줘. 별무리반도체(990308)가 2026년에 공시한 설비 투자는 무엇이었어? 공시를 직접 읽고 설비 종류와 수량을 알려 줘.",
+              "as_of": "2026-03-15",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "opendart",
+                    "metric": "tool_validity"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "포장\\s*라인",
+                      "packaging\\s+lines?"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "검사 장비",
+                      "검사장비",
+                      "inspection"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "cites_result",
+                    "tool": "dart_filing_read",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "cutoff-honesty",
+                    "criterion": "The answer reports the 2026-03-05 filing about 2 inspection machines and does not mention the 2026-03-18 packaging-line filing or its content.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "web-research"
+      ],
+      "id": "T-035",
+      "title": "A web page published after the as-of cutoff is not used",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "web",
+        "as-of"
+      ],
+      "replay": "replay/web-noeul-mill-as-of.json",
+      "replay_needs": "web_fetch of https://fictional.example/noeul-paper/mill-update-march-2 (published 2026-03-02) reports 410 thousand tonnes a year; mill-update-march-18 (published 2026-03-18) reports 455. Under host as_of 2026-03-10 the second page is refused, so only 410 may appear.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "Answer only from what had been published by 2026-03-10. Read https://fictional.example/noeul-paper/mill-update-march-2 and https://fictional.example/noeul-paper/mill-update-march-18, then tell me the Gwangyang mill's annual capacity as it was known then, in thousand tonnes.",
+              "as_of": "2026-03-10",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "web-research",
+                    "metric": "tool_validity"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "\\b455\\b"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "410"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "cites_result",
+                    "tool": "web_fetch",
+                    "near": [
+                      "410"
+                    ],
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "cutoff-honesty",
+                    "criterion": "The answer gives 410 thousand tonnes a year as the capacity known by 2026-03-10 and does not report the 455 thousand tonne figure published on 2026-03-18.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "opendart"
+      ],
+      "id": "T-036",
+      "title": "A derived margin is calculated on the host and every number in the answer links to its source or calculation",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart",
+        "show-the-math",
+        "en"
+      ],
+      "replay": "replay/opendart-solsup-margin.json",
+      "replay_needs": "dart_company_lookup resolves 솔숲식품, Solsup Foods or stock_code 990221 to corp_code 99022100. dart_financials company 99022100, fiscal_year 2025, report_period annual, basis consolidated returns revenue 452300000000 KRW, operating_income 38100000000 KRW and net_income 21400000000 KRW in receipt 20260318990221, filed 2026-03-18. No other company or later revision. The margin is 38100000000 / 452300000000 = 8.4236%.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "What was Solsup Foods (990221) FY2025 consolidated operating margin? Show how you got it. End the answer with only the JSON object {\"metrics\":{\"operating_margin_pct\": number}} and nothing after it.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "opendart",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "dart_financials"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "calculate_inputs_cited",
+                    "operation": "margin",
+                    "inputs": [
+                      "profit",
+                      "revenue"
+                    ],
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "operating_margin_pct": 8.42
+                    },
+                    "tolerance": 0.01,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "cites_result",
+                    "tool": "dart_financials",
+                    "near": [
+                      "452.3",
+                      "452,300"
+                    ],
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "numbers_linked",
+                    "checked": [
+                      "8.4"
+                    ],
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "shows-the-math",
+                    "criterion": "The answer gives an operating margin of about 8.4% from operating income ₩38.1bn over revenue ₩452.3bn, links each input to the OpenDART result and the margin to its calculation, and does no arithmetic in prose.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "opendart"
+      ],
+      "id": "T-037",
+      "title": "Korean amounts in 억 units link to the DART rows they were read from",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart",
+        "show-the-math",
+        "ko"
+      ],
+      "replay": "replay/opendart-solsup-links-ko.json",
+      "replay_needs": "dart_company_lookup resolves 솔숲식품, Solsup Foods or stock_code 990221 to corp_code 99022100. dart_financials company 99022100, fiscal_year 2025, report_period annual, basis consolidated returns revenue 452300000000 KRW, operating_income 38100000000 KRW and net_income 21400000000 KRW in receipt 20260318990221, filed 2026-03-18. No other company or later revision. Read in 억 units: revenue 4,523억 원 and operating income 381억 원.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "솔숲식품 FY2025 연결 매출과 영업이익은?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "opendart",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "cites_result",
+                    "tool": "dart_financials",
+                    "near": [
+                      "4,523억",
+                      "4523억",
+                      "452,300,000,000"
+                    ],
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "numbers_linked",
+                    "checked": [
+                      "4,523억",
+                      "381억"
+                    ],
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "linked-dart-amounts",
+                    "criterion": "The answer reports FY2025 consolidated revenue of 4,523억 원 and operating income of 381억 원 for 솔숲식품, each written as a link to the OpenDART result it came from.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "opendart"
+      ],
+      "id": "T-038",
+      "title": "Under an as-of date, a filing saved later stays out of the answer",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart",
+        "as-of",
+        "memory"
+      ],
+      "replay": "replay/opendart-solsup-memory-as-of.json",
+      "replay_needs": "dart_company_lookup resolves 솔숲식품, Solsup Foods or stock_code 990221 to corp_code 99022100. dart_financials company 99022100, fiscal_year 2025, report_period annual, basis consolidated returns revenue 452300000000 KRW, operating_income 38100000000 KRW and net_income 21400000000 KRW in receipt 20260318990221, filed 2026-03-18. No other company or later revision. The setup turn reads it without a cutoff and keeps the filing; the probe runs under host as_of 2026-03-10, when the 2026-03-18 filing was not yet published, so a fresh read returns nothing and the saved Source is left out.",
+      "sessions": [
+        {
+          "id": "setup",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Read Solsup Foods' (990221) FY2025 consolidated results from its annual filing and keep the filing so we can come back to it.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "opendart",
+                    "metric": "tool_validity"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "keeps-the-filing",
+                    "criterion": "The answer reports Solsup Foods' FY2025 consolidated revenue from the 2026-03-18 OpenDART filing and keeps that filing as a saved Source.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "As of 2026-03-10, what did we know about Solsup Foods' FY2025 revenue?",
+              "as_of": "2026-03-10",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "as_of_left_out",
+                    "kind": "sources",
+                    "min": 1,
+                    "metric": "negative_transfer"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "452,?300,?000,?000",
+                      "4,?523\\s*억",
+                      "452\\.3",
+                      "4\\.523\\s*조"
+                    ],
+                    "metric": "negative_transfer"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "cutoff-honesty",
+                    "criterion": "The answer says Solsup Foods' FY2025 revenue had not been reported by 2026-03-10, uses nothing from the annual filing published on 2026-03-18, and gives no FY2025 revenue figure.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "opendart"
+      ],
+      "id": "T-039",
+      "title": "A Journal judgment is looked back on with only what was known when it was written",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart",
+        "as-of",
+        "memory",
+        "journal"
+      ],
+      "replay": "replay/opendart-solsup-journal-as-of.json",
+      "replay_needs": "dart_company_lookup resolves 솔숲식품, Solsup Foods or stock_code 990221 to corp_code 99022100. dart_financials company 99022100, fiscal_year 2025, report_period annual, basis consolidated returns revenue 452300000000 KRW, operating_income 38100000000 KRW and net_income 21400000000 KRW in receipt 20260318990221, filed 2026-03-18. No other company or later revision. A Journal line created 2026-03-05 checks revenue above 445000000000 KRW by 2026-03-31. The probe runs under host as_of 2026-03-05, before the filing, so the check cannot be judged and no review may be saved.",
+      "seed": {
+        "watchlist": [
+          {
+            "symbol": "990221",
+            "market": "KRX",
+            "display_name": "Solsup Foods"
+          }
+        ],
+        "journal": [
+          {
+            "judgment": "Solsup's FY2025 revenue will beat ₩445bn.",
+            "thesis": {
+              "symbol": "990221",
+              "market": "KRX",
+              "role": "line"
+            },
+            "check": {
+              "claim": "Solsup's FY2025 revenue will beat ₩445bn",
+              "metric": "FY2025 revenue",
+              "direction": "above",
+              "threshold": 445000000000,
+              "unit": "KRW",
+              "byDate": "2026-03-31"
+            },
+            "createdAtMs": 1772679600000
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "setup",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Read Solsup Foods' (990221) FY2025 consolidated results from its annual filing and keep the filing so we can come back to it.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "opendart",
+                    "metric": "tool_validity"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "keeps-the-filing",
+                    "criterion": "The answer reports Solsup Foods' FY2025 consolidated revenue from the 2026-03-18 OpenDART filing and keeps that filing as a saved Source.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Using only what was known on 2026-03-05, how well supported was my Journal judgment that Solsup's FY2025 revenue would beat ₩445bn, and what was missing?",
+              "as_of": "2026-03-05",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "not_committed",
+                    "kind": "journal",
+                    "metric": "negative_transfer"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "452,?300,?000,?000",
+                      "4,?523\\s*억",
+                      "452\\.3",
+                      "4\\.523\\s*조"
+                    ],
+                    "metric": "negative_transfer"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "names-then-and-missing",
+                    "criterion": "The answer judges the Journal entry only from what was known on 2026-03-05, names the evidence available then and what was missing, says the FY2025 results had not been filed so the check could not yet be judged, and never says the judgment came true.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "koreainvestment"
+      ],
+      "id": "T-040",
+      "title": "A current-only quote under an as-of date is said, not filled",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "koreainvestment",
+        "as-of"
+      ],
+      "replay": "replay/kis-bada-as-of.json",
+      "replay_needs": "kis_operation_search uses the real read-only manifest and discovers domestic_stock.inquire_price. kis_read returns the current raw output.stck_prpr 51200 KRW for 990417, but under host as_of 2026-03-03 the host refuses the read with as_of_unsupported before any request, so the current price must never reach the answer.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "2026-03-03 기준으로 그때 알 수 있었던 정보만으로 답해 줘. 종목 990417의 가격은 원으로 얼마였어?",
+              "as_of": "2026-03-03",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "koreainvestment",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "as_of_refused",
+                    "tool": "kis_read",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "51,?200",
+                      "5\\.12\\s*만"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "cutoff-honesty",
+                    "criterion": "The answer says the price of issue 990417 as known on 2026-03-03 cannot be shown because the connected source reports only current values, and gives no current price as if it were the 2026-03-03 price.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "opendart"
+      ],
+      "id": "T-041",
+      "title": "A comparison of three companies on three measures is one grid whose every cell links to a filing or a calculation",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart",
+        "show-the-math",
+        "grid",
+        "en"
+      ],
+      "replay": "replay/opendart-grid-trio.json",
+      "replay_needs": "dart_company_lookup resolves 솔숲식품/Solsup Foods/990221 to 99022100, 이슬물류/Iseul Logistics/990552 to 99055200 and 한빛화학/Hanbit Chem/990777 to 99077700. dart_financials fiscal_year 2025, report_period annual: Solsup consolidated revenue 452300000000, operating_income 38100000000, net_income 21400000000 KRW (filed 2026-03-18); Iseul has no consolidated statements (OpenDART 013) and separate revenue 128400000000, operating_income 7600000000, net_income 4900000000 KRW (filed 2026-03-20); Hanbit consolidated revenue 286500000000, operating_income 31400000000, net_income 19800000000 KRW (filed 2026-03-19). No other company, year or basis.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "Compare Solsup Foods, Iseul Logistics and Hanbit Chem on FY2025 revenue, operating margin and net margin in a table.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "opendart",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "dart_financials"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "grid_cells_linked",
+                    "rows": 3,
+                    "columns": 3,
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "calculate_inputs_cited",
+                    "operation": "margin",
+                    "inputs": [
+                      "profit",
+                      "revenue"
+                    ],
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "one-sourced-grid",
+                    "criterion": "The answer shows one table of the three companies with FY2025 revenue, operating margin and net margin (Solsup about 8.4% and 4.7%, Iseul about 5.9% and 3.8%, Hanbit about 11.0% and 6.9%), each value linked to OpenDART or a calculation, without repeating the table as prose.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "separate-basis",
+                    "criterion": "The table's Iseul Logistics column or note says its figures are on a separate (non-consolidated) basis because no consolidated statements were filed, and never presents them as consolidated.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "opendart"
+      ],
+      "id": "T-042",
+      "title": "A grid leaves a company's cells empty with a reason when its statements cannot be read, and never invents them",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart",
+        "show-the-math",
+        "grid",
+        "ko"
+      ],
+      "replay": "replay/opendart-grid-trio-missing.json",
+      "replay_needs": "dart_company_lookup resolves 솔숲식품/Solsup Foods/990221 to 99022100, 이슬물류/Iseul Logistics/990552 to 99055200 and 한빛화학/Hanbit Chem/990777 to 99077700. dart_financials fiscal_year 2025, report_period annual: Solsup consolidated revenue 452300000000, operating_income 38100000000, net_income 21400000000 KRW (filed 2026-03-18); Iseul has no consolidated statements (OpenDART 013) and separate revenue 128400000000, operating_income 7600000000, net_income 4900000000 KRW (filed 2026-03-20); Hanbit has no FY2025 statements on either basis (OpenDART 013 for consolidated and separate). Any Hanbit revenue or margin in the answer is invented.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "솔숲식품, 이슬물류, 한빛화학의 FY2025 매출, 영업이익률, 순이익률을 표로 비교해 줘.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "opendart",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "grid_cells_linked",
+                    "rows": 3,
+                    "columns": 3,
+                    "empty": [
+                      "unavailable"
+                    ],
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "(?:한빛화학|Hanbit)(?:(?!솔숲|이슬|Solsup|Iseul)[^\\n.。!?])*?[-−]?\\d[\\d,]*(?:\\.\\d+)?\\s?(?:억|조|%|원|bn\\b|billion)"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "says-what-is-missing",
+                    "criterion": "The answer says Hanbit Chem's FY2025 statements could not be retrieved from OpenDART, leaves its cells empty instead of estimating them, and still compares Solsup Foods and Iseul Logistics (Iseul on a separate basis).",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "opendart"
+      ],
+      "id": "T-044",
+      "title": "A convertible bond decision is explained in plain words, with its conversion price, reset floor and dilution linked to the filing",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart",
+        "korea",
+        "ko"
+      ],
+      "replay": "replay/opendart-byeolmuri-cb.json",
+      "replay_needs": "dart_company_lookup resolves 별무리 (a partial name) or 별무리반도체 or stock_code 990308 to corp_code 99030800. dart_major_report kind convertible_bonds over any receipt range that includes 2026-10-30 returns one decision filed 2026-10-30 (receipt 20261030990308): face amount 30000000000 KRW, conversion price 9100 KRW, reset floor 6370 KRW (70% of the issue-time conversion price), 3296703 conversion shares equal to 6.10% of shares outstanding by the filing's own ratio, coupon 0.0%, maturity yield 2.0%, maturity 2029-11-05, payment 2026-11-05, conversion from 2027-11-05 to 2029-10-05, purpose operations 20000000000 and facilities 10000000000 KRW. Rights offerings, bonds with warrants and exchangeable bonds return no decision in that range. dart_filing_search lists the 주요사항보고서(전환사채권발행결정); dart_filing_read of 20261030990308 names three fictional allottees and a one-year restriction on splitting the bonds. No credit balance, short-sale balance or lock-up data exists.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "별무리가 전환사채를 발행했다던데 조건이 어때?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "opendart",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "dart_major_report"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "dart_major_report",
+                    "args": {
+                      "kind": "convertible_bonds"
+                    },
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "cites_result",
+                    "tool": "dart_major_report",
+                    "near": [
+                      "9,100",
+                      "9100"
+                    ],
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "cites_result",
+                    "tool": "dart_major_report",
+                    "near": [
+                      "6,370",
+                      "6370"
+                    ],
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "numbers_linked",
+                    "checked": [
+                      "9,100",
+                      "6,370"
+                    ],
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "plain-terms",
+                    "criterion": "In Korean and plain words, the answer says Byeolmuri Semiconductor decided on 2026-10-30 to issue 30 billion won (300억 원) of convertible bonds that convert at 9,100 won a share, that the conversion price can be reset down to 6,370 won if the share price falls, and that conversion could add about 6.1% more shares at 9,100 won and up to about 8.7% if reset to 6,370 won, with payment on 2026-11-05 and maturity on 2029-11-05.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "nothing-invented",
+                    "criterion": "The dilution figures are the filing's own ratio (6.10%) and the tool's figure at the reset floor (8.71%), linked to the OpenDART decision, or figures computed on the host, never mental arithmetic, and the answer invents no allottee, lock-up, market reaction or price target it did not read.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "koreainvestment"
+      ],
+      "id": "T-045",
+      "title": "Recent investor flows are summed on the host and dated, their lag is stated, and no credit-balance figure appears",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "koreainvestment",
+        "korea",
+        "ko"
+      ],
+      "replay": "replay/kis-bada-flows.json",
+      "replay_needs": "kis_operation_search uses the real read-only manifest. kis_read domestic_stock.investor_trade_by_stock_daily for fid_input_iscd 990417 (any market code and date) returns daily rows for 2026-10-15 to 2026-10-30, newest first; over the ten sessions 2026-10-19 to 2026-10-30 foreign net buying (frgn_ntby_tr_pbmn, millions of won) sums to 12340, institutions (orgn_) to -4120 and individuals (prsn_) to -8150. domestic_stock.daily_short_sale for 990417 returns the same sessions, short-sale volume summing to 178900 of 4259400 shares traded over those ten sessions (4.2%). domestic_stock.daily_loan_trans for mrkt_div_cls_code 3 and 990417 returns settled lending balances only to 2026-10-28, from 2049800 shares on 2026-10-19 to 1986200 (-3.1%). inquire_price returns 51200. No response holds a credit balance (신용잔고), a short-sale balance or a lock-up schedule.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "바다은행(990417) 최근 수급 어때?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "koreainvestment",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "kis_read"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "kis_read",
+                    "args": {
+                      "operation_id": "domestic_stock.investor_trade_by_stock_daily"
+                    },
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "calculate",
+                    "args": {
+                      "operation": "sum"
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "신용\\s*(?:잔고|융자)[^\\n.。]{0,30}?\\d[\\d,.]*\\s?(?:주|원|억|조|만|%)",
+                      "credit[ -]balances?[^\\n.]{0,30}?\\d[\\d,.]*\\s?(?:shares|won|KRW|%|bn|million)"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "numbers_linked",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "lag-and-dates",
+                    "criterion": "The answer says which sessions its sums cover (ending 2026-10-30), that daily investor flows are final only after the close, and that the lending balance runs only to 2026-10-28 because it settles two business days after trading.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "flows-in-plain-words",
+                    "criterion": "In Korean, the answer reports net buying of about 123억 원 by foreign investors and net selling of about 41억 원 by institutions and 82억 원 by individuals over the ten sessions to 2026-10-30 (or correct sums for another window it states), a short-selling share of volume near 4.2% and a lending balance down about 3.1%, and says credit balances, short-sale balances and lock-ups were not checked instead of estimating them.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "opendart"
+      ],
+      "id": "T-046",
+      "title": "An operating margin for a company without consolidated statements names the separate basis",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart",
+        "korea",
+        "ko"
+      ],
+      "replay": "replay/opendart-iseul-basis.json",
+      "replay_needs": "dart_company_lookup resolves 이슬물류 or stock_code 990552 to corp_code 99055200. dart_financials 99055200 fiscal_year 2025, report_period annual: basis consolidated returns OpenDART status 013 (no consolidated statements); basis separate returns revenue 128400000000, operating_income 7600000000 and net_income 4900000000 KRW, filed 2026-03-20. The separate operating margin is 7600000000 / 128400000000 = 5.919%. No other year, period or basis.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "이슬물류 영업이익률은?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "opendart",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "calculate_inputs_cited",
+                    "operation": "margin",
+                    "inputs": [
+                      "profit",
+                      "revenue"
+                    ],
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "별도"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "numbers_linked",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "names-the-basis",
+                    "criterion": "The answer gives Iseul Logistics' FY2025 operating margin of about 5.9% on a separate (별도) basis, says the company filed no consolidated statements for that year, and never calls the figure consolidated.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "opendart"
+      ],
+      "id": "T-047",
+      "title": "Whether a dividend is safe is answered from payout on earnings and free cash flow, cuts and growth, every figure linked",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart",
+        "dividends",
+        "en"
+      ],
+      "replay": "replay/opendart-solsup-dividends.json",
+      "replay_needs": "dart_company_lookup resolves Solsup Foods, 솔숲식품 or 990221 to 99022100. dart_dividends 99022100 for year 2022, 2023, 2024 or 2025 returns that annual report's dividend table (the year and the two before): dividend per common share 250, 250, 200, 250, 250 and 300 KRW for FY2020 to FY2025; total cash dividends 5000, 5000, 4000, 5000, 5000 and 6000 million KRW; consolidated net income attributable to owners 16500, 17800, 9400, 16900, 19500 and 21000 million KRW; consolidated payout 30.3, 28.1, 42.6, 29.6, 25.6 and 28.6%; cash yield 1.6, 1.5, 1.6, 1.5, 1.3 and 1.4%. For 2025 the cash dividend decision 20260205990221 gives the record date 2025-12-31. dart_financials 99022100 FY2025 annual consolidated returns revenue 452300000000, net income attributable to owners 21000000000, operating cash flow 52600000000 and purchases of property, plant and equipment -18900000000 KRW, so free cash flow is 33.7bn and the dividend about 17.8% of it. FY2022 is the one cut (250 to 200 KRW); dividend per share grew 3.7% a year over FY2020–FY2025.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "Is Solsup Foods' dividend safe?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "opendart",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "dart_dividends"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "calculate_inputs_cited",
+                    "operation": "payout_ratio",
+                    "inputs": [
+                      "dividends",
+                      "earnings"
+                    ],
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "numbers_linked",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "conditional-view",
+                    "criterion": "The answer gives a clear conditional view that the dividend looks covered: about 29% of FY2025 consolidated earnings attributable to owners and about 18% of free cash flow, one cut in FY2022 (250 to 200 won) when earnings fell, and dividend growth of about 3.7% a year over FY2020–FY2025; it names what would threaten the dividend.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "basis-dates-no-holdings",
+                    "criterion": "The answer names the consolidated basis attributable to owners for the payout, gives the record date 2025-12-31 from the decision notice, and neither asks what the user owns nor projects income without a share count the user gave.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "T-048",
+      "title": "A savings goal is answered as a range across return rates from the user's own numbers, without asking about income or risk tolerance",
+      "tags": [
+        "goal-math",
+        "local",
+        "en"
+      ],
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "I can put $300 a month aside. Where could I be in 15 years?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "calculate",
+                    "args": {
+                      "operation": "goal_grid"
+                    },
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "tool_args_not_matching",
+                    "tool": "calculate",
+                    "patterns": [
+                      "\"return_pct\":\\[-?[0-9.]+(?:,-?[0-9.]+)?\\]"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "what(?:'s|’s| is) your (?:income|salary|net worth|risk tolerance)",
+                      "how (?:much|comfortable)[^.?\\n]{0,40}(?:earn|income|risk)[^.?\\n]{0,40}\\?",
+                      "(?:tell me|share) (?:about )?your (?:income|salary|savings|assets|risk tolerance)"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "range-not-promise",
+                    "criterion": "The answer shows what $300 a month for 15 years could grow to at three or more yearly return rates (for example $54,000 at 0%, about $73,400 at 4% and about $93,300 at 7%), computed on the host, never one promised figure, and says the figures are nominal, before costs and taxes, and not forecasts.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "no-suitability-questions",
+                    "criterion": "The answer does not ask about the user's income, assets, debts, risk tolerance or other personal financial details and recommends no product or allocation; at most it offers to redo the math with numbers the user chooses.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "krx",
+        "web-research"
+      ],
+      "id": "T-049",
+      "title": "Why a stock rose is answered with the measured move, sourced reasons, labelled inference and what is not explained",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "krx",
+        "web",
+        "ko"
+      ],
+      "replay": "replay/krx-noeul-march-move.json",
+      "replay_needs": "krx_daily_quote symbol 990184 (노을제지) for any date or range from 2026-02-16 to 2026-03-06 returns KOSPI daily bars: close 72500 KRW on 2026-02-27 and 73400 on 2026-03-03 (up 900, 1.24%); 2026-02-16 to 2026-02-18 (Seollal) and 2026-03-02 (the substitute holiday) have no rows; 2026-03-04 closes at 74650. No index or sector series is available. web_fetch of https://fictional.example/noeul-paper/mill-update-march-2 (published 2026-03-02) says the Gwangyang mill can make 410 thousand tonnes a year and nothing about the shares; mill-update-march-18 (published after the move) reports 455. No filing, flow or other news explains the rise.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "노을제지(990184)가 3월 3일에 왜 올랐어? 전날 이 기사가 나왔던데: https://fictional.example/noeul-paper/mill-update-march-2",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "krx",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "calculate_inputs_cited",
+                    "operation": "percent_change",
+                    "inputs": [
+                      "from",
+                      "to"
+                    ],
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "cites_result",
+                    "tool": "krx_daily_quote",
+                    "near": [
+                      "73,400",
+                      "73400"
+                    ],
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "\\b455\\b"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "numbers_linked",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "four-sections",
+                    "criterion": "The Korean answer has four parts in order: the measured move (about 1.2% from the 2026-02-27 close of 72,500 won to 73,400 won on 2026-03-03) with the market's move or a statement that it could not be checked; reported reasons from dated sources only; the Loupist's own reading, labelled as inference; and what isn't explained.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "honest-gaps",
+                    "criterion": "The answer does not claim the March 2 capacity article caused the rise or invent another cause, and says plainly that no filing or report explains the move and that the market and sector comparison was not checked unless it cites a source for them.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "opendart",
+        "krx"
+      ],
+      "id": "T-050",
+      "title": "What growth a price implies is a reverse DCF card read against the last five years' growth, not one number",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart",
+        "krx",
+        "valuation",
+        "en"
+      ],
+      "replay": "replay/opendart-solsup-implied-growth.json",
+      "replay_needs": "dart_company_lookup resolves Solsup Foods or 990221 to 99022100. dart_financials 99022100 annual consolidated for each fiscal year 2020 to 2025 returns revenue, operating income, net income, net income attributable to owners, basic EPS, cash, short- and long-term borrowings, operating cash flow and purchases of property, plant and equipment (negative): FY2025 operating cash flow 52600000000 and capex -18900000000 KRW (free cash flow 33.7bn), FY2020 33000000000 and -12100000000 (20.9bn), so free cash flow grew 10.0% a year over FY2020–FY2025; FY2025 cash 41200000000, short-term borrowings 30000000000 and long-term borrowings 65000000000. krx_daily_quote 990221 on 2026-04-16 closes at 21950 KRW with 20000000 listed shares. No other date, company or basis.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "What growth does Solsup Foods' (990221) share price imply? Use the close on 2026-04-16.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "opendart",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "capability_loaded",
+                    "id": "krx",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "calculate_inputs_cited",
+                    "operation": "reverse_dcf",
+                    "inputs": [
+                      "price",
+                      "reference_growth_pct"
+                    ],
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "sensitivity_card",
+                    "operation": "reverse_dcf",
+                    "reference": true,
+                    "metric": "task_success"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "numbers_linked",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "range-against-history",
+                    "criterion": "The answer shows the implied growth as a grid over discount and long-run growth rates (a card linked on its own), reads it against free cash flow growth of about 10% a year over FY2020–FY2025, says which combinations need more growth than that, and never presents a single implied rate, target price or fair value as the answer.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "opendart",
+        "web-research"
+      ],
+      "id": "T-051",
+      "title": "When a filing and a news page disagree, the answer shows both in a conflict card, says which it uses and why, and never averages",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart",
+        "web",
+        "disagreement",
+        "en"
+      ],
+      "replay": "replay/web-solsup-prelim-news.json",
+      "replay_needs": "dart_company_lookup resolves Solsup Foods/990221 to 99022100; dart_financials 99022100, fiscal_year 2025, report_period annual, basis consolidated returns revenue 452300000000 KRW in the annual report filed 2026-03-18. web_fetch of https://fictional.example/markets/solsup-foods-preliminary-fy2025 (published 2026-02-05) reports unaudited preliminary FY2025 consolidated revenue of 455.0 billion won. The figures differ as preliminary versus final.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "What was Solsup Foods' FY2025 revenue? I saw a different number in this news story: https://fictional.example/markets/solsup-foods-preliminary-fy2025",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "opendart",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "capability_loaded",
+                    "id": "web-research",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "grid_cells_linked",
+                    "layout": "conflict",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "\\b453[.,]6\\d*",
+                      "\\b453[.,]7\\b",
+                      "4,?53[67](?:[.,]\\d+)?\\s?억",
+                      "453,?650,?000,?000"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "cites_result",
+                    "tool": "dart_financials",
+                    "near": [
+                      "452.3",
+                      "452,3",
+                      "4,523"
+                    ],
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "explains-the-disagreement",
+                    "criterion": "The answer shows both figures, 452.3 billion won from the annual report filed with OpenDART and 455.0 billion won from the February preliminary notice in the news, explains that one is preliminary and the other final, says it relies on the filed figure and why, and does not average them.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "T-043",
+      "title": "How the user's crypto did is answered from price changes, never from the imported quantity",
+      "tags": [
+        "dataset",
+        "local",
+        "holdings",
+        "privacy",
+        "en"
+      ],
+      "seed": {
+        "holdings_crypto_csv": "asset,balance\nXXBT,0.4271\n"
+      },
+      "workspace_files": {
+        "prices/btc-usd-2026-10.csv": "date,close\n2026-10-01,61250.00\n2026-10-02,61250.00\n2026-10-03,61660.00\n2026-10-04,61440.00\n2026-10-05,62345.00\n2026-10-06,62985.00\n2026-10-07,61805.00\n2026-10-08,60275.00\n2026-10-09,60535.00\n2026-10-10,61550.00\n2026-10-11,62330.00\n2026-10-12,61970.00\n2026-10-13,63210.00\n2026-10-14,63725.00\n2026-10-15,62835.00\n2026-10-16,64160.00\n2026-10-17,63520.00\n2026-10-18,63990.00\n2026-10-19,65100.00\n2026-10-20,65385.00\n2026-10-21,64970.00\n2026-10-22,65900.00\n2026-10-23,66580.00\n2026-10-24,65375.00\n2026-10-25,65930.00\n2026-10-26,66720.00\n2026-10-27,67035.00\n2026-10-28,66755.00\n2026-10-29,67600.00\n2026-10-30,68000.00\n2026-10-31,67375.00\n"
+      },
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "How has my crypto done in October? The daily closes are in prices/btc-usd-2026-10.csv. End the answer with only the JSON object {\"metrics\":{\"btc_october_change_pct\": number}} and nothing after it.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "btc_october_change_pct": 10.0
+                    },
+                    "tolerance": 0.05,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "0\\.4271",
+                      "0\\.427\\b"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "price-change-only",
+                    "criterion": "The answer says Bitcoin, which the user holds, rose about 10% in October (from 61,250 to 67,375 at the daily close), computed on the host, and never states the user's quantity or the value of the position.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "value-on-request",
+                    "criterion": "If the answer mentions the value of the user's position at all, it only offers to work it out if the user says how much they hold; it does not guess an amount.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "opendart"
+      ],
+      "id": "T-052",
+      "title": "A five-stage company comparison keeps its plan current through the final brief",
+      "tags": [
+        "plan",
+        "en",
+        "needs-replay",
+        "opendart"
+      ],
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "Prepare a research brief comparing Solsup Foods, Iseul Logistics and Hanbit Chem for FY2025. First establish which statement basis is available for each company. Next reconcile their revenue and operating income on that basis. Then compute operating margins and rank the companies. Next build a comparison chart of the margins. Finally write a short conclusion explaining the ranking and the limitation of comparing different statement bases. Complete all five parts and cite the filings behind the figures.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "plan_progress",
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "separate",
+                      "non-consolidated"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "replay": "replay/opendart-plan-comparison.json",
+      "replay_needs": "dart_company_lookup resolves 솔숲식품/Solsup Foods/990221 to 99022100, 이슬물류/Iseul Logistics/990552 to 99055200 and 한빛화학/Hanbit Chem/990777 to 99077700. dart_financials fiscal_year 2025, report_period annual: Solsup consolidated revenue 452300000000, operating_income 38100000000, net_income 21400000000 KRW (filed 2026-03-18); Iseul has no consolidated statements (OpenDART 013) and separate revenue 128400000000, operating_income 7600000000, net_income 4900000000 KRW (filed 2026-03-20); Hanbit consolidated revenue 286500000000, operating_income 31400000000, net_income 19800000000 KRW (filed 2026-03-19). No other company, year or basis."
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "opendart"
+      ],
+      "id": "T-053",
+      "title": "A five-stage dividend review closes completed research steps",
+      "tags": [
+        "plan",
+        "ko",
+        "needs-replay",
+        "opendart"
+      ],
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "솔숲식품의 FY2025 배당을 검토해 줘. 먼저 2021년부터 2025년까지 보통주 주당 배당금과 삭감 여부를 확인해. 다음으로 FY2025 연결 지배주주 순이익 대비 현금배당 비율을 계산해. 세 번째로 영업현금흐름과 유형자산 취득액에서 잉여현금흐름을 구하고 배당을 얼마나 충당하는지 확인해. 네 번째로 처음과 마지막 해의 주당 배당금으로 연평균 증가율을 계산해. 마지막으로 이 근거들을 종합해 배당 지속 가능성과 아직 확인하지 못한 위험을 짧게 평가해. 다섯 부분을 모두 마치고 수치에는 공시 근거를 달아 줘.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "plan_progress",
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "replay": "replay/opendart-plan-dividend.json",
+      "replay_needs": "dart_company_lookup resolves Solsup Foods, 솔숲식품 or 990221 to 99022100. dart_dividends 99022100 for year 2022, 2023, 2024 or 2025 returns that annual report's dividend table (the year and the two before): dividend per common share 250, 250, 200, 250, 250 and 300 KRW for FY2020 to FY2025; total cash dividends 5000, 5000, 4000, 5000, 5000 and 6000 million KRW; consolidated net income attributable to owners 16500, 17800, 9400, 16900, 19500 and 21000 million KRW; consolidated payout 30.3, 28.1, 42.6, 29.6, 25.6 and 28.6%; cash yield 1.6, 1.5, 1.6, 1.5, 1.3 and 1.4%. For 2025 the cash dividend decision 20260205990221 gives the record date 2025-12-31. dart_financials 99022100 FY2025 annual consolidated returns revenue 452300000000, net income attributable to owners 21000000000, operating cash flow 52600000000 and purchases of property, plant and equipment -18900000000 KRW, so free cash flow is 33.7bn and the dividend about 17.8% of it. FY2022 is the one cut (250 to 200 KRW); dividend per share grew 3.7% a year over FY2020–FY2025. The FY2021 dividend endpoint also returns the 2021 and 2020 values carried by the FY2022 filing, with the older comparison unavailable."
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "T-054",
+      "title": "Quick definitions do not open a research plan",
+      "tags": [
+        "plan",
+        "quick",
+        "en",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "What is operating margin? Answer in one sentence.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "plan_update",
+                    "metric": "efficiency"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "revenue",
+                      "매출"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "task-2",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "영업이익률이 무엇인지 한 문장으로 설명해 줘.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "plan_update",
+                    "metric": "efficiency"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "revenue",
+                      "매출"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [
+        "opendart"
+      ],
+      "id": "T-055",
+      "title": "A ratio from retained statement cells links to its formula and inputs",
+      "tags": [
+        "calculate",
+        "dataset",
+        "show-the-math",
+        "instructed",
+        "en",
+        "ko",
+        "needs-replay",
+        "opendart"
+      ],
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "Fetch Solsup Foods FY2025 consolidated financials from OpenDART. Use calculate with operation ratio and as_percent true for operating income divided by revenue, passing both inputs as pinned dataset cells (dataset_id, revision, pointer) from the retained financials, not copied numbers. Answer with the percentage rounded to two decimal places and link that number to the calculation.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "calculation_chip",
+                    "operation": "ratio",
+                    "text": "8.42%",
+                    "formula": "38,100,000,000 / 452,300,000,000 = 8.42%",
+                    "inputs": {
+                      "numerator": 38100000000,
+                      "denominator": 452300000000
+                    },
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "numbers_linked",
+                    "checked": [
+                      "8.42%"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "task-2",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "OpenDART에서 솔숲식품 FY2025 연결 재무제표를 조회해 줘. calculate의 ratio 연산과 as_percent true로 영업이익을 매출로 나눈 비율을 구해. 두 입력 모두 숫자를 복사하지 말고 보관된 재무제표의 데이터셋 셀(dataset_id, revision, pointer)로 지정해. 소수점 둘째 자리까지 백분율로 답하고 그 숫자에 계산 근거를 연결해 줘.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "calculation_chip",
+                    "operation": "ratio",
+                    "text": "8.42%",
+                    "formula": "38,100,000,000 / 452,300,000,000 = 8.42%",
+                    "inputs": {
+                      "numerator": 38100000000,
+                      "denominator": 452300000000
+                    },
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "numbers_linked",
+                    "checked": [
+                      "8.42%"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "replay": "replay/opendart-dataset-ratio.json",
+      "replay_needs": "dart_company_lookup resolves 솔숲식품, Solsup Foods or stock_code 990221 to corp_code 99022100. dart_financials company 99022100, fiscal_year 2025, report_period annual, basis consolidated returns revenue 452300000000 KRW, operating_income 38100000000 KRW and net_income 21400000000 KRW in receipt 20260318990221, filed 2026-03-18. No other company or later revision. The margin is 38100000000 / 452300000000 = 8.4236%."
+    }
+  ]
+}

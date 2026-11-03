@@ -1,0 +1,128 @@
+{
+  "schema": "loupist-world-suite/1",
+  "suite": "implicit-memory-native-files-v5",
+  "version": 1,
+  "fixture_delivery": "per_step",
+  "description": "Unseen validation frozen before native-original retention guidance changes; no Memory/tool-save hints in user prompts.",
+  "scenarios": [
+    {
+      "condition": "implicit",
+      "world_enabled": false,
+      "connections": [],
+      "seed_sources": [],
+      "split": "validation",
+      "id": "V5-NATIVE-ORIGINAL",
+      "title": "Native read followed by original reuse",
+      "family": "native_original_retention",
+      "workspace_files": {
+        "birch.txt": "FICTIONAL EXERCISE\nPublisher: Birch Controls Exercise Desk\nPublication: 2026-10-08\nBirch Controls Q3 2026 consolidated revenue: KRW 64 billion. Q3 2025 revenue: KRW 50 billion. Both periods cover three months. Document code: BIRCH-N7-64.\n"
+      },
+      "steps": [
+        {
+          "id": "document",
+          "user": "birch.txt는 가상 회사 버치컨트롤스의 분기 매출 자료야. 터미널에서 cat birch.txt로 읽고 올해 매출과 전년 대비 증가율을 짧게 알려줘.",
+          "chat": "document",
+          "role": "train",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "source_retained",
+              "metric": "source_acquisition",
+              "path": "birch.txt"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "28\\s*%"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "lens"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "recall",
+          "user": "앞서 본 버치컨트롤스의 분기 매출 자료에서 문서 코드가 무엇이었고 비교 기간은 같은 길이였지?",
+          "chat": "recall",
+          "role": "probe",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "memory_read",
+              "metric": "retrieval",
+              "kind": "source"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "BIRCH-N7-64"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "3개월|세 달|three months"
+            },
+            {
+              "assert": "original_not_read",
+              "metric": "efficiency",
+              "path": "birch.txt"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "condition": "implicit",
+      "world_enabled": false,
+      "connections": [],
+      "seed_sources": [],
+      "split": "validation",
+      "id": "V5-CALCULATION-ONLY",
+      "title": "Temporary numeric input stays outside Memory",
+      "family": "native_calculation_only",
+      "workspace_files": {
+        "scratch.txt": "13\n29\n"
+      },
+      "steps": [
+        {
+          "id": "calculation",
+          "user": "scratch.txt의 두 수만 더해줘. 이번 계산에만 쓰는 임시 입력이야.",
+          "chat": "calculation",
+          "role": "train",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "42"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "all"
+            },
+            {
+              "assert": "no_commit",
+              "metric": "save_precision",
+              "kind": "all"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

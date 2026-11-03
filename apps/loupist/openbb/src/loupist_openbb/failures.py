@@ -1,0 +1,118 @@
+"""Typed network failures across OpenBB's REST and MCP boundaries.
+
+Only exception types and our private REST marker are inspected. Provider text,
+URLs and credentials never enter the MCP diagnostic.
+"""
+
+from __future__ import annotations
+
+import socket
+from collections.abc import Callable
+from typing import Any
+from urllib.error import URLError
+
+OFFLINE = {"loupist_error": {"kind": "offline"}}
+
+
+def is_offline_error(error: BaseException) -> bool:
+    import aiohttp
+    import httpx
+    import requests
+    from curl_cffi import CurlError
+    from curl_cffi.const import CurlECode
+
+    pending = [error]
+    seen: set[int] = set()
+    while pending and len(seen) < 32:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        # TLS and HTTP rejections are reachable services, not offline reads.
+        if isinstance(current, (requests.exceptions.SSLError, aiohttp.ClientSSLError)):
+            continue
+        if isinstance(
+            current,
+            (
+                socket.gaierror,
+                ConnectionError,
+                TimeoutError,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                aiohttp.ClientConnectionError,
+                httpx.ConnectError,
+                httpx.TimeoutException,
+            ),
+        ):
+            return True
+        if isinstance(current, CurlError) and current.code in {
+            CurlECode.COULDNT_RESOLVE_PROXY,
+            CurlECode.COULDNT_RESOLVE_HOST,
+            CurlECode.COULDNT_CONNECT,
+            CurlECode.OPERATION_TIMEDOUT,
+        }:
+            return True
+        if isinstance(current, httpx.HTTPStatusError):
+            try:
+                if current.response.json() == OFFLINE:
+                    return True
+            except ValueError:
+                pass
+        if isinstance(current, URLError) and isinstance(current.reason, BaseException):
+            pending.append(current.reason)
+        original = getattr(current, "original", None)
+        if isinstance(original, BaseException):
+            pending.append(original)
+        pending.extend(
+            cause
+            for cause in (current.__cause__, current.__context__)
+            if cause is not None
+        )
+        # OpenBB can wrap an exception as an argument without an explicit cause.
+        pending.extend(arg for arg in current.args if isinstance(arg, BaseException))
+    return False
+
+
+def classify_rest_failures(app: Any) -> None:
+    """Keep OpenBB's handlers, replacing only unreachable-provider failures."""
+    from starlette.responses import JSONResponse
+
+    def wrap(handler: Callable[..., Any]) -> Callable[..., Any]:
+        async def classified(request: Any, error: Exception) -> Any:
+            if is_offline_error(error):
+                return JSONResponse(OFFLINE, status_code=503)
+            return await handler(request, error)
+
+        return classified
+
+    app.exception_handlers = {
+        kind: wrap(handler) for kind, handler in app.exception_handlers.items()
+    }
+    # Also cover a plain FastAPI app (used in contract tests). OpenBB already
+    # installs its own Exception handler, whose other behavior stays intact.
+    if Exception not in app.exception_handlers:
+
+        async def unhandled(request: Any, error: Exception) -> Any:
+            if is_offline_error(error):
+                return JSONResponse(OFFLINE, status_code=503)
+            raise error
+
+        app.exception_handlers[Exception] = unhandled
+    app.middleware_stack = None
+
+
+async def call_tool_with_failures(
+    run: Callable[..., Any], arguments: dict[str, Any]
+) -> Any:
+    from fastmcp.tools.tool import ToolResult
+
+    try:
+        return await run(arguments)
+    except Exception as error:
+        if not is_offline_error(error):
+            raise
+        return ToolResult(
+            content="The data provider could not be reached.",
+            structured_content=OFFLINE,
+            is_error=True,
+        )

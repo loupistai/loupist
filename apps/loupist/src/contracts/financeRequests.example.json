@@ -1,0 +1,19 @@
+{
+  "earnings_snapshot_get": [
+    { "loupistId": "loupist-quality", "assetId": "ast_0123456789abcdef" },
+    { "loupistId": "loupist-quality", "assetId": "ast_0123456789abcdef", "eventId": "ern_0123456789abcdef" }
+  ],
+  "earnings_events_list": [{ "loupistId": "loupist-quality", "assetId": "ast_0123456789abcdef" }],
+  "earnings_prepare": [{ "loupistId": "loupist-quality", "assetId": "ast_0123456789abcdef", "eventId": "ern_0123456789abcdef" }],
+  "watch_settings_list": [{ "loupistId": "loupist-quality" }],
+  "watch_setting_set": [
+    { "loupistId": "loupist-quality", "assetId": "ast_0123456789abcdef", "kind": "insiders", "enabled": true, "expectedRevision": 2 },
+    { "loupistId": "loupist-quality", "assetId": "ast_0123456789abcdef", "kind": "cryptoMove", "enabled": true, "expectedRevision": 3 },
+    { "loupistId": "loupist-quality", "assetId": "ast_0123456789abcdef", "kind": "oilInventory", "enabled": false, "expectedRevision": 4 }
+  ],
+  "watch_pause_set": [{ "loupistId": "loupist-quality", "paused": true }],
+  "watch_check_now": [{ "loupistId": "loupist-quality" }],
+  "watch_events_list": [{ "loupistId": "loupist-quality", "limit": 50 }, { "loupistId": "loupist-quality", "sinceMs": 1793145600000, "limit": 24 }],
+  "watch_events_seen": [{ "loupistId": "loupist-quality", "eventIds": ["wev_0123456789abcdef"] }, { "loupistId": "loupist-quality", "eventIds": [] }],
+  "watchlist_add": [{ "symbol": "HANU", "market": "KRX", "displayName": "Hanul Precision", "loupistId": "loupist-quality" }]
+}

@@ -1,0 +1,13 @@
+{
+  "bundle": {
+    "createUpdaterArtifacts": false,
+    "resources": {
+      "resources/pi-runtime/": "pi-runtime",
+      "resources/embed_assets/": "embed_assets",
+      "../agent/": "loupist-agent",
+      "../../../LICENSE": "LICENSE",
+      "../../../NOTICE": "NOTICE",
+      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+    }
+  }
+}

@@ -1,0 +1,144 @@
+{
+  "schema": "loupist-connection-replay/1",
+  "requests": [
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/corpCode.xml"
+      },
+      "response": {
+        "status": 200,
+        "content_type": "application/zip",
+        "body_base64": "UEsDBBQAAAAIAAAAIVwgUCS2tQAAAAQBAAAMAAAAQ09SUENPREUueG1sTY9BDoIwEEWvQthrKyYGkqEkLryAuiakjKSRtqaAkT17t57AFQuj3KoeQiJE2Uwy/7/J/A/RRebOGU0htArdxZy6DiquU6Gy0N3vNjPfjRgYLKq8ZJCLop9cm1PcM8iCgC6pTymQvzbYKpHI7KuxbWfvrX3c7LV5P7sR/LoDiCob1nWNOpeVEc4WpeBapRUvtRkvfhgUpebH6XsgEwlkn/1Qx2lSIvOot+qJBZCpCmSoQcZWH1BLAQIUAxQAAAAIAAAAIVwgUCS2tQAAAAQBAAAMAAAAAAAAAAAAAACAAQAAAABDT1JQQ09ERS54bWxQSwUGAAAAAAEAAQA6AAAA3wAAAAAA"
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99030800&bgn_de=20260101&end_de=20260331&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=20"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99030800",
+              "corp_cls": "Y",
+              "corp_name": "별무리반도체",
+              "stock_code": "990308",
+              "report_nm": "별무리반도체 포장라인 증설",
+              "rcept_no": "20260318990308",
+              "flr_nm": "별무리반도체",
+              "rcept_dt": "20260318",
+              "rm": ""
+            }
+          ]
+        }
+      },
+      "query_match": {
+        "page_count": "ignore",
+        "bgn_de": {
+          "at_most": "20260318"
+        },
+        "end_de": {
+          "at_least": "20260318"
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99030800&bgn_de=20260101&end_de=20260331&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=20&pblntf_ty=B"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99030800",
+              "corp_cls": "Y",
+              "corp_name": "별무리반도체",
+              "stock_code": "990308",
+              "report_nm": "별무리반도체 포장라인 증설",
+              "rcept_no": "20260318990308",
+              "flr_nm": "별무리반도체",
+              "rcept_dt": "20260318",
+              "rm": ""
+            }
+          ]
+        }
+      },
+      "query_match": {
+        "page_count": "ignore",
+        "bgn_de": {
+          "at_most": "20260318"
+        },
+        "end_de": {
+          "at_least": "20260318"
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99030800&bgn_de=20260101&end_de=20260331&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=20&pblntf_ty=I"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99030800",
+              "corp_cls": "Y",
+              "corp_name": "별무리반도체",
+              "stock_code": "990308",
+              "report_nm": "별무리반도체 포장라인 증설",
+              "rcept_no": "20260318990308",
+              "flr_nm": "별무리반도체",
+              "rcept_dt": "20260318",
+              "rm": ""
+            }
+          ]
+        }
+      },
+      "query_match": {
+        "page_count": "ignore",
+        "bgn_de": {
+          "at_most": "20260318"
+        },
+        "end_de": {
+          "at_least": "20260318"
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20260318990308"
+      },
+      "response": {
+        "status": 200,
+        "content_type": "application/zip",
+        "body_base64": "UEsDBBQAAAAIAAAAIVxUkBt+LwEAAIQBAAASAAAAMjAyNjAzMTg5OTAzMDgueG1sbZA7a8JQFMe/yiG7puLS4RqpGkGoRjAOHUNyq5fmUUzsY+vDQZpBh5ZmMMVBhYJDqEI72C+Ue/IdmqLYFrodOPx//wcpXlkmXNCeyxy7IOSyBwJQW3cMZncKQlutZg6FokQqSrldlxvqz5VpHNVlia8GfLnmiyWPAj4a4NsaktESX+Y83GD4AbgIcTAj4l8VKSmVE4m05LJaUxqZnETUmnosS+hP4/cJoD9JRZAMU9CYiNsfaf5jxh8eIY5u8P4WwwAwmOFdBBh9xqspPo93UWCXJR9HEz7fpPhpik+eXrk/5P4sS8TmN73KdC/dQDOhdE0d0+r3GLSoxXTHNvq65/TgkpkmaIYBeTjX9DOtk24EJrOpC5oHXpfC6Z6huJoNbpcaW7z4q6u4bb/fRPoCUEsBAhQDFAAAAAgAAAAhXFSQG34vAQAAhAEAABIAAAAAAAAAAAAAAIABAAAAADIwMjYwMzE4OTkwMzA4LnhtbFBLBQYAAAAAAQABAEAAAABfAQAAAAA="
+      }
+    }
+  ]
+}

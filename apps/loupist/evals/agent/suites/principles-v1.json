@@ -1,0 +1,1099 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "principles",
+  "version": 1,
+  "description": "Fictional product regression and private-context capability scenarios; deterministic checks precede independent binary rubrics.",
+  "budget": {
+    "maxInputTokensPerTurn": 250000,
+    "maxTurns": 120
+  },
+  "scenarios": [
+    {
+      "id": "P-R01",
+      "title": "A user rule saves exactly one principle",
+      "split": "regression",
+      "tags": [
+        "en"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "teach",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Remember this research rule: compare operating cash flow with reported profit before trusting earnings.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-R02",
+      "title": "Analysis alone creates no principle",
+      "split": "regression",
+      "tags": [
+        "en"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "analysis",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Fictional Zircon Loom reported profit of 17 million credits and operating cash flow of 6 million on 2026-09-29. Assess earnings quality using only these facts.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "not_committed",
+                    "kind": "principle",
+                    "metric": "save_precision"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-R03",
+      "title": "New Chat applies a dated principle checklist",
+      "split": "regression",
+      "tags": [
+        "en"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "teach",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Remember this research rule: compare operating cash flow with reported profit before trusting earnings.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "new-chat",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Fictional Zircon Loom reported profit of 17 million credits and operating cash flow of 6 million on 2026-09-29. Assess earnings quality using only these facts.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "lens:"
+                    ],
+                    "metric": "carry_forward"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "2026-09-29",
+                      "September 29, 2026",
+                      "29 September 2026",
+                      "2026년 9월 29일",
+                      "2026년9월29일"
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "principle-checklist",
+                    "criterion": "Pass only if the answer applies the user cash-flow principle, includes a final Checked against your principles checklist (or Korean equivalent), a lens: link, the 2026-09-29 date, and a factual result qualified by 6 cash flow versus 17 profit.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-R04",
+      "title": "Unrelated question has no negative transfer",
+      "split": "regression",
+      "tags": [
+        "en"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "teach",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Remember this research rule: compare operating cash flow with reported profit before trusting earnings.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "unrelated",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "What is 13 plus 16? Reply briefly.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "29"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "not_contains",
+                    "values": [
+                      "lens:",
+                      "operating cash flow",
+                      "영업현금흐름"
+                    ],
+                    "metric": "negative_transfer"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "not_committed",
+                    "kind": "principle",
+                    "metric": "save_precision"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-R05a",
+      "title": "A user-stated trade-action rule is saved faithfully",
+      "split": "regression",
+      "tags": [
+        "en"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "teach",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Remember my rule: sell when operating margin falls below 10%.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "faithful-user-rule",
+                    "metric": "save_recall",
+                    "criterion": "Pass only if exactly one principle is committed that preserves the user-stated rule to sell when operating margin falls below 10%. Rewriting the rule into a neutral review flag, merely offering to save it, or saving no principle fails; this assesses faithful recording, not endorsement of the action."
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-R05b",
+      "title": "A seeded trade-action rule yields a correct condition result",
+      "split": "regression",
+      "tags": [
+        "en"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "condition",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Fictional Zircon Loom operating margin was 8% on 2026-09-29. Check it against my principles.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "8"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "2026-09-29",
+                      "September 29, 2026",
+                      "29 September 2026",
+                      "2026년 9월 29일",
+                      "2026년9월29일"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "lens:"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "condition-result",
+                    "criterion": "Pass only if the answer correctly reports that the user sell rule condition is met because operating margin of 8% on 2026-09-29 is below 10%, with a dated principle checklist result. A refusal or incorrect comparison fails.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "seed": {
+        "principles": [
+          "Sell when operating margin falls below 10%."
+        ]
+      }
+    },
+    {
+      "id": "P-R06",
+      "title": "Repeated statement is not committed twice",
+      "split": "regression",
+      "tags": [
+        "en"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "teach",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Remember this research rule: compare operating cash flow with reported profit before trusting earnings.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "Remember this research rule: compare operating cash flow with reported profit before trusting earnings.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "not_committed",
+                    "kind": "principle",
+                    "metric": "save_precision"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-R07",
+      "title": "Private Chat omits principles",
+      "split": "regression",
+      "tags": [
+        "en"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "teach",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Remember my research rule: describe every earnings-quality summary with the private label violet lantern.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "private",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "Fictional Zircon Loom reported profit of 17 million credits and operating cash flow of 6 million on 2026-09-29. Assess earnings quality using only these facts.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "not_contains",
+                    "values": [
+                      "violet lantern",
+                      "lens:",
+                      "Checked against your principles"
+                    ],
+                    "metric": "negative_transfer"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "not_committed",
+                    "kind": "principle",
+                    "metric": "save_precision"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-R08",
+      "title": "Korean user rule saves one principle",
+      "split": "regression",
+      "tags": [
+        "ko"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "teach",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "내 연구 원칙으로 기억해 줘. 보고 이익을 신뢰하기 전에 영업현금흐름과 비교해.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-R09",
+      "title": "Korean new Chat checks dated evidence",
+      "split": "regression",
+      "tags": [
+        "ko"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "teach",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "내 연구 원칙으로 기억해 줘. 보고 이익을 신뢰하기 전에 영업현금흐름과 비교해.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "new-chat",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "가상의 자수정직물은 2026-09-29에 이익 17억 원과 영업현금흐름 6억 원을 보고했어. 주어진 사실로 이익의 질을 분석해.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "lens:"
+                    ],
+                    "metric": "carry_forward"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "2026-09-29",
+                      "September 29, 2026",
+                      "29 September 2026",
+                      "2026년 9월 29일",
+                      "2026년9월29일"
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "principle-checklist",
+                    "criterion": "Pass only if the answer applies the user cash-flow principle, includes a final Checked against your principles checklist (or Korean equivalent), a lens: link, the 2026-09-29 date, and a factual result qualified by 6 cash flow versus 17 profit.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-C01",
+      "title": "Conflicting principles are disclosed",
+      "split": "capability",
+      "tags": [
+        "en"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "teach",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Remember this rule: classify cash conversion below 70% as weak.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "teach-second",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Also remember this distinct rule: classify cash conversion above 50% as adequate.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Zircon Loom profit is 10 and cash flow is 6 as of 2026-09-29. How does cash conversion compare with my rules?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "lens:"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "conflict",
+                    "criterion": "Pass only if the answer identifies that 60% satisfies the adequate rule yet also triggers the weak rule, discloses the conflict, and does not silently choose one.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-C02",
+      "title": "User principle outranks a saved method",
+      "split": "capability",
+      "tags": [
+        "en"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "teach",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Remember my rule: classify cash conversion as weak only below 45%.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Zircon Loom cash flow is 6 and profit is 10 on 2026-09-29. Apply the saved cash conversion method and my rules.",
+              "expect": {
+                "rubric": [
+                  {
+                    "id": "precedence",
+                    "criterion": "Pass only if the answer uses the user principle threshold of 45%, describes 60% as not weak under that rule, and explicitly resolves the conflicting 80% method in favor of the principle.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "seed": {
+        "lens": [
+          {
+            "title": "Cash conversion method",
+            "markdown": "Classify cash conversion below 80% as weak.",
+            "applicability": "Earnings quality",
+            "assumptions": "Profit is positive.",
+            "procedure": "Divide cash flow by profit. Below 80% is weak.",
+            "principles": "Use the stated threshold consistently.",
+            "limitations": "No investment action follows."
+          }
+        ]
+      }
+    },
+    {
+      "id": "P-C03",
+      "title": "Correction phrasing teaches a principle",
+      "split": "capability",
+      "tags": [
+        "en"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "teach",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "No, that is not how I review revenue quality. My rule is to flag receivables growth only when it exceeds sales growth by more than 13 percentage points. Remember that.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Zircon Loom sales grew 12% and receivables grew 23% on 2026-09-29. Does this trigger my revenue-quality screen?",
+              "expect": {
+                "rubric": [
+                  {
+                    "id": "correction-recall",
+                    "criterion": "Pass only if the answer uses the privately taught 13 percentage point threshold, calculates an 11 point gap and says the screen does not trigger.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-C04",
+      "title": "Recall survives ten distractor Chats",
+      "split": "capability",
+      "tags": [
+        "en"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "teach",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Remember this rule: in my notes, amber means customer concentration above 37%.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "distractor-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "For an unrelated arithmetic check, what is 21 plus 2?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "23"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "distractor-2",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "For an unrelated arithmetic check, what is 22 plus 2?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "24"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "distractor-3",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "For an unrelated arithmetic check, what is 23 plus 2?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "25"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "distractor-4",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "For an unrelated arithmetic check, what is 24 plus 2?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "26"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "distractor-5",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "For an unrelated arithmetic check, what is 25 plus 2?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "27"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "distractor-6",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "For an unrelated arithmetic check, what is 26 plus 2?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "28"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "distractor-7",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "For an unrelated arithmetic check, what is 27 plus 2?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "29"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "distractor-8",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "For an unrelated arithmetic check, what is 28 plus 2?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "30"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "distractor-9",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "For an unrelated arithmetic check, what is 29 plus 2?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "31"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "distractor-10",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "For an unrelated arithmetic check, what is 30 plus 2?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "32"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Zircon Loom has one customer representing 39% of revenue on 2026-09-29. How should my notes label that?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "amber",
+                      "Amber",
+                      "AMBER"
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "long-gap",
+                    "criterion": "Pass only if the answer recalls that amber means customer concentration above 37%, applies it to 39%, and does not replace the private threshold with a generic rule.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-C05",
+      "title": "Private exception resolves general principle",
+      "split": "capability",
+      "tags": [
+        "en"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "teach",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Remember this rule: label revenue growth below 12% slow.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "exception",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Remember this separate exception: for subscription firms, label revenue growth slow only below 7%.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Zircon Loom is a subscription firm; 2026-09-29 revenue growth was 9%. Does my slow-growth label apply?",
+              "expect": {
+                "rubric": [
+                  {
+                    "id": "exception",
+                    "criterion": "Pass only if the answer applies the subscription exception of 7%, says 9% is not slow under the user convention, and explains its precedence over the general 12% rule.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-C06",
+      "title": "Korean correction carries private threshold",
+      "split": "capability",
+      "tags": [
+        "ko"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "teach",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "아니야. 내 연구 원칙은 현금전환율이 43% 미만일 때만 낮다고 표시하는 거야. 이 원칙을 기억해.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "가상의 자수정직물은 2026-09-29 기준 이익 20억 원, 영업현금흐름 9억 원이야. 내 기준에서 현금전환율이 낮아?",
+              "expect": {
+                "rubric": [
+                  {
+                    "id": "korean-correction",
+                    "criterion": "Pass only if the answer computes 45%, uses the privately taught 43% threshold, and says the low-conversion label is not triggered.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

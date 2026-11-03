@@ -1,0 +1,60 @@
+/* "Your holdings" sheet (finance-crypto-and-templates.md §2.1–§2.3). */
+.holdings-sheet { border-radius: var(--gg-radius-lg); background: var(--gg-color-bg-raised); }
+.holdings-sheet .dialog-title { font-size: var(--gg-text-title); }
+.holdings-lead, .holdings-note { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.holdings-body { gap: var(--gg-space-2); }
+.holdings-section { display: grid; min-width: 0; }
+.holdings-section-label { margin: var(--gg-space-5) 0 var(--gg-space-1); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); font-weight: var(--gg-weight-medium); text-transform: uppercase; letter-spacing: .04em; }
+.holdings-section:first-child .holdings-section-label { margin-top: 0; }
+.holdings-subhead { margin: var(--gg-space-3) 0 0; font-size: var(--gg-text-body); font-weight: var(--gg-weight-medium); }
+.holdings-source, .holdings-wallet { display: flex; align-items: center; justify-content: space-between; gap: var(--gg-space-3); min-height: 44px; min-width: 0; }
+.holdings-source-text, .holdings-wallet-text { display: grid; min-width: 0; }
+.holdings-source-name { font-size: var(--gg-text-body); font-weight: var(--gg-weight-medium); }
+.holdings-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--gg-space-1); margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.holdings-meta > span:not(:first-child)::before { content: "·"; margin-right: var(--gg-space-1); }
+/* A wallet's line flows as text; its separators keep to the end of a line. */
+.holdings-wallet-meta { display: block; }
+.holdings-meta.holdings-wallet-meta > span::before { content: none; }
+.holdings-wallet-meta .holdings-reading, .holdings-wallet-meta .holdings-failed { display: inline-flex; vertical-align: middle; }
+.holdings-helper { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+.holdings-wallets { display: grid; margin: 0; padding: 0 0 0 var(--gg-space-4); list-style: none; }
+.holdings-address { font-family: var(--gg-font-mono); font-size: var(--gg-text-meta); color: var(--gg-color-text-primary); }
+.holdings-wallet-actions { display: flex; align-items: center; gap: var(--gg-space-1); flex: none; }
+.holdings-reading, .holdings-failed { display: inline-flex; align-items: center; gap: var(--gg-space-1); }
+.holdings-failed { color: var(--gg-color-warning); }
+.holdings-failed svg { width: 16px; height: 16px; }
+.holdings-reading [data-slot="spinner"] { width: 16px; height: 16px; }
+.holdings-inline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); padding-block: var(--gg-space-2); }
+.holdings-inline input { max-width: 240px; }
+.holdings-add { justify-self: start; margin-top: var(--gg-space-2); }
+.holdings-add-form { display: grid; gap: var(--gg-space-2); margin-top: var(--gg-space-2); padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); animation: holdings-expand var(--gg-motion-normal) var(--gg-ease-out); }
+.holdings-field { display: grid; gap: var(--gg-space-1); font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); }
+.holdings-field input { height: var(--gg-size-field); }
+.holdings-address-input { font-family: var(--gg-font-mono); transition: border-color var(--gg-motion-fast); }
+/* A pasted secret turns the Address field to its error style, focused or not. */
+.holdings-address-input[data-secret], .holdings-address-input[data-secret]:focus-visible { border-color: var(--gg-color-negative); }
+.holdings-address-input[data-secret]:focus-visible { outline-color: var(--gg-color-negative) !important; }
+.holdings-add-form .holdings-secret { margin-top: calc(-1 * var(--gg-space-1)); }
+.holdings-secret, .holdings-error { margin: 0; color: var(--gg-color-negative); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.holdings-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--gg-space-2); }
+.holdings-preview { display: grid; gap: var(--gg-space-3); min-width: 0; animation: holdings-fade var(--gg-motion-normal) var(--gg-ease-out); }
+.holdings-table { max-height: 280px; overflow: auto; }
+.holdings-table table { width: 100%; border-collapse: collapse; font-size: var(--gg-text-meta); }
+.holdings-table th { text-align: left; padding: var(--gg-space-2); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); text-transform: uppercase; border-bottom: 1px solid var(--gg-color-border-subtle); }
+.holdings-table td { padding: var(--gg-space-2); border-bottom: 1px solid var(--gg-color-border-subtle); }
+.holdings-table .holdings-quantity { text-align: right; }
+.holdings-skipped { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+.holdings-menu .holdings-menu-refresh { display: none; }
+@keyframes holdings-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes holdings-expand { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@media (max-width: 700px), (max-height: 600px) {
+  .holdings-sheet { max-height: calc(100dvh - var(--gg-space-4)); }
+  .holdings-refresh { display: none; }
+  .holdings-menu .holdings-menu-refresh { display: flex; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .holdings-preview, .holdings-add-form { animation: holdings-fade var(--gg-motion-normal) linear; }
+  .holdings-address-input { transition: none; }
+}

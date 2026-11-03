@@ -1,0 +1,104 @@
+{
+  "schema": "loupist-growth-scenario/1",
+  "loupist": "Semiconductors",
+  "model": "openai-codex/gpt-6.1-sol",
+  "thinking": "medium",
+  "watchlist": [
+    {
+      "symbol": "ASTF",
+      "market": "NASDAQ",
+      "display_name": "Aster Silicon"
+    },
+    {
+      "symbol": "BRDF",
+      "market": "NASDAQ",
+      "display_name": "Brindle Devices"
+    },
+    {
+      "symbol": "COWF",
+      "market": "NASDAQ",
+      "display_name": "Cobalt Wafer"
+    }
+  ],
+  "sources": [
+    {
+      "id": "aster-q1",
+      "title": "Aster Silicon Q1 review",
+      "publication_time": "2026-04-20",
+      "origin": "https://fictional.example/aster-q1",
+      "text": "Entirely fictional evaluation fixture. Published 2026-04-20. Aster Silicon (ASTF) reported Q1 operating margin of 12% while its new fabrication line ran at 55% utilization. Qualification and idle-capacity costs were 4 million fictional credits. Management called these costs temporary and expected them to end in Q2."
+    },
+    {
+      "id": "brindle-q1",
+      "title": "Brindle Devices Q1 review",
+      "publication_time": "2026-04-22",
+      "origin": "https://fictional.example/brindle-q1",
+      "text": "Entirely fictional evaluation fixture. Published 2026-04-22. Brindle Devices (BRDF) reported Q1 operating margin of 11% and utilization of 58% during a new-line ramp. Ramp costs were 3 million fictional credits. Inventory days were 68; operating cash flow was 8 million fictional credits."
+    },
+    {
+      "id": "aster-q3",
+      "title": "Aster Silicon Q3 review",
+      "publication_time": "2026-10-25",
+      "origin": "https://fictional.example/aster-q3",
+      "text": "Entirely fictional evaluation fixture. Published 2026-10-25. Aster Silicon (ASTF) reported Q3 operating margin of 17%, up from 12% in Q1; utilization rose from 55% to 82%. Idle-capacity and qualification costs remained 4 million fictional credits in Q2 and Q3, contradicting the April 20 claim that they would end in Q2. Inventory days increased from 65 in Q1 to 91 in Q3, and operating cash flow fell from 10 to 6 million fictional credits. Management nevertheless described margin recovery as durable."
+    },
+    {
+      "id": "brindle-q3",
+      "title": "Brindle Devices Q3 review",
+      "publication_time": "2026-10-26",
+      "origin": "https://fictional.example/brindle-q3",
+      "text": "Entirely fictional evaluation fixture. Published 2026-10-26. Brindle Devices (BRDF) reported Q3 operating margin of 16%, up from 11% in Q1; utilization rose from 58% to 80%. Ramp costs fell from 3 to 1 million fictional credits. Inventory days increased from 68 to 88 and operating cash flow fell from 8 to 5 million fictional credits. Increased utilization and lower ramp costs improved margins, but cash conversion weakened."
+    },
+    {
+      "id": "cobalt-q3",
+      "title": "Cobalt Wafer Q3 review",
+      "publication_time": "2026-10-27",
+      "origin": "https://fictional.example/cobalt-q3",
+      "text": "Entirely fictional evaluation fixture. Published 2026-10-27. Cobalt Wafer (COWF) reported Q3 operating margin of 18%, up from 13% in Q1; utilization rose from 60% to 85%. Ramp costs fell from 5 to 2 million fictional credits. Inventory days increased from 70 to 95 and operating cash flow fell from 12 to 7 million fictional credits. Increased utilization and lower ramp costs improved margins, but cash conversion weakened."
+    }
+  ],
+  "sessions": [
+    {
+      "id": "session-1",
+      "role": "train",
+      "memory": "remember",
+      "turns": [
+        {
+          "user": "Using only the two retained fictional quarterly reviews, what explains the margin pressure at Aster Silicon and Brindle Devices? Identify dated facts and what is still uncertain. Do not use external tools or create a method yet."
+        }
+      ]
+    },
+    {
+      "id": "session-2",
+      "role": "train",
+      "memory": "remember",
+      "turns": [
+        {
+          "user": "Teach my Loupist this principle: \"Check whether capacity costs are temporary before trusting margin recovery.\" Save it as my principle. For Aster Silicon, what evidence would let us distinguish temporary ramp costs from persistent pressure? Apply my principle as an explicit checklist. Use only retained fictional sources; do not create a method."
+        }
+      ]
+    },
+    {
+      "id": "session-3",
+      "role": "train",
+      "memory": "remember",
+      "turns": []
+    },
+    {
+      "id": "session-4",
+      "role": "probe",
+      "memory": "remember",
+      "turns": []
+    },
+    {
+      "id": "session-5",
+      "role": "probe",
+      "memory": "read_only",
+      "turns": [
+        {
+          "user": "Compare the quality of the reported margin recoveries at Aster Silicon, Brindle Devices, and Cobalt Wafer using this Loupist\u2019s retained fictional evidence and relevant saved guidance. What should the next quarterly review check, and which earlier interpretation needs revisiting? Distinguish facts, uncertainty, and reusable analysis steps. Use no external data and give no investment action."
+        }
+      ]
+    }
+  ]
+}

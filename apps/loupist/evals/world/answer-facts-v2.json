@@ -1,0 +1,344 @@
+{
+  "schema": "loupist-world-answer-facts/1",
+  "version": 2,
+  "derivation": "Frozen questions and oracle criteria only. Negative-transfer guards constrain the accuracy of any assertion made; they do not require restating an unasked distractor value or role. No heldout execution outcomes were inspected.",
+  "metric_revision": "world-utilization/3",
+  "scope": "Required affirmative source-backed answer facts from the frozen oracle catalog. Guard-only collision facts remain correctness and adverse checks, and all storage requirements remain unchanged. Derived arithmetic, unknown values, citation/date conditions and process requirements retain separate checks.",
+  "suites": [
+    {
+      "suite": "world-v1",
+      "input_sha256": "efe663acd440cd4ae4bda226fb7be1fab29d9988435c4a40d35e46a615ee8694",
+      "oracle_content_sha256": "f2164b31110f3eb07ab7f8854f2fe7a96f9f1f9cb6a29c998e176f3f1f43d2f4",
+      "checkpoints": [
+        {
+          "scenario_id": "W-LIFECYCLE",
+          "step_id": "first-research",
+          "question_sha256": "1be9de6c218b2fffd328c1e68a7d402e233bda0fb1d0b215100eeedd6ad96677",
+          "answer_checks_content_sha256": "a1a37a9037b708b503ee112ae0a34df00684728abbaceaced04e2da26ee1d0bd",
+          "required_answer_fact_ids": [
+            "a-initial-revenue",
+            "a-old-q2-profit",
+            "a-initial-h1",
+            "a-initial-parent",
+            "a-initial-cfo"
+          ],
+          "excluded_cumulative_fact_ids": [
+            "a-collision-profit",
+            "a-collision-person"
+          ],
+          "rationale": "The question affirmatively requests Systems revenue, quarterly/cumulative/parent profit and CFO appointment. Its instruction not to transfer Holdings figures or people and the initial-person criterion are attribution guards, not requests to restate Holdings profit or director. Correct identification of FICT-MV-A and the Systems/Holdings distinction satisfies the guard without those unasked facts.",
+          "guard_only_fact_ids": [
+            "a-collision-profit",
+            "a-collision-person"
+          ],
+          "guard_interpretation": "Do not misattribute the other company/person or transfer its figure/role. Omission of that unasked figure/role alone is not a failed distinction. If the answer discusses it, it must remain accurate and separate; contradiction fails the existing person/entity and adverse checks."
+        },
+        {
+          "scenario_id": "W-LIFECYCLE",
+          "step_id": "follow-up",
+          "question_sha256": "b4b97d4db86692b0e6744e466d74f064ee53f43d8781fb0578a00827b7de05fd",
+          "answer_checks_content_sha256": "8f626258c48af37b663f4a26781cf70f6f406ae56c562696eec77b7bac5d4213",
+          "required_answer_fact_ids": [
+            "a-old-q2-profit",
+            "a-initial-h1",
+            "a-initial-parent",
+            "a-collision-profit"
+          ],
+          "excluded_cumulative_fact_ids": [
+            "a-initial-revenue",
+            "a-initial-cfo",
+            "a-collision-person"
+          ],
+          "rationale": "The question and period-basis-separation criterion explicitly compare Q2 consolidated profit, H1 profit, parent-only profit and Holdings profit. Revenue, CFO appointment and the other person are retained context but not requested facts for this answer. Forecast uncertainty remains a separate answer criterion."
+        },
+        {
+          "scenario_id": "W-LIFECYCLE",
+          "step_id": "new-material",
+          "question_sha256": "23f4f3d4c6a91b23f6ffb10c442afa0fb8896124e019cfbe8bd0f8d4fb52570e",
+          "answer_checks_content_sha256": "b73db4f83fb4fa1b873d62bb520165fc836f9c946ee057f0c6a32018510981fb",
+          "required_answer_fact_ids": [
+            "a-contract-value",
+            "a-contract-plan"
+          ],
+          "excluded_cumulative_fact_ids": [
+            "a-initial-revenue",
+            "a-old-q2-profit",
+            "a-initial-h1",
+            "a-initial-parent",
+            "a-initial-cfo",
+            "a-collision-profit",
+            "a-collision-person"
+          ],
+          "rationale": "The question and contract-time criterion require the newly announced contract value/signature and planned delivery. Earlier earnings and officer facts are not requested. Publication date, non-recognition and unsupported forecast remain checked by the frozen answer criteria and numeric null requirement."
+        },
+        {
+          "scenario_id": "W-LIFECYCLE",
+          "step_id": "correction-and-conflict",
+          "question_sha256": "c3deebb33ec2bbe4d333678e0798f35bbd05d0ce4b27ee40fa5daf3cf237b087",
+          "answer_checks_content_sha256": "16e2cb04b797aa2d85adb5e7accbd1c01718a5722a86ce5100f47161c93e10ce",
+          "required_answer_fact_ids": [
+            "a-q2-revenue",
+            "a-q2-profit",
+            "a-h1-profit",
+            "a-parent-profit",
+            "a-cfo",
+            "a-contract-value",
+            "a-contract-plan",
+            "a-disputed-plan",
+            "a-response-plan"
+          ],
+          "excluded_cumulative_fact_ids": [
+            "a-collision-profit",
+            "a-collision-person"
+          ],
+          "rationale": "The question affirmatively requests the target company results, officer, contract/plan and disputed/response schedule evidence: nine source-backed facts. The question and person-entity criterion prohibit confusion with the other company/person; their negative guard clauses do not require the unasked collision amount or role to be restated. Apply this interpretation identically to lifecycle, off/clean/conflict and heldout questions.",
+          "guard_only_fact_ids": [
+            "a-collision-profit",
+            "a-collision-person"
+          ],
+          "guard_interpretation": "Do not misattribute the other company/person or transfer its figure/role. Omission of that unasked figure/role alone is not a failed distinction. If the answer discusses it, it must remain accurate and separate; contradiction fails the existing person/entity and adverse checks."
+        },
+        {
+          "scenario_id": "W-LIFECYCLE",
+          "step_id": "new-chat",
+          "question_sha256": "c3deebb33ec2bbe4d333678e0798f35bbd05d0ce4b27ee40fa5daf3cf237b087",
+          "answer_checks_content_sha256": "16e2cb04b797aa2d85adb5e7accbd1c01718a5722a86ce5100f47161c93e10ce",
+          "required_answer_fact_ids": [
+            "a-q2-revenue",
+            "a-q2-profit",
+            "a-h1-profit",
+            "a-parent-profit",
+            "a-cfo",
+            "a-contract-value",
+            "a-contract-plan",
+            "a-disputed-plan",
+            "a-response-plan"
+          ],
+          "excluded_cumulative_fact_ids": [
+            "a-collision-profit",
+            "a-collision-person"
+          ],
+          "rationale": "The question affirmatively requests the target company results, officer, contract/plan and disputed/response schedule evidence: nine source-backed facts. The question and person-entity criterion prohibit confusion with the other company/person; their negative guard clauses do not require the unasked collision amount or role to be restated. Apply this interpretation identically to lifecycle, off/clean/conflict and heldout questions.",
+          "guard_only_fact_ids": [
+            "a-collision-profit",
+            "a-collision-person"
+          ],
+          "guard_interpretation": "Do not misattribute the other company/person or transfer its figure/role. Omission of that unasked figure/role alone is not a failed distinction. If the answer discusses it, it must remain accurate and separate; contradiction fails the existing person/entity and adverse checks."
+        },
+        {
+          "scenario_id": "W-COMPARE-OFF",
+          "step_id": "final-probe",
+          "question_sha256": "c3deebb33ec2bbe4d333678e0798f35bbd05d0ce4b27ee40fa5daf3cf237b087",
+          "answer_checks_content_sha256": "16e2cb04b797aa2d85adb5e7accbd1c01718a5722a86ce5100f47161c93e10ce",
+          "required_answer_fact_ids": [
+            "a-q2-revenue",
+            "a-q2-profit",
+            "a-h1-profit",
+            "a-parent-profit",
+            "a-cfo",
+            "a-contract-value",
+            "a-contract-plan",
+            "a-disputed-plan",
+            "a-response-plan"
+          ],
+          "excluded_cumulative_fact_ids": [
+            "a-collision-profit",
+            "a-collision-person"
+          ],
+          "rationale": "The question affirmatively requests the target company results, officer, contract/plan and disputed/response schedule evidence: nine source-backed facts. The question and person-entity criterion prohibit confusion with the other company/person; their negative guard clauses do not require the unasked collision amount or role to be restated. Apply this interpretation identically to lifecycle, off/clean/conflict and heldout questions.",
+          "guard_only_fact_ids": [
+            "a-collision-profit",
+            "a-collision-person"
+          ],
+          "guard_interpretation": "Do not misattribute the other company/person or transfer its figure/role. Omission of that unasked figure/role alone is not a failed distinction. If the answer discusses it, it must remain accurate and separate; contradiction fails the existing person/entity and adverse checks."
+        },
+        {
+          "scenario_id": "W-COMPARE-CLEAN",
+          "step_id": "final-probe",
+          "question_sha256": "c3deebb33ec2bbe4d333678e0798f35bbd05d0ce4b27ee40fa5daf3cf237b087",
+          "answer_checks_content_sha256": "16e2cb04b797aa2d85adb5e7accbd1c01718a5722a86ce5100f47161c93e10ce",
+          "required_answer_fact_ids": [
+            "a-q2-revenue",
+            "a-q2-profit",
+            "a-h1-profit",
+            "a-parent-profit",
+            "a-cfo",
+            "a-contract-value",
+            "a-contract-plan",
+            "a-disputed-plan",
+            "a-response-plan"
+          ],
+          "excluded_cumulative_fact_ids": [
+            "a-collision-profit",
+            "a-collision-person"
+          ],
+          "rationale": "The question affirmatively requests the target company results, officer, contract/plan and disputed/response schedule evidence: nine source-backed facts. The question and person-entity criterion prohibit confusion with the other company/person; their negative guard clauses do not require the unasked collision amount or role to be restated. Apply this interpretation identically to lifecycle, off/clean/conflict and heldout questions.",
+          "guard_only_fact_ids": [
+            "a-collision-profit",
+            "a-collision-person"
+          ],
+          "guard_interpretation": "Do not misattribute the other company/person or transfer its figure/role. Omission of that unasked figure/role alone is not a failed distinction. If the answer discusses it, it must remain accurate and separate; contradiction fails the existing person/entity and adverse checks."
+        },
+        {
+          "scenario_id": "W-COMPARE-CONFLICT",
+          "step_id": "final-probe",
+          "question_sha256": "c3deebb33ec2bbe4d333678e0798f35bbd05d0ce4b27ee40fa5daf3cf237b087",
+          "answer_checks_content_sha256": "16e2cb04b797aa2d85adb5e7accbd1c01718a5722a86ce5100f47161c93e10ce",
+          "required_answer_fact_ids": [
+            "a-q2-revenue",
+            "a-q2-profit",
+            "a-h1-profit",
+            "a-parent-profit",
+            "a-cfo",
+            "a-contract-value",
+            "a-contract-plan",
+            "a-disputed-plan",
+            "a-response-plan"
+          ],
+          "excluded_cumulative_fact_ids": [
+            "a-collision-profit",
+            "a-collision-person"
+          ],
+          "rationale": "The question affirmatively requests the target company results, officer, contract/plan and disputed/response schedule evidence: nine source-backed facts. The question and person-entity criterion prohibit confusion with the other company/person; their negative guard clauses do not require the unasked collision amount or role to be restated. Apply this interpretation identically to lifecycle, off/clean/conflict and heldout questions.",
+          "guard_only_fact_ids": [
+            "a-collision-profit",
+            "a-collision-person"
+          ],
+          "guard_interpretation": "Do not misattribute the other company/person or transfer its figure/role. Omission of that unasked figure/role alone is not a failed distinction. If the answer discusses it, it must remain accurate and separate; contradiction fails the existing person/entity and adverse checks."
+        },
+        {
+          "scenario_id": "W-HELDOUT-OFF",
+          "step_id": "final-probe",
+          "question_sha256": "6e2c28855b6747a5bc9bce57a7454f480c17c2bf131ffbbcadce67793f7e5073",
+          "answer_checks_content_sha256": "a357518790d481a6c63da436bc6d8410b349e867179164fd2d2982cd59d80c0f",
+          "required_answer_fact_ids": [
+            "h-q4-revenue",
+            "h-q4-profit",
+            "h-fy-profit",
+            "h-parent-profit",
+            "h-cto",
+            "h-contract-value",
+            "h-contract-plan",
+            "h-disputed-plan",
+            "h-response-plan"
+          ],
+          "excluded_cumulative_fact_ids": [
+            "h-collision-profit",
+            "h-collision-person"
+          ],
+          "rationale": "The question affirmatively requests the target company results, officer, contract/plan and disputed/response schedule evidence: nine source-backed facts. The question and person-entity criterion prohibit confusion with the other company/person; their negative guard clauses do not require the unasked collision amount or role to be restated. Apply this interpretation identically to lifecycle, off/clean/conflict and heldout questions.",
+          "guard_only_fact_ids": [
+            "h-collision-profit",
+            "h-collision-person"
+          ],
+          "guard_interpretation": "Do not misattribute the other company/person or transfer its figure/role. Omission of that unasked figure/role alone is not a failed distinction. If the answer discusses it, it must remain accurate and separate; contradiction fails the existing person/entity and adverse checks."
+        },
+        {
+          "scenario_id": "W-HELDOUT-CLEAN",
+          "step_id": "final-probe",
+          "question_sha256": "6e2c28855b6747a5bc9bce57a7454f480c17c2bf131ffbbcadce67793f7e5073",
+          "answer_checks_content_sha256": "a357518790d481a6c63da436bc6d8410b349e867179164fd2d2982cd59d80c0f",
+          "required_answer_fact_ids": [
+            "h-q4-revenue",
+            "h-q4-profit",
+            "h-fy-profit",
+            "h-parent-profit",
+            "h-cto",
+            "h-contract-value",
+            "h-contract-plan",
+            "h-disputed-plan",
+            "h-response-plan"
+          ],
+          "excluded_cumulative_fact_ids": [
+            "h-collision-profit",
+            "h-collision-person"
+          ],
+          "rationale": "The question affirmatively requests the target company results, officer, contract/plan and disputed/response schedule evidence: nine source-backed facts. The question and person-entity criterion prohibit confusion with the other company/person; their negative guard clauses do not require the unasked collision amount or role to be restated. Apply this interpretation identically to lifecycle, off/clean/conflict and heldout questions.",
+          "guard_only_fact_ids": [
+            "h-collision-profit",
+            "h-collision-person"
+          ],
+          "guard_interpretation": "Do not misattribute the other company/person or transfer its figure/role. Omission of that unasked figure/role alone is not a failed distinction. If the answer discusses it, it must remain accurate and separate; contradiction fails the existing person/entity and adverse checks."
+        },
+        {
+          "scenario_id": "W-HELDOUT-CONFLICT",
+          "step_id": "final-probe",
+          "question_sha256": "6e2c28855b6747a5bc9bce57a7454f480c17c2bf131ffbbcadce67793f7e5073",
+          "answer_checks_content_sha256": "a357518790d481a6c63da436bc6d8410b349e867179164fd2d2982cd59d80c0f",
+          "required_answer_fact_ids": [
+            "h-q4-revenue",
+            "h-q4-profit",
+            "h-fy-profit",
+            "h-parent-profit",
+            "h-cto",
+            "h-contract-value",
+            "h-contract-plan",
+            "h-disputed-plan",
+            "h-response-plan"
+          ],
+          "excluded_cumulative_fact_ids": [
+            "h-collision-profit",
+            "h-collision-person"
+          ],
+          "rationale": "The question affirmatively requests the target company results, officer, contract/plan and disputed/response schedule evidence: nine source-backed facts. The question and person-entity criterion prohibit confusion with the other company/person; their negative guard clauses do not require the unasked collision amount or role to be restated. Apply this interpretation identically to lifecycle, off/clean/conflict and heldout questions.",
+          "guard_only_fact_ids": [
+            "h-collision-profit",
+            "h-collision-person"
+          ],
+          "guard_interpretation": "Do not misattribute the other company/person or transfer its figure/role. Omission of that unasked figure/role alone is not a failed distinction. If the answer discusses it, it must remain accurate and separate; contradiction fails the existing person/entity and adverse checks."
+        }
+      ]
+    },
+    {
+      "suite": "world-acquisition-v1",
+      "input_sha256": "70ded2604f728acc71be593dd9e7651b64ec6d096cbf0627fe0c03ebe5990fa3",
+      "oracle_content_sha256": "e7d60087cac32f3f72340864df3a2f37f2900de22977f63d0b009c9c685fbca2",
+      "checkpoints": [
+        {
+          "scenario_id": "W-ACQUIRE",
+          "step_id": "investigate-and-retain",
+          "question_sha256": "f7983c59c996084c082fc1f38c9cd2ba42b0b4c2a59995f3739c202f176311ec",
+          "answer_checks_content_sha256": "73c25bd6f25e3b851b9ce450ae495086dac49f3263f1ee2436eaf3902131f65b",
+          "required_answer_fact_ids": [
+            "q-current-profit",
+            "q-current-revenue",
+            "q-correction-date"
+          ],
+          "excluded_cumulative_fact_ids": [],
+          "rationale": "The frozen correction criterion requires corrected profit, revenue and the correction publication date at every checkpoint, including the follow-up. The mapping preserves that predeclared criterion; acquisition, search behavior, margin calculation and uncertainty remain separately checked."
+        },
+        {
+          "scenario_id": "W-ACQUIRE",
+          "step_id": "follow-up-unavailable",
+          "question_sha256": "56dca8b7b5df89c1057cbf665178e494ea7e94a007015318b89f812db7908379",
+          "answer_checks_content_sha256": "73c25bd6f25e3b851b9ce450ae495086dac49f3263f1ee2436eaf3902131f65b",
+          "required_answer_fact_ids": [
+            "q-current-profit",
+            "q-current-revenue",
+            "q-correction-date"
+          ],
+          "excluded_cumulative_fact_ids": [],
+          "rationale": "The frozen correction criterion requires corrected profit, revenue and the correction publication date at every checkpoint, including the follow-up. The mapping preserves that predeclared criterion; acquisition, search behavior, margin calculation and uncertainty remain separately checked."
+        },
+        {
+          "scenario_id": "W-ACQUIRE",
+          "step_id": "new-chat-reuse",
+          "question_sha256": "37ef6e67b07e8506347f668e18386797f9fe6ba8a3c86880bf71e7e5452db005",
+          "answer_checks_content_sha256": "73c25bd6f25e3b851b9ce450ae495086dac49f3263f1ee2436eaf3902131f65b",
+          "required_answer_fact_ids": [
+            "q-current-profit",
+            "q-current-revenue",
+            "q-correction-date"
+          ],
+          "excluded_cumulative_fact_ids": [],
+          "rationale": "The frozen correction criterion requires corrected profit, revenue and the correction publication date at every checkpoint, including the follow-up. The mapping preserves that predeclared criterion; acquisition, search behavior, margin calculation and uncertainty remain separately checked."
+        }
+      ]
+    }
+  ],
+  "supersedes": {
+    "file": "answer-facts-v1.json",
+    "sha256": "dda1a7c4fe5041b98208e1c9715656fa65c972d5c6ae9131775d7a01f51985e7",
+    "reason": "Distinguish affirmative answer requests from negative-transfer guards consistently across initial and comprehensive core/heldout questions. Previous mapping retained guard-only collision facts in the utilization denominator."
+  }
+}

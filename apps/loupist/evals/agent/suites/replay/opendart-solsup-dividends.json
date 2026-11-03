@@ -1,0 +1,837 @@
+{
+  "schema": "loupist-connection-replay/1",
+  "requests": [
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/corpCode.xml"
+      },
+      "response": {
+        "status": 200,
+        "content_type": "application/zip",
+        "body_base64": "UEsDBBQAAAAIAAAAIVwuaOAPpAAAAPMAAAAMAAAAQ09SUENPREUueG1ss7GvyM1RKEstKs7Mz7NVMtQzUFJIzUvOT8nMS7dVCg1x07VQsrezKUotLs0psbPJySwGksn5RQXxQDWpdpaWBkZGhgYGNvoIMYh0XmJuqt2btilvOja96Z77dlIHVAlYHKIkNS8dwg3OzykuLVBwy89PKYYqg8vZFJfkJ2cj22ajjyRkkwt0alplfEpiSaqdkYGRmYGxAVAFsqiNPsTV+lBPAABQSwECFAMUAAAACAAAACFcLmjgD6QAAADzAAAADAAAAAAAAAAAAAAAgAEAAAAAQ09SUENPREUueG1sUEsFBgAAAAABAAEAOgAAAM4AAAAAAA=="
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/alotMatter.json?corp_code=99022100&bsns_year=2025&reprt_code=11011"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20260318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2025-12-31",
+              "se": "주당액면가액(원)",
+              "thstrm": "500",
+              "frmtrm": "500",
+              "lwfr": "500"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2025-12-31",
+              "se": "(연결)당기순이익(백만원)",
+              "thstrm": "21,000",
+              "frmtrm": "19,500",
+              "lwfr": "16,900"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2025-12-31",
+              "se": "(별도)당기순이익(백만원)",
+              "thstrm": "15,800",
+              "frmtrm": "14,600",
+              "lwfr": "13,900"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2025-12-31",
+              "se": "(연결)주당순이익(원)",
+              "thstrm": "1,050",
+              "frmtrm": "975",
+              "lwfr": "845"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2025-12-31",
+              "se": "현금배당금총액(백만원)",
+              "thstrm": "6,000",
+              "frmtrm": "5,000",
+              "lwfr": "5,000"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2025-12-31",
+              "se": "주식배당금총액(백만원)",
+              "thstrm": "-",
+              "frmtrm": "-",
+              "lwfr": "-"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2025-12-31",
+              "se": "(연결)현금배당성향(%)",
+              "thstrm": "28.6",
+              "frmtrm": "25.6",
+              "lwfr": "29.6"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2025-12-31",
+              "se": "현금배당수익률(%)",
+              "thstrm": "1.4",
+              "frmtrm": "1.3",
+              "lwfr": "1.5",
+              "stock_knd": "보통주"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2025-12-31",
+              "se": "주식배당수익률(%)",
+              "thstrm": "-",
+              "frmtrm": "-",
+              "lwfr": "-",
+              "stock_knd": "보통주"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2025-12-31",
+              "se": "주당 현금배당금(원)",
+              "thstrm": "300",
+              "frmtrm": "250",
+              "lwfr": "250",
+              "stock_knd": "보통주"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2025-12-31",
+              "se": "주당 주식배당(주)",
+              "thstrm": "-",
+              "frmtrm": "-",
+              "lwfr": "-",
+              "stock_knd": "보통주"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/alotMatter.json?corp_code=99022100&bsns_year=2024&reprt_code=11011"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20250318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2024-12-31",
+              "se": "주당액면가액(원)",
+              "thstrm": "500",
+              "frmtrm": "500",
+              "lwfr": "500"
+            },
+            {
+              "rcept_no": "20250318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2024-12-31",
+              "se": "(연결)당기순이익(백만원)",
+              "thstrm": "19,500",
+              "frmtrm": "16,900",
+              "lwfr": "9,400"
+            },
+            {
+              "rcept_no": "20250318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2024-12-31",
+              "se": "(별도)당기순이익(백만원)",
+              "thstrm": "14,600",
+              "frmtrm": "13,900",
+              "lwfr": "8,100"
+            },
+            {
+              "rcept_no": "20250318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2024-12-31",
+              "se": "(연결)주당순이익(원)",
+              "thstrm": "975",
+              "frmtrm": "845",
+              "lwfr": "470"
+            },
+            {
+              "rcept_no": "20250318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2024-12-31",
+              "se": "현금배당금총액(백만원)",
+              "thstrm": "5,000",
+              "frmtrm": "5,000",
+              "lwfr": "4,000"
+            },
+            {
+              "rcept_no": "20250318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2024-12-31",
+              "se": "주식배당금총액(백만원)",
+              "thstrm": "-",
+              "frmtrm": "-",
+              "lwfr": "-"
+            },
+            {
+              "rcept_no": "20250318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2024-12-31",
+              "se": "(연결)현금배당성향(%)",
+              "thstrm": "25.6",
+              "frmtrm": "29.6",
+              "lwfr": "42.6"
+            },
+            {
+              "rcept_no": "20250318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2024-12-31",
+              "se": "현금배당수익률(%)",
+              "thstrm": "1.3",
+              "frmtrm": "1.5",
+              "lwfr": "1.6",
+              "stock_knd": "보통주"
+            },
+            {
+              "rcept_no": "20250318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2024-12-31",
+              "se": "주식배당수익률(%)",
+              "thstrm": "-",
+              "frmtrm": "-",
+              "lwfr": "-",
+              "stock_knd": "보통주"
+            },
+            {
+              "rcept_no": "20250318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2024-12-31",
+              "se": "주당 현금배당금(원)",
+              "thstrm": "250",
+              "frmtrm": "250",
+              "lwfr": "200",
+              "stock_knd": "보통주"
+            },
+            {
+              "rcept_no": "20250318990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2024-12-31",
+              "se": "주당 주식배당(주)",
+              "thstrm": "-",
+              "frmtrm": "-",
+              "lwfr": "-",
+              "stock_knd": "보통주"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/alotMatter.json?corp_code=99022100&bsns_year=2023&reprt_code=11011"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20240319990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2023-12-31",
+              "se": "주당액면가액(원)",
+              "thstrm": "500",
+              "frmtrm": "500",
+              "lwfr": "500"
+            },
+            {
+              "rcept_no": "20240319990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2023-12-31",
+              "se": "(연결)당기순이익(백만원)",
+              "thstrm": "16,900",
+              "frmtrm": "9,400",
+              "lwfr": "17,800"
+            },
+            {
+              "rcept_no": "20240319990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2023-12-31",
+              "se": "(별도)당기순이익(백만원)",
+              "thstrm": "13,900",
+              "frmtrm": "8,100",
+              "lwfr": "13,200"
+            },
+            {
+              "rcept_no": "20240319990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2023-12-31",
+              "se": "(연결)주당순이익(원)",
+              "thstrm": "845",
+              "frmtrm": "470",
+              "lwfr": "890"
+            },
+            {
+              "rcept_no": "20240319990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2023-12-31",
+              "se": "현금배당금총액(백만원)",
+              "thstrm": "5,000",
+              "frmtrm": "4,000",
+              "lwfr": "5,000"
+            },
+            {
+              "rcept_no": "20240319990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2023-12-31",
+              "se": "주식배당금총액(백만원)",
+              "thstrm": "-",
+              "frmtrm": "-",
+              "lwfr": "-"
+            },
+            {
+              "rcept_no": "20240319990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2023-12-31",
+              "se": "(연결)현금배당성향(%)",
+              "thstrm": "29.6",
+              "frmtrm": "42.6",
+              "lwfr": "28.1"
+            },
+            {
+              "rcept_no": "20240319990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2023-12-31",
+              "se": "현금배당수익률(%)",
+              "thstrm": "1.5",
+              "frmtrm": "1.6",
+              "lwfr": "1.5",
+              "stock_knd": "보통주"
+            },
+            {
+              "rcept_no": "20240319990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2023-12-31",
+              "se": "주식배당수익률(%)",
+              "thstrm": "-",
+              "frmtrm": "-",
+              "lwfr": "-",
+              "stock_knd": "보통주"
+            },
+            {
+              "rcept_no": "20240319990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2023-12-31",
+              "se": "주당 현금배당금(원)",
+              "thstrm": "250",
+              "frmtrm": "200",
+              "lwfr": "250",
+              "stock_knd": "보통주"
+            },
+            {
+              "rcept_no": "20240319990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2023-12-31",
+              "se": "주당 주식배당(주)",
+              "thstrm": "-",
+              "frmtrm": "-",
+              "lwfr": "-",
+              "stock_knd": "보통주"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/alotMatter.json?corp_code=99022100&bsns_year=2022&reprt_code=11011"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20230320990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2022-12-31",
+              "se": "주당액면가액(원)",
+              "thstrm": "500",
+              "frmtrm": "500",
+              "lwfr": "500"
+            },
+            {
+              "rcept_no": "20230320990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2022-12-31",
+              "se": "(연결)당기순이익(백만원)",
+              "thstrm": "9,400",
+              "frmtrm": "17,800",
+              "lwfr": "16,500"
+            },
+            {
+              "rcept_no": "20230320990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2022-12-31",
+              "se": "(별도)당기순이익(백만원)",
+              "thstrm": "8,100",
+              "frmtrm": "13,200",
+              "lwfr": "12,600"
+            },
+            {
+              "rcept_no": "20230320990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2022-12-31",
+              "se": "(연결)주당순이익(원)",
+              "thstrm": "470",
+              "frmtrm": "890",
+              "lwfr": "825"
+            },
+            {
+              "rcept_no": "20230320990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2022-12-31",
+              "se": "현금배당금총액(백만원)",
+              "thstrm": "4,000",
+              "frmtrm": "5,000",
+              "lwfr": "5,000"
+            },
+            {
+              "rcept_no": "20230320990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2022-12-31",
+              "se": "주식배당금총액(백만원)",
+              "thstrm": "-",
+              "frmtrm": "-",
+              "lwfr": "-"
+            },
+            {
+              "rcept_no": "20230320990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2022-12-31",
+              "se": "(연결)현금배당성향(%)",
+              "thstrm": "42.6",
+              "frmtrm": "28.1",
+              "lwfr": "30.3"
+            },
+            {
+              "rcept_no": "20230320990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2022-12-31",
+              "se": "현금배당수익률(%)",
+              "thstrm": "1.6",
+              "frmtrm": "1.5",
+              "lwfr": "1.6",
+              "stock_knd": "보통주"
+            },
+            {
+              "rcept_no": "20230320990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2022-12-31",
+              "se": "주식배당수익률(%)",
+              "thstrm": "-",
+              "frmtrm": "-",
+              "lwfr": "-",
+              "stock_knd": "보통주"
+            },
+            {
+              "rcept_no": "20230320990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2022-12-31",
+              "se": "주당 현금배당금(원)",
+              "thstrm": "200",
+              "frmtrm": "250",
+              "lwfr": "250",
+              "stock_knd": "보통주"
+            },
+            {
+              "rcept_no": "20230320990221",
+              "corp_cls": "Y",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stlm_dt": "2022-12-31",
+              "se": "주당 주식배당(주)",
+              "thstrm": "-",
+              "frmtrm": "-",
+              "lwfr": "-",
+              "stock_knd": "보통주"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20251101&end_de=20260430&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=I"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 100,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "corp_cls": "Y",
+              "report_nm": "현금ㆍ현물배당결정",
+              "rcept_no": "20260205990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260205",
+              "rm": "유"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20260205990221"
+      },
+      "response": {
+        "status": 200,
+        "content_type": "application/zip",
+        "body_base64": "UEsDBBQAAAAIAAAAIVxA6/m7uwEAAKQCAAASAAAAMjAyNjAyMDU5OTAyMjEueG1shZJdS+NQEIb/ylAQKpj0JP1QJEZ2tQVRW9GI7GVJsmugTSRR8bJ+tESiIKIQ1IirLutFL4LWpQv5N3vXM/0Pm5h0W/fGiwPDmfc8886cEWb36jXYVU1LM/SZFMeSFKi6bCia/m0mtS6VmKnUrCjMV+bWl4tlaRgx5U/LRbHvHvW69p/WaRjQdkB9nzq/e88+3l0KmfdS4XNl/osorBXnpIVKmeFEQVqQlj5AxBJhRez5DTzcR88FbF2g/YyO1z+3gSd8njaPINIf+BCzYgTEDLxtUsemziMrZFYiEsdCUuO1TX8NniZv+EES75v0h/semGWBw4cgChNC107j9dk40JdOv/Ua5kJbkCUEciygcxOaTmg3T+mx/2Qcm4M8OyRhx8PL7zGvMEEIGZzEd2Go9fGxgV7w1j3D8UyWg8lR0s9Gr3sM6NpR/16At2eRtMCQHMMRmAq9eR08aPevTqLmPTfUpJNpecF4ouUZkk9KlzR5O1yPag3WjJq1swUlw1CsafiqRXdy1doERdvVFFVXYHF1420CW6oJslGvGzpYm1VTnQBTlQ1TAaW6rY44j78lM7IWmXhR/q2P+BdQSwECFAMUAAAACAAAACFcQOv5u7sBAACkAgAAEgAAAAAAAAAAAAAApAEAAAAAMjAyNjAyMDU5OTAyMjEueG1sUEsFBgAAAAABAAEAQAAAAOsBAAAAAA=="
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?corp_code=99022100&bsns_year=2025&reprt_code=11011&fs_div=CFS"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_Revenue",
+              "account_nm": "매출액",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_dt": "2025-12-31",
+              "thstrm_amount": "452300000000",
+              "ord": "1",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_OperatingIncomeLoss",
+              "account_nm": "영업이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_dt": "2025-12-31",
+              "thstrm_amount": "38100000000",
+              "ord": "2",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLoss",
+              "account_nm": "당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_dt": "2025-12-31",
+              "thstrm_amount": "21400000000",
+              "ord": "3",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLossAttributableToOwnersOfParent",
+              "account_nm": "지배기업의 소유주에게 귀속되는 당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_dt": "2025-12-31",
+              "thstrm_amount": "21000000000",
+              "ord": "4",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_BasicEarningsLossPerShare",
+              "account_nm": "기본주당이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_dt": "2025-12-31",
+              "thstrm_amount": "1050",
+              "ord": "5",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "BS",
+              "sj_nm": "재무상태표",
+              "account_id": "ifrs-full_CashAndCashEquivalents",
+              "account_nm": "현금및현금성자산",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_dt": "2025-12-31",
+              "thstrm_amount": "41200000000",
+              "ord": "6",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "BS",
+              "sj_nm": "재무상태표",
+              "account_id": "ifrs-full_ShortTermBorrowings",
+              "account_nm": "단기차입금",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_dt": "2025-12-31",
+              "thstrm_amount": "30000000000",
+              "ord": "7",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "BS",
+              "sj_nm": "재무상태표",
+              "account_id": "ifrs-full_LongtermBorrowings",
+              "account_nm": "장기차입금",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_dt": "2025-12-31",
+              "thstrm_amount": "65000000000",
+              "ord": "8",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "CF",
+              "sj_nm": "현금흐름표",
+              "account_id": "ifrs-full_CashFlowsFromUsedInOperatingActivities",
+              "account_nm": "영업활동현금흐름",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_dt": "2025-12-31",
+              "thstrm_amount": "52600000000",
+              "ord": "9",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "CF",
+              "sj_nm": "현금흐름표",
+              "account_id": "ifrs-full_PurchaseOfPropertyPlantAndEquipment",
+              "account_nm": "유형자산의 취득",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_dt": "2025-12-31",
+              "thstrm_amount": "-18900000000",
+              "ord": "10",
+              "currency": "KRW"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/company.json?corp_code=99022100"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "corp_code": "99022100",
+          "acc_mt": "12"
+        }
+      }
+    }
+  ]
+}

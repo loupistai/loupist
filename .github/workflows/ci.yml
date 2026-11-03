@@ -1,0 +1,311 @@
+name: Loupist CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: loupist-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  changes:
+    name: Classify change scope
+    runs-on: ubuntu-latest
+    outputs:
+      native: ${{ steps.scope.outputs.native }}
+      packaging: ${{ steps.scope.outputs.packaging }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Classify native and packaging surfaces
+        id: scope
+        env:
+          CI_FORCE_FULL: ${{ github.event_name != 'pull_request' && '1' || '0' }}
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 apps/loupist/scripts/ci_change_scope.py
+
+  verify-web:
+    timeout-minutes: 60
+    name: Web contracts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Node 22.19
+        uses: ./.github/actions/setup-toolchains
+        with:
+          node: "true"
+          node-cache: |
+            apps/loupist/package-lock.json
+            apps/loupist/e2e/package-lock.json
+
+      - name: Verify renderer and E2E tooling
+        working-directory: apps/loupist
+        run: |
+          set -euo pipefail
+          sh scripts/check.sh web --install
+
+      - name: Retain web check evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: checks-web
+          path: apps/loupist/output/checks/*/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  verify-python:
+    timeout-minutes: 60
+    name: Python contracts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Python 3.12 and uv
+        uses: ./.github/actions/setup-toolchains
+        with:
+          python: "true"
+
+      - name: Verify OpenBB and graph workers
+        run: |
+          set -euo pipefail
+          sh apps/loupist/scripts/check.sh python --install
+
+      - name: Retain python check evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: checks-python
+          path: apps/loupist/output/checks/*/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  verify-rust:
+    timeout-minutes: 60
+    name: Rust contracts
+    runs-on: macos-15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: ./.github/actions/setup-toolchains
+        with:
+          rust: "true"
+          rust-components: clippy,rustfmt
+          rust-cache-key: verify
+
+      - name: Verify desktop Rust
+        run: |
+          set -euo pipefail
+          sh apps/loupist/scripts/check.sh rust
+
+      - name: Retain rust check evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: checks-rust
+          path: apps/loupist/output/checks/*/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  verify:
+    name: Source and product contracts
+    needs:
+      - verify-web
+      - verify-python
+      - verify-rust
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every source check
+        run: |
+          set -euo pipefail
+          test "${{ needs.verify-web.result }}" = success
+          test "${{ needs.verify-python.result }}" = success
+          test "${{ needs.verify-rust.result }}" = success
+
+  native-e2e:
+    timeout-minutes: 60
+    name: Native macOS interaction
+    needs: changes
+    runs-on: ${{ needs.changes.outputs.native == 'true' && 'macos-15' || 'ubuntu-latest' }}
+    steps:
+      - name: Skip unchanged native surface
+        if: ${{ needs.changes.outputs.native != 'true' }}
+        run: echo "No native-surface changes; skipping the macOS interaction suite."
+
+      - name: Check out repository
+        if: ${{ needs.changes.outputs.native == 'true' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install CI toolchains
+        if: ${{ needs.changes.outputs.native == 'true' }}
+        uses: ./.github/actions/setup-toolchains
+        with:
+          node: "true"
+          node-cache: |
+            apps/loupist/package-lock.json
+            apps/loupist/e2e/package-lock.json
+          rust: "true"
+          rust-cache-key: e2e
+          python: "true"
+
+      - name: Install renderer dependencies
+        if: ${{ needs.changes.outputs.native == 'true' }}
+        working-directory: apps/loupist
+        run: npm ci
+
+      - name: Install native E2E dependencies
+        if: ${{ needs.changes.outputs.native == 'true' }}
+        working-directory: apps/loupist/e2e
+        run: npm ci
+
+      - name: Stage pinned macOS sidecars
+        if: ${{ needs.changes.outputs.native == 'true' }}
+        run: apps/loupist/scripts/stage-macos-arm64.sh
+
+      - name: Run native interaction regression suite
+        if: ${{ needs.changes.outputs.native == 'true' }}
+        working-directory: apps/loupist/e2e
+        env:
+          LOUPIST_E2E_REQUIRE_STAGED_RUNTIMES: "1"
+          # A fresh macOS runner must compile the Tauri test binary before its
+          # WebDriver endpoint can bind. Local runs retain the five-minute default.
+          LOUPIST_E2E_STARTUP_TIMEOUT_MS: "600000"
+        run: |
+          npm run test:native:full
+          npm run test:persistence
+
+  package-smoke:
+    timeout-minutes: 60
+    name: Package smoke (${{ matrix.target }})
+    needs: changes
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: aarch64-apple-darwin
+            bundle: dmg
+    runs-on: ${{ needs.changes.outputs.packaging == 'true' && matrix.os || 'ubuntu-latest' }}
+    steps:
+      - name: Skip unchanged packaging surface
+        if: ${{ needs.changes.outputs.packaging != 'true' }}
+        run: echo "No packaging-surface changes; skipping ${{ matrix.target }} package smoke."
+
+      - name: Check out repository
+        if: ${{ needs.changes.outputs.packaging == 'true' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install CI toolchains
+        if: ${{ needs.changes.outputs.packaging == 'true' }}
+        uses: ./.github/actions/setup-toolchains
+        with:
+          node: "true"
+          rust: "true"
+          rust-targets: ${{ matrix.target }}
+          rust-cache-key: package-smoke
+          python: "true"
+
+      - name: Install renderer dependencies
+        if: ${{ needs.changes.outputs.packaging == 'true' }}
+        working-directory: apps/loupist
+        run: npm ci
+
+      - name: Stage pinned macOS sidecars
+        if: ${{ needs.changes.outputs.packaging == 'true' && runner.os == 'macOS' }}
+        run: apps/loupist/scripts/stage-macos-arm64.sh
+
+      - name: Build unsigned package smoke
+        if: ${{ needs.changes.outputs.packaging == 'true' }}
+        working-directory: apps/loupist
+        shell: bash
+        run: >-
+          npm exec -- tauri build
+          --target ${{ matrix.target }}
+          --bundles ${{ matrix.bundle }}
+          --config src-tauri/tauri.package-smoke.conf.json
+
+      - name: Assert installer was produced
+        if: ${{ needs.changes.outputs.packaging == 'true' }}
+        shell: bash
+        env:
+          BUNDLE: ${{ matrix.bundle }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          case "$BUNDLE" in
+            dmg) pattern='*.dmg' ;;
+            nsis) pattern='*-setup.exe' ;;
+            *) exit 1 ;;
+          esac
+          test -n "$(find "apps/loupist/src-tauri/target/$TARGET/release/bundle/$BUNDLE" -type f -name "$pattern" -print -quit)"
+
+      - name: Verify mounted macOS package metadata
+        if: ${{ needs.changes.outputs.packaging == 'true' && matrix.bundle == 'dmg' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUNDLE_ROOT="apps/loupist/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg"
+          shopt -s nullglob
+          DMGS=("$BUNDLE_ROOT"/*.dmg)
+          test "${#DMGS[@]}" -eq 1
+          hdiutil verify "${DMGS[0]}" >/dev/null
+          MOUNT_DIR="$(mktemp -d "$RUNNER_TEMP/loupist-dmg.XXXXXX")"
+          DMG_ATTACHED=false
+          detach_dmg_mount() {
+            if [[ "$DMG_ATTACHED" != true ]]; then
+              return
+            fi
+            if ! hdiutil detach "$MOUNT_DIR" >/dev/null; then
+              hdiutil detach -force "$MOUNT_DIR" >/dev/null
+            fi
+            DMG_ATTACHED=false
+          }
+          cleanup_dmg_mount() {
+            detach_dmg_mount
+            rmdir "$MOUNT_DIR"
+          }
+          trap cleanup_dmg_mount EXIT
+          trap 'exit 129' HUP
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+          hdiutil attach "${DMGS[0]}" \
+            -nobrowse \
+            -readonly \
+            -mountpoint "$MOUNT_DIR" >/dev/null
+          DMG_ATTACHED=true
+          MOUNTED_APP="$MOUNT_DIR/Loupist.app"
+          test -d "$MOUNTED_APP"
+          apps/loupist/scripts/check-macos-app-bundle.sh "$MOUNTED_APP"
+          detach_dmg_mount
+          rmdir "$MOUNT_DIR"
+          trap - EXIT HUP INT TERM

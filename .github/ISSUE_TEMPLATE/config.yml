@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability privately
+    url: https://github.com/loupistai/loupist/security/advisories/new
+    about: Keep vulnerabilities and sensitive information out of public issues.
+  - name: Development guide
+    url: https://github.com/loupistai/loupist/blob/main/docs/README.md
+    about: Setup, architecture, testing and product behavior.

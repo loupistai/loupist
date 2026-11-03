@@ -1,0 +1,48 @@
+{
+  "format": "loupist-pack/1",
+  "id": "7f1d1c3e-0000-4000-8000-000000000001",
+  "kind": "loupist",
+  "name": "Quartz review",
+  "version": 1,
+  "createdAt": "2026-11-01T00:00:00Z",
+  "language": "en",
+  "license": "CC-BY-4.0",
+  "author": null,
+  "origin": [],
+  "assetClasses": [],
+  "counts": {
+    "perspective": 0,
+    "methods": 1,
+    "principles": 0,
+    "entities": 2,
+    "claims": 1,
+    "sources": 1
+  },
+  "files": {
+    "LOUPIST.md": {
+      "sha256": "51797cb5ce99e4a9bff27e571253f050b1a98f538925e7f2a8f8a5869b50d9aa",
+      "bytes": 107
+    },
+    "README.md": {
+      "sha256": "201f43837dcddf51317f5ca35cfb9779df74934366e48c24b590606433a838f9",
+      "bytes": 16
+    },
+    "lens/methods/quartz-margin-check.md": {
+      "sha256": "19a4b965df9b8ce382b1673333abdf2bfd265580ec4d6faceb9e1d33955a9a26",
+      "bytes": 376
+    },
+    "world/claims.jsonl": {
+      "sha256": "e6a3aad64a734cf9a67d2cbec857f99a36760df6b2b13ce73e4162fbdb77d306",
+      "bytes": 411
+    },
+    "world/entities.jsonl": {
+      "sha256": "ac5e2c438fc9acd94106d4aa5e49066c9da5b61a9b0cf335cc052d13fad1e615",
+      "bytes": 496
+    },
+    "world/sources.jsonl": {
+      "sha256": "a8304369661d6e2601d1743c3189df7bb12a53c9214e57d66ea35076a61ec46e",
+      "bytes": 187
+    }
+  },
+  "app": "0.0.1"
+}

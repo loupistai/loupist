@@ -1,0 +1,1267 @@
+{
+  "schema": "loupist-finance-eval/1",
+  "dataset": "finance-heldout-48",
+  "repeats": 3,
+  "conditions": [
+    "memory_off",
+    "source_only",
+    "curated_lens",
+    "learned_lens"
+  ],
+  "families": [
+    "data",
+    "charts",
+    "strategy",
+    "portfolio",
+    "events",
+    "valuation"
+  ],
+  "baseline_ids": [
+    "D01",
+    "D05",
+    "C01",
+    "C05",
+    "S01",
+    "S05",
+    "P01",
+    "P05",
+    "E01",
+    "E05",
+    "V01",
+    "V05"
+  ],
+  "heldout": true,
+  "training_ids": [],
+  "cases": [
+    {
+      "id": "D01",
+      "family": "data",
+      "language": "en",
+      "prompt": "Join the sales and sector tables without inflating revenue. Report total_revenue and company_count.",
+      "facts": {
+        "sales": [
+          {
+            "company": "A",
+            "revenue": 100
+          },
+          {
+            "company": "B",
+            "revenue": 200
+          }
+        ],
+        "sectors": [
+          {
+            "company": "A",
+            "sector": "Tech"
+          },
+          {
+            "company": "A",
+            "sector": "Tech"
+          },
+          {
+            "company": "B",
+            "sector": "Energy"
+          }
+        ],
+        "unit": "USD million"
+      },
+      "expected": {
+        "metrics": {
+          "total_revenue": 300,
+          "company_count": 2
+        }
+      },
+      "review": [
+        "Detect duplicate dimension keys before the join.",
+        "Preserve USD million as the unit."
+      ],
+      "baseline": true
+    },
+    {
+      "id": "D02",
+      "family": "data",
+      "language": "ko",
+      "prompt": "금액 단위를 백만원으로 통일하고 total_krw_million을 구하세요.",
+      "facts": {
+        "rows": [
+          {
+            "amount": 1500,
+            "unit": "KRW thousand"
+          },
+          {
+            "amount": 2,
+            "unit": "KRW million"
+          }
+        ]
+      },
+      "expected": {
+        "metrics": {
+          "total_krw_million": 3.5
+        }
+      },
+      "review": [
+        "Convert units explicitly.",
+        "Do not add incompatible raw amounts."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "D03",
+      "family": "data",
+      "language": "en",
+      "prompt": "Quantify missingness and the observed end-to-end price return; do not manufacture a daily return.",
+      "facts": {
+        "dates": [
+          "2026-01-02",
+          "2026-01-05",
+          "2026-01-06"
+        ],
+        "close": [
+          100,
+          null,
+          110
+        ],
+        "adjustment": "raw, no corporate actions"
+      },
+      "expected": {
+        "metrics": {
+          "missing_count": 1,
+          "period_return": 0.1
+        }
+      },
+      "review": [
+        "The return spans two trading intervals.",
+        "Keep the missing observation visible."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "D04",
+      "family": "data",
+      "language": "en",
+      "prompt": "At the 2025-03-31 information cutoff, choose the available revenue observation.",
+      "facts": {
+        "records": [
+          {
+            "published": "2025-03-01",
+            "revenue": 100
+          },
+          {
+            "published": "2025-04-10",
+            "revenue": 120
+          }
+        ],
+        "unit": "USD million"
+      },
+      "expected": {
+        "metrics": {
+          "asof_revenue": 100
+        }
+      },
+      "review": [
+        "Exclude the later revision.",
+        "Separate publication and fiscal dates."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "D05",
+      "family": "data",
+      "language": "ko",
+      "prompt": "누적 분기 공시에서 독립 2분기 매출 q2_revenue를 계산하세요.",
+      "facts": {
+        "q1_ytd_revenue": 30,
+        "q2_ytd_revenue": 90,
+        "unit": "KRW billion"
+      },
+      "expected": {
+        "metrics": {
+          "q2_revenue": 60
+        }
+      },
+      "review": [
+        "Subtract matching year-to-date periods.",
+        "Retain the billion-KRW unit."
+      ],
+      "baseline": true
+    },
+    {
+      "id": "D06",
+      "family": "data",
+      "language": "en",
+      "prompt": "Convert each transaction at its stated transaction-date FX rate and total USD.",
+      "facts": {
+        "transactions": [
+          {
+            "eur": 100,
+            "usd_per_eur": 1.1
+          },
+          {
+            "eur": 200,
+            "usd_per_eur": 1.2
+          }
+        ]
+      },
+      "expected": {
+        "metrics": {
+          "total_usd": 350
+        }
+      },
+      "review": [
+        "Use each stated FX rate.",
+        "Do not average FX rates without notional weighting."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "D07",
+      "family": "data",
+      "language": "en",
+      "prompt": "Compute the economic return across a two-for-one split, with no dividend.",
+      "facts": {
+        "pre_split_price": 100,
+        "post_split_price": 50,
+        "new_shares_per_old_share": 2
+      },
+      "expected": {
+        "metrics": {
+          "economic_return": 0
+        }
+      },
+      "review": [
+        "Adjust share count and price consistently.",
+        "Do not call the raw price drop an economic loss."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "D08",
+      "family": "data",
+      "language": "en",
+      "prompt": "Compute the arithmetic mean of observed returns and count valid observations.",
+      "facts": {
+        "returns": [
+          0.01,
+          null,
+          -0.02,
+          0.03
+        ]
+      },
+      "expected": {
+        "metrics": {
+          "mean_return": 0.006666666666666667,
+          "valid_count": 3
+        }
+      },
+      "review": [
+        "Exclude missingness from the denominator.",
+        "Do not replace missing returns with zero."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "C01",
+      "family": "charts",
+      "language": "en",
+      "prompt": "Publish a common-base comparison chart and report each series ending index (base 100).",
+      "facts": {
+        "A": [
+          50,
+          55,
+          60
+        ],
+        "B": [
+          200,
+          180,
+          220
+        ],
+        "dates": [
+          "2026-01-02",
+          "2026-01-05",
+          "2026-01-06"
+        ]
+      },
+      "expected": {
+        "metrics": {
+          "a_end_index": 120,
+          "b_end_index": 110
+        }
+      },
+      "review": [
+        "Publish an actual artifact and label normalization.",
+        "Use the same base date for both series."
+      ],
+      "baseline": true
+    },
+    {
+      "id": "C02",
+      "family": "charts",
+      "language": "ko",
+      "prompt": "가격과 3기간 단순이동평균 차트를 만들고 마지막 sma3 값을 보고하세요.",
+      "facts": {
+        "close": [
+          100,
+          102,
+          104,
+          108,
+          112
+        ],
+        "frequency": "daily"
+      },
+      "expected": {
+        "metrics": {
+          "sma3": 108
+        }
+      },
+      "review": [
+        "First two SMA points are missing, not zero.",
+        "Publish the custom result or native study."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "C03",
+      "family": "charts",
+      "language": "en",
+      "prompt": "Chart cumulative wealth from these simple returns and report terminal_wealth.",
+      "facts": {
+        "initial_wealth": 100,
+        "returns": [
+          0.1,
+          -0.1,
+          0.05
+        ]
+      },
+      "expected": {
+        "metrics": {
+          "terminal_wealth": 103.95
+        }
+      },
+      "review": [
+        "Compound returns rather than sum them.",
+        "Label the initial wealth and time ordering."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "C04",
+      "family": "charts",
+      "language": "en",
+      "prompt": "Chart drawdown from the running high and report max_drawdown as a negative fraction.",
+      "facts": {
+        "equity": [
+          100,
+          120,
+          90,
+          108,
+          130
+        ]
+      },
+      "expected": {
+        "metrics": {
+          "max_drawdown": -0.25
+        }
+      },
+      "review": [
+        "Use running peaks.",
+        "Keep drawdown separate from equity units."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "C05",
+      "family": "charts",
+      "language": "en",
+      "prompt": "Plot log returns and report the sum of log returns from these prices.",
+      "facts": {
+        "close": [
+          100,
+          110,
+          121
+        ]
+      },
+      "expected": {
+        "metrics": {
+          "log_return_sum": 0.1906203596086497
+        }
+      },
+      "review": [
+        "Distinguish log from simple returns.",
+        "Do not label the log-return sum as 21 percent."
+      ],
+      "baseline": true
+    },
+    {
+      "id": "C06",
+      "family": "charts",
+      "language": "ko",
+      "prompt": "결측 거래일을 숨기지 않는 종가 차트를 만들고 missing_count를 보고하세요.",
+      "facts": {
+        "date": [
+          "2026-01-02",
+          "2026-01-05",
+          "2026-01-06"
+        ],
+        "close": [
+          10,
+          null,
+          12
+        ]
+      },
+      "expected": {
+        "metrics": {
+          "missing_count": 1
+        }
+      },
+      "review": [
+        "Keep a visible gap or explicit missing annotation.",
+        "Do not invent the middle price."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "C07",
+      "family": "charts",
+      "language": "en",
+      "prompt": "Compare monthly price returns on a common percent scale; report a_return and b_return.",
+      "facts": {
+        "A": [
+          20,
+          22
+        ],
+        "B": [
+          1000,
+          950
+        ],
+        "unit": "USD, prices not total return"
+      },
+      "expected": {
+        "metrics": {
+          "a_return": 0.1,
+          "b_return": -0.05
+        }
+      },
+      "review": [
+        "Use matching windows.",
+        "Avoid misleading raw-price axis comparison."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "C08",
+      "family": "charts",
+      "language": "en",
+      "prompt": "Create a price/volume view and report total_volume; preserve share units.",
+      "facts": {
+        "close": [
+          10,
+          11,
+          10.5
+        ],
+        "volume": [
+          100,
+          200,
+          150
+        ],
+        "volume_unit": "shares"
+      },
+      "expected": {
+        "metrics": {
+          "total_volume": 450
+        }
+      },
+      "review": [
+        "Use a separate volume panel or labeled axis.",
+        "Do not sum prices."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "S01",
+      "family": "strategy",
+      "language": "en",
+      "prompt": "Test a one-share long signal known at day-1 close, filled at day-2 open and exited at day-3 open. Report net_pnl.",
+      "facts": {
+        "day1_close": 100,
+        "day2_open": 110,
+        "day3_open": 105,
+        "commission_per_side": 1
+      },
+      "expected": {
+        "metrics": {
+          "net_pnl": -7
+        }
+      },
+      "review": [
+        "Use next-open entry, not the signal close.",
+        "Deduct both commissions."
+      ],
+      "baseline": true
+    },
+    {
+      "id": "S02",
+      "family": "strategy",
+      "language": "ko",
+      "prompt": "요청한 이동평균 전략 가설을 제시하고 이 확정 거래의 순손익 net_pnl을 계산하세요.",
+      "facts": {
+        "quantity": 2,
+        "entry": 50,
+        "exit": 55,
+        "fee_rate_each_side": 0.01
+      },
+      "expected": {
+        "metrics": {
+          "net_pnl": 7.9
+        }
+      },
+      "review": [
+        "Generate a testable requested strategy without claiming a live recommendation.",
+        "Charge entry and exit notionals."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "S03",
+      "family": "strategy",
+      "language": "en",
+      "prompt": "For one same-bar OHLC ambiguity, report the conservative stop-loss pnl per share.",
+      "facts": {
+        "entry": 100,
+        "next_bar": {
+          "open": 100,
+          "high": 110,
+          "low": 90,
+          "close": 105
+        },
+        "stop": 95,
+        "take_profit": 108
+      },
+      "expected": {
+        "metrics": {
+          "conservative_pnl": -5
+        }
+      },
+      "review": [
+        "Explain OHLC cannot establish whether stop or target hit first.",
+        "Disclose the conservative fill convention."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "S04",
+      "family": "strategy",
+      "language": "en",
+      "prompt": "Compare strategy and benchmark over the same window. Report strategy_return and excess_return.",
+      "facts": {
+        "strategy_equity": [
+          100,
+          110,
+          121
+        ],
+        "benchmark_equity": [
+          100,
+          105,
+          110
+        ]
+      },
+      "expected": {
+        "metrics": {
+          "strategy_return": 0.21,
+          "excess_return": 0.11
+        }
+      },
+      "review": [
+        "Use the same start/end dates.",
+        "Do not subtract independently annualized incompatible windows."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "S05",
+      "family": "strategy",
+      "language": "en",
+      "prompt": "Choose a parameter using training only, then report chosen_parameter and heldout_return.",
+      "facts": {
+        "trials": [
+          {
+            "parameter": 5,
+            "train_return": 0.2,
+            "heldout_return": -0.1
+          },
+          {
+            "parameter": 10,
+            "train_return": 0.1,
+            "heldout_return": 0.3
+          }
+        ]
+      },
+      "expected": {
+        "metrics": {
+          "chosen_parameter": 5,
+          "heldout_return": -0.1
+        }
+      },
+      "review": [
+        "Do not choose using the holdout.",
+        "Report both trials and selection bias."
+      ],
+      "baseline": true
+    },
+    {
+      "id": "S06",
+      "family": "strategy",
+      "language": "ko",
+      "prompt": "공유 현금으로 동일 비중 매수할 때 잔여 현금 cash와 보유 주식 수를 계산하세요. 정수 주식만 허용합니다.",
+      "facts": {
+        "cash": 1000,
+        "A_price": 60,
+        "B_price": 80,
+        "target_each": 0.5,
+        "fees": 0
+      },
+      "expected": {
+        "metrics": {
+          "a_shares": 8,
+          "b_shares": 6,
+          "cash": 40
+        }
+      },
+      "review": [
+        "Use one shared cash balance.",
+        "Do not invest the full initial cash independently in each asset."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "S07",
+      "family": "strategy",
+      "language": "en",
+      "prompt": "A fixed 20-share trade buys at 10 and sells at 11; adverse slippage is 0.10 on each side. Report net_pnl.",
+      "facts": {
+        "shares": 20,
+        "entry_mid": 10,
+        "exit_mid": 11,
+        "adverse_slippage_each_side": 0.1,
+        "fees": 0
+      },
+      "expected": {
+        "metrics": {
+          "net_pnl": 16
+        }
+      },
+      "review": [
+        "Apply adverse slippage to both entry and exit.",
+        "Keep quote midpoint separate from executed price."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "S08",
+      "family": "strategy",
+      "language": "en",
+      "prompt": "Reconcile closing equity after this position and report equity and total_return.",
+      "facts": {
+        "initial_cash": 1000,
+        "buy_shares": 5,
+        "buy_price": 100,
+        "buy_fee": 5,
+        "closing_price": 110
+      },
+      "expected": {
+        "metrics": {
+          "equity": 1045,
+          "total_return": 0.045
+        }
+      },
+      "review": [
+        "Equity equals remaining cash plus marked holdings.",
+        "Do not count invested capital twice."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "P01",
+      "family": "portfolio",
+      "language": "en",
+      "prompt": "Compute a static weighted portfolio return.",
+      "facts": {
+        "weights": [
+          0.6,
+          0.4
+        ],
+        "asset_returns": [
+          0.1,
+          -0.05
+        ],
+        "cash_weight": 0
+      },
+      "expected": {
+        "metrics": {
+          "portfolio_return": 0.04
+        }
+      },
+      "review": [
+        "Weights and return horizons must align.",
+        "This is a hypothetical allocation."
+      ],
+      "baseline": true
+    },
+    {
+      "id": "P02",
+      "family": "portfolio",
+      "language": "ko",
+      "prompt": "상관관계를 반영한 두 자산 포트폴리오 분산 portfolio_variance를 계산하세요.",
+      "facts": {
+        "weights": [
+          0.5,
+          0.5
+        ],
+        "volatilities": [
+          0.2,
+          0.1
+        ],
+        "correlation": 0
+      },
+      "expected": {
+        "metrics": {
+          "portfolio_variance": 0.0125
+        }
+      },
+      "review": [
+        "Include covariance correctly.",
+        "Do not average volatilities directly."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "P03",
+      "family": "portfolio",
+      "language": "en",
+      "prompt": "Compute net_exposure and gross_exposure for these signed weights.",
+      "facts": {
+        "weights": [
+          0.8,
+          0.4,
+          -0.3
+        ]
+      },
+      "expected": {
+        "metrics": {
+          "net_exposure": 0.9,
+          "gross_exposure": 1.5
+        }
+      },
+      "review": [
+        "Use absolute weights for gross exposure.",
+        "Expose leverage and short exposure."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "P04",
+      "family": "portfolio",
+      "language": "en",
+      "prompt": "Compute the worst peak-to-trough loss as a positive fraction.",
+      "facts": {
+        "equity": [
+          100,
+          110,
+          88,
+          99
+        ]
+      },
+      "expected": {
+        "metrics": {
+          "max_drawdown_loss": 0.2
+        }
+      },
+      "review": [
+        "Use peak 110, not initial 100.",
+        "State the positive-loss convention."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "P05",
+      "family": "portfolio",
+      "language": "en",
+      "prompt": "Stress this static portfolio with the specified asset shocks.",
+      "facts": {
+        "weights": [
+          0.5,
+          0.3,
+          0.2
+        ],
+        "shocks": [
+          -0.2,
+          -0.1,
+          0
+        ],
+        "portfolio_value": 100000
+      },
+      "expected": {
+        "metrics": {
+          "stress_return": -0.13,
+          "stress_loss": 13000
+        }
+      },
+      "review": [
+        "Keep scenario assumptions separate from forecasts.",
+        "Include the zero-return cash allocation."
+      ],
+      "baseline": true
+    },
+    {
+      "id": "P06",
+      "family": "portfolio",
+      "language": "ko",
+      "prompt": "월간 변동성 0.02를 독립수익률 가정으로 연율화하세요.",
+      "facts": {
+        "monthly_volatility": 0.02,
+        "periods_per_year": 12
+      },
+      "expected": {
+        "metrics": {
+          "annualized_volatility": 0.06928203230275509
+        }
+      },
+      "review": [
+        "Use square-root-of-time scaling.",
+        "State the independence/stationarity assumption."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "P07",
+      "family": "portfolio",
+      "language": "en",
+      "prompt": "Compute one-way turnover (half the L1 weight change) for this fully invested rebalance.",
+      "facts": {
+        "old_weights": [
+          0.6,
+          0.4
+        ],
+        "new_weights": [
+          0.4,
+          0.6
+        ]
+      },
+      "expected": {
+        "metrics": {
+          "one_way_turnover": 0.2
+        }
+      },
+      "review": [
+        "State the turnover convention.",
+        "Do not confuse one-way and two-way notional."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "P08",
+      "family": "portfolio",
+      "language": "en",
+      "prompt": "Compute the unbiased sample covariance of the two return series.",
+      "facts": {
+        "A": [
+          0.01,
+          0.02,
+          0.03
+        ],
+        "B": [
+          0.02,
+          0.04,
+          0.06
+        ]
+      },
+      "expected": {
+        "metrics": {
+          "sample_covariance": 0.0002
+        }
+      },
+      "review": [
+        "Use n minus 1.",
+        "Preserve return units and sample size."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "E01",
+      "family": "events",
+      "language": "en",
+      "prompt": "Compute a three-session cumulative abnormal return using additive event-study convention.",
+      "facts": {
+        "asset_returns": [
+          0.03,
+          -0.01,
+          0.02
+        ],
+        "benchmark_returns": [
+          0.01,
+          0,
+          0.01
+        ]
+      },
+      "expected": {
+        "metrics": {
+          "car": 0.02
+        }
+      },
+      "review": [
+        "State the additive convention.",
+        "Association does not establish causality."
+      ],
+      "baseline": true
+    },
+    {
+      "id": "E02",
+      "family": "events",
+      "language": "ko",
+      "prompt": "장 마감 후 발표는 다음 거래일에 반영됩니다. event_session_index를 0부터 계산하세요.",
+      "facts": {
+        "sessions": [
+          "Mon",
+          "Tue",
+          "Wed"
+        ],
+        "announcement": "Mon after close"
+      },
+      "expected": {
+        "metrics": {
+          "event_session_index": 1
+        }
+      },
+      "review": [
+        "Use the next trading session.",
+        "Do not use Monday returns as the post-announcement response."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "E03",
+      "family": "events",
+      "language": "en",
+      "prompt": "Compute mean and standard error of these independent observations.",
+      "facts": {
+        "observations": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "expected": {
+        "metrics": {
+          "mean": 2.5,
+          "standard_error": 0.6454972243679028
+        }
+      },
+      "review": [
+        "Use sample standard deviation.",
+        "State small-sample limitations."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "E04",
+      "family": "events",
+      "language": "en",
+      "prompt": "Fit y = intercept + slope*x by OLS.",
+      "facts": {
+        "x": [
+          1,
+          2,
+          3
+        ],
+        "y": [
+          3,
+          5,
+          7
+        ]
+      },
+      "expected": {
+        "metrics": {
+          "intercept": 1,
+          "slope": 2
+        }
+      },
+      "review": [
+        "Do not infer causality from fit.",
+        "A perfect tiny-sample fit is not a robust forecast."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "E05",
+      "family": "events",
+      "language": "en",
+      "prompt": "Adjust the smallest p-value by Bonferroni for all attempted hypotheses.",
+      "facts": {
+        "p_values": [
+          0.01,
+          0.04,
+          0.2,
+          0.5,
+          0.8
+        ],
+        "alpha": 0.05
+      },
+      "expected": {
+        "metrics": {
+          "adjusted_min_p": 0.05
+        }
+      },
+      "review": [
+        "Count all five attempted tests.",
+        "State the significance boundary convention."
+      ],
+      "baseline": true
+    },
+    {
+      "id": "E06",
+      "family": "events",
+      "language": "ko",
+      "prompt": "사건 전후 평균 차이 difference를 계산하고 인과관계 한계를 설명하세요.",
+      "facts": {
+        "before": [
+          10,
+          12
+        ],
+        "after": [
+          13,
+          15
+        ]
+      },
+      "expected": {
+        "metrics": {
+          "difference": 3
+        }
+      },
+      "review": [
+        "No control group is provided.",
+        "Avoid a causal conclusion."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "E07",
+      "family": "events",
+      "language": "en",
+      "prompt": "Compute the market-model expected return and abnormal return.",
+      "facts": {
+        "alpha": 0.001,
+        "beta": 1.2,
+        "market_return": 0.02,
+        "asset_return": 0.03
+      },
+      "expected": {
+        "metrics": {
+          "expected_return": 0.025,
+          "abnormal_return": 0.005
+        }
+      },
+      "review": [
+        "Separate estimation parameters from event observations.",
+        "Explain model dependence."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "E08",
+      "family": "events",
+      "language": "en",
+      "prompt": "Compute a pooled treatment-minus-control change (difference in differences).",
+      "facts": {
+        "treatment_before": 10,
+        "treatment_after": 15,
+        "control_before": 20,
+        "control_after": 22
+      },
+      "expected": {
+        "metrics": {
+          "difference_in_differences": 3
+        }
+      },
+      "review": [
+        "State the parallel-trends assumption.",
+        "The supplied two periods do not test that assumption."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "V01",
+      "family": "valuation",
+      "language": "en",
+      "prompt": "Compute enterprise value from equity, debt, and cash.",
+      "facts": {
+        "equity_value": 1000,
+        "debt": 300,
+        "cash": 100,
+        "unit": "USD million"
+      },
+      "expected": {
+        "metrics": {
+          "enterprise_value": 1200
+        }
+      },
+      "review": [
+        "Match the as-of date and value basis.",
+        "Subtract cash once."
+      ],
+      "baseline": true
+    },
+    {
+      "id": "V02",
+      "family": "valuation",
+      "language": "ko",
+      "prompt": "동일 단위의 주가와 EPS로 PER을 계산하세요.",
+      "facts": {
+        "share_price_krw": 60000,
+        "eps_krw": 5000
+      },
+      "expected": {
+        "metrics": {
+          "pe": 12
+        }
+      },
+      "review": [
+        "Match share class and earnings basis.",
+        "Do not confuse company-level income with per-share earnings."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "V03",
+      "family": "valuation",
+      "language": "en",
+      "prompt": "Value next-year free cash flow as a growing perpetuity.",
+      "facts": {
+        "fcf_next_year": 10,
+        "discount_rate": 0.1,
+        "growth_rate": 0.02,
+        "unit": "USD million"
+      },
+      "expected": {
+        "metrics": {
+          "enterprise_value": 125
+        }
+      },
+      "review": [
+        "Require discount rate greater than growth.",
+        "This is a strong perpetual-growth assumption."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "V04",
+      "family": "valuation",
+      "language": "en",
+      "prompt": "Discount two end-of-year cash flows and terminal value at the end of year two.",
+      "facts": {
+        "cash_flows": [
+          100,
+          110
+        ],
+        "terminal_value_year2": 1000,
+        "discount_rate": 0.1
+      },
+      "expected": {
+        "metrics": {
+          "present_value": 1008.2644628099174
+        }
+      },
+      "review": [
+        "Discount the terminal value two periods.",
+        "Separate explicit flows from terminal value."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "V05",
+      "family": "valuation",
+      "language": "en",
+      "prompt": "Compute diluted value per share from this equity valuation.",
+      "facts": {
+        "equity_value_usd_million": 1000,
+        "basic_shares_million": 80,
+        "incremental_diluted_shares_million": 20
+      },
+      "expected": {
+        "metrics": {
+          "diluted_value_per_share": 10
+        }
+      },
+      "review": [
+        "Use diluted share count.",
+        "Keep million units consistent."
+      ],
+      "baseline": true
+    },
+    {
+      "id": "V06",
+      "family": "valuation",
+      "language": "ko",
+      "prompt": "매출과 영업이익으로 영업이익률 operating_margin을 구하세요.",
+      "facts": {
+        "revenue": 200,
+        "operating_profit": 30,
+        "unit": "KRW billion"
+      },
+      "expected": {
+        "metrics": {
+          "operating_margin": 0.15
+        }
+      },
+      "review": [
+        "Use matching consolidated periods.",
+        "Preserve the ratio convention."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "V07",
+      "family": "valuation",
+      "language": "en",
+      "prompt": "Compute a revenue multiple and implied equity value from this scenario.",
+      "facts": {
+        "revenue": 200,
+        "ev_to_revenue": 3,
+        "debt": 100,
+        "cash": 20,
+        "unit": "USD million"
+      },
+      "expected": {
+        "metrics": {
+          "enterprise_value": 600,
+          "equity_value": 520
+        }
+      },
+      "review": [
+        "Bridge enterprise to equity value.",
+        "Describe the multiple as an assumption."
+      ],
+      "baseline": false
+    },
+    {
+      "id": "V08",
+      "family": "valuation",
+      "language": "en",
+      "prompt": "Compute the year-over-year change; handle the negative prior denominator explicitly.",
+      "facts": {
+        "prior_operating_profit": -10,
+        "current_operating_profit": 5,
+        "unit": "USD million"
+      },
+      "expected": {
+        "metrics": {
+          "absolute_change": 15
+        }
+      },
+      "review": [
+        "Describe a loss-to-profit turnaround.",
+        "Do not advertise a conventional positive growth percentage from a negative base."
+      ],
+      "baseline": false
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "onchain",
+  "version": "1.0.0",
+  "description": "Public blockchain data: your wallet balances for your holdings, and value locked in on-chain networks.",
+  "author": {
+    "name": "Loupist"
+  },
+  "interface": {
+    "displayName": "On-chain data",
+    "shortDescription": "Public blockchain data: your wallet balances for your holdings, and value locked in on-chain networks.",
+    "category": "Data",
+    "capabilities": [
+      "Read"
+    ]
+  },
+  "connectors": "./connectors/"
+}

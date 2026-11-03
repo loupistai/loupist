@@ -1,0 +1,51 @@
+import { after, before, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { comparePixels, openChrome, visualDiff } from './visual-diff.mjs';
+let chrome, root;
+before(async () => { chrome = await openChrome(); root = await mkdtemp(join(tmpdir(), 'visual-diff-test-')); });
+after(async () => { await chrome?.close(); if (root) await rm(root, { recursive: true, force: true }); });
+const png = (pixels, width = pixels.length, height = 1) => chrome.evaluate(`(() => { const c = Object.assign(document.createElement('canvas'), {width:${width},height:${height}}); const ctx=c.getContext('2d'); const image=ctx.createImageData(c.width,c.height); image.data.set(${JSON.stringify(pixels.flat())}); ctx.putImageData(image,0,0); return c.toDataURL(); })()`);
+const compare = (a, b) => chrome.evaluate(`(${comparePixels.toString()})(${JSON.stringify(a)},${JSON.stringify(b)})`);
+const writePng = (path, data) => writeFile(path, Buffer.from(data.split(',')[1], 'base64'));
+test('identical pixels, channel tolerance boundary, alpha, dimming and pink mask', async () => {
+  const a = await png([[100, 100, 100, 255], [100, 100, 100, 255]]);
+  assert.equal((await compare(a, a)).mismatchPercentage, 0);
+  const b = await png([[116, 100, 100, 255], [100, 117, 100, 255]]);
+  const result = await compare(a, b);
+  assert.equal(result.mismatchPercentage, 50);
+  const mask = await chrome.evaluate(`(async()=>{const i=new Image();i.src=${JSON.stringify(result.diff)};await i.decode();const c=Object.assign(document.createElement('canvas'),{width:2,height:1});const x=c.getContext('2d');x.drawImage(i,0,0);return [...x.getImageData(0,0,2,1).data]})()`);
+  assert.deepEqual(mask, [35, 30, 30, 255, 255, 45, 85, 255]);
+  assert.equal((await compare(await png([[0, 0, 0, 255]]), await png([[0, 0, 0, 238]]))).mismatchPercentage, 100);
+});
+test('size mismatch is always 100 percent', async () => {
+  const result = await compare(await png([[0, 0, 0, 255]]), await png([[0, 0, 0, 255], [0, 0, 0, 255]]));
+  assert.equal(result.sizeMismatch, true); assert.equal(result.mismatchPercentage, 100);
+});
+test('report artifacts, filename matching, sorting, threshold exit and report override', async () => {
+  const baseline = join(root, 'baseline'), candidate = join(root, 'candidate'), out = join(root, 'out');
+  await mkdir(baseline); await mkdir(candidate);
+  const black = await png([[0, 0, 0, 255]]), white = await png([[255, 255, 255, 255]]);
+  for (const [dir, file, data] of [[baseline, 'equal.png', black], [candidate, 'equal.png', black], [baseline, 'changed.png', black], [candidate, 'changed.png', white], [baseline, 'missing.png', black], [candidate, 'new.png', black]]) await writePng(join(dir, file), data);
+  const result = await visualDiff({ baseline, candidate, out, threshold: 0 });
+  assert.equal(result.exitCode, 1); assert.deepEqual(result.missing, ['missing.png']); assert.deepEqual(result.added, ['new.png']);
+  assert.deepEqual(result.cells.map(cell => cell.file), ['changed.png', 'equal.png']);
+  assert.match(await readFile(join(out, 'index.html'), 'utf8'), /side-by-side\/changed.png/);
+  assert.equal(JSON.parse(await readFile(join(out, 'diff.json'))).totals.changed, 1);
+  assert.ok((await readFile(join(out, 'diff', 'changed.png'))).length);
+  const cli = spawnSync(process.execPath, [fileURLToPath(new URL('./visual-diff.mjs', import.meta.url)), '--baseline', baseline, '--candidate', candidate, '--out', out, '--report'], { encoding: 'utf8' });
+  assert.equal(cli.status, 0, cli.stderr);
+  await rm(join(baseline, 'missing.png')); await rm(join(candidate, 'new.png'));
+  assert.equal((await visualDiff({ baseline, candidate, out, threshold: 100 })).exitCode, 0);
+  await assert.rejects(visualDiff({ baseline, candidate, out: baseline }), /separate/);
+  await assert.rejects(visualDiff({ baseline, candidate, out, threshold: NaN }), /Threshold/);
+});
+test('capture failures cannot silently become missing cells or accepted reports', async () => {
+  const baseline = join(root, 'incomplete'); await mkdir(baseline);
+  await writeFile(join(baseline, 'manifest.json'), JSON.stringify({ cells: [{ file: 'bad.png', status: 'error' }] }));
+  await assert.rejects(visualDiff({ baseline, candidate: join(root, 'candidate'), out: join(root, 'incomplete-report') }), /Incomplete/);
+});

@@ -1,0 +1,3 @@
+{
+  "setup-worktree-unix": ["sh apps/loupist/scripts/setup.sh"]
+}

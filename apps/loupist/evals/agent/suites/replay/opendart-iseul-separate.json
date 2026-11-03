@@ -1,0 +1,84 @@
+{
+  "schema": "loupist-connection-replay/1",
+  "requests": [
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/corpCode.xml"
+      },
+      "response": {
+        "status": 200,
+        "content_type": "application/zip",
+        "body_base64": "UEsDBBQAAAAIAAAAIVwkaRwYpwAAAPYAAAAMAAAAQ09SUENPREUueG1ss7GvyM1RKEstKs7Mz7NVMtQzUFJIzUvOT8nMS7dVCg1x07VQsrezKUotLs0psbPJySwGksn5RQXxQDWpdpaWBqamRgYGNvoIMYh0XmJuqt2buVvedK15vWbP66UzoErA4hAlqXnpEK5ncWppjoJPfjrQ9MzkYqhKuLRNcUl+cjayhTb6SEI2uUDXplXGpySWpNoZGRiZGRgbGNroI4va6EMcrg/1BwBQSwECFAMUAAAACAAAACFcJGkcGKcAAAD2AAAADAAAAAAAAAAAAAAAgAEAAAAAQ09SUENPREUueG1sUEsFBgAAAAABAAEAOgAAANEAAAAAAA=="
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?corp_code=99055200&bsns_year=2025&reprt_code=11011&fs_div=OFS"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20260320990552",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99055200",
+              "corp_name": "이슬물류",
+              "stock_code": "990552",
+              "fs_div": "OFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_Revenue",
+              "account_nm": "매출액",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_dt": "2025-12-31",
+              "thstrm_amount": "128400000000",
+              "ord": "1",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260320990552",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99055200",
+              "corp_name": "이슬물류",
+              "stock_code": "990552",
+              "fs_div": "OFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_OperatingIncomeLoss",
+              "account_nm": "영업이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_dt": "2025-12-31",
+              "thstrm_amount": "7600000000",
+              "ord": "2",
+              "currency": "KRW"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/company.json?corp_code=99055200"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "corp_code": "99055200",
+          "acc_mt": "12"
+        }
+      }
+    }
+  ]
+}

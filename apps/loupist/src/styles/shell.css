@@ -1,0 +1,428 @@
+.app-shell {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+  flex-direction: column;
+  --gg-titlebar-height: 52px;
+  background: var(--gg-color-bg-app);
+  -webkit-user-select: none;
+  user-select: none;
+}
+html[data-desktop-platform="macos"] .app-shell {
+  /* Twice the traffic-light center. tauri.conf.json places those buttons at y: 22. */
+  --gg-titlebar-height: 44px;
+}
+.app-titlebar {
+  display: flex;
+  align-items: stretch;
+  flex: none;
+  min-width: 0;
+  min-height: var(--gg-titlebar-height);
+  background: var(--gg-color-bg-app);
+  border-bottom: 1px solid var(--gg-color-border-subtle);
+  position: relative;
+  z-index: calc(var(--gg-z-sidebar) + 1);
+}
+.app-body {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+}
+/* Anchor the sidebar to the remaining body space, including when the titlebar grows. */
+.app-body [data-slot="sidebar-container"] {
+  position: absolute;
+  inset-block: 0;
+  height: auto;
+}
+.app-body [data-slot="sidebar-inner"] {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+
+/*
+ * Selection is opt-in so a drag that starts on layout chrome cannot create a
+ * document-wide selection. Keep authored prose and editable fields selectable.
+ */
+.app-shell :is(
+  input,
+  textarea,
+  [contenteditable="true"],
+  .message-content,
+  .chat-progress-commentary,
+  .chat-execution-detail,
+  .artifact-markdown,
+  .artifact-source,
+  .workspace-evidence,
+  .workspace-file-content,
+  .chat-progress-memory,
+  .knowledge-passage,
+  .source-reader
+) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.app-shell :is(button, summary, [role="button"], [role="tab"]) {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.app-shell :is(img, svg) {
+  -webkit-user-drag: none;
+}
+
+.app-frame {
+  flex: 1 1 0;
+  width: 0;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 0;
+  background: var(--gg-color-bg-app);
+}
+
+.app-header {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--gg-space-3);
+  padding: 0 var(--gg-space-4);
+}
+
+/* Reference-backed research workspace shell */
+.view-error {
+  display: flex;
+  flex: 1;
+  min-height: 280px;
+  height: 100%;
+  padding: var(--gg-space-7);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gg-space-3);
+  text-align: center;
+  background: var(--gg-color-bg-app);
+}
+
+.view-error h1 { margin: 0; font-size: var(--gg-text-heading); font-weight: var(--gg-weight-semibold); }
+.view-error p { max-width: 440px; margin: 0 0 var(--gg-space-2); color: var(--gg-color-text-secondary); line-height: 1.6; }
+
+.app-selection-error {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--gg-space-2);
+  padding: 10px var(--gg-space-4);
+  border-bottom: 1px solid var(--gg-color-border-subtle);
+  background: var(--gg-color-warning-soft);
+  color: var(--gg-color-text-primary);
+  font-size: var(--gg-text-meta);
+}
+.app-selection-error p { flex: 1; margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.app-selection-error button { flex-shrink: 0; }
+
+/*
+ * Radix dialogs portal to body, so their default 50% anchor targets the full
+ * window. On desktop, center them in the content area beside the open sidebar.
+ */
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@media (min-width: 900px) {
+  body:has(
+      [data-slot="sidebar"][data-state="expanded"][data-side="left"]
+    )
+    [data-slot="dialog-content"] {
+    left: calc(50% + calc(var(--gg-size-sidebar) / 2));
+    --dialog-available-width: calc(100vw - var(--gg-size-sidebar) - var(--gg-space-7));
+    transition: left var(--gg-motion-normal) var(--gg-ease-out);
+  }
+}
+
+.context-title,
+.app-brand {
+  display: flex;
+  align-items: center;
+}
+
+.context-title {
+  gap: 9px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.context-title strong {
+  display: block;
+  overflow: hidden;
+  color: var(--gg-color-text-primary);
+  font-size: var(--gg-text-body);
+  font-weight: var(--gg-weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.loupist-header-tools {
+  flex: 0 0 auto;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.app-brand {
+  gap: 10px;
+  padding: 2px 1px;
+}
+
+.app-brand strong {
+  font-size: var(--gg-text-body);
+  font-weight: var(--gg-weight-semibold);
+  letter-spacing: -0.02em;
+}
+
+[data-slot="sidebar-content"] { overflow-x: hidden; }
+
+[data-slot="sidebar-header"] {
+  gap: 7px;
+  padding: 10px;
+}
+
+.macos-titlebar-controls {
+  display: none;
+}
+
+
+/* token-exception: breakpoint; vars unsupported in query conditions */
+
+@media (min-width: 900px) {
+  html[data-desktop-platform="macos"] .macos-titlebar-controls {
+    position: static;
+    z-index: auto;
+    display: flex;
+    flex: none;
+    align-items: center;
+    width: auto;
+    height: auto;
+    padding: 0 var(--gg-space-2);
+    pointer-events: none;
+  }
+
+  html[data-desktop-platform="macos"] .macos-titlebar-sidebar-trigger {
+    pointer-events: auto;
+  }
+
+  html[data-desktop-platform="macos"] .app-titlebar {
+    padding-left: 78px;
+  }
+
+  html[data-desktop-platform="macos"] .app-header-sidebar-trigger {
+    display: none;
+  }
+
+  html[data-desktop-platform="macos"] .app-navigation [data-slot="sidebar-header"] {
+    min-height: 0;
+    justify-content: flex-start;
+    padding: var(--gg-space-3);
+  }
+}
+
+/* Native window controls remain present when navigation becomes a drawer. */
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@media (max-width: 899px) {
+  html[data-desktop-platform="macos"] .app-titlebar {
+    padding-left: calc(var(--gg-space-8) * 2);
+  }
+
+  html[data-desktop-platform="macos"]
+    [data-slot="sidebar"][data-mobile="true"]
+    [data-slot="sidebar-header"] {
+    padding-top: calc(var(--gg-space-9) + var(--gg-space-3));
+  }
+}
+
+[data-slot="sidebar-content"] > [data-slot="sidebar-group"] {
+  padding-block: var(--gg-space-2);
+}
+
+.app-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+}
+
+.app-panel {
+  height: 100%;
+  min-height: 0;
+}
+
+.app-panel[hidden] {
+  display: none;
+}
+
+.app-loading,
+.fatal-error {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+
+.fatal-error h1,
+.fatal-error p {
+  margin: 0;
+}
+
+.loupist-onboarding {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px;
+  text-align: center;
+}
+
+.loupist-onboarding h1 {
+  margin: 6px 0 var(--gg-space-2);
+  font-size: var(--gg-text-page);
+  font-weight: var(--gg-weight-semibold);
+  letter-spacing: -0.03em;
+}
+.loupist-onboarding > p {
+  max-width: 460px;
+  margin: 0;
+  color: var(--gg-color-text-secondary);
+  font-size: var(--gg-text-body);
+  line-height: 1.65;
+}
+.onboarding-actions {
+  display: flex;
+  gap: var(--gg-space-2);
+  margin-top: var(--gg-space-6);
+}
+
+/* Loupist shell */
+[data-slot="sidebar-wrapper"] { --sidebar-width: var(--gg-size-sidebar) !important; --sidebar-width-icon: var(--gg-space-10) !important; }
+/* Profiles stay in one row. Overflow belongs to their strip, leaving creation and header tools reachable. */
+.loupist-header-selector { display: flex; flex: 0 1 auto; align-items: center; min-width: 0; gap: var(--gg-space-1); }
+.loupist-header-profiles { display: flex; align-items: center; min-width: 0; gap: var(--gg-space-1); overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; padding: 3px; }
+.loupist-header-identity { display: flex; flex: 0 0 auto; align-items: center; gap: var(--gg-space-2); min-width: 0; max-width: 240px; height: 34px; padding: 3px var(--gg-space-2); border: 1px solid transparent; border-radius: var(--gg-radius-md); text-align: left; color: var(--gg-color-text-secondary); }
+.loupist-header-identity:hover { background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); }
+.loupist-header-identity[aria-pressed="true"] { border-color: var(--gg-color-border-subtle); background: var(--gg-color-bg-raised); color: var(--gg-color-text-primary); }
+.loupist-header-identity:focus-visible { outline: 2px solid var(--gg-color-accent); outline-offset: 1px; }
+.loupist-header-identity .loupist-avatar { width: 26px; height: 26px; flex-basis: 26px; }
+.loupist-header-avatar { display: inline-flex; position: relative; flex: none; }
+.loupist-run-indicator {
+  position: absolute;
+  inset: -2px;
+  border: 2px solid var(--gg-color-accent);
+  border-inline-start-color: transparent;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .loupist-run-indicator { animation: loupist-working 1.8s linear infinite; }
+}
+@keyframes loupist-working { to { transform: rotate(1turn); } }
+@media (forced-colors: active) {
+  .loupist-run-indicator { border-color: Highlight transparent transparent Highlight; }
+}
+.loupist-header-identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); }
+.loupist-header-new, .app-header [data-header-loupist-settings] { flex: none; }
+.loupist-header-identity .shell-unread { flex: none; }
+.shell-tabs { display: flex; flex: 0 0 auto; margin-left: var(--gg-space-6); height: var(--gg-size-control-md); padding: calc(var(--gg-space-1) / 2); gap: calc(var(--gg-space-1) / 2); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-hover); }
+.shell-tabs button { white-space: nowrap; padding: 0 var(--gg-space-4); border-radius: var(--gg-radius-xs); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); }
+.shell-tabs button[aria-selected="true"] { color: var(--gg-color-text-primary); background: var(--gg-color-bg-raised); box-shadow: var(--gg-shadow-xs); font-weight: var(--gg-weight-semibold); }
+.loupist-header-tools { margin-left: auto; gap: var(--gg-space-1); }
+/* Market status: a quiet status line right of the tabs; it yields to the tabs and tools when space runs out. */
+.market-status { display: flex; align-items: center; gap: var(--gg-space-2); min-width: 0; margin-left: var(--gg-space-3); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); white-space: nowrap; overflow: hidden; }
+.market-status > span { overflow: hidden; text-overflow: ellipsis; }
+.market-status > span + span::before { content: "·"; margin-right: var(--gg-space-2); color: var(--gg-color-text-tertiary); }
+.market-status > [data-state="open"], .market-status > [data-state="always"] { color: var(--gg-color-text-primary); }
+@media (max-width: 1099px) { .market-status { display: none; } }
+.app-header-sidebar-trigger { display: none; }
+.chat-tab-panel { position: relative; display: flex; min-width: 0; }
+.chat-list-scrim { display: none; }
+.chat-list-panel { width: 280px; flex-shrink: 0; overflow: auto; padding: var(--gg-space-3); border-right: 1px solid var(--gg-color-border-subtle); background: var(--gg-color-bg-app); }
+.chat-list-scrim[data-overlay] { display: block; position: absolute; inset: 0; z-index: var(--gg-z-panel); background: var(--gg-color-bg-overlay); border: 0; }
+.chat-list-panel[data-overlay] { position: absolute; z-index: calc(var(--gg-z-panel) + 1); inset-block: 0; inset-inline-start: 0; width: min(320px, 100%); box-shadow: var(--gg-shadow-md); }
+.chat-list-panel header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--gg-space-3); }
+.chat-list-panel ul { list-style: none; padding: 0; margin-top: var(--gg-space-3); }
+.loupist-settings-body .agent-editor { display: flex; flex-direction: column; gap: var(--gg-space-5); }
+.loupist-memory-defaults > label { display: flex; align-items: center; justify-content: space-between; gap: var(--gg-space-4); margin-block: var(--gg-space-3); }
+.loupist-settings-body h2 { font-size: var(--gg-text-body); font-weight: var(--gg-weight-semibold); }
+.settings-loupists ul { list-style: none; padding: 0; }
+.settings-loupists li { display: flex; align-items: center; gap: var(--gg-space-3); padding-block: var(--gg-space-4); border-bottom: 1px solid var(--gg-color-border-subtle); }
+.settings-loupists li > div { flex: 1; min-width: 0; }
+.settings-loupists li p { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.settings-loupist-actions { display: flex; gap: var(--gg-space-2); }
+@media (max-width: 899px) {
+  .app-header-sidebar-trigger, html[data-desktop-platform="macos"] .app-header-sidebar-trigger { display: inline-flex; }
+  [data-mobile="true"][data-slot="sidebar"] { width: calc(var(--gg-size-sidebar) + var(--gg-space-7)); max-width: none; }
+  .shell-tabs { margin-left: 0; }
+  .app-header { gap: var(--gg-space-2); padding-inline: var(--gg-space-2); }
+}
+@media (max-width: 700px) {
+  .shell-tabs button { padding-inline: var(--gg-space-2); }
+  .loupist-header-identity { gap: var(--gg-space-2); }
+}
+.chat-tab-panel > .chat-layout { flex: 1 1 0; min-width: 0; width: 0; }
+.app-titlebar .app-header,
+.app-titlebar .loupist-header-identity { align-items: center; }
+.app-titlebar .loupist-header-identity strong { font-size: var(--gg-text-control); line-height: var(--gg-leading-control); font-weight: var(--gg-weight-medium); }
+.app-titlebar .loupist-avatar { width: var(--gg-size-control-sm); height: var(--gg-size-control-sm); flex-basis: var(--gg-size-control-sm); }
+
+@media (min-width: 900px) {
+  /* The macOS titlebar owns the sidebar toggle, so the sidebar does not keep an empty trigger row. */
+  html[data-desktop-platform="macos"] .navigation-toolbar,
+  html[data-desktop-platform="macos"] .app-header-sidebar-trigger { display: none; }
+}
+/* The narrow navigation sheet keeps the same rows; nothing in the header may force it wider than the drawer. */
+[data-mobile="true"][data-slot="sidebar"] [data-slot="sidebar-header"],
+[data-mobile="true"][data-slot="sidebar"] .navigation-command { max-width: 100%; }
+
+/* Command palette (X7): one search across chats, names, principles, briefings and actions. */
+.dialog-surface.command-palette { top: 96px; translate: -50% 0; padding: 0; gap: 0; border-radius: var(--gg-radius-lg); background: var(--gg-color-bg-raised); display: flex; flex-direction: column; max-height: min(560px, calc(100dvh - 128px)); overflow: hidden; }
+.command-palette-input { flex: none; width: 100%; height: 52px; padding: 0 var(--gg-space-5); border: 0; border-bottom: 1px solid var(--gg-color-border-subtle); background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-body); outline: none; }
+.command-palette-list { flex: 1; min-height: 0; margin: 0; padding: var(--gg-space-2) 0; list-style: none; overflow: auto; }
+.command-palette-list ul { margin: 0; padding: 0; list-style: none; }
+.command-palette-group { margin: var(--gg-space-2) var(--gg-space-5) var(--gg-space-1); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); letter-spacing: .06em; text-transform: uppercase; }
+.command-palette-group:lang(ko) { letter-spacing: 0; text-transform: none; }
+.command-palette-row { display: flex; align-items: center; gap: var(--gg-space-2); min-height: 40px; margin: 0 var(--gg-space-2); padding: 0 var(--gg-space-3); border-radius: var(--gg-radius-sm); color: var(--gg-color-text-primary); font-size: var(--gg-text-control); cursor: pointer; }
+.command-palette-row[aria-selected="true"] { background: var(--gg-color-bg-selected); }
+.command-palette-row[data-more] { color: var(--gg-color-accent-ink); }
+.command-palette-row .map-swatch { flex: none; width: 8px; height: 8px; }
+.command-palette-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.command-palette-row small { flex: none; max-width: 45%; overflow: hidden; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); text-overflow: ellipsis; white-space: nowrap; }
+.command-palette-empty { padding: var(--gg-space-4) var(--gg-space-5); color: var(--gg-color-text-secondary); }
+
+.app-header .loupist-header-identity strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-workspace-controls { display:flex; flex:none; align-items:center; gap:var(--gg-space-1); margin-inline-start:auto; }
+.header-workspace-controls .header-panel-toggle { max-width:180px; gap:var(--gg-space-2); }
+.header-workspace-controls .header-panel-toggle > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.header-workspace-divider { width:1px; height:18px; margin-inline:var(--gg-space-1); background:var(--gg-color-border-subtle); }
+.header-workspace-split[aria-pressed="true"] { color:var(--gg-color-text-primary); background:var(--gg-color-bg-selected); box-shadow:inset 0 0 0 1px var(--gg-color-border-subtle); }
+@media (max-width:600px) { .header-workspace-controls .header-panel-toggle { max-width:110px; padding-inline:var(--gg-space-2); } }

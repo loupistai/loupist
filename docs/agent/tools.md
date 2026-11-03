@@ -1,0 +1,74 @@
+# Tool catalog
+
+Static tool names, routes and evidence rules live in the catalog and `SYSTEM.md`. Per-turn Memory and asset tools are in [Turn tools](turn-tools.md).
+
+## Tool contracts and turn preparation
+
+`agent/tool-catalog.json` owns static names, broker routes, Memory permission
+classes, component membership, schemas and descriptions. Its `progress` metadata
+is for Chat presentation, not model input. Each tool step in `ChatProgress` carries the
+host's `toolName`; the renderer recognizes steps by it (a `chart_publish` step reserves
+a chart card, a `grid_publish` step a table card) and shows a step whose label is that
+tool's catalog wording in the interface language from `toolProgress` in the Chat locale
+files. The English entries must equal the catalog, so a tool that gains progress labels
+needs both locales; labels the host composes itself (`Opened {connection}`, `Reading
+{host}`) stay as sent. Rust derives the permitted surface;
+service handlers independently validate arguments, ownership and evidence. The Pi
+extension registers schemas/routes. MCP tools are discovered dynamically; bundled
+OpenBB descriptions are host-generated in
+`apps/loupist/src-tauri/src/commands/tool_executor/mcp_host/openbb.rs`,
+not taken from upstream docstrings, so edit them there.
+
+Native `read`, `write`, `edit`, `bash`, `ls`, `find`, and `grep` keep Pi's tool descriptions. [SYSTEM.md](../../apps/loupist/agent/SYSTEM.md) states the permission rule once, under "Authority and local work": those tools run in the selected workspace with the user's permissions, including absolute paths, and that execution is trusted local work. `registerWorkspaceTools` in `agent/workspace-tools.mjs` does not append that sentence to each tool. It still calls the Rust `authorize` hook before every execution, wraps untrusted text with the host boundary, and passes the workspace as the tool cwd while Pi's runtime directory stays private. The two-case form for an investment view is in that same file under "Investment judgment" and in the [Journal Skill](../../apps/loupist/agent/skills/journal/SKILL.md): two compact points, for and against, each a dated observation, then its next check (metric and timing), then what would strengthen or weaken it. The system's dated, linked per-principle checklist still applies. A proposed chart level's observed anchor is date, measure, and value; the [Visualize Skill](../../apps/loupist/agent/skills/visualize/SKILL.md) says "last day" or the chart's overall range does not date that value.
+
+`web_search` follows the [routing setting](../capabilities/data-services.md#agent-facing-data-services)
+in Rust. Model-native search runs as a Pi support command through
+`agent/loupist-native-search.mjs` and the adapters in `agent/native-search/`:
+`openai` (a ChatGPT sign-in or an OpenAI key) and the debug-only `openai-codex`
+client share the Responses hosted-search request in `codex.mjs`; `anthropic.mjs`
+and `xai.mjs` have their own. Every adapter needs a resolvable credential before
+any request.
+
+`calculate` (`calculations` pack) is the host arithmetic tool; its contract is in
+[Calculation](../analysis/calculation.md#calculation). `SYSTEM.md` sends common arithmetic to
+`calculate` before Bash, and the financial Skills route numeric work without a
+runtime first: `calculate`, then OpenBB's local `quantitative_*`, `technical_*`
+and `econometrics_*` tools, then `dataset_export` plus local code for what those
+cannot do.
+
+A `dcf_grid` or `reverse_dcf` result shows as a [sensitivity card](../analysis/calculation.md#sensitivity-cards)
+when the answer links it alone in a paragraph with the company name as the link text;
+the `calculate` description and the `valuation` Skill ask for that form. For what a price
+implies, the valuation Skill gives `reverse_dcf` the dated price and shares with their
+sources and, when the data allows, a `cagr` of the same cash-flow measure over the last
+five fiscal years as `reference_growth_pct` (cited in `input_sources`, its period in
+`labels.reference_growth_pct`); it never presents one cell as the answer or as a target
+price. `dividend-income` asks for the same card with the dividend `cagr` as reference.
+The bundled catalog in `agent_harness.rs` lists the four retail Skills
+([list](../capabilities/skills.md#skills-management)) first among the optional
+workflows, so the Skills group under `/` shows them right after the fixed procedures,
+each with its `skillBlurb` line from the Chat locale files.
+
+`SYSTEM.md` ("Evidence and citations") has the agent write each material number as a
+link whose text is only the number with its unit or currency and whose target is the
+exact `citation_url` it came from: a data result or passage for a figure read from a
+source (for a web page, a `web_fetch` passage whose `find` phrase contains the
+number), a `calculate` result for a derived figure, with each sourced input named in
+`input_sources`. Arithmetic never happens in prose; the first mention in a paragraph
+and every material table cell are linked; years, dates, counts and the user's own
+assumptions stay plain. Rust [checks those links](../analysis/number-checks.md#number-checks) when the
+reply commits, and the [evaluation](../../apps/loupist/evals/README.md#agent-evals)
+assertion `numbers_linked` measures them.
+
+For a local original, native `read` returns the file text; `workspace_capture`
+returns the host's `citation_url` alongside that text, outside any third-party
+delimiter. `source_save` stages that captured result and does not create another
+citation. The [citation scenarios](../../apps/loupist/evals/agent/suites/citations-v1.json)
+exercise both Chat attachments and workspace files through the headless runner;
+their scripted counterparts check delivery, Source retention and the linked
+answer's number check. A native journey must count both numbered citations and
+checked number links as inline evidence, independently of the Source footer.
+
+## Code
+
+- Prompt / tools: `agent/SYSTEM.md`, `agent/tool-catalog.json`, `src-tauri/src/broker.rs`

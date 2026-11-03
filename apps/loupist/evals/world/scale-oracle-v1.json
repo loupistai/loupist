@@ -1,0 +1,80 @@
+{
+  "schema": "loupist-world-retrieval-scale-oracle/1",
+  "version": 1,
+  "input_sha256": "e7c9a74ea7ad336ab8651ded6bd74b51bef68bfee801e1378a4dc5ac86d443a6",
+  "label_provenance": "Deterministic known imported corpus; no human labels and no extraction-quality claim.",
+  "cases": [
+    {
+      "id": "W-SCALE-000",
+      "expected_focal_source_id": "scale-focal",
+      "expected_entity_identifier": "FICT-AHS-001",
+      "expected_claim_id": "claim-zz-focal",
+      "required_exact_read": true,
+      "answer_metrics": {
+        "q2_operating_profit_usd_m": 9
+      },
+      "currency": "USD",
+      "unit": "million",
+      "publication_date": "2026-08-05",
+      "beyond_first_page_required": false,
+      "required_zero_wrong_entity_claims_in_answer": true
+    },
+    {
+      "id": "W-SCALE-020",
+      "expected_focal_source_id": "scale-focal",
+      "expected_entity_identifier": "FICT-AHS-001",
+      "expected_claim_id": "claim-zz-focal",
+      "required_exact_read": true,
+      "answer_metrics": {
+        "q2_operating_profit_usd_m": 9
+      },
+      "currency": "USD",
+      "unit": "million",
+      "publication_date": "2026-08-05",
+      "beyond_first_page_required": true,
+      "required_zero_wrong_entity_claims_in_answer": true
+    },
+    {
+      "id": "W-SCALE-100",
+      "expected_focal_source_id": "scale-focal",
+      "expected_entity_identifier": "FICT-AHS-001",
+      "expected_claim_id": "claim-zz-focal",
+      "required_exact_read": true,
+      "answer_metrics": {
+        "q2_operating_profit_usd_m": 9
+      },
+      "currency": "USD",
+      "unit": "million",
+      "publication_date": "2026-08-05",
+      "beyond_first_page_required": true,
+      "required_zero_wrong_entity_claims_in_answer": true
+    }
+  ],
+  "measurements": [
+    "source_count",
+    "canonical_claim_count",
+    "index_rebuild_ms",
+    "embedding_ms",
+    "query_latency_ms",
+    "recall_at_1",
+    "recall_at_5",
+    "recall_at_20",
+    "irrelevant_result_count_at_5",
+    "query_result_bytes",
+    "chat_input_tokens",
+    "chat_cached_input_tokens",
+    "chat_output_tokens",
+    "chat_duration_ms",
+    "measured_chat_cost_or_null",
+    "answer_correctness",
+    "actual_first_browse_page_claim_ids"
+  ],
+  "relevance": "Only the focal claim is relevant to the target profit query. Other claims are unrelated archive capacities, even though source text names the target solely to state non-identity.",
+  "gates": {
+    "focal_recall_at_5": 1,
+    "answer_correctness": 1,
+    "cross_entity_contamination": 0,
+    "trials": 3
+  },
+  "missing_policy": "An absent latency, cost or token value is null and unmeasured. Missing query/answer/required browse evidence prevents a complete pass."
+}

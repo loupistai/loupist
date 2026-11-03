@@ -1,0 +1,72 @@
+{
+  "schema": "loupist-world-oracle/1",
+  "suite": "world-temporal-v2",
+  "version": 2,
+  "description": "Expected temporal outcomes for temporal-corpus-v2.json. Every acceptance condition and scenario check is unchanged from v1; corpus effective times are explicit instants and unrelated CEO role history is omitted. Never enters a workspace, Source or prompt.",
+  "acceptance": "Pre-registered for W18.12e before any run: a candidate holds when its supersede and end passes, summed over all trials, are at least the baseline's, its control false invalidations are no more than the baseline's, and every candidate trial completes. Reported beside the ontology gates; not one of them.",
+  "checks": {
+    "supersede": "Every claim joining the old pair with evidence from the old Source is invalidated (invalidAt or expiredAt set), and at least one claim joining the new pair with evidence from the new Source is active.",
+    "end": "Every claim joining the old pair with evidence from the old Source is invalidated.",
+    "control": "No claim joining the old pair with evidence from the old Source is invalidated."
+  },
+  "scenarios": [
+    {
+      "id": "T-CEO",
+      "check": "supersede",
+      "old": {
+        "source_title": "Corvane Logistics names Lena Ortiz chief executive",
+        "between": [
+          "^lena ortiz$",
+          "^corvane( logistics)?$"
+        ]
+      },
+      "new": {
+        "source_title": "Corvane Logistics changes chief executive",
+        "between": [
+          "^marcus hale$",
+          "^corvane( logistics)?$"
+        ]
+      }
+    },
+    {
+      "id": "T-HQ",
+      "check": "supersede",
+      "old": {
+        "source_title": "Brightwell Foods company profile",
+        "between": [
+          "^brightwell foods$",
+          "^austin"
+        ]
+      },
+      "new": {
+        "source_title": "Brightwell Foods relocates its headquarters",
+        "between": [
+          "^brightwell foods$",
+          "^denver"
+        ]
+      }
+    },
+    {
+      "id": "T-SUPPLY",
+      "check": "end",
+      "old": {
+        "source_title": "Kestrel Semiconductor wins Halden Motors supply contract",
+        "between": [
+          "^kestrel semiconductor$",
+          "^halden motors$"
+        ]
+      }
+    },
+    {
+      "id": "T-DISPUTE",
+      "check": "control",
+      "old": {
+        "source_title": "Orion Ferry Works signs Pell Shipyards contract",
+        "between": [
+          "^orion ferry works$",
+          "^pell shipyards$"
+        ]
+      }
+    }
+  ]
+}

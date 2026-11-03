@@ -1,0 +1,21 @@
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { PreviewBridge, prepareConflictsFixture } from "../../preview/fixtures";
+import { MapInspector } from "./MapInspector";
+it("shows both attributed conflicting reports and opens each exact source", async () => {
+  const bridge = new PreviewBridge({delay_ms:0}); await prepareConflictsFixture(bridge);
+  const catalog = await bridge.knowledgeCatalog({loupistId:"loupist-quality"});
+  const map = await bridge.knowledgeMap({loupistId:"loupist-quality"});
+  const location = {loupistId:"loupist-quality",surface:"world" as const,recordId:"preview-world",revisionId:"preview-revision"};
+  const onOpen = vi.fn();
+  render(<MapInspector node={map.nodes[0]} map={map} catalog={catalog} location={location} bridge={bridge} onClose={vi.fn()} onSelect={vi.fn()} onOpen={onOpen} onAsk={vi.fn()} />);
+  const conflicts = await screen.findByRole("region",{name:"Sources disagree"});
+  expect(within(conflicts).getByText(/expanded supplier capacity by 18%/)).toBeVisible();
+  expect(within(conflicts).getByText(/reports unchanged capacity/)).toBeVisible();
+  expect(within(conflicts).getByText(/Oct 27, 2026/)).toBeVisible();
+  expect(within(conflicts).getByText(/Oct 26, 2026/)).toBeVisible();
+  const user = userEvent.setup(); const links = within(conflicts).getAllByRole("button",{name:"Open source"});
+  expect(links).toHaveLength(2);
+  await user.click(links[1]);
+  expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({surface:"source",objectId:"preview-source-1",selection:expect.objectContaining({spanId:"conflict-span-1"})}));
+});

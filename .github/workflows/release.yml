@@ -1,0 +1,644 @@
+name: Loupist Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: loupist-release
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  validate:
+    name: Validate release identity
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+      prerelease: ${{ steps.identity.outputs.prerelease }}
+      source_commit: ${{ steps.identity.outputs.source_commit }}
+      macos_bundle_version: ${{ steps.macos_bundle_version.outputs.value }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Node 22.19
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22.19.0
+
+      - name: Install Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12"
+
+      - id: identity
+        name: Match tag and package versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_VERSION="$(node -p "require('./apps/loupist/package.json').version")"
+          test "$GITHUB_REPOSITORY" = "loupistai/loupist"
+          python3 apps/loupist/scripts/set-version.py --check --version "$APP_VERSION"
+          test "$GITHUB_REF_NAME" = "v$APP_VERSION"
+          [[ "$GITHUB_RUN_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          if [[ "$APP_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-rc\.([1-9][0-9]*)$ ]]; then
+            PRERELEASE=true
+          elif [[ "$APP_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            PRERELEASE=false
+          else
+            echo "Releases must use canonical X.Y.Z or X.Y.Z-rc.N without build metadata." >&2
+            exit 1
+          fi
+          echo "version=$APP_VERSION" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "source_commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - id: macos_bundle_version
+        name: Allocate a monotonic macOS bundle build number
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          METADATA_DIRECTORY="$RUNNER_TEMP/retained-release-metadata"
+          RELEASE_TAGS="$RUNNER_TEMP/retained-release-tags.txt"
+          mkdir -p "$METADATA_DIRECTORY"
+          gh release list \
+            --repo "$GITHUB_REPOSITORY" \
+            --limit 1000 \
+            --json tagName \
+            --jq '.[].tagName' > "$RELEASE_TAGS"
+          release_index=0
+          while IFS= read -r release_tag; do
+            test -n "$release_tag"
+            release_index=$((release_index + 1))
+            destination="$METADATA_DIRECTORY/$release_index"
+            mkdir "$destination"
+            gh release download "$release_tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern RELEASE-METADATA.json \
+              --dir "$destination"
+          done < "$RELEASE_TAGS"
+          MACOS_BUNDLE_VERSION="$(
+            python3 apps/loupist/scripts/next-macos-bundle-version.py \
+              --run-number "$GITHUB_RUN_NUMBER" \
+              --release-metadata-directory "$METADATA_DIRECTORY"
+          )"
+          [[ "$MACOS_BUNDLE_VERSION" =~ ^[1-9][0-9]*$ ]]
+          echo "value=$MACOS_BUNDLE_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Require exact source commit to have passed protected CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SOURCE_COMMIT="$(git rev-parse HEAD)"
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$SOURCE_COMMIT" origin/main
+          gh api --paginate \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "/repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$SOURCE_COMMIT&status=completed&per_page=100" \
+            --jq '.workflow_runs[] | [.id, .path, .head_sha, .status, .conclusion, .head_repository.full_name, .repository.full_name, .event, .head_branch] | @tsv' \
+            > "$RUNNER_TEMP/ci-runs.tsv"
+          VERIFIED_RUN_ID="$(
+            awk -F '\t' -v sha="$SOURCE_COMMIT" -v repository="$GITHUB_REPOSITORY" '
+              $2 == ".github/workflows/ci.yml" &&
+              $3 == sha &&
+              $4 == "completed" &&
+              $5 == "success" &&
+              $6 == repository &&
+              $7 == repository &&
+              $8 == "push" &&
+              $9 == "main" { print $1; exit }
+            ' "$RUNNER_TEMP/ci-runs.tsv"
+          )"
+          test -n "$VERIFIED_RUN_ID" || {
+            echo "release source commit has no successful exact-SHA ci.yml run" >&2
+            exit 1
+          }
+          echo "verified exact-source CI run $VERIFIED_RUN_ID"
+
+      - name: Require contiguous release candidates
+        if: steps.identity.outputs.prerelease == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          PUBLISHED_TAGS="$RUNNER_TEMP/published-release-tags.txt"
+          gh api --paginate \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "/repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and .published_at != null) | .tag_name' \
+            > "$PUBLISHED_TAGS"
+          python3 apps/loupist/scripts/release-qualification.py rc-sequence \
+            --candidate-tag "$GITHUB_REF_NAME" \
+            --published-tags "$PUBLISHED_TAGS"
+
+      - name: Require dated changelog for stable release
+        if: steps.identity.outputs.prerelease == 'false'
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from datetime import date
+          import os
+          from pathlib import Path
+          import re
+
+          version = os.environ["RELEASE_VERSION"]
+          lines = Path("CHANGELOG.md").read_text(encoding="utf-8").splitlines()
+          unreleased_heading = f"## {version} - Unreleased"
+          if unreleased_heading in lines:
+              raise SystemExit(
+                  f"Stable release cannot retain {unreleased_heading!r}."
+              )
+          heading = re.compile(
+              rf"^## {re.escape(version)} - ([0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}})$"
+          )
+          matches = [heading.fullmatch(line) for line in lines]
+          matches = [match for match in matches if match is not None]
+          if len(matches) != 1:
+              raise SystemExit(
+                  f"Stable release requires exactly one '## {version} - YYYY-MM-DD' heading."
+              )
+          try:
+              date.fromisoformat(matches[0].group(1))
+          except ValueError as error:
+              raise SystemExit(f"Stable release heading has an invalid date: {error}")
+          PY
+
+      - name: Require published release candidate before stable release
+        if: steps.identity.outputs.prerelease == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+        run: |
+          set -euo pipefail
+          PUBLISHED_RC_TAGS="$(
+            gh api --paginate \
+              --header "Accept: application/vnd.github+json" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              "/repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              --jq '.[] | select(.draft == false and .prerelease == true and .published_at != null) | .tag_name'
+          )"
+          MATCHING_RC=false
+          while IFS= read -r tag; do
+            if [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-rc\.([1-9][0-9]*)$ ]] \
+              && [[ "${BASH_REMATCH[1]}" == "$RELEASE_VERSION" ]]; then
+              MATCHING_RC=true
+              break
+            fi
+          done <<< "$PUBLISHED_RC_TAGS"
+          if [[ "$MATCHING_RC" != true ]]; then
+            echo "Stable release requires an already published, non-draft v${RELEASE_VERSION}-rc.N prerelease." >&2
+            exit 1
+          fi
+
+      - name: Validate release configuration
+        run: |
+          python3 apps/loupist/scripts/check-macos-bundle-version.py \
+            --tauri-config apps/loupist/src-tauri/tauri.conf.json \
+            --source-plist apps/loupist/src-tauri/Info.plist
+          python3 - <<'PY'
+          import json
+          import plistlib
+          from pathlib import Path
+
+          base = json.loads(Path("apps/loupist/src-tauri/tauri.conf.json").read_text())
+          release = json.loads(Path("apps/loupist/src-tauri/tauri.release.conf.json").read_text())
+          with Path("apps/loupist/src-tauri/Info.plist").open("rb") as source:
+              info = plistlib.load(source)
+          assert base["productName"] == "Loupist"
+          assert base["identifier"] == "com.monarchjuno.loupist"
+          assert base["build"]["beforeBuildCommand"] == "npm run build"
+          assert base["version"].split("-", 1)[0] == info["CFBundleShortVersionString"]
+          bundle_version = base["bundle"]["macOS"]["bundleVersion"]
+          bundle_components = bundle_version.split(".") if isinstance(bundle_version, str) else []
+          assert 1 <= len(bundle_components) <= 3
+          assert all(component.isdigit() for component in bundle_components)
+          assert any(int(component) > 0 for component in bundle_components)
+          assert base["bundle"]["macOS"]["minimumSystemVersion"] == "13.0"
+          assert release["bundle"]["createUpdaterArtifacts"] is True
+          assert not base["bundle"].get("externalBin")
+          assert not release["bundle"].get("externalBin")
+          assert release["bundle"]["resources"] == {
+              "resources/pi-runtime/": "pi-runtime",
+              "resources/embed_assets/": "embed_assets",
+              "../agent/": "loupist-agent",
+              "../../../LICENSE": "LICENSE",
+              "../../../NOTICE": "NOTICE",
+              "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
+          }
+          PY
+
+  build-macos:
+    name: Signed macOS arm64 release
+    needs: validate
+    runs-on: macos-15
+    environment: release
+    steps:
+      - name: Require release credentials
+        shell: bash
+        env:
+          UPDATER_PUBLIC_KEY: ${{ secrets.LOUPIST_UPDATER_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.LOUPIST_TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.LOUPIST_TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.LOUPIST_APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.LOUPIST_APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.LOUPIST_APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.LOUPIST_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.LOUPIST_APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.LOUPIST_APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          for name in \
+            UPDATER_PUBLIC_KEY \
+            TAURI_SIGNING_PRIVATE_KEY \
+            TAURI_SIGNING_PRIVATE_KEY_PASSWORD \
+            APPLE_CERTIFICATE \
+            APPLE_CERTIFICATE_PASSWORD \
+            APPLE_SIGNING_IDENTITY \
+            APPLE_ID \
+            APPLE_PASSWORD \
+            APPLE_TEAM_ID; do
+            test -n "${!name:-}" || {
+              echo "Required release credential is absent: $name" >&2
+              exit 1
+            }
+          done
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install CI toolchains
+        uses: ./.github/actions/setup-toolchains
+        with:
+          node: "true"
+          rust: "true"
+          rust-targets: aarch64-apple-darwin
+          rust-cache-key: release
+          python: "true"
+
+      - name: Install renderer dependencies
+        working-directory: apps/loupist
+        run: npm ci
+
+      - name: Import Developer ID certificate
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.LOUPIST_APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.LOUPIST_APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          CERTIFICATE_PATH="$RUNNER_TEMP/loupist-signing.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/loupist-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          printf '%s' "$APPLE_CERTIFICATE" \
+            | openssl base64 -d -A -out "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          echo "LOUPIST_SIGNING_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      - name: Configure embedded updater
+        shell: bash
+        env:
+          LOUPIST_UPDATER_PUBLIC_KEY: ${{ secrets.LOUPIST_UPDATER_PUBLIC_KEY }}
+          LOUPIST_RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          LOUPIST_MACOS_BUNDLE_VERSION: ${{ needs.validate.outputs.macos_bundle_version }}
+        run: |
+          set -euo pipefail
+          RELEASE_CONFIG="$RUNNER_TEMP/loupist-tauri-release.json"
+          python3 apps/loupist/scripts/create-release-config.py \
+            --platform macos \
+            --version "$LOUPIST_RELEASE_VERSION" \
+            --macos-bundle-version "$LOUPIST_MACOS_BUNDLE_VERSION" \
+            --release-config apps/loupist/src-tauri/tauri.release.conf.json \
+            --output "$RELEASE_CONFIG"
+          python3 - "$RELEASE_CONFIG" "$LOUPIST_MACOS_BUNDLE_VERSION" <<'PY'
+          import json
+          import sys
+
+          config = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert config["bundle"]["macOS"]["bundleVersion"] == sys.argv[2]
+          PY
+          echo "LOUPIST_TAURI_RELEASE_CONFIG=$RELEASE_CONFIG" >> "$GITHUB_ENV"
+
+      - name: Stage and sign sidecars and OpenBB runtime
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.LOUPIST_APPLE_SIGNING_IDENTITY }}
+          LOUPIST_REQUIRE_DISTRIBUTION_SIGNING: "1"
+        run: apps/loupist/scripts/stage-macos-arm64.sh
+
+      - name: Build, sign, and notarize Loupist
+        working-directory: apps/loupist
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.LOUPIST_TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.LOUPIST_TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.LOUPIST_APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.LOUPIST_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.LOUPIST_APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.LOUPIST_APPLE_TEAM_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${TAURI_CONFIG:-}"
+          test -s "$LOUPIST_TAURI_RELEASE_CONFIG"
+          npm exec -- tauri build \
+            --target aarch64-apple-darwin \
+            --bundles app,dmg \
+            --config "$LOUPIST_TAURI_RELEASE_CONFIG"
+
+      - name: Notarize and staple the DMG
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.LOUPIST_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.LOUPIST_APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.LOUPIST_APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          BUNDLE_ROOT="apps/loupist/src-tauri/target/aarch64-apple-darwin/release/bundle"
+          shopt -s nullglob
+          DMGS=("$BUNDLE_ROOT"/dmg/*.dmg)
+          test "${#DMGS[@]}" -eq 1
+          NOTARY_RESULT="$RUNNER_TEMP/loupist-dmg-notary.json"
+          xcrun notarytool submit "${DMGS[0]}" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait \
+            --output-format json > "$NOTARY_RESULT"
+          python3 - "$NOTARY_RESULT" <<'PY'
+          import json
+          import sys
+
+          result = json.load(open(sys.argv[1], encoding="utf-8"))
+          if result.get("status") != "Accepted":
+              raise SystemExit(f"DMG notarization was not accepted: {result}")
+          PY
+          xcrun stapler staple "${DMGS[0]}"
+
+      - name: Verify signatures, notarization, and updater artifacts
+        shell: bash
+        env:
+          APPLE_TEAM_ID: ${{ secrets.LOUPIST_APPLE_TEAM_ID }}
+          LOUPIST_MACOS_BUNDLE_VERSION: ${{ needs.validate.outputs.macos_bundle_version }}
+        run: |
+          set -euo pipefail
+          BUNDLE_ROOT="apps/loupist/src-tauri/target/aarch64-apple-darwin/release/bundle"
+          shopt -s nullglob
+          APPS=("$BUNDLE_ROOT"/macos/*.app)
+          DMGS=("$BUNDLE_ROOT"/dmg/*.dmg)
+          UPDATERS=("$BUNDLE_ROOT"/macos/*.app.tar.gz)
+          test "${#APPS[@]}" -eq 1
+          test "${#DMGS[@]}" -eq 1
+          test "${#UPDATERS[@]}" -eq 1
+          APP_BUNDLE="${APPS[0]}"
+          DMG="${DMGS[0]}"
+          UPDATER="${UPDATERS[0]}"
+          hdiutil verify "$DMG" >/dev/null
+          python3 apps/loupist/scripts/check-macos-bundle-version.py \
+            --tauri-config apps/loupist/src-tauri/tauri.conf.json \
+            --source-plist apps/loupist/src-tauri/Info.plist \
+            --expected-bundle-version "$LOUPIST_MACOS_BUNDLE_VERSION" \
+            --bundle-plist "$APP_BUNDLE/Contents/Info.plist"
+          PI_RUNTIME="$APP_BUNDLE/Contents/Resources/pi-runtime"
+          PI_BINARY="$PI_RUNTIME/loupist-pi"
+          test -x "$PI_BINARY"
+          test -s "$APP_BUNDLE/Contents/Resources/LICENSE"
+          test -s "$APP_BUNDLE/Contents/Resources/NOTICE"
+          test -s "$APP_BUNDLE/Contents/Resources/THIRD_PARTY_NOTICES.md"
+          test -s "$UPDATER.sig"
+          codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+          codesign --verify --strict --verbose=2 "$DMG"
+          xcrun stapler validate "$APP_BUNDLE"
+          xcrun stapler validate "$DMG"
+          find "$PI_RUNTIME" -type f -exec sh -c '
+            team=$1
+            shift
+            for binary do
+              if LC_ALL=C file "$binary" | grep -q "Mach-O"; then
+                codesign --verify --strict --verbose=2 "$binary"
+                codesign --display --verbose=4 "$binary" 2>&1 \
+                  | grep -Fqx "TeamIdentifier=$team"
+              fi
+            done
+          ' sh "$APPLE_TEAM_ID" {} +
+          for entitlement in \
+            com.apple.security.cs.allow-jit \
+            com.apple.security.cs.allow-unsigned-executable-memory; do
+            codesign --display --entitlements :- "$PI_BINARY" 2>/dev/null \
+              | plutil -extract "$entitlement" raw -o - - \
+              | grep -qx true
+          done
+          MOUNT_DIR="$(mktemp -d "$RUNNER_TEMP/loupist-dmg.XXXXXX")"
+          DMG_ATTACHED=false
+          cleanup_dmg_mount() {
+            if [[ "$DMG_ATTACHED" == true ]]; then
+              hdiutil detach "$MOUNT_DIR" >/dev/null
+            fi
+            rmdir "$MOUNT_DIR"
+          }
+          trap cleanup_dmg_mount EXIT
+          trap 'exit 129' HUP
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+          hdiutil attach "$DMG" \
+            -nobrowse \
+            -readonly \
+            -mountpoint "$MOUNT_DIR" >/dev/null
+          DMG_ATTACHED=true
+          MOUNTED_APP="$MOUNT_DIR/Loupist.app"
+          test -d "$MOUNTED_APP"
+          apps/loupist/scripts/check-macos-app-bundle.sh \
+            "$MOUNTED_APP" \
+            --expected-bundle-version "$LOUPIST_MACOS_BUNDLE_VERSION"
+          hdiutil detach "$MOUNT_DIR" >/dev/null
+          DMG_ATTACHED=false
+          rmdir "$MOUNT_DIR"
+          trap - EXIT HUP INT TERM
+
+      - name: Normalize macOS release assets
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          python3 apps/loupist/scripts/prepare-release-assets.py \
+            --platform macos \
+            --version "$RELEASE_VERSION" \
+            --bundle-root apps/loupist/src-tauri/target/aarch64-apple-darwin/release/bundle \
+            --output release-assets
+
+      - name: Upload macOS release assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: loupist-${{ needs.validate.outputs.version }}-macos-aarch64
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove temporary signing keychain
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${LOUPIST_SIGNING_KEYCHAIN:-}" ]]; then
+            security delete-keychain "$LOUPIST_SIGNING_KEYCHAIN" || true
+          fi
+          rm -f -- \
+            "$RUNNER_TEMP/loupist-signing.p12" \
+            "$RUNNER_TEMP/loupist-tauri-release.json" \
+            "$RUNNER_TEMP/loupist-dmg-notary.json"
+
+  publish:
+    name: Assemble signed release candidate
+    needs:
+      - validate
+      - build-macos
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Download signed macOS assets
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: loupist-${{ needs.validate.outputs.version }}-macos-aarch64
+          path: release-assets
+
+      - name: Generate static updater manifest
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          PUBLISHED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          python3 apps/loupist/scripts/generate-update-manifest.py \
+            --version "$RELEASE_VERSION" \
+            --tag "$GITHUB_REF_NAME" \
+            --repository "$GITHUB_REPOSITORY" \
+            --pub-date "$PUBLISHED_AT" \
+            --assets release-assets \
+            --output release-assets/latest.json
+
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          syft-version: v1.50.0
+          path: .
+          format: spdx-json
+          output-file: release-assets/Loupist-${{ needs.validate.outputs.version }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Finalize aliases, metadata, and checksums
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          LOUPIST_MACOS_BUNDLE_VERSION: ${{ needs.validate.outputs.macos_bundle_version }}
+        run: |
+          set -euo pipefail
+          python3 apps/loupist/scripts/finalize-release-assets.py \
+            --version "$RELEASE_VERSION" \
+            --tag "$GITHUB_REF_NAME" \
+            --repository "$GITHUB_REPOSITORY" \
+            --source-commit "${{ needs.validate.outputs.source_commit }}" \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --macos-bundle-version "$LOUPIST_MACOS_BUNDLE_VERSION" \
+            --assets release-assets
+
+      - name: Validate assembled release
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 apps/loupist/scripts/verify-release-assets.py \
+            --version "$RELEASE_VERSION" \
+            --tag "$GITHUB_REF_NAME" \
+            --repository "$GITHUB_REPOSITORY" \
+            --source-commit "${{ needs.validate.outputs.source_commit }}" \
+            --assets release-assets
+
+      - name: Cryptographically verify updater packages against the configured public key
+        shell: bash
+        env:
+          LOUPIST_UPDATER_PUBLIC_KEY: ${{ secrets.LOUPIST_UPDATER_PUBLIC_KEY }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          node apps/loupist/scripts/verify-updater-signatures.mjs \
+            --version "$RELEASE_VERSION" \
+            --assets release-assets
+
+      - name: Attest assembled candidate provenance
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: release-assets/*
+
+      - name: Publish RC or stage stable draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release already exists; immutable assets will not be replaced." >&2
+            exit 1
+          fi
+          args=(
+            "$GITHUB_REF_NAME"
+            --verify-tag
+            --title "Loupist $RELEASE_VERSION"
+            --notes "Signed Loupist $RELEASE_VERSION for macOS 13+ on Apple Silicon. Installer and updater artifacts. Verify downloads with SHA256SUMS and RELEASE-METADATA.json."
+          )
+          if [[ "$PRERELEASE" == true ]]; then
+            args+=(--prerelease --latest=false)
+          else
+            args+=(--draft)
+          fi
+          gh release create "${args[@]}" release-assets/*
+          if [[ "$PRERELEASE" == true ]]; then
+            test "$(gh release view "$GITHUB_REF_NAME" --json isDraft,isPrerelease --jq '[.isDraft, .isPrerelease] | @tsv')" = $'false\ttrue'
+            apps/loupist/scripts/verify-published-release.sh "$GITHUB_REF_NAME"
+          else
+            test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true
+          fi

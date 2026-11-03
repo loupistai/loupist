@@ -1,0 +1,827 @@
+{
+  "schema": "loupist-world-suite/1",
+  "suite": "implicit-memory-validation-v3",
+  "version": 1,
+  "fixture_delivery": "per_step",
+  "description": "Uncued production Chat lifecycle evaluation. User-visible prompts contain no Memory capability hints. Evaluator-only checks measure canonical state and exact tool receipts.",
+  "prompt_policy": "No World/Lens/Memory, save/remember, capability names, tool arguments, or requested output JSON in user prompts. Natural preferences and one-off scope statements are allowed.",
+  "scenarios": [
+    {
+      "id": "V01-NEAR-NAMES",
+      "title": "Similar entity names",
+      "family": "entity_disambiguation",
+      "split": "validation",
+      "condition": "implicit",
+      "world_enabled": true,
+      "connections": [],
+      "workspace_files": {
+        "directory.txt": "FICTIONAL EXERCISE\nPublisher: Port Industry Directory\nDate: 2026-10-04\nSolin Robotics (Busan) and Solin Robotix (Incheon) are separate companies. Solin Robotics buys depth cameras from Amber Optics. Solin Robotix buys battery packs from Blue Cell. Neither supplier serves the other company in this report.\n"
+      },
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "initial",
+          "user": "directory.txt에 있는 이름이 비슷한 두 가상 회사와 각 공급사를 구분해 설명해줘.",
+          "chat": "initial",
+          "role": "train",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "source_retained",
+              "metric": "source_acquisition",
+              "path": "directory.txt"
+            },
+            {
+              "assert": "world_edge",
+              "metric": "world_extraction",
+              "from_name": "Solin Robotics",
+              "to_name": "Amber Optics"
+            },
+            {
+              "assert": "world_edge",
+              "metric": "world_extraction",
+              "from_name": "Solin Robotix",
+              "to_name": "Blue Cell"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "probe",
+          "user": "인천에 있는 Solin Robotix는 무엇을 어디서 사는 회사였지? 부산 회사와 혼동하지 말고 알려줘.",
+          "chat": "probe",
+          "role": "probe",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "memory_read",
+              "metric": "retrieval",
+              "kind": "source"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "Blue Cell"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "배터리|battery"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "lens"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "other",
+          "user": "부산에 있는 Solin Robotics의 공급사는 어디였어?",
+          "chat": "other",
+          "role": "probe",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "memory_read",
+              "metric": "retrieval",
+              "kind": "source"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "Amber Optics"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "lens"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V02-TERMINATED",
+      "title": "Ended relationship",
+      "family": "temporal_relationship",
+      "split": "validation",
+      "condition": "implicit",
+      "world_enabled": true,
+      "connections": [],
+      "workspace_files": {
+        "agreement.txt": "FICTIONAL EXERCISE\nPublisher: Cedar Mobility Exercise Office\nDate: 2026-08-01\nCedar Mobility signed a three-year motor supply agreement with Coral Motors on 2026-08-01. The agreement became effective that day.\n"
+      },
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "initial",
+          "user": "agreement.txt의 가상 기업 계약 관계를 설명해줘.",
+          "chat": "initial",
+          "role": "train",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "source_retained",
+              "metric": "source_acquisition",
+              "path": "agreement.txt"
+            },
+            {
+              "assert": "world_edge",
+              "metric": "world_extraction",
+              "from_name": "Cedar Mobility",
+              "to_name": "Coral Motors",
+              "directed": false
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "termination",
+          "user": "termination.txt에 후속 발표가 있어. 계약 상태가 어떻게 달라졌는지 설명해줘.",
+          "chat": "initial",
+          "role": "train",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "source_retained",
+              "metric": "source_acquisition",
+              "path": "termination.txt"
+            },
+            {
+              "assert": "record_count",
+              "metric": "save_precision",
+              "kind": "source",
+              "equals": 2
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "종료|해지|terminate"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ],
+          "workspace_files": {
+            "termination.txt": "FICTIONAL EXERCISE\nPublisher: Cedar Mobility Exercise Office\nDate: 2026-10-12\nCedar Mobility and Coral Motors terminated their 2026-08-01 motor supply agreement by mutual consent, effective 2026-10-10. No replacement supplier has been announced. The historical signing remains a past event; the agreement is no longer in force.\n"
+          }
+        },
+        {
+          "id": "probe",
+          "user": "Cedar Mobility와 Coral Motors의 모터 공급 계약은 현재 유효해? 언제 무엇이 바뀌었고 후속 공급사는 알려졌는지 정리해줘.",
+          "chat": "probe",
+          "role": "probe",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "memory_read",
+              "metric": "retrieval",
+              "kind": "source"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "종료|해지|유효하지|효력.*없"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "10[월.\\-/ ]+10|2026-10-10"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "미발표|발표.*없|알려.*않|확인.*않|확인.*없"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "lens"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V03-UNITS",
+      "title": "Comparable units",
+      "family": "unit_and_percentage_points",
+      "split": "validation",
+      "condition": "implicit",
+      "world_enabled": true,
+      "connections": [],
+      "workspace_files": {},
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "learn",
+          "user": "나는 실적을 비교할 때 금액 단위를 먼저 맞추고, 영업이익률 변화는 퍼센트포인트로 표시해. 전년 값이 양수일 때만 성장률을 계산하고. 매출 100, 이익 10이면 이익률은?",
+          "chat": "learn",
+          "role": "train",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "lens_created",
+              "metric": "method_learning"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "10\\s*%"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "document",
+          "user": "quartz.txt의 가상 회사 실적을 전년 동기와 비교해줘. 매출 성장률과 이익률 변화를 내 방식으로 설명해줘.",
+          "chat": "learn",
+          "role": "train",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "source_retained",
+              "metric": "source_acquisition",
+              "path": "quartz.txt"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "25\\s*%"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "5\\s*(?:%p|퍼센트포인트|percentage points|pp)"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "lens"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ],
+          "workspace_files": {
+            "quartz.txt": "FICTIONAL EXERCISE\nPublisher: Quartz Tools Exercise Office\nDate: 2026-10-06\nQuartz Tools consolidated revenue in Q3 2025 was KRW 80000 million and operating profit was KRW 8000 million. In Q3 2026 revenue was KRW 100 billion and operating profit was KRW 15 billion. Figures cover matching three-month periods and accounting scope.\n"
+          }
+        },
+        {
+          "id": "probe",
+          "user": "Quartz Tools의 두 분기 실적에서 매출 성장률과 영업이익률 변화를 다시 정리해줘.",
+          "chat": "probe",
+          "role": "probe",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "memory_read",
+              "metric": "retrieval",
+              "kind": "lens",
+              "reference_step": "learn"
+            },
+            {
+              "assert": "memory_read",
+              "metric": "retrieval",
+              "kind": "source"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "25\\s*%"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "5\\s*(?:%p|퍼센트포인트|percentage points|pp)"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "lens"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V04-LANGUAGE",
+      "title": "Method across languages",
+      "family": "cross_language_transfer",
+      "split": "validation",
+      "condition": "implicit",
+      "world_enabled": false,
+      "connections": [],
+      "workspace_files": {},
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "learn",
+          "user": "나는 가상 제조사의 유동성 여유를 현금 보유 개월수가 8개월 미만이면 취약, 8개월 이상이면 보통으로 분류해. 7개월이면 어떤 등급일까?",
+          "chat": "learn",
+          "role": "train",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "lens_created",
+              "metric": "method_learning"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "취약"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "refine",
+          "user": "유동성 분류 경계를 10개월로 높이자. 10개월 미만은 취약, 10개월 이상은 보통이야. 매출채권 회전일수에는 이 기준을 적용하지 않아.",
+          "chat": "learn",
+          "role": "train",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "lens_revised",
+              "metric": "method_revision",
+              "reference_step": "learn"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "probe",
+          "user": "A fictional manufacturer has exactly ten months of cash runway. Using my usual liquidity classification, which category applies? Please answer in English.",
+          "chat": "probe",
+          "role": "probe",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "memory_read",
+              "metric": "retrieval",
+              "kind": "lens",
+              "reference_step": "learn"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "normal|ordinary|standard|moderate"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "lens"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V05-SCOPE",
+      "title": "Scope exclusions",
+      "family": "method_scope_exclusion",
+      "split": "validation",
+      "condition": "implicit",
+      "world_enabled": false,
+      "connections": [],
+      "workspace_files": {},
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "learn",
+          "user": "원재료 재고만 따로 평가하는 내 기준은 재고일수 40일 초과면 부담 3점, 그 이하면 0점이야. 재공품과 완제품에는 이 기준을 쓰지 않아. 원재료 42일이면 몇 점이지?",
+          "chat": "learn",
+          "role": "train",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "lens_created",
+              "metric": "method_learning"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "3\\s*점"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "outside",
+          "user": "가상 회사의 재공품 재고일수가 50일이야. 내 원재료 기준을 이 수치에 적용할 수 있을까?",
+          "chat": "outside",
+          "role": "probe",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "memory_read",
+              "metric": "retrieval",
+              "kind": "lens",
+              "reference_step": "learn"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "적용.{0,25}(?:않|못|없|안)|대상.{0,15}아니|제외"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "lens"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "inside",
+          "user": "같은 회사 원재료 재고일수는 정확히 40일이래. 내 기준으로 부담은 몇 점이야?",
+          "chat": "inside",
+          "role": "probe",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "memory_read",
+              "metric": "retrieval",
+              "kind": "lens",
+              "reference_step": "learn"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "0\\s*점"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "lens"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V06-MISSING",
+      "title": "Missing and zero denominators",
+      "family": "missing_vs_zero",
+      "split": "validation",
+      "condition": "implicit",
+      "world_enabled": false,
+      "connections": [],
+      "workspace_files": {},
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "learn",
+          "user": "나는 성장률 계산에서 전년 수치가 양수로 확인될 때만 (금년-전년)/전년을 써. 전년 값이 없으면 미확인, 0이면 계산 불가라고 구분해. 전년 10, 금년 12면 얼마야?",
+          "chat": "learn",
+          "role": "train",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "lens_created",
+              "metric": "method_learning"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "20\\s*%"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "missing",
+          "user": "가상 회사 매출은 올해 12인데 전년 수치는 자료에 없어. 내 방식대로 성장률 상태를 말해줘.",
+          "chat": "missing",
+          "role": "probe",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "memory_read",
+              "metric": "retrieval",
+              "kind": "lens",
+              "reference_step": "learn"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "미확인|확인.*않|알 수 없"
+            },
+            {
+              "assert": "answer_absent",
+              "metric": "negative_transfer",
+              "pattern": "100\\s*%"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "lens"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "zero",
+          "user": "다른 가상 회사의 매출은 올해 12이고 전년은 0으로 확인됐어. 내 방식대로 성장률 상태를 말해줘.",
+          "chat": "zero",
+          "role": "probe",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "memory_read",
+              "metric": "retrieval",
+              "kind": "lens",
+              "reference_step": "learn"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "계산 불가|계산할 수 없|산출 불가|계산.*불가능|정의.*않"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "lens"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V07-MODE",
+      "title": "Memory permission transitions",
+      "family": "memory_mode_transitions",
+      "split": "validation",
+      "condition": "implicit",
+      "world_enabled": false,
+      "connections": [],
+      "workspace_files": {},
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "learn",
+          "user": "나는 설비 가동률 81% 초과를 증설 압박 2점, 81% 이하는 0점으로 분류해. 83%면 몇 점이지?",
+          "chat": "learn",
+          "role": "train",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "lens_created",
+              "metric": "method_learning"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "2\\s*점"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "off",
+          "user": "내가 평소 쓰는 설비 증설 압박 점수의 정확한 경계는 얼마야? 이 대화에 그 기준이 없다면 모른다고 해줘.",
+          "chat": "off",
+          "role": "probe",
+          "memory": "off",
+          "checks": [
+            {
+              "assert": "no_memory_access",
+              "metric": "permission"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "all"
+            },
+            {
+              "assert": "no_commit",
+              "metric": "save_precision",
+              "kind": "all"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "모르|알 수 없|없|확인할 수 없"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "readonly",
+          "user": "평소 내 기준으로 가동률이 정확히 81%인 공장은 증설 압박 몇 점이야?",
+          "chat": "readonly",
+          "role": "probe",
+          "memory": "read_only",
+          "checks": [
+            {
+              "assert": "memory_read",
+              "metric": "retrieval",
+              "kind": "lens",
+              "reference_step": "learn"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "0\\s*점"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "all"
+            },
+            {
+              "assert": "no_commit",
+              "metric": "save_precision",
+              "kind": "all"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "on",
+          "user": "평소 내 기준으로 가동률 83%인 공장의 증설 압박은 몇 점이야?",
+          "chat": "on",
+          "role": "probe",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "memory_read",
+              "metric": "retrieval",
+              "kind": "lens",
+              "reference_step": "learn"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "2\\s*점"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "lens"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V08-UNICODE",
+      "title": "Multilingual original quote",
+      "family": "unicode_conversation_provenance",
+      "split": "validation",
+      "condition": "implicit",
+      "world_enabled": false,
+      "connections": [],
+      "workspace_files": {},
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "original",
+          "user": "이번 문장 검토에서만 쓰는 원문은 「café / 東京 / 한글🧩 — 주문번호 Z-é-27」이야. 내가 쓴 원문을 인용하지 말고 접수했다고만 말해줘.",
+          "chat": "original",
+          "role": "train",
+          "memory": "read_only",
+          "checks": [
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "all"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "aside",
+          "user": "문장 내용과 무관하게 9 곱하기 7을 계산해줘.",
+          "chat": "original",
+          "role": "train",
+          "memory": "read_only",
+          "checks": [
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "63"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "all"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "probe",
+          "user": "Please quote the exact multilingual line I supplied in our earlier discussion, preserving accents, Japanese characters, the emoji, and the order code. Separate my wording from your prior reply.",
+          "chat": "probe",
+          "role": "probe",
+          "memory": "read_only",
+          "checks": [
+            {
+              "assert": "conversation_read",
+              "metric": "conversation_provenance",
+              "reference_step": "original",
+              "complete": true
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "café / 東京 / 한글🧩"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "Z-é-27"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "all"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

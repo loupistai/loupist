@@ -1,0 +1,57 @@
+{
+  "id": "krx.market-data",
+  "name": "KRX Open API",
+  "summary": "Daily KOSPI and KOSDAQ prices straight from the exchange, up to 31 weekdays per read. A free KRX account needs approval for each market you use; verification checks both.",
+  "publisher": "Loupist",
+  "data_authority": "Korea Exchange",
+  "kind": "data_source",
+  "free_state": "free_account",
+  "trust": "first_party",
+  "runtime": {
+    "kind": "native",
+    "server_id": null,
+    "provider_ids": [],
+    "credential_mapping": {},
+    "config_mapping": {},
+    "verification_probe": null
+  },
+  "release_stage": "available",
+  "featured": false,
+  "markets": [
+    "South Korea"
+  ],
+  "asset_classes": [
+    "Equity"
+  ],
+  "capabilities": [
+    "market.ohlcv"
+  ],
+  "freshness": [
+    "Historical trading dates"
+  ],
+  "attribution": "Korea Exchange",
+  "terms_url": "https://openapi.krx.co.kr/contents/OPP/INFO/OPPINFO002.jsp",
+  "permissions": {
+    "network_hosts": [
+      "data-dbg.krx.co.kr"
+    ],
+    "credential_kinds": [
+      "api_key"
+    ]
+  },
+  "setup": {
+    "config_fields": [],
+    "credential_fields": [
+      {
+        "id": "api_key",
+        "kind": "api_key",
+        "options": [],
+        "label": "KRX API key",
+        "required": true,
+        "min_length": 8,
+        "max_length": 256,
+        "help_url": "https://openapi.krx.co.kr/contents/OPP/INFO/OPPINFO001.jsp"
+      }
+    ]
+  }
+}

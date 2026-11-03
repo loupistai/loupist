@@ -1,0 +1,300 @@
+{
+  "schema": "loupist-world-suite/1",
+  "suite": "implicit-memory-validation-v4",
+  "version": 1,
+  "fixture_delivery": "per_step",
+  "description": "Versioned follow-up: promoted observed failures and separately frozen unseen validation. Only user text reaches Chat.",
+  "prompt_policy": "No World/Lens/Memory, save/remember, capability names, tool arguments, or requested output JSON in user prompts. Natural preferences and one-off scope statements are allowed.",
+  "scenarios": [
+    {
+      "id": "V4-ORIGINAL",
+      "title": "Original with a different query language",
+      "family": "cross_language_recall_transfer",
+      "split": "validation",
+      "condition": "implicit",
+      "world_enabled": false,
+      "connections": [],
+      "workspace_files": {},
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "original",
+          "user": "Para este intercambio solamente, la frase es «La caja índigo se abre el jueves 🪁; código Ñ-azul-62». No repitas la frase: responde únicamente que la recibiste.",
+          "chat": "original",
+          "role": "train",
+          "memory": "read_only",
+          "checks": [
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "all"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "aside",
+          "user": "이번에는 이전 문장과 무관하게 6 곱하기 8만 계산해줘.",
+          "chat": "original",
+          "role": "train",
+          "memory": "read_only",
+          "checks": [
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "48"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "all"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "probe",
+          "user": "앞선 대화에서 내가 스페인어로 제시한 상자 문장을 악센트, 이모지, 코드까지 원문 그대로 인용해줘. 번역문이나 네 이전 답변과 구분해줘.",
+          "chat": "probe",
+          "role": "probe",
+          "memory": "read_only",
+          "checks": [
+            {
+              "assert": "conversation_read",
+              "metric": "conversation_provenance",
+              "reference_step": "original",
+              "complete": true
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "La caja índigo se abre el jueves 🪁"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "Ñ-azul-62"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "all"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V4-ABSENT",
+      "title": "Absent premise after broad discovery",
+      "family": "recall_absence_after_browse",
+      "split": "validation",
+      "condition": "implicit",
+      "world_enabled": false,
+      "connections": [],
+      "workspace_files": {},
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "arithmetic",
+          "user": "이번 대화에서는 18 더하기 24만 계산해줘.",
+          "chat": "arithmetic",
+          "role": "train",
+          "memory": "read_only",
+          "checks": [
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "42"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "all"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "absent",
+          "user": "내가 앞선 대화에서 정한 비상 연락망 코드는 뭐였지? 기록에 그런 코드가 없으면 미확인이라고만 답해줘.",
+          "chat": "absent",
+          "role": "probe",
+          "memory": "read_only",
+          "checks": [
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "^\\s*미확인[.!]?\\s*$"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "all"
+            },
+            {
+              "assert": "no_commit",
+              "metric": "save_precision",
+              "kind": "all"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "later",
+          "user": "그럼 앞선 대화에서 내가 요청한 산술 계산식을 원래 표현대로 인용해줘.",
+          "chat": "later",
+          "role": "probe",
+          "memory": "read_only",
+          "checks": [
+            {
+              "assert": "conversation_read",
+              "metric": "conversation_provenance",
+              "reference_step": "arithmetic",
+              "complete": true
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "18 더하기 24"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "all"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "V4-GROUNDED-METHOD",
+      "title": "Method grounded in a retained original",
+      "family": "source_backed_method_evidence",
+      "split": "validation",
+      "condition": "implicit",
+      "world_enabled": false,
+      "connections": [],
+      "workspace_files": {
+        "harbor.txt": "FICTIONAL EXERCISE\nPublisher: Harbor Assembly Exercise Office\nDate: 2026-10-05\nHarbor Assembly completed customer sample evaluation for its ceramic connectors. A supply contract has not been signed. Commercial shipments have not begun, and no revenue from this product has been recognized.\n"
+      },
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "document",
+          "user": "harbor.txt의 가상 회사 신제품은 어느 단계까지 진행됐고 무엇은 아직 확인되지 않았는지 설명해줘.",
+          "chat": "document",
+          "role": "train",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "source_retained",
+              "metric": "source_acquisition",
+              "path": "harbor.txt"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "lens"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "method",
+          "user": "나는 신제품 진척을 샘플 검증 → 계약 체결 → 상업 출하 → 매출 인식으로 구분해. 앞 단계 통과만으로 뒤 단계까지 추정하지 않는 것이 내 기본 분석법이야. 앞서 본 발표문을 근거로 이 구분을 설명해줘.",
+          "chat": "document",
+          "role": "train",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "lens_created",
+              "metric": "method_learning"
+            },
+            {
+              "assert": "memory_read",
+              "metric": "retrieval",
+              "kind": "source"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "계약"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "출하"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "매출"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        },
+        {
+          "id": "probe",
+          "user": "가상 회사 벨솔의 커넥터가 고객 샘플 검증을 통과했대. 계약이나 출하에 대한 언급은 없어. 내 신제품 분석법으로 어디까지 확인된 것인지 말해줘.",
+          "chat": "probe",
+          "role": "probe",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "memory_read",
+              "metric": "retrieval",
+              "kind": "lens",
+              "reference_step": "method"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "샘플.*검증"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "미확인|확인.*않|확인.*없|추정.*않|확인.*불가"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "lens"
+            },
+            {
+              "assert": "tool_validity",
+              "metric": "tool_reliability"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

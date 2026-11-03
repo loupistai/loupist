@@ -1,0 +1,8 @@
+{
+  "schema": "loupist-connection-replay/1",
+  "requests": [{
+    "provider": "opendart.disclosures",
+    "request": {"url": "https://opendart.fss.or.kr/api/list.json?corp_code=00999999&bgn_de=20200101&end_de=20201231&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=1"},
+    "response": {"status": 200, "body": {"status": "000", "message": "Fictional fixture", "total_count": 1, "list": [{"corp_code": "00999999", "corp_name": "Fictional Hanbit Aurora", "stock_code": "999999", "rcept_no": "20201001000001", "rcept_dt": "20201001", "report_nm": "Fictional interim report", "flr_nm": "Fictional Hanbit Aurora"}]}}
+  }]
+}

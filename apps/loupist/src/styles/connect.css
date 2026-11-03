@@ -1,0 +1,140 @@
+/* Connecting a model provider (providers spec §2.1–§2.2): onboarding step 2, the waiting card and the connect sheet. */
+
+/* Ways to connect: grouped ghost rows, no logos. */
+.connect-ways { display: grid; min-width: 0; }
+.connect-group-label { margin: var(--gg-space-4) 0 var(--gg-space-1); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); font-weight: var(--gg-weight-medium); text-transform: uppercase; letter-spacing: .06em; }
+.connect-ways > .connect-group-label:first-child { margin-top: 0; }
+:lang(ko) .connect-group-label { letter-spacing: 0; }
+.connect-row { display: flex; align-items: center; gap: var(--gg-space-3); width: 100%; min-height: 44px; padding: 0 var(--gg-space-3); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); text-align: left; cursor: pointer; transition: background-color var(--gg-motion-instant) var(--gg-ease-out); }
+.connect-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
+.connect-row:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
+.connect-row:disabled { cursor: default; opacity: .5; }
+.connect-row-copy { display: grid; flex: 1 1 auto; min-width: 0; padding-block: var(--gg-space-2); }
+.connect-row-label { overflow-wrap: anywhere; }
+.connect-row-note { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+/* Tertiary text never sits on a hover fill. */
+.connect-row:hover:not(:disabled) .connect-row-note { color: var(--gg-color-text-secondary); }
+.connect-row-chevron { flex: none; width: 16px; height: 16px; color: var(--gg-color-text-secondary); }
+.connect-recommended { flex: none; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.connect-more { margin-top: var(--gg-space-3); }
+.connect-more > .ui-disclosure-body { gap: 0; padding-top: 0; }
+
+/* Provider state: text plus an 8 px dot, never color alone. */
+.connect-state { display: inline-flex; flex: none; align-items: center; gap: var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.connect-state-dot { width: 8px; height: 8px; border-radius: var(--gg-radius-full); background: var(--gg-color-positive); transition: background-color var(--gg-motion-fast) var(--gg-ease-out), box-shadow var(--gg-motion-fast) var(--gg-ease-out); }
+.connect-state[data-state="needs_reconnect"] .connect-state-dot { background: var(--gg-color-warning); }
+.connect-state[data-state="disconnected"] .connect-state-dot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--gg-color-border-strong); }
+
+/* Onboarding step 2. */
+.connect-primary-block { display: grid; gap: var(--gg-space-2); }
+.onboarding-step .connect-meta,
+.connect-meta { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.connect-key-stays { margin-top: var(--gg-space-3); }
+
+/* The waiting card replaces the primary button while a browser or device sign-in runs. */
+.signin-card { display: grid; gap: var(--gg-space-3); padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); animation: connect-cross-fade var(--gg-motion-normal) var(--gg-ease-out); }
+.onboarding-step .signin-title,
+.signin-title { display: flex; align-items: center; gap: var(--gg-space-2); margin: 0; color: var(--gg-color-text-primary); font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); font-weight: var(--gg-weight-semibold); }
+.signin-spinner { flex: none; width: 16px; height: 16px; color: var(--gg-color-text-secondary); }
+.onboarding-step .signin-body,
+.signin-body { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+.signin-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
+.signin-link,
+.connect-link { display: inline-flex; align-items: center; gap: var(--gg-space-1); justify-self: start; min-height: var(--gg-size-control-sm); padding: 0; border: 0; background: none; color: var(--gg-color-accent-ink); font: inherit; font-size: var(--gg-text-control); line-height: var(--gg-leading-control); font-weight: var(--gg-weight-medium); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.signin-link:hover, .connect-link:hover { color: var(--gg-color-accent-hover); }
+.signin-link:focus-visible, .connect-link:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; border-radius: var(--gg-radius-xs); }
+.connect-link svg { width: 16px; height: 16px; }
+.signin-paste { display: grid; gap: var(--gg-space-2); animation: connect-reveal var(--gg-motion-normal) var(--gg-ease-out); }
+.signin-paste-row { display: flex; gap: var(--gg-space-2); }
+.signin-paste-row input { flex: 1 1 auto; min-width: 0; height: var(--gg-size-field); }
+.signin-paste-row button { height: var(--gg-size-field); }
+.onboarding-step .signin-paste-error,
+.signin-paste-error { margin: 0; color: var(--gg-color-negative); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.onboarding-step .signin-device-code,
+.signin-device-code { display: block; margin: 0; color: var(--gg-color-text-primary); font-family: var(--gg-font-mono); font-size: var(--gg-text-page); line-height: var(--gg-leading-page); font-weight: var(--gg-weight-semibold); letter-spacing: .08em; }
+
+/* Error rows: warning-soft when the user can fix it, negative-soft otherwise. */
+.signin-error { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gg-space-3); padding: var(--gg-space-3); border-radius: var(--gg-radius-sm); background: var(--gg-color-negative-soft); color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); animation: connect-rise var(--gg-motion-fast) var(--gg-ease-out); }
+.signin-error[data-tone="warning"] { background: var(--gg-color-warning-soft); }
+.onboarding-step .signin-error p,
+.signin-error p { flex: 1 1 280px; margin: 0; color: var(--gg-color-text-primary); }
+.signin-error-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--gg-space-2); margin-left: auto; }
+@media (max-width: 1059px) {
+  .signin-error { flex-direction: column; align-items: stretch; }
+  .onboarding-step .signin-error p,
+  .signin-error p { flex: 0 1 auto; }
+  .signin-error-actions { align-self: flex-end; }
+}
+
+/* Notes inside the sheet and before Claude's browser opens. */
+.onboarding-step .connect-note,
+.connect-note { margin: 0; padding: var(--gg-space-3); border-radius: var(--gg-radius-sm); background: var(--gg-color-info-soft); color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); animation: connect-rise var(--gg-motion-fast) var(--gg-ease-out); }
+.connect-note[data-tone="warning"] { background: var(--gg-color-warning-soft); }
+.connect-note[data-tone="negative"] { background: var(--gg-color-negative-soft); }
+
+/* The connect sheet (shared by onboarding and Settings). */
+.dialog-surface.connect-sheet { border-radius: var(--gg-radius-lg); box-shadow: var(--gg-shadow-lg); padding: var(--gg-space-6); }
+.connect-sheet-header { gap: var(--gg-space-2); }
+.connect-sheet-back { align-self: flex-start; margin-left: calc(-1 * var(--gg-space-2)); height: var(--gg-size-control-sm); }
+.connect-sheet .dialog-title { font-size: var(--gg-text-title); line-height: var(--gg-leading-title); }
+.connect-sheet-section { display: grid; gap: var(--gg-space-4); min-width: 0; }
+.connect-field { display: grid; gap: var(--gg-space-2); min-width: 0; }
+.connect-field-label { color: var(--gg-color-text-primary); font-size: var(--gg-text-control); line-height: var(--gg-leading-control); font-weight: var(--gg-weight-medium); }
+.connect-field input:not([type="radio"]):not([type="checkbox"]) { height: var(--gg-size-field); }
+.connect-secret { position: relative; }
+.connect-secret input { padding-right: calc(var(--gg-space-10) + var(--gg-space-3)); }
+.connect-secret-toggle { position: absolute; top: 50%; right: var(--gg-space-1); transform: translateY(-50%); }
+.connect-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--gg-space-2); }
+.connect-actions-start { justify-content: flex-start; }
+.connect-primary { justify-self: stretch; min-height: var(--gg-size-control-lg); }
+.connect-progress { display: flex; align-items: center; gap: var(--gg-space-2); margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+.connect-spinner { flex: none; width: 16px; height: 16px; }
+
+/* Local model apps: one section per engine, model radios inside. */
+.connect-engine { display: grid; gap: var(--gg-space-1); min-width: 0; margin: 0; padding: 0; border: 0; }
+.connect-engine legend { margin-bottom: var(--gg-space-1); padding: 0; color: var(--gg-color-text-primary); font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); font-weight: var(--gg-weight-semibold); }
+.connect-engine-off { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.connect-model { display: flex; align-items: flex-start; gap: var(--gg-space-3); min-height: 44px; padding: var(--gg-space-2) var(--gg-space-3); border-radius: var(--gg-radius-sm); cursor: pointer; }
+.connect-model:hover:not([data-disabled]) { background: var(--gg-color-bg-hover); }
+.connect-model[data-selected] { background: var(--gg-color-bg-selected); }
+.connect-model[data-disabled] { cursor: default; }
+.connect-model:has(input:focus-visible) { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
+.connect-model input { flex: none; margin: 3px 0 0; accent-color: var(--gg-color-accent); }
+.connect-model-copy { display: grid; min-width: 0; }
+.connect-model-name { overflow-wrap: anywhere; color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+.connect-model[data-disabled] .connect-model-name { color: var(--gg-color-text-secondary); }
+.connect-model-context { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.connect-model-short { color: var(--gg-color-warning); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+
+/* Custom endpoint: "How it talks" segmented control and the Test result. */
+.connect-segmented { display: inline-flex; flex-wrap: wrap; justify-self: start; gap: var(--gg-space-1); padding: var(--gg-space-1); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-sm); }
+.connect-segmented label { position: relative; display: inline-flex; align-items: center; min-height: var(--gg-size-control-sm); padding: 0 var(--gg-space-3); border-radius: var(--gg-radius-xs); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); line-height: var(--gg-leading-control); font-weight: var(--gg-weight-medium); cursor: pointer; }
+.connect-segmented label:hover { background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); }
+.connect-segmented label[data-selected] { background: var(--gg-color-bg-selected); color: var(--gg-color-text-primary); }
+.connect-segmented label:has(input:focus-visible) { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
+.connect-segmented input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.connect-test-result { display: flex; align-items: center; gap: var(--gg-space-2); margin: 0; color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); animation: connect-rise var(--gg-motion-fast) var(--gg-ease-out); }
+.connect-test-result svg { flex: none; width: 16px; height: 16px; color: var(--gg-color-negative); }
+.connect-test-result[data-outcome="ok"] svg { color: var(--gg-color-positive); }
+.connect-test-models { display: grid; max-height: 240px; margin: 0; padding: 0; overflow-y: auto; border: 0; }
+
+/* 700×560: the primary button and waiting card stay above the fold; the ways scroll inside the step. */
+@media (max-width: 760px) {
+  .onboarding-window[data-onboarding="2"] { padding-inline: var(--gg-space-4); }
+}
+@media (max-height: 700px) {
+  .onboarding-step[data-step="2"] .onboarding-other > .ui-disclosure-body { max-height: 40dvh; overflow-y: auto; overscroll-behavior: contain; }
+}
+
+@keyframes connect-cross-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes connect-reveal { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes connect-rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .signin-card { animation-duration: var(--gg-motion-instant); }
+  .signin-paste { animation: none; }
+  @keyframes connect-rise { from { opacity: 0; } to { opacity: 1; } }
+  .connect-row, .connect-state-dot { transition: none; }
+  /* A still "…" replaces the rotating spinner. */
+  .signin-spinner, .connect-spinner { display: none; }
+  .signin-title::after { content: "…"; }
+}

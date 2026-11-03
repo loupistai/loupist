@@ -1,0 +1,32 @@
+{
+  "shareCount": "{{value}} shares",
+  "dialog": {
+    "close": "Close"
+  },
+  "sheet": {
+    "close": "Close"
+  },
+  "sidebar": {
+    "sidebar": "Sidebar",
+    "displaysTheMobileSidebar": "Displays the mobile sidebar.",
+    "toggleSidebar": "Toggle Sidebar"
+  },
+  "spinner": {
+    "loading": "Loading"
+  },
+  "copyTextButton": {
+    "selectTheTextToCopyIt": "Select the text to copy it.",
+    "copied": "Copied",
+    "copy": "Copy {{label}}",
+    "copiedLabel": "{{label}} copied"
+  },
+  "time": {
+    "am": "AM",
+    "pm": "PM"
+  },
+  "date": {
+    "year": "Year",
+    "month": "Month",
+    "day": "Day"
+  }
+}

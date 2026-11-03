@@ -1,0 +1,62 @@
+{
+  "schema": "loupist-connection-replay/1",
+  "requests": [
+    {
+      "provider": "koreainvestment.market-data",
+      "request": {
+        "url": "https://openapivts.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations/inquire-price?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=990417",
+        "tr_id": "FHKST01010100"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "rt_cd": "0",
+          "msg_cd": "MCA00000",
+          "msg1": "정상처리 되었습니다.",
+          "output": {
+            "stck_shrn_iscd": "990417",
+            "stck_prpr": "51200"
+          }
+        }
+      }
+    },
+    {
+      "provider": "koreainvestment.market-data",
+      "request": {
+        "url": "https://openapivts.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations/inquire-price?FID_COND_MRKT_DIV_CODE=NX&FID_INPUT_ISCD=990417",
+        "tr_id": "FHKST01010100"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "rt_cd": "0",
+          "msg_cd": "MCA00000",
+          "msg1": "정상처리 되었습니다.",
+          "output": {
+            "stck_shrn_iscd": "990417",
+            "stck_prpr": "51200"
+          }
+        }
+      }
+    },
+    {
+      "provider": "koreainvestment.market-data",
+      "request": {
+        "url": "https://openapivts.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations/inquire-price?FID_COND_MRKT_DIV_CODE=UN&FID_INPUT_ISCD=990417",
+        "tr_id": "FHKST01010100"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "rt_cd": "0",
+          "msg_cd": "MCA00000",
+          "msg1": "정상처리 되었습니다.",
+          "output": {
+            "stck_shrn_iscd": "990417",
+            "stck_prpr": "51200"
+          }
+        }
+      }
+    }
+  ]
+}

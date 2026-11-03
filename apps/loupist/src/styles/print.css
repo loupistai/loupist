@@ -1,0 +1,28 @@
+/*
+ * Print to PDF (shell-briefings §2.6, X9). A chat or briefing prints from a
+ * sheet outside the app, in the light theme (tokens.css scopes the light
+ * values to .print-sheet). The sheet never shows on screen; in print media
+ * it is the only thing on the page.
+ */
+.print-sheet { display: none; }
+
+@media print {
+  @page { margin: 18mm 16mm; }
+  html[data-printing], html[data-printing] body { height: auto; min-height: 0; overflow: visible; background: none; }
+  html[data-printing] body > :not(.print-sheet) { display: none !important; }
+  html[data-printing] .print-sheet { display: block; color: var(--gg-color-text-primary); background: var(--gg-color-bg-raised); font-family: var(--gg-font-ui); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+  .print-document { max-width: none; margin: 0; padding: 0; }
+  .print-document .message.assistant .message-content { font-size: var(--gg-text-body); line-height: var(--gg-leading-reading); }
+  /* Headings and pictures never split across a page; a heading keeps its first lines. */
+  .print-document h1, .print-document h2, .print-document h3, .print-document [data-streamdown^="heading-"] { break-after: avoid; break-inside: avoid; }
+  .print-document img, .print-document svg, .print-document table, .print-document pre, .print-document figure, .print-document .chat-artifact-block { break-inside: avoid; }
+  .print-document img.print-canvas { max-width: 100%; height: auto; }
+  /* Words kept from buttons read as text. */
+  .print-document [data-print-words], .print-document .loupist-citation { all: unset; }
+  .print-document [data-footnote-backref], .print-document a[href^="#user-content-fnref"] { display: none; }
+  .print-notice { margin: var(--gg-space-6) 0 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); font-style: italic; }
+  .print-document .loupist-citation::before { content: "["; }
+  .print-document .loupist-citation::after { content: "]"; }
+  .print-document a { color: inherit; text-decoration: underline; }
+  .print-document .chat-artifact-block { box-shadow: none; }
+}

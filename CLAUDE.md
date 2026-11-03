@@ -1,0 +1,3 @@
+# Loupist
+
+@AGENTS.md

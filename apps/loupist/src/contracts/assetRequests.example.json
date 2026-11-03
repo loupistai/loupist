@@ -1,0 +1,12 @@
+{
+  "asset_page_get": [
+    { "loupistId": "loupist-quality", "symbol": "HANU", "market": "KRX", "name": "Hanul Precision" },
+    { "loupistId": "loupist-quality", "assetId": "ast_0123456789abcdef", "sinceMs": 1793145600000 }
+  ],
+  "asset_delta": [{ "loupistId": "loupist-quality", "assetId": "ast_0123456789abcdef", "sinceMs": 1793145600000 }],
+  "asset_refresh": [{ "loupistId": "loupist-quality", "assetId": "ast_0123456789abcdef", "sinceMs": 1793145600000 }],
+  "asset_class_set": [{ "loupistId": "loupist-quality", "assetId": "ast_0123456789abcdef", "class": "fund", "sinceMs": 1793145600000 }],
+  "asset_verdict_undo": [{ "loupistId": "loupist-quality", "assetId": "ast_0123456789abcdef", "moveId": "amv_0123456789abcdef", "sinceMs": 1793145600000 }],
+  "asset_page_seen": [{ "loupistId": "loupist-quality", "assetId": "ast_0123456789abcdef" }],
+  "upcoming_events": [{ "loupistId": "loupist-quality" }]
+}

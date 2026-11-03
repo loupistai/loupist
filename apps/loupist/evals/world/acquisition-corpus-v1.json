@@ -1,0 +1,59 @@
+{
+  "schema": "loupist-world-suite/1",
+  "suite": "world-acquisition-v1",
+  "version": 1,
+  "description": "Actual model choice of saved World and newly fetched material, canonical source_save, and subsequent Chat reuse with empty/failed searches.",
+  "scenarios": [
+    {
+      "id": "W-ACQUIRE",
+      "title": "Acquire new evidence and reuse it across Chats",
+      "split": "capability",
+      "condition": "acquisition",
+      "world_enabled": true,
+      "connections": [
+        "web"
+      ],
+      "replay": "replay/acquisition-v1.json",
+      "seed_sources": [
+        {
+          "id": "q-initial",
+          "title": "Cedar Quay Instruments initial Q1 release",
+          "text": "Cedar Quay Instruments plc (ticker CQI; entity identifier FICT-CQI-301) makes laboratory instruments. Published 20 April 2026. Q1 2026 covers 1 January through 31 March 2026. All figures are consolidated and in USD millions. Q1 2026 revenue was USD 50 million and operating profit was USD 5 million. No 2027 operating-profit forecast was provided.\n",
+          "origin": "https://fixtures.invalid/world-acquire/cqi-initial",
+          "publication_time": "2026-04-20T09:00:00Z",
+          "acquired_at": "2026-04-20T12:00:00Z",
+          "authorship": "publisher"
+        }
+      ],
+      "steps": [
+        {
+          "id": "investigate-and-retain",
+          "sources": [],
+          "query": "Cedar Quay Instruments CQI operating profit",
+          "user": "This is a fictional closed-corpus research exercise as of 30 April 2026. Start with relevant evidence already saved in this Loupist. The issuer has posted a new release at https://fixtures.invalid/world-acquire/cqi-correction. Investigate it through the available web capability, compare it with our saved knowledge, and retain the original source so future Chats can use the corrected information. Do not merely retain your own answer. Assess Cedar Quay Instruments plc (CQI; FICT-CQI-301) Q1 2026 consolidated revenue, operating profit and operating margin. Distinguish publication time and reporting period, cite the actual source, and explain any correction. End with JSON metrics.q1_revenue_usd_m, metrics.q1_operating_profit_usd_m and metrics.q1_operating_margin_pct. Do not use facts about real companies.",
+          "chat": "acquire-research",
+          "memory": "remember",
+          "role": "train"
+        },
+        {
+          "id": "follow-up-unavailable",
+          "sources": [],
+          "query": "Cedar Quay Instruments CQI corrected operating profit",
+          "user": "Follow up using our retained Cedar Quay Instruments evidence. Confirm the current Q1 2026 consolidated operating profit, then check whether the supplied search service supports a 2027 operating-profit forecast. Search once for the exact phrase \"Cedar Quay Instruments CQI 2027 operating profit guidance\" and once for \"Cedar Quay Instruments CQI 2027 issuer forecast availability\"; do not add domain or recency filters. Do not repeat an unchanged failed request. Explain what empty results and an unavailable search service do and do not establish. Use retained evidence for facts already known and leave an unsupported forecast unknown. End with JSON metrics.q1_operating_profit_usd_m and metrics.forecast_2027_operating_profit_usd_m. This is a closed fictional exercise; other web queries are outside the supplied corpus.",
+          "chat": "acquire-research",
+          "memory": "read_only",
+          "role": "probe"
+        },
+        {
+          "id": "new-chat-reuse",
+          "sources": [],
+          "query": "Cedar Quay Instruments CQI corrected operating profit",
+          "user": "This is a new Chat about fictional Cedar Quay Instruments plc (CQI; FICT-CQI-301), as of 30 April 2026. Use this Loupist's retained research to state the latest Q1 2026 consolidated revenue, operating profit and operating margin, the correction history, publication date and reporting period. Is a 2027 operating-profit forecast supported by retained evidence? Cite the original retained evidence, not a previous assistant answer. The supplied source set has not changed, so do not repeat network research without a missing fact that requires it. End with JSON metrics.q1_revenue_usd_m, metrics.q1_operating_profit_usd_m, metrics.q1_operating_margin_pct and metrics.forecast_2027_operating_profit_usd_m; use null for an unsupported forecast.",
+          "chat": "new-research",
+          "memory": "read_only",
+          "role": "probe"
+        }
+      ]
+    }
+  ]
+}

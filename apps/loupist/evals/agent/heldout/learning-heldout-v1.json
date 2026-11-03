@@ -1,0 +1,711 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "learning-heldout",
+  "version": 1,
+  "description": "Adoption-only held-out learning scenarios. Never use for optimization, Lens authoring, or training.",
+  "scenarios": [
+    {
+      "split": "heldout",
+      "connections": [],
+      "id": "L-005",
+      "title": "A quarterly run-rate uses seasonal weights",
+      "tags": [
+        "carry_forward",
+        "lens",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "From now on, a quarterly run-rate divides that quarter by its seasonal weight instead of multiplying by four. The weights are 20 percent for Q1, 20 percent for Q2, 30 percent for Q3, and 30 percent for Q4. Orchid Relay Q3 revenue was 15 million USD. Show the run-rate. End with a JSON object {\"metrics\":{\"run_rate\": <number>}} and no text after it.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "run_rate": 50
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "labels-run-rate",
+                    "criterion": "The answer presents 50 as the run-rate, from Q3 revenue of 15 divided by the 30 percent weight, and does not present 60 from multiplying by four.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "keeps-method",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer keeps the seasonal-weight run-rate method rather than a quarter-times-four shortcut.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "달항만의 2분기 매출 수치는 10이고 단위는 십억 원이야. 연환산 수치를 제시해 줘. 답의 맨 끝에는 {\"metrics\":{\"run_rate\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "discriminator": "A no-Memory analyst annualizes a quarter by multiplying by four, so 10 times 4 is 40. The taught Q2 seasonal weight is 20 percent, so the run-rate is 10 divided by 0.20, which is 50.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "run_rate": 50
+                    },
+                    "scales": [
+                      1000000000
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "carries-run-rate",
+                    "criterion": "The answer presents 50 as the run-rate, from the second quarter divided by its 20 percent weight, and does not present 40 from multiplying by four.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "heldout",
+      "connections": [],
+      "id": "L-010",
+      "title": "The one-off growth rate is not the standing forecast method",
+      "tags": [
+        "save_precision",
+        "lens",
+        "ko",
+        "light"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "이번 질문에 한해서만 매출이 5% 성장한다고 가정하고 내년 매출을 추정해 줘. 이 가정은 이번 질문에서만 쓰는 거야. 솔숲식품의 이번 해 매출 수치는 200이고 단위는 십억 원이야. 답의 맨 끝에는 {\"metrics\":{\"next_revenue\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "next_revenue": 210
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens",
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens_proposal",
+                    "metric": "save_precision"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "labels-one-off",
+                    "criterion": "Judge the answer and this turn's memory commits (trace_summary.memory_commits). Pass only if no commit keeps what this statement says must not be kept. Statement: The answer treats the 5 percent growth rate as an assumption for this question only and does not keep it as a standing method.",
+                    "metric": "save_precision"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "성장률을 따로 안 주면 내년 매출은 최근 해 매출에 직전 연간 변화의 절반을 더한 값으로 잡아. 이 계산은 앞으로 계속 쓰는 방법이야.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "keeps-standing-growth",
+                    "metric": "save_recall",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer keeps a standing method: when no growth rate is given, next year revenue is the latest revenue plus half of the last absolute change, and that method is not the one-off 5 percent rate."
+                  }
+                ]
+              }
+            },
+            {
+              "user": "Thanks, that is all for today.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens",
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens_proposal",
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "not_committed",
+                    "kind": "note",
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "not_committed",
+                    "kind": "source",
+                    "metric": "save_precision"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "drops-chit-chat",
+                    "criterion": "Judge the answer and this turn's memory commits (trace_summary.memory_commits). Pass only if no commit keeps what this statement says must not be kept. Statement: The answer does not keep the thank-you as a note, a source, or a standing method.",
+                    "metric": "save_precision"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Brindle Metering revenue was 64 million USD last year and 80 million USD this year. Can you estimate next year revenue? End with a JSON object {\"metrics\":{\"next_revenue\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst either refuses a forecast or extends the recent trend to 100, and the one-off 5 percent rate would give 84. The standing rule adds half of the last change, so 80 plus 8 is 88. Negative transfer: An over-applying agent reuses the one-off 5 percent rate and presents 84. A no-Memory analyst does not do that.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens",
+                    "metric": "negative_transfer"
+                  },
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens_proposal",
+                    "metric": "negative_transfer"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "no-five-percent",
+                    "criterion": "The answer estimates next year revenue of 88, which is 80 plus half of the 16 change, and does not apply the one-off 5 percent rate to present 84.",
+                    "metric": "carry_forward"
+                  },
+                  {
+                    "id": "no-one-off-rate",
+                    "criterion": "The answer does not apply the earlier one-off 5 percent growth assumption (which would give 84).",
+                    "metric": "negative_transfer"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "next_revenue": 88
+                    },
+                    "scales": [
+                      1000000
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-light",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "What is 9 plus 8?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "max_tool_calls",
+                    "n": 0,
+                    "metric": "efficiency"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "17"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "stays-light",
+                    "criterion": "The answer states the requested result directly and does not call a tool for this arithmetic.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "heldout",
+      "connections": [],
+      "id": "L-015",
+      "title": "The signed contract amount overrides the draft file",
+      "tags": [
+        "save_recall",
+        "source",
+        "ko",
+        "light"
+      ],
+      "workspace_files": {
+        "data/kitewharf-contract.md": "# Kitewharf contract\n\nSource: https://fictional.example/kitewharf/contract-2025\n\nDraft harbor contract amount: 250 million USD, dated 2025-06-02. This draft is not the signed amount.\n"
+      },
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "data/kitewharf-contract.md 는 초안이야. 2025-06-02에 서명된 키트워프 하버 계약 금액은 263.4백만 달러야. 파일에 적힌 금액은 초안 값이야. 서명 금액을 정리해 줘.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "keeps-contract",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer retains the signed Kitewharf harbor contract amount of 263.4 million USD and does not treat the draft figure in the file as the signed amount.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "What was the Kitewharf Marine harbor contract worth on 2 June 2025? End with a JSON object {\"metrics\":{\"contract_value\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst rereads the workspace draft and reports 250. The signed contract amount 263.4 was stated only in the earlier session, not in the file.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "contract_value": 263.4
+                    },
+                    "scales": [
+                      1000000
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "recalls-contract",
+                    "criterion": "The answer states the signed Kitewharf Marine harbor contract value of 263.4 million USD and does not report the draft amount of 250.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-light",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "What is 6 times 5?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "max_tool_calls",
+                    "n": 0,
+                    "metric": "efficiency"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "30"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "stays-light",
+                    "criterion": "The answer states the requested result directly and does not call a tool for this arithmetic.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "heldout",
+      "connections": [],
+      "id": "L-020",
+      "title": "A corrected debt balance replaces the first figure",
+      "tags": [
+        "revision_disclosure",
+        "lens",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Quill and Cordage net debt was recorded as 120. Origin: https://fictional.example/quill/debt-original. Treat 120 as the current net debt for now.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "records-120",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer records 120 as the then-current Quill and Cordage net debt and keeps that view.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "train-2",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "New primary source. Origin: https://fictional.example/quill/debt-revision. The 120 net-debt figure double-counted a sold warehouse, and the corrected net debt is 86.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "records-86",
+                    "criterion": "The answer treats 86 as the current Quill and Cordage net debt after the warehouse correction.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "퀼앤코디지의 현재 순부채는 얼마야? 답의 맨 끝에는 {\"metrics\":{\"current_net_debt\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "discriminator": "A no-Memory analyst does not have the warehouse correction, so it cannot select 86 over the original 120. The current net debt comes only from the later session.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "current_net_debt": 86
+                    },
+                    "metric": "revision_disclosure"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "discloses-debt",
+                    "criterion": "The answer gives 86 as the current net debt and says what was retained, what was revised, and what was rejected about the earlier 120 figure.",
+                    "metric": "revision_disclosure"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "heldout",
+      "connections": [],
+      "id": "L-025",
+      "title": "The signed dry-dock spend overrides the draft file",
+      "tags": [
+        "alias",
+        "save_recall",
+        "light"
+      ],
+      "workspace_files": {
+        "data/nimbus-drydock.md": "# Nimbus dry dock\n\nSource: https://fictional.example/nimbus/drydock-2025\n\nNimbus Harbor Logistics, Korean alias 님버스하버, ticker NBHR, draft dry-dock spend for FY2025: 18 million USD. This file is a draft.\n"
+      },
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "data/nimbus-drydock.md is a draft. The signed Nimbus Harbor dry-dock spend for FY2025 is 19.8 million USD, and the Korean alias is 님버스하버. The figure in the file is the draft amount. Summarize the signed spend.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "keeps-drydock",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer retains the signed Nimbus Harbor dry-dock spend of 19.8 million USD, including the Korean alias, and does not treat the draft figure as signed.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "님버스하버의 FY2025 드라이독 비용을 알려 줘. 답의 맨 끝에는 {\"metrics\":{\"dry_dock\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "discriminator": "A no-Memory analyst rereads the workspace draft and reports dry-dock spend of 18. The signed spend 19.8 was stated only in the earlier session.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "dry_dock": 19.8
+                    },
+                    "scales": [
+                      1000000
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "recalls-drydock",
+                    "criterion": "The answer states the signed Nimbus Harbor dry-dock cost of 19.8 million USD for 님버스하버 and does not report the draft amount of 18.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-light",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "What is 11 plus 6?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "max_tool_calls",
+                    "n": 0,
+                    "metric": "efficiency"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "17"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "stays-light",
+                    "criterion": "The answer states the requested result directly and does not call a tool for this arithmetic.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "heldout",
+      "connections": [],
+      "id": "L-030",
+      "title": "Instructed non-bank value does not subtract net debt",
+      "tags": [
+        "instructed",
+        "negative_transfer",
+        "lens",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "앞으로 은행에만 CET1과 유형장부가를 써. 은행이 아닌 회사의 지분가치는 EBITDA에 배수를 곱한 값이고 순부채는 빼지 마. 그 범위까지 포함해서 Lens 제목은 Bank capital method 로 저장해. 바다은행은 은행이고 CET1은 12.4%이며 유형장부가치는 주당 18000원이야.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "title_contains": "Bank capital method"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "saves-bank-lens",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer saves a Lens titled Bank capital method covering CET1 for banks and, for other companies, EBITDA times the multiple with no net-debt subtraction.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Larkspur Retail is a grocery chain, not a bank. Read the saved bank-capital Lens with lens_search and lens_read, then value it with EBITDA 40, net debt 10, and a 7 times multiple. End with a JSON object {\"metrics\":{\"equity_value\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst subtracts net debt and gets 270. The saved non-bank rule does not subtract, so equity value is 280, and CET1 is not applied to the grocer. Negative transfer: An over-applying agent describes the grocer's capital with CET1 or tangible book value per share. A no-Memory analyst does not do that.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "lens_search",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "lens_read",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "lens_search",
+                      "lens_read"
+                    ],
+                    "metric": "retrieval"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "equity_value": 280
+                    },
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "reads-and-withholds",
+                    "criterion": "The answer reads the saved Lens and values Larkspur at 280 from 40 times 7, without subtracting net debt of 10 and without CET1.",
+                    "metric": "carry_forward"
+                  },
+                  {
+                    "id": "no-bank-method",
+                    "criterion": "The answer does not value Larkspur Retail, a grocery chain, with CET1 or tangible book value per share.",
+                    "metric": "negative_transfer"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

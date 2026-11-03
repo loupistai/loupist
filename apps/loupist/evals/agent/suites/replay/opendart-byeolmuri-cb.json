@@ -1,0 +1,244 @@
+{
+  "schema": "loupist-connection-replay/1",
+  "requests": [
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/corpCode.xml"
+      },
+      "response": {
+        "status": 200,
+        "content_type": "application/zip",
+        "body_base64": "UEsDBBQAAAAIAAAAIVwgUCS2tQAAAAQBAAAMAAAAQ09SUENPREUueG1sTY9BDoIwEEWvQthrKyYGkqEkLryAuiakjKSRtqaAkT17t57AFQuj3KoeQiJE2Uwy/7/J/A/RRebOGU0htArdxZy6DiquU6Gy0N3vNjPfjRgYLKq8ZJCLop9cm1PcM8iCgC6pTymQvzbYKpHI7KuxbWfvrX3c7LV5P7sR/LoDiCob1nWNOpeVEc4WpeBapRUvtRkvfhgUpebH6XsgEwlkn/1Qx2lSIvOot+qJBZCpCmSoQcZWH1BLAQIUAxQAAAAIAAAAIVwgUCS2tQAAAAQBAAAMAAAAAAAAAAAAAACAAQAAAABDT1JQQ09ERS54bWxQSwUGAAAAAAEAAQA6AAAA3wAAAAAA"
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/cvbdIsDecsn.json?corp_code=99030800&bgn_de=20260101&end_de=20261031"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20261030990308",
+              "corp_code": "99030800",
+              "corp_cls": "Y",
+              "corp_name": "별무리반도체",
+              "bd_tm": "3",
+              "bd_knd": "무기명식 이권부 무보증 사모 전환사채",
+              "bd_fta": "30,000,000,000",
+              "fdpp_fclt": "10,000,000,000",
+              "fdpp_bsninh": "-",
+              "fdpp_op": "20,000,000,000",
+              "fdpp_dtrp": "-",
+              "fdpp_ocsa": "-",
+              "fdpp_etc": "-",
+              "bd_intr_ex": "0.0",
+              "bd_intr_sf": "2.0",
+              "bd_mtd": "2029년 11월 05일",
+              "bdis_mthn": "사모",
+              "cv_rt": "100",
+              "cv_prc": "9,100",
+              "cvisstk_knd": "기명식 보통주",
+              "cvisstk_cnt": "3,296,703",
+              "cvisstk_tisstk_vs": "6.10",
+              "cvrqpd_bgd": "2027년 11월 05일",
+              "cvrqpd_edd": "2029년 10월 05일",
+              "act_mktprcfl_cvprc_lwtrsprc": "6,370",
+              "act_mktprcfl_cvprc_lwtrsprc_bs": "발행당시 전환가액의 70%",
+              "sbd": "2026년 11월 05일",
+              "pymd": "2026년 11월 05일",
+              "bddd": "2026년 10월 30일"
+            }
+          ]
+        }
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20261030"
+        },
+        "end_de": {
+          "at_least": "20261030"
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/bdwtIsDecsn.json?corp_code=99030800&bgn_de=20260101&end_de=20261031"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "013",
+          "message": "조회된 데이타가 없습니다."
+        }
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20261030"
+        },
+        "end_de": {
+          "at_least": "20261030"
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/exbdIsDecsn.json?corp_code=99030800&bgn_de=20260101&end_de=20261031"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "013",
+          "message": "조회된 데이타가 없습니다."
+        }
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20261030"
+        },
+        "end_de": {
+          "at_least": "20261030"
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/piicDecsn.json?corp_code=99030800&bgn_de=20260101&end_de=20261031"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "013",
+          "message": "조회된 데이타가 없습니다."
+        }
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20261030"
+        },
+        "end_de": {
+          "at_least": "20261030"
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99030800&bgn_de=20260101&end_de=20261031&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=20"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99030800",
+              "corp_cls": "Y",
+              "corp_name": "별무리반도체",
+              "stock_code": "990308",
+              "report_nm": "주요사항보고서(전환사채권발행결정)",
+              "rcept_no": "20261030990308",
+              "flr_nm": "별무리반도체",
+              "rcept_dt": "20261030",
+              "rm": ""
+            }
+          ]
+        }
+      },
+      "query_match": {
+        "page_count": "ignore",
+        "bgn_de": {
+          "at_most": "20261030"
+        },
+        "end_de": {
+          "at_least": "20261030"
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99030800&bgn_de=20260101&end_de=20261031&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=20&pblntf_ty=B"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99030800",
+              "corp_cls": "Y",
+              "corp_name": "별무리반도체",
+              "stock_code": "990308",
+              "report_nm": "주요사항보고서(전환사채권발행결정)",
+              "rcept_no": "20261030990308",
+              "flr_nm": "별무리반도체",
+              "rcept_dt": "20261030",
+              "rm": ""
+            }
+          ]
+        }
+      },
+      "query_match": {
+        "page_count": "ignore",
+        "bgn_de": {
+          "at_most": "20261030"
+        },
+        "end_de": {
+          "at_least": "20261030"
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99030800&bgn_de=20260101&end_de=20261031&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=20&pblntf_ty=I"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "013",
+          "message": "조회된 데이타가 없습니다."
+        }
+      },
+      "query_match": {
+        "page_count": "ignore",
+        "bgn_de": {
+          "at_most": "20261030"
+        },
+        "end_de": {
+          "at_least": "20261030"
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20261030990308"
+      },
+      "response": {
+        "status": 200,
+        "content_type": "application/zip",
+        "body_base64": "UEsDBBQAAAAIAAAAIVz/kE5OGAMAAIsFAAASAAAAMjAyNjEwMzA5OTAzMDgueG1snVTrS9tQFP9XDoKgEGtiUafUynyBbD6YlbGPWuNWqI20VbZvtYujs4V1YGdXk5IyX5UKUaO04P6h3JP/YecmabX6bR9K23Puefwe94YmP2/FYVdOpmJKYqJHCog9ICeiykYs8XGiZzUyN/CqZzIcmlmaXl2YXYw8/hpYfL0wG8Y/D1g5xGzDKV2xW8u+NVDV+tBQnd9liuK1at8XmKk5v77bNyYapf7QYHeH0NTSzIdwaGV2OjK/tDgghUOR+cjb/+vsVYaWw7aZwa97qJeB3aqsYbGzBjPL7IeKNxagoQWdSgEobjdNdrmPeR1Qt3i/+wwP0zw8o1i2wS4v4OlM8CaCNxKr+yyfY/mTAK/nu1YKPKOXUX+AIXFohO2rIIl4fAhBkWKB0OCyux+Nqlto6ViqUUYQxc4Hj4vUrVq0mzmsmSzfcFFc1tHYGwesWFje87LU/1mdAJjXUD3x89KLvv5056fGp9PG1SJqFyAGxF4B2HmB6HiMDrlRD3Y754Iac0FJHJQ4zEEBy9aJii7MT9L+VI9GrgxhHhOkNlSP3aMisEOTUQuPYadkALcASfMoEunifLujMASFobERYVQM8j993kFOZ464KmRYS4WRgCT29nf631zZdw3qZJsqX3L02ZIkvKOaj+jETsZuFfA80wGR1wiBUyoz/W9759MmdGEj2cgbJNadhkbG/+vnRoTgKMcNfR5Mlm9Ry656rvcoX72t1kGLW01vuvMKNFzjX9zf1SLZuy2R1y9r4dHVOPgXQL3G6qmTa3BJa6ZTqnPzS065CdLwC/P4NXmDS50zuspeeKlznI5kTe7LSh2e93wiPTs/odG0O6ejVR73ZebU1zSffYmo5/p0rjfqdOHuVfICMU4qAJYO2MEhp9S+tlDjtR2/1P2r6M+ci0XT9KStxWHqi6zEt3aSMViRt2JRJbGxE00ryXF48+49Xb71BGwnY7traRkoRy9hOrYel2GdzqUEP8QfR34qKrtFrnsFSMopOQ2bcUVJumFXXAF2tiGteP4DZRNSn9booLfW4JNnbtB7+DrPYfgfUEsBAhQDFAAAAAgAAAAhXP+QTk4YAwAAiwUAABIAAAAAAAAAAAAAAKQBAAAAADIwMjYxMDMwOTkwMzA4LnhtbFBLBQYAAAAAAQABAEAAAABIAwAAAAA="
+      }
+    }
+  ]
+}

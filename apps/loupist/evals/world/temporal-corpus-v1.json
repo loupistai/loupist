@@ -1,0 +1,160 @@
+{
+  "schema": "loupist-world-suite/1",
+  "suite": "world-temporal-v1",
+  "version": 1,
+  "description": "Fictional World-only corpus where a later Source supersedes an earlier dated relationship, plus a disputed-report control. Sources are closed fixtures. No oracle is included.",
+  "scenarios": [
+    {
+      "id": "T-CEO",
+      "title": "A chief executive is replaced on a stated date",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "t-ceo-appointed",
+              "title": "Corvane Logistics names Lena Ortiz chief executive",
+              "text": "Corvane Logistics, a fictional freight company, said its board appointed Lena Ortiz as chief executive officer effective January 5, 2026. Ortiz previously ran the company's European operations.\n",
+              "origin": "https://fixtures.invalid/world/temporal/ceo-appointed",
+              "publication_time": "2026-01-06T09:00:00Z",
+              "acquired_at": "2026-01-06T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "t-ceo-replaced",
+              "title": "Corvane Logistics changes chief executive",
+              "text": "Corvane Logistics said Lena Ortiz stepped down as chief executive officer effective June 15, 2026. The board appointed Marcus Hale, the company's former chief operating officer, as chief executive officer effective June 15, 2026. Ortiz no longer holds a role at Corvane Logistics.\n",
+              "origin": "https://fixtures.invalid/world/temporal/ceo-replaced",
+              "publication_time": "2026-06-16T09:00:00Z",
+              "acquired_at": "2026-06-16T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T-HQ",
+      "title": "A headquarters moves on a stated date",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "t-hq-austin",
+              "title": "Brightwell Foods company profile",
+              "text": "Brightwell Foods, a fictional packaged-food maker, has been headquartered in Austin, Texas since it moved its head office there on March 1, 2019.\n",
+              "origin": "https://fixtures.invalid/world/temporal/hq-austin",
+              "publication_time": "2026-02-03T09:00:00Z",
+              "acquired_at": "2026-02-03T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "t-hq-denver",
+              "title": "Brightwell Foods relocates its headquarters",
+              "text": "Brightwell Foods relocated its headquarters from Austin, Texas to Denver, Colorado, effective July 1, 2026. The Austin office is no longer the company's headquarters.\n",
+              "origin": "https://fixtures.invalid/world/temporal/hq-denver",
+              "publication_time": "2026-07-02T09:00:00Z",
+              "acquired_at": "2026-07-02T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T-SUPPLY",
+      "title": "A supply contract is terminated on a stated date",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "t-supply-begins",
+              "title": "Kestrel Semiconductor wins Halden Motors supply contract",
+              "text": "Kestrel Semiconductor, a fictional chipmaker, began supplying power modules to Halden Motors under a supply contract signed on January 15, 2026.\n",
+              "origin": "https://fixtures.invalid/world/temporal/supply-begins",
+              "publication_time": "2026-01-20T09:00:00Z",
+              "acquired_at": "2026-01-20T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "t-supply-ends",
+              "title": "Halden Motors ends Kestrel Semiconductor contract",
+              "text": "Halden Motors terminated its power-module supply contract with Kestrel Semiconductor effective September 30, 2026. Kestrel Semiconductor no longer supplies power modules to Halden Motors.\n",
+              "origin": "https://fixtures.invalid/world/temporal/supply-ends",
+              "publication_time": "2026-10-01T09:00:00Z",
+              "acquired_at": "2026-10-01T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T-DISPUTE",
+      "title": "A denied allegation does not end a contract",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "t-dispute-contract",
+              "title": "Orion Ferry Works signs Pell Shipyards contract",
+              "text": "Orion Ferry Works, a fictional steel fabricator, supplies hull steel to Pell Shipyards under a contract signed on April 2, 2026.\n",
+              "origin": "https://fixtures.invalid/world/temporal/dispute-contract",
+              "publication_time": "2026-04-03T09:00:00Z",
+              "acquired_at": "2026-04-03T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "t-dispute-report",
+              "title": "Short-seller report on Pell Shipyards suppliers",
+              "text": "A short-seller report published on August 10, 2026 alleges that Pell Shipyards plans to stop buying hull steel from Orion Ferry Works. Pell Shipyards denied the report and said its contract with Orion Ferry Works remains in force.\n",
+              "origin": "https://fixtures.invalid/world/temporal/dispute-report",
+              "publication_time": "2026-08-11T09:00:00Z",
+              "acquired_at": "2026-08-11T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

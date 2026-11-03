@@ -1,0 +1,39 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "lens-causal-training-v1",
+  "version": 1,
+  "description": "Fictional research followed by methodological feedback and an accepted refinement. No test cases or answers are included.",
+  "scenarios": [{
+    "id": "TRAIN-COMPARISON",
+    "title": "Learning to compare evidence without losing identifiable results",
+    "tags": ["training"],
+    "connections": [],
+    "workspace_files": {},
+    "seed": {
+      "lens": [],
+      "sources": [
+        {
+          "title": "Vale delivery pilot — original research dossier",
+          "origin": "eval-fixture:vale-pilot",
+          "text": "Fictional internal research dossier, published 2025-02-14. Vale delivery pilot. Before: urban deliveries 80 on time out of 100, rural deliveries 36/60. After: urban 18/20, rural 126/180. These are consecutive weeks, not random assignment. The aggregate on-time share declined. The urban/rural mix changed. Weather and staffing were not held constant. The report measures delivery events, not unique customers. Management calls the pilot a failure based solely on the pooled rate."
+        },
+        {
+          "title": "Morrow processing trial — original and corrected measurement notes",
+          "origin": "eval-fixture:morrow-trial",
+          "text": "Fictional research notes. Original bulletin, 2025-03-02: a processing line reduced average job duration from 16 to 12 minutes; the bulletin called this a 25% throughput increase. Correction, 2025-03-06: at fixed workload and capacity with no idle time, throughput is inverse to duration, so the implied throughput increase is one third. The original duration measurements are unchanged. A separate enterprise rollout changed hardware and workload, so these controlled measurements do not establish the rollout's causal effect."
+        }
+      ]
+    },
+    "sessions": [{
+      "id": "research-and-feedback",
+      "role": "train",
+      "memory": "remember",
+      "turns": [
+        {"user": "가상의 Vale 배송 파일럿 원문을 검토해 줘. 전체 정시배송률이 떨어졌으니 파일럿이 실패했다는 경영진 해석이 수치와 연구 설계에 맞는지 분석해 줘. 전체와 도시·농촌 결과를 함께 계산하고, 이 자료로 어디까지 말할 수 있는지 설명해 줘. 외부 자료는 필요 없어."},
+        {"user": "이번 검토에서 앞으로 재사용할 분석 방식을 정리해 두자. 서로 다른 기간이나 집단을 비교할 때 먼저 대상·분모·단위·관측 시점을 맞추고, 전체와 하위집단이 어긋나면 구성 변화부터 분해해 줘. 지금 단계의 내 원칙은 비교 조건이 다르면 개선 여부 판단을 보류하는 거야. 이 배송 업체의 숫자가 아니라 다른 연구에도 쓸 수 있는 방법으로 기억해 줘."},
+        {"user": "이번에는 가상의 Morrow 처리 시험 원문과 정정 노트를 검토해 줘. 시간 절감과 처리량 증가를 어떻게 구분해야 하고, 정정으로 무엇을 바꾸고 무엇을 유지해야 하는지 설명해 줘. 이 자료만 써 줘."},
+        {"user": "앞서 정리한 비교 방법을 다듬자. '조건이 다르면 판단을 보류'만으로 끝내면 유용한 분석까지 버리게 돼. 식별 가능한 변화와 식별되지 않는 원인을 나눠 줘. 공통 가중치나 명시된 고정 조건으로 계산할 수 있으면 그 결과와 가정을 보여 주고, 관찰 차이를 인과 효과로 바꾸지는 마. 감소율과 역수 지표 증가율처럼 분모가 달라지면 각각 계산해 줘. 정정 자료는 바뀐 주장만 대체하고 여전히 유효한 측정치는 남겨 줘. 단순 합계·번역·정의 요청에는 이 절차를 억지로 적용하지 않아도 돼. 이 피드백으로 같은 방법을 수정하고, 바뀐 점을 짧게 알려 줘."}
+      ]
+    }]
+  }]
+}

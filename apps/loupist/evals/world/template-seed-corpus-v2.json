@@ -1,0 +1,428 @@
+{
+  "schema": "loupist-world-suite/1",
+  "suite": "world-template-seed-v2",
+  "version": 1,
+  "description": "Fictional World corpus for the asset-class template seed check. S-CRYPTO, S-COMMODITIES, S-MACRO and S-REAL-ASSETS each have six English Sources and two query steps, checked in with seed none; the other arm sets seed template. S-CRYPTO and S-COMMODITIES are unchanged from v1. No oracle is included.",
+  "scenarios": [
+    {
+      "id": "S-CRYPTO",
+      "title": "Crypto networks, tokens and the companies around them",
+      "split": "seed",
+      "condition": "seed",
+      "world_enabled": true,
+      "research_focus": "Crypto networks, tokens and the companies around them",
+      "seed": "none",
+      "template": "crypto",
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "ferrovia-mainnet",
+          "sources": [
+            {
+              "id": "ferrovia-mainnet",
+              "title": "Ferrovia Foundation launches the Ferrovia Network mainnet and its FRV token",
+              "text": "The Ferrovia Foundation, a non-profit based in Zug, Switzerland, said the Ferrovia Network mainnet went live on 2027-02-01. Ferrovia Network is a proof-of-stake blockchain for payments. The foundation issues the network's native token, FRV, and said 1 billion FRV exist at launch. Validators stake FRV to secure the network. The foundation develops the core software and pays for audits. Lumen Ridge Ventures invested USD 40 million in the foundation's token sale in 2026, according to the release. The document does not give an FRV price or any trading volume. It describes Ferrovia Network as the blockchain, FRV as its token, and the Ferrovia Foundation as the organization behind both. No exchange listing is announced here.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/ferrovia-mainnet",
+              "publication_time": "2027-02-01T09:00:00Z",
+              "acquired_at": "2027-02-01T09:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "quillswap-launch",
+          "sources": [
+            {
+              "id": "quillswap-launch",
+              "title": "Quillswap exchange app goes live on Ferrovia Network",
+              "text": "Quillswap Labs said its decentralized exchange app, Quillswap, now runs on Ferrovia Network. Quillswap lets users trade tokens on Ferrovia without an intermediary. The app was first built on Arcadia Chain and keeps a second deployment there. Quillswap Labs issues the QSW governance token; holders vote on fee settings. Quillswap Labs is a company registered in Singapore. The release says Quillswap held USD 120 million in deposits across both networks on its first day on Ferrovia. That figure counts deposits in Quillswap pools, not QSW's market value. The document names no partner bank and no exchange listing for QSW.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/quillswap-launch",
+              "publication_time": "2027-02-05T09:00:00Z",
+              "acquired_at": "2027-02-05T09:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "harbor-lists-frv",
+          "sources": [
+            {
+              "id": "harbor-lists-frv",
+              "title": "Harbor Exchange lists FRV for trading",
+              "text": "Harbor Exchange, a regulated crypto exchange headquartered in Dublin, Ireland, said it listed FRV for trading on 2027-02-10. Customers can trade FRV against the euro and against the Stellis Dollar stablecoin. Harbor Exchange competes with Calder Markets, which has not listed FRV. The release says Harbor holds customer FRV in its own custody. Trading started at 10:00 Dublin time. The document gives no opening price. Harbor Exchange said the listing followed its standard asset review; it did not say the Ferrovia Foundation paid a fee.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/harbor-lists-frv",
+              "publication_time": "2027-02-10T10:00:00Z",
+              "acquired_at": "2027-02-10T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "stellis-reserves",
+          "sources": [
+            {
+              "id": "stellis-reserves",
+              "title": "Stellis Dollar reserve report for January 2027",
+              "text": "Stellis Payments, the company that issues the Stellis Dollar (SDX) stablecoin, published its reserve report for January 2027. SDX aims to keep a value of one US dollar. The report says SDX in circulation was USD 2.1 billion at month end, backed by USD 1.6 billion of US Treasury bills and USD 0.5 billion of cash deposits. Northgate Trust holds the Treasury bills and the cash in custody for Stellis Payments. An accounting firm, Brightline & Co., reviewed the report. The report does not describe any lending of reserves. Stellis Payments is located in New York.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/stellis-reserves",
+              "publication_time": "2027-02-12T14:00:00Z",
+              "acquired_at": "2027-02-12T14:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "corvane-frv-fund",
+          "sources": [
+            {
+              "id": "corvane-frv-fund",
+              "title": "Corvane Asset Management files a spot FRV fund with Northgate Trust as custodian",
+              "text": "Corvane Asset Management said it filed to launch the Corvane FRV Trust, a fund that would hold FRV tokens directly. Northgate Trust would act as custodian and keep the fund's FRV in cold storage. Corvane said the fund would buy FRV through Harbor Exchange. The filing does not give a launch date, a fee, or an approval. Corvane already offers a Bitcoin fund with the same custodian. The document names Corvane Asset Management as the sponsor, Northgate Trust as custodian, and FRV as the asset the fund would hold.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/corvane-frv-fund",
+              "publication_time": "2027-02-18T13:00:00Z",
+              "acquired_at": "2027-02-18T13:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "pellar-partnership",
+          "sources": [
+            {
+              "id": "pellar-partnership",
+              "title": "Pellar Payments partners with the Ferrovia Foundation to settle merchant payments on Ferrovia",
+              "text": "Pellar Payments, a payment processor based in Lisbon, Portugal, announced a partnership with the Ferrovia Foundation. Pellar will settle card payments for some European merchants on Ferrovia Network using the Stellis Dollar. Pellar said it uses Ferrovia because transfers settle in seconds. The pilot covers 300 merchants in Portugal and Spain from March 2027. Pellar did not say it bought FRV. The release does not give a transaction volume. The Ferrovia Foundation said it will supply technical support to Pellar during the pilot.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/pellar-partnership",
+              "publication_time": "2027-02-24T09:00:00Z",
+              "acquired_at": "2027-02-24T09:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "q-frv",
+          "query": "FRV token listing and custody"
+        },
+        {
+          "id": "q-sdx",
+          "query": "Stellis Dollar reserves"
+        }
+      ]
+    },
+    {
+      "id": "S-COMMODITIES",
+      "title": "Energy, metals and farm goods: supply, demand and positioning",
+      "split": "seed",
+      "condition": "seed",
+      "world_enabled": true,
+      "research_focus": "Energy, metals and farm goods: supply, demand and positioning",
+      "seed": "none",
+      "template": "commodities",
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "halvard-copper-mine",
+          "sources": [
+            {
+              "id": "halvard-copper-mine",
+              "title": "Halvard Mining starts production at the Cerro Ancla copper mine in Chile",
+              "text": "Halvard Mining said its Cerro Ancla mine in the Atacama region of Chile began commercial production of copper concentrate on 2027-01-15. The mine is designed to produce 120,000 tonnes of copper a year at full rate, which Halvard expects in 2028. Halvard owns 70% of Cerro Ancla; Tomoe Metals owns 30%. Concentrate is trucked to the port of Antofagasta. The release gives no cost per tonne. Halvard is listed in Toronto and headquartered in Vancouver, Canada. The document describes Cerro Ancla as a mine, copper as its product, and Chile as its location.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/halvard-copper-mine",
+              "publication_time": "2027-01-15T12:00:00Z",
+              "acquired_at": "2027-01-15T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "tomoe-smelter-offtake",
+          "sources": [
+            {
+              "id": "tomoe-smelter-offtake",
+              "title": "Tomoe Metals agrees to buy Cerro Ancla concentrate for its Saganoseki smelter",
+              "text": "Tomoe Metals said it agreed to buy 60% of the copper concentrate from Halvard Mining's Cerro Ancla mine for ten years. The concentrate will be processed at Tomoe's Saganoseki smelter in Japan, which turns concentrate into refined copper cathode. Tomoe uses refined copper to make wire for power grids and electric vehicles. Halvard supplies the concentrate; Tomoe pays a market-linked price. The release does not state a total contract value. Tomoe Metals is headquartered in Tokyo.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/tomoe-smelter-offtake",
+              "publication_time": "2027-01-20T03:00:00Z",
+              "acquired_at": "2027-01-20T03:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "cushing-inventory",
+          "sources": [
+            {
+              "id": "cushing-inventory",
+              "title": "Weekly report: crude stocks at the Cushing hub fall",
+              "text": "The weekly petroleum report from the Energy Statistics Office said crude oil stocks at the Cushing, Oklahoma storage hub fell to 24.1 million barrels in the week to 2027-01-22, down from 25.6 million barrels a week earlier. Cushing is the delivery point for West Texas Intermediate futures. Stocks there are held in tank farms run by several pipeline companies, including Redfield Midstream. The report does not forecast prices. It gives total US commercial crude stocks of 412 million barrels for the same week.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/cushing-inventory",
+              "publication_time": "2027-01-27T15:30:00Z",
+              "acquired_at": "2027-01-27T15:30:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "redfield-pipeline",
+          "sources": [
+            {
+              "id": "redfield-pipeline",
+              "title": "Redfield Midstream finishes its Prairie Line crude pipeline into Cushing",
+              "text": "Redfield Midstream said its Prairie Line pipeline is now carrying crude oil from the Permian Basin in Texas to its storage terminal at Cushing, Oklahoma. The pipeline can move 300,000 barrels a day. Brenmark Energy, a Permian producer, has committed to ship 120,000 barrels a day on the line for seven years. Redfield owns the pipeline and the terminal, which can store 9 million barrels. The release gives no tariff rate. Redfield is based in Houston.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/redfield-pipeline",
+              "publication_time": "2027-02-02T14:00:00Z",
+              "acquired_at": "2027-02-02T14:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "chile-copper-exports",
+          "sources": [
+            {
+              "id": "chile-copper-exports",
+              "title": "Chile's copper exports to China rose in January",
+              "text": "Chile's customs agency said the country exported 410,000 tonnes of copper to China in January 2027, 8% more than in January 2026. China remained the largest buyer of Chilean copper. Japan was the second largest destination, with 95,000 tonnes. The figures cover copper concentrate and refined cathode together. The agency did not break exports down by company. The document lists Chile as the exporter and China and Japan as destinations, with the commodity and the month stated for each figure.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/chile-copper-exports",
+              "publication_time": "2027-02-08T16:00:00Z",
+              "acquired_at": "2027-02-08T16:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "aluminium-substitution",
+          "sources": [
+            {
+              "id": "aluminium-substitution",
+              "title": "Wire makers turn to aluminium as copper stays expensive",
+              "text": "Vestry Cables, a European maker of power cables, said it will use aluminium instead of copper in some overhead power lines from 2027 because copper prices stayed high. Aluminium carries less current per kilogram of conductor area but weighs less and costs less per tonne. Vestry said aluminium can replace copper in overhead lines but not in most building wiring. The company buys aluminium rod from Nordal Aluminium in Norway. Vestry consumes about 40,000 tonnes of copper a year and expects to cut that by a quarter.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/aluminium-substitution",
+              "publication_time": "2027-02-16T09:00:00Z",
+              "acquired_at": "2027-02-16T09:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "q-copper",
+          "query": "Cerro Ancla copper buyers"
+        },
+        {
+          "id": "q-cushing",
+          "query": "Cushing crude storage"
+        }
+      ]
+    },
+    {
+      "id": "S-MACRO",
+      "title": "Interest rates, inflation, currencies and central banks",
+      "split": "seed",
+      "condition": "seed",
+      "world_enabled": true,
+      "research_focus": "Interest rates, inflation, currencies and central banks",
+      "seed": "none",
+      "template": "macro",
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "valdoria-rate-decision",
+          "sources": [
+            {
+              "id": "valdoria-rate-decision",
+              "title": "Bank of Valdoria raises its policy rate to 4.50%",
+              "text": "The Bank of Valdoria raised its policy rate by 0.25 percentage points to 4.50% on 2027-01-28. The bank sets monetary policy for Valdoria, whose currency is the Valdorian crown (VDC). Governor Elin Marsk said consumer price inflation was still above the bank's 2% target. Five of the seven members of the rate committee voted for the increase; two voted to hold. The bank is headquartered in Kessel, the capital. The statement does not say what the bank will do at its next meeting in March 2027.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/valdoria-rate-decision",
+              "publication_time": "2027-01-28T13:00:00Z",
+              "acquired_at": "2027-01-28T13:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "valdoria-jobs-january",
+          "sources": [
+            {
+              "id": "valdoria-jobs-january",
+              "title": "Valdoria's employers added 18,000 jobs in January",
+              "text": "The Valdoria Statistics Office said employers in Valdoria added 18,000 jobs in January 2027, according to its monthly labour survey. The unemployment rate was 4.2%, unchanged from December 2026. The office publishes the labour survey every month; it measures employment and unemployment in Valdoria. The office is an agency of Valdoria's Ministry of Finance. The release does not comment on interest rates.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/valdoria-jobs-january",
+              "publication_time": "2027-02-06T08:00:00Z",
+              "acquired_at": "2027-02-06T08:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "valdoria-cpi-january",
+          "sources": [
+            {
+              "id": "valdoria-cpi-january",
+              "title": "Valdoria's consumer prices rose 3.4% in the year to January",
+              "text": "The Valdoria Statistics Office published its consumer price index (CPI) for January 2027. Prices paid by Valdorian households rose 3.4% from January 2026, after a 3.1% rise in the year to December 2026. Core CPI, which leaves out energy and food, rose 2.9%. The office said higher electricity and heating prices caused most of the increase. The office publishes the CPI every month; it measures consumer prices in Valdoria. The release does not forecast inflation.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/valdoria-cpi-january",
+              "publication_time": "2027-02-12T08:00:00Z",
+              "acquired_at": "2027-02-12T08:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "crown-after-cpi",
+          "sources": [
+            {
+              "id": "crown-after-cpi",
+              "title": "The crown falls after the inflation figures",
+              "text": "The Valdorian crown fell 1.2% against the US dollar on 2027-02-12, to 10.45 crowns per dollar, after the January CPI release, according to a note from Ostmark Bank's currency desk. The yield on Valdoria's 10-year government bond rose to 5.10% from 4.98% the same day. Ostmark strategist Jonas Reim wrote that over the past two years the crown has weakened against the dollar in most months when Valdorian CPI came in above forecasts. The note is Ostmark Bank's view; it does not say the pattern will continue. Ostmark Bank is based in Kessel.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/crown-after-cpi",
+              "publication_time": "2027-02-13T09:00:00Z",
+              "acquired_at": "2027-02-13T09:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "valdoria-bond-auction",
+          "sources": [
+            {
+              "id": "valdoria-bond-auction",
+              "title": "Valdoria sells 2 billion crowns of 10-year bonds",
+              "text": "The Valdoria Debt Management Agency sold 2 billion crowns of 10-year government bonds on 2027-02-18 at an average yield of 5.08%. Bids totalled 4.2 billion crowns, 2.1 times the amount sold. The agency issues and manages Valdoria's government debt on behalf of the Ministry of Finance. Ostmark Bank and Kessel Savings Bank, two of the primary dealers, bought a combined 40% of the bonds. The release does not name other buyers.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/valdoria-bond-auction",
+              "publication_time": "2027-02-18T12:00:00Z",
+              "acquired_at": "2027-02-18T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "lerona-holds-rates",
+          "sources": [
+            {
+              "id": "lerona-holds-rates",
+              "title": "Central Bank of Lerona holds rates and keeps its peg to the crown",
+              "text": "The Central Bank of Lerona kept its policy rate at 4.75% on 2027-02-24. Lerona's currency, the Leronan mark, is pegged to the Valdorian crown at 2 marks per crown, and Governor Ana Toller said the bank follows the Bank of Valdoria's rate decisions to keep the peg. The bank sets monetary policy for Lerona. Lerona buys most of its electricity from Valdoria, so Valdorian power prices raise Leronan inflation, the statement said. The statement gives no inflation figure for Lerona.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/lerona-holds-rates",
+              "publication_time": "2027-02-24T11:00:00Z",
+              "acquired_at": "2027-02-24T11:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "q-valdoria-rate",
+          "query": "Bank of Valdoria policy rate"
+        },
+        {
+          "id": "q-crown-cpi",
+          "query": "Valdoria inflation and the crown"
+        }
+      ]
+    },
+    {
+      "id": "S-REAL-ASSETS",
+      "title": "Property, infrastructure and land: owners, tenants and financing",
+      "split": "seed",
+      "condition": "seed",
+      "world_enabled": true,
+      "research_focus": "Property, infrastructure and land: owners, tenants and financing",
+      "seed": "none",
+      "template": "realAssets",
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "granmoor-buys-halden",
+          "sources": [
+            {
+              "id": "granmoor-buys-halden",
+              "title": "Granmoor Property Trust buys Halden House in Manchester",
+              "text": "Granmoor Property Trust, a listed real estate investment trust based in London, said it bought Halden House, a 22-floor office building in Manchester, England, from Corrick Estates for GBP 180 million. Granmoor owns the whole building. Halden House has 40,000 square metres of offices and is 92% let. Fenwick Real Estate will manage the building day to day for Granmoor. The release does not name the existing tenants.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/granmoor-buys-halden",
+              "publication_time": "2027-01-12T08:00:00Z",
+              "acquired_at": "2027-01-12T08:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "lattice-leases-halden",
+          "sources": [
+            {
+              "id": "lattice-leases-halden",
+              "title": "Lattice Insurance signs a 15-year lease at Halden House",
+              "text": "Lattice Insurance signed a 15-year lease on eight floors of Halden House in Manchester, Granmoor Property Trust said. The rent is GBP 38 per square foot a year. Lattice will move its northern head office into the building from June 2027. Granmoor is the landlord. The release gives no break date and no rent-free period. Lattice Insurance is headquartered in Leeds.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/lattice-leases-halden",
+              "publication_time": "2027-01-26T08:00:00Z",
+              "acquired_at": "2027-01-26T08:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "granmoor-loan",
+          "sources": [
+            {
+              "id": "granmoor-loan",
+              "title": "Granmoor takes a GBP 110 million loan secured on three offices",
+              "text": "Granmoor Property Trust said it arranged a five-year GBP 110 million loan from Selby Bank. The loan is secured on Halden House and two other Granmoor offices in Leeds. Interest is SONIA plus 1.9 percentage points. Granmoor said the loan is 45% of the three buildings' value and repays a bond that matures in March 2027. The release does not give the value of each building.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/granmoor-loan",
+              "publication_time": "2027-02-03T08:00:00Z",
+              "acquired_at": "2027-02-03T08:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "kestrel-fen-solar",
+          "sources": [
+            {
+              "id": "kestrel-fen-solar",
+              "title": "Brightwater Infrastructure Fund buys 60% of the Kestrel Fen solar farm",
+              "text": "Brightwater Infrastructure Fund bought a 60% stake in the Kestrel Fen solar farm in Lincolnshire, England, from the developer Aldane Renewables. Aldane keeps the other 40% and will operate the farm. Kestrel Fen has 120 megawatts of capacity and sells its power to the utility Wexford Power under a 10-year contract. Caradoc Capital manages Brightwater Infrastructure Fund. The price was not disclosed.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/kestrel-fen-solar",
+              "publication_time": "2027-02-09T08:00:00Z",
+              "acquired_at": "2027-02-09T08:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "pellmore-warehouses",
+          "sources": [
+            {
+              "id": "pellmore-warehouses",
+              "title": "Pellmore Logistics REIT buys six warehouses near Rotterdam",
+              "text": "Pellmore Logistics REIT bought a portfolio of six warehouses near Rotterdam, the Netherlands, from Vandeberg Group for EUR 240 million. Parcel carrier Swiftline leases two of the warehouses until 2034. Pellmore paid with EUR 140 million from a new share sale and a EUR 100 million loan from Zuidbank. Vandeberg Group will keep managing the sites for Pellmore for two years. The release does not name the other tenants.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/pellmore-warehouses",
+              "publication_time": "2027-02-15T08:00:00Z",
+              "acquired_at": "2027-02-15T08:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "tilden-farmland",
+          "sources": [
+            {
+              "id": "tilden-farmland",
+              "title": "Tilden Farmland Partners buys Iowa farmland and leases it back",
+              "text": "Tilden Farmland Partners, a farmland fund, bought 3,200 hectares of farmland in Iowa, United States, from the Haverkamp family for USD 52 million. The fund leased the land back to Haverkamp Farms for ten years at USD 900 per hectare a year. The Midwest Teachers Retirement System invested USD 300 million in Tilden Farmland Partners in 2025, the release said. Tilden is based in Chicago. The release does not say what crops are grown.\n",
+              "origin": "https://fixtures.invalid/world/template-seed/tilden-farmland",
+              "publication_time": "2027-02-22T08:00:00Z",
+              "acquired_at": "2027-02-22T08:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "q-halden",
+          "query": "Halden House owner, tenant and loan"
+        },
+        {
+          "id": "q-kestrel",
+          "query": "Kestrel Fen solar farm owners"
+        }
+      ]
+    }
+  ]
+}

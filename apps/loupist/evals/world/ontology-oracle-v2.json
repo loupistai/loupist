@@ -1,0 +1,1027 @@
+{
+  "schema": "loupist-world-ontology-oracle/1",
+  "version": 2,
+  "input_sha256": "f3cca72a7a23c72d9483f76a1b8305bb9d719d5d861a1b5d26aeb3a44e171c28",
+  "scenarios": [
+    {
+      "id": "O-KO-SUPPLY",
+      "entities": [
+        {
+          "id": "hanbit",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:Han[- ]?bit Battery(?:\\s*,?\\s*(?:Co\\.,?\\s*Ltd\\.|Co\\.?\\s*Ltd\\.|Corporation|Incorporated|Limited|Company|Corp\\.|Inc\\.|Ltd\\.|LLC))?|(?:주식회사\\s*)?한빛배터리(?:\\s*주식회사)?)$"
+          ],
+          "original_name": "한빛배터리",
+          "identifier": "412340"
+        },
+        {
+          "id": "northgate",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:Northgate Motors(?:\\s*,?\\s*(?:Co\\.,?\\s*Ltd\\.|Co\\.?\\s*Ltd\\.|Corporation|Incorporated|Limited|Company|Corp\\.|Inc\\.|Ltd\\.|LLC))?|노스게이트모터스)$"
+          ],
+          "original_name": "노스게이트모터스"
+        },
+        {
+          "id": "kim",
+          "kind": "Person",
+          "name_patterns": [
+            "^(?:Kim Seo-yeon|Kim Seoyeon|Kim Seo Yeon|Seo-yeon Kim|Seoyeon Kim|Seo Yeon Kim|김서연)$"
+          ],
+          "original_name": "김서연"
+        },
+        {
+          "id": "lfp",
+          "kind": "Product",
+          "name_patterns": [
+            "^(?:LFP cathodes?(?:[ -]active)?(?: materials?)?|LFP 양극재|lithium iron phosphate(?: \\(LFP\\))? cathodes?(?:[ -]active)?(?: materials?)?)$"
+          ],
+          "original_name": "LFP 양극재"
+        },
+        {
+          "id": "chungju",
+          "kind": "Place",
+          "name_patterns": [
+            "^(?:Chung-?ju(?:\\s+(?:plant|factory))?|충주(?:\\s*공장)?)$"
+          ],
+          "original_name": "충주"
+        },
+        {
+          "id": "nuri",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:Nuri(?: Investment)? Securities(?:\\s*,?\\s*(?:Co\\.,?\\s*Ltd\\.|Co\\.?\\s*Ltd\\.|Corporation|Incorporated|Limited|Company|Corp\\.|Inc\\.|Ltd\\.|LLC))?|(?:주식회사\\s*)?누리투자증권)$"
+          ],
+          "original_name": "누리투자증권"
+        },
+        {
+          "id": "park",
+          "kind": "Person",
+          "name_patterns": [
+            "^(?:Park Jun-ho|Park Junho|Park Jun Ho|Park Joon-ho|Park Joonho|Park Joon Ho|Jun-ho Park|Junho Park|Joon-ho Park|Joonho Park|박준호)$"
+          ],
+          "original_name": "박준호"
+        },
+        {
+          "id": "daeseong",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:Dae[- ]?s(?:eo|u)ng Chemicals?(?:\\s*,?\\s*(?:Co\\.,?\\s*Ltd\\.|Co\\.?\\s*Ltd\\.|Corporation|Incorporated|Limited|Company|Corp\\.|Inc\\.|Ltd\\.|LLC))?|(?:주식회사\\s*)?대성케미칼)$"
+          ],
+          "original_name": "대성케미칼"
+        },
+        {
+          "id": "policy",
+          "kind": "Policy",
+          "name_patterns": [
+            "^(?:(?:the )?Clean Vehicle Content Rules?|청정차량 부품 규정)$"
+          ],
+          "original_name": "청정차량 부품 규정"
+        },
+        {
+          "id": "lithium",
+          "kind": "Asset",
+          "name_patterns": [
+            "^(?:lithium[- ]carbonate|탄산리튬)$"
+          ],
+          "original_name": "탄산리튬"
+        },
+        {
+          "id": "kosdaq-market",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:KOSDAQ(?: market)?|코스닥(?:\\s*시장)?)$"
+          ],
+          "original_name": "코스닥"
+        },
+        {
+          "id": "kosdaq-index",
+          "kind": "Asset",
+          "name_patterns": [
+            "^(?:KOSDAQ index|KOSDAQ composite(?: index)?|코스닥\\s*지수)$"
+          ],
+          "original_name": "코스닥 지수"
+        },
+        {
+          "id": "supply-agreement",
+          "kind": "Event",
+          "name_patterns": [
+            "supply agreement|공급 계약"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "id": "kim-leads-hanbit",
+          "source": "kim",
+          "target": "hanbit",
+          "relation": "LEADS",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "hanbit-offers-lfp",
+          "source": "hanbit",
+          "target": "lfp",
+          "relation": "OFFERS",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "hanbit-located-chungju",
+          "source": "hanbit",
+          "target": "chungju",
+          "relation": "LOCATED_IN",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "hanbit-supplies-northgate",
+          "source": "hanbit",
+          "target": "northgate",
+          "relation": "SUPPLIES",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "daeseong-competes-hanbit",
+          "source": "daeseong",
+          "target": "hanbit",
+          "relation": "COMPETES_WITH",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "daeseong-offers-lfp",
+          "source": "daeseong",
+          "target": "lfp",
+          "relation": "OFFERS",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "policy-affects-hanbit",
+          "source": "policy",
+          "target": "hanbit",
+          "relation": "AFFECTS",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "lithium-open-kosdaq-index",
+          "source": "lithium",
+          "target": "kosdaq-index",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "park-open-nuri",
+          "source": "park",
+          "target": "nuri",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        }
+      ],
+      "numeric_facts": [
+        {
+          "id": "hanbit-q2-revenue",
+          "subject": "hanbit",
+          "status": "reported",
+          "value_patterns": [
+            "1,234\\s*억",
+            "1234\\s*억",
+            "123\\.4\\s*billion"
+          ],
+          "status_patterns": [
+            "매출",
+            "revenue",
+            "sales"
+          ]
+        },
+        {
+          "id": "hanbit-q2-profit",
+          "subject": "hanbit",
+          "status": "reported",
+          "value_patterns": [
+            "(?<![\\d,.])87\\s*억",
+            "8\\.7\\s*billion"
+          ],
+          "status_patterns": [
+            "영업이익",
+            "operating profit"
+          ]
+        },
+        {
+          "id": "northgate-revenue-share",
+          "subject": "hanbit",
+          "status": "reported",
+          "value_patterns": [
+            "41\\s*%",
+            "41\\s*percent",
+            "41\\s*퍼센트"
+          ],
+          "status_patterns": [
+            "비중",
+            "share",
+            "customer"
+          ]
+        },
+        {
+          "id": "chungju-capacity",
+          "subject": "chungju",
+          "status": "reported",
+          "value_patterns": [
+            "4만\\s*톤",
+            "40,000\\s*(?:tonnes|tons|톤)",
+            "40000\\s*(?:tonnes|tons)",
+            "40\\s*thousand\\s*tonnes"
+          ],
+          "status_patterns": [
+            "연산",
+            "capacity",
+            "plant",
+            "공장"
+          ]
+        },
+        {
+          "id": "supply-contract-value",
+          "subject": "hanbit",
+          "status": "reported",
+          "value_patterns": [
+            "4,800\\s*억",
+            "4800\\s*억",
+            "480\\s*billion"
+          ],
+          "status_patterns": [
+            "공급",
+            "supply",
+            "계약",
+            "contract",
+            "agreement"
+          ]
+        },
+        {
+          "id": "hanbit-2027-revenue-forecast",
+          "subject": "hanbit",
+          "status": "forecast",
+          "value_patterns": [
+            "6,000\\s*억",
+            "6000\\s*억",
+            "600\\s*billion"
+          ],
+          "status_patterns": [
+            "전망",
+            "추정",
+            "forecast",
+            "estimate"
+          ]
+        },
+        {
+          "id": "lithium-carbonate-price",
+          "subject": "lithium",
+          "status": "reported",
+          "value_patterns": [
+            "9,800",
+            "9800"
+          ],
+          "status_patterns": [
+            "탄산리튬",
+            "lithium",
+            "tonne",
+            "톤"
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "step_id": "query-en",
+          "language": "en",
+          "target_entity_ids": [
+            "hanbit",
+            "northgate"
+          ]
+        },
+        {
+          "step_id": "query-ko",
+          "language": "ko",
+          "target_entity_ids": [
+            "hanbit",
+            "northgate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O-EN-MARKET",
+      "entities": [
+        {
+          "id": "northgate",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:Northgate Motors(?:\\s*,?\\s*(?:Co\\.,?\\s*Ltd\\.|Co\\.?\\s*Ltd\\.|Corporation|Incorporated|Limited|Company|Corp\\.|Inc\\.|Ltd\\.|LLC))?|노스게이트모터스)$"
+          ],
+          "identifier": "NGTM"
+        },
+        {
+          "id": "hanbit",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:Han[- ]?bit Battery(?:\\s*,?\\s*(?:Co\\.,?\\s*Ltd\\.|Co\\.?\\s*Ltd\\.|Corporation|Incorporated|Limited|Company|Corp\\.|Inc\\.|Ltd\\.|LLC))?|(?:주식회사\\s*)?한빛배터리(?:\\s*주식회사)?)$"
+          ]
+        },
+        {
+          "id": "dana",
+          "kind": "Person",
+          "name_patterns": [
+            "^Dana Whitfield$"
+          ]
+        },
+        {
+          "id": "northgate-energy",
+          "kind": "Organization",
+          "name_patterns": [
+            "^Northgate Energy(?:\\s*,?\\s*(?:Co\\.,?\\s*Ltd\\.|Co\\.?\\s*Ltd\\.|Corporation|Incorporated|Limited|Company|Corp\\.|Inc\\.|Ltd\\.|LLC))?$"
+          ]
+        },
+        {
+          "id": "austin",
+          "kind": "Place",
+          "name_patterns": [
+            "^Austin(?:,?\\s*(?:Texas|TX))?$"
+          ]
+        },
+        {
+          "id": "halvorsen",
+          "kind": "Organization",
+          "name_patterns": [
+            "^Halvorsen Research(?:\\s*,?\\s*(?:Co\\.,?\\s*Ltd\\.|Co\\.?\\s*Ltd\\.|Corporation|Incorporated|Limited|Company|Corp\\.|Inc\\.|Ltd\\.|LLC))?$"
+          ]
+        },
+        {
+          "id": "tessera",
+          "kind": "Asset",
+          "name_patterns": [
+            "^(?:the )?Tessera 200(?: index)?$"
+          ]
+        },
+        {
+          "id": "policy",
+          "kind": "Policy",
+          "name_patterns": [
+            "^(?:(?:the )?Clean Vehicle Content Rules?|청정차량 부품 규정)$"
+          ]
+        },
+        {
+          "id": "ovs",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:the )?Office of Vehicle Standards$"
+          ]
+        },
+        {
+          "id": "lithium",
+          "kind": "Asset",
+          "name_patterns": [
+            "^(?:lithium[- ]carbonate|탄산리튬)$"
+          ]
+        },
+        {
+          "id": "usdkrw",
+          "kind": "Asset",
+          "name_patterns": [
+            "^USD\\s*[/-]?\\s*KRW$"
+          ],
+          "identifier": "USD/KRW"
+        },
+        {
+          "id": "supply-agreement",
+          "kind": "Event",
+          "name_patterns": [
+            "supply agreement|공급 계약"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "id": "hanbit-supplies-northgate",
+          "source": "hanbit",
+          "target": "northgate",
+          "relation": "SUPPLIES",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "dana-leads-northgate",
+          "source": "dana",
+          "target": "northgate",
+          "relation": "LEADS",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "energy-subsidiary-northgate",
+          "source": "northgate-energy",
+          "target": "northgate",
+          "relation": "SUBSIDIARY_OF",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "northgate-located-austin",
+          "source": "northgate",
+          "target": "austin",
+          "relation": "LOCATED_IN",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "policy-affects-northgate",
+          "source": "policy",
+          "target": "northgate",
+          "relation": "AFFECTS",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "northgate-open-tessera",
+          "source": "northgate",
+          "target": "tessera",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        }
+      ],
+      "numeric_facts": [
+        {
+          "id": "supply-contract-value",
+          "subject": "hanbit",
+          "status": "reported",
+          "value_patterns": [
+            "4,800\\s*억",
+            "4800\\s*억",
+            "480\\s*billion"
+          ],
+          "status_patterns": [
+            "공급",
+            "supply",
+            "계약",
+            "contract",
+            "agreement"
+          ]
+        },
+        {
+          "id": "northgate-2027-deliveries",
+          "subject": "northgate",
+          "status": "forecast",
+          "value_patterns": [
+            "310,000",
+            "310000"
+          ],
+          "status_patterns": [
+            "forecast",
+            "estimate",
+            "전망",
+            "추정"
+          ]
+        },
+        {
+          "id": "lithium-carbonate-price",
+          "subject": "lithium",
+          "status": "reported",
+          "value_patterns": [
+            "9,800",
+            "9800"
+          ],
+          "status_patterns": [
+            "탄산리튬",
+            "lithium",
+            "tonne",
+            "톤"
+          ]
+        },
+        {
+          "id": "usd-krw-rate",
+          "subject": "usdkrw",
+          "status": "reported",
+          "value_patterns": [
+            "1,382",
+            "1382"
+          ],
+          "status_patterns": [
+            "USD/KRW",
+            "원"
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "step_id": "query-en",
+          "language": "en",
+          "target_entity_ids": [
+            "hanbit",
+            "northgate"
+          ]
+        },
+        {
+          "step_id": "query-ko",
+          "language": "ko",
+          "target_entity_ids": [
+            "hanbit",
+            "northgate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "O-MIXED",
+      "entities": [
+        {
+          "id": "hanbit",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:Han[- ]?bit Battery(?:\\s*,?\\s*(?:Co\\.,?\\s*Ltd\\.|Co\\.?\\s*Ltd\\.|Corporation|Incorporated|Limited|Company|Corp\\.|Inc\\.|Ltd\\.|LLC))?|(?:주식회사\\s*)?한빛배터리(?:\\s*주식회사)?)$"
+          ],
+          "original_name": "한빛배터리",
+          "identifier": "412340"
+        },
+        {
+          "id": "northgate",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:Northgate Motors(?:\\s*,?\\s*(?:Co\\.,?\\s*Ltd\\.|Co\\.?\\s*Ltd\\.|Corporation|Incorporated|Limited|Company|Corp\\.|Inc\\.|Ltd\\.|LLC))?|노스게이트모터스)$"
+          ],
+          "original_name": "노스게이트모터스",
+          "identifier": "NGTM"
+        },
+        {
+          "id": "kim",
+          "kind": "Person",
+          "name_patterns": [
+            "^(?:Kim Seo-yeon|Kim Seoyeon|Kim Seo Yeon|Seo-yeon Kim|Seoyeon Kim|Seo Yeon Kim|김서연)$"
+          ],
+          "original_name": "김서연"
+        },
+        {
+          "id": "dana",
+          "kind": "Person",
+          "name_patterns": [
+            "^Dana Whitfield$"
+          ]
+        },
+        {
+          "id": "lfp",
+          "kind": "Product",
+          "name_patterns": [
+            "^(?:LFP cathodes?(?:[ -]active)?(?: materials?)?|LFP 양극재|lithium iron phosphate(?: \\(LFP\\))? cathodes?(?:[ -]active)?(?: materials?)?)$"
+          ],
+          "original_name": "LFP 양극재"
+        },
+        {
+          "id": "chungju",
+          "kind": "Place",
+          "name_patterns": [
+            "^(?:Chung-?ju(?:\\s+(?:plant|factory))?|충주(?:\\s*공장)?)$"
+          ],
+          "original_name": "충주"
+        },
+        {
+          "id": "nuri",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:Nuri(?: Investment)? Securities(?:\\s*,?\\s*(?:Co\\.,?\\s*Ltd\\.|Co\\.?\\s*Ltd\\.|Corporation|Incorporated|Limited|Company|Corp\\.|Inc\\.|Ltd\\.|LLC))?|(?:주식회사\\s*)?누리투자증권)$"
+          ],
+          "original_name": "누리투자증권"
+        },
+        {
+          "id": "park",
+          "kind": "Person",
+          "name_patterns": [
+            "^(?:Park Jun-ho|Park Junho|Park Jun Ho|Park Joon-ho|Park Joonho|Park Joon Ho|Jun-ho Park|Junho Park|Joon-ho Park|Joonho Park|박준호)$"
+          ],
+          "original_name": "박준호"
+        },
+        {
+          "id": "daeseong",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:Dae[- ]?s(?:eo|u)ng Chemicals?(?:\\s*,?\\s*(?:Co\\.,?\\s*Ltd\\.|Co\\.?\\s*Ltd\\.|Corporation|Incorporated|Limited|Company|Corp\\.|Inc\\.|Ltd\\.|LLC))?|(?:주식회사\\s*)?대성케미칼)$"
+          ],
+          "original_name": "대성케미칼"
+        },
+        {
+          "id": "policy",
+          "kind": "Policy",
+          "name_patterns": [
+            "^(?:(?:the )?Clean Vehicle Content Rules?|청정차량 부품 규정)$"
+          ],
+          "original_name": "청정차량 부품 규정"
+        },
+        {
+          "id": "lithium",
+          "kind": "Asset",
+          "name_patterns": [
+            "^(?:lithium[- ]carbonate|탄산리튬)$"
+          ],
+          "original_name": "탄산리튬"
+        },
+        {
+          "id": "kosdaq-market",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:KOSDAQ(?: market)?|코스닥(?:\\s*시장)?)$"
+          ],
+          "original_name": "코스닥"
+        },
+        {
+          "id": "kosdaq-index",
+          "kind": "Asset",
+          "name_patterns": [
+            "^(?:KOSDAQ index|KOSDAQ composite(?: index)?|코스닥\\s*지수)$"
+          ],
+          "original_name": "코스닥 지수"
+        },
+        {
+          "id": "northgate-energy",
+          "kind": "Organization",
+          "name_patterns": [
+            "^Northgate Energy(?:\\s*,?\\s*(?:Co\\.,?\\s*Ltd\\.|Co\\.?\\s*Ltd\\.|Corporation|Incorporated|Limited|Company|Corp\\.|Inc\\.|Ltd\\.|LLC))?$"
+          ]
+        },
+        {
+          "id": "austin",
+          "kind": "Place",
+          "name_patterns": [
+            "^Austin(?:,?\\s*(?:Texas|TX))?$"
+          ]
+        },
+        {
+          "id": "halvorsen",
+          "kind": "Organization",
+          "name_patterns": [
+            "^Halvorsen Research(?:\\s*,?\\s*(?:Co\\.,?\\s*Ltd\\.|Co\\.?\\s*Ltd\\.|Corporation|Incorporated|Limited|Company|Corp\\.|Inc\\.|Ltd\\.|LLC))?$"
+          ]
+        },
+        {
+          "id": "tessera",
+          "kind": "Asset",
+          "name_patterns": [
+            "^(?:the )?Tessera 200(?: index)?$"
+          ]
+        },
+        {
+          "id": "ovs",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:the )?Office of Vehicle Standards$"
+          ]
+        },
+        {
+          "id": "usdkrw",
+          "kind": "Asset",
+          "name_patterns": [
+            "^USD\\s*[/-]?\\s*KRW$"
+          ],
+          "identifier": "USD/KRW"
+        },
+        {
+          "id": "supply-agreement",
+          "kind": "Event",
+          "name_patterns": [
+            "supply agreement|공급 계약"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "id": "kim-leads-hanbit",
+          "source": "kim",
+          "target": "hanbit",
+          "relation": "LEADS",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "hanbit-offers-lfp",
+          "source": "hanbit",
+          "target": "lfp",
+          "relation": "OFFERS",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "hanbit-located-chungju",
+          "source": "hanbit",
+          "target": "chungju",
+          "relation": "LOCATED_IN",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "hanbit-supplies-northgate",
+          "source": "hanbit",
+          "target": "northgate",
+          "relation": "SUPPLIES",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "daeseong-competes-hanbit",
+          "source": "daeseong",
+          "target": "hanbit",
+          "relation": "COMPETES_WITH",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "daeseong-offers-lfp",
+          "source": "daeseong",
+          "target": "lfp",
+          "relation": "OFFERS",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "policy-affects-hanbit",
+          "source": "policy",
+          "target": "hanbit",
+          "relation": "AFFECTS",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "lithium-open-kosdaq-index",
+          "source": "lithium",
+          "target": "kosdaq-index",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "park-open-nuri",
+          "source": "park",
+          "target": "nuri",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "dana-leads-northgate",
+          "source": "dana",
+          "target": "northgate",
+          "relation": "LEADS",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "energy-subsidiary-northgate",
+          "source": "northgate-energy",
+          "target": "northgate",
+          "relation": "SUBSIDIARY_OF",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "northgate-located-austin",
+          "source": "northgate",
+          "target": "austin",
+          "relation": "LOCATED_IN",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "policy-affects-northgate",
+          "source": "policy",
+          "target": "northgate",
+          "relation": "AFFECTS",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "northgate-open-tessera",
+          "source": "northgate",
+          "target": "tessera",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        }
+      ],
+      "numeric_facts": [
+        {
+          "id": "hanbit-q2-revenue",
+          "subject": "hanbit",
+          "status": "reported",
+          "value_patterns": [
+            "1,234\\s*억",
+            "1234\\s*억",
+            "123\\.4\\s*billion"
+          ],
+          "status_patterns": [
+            "매출",
+            "revenue",
+            "sales"
+          ]
+        },
+        {
+          "id": "hanbit-q2-profit",
+          "subject": "hanbit",
+          "status": "reported",
+          "value_patterns": [
+            "(?<![\\d,.])87\\s*억",
+            "8\\.7\\s*billion"
+          ],
+          "status_patterns": [
+            "영업이익",
+            "operating profit"
+          ]
+        },
+        {
+          "id": "northgate-revenue-share",
+          "subject": "hanbit",
+          "status": "reported",
+          "value_patterns": [
+            "41\\s*%",
+            "41\\s*percent",
+            "41\\s*퍼센트"
+          ],
+          "status_patterns": [
+            "비중",
+            "share",
+            "customer"
+          ]
+        },
+        {
+          "id": "chungju-capacity",
+          "subject": "chungju",
+          "status": "reported",
+          "value_patterns": [
+            "4만\\s*톤",
+            "40,000\\s*(?:tonnes|tons|톤)",
+            "40000\\s*(?:tonnes|tons)",
+            "40\\s*thousand\\s*tonnes"
+          ],
+          "status_patterns": [
+            "연산",
+            "capacity",
+            "plant",
+            "공장"
+          ]
+        },
+        {
+          "id": "supply-contract-value",
+          "subject": "hanbit",
+          "status": "reported",
+          "value_patterns": [
+            "4,800\\s*억",
+            "4800\\s*억",
+            "480\\s*billion"
+          ],
+          "status_patterns": [
+            "공급",
+            "supply",
+            "계약",
+            "contract",
+            "agreement"
+          ]
+        },
+        {
+          "id": "hanbit-2027-revenue-forecast",
+          "subject": "hanbit",
+          "status": "forecast",
+          "value_patterns": [
+            "6,000\\s*억",
+            "6000\\s*억",
+            "600\\s*billion"
+          ],
+          "status_patterns": [
+            "전망",
+            "추정",
+            "forecast",
+            "estimate"
+          ]
+        },
+        {
+          "id": "lithium-carbonate-price",
+          "subject": "lithium",
+          "status": "reported",
+          "value_patterns": [
+            "9,800",
+            "9800"
+          ],
+          "status_patterns": [
+            "탄산리튬",
+            "lithium",
+            "tonne",
+            "톤"
+          ]
+        },
+        {
+          "id": "northgate-2027-deliveries",
+          "subject": "northgate",
+          "status": "forecast",
+          "value_patterns": [
+            "310,000",
+            "310000"
+          ],
+          "status_patterns": [
+            "forecast",
+            "estimate",
+            "전망",
+            "추정"
+          ]
+        },
+        {
+          "id": "usd-krw-rate",
+          "subject": "usdkrw",
+          "status": "reported",
+          "value_patterns": [
+            "1,382",
+            "1382"
+          ],
+          "status_patterns": [
+            "USD/KRW",
+            "원"
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "step_id": "query-en",
+          "language": "en",
+          "target_entity_ids": [
+            "hanbit",
+            "northgate"
+          ]
+        },
+        {
+          "step_id": "query-ko",
+          "language": "ko",
+          "target_entity_ids": [
+            "hanbit",
+            "northgate"
+          ]
+        }
+      ]
+    }
+  ]
+}

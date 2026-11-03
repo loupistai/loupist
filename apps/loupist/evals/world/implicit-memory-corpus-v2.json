@@ -1,0 +1,403 @@
+{
+  "schema": "loupist-world-suite/1",
+  "suite": "implicit-memory-v2",
+  "version": 1,
+  "description": "Uncued acquisition, automatic World extraction, method refinement, cross-chat reuse, and save restraint through the production Chat path. Checks are evaluator-only and never deserialized by world_eval. V2 introduces later evidence only at the corresponding step.",
+  "prompt_policy": "No World/Lens/Memory, save/remember, capability names, tool arguments, or requested output JSON in user prompts. Natural preferences and one-off scope statements are allowed.",
+  "scenarios": [
+    {
+      "id": "IM-SOURCE",
+      "title": "Natural research A",
+      "split": "regression",
+      "condition": "implicit",
+      "world_enabled": true,
+      "connections": [],
+      "workspace_files": {
+        "quarterly-brief.txt": "FICTIONAL EXERCISE — Nuri Automation is not a real company.\nPublisher: Nuri Automation Exercise Office\nPublication date: 2026-10-02\nTitle: Nuri Automation Q3 2026 operating update\nNuri Automation makes warehouse robots in Daejeon. Mirae Fulfilment is a customer. Nuri Automation buys depth cameras from Haneul Optics.\nAll figures are consolidated and in KRW billions. Q3 2026 revenue was 240 and operating profit was 36. Q3 2025 revenue was 200 and operating profit was 30. Q3 2026 order backlog was 180.\n"
+      },
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "initial",
+          "user": "quarterly-brief.txt는 가상 기업 Nuri Automation의 분기 발표문이야. 2026년 3분기 실적이 전년 동기와 비교해 어땠는지, 어떤 고객·공급사와 거래하는지 짧게 설명해줘. 실제 회사 정보는 필요 없어.",
+          "chat": "research",
+          "role": "train",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "source_retained",
+              "metric": "source_acquisition",
+              "path": "quarterly-brief.txt"
+            },
+            {
+              "assert": "world_edge",
+              "metric": "world_extraction",
+              "from_name": "Nuri Automation",
+              "to_name": "Haneul Optics"
+            },
+            {
+              "assert": "world_edge",
+              "metric": "world_extraction",
+              "from_name": "Nuri Automation",
+              "to_name": "Mirae Fulfilment",
+              "directed": false
+            },
+            {
+              "assert": "no_commit",
+              "metric": "save_precision",
+              "kind": "lens"
+            },
+            {
+              "assert": "record_count",
+              "metric": "chronology",
+              "kind": "source",
+              "equals": 1
+            },
+            {
+              "assert": "answer_absent",
+              "metric": "chronology",
+              "pattern": "Dasom Retail|24bn|240억"
+            }
+          ]
+        },
+        {
+          "id": "correction",
+          "user": "회사에서 correction-brief.txt를 추가로 내놨어. 실적 설명 중 달라진 부분과 그대로인 부분을 구분해줘. 수익성과 거래 관계에도 변화가 있는지 봐줘.",
+          "chat": "research",
+          "role": "train",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "source_retained",
+              "metric": "source_acquisition",
+              "path": "quarterly-brief.txt"
+            },
+            {
+              "assert": "source_retained",
+              "metric": "source_acquisition",
+              "path": "correction-brief.txt"
+            },
+            {
+              "assert": "record_count",
+              "metric": "source_acquisition",
+              "kind": "source",
+              "equals": 2
+            },
+            {
+              "assert": "world_node",
+              "metric": "world_extraction",
+              "name": "Dasom Retail"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "correction",
+              "pattern": "24|240억"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "correction",
+              "pattern": "36|360억"
+            },
+            {
+              "assert": "no_commit",
+              "metric": "save_precision",
+              "kind": "lens"
+            }
+          ],
+          "workspace_files": {
+            "correction-brief.txt": "FICTIONAL EXERCISE — Nuri Automation is not a real company.\nPublisher: Nuri Automation Exercise Office\nPublication date: 2026-10-19\nTitle: Correction to Nuri Automation Q3 2026 operating update\nNuri Automation corrects its consolidated Q3 2026 operating profit from KRW 36 billion to KRW 24 billion because KRW 12 billion of warranty expense was omitted. Q3 2026 revenue of KRW 240 billion and Q3 2025 revenue of KRW 200 billion and operating profit of KRW 30 billion are unchanged. Only the previously reported Q3 2026 operating profit is replaced.\nNuri Automation signed a warehouse-robot supply agreement with Dasom Retail on 2026-10-17. The release does not say deliveries have begun.\n"
+          }
+        },
+        {
+          "id": "revisit",
+          "user": "가상 기업 Nuri Automation의 2026년 3분기 매출, 영업이익, 영업이익률과 거래 관계를 정리해줘. 확인되지 않은 내용은 구분해줘.",
+          "chat": "fresh-research",
+          "role": "probe",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "memory_read",
+              "metric": "retrieval",
+              "kind": "source"
+            },
+            {
+              "assert": "memory_read",
+              "metric": "retrieval",
+              "kind": "world"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "carry_forward",
+              "pattern": "24|240억"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "carry_forward",
+              "pattern": "10(?:\\.0)?\\s*%"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "carry_forward",
+              "pattern": "Haneul Optics"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "carry_forward",
+              "pattern": "Dasom Retail"
+            },
+            {
+              "assert": "original_not_read",
+              "metric": "retrieval",
+              "paths": [
+                "quarterly-brief.txt",
+                "correction-brief.txt"
+              ]
+            },
+            {
+              "assert": "no_commit",
+              "metric": "save_precision",
+              "kind": "lens"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "IM-METHOD",
+      "title": "Natural research B",
+      "split": "regression",
+      "condition": "implicit",
+      "world_enabled": false,
+      "connections": [],
+      "workspace_files": {},
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "learn",
+          "user": "나는 설비 가동률로 증설 압박을 간단히 분류해. 가동률이 85%를 초과할 때만 2점, 나머지는 0점이야. 85%와 정확히 같아도 0점이고. 가상의 바람기계 가동률이 86%라면 몇 점일까?",
+          "chat": "discussion",
+          "role": "train",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "lens_created",
+              "metric": "method_learning"
+            },
+            {
+              "assert": "record_count",
+              "metric": "method_learning",
+              "kind": "lens",
+              "equals": 2
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "2\\s*점"
+            }
+          ]
+        },
+        {
+          "id": "refine",
+          "user": "생각해 보니 그 경계가 너무 낮네. 증설 압박 2점은 가동률이 90%를 초과할 때로 바꾸는 게 맞겠어. 90% 이하는 0점으로 보자. 직원 출근율이나 다른 비율에는 이 기준을 적용하지 않아.",
+          "chat": "discussion",
+          "role": "train",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "lens_revised",
+              "metric": "method_revision",
+              "reference_step": "learn"
+            },
+            {
+              "assert": "record_count",
+              "metric": "method_revision",
+              "kind": "lens",
+              "equals": 2
+            },
+            {
+              "assert": "lens_pattern",
+              "metric": "method_revision",
+              "pattern": "90"
+            },
+            {
+              "assert": "lens_pattern",
+              "metric": "method_revision",
+              "pattern": "출근|attendance"
+            }
+          ]
+        },
+        {
+          "id": "revisit",
+          "user": "가상의 해솔정밀 설비 가동률이 88%야. 증설 압박은 몇 점으로 보면 돼?",
+          "chat": "fresh-analysis",
+          "role": "probe",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "memory_read",
+              "metric": "retrieval",
+              "kind": "lens"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "carry_forward",
+              "pattern": "0\\s*점"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "lens"
+            }
+          ]
+        },
+        {
+          "id": "boundary",
+          "user": "가상의 새벽기계 설비 가동률은 정확히 90%래. 증설 압박은 몇 점이야?",
+          "chat": "boundary-analysis",
+          "role": "probe",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "memory_read",
+              "metric": "retrieval",
+              "kind": "lens"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "carry_forward",
+              "pattern": "0\\s*점"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "lens"
+            }
+          ]
+        },
+        {
+          "id": "above",
+          "user": "가상의 달빛기계 설비 가동률은 92%야. 증설 압박은 몇 점일까?",
+          "chat": "above-analysis",
+          "role": "probe",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "memory_read",
+              "metric": "retrieval",
+              "kind": "lens"
+            },
+            {
+              "assert": "answer_pattern",
+              "metric": "carry_forward",
+              "pattern": "2\\s*점"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "lens"
+            }
+          ]
+        },
+        {
+          "id": "unrelated",
+          "user": "이번에는 단순 산술 확인이야. 직원 교육 이수율이 92%면 미이수율은 몇 퍼센트야?",
+          "chat": "unrelated-analysis",
+          "role": "probe",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "answer_pattern",
+              "metric": "negative_transfer",
+              "pattern": "8\\s*%"
+            },
+            {
+              "assert": "answer_absent",
+              "metric": "negative_transfer",
+              "pattern": "증설|가동률|2\\s*점"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "lens"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "IM-GUARDS",
+      "title": "Natural research C",
+      "split": "regression",
+      "condition": "implicit",
+      "world_enabled": false,
+      "connections": [],
+      "workspace_files": {},
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "oneoff",
+          "user": "이번 가정 계산에만 가동률 70% 초과를 2점, 나머지를 0점으로 놓자. 평소 분석 기준은 아니야. 72%라면 몇 점이지?",
+          "chat": "oneoff",
+          "role": "probe",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "answer_pattern",
+              "metric": "task_success",
+              "pattern": "2\\s*점"
+            },
+            {
+              "assert": "no_commit",
+              "metric": "save_precision",
+              "kind": "all"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "all"
+            }
+          ]
+        },
+        {
+          "id": "chatter",
+          "user": "고마워, 오늘은 여기까지!",
+          "chat": "oneoff",
+          "role": "probe",
+          "memory": "remember",
+          "checks": [
+            {
+              "assert": "no_commit",
+              "metric": "save_precision",
+              "kind": "all"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "save_precision",
+              "kind": "all"
+            }
+          ]
+        },
+        {
+          "id": "readonly",
+          "user": "설비 가동률이 83%보다 높으면 증설 압박이 크다고 보는 편이야. 단, 정기보수 중인 공장에는 적용하지 않아. 이런 기준의 한계는 뭘까?",
+          "chat": "readonly",
+          "role": "probe",
+          "memory": "read_only",
+          "checks": [
+            {
+              "assert": "no_commit",
+              "metric": "permission",
+              "kind": "all"
+            },
+            {
+              "assert": "records_unchanged",
+              "metric": "permission",
+              "kind": "all"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "fixture_delivery": "per_step"
+}

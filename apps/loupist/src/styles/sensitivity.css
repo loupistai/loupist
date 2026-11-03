@@ -1,0 +1,110 @@
+/* Sensitivity card (finance-korea-retail-disagreement.md §2.2): discount rates × long-run growth. */
+
+.sensitivity-card {
+  display: grid;
+  gap: var(--gg-space-2);
+  min-width: 0;
+  max-width: 100%;
+  /* Where its link paragraph stood, between the paragraphs around it. */
+  margin-block: var(--gg-space-3);
+  padding: var(--gg-space-4);
+  border: 1px solid var(--gg-color-border-subtle);
+  border-radius: var(--gg-radius-md);
+  background: var(--gg-color-bg-raised);
+  color: var(--gg-color-text-primary);
+  animation: sensitivity-card-in var(--gg-motion-normal) var(--gg-ease-out);
+}
+@keyframes sensitivity-card-in { from { opacity: 0; } }
+/* In the results dialog the dialog is the card; its close button sits at the top right. */
+.sensitivity-card[data-variant="dialog"] { margin: 0; padding: 0; border: 0; background: transparent; animation: none; }
+.sensitivity-card[data-variant="dialog"] .sensitivity-header { padding-right: var(--gg-space-6); }
+
+.sensitivity-header { display: flex; align-items: flex-start; gap: var(--gg-space-3); min-width: 0; }
+.sensitivity-heading { display: grid; flex: 1 1 auto; min-width: 0; }
+.sensitivity-card .sensitivity-title {
+  margin: 0;
+  color: var(--gg-color-text-primary);
+  font-size: var(--gg-text-subtitle);
+  font-weight: var(--gg-weight-semibold);
+  line-height: var(--gg-leading-subtitle);
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+/* The price keeps its date and source with it when the title wraps. */
+.sensitivity-title-price { white-space: nowrap; }
+.sensitivity-meta { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.sensitivity-hint { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.sensitivity-copy { flex: none; margin-top: calc(-1 * var(--gg-space-1)); }
+
+/* Axis names stand beside the grid; at 700 px they move above it. */
+.sensitivity-axes { display: none; margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+
+.sensitivity-scroll { min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; border-radius: var(--gg-radius-xs); }
+.sensitivity-scroll:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
+.sensitivity-table { border-collapse: separate; border-spacing: 0; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+.sensitivity-table th, .sensitivity-table td { height: 32px; padding: 0 var(--gg-space-2); white-space: nowrap; }
+.sensitivity-table thead th, .sensitivity-corner { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-regular); line-height: var(--gg-leading-meta); text-align: end; vertical-align: bottom; }
+.sensitivity-table tbody th { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-regular); text-align: end; }
+.sensitivity-axis-label { margin-right: var(--gg-space-3); }
+.sensitivity-corner .sensitivity-axis-label { margin-right: 0; }
+
+/* Cells: 72 × 32, right-aligned; the base case outlined; shading only for needing more than the reference. */
+.sensitivity-cell { width: 72px; min-width: 72px; color: var(--gg-color-text-primary); text-align: end; }
+.sensitivity-cell[data-above] { background: var(--gg-color-warning-soft); }
+.sensitivity-cell[data-base] { outline: 2px solid var(--gg-color-border-strong); outline-offset: -2px; border-radius: var(--gg-radius-xs); }
+.sensitivity-null {
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--gg-color-text-tertiary);
+  font: inherit;
+  cursor: help;
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--gg-color-border-default);
+  text-underline-offset: 3px;
+}
+.sensitivity-null:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 1px; border-radius: var(--gg-radius-xs); }
+.sensitivity-note {
+  z-index: var(--gg-z-tooltip);
+  max-width: 280px;
+  padding: var(--gg-space-2) var(--gg-space-3);
+  border: 1px solid var(--gg-color-border-subtle);
+  border-radius: var(--gg-radius-sm);
+  background: var(--gg-color-bg-raised);
+  color: var(--gg-color-text-secondary);
+  box-shadow: var(--gg-shadow-md);
+  font-size: var(--gg-text-meta);
+  line-height: var(--gg-leading-meta);
+}
+
+.sensitivity-caption { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); }
+.sensitivity-legend { display: flex; align-items: baseline; gap: var(--gg-space-2); margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+/* A 3:1 edge keeps the soft fill visible as a key on the raised card. */
+.sensitivity-swatch { flex: none; width: 12px; height: 12px; border: 1px solid var(--gg-color-border-strong); background: var(--gg-color-warning-soft); transform: translateY(2px); }
+.sensitivity-inputs { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.sensitivity-inputs-label { margin-right: var(--gg-space-2); color: var(--gg-color-text-tertiary); }
+.sensitivity-input .gg-num { color: var(--gg-color-text-primary); }
+.sensitivity-input-flag { width: 14px; height: 14px; margin-left: var(--gg-space-1); color: var(--gg-color-warning); vertical-align: -2px; }
+
+.sensitivity-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-1) var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.sensitivity-how { min-height: 28px; padding: 0; border: 0; background: transparent; color: var(--gg-color-text-secondary); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.sensitivity-how:hover { color: var(--gg-color-text-primary); }
+.sensitivity-how:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 1px; border-radius: var(--gg-radius-xs); }
+.sensitivity-formulas { display: grid; gap: var(--gg-space-1); padding: var(--gg-space-2) var(--gg-space-3); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-sunken); color: var(--gg-color-text-secondary); font-family: var(--gg-font-mono); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); overflow-wrap: anywhere; }
+.sensitivity-formulas p { margin: 0; }
+
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@media (max-width: 720px) {
+  .sensitivity-axes { display: block; }
+  .sensitivity-card .sensitivity-axis-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .sensitivity-cell { width: 56px; min-width: 56px; }
+  /* The axis names stand above the grid, so the header row only holds its rates. */
+  .sensitivity-table thead th, .sensitivity-corner { height: auto; padding-bottom: var(--gg-space-1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sensitivity-card { animation: none; }
+}

@@ -1,0 +1,59 @@
+.custom-stack { display: flex; flex-direction: column; gap: var(--gg-space-4); min-width: 0; }
+.custom-connections { padding-block: var(--gg-space-4); }
+.custom-heading, .custom-switch { display: flex; align-items: center; justify-content: space-between; gap: var(--gg-space-3); }
+/* The 2px focus ring plus its offset sits outside the switch and the drawer body scrolls. */
+.custom-switch { padding-block: var(--gg-space-2); }
+.custom-heading { flex-wrap: wrap; }
+.custom-heading h2 { font-size: var(--gg-text-subtitle); font-weight: var(--gg-weight-semibold); line-height: var(--gg-leading-subtitle); margin: 0; }
+.custom-meta { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.custom-field { display: flex; flex-direction: column; gap: var(--gg-space-2); font-size: var(--gg-text-control); }
+.custom-rows, .custom-tools { list-style: none; margin: 0; padding: 0; }
+.custom-row { width: 100%; min-height: calc(var(--gg-size-field) + var(--gg-space-4)); display: flex; align-items: center; justify-content: space-between; text-align: start; gap: var(--gg-space-4); padding: var(--gg-space-4) 0; border-bottom: 1px solid var(--gg-color-border-subtle); }
+.custom-row:hover { background: var(--gg-color-bg-hover); }
+.custom-row-end { display: flex; flex-direction: column; align-items: flex-end; gap: var(--gg-space-2); flex-shrink: 0; }
+.custom-row-action { display: inline-flex; align-items: center; gap: var(--gg-space-1); font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); line-height: var(--gg-leading-control); color: var(--gg-color-text-primary); }
+.custom-row-action svg { width: var(--gg-space-4); height: var(--gg-space-4); }
+.custom-row strong, .custom-row small { display: block; overflow-wrap: anywhere; }
+.custom-row strong { font-size: var(--gg-text-body); font-weight: var(--gg-weight-medium); }
+.custom-row small { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.custom-status { font-size: var(--gg-text-meta); }
+.custom-status.positive { color: var(--gg-color-positive); }
+.custom-status.warning { color: var(--gg-color-warning); }
+.custom-status.negative { color: var(--gg-color-negative); }
+.custom-status.muted { color: var(--gg-color-text-tertiary); }
+.custom-tool { display: flex; flex-direction: column; align-items: flex-start; gap: var(--gg-space-2); padding-block: var(--gg-space-4); border-bottom: 1px solid var(--gg-color-border-subtle); min-width: 0; }
+.custom-add .custom-tool:last-child { border-bottom: 0; }
+.custom-tool p { margin: 0; overflow-wrap: anywhere; }
+.custom-tool code { font-family: var(--gg-font-mono); font-size: var(--gg-text-control); overflow-wrap: anywhere; }
+.custom-tool-title { font-size: var(--gg-text-body); line-height: var(--gg-leading-body); font-weight: var(--gg-weight-medium); }
+.custom-tool-id { font-family: var(--gg-font-mono); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); color: var(--gg-color-text-tertiary); }
+.custom-description-clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.custom-segments { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
+.custom-command { background: var(--gg-color-bg-sunken); border-radius: var(--gg-radius-sm); padding: var(--gg-space-3); white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--gg-font-mono); font-size: var(--gg-text-control); max-width: 100%; }
+.custom-code-input { font-family: var(--gg-font-mono); }
+.custom-env-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gg-space-2); }
+.custom-detail[data-slot="sheet-content"] { width: min(100%, calc(var(--gg-size-dialog-md) - var(--gg-space-8) * 2)); max-width: none; }
+.custom-detail-body { padding: 0 var(--gg-space-4) var(--gg-space-6); overflow-y: auto; }
+.custom-detail h3 { font-size: var(--gg-text-subtitle); font-weight: var(--gg-weight-medium); }
+.custom-detail [data-slot="sheet-title"] { overflow-wrap: anywhere; padding-inline-end: var(--gg-space-7); }
+.custom-waiting { display: flex; align-items: flex-start; gap: var(--gg-space-2); margin: 0; }
+.custom-waiting svg { flex: none; margin-top: 2px; }
+.flush-start { margin-inline-start: -0.625rem; }
+.custom-stack[data-custom-signing-in] { align-items: flex-start; padding-bottom: var(--gg-space-1); }
+.custom-stack[data-custom-signing-in] > :is(button, a) { align-self: flex-start; width: auto; max-width: 100%; }
+.custom-add [data-slot="tabs-list"] { display: grid; grid-template-columns: 1fr 1fr; width: 100%; height: auto; gap: 2px; padding: 2px; border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-sunken); }
+.custom-add [data-slot="tabs-trigger"] { height: auto; min-height: var(--gg-size-control-md); flex-direction: column; gap: 0; white-space: normal; border: 0; outline: none; box-shadow: none; background: transparent; color: var(--gg-color-text-secondary); }
+.custom-add [data-slot="tabs-trigger"][data-state="active"] { background: var(--gg-color-bg-selected); box-shadow: inset 0 0 0 1px var(--gg-color-border-strong); color: var(--gg-color-text-primary); }
+.custom-add [data-slot="tabs-trigger"] small { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-regular); line-height: var(--gg-leading-caption); }
+.custom-add [data-slot="tabs-trigger"]:focus { outline: none; box-shadow: none; }
+.custom-add [data-slot="tabs-trigger"][data-state="active"]:focus { box-shadow: inset 0 0 0 1px var(--gg-color-border-strong); }
+.custom-add [data-slot="tabs-trigger"][data-state="active"]:focus-visible { outline: 2px solid var(--gg-color-focus) !important; outline-offset: 2px; }
+.custom-add [data-slot="tabs-trigger"][data-state="inactive"]:focus,
+.custom-add [data-slot="tabs-trigger"][data-state="inactive"]:focus-visible { outline: none !important; box-shadow: none !important; }
+/* A max-height alone does not make this dialog body the scrollport, so a short window clips the next Add. */
+@media (max-height: 640px) {
+  .custom-add .dialog-body { max-height: calc(100dvh - 10rem); overflow-y: auto; }
+}
+.custom-add .custom-scroll { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.custom-add .custom-scroll > .dialog-body { flex: 1 1 auto; min-height: 0; max-height: none; padding: var(--gg-space-1); margin: 0; scroll-padding: var(--gg-space-1); }
+.custom-scroll-fade { position: absolute; inset-inline: 0; bottom: 0; height: var(--gg-space-6); pointer-events: none; background: linear-gradient(to bottom, transparent, var(--gg-color-bg-raised)); }

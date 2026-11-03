@@ -1,0 +1,6 @@
+{
+  "schema": 1,
+  "pi": "1.0.1",
+  "undici": "8.12.3",
+  "brace-expansion": "5.0.12"
+}

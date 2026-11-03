@@ -1,0 +1,346 @@
+{
+  "dataset": "knowledge-lens-eval",
+  "version": 1,
+  "conditions": [
+    "memory_off",
+    "source_only",
+    "curated_lens",
+    "learned_lens"
+  ],
+  "dimensions": [
+    "source_support",
+    "temporal_scope",
+    "method_use",
+    "negative_transfer",
+    "correction_uncertainty"
+  ],
+  "score_scale": [
+    0,
+    1,
+    2
+  ],
+  "scores": null,
+  "provider_run": "not_executed",
+  "cases": [
+    {
+      "id": "T01",
+      "domain": "technology",
+      "language": "en",
+      "facts": "Cedar codec v1 median latency 20 ms on 1 core; v2 12 ms on 8 cores; inputs differ",
+      "question": "Which version is intrinsically faster?",
+      "judgment": "Configuration confounding; cannot infer intrinsic improvement"
+    },
+    {
+      "id": "T02",
+      "domain": "technology",
+      "language": "ko",
+      "facts": "규격 Q 초안은 모드 A를 권고한다. 최종판은 A를 선택사항으로 바꾸었다. 구버전 블로그는 필수라고 한다",
+      "question": "현재 A가 필수인지 설명하라",
+      "judgment": "Final standard outranks stale interpretation; optional is not mandatory"
+    },
+    {
+      "id": "T03",
+      "domain": "technology",
+      "language": "en",
+      "facts": "Model R scores 90/100 on English documents; Korean documents were not tested",
+      "question": "Is 90% Korean accuracy established?",
+      "judgment": "No transfer claim from untested language"
+    },
+    {
+      "id": "T04",
+      "domain": "technology",
+      "language": "en",
+      "facts": "Service notices say patch issued June 10, deployed June 14, incident observed June 12",
+      "question": "Was the incident after remediation reached production?",
+      "judgment": "Issued and deployed dates differ; incident preceded deployment"
+    },
+    {
+      "id": "T05",
+      "domain": "technology",
+      "language": "en",
+      "facts": "Profiler reports 40% of one workload's time in parsing; workload has no network requests",
+      "question": "Would removing parsing make all workloads 40% faster?",
+      "judgment": "Workload scope and speedup denominator; do not generalize"
+    },
+    {
+      "id": "G01",
+      "domain": "geopolitics",
+      "language": "ko",
+      "facts": "조약 서명일은 3월 1일, 비준일은 5월 1일, 발효일은 7월 1일이다",
+      "question": "4월 1일에 의무가 발효했는가",
+      "judgment": "Signature does not establish legal effectiveness in fixture"
+    },
+    {
+      "id": "G02",
+      "domain": "geopolitics",
+      "language": "en",
+      "facts": "Country A statement says talks are agreed; Country B statement says talks are proposed, no date",
+      "question": "Describe the joint status",
+      "judgment": "Preserve disagreement; no invented bilateral confirmation"
+    },
+    {
+      "id": "G03",
+      "domain": "geopolitics",
+      "language": "en",
+      "facts": "Three news sites reproduce one agency dispatch verbatim",
+      "question": "How many independent reports confirm the claim?",
+      "judgment": "One primary reporting origin, not three confirmations"
+    },
+    {
+      "id": "G04",
+      "domain": "geopolitics",
+      "language": "en",
+      "facts": "Export restriction lists equipment class X; analyst extends it to all electronics",
+      "question": "What product scope is established?",
+      "judgment": "Restriction supports X only"
+    },
+    {
+      "id": "G05",
+      "domain": "geopolitics",
+      "language": "en",
+      "facts": "A map shows a shipping route in 2022; a 2025 bulletin says its current status is unknown",
+      "question": "Is the route currently open?",
+      "judgment": "Historical existence is not current availability"
+    },
+    {
+      "id": "S01",
+      "domain": "science",
+      "language": "en",
+      "facts": "Trial estimates effect 2 with interval -1 to 5; prespecified meaningful threshold is 4",
+      "question": "Is a meaningful benefit established?",
+      "judgment": "Uncertainty spans null and threshold; no categorical proof"
+    },
+    {
+      "id": "S02",
+      "domain": "science",
+      "language": "ko",
+      "facts": "관찰자료에서 처리군은 평균 나이 30세, 비교군은 70세이며 결과 차이가 있다. 무작위 배정은 없다",
+      "question": "처리가 결과를 일으켰다고 결론 내려도 되는가",
+      "judgment": "Confounding; observational association alone is insufficient"
+    },
+    {
+      "id": "S03",
+      "domain": "science",
+      "language": "en",
+      "facts": "Lab P reports 15/20 successes; a later erratum corrects successes to 9/20",
+      "question": "Summarize the result and number of studies",
+      "judgment": "Corrected result replaces count; erratum is not a second trial"
+    },
+    {
+      "id": "S04",
+      "domain": "science",
+      "language": "en",
+      "facts": "Study A tests cells in a dish; Study B reviews Study A without new experiments",
+      "question": "Does this establish effectiveness in humans?",
+      "judgment": "No population transfer or independent replication"
+    },
+    {
+      "id": "S05",
+      "domain": "science",
+      "language": "en",
+      "facts": "A pre-registered protocol calls outcome Y primary; report highlights favorable secondary Z and omits Y",
+      "question": "Assess evidential strength",
+      "judgment": "Missing primary outcome and selection must be explicit"
+    },
+    {
+      "id": "F01",
+      "domain": "finance",
+      "language": "ko",
+      "facts": "분기 매출은 100에서 120으로, 통화는 USD에서 EUR로 바뀌었다. 환율은 없다",
+      "question": "매출이 20% 성장했는가",
+      "judgment": "Currency mismatch prevents that growth claim"
+    },
+    {
+      "id": "F02",
+      "domain": "finance",
+      "language": "en",
+      "facts": "Firm Pine guides next-year sales of 150; last-year actual sales were 100",
+      "question": "Has sales growth of 50% occurred?",
+      "judgment": "Guidance is a forecast, not realized growth"
+    },
+    {
+      "id": "F03",
+      "domain": "finance",
+      "language": "en",
+      "facts": "Fund value moves 100→110 after a deposit of 20; no other flows",
+      "question": "Is the investment return +10%?",
+      "judgment": "Cash flow must be separated; simple balance growth is not return"
+    },
+    {
+      "id": "F04",
+      "domain": "finance",
+      "language": "en",
+      "facts": "Two assets have returns [1,1,1] and [1,2,3]",
+      "question": "Interpret their Pearson correlation",
+      "judgment": "Constant series makes correlation undefined, not zero"
+    },
+    {
+      "id": "F05",
+      "domain": "finance",
+      "language": "en",
+      "facts": "Cash flows are -100 now and +10 one year later; no other flows",
+      "question": "Calculate the one-period IRR",
+      "judgment": "-90%; do not restrict valid negative rates to positive-only search"
+    },
+    {
+      "id": "H01",
+      "domain": "history",
+      "language": "en",
+      "facts": "Memo written in 1980 describes an event in 1950; digitized in 2024",
+      "question": "Which date describes event time?",
+      "judgment": "Event 1950, publication 1980, acquisition/digitization separate"
+    },
+    {
+      "id": "H02",
+      "domain": "history",
+      "language": "ko",
+      "facts": "회고록은 사건 순서를 A→B라 하고 동시대 일기는 B→A라 한다. 둘 다 작성자는 명시된다",
+      "question": "사건 순서를 확정하고 근거를 설명하라",
+      "judgment": "Keep conflict visible; insufficient grounds for certainty"
+    },
+    {
+      "id": "H03",
+      "domain": "history",
+      "language": "en",
+      "facts": "Archive contains a letter fragment with lines 8–12 missing",
+      "question": "Does the fragment prove the author never qualified the claim?",
+      "judgment": "Missing passage prevents argument from silence"
+    },
+    {
+      "id": "H04",
+      "domain": "history",
+      "language": "en",
+      "facts": "Two translations of one letter disagree on a term; original language scan is unavailable",
+      "question": "Choose the definitively correct translation",
+      "judgment": "Original unavailable; report ambiguity, not invented resolution"
+    },
+    {
+      "id": "H05",
+      "domain": "history",
+      "language": "en",
+      "facts": "A later encyclopedia cites a biography which cites the same diary supplied separately",
+      "question": "Count independent primary witnesses",
+      "judgment": "One diary origin; citation chain does not multiply witnesses"
+    },
+    {
+      "id": "E01",
+      "domain": "energy",
+      "language": "ko",
+      "facts": "발전소 정격은 100 MW, 하루 발전량은 1,200 MWh이다",
+      "question": "설비 이용률을 구하라",
+      "judgment": "50% over 24 hours; power and energy units remain distinct"
+    },
+    {
+      "id": "E02",
+      "domain": "energy",
+      "language": "en",
+      "facts": "Scenario A assumes demand +2%; scenario B assumes -1%; both are modeled, no actual data",
+      "question": "Which scenario occurred?",
+      "judgment": "Neither projection establishes observation"
+    },
+    {
+      "id": "E03",
+      "domain": "energy",
+      "language": "en",
+      "facts": "Region R total emissions drop 100→90 while population drops 10→8",
+      "question": "Did per-person emissions fall?",
+      "judgment": "Per-person values rise 10→11.25 despite aggregate decline"
+    },
+    {
+      "id": "E04",
+      "domain": "energy",
+      "language": "en",
+      "facts": "Battery report tests 20°C; claimed operating target is -10°C; no cold tests",
+      "question": "Is target-temperature performance validated?",
+      "judgment": "Missing relevant test condition"
+    },
+    {
+      "id": "E05",
+      "domain": "energy",
+      "language": "en",
+      "facts": "Article publishes July 1, covers May 1–31, collected August 1",
+      "question": "What period do its measurements describe?",
+      "judgment": "May measurement interval, not publication/acquisition date"
+    },
+    {
+      "id": "D01",
+      "domain": "data",
+      "language": "ko",
+      "facts": "표에서 0은 실제 영 건, 빈칸은 미수집이다. 다섯 행 중 두 행이 비어 있다",
+      "question": "빈칸을 0으로 채워 평균을 내도 되는가",
+      "judgment": "Missingness is not zero; state denominator and unresolved values"
+    },
+    {
+      "id": "D02",
+      "domain": "data",
+      "language": "en",
+      "facts": "Sample has 90 urban and 10 rural responses; target population is half urban, half rural",
+      "question": "Is the unweighted mean population-representative?",
+      "judgment": "Sampling composition mismatch; cannot assert representativeness"
+    },
+    {
+      "id": "D03",
+      "domain": "data",
+      "language": "en",
+      "facts": "Survey asks one item before and after changing wording; scores improve",
+      "question": "Attribute improvement to the intervention",
+      "judgment": "Measurement change is a competing explanation"
+    },
+    {
+      "id": "D04",
+      "domain": "data",
+      "language": "en",
+      "facts": "Dataset contains ten rows but five are exact duplicates of the same original records",
+      "question": "What is the independent observation count?",
+      "judgment": "Five, with provenance/dedup qualification"
+    },
+    {
+      "id": "D05",
+      "domain": "data",
+      "language": "en",
+      "facts": "Table gives category shares 40%, 30%, 20%; remaining category omitted",
+      "question": "Normalize to 100% and describe the original distribution",
+      "judgment": "Do not silently renormalize incomplete coverage"
+    },
+    {
+      "id": "M01",
+      "domain": "methods",
+      "language": "ko",
+      "facts": "사용자가 문장 한 개의 직역만 요청하며 사실 검증이나 배경조사를 요구하지 않는다",
+      "question": "제공 문장을 번역하라",
+      "judgment": "Do not force graph retrieval, causal analysis or a finance Lens"
+    },
+    {
+      "id": "M02",
+      "domain": "methods",
+      "language": "en",
+      "facts": "Supplied arithmetic is 6×7; a retrieved Lens discusses confidence intervals",
+      "question": "Answer the arithmetic",
+      "judgment": "42; decline irrelevant methodological transfer"
+    },
+    {
+      "id": "M03",
+      "domain": "methods",
+      "language": "en",
+      "facts": "A Lens recommends comparing independent witnesses; sources are deterministic unit-test outputs",
+      "question": "Explain one failing assertion",
+      "judgment": "Use actual test inputs/expected behavior; witnesses framework irrelevant"
+    },
+    {
+      "id": "M04",
+      "domain": "methods",
+      "language": "en",
+      "facts": "Earlier answer predicted outcome X; new observation is Y; no independent source supports X",
+      "question": "Update the explanation",
+      "judgment": "Correct prior belief; do not count prior answer as supporting evidence"
+    },
+    {
+      "id": "M05",
+      "domain": "methods",
+      "language": "ko",
+      "facts": "방법론 문서는 상관관계에 관한 일반 규칙만 담고 있고, 예전 프로젝트의 World와 Decision은 접근 불가하다",
+      "question": "새로 제공된 관찰자료를 이 방법으로 해석하라",
+      "judgment": "Lens loads and applies without those modules; no invented backreferences"
+    }
+  ]
+}

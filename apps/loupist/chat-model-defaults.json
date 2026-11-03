@@ -1,0 +1,45 @@
+[
+  {
+    "provider": "openai",
+    "models": [
+      {
+        "id": "gpt-6.1-sol",
+        "thinking_level": "medium"
+      },
+      {
+        "id": "gpt-6-sol",
+        "thinking_level": "medium"
+      },
+      {
+        "id": "gpt-5.6-sol",
+        "thinking_level": "medium"
+      }
+    ]
+  },
+  {
+    "provider": "anthropic",
+    "models": [
+      {
+        "id": "claude-sonnet-5-5",
+        "thinking_level": "medium"
+      },
+      {
+        "id": "claude-sonnet-5",
+        "thinking_level": "medium"
+      },
+      {
+        "id": "claude-sonnet-4-6",
+        "thinking_level": "medium"
+      }
+    ]
+  },
+  {
+    "provider": "xai",
+    "models": [
+      {
+        "id": "grok-4.7",
+        "thinking_level": "medium"
+      }
+    ]
+  }
+]

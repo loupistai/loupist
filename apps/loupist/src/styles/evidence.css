@@ -1,0 +1,54 @@
+.loupist-citation {
+  display: inline; padding: 1px 5px; margin-inline: 2px; border: 1px solid var(--gg-color-border-subtle);
+  border-radius: 5px; background: var(--gg-color-bg-hover); color: var(--gg-color-text-secondary);
+  font-size: .8em; font-weight: var(--gg-weight-medium); line-height: 1.4; vertical-align: baseline; cursor: pointer;
+}
+.loupist-citation:hover { background: var(--gg-color-bg-selected); color: var(--gg-color-text-primary); }
+/* Its passage is open in Evidence, marked in the same accent as the passage there. */
+.loupist-citation[aria-current="true"] { border-color: var(--gg-color-accent); background: var(--gg-color-accent-soft); color: var(--gg-color-accent-ink); }
+.loupist-unavailable-citation { color: var(--gg-color-text-secondary); }
+.message-sources { margin-top: 14px; max-width: 100%; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.message-sources summary { display: inline-flex; align-items: center; width: fit-content; min-height: var(--gg-size-control-sm); padding: 5px 0; cursor: pointer; }
+.message-sources ol { display: grid; gap: 2px; padding: var(--gg-space-1) 0; margin: 0; list-style: none; }
+.message-sources li > button { display: flex; align-items: center; width: 100%; gap: 9px; padding: var(--gg-space-2); border-radius: var(--gg-radius-sm); text-align: left; }
+.message-sources li > button:hover { background: var(--gg-color-bg-hover); }
+.message-sources li > button > span:nth-child(2) { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.message-sources strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--gg-color-text-secondary); font-weight: var(--gg-weight-medium); }
+.message-sources small { color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
+.message-sources svg { width: 14px; height: 14px; flex: none; }
+.source-number { display: grid; place-items: center; width: 22px; height: 22px; flex: none; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-xs); font-variant-numeric: tabular-nums; }
+.source-site { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.source-site > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.source-favicon { display: inline-flex; align-items: center; justify-content: center; width: var(--gg-space-4); height: var(--gg-space-4); flex: 0 0 var(--gg-space-4); }
+.source-favicon img { display: block; width: var(--gg-space-4); height: var(--gg-space-4); object-fit: contain; border-radius: 3px; }
+.source-favicon svg { width: 14px; height: 14px; color: var(--gg-color-text-secondary); }
+.workspace-evidence { height: 100%; overflow: auto; padding: 0 var(--gg-space-6) var(--gg-space-6); color: var(--gg-color-text-primary); }
+.workspace-evidence > header { padding-top: var(--gg-space-6); }
+/* Keyboard focus lands on the reader after a citation opens it; draw the ring inside the scroll frame. */
+/* The reader takes programmatic focus (tabindex -1) so arrow keys scroll it; it is not a tab stop, so no ring. */
+.workspace-evidence:focus-visible { outline: none !important; }
+.evidence-kind { display: flex; align-items: center; gap: 7px; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.evidence-kind svg { width: 15px; height: 15px; }
+.workspace-evidence h2 { margin: var(--gg-space-3) 0 var(--gg-space-2); font-size: var(--gg-text-heading); line-height: 1.4; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.workspace-evidence header > p { margin: 0 0 var(--gg-space-4); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); line-height: 1.6; }
+.evidence-metadata { display: grid; grid-template-columns: auto minmax(0,1fr); gap: var(--gg-space-2) var(--gg-space-4); padding: 18px 0; margin: 0 0 var(--gg-space-4); border-bottom: 1px solid var(--gg-color-border-subtle); font-size: var(--gg-text-meta); }
+.evidence-metadata dt, .evidence-receipt dt { color: var(--gg-color-text-secondary); }
+.evidence-metadata dd { margin: 0; overflow-wrap: anywhere; }
+.evidence-excerpt h3 { font-size: var(--gg-text-control); font-weight: var(--gg-weight-semibold); margin: var(--gg-space-5) 0 var(--gg-space-3); }
+.evidence-excerpt pre, .evidence-receipt pre { margin: var(--gg-space-3) 0; font: 13px/1.75 var(--gg-font-ui); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Sits under the header and sticks to the top of the reader; its rule doubles as the header divider. */
+.evidence-actions {
+  position: sticky; top: 0; z-index: var(--gg-z-sticky); display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--gg-space-2);
+  margin: 0 calc(-1 * var(--gg-space-6)); padding: var(--gg-space-2) var(--gg-space-6); background: var(--gg-color-bg-app); box-shadow: 0 1px 0 var(--gg-color-border-subtle);
+}
+.evidence-actions:empty { padding-block: 0; }
+/* The cited passage: accent tint with a 2 px accent rule; it pulses once after the scroll settles. */
+.evidence-match { background: var(--gg-color-accent-soft); color: var(--gg-color-text-primary); box-shadow: inset 2px 0 0 var(--gg-color-accent); padding: 2px 2px 2px 6px; border-radius: 0 var(--gg-radius-xs) var(--gg-radius-xs) 0; -webkit-box-decoration-break: clone; box-decoration-break: clone; scroll-margin-block: 80px; }
+@keyframes evidence-match-pulse { 50% { background: color-mix(in srgb, var(--gg-color-accent) 25%, var(--gg-color-accent-soft)); } }
+@media (prefers-reduced-motion: no-preference) { .evidence-match { animation: evidence-match-pulse 600ms var(--gg-ease-out) 240ms 1; } }
+.evidence-truncation { font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); line-height: 1.6; }
+.evidence-notices { border-left: 2px solid var(--gg-color-warning); padding-left: var(--gg-space-3); font-size: var(--gg-text-meta); line-height: 1.6; }
+.evidence-receipt { margin-top: var(--gg-space-6); padding-top: var(--gg-space-4); border-top: 1px solid var(--gg-color-border-subtle); font-size: var(--gg-text-caption); }
+.evidence-receipt summary { color: var(--gg-color-text-secondary); cursor: pointer; }
+.evidence-receipt dl { display: grid; gap: 5px; }
+.evidence-receipt dd { margin: 0 0 var(--gg-space-2); overflow-wrap: anywhere; font-family: var(--gg-font-mono); }

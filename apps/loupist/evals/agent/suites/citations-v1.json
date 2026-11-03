@@ -1,0 +1,105 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "citations",
+  "version": 1,
+  "description": "Inline citations for handed-over local originals through the production Chat host.",
+  "scenarios": [
+    {
+      "id": "C-001",
+      "title": "Cite an attached Northwind Loom note",
+      "tags": [
+        "source",
+        "citations",
+        "attachment"
+      ],
+      "split": "regression",
+      "connections": [],
+      "workspace_files": {},
+      "sessions": [
+        {
+          "id": "cite-note",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Using only the attached note, what loom-yield token did Northwind Loom record on 12 March 2026? Cite the note. This is a fixture question, not a request for a recommendation.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "cites_result",
+                    "tool": "workspace_capture",
+                    "near": [
+                      "18420"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_recall"
+                  }
+                ]
+              },
+              "attachments": [
+                {
+                  "filename": "northwind-loom.md",
+                  "media_type": "text/markdown",
+                  "text": "Northwind Loom is a fictional company created for Loupist's release check.\nIt does not trade, and this note is not a recommendation or a price.\n\nOn 12 March 2026 the internal note recorded a loom-yield token of 18420.\nThe token is an identifier in this fixture, not a market value.\n"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "C-002",
+      "title": "Cite a handed-over Northwind Loom note",
+      "tags": [
+        "source",
+        "citations",
+        "workspace"
+      ],
+      "split": "regression",
+      "connections": [],
+      "workspace_files": {
+        "northwind-loom.md": "Northwind Loom is a fictional company created for Loupist's release check.\nIt does not trade, and this note is not a recommendation or a price.\n\nOn 12 March 2026 the internal note recorded a loom-yield token of 18420.\nThe token is an identifier in this fixture, not a market value.\n"
+      },
+      "sessions": [
+        {
+          "id": "cite-note",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Using only the supplied note northwind-loom.md in the workspace, what loom-yield token did Northwind Loom record on 12 March 2026? Cite the note. This is a fixture question, not a request for a recommendation.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "cites_result",
+                    "tool": "workspace_capture",
+                    "near": [
+                      "18420"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

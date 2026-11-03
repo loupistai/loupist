@@ -1,0 +1,116 @@
+{
+  "schema": "loupist-connection-replay/1",
+  "requests": [
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/corpCode.xml"
+      },
+      "response": {
+        "status": 200,
+        "content_type": "application/zip",
+        "body_base64": "UEsDBBQAAAAIAAAAIVwuaOAPpAAAAPMAAAAMAAAAQ09SUENPREUueG1ss7GvyM1RKEstKs7Mz7NVMtQzUFJIzUvOT8nMS7dVCg1x07VQsrezKUotLs0psbPJySwGksn5RQXxQDWpdpaWBkZGhgYGNvoIMYh0XmJuqt2btilvOja96Z77dlIHVAlYHKIkNS8dwg3OzykuLVBwy89PKYYqg8vZFJfkJ2cj22ajjyRkkwt0alplfEpiSaqdkYGRmYGxAVAFsqiNPsTV+lBPAABQSwECFAMUAAAACAAAACFcLmjgD6QAAADzAAAADAAAAAAAAAAAAAAAgAEAAAAAQ09SUENPREUueG1sUEsFBgAAAAABAAEAOgAAAM4AAAAAAA=="
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?corp_code=99022100&bsns_year=2025&reprt_code=11011&fs_div=CFS"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_Revenue",
+              "account_nm": "매출액",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_dt": "2025-12-31",
+              "thstrm_amount": "452300000000",
+              "ord": "1",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_OperatingIncomeLoss",
+              "account_nm": "영업이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_dt": "2025-12-31",
+              "thstrm_amount": "38100000000",
+              "ord": "2",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLoss",
+              "account_nm": "당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_dt": "2025-12-31",
+              "thstrm_amount": "21400000000",
+              "ord": "3",
+              "currency": "KRW"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "web",
+      "request": {
+        "method": "GET",
+        "url": "https://fictional.example/markets/solsup-foods-preliminary-fy2025",
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "content_type": "text/html",
+        "text": "<!doctype html><html><head><title>Solsup Foods posts preliminary FY2025 results</title><meta property=\"article:published_time\" content=\"2026-02-05T08:30:00Z\"></head><body><article><h1>Solsup Foods posts preliminary FY2025 results</h1><p>Fictional Solsup Foods said on 5 February 2026, in its preliminary earnings notice, that FY2025 revenue was 455.0 billion won on a consolidated basis. The company said the figures are unaudited and may change in the annual report.</p></article></body></html>"
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/company.json?corp_code=99022100"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "corp_code": "99022100",
+          "acc_mt": "12"
+        }
+      }
+    }
+  ]
+}

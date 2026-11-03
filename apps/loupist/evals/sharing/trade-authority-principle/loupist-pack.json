@@ -1,0 +1,32 @@
+{
+  "format": "loupist-pack/1",
+  "id": "7f1d1c3e-0000-4000-8000-000000000001",
+  "kind": "principle",
+  "name": "Fictional shared item",
+  "version": 1,
+  "createdAt": "2026-11-01T00:00:00Z",
+  "language": "en",
+  "license": "CC-BY-4.0",
+  "author": null,
+  "origin": [],
+  "assetClasses": [],
+  "counts": {
+    "perspective": 0,
+    "methods": 0,
+    "principles": 1,
+    "entities": 0,
+    "claims": 0,
+    "sources": 0
+  },
+  "files": {
+    "README.md": {
+      "sha256": "c30531ad68359d0ea1b7ee51ebca1d78c04dd328f31158de895140efccd41734",
+      "bytes": 24
+    },
+    "principle-the-user-authorized.md": {
+      "sha256": "429fa3b5238e055030666523ca57c7e394d375353d18b29e5e495cde501d75a7",
+      "bytes": 157
+    }
+  },
+  "app": "0.0.1"
+}

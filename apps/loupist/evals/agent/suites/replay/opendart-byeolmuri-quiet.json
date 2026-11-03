@@ -1,0 +1,108 @@
+{
+  "schema": "loupist-connection-replay/1",
+  "requests": [
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/corpCode.xml"
+      },
+      "response": {
+        "status": 200,
+        "content_type": "application/zip",
+        "body_base64": "UEsDBBQAAAAIAAAAIVwgUCS2tQAAAAQBAAAMAAAAQ09SUENPREUueG1sTY9BDoIwEEWvQthrKyYGkqEkLryAuiakjKSRtqaAkT17t57AFQuj3KoeQiJE2Uwy/7/J/A/RRebOGU0htArdxZy6DiquU6Gy0N3vNjPfjRgYLKq8ZJCLop9cm1PcM8iCgC6pTymQvzbYKpHI7KuxbWfvrX3c7LV5P7sR/LoDiCob1nWNOpeVEc4WpeBapRUvtRkvfhgUpebH6XsgEwlkn/1Qx2lSIvOot+qJBZCpCmSoQcZWH1BLAQIUAxQAAAAIAAAAIVwgUCS2tQAAAAQBAAAMAAAAAAAAAAAAAACAAQAAAABDT1JQQ09ERS54bWxQSwUGAAAAAAEAAQA6AAAA3wAAAAAA"
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99030800&bgn_de=20260101&end_de=20260331&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=20"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 0,
+          "total_count": 0,
+          "total_page": 0,
+          "list": []
+        }
+      },
+      "query_match": {
+        "page_count": "ignore",
+        "bgn_de": "ignore",
+        "end_de": "ignore"
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99030800&bgn_de=20260101&end_de=20260331&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=20&pblntf_ty=A"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 0,
+          "total_count": 0,
+          "total_page": 0,
+          "list": []
+        }
+      },
+      "query_match": {
+        "page_count": "ignore",
+        "bgn_de": "ignore",
+        "end_de": "ignore"
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99030800&bgn_de=20260101&end_de=20260331&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=20&pblntf_ty=B"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 0,
+          "total_count": 0,
+          "total_page": 0,
+          "list": []
+        }
+      },
+      "query_match": {
+        "page_count": "ignore",
+        "bgn_de": "ignore",
+        "end_de": "ignore"
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99030800&bgn_de=20260101&end_de=20260331&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=20&pblntf_ty=I"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 0,
+          "total_count": 0,
+          "total_page": 0,
+          "list": []
+        }
+      },
+      "query_match": {
+        "page_count": "ignore",
+        "bgn_de": "ignore",
+        "end_de": "ignore"
+      }
+    }
+  ]
+}

@@ -1,0 +1,763 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "scheduling",
+  "version": 1,
+  "description": "Natural requests for independently saved schedules, task-owned continuing sessions, fresh runs, selective edits and ambiguity restraint. State is graded from SQLite, not save claims.",
+  "scenarios": [
+    {
+      "id": "S-001",
+      "title": "Several independent tasks, selective edit and removal",
+      "tags": [
+        "regression"
+      ],
+      "split": "regression",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "예약 두 개 등록해 줘. 제목은 각각 아침 검토, 오후 검토로 해. 아침 검토는 한국 시간 평일 오전 9시에 작업 폴더의 morning.md를 요약하고, 그 예약 전용 대화에서 이전 실행을 이어가. 오후 검토는 한국 시간 평일 오후 3시에 afternoon.md를 요약하고 실행마다 새 대화로 시작해. 둘 다 지금 활성화해. 파일은 실행할 때 읽으면 돼.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 2,
+                    "tasks": [
+                      {
+                        "title": "아침 검토",
+                        "status": "active",
+                        "target": {
+                          "kind": "dedicated_chat"
+                        },
+                        "schedule": {
+                          "kind": "weekly",
+                          "days": [
+                            1,
+                            2,
+                            3,
+                            4,
+                            5
+                          ],
+                          "hour": 9,
+                          "minute": 0,
+                          "timezone": "Asia/Seoul"
+                        },
+                        "use_memory": false,
+                        "update_memory": false,
+                        "prompt_includes": [
+                          "morning.md"
+                        ],
+                        "awaiting_confirmation": false
+                      },
+                      {
+                        "title": "오후 검토",
+                        "status": "active",
+                        "target": {
+                          "kind": "new_chat"
+                        },
+                        "schedule": {
+                          "kind": "weekly",
+                          "days": [
+                            1,
+                            2,
+                            3,
+                            4,
+                            5
+                          ],
+                          "hour": 15,
+                          "minute": 0,
+                          "timezone": "Asia/Seoul"
+                        },
+                        "use_memory": false,
+                        "update_memory": false,
+                        "prompt_includes": [
+                          "afternoon.md"
+                        ],
+                        "awaiting_confirmation": false
+                      }
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "아침 검토 시간만 한국 시간 평일 오전 10시로 바꿔 줘. 나머지는 그대로 둬.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 2,
+                    "tasks": [
+                      {
+                        "title": "아침 검토",
+                        "status": "active",
+                        "target": {
+                          "kind": "dedicated_chat"
+                        },
+                        "schedule": {
+                          "kind": "weekly",
+                          "days": [
+                            1,
+                            2,
+                            3,
+                            4,
+                            5
+                          ],
+                          "hour": 10,
+                          "minute": 0,
+                          "timezone": "Asia/Seoul"
+                        },
+                        "use_memory": false,
+                        "update_memory": false,
+                        "prompt_includes": [
+                          "morning.md"
+                        ],
+                        "awaiting_confirmation": false
+                      },
+                      {
+                        "title": "오후 검토",
+                        "status": "active",
+                        "target": {
+                          "kind": "new_chat"
+                        },
+                        "schedule": {
+                          "kind": "weekly",
+                          "days": [
+                            1,
+                            2,
+                            3,
+                            4,
+                            5
+                          ],
+                          "hour": 15,
+                          "minute": 0,
+                          "timezone": "Asia/Seoul"
+                        },
+                        "use_memory": false,
+                        "update_memory": false,
+                        "prompt_includes": [
+                          "afternoon.md"
+                        ],
+                        "awaiting_confirmation": false
+                      }
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "오후 검토만 잠시 멈춰 줘.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 2,
+                    "tasks": [
+                      {
+                        "title": "아침 검토",
+                        "status": "active",
+                        "target": {
+                          "kind": "dedicated_chat"
+                        },
+                        "schedule": {
+                          "kind": "weekly",
+                          "days": [
+                            1,
+                            2,
+                            3,
+                            4,
+                            5
+                          ],
+                          "hour": 10,
+                          "minute": 0,
+                          "timezone": "Asia/Seoul"
+                        },
+                        "use_memory": false,
+                        "update_memory": false,
+                        "prompt_includes": [
+                          "morning.md"
+                        ],
+                        "awaiting_confirmation": false
+                      },
+                      {
+                        "title": "오후 검토",
+                        "status": "paused",
+                        "target": {
+                          "kind": "new_chat"
+                        },
+                        "schedule": {
+                          "kind": "weekly",
+                          "days": [
+                            1,
+                            2,
+                            3,
+                            4,
+                            5
+                          ],
+                          "hour": 15,
+                          "minute": 0,
+                          "timezone": "Asia/Seoul"
+                        },
+                        "use_memory": false,
+                        "update_memory": false,
+                        "prompt_includes": [
+                          "afternoon.md"
+                        ]
+                      }
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "오후 검토를 다시 켜 줘.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 2,
+                    "tasks": [
+                      {
+                        "title": "아침 검토",
+                        "status": "active",
+                        "target": {
+                          "kind": "dedicated_chat"
+                        },
+                        "schedule": {
+                          "kind": "weekly",
+                          "days": [
+                            1,
+                            2,
+                            3,
+                            4,
+                            5
+                          ],
+                          "hour": 10,
+                          "minute": 0,
+                          "timezone": "Asia/Seoul"
+                        },
+                        "use_memory": false,
+                        "update_memory": false,
+                        "prompt_includes": [
+                          "morning.md"
+                        ],
+                        "awaiting_confirmation": false
+                      },
+                      {
+                        "title": "오후 검토",
+                        "status": "active",
+                        "target": {
+                          "kind": "new_chat"
+                        },
+                        "schedule": {
+                          "kind": "weekly",
+                          "days": [
+                            1,
+                            2,
+                            3,
+                            4,
+                            5
+                          ],
+                          "hour": 15,
+                          "minute": 0,
+                          "timezone": "Asia/Seoul"
+                        },
+                        "use_memory": false,
+                        "update_memory": false,
+                        "prompt_includes": [
+                          "afternoon.md"
+                        ]
+                      }
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "아침 검토 예약만 삭제해 줘.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 1,
+                    "tasks": [
+                      {
+                        "title": "오후 검토",
+                        "status": "active",
+                        "target": {
+                          "kind": "new_chat"
+                        },
+                        "schedule": {
+                          "kind": "weekly",
+                          "days": [
+                            1,
+                            2,
+                            3,
+                            4,
+                            5
+                          ],
+                          "hour": 15,
+                          "minute": 0,
+                          "timezone": "Asia/Seoul"
+                        },
+                        "use_memory": false,
+                        "update_memory": false,
+                        "prompt_includes": [
+                          "afternoon.md"
+                        ]
+                      }
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S-002",
+      "title": "Discussion does not create work",
+      "tags": [
+        "regression"
+      ],
+      "split": "regression",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "main",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "매일 보고서 요약을 예약하면 편할까? 아직 등록하지 말고 장단점만 짧게 말해 줘.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 0,
+                    "tasks": [],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S-003",
+      "title": "One-off with offset and fresh conversation",
+      "tags": [
+        "validation"
+      ],
+      "split": "regression",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "main",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "Create a one-time task titled Archive check for January 15, 2027 at 9:30 AM in Seoul. At that time read archive.md in my workspace and summarize unresolved questions. Start with fresh chat history and activate it now. Do not read the file yet.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 1,
+                    "tasks": [
+                      {
+                        "title": "Archive check",
+                        "status": "active",
+                        "target": {
+                          "kind": "new_chat"
+                        },
+                        "schedule": {
+                          "kind": "once",
+                          "at_ms": 1799973000000
+                        },
+                        "use_memory": false,
+                        "update_memory": false,
+                        "prompt_includes": [
+                          "archive.md"
+                        ],
+                        "awaiting_confirmation": false
+                      }
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S-004",
+      "title": "Switch session mode without changing the other task",
+      "tags": [
+        "validation"
+      ],
+      "split": "regression",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "Create two paused schedules, North review and South review. Each should summarize its matching file north.md or south.md every 120 minutes. Each schedule should continue in its own dedicated conversation. Do not execute the work now.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 2,
+                    "tasks": [
+                      {
+                        "title": "North review",
+                        "status": "paused",
+                        "target": {
+                          "kind": "dedicated_chat"
+                        },
+                        "prompt_includes": [
+                          "north.md"
+                        ]
+                      },
+                      {
+                        "title": "South review",
+                        "status": "paused",
+                        "target": {
+                          "kind": "dedicated_chat"
+                        },
+                        "prompt_includes": [
+                          "south.md"
+                        ]
+                      }
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "Change only North review so each run starts with fresh conversation history. Leave it paused and keep South review as it is.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 2,
+                    "tasks": [
+                      {
+                        "title": "North review",
+                        "status": "paused",
+                        "target": {
+                          "kind": "new_chat"
+                        },
+                        "prompt_includes": [
+                          "north.md"
+                        ]
+                      },
+                      {
+                        "title": "South review",
+                        "status": "paused",
+                        "target": {
+                          "kind": "dedicated_chat"
+                        },
+                        "prompt_includes": [
+                          "south.md"
+                        ]
+                      }
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S-005",
+      "title": "Ambiguous deletion asks instead of guessing",
+      "tags": [
+        "regression"
+      ],
+      "split": "regression",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "한국 시간 매일 오전 8시에 north.md를 요약하는 북쪽 일일 검토와 south.md를 요약하는 남쪽 일일 검토를 각각 만들어 줘. 둘 다 일시정지해 두고 매번 새 대화로 시작해.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 2,
+                    "tasks": [
+                      {
+                        "title": "북쪽 일일 검토",
+                        "status": "paused",
+                        "prompt_includes": [
+                          "north.md"
+                        ]
+                      },
+                      {
+                        "title": "남쪽 일일 검토",
+                        "status": "paused",
+                        "prompt_includes": [
+                          "south.md"
+                        ]
+                      }
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "그 일일 검토 예약 지워 줘.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 2,
+                    "tasks": [
+                      {
+                        "title": "북쪽 일일 검토",
+                        "status": "paused",
+                        "prompt_includes": [
+                          "north.md"
+                        ]
+                      },
+                      {
+                        "title": "남쪽 일일 검토",
+                        "status": "paused",
+                        "prompt_includes": [
+                          "south.md"
+                        ]
+                      }
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S-006",
+      "title": "Ambiguous singular deletion after unrelated creation",
+      "tags": [
+        "validation"
+      ],
+      "split": "regression",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "Create two paused daily tasks for 08:00 Europe/London, both starting a fresh conversation on every run: River audit summarizes river.md; Harbor audit summarizes harbor.md. Do not inspect the files now.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 2,
+                    "tasks": [
+                      {
+                        "title": "River audit",
+                        "status": "paused",
+                        "prompt_includes": [
+                          "river.md"
+                        ]
+                      },
+                      {
+                        "title": "Harbor audit",
+                        "status": "paused",
+                        "prompt_includes": [
+                          "harbor.md"
+                        ]
+                      }
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "Remove the audit task.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 2,
+                    "tasks": [
+                      {
+                        "title": "River audit",
+                        "status": "paused",
+                        "prompt_includes": [
+                          "river.md"
+                        ]
+                      },
+                      {
+                        "title": "Harbor audit",
+                        "status": "paused",
+                        "prompt_includes": [
+                          "harbor.md"
+                        ]
+                      }
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S-007",
+      "title": "A session hands an unspecified time to its Bot and the Bot schedules the reply",
+      "tags": [
+        "validation"
+      ],
+      "split": "regression",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "main",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "Please schedule a weekly archive digest of archive.md. I have not decided which day or time yet. Do not read the file now.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_handoff",
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 0,
+                    "tasks": [],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "For the weekly archive digest you asked about, every Monday at 08:00 Asia/Seoul. Please start the schedule.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 1,
+                    "tasks": [
+                      {
+                        "status": "active",
+                        "prompt_includes": [
+                          "archive.md"
+                        ],
+                        "use_memory": false,
+                        "update_memory": false,
+                        "awaiting_confirmation": false
+                      }
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

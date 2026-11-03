@@ -1,0 +1,2711 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "learning",
+  "version": 1,
+  "description": "Fresh-Loupist scenarios. Most turns are ordinary user requests: a preference, a correction, or a supplied document, then a later question whose answer should change once that lesson is remembered. Scenarios tagged instructed name the Lens or the save step and are the capability floor.",
+  "scenarios": [
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-001",
+      "title": "Headline EPS uses basic shares unless dilution exceeds 15 percent",
+      "tags": [
+        "carry_forward",
+        "lens",
+        "light"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "From now on, use the diluted share count for EPS only when diluted shares exceed basic shares by more than 15 percent. Otherwise use the basic count, and say which count you used. Marrow Glass net income is 18.6 million USD, basic shares are 10.1 million, and diluted shares are 12.4 million. End with a JSON object {\"metrics\":{\"eps\": <number>}} and no text after it.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "eps": 1.5
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "uses-diluted",
+                    "criterion": "The answer divides Marrow Glass net income of 18.6 by the 12.4 million diluted shares because dilution exceeds 15 percent, giving EPS of 1.5.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "keeps-method",
+                    "criterion": "This scenario teaches a user-stated standing rule or convention: either a principle commit or a Lens commit satisfies the reusable-rule storage requirement; do not require a method-kind record or a Lens specifically. Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer keeps the share-count rule: diluted shares are used only when they exceed basic shares by more than 15 percent, and otherwise EPS uses the basic count.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "솔숲식품의 당기순이익은 22억 원이고 기본 주식 수는 1,000만 주, 희석 주식 수는 1,100만 주야. 주당순이익을 계산해 줘. 답의 맨 끝에는 {\"metrics\":{\"eps\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "discriminator": "A no-Memory analyst uses diluted shares whenever both counts are disclosed, so 22억 won over 1,100만 shares is 200. Dilution here is 10 percent, which is not above the taught 15 percent cutoff, so EPS stays on the basic count at 220.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "eps": 220
+                    },
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "carries-diluted",
+                    "criterion": "The answer gives EPS of 220 by dividing 22억 won by the 1,000만 basic shares, because dilution is 10 percent and does not exceed 15 percent, rather than the diluted result of 200.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-light",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "What is 4 times 7?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "max_tool_calls",
+                    "n": 0,
+                    "metric": "efficiency"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "28"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "stays-light",
+                    "criterion": "The answer states the requested result directly and does not call a tool for this arithmetic.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-002",
+      "title": "Adjusted profit adds back cash restructuring and keeps one-time gains",
+      "tags": [
+        "carry_forward",
+        "lens",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "앞으로 조정 영업이익은 보고 영업이익에 현금 구조조정 비용만 더하고, 일회성 이익은 빼지 마. 별무리반도체의 보고 영업이익 수치는 40이고, 그 안에 현금 구조조정 비용 6.5가 들어 있어. 일회성 이익은 없어. 단위는 십억 원이야. 답의 맨 끝에는 {\"metrics\":{\"adjusted_operating_profit\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "adjusted_operating_profit": 46.5
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "keeps-both",
+                    "criterion": "The answer adds the cash restructuring cost of 6.5 to reported operating profit of 40 and states adjusted operating profit of 46.5.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "keeps-method",
+                    "criterion": "This scenario teaches a user-stated standing rule or convention: either a principle commit or a Lens commit satisfies the reusable-rule storage requirement; do not require a method-kind record or a Lens specifically. Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer keeps the adjustment rule: add back cash restructuring cost, and do not strip a one-time gain.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Kitewharf Marine reported operating profit is 22 million USD. That figure includes a one-time gain of 3 million USD and a cash restructuring cost of 4 million USD. What adjusted operating profit do you get? End with a JSON object {\"metrics\":{\"adjusted_operating_profit\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst strips the one-time gain and adds back the cash restructuring cost, so 22 minus 3 plus 4 is 23. The taught rule adds back only the cash cost and keeps the gain, so adjusted operating profit is 26.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "adjusted_operating_profit": 26
+                    },
+                    "scales": [
+                      1000000
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "separates-gain",
+                    "criterion": "The answer adds back the cash restructuring cost and keeps the one-time gain, so adjusted operating profit is 26, not 23.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-003",
+      "title": "Revenue given in millions is restated in thousands",
+      "tags": [
+        "carry_forward",
+        "lens"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "From now on, restate every revenue figure that is given in millions as thousands of the same currency. Vellum Press FY2025 revenue was 64.2 million USD. End with a JSON object {\"metrics\":{\"revenue\": <number>}} and no text after it.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "names-identity",
+                    "criterion": "The answer restates Vellum Press FY2025 revenue of 64.2 million USD as 64200 thousand USD.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "keeps-method",
+                    "criterion": "This scenario teaches a user-stated standing rule or convention: either a principle commit or a Lens commit satisfies the reusable-rule storage requirement; do not require a method-kind record or a Lens specifically. Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer keeps the unit convention that revenue given in millions is restated in thousands.",
+                    "metric": "save_recall"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "revenue": 64200
+                    },
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "신더피크마이닝의 FY2025 매출은 51.8백만 캐나다 달러야. 이 매출 규모를 정리해 줘. 답의 맨 끝에는 {\"metrics\":{\"revenue\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "discriminator": "A no-Memory analyst repeats 51.8 million Canadian dollars. The taught convention restates millions as thousands, so the revenue figure is 51800.",
+              "expect": {
+                "rubric": [
+                  {
+                    "id": "names-cinder",
+                    "criterion": "The answer restates Cinder Peak Mining FY2025 revenue of 51.8 million Canadian dollars as 51800 thousand Canadian dollars.",
+                    "metric": "carry_forward"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "revenue": 51800
+                    },
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-004",
+      "title": "Customer concentration is flagged only above 25 percent",
+      "tags": [
+        "carry_forward",
+        "lens",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "앞으로 한 고객의 매출 비중이 25%를 넘으면 집중 위험으로 적고, 25% 이하면 그 이유로 집중 위험이라고 하지 마. 이슬물류의 최대 고객 비중은 매출의 32%야. 그 회사에 지금 적용해 줘.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "flags-32",
+                    "criterion": "The answer flags Iseul Logistics customer concentration because 32 percent is above 25 percent.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "keeps-method",
+                    "criterion": "This scenario teaches a user-stated standing rule or convention: either a principle commit or a Lens commit satisfies the reusable-rule storage requirement; do not require a method-kind record or a Lens specifically. Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer keeps the 25 percent customer-concentration rule as a reusable method.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "앰버라인페리의 최대 고객 매출 비중은 18%야. 이 회사를 집중 위험으로 봐야 해? 답의 맨 끝에는 {\"metrics\":{\"concentration_flag\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "discriminator": "A no-Memory analyst treats one customer above about 10 percent of sales as a concentration risk, so 18 percent is flagged. The taught rule flags concentration only above 25 percent, so the flag is 0.",
+              "expect": {
+                "rubric": [
+                  {
+                    "id": "not-11",
+                    "criterion": "The answer does not flag Amberline Ferries as a customer-concentration risk, because 18 percent is not above 25 percent, so the flag is 0.",
+                    "metric": "carry_forward"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "concentration_flag": 0
+                    },
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-006",
+      "title": "Non-banks keep EBITDA times multiple and banks stay on CET1",
+      "tags": [
+        "negative_transfer",
+        "lens",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "앞으로 은행은 CET1 비율과 유형장부가치로만 자본을 설명해. 은행이 아닌 회사의 지분가치는 EBITDA에 동종 배수를 곱한 값이고, 순부채는 빼지 마. 바다은행은 은행이고 CET1은 12.4%이며 유형장부가치는 주당 18000원이야. 그 두 수치로 자본을 설명해 줘.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "applies-to-bank",
+                    "criterion": "The answer reports Bada Bank CET1 of 12.4 percent and tangible book of 18000 KRW per share because the company is a bank.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "keeps-scope",
+                    "criterion": "This scenario teaches a user-stated standing rule or convention: either a principle commit or a Lens commit satisfies the reusable-rule storage requirement; do not require a method-kind record or a Lens specifically. Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer keeps bank capital on CET1 and tangible book, and it keeps non-bank equity value as EBITDA times the peer multiple with no net-debt subtraction.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Larkspur Retail is a grocery chain. FY2025 EBITDA was 40 million USD, net debt was 10 million USD, and the supplied peer multiple is 7 times EV/EBITDA. What equity value do you get? End with a JSON object {\"metrics\":{\"equity_value\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst builds equity value as EBITDA times the multiple minus net debt, so 40 times 7 minus 10 is 270. The taught non-bank rule does not subtract net debt, so equity value is 280, and the bank CET1 method does not apply. Negative transfer: An over-applying agent describes the grocer's capital with CET1 or tangible book value per share. A no-Memory analyst does not do that.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "equity_value": 280
+                    },
+                    "scales": [
+                      1000000
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "skips-bank-method",
+                    "criterion": "The equity value is 280, from 40 times 7 with no net-debt subtraction, and the answer does not value Larkspur Retail with CET1 or tangible book.",
+                    "metric": "carry_forward"
+                  },
+                  {
+                    "id": "no-bank-method",
+                    "criterion": "The answer does not value Larkspur Retail, a grocery chain, with CET1 or tangible book value per share.",
+                    "metric": "negative_transfer"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-007",
+      "title": "Product-revenue EPS uses basic shares and ignores runway",
+      "tags": [
+        "negative_transfer",
+        "lens"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "From now on, only for a pre-revenue biotechnology company, refuse a P/E and report cash runway in quarters as cash divided by the latest quarterly cash burn. For a company that already has product revenue, EPS uses the basic share count and ignores diluted shares and cash runway. Foxglove Diagnostics has no product revenue, cash of 48 million USD, and latest-quarter cash burn of 6 million USD. End with a JSON object {\"metrics\":{\"runway_quarters\": <number>}} and no text after it.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "runway_quarters": 8
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "runway-foxglove",
+                    "criterion": "The answer reports an 8-quarter cash runway for Foxglove Diagnostics and does not produce a P/E.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "keeps-scope",
+                    "criterion": "This scenario teaches a user-stated standing rule or convention: either a principle commit or a Lens commit satisfies the reusable-rule storage requirement; do not require a method-kind record or a Lens specifically. Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer keeps cash runway scoped to pre-revenue biotechnology companies and keeps EPS for a company with product revenue on the basic share count.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Nallo Mart already sells food and has product revenue. Net income is 12 million USD, basic shares are 4 million, and diluted shares are 6 million. Cash is 48 million USD and the latest quarterly cash burn is 6 million USD. What EPS do you get? End with a JSON object {\"metrics\":{\"eps\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst divides net income by diluted shares, so 12 divided by 6 is 2, or wrongly applies the biotech runway and gets 8. The taught product-revenue rule uses basic shares, so EPS is 12 divided by 4, which is 3. Negative transfer: An over-applying agent treats Nallo Mart like a pre-revenue biotech and reports an 8-quarter cash runway instead of EPS. A no-Memory analyst does not do that.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "eps": 3
+                    },
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "no-runway-grocery",
+                    "criterion": "The answer gives EPS of 3 for Nallo Mart from net income of 12 on 4 million basic shares, not diluted EPS of 2 and not an 8-quarter cash runway.",
+                    "metric": "carry_forward"
+                  },
+                  {
+                    "id": "no-runway",
+                    "criterion": "The answer does not refuse EPS or P/E for Nallo Mart and does not present a cash runway in quarters as its answer.",
+                    "metric": "negative_transfer"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-008",
+      "title": "Consolidated revenue leads only for a Korean manufacturer",
+      "tags": [
+        "negative_transfer",
+        "lens",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "앞으로 한국 제조사의 매출을 볼 때는 연결 매출을 별도 매출보다 먼저 써. 한국 제조사가 아니면 그 순서를 쓰지 마. 별무리반도체는 한국 제조사이고 연결 매출은 500, 별도 매출은 310이야. 어떤 매출을 쓸지 말해 줘.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "uses-consolidated",
+                    "criterion": "The answer selects Byeolmuri consolidated revenue of 500 rather than separate revenue of 310.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "keeps-scope",
+                    "criterion": "This scenario teaches a user-stated standing rule or convention: either a principle commit or a Lens commit satisfies the reusable-rule storage requirement; do not require a method-kind record or a Lens specifically. Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer keeps the consolidated-first rule scoped to Korean manufacturers.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Sable Orchard is a US orchard. Consolidated revenue is 40 million USD and separate revenue is 27.4 million USD. Which revenue figure should I use? End with a JSON object {\"metrics\":{\"use_consolidated\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst headlines the consolidated figure when both figures are given, which would set the flag to 1. Sable Orchard is not a Korean manufacturer, so the taught rule uses the separate figure and the flag is 0.",
+              "expect": {
+                "rubric": [
+                  {
+                    "id": "keeps-single-figure",
+                    "criterion": "The answer sets use_consolidated to 0 and uses the separate 27.4 million USD figure, because Sable Orchard is not a Korean manufacturer.",
+                    "metric": "carry_forward"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "use_consolidated": 0
+                    },
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-009",
+      "title": "Net debt comes out of the bridge only above 2 times EBITDA",
+      "tags": [
+        "negative_transfer",
+        "lens",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "From now on, subtract net debt in an equity-value bridge only when net debt exceeds 2 times EBITDA. Otherwise report enterprise value and say the debt screen did not trigger. Quill and Cordage has EBITDA of 10, net debt of 30, and a peer EV/EBITDA of 7. End with a JSON object {\"metrics\":{\"equity_value\": <number>}} and no text after it.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "equity_value": 40
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "subtracts-when-triggered",
+                    "criterion": "The answer subtracts net debt of 30 because it exceeds 2 times EBITDA of 10, giving equity value 40.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "keeps-method",
+                    "criterion": "This scenario teaches a user-stated standing rule or convention: either a principle commit or a Lens commit satisfies the reusable-rule storage requirement; do not require a method-kind record or a Lens specifically. Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer keeps the net-debt screen as a reusable method.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "안개직물의 상각전 영업이익은 10이고 순부채는 12이며 동종 배수는 7이야. 지분가치로 어떤 숫자를 보고하면 돼? 답의 맨 끝에는 {\"metrics\":{\"reported_value\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "discriminator": "A no-Memory analyst always subtracts net debt to reach equity value, so 10 times 7 minus 12 is 58. Net debt of 12 does not exceed 2 times EBITDA, so the taught screen does not trigger and the reported figure stays 70.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "reported_value": 70
+                    },
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "does-not-subtract",
+                    "criterion": "The answer reports 70 and does not subtract net debt, because net debt of 12 does not exceed 2 times EBITDA, so the screen does not trigger.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-011",
+      "title": "Annual volume is nameplate times 12, not months operated",
+      "tags": [
+        "save_precision",
+        "lens",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "For this question only, assume the Cinder Peak north pit is closed for all of March and remove one twelfth of annual volume. Annual volume is 120. End with a JSON object {\"metrics\":{\"volume\": <number>}} and no text after it.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "volume": 110
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens",
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens_proposal",
+                    "metric": "save_precision"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "one-off-closure",
+                    "criterion": "Judge the answer and this turn's memory commits (trace_summary.memory_commits). Pass only if no commit keeps what this statement says must not be kept. Statement: The answer removes one twelfth of 120 for this question and does not keep the March closure as a standing rule.",
+                    "metric": "save_precision"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "개월이 비어도 연간 물동량은 월 명판에 12를 곱한 값으로 봐. 조업한 개월 수로 안분하지 마. 이 계산은 앞으로 계속 쓰는 방법이야.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "keeps-nameplate",
+                    "metric": "save_recall",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer keeps a standing method: annual volume is the monthly nameplate times 12, and a partial operating year is not pro-rated."
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "키트워프의 월 명판 물동량은 8이고, 올해는 9개월만 조업했어. 올해 물동량을 얼마로 보면 돼? 답의 맨 끝에는 {\"metrics\":{\"volume\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "discriminator": "A no-Memory analyst pro-rates the months operated, so 8 times 9 is 72. The standing rule uses monthly nameplate times 12 and does not pro-rate, so volume is 96. Negative transfer: An over-applying agent removes one twelfth for a March closure and presents 88. A no-Memory analyst does not do that.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens",
+                    "metric": "negative_transfer"
+                  },
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens_proposal",
+                    "metric": "negative_transfer"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "keeps-96",
+                    "criterion": "The answer reports volume of 96, which is the monthly nameplate of 8 times 12, and does not pro-rate the 9 operating months down to 72.",
+                    "metric": "carry_forward"
+                  },
+                  {
+                    "id": "no-one-off-closure",
+                    "criterion": "The answer does not apply the earlier one-off March closure adjustment that removed one twelfth of annual volume.",
+                    "metric": "negative_transfer"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "volume": 96
+                    },
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-012",
+      "title": "A missing multiple uses 8 times, and 6 times stays one-off",
+      "tags": [
+        "save_precision",
+        "lens",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "이번 질문에만 배수 6배를 써 줘. 이슬물류 EBITDA 15에 그 배수를 적용한 기업가치를 구해 줘. 답의 맨 끝에는 {\"metrics\":{\"enterprise_value\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "enterprise_value": 90
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens",
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens_proposal",
+                    "metric": "save_precision"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "one-time-multiple",
+                    "criterion": "Judge the answer and this turn's memory commits (trace_summary.memory_commits). Pass only if no commit keeps what this statement says must not be kept. Statement: The answer uses 6 times EBITDA only for this question and does not keep 6 times as a standing method.",
+                    "metric": "save_precision"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "배수를 따로 안 주면 기업가치는 EBITDA의 8배로 계산해. 이 계산은 앞으로 계속 쓰는 방법이야.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "keeps-eight-times",
+                    "metric": "save_recall",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer keeps a standing method: when no multiple is given, enterprise value is 8 times EBITDA, and that method is not the one-off 6 times multiple."
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Pebble and Quill EBITDA is 10 million USD. What enterprise value do you get? End with a JSON object {\"metrics\":{\"enterprise_value\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst has no multiple and will not produce an enterprise value, and reusing the one-off 6 times multiple would give 60. The standing rule uses 8 times, so enterprise value is 80. Negative transfer: An over-applying agent reuses the one-off 6 times multiple and presents 60. A no-Memory analyst does not do that.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens",
+                    "metric": "negative_transfer"
+                  },
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens_proposal",
+                    "metric": "negative_transfer"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "no-standing-multiple",
+                    "criterion": "The answer reports enterprise value of 80 by applying the standing 8 times multiple, and does not apply the one-off 6 times multiple to report 60.",
+                    "metric": "carry_forward"
+                  },
+                  {
+                    "id": "no-one-off-multiple",
+                    "criterion": "The answer does not apply the earlier one-off 6 times multiple (which would give 60).",
+                    "metric": "negative_transfer"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "enterprise_value": 80
+                    },
+                    "scales": [
+                      1000000
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-013",
+      "title": "A missing tax rate uses 20 percent, and 31 percent stays one-off",
+      "tags": [
+        "save_precision",
+        "lens",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Assume a 31 percent tax rate just for this question on Marrow Glass pretax profit of 50. End with a JSON object {\"metrics\":{\"net_profit\": <number>}} and no text after it.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "net_profit": 34.5
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens",
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens_proposal",
+                    "metric": "save_precision"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "one-question-tax",
+                    "criterion": "Judge the answer and this turn's memory commits (trace_summary.memory_commits). Pass only if no commit keeps what this statement says must not be kept. Statement: The answer applies 31 percent tax only to this Marrow Glass question and does not keep that rate as a standing method.",
+                    "metric": "save_precision"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "세율을 따로 안 주면 세율은 20%로 보고 당기순이익은 세전이익의 80%로 계산해. 이 계산은 앞으로 계속 쓰는 방법이야.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "keeps-twenty-percent",
+                    "metric": "save_recall",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer keeps a standing method: when no tax rate is given, net profit is 80 percent of pretax profit, and that method is not the one-off 31 percent rate."
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "달항만의 세전이익은 40이야. 당기순이익을 구해 줘. 답의 맨 끝에는 {\"metrics\":{\"net_profit\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "discriminator": "A no-Memory analyst will not compute net profit without a tax rate, and reusing the one-off 31 percent rate on pretax 40 gives 27.6. The standing 20 percent rate leaves 80 percent of pretax, so net profit is 32. Negative transfer: An over-applying agent reuses the one-off 31 percent rate and presents 27.6. A no-Memory analyst does not do that.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens",
+                    "metric": "negative_transfer"
+                  },
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens_proposal",
+                    "metric": "negative_transfer"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "no-31-percent",
+                    "criterion": "The answer reports net profit of 32, which is 80 percent of pretax profit of 40, and does not apply the one-off 31 percent tax rate.",
+                    "metric": "carry_forward"
+                  },
+                  {
+                    "id": "no-one-off-tax",
+                    "criterion": "The answer does not apply the earlier one-off 31 percent tax rate (which would give 27.6).",
+                    "metric": "negative_transfer"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "net_profit": 32
+                    },
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-014",
+      "title": "A pasted backlog release is recalled later",
+      "tags": [
+        "save_recall",
+        "source",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "솔숲식품이 2025년 3월 12일에 알린 수주잔고 공시야. 본문은 이렇다. 솔숲식품은 2025년 3월 12일 현재 수주잔고 수치가 184.6이고 단위는 십억 원이라고 알렸다. 출처 주소는 https://fictional.example/solsup/backlog-2025 이다. 이 공시에서 수주잔고를 정리해 줘.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "keeps-source",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer retains the pasted Solsup backlog notice as a source rather than only summarizing it in the reply.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "What order backlog did Solsup Foods report as of 12 March 2025? End with a JSON object {\"metrics\":{\"backlog\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst was not told the 12 March 2025 backlog in this Chat, so it cannot report 184.6. That figure exists only in the earlier session's pasted notice.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "backlog": 184.6
+                    },
+                    "scales": [
+                      1000000000
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "recalls-fact",
+                    "criterion": "The answer states the Solsup Foods backlog of 184.6 as of 12 March 2025.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-016",
+      "title": "Confirmed capex overrides the draft file",
+      "tags": [
+        "save_recall",
+        "source",
+        "ko"
+      ],
+      "workspace_files": {
+        "data/byeolmuri-capex.md": "# Byeolmuri capex\n\nSource: https://fictional.example/byeolmuri/capex-2025\n\n별무리반도체 FY2025 설비투자 초안 수치는 70이고 단위는 십억 원이다. 이 파일은 초안이다.\n"
+      },
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "data/byeolmuri-capex.md 는 초안이야. 확정된 별무리반도체 FY2025 설비투자 수치는 73.4이고 단위는 십억 원이야. 파일 숫자는 초안 값이야. 확정 금액을 정리해 줘.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "keeps-capex",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer retains the confirmed Byeolmuri capex of 73.4 and does not treat the draft figure in the file as the confirmed amount.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "What FY2025 capex did Byeolmuri Semiconductor report? End with a JSON object {\"metrics\":{\"capex\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst rereads the workspace draft and reports capex of 70. The confirmed capex 73.4 was stated only in the earlier session.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "capex": 73.4
+                    },
+                    "scales": [
+                      1000000000
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "recalls-capex",
+                    "criterion": "The answer states confirmed FY2025 capex of 73.4 for Byeolmuri Semiconductor and does not report the draft figure of 70.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-017",
+      "title": "An English harvest note is recalled in Korean",
+      "tags": [
+        "save_recall",
+        "source",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Sable Orchard packed 318.2 thousand boxes in the FY2025 harvest. Origin: https://fictional.example/sable/harvest-2025. Summarize that harvest note.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "keeps-source",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer retains the pasted Sable harvest note as a source rather than only summarizing it.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "세이블오차드가 FY2025 수확에서 포장한 상자 수를 알려 줘. 답의 맨 끝에는 {\"metrics\":{\"boxes\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "discriminator": "A no-Memory analyst was not told the harvest count in this Chat, so it cannot report 318.2 thousand boxes. That figure exists only in the earlier pasted note.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "boxes": 318.2
+                    },
+                    "scales": [
+                      1000
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "recalls-fact",
+                    "criterion": "The answer states the Sable Orchard harvest of 318.2 thousand boxes.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-018",
+      "title": "The confirmed freight rate overrides the draft file",
+      "tags": [
+        "save_recall",
+        "source",
+        "ko"
+      ],
+      "workspace_files": {
+        "data/iseul-freight.md": "# Iseul freight\n\nSource: https://fictional.example/iseul/freight-2025\n\n이슬물류 FY2025 평균 운임 초안은 톤당 90달러다. 이 파일은 초안이다.\n"
+      },
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "data/iseul-freight.md 는 초안이야. 확정된 이슬물류 FY2025 평균 운임은 톤당 92.7달러야. 파일 숫자는 초안 값이야. 확정 운임을 정리해 줘.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "keeps-freight",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer retains the confirmed Iseul freight rate of 92.7 and does not treat the draft figure in the file as the confirmed rate.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "What average freight rate did Iseul Logistics report for FY2025? End with a JSON object {\"metrics\":{\"freight_rate\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst rereads the workspace draft and reports a freight rate of 90. The confirmed rate 92.7 was stated only in the earlier session.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "freight_rate": 92.7
+                    },
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "recalls-freight",
+                    "criterion": "The answer states the confirmed Iseul Logistics average freight rate of 92.7 and does not report the draft rate of 90.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-019",
+      "title": "A restated margin replaces the earlier view",
+      "tags": [
+        "revision_disclosure",
+        "lens"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Marrow Glass original FY2024 gross margin was 40.0 percent. Origin: https://fictional.example/marrow/fy2024. Treat that as the current margin for now.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "records-original",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer records 40.0 percent as the then-current Marrow Glass FY2024 gross margin and keeps that view.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "train-2",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "New filing. Origin: https://fictional.example/marrow/fy2024-restatement. Marrow Glass restated FY2024 gross margin to 33.0 percent.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "records-restatement",
+                    "criterion": "The answer treats 33.0 percent as the current Marrow Glass FY2024 gross margin after the restatement.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "What is your current view of the Marrow Glass FY2024 gross margin? End with a JSON object {\"metrics\":{\"current_gross_margin\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst does not have the restatement, so it cannot select 33 percent over the original 40.0 percent. The current margin comes only from the later session.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "current_gross_margin": 33
+                    },
+                    "scales": [
+                      0.01
+                    ],
+                    "metric": "revision_disclosure"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "discloses-status",
+                    "criterion": "The answer gives 33 percent as the current gross margin and says what was retained, what was revised, and what was rejected about the earlier 40 percent view.",
+                    "metric": "revision_disclosure"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-021",
+      "title": "Withdrawn guidance is no longer a live target",
+      "tags": [
+        "revision_disclosure",
+        "lens",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Orchid Relay FY2026 revenue guidance is 400 million USD. Origin: https://fictional.example/orchid/guidance-original. Treat 400 as live guidance for now.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "records-guidance",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer records 400 million USD as the then-live Orchid Relay FY2026 revenue guidance.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "train-2",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "오키드 릴레이가 FY2026 매출 가이던스를 철회했다는 새 자료야. 주소는 https://fictional.example/orchid/guidance-withdrawn 이다. 숫자 400은 더 이상 살아있는 목표가 아니야.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "records-withdrawal",
+                    "criterion": "The answer treats the Orchid Relay FY2026 revenue guidance of 400 as withdrawn rather than live.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "What is your current view of Orchid Relay FY2026 revenue guidance? End with a JSON object {\"metrics\":{\"guidance_live\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst does not know the guidance was withdrawn and cannot set guidance_live to 0 or reject 400 as a live target. The withdrawal was supplied only in the later session.",
+              "expect": {
+                "rubric": [
+                  {
+                    "id": "discloses-withdrawal",
+                    "criterion": "The answer says the FY2026 revenue guidance is withdrawn, sets guidance_live to 0, and says what was retained, revised, or rejected about the earlier 400 target.",
+                    "metric": "revision_disclosure"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "guidance_live": 0
+                    },
+                    "metric": "revision_disclosure"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-022",
+      "title": "A terminated contract replaces a renewal claim",
+      "tags": [
+        "revision_disclosure",
+        "lens"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "앰버라인페리의 최대 고객이 2028년까지 계약을 갱신했다는 자료야. 주소는 https://fictional.example/amberline/renewal 이다. 지금은 그 갱신을 현재 사실로 봐 줘.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "records-renewal",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer records the Amberline Ferries top-customer renewal through 2028 as the then-current fact.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "train-2",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Later source. Origin: https://fictional.example/amberline/termination. That same top customer filed to terminate the contract on 2026-04-09.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "records-termination",
+                    "criterion": "The answer treats the Amberline Ferries top-customer contract as terminated on 2026-04-09 rather than renewed through 2028.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "What is your current view of the Amberline Ferries top-customer contract? End with a JSON object {\"metrics\":{\"renewal_in_force\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst does not know about the termination and cannot set renewal_in_force to 0 or replace the renewal through 2028. The termination was supplied only in the later session.",
+              "expect": {
+                "rubric": [
+                  {
+                    "id": "discloses-termination",
+                    "criterion": "The answer says the contract was terminated, sets renewal_in_force to 0, and states what was retained, revised, or rejected about the renewal through 2028. Korean 해지, 수정, or 기각 is acceptable.",
+                    "metric": "revision_disclosure"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "renewal_in_force": 0
+                    },
+                    "metric": "revision_disclosure"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-023",
+      "title": "Korean name recalls an English ticker source",
+      "tags": [
+        "alias",
+        "save_recall",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Byeolmuri Semiconductor, ticker BYMR, KRX 990308, Korean name 별무리반도체, reported FY2025 capex of 73.4 billion KRW. Origin: https://fictional.example/byeolmuri/alias-capex. Summarize that filing.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "keeps-source",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer retains the pasted Byeolmuri capex filing, including the Korean name and the ticker, as a source.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "별무리반도체의 FY2025 설비투자 금액만 알려 줘. 답의 맨 끝에는 {\"metrics\":{\"capex\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "discriminator": "A no-Memory analyst was not given Byeolmuri capex in this Chat, so the Korean alias alone cannot produce 73.4. The figure exists only in the earlier pasted filing.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "capex": 73.4
+                    },
+                    "scales": [
+                      1000000000
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "recalls-fact",
+                    "criterion": "The answer states FY2025 capex of 73.4 for 별무리반도체, matching the Byeolmuri Semiconductor source.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-024",
+      "title": "Ticker recalls a Korean company source",
+      "tags": [
+        "alias",
+        "save_recall",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "노을제지, 영문명 Noeul Paper, 티커 NOUL, 종목코드 990184. FY2025 영업이익 수치는 47.3이고 단위는 십억 원이다. 주소는 https://fictional.example/noeul/op-2025 이다. 이 공시의 영업이익을 정리해 줘.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "keeps-source",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer retains the pasted Noeul Paper operating-profit filing as a source.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "What was NOUL FY2025 operating profit? End with a JSON object {\"metrics\":{\"operating_profit\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst was not given Noeul Paper operating profit in this Chat, so the ticker NOUL alone does not yield 47.3. The figure exists only in the earlier pasted filing.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "operating_profit": 47.3
+                    },
+                    "scales": [
+                      1000000000
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "recalls-fact",
+                    "criterion": "The answer states NOUL FY2025 operating profit of 47.3, matching the 노을제지 source.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-026",
+      "title": "Headline EPS divides by the average of basic and diluted shares",
+      "tags": [
+        "correction",
+        "carry_forward",
+        "lens",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Compute EPS for Amberline Ferries. Net income is 24 million USD. Use 8 million shares. End with a JSON object {\"metrics\":{\"eps\": <number>}} and no text after it.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "eps": 3
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "follows-given-count",
+                    "criterion": "The answer divides net income of 24 by the 8 million shares the user supplied.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "방금 계산은 틀렸어. 8백만 주는 기본 주식 수이고 희석 주식 수는 12백만 주야. 헤드라인 EPS는 기본 주식 수와 희석 주식 수의 평균으로 나눠. 평균은 10백만 주이고 올바른 EPS는 2.4야. 앞으로 기본과 희석이 같이 있으면 그 평균으로 나눠.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "accepts-correction",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer accepts EPS of 2.4 on the 10 million average share count and keeps that average-share method for later companies.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Orchid Relay net income is 15 million USD. Basic shares are 20 million and diluted shares are 30 million. Compute EPS. End with a JSON object {\"metrics\":{\"eps\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst divides by the diluted share count, so 15 divided by 30 is 0.5. The corrected rule divides by the average of 20 and 30, so EPS is 0.6.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "eps": 0.6
+                    },
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "uses-corrected-method",
+                    "criterion": "The answer divides 15 by the 25 million average of the basic and diluted share counts, giving EPS of 0.6, not the diluted result of 0.5.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-027",
+      "title": "Growth rate divides the change by the new figure",
+      "tags": [
+        "correction",
+        "carry_forward",
+        "lens",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "솔숲식품 매출이 80에서 100이 됐어. 성장률 대신 두 수의 차이만 계산해 줘. 답의 맨 끝에는 {\"metrics\":{\"difference\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "difference": 20
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "raw-difference",
+                    "criterion": "The answer reports the raw difference 20, which is the calculation requested in this turn.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "That difference is the wrong growth method. Growth rate is (new - old) / new, so (100 - 80) / 100 = 0.2. From now on use that ratio, not the raw difference and not (new - old) / old.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "accepts-ratio",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer accepts the growth rate of 0.2 from dividing the change by the new figure and keeps that ratio rather than dividing by the old figure.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Pebble and Quill revenue went from 50 to 80. Report the growth rate. End with a JSON object {\"metrics\":{\"growth_rate\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst divides the change by the old figure, so (80 - 50) / 50 is 0.6. The corrected rule divides by the new figure, so the growth rate is 0.375.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "growth_rate": 0.375
+                    },
+                    "scales": [
+                      100
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "uses-ratio",
+                    "criterion": "The reported growth rate is 0.375, computed as (80 - 50) / 80, not 0.6 from dividing the change by the old figure.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-028",
+      "title": "Segment margin is sales-weighted, then haircut by 5 points",
+      "tags": [
+        "correction",
+        "carry_forward",
+        "lens",
+        "ko",
+        "light"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Average these two Kitewharf segment margin percentages, without weighting. Segment A margin is 10 percent on sales of 100. Segment B margin is 40 percent on sales of 300. End with a JSON object {\"metrics\":{\"simple_average\": <number>}} and no text after it.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "simple_average": 25
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "simple-average",
+                    "criterion": "The answer averages the two margin percentages to 25, which is the unweighted calculation requested in this turn.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "그 평균은 잘못된 방법이야. 마진 퍼센트를 단순 평균하지 말고 이익을 합쳐 다시 나눈 뒤, 본사 비용 5%포인트를 빼. A 이익 10, B 이익 120, 매출 합 400이면 가중 마진은 32.5%이고, 본사 비용을 빼면 27.5%야. 앞으로 부문 마진은 이렇게 계산해.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "accepts-weighted",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer accepts the weighted margin of 32.5 percent minus a 5 point overhead haircut, giving 27.5 percent, and keeps that method.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Sable Orchard segment North margin is 20 percent on sales of 50, and segment South margin is 50 percent on sales of 150. Report the combined margin. End with a JSON object {\"metrics\":{\"combined_margin\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst reports the sales-weighted margin of 42.5 percent, or the simple average of 35. The corrected rule subtracts a 5 point overhead haircut, so the combined margin is 37.5.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "combined_margin": 37.5
+                    },
+                    "scales": [
+                      0.01
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "weights-segments",
+                    "criterion": "The combined margin is 37.5 percent, from the sales-weighted 42.5 percent minus a 5 point overhead haircut, not the unweighted average and not 42.5.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-light",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "What is 6 times 3?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "max_tool_calls",
+                    "n": 0,
+                    "metric": "efficiency"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "18"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "stays-light",
+                    "criterion": "The answer states the requested result directly and does not call a tool for this arithmetic.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-029",
+      "title": "Instructed headline EPS uses basic shares unless dilution exceeds 15 percent",
+      "tags": [
+        "instructed",
+        "carry_forward",
+        "lens"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "From now on, use the diluted share count for EPS only when diluted shares exceed basic shares by more than 15 percent. Otherwise use the basic count. Save a Lens method titled Headline share count. Marrow Glass net income is 18.6 million USD, basic shares are 10.1 million, and diluted shares are 12.4 million. End with a JSON object {\"metrics\":{\"eps\": <number>}} and no text after it.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "eps": 1.5
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "title_contains": "Headline share count"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "saves-titled-lens",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer saves a Lens method titled Headline share count and applies the 15 percent dilution test, using Marrow Glass diluted shares because that test is met.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "솔숲식품의 당기순이익은 22억 원이고 기본 주식 수는 1,000만 주, 희석 주식 수는 1,100만 주야. 저장된 Lens를 lens_search로 찾은 다음 lens_read로 읽고 그 방법으로 주당순이익을 계산해 줘. 답의 맨 끝에는 {\"metrics\":{\"eps\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "discriminator": "A no-Memory analyst uses diluted shares whenever both counts are disclosed, so EPS would be 200. Dilution is only 10 percent, below the taught 15 percent cutoff, so the saved method stays on basic shares and EPS is 220.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "lens_search",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "lens_read",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "lens_search",
+                      "lens_read"
+                    ],
+                    "metric": "retrieval"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "eps": 220
+                    },
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "reads-then-applies",
+                    "criterion": "The answer reads the saved Lens and gives EPS of 220 on the basic shares, because dilution is 10 percent and does not exceed 15 percent.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-031",
+      "title": "Instructed one-off growth rate is not the standing method",
+      "tags": [
+        "instructed",
+        "save_precision",
+        "lens",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "이번 질문에만 5% 성장을 가정하고, 그 가정을 Lens로 저장하면 안 돼. 솔숲식품 매출 수치는 200이고 단위는 십억 원이야. 답의 맨 끝에는 {\"metrics\":{\"next_revenue\": 숫자}} JSON 객체만 붙이고 그 뒤에는 아무 말도 하지 마.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "next_revenue": 210
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens",
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens_proposal",
+                    "metric": "save_precision"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "forbids-lens",
+                    "criterion": "Judge the answer and this turn's memory commits (trace_summary.memory_commits). Pass only if no commit keeps what this statement says must not be kept. Statement: The answer uses 5 percent only for this question and does not save a Lens method.",
+                    "metric": "save_precision"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "성장률을 따로 안 주면 내년 매출은 최근 해 매출에 직전 연간 변화의 절반을 더한 값이야. 이 방법만 제목이 Unspecified growth method 인 Lens로 저장해. 5% 가정은 이 방법에 넣지 마.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_recall",
+                    "title_contains": "Unspecified growth method"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "saves-standing-growth",
+                    "metric": "save_recall",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer saves a Lens titled Unspecified growth method that sets next year revenue to the latest revenue plus half of the last absolute change, and it does not store the 5 percent rate."
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Brindle Metering revenue was 64 million USD last year and 80 million USD this year. Read the saved Lens with lens_search and lens_read, then estimate next year revenue. Do not reuse the one-off 5 percent assumption. End with a JSON object {\"metrics\":{\"next_revenue\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst refuses or extends the recent trend to 100, and the one-off 5 percent rate would give 84. The saved standing rule adds half the last change, so next year revenue is 88. Negative transfer: An over-applying agent reuses the one-off 5 percent rate and presents 84. A no-Memory analyst does not do that.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens",
+                    "metric": "negative_transfer"
+                  },
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens_proposal",
+                    "metric": "negative_transfer"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "no-saved-rate",
+                    "criterion": "The answer reads the saved Lens and estimates next year revenue of 88, and it does not apply a saved 5 percent rate to present 84.",
+                    "metric": "carry_forward"
+                  },
+                  {
+                    "id": "no-one-off-rate",
+                    "criterion": "The answer does not apply the earlier one-off 5 percent growth assumption (which would give 84).",
+                    "metric": "negative_transfer"
+                  }
+                ],
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "lens_search",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "lens_read",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "lens_search",
+                      "lens_read"
+                    ],
+                    "metric": "retrieval"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "next_revenue": 88
+                    },
+                    "scales": [
+                      1000000
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-032",
+      "title": "Instructed twin of the backlog source",
+      "tags": [
+        "instructed",
+        "save_recall",
+        "source",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "아래 1차 자료를 출처로 저장해 줘. 제목에는 Solsup backlog 를 넣어 줘. 주소는 https://fictional.example/solsup/backlog-2025 이다. 본문: 솔숲식품은 2025-03-12 현재 수주잔고 수치가 184.6이고 단위는 십억 원이라고 알렸다.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "title_contains": "Solsup backlog"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "saves-titled-source",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer saves a source whose title contains Solsup backlog and keeps the pasted backlog figure.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "What order backlog did Solsup Foods report as of 12 March 2025? Use the saved source. End with a JSON object {\"metrics\":{\"backlog\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst was not given the backlog in this Chat, so it cannot report 184.6 even when told to use a source. The figure exists only in the earlier pasted notice.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "backlog": 184.6
+                    },
+                    "scales": [
+                      1000000000
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "uses-saved-source",
+                    "criterion": "The answer states the backlog of 184.6 from the saved Solsup backlog source.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-033",
+      "title": "Instructed twin of the restated margin",
+      "tags": [
+        "instructed",
+        "revision_disclosure",
+        "lens"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Save this primary source as Marrow margin original. Origin: https://fictional.example/marrow/fy2024. Body: Marrow Glass original FY2024 gross margin was 40.0 percent. Also save a Lens titled Marrow margin view that treats 40.0 percent as the current margin.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "title_contains": "Marrow margin original"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "title_contains": "Marrow margin view"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "saves-titled-view",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer saves the original source and a Lens titled Marrow margin view at 40.0 percent.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "train-2",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "New source, title Marrow margin restatement. Origin: https://fictional.example/marrow/fy2024-restatement. Marrow Glass restated FY2024 gross margin to 33.0 percent. Read the saved Lens and revise it. In this answer, disclose what you retained, revised, and rejected.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "title_contains": "Marrow margin restatement"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_recall",
+                    "min": 1
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "discloses-on-request",
+                    "criterion": "The answer revises the saved view to 33.0 percent and discloses retained, revised, and rejected items because the user asked.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "What is your current view of the Marrow Glass FY2024 gross margin? Search and exact-read the saved Lens first. Disclose retained, revised, and rejected knowledge. End with a JSON object {\"metrics\":{\"current_gross_margin\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst does not have the restatement, so it cannot give 33 percent as the current margin or disclose the revision of 40.0 percent. Both facts come from the earlier sessions.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "lens_search",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "lens_read",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "lens_search",
+                      "lens_read"
+                    ],
+                    "metric": "retrieval"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "current_gross_margin": 33
+                    },
+                    "scales": [
+                      0.01
+                    ],
+                    "metric": "revision_disclosure"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "reads-and-discloses",
+                    "criterion": "The answer reads the saved Lens, gives 33 percent as current, and discloses retained, revised, and rejected items.",
+                    "metric": "revision_disclosure"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "capability",
+      "connections": [],
+      "id": "L-034",
+      "title": "Instructed headline EPS uses the average share count",
+      "tags": [
+        "instructed",
+        "correction",
+        "carry_forward",
+        "lens",
+        "ko"
+      ],
+      "sessions": [
+        {
+          "id": "train-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Compute EPS for Amberline Ferries. Net income is 24 million USD. Use 8 million shares. End with a JSON object {\"metrics\":{\"eps\": <number>}} and no text after it.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "eps": 3
+                    },
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "follows-given-count",
+                    "criterion": "The answer divides net income of 24 by the 8 million shares the user supplied.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "방금 계산은 틀렸어. 8백만 주는 기본 주식 수이고 희석 주식 수는 12백만 주야. 헤드라인 EPS는 기본 주식 수와 희석 주식 수의 평균으로 나눠. 평균은 10백만 주이고 올바른 EPS는 2.4야. 이 방법을 Headline EPS correction 이라는 Lens로 저장해 줘. 앞으로 기본과 희석이 같이 있으면 그 평균으로 나눠.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "title_contains": "Headline EPS correction"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "saves-correction",
+                    "criterion": "Judge only this turn's memory commits (trace_summary.memory_commits), not the answer text. Pass only if a commit captures what this statement describes; with no commit, fail. Statement: The answer accepts EPS of 2.4 and saves a Lens titled Headline EPS correction that divides by the average of the basic and diluted share counts.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Orchid Relay net income is 15 million USD. Basic shares are 20 million and diluted shares are 30 million. Read the saved Lens with lens_search and lens_read, then compute EPS. End with a JSON object {\"metrics\":{\"eps\": <number>}} and no text after it.",
+              "discriminator": "A no-Memory analyst divides by the diluted count and gets 0.5. The saved correction divides by the average of the basic and diluted counts, so EPS is 0.6.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "lens_search",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "lens_read",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "lens_search",
+                      "lens_read"
+                    ],
+                    "metric": "retrieval"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "eps": 0.6
+                    },
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "reads-corrected-lens",
+                    "criterion": "The answer reads the saved Lens and divides 15 by the 25 million average share count, giving EPS of 0.6 rather than diluted EPS of 0.5.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "budget": {
+    "maxInputTokensPerTurn": 250000,
+    "maxTurns": 250
+  }
+}

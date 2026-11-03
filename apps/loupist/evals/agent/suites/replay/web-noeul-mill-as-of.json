@@ -1,0 +1,31 @@
+{
+  "schema": "loupist-connection-replay/1",
+  "requests": [
+    {
+      "provider": "web",
+      "request": {
+        "method": "GET",
+        "url": "https://fictional.example/noeul-paper/mill-update-march-2",
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "content_type": "text/html",
+        "text": "<!doctype html><html><head><title>Noeul Paper Gwangyang mill update</title><meta property=\"article:published_time\" content=\"2026-03-02T09:00:00Z\"></head><body><article><h1>Noeul Paper Gwangyang mill update</h1><p>Fictional Noeul Paper said on 2 March 2026 that its Gwangyang mill can make 410 thousand tonnes of paper a year.</p></article></body></html>"
+      }
+    },
+    {
+      "provider": "web",
+      "request": {
+        "method": "GET",
+        "url": "https://fictional.example/noeul-paper/mill-update-march-18",
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "content_type": "text/html",
+        "text": "<!doctype html><html><head><title>Noeul Paper expands Gwangyang mill</title><meta property=\"article:published_time\" content=\"2026-03-18T09:00:00Z\"></head><body><article><h1>Noeul Paper expands Gwangyang mill</h1><p>Fictional Noeul Paper said on 18 March 2026 that the Gwangyang mill expansion raised capacity to 455 thousand tonnes a year.</p></article></body></html>"
+      }
+    }
+  ]
+}

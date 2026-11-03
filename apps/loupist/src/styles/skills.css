@@ -1,0 +1,23 @@
+.skills-settings { display: grid; gap: var(--gg-space-5); }
+.skills-scope { display: flex; align-items: center; justify-content: space-between; gap: var(--gg-space-5); }
+.skills-scope label { font-weight: var(--gg-weight-semibold); }
+.skills-scope p, .skills-status, .skill-origin { color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); }
+.skills-scope select { max-width: 300px; }
+.skills-toolbar { display: flex; gap: var(--gg-space-2); flex-wrap: wrap; align-items: center; }
+.skills-search { position: relative; flex: 1; min-width: 180px; }
+.skills-search svg { position: absolute; left: 10px; top: 10px; width: var(--gg-space-4); height: var(--gg-space-4); color: var(--gg-color-text-secondary); }
+.skills-search input { padding-left: 34px; }
+.skills-list { list-style: none; padding: 0; margin: 0; }
+.skill-row { display: flex; align-items: center; gap: var(--gg-space-5); border-bottom: 1px solid var(--gg-color-border-subtle); padding: var(--gg-space-5) 0; }
+.skill-summary { text-align: left; display: grid; gap: 6px; flex: 1; min-width: 0; background: none; border: 0; color: inherit; cursor: pointer; }
+.skill-title { display: flex; align-items: center; gap: var(--gg-space-2); font-size: var(--gg-text-body); font-weight: var(--gg-weight-semibold); }
+.skill-title svg { width: 17px; height: 17px; flex-shrink: 0; }
+.skill-description { font-size: var(--gg-text-body); color: var(--gg-color-text-secondary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.skill-actions { display: flex; gap: 6px; align-items: center; font-size: var(--gg-text-control); color: var(--gg-color-text-secondary); }
+.skill-instructions { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; font-size: var(--gg-text-body); line-height: 1.7; }
+.skill-editor-fields, .skill-editor-fields label { display: grid; gap: var(--gg-space-2); }
+.skill-editor-fields { gap: var(--gg-space-5); }
+.skill-instructions-editor { min-height: 200px; }
+.skills-empty { padding: var(--gg-space-8) 0; display: grid; justify-items: center; gap: var(--gg-space-3); color: var(--gg-color-text-secondary); }
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@media (max-width: 760px) { .skills-scope { align-items: stretch; flex-direction: column; } .skills-scope select { max-width: none; } .skill-row { flex-wrap: wrap; gap: var(--gg-space-3); } .skill-summary { flex-basis: 100%; } }

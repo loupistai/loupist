@@ -1,0 +1,55 @@
+{
+  "schema": "loupist-connection-replay/1",
+  "requests": [
+    {
+      "provider": "koreainvestment.market-data",
+      "request": {
+        "url": "https://openapivts.koreainvestment.com:29443/uapi/domestic-stock/v1/trading/inquire-balance?CANO=50000000&ACNT_PRDT_CD=01&AFHR_FLPR_YN=N&OFL_YN=&INQR_DVSN=02&UNPR_DVSN=01&FUND_STTL_ICLD_YN=N&FNCG_AMT_AUTO_RDPT_YN=N&PRCS_DVSN=00&CTX_AREA_FK100=&CTX_AREA_NK100=",
+        "tr_id": "VTTC8434R"
+      },
+      "query_match": {
+        "CTX_AREA_FK100": "ignore",
+        "CTX_AREA_NK100": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "rt_cd": "0",
+          "msg_cd": "MCA00000",
+          "msg1": "정상처리 되었습니다.",
+          "ctx_area_fk100": "",
+          "ctx_area_nk100": "",
+          "output1": [
+            {
+              "pdno": "990417",
+              "prdt_name": "바다은행",
+              "trad_dvsn_name": "현금",
+              "hldg_qty": "1337",
+              "ord_psbl_qty": "1337",
+              "thdt_buyqty": "0",
+              "thdt_sll_qty": "0",
+              "pchs_avg_pric": "36061.2566",
+              "pchs_amt": "48213900",
+              "prpr": "51200",
+              "evlu_amt": "68454400",
+              "evlu_pfls_amt": "20240500",
+              "evlu_pfls_rt": "41.98",
+              "evlu_erng_rt": "41.98"
+            }
+          ],
+          "output2": [
+            {
+              "dnca_tot_amt": "1250000",
+              "scts_evlu_amt": "68454400",
+              "tot_evlu_amt": "69704400",
+              "nass_amt": "69704400",
+              "pchs_amt_smtl_amt": "48213900",
+              "evlu_amt_smtl_amt": "68454400",
+              "evlu_pfls_smtl_amt": "20240500"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

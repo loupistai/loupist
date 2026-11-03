@@ -1,0 +1,676 @@
+{
+  "schema": "loupist-world-seed-oracle/2",
+  "version": 2,
+  "input_sha256": "a0f085a3f7d5b589beb37ddd42d0aba3953c5a9cf573ba38298a16ca624a76bc",
+  "scenarios": [
+    {
+      "id": "S-BIOTECH",
+      "entities": [
+        {
+          "id": "veltrion",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:Veltrion(?: Therapeutics)?(?:,?\\s*Inc\\.?)?)$"
+          ],
+          "identifier": "VLTN"
+        },
+        {
+          "id": "orinda",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:Orinda Bio(?:sciences)?(?:,?\\s*Inc\\.?)?)$"
+          ]
+        },
+        {
+          "id": "halden",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:Halden Pharma(?:ceuticals)?(?:,?\\s*Inc\\.?)?)$"
+          ]
+        },
+        {
+          "id": "office",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:(?:the )?Office of Drug Review)$"
+          ]
+        },
+        {
+          "id": "marisa",
+          "kind": "Person",
+          "name_patterns": [
+            "^(?:Marisa Quell|Quell, Marisa)$"
+          ]
+        },
+        {
+          "id": "vel-204",
+          "kind": "Product",
+          "name_patterns": [
+            "^(?:VEL-204|VEL204)$"
+          ]
+        },
+        {
+          "id": "vel-310",
+          "kind": "Product",
+          "name_patterns": [
+            "^(?:VEL-310|VEL310)$"
+          ]
+        },
+        {
+          "id": "vel-101",
+          "kind": "Product",
+          "name_patterns": [
+            "^(?:VEL-101|VEL101)$"
+          ]
+        },
+        {
+          "id": "hp-77",
+          "kind": "Product",
+          "name_patterns": [
+            "^(?:HP-77|HP77)$"
+          ]
+        }
+      ],
+      "domain_concepts": [
+        {
+          "id": "vel204-trial",
+          "name_patterns": [
+            "^(?:(?:the )?(?:Phase 2|phase II|P2) VEL-?204(?: (?:Phase 2|phase II|P2))?(?: (?:psoriasis )?(?:trial|study))?|VEL-?204 (?:Phase 2|phase II|P2)(?: (?:psoriasis )?(?:trial|study))?|VEL-?204 (?:psoriasis )?(?:trial|study))$"
+          ],
+          "anchor_patterns": [
+            "VEL-?204"
+          ],
+          "cue_patterns": [
+            "trial|study"
+          ],
+          "kind_patterns": [
+            "^(?:Trial|Study)$"
+          ]
+        },
+        {
+          "id": "hp77-trial",
+          "name_patterns": [
+            "^(?:(?:the )?(?:Phase 3|phase III|P3) HP-?77(?: (?:Phase 3|phase III|P3))?(?: (?:psoriasis )?(?:trial|study))?|HP-?77 (?:Phase 3|phase III|P3)(?: (?:psoriasis )?(?:trial|study))?|HP-?77 (?:psoriasis )?(?:trial|study))$"
+          ],
+          "anchor_patterns": [
+            "HP-?77"
+          ],
+          "cue_patterns": [
+            "trial|study"
+          ],
+          "kind_patterns": [
+            "^(?:Trial|Study)$"
+          ]
+        },
+        {
+          "id": "psoriasis",
+          "name_patterns": [
+            "^(?:(?:moderate )?psoriasis)$"
+          ],
+          "anchor_patterns": [
+            "psoriasis"
+          ],
+          "kind_patterns": [
+            "^(?:Indication|Disease|Condition|Disorder)$"
+          ]
+        },
+        {
+          "id": "atopic",
+          "name_patterns": [
+            "^(?:atopic dermatitis)$"
+          ],
+          "anchor_patterns": [
+            "atopic dermatitis"
+          ],
+          "kind_patterns": [
+            "^(?:Indication|Disease|Condition|Disorder)$"
+          ]
+        },
+        {
+          "id": "vel101-decision",
+          "name_patterns": [
+            "^(?:VEL-?101 (?:marketing )?(?:application|submission|decision|review)|(?:marketing )?(?:application|submission|decision) for VEL-?101)$"
+          ],
+          "anchor_patterns": [
+            "VEL-?101"
+          ],
+          "cue_patterns": [
+            "application|submission|filing|review|decision|approval"
+          ],
+          "kind_patterns": [
+            "^(?:Application|Submission|Filing|Decision|Approval|Review)$"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "id": "vel204-trial-drug",
+          "source": "vel204-trial",
+          "target": "vel-204",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "hp77-trial-drug",
+          "source": "hp77-trial",
+          "target": "hp-77",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "veltrion-sponsors-vel204",
+          "source": "veltrion",
+          "target": "vel204-trial",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "halden-sponsors-hp77",
+          "source": "halden",
+          "target": "hp77-trial",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "vel204-psoriasis",
+          "source": "vel-204",
+          "target": "psoriasis",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ],
+          "via": [
+            "vel204-trial"
+          ]
+        },
+        {
+          "id": "vel101-atopic",
+          "source": "vel-101",
+          "target": "atopic",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ],
+          "via": [
+            "vel101-decision"
+          ]
+        },
+        {
+          "id": "hp77-psoriasis",
+          "source": "hp-77",
+          "target": "psoriasis",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ],
+          "via": [
+            "hp77-trial"
+          ]
+        },
+        {
+          "id": "orinda-licenses",
+          "source": "orinda",
+          "target": "vel-310",
+          "also_targets": [
+            "veltrion"
+          ],
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "office-reviews-vel101",
+          "source": "office",
+          "target": "vel101-decision",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ],
+          "also_targets": [
+            "vel-101"
+          ]
+        }
+      ],
+      "numeric_facts": [
+        {
+          "id": "vel204-patients",
+          "subject": "vel-204",
+          "status": "reported",
+          "value_patterns": [
+            "(?<!\\d)240(?!\\d)"
+          ],
+          "status_patterns": [
+            "patient",
+            "enroll",
+            "sample"
+          ]
+        },
+        {
+          "id": "vel310-upfront",
+          "subject": "vel-310",
+          "status": "reported",
+          "value_patterns": [
+            "(?:USD\\s*)?45\\s*million",
+            "\\$45\\s*million"
+          ],
+          "status_patterns": [
+            "upfront",
+            "licen"
+          ]
+        },
+        {
+          "id": "hp77-pasi",
+          "subject": "hp-77",
+          "status": "reported",
+          "value_patterns": [
+            "68\\s*%[\\s\\S]{0,160}12\\s*%",
+            "68\\s*percent[\\s\\S]{0,160}12\\s*percent"
+          ],
+          "status_patterns": [
+            "PASI",
+            "placebo",
+            "endpoint"
+          ]
+        },
+        {
+          "id": "rnd-spend",
+          "subject": "veltrion",
+          "status": "reported",
+          "value_patterns": [
+            "32\\.1\\s*million"
+          ],
+          "status_patterns": [
+            "R&D",
+            "research and development",
+            "spend"
+          ]
+        },
+        {
+          "id": "vel101-decision-date",
+          "subject": "vel-101",
+          "status": "reported",
+          "value_patterns": [
+            "2027-02-14",
+            "February 14,\\s*2027",
+            "14 February 2027"
+          ],
+          "status_patterns": [
+            "decision",
+            "review",
+            "accept"
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "step_id": "q-vel204",
+          "language": "en",
+          "target_entity_ids": [
+            "vel-204",
+            "vel204-trial"
+          ]
+        },
+        {
+          "step_id": "q-pso",
+          "language": "en",
+          "target_entity_ids": [
+            "hp-77",
+            "hp77-trial",
+            "psoriasis"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S-LITHIUM",
+      "entities": [
+        {
+          "id": "kestrel",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:Kestrel(?: Lithium)?(?: Ltd\\.?)?)$"
+          ],
+          "identifier": "KLI"
+        },
+        {
+          "id": "ardell",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:Ardell(?: Cells)?)$"
+          ]
+        },
+        {
+          "id": "brightwater",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:Brightwater(?: Minerals)?)$"
+          ]
+        },
+        {
+          "id": "department",
+          "kind": "Organization",
+          "name_patterns": [
+            "^(?:(?:the )?Corvane Department of Mines)$"
+          ]
+        },
+        {
+          "id": "dana",
+          "kind": "Person",
+          "name_patterns": [
+            "^(?:Dana Oyelaran|Oyelaran, Dana)$"
+          ]
+        },
+        {
+          "id": "corvane",
+          "kind": "Place",
+          "name_patterns": [
+            "^(?:Corvane Province)$"
+          ]
+        }
+      ],
+      "domain_concepts": [
+        {
+          "id": "tamsin-project",
+          "name_patterns": [
+            "^(?:(?:the )?Tamsin Flats(?: project)?)$"
+          ],
+          "anchor_patterns": [
+            "Tamsin Flats"
+          ],
+          "cue_patterns": [
+            "project"
+          ],
+          "kind_patterns": [
+            "^(?:Project|Mine|Deposit|Operation|Site)$"
+          ]
+        },
+        {
+          "id": "lake-ostra",
+          "name_patterns": [
+            "^(?:(?:the )?Lake Ostra(?: mine)?)$"
+          ],
+          "anchor_patterns": [
+            "Lake Ostra"
+          ],
+          "cue_patterns": [
+            "mine"
+          ],
+          "kind_patterns": [
+            "^(?:Project|Mine|Deposit|Operation|Site)$"
+          ]
+        },
+        {
+          "id": "tamsin-lease",
+          "name_patterns": [
+            "^(?:(?:the )?Tamsin Flats (?:mining )?(?:lease|permit)|(?:the )?(?:mining )?(?:lease|permit) for (?:the )?Tamsin Flats)$"
+          ],
+          "anchor_patterns": [
+            "Tamsin Flats"
+          ],
+          "cue_patterns": [
+            "lease|permit"
+          ],
+          "kind_patterns": [
+            "^(?:Lease|Permit|License|Licence|Tenement|Concession|Approval)$"
+          ]
+        },
+        {
+          "id": "offtake",
+          "name_patterns": [
+            "^(?:(?:the )?(?:Kestrel(?: Lithium)?[–-]Ardell(?: Cells)? )?(?:binding )?(?:five-year )?offtake(?: agreement)?)$"
+          ],
+          "anchor_patterns": [
+            "offtake|off-take"
+          ],
+          "cue_patterns": [
+            "agreement|deal|contract"
+          ],
+          "kind_patterns": [
+            "^(?:Offtake|Agreement|Contract|Deal)$"
+          ]
+        },
+        {
+          "id": "tamsin-study",
+          "name_patterns": [
+            "^(?:(?:the )?Tamsin Flats (?:definitive )?feasibility study|(?:the )?(?:definitive )?feasibility study for (?:the )?Tamsin Flats|(?:the )?Tamsin Flats DFS)$"
+          ],
+          "anchor_patterns": [
+            "feasibility|DFS"
+          ],
+          "cue_patterns": [
+            "study|DFS"
+          ],
+          "kind_patterns": [
+            "^(?:Study)$"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "id": "kestrel-tamsin",
+          "source": "kestrel",
+          "target": "tamsin-project",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "brightwater-ostra",
+          "source": "brightwater",
+          "target": "lake-ostra",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "department-lease",
+          "source": "department",
+          "target": "tamsin-lease",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "kestrel-study",
+          "source": "kestrel",
+          "target": "tamsin-study",
+          "via": [
+            "tamsin-project"
+          ],
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "kestrel-ardell",
+          "source": "kestrel",
+          "target": "ardell",
+          "via": [
+            "offtake"
+          ],
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "ardell-tamsin",
+          "source": "ardell",
+          "target": "tamsin-project",
+          "via": [
+            "offtake"
+          ],
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "department-tamsin",
+          "source": "department",
+          "target": "tamsin-project",
+          "via": [
+            "tamsin-lease"
+          ],
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "dana-kestrel",
+          "source": "dana",
+          "target": "kestrel",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "tamsin-corvane",
+          "source": "tamsin-project",
+          "target": "corvane",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "lease-tamsin",
+          "source": "tamsin-lease",
+          "target": "tamsin-project",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        },
+        {
+          "id": "study-tamsin",
+          "source": "tamsin-study",
+          "target": "tamsin-project",
+          "relation": "open",
+          "directions": [
+            "forward",
+            "reverse"
+          ]
+        }
+      ],
+      "numeric_facts": [
+        {
+          "id": "tamsin-tonnes",
+          "subject": "tamsin-project",
+          "status": "reported",
+          "value_patterns": [
+            "48\\s*million"
+          ],
+          "status_patterns": [
+            "tonne",
+            "resource"
+          ]
+        },
+        {
+          "id": "tamsin-grade",
+          "subject": "tamsin-project",
+          "status": "reported",
+          "value_patterns": [
+            "1\\.3\\s*%",
+            "1\\.3\\s*percent"
+          ],
+          "status_patterns": [
+            "Li2O",
+            "grade"
+          ]
+        },
+        {
+          "id": "offtake-tonnes",
+          "subject": "offtake",
+          "status": "reported",
+          "value_patterns": [
+            "60,?000"
+          ],
+          "status_patterns": [
+            "offtake",
+            "spodumene",
+            "concentrate"
+          ]
+        },
+        {
+          "id": "ostra-shipment",
+          "subject": "lake-ostra",
+          "status": "reported",
+          "value_patterns": [
+            "8,?500"
+          ],
+          "status_patterns": [
+            "ship",
+            "shipment",
+            "cargo"
+          ]
+        },
+        {
+          "id": "kestrel-cash",
+          "subject": "kestrel",
+          "status": "reported",
+          "value_patterns": [
+            "88\\s*million"
+          ],
+          "status_patterns": [
+            "cash"
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "step_id": "q-permits",
+          "language": "en",
+          "target_entity_ids": [
+            "tamsin-lease",
+            "tamsin-project",
+            "department"
+          ]
+        },
+        {
+          "step_id": "q-offtake",
+          "language": "en",
+          "target_entity_ids": [
+            "offtake",
+            "ardell",
+            "kestrel"
+          ]
+        }
+      ]
+    }
+  ]
+}

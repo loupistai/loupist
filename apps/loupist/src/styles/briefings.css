@@ -1,0 +1,136 @@
+.briefings-view { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.briefings-bar { min-height: 52px; padding: 0 var(--gg-space-5); border-bottom: 1px solid var(--gg-color-border-subtle); display: flex; align-items: center; gap: var(--gg-space-4); flex-wrap: wrap; }
+.briefings-bar h1 { font-size: var(--gg-text-title); line-height: var(--gg-leading-title); font-weight: var(--gg-weight-semibold); margin: 0; }
+.briefings-meta { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.briefings-bar > p { flex: 1; min-width: 0; }
+.briefings-actions { display: flex; align-items: center; gap: var(--gg-space-2); flex-wrap: wrap; }
+.briefings-toggle { display: flex; align-items: center; gap: var(--gg-space-2); font-size: var(--gg-text-meta); }
+.briefings-layout { flex: 1; display: grid; grid-template-columns: var(--gg-size-inspector) minmax(0, 1fr); min-height: 0; }
+.briefings-inbox { overflow: auto; border-right: 1px solid var(--gg-color-border-subtle); }
+.briefings-group { margin: 0; padding: var(--gg-space-4) var(--gg-space-4) var(--gg-space-2); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); text-transform: uppercase; }
+.briefings-item { display: block; width: 100%; min-height: var(--gg-space-10); padding: var(--gg-space-3) var(--gg-space-4); text-align: left; }
+.briefings-item:hover { background: var(--gg-color-bg-hover); }
+.briefings-item[aria-selected="true"] { background: var(--gg-color-bg-selected); }
+.briefings-item-heading { display: flex; align-items: baseline; gap: var(--gg-space-2); }
+.briefings-item-heading strong { min-width: 0; flex: 1; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); font-weight: var(--gg-weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.briefings-item[data-unread="true"] strong { font-weight: var(--gg-weight-semibold); }
+.briefings-item time { font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); color: var(--gg-color-text-secondary); font-variant-numeric: tabular-nums; }
+.briefings-unread { align-self: center; flex: 0 0 var(--gg-space-2); height: var(--gg-space-2); border-radius: var(--gg-radius-full); background: var(--gg-color-accent); }
+.briefings-summary { margin-top: var(--gg-space-1); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.briefings-summary svg { display: inline; width: var(--gg-space-3); height: var(--gg-space-3); margin-right: var(--gg-space-1); }
+.briefings-summary[data-failed="true"], .briefings-error { color: var(--gg-color-negative); }
+.briefings-reader-scroll { min-width: 0; overflow: auto; }
+.briefings-reader { max-width: var(--gg-size-reading-column); margin: auto; padding: var(--gg-space-6); }
+.briefings-reader > header { padding-bottom: var(--gg-space-4); margin-bottom: var(--gg-space-5); border-bottom: 1px solid var(--gg-color-border-subtle); }
+.briefings-reader h2, .briefings-empty h2 { font-size: var(--gg-text-heading); line-height: var(--gg-leading-heading); font-weight: var(--gg-weight-semibold); }
+.briefings-reader .message { margin: 0; }
+.briefings-disclosure { margin-top: var(--gg-space-6); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.briefings-reader .ui-disclosure { margin: var(--gg-space-5) 0; }
+.briefings-reader .message-action-bar > .ui-disclosure.message-sources { margin: 0; align-self: center; }
+.briefings-reader .message-action-bar > .ui-disclosure.message-sources > summary { padding: 0 2px; min-height: var(--gg-size-control-sm); }
+.briefings-empty { max-width: var(--gg-size-reading-column); margin: auto; padding: var(--gg-space-6); text-align: center; }
+.briefings-empty p { margin: var(--gg-space-4) 0; color: var(--gg-color-text-secondary); }
+.briefings-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-1) var(--gg-space-2); }
+.briefings-print-error { color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
+.briefings-back { display: none; }
+.briefings-back,
+.briefings-continue,
+.briefings-conflicts { margin-inline-start: -0.625rem; }
+.briefings-schedule-dialog { max-width: var(--gg-size-dialog-sm); }
+.briefings-schedule-dialog form { display: grid; gap: var(--gg-space-4); }
+.briefings-days { display: flex; gap: var(--gg-space-1); flex-wrap: wrap; margin-top: var(--gg-space-2); }
+.briefings-days button { min-width: var(--gg-size-control-md); height: var(--gg-size-control-md); padding: 0 var(--gg-space-2); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-full); font-size: var(--gg-text-meta); }
+.briefings-days button[aria-pressed="true"] { background: var(--gg-color-bg-selected); border-color: var(--gg-color-accent); }
+.briefings-time { display: grid; gap: var(--gg-space-2); border: 0; margin: 0; padding: 0; }
+.briefings-clock { display: flex; gap: var(--gg-space-2); }
+.briefings-clock > * { flex: 1; min-width: 0; }
+.briefings-resident { display: flex; align-items: flex-start; gap: var(--gg-space-3); }
+.briefings-resident > span { display: grid; gap: var(--gg-space-1); }
+@media (max-width: 899px) {
+  .briefings-bar { padding: var(--gg-space-2) var(--gg-space-4); gap: var(--gg-space-2); }
+  .briefings-bar > p { flex-basis: 70%; }
+  .briefings-layout { display: flex; }
+  .briefings-inbox, .schedule-list { width: 100%; border: 0; }
+  .briefings-reader-scroll { display: none; }
+  .briefings-layout[data-reader-open="true"] .briefings-inbox, .briefings-layout[data-reader-open="true"] .schedule-list { display: none; }
+  .briefings-layout[data-reader-open="true"] .briefings-reader-scroll { display: block; width: 100%; }
+  .briefings-back { display: inline-flex; margin-bottom: var(--gg-space-4); }
+}
+.briefings-toast { position: fixed; bottom: var(--gg-space-5); left: 50%; transform: translateX(-50%); max-width: calc(100vw - var(--gg-space-8)); padding: var(--gg-space-3) var(--gg-space-4); background: var(--gg-color-bg-raised); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-sm); box-shadow: var(--gg-shadow-md); z-index: var(--gg-z-toast); }
+
+.onboarding-step .briefings-meta { font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); }
+
+.briefings-failure { padding: var(--gg-space-4); border-radius: var(--gg-radius-sm); background: var(--gg-color-negative-soft); color: var(--gg-color-negative); }
+.briefings-failure h3 { font-size: var(--gg-text-subtitle); font-weight: var(--gg-weight-semibold); margin-bottom: var(--gg-space-2); }
+.briefings-failure-details pre { font-family: var(--gg-font-mono); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Schedule (W15.23): the manager of scheduled work. Results are read in the Thread. */
+.schedule-list { overflow: auto; border-right: 1px solid var(--gg-color-border-subtle); padding-bottom: var(--gg-space-5); }
+.schedule-section-label { margin: var(--gg-space-5) var(--gg-space-4) var(--gg-space-2); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); font-weight: var(--gg-weight-medium); letter-spacing: .06em; text-transform: uppercase; }
+.schedule-view:lang(ko) .schedule-section-label { letter-spacing: 0; text-transform: none; }
+.schedule-running, .schedule-tasks, .schedule-history { list-style: none; margin: 0; padding: 0; }
+.schedule-running li { display: flex; align-items: center; gap: var(--gg-space-2); min-height: var(--gg-size-control-md); padding: 0 var(--gg-space-4); }
+.schedule-running-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.schedule-running time { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); font-variant-numeric: tabular-nums; }
+.schedule-task { border-top: 1px solid var(--gg-color-border-subtle); }
+.schedule-task:first-child { border-top: 0; }
+.schedule-task-row { display: flex; align-items: flex-start; gap: var(--gg-space-2); padding: var(--gg-space-3) var(--gg-space-3) var(--gg-space-3) var(--gg-space-4); }
+.schedule-task-summary { display: grid; gap: 2px; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.schedule-task-heading { display: flex; align-items: baseline; gap: var(--gg-space-2); min-width: 0; }
+.schedule-task-heading strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--gg-weight-medium); }
+.schedule-task-status { flex: none; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.schedule-task[data-status="active"] .schedule-task-status { color: var(--gg-color-text-primary); }
+.schedule-task[data-status="awaiting"] .schedule-task-status { color: var(--gg-color-warning); }
+.schedule-task-actions { display: flex; flex: none; align-items: center; gap: var(--gg-space-1); }
+.schedule-history { padding-bottom: var(--gg-space-2); }
+.schedule-history > .briefings-meta { padding: 0 var(--gg-space-4) var(--gg-space-2); }
+.schedule-history .briefings-item { padding-left: var(--gg-space-5); }
+.schedule-history .briefings-item[aria-current="true"] { background: var(--gg-color-bg-selected); }
+.schedule-suggestion { margin: var(--gg-space-3) var(--gg-space-4) 0; padding: var(--gg-space-3) var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
+.schedule-suggestion .schedule-section-label { margin: 0 0 var(--gg-space-1); }
+.schedule-suggestion-text { margin: 0 0 var(--gg-space-2); font-weight: var(--gg-weight-medium); }
+.schedule-suggestion-actions { display: flex; gap: var(--gg-space-2); }
+.briefing-sections { display: grid; gap: var(--gg-space-1); margin-bottom: var(--gg-space-5); }
+.briefing-sections .schedule-section-label { margin-left: 0; margin-right: 0; }
+.briefing-sections p { margin: 0; }
+.briefing-changes, .briefing-ahead { margin: var(--gg-space-1) 0 0; padding-left: var(--gg-space-5); display: grid; gap: var(--gg-space-1); }
+.briefing-changes small { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); }
+
+/* Schedule review fixes (loop 4): one reader per task, aligned briefing rows, a calmer suggestion. */
+.briefings-layout[data-empty="true"] { grid-template-columns: minmax(0, 1fr); }
+.briefings-layout[data-empty="true"] .schedule-list { border-right: 0; }
+.briefings-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--gg-space-2); }
+.schedule-task[data-current="true"] { background: var(--gg-color-bg-hover); }
+.schedule-task-detail .schedule-section-label { margin-left: 0; margin-right: 0; }
+.schedule-task-detail .schedule-history .briefings-item { padding-left: 0; }
+.schedule-task-prompt { margin: var(--gg-space-3) 0 0; color: var(--gg-color-text-secondary); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.schedule-suggestion { max-width: var(--gg-size-reading-column); }
+.briefing-ahead > li > button, .briefing-changes .briefing-row-link { height: auto; min-height: var(--gg-size-control-sm); padding: 0; text-align: left; white-space: normal; }
+.briefing-changes .briefing-row-link { font-size: var(--gg-text-meta); }
+
+/* Schedule lands as one centered column. A task or run replaces it until Back. */
+.schedule-view .briefings-layout { display: block; flex: 1; width: min(var(--gg-size-reading-column), 100%); margin-inline: auto; overflow: auto; }
+.schedule-view .schedule-list { width: 100%; border-right: 0; overflow: visible; }
+.schedule-view .briefings-reader-scroll { display: none; }
+.schedule-view .briefings-layout[data-reader-open="true"] { overflow: hidden; }
+.schedule-view .briefings-layout[data-reader-open="true"] .schedule-list { display: none; }
+.schedule-view .briefings-layout[data-reader-open="true"] .briefings-reader-scroll { display: block; width: 100%; height: 100%; overflow: auto; }
+.schedule-view .briefings-back { display: inline-flex; margin-bottom: var(--gg-space-4); }
+.schedule-view .schedule-suggestion { width: min(var(--gg-size-reading-column), calc(100% - var(--gg-space-8))); margin-inline: auto; }
+.schedule-view .schedule-detail-actions { display: block; }
+
+/* Schedule a task: one field, examples while composing, and an Active filter. */
+.schedule-create { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); margin: var(--gg-space-4) var(--gg-space-4) 0; }
+.schedule-create-field { flex: 1 1 16rem; min-width: 0; }
+.schedule-create-hint { flex-basis: 100%; margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.schedule-examples { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); flex-basis: 100%; margin: 0; padding: 0; list-style: none; }
+.schedule-examples button { height: auto; min-height: var(--gg-size-control-sm); max-width: 100%; white-space: normal; text-align: left; }
+.schedule-filter { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-1); margin: var(--gg-space-3) var(--gg-space-4) 0; }
+.schedule-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--gg-space-3); }
+.schedule-detail-actions { display: none; }
+@media (max-width: 899px) {
+  .schedule-create { margin-inline: var(--gg-space-4); }
+  .schedule-create > button[type="submit"] { flex: 1 1 auto; }
+  .schedule-detail-actions { display: block; }
+  .schedule-task-detail .schedule-detail-actions .schedule-task-actions { margin: 0; }
+}

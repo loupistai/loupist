@@ -1,0 +1,65 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Loupist",
+  "version": "0.0.1-rc.1",
+  "identifier": "com.monarchjuno.loupist",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Loupist",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 700,
+        "minHeight": 560,
+        "resizable": true,
+        "dragDropEnabled": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 12, "y": 22 }
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: data:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["loupist"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "targets": ["dmg", "nsis"],
+    "category": "Finance",
+    "publisher": "Loupist",
+    "homepage": "https://github.com/loupistai/loupist",
+    "shortDescription": "Build an investment Loupist that shows its work",
+    "longDescription": "Loupist is a local-first research desktop for investors. Build a Loupist that reads primary filings, runs valuation math itself, and keeps retained Sources, World graphs, Markdown Lens methods, and private Decision history on your machine. It uses a supported provider API key or account sign-in, with no Loupist account and no sync.",
+    "macOS": {
+      "bundleVersion": "1",
+      "minimumSystemVersion": "13.0"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["English", "Korean"]
+      }
+    }
+  }
+}

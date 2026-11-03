@@ -1,0 +1,16 @@
+{
+  "schema": "loupist-connection-replay/1",
+  "requests": [
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/corpCode.xml"
+      },
+      "response": {
+        "status": 200,
+        "content_type": "application/zip",
+        "body_base64": "UEsDBBQAAAAIAAAAIVwrlxedpAAAAPIAAAAMAAAAQ09SUENPREUueG1ss7GvyM1RKEstKs7Mz7NVMtQzUFJIzUvOT8nMS7dVCg1x07VQsrezKUotLs0psbPJySwGksn5RQXxQDWpdpaWBoYWJgYGNvoIMYh0XmJuqt3r1h1v5ra8WTDnzfIGqBKwOERJal46hOuXn1qaoxCQWJBaBFUFl7IpLslPzka2zEYfScgmF+jStMr4lMSSVDsjAyMzA2MDQxt9ZFEbfYij9aF+AABQSwECFAMUAAAACAAAACFcK5cXnaQAAADyAAAADAAAAAAAAAAAAAAAgAEAAAAAQ09SUENPREUueG1sUEsFBgAAAAABAAEAOgAAAM4AAAAAAA=="
+      }
+    }
+  ]
+}

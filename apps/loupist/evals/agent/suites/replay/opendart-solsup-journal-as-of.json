@@ -1,0 +1,103 @@
+{
+  "schema": "loupist-connection-replay/1",
+  "requests": [
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/corpCode.xml"
+      },
+      "response": {
+        "status": 200,
+        "content_type": "application/zip",
+        "body_base64": "UEsDBBQAAAAIAAAAIVwuaOAPpAAAAPMAAAAMAAAAQ09SUENPREUueG1ss7GvyM1RKEstKs7Mz7NVMtQzUFJIzUvOT8nMS7dVCg1x07VQsrezKUotLs0psbPJySwGksn5RQXxQDWpdpaWBkZGhgYGNvoIMYh0XmJuqt2btilvOja96Z77dlIHVAlYHKIkNS8dwg3OzykuLVBwy89PKYYqg8vZFJfkJ2cj22ajjyRkkwt0alplfEpiSaqdkYGRmYGxAVAFsqiNPsTV+lBPAABQSwECFAMUAAAACAAAACFcLmjgD6QAAADzAAAADAAAAAAAAAAAAAAAgAEAAAAAQ09SUENPREUueG1sUEsFBgAAAAABAAEAOgAAAM4AAAAAAA=="
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?corp_code=99022100&bsns_year=2025&reprt_code=11011&fs_div=CFS"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_Revenue",
+              "account_nm": "매출액",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_dt": "2025-12-31",
+              "thstrm_amount": "452300000000",
+              "ord": "1",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_OperatingIncomeLoss",
+              "account_nm": "영업이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_dt": "2025-12-31",
+              "thstrm_amount": "38100000000",
+              "ord": "2",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLoss",
+              "account_nm": "당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_dt": "2025-12-31",
+              "thstrm_amount": "21400000000",
+              "ord": "3",
+              "currency": "KRW"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/company.json?corp_code=99022100"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "corp_code": "99022100",
+          "acc_mt": "12"
+        }
+      }
+    }
+  ]
+}

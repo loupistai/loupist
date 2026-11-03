@@ -1,0 +1,273 @@
+{
+  "schema": "loupist-concurrent-suite/1",
+  "scenarios": [
+    {
+      "id": "C01-SAME-LOUPIST-SOURCES",
+      "members": [
+        {
+          "id": "a",
+          "loupist": "shared",
+          "memory": "remember",
+          "files": {
+            "report-a.txt": "Fictional Vela Logistics: revenue 81 million KRW, 2026-10-21. Document code VELA-A-813."
+          },
+          "ready_file": "ready-a.txt",
+          "cancel": false,
+          "user": "로컬 파일 report-a.txt의 내용을 확인하고 핵심 사실과 식별 코드를 짧게 답해줘. 동시 실행 검증을 위해 먼저 다음 bash 명령을 90초 제한으로 실행해줘. 준비 파일과 release-gate.txt는 이미 준비되어 있으며 테스트 진행기가 신호를 보낼 거야: `printf ready > ready-a.txt; for attempt in $(seq 1 600); do if [ \"$(cat release-gate.txt)\" = go ]; then cat report-a.txt; exit 0; fi; sleep 0.1; done; exit 124`. 이 파일은 다음 조사에서도 쓸 원문이니 현재 Loupist의 Source로 저장해줘.",
+          "answer_contains": [
+            "VELA-A-813"
+          ],
+          "answer_excludes": [],
+          "memory_contains": [
+            "VELA-A-813"
+          ],
+          "memory_excludes": [],
+          "min_commits": 1,
+          "required_commit_kind": "source"
+        },
+        {
+          "id": "b",
+          "loupist": "shared",
+          "memory": "remember",
+          "files": {
+            "report-b.txt": "Fictional Mero Sensors: revenue 57 million KRW, 2026-10-22. Document code MERO-B-579."
+          },
+          "ready_file": "ready-b.txt",
+          "cancel": false,
+          "user": "로컬 파일 report-b.txt의 내용을 확인하고 핵심 사실과 식별 코드를 짧게 답해줘. 동시 실행 검증을 위해 먼저 다음 bash 명령을 90초 제한으로 실행해줘. 준비 파일과 release-gate.txt는 이미 준비되어 있으며 테스트 진행기가 신호를 보낼 거야: `printf ready > ready-b.txt; for attempt in $(seq 1 600); do if [ \"$(cat release-gate.txt)\" = go ]; then cat report-b.txt; exit 0; fi; sleep 0.1; done; exit 124`. 이 파일은 다음 조사에서도 쓸 원문이니 현재 Loupist의 Source로 저장해줘.",
+          "answer_contains": [
+            "MERO-B-579"
+          ],
+          "answer_excludes": [],
+          "memory_contains": [
+            "MERO-B-579"
+          ],
+          "memory_excludes": [],
+          "min_commits": 1,
+          "required_commit_kind": "source"
+        }
+      ]
+    },
+    {
+      "id": "C02-LOUPIST-WORKSPACE-ISOLATION",
+      "members": [
+        {
+          "id": "a",
+          "loupist": "alpha",
+          "memory": "remember",
+          "files": {
+            "report.txt": "Fictional workspace Alpha: confirmed sample identifier ALPHA-ONLY-641."
+          },
+          "ready_file": "ready-a.txt",
+          "cancel": false,
+          "user": "로컬 파일 report.txt의 내용을 확인하고 핵심 사실과 식별 코드를 짧게 답해줘. 동시 실행 검증을 위해 먼저 다음 bash 명령을 90초 제한으로 실행해줘. 준비 파일과 release-gate.txt는 이미 준비되어 있으며 테스트 진행기가 신호를 보낼 거야: `printf ready > ready-a.txt; for attempt in $(seq 1 600); do if [ \"$(cat release-gate.txt)\" = go ]; then cat report.txt; exit 0; fi; sleep 0.1; done; exit 124`. 이 파일은 다음 조사에서도 쓸 원문이니 현재 Loupist의 Source로 저장해줘.",
+          "answer_contains": [
+            "ALPHA-ONLY-641"
+          ],
+          "answer_excludes": [
+            "BETA-ONLY-287"
+          ],
+          "memory_contains": [
+            "ALPHA-ONLY-641"
+          ],
+          "memory_excludes": [
+            "BETA-ONLY-287"
+          ],
+          "min_commits": 1,
+          "required_commit_kind": "source"
+        },
+        {
+          "id": "b",
+          "loupist": "beta",
+          "memory": "remember",
+          "files": {
+            "report.txt": "Fictional workspace Beta: confirmed sample identifier BETA-ONLY-287."
+          },
+          "ready_file": "ready-b.txt",
+          "cancel": false,
+          "user": "로컬 파일 report.txt의 내용을 확인하고 핵심 사실과 식별 코드를 짧게 답해줘. 동시 실행 검증을 위해 먼저 다음 bash 명령을 90초 제한으로 실행해줘. 준비 파일과 release-gate.txt는 이미 준비되어 있으며 테스트 진행기가 신호를 보낼 거야: `printf ready > ready-b.txt; for attempt in $(seq 1 600); do if [ \"$(cat release-gate.txt)\" = go ]; then cat report.txt; exit 0; fi; sleep 0.1; done; exit 124`. 이 파일은 다음 조사에서도 쓸 원문이니 현재 Loupist의 Source로 저장해줘.",
+          "answer_contains": [
+            "BETA-ONLY-287"
+          ],
+          "answer_excludes": [
+            "ALPHA-ONLY-641"
+          ],
+          "memory_contains": [
+            "BETA-ONLY-287"
+          ],
+          "memory_excludes": [
+            "ALPHA-ONLY-641"
+          ],
+          "min_commits": 1,
+          "required_commit_kind": "source"
+        }
+      ]
+    },
+    {
+      "id": "C03-CANCEL-ONE",
+      "members": [
+        {
+          "id": "cancel",
+          "loupist": "shared",
+          "memory": "off",
+          "files": {
+            "cancel.txt": "Cancelled task marker NEVER-FINISH-735."
+          },
+          "ready_file": "ready-cancel.txt",
+          "cancel": true,
+          "user": "동시 실행 취소 테스트야. 명령이 끝나면 파일 내용을 답해줘. 동시 실행 검증을 위해 먼저 다음 bash 명령을 90초 제한으로 실행해줘. 준비 파일과 release-gate.txt는 이미 준비되어 있으며 테스트 진행기가 신호를 보낼 거야: `printf ready > ready-cancel.txt; for attempt in $(seq 1 600); do if [ \"$(cat release-gate.txt)\" = go ]; then sleep 30; cat cancel.txt; exit 0; fi; sleep 0.1; done; exit 124`.",
+          "answer_contains": [],
+          "answer_excludes": [],
+          "memory_contains": [],
+          "memory_excludes": [],
+          "min_commits": 0
+        },
+        {
+          "id": "survivor",
+          "loupist": "shared",
+          "memory": "off",
+          "files": {
+            "survivor.txt": "Independent task marker SURVIVED-948."
+          },
+          "ready_file": "ready-survivor.txt",
+          "cancel": false,
+          "user": "로컬 파일 survivor.txt의 내용을 확인하고 핵심 사실과 식별 코드를 짧게 답해줘. 동시 실행 검증을 위해 먼저 다음 bash 명령을 90초 제한으로 실행해줘. 준비 파일과 release-gate.txt는 이미 준비되어 있으며 테스트 진행기가 신호를 보낼 거야: `printf ready > ready-survivor.txt; for attempt in $(seq 1 600); do if [ \"$(cat release-gate.txt)\" = go ]; then cat survivor.txt; exit 0; fi; sleep 0.1; done; exit 124`.",
+          "answer_contains": [
+            "SURVIVED-948"
+          ],
+          "answer_excludes": [],
+          "memory_contains": [],
+          "memory_excludes": [],
+          "min_commits": 0
+        }
+      ]
+    },
+    {
+      "id": "C04-PER-CHAT-MEMORY",
+      "members": [
+        {
+          "id": "remember",
+          "loupist": "shared",
+          "memory": "remember",
+          "files": {
+            "method.txt": "Method code: QUALITY-DELTA-351. Compare defect rates with the same inspection coverage and report percentage-point change."
+          },
+          "ready_file": "ready-remember.txt",
+          "cancel": false,
+          "user": "로컬 파일 method.txt의 내용을 확인하고 핵심 사실과 식별 코드를 짧게 답해줘. 동시 실행 검증을 위해 먼저 다음 bash 명령을 90초 제한으로 실행해줘. 준비 파일과 release-gate.txt는 이미 준비되어 있으며 테스트 진행기가 신호를 보낼 거야: `printf ready > ready-remember.txt; for attempt in $(seq 1 600); do if [ \"$(cat release-gate.txt)\" = go ]; then cat method.txt; exit 0; fi; sleep 0.1; done; exit 124`. 이 방법을 QUALITY-DELTA-351이라는 이름으로 다음 대화에서도 적용해줘. 회사별 수치는 방법에 넣지 마.",
+          "answer_contains": [
+            "QUALITY-DELTA-351"
+          ],
+          "answer_excludes": [],
+          "memory_contains": [
+            "QUALITY-DELTA-351"
+          ],
+          "memory_excludes": [
+            "TEMP-ONLY-862"
+          ],
+          "min_commits": 1,
+          "required_commit_kind": "lens"
+        },
+        {
+          "id": "off",
+          "loupist": "shared",
+          "memory": "off",
+          "files": {
+            "private.txt": "Temporary calculation code TEMP-ONLY-862. Add 27 and 35."
+          },
+          "ready_file": "ready-off.txt",
+          "cancel": false,
+          "user": "로컬 파일 private.txt의 내용을 확인하고 핵심 사실과 식별 코드를 짧게 답해줘. 동시 실행 검증을 위해 먼저 다음 bash 명령을 90초 제한으로 실행해줘. 준비 파일과 release-gate.txt는 이미 준비되어 있으며 테스트 진행기가 신호를 보낼 거야: `printf ready > ready-off.txt; for attempt in $(seq 1 600); do if [ \"$(cat release-gate.txt)\" = go ]; then cat private.txt; exit 0; fi; sleep 0.1; done; exit 124`. 이 대화에서만 쓰는 계산이야. 코드와 계산 결과를 말해줘.",
+          "answer_contains": [
+            "TEMP-ONLY-862"
+          ],
+          "answer_excludes": [],
+          "memory_contains": [],
+          "memory_excludes": [
+            "TEMP-ONLY-862"
+          ],
+          "min_commits": 0
+        }
+      ]
+    },
+    {
+      "id": "C05-FOUR-CHATS",
+      "members": [
+        {
+          "id": "slot-1",
+          "loupist": "shared",
+          "memory": "off",
+          "files": {
+            "slot-1.txt": "Concurrent slot 1: exact code SLOT-1-RAN."
+          },
+          "ready_file": "ready-slot-1.txt",
+          "cancel": false,
+          "user": "로컬 파일 slot-1.txt의 내용을 확인하고 핵심 사실과 식별 코드를 짧게 답해줘. 동시 실행 검증을 위해 먼저 다음 bash 명령을 90초 제한으로 실행해줘. 준비 파일과 release-gate.txt는 이미 준비되어 있으며 테스트 진행기가 신호를 보낼 거야: `printf ready > ready-slot-1.txt; for attempt in $(seq 1 600); do if [ \"$(cat release-gate.txt)\" = go ]; then cat slot-1.txt; exit 0; fi; sleep 0.1; done; exit 124`.",
+          "answer_contains": [
+            "SLOT-1-RAN"
+          ],
+          "answer_excludes": [],
+          "memory_contains": [],
+          "memory_excludes": [],
+          "min_commits": 0
+        },
+        {
+          "id": "slot-2",
+          "loupist": "shared",
+          "memory": "off",
+          "files": {
+            "slot-2.txt": "Concurrent slot 2: exact code SLOT-2-RAN."
+          },
+          "ready_file": "ready-slot-2.txt",
+          "cancel": false,
+          "user": "로컬 파일 slot-2.txt의 내용을 확인하고 핵심 사실과 식별 코드를 짧게 답해줘. 동시 실행 검증을 위해 먼저 다음 bash 명령을 90초 제한으로 실행해줘. 준비 파일과 release-gate.txt는 이미 준비되어 있으며 테스트 진행기가 신호를 보낼 거야: `printf ready > ready-slot-2.txt; for attempt in $(seq 1 600); do if [ \"$(cat release-gate.txt)\" = go ]; then cat slot-2.txt; exit 0; fi; sleep 0.1; done; exit 124`.",
+          "answer_contains": [
+            "SLOT-2-RAN"
+          ],
+          "answer_excludes": [],
+          "memory_contains": [],
+          "memory_excludes": [],
+          "min_commits": 0
+        },
+        {
+          "id": "slot-3",
+          "loupist": "shared",
+          "memory": "off",
+          "files": {
+            "slot-3.txt": "Concurrent slot 3: exact code SLOT-3-RAN."
+          },
+          "ready_file": "ready-slot-3.txt",
+          "cancel": false,
+          "user": "로컬 파일 slot-3.txt의 내용을 확인하고 핵심 사실과 식별 코드를 짧게 답해줘. 동시 실행 검증을 위해 먼저 다음 bash 명령을 90초 제한으로 실행해줘. 준비 파일과 release-gate.txt는 이미 준비되어 있으며 테스트 진행기가 신호를 보낼 거야: `printf ready > ready-slot-3.txt; for attempt in $(seq 1 600); do if [ \"$(cat release-gate.txt)\" = go ]; then cat slot-3.txt; exit 0; fi; sleep 0.1; done; exit 124`.",
+          "answer_contains": [
+            "SLOT-3-RAN"
+          ],
+          "answer_excludes": [],
+          "memory_contains": [],
+          "memory_excludes": [],
+          "min_commits": 0
+        },
+        {
+          "id": "slot-4",
+          "loupist": "shared",
+          "memory": "off",
+          "files": {
+            "slot-4.txt": "Concurrent slot 4: exact code SLOT-4-RAN."
+          },
+          "ready_file": "ready-slot-4.txt",
+          "cancel": false,
+          "user": "로컬 파일 slot-4.txt의 내용을 확인하고 핵심 사실과 식별 코드를 짧게 답해줘. 동시 실행 검증을 위해 먼저 다음 bash 명령을 90초 제한으로 실행해줘. 준비 파일과 release-gate.txt는 이미 준비되어 있으며 테스트 진행기가 신호를 보낼 거야: `printf ready > ready-slot-4.txt; for attempt in $(seq 1 600); do if [ \"$(cat release-gate.txt)\" = go ]; then cat slot-4.txt; exit 0; fi; sleep 0.1; done; exit 124`.",
+          "answer_contains": [
+            "SLOT-4-RAN"
+          ],
+          "answer_excludes": [],
+          "memory_contains": [],
+          "memory_excludes": [],
+          "min_commits": 0
+        }
+      ]
+    }
+  ],
+  "protocol_version": 2,
+  "description": "Controlled concurrency qualification. Required Source writes are explicit; readiness files start as pending. The host opens a bounded native-command barrier only after all member Chats report ready."
+}

@@ -1,0 +1,488 @@
+import type { ComponentProps } from "react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import i18n from "@/i18n";
+// Citation links open a delayed HoverCard; skipping hover keeps its timer from firing after teardown.
+import type { ChatMessage, ChatPerformance, KnowledgeReference, LensProposal, MemoryRef, MemoryUpdateChange } from "../../types";
+import { dismissLensProposal } from "../../chat/dismissLensProposal";
+import { evidenceFixture } from "../../test/evidenceFixtures";
+import { TooltipProvider } from "../ui/tooltip";
+import { MockLoupistBridge } from "../../bridge/mockBridge";
+import { ChatMessageCard } from "./ChatMessageCard";
+
+const source: KnowledgeReference = { kind: "source", recordId: "source-record", revisionId: "source-v1", objectId: "source-original", spanId: "passage-1", receiptId: "selected-receipt" };
+const read = (read_ref: string, knowledge = source): MemoryRef => ({ read_ref, kind: "source", title: "Annual report", excerpt: "Original passage", access: "exact_read", knowledge });
+const answer = (extra: Partial<ChatMessage> = {}): ChatMessage => ({ id: "answer", role: "assistant", status: "complete", content: "Answer.", created_at: "2026-10-10T00:00:00Z", ...extra });
+const user = () => userEvent.setup({ skipHover: true });
+
+function renderAnswer(message: ChatMessage, extra: Partial<ComponentProps<typeof ChatMessageCard>> = {}) {
+  const props = { message, loupistId: "loupist-a", chatId: "chat-a", loupistName: "Loupist", onOpenMemory: vi.fn(), onOpenMemoryPage: vi.fn(), onOpenArtifact: vi.fn(), onOpenLink: vi.fn(), onReadAttachment: vi.fn(), ...extra };
+  const view = render(<TooltipProvider><ChatMessageCard {...props} /></TooltipProvider>);
+  return { ...props, view };
+}
+
+const savedLens = (operation: MemoryUpdateChange["operation"], title: string): MemoryUpdateChange => ({
+  recordId: `lens-${operation}`, kind: "Lens", operation, title,
+  knowledge: { kind: "lens", recordId: `lens-${operation}`, revisionId: "rev-1", objectId: `lens-${operation}` },
+  lesson: `${title} lesson`, basis: "Filing", futureUse: "Next review",
+});
+
+it.each([false, true])("keeps one stable research summary from first call to settlement (expanded: %s)", async (expanded) => {
+  const first = { id: "a", kind: "tool" as const, category: "files" as const, operation: "read" as const, action: "Read file", running: "Reading file", target: "q1.csv", status: "running" as const, startedAtMs: 2 };
+  const second = { ...first, id: "b", target: "q2.csv", startedAtMs: 3 };
+  const plan = { items: [{ id: "compare", label: "Compare quarters", status: "active" as const, activatedAtMs: 1 }] };
+  const message = (status: "streaming" | "complete", items: NonNullable<ChatMessage["progress"]>["items"]) =>
+    answer({ content: status === "complete" ? "Done." : "", status, phase: "tool", progress: { startedAtMs: 1, plan, items } });
+  const { view, ...props } = renderAnswer(message("streaming", [first]));
+  const digest = screen.getByRole("button", { name: /Compare quarters/ });
+  expect(digest).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByText("q1.csv")).toBeNull();
+  expect(screen.getByRole("listitem")).toHaveTextContent("Reading file");
+  if (expanded) await user().click(digest);
+  const both = [{ ...first, status: "succeeded" as const }, second];
+  view.rerender(<TooltipProvider><ChatMessageCard {...props} message={message("streaming", both)} /></TooltipProvider>);
+  expect(screen.getByRole("button", { name: /Compare quarters/ })).toBe(digest);
+  view.rerender(<TooltipProvider><ChatMessageCard {...props} message={message("complete", both.map(item => ({ ...item, status: "succeeded" })))} /></TooltipProvider>);
+  expect(digest).toHaveAttribute("aria-expanded", String(expanded));
+  if (!expanded) {
+    expect(screen.queryByText("q2.csv")).toBeNull();
+    await user().click(digest);
+  }
+  const details = within(digest.closest<HTMLElement>("section")!);
+  expect(details.getByText("q1.csv").compareDocumentPosition(details.getByText("q2.csv")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it("foregrounds the source of a settled multi-stage answer and opens it without fetching tool output", async () => {
+  const report = evidenceFixture();
+  const onOpenEvidence = vi.fn();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const loadDetail = vi.spyOn(bridge, "chatActivityRead");
+  renderAnswer(answer({ content: "Operating cash flow increased.", evidence_refs: [report], progress: {
+    startedAtMs: 0, finishedAtMs: 5,
+    plan: { items: [
+      { id: "read", label: "Review the filing", status: "done", activatedAtMs: 1 },
+      { id: "calc", label: "Reconcile the change", status: "done", activatedAtMs: 3 },
+    ] },
+    items: [
+      { id: "filing", startedAtMs: 2, kind: "tool", operation: "read", category: "web", action: "Read report", status: "succeeded", resultIds: [report.id] },
+      { id: "cmd", startedAtMs: 4, kind: "tool", operation: "execute", category: "compute", action: "Ran command", status: "succeeded", target: "private-analysis.sh", detailId: "raw-output" },
+    ],
+  } }), { bridge, onOpenEvidence });
+  const digest = within(screen.getByLabelText("Work progress"));
+  const toggle = digest.getByRole("button");
+  expect(toggle).toHaveAccessibleName(/1 source.*investor.apple.com/i);
+  expect(screen.getByText("Operating cash flow increased.")).toBeVisible();
+  expect(digest.queryByText("Reconcile the change")).toBeNull();
+  expect(digest.queryByText("private-analysis.sh")).toBeNull();
+  await user().click(toggle);
+  expect(digest.getByText("Reconcile the change")).toBeVisible();
+  await user().click(digest.getByRole("button", { name: report.title }));
+  expect(onOpenEvidence.mock.calls[0]?.[0]).toBe(report);
+  expect(loadDetail).not.toHaveBeenCalled();
+});
+
+it("lists distinct exact Memory reads in progress without changing the saved receipts", async () => {
+  const refs = [
+    { ...read("search-result"), access: "search_discovered" as const, title: "Search hit" },
+    read("selected-read"),
+    read("explicit-read", { ...source, receiptId: "explicit-receipt" }),
+    read("other-version", { ...source, revisionId: "source-v2" }),
+  ];
+  const before = structuredClone(refs);
+  const { message, onOpenMemory } = renderAnswer(answer({ memory_refs: refs }));
+  await user().click(within(screen.getByLabelText("Work progress")).getByRole("button"));
+  await user().click(screen.getByText("Consulted 2 saved notes"));
+  const used = screen.getByLabelText("Used in this answer");
+  expect(within(used).getAllByRole("listitem")).toHaveLength(2);
+  expect(within(used).queryByText("Search hit")).toBeNull();
+  expect(onOpenMemory).not.toHaveBeenCalled();
+  expect(message.memory_refs).toEqual(before);
+});
+
+it.each(["error", "aborted"] as const)("keeps Try again beside an inline %s notice", async (status) => {
+  const onRetry = vi.fn();
+  renderAnswer(answer({ id: "failed", content: "", status }), { onRetry });
+  const notice = screen.getByRole(status === "error" ? "alert" : "status");
+  await user().click(within(notice).getByRole("button", { name: "Try again" }));
+  expect(onRetry).toHaveBeenCalledOnce();
+});
+
+it.each(["en", "ko"])("shows one localized failure notice in %s and preserves a partial answer", async (language) => {
+  await i18n.changeLanguage(language);
+  try {
+    const failed = answer({ content: "Response could not be completed.", status: "error", failure_kind: "other" });
+    const { view, ...props } = renderAnswer(failed, { onRetry: vi.fn() });
+    expect(screen.getByRole("alert")).toHaveTextContent(i18n.t("chat:chatMessageCard.other"));
+    expect(screen.queryByText(failed.content)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: i18n.t("chat:chatMessageCard.copyAnswer") })).not.toBeInTheDocument();
+    await user().click(screen.getByRole("button", { name: i18n.t("chat:chatMessageCard.tryAgain") }));
+    expect(props.onRetry).toHaveBeenCalledOnce();
+    const partial = { ...failed, content: "The observed revenue increased." };
+    view.rerender(<TooltipProvider><ChatMessageCard {...props} message={partial} /></TooltipProvider>);
+    expect(screen.getByText(partial.content)).toBeVisible();
+    expect(screen.getByRole("button", { name: i18n.t("chat:chatMessageCard.copyAnswer") })).toBeVisible();
+    expect(screen.getByRole("alert")).toBeVisible();
+  } finally {
+    await i18n.changeLanguage("en");
+  }
+});
+
+it("keeps stopped text without exposing the runtime's English stop marker", async () => {
+  await i18n.changeLanguage("ko");
+  try {
+    const { view, ...props } = renderAnswer(answer({ status: "aborted", content: "첫 문장.\n\nResponse stopped." }), { onRetry: vi.fn() });
+    expect(screen.getByText("첫 문장.")).toBeVisible();
+    expect(screen.queryByText("Response stopped.")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("중지됨 · 지금까지의 글을 남겼어요");
+    view.rerender(<TooltipProvider><ChatMessageCard {...props} message={answer({ status: "aborted", content: "Response stopped." })} /></TooltipProvider>);
+    expect(screen.queryByText("Response stopped.")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("답변이 끝나기 전에 중지되었어요.");
+    expect(screen.queryByRole("button", { name: "답변 복사" })).not.toBeInTheDocument();
+    view.rerender(<TooltipProvider><ChatMessageCard {...props} message={answer({ status: "aborted", content: "Response stopped.", progress: { startedAtMs: 1, items: [{ id: "draft", kind: "commentary", text: "쓰다 멈춘 문장" }] } })} /></TooltipProvider>);
+    expect(screen.getByRole("status")).toHaveTextContent("중지됨 · 쓰던 글을 남겼어요");
+  } finally {
+    await i18n.changeLanguage("en");
+  }
+});
+
+it.each([
+  ["/research", "reports/summary.md"],
+  [String.raw`\\?\C:\Research`, "c:/research/reports/summary.md"],
+  [String.raw`\\?\UNC\Server\Share\Research`, "//server/share/research/reports/summary.md"],
+])("opens workspace file links for %s and keeps external links separate", async (workspacePath, href) => {
+  const { onOpenLink, onOpenFile } = renderAnswer(answer({ content: `[Report](${href}) and [Source](https://example.com/report).` }), { workspacePath, onOpenFile: vi.fn() });
+  await user().click(await screen.findByRole("link", { name: "Report" }));
+  expect(onOpenFile).toHaveBeenCalledWith("reports/summary.md");
+  expect(onOpenLink).not.toHaveBeenCalled();
+  await user().click(screen.getByRole("link", { name: "Source" }));
+  expect(onOpenLink).toHaveBeenCalledWith("https://example.com/report");
+});
+
+it("opens a Lens link from the answer in this Loupist's Lens", async () => {
+  const { onOpenMemory } = renderAnswer(answer({ content: "Use [Cash conversion](lens:rec_0123456789abcdef0123456789abcdef)." }));
+  await user().click(await screen.findByRole("link", { name: "Cash conversion" }));
+  expect(onOpenMemory).toHaveBeenCalledWith(expect.objectContaining({ loupistId: "loupist-a", surface: "lens", recordId: "rec_0123456789abcdef0123456789abcdef" }), "Lens");
+});
+
+describe("response details", () => {
+  const performance: ChatPerformance = { setupMs: 100, firstTextMs: 400, generationMs: 800, totalMs: 900, sessionCache: "warm", inputTokens: 25, outputTokens: 30, cacheReadTokens: 150, cacheWriteTokens: 25 };
+  async function details(measurement?: ChatPerformance) {
+    renderAnswer(answer({ execution_model: { profile_id: "model", name: "Model", provider: "provider", model: "model", thinking_level: "none", run_options: {} }, performance: measurement }));
+    await user().click(screen.getByRole("button", { name: "Response details" }));
+    return screen.findByRole("dialog", { name: "Response details" });
+  }
+
+  it("shows total usage including cache reads and writes, without internal diagnostics", async () => {
+    const dialog = await details(performance);
+    expect(dialog).toHaveTextContent("Input: 200 tokens");
+    expect(dialog).toHaveTextContent("Output: 30 tokens");
+    expect(dialog).not.toHaveTextContent(/cache|session|setup|first text/);
+  });
+
+  it("never manufactures usage from missing or nonfinite counters, and keeps zero distinct", async () => {
+    expect(await details({ ...performance, cacheWriteTokens: undefined } as unknown as ChatPerformance)).toHaveTextContent("Input: unavailable");
+    cleanup();
+    expect(await details({ ...performance, outputTokens: Infinity })).toHaveTextContent("Output: unavailable");
+    cleanup();
+    expect(await details({ ...performance, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })).toHaveTextContent("Input: 0 tokens");
+  });
+});
+
+it("shows only explicitly delivered, successfully written files as file chips, which open and show the file in Finder", async () => {
+  const progress = { startedAtMs: 1, finishedAtMs: 20, items: [
+    { id: "script", kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", filePath: "analysis.py", status: "succeeded" },
+    { id: "report", kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", filePath: "reports/summary.csv", status: "succeeded" },
+    { id: "failed", kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", filePath: "reports/failed.csv", status: "failed" },
+  ] } as ChatMessage["progress"];
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const reveal = vi.spyOn(bridge, "workspaceReveal").mockResolvedValueOnce().mockRejectedValueOnce(new Error("File not found."));
+  const { onOpenFile } = renderAnswer(answer({
+    content: "analysis.py\n\n`[Script](analysis.py)`\n\n![Preview](analysis.py)\n\n[Failed](reports/failed.csv)\n\n[Report][download]\n\n[download]: reports/summary.csv",
+    progress,
+  }), { workspacePath: "/research", onOpenFile: vi.fn(), bridge });
+  const files = screen.getByRole("group", { name: "Files" });
+  expect(screen.queryByLabelText("Outputs")).toBeNull();
+  await user().click(within(files).getByRole("button", { name: "summary.csv" }));
+  expect(within(files).queryByRole("button", { name: /analysis.py|failed.csv/ })).toBeNull();
+  expect(onOpenFile).toHaveBeenCalledExactlyOnceWith("reports/summary.csv");
+  // The ⋯ menu reveals the file through the workspace command, scoped to this Loupist.
+  await user().click(within(files).getByRole("button", { name: "More for summary.csv" }));
+  await user().click(await screen.findByRole("menuitem", { name: "Show in Finder" }));
+  expect(reveal).toHaveBeenCalledExactlyOnceWith({ loupist_id: "loupist-a", path: "reports/summary.csv" });
+  expect(within(files).queryByRole("status")).toBeNull();
+  // A file that moved since the answer says so instead of failing silently.
+  await user().click(within(files).getByRole("button", { name: "More for summary.csv" }));
+  await user().click(await screen.findByRole("menuitem", { name: "Show in Finder" }));
+  expect(await within(files).findByRole("status")).toHaveTextContent("Could not show summary.csv.");
+});
+
+it("keeps documents as output cards and adds no file row when the answer delivered no file", () => {
+  renderAnswer(answer({ artifact_refs: [{ artifact_id: "doc", revision: 1, kind: "markdown", title: "Margin memo", digest: "d" }] }));
+  expect(within(screen.getByLabelText("Outputs")).getByRole("button", { name: "Open document Margin memo" })).toBeVisible();
+  expect(screen.queryByRole("group", { name: "Files" })).toBeNull();
+});
+
+it("summarizes saved Memory changes and opens each target", async () => {
+  const props = renderAnswer(answer({
+    memory_refs: [read("selected-read")],
+    memory_update: { status: "applied", commitId: "saved", changes: [
+      savedLens("revise", "Margin method"),
+      { recordId: "source-1", kind: "Source", operation: "create", title: "Filing excerpt", knowledge: { kind: "source", recordId: "source-record", revisionId: "source-v1", objectId: "source-1" }, lesson: "Captured.", basis: "Filing", futureUse: "Later." },
+    ] },
+  }));
+  const receipt = screen.getByRole("navigation", { name: "What this answer used and saved" });
+  expect(receipt).toHaveTextContent("Saved 1 source·Learned 1 new way of working");
+  // A single saved Source opens directly from its receipt segment; the list stays open for the rest.
+  await user().click(within(receipt).getByRole("button", { name: "Saved 1 source" }));
+  const memory = screen.getByRole("list", { name: "Saved in this answer" });
+  await user().click(within(memory).getByRole("button", { name: "Margin method" }));
+  expect(props.onOpenMemory).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ surface: "source", recordId: "source-record" }), "Filing excerpt");
+  // A saved method opens on "What {Loupist} knows".
+  expect(props.onOpenMemoryPage).toHaveBeenCalledWith(expect.objectContaining({ surface: "lens", recordId: "lens-revise" }));
+  await user().click(within(memory).getByRole("button", { name: "Open in Lens" }));
+  expect(props.onOpenMemoryPage).toHaveBeenCalledWith(expect.objectContaining({ surface: "lens", recordId: "lens-revise" }));
+});
+
+it("says when nothing new was saved, and adds no receipt to a private chat or a running answer", () => {
+  const { view } = renderAnswer(answer({ memory_update: { status: "no_change", commitId: null, changes: [] } }));
+  expect(screen.getByRole("navigation", { name: "What this answer used and saved" })).toHaveTextContent("Nothing new saved");
+  view.unmount();
+  const privateAnswer = renderAnswer(answer({ id: "private" }));
+  expect(screen.queryByRole("navigation", { name: "What this answer used and saved" })).toBeNull();
+  privateAnswer.view.unmount();
+  renderAnswer(answer({ id: "live", status: "streaming", memory_refs: [read("selected-read")], evidence_refs: [evidenceFixture()] }), { onOpenEvidence: vi.fn() });
+  expect(screen.queryByRole("navigation", { name: "What this answer used and saved" })).toBeNull();
+  expect(screen.getByLabelText("Research sources")).toBeInTheDocument();
+});
+
+describe("Lens proposals", () => {
+  const proposed = () => answer({ memory_update: { status: "applied", commitId: "proposal", changes: [savedLens("proposed", "Cash conversion")] } });
+
+  it("reviews and dismisses a proposed Lens from the answer", async () => {
+    let release: () => void = () => {};
+    const onDismissLensProposal = vi.fn(() => new Promise<void>((resolve) => { release = resolve; }));
+    const props = renderAnswer(proposed(), { onDismissLensProposal });
+    await user().click(screen.getByRole("button", { name: "1 proposal to review" }));
+    await user().click(screen.getByRole("button", { name: "Review Cash conversion" }));
+    expect(props.onOpenMemory).toHaveBeenCalledWith(expect.objectContaining({ surface: "lens", recordId: "lens-proposed", view: expect.objectContaining({ reviewProposal: { chatId: "chat-a", messageId: "answer" } }) }), "Cash conversion");
+    const dismiss = screen.getByRole("button", { name: "Dismiss Cash conversion" });
+    await user().click(dismiss);
+    expect(onDismissLensProposal).toHaveBeenCalledExactlyOnceWith({ recordId: "lens-proposed", messageId: "answer" });
+    expect(dismiss).toBeDisabled();
+    release();
+    expect(await screen.findByText("Dismissed")).toHaveAttribute("role", "status");
+  });
+
+  it.each(["failed", "ambiguous", "mismatched"])("keeps a %s dismissal recoverable without touching another draft", async (scenario) => {
+    const proposal: LensProposal = {
+      draftId: "draft-a", loupistId: "loupist-a", author: "loupist", recordId: "lens-proposed", baseRevisionId: "rev-1",
+      document: { markdown: "Proposed method", applicability: "", assumptions: "", procedure: "", principles: "", limitations: "" },
+      rationale: "Evidence", updatedAtMs: 1, originChatId: "chat-a", originMessageId: "answer",
+    };
+    const proposals = scenario === "ambiguous" ? [proposal, { ...proposal, draftId: "draft-b" }] : [{ ...proposal, originChatId: "another-chat" }];
+    const bridge = { knowledgeLensProposals: vi.fn().mockResolvedValue(proposals), knowledgeLensProposalDismiss: vi.fn() };
+    const onDismissLensProposal = scenario === "failed"
+      ? vi.fn().mockRejectedValue(new Error("Proposal not found."))
+      : (target: { recordId: string; messageId: string }) => dismissLensProposal(bridge, { ...target, loupistId: "loupist-a", chatId: "chat-a" });
+    renderAnswer(proposed(), { onDismissLensProposal });
+    await user().click(screen.getByRole("button", { name: "1 proposal to review" }));
+    await user().click(screen.getByRole("button", { name: "Dismiss Cash conversion" }));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(bridge.knowledgeLensProposalDismiss).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Dismiss Cash conversion" })).toBeEnabled();
+  });
+});
+
+it("cites external grounding once, opens it, and routes saved reads to Memory", async () => {
+  const web = evidenceFixture({ id: `ev_${"1".repeat(32)}`, title: "Rates outlook", tool_name: "web_fetch", kind: "original" });
+  const connection = evidenceFixture({ id: `ev_${"2".repeat(32)}`, title: "Market quote", tool_name: "krx_daily_quote", kind: "original", url: undefined, provider: "KRX" });
+  const sourceRead = evidenceFixture({ id: `ev_${"3".repeat(32)}`, title: "world read", tool_name: "world_read", kind: "saved_context", url: undefined, read_ref: "source-read" });
+  const search = evidenceFixture({ id: `ev_${"5".repeat(32)}`, title: "world search", tool_name: "world_search", kind: "saved_context", url: undefined, excerpt: "Search hits for the filing." });
+  const evidence = [web, connection, sourceRead, search];
+  const props = renderAnswer(answer({
+    content: evidence.map((item) => `[${item.title}](#evidence-${item.id})`).join(" "),
+    evidence_refs: [...evidence, web],
+    memory_refs: [read("source-read")],
+  }), { onOpenEvidence: vi.fn() });
+
+  const sources = screen.getByLabelText("Research sources");
+  await user().click(within(sources).getByText("2 citations"));
+  expect(within(sources).getAllByRole("listitem")).toHaveLength(2);
+  expect(screen.queryByRole("button", { name: /^Source 3:/ })).toBeNull();
+  await user().click(screen.getByRole("button", { name: "Source 2: Market quote" }));
+  expect(props.onOpenEvidence).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: connection.id }), undefined);
+  await user().click(screen.getByRole("button", { name: "Memory: Annual report" }));
+  expect(props.onOpenMemory).toHaveBeenCalledWith(expect.objectContaining({ surface: "source", recordId: "source-record" }), "Annual report");
+  await user().click(screen.getByRole("button", { name: "Result: World search" }));
+  expect(props.onOpenEvidence).toHaveBeenCalledTimes(1);
+  expect(within(screen.getByLabelText("Work progress")).getByLabelText("Tool result")).toHaveTextContent(search.excerpt);
+});
+
+it("opens a quote basket from the source list, receipt and citation without the raw reader", async () => {
+  const excerpt = JSON.stringify({ content: [{ type: "text", text: JSON.stringify({ results: [
+    { symbol: "AAPL", name: "Apple", currency: "USD", last_price: 271.4 },
+    { symbol: "MSFT", name: "Microsoft", currency: "USD", last_price: 415.2 },
+  ] }) }] });
+  const quote = evidenceFixture({
+    id: "ev_quote", title: "Equity price quote", tool_name: "mcp__openbb__equity_price_quote", provider: "Yahoo Finance",
+    url: "https://finance.example/quotes", retrieved_at: "2026-10-11T15:04:00Z", published_at: undefined, excerpt,
+  });
+  const cut = excerpt.slice(0, excerpt.indexOf("MSFT"));
+  const truncated = evidenceFixture({
+    id: "ev_cut", title: "Cut quote", tool_name: "equity_price_quote", provider: "Yahoo Finance", url: undefined,
+    excerpt: cut, excerpt_truncated: true,
+  });
+  const props = renderAnswer(answer({
+    content: `Quotes [Equity price quote](#evidence-${quote.id}) and [Cut quote](#evidence-${truncated.id}).`,
+    evidence_refs: [quote, truncated],
+  }), { onOpenEvidence: vi.fn() });
+
+  const sources = screen.getByLabelText("Research sources");
+  await user().click(within(sources).getByText("2 citations"));
+  await user().click(within(sources).getByRole("button", { name: /Equity price quote/ }));
+  let receipt = await screen.findByRole("dialog", { name: "Price quotes" });
+  expect(receipt).toHaveTextContent("AAPL");
+  await user().keyboard("{Escape}");
+
+  await user().click(screen.getByRole("button", { name: "Source 1: Equity price quote" }));
+  receipt = await screen.findByRole("dialog", { name: "Price quotes" });
+  expect(receipt).toHaveTextContent("AAPL");
+  expect(receipt).toHaveTextContent("271.4 USD");
+  expect(receipt).toHaveTextContent("MSFT");
+  expect(receipt).toHaveTextContent("415.2 USD");
+  expect(receipt).toHaveTextContent("Retrieved");
+  expect(receipt).toHaveTextContent("Yahoo Finance");
+  expect(receipt).not.toHaveTextContent("Quote time");
+  expect(props.onOpenEvidence).not.toHaveBeenCalled();
+  await user().keyboard("{Escape}");
+
+  await user().click(screen.getByRole("button", { name: "Read 2 sources" }));
+  const read = await screen.findByLabelText("Sources read in this answer");
+  await user().click(within(read).getByRole("button", { name: /Cut quote/ }));
+  const cutReceipt = await screen.findByRole("dialog", { name: "Price quotes" });
+  expect(cutReceipt).toHaveTextContent("No complete quote was in the saved result.");
+  expect(within(cutReceipt).queryByRole("term", { name: "Last price" })).toBeNull();
+  expect(props.onOpenEvidence).not.toHaveBeenCalled();
+  await user().keyboard("{Escape}");
+
+  // A pointer click in WKWebView can leave focus on the page. The receipt still measures the button.
+  document.body.tabIndex = -1;
+  document.body.focus();
+  const citation = screen.getByRole("button", { name: "Source 1: Equity price quote" });
+  let focusedAtClick: Element | null = null;
+  citation.addEventListener("click", () => { focusedAtClick = document.activeElement; });
+  vi.spyOn(citation, "getBoundingClientRect").mockReturnValue(new DOMRect(80, 180, 36, 18));
+  vi.spyOn(document.body, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1280, 820));
+  fireEvent.click(citation);
+  expect(focusedAtClick).toBe(document.body);
+  const anchored = await screen.findByRole("dialog", { name: "Price quotes" });
+  await waitFor(() => expect(anchored.parentElement?.style.getPropertyValue("--radix-popper-anchor-width")).toBe("36px"));
+});
+
+it.each([
+  [{ failure_kind: "provider_error", status: "error" }],
+  [{ host_composed: true, status: "complete" }],
+] as const)("explains host-authored response metadata without a model receipt: %o", async (metadata) => {
+  renderAnswer(answer({ id: "host-answer", content: "Saved Memory.", ...metadata }));
+  if (metadata.status === "error") {
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Response details" })).toBeNull();
+  } else {
+    await user().click(screen.getByRole("button", { name: "Response details" }));
+    expect(await screen.findByRole("dialog", { name: "Response details" })).toHaveTextContent("returned no text");
+  }
+});
+
+it("does not call a busy answer failed while it still counts down to its own retry", () => {
+  const busy = answer({ id: "busy", content: "", status: "error", failure_kind: "rate_limited" });
+  const { view, ...props } = renderAnswer(busy, { onRetry: vi.fn(), retryAttempt: 1 });
+  expect(screen.queryByText("Response failed")).toBeNull();
+  expect(screen.getByText(/Retrying in 20 s/)).toBeInTheDocument();
+  view.rerender(<TooltipProvider><ChatMessageCard {...props} message={busy} retryAttempt={3} /></TooltipProvider>);
+  expect(screen.getByText("Response failed")).toBeInTheDocument();
+});
+
+it("counts a busy answer down from the wait its provider asked for", () => {
+  renderAnswer(answer({ id: "busy", content: "", status: "error", failure_kind: "rate_limited", retry_after_seconds: 12 }), { onRetry: vi.fn(), retryAttempt: 1 });
+  expect(screen.getByText(/Retrying in 12 s/)).toBeInTheDocument();
+});
+
+it("shows guidance a finished reply accepted as a Guided row, not a question bubble", async () => {
+  const steer: ChatMessage = { id: "steer", role: "user", status: "complete", content: "Focus on margins", created_at: "2026-10-10T00:00:00Z", steer: true };
+  const { view } = renderAnswer(steer);
+  expect(screen.getByText("Guided: “Focus on margins”")).toBeInTheDocument();
+  expect(view.container.querySelector("article.message.user")).toBeNull();
+  await i18n.changeLanguage("ko");
+  view.rerender(<TooltipProvider><ChatMessageCard message={steer} loupistId="loupist-a" chatId="chat-a" loupistName="Loupist" onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} onOpenArtifact={vi.fn()} onOpenLink={vi.fn()} onReadAttachment={vi.fn()} /></TooltipProvider>);
+  expect(screen.getByText("안내했어요: “Focus on margins”")).toBeInTheDocument();
+  await i18n.changeLanguage("en");
+  // The same words as a plain question still read as a bubble.
+  view.rerender(<TooltipProvider><ChatMessageCard message={{ ...steer, steer: undefined }} loupistId="loupist-a" chatId="chat-a" loupistName="Loupist" onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} onOpenArtifact={vi.fn()} onOpenLink={vi.fn()} onReadAttachment={vi.fn()} /></TooltipProvider>);
+  expect(view.container.querySelector("article.message.user")).not.toBeNull();
+});
+
+it("keeps saved schedule cards current, even after a stopped reply, and opens the exact task", async () => {
+  const receipt = { task_id: "task-a", title: "Morning review", revision: 1, action: "created" as const, status: "active" as const,
+    schedule: { kind: "daily" as const, hour: 9, minute: 0, timezone: "Asia/Seoul" }, target: { kind: "dedicated_chat" as const },
+    next_run_at_ms: 1799973000000, use_memory: false, update_memory: false };
+  const message = answer({ status: "aborted", content: "", schedule_receipts: [receipt, { ...receipt, task_id: "task-b", title: "Evening review", target: { kind: "new_chat" } }] });
+  const { view, ...props } = renderAnswer(message, { onOpenSchedule: vi.fn() });
+  const paused = { ...message, schedule_receipts: [{ ...receipt, revision: 2, action: "paused" as const, status: "paused" as const }, message.schedule_receipts![1]] };
+  const onOpenSchedule = vi.fn();
+  view.rerender(<TooltipProvider><ChatMessageCard {...props} message={paused} onOpenSchedule={onOpenSchedule} /></TooltipProvider>);
+  expect(screen.getAllByRole("article", { name: /Scheduled task:/ })).toHaveLength(2);
+  expect(screen.getByRole("article", { name: "Scheduled task: Morning review" })).toHaveTextContent("Paused");
+  await user().click(screen.getByRole("button", { name: "Open scheduled task: Evening review" }));
+  expect(onOpenSchedule).toHaveBeenCalledWith("task-b");
+  expect(props.onOpenSchedule).not.toHaveBeenCalled();
+});
+
+it("says what a stopped reply kept: finished steps and the text so far", () => {
+  const steps = { startedAtMs: 0, items: [
+    { id: "s1", kind: "tool" as const, toolName: "web_search", category: "web" as const, operation: "search" as const, action: "Searched the web", status: "succeeded" as const },
+    { id: "s2", kind: "tool" as const, toolName: "web_fetch", category: "web" as const, operation: "read" as const, action: "Read a web source", status: "succeeded" as const },
+    { id: "s3", kind: "tool" as const, toolName: "web_fetch", category: "web" as const, operation: "read" as const, action: "Read a web source", status: "stopped" as const },
+  ] };
+  renderAnswer(answer({ status: "aborted", content: "Margin fell while", progress: steps }));
+  expect(screen.getByText("Stopped · kept 2 steps and the text so far")).toBeVisible();
+  cleanup();
+  renderAnswer(answer({ status: "aborted", content: "" }));
+  expect(screen.getByText("Stopped before the answer finished.")).toBeVisible();
+});
+
+it("keeps a waiting approval actionable while folded and leaves its settled receipt with the step", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const approval = (state: "waiting" | "allowed_once") => ({
+    requestId: "req-1", itemId: "step-filings", connectionId: "custom-morrow", connectionName: "Morrow research tools",
+    toolName: "read_company_filings", target: "Hanul Precision · 2026 Q3", state, requestedAtMs: Date.now() - 12_000,
+  });
+  const items = (status: "running" | "succeeded") => [
+    { id: "step-notes", kind: "tool" as const, toolName: "world_read", category: "memory" as const, operation: "read" as const, action: "Read saved notes", status: "succeeded" as const, startedAtMs: 1, finishedAtMs: 2 },
+    { id: "step-filings", kind: "tool" as const, toolName: "mcp__custom-morrow__read_company_filings", category: "finance" as const, operation: "read" as const, action: "Read Read company filings", running: "Reading company filings", status, startedAtMs: 3, ...(status === "succeeded" ? { finishedAtMs: 4 } : {}) },
+  ];
+  const running = answer({ status: "streaming", content: "", progress: { startedAtMs: 0, items: items("running"), approvals: [approval("waiting")] } });
+  const { view } = renderAnswer(running, { bridge });
+  const card = screen.getByRole("region", { name: "Approval for Read company filings" });
+  expect(card.closest(".chat-progress")).toHaveAttribute("data-expanded", "false");
+  expect(screen.getAllByRole("button", { name: "Allow once" })).toHaveLength(1);
+
+  // Decisions that need no further input move into the retained activity.
+  const done = answer({ progress: { startedAtMs: 0, finishedAtMs: 5_000, items: items("succeeded"), approvals: [approval("allowed_once")] } });
+  view.rerender(<TooltipProvider><ChatMessageCard message={done} loupistId="loupist-a" chatId="chat-a" loupistName="Loupist" bridge={bridge}
+    onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} onOpenArtifact={vi.fn()} onOpenLink={vi.fn()} onReadAttachment={vi.fn()} /></TooltipProvider>);
+  expect(screen.queryByText("Allowed once · Read company filings")).toBeNull();
+  await user().click(within(screen.getByLabelText("Work progress")).getByRole("button"));
+  expect(screen.getAllByText("Allowed once · Read company filings")).toHaveLength(1);
+  expect(screen.getByText("Allowed once · Read company filings").closest('[data-progress-status="succeeded"]')).not.toBeNull();
+});
+
+it("keeps inline references in the question and shows saved tool and date selections below it", () => {
+  const { view } = renderAnswer(answer({
+    role: "user", as_of: "2026-03-05",
+    content: "$lens\n\nCompare @filings across periods.\n\nKeep this second paragraph.",
+  }), { mentionSkills: [{ id: "lens", name: "Lens" }], mentionPlugins: [{ id: "filings", name: "Filings" }] });
+  const body = view.container.querySelector(".message-user-text")!;
+  expect(body.textContent).toBe("Compare Filings across periods.\n\nKeep this second paragraph.");
+  expect(body.nextElementSibling).toHaveTextContent("Lens");
+  expect(body.nextElementSibling?.querySelector('[data-kind="request"]')).toBeTruthy();
+});

@@ -1,0 +1,32 @@
+{
+  "format": "loupist-pack/1",
+  "id": "7f1d1c3e-0000-4000-8000-000000000001",
+  "kind": "loupist",
+  "name": "Helpful skills",
+  "version": 1,
+  "createdAt": "2026-11-01T00:00:00Z",
+  "language": "en",
+  "license": "CC-BY-4.0",
+  "author": null,
+  "origin": [],
+  "assetClasses": [],
+  "counts": {
+    "perspective": 0,
+    "methods": 0,
+    "principles": 0,
+    "entities": 0,
+    "claims": 0,
+    "sources": 0
+  },
+  "files": {
+    "LOUPIST.md": {
+      "sha256": "51797cb5ce99e4a9bff27e571253f050b1a98f538925e7f2a8f8a5869b50d9aa",
+      "bytes": 107
+    },
+    "skills/helper/SKILL.md": {
+      "sha256": "0aa4a8f63b1eff1087c067279e19ec190c702c078855cff74c1c101d4135a7d2",
+      "bytes": 58
+    }
+  },
+  "app": "0.0.1"
+}

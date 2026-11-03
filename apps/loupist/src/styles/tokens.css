@@ -1,0 +1,350 @@
+/* Semantic design tokens. Primitive palette values are private to this file. */
+:root, .theme-preview[data-theme-preview="light"], .print-sheet {
+  --gg-p-neutral-0: #ffffff;
+  --gg-p-neutral-25: #fbfaf8;
+  --gg-p-neutral-50: #f3f2ee;
+  --gg-p-neutral-100: #ecebe6;
+  --gg-p-neutral-150: #e5e3dd;
+  --gg-p-neutral-200: #dcdad3;
+  --gg-p-neutral-400: #8c8980;
+  --gg-p-neutral-500: #6f6c64;
+  --gg-p-neutral-600: #5c5a53;
+  --gg-p-neutral-900: #262624;
+  --gg-p-amber-700: #8f4709;
+  --gg-p-amber-600: #a4530c;
+  --gg-p-amber-tint: #f8ece1;
+  --gg-color-bg-app: var(--gg-p-neutral-25);
+  --gg-color-bg-sidebar: var(--gg-p-neutral-50);
+  --gg-color-bg-raised: var(--gg-p-neutral-0);
+  --gg-color-bg-sunken: var(--gg-p-neutral-50);
+  --gg-color-bg-hover: var(--gg-p-neutral-100);
+  --gg-color-bg-selected: #e7e5df;
+  --gg-color-bg-user-message: var(--gg-p-neutral-100);
+  --gg-color-bg-overlay: rgb(17 17 19 / 48%);
+  --gg-color-text-primary: var(--gg-p-neutral-900);
+  --gg-color-text-secondary: var(--gg-p-neutral-600);
+  --gg-color-text-tertiary: var(--gg-p-neutral-500);
+  --gg-color-text-disabled: var(--gg-p-neutral-400);
+  --gg-color-text-on-accent: #ffffff;
+  --gg-color-border-subtle: var(--gg-p-neutral-150);
+  --gg-color-border-default: var(--gg-p-neutral-200);
+  --gg-color-control-off: var(--gg-p-neutral-500);
+  --gg-color-border-strong: var(--gg-p-neutral-400);
+  --gg-color-accent: var(--gg-p-amber-600);
+  --gg-color-accent-hover: var(--gg-p-amber-700);
+  --gg-color-accent-soft: var(--gg-p-amber-tint);
+  --gg-color-accent-ink: var(--gg-p-amber-700);
+  --gg-color-focus: var(--gg-p-amber-600);
+  --gg-color-action: var(--gg-p-neutral-900);
+  --gg-color-action-ink: var(--gg-p-neutral-25);
+  --gg-color-positive: #17794a;
+  --gg-color-negative: #c2382f;
+  --gg-color-warning: #8f5f00;
+  --gg-color-info: #2d6aa8;
+  --gg-color-positive-soft: #e8f4ec;
+  --gg-color-negative-soft: #fbecea;
+  --gg-color-warning-soft: #fbf3e1;
+  --gg-color-info-soft: #eaf1f9;
+  /* The canvas sits a step darker than the app (map spec B5), which frames the Map without a border. */
+  --gg-color-map-bg: #f4f2ec;
+  --gg-color-map-company: #2f6fb3;
+  --gg-color-map-product: #7550bd;
+  --gg-color-map-person: #b2477a;
+  --gg-color-map-event: #23806f;
+  --gg-color-map-metric: rgb(35 128 111 / 55%);
+  --gg-color-map-market: #3f7f2a;
+  --gg-color-map-other: var(--gg-p-neutral-500);
+  --gg-color-map-principle: var(--gg-p-amber-600);
+  --gg-color-map-method: var(--gg-p-amber-600);
+  --gg-color-map-perspective: var(--gg-p-amber-700);
+  --gg-color-map-holding-ring: var(--gg-p-neutral-900);
+  --gg-color-map-edge: rgb(38 38 36 / 22%);
+  --gg-color-map-edge-active: rgb(38 38 36 / 55%);
+  --gg-color-map-edge-disputed: #c2382f;
+  --gg-color-map-label: var(--gg-p-neutral-900);
+  --gg-color-map-label-halo: rgb(244 242 236 / 90%);
+  --gg-color-map-new-glow: rgb(164 83 12 / 35%);
+  --gg-color-map-dim: 0.25;
+  --gg-font-ui: "Geist Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR", "Segoe UI", sans-serif;
+  --gg-font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --gg-text-caption: 11px;
+  --gg-leading-caption: 16px;
+  --gg-text-meta: 12px;
+  --gg-leading-meta: 16px;
+  --gg-text-control: 13px;
+  --gg-leading-control: 18px;
+  --gg-text-body: 14px;
+  --gg-leading-body: 22px;
+  --gg-text-reading: 15px;
+  --gg-leading-reading: 26px;
+  --gg-text-subtitle: 16px;
+  --gg-leading-subtitle: 24px;
+  --gg-text-title: 18px;
+  --gg-leading-title: 26px;
+  --gg-text-heading: 20px;
+  --gg-leading-heading: 28px;
+  --gg-text-page: 24px;
+  --gg-leading-page: 32px;
+  --gg-text-display: 30px;
+  --gg-leading-display: 38px;
+  --gg-weight-regular: 450;
+  --gg-weight-medium: 520;
+  --gg-weight-semibold: 600;
+  --gg-space-1: 4px;
+  --gg-space-2: 8px;
+  --gg-space-3: 12px;
+  --gg-space-4: 16px;
+  --gg-space-5: 20px;
+  --gg-space-6: 24px;
+  --gg-space-7: 32px;
+  --gg-space-8: 40px;
+  --gg-space-9: 48px;
+  --gg-space-10: 64px;
+  --gg-size-control-sm: 28px;
+  --gg-size-control-md: 32px;
+  --gg-size-control-lg: 36px;
+  --gg-size-field: 40px;
+  --gg-size-sidebar: 248px;
+  --gg-size-chat-column: 760px;
+  /* The floating "In this chat" rail (context-rail.md R1). */
+  --gg-size-rail: 280px;
+  --gg-size-reading-column: 720px;
+  --gg-size-page: 1120px;
+  --gg-size-inspector: 360px;
+  --gg-size-mini-map: 320px;
+  --gg-size-dialog-sm: 420px;
+  --gg-size-dialog-md: 560px;
+  --gg-radius-xs: 6px;
+  --gg-radius-sm: 8px;
+  --gg-radius-md: 12px;
+  --gg-radius-lg: 16px;
+  --gg-radius-xl: 24px;
+  --gg-radius-full: 9999px;
+  --gg-shadow-xs: 0 1px 2px rgb(17 17 19 / 4%);
+  --gg-shadow-sm: 0 4px 14px rgb(17 17 19 / 7%);
+  --gg-shadow-md: 0 12px 32px rgb(17 17 19 / 10%);
+  --gg-shadow-lg: 0 24px 64px rgb(17 17 19 / 16%);
+  --gg-motion-instant: 80ms;
+  --gg-motion-fast: 120ms;
+  --gg-motion-normal: 180ms;
+  --gg-motion-slow: 280ms;
+  --gg-motion-map-enter: 600ms;
+  --gg-motion-map-stagger: 40ms;
+  --gg-ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --gg-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --gg-ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --gg-z-base: 0;
+  --gg-z-sticky: 10;
+  --gg-z-sidebar: 20;
+  --gg-z-panel: 30;
+  --gg-z-popover: 40;
+  --gg-z-dialog: 50;
+  --gg-z-toast: 60;
+  --gg-z-tooltip: 70;
+  font-family: var(--gg-font-ui);
+  color: var(--gg-color-text-primary);
+  background: var(--gg-color-bg-app);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"], .theme-preview[data-theme-preview="dark"] {
+  --gg-p-neutral-0: #131312;
+  --gg-p-neutral-25: #1c1c1a;
+  --gg-p-neutral-50: #202020;
+  --gg-p-neutral-75: #252523;
+  --gg-p-neutral-100: #2a2a27;
+  --gg-p-neutral-150: #323230;
+  --gg-p-neutral-200: #3b3a37;
+  --gg-p-neutral-400: #6b6962;
+  --gg-p-neutral-500: #908e86;
+  --gg-p-neutral-600: #b5b3ab;
+  --gg-p-neutral-900: #ecece7;
+  --gg-p-amber-300: #f3b27c;
+  --gg-p-amber-400: #eea062;
+  --gg-p-amber-tint: #3a2a1c;
+  --gg-color-bg-app: var(--gg-p-neutral-25);
+  --gg-color-bg-sidebar: #181817;
+  --gg-color-bg-raised: var(--gg-p-neutral-75);
+  --gg-color-bg-sunken: #171716;
+  --gg-color-bg-hover: var(--gg-p-neutral-100);
+  --gg-color-bg-selected: #33322e;
+  --gg-color-bg-user-message: #2a2a27;
+  --gg-color-bg-overlay: rgb(0 0 0 / 66%);
+  --gg-color-text-primary: var(--gg-p-neutral-900);
+  --gg-color-text-secondary: var(--gg-p-neutral-600);
+  --gg-color-text-tertiary: var(--gg-p-neutral-500);
+  --gg-color-text-disabled: var(--gg-p-neutral-400);
+  --gg-color-text-on-accent: #1c1c1a;
+  --gg-color-border-subtle: var(--gg-p-neutral-150);
+  --gg-color-border-default: var(--gg-p-neutral-200);
+  --gg-color-control-off: var(--gg-p-neutral-500);
+  --gg-color-border-strong: var(--gg-p-neutral-400);
+  --gg-color-accent: var(--gg-p-amber-400);
+  --gg-color-accent-hover: var(--gg-p-amber-300);
+  --gg-color-accent-soft: var(--gg-p-amber-tint);
+  --gg-color-accent-ink: var(--gg-p-amber-300);
+  --gg-color-focus: var(--gg-p-amber-400);
+  --gg-color-action: var(--gg-p-neutral-900);
+  --gg-color-action-ink: #1c1c1a;
+  --gg-color-positive: #4dbf87;
+  --gg-color-negative: #f0736a;
+  --gg-color-warning: #e3ac4c;
+  --gg-color-info: #7eaae6;
+  --gg-color-positive-soft: #1d3327;
+  --gg-color-negative-soft: #3a2425;
+  --gg-color-warning-soft: #3a3020;
+  --gg-color-info-soft: #1f2a38;
+  --gg-color-map-bg: #131312;
+  --gg-color-map-company: #6ea6ea;
+  --gg-color-map-product: #a98ae8;
+  --gg-color-map-person: #e889b4;
+  --gg-color-map-event: #5cc5b0;
+  --gg-color-map-metric: rgb(92 197 176 / 55%);
+  --gg-color-map-market: #86c86e;
+  --gg-color-map-other: var(--gg-p-neutral-500);
+  --gg-color-map-principle: var(--gg-p-amber-400);
+  --gg-color-map-method: var(--gg-p-amber-400);
+  --gg-color-map-perspective: var(--gg-p-amber-300);
+  --gg-color-map-holding-ring: var(--gg-p-neutral-900);
+  --gg-color-map-edge: rgb(236 236 231 / 16%);
+  --gg-color-map-edge-active: rgb(236 236 231 / 55%);
+  --gg-color-map-edge-disputed: #f0736a;
+  --gg-color-map-label: #d9d8d2;
+  --gg-color-map-label-halo: rgb(19 19 18 / 85%);
+  --gg-color-map-new-glow: rgb(238 160 98 / 40%);
+  --gg-color-map-dim: 0.22;
+  --gg-shadow-xs: 0 1px 2px rgb(0 0 0 / 18%);
+  --gg-shadow-sm: 0 4px 16px rgb(0 0 0 / 22%);
+  --gg-shadow-md: 0 12px 36px rgb(0 0 0 / 30%);
+  --gg-shadow-lg: 0 24px 72px rgb(0 0 0 / 42%);
+  color-scheme: dark;
+}
+
+:root,
+:root[data-price-colors="green-up"] {
+  --gg-color-price-up: var(--gg-color-positive);
+  --gg-color-price-down: var(--gg-color-negative);
+}
+
+:root[data-price-colors="red-up"] {
+  --gg-color-price-up: var(--gg-color-negative);
+  --gg-color-price-down: var(--gg-color-info);
+}
+
+/* The only shadcn mapping; theme values resolve through semantic tokens. */
+:root {
+  --background: var(--gg-color-bg-app);
+  --foreground: var(--gg-color-text-primary);
+  --card: var(--gg-color-bg-raised);
+  --popover: var(--gg-color-bg-raised);
+  --card-foreground: var(--gg-color-text-primary);
+  --popover-foreground: var(--gg-color-text-primary);
+  --primary: var(--gg-color-action);
+  --primary-foreground: var(--gg-color-action-ink);
+  --secondary: var(--gg-color-bg-hover);
+  --shadcn-muted: var(--gg-color-bg-hover);
+  --secondary-foreground: var(--gg-color-text-primary);
+  --muted-foreground: var(--gg-color-text-secondary);
+  --shadcn-accent: var(--gg-color-bg-hover);
+  --accent-foreground: var(--gg-color-text-primary);
+  --destructive: var(--gg-color-negative);
+  --border: var(--gg-color-border-subtle);
+  --input: var(--gg-color-border-default);
+  --ring: var(--gg-color-focus);
+  --sidebar: var(--gg-color-bg-sidebar);
+  --sidebar-foreground: var(--gg-color-text-primary);
+  --sidebar-primary: var(--gg-color-action);
+  --sidebar-primary-foreground: var(--gg-color-action-ink);
+  --sidebar-accent: var(--gg-color-bg-hover);
+  --sidebar-accent-foreground: var(--gg-color-text-primary);
+  --sidebar-border: var(--gg-color-border-subtle);
+  --sidebar-ring: var(--gg-color-focus);
+  --chart-1: var(--gg-color-map-company);
+  --chart-2: var(--gg-color-map-product);
+  --chart-3: var(--gg-color-map-event);
+  --chart-4: var(--gg-color-map-person);
+  --chart-5: var(--gg-color-map-other);
+}
+
+/* Figures line up (X10): tables, receipts, the Map stats, briefing rows, attention counts and palette captions. */
+.gg-num, table, .chat-receipt, .map-stats, .briefing-sections, .needs-attention, .command-palette-row small, .market-status { font-variant-numeric: tabular-nums; }
+/* Reduced motion (X19): one guard for every CSS animation and transition; progress spinners keep turning because they carry status. */
+@media (prefers-reduced-motion: reduce) {
+  *:not(.animate-spin), *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+:root:lang(ko) { word-break: keep-all; overflow-wrap: anywhere; }
+* { box-sizing: border-box; }
+html, body, #root { min-height: 100%; margin: 0; }
+body {
+  font-size: var(--gg-text-body);
+  min-width: 320px;
+  min-height: 100vh;
+  overflow: hidden;
+  color: var(--gg-color-text-primary);
+  background: var(--gg-color-bg-app);
+}
+button, input, textarea, select {
+  transition-duration: var(--gg-motion-fast);
+  transition-property: background-color, border-color, box-shadow, color, opacity, transform;
+  transition-timing-function: var(--gg-ease-out);
+}
+[data-slot="button"], [data-slot="select-trigger"], [data-slot="dropdown-menu-item"], [data-slot="select-item"] {
+  font-family: var(--gg-font-ui);
+  font-size: var(--gg-text-control);
+  font-weight: var(--gg-weight-medium);
+}
+[data-slot="select-content"], [data-slot="dropdown-menu-content"] {
+  font-family: var(--gg-font-ui);
+  border-radius: var(--gg-radius-md);
+  box-shadow: var(--gg-shadow-md);
+}
+/* Authoritative keyboard focus, including links, canvas and composite controls. */
+:focus-visible {
+  outline: 2px solid var(--gg-color-focus) !important;
+  outline-offset: 2px !important;
+  --tw-ring-shadow: 0 0 transparent !important;
+}
+/* Inset the field outline over its resting border so focus paints one contour. */
+:is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"]):focus-visible {
+  outline-offset: -2px !important;
+}
+@media (forced-colors: active) {
+  :focus-visible { outline-color: CanvasText !important; }
+}
+/* A menu takes focus itself when a press opens it; its items show keyboard focus, so the menu never rings. */
+[data-slot="dropdown-menu-content"]:focus-visible { outline: none !important; }
+/* A menu trigger and items that a press reached (`lib/inputModality`) show no ring, even where WebKit counts
+   the focus a script moved as keyboard focus; keys still do. The triggers that carry it are ghost buttons,
+   so their focus border goes too. */
+[data-input="pointer"]:focus-visible { outline: none !important; border-color: transparent !important; }
+[data-slot="dropdown-menu-content"][data-input="pointer"] :focus-visible { outline: none !important; }
+button:disabled { cursor: not-allowed; opacity: 0.48; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --gg-motion-instant: 0ms;
+    --gg-motion-fast: 0ms;
+    --gg-motion-normal: 0ms;
+    --gg-motion-slow: 0ms;
+    --gg-motion-map-enter: 0ms;
+    --gg-motion-map-stagger: 0ms;
+  }
+  *, *::before, *::after {
+    animation-duration: 0ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: var(--gg-motion-instant) !important;
+    transition-property: opacity !important;
+    scroll-behavior: auto !important;
+  }
+}
+@keyframes gg-map-enter-reduced { from { opacity: 0; } to { opacity: 1; } }

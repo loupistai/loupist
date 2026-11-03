@@ -1,0 +1,391 @@
+{
+  "schema": "loupist-connection-replay/1",
+  "requests": [
+    {
+      "provider": "krx.market-data",
+      "request": {
+        "url": "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=20260216"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "OutBlock_1": []
+        }
+      }
+    },
+    {
+      "provider": "krx.market-data",
+      "request": {
+        "url": "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=20260217"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "OutBlock_1": []
+        }
+      }
+    },
+    {
+      "provider": "krx.market-data",
+      "request": {
+        "url": "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=20260218"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "OutBlock_1": []
+        }
+      }
+    },
+    {
+      "provider": "krx.market-data",
+      "request": {
+        "url": "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=20260219"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "OutBlock_1": [
+            {
+              "BAS_DD": "20260219",
+              "ISU_SRT_CD": "990184",
+              "ISU_CD": "KR7990184000",
+              "ISU_NM": "노을제지",
+              "MKT_NM": "KOSPI",
+              "TDD_OPNPRC": "70500",
+              "TDD_HGPRC": "71200",
+              "TDD_LWPRC": "70300",
+              "TDD_CLSPRC": "70800",
+              "CMPPREVDD_PRC": "200",
+              "ACC_TRDVOL": "151220"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "krx.market-data",
+      "request": {
+        "url": "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=20260220"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "OutBlock_1": [
+            {
+              "BAS_DD": "20260220",
+              "ISU_SRT_CD": "990184",
+              "ISU_CD": "KR7990184000",
+              "ISU_NM": "노을제지",
+              "MKT_NM": "KOSPI",
+              "TDD_OPNPRC": "70900",
+              "TDD_HGPRC": "71500",
+              "TDD_LWPRC": "70600",
+              "TDD_CLSPRC": "71300",
+              "CMPPREVDD_PRC": "500",
+              "ACC_TRDVOL": "163480"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "krx.market-data",
+      "request": {
+        "url": "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=20260223"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "OutBlock_1": [
+            {
+              "BAS_DD": "20260223",
+              "ISU_SRT_CD": "990184",
+              "ISU_CD": "KR7990184000",
+              "ISU_NM": "노을제지",
+              "MKT_NM": "KOSPI",
+              "TDD_OPNPRC": "71200",
+              "TDD_HGPRC": "71400",
+              "TDD_LWPRC": "70700",
+              "TDD_CLSPRC": "71000",
+              "CMPPREVDD_PRC": "-300",
+              "ACC_TRDVOL": "140915"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "krx.market-data",
+      "request": {
+        "url": "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=20260224"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "OutBlock_1": [
+            {
+              "BAS_DD": "20260224",
+              "ISU_SRT_CD": "990184",
+              "ISU_CD": "KR7990184000",
+              "ISU_NM": "노을제지",
+              "MKT_NM": "KOSPI",
+              "TDD_OPNPRC": "71100",
+              "TDD_HGPRC": "71800",
+              "TDD_LWPRC": "70900",
+              "TDD_CLSPRC": "71600",
+              "CMPPREVDD_PRC": "600",
+              "ACC_TRDVOL": "158330"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "krx.market-data",
+      "request": {
+        "url": "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=20260225"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "OutBlock_1": [
+            {
+              "BAS_DD": "20260225",
+              "ISU_SRT_CD": "990184",
+              "ISU_CD": "KR7990184000",
+              "ISU_NM": "노을제지",
+              "MKT_NM": "KOSPI",
+              "TDD_OPNPRC": "71700",
+              "TDD_HGPRC": "72300",
+              "TDD_LWPRC": "71500",
+              "TDD_CLSPRC": "72100",
+              "CMPPREVDD_PRC": "500",
+              "ACC_TRDVOL": "171042"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "krx.market-data",
+      "request": {
+        "url": "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=20260226"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "OutBlock_1": [
+            {
+              "BAS_DD": "20260226",
+              "ISU_SRT_CD": "990184",
+              "ISU_CD": "KR7990184000",
+              "ISU_NM": "노을제지",
+              "MKT_NM": "KOSPI",
+              "TDD_OPNPRC": "72000",
+              "TDD_HGPRC": "72200",
+              "TDD_LWPRC": "71600",
+              "TDD_CLSPRC": "71900",
+              "CMPPREVDD_PRC": "-200",
+              "ACC_TRDVOL": "149870"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "krx.market-data",
+      "request": {
+        "url": "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=20260227"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "OutBlock_1": [
+            {
+              "BAS_DD": "20260227",
+              "ISU_SRT_CD": "990184",
+              "ISU_CD": "KR7990184000",
+              "ISU_NM": "노을제지",
+              "MKT_NM": "KOSPI",
+              "TDD_OPNPRC": "71900",
+              "TDD_HGPRC": "72700",
+              "TDD_LWPRC": "71800",
+              "TDD_CLSPRC": "72500",
+              "CMPPREVDD_PRC": "600",
+              "ACC_TRDVOL": "176254"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "krx.market-data",
+      "request": {
+        "url": "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=20260302"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "OutBlock_1": []
+        }
+      }
+    },
+    {
+      "provider": "krx.market-data",
+      "request": {
+        "url": "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=20260303"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "OutBlock_1": [
+            {
+              "BAS_DD": "20260303",
+              "ISU_SRT_CD": "990184",
+              "ISU_CD": "KR7990184000",
+              "ISU_NM": "노을제지",
+              "MKT_NM": "KOSPI",
+              "TDD_OPNPRC": "72500",
+              "TDD_HGPRC": "74400",
+              "TDD_LWPRC": "72400",
+              "TDD_CLSPRC": "73400",
+              "CMPPREVDD_PRC": "900",
+              "ACC_TRDVOL": "182233"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "krx.market-data",
+      "request": {
+        "url": "https://data-dbg.krx.co.kr/svc/apis/sto/ksq_bydd_trd?basDd=20260303"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "OutBlock_1": [
+            {
+              "BAS_DD": "20260303",
+              "ISU_SRT_CD": "990905",
+              "ISU_CD": "KR7990905008",
+              "ISU_NM": "가람바이오",
+              "MKT_NM": "KOSDAQ",
+              "TDD_OPNPRC": "8100",
+              "TDD_HGPRC": "8350",
+              "TDD_LWPRC": "7980",
+              "TDD_CLSPRC": "8200",
+              "CMPPREVDD_PRC": "120",
+              "ACC_TRDVOL": "301455"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "krx.market-data",
+      "request": {
+        "url": "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=20260304"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "OutBlock_1": [
+            {
+              "BAS_DD": "20260304",
+              "ISU_SRT_CD": "990184",
+              "ISU_CD": "KR7990184000",
+              "ISU_NM": "노을제지",
+              "MKT_NM": "KOSPI",
+              "TDD_OPNPRC": "73600",
+              "TDD_HGPRC": "74900",
+              "TDD_LWPRC": "73300",
+              "TDD_CLSPRC": "74650",
+              "CMPPREVDD_PRC": "1250",
+              "ACC_TRDVOL": "201447"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "krx.market-data",
+      "request": {
+        "url": "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=20260305"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "OutBlock_1": [
+            {
+              "BAS_DD": "20260305",
+              "ISU_SRT_CD": "990184",
+              "ISU_CD": "KR7990184000",
+              "ISU_NM": "노을제지",
+              "MKT_NM": "KOSPI",
+              "TDD_OPNPRC": "74500",
+              "TDD_HGPRC": "74900",
+              "TDD_LWPRC": "73800",
+              "TDD_CLSPRC": "74100",
+              "CMPPREVDD_PRC": "-550",
+              "ACC_TRDVOL": "168402"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "krx.market-data",
+      "request": {
+        "url": "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=20260306"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "OutBlock_1": [
+            {
+              "BAS_DD": "20260306",
+              "ISU_SRT_CD": "990184",
+              "ISU_CD": "KR7990184000",
+              "ISU_NM": "노을제지",
+              "MKT_NM": "KOSPI",
+              "TDD_OPNPRC": "74000",
+              "TDD_HGPRC": "74600",
+              "TDD_LWPRC": "73700",
+              "TDD_CLSPRC": "74300",
+              "CMPPREVDD_PRC": "200",
+              "ACC_TRDVOL": "152917"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "web",
+      "request": {
+        "method": "GET",
+        "url": "https://fictional.example/noeul-paper/mill-update-march-2",
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "content_type": "text/html",
+        "text": "<!doctype html><html><head><title>Noeul Paper Gwangyang mill update</title><meta property=\"article:published_time\" content=\"2026-03-02T09:00:00Z\"></head><body><article><h1>Noeul Paper Gwangyang mill update</h1><p>Fictional Noeul Paper said on 2 March 2026 that its Gwangyang mill can make 410 thousand tonnes of paper a year.</p></article></body></html>"
+      }
+    },
+    {
+      "provider": "web",
+      "request": {
+        "method": "GET",
+        "url": "https://fictional.example/noeul-paper/mill-update-march-18",
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "content_type": "text/html",
+        "text": "<!doctype html><html><head><title>Noeul Paper expands Gwangyang mill</title><meta property=\"article:published_time\" content=\"2026-03-18T09:00:00Z\"></head><body><article><h1>Noeul Paper expands Gwangyang mill</h1><p>Fictional Noeul Paper said on 18 March 2026 that the Gwangyang mill expansion raised capacity to 455 thousand tonnes a year.</p></article></body></html>"
+      }
+    }
+  ]
+}

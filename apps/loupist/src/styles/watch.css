@@ -1,0 +1,92 @@
+/* Local watchers (W16.7, finance-watchers.md §2). */
+
+/* Asset page: "Watch for" in the side column; rows 36 high, the switch at the right. */
+.watch-for { display: grid; gap: var(--gg-space-2); }
+.watch-for-kinds { display: grid; margin: 0; padding: 0; list-style: none; }
+.watch-for-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--gg-space-3); min-height: 36px; }
+.watch-for-label { font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+.watch-for-row[data-disabled] .watch-for-label { color: var(--gg-color-text-secondary); }
+.watch-for-reason { grid-column: 1 / -1; margin: 0 0 var(--gg-space-1); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.watch-switch[aria-disabled="true"] { cursor: not-allowed; opacity: .5; }
+.watch-switch [data-slot="switch-thumb"] { transition: transform var(--gg-motion-fast) var(--gg-ease-out); }
+
+/* Schedule › Watching. */
+.watching-item .schedule-task-status { white-space: nowrap; }
+.watching-reader { display: grid; gap: var(--gg-space-4); }
+.watching-reader > .briefings-back { justify-self: start; }
+.watching-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--gg-space-2); }
+.watching-head h2 { margin: 0; }
+.watching-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
+.watching-actions [data-slot="button"] { gap: var(--gg-space-2); }
+.watching-privacy { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.watching-consent { margin: 0; color: var(--gg-color-text-secondary); }
+/* The matrix scrolls sideways inside its own box when the reader is narrow; the asset column stays put. */
+.watching-matrix-scroll { min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; }
+/* With stocks and crypto or commodities, each class has its own table and a label above it. */
+.watching-group { position: sticky; left: 0; width: fit-content; margin: 0 0 var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); line-height: var(--gg-leading-meta); }
+.watching-matrix { width: 100%; min-width: max-content; border-collapse: collapse; transition: color var(--gg-motion-normal) var(--gg-ease-in-out); }
+/* Column labels never run together: each keeps one line and its own gap. */
+.watching-matrix thead th { padding: 0 6px var(--gg-space-2); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); letter-spacing: .01em; text-transform: uppercase; white-space: nowrap; vertical-align: bottom; }
+.watching-reader:lang(ko) .watching-matrix thead th { letter-spacing: 0; text-transform: none; }
+.watching-matrix .watching-asset-head, .watching-matrix .watching-asset-cell { position: sticky; left: 0; z-index: var(--gg-z-sticky); width: 144px; min-width: 128px; max-width: 200px; padding-left: 0; background: var(--gg-color-bg-app); text-align: left; }
+.watching-matrix .watching-kind { min-width: 48px; text-align: center; }
+.watching-matrix .watching-last { min-width: 88px; text-align: left; }
+.watching-last-date, .watching-last-kind { display: block; white-space: nowrap; }
+.watching-last-kind { color: var(--gg-color-text-tertiary); }
+.watching-matrix tbody tr { height: 40px; }
+.watching-matrix tbody tr:hover > * { background: var(--gg-color-bg-hover); }
+.watching-matrix tbody tr:hover > .watching-asset-cell { background: linear-gradient(var(--gg-color-bg-hover), var(--gg-color-bg-hover)), var(--gg-color-bg-app); }
+.watching-matrix tbody th, .watching-matrix tbody td { padding: var(--gg-space-1) 6px; border-top: 1px solid var(--gg-color-border-subtle); vertical-align: middle; }
+.watching-hint { margin: calc(-1 * var(--gg-space-2)) 0 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+/* Paused reads at a glance: the word itself, then the matrix dimmed. */
+.watching-status[data-paused] .watching-paused { color: var(--gg-color-text-primary); font-weight: var(--gg-weight-semibold); }
+.watching-asset { display: grid; }
+.watching-asset strong { font-size: var(--gg-text-body); font-weight: var(--gg-weight-medium); }
+.watching-asset small, .watching-last { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.watching-check { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; min-height: 28px; cursor: pointer; }
+.watching-check input { width: 16px; height: 16px; margin: 0; accent-color: var(--gg-color-accent); cursor: inherit; }
+.watching-check[data-disabled] { cursor: not-allowed; opacity: .5; }
+.watching-na { color: var(--gg-color-text-tertiary); }
+.watching-matrix[data-paused] tbody { color: var(--gg-color-text-secondary); }
+.watching-section { display: grid; gap: var(--gg-space-2); }
+.watching-alerts { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.watching-alert { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; align-items: start; gap: var(--gg-space-2); min-height: 36px; padding: var(--gg-space-2) var(--gg-space-1); border-radius: var(--gg-radius-sm); }
+.watching-alert:hover { background: var(--gg-color-bg-hover); }
+.watching-alert[data-arrived] { animation: watching-arrive var(--gg-motion-fast) var(--gg-ease-in-out); }
+@keyframes watching-arrive { from { opacity: 0; } to { opacity: 1; } }
+.watching-alert p { margin: 0; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); overflow-wrap: anywhere; }
+.watching-alert .asset-change-day { padding-top: 2px; }
+.watching-not-here { display: grid; gap: var(--gg-space-2); margin: 0; padding: 0; list-style: none; }
+.watching-not-here li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gg-space-2); min-height: 36px; }
+
+/* Thread: one message per check batch, up to five events. */
+.thread-watch { display: grid; gap: var(--gg-space-2); }
+.thread-watch > .morning-link { justify-self: start; }
+.thread-watch-events { display: grid; gap: var(--gg-space-2); margin: 0; padding: 0; list-style: none; }
+.thread-watch-events > li { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--gg-space-1) var(--gg-space-3); }
+.thread-watch-events p { flex: 1 1 320px; margin: 0; }
+.thread-watch-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
+.thread-watch-actions [data-slot="button"] { gap: var(--gg-space-2); }
+.thread-earnings { display: grid; gap: var(--gg-space-2); }
+.thread-earnings p { margin: 0; }
+.thread-earnings-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
+
+/* Briefing reader rows. */
+.briefing-watch-rows, .briefing-earnings { display: grid; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 0; padding: 0; list-style: none; }
+.briefing-earnings > li { display: grid; gap: var(--gg-space-1); }
+.briefing-earnings > li > p { margin: 0; }
+.briefing-earnings [data-slot="button"] { justify-self: start; padding-inline: 0; }
+
+@media (max-width: 700px) {
+  /* The matrix keeps its labelled columns and scrolls sideways under a narrower asset column. */
+  .watching-matrix .watching-asset-head, .watching-matrix .watching-asset-cell { width: 136px; min-width: 136px; max-width: 136px; }
+  /* More columns lie past the right edge: it fades, over padding the last column keeps clear. */
+  .watching-matrix-scroll { mask-image: linear-gradient(to left, transparent 0, var(--gg-color-bg-app) 24px); }
+  .watching-matrix .watching-last { padding-right: var(--gg-space-6); }
+  .watching-alert { grid-template-columns: minmax(0, 1fr) auto; }
+  .watching-alert .asset-change-day { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .watching-alert[data-arrived] { animation: none; }
+  .watching-matrix, .watch-switch [data-slot="switch-thumb"] { transition: none; }
+}

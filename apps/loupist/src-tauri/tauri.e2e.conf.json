@@ -1,0 +1,8 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Loupist E2E",
+  "identifier": "com.monarchjuno.loupist.e2e",
+  "bundle": {
+    "active": false
+  }
+}

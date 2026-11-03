@@ -1,0 +1,42 @@
+{
+  "id": "defillama.tvl",
+  "name": "DefiLlama",
+  "summary": "Daily value locked for on-chain protocols and networks, and stablecoin supply. No account needed.",
+  "publisher": "Loupist",
+  "data_authority": "DefiLlama",
+  "kind": "data_source",
+  "free_state": "keyless",
+  "trust": "first_party",
+  "runtime": {
+    "kind": "native",
+    "server_id": null,
+    "provider_ids": [],
+    "credential_mapping": {},
+    "config_mapping": {},
+    "verification_probe": null
+  },
+  "release_stage": "available",
+  "featured": false,
+  "markets": [
+    "Global"
+  ],
+  "asset_classes": [
+    "Crypto"
+  ],
+  "capabilities": [
+    "crypto.tvl"
+  ],
+  "freshness": [
+    "Daily",
+    "Historical"
+  ],
+  "attribution": "DefiLlama",
+  "terms_url": "https://defillama.com/docs/api",
+  "permissions": {
+    "network_hosts": [
+      "api.llama.fi",
+      "stablecoins.llama.fi"
+    ],
+    "credential_kinds": []
+  }
+}

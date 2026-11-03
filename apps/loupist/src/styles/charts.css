@@ -1,0 +1,15 @@
+/* One row of chart chrome (it wraps only when the panel is very narrow), so the plot keeps its height. */
+.chart-local-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-1) 5px; padding: var(--gg-space-1) var(--gg-space-2); border-bottom: 1px solid var(--gg-color-border-subtle); font-size: var(--gg-text-caption); }
+.chart-local-toolbar button, .chart-local-toolbar select { padding: var(--gg-space-1) 7px; border: 1px solid var(--gg-color-border-subtle); border-radius: 5px; background: var(--gg-color-bg-app); color: var(--gg-color-text-primary); font-size: var(--gg-text-caption); }
+.chart-local-toolbar select { max-width: 150px; }
+.chart-local-toolbar button:disabled { opacity: .4; }
+.chart-local-toolbar button[aria-pressed="true"] { background: var(--gg-color-bg-selected); color: var(--gg-color-text-primary); }
+.chart-local-toolbar .chart-draw-trigger { display: inline-flex; align-items: center; gap: var(--gg-space-1); }
+.chart-local-toolbar .chart-draw-trigger svg { width: 12px; height: 12px; }
+.chart-local-toolbar label { display: inline-flex; gap: 5px; align-items: center; color: var(--gg-color-text-secondary); }
+.chart-local-toolbar output { color: var(--gg-color-text-tertiary); white-space: nowrap; }
+.chart-toolbar-gap { width: 1px; height: var(--gg-space-4); margin: 0 var(--gg-space-1); background: var(--gg-color-border-subtle); }
+.chart-financial-stage { display: flex; flex-direction: column; }
+/* The plot never shrinks below a readable height; the panel scrolls instead. */
+.chart-financial-canvas { flex: 1; min-height: 220px; }
+.chart-local-toolbar input[type="color"] { width: var(--gg-space-6); height: var(--gg-space-6); padding: 0; border: 0; }

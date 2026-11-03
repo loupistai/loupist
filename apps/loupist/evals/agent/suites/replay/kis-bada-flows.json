@@ -1,0 +1,498 @@
+{
+  "schema": "loupist-connection-replay/1",
+  "requests": [
+    {
+      "provider": "koreainvestment.market-data",
+      "request": {
+        "url": "https://openapivts.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations/investor-trade-by-stock-daily?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=990417&FID_INPUT_DATE_1=20261030&FID_ORG_ADJ_PRC=&FID_ETC_CLS_CODE=",
+        "tr_id": "FHPTJ04160001"
+      },
+      "query_match": {
+        "FID_COND_MRKT_DIV_CODE": "ignore",
+        "FID_INPUT_DATE_1": "ignore",
+        "FID_ORG_ADJ_PRC": "ignore",
+        "FID_ETC_CLS_CODE": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "rt_cd": "0",
+          "msg_cd": "MCA00000",
+          "msg1": "정상처리 되었습니다.",
+          "output1": {
+            "stck_prpr": "51200",
+            "prdy_vrss": "300",
+            "prdy_vrss_sign": "2",
+            "prdy_ctrt": "0.59",
+            "acml_vol": "412300",
+            "prdy_vol": "398700",
+            "rprs_mrkt_kor_name": "KOSPI"
+          },
+          "output2": [
+            {
+              "stck_bsop_date": "20261030",
+              "stck_clpr": "51200",
+              "prdy_vrss": "300",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "0.59",
+              "acml_vol": "412300",
+              "frgn_ntby_qty": "41797",
+              "orgn_ntby_qty": "-11914",
+              "prsn_ntby_qty": "-29492",
+              "frgn_ntby_tr_pbmn": "2140",
+              "orgn_ntby_tr_pbmn": "-610",
+              "prsn_ntby_tr_pbmn": "-1510",
+              "etc_corp_ntby_tr_pbmn": "-20"
+            },
+            {
+              "stck_bsop_date": "20261029",
+              "stck_clpr": "50900",
+              "prdy_vrss": "500",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "0.99",
+              "acml_vol": "398700",
+              "frgn_ntby_qty": "36346",
+              "orgn_ntby_qty": "-17289",
+              "prsn_ntby_qty": "-19253",
+              "frgn_ntby_tr_pbmn": "1850",
+              "orgn_ntby_tr_pbmn": "-880",
+              "prsn_ntby_tr_pbmn": "-980",
+              "etc_corp_ntby_tr_pbmn": "10"
+            },
+            {
+              "stck_bsop_date": "20261028",
+              "stck_clpr": "50400",
+              "prdy_vrss": "350",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "0.70",
+              "acml_vol": "455200",
+              "frgn_ntby_qty": "19048",
+              "orgn_ntby_qty": "4762",
+              "prsn_ntby_qty": "-23512",
+              "frgn_ntby_tr_pbmn": "960",
+              "orgn_ntby_tr_pbmn": "240",
+              "prsn_ntby_tr_pbmn": "-1185",
+              "etc_corp_ntby_tr_pbmn": "-15"
+            },
+            {
+              "stck_bsop_date": "20261027",
+              "stck_clpr": "50050",
+              "prdy_vrss": "-450",
+              "prdy_vrss_sign": "5",
+              "prdy_ctrt": "-0.89",
+              "acml_vol": "501800",
+              "frgn_ntby_qty": "-8392",
+              "orgn_ntby_qty": "-22977",
+              "prsn_ntby_qty": "31269",
+              "frgn_ntby_tr_pbmn": "-420",
+              "orgn_ntby_tr_pbmn": "-1150",
+              "prsn_ntby_tr_pbmn": "1565",
+              "etc_corp_ntby_tr_pbmn": "5"
+            },
+            {
+              "stck_bsop_date": "20261026",
+              "stck_clpr": "50500",
+              "prdy_vrss": "200",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "0.40",
+              "acml_vol": "389600",
+              "frgn_ntby_qty": "25941",
+              "orgn_ntby_qty": "-6337",
+              "prsn_ntby_qty": "-19406",
+              "frgn_ntby_tr_pbmn": "1310",
+              "orgn_ntby_tr_pbmn": "-320",
+              "prsn_ntby_tr_pbmn": "-980",
+              "etc_corp_ntby_tr_pbmn": "-10"
+            },
+            {
+              "stck_bsop_date": "20261023",
+              "stck_clpr": "50300",
+              "prdy_vrss": "650",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "1.31",
+              "acml_vol": "520400",
+              "frgn_ntby_qty": "45328",
+              "orgn_ntby_qty": "-9344",
+              "prsn_ntby_qty": "-35487",
+              "frgn_ntby_tr_pbmn": "2280",
+              "orgn_ntby_tr_pbmn": "-470",
+              "prsn_ntby_tr_pbmn": "-1785",
+              "etc_corp_ntby_tr_pbmn": "-25"
+            },
+            {
+              "stck_bsop_date": "20261022",
+              "stck_clpr": "49650",
+              "prdy_vrss": "550",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "1.12",
+              "acml_vol": "433900",
+              "frgn_ntby_qty": "29406",
+              "orgn_ntby_qty": "1813",
+              "prsn_ntby_qty": "-31118",
+              "frgn_ntby_tr_pbmn": "1460",
+              "orgn_ntby_tr_pbmn": "90",
+              "prsn_ntby_tr_pbmn": "-1545",
+              "etc_corp_ntby_tr_pbmn": "-5"
+            },
+            {
+              "stck_bsop_date": "20261021",
+              "stck_clpr": "49100",
+              "prdy_vrss": "150",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "0.31",
+              "acml_vol": "376500",
+              "frgn_ntby_qty": "17719",
+              "orgn_ntby_qty": "-11405",
+              "prsn_ntby_qty": "-6314",
+              "frgn_ntby_tr_pbmn": "870",
+              "orgn_ntby_tr_pbmn": "-560",
+              "prsn_ntby_tr_pbmn": "-310",
+              "etc_corp_ntby_tr_pbmn": "0"
+            },
+            {
+              "stck_bsop_date": "20261020",
+              "stck_clpr": "48950",
+              "prdy_vrss": "550",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "1.14",
+              "acml_vol": "402100",
+              "frgn_ntby_qty": "24311",
+              "orgn_ntby_qty": "-4699",
+              "prsn_ntby_qty": "-19203",
+              "frgn_ntby_tr_pbmn": "1190",
+              "orgn_ntby_tr_pbmn": "-230",
+              "prsn_ntby_tr_pbmn": "-940",
+              "etc_corp_ntby_tr_pbmn": "-20"
+            },
+            {
+              "stck_bsop_date": "20261019",
+              "stck_clpr": "48400",
+              "prdy_vrss": "300",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "0.62",
+              "acml_vol": "368900",
+              "frgn_ntby_qty": "14463",
+              "orgn_ntby_qty": "-4752",
+              "prsn_ntby_qty": "-9917",
+              "frgn_ntby_tr_pbmn": "700",
+              "orgn_ntby_tr_pbmn": "-230",
+              "prsn_ntby_tr_pbmn": "-480",
+              "etc_corp_ntby_tr_pbmn": "10"
+            },
+            {
+              "stck_bsop_date": "20261016",
+              "stck_clpr": "48100",
+              "prdy_vrss": "250",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "0.52",
+              "acml_vol": "351200",
+              "frgn_ntby_qty": "10811",
+              "orgn_ntby_qty": "-2911",
+              "prsn_ntby_qty": "-7692",
+              "frgn_ntby_tr_pbmn": "520",
+              "orgn_ntby_tr_pbmn": "-140",
+              "prsn_ntby_tr_pbmn": "-370",
+              "etc_corp_ntby_tr_pbmn": "-10"
+            },
+            {
+              "stck_bsop_date": "20261015",
+              "stck_clpr": "47850",
+              "prdy_vrss": "250",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "0.53",
+              "acml_vol": "344800",
+              "frgn_ntby_qty": "-6479",
+              "orgn_ntby_qty": "5434",
+              "prsn_ntby_qty": "1254",
+              "frgn_ntby_tr_pbmn": "-310",
+              "orgn_ntby_tr_pbmn": "260",
+              "prsn_ntby_tr_pbmn": "60",
+              "etc_corp_ntby_tr_pbmn": "-10"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "koreainvestment.market-data",
+      "request": {
+        "url": "https://openapivts.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations/daily-short-sale?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=990417&FID_INPUT_DATE_1=20261001&FID_INPUT_DATE_2=20261030",
+        "tr_id": "FHPST04830000"
+      },
+      "query_match": {
+        "FID_COND_MRKT_DIV_CODE": "ignore",
+        "FID_INPUT_DATE_1": "ignore",
+        "FID_INPUT_DATE_2": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "rt_cd": "0",
+          "msg_cd": "MCA00000",
+          "msg1": "정상처리 되었습니다.",
+          "output1": {
+            "stck_prpr": "51200",
+            "prdy_vrss": "300",
+            "prdy_vrss_sign": "2",
+            "prdy_ctrt": "0.59",
+            "acml_vol": "412300",
+            "prdy_vol": "398700"
+          },
+          "output2": [
+            {
+              "stck_bsop_date": "20261030",
+              "stck_clpr": "51200",
+              "prdy_vrss": "300",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "0.59",
+              "acml_vol": "412300",
+              "ssts_cntg_qty": "17900",
+              "ssts_vol_rlim": "4.34"
+            },
+            {
+              "stck_bsop_date": "20261029",
+              "stck_clpr": "50900",
+              "prdy_vrss": "500",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "0.99",
+              "acml_vol": "398700",
+              "ssts_cntg_qty": "15100",
+              "ssts_vol_rlim": "3.79"
+            },
+            {
+              "stck_bsop_date": "20261028",
+              "stck_clpr": "50400",
+              "prdy_vrss": "350",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "0.70",
+              "acml_vol": "455200",
+              "ssts_cntg_qty": "19800",
+              "ssts_vol_rlim": "4.35"
+            },
+            {
+              "stck_bsop_date": "20261027",
+              "stck_clpr": "50050",
+              "prdy_vrss": "-450",
+              "prdy_vrss_sign": "5",
+              "prdy_ctrt": "-0.89",
+              "acml_vol": "501800",
+              "ssts_cntg_qty": "23600",
+              "ssts_vol_rlim": "4.70"
+            },
+            {
+              "stck_bsop_date": "20261026",
+              "stck_clpr": "50500",
+              "prdy_vrss": "200",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "0.40",
+              "acml_vol": "389600",
+              "ssts_cntg_qty": "14800",
+              "ssts_vol_rlim": "3.80"
+            },
+            {
+              "stck_bsop_date": "20261023",
+              "stck_clpr": "50300",
+              "prdy_vrss": "650",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "1.31",
+              "acml_vol": "520400",
+              "ssts_cntg_qty": "22300",
+              "ssts_vol_rlim": "4.29"
+            },
+            {
+              "stck_bsop_date": "20261022",
+              "stck_clpr": "49650",
+              "prdy_vrss": "550",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "1.12",
+              "acml_vol": "433900",
+              "ssts_cntg_qty": "18100",
+              "ssts_vol_rlim": "4.17"
+            },
+            {
+              "stck_bsop_date": "20261021",
+              "stck_clpr": "49100",
+              "prdy_vrss": "150",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "0.31",
+              "acml_vol": "376500",
+              "ssts_cntg_qty": "15300",
+              "ssts_vol_rlim": "4.06"
+            },
+            {
+              "stck_bsop_date": "20261020",
+              "stck_clpr": "48950",
+              "prdy_vrss": "550",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "1.14",
+              "acml_vol": "402100",
+              "ssts_cntg_qty": "16900",
+              "ssts_vol_rlim": "4.20"
+            },
+            {
+              "stck_bsop_date": "20261019",
+              "stck_clpr": "48400",
+              "prdy_vrss": "300",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "0.62",
+              "acml_vol": "368900",
+              "ssts_cntg_qty": "15100",
+              "ssts_vol_rlim": "4.09"
+            },
+            {
+              "stck_bsop_date": "20261016",
+              "stck_clpr": "48100",
+              "prdy_vrss": "250",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "0.52",
+              "acml_vol": "351200",
+              "ssts_cntg_qty": "13900",
+              "ssts_vol_rlim": "3.96"
+            },
+            {
+              "stck_bsop_date": "20261015",
+              "stck_clpr": "47850",
+              "prdy_vrss": "250",
+              "prdy_vrss_sign": "2",
+              "prdy_ctrt": "0.53",
+              "acml_vol": "344800",
+              "ssts_cntg_qty": "14200",
+              "ssts_vol_rlim": "4.12"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "koreainvestment.market-data",
+      "request": {
+        "url": "https://openapivts.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations/daily-loan-trans?MRKT_DIV_CLS_CODE=3&MKSC_SHRN_ISCD=990417&START_DATE=20261001&END_DATE=20261030&CTS=",
+        "tr_id": "HHPST074500C0"
+      },
+      "query_match": {
+        "START_DATE": "ignore",
+        "END_DATE": "ignore",
+        "CTS": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "rt_cd": "0",
+          "msg_cd": "MCA00000",
+          "msg1": "정상처리 되었습니다.",
+          "output1": [
+            {
+              "bsop_date": "20261028",
+              "stck_prpr": "50400",
+              "acml_vol": "455200",
+              "new_stcn": "700",
+              "rdmp_stcn": "9100",
+              "prdy_rmnd_vrss": "-8400",
+              "rmnd_stcn": "1986200"
+            },
+            {
+              "bsop_date": "20261027",
+              "stck_prpr": "50050",
+              "acml_vol": "501800",
+              "new_stcn": "1000",
+              "rdmp_stcn": "9500",
+              "prdy_rmnd_vrss": "-8500",
+              "rmnd_stcn": "1994600"
+            },
+            {
+              "bsop_date": "20261026",
+              "stck_prpr": "50500",
+              "acml_vol": "389600",
+              "new_stcn": "1300",
+              "rdmp_stcn": "10600",
+              "prdy_rmnd_vrss": "-9300",
+              "rmnd_stcn": "2003100"
+            },
+            {
+              "bsop_date": "20261023",
+              "stck_prpr": "50300",
+              "acml_vol": "520400",
+              "new_stcn": "1600",
+              "rdmp_stcn": "10100",
+              "prdy_rmnd_vrss": "-8500",
+              "rmnd_stcn": "2012400"
+            },
+            {
+              "bsop_date": "20261022",
+              "stck_prpr": "49650",
+              "acml_vol": "433900",
+              "new_stcn": "1900",
+              "rdmp_stcn": "14700",
+              "prdy_rmnd_vrss": "-12800",
+              "rmnd_stcn": "2020900"
+            },
+            {
+              "bsop_date": "20261021",
+              "stck_prpr": "49100",
+              "acml_vol": "376500",
+              "new_stcn": "700",
+              "rdmp_stcn": "8200",
+              "prdy_rmnd_vrss": "-7500",
+              "rmnd_stcn": "2033700"
+            },
+            {
+              "bsop_date": "20261020",
+              "stck_prpr": "48950",
+              "acml_vol": "402100",
+              "new_stcn": "1000",
+              "rdmp_stcn": "9600",
+              "prdy_rmnd_vrss": "-8600",
+              "rmnd_stcn": "2041200"
+            },
+            {
+              "bsop_date": "20261019",
+              "stck_prpr": "48400",
+              "acml_vol": "368900",
+              "new_stcn": "1300",
+              "rdmp_stcn": "9900",
+              "prdy_rmnd_vrss": "-8600",
+              "rmnd_stcn": "2049800"
+            },
+            {
+              "bsop_date": "20261016",
+              "stck_prpr": "48100",
+              "acml_vol": "351200",
+              "new_stcn": "1600",
+              "rdmp_stcn": "4500",
+              "prdy_rmnd_vrss": "-2900",
+              "rmnd_stcn": "2058400"
+            },
+            {
+              "bsop_date": "20261015",
+              "stck_prpr": "47850",
+              "acml_vol": "344800",
+              "new_stcn": "1900",
+              "rdmp_stcn": "7500",
+              "prdy_rmnd_vrss": "-5600",
+              "rmnd_stcn": "2061300"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "koreainvestment.market-data",
+      "request": {
+        "url": "https://openapivts.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations/inquire-price?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=990417",
+        "tr_id": "FHKST01010100"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "rt_cd": "0",
+          "msg_cd": "MCA00000",
+          "msg1": "정상처리 되었습니다.",
+          "output": {
+            "stck_shrn_iscd": "990417",
+            "stck_prpr": "51200"
+          }
+        }
+      }
+    }
+  ]
+}

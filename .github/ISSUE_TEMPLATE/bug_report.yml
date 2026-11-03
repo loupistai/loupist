@@ -1,0 +1,42 @@
+name: Bug report
+description: Report a reproducible problem in Loupist.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For vulnerabilities, use [private security reporting](https://github.com/loupistai/loupist/security/advisories/new).
+        Remove credentials, account details, personal paths and private research from reports and attachments.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: Release version or Git commit
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and architecture
+      placeholder: macOS version and Apple Silicon model family
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Use fictional or public data in the smallest reproducible example.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true

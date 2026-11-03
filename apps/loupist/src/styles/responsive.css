@@ -1,0 +1,90 @@
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@media (max-width: 1100px) {
+  .marketplace-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* token-exception: breakpoint; vars unsupported in query conditions */
+
+@media (max-width: 760px) {
+  .app-frame {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+}
+
+/* Chat controls respond to the space left by navigation and the work panel. */
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@container chat-workspace (max-width: 760px) {
+  /* A container query applies to descendants, never to the container itself. */
+  .workspace-chat-title,
+  .chat-body,
+  .chat-reading-pane { --chat-gutter: var(--gg-space-3); }
+}
+
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@container chat-reading (max-width: 760px) {
+  .message.user {
+    width: fit-content;
+  }
+  .composer-footer {
+    min-width: 0;
+    align-items: flex-end;
+  }
+  .composer-tools {
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+  }
+  .composer-tools::-webkit-scrollbar {
+    display: none;
+  }
+  .composer-tools > [data-slot="button"] {
+    flex: 0 0 auto;
+  }
+  .composer-queue-action,
+  .composer-steer-action {
+    min-width: 0;
+  }
+  .composer-model-menu {
+    max-width: 220px;
+  }
+  .composer-shell {
+    margin-bottom: var(--gg-space-3);
+  }
+  .composer {
+    width: 100%;
+    margin: 0;
+  }
+}
+
+/* token-exception: breakpoint; vars unsupported in query conditions */
+
+@media (max-width: 480px) {
+  .app-header {
+    padding-inline: 10px;
+  }
+}
+
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@container chat-workspace (max-width: 480px) {
+  .workspace-heading {
+    padding-block: var(--gg-space-3);
+  }
+  .workspace-heading .memory-state {
+    display: none;
+  }
+}
+
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@container chat-reading (max-width: 480px) {
+  .message.user {
+    width: fit-content;
+    max-width: 90%;
+  }
+  .composer-model-menu {
+    max-width: 148px;
+  }
+
+}

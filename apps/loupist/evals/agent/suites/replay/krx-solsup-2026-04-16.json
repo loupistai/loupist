@@ -1,0 +1,57 @@
+{
+  "schema": "loupist-connection-replay/1",
+  "requests": [
+    {
+      "provider": "krx.market-data",
+      "request": {
+        "url": "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=20260416"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "OutBlock_1": [
+            {
+              "BAS_DD": "20260416",
+              "ISU_SRT_CD": "990221",
+              "ISU_CD": "KR7990221000",
+              "ISU_NM": "솔숲식품",
+              "MKT_NM": "KOSPI",
+              "TDD_OPNPRC": "22100",
+              "TDD_HGPRC": "22950",
+              "TDD_LWPRC": "20950",
+              "TDD_CLSPRC": "21950",
+              "CMPPREVDD_PRC": "-150",
+              "ACC_TRDVOL": "64012"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "krx.market-data",
+      "request": {
+        "url": "https://data-dbg.krx.co.kr/svc/apis/sto/ksq_bydd_trd?basDd=20260416"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "OutBlock_1": [
+            {
+              "BAS_DD": "20260416",
+              "ISU_SRT_CD": "990905",
+              "ISU_CD": "KR7990905008",
+              "ISU_NM": "가람바이오",
+              "MKT_NM": "KOSDAQ",
+              "TDD_OPNPRC": "8100",
+              "TDD_HGPRC": "8350",
+              "TDD_LWPRC": "7980",
+              "TDD_CLSPRC": "8200",
+              "CMPPREVDD_PRC": "120",
+              "ACC_TRDVOL": "301455"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

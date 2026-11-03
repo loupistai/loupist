@@ -1,0 +1,299 @@
+/* Sharing (W19): Share sheet, link dialog, review page, suggestions, shared packs, updates and the Gallery. */
+
+/* Share sheet: dialog-md, radius lg, shadow lg; body scrolls, footer stays. */
+.dialog-surface.share-sheet { border-radius: var(--gg-radius-lg); box-shadow: var(--gg-shadow-lg); padding: var(--gg-space-6); max-height: calc(100vh - 2 * var(--gg-space-8)); }
+.share-step { display: flex; flex-direction: column; gap: var(--gg-space-5); min-height: 0; }
+.share-sheet .dialog-title { font-size: var(--gg-text-title); line-height: var(--gg-leading-title); letter-spacing: 0; }
+.share-sheet .dialog-description { color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+.share-body { gap: var(--gg-space-5); }
+.share-label { margin: 0 0 var(--gg-space-2); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); letter-spacing: .06em; text-transform: uppercase; }
+.share-label.is-warning { color: var(--gg-color-warning); }
+:lang(ko) .share-label { letter-spacing: 0; text-transform: none; }
+.share-sections { display: grid; margin: 0; padding: 0; list-style: none; }
+.share-section-row { display: flex; align-items: center; gap: var(--gg-space-4); min-height: 44px; padding: var(--gg-space-2) 0; border-bottom: 1px solid var(--gg-color-border-subtle); }
+.share-section-row:last-child { border-bottom: 0; }
+.share-section-text { display: grid; flex: 1 1 auto; gap: 2px; min-width: 0; }
+.share-section-label { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); font-weight: var(--gg-weight-medium); }
+.share-section-note { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); overflow-wrap: anywhere; }
+.share-left-out { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+.share-count { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.share-skeleton { display: inline-block; width: 48px; height: 12px; border-radius: var(--gg-radius-xs); background: var(--gg-color-bg-hover); vertical-align: middle; }
+.share-item-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--gg-space-3); margin: 0; padding: var(--gg-space-3) 0; border-bottom: 1px solid var(--gg-color-border-subtle); }
+.share-nothing { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); }
+.share-findings ul { display: grid; gap: var(--gg-space-2); margin: 0; padding: 0; list-style: none; }
+.share-finding { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gg-space-2) var(--gg-space-3); padding: var(--gg-space-3); border-radius: var(--gg-radius-sm); background: var(--gg-color-warning-soft); color: var(--gg-color-text-primary); font-size: var(--gg-text-body); }
+.share-finding > span:first-child { flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; }
+.share-finding-actions { display: flex; flex: none; gap: var(--gg-space-2); }
+.share-sections + .share-left-out { margin: 0; }
+.share-item-row + .share-left-out { margin: var(--gg-space-2) 0 0; }
+.share-fields { display: grid; gap: var(--gg-space-4); }
+/* License: the plain line under the choice, or the items whose licenses can't be shared together. */
+.share-license-note { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.share-license-about { display: grid; gap: 2px; justify-items: start; }
+.share-license-link { height: auto; min-height: var(--gg-size-control-sm); padding: 0; color: var(--gg-color-accent-ink); font-size: var(--gg-text-meta); white-space: normal; text-align: left; }
+.share-license-link svg { width: 12px; height: 12px; }
+.share-field > .share-left-out { margin: 0; }
+.share-license-conflict { display: grid; gap: var(--gg-space-2); }
+.share-license-conflict .share-label { margin: 0; }
+.share-license-conflict ul { display: grid; gap: var(--gg-space-2); margin: 0; padding: 0; list-style: none; }
+.share-conflict-item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gg-space-2) var(--gg-space-3); padding: var(--gg-space-2) var(--gg-space-3); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-sunken); color: var(--gg-color-text-primary); font-size: var(--gg-text-body); }
+.share-conflict-text { display: grid; flex: 1 1 240px; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.share-field { display: grid; gap: var(--gg-space-2); min-width: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.share-field input:not([type="radio"]):not([type="checkbox"]) { height: var(--gg-size-field); }
+.share-field-error { color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
+/* The footer is one column of full-width rows: the shared dialog footer's right-aligned flex row would shrink the 50/50 outputs. */
+.dialog-footer.share-footer { position: sticky; bottom: 0; display: grid; grid-template-columns: minmax(0, 1fr); justify-content: stretch; gap: var(--gg-space-2); background: var(--gg-color-bg-raised); }
+/* Steps move focus to their title or first control; the sheet itself is only Radix's fallback target and never shows a ring. */
+.dialog-surface.share-sheet:focus-visible { outline: none !important; }
+.share-primary { width: 100%; min-height: var(--gg-size-control-lg); }
+.share-outputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gg-space-2); width: 100%; }
+.share-outputs > button { min-height: var(--gg-size-control-md); }
+.share-disabled-reason { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.share-step-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gg-space-2); }
+.share-gist-choice { display: grid; gap: var(--gg-space-2); }
+.share-gist-note { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.share-gist-options { display: flex; flex-wrap: wrap; gap: var(--gg-space-2) var(--gg-space-5); }
+.share-radio-row { display: inline-flex; align-items: center; gap: var(--gg-space-2); min-height: var(--gg-size-control-sm); color: var(--gg-color-text-primary); font-size: var(--gg-text-body); }
+.share-radio-row label { cursor: pointer; }
+.share-github-missing, .share-github-line, .share-scope { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.share-github-line { color: var(--gg-color-text-tertiary); }
+.share-github-line button { height: auto; padding: 0; color: var(--gg-color-accent-ink); font-size: inherit; }
+.share-saved, .share-status, .share-published { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); overflow-wrap: anywhere; }
+.share-saved svg, .share-published svg { width: 16px; height: 16px; color: var(--gg-color-positive); }
+.share-published { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); }
+.share-saved button { height: auto; padding: 0; color: var(--gg-color-accent-ink); font-size: inherit; }
+.share-spinner { width: 16px; height: 16px; }
+.share-error { margin: 0; color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
+.share-signin { justify-items: stretch; }
+.share-signin > p:first-child { margin: 0; color: var(--gg-color-text-primary); font-size: var(--gg-text-body); }
+.share-device-code { margin: 0; padding: var(--gg-space-4); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-sunken); font-family: var(--gg-font-mono); font-size: var(--gg-text-page); line-height: var(--gg-leading-page); letter-spacing: .08em; text-align: center; }
+@media (prefers-reduced-motion: no-preference) {
+  .share-step { animation: share-step-in var(--gg-motion-normal) var(--gg-ease-out); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .share-step { animation: share-step-fade var(--gg-motion-instant) linear; }
+}
+@keyframes share-step-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes share-step-fade { from { opacity: 0; } to { opacity: 1; } }
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@media (max-width: 700px) {
+  .dialog-surface.share-sheet { width: calc(100vw - 2 * var(--gg-space-4)); max-width: none; }
+  .share-outputs { grid-template-columns: 1fr; }
+  /* The sheet is still 668 px wide: its two outputs stay side by side so the footer leaves the body room for the License rows. */
+  .share-sheet .share-outputs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@media (max-height: 620px) {
+  .dialog-surface.share-sheet { max-height: calc(100vh - 2 * var(--gg-space-4)); padding: var(--gg-space-5); }
+  .share-step { gap: var(--gg-space-4); }
+}
+
+/* Link or file dialog. */
+.pack-link-body { gap: var(--gg-space-4); }
+.pack-link-or { display: flex; align-items: center; gap: var(--gg-space-3); margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+.pack-link-or::before, .pack-link-or::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--gg-color-border-subtle); }
+
+/* Shared text: read-only lines, flagged lines on warning-soft. */
+.pack-markdown { display: grid; color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); overflow-wrap: anywhere; }
+.pack-md-line { margin: 0; padding: 0 var(--gg-space-1); border-radius: var(--gg-radius-xs); white-space: pre-wrap; }
+.pack-md-line.is-heading { font-weight: var(--gg-weight-semibold); }
+.pack-md-line.is-blank { min-height: var(--gg-space-2); }
+.pack-md-line[data-flagged] { background: var(--gg-color-warning-soft); }
+.pack-flags { display: grid; gap: var(--gg-space-1); margin: 0 0 var(--gg-space-2); padding: 0; list-style: none; color: var(--gg-color-warning); font-size: var(--gg-text-caption); }
+
+/* Review before adding: a page in the main area. */
+.app-stage-main:has(> .pack-review-layer) { position: relative; }
+.pack-review-layer { position: absolute; inset: 0; z-index: calc(var(--gg-z-sticky) + 2); overflow: auto; background: var(--gg-color-bg-app); }
+.pack-review { width: min(100%, var(--gg-size-page)); margin: 0 auto; padding: var(--gg-space-4) var(--gg-space-6) var(--gg-space-8); color: var(--gg-color-text-primary); }
+.pack-review-header { display: flex; align-items: center; gap: var(--gg-space-3); min-height: var(--gg-size-control-lg); margin-bottom: var(--gg-space-6); }
+.pack-review-header h1 { margin: 0; font-size: var(--gg-text-page); line-height: var(--gg-leading-page); font-weight: var(--gg-weight-semibold); }
+.pack-review-grid { display: grid; grid-template-columns: 360px minmax(0, 1fr); grid-template-rows: auto 1fr; gap: var(--gg-space-6) var(--gg-space-8); align-items: start; }
+.pack-review-summary { grid-column: 1; grid-row: 1; display: grid; gap: var(--gg-space-2); justify-items: start; }
+.pack-review-add { grid-column: 1; grid-row: 2; position: sticky; top: var(--gg-space-6); display: grid; gap: var(--gg-space-3); }
+.pack-review-sections { grid-column: 2; grid-row: 1 / span 2; display: grid; gap: var(--gg-space-6); min-width: 0; }
+.pack-review-name { margin: 0; font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); font-weight: var(--gg-weight-semibold); overflow-wrap: anywhere; }
+.pack-review-meta { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); overflow-wrap: anywhere; }
+.pack-review-link { height: auto; min-height: var(--gg-size-control-sm); padding: 0; color: var(--gg-color-accent-ink); font-size: var(--gg-text-meta); white-space: normal; text-align: left; }
+.pack-review-link svg { width: 12px; height: 12px; }
+.pack-review-summary .share-label { margin-top: var(--gg-space-4); }
+.pack-review-license { display: grid; gap: 2px; justify-items: start; }
+/* Credits: one row per origin, its name (a link when the pack gives one) over author · version · license. */
+.pack-review-credits { display: grid; justify-items: start; min-width: 0; max-width: 100%; }
+.pack-review-credits ul { display: grid; gap: var(--gg-space-2); margin: 0; padding: 0; list-style: none; }
+.pack-review-credits li { display: grid; gap: 2px; justify-items: start; min-width: 0; }
+.pack-review-credit-name { color: var(--gg-color-text-primary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); overflow-wrap: anywhere; }
+.pack-review-restricted { margin: 0; color: var(--gg-color-text-primary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); overflow-wrap: anywhere; }
+.pack-review-safety { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); }
+.pack-review-flags { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.pack-review-flags.is-warning { color: var(--gg-color-warning); }
+.pack-review-blocked { margin: 0; padding: var(--gg-space-3); border-radius: var(--gg-radius-sm); background: var(--gg-color-negative-soft); color: var(--gg-color-negative); font-size: var(--gg-text-body); }
+.pack-review-mode { display: grid; gap: var(--gg-space-2); min-width: 0; color: var(--gg-color-text-primary); font-size: var(--gg-text-body); }
+.pack-review-mode .share-label { margin: 0; }
+.pack-review-options { gap: var(--gg-space-2); }
+.pack-review-options .share-radio-row { min-height: var(--gg-size-control-md); }
+.pack-review-merge { display: flex; min-width: 0; }
+.pack-review-merge > span { flex: 1 1 auto; min-width: 0; }
+.share-radio-row:has(> [data-disabled]) label { cursor: not-allowed; opacity: .48; }
+.pack-review-note { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+.pack-review-section { display: grid; gap: var(--gg-space-3); padding-bottom: var(--gg-space-5); border-bottom: 1px solid var(--gg-color-border-subtle); }
+.pack-review-section[data-off] .pack-markdown, .pack-review-section[data-off] .pack-review-items { opacity: .6; }
+.pack-review-section-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2) var(--gg-space-4); }
+.pack-review-section-head h2 { flex: 1 1 auto; margin: 0; }
+.pack-review-section-head .pack-review-meta { flex-basis: 100%; order: 3; }
+.pack-review-profile { display: grid; grid-template-columns: minmax(0, 1fr) 200px; gap: var(--gg-space-4); }
+.pack-review-focus { margin: 0; color: var(--gg-color-text-primary); font-size: var(--gg-text-body); }
+.pack-review-focus span { margin-right: var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.pack-review-items { display: grid; margin: 0; padding: 0; list-style: none; }
+.pack-review-item { display: flex; align-items: center; gap: var(--gg-space-2); width: 100%; min-height: 44px; padding: var(--gg-space-2); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-body); text-align: left; cursor: pointer; }
+.pack-review-item:hover { background: var(--gg-color-bg-hover); }
+.pack-review-item > svg { width: 14px; height: 14px; flex: none; color: var(--gg-color-text-secondary); }
+.pack-review-item[aria-expanded="true"] > svg { transform: rotate(90deg); }
+.pack-review-item-title { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.pack-review-item-flags { flex: none; max-width: 50%; color: var(--gg-color-warning); font-size: var(--gg-text-meta); }
+.pack-review-item-body { padding: var(--gg-space-2) var(--gg-space-2) var(--gg-space-4) var(--gg-space-7); }
+.pack-map-findings { display: grid; gap: var(--gg-space-1); margin: 0; padding: 0; list-style: none; }
+.pack-map-findings li { display: flex; align-items: baseline; gap: var(--gg-space-2); padding: var(--gg-space-2); border-radius: var(--gg-radius-sm); background: var(--gg-color-warning-soft); color: var(--gg-color-text-primary); font-size: var(--gg-text-body); }
+.pack-review-rejected { display: grid; gap: var(--gg-space-3); justify-items: start; max-width: var(--gg-size-reading-column); padding: var(--gg-space-6); border-radius: var(--gg-radius-md); background: var(--gg-color-negative-soft); color: var(--gg-color-text-primary); font-size: var(--gg-text-body); }
+.pack-review-rejected h2 { margin: 0; font-size: var(--gg-text-subtitle); font-weight: var(--gg-weight-semibold); }
+.pack-review-rejected p { margin: 0; }
+.pack-review-source { color: var(--gg-color-text-secondary); font-family: var(--gg-font-mono); font-size: var(--gg-text-meta); }
+@media (prefers-reduced-motion: no-preference) {
+  .pack-review-item-body { animation: share-step-fade var(--gg-motion-normal) var(--gg-ease-in-out); }
+  .pack-review-item > svg { transition: transform var(--gg-motion-normal) var(--gg-ease-in-out); }
+}
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@media (max-width: 1059px) {
+  .pack-review { padding: var(--gg-space-3) var(--gg-space-4) 0; }
+  .pack-review-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
+  .pack-review-summary, .pack-review-sections, .pack-review-add { grid-column: 1; grid-row: auto; }
+  /* Compact sticky bar: the choice and Add share one row, the note one line under it (about a seventh of 560 px). */
+  .pack-review-add { position: sticky; top: auto; bottom: 0; z-index: var(--gg-z-sticky); grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--gg-space-1) var(--gg-space-4); padding: var(--gg-space-2) var(--gg-space-4); margin: 0 calc(-1 * var(--gg-space-4)); border-top: 1px solid var(--gg-color-border-subtle); background: var(--gg-color-bg-app); }
+  .pack-review-add > .pack-review-mode { grid-column: 1; }
+  .pack-review-mode .pack-review-mode-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  .pack-review-options { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-1) var(--gg-space-5); }
+  .pack-review-merge { flex: 1 1 240px; }
+  .pack-review-add > .share-primary { grid-column: 2; width: auto; min-height: var(--gg-size-control-md); padding-inline: var(--gg-space-6); }
+  .pack-review-add > p { grid-column: 1 / -1; overflow-wrap: anywhere; }
+  .pack-review-profile { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Suggestions from shared Loupists, top of the Lens section. */
+.pack-suggestions { display: grid; gap: var(--gg-space-4); margin-bottom: var(--gg-space-4); }
+.pack-suggestion-group { display: grid; gap: var(--gg-space-2); padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
+.pack-suggestion-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gg-space-2); }
+.pack-suggestion-head .share-label { margin: 0; }
+.pack-suggestion-group ul { display: grid; margin: 0; padding: 0; list-style: none; }
+.pack-suggestion { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2) var(--gg-space-3); min-height: 52px; padding: var(--gg-space-2) 0; border-top: 1px solid var(--gg-color-border-subtle); }
+.pack-suggestion-text { display: grid; flex: 1 1 220px; gap: 2px; min-width: 0; }
+.pack-suggestion-text strong { font-size: var(--gg-text-body); font-weight: var(--gg-weight-medium); overflow-wrap: anywhere; }
+.pack-suggestion-kind { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.pack-suggestion-warning { color: var(--gg-color-warning); font-size: var(--gg-text-meta); }
+.pack-suggestion-note { flex-basis: 100%; order: 2; margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.pack-suggestion-actions { display: flex; flex: none; gap: var(--gg-space-1); order: 3; }
+@media (prefers-reduced-motion: no-preference) {
+  .pack-suggestion { animation: share-step-fade var(--gg-motion-fast) var(--gg-ease-out); }
+}
+
+/* Shared Loupists you added. */
+.shared-packs ul { display: grid; margin: 0; padding: 0; list-style: none; }
+.shared-pack-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2) var(--gg-space-3); padding: var(--gg-space-3) 0; border-top: 1px solid var(--gg-color-border-subtle); }
+.shared-pack-text { display: grid; flex: 1 1 240px; gap: 2px; justify-items: start; min-width: 0; }
+.shared-pack-text strong { font-size: var(--gg-text-body); font-weight: var(--gg-weight-medium); }
+.shared-pack-meta { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.shared-pack-row > .shared-pack-meta { flex-basis: 100%; color: var(--gg-color-text-tertiary); }
+.shared-pack-actions { display: flex; gap: var(--gg-space-1); }
+.shared-pack-banner { flex-basis: 100%; margin: 0; padding: var(--gg-space-2) var(--gg-space-3); border-radius: var(--gg-radius-sm); background: var(--gg-color-warning-soft); color: var(--gg-color-text-primary); font-size: var(--gg-text-meta); }
+.pack-remove-archive { display: flex; align-items: flex-start; gap: var(--gg-space-2); color: var(--gg-color-text-primary); font-size: var(--gg-text-body); }
+.pack-remove-confirm { background: var(--gg-color-negative); color: var(--gg-color-text-on-accent); }
+.pack-remove-confirm:hover { background: var(--gg-color-negative); opacity: .9; }
+
+/* Origin line under a Lens or Map title. */
+.shared-origin { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gg-space-1) var(--gg-space-2); margin: var(--gg-space-1) 0 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.shared-origin button { height: auto; min-height: var(--gg-size-control-sm); padding: 0; color: var(--gg-color-accent-ink); font-size: inherit; }
+
+/* Deep link confirm. */
+.deep-link-source { font-family: var(--gg-font-mono); font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); overflow-wrap: anywhere; }
+
+/* New Loupist dialog: start from a shared Loupist. */
+.loupist-shared-entry { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.loupist-shared-entry > span { margin-right: auto; }
+/* The shared-entry row takes a line from the scrolling form; on short windows the template cards tighten so the
+   Name field stays whole above the fold instead of being cut through its text. */
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@media (max-height: 620px) {
+  .loupist-dialog:has([data-loupist-shared-entry]) .dialog-form { gap: var(--gg-space-3); }
+  /* A line crossing the fold fades (the map legend's edge fade) rather than being sliced; the padding lets the last line scroll clear of it. */
+  .loupist-dialog:has([data-loupist-shared-entry]) .dialog-body { padding-bottom: var(--gg-space-3); -webkit-mask-image: linear-gradient(to bottom, var(--gg-color-text-primary) calc(100% - var(--gg-space-3)), transparent); mask-image: linear-gradient(to bottom, var(--gg-color-text-primary) calc(100% - var(--gg-space-3)), transparent); }
+  .loupist-dialog:has([data-loupist-shared-entry]) .loupist-template-grid { gap: var(--gg-space-2); }
+  .loupist-dialog:has([data-loupist-shared-entry]) .loupist-template-card { padding: var(--gg-space-3) var(--gg-space-4); }
+}
+
+/* Update diff under a shared Loupist's row (W19.5). */
+.shared-pack-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gg-space-2) var(--gg-space-3); }
+.shared-pack-status { flex-basis: 100%; margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.pack-update { display: grid; flex-basis: 100%; gap: var(--gg-space-3); padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-sunken); }
+.pack-update-title { margin: 0; color: var(--gg-color-text-primary); font-size: var(--gg-text-body); font-weight: var(--gg-weight-medium); }
+.pack-update-group { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: var(--gg-space-1) var(--gg-space-4); align-items: start; }
+.pack-update-group > .share-label { margin: 0; padding-top: var(--gg-space-3); }
+.pack-update-group ul { display: grid; margin: 0; padding: 0; list-style: none; }
+.pack-update-row { display: flex; align-items: center; gap: var(--gg-space-2); min-height: 44px; }
+.pack-update-choice { display: flex; flex: 1 1 auto; align-items: center; gap: var(--gg-space-2); min-width: 0; color: var(--gg-color-text-primary); font-size: var(--gg-text-body); cursor: pointer; }
+.pack-update-text { display: grid; flex: 1 1 auto; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.pack-update-note { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.pack-update-map { min-height: 44px; }
+.pack-update-choice input, .share-listing-choice input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--gg-color-accent); }
+.pack-update-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
+.pack-then-now { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gg-space-4); }
+.pack-then-now.is-single { grid-template-columns: minmax(0, 1fr); }
+.pack-then-now > section { display: grid; gap: var(--gg-space-2); align-content: start; min-width: 0; padding: var(--gg-space-3); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-sunken); }
+.pack-then-now .share-label { margin: 0; }
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@media (max-width: 700px) {
+  .pack-update-group, .pack-then-now { grid-template-columns: minmax(0, 1fr); }
+  .pack-update-group > .share-label { padding-top: 0; }
+}
+
+/* "List it in the Gallery" on the published step (W19.6): agree to the listing terms, then request it. */
+.share-listing { display: grid; justify-items: start; gap: var(--gg-space-2); margin-top: var(--gg-space-4); }
+.share-listing-choice { display: flex; align-items: center; gap: var(--gg-space-2); min-height: var(--gg-size-control-sm); color: var(--gg-color-text-primary); font-size: var(--gg-text-body); }
+.share-listing-choice label { cursor: pointer; }
+.share-listing > .share-label { margin: 0; }
+.share-terms-link { display: inline; height: auto; padding: 0; color: var(--gg-color-accent-ink); font-size: inherit; vertical-align: baseline; white-space: normal; }
+.share-listing-request { min-height: var(--gg-size-control-md); }
+.share-listing .share-saved button { height: auto; padding: 0; }
+
+/* Gallery (W19.6): a page in the main area. */
+.gallery-page { display: grid; align-content: start; gap: var(--gg-space-4); width: min(100%, var(--gg-size-page)); margin: 0 auto; padding: var(--gg-space-8) var(--gg-space-6); color: var(--gg-color-text-primary); }
+.gallery-header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-3); min-height: var(--gg-size-control-lg); }
+.gallery-header h1 { flex: 1 1 auto; margin: 0; font-size: var(--gg-text-page); line-height: var(--gg-leading-page); font-weight: var(--gg-weight-semibold); }
+.gallery-updated { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+.gallery-body { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+.gallery-notice { margin: 0; padding: var(--gg-space-2) var(--gg-space-3); border-radius: var(--gg-radius-sm); background: var(--gg-color-warning-soft); color: var(--gg-color-text-primary); font-size: var(--gg-text-meta); }
+.gallery-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2) var(--gg-space-3); }
+.gallery-search { flex: 1 1 260px; min-width: 0; height: var(--gg-size-field); }
+.gallery-filter { display: flex; align-items: center; gap: var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); white-space: nowrap; }
+.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--gg-space-5); }
+.gallery-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); transition: box-shadow var(--gg-motion-instant) linear, border-color var(--gg-motion-instant) linear; }
+.gallery-card:not(.is-skeleton):hover { border-color: var(--gg-color-border-default); box-shadow: var(--gg-shadow-sm); }
+.gallery-card-image { aspect-ratio: 16 / 10; max-height: 176px; overflow: hidden; border-radius: var(--gg-radius-md) var(--gg-radius-md) 0 0; background: var(--gg-color-map-bg); }
+.gallery-card-image img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.gallery-card-content { display: flex; flex: 1 1 auto; flex-direction: column; gap: var(--gg-space-2); padding: var(--gg-space-4); }
+.gallery-card-name { display: -webkit-box; margin: 0; overflow: hidden; font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); font-weight: var(--gg-weight-semibold); overflow-wrap: anywhere; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.gallery-card-meta, .gallery-card-counts { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); overflow-wrap: anywhere; }
+.gallery-card-focus { display: -webkit-box; margin: 0; overflow: hidden; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); overflow-wrap: anywhere; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.gallery-card-chips { display: flex; flex-wrap: wrap; gap: var(--gg-space-1); margin: 0; padding: 0; list-style: none; }
+.gallery-card-chips li { padding: 2px var(--gg-space-2); border-radius: var(--gg-radius-xs); background: var(--gg-color-bg-hover); color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
+.gallery-card-social { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+.gallery-card-actions { display: flex; justify-content: space-between; gap: var(--gg-space-2); margin-top: auto; padding-top: var(--gg-space-1); }
+.gallery-card.is-skeleton .gallery-card-content span { display: block; height: 12px; border-radius: var(--gg-radius-xs); background: var(--gg-color-bg-hover); }
+.gallery-card.is-skeleton .gallery-card-content span:first-child { width: 70%; height: 16px; }
+.gallery-card.is-skeleton .gallery-card-content span:nth-child(2) { width: 45%; }
+.gallery-card.is-skeleton .gallery-card-content span:last-child { width: 85%; }
+.gallery-empty, .gallery-unavailable { display: grid; justify-items: start; gap: var(--gg-space-3); padding: var(--gg-space-6) 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); }
+.gallery-empty p, .gallery-unavailable p { margin: 0; }
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@media (max-width: 700px) {
+  .gallery-page { padding: var(--gg-space-4); }
+  .gallery-search { flex-basis: 100%; }
+  .gallery-grid { grid-template-columns: minmax(0, 1fr); }
+}

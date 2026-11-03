@@ -1,0 +1,46 @@
+{
+  "id": "onchain.wallets",
+  "name": "Public blockchains",
+  "summary": "Reads the public balances of wallet addresses you add to Your holdings. The explorers see the address, not you; balances stay on this computer and never reach your Loupist.",
+  "publisher": "Loupist",
+  "data_authority": "mempool.space, Blockscout and Solana",
+  "kind": "data_source",
+  "free_state": "keyless",
+  "trust": "first_party",
+  "runtime": {
+    "kind": "native",
+    "server_id": null,
+    "provider_ids": [],
+    "credential_mapping": {},
+    "config_mapping": {},
+    "verification_probe": null
+  },
+  "release_stage": "available",
+  "featured": false,
+  "markets": [
+    "Global"
+  ],
+  "asset_classes": [
+    "Crypto"
+  ],
+  "capabilities": [
+    "holdings.wallet_balances"
+  ],
+  "freshness": [
+    "Latest"
+  ],
+  "attribution": "mempool.space, Blockscout, Solana",
+  "terms_url": "https://mempool.space/terms-of-service",
+  "permissions": {
+    "network_hosts": [
+      "mempool.space",
+      "eth.blockscout.com",
+      "base.blockscout.com",
+      "arbitrum.blockscout.com",
+      "optimism.blockscout.com",
+      "polygon.blockscout.com",
+      "api.mainnet-beta.solana.com"
+    ],
+    "credential_kinds": []
+  }
+}

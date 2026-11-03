@@ -1,0 +1,48 @@
+import { act, renderHook } from "@testing-library/react";
+import { MockLoupistBridge } from "../../bridge/mockBridge";
+import type { UpdateState } from "../../types";
+import { useAppUpdate } from "./useAppUpdate";
+
+const idle: UpdateState = {
+  supported: true, current_version: "0.0.1", phase: "idle", offer: null,
+  downloaded_bytes: 0, total_bytes: null, last_checked_at_ms: null,
+  next_auto_check_at_ms: null, error: null, blockers: [],
+};
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(done => { resolve = done; });
+  return { promise, resolve };
+};
+
+describe("update request lifecycle", () => {
+  it("does not let an earlier status response erase a newer checked offer", async () => {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const initial = deferred<UpdateState>();
+    vi.spyOn(bridge, "updateStatus").mockReturnValue(initial.promise);
+    const available = { ...idle, offer: { offer_id: "current-offer", version: "0.0.2", notes: null, published_at: null } };
+    vi.spyOn(bridge, "updateCheck").mockResolvedValue(available);
+    const { result } = renderHook(() => useAppUpdate(bridge));
+    await act(() => result.current.checkForUpdates());
+    await act(async () => initial.resolve(idle));
+    expect(result.current.status?.offer?.offer_id).toBe("current-offer");
+  });
+
+  it("exposes busy state before initial status arrives and prevents overlapping actions", async () => {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    vi.spyOn(bridge, "updateStatus").mockResolvedValue(idle);
+    const pending = deferred<UpdateState>();
+    const check = vi.spyOn(bridge, "updateCheck").mockReturnValue(pending.promise);
+    const install = vi.spyOn(bridge, "updateInstall");
+    const { result } = renderHook(() => useAppUpdate(bridge));
+    act(() => {
+      void result.current.checkForUpdates();
+      void result.current.checkForUpdates();
+      void result.current.installUpdate({ offer_id: "current-offer" });
+    });
+    expect(result.current.phase).toBe("checking");
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(install).not.toHaveBeenCalled();
+    await act(async () => pending.resolve(idle));
+    expect(result.current.phase).toBe("idle");
+  });
+});

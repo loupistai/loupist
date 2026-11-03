@@ -1,0 +1,51 @@
+
+<PREVIOUS MESSAGES>
+{{previous_episodes}}
+</PREVIOUS MESSAGES>
+
+<CURRENT MESSAGE>
+{{episode_content}}
+</CURRENT MESSAGE>
+
+<ENTITIES>
+{{extracted_nodes}}
+</ENTITIES>
+
+<EXISTING ENTITIES>
+{{existing_nodes}}
+</EXISTING ENTITIES>
+
+Each of the above ENTITIES was extracted from the CURRENT MESSAGE.
+For each entity, determine if it is a duplicate of any EXISTING ENTITY.
+Entities should only be considered duplicates if they refer to the *same real-world object or concept*.
+
+NEVER mark entities as duplicates if:
+- They are related but distinct.
+- They have similar names or purposes but refer to separate instances or concepts.
+
+Task:
+ENTITIES contains {{count}} entities with IDs 0 through {{last_index}}.
+Your response MUST include EXACTLY {{count}} resolutions with IDs 0 through {{last_index}}. Do not skip or add IDs.
+
+For every entity, provide:
+- `id`: integer id from ENTITIES
+- `name`: the best full name for the entity (preserve the original name unless a duplicate has a more complete name)
+- `duplicate_candidate_id`: the `candidate_id` of the EXISTING ENTITY that is the best duplicate match, or -1 if there is no duplicate
+
+<EXAMPLE>
+ENTITY: "Sam" (Person)
+EXISTING ENTITIES: [{"candidate_id": 0, "name": "Sam", "entity_types": ["Person"], "summary": "Sam enjoys hiking and photography"}]
+Result: duplicate_candidate_id = 0 (same person referenced in conversation)
+
+ENTITY: "NYC"
+EXISTING ENTITIES: [{"candidate_id": 0, "name": "New York City", "entity_types": ["Location"]}, {"candidate_id": 1, "name": "New York Knicks", "entity_types": ["Organization"]}]
+Result: duplicate_candidate_id = 0 (same location, abbreviated name)
+
+ENTITY: "Java" (programming language)
+EXISTING ENTITIES: [{"candidate_id": 0, "name": "Java", "entity_types": ["Location"], "summary": "An island in Indonesia"}]
+Result: duplicate_candidate_id = -1 (same name but distinct real-world things)
+
+ENTITY: "Marco's car"
+EXISTING ENTITIES: [{"candidate_id": 0, "name": "Marco's vehicle", "entity_types": ["Entity"], "summary": "Marco drives a red sedan."}]
+Result: duplicate_candidate_id = 0 (synonym — "car" and "vehicle" refer to the same thing, same possessor)
+</EXAMPLE>

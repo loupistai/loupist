@@ -1,0 +1,4 @@
+# Cargo keeps the normal Tauri dev watcher and process tree. Only the native
+# executable's launch location changes, so macOS can identify it as an app.
+[target.'cfg(target_os = "macos")']
+runner = ["python3", "../e2e/macos_dev_app.py"]

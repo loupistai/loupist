@@ -1,0 +1,105 @@
+{
+  "schema": "loupist-connection-replay/1",
+  "requests": [
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/corpCode.xml"
+      },
+      "response": {
+        "status": 200,
+        "content_type": "application/zip",
+        "body_base64": "UEsDBBQAAAAIAAAAIVwuaOAPpAAAAPMAAAAMAAAAQ09SUENPREUueG1ss7GvyM1RKEstKs7Mz7NVMtQzUFJIzUvOT8nMS7dVCg1x07VQsrezKUotLs0psbPJySwGksn5RQXxQDWpdpaWBkZGhgYGNvoIMYh0XmJuqt2btilvOja96Z77dlIHVAlYHKIkNS8dwg3OzykuLVBwy89PKYYqg8vZFJfkJ2cj22ajjyRkkwt0alplfEpiSaqdkYGRmYGxAVAFsqiNPsTV+lBPAABQSwECFAMUAAAACAAAACFcLmjgD6QAAADzAAAADAAAAAAAAAAAAAAAgAEAAAAAQ09SUENPREUueG1sUEsFBgAAAAABAAEAOgAAAM4AAAAAAA=="
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260101&end_de=20260430&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=20"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "연결재무제표기준영업(잠정)실적(공정공시)",
+              "rcept_no": "20260428990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260428",
+              "rm": "유"
+            }
+          ]
+        }
+      },
+      "query_match": {
+        "page_count": "ignore",
+        "bgn_de": {
+          "at_most": "20260428"
+        },
+        "end_de": {
+          "at_least": "20260428"
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260101&end_de=20260430&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=20&pblntf_ty=I"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "연결재무제표기준영업(잠정)실적(공정공시)",
+              "rcept_no": "20260428990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260428",
+              "rm": "유"
+            }
+          ]
+        }
+      },
+      "query_match": {
+        "page_count": "ignore",
+        "bgn_de": {
+          "at_most": "20260428"
+        },
+        "end_de": {
+          "at_least": "20260428"
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20260428990221"
+      },
+      "response": {
+        "status": 200,
+        "content_type": "application/zip",
+        "body_base64": "UEsDBBQAAAAAAAAAIVyMeGwSAgMAAAIDAAASAAAAMjAyNjA0Mjg5OTAyMjEueG1sPD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz48RE9DVU1FTlQ+PERPQ1VNRU5ULU5BTUU+7Jew6rKw7J6s66y07KCc7ZGc6riw7KSA7JiB7JeFKOyeoOyglSnsi6TsoIEo6rO17KCV6rO17IucKTwvRE9DVU1FTlQtTkFNRT48Qk9EWT48U0VDVElPTi0xPjxUSVRMRT7sl7DqsrDsnqzrrLTsoJztkZzquLDspIDsmIHsl4Uo7J6g7KCVKeyLpOyggTwvVElUTEU+PFA+6rCA7IOB7J2YIOyGlOyIsuyLne2SiCAyMDI264WEIDHrtoTquLAoMjAyNi4wMS4wMX4yMDI2LjAzLjMxKSDsl7DqsrAg6riw7KSAIOyeoOyglSDsi6TsoIHsnoXri4jri6QuIOqzteyLnOydvCAyMDI2LTA0LTI4LjwvUD48UD7rp6TstpzslaEgNCw1MjPslrXsm5AgKOyghOuFhOuPmeq4sCA0LDIxMOyWteybkCksIOyYgeyXheydtOydtSAxLDE4NuyWteybkCAo7KCE64WE64+Z6riwIDEsMDM07Ja17JuQKSwg64u56riw7Iic7J207J21IDkwMuyWteybkC48L1A+PFA+67O4IOyekOujjOuKlCDsmbjrtoDqsJDsgqzsnbjsnZgg6rKA7Yag6rCAIOyZhOujjOuQmOyngCDslYrsnYAg7J6g7KCV7LmY66GcLCDrtoTquLDrs7Tqs6DshJzsnZgg7ZmV7KCV7LmY7JmAIOuLpOulvCDsiJgg7J6I7Iq164uI64ukLjwvUD48UD5GaWN0aW9uYWwgU29sc3VwIEZvb2RzLCBRMSAyMDI2IGNvbnNvbGlkYXRlZCBwcmVsaW1pbmFyeSByZXN1bHRzOiByZXZlbnVlIEtSVyA0NTIuM2JuLCBvcGVyYXRpbmcgaW5jb21lIEtSVyAxMTguNmJuLjwvUD48L1NFQ1RJT04tMT48L0JPRFk+PC9ET0NVTUVOVD5QSwECFAMUAAAAAAAAACFcjHhsEgIDAAACAwAAEgAAAAAAAAAAAAAAgAEAAAAAMjAyNjA0Mjg5OTAyMjEueG1sUEsFBgAAAAABAAEAQAAAADIDAAAAAA=="
+      }
+    }
+  ]
+}

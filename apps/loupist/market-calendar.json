@@ -1,0 +1,71 @@
+{
+  "about": "Exchange holidays and shortened sessions, maintained by hand from each exchange's own published calendar. Read by the header's market status (src/chat/marketStatus.ts) and by Rust (src-tauri/src/market_calendar.rs). Only years an exchange has published are listed; any other date is treated as a regular weekday session, never as a holiday.",
+  "markets": {
+    "US": {
+      "name": "NYSE and Nasdaq",
+      "timeZone": "America/New_York",
+      "years": [2026, 2027],
+      "sources": [
+        "https://www.nyse.com/markets/hours-calendars",
+        "https://www.nasdaqtrader.com/Trader.aspx?id=Calendar"
+      ],
+      "note": "Checked 2026-11-01. NYSE publishes 2026 and 2027; Nasdaq's calendar lists 2026 only and matches NYSE for it, and the two share one holiday calendar. Early closes are 13:00 New York time.",
+      "closed": {
+        "2026-01-01": "New Year's Day",
+        "2026-01-19": "Martin Luther King, Jr. Day",
+        "2026-02-16": "Washington's Birthday",
+        "2026-04-03": "Good Friday",
+        "2026-05-25": "Memorial Day",
+        "2026-06-19": "Juneteenth National Independence Day",
+        "2026-07-03": "Independence Day (observed)",
+        "2026-09-07": "Labor Day",
+        "2026-11-26": "Thanksgiving Day",
+        "2026-12-25": "Christmas Day",
+        "2027-01-01": "New Year's Day",
+        "2027-01-18": "Martin Luther King, Jr. Day",
+        "2027-02-15": "Washington's Birthday",
+        "2027-03-26": "Good Friday",
+        "2027-05-31": "Memorial Day",
+        "2027-06-18": "Juneteenth National Independence Day (observed)",
+        "2027-07-05": "Independence Day (observed)",
+        "2027-09-06": "Labor Day",
+        "2027-11-25": "Thanksgiving Day",
+        "2027-12-24": "Christmas Day (observed)"
+      },
+      "earlyClose": {
+        "2026-11-27": "13:00",
+        "2026-12-24": "13:00",
+        "2027-11-26": "13:00"
+      }
+    },
+    "KRX": {
+      "name": "Korea Exchange (KOSPI, KOSDAQ, KONEX)",
+      "timeZone": "Asia/Seoul",
+      "years": [2026],
+      "sources": [
+        "https://global.krx.co.kr/contents/GLB/05/0501/0501110000/GLB0501110000.jsp"
+      ],
+      "note": "Checked 2026-11-01. KRX offers holidays up to 2026 on this page; 2027 is left out until KRX publishes it. KRX has no early closes; exam-day late openings are added only once KRX announces them.",
+      "closed": {
+        "2026-01-01": "New Year's Day",
+        "2026-02-16": "Seollal",
+        "2026-02-17": "Seollal",
+        "2026-02-18": "Seollal",
+        "2026-03-02": "Substitute holiday (Independence Movement Day)",
+        "2026-05-01": "Labor Day",
+        "2026-05-05": "Children's Day",
+        "2026-05-25": "Substitute holiday (Buddha's Birthday)",
+        "2026-06-03": "Local elections",
+        "2026-07-17": "Constitution Day",
+        "2026-08-17": "Substitute holiday (Liberation Day)",
+        "2026-09-24": "Chuseok",
+        "2026-09-25": "Chuseok",
+        "2026-10-05": "Substitute holiday (National Foundation Day)",
+        "2026-10-09": "Hangeul Day",
+        "2026-12-25": "Christmas Day",
+        "2026-12-31": "Year-end closing"
+      },
+      "earlyClose": {}
+    }
+  }
+}

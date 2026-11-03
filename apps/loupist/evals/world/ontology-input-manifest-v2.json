@@ -1,0 +1,20 @@
+{
+  "schema": "loupist-world-ontology-input-manifest/1",
+  "status": "frozen_before_measurement",
+  "files": {
+    "ontology-corpus-v1.json": "f3cca72a7a23c72d9483f76a1b8305bb9d719d5d861a1b5d26aeb3a44e171c28",
+    "ontology-oracle-v2.json": "abdf35f6d6e241ee35e23971c56563313bdf68c9db9393e4bf343dcab562bbfb"
+  },
+  "validation": {
+    "scenarios": 3,
+    "sources_per_scenario": {
+      "O-KO-SUPPLY": 3,
+      "O-EN-MARKET": 3,
+      "O-MIXED": 6
+    },
+    "query_steps_per_scenario": 2,
+    "chat_turns": 0,
+    "live_calls": 0
+  },
+  "scope": "Ontology corpus v1 and scoring oracle v2. Does not attest live extraction, retrieval, or answer quality. Oracle v1 is unchanged."
+}

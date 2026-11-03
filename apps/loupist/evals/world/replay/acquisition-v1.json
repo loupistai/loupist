@@ -1,0 +1,698 @@
+{
+  "schema": "loupist-connection-replay/1",
+  "requests": [
+    {
+      "provider": "web",
+      "request": {
+        "method": "GET",
+        "url": "https://fixtures.invalid/world-acquire/cqi-correction",
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "content_type": "text/html",
+        "text": "<!doctype html><html><head><title>Cedar Quay Instruments corrected Q1 release</title><meta property=\"article:published_time\" content=\"2026-04-25T09:00:00Z\"></head><body><article><h1>Cedar Quay Instruments corrected Q1 release</h1><p>Cedar Quay Instruments plc (ticker CQI; entity identifier FICT-CQI-301) issued this correction on 25 April 2026. Q1 2026 covers 1 January through 31 March 2026. All figures are consolidated and in USD millions. Corrected Q1 2026 operating profit is USD 4 million, replacing USD 5 million in the 20 April release. Q1 2026 revenue remains USD 50 million. No 2027 operating-profit forecast is provided. The laboratory instrument manufacturer is not Cedar Quay Holdings.</p></article></body></html>"
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "openai-codex",
+        "query": "Cedar Quay Instruments CQI 2027 operating profit guidance",
+        "limit": 1,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "openai-codex",
+        "query": "Cedar Quay Instruments CQI 2027 operating profit guidance",
+        "limit": 2,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "openai-codex",
+        "query": "Cedar Quay Instruments CQI 2027 operating profit guidance",
+        "limit": 3,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "openai-codex",
+        "query": "Cedar Quay Instruments CQI 2027 operating profit guidance",
+        "limit": 4,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "openai-codex",
+        "query": "Cedar Quay Instruments CQI 2027 operating profit guidance",
+        "limit": 5,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "openai-codex",
+        "query": "Cedar Quay Instruments CQI 2027 operating profit guidance",
+        "limit": 6,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "openai-codex",
+        "query": "Cedar Quay Instruments CQI 2027 operating profit guidance",
+        "limit": 7,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "openai-codex",
+        "query": "Cedar Quay Instruments CQI 2027 operating profit guidance",
+        "limit": 8,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "openai-codex",
+        "query": "Cedar Quay Instruments CQI 2027 operating profit guidance",
+        "limit": 9,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "openai-codex",
+        "query": "Cedar Quay Instruments CQI 2027 operating profit guidance",
+        "limit": 10,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "openai-codex",
+        "query": "Cedar Quay Instruments CQI 2027 issuer forecast availability",
+        "limit": 1,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": "Synthetic search service unavailable; this says nothing about whether issuer guidance exists."
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "openai-codex",
+        "query": "Cedar Quay Instruments CQI 2027 issuer forecast availability",
+        "limit": 2,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": "Synthetic search service unavailable; this says nothing about whether issuer guidance exists."
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "openai-codex",
+        "query": "Cedar Quay Instruments CQI 2027 issuer forecast availability",
+        "limit": 3,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": "Synthetic search service unavailable; this says nothing about whether issuer guidance exists."
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "openai-codex",
+        "query": "Cedar Quay Instruments CQI 2027 issuer forecast availability",
+        "limit": 4,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": "Synthetic search service unavailable; this says nothing about whether issuer guidance exists."
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "openai-codex",
+        "query": "Cedar Quay Instruments CQI 2027 issuer forecast availability",
+        "limit": 5,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": "Synthetic search service unavailable; this says nothing about whether issuer guidance exists."
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "openai-codex",
+        "query": "Cedar Quay Instruments CQI 2027 issuer forecast availability",
+        "limit": 6,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": "Synthetic search service unavailable; this says nothing about whether issuer guidance exists."
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "openai-codex",
+        "query": "Cedar Quay Instruments CQI 2027 issuer forecast availability",
+        "limit": 7,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": "Synthetic search service unavailable; this says nothing about whether issuer guidance exists."
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "openai-codex",
+        "query": "Cedar Quay Instruments CQI 2027 issuer forecast availability",
+        "limit": 8,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": "Synthetic search service unavailable; this says nothing about whether issuer guidance exists."
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "openai-codex",
+        "query": "Cedar Quay Instruments CQI 2027 issuer forecast availability",
+        "limit": 9,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": "Synthetic search service unavailable; this says nothing about whether issuer guidance exists."
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "openai-codex",
+        "query": "Cedar Quay Instruments CQI 2027 issuer forecast availability",
+        "limit": 10,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": "Synthetic search service unavailable; this says nothing about whether issuer guidance exists."
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "exa_public",
+        "query": "Cedar Quay Instruments CQI 2027 operating profit guidance",
+        "limit": 1,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "exa_public",
+        "query": "Cedar Quay Instruments CQI 2027 operating profit guidance",
+        "limit": 2,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "exa_public",
+        "query": "Cedar Quay Instruments CQI 2027 operating profit guidance",
+        "limit": 3,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "exa_public",
+        "query": "Cedar Quay Instruments CQI 2027 operating profit guidance",
+        "limit": 4,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "exa_public",
+        "query": "Cedar Quay Instruments CQI 2027 operating profit guidance",
+        "limit": 5,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "exa_public",
+        "query": "Cedar Quay Instruments CQI 2027 operating profit guidance",
+        "limit": 6,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "exa_public",
+        "query": "Cedar Quay Instruments CQI 2027 operating profit guidance",
+        "limit": 7,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "exa_public",
+        "query": "Cedar Quay Instruments CQI 2027 operating profit guidance",
+        "limit": 8,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "exa_public",
+        "query": "Cedar Quay Instruments CQI 2027 operating profit guidance",
+        "limit": 9,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "exa_public",
+        "query": "Cedar Quay Instruments CQI 2027 operating profit guidance",
+        "limit": 10,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "exa_public",
+        "query": "Cedar Quay Instruments CQI 2027 issuer forecast availability",
+        "limit": 1,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": "Synthetic search service unavailable; this says nothing about whether issuer guidance exists."
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "exa_public",
+        "query": "Cedar Quay Instruments CQI 2027 issuer forecast availability",
+        "limit": 2,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": "Synthetic search service unavailable; this says nothing about whether issuer guidance exists."
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "exa_public",
+        "query": "Cedar Quay Instruments CQI 2027 issuer forecast availability",
+        "limit": 3,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": "Synthetic search service unavailable; this says nothing about whether issuer guidance exists."
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "exa_public",
+        "query": "Cedar Quay Instruments CQI 2027 issuer forecast availability",
+        "limit": 4,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": "Synthetic search service unavailable; this says nothing about whether issuer guidance exists."
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "exa_public",
+        "query": "Cedar Quay Instruments CQI 2027 issuer forecast availability",
+        "limit": 5,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": "Synthetic search service unavailable; this says nothing about whether issuer guidance exists."
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "exa_public",
+        "query": "Cedar Quay Instruments CQI 2027 issuer forecast availability",
+        "limit": 6,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": "Synthetic search service unavailable; this says nothing about whether issuer guidance exists."
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "exa_public",
+        "query": "Cedar Quay Instruments CQI 2027 issuer forecast availability",
+        "limit": 7,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": "Synthetic search service unavailable; this says nothing about whether issuer guidance exists."
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "exa_public",
+        "query": "Cedar Quay Instruments CQI 2027 issuer forecast availability",
+        "limit": 8,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": "Synthetic search service unavailable; this says nothing about whether issuer guidance exists."
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "exa_public",
+        "query": "Cedar Quay Instruments CQI 2027 issuer forecast availability",
+        "limit": 9,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": "Synthetic search service unavailable; this says nothing about whether issuer guidance exists."
+        }
+      }
+    },
+    {
+      "provider": "web-search",
+      "request": {
+        "provider": "exa_public",
+        "query": "Cedar Quay Instruments CQI 2027 issuer forecast availability",
+        "limit": 10,
+        "recency": null,
+        "include_domains": [],
+        "exclude_domains": []
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "error": "Synthetic search service unavailable; this says nothing about whether issuer guidance exists."
+        }
+      }
+    }
+  ]
+}

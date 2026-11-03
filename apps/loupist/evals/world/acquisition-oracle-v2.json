@@ -1,0 +1,267 @@
+{
+  "schema": "loupist-world-oracle/1",
+  "version": 2,
+  "label_provenance": "Deterministic evidence and coordinator direct-source review; no human labels.",
+  "input_sha256": "70ded2604f728acc71be593dd9e7651b64ec6d096cbf0627fe0c03ebe5990fa3",
+  "replay_sha256": "e1f192981fd305f73a7a435d93078e79821602411d1dce19d4968e1c6350291a",
+  "source_texts_for_review_only": {
+    "q-initial": "Cedar Quay Instruments plc (ticker CQI; entity identifier FICT-CQI-301) makes laboratory instruments. Published 20 April 2026. Q1 2026 covers 1 January through 31 March 2026. All figures are consolidated and in USD millions. Q1 2026 revenue was USD 50 million and operating profit was USD 5 million. No 2027 operating-profit forecast was provided.\n",
+    "q-correction": "Cedar Quay Instruments plc (ticker CQI; entity identifier FICT-CQI-301) issued this correction on 25 April 2026. Q1 2026 covers 1 January through 31 March 2026. All figures are consolidated and in USD millions. Corrected Q1 2026 operating profit is USD 4 million, replacing USD 5 million in the 20 April release. Q1 2026 revenue remains USD 50 million. No 2027 operating-profit forecast is provided. The laboratory instrument manufacturer is not Cedar Quay Holdings.\n"
+  },
+  "source_manifest": [
+    {
+      "source_id": "q-initial",
+      "text_sha256": "4c701eab8d63ae273f81b818de95c21d4db124b8c3c48ee96fb1e338bcc1bc7a",
+      "original_provenance_group": "q-initial"
+    },
+    {
+      "source_id": "q-correction",
+      "origin": "https://fixtures.invalid/world-acquire/cqi-correction",
+      "text_sha256": "645c98e4a530c9340d5d011f8a7af884a08a441254d2de619cf3f6a2164ebaf2",
+      "transport_html_sha256": "c1857aa4fdc4360deea34f522a8e23f12e1c1acd61f6fd6fca3d0040f4c45832",
+      "original_provenance_group": "q-correction",
+      "publication_time": "2026-04-25T09:00:00Z",
+      "canonical_extracted_text": "May include the HTML title/heading; exact quote spans above refer to the normalized article body, not an asserted extractor offset. Map retained spans back to HTML and record that mapping."
+    }
+  ],
+  "facts": [
+    {
+      "id": "q-current-profit",
+      "source_id": "q-correction",
+      "subject": "FICT-CQI-301",
+      "predicate": "operating_profit",
+      "value": 4,
+      "qualifiers": {
+        "period": "2026-Q1",
+        "basis": "consolidated",
+        "currency": "USD",
+        "unit": "million",
+        "status": "corrected"
+      },
+      "evidence": {
+        "quote": "Corrected Q1 2026 operating profit is USD 4 million, replacing USD 5 million in the 20 April release.",
+        "utf8_start": 211,
+        "utf8_end_exclusive": 312
+      }
+    },
+    {
+      "id": "q-current-revenue",
+      "source_id": "q-correction",
+      "subject": "FICT-CQI-301",
+      "predicate": "revenue",
+      "value": 50,
+      "qualifiers": {
+        "period": "2026-Q1",
+        "basis": "consolidated",
+        "currency": "USD",
+        "unit": "million"
+      },
+      "evidence": {
+        "quote": "Q1 2026 revenue remains USD 50 million.",
+        "utf8_start": 313,
+        "utf8_end_exclusive": 352
+      }
+    },
+    {
+      "id": "q-correction-date",
+      "source_id": "q-correction",
+      "subject": "FICT-CQI-301",
+      "predicate": "publication_date",
+      "value": "2026-04-25",
+      "qualifiers": {},
+      "evidence": {
+        "quote": "issued this correction on 25 April 2026.",
+        "utf8_start": 72,
+        "utf8_end_exclusive": 112
+      },
+      "storage_target": "Source publication metadata or preserved dated original span reachable from World provenance; a separate graph claim about publication is not required."
+    }
+  ],
+  "checkpoints": [
+    {
+      "scenario_id": "W-ACQUIRE",
+      "step_id": "investigate-and-retain",
+      "required_stored_fact_ids": [
+        "q-current-profit",
+        "q-current-revenue",
+        "q-correction-date"
+      ],
+      "storage_checkpoint": "after_post_chat_processing",
+      "answer_metrics": {
+        "q1_operating_profit_usd_m": 4,
+        "q1_revenue_usd_m": 50,
+        "q1_operating_margin_pct": 8
+      },
+      "answer_checks": [
+        {
+          "id": "correction",
+          "requirement": "Current Q1 Jan–Mar2026 consolidated operating profit is USD4million, replacing the old USD5million; revenue is USD50million and operating margin8%. Distinguish the25April correction publication date from the reporting period and explain the correction using the earlier retained release. Any historical date or value mentioned must be accurate."
+        },
+        {
+          "id": "unknown",
+          "requirement": "The first question does not request a2027 forecast. No forecast statement is required; any forecast assertion made must remain unsupported/unknown unless the supplied original evidence supports it. Do not turn absent evidence into a claim that no forecast exists."
+        },
+        {
+          "id": "prose-json",
+          "requirement": "Prose and structured metrics agree in value, sign, unit and certainty."
+        },
+        {
+          "id": "provenance",
+          "requirement": "Important current facts cite the actual acknowledged original web_fetch material and the comparison cites acknowledged retained evidence where used. The newly acquired original must be retained through source_save and canonical processing; it need not be read from Memory before its post-answer commit. Assistant notes or a prior answer are not original evidence."
+        }
+      ],
+      "trace_requirements": [
+        "Relevant existing World/Source acknowledged read before final answer.",
+        "Successful web_fetch of named corrected release.",
+        "Successful source_save retaining acknowledged original fetch, not assistant synthesis.",
+        "Canonical Source bytes and subsequent sealed World contain correction after drain."
+      ],
+      "information_cutoff": "2026-04-30",
+      "evidence_phase": "initial_acquisition",
+      "required_answer_fact_ids": [
+        "q-current-profit",
+        "q-current-revenue",
+        "q-correction-date"
+      ],
+      "answer_fact_rationale": "The first question requests revenue, profit, margin, publication versus reporting period and correction history. The three original-source facts are scored against the actual new fetch and canonical save; margin remains a numeric/answer correctness check."
+    },
+    {
+      "scenario_id": "W-ACQUIRE",
+      "step_id": "follow-up-unavailable",
+      "required_stored_fact_ids": [
+        "q-current-profit",
+        "q-current-revenue",
+        "q-correction-date"
+      ],
+      "storage_checkpoint": "before_chat",
+      "answer_metrics": {
+        "q1_operating_profit_usd_m": 4,
+        "forecast_2027_operating_profit_usd_m": null
+      },
+      "answer_checks": [
+        {
+          "id": "correction",
+          "requirement": "Correctly confirm current Q1 2026 consolidated operating profit of USD4million from the retained corrected evidence, without presenting the old USD5million as current. Revenue, margin and publication-date restatement are not required by this follow-up. If any of those facts or correction history are asserted, their values, dates, entity, period, basis, units and status must remain accurate."
+        },
+        {
+          "id": "unknown",
+          "requirement": "The2027 profit forecast remains unsupported by supplied or retained evidence. The answer must distinguish the first search returning zero hits from the second search service being unavailable, and explain that neither establishes that no forecast exists in the world."
+        },
+        {
+          "id": "prose-json",
+          "requirement": "Prose and structured metrics agree in value, sign, unit and certainty."
+        },
+        {
+          "id": "provenance",
+          "requirement": "Important facts cite actually read retained original source material, not self-generated notes or the previous answer."
+        }
+      ],
+      "trace_requirements": [
+        "Actual retained Source/World acknowledged read and correct answer use.",
+        "Both specified search queries attempted once at Chat-tool level; zero repeated identical failed calls.",
+        "First query yields no source hits; second query records provider/replay error, not zero-result success.",
+        "Previously known profit remains usable despite search failure."
+      ],
+      "information_cutoff": "2026-04-30",
+      "evidence_phase": "retained_memory",
+      "required_answer_fact_ids": [
+        "q-current-profit"
+      ],
+      "answer_fact_rationale": "The follow-up explicitly asks current Q1 consolidated operating profit and whether the unavailable/empty supplied search supports a2027 forecast. Revenue, margin and earlier publication-date restatement are not requested; all assertions actually made still require correct qualifiers and evidence."
+    },
+    {
+      "scenario_id": "W-ACQUIRE",
+      "step_id": "new-chat-reuse",
+      "required_stored_fact_ids": [
+        "q-current-profit",
+        "q-current-revenue",
+        "q-correction-date"
+      ],
+      "storage_checkpoint": "before_chat",
+      "answer_metrics": {
+        "q1_operating_profit_usd_m": 4,
+        "q1_revenue_usd_m": 50,
+        "q1_operating_margin_pct": 8,
+        "forecast_2027_operating_profit_usd_m": null
+      },
+      "answer_checks": [
+        {
+          "id": "correction",
+          "requirement": "Correctly state latest Q1 Jan–Mar2026 consolidated revenue USD50million, operating profit USD4million and margin8%; explain that the25April correction replaces the20April release's USD5million profit. Distinguish publication dates from the reporting period and preserve the correction history."
+        },
+        {
+          "id": "unknown",
+          "requirement": "2027 profit forecast remains unsupported by supplied evidence. Empty/failed retrieval does not prove no forecast exists."
+        },
+        {
+          "id": "prose-json",
+          "requirement": "Prose and structured metrics agree in value, sign, unit and certainty."
+        },
+        {
+          "id": "provenance",
+          "requirement": "Important facts cite actually read retained original source material, not self-generated notes or the previous answer."
+        }
+      ],
+      "trace_requirements": [
+        "Actual retained Source/World acknowledged read and correct answer use.",
+        "Different canonical conversation ID from acquisition Chat.",
+        "No redundant network call for unchanged source-backed known facts."
+      ],
+      "information_cutoff": "2026-04-30",
+      "evidence_phase": "retained_memory",
+      "required_answer_fact_ids": [
+        "q-current-profit",
+        "q-current-revenue",
+        "q-correction-date"
+      ],
+      "answer_fact_rationale": "The new Chat explicitly requests latest revenue, profit, margin, correction history, publication date and reporting period. The three retained-source facts require actual acknowledged Memory reads; margin and forecast uncertainty remain separately checked."
+    }
+  ],
+  "adverse_opportunities": [
+    {
+      "id": "q-stale-profit",
+      "description": "Uses superseded5 instead of corrected4 as current."
+    },
+    {
+      "id": "q-search-absence",
+      "description": "Concludes no2027 guidance exists from empty search or provider failure."
+    },
+    {
+      "id": "q-self-corroboration",
+      "description": "Saves own answer as independent source or cites it in place of original fetched issuer evidence."
+    },
+    {
+      "id": "q-repeat-failure",
+      "description": "Repeats identical failed search tool call without changed request or authority."
+    }
+  ],
+  "thresholds": {
+    "storage_precision_min": 0.8,
+    "storage_recall_min": 0.8,
+    "utilization_min": 0.8,
+    "negative_transfer_max": 0.1,
+    "invalid_tool_call_rate_max": 0.05,
+    "repeated_failed_calls_max": 0,
+    "independent_trials": 3,
+    "acquisition_min": 0.8
+  },
+  "grading_contract": {
+    "numeric_tolerance": 1e-09,
+    "unknown_numeric_value": null,
+    "missing_or_failed": "not_pass",
+    "do_not_seed_new_source": "q-correction must enter Memory only via the actual Chat source_save path. Replay bytes are available at the provider boundary, not in workspace files or the prompt.",
+    "newly_acquired_source_timestamp": "Actual web acquisition time remains real; source publication/event times are fixture text. Do not backdate actual network-capture records.",
+    "lookup_error": "Intentional replay503 is a provider-availability observation, not an invalid argument. It still must be present in failure totals.",
+    "human_label_count": 0,
+    "initial_acquisition": "Score requested first-answer facts using the current-stage acknowledged full web_fetch and source_save result_ref chain to the verified canonical original plus completed post-chat World processing. Keep this separate from retained-Memory utilization.",
+    "retained_memory_utilization": "After retention, score requested answer facts only through a current-stage acknowledged exact read of the specific Source/World revision and fact. Do not substitute prior-stage reads of an older revision, search discovery, prior assistant prose or runner queries.",
+    "retrospective_revision": "Apply this exact v2 oracle to baseline and every evaluated candidate in separate versioned outputs. Retain all old reports and failures. No new execution is implied; the model-visible corpus/replay and task initial-state recipe are unchanged."
+  },
+  "metric_revision": "world-acquisition/2",
+  "supersedes": {
+    "file": "acquisition-oracle-v1.json",
+    "sha256": "18d6205591141a45c91b5c42295c5e39fc7d7add76588e09b14c68fab31d8ab0",
+    "reason": "User-approved construct correction: distinguish initial acknowledged original acquisition from retained-Memory reuse, and score facts requested by each checkpoint. Corpus/replay, required storage facts, source identities, expected values, adverse opportunities, evidence integrity and existing numeric thresholds remain unchanged.",
+    "authorization": "User approved the proposed definition correction on2026-10-20. This is retrospective regrading of immutable runs, not a claim the revision was frozen before their execution."
+  }
+}

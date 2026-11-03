@@ -1,0 +1,167 @@
+.onboarding-window { width: 100%; height: 100dvh; overflow-y: auto; background: var(--gg-color-bg-app); color: var(--gg-color-text-primary); padding: clamp(32px, 10vh, 96px) var(--gg-space-6) var(--gg-space-8); }
+.onboarding-column { width: 100%; max-width: var(--gg-size-dialog-md); margin-inline: auto; }
+.onboarding-navigation { display: flex; align-items: center; justify-content: center; position: relative; min-height: var(--gg-size-control-lg); margin-bottom: var(--gg-space-6); }
+.onboarding-back { position: absolute; left: 0; }
+.onboarding-dots { display: flex; gap: var(--gg-space-2); }
+.onboarding-dot { width: var(--gg-space-2); height: var(--gg-space-2); border-radius: 50%; background: var(--gg-color-border-strong); }
+.onboarding-dot[data-state="current"] { background: var(--gg-color-accent); }
+.onboarding-dot[data-state="done"] { background: var(--gg-color-text-secondary); }
+.onboarding-step { display: grid; gap: var(--gg-space-5); animation: onboarding-enter 180ms var(--gg-ease-out); }
+.onboarding-step h1 { margin: 0; font-size: var(--gg-text-heading); line-height: var(--gg-leading-heading); font-weight: var(--gg-weight-semibold); }
+.onboarding-step[data-step="1"] h1 { font-size: var(--gg-text-display); line-height: var(--gg-leading-display); }
+.onboarding-step p { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+/* The line under the welcome title says what a Loupist is; it sits with the title, not the list. */
+.onboarding-step .onboarding-welcome-loupist { margin-top: calc(var(--gg-space-2) * -1); color: var(--gg-color-text-primary); font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); font-weight: var(--gg-weight-regular); }
+.onboarding-benefits { display: grid; gap: var(--gg-space-2); padding: var(--gg-space-3) 0; margin: 0; list-style: none; }
+.onboarding-benefits li { display: flex; align-items: flex-start; gap: var(--gg-space-3); color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+.onboarding-primary { width: 100%; min-height: var(--gg-size-control-lg); height: auto; white-space: normal; }
+.onboarding-other summary { cursor: pointer; font-size: var(--gg-text-control); color: var(--gg-color-text-secondary); padding-block: var(--gg-space-3); }
+.onboarding-other > .ui-disclosure-body > button { width: 100%; justify-content: flex-start; min-height: 44px; }
+.onboarding-success { display: flex; align-items: center; gap: var(--gg-space-2); color: var(--gg-color-positive); }
+.onboarding-error { padding: var(--gg-space-3); border-radius: var(--gg-radius-sm); background: var(--gg-color-negative-soft); color: var(--gg-color-negative); }
+.onboarding-actions-row { display: grid; justify-items: center; gap: var(--gg-space-2); }
+.onboarding-chips { display: flex; gap: var(--gg-space-2); flex-wrap: wrap; }
+.onboarding-chip { display: inline-flex; align-items: center; gap: var(--gg-space-1); padding-left: var(--gg-space-2); border-radius: var(--gg-radius-xs); background: var(--gg-color-bg-selected); font-size: var(--gg-text-control); }
+.onboarding-chip button { min-width: var(--gg-size-control-sm); min-height: var(--gg-size-control-sm); }
+.onboarding-holdings { max-height: 240px; overflow: auto; }
+.onboarding-holdings table { width: 100%; font-size: var(--gg-text-meta); border-collapse: collapse; }
+.onboarding-holdings th, .onboarding-holdings td { text-align: left; padding: var(--gg-space-2); border-bottom: 1px solid var(--gg-color-border-subtle); }
+.onboarding-step .onboarding-holdings-note { font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); color: var(--gg-color-text-tertiary); }
+.loupist-template-fields { display: grid; gap: var(--gg-space-4); min-width: 0; }
+.loupist-template-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gg-space-3); }
+.loupist-template-card { display: flex; flex-direction: column; gap: var(--gg-space-1); padding: var(--gg-space-4); text-align: left; border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); min-width: 0; }
+.loupist-template-card:hover { border-color: var(--gg-color-border-strong); }
+.loupist-template-card[aria-pressed="true"] { border-color: var(--gg-color-accent); background: var(--gg-color-accent-soft); }
+.loupist-template-card strong { font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); font-weight: var(--gg-weight-semibold); }
+.loupist-template-card > span:last-child { font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); color: var(--gg-color-text-secondary); width: 100%; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; white-space: normal; }
+.loupist-template-fields .form-field { display: grid; gap: var(--gg-space-2); }
+.loupist-template-fields textarea { min-height: auto; resize: vertical; }
+/* Template grid (finance-crypto-and-templates.md §2.4): three columns from 520 px of form width. */
+.loupist-template-fields { container-type: inline-size; }
+@container (min-width: 520px) { .loupist-template-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.loupist-template-starters { display: grid; gap: var(--gg-space-2); }
+.loupist-template-starters > p { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.loupist-starter { min-height: var(--gg-size-control-sm); padding-inline: var(--gg-space-3); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-full); background: var(--gg-color-bg-raised); font-size: var(--gg-text-control); }
+.loupist-starter:hover { border-color: var(--gg-color-border-strong); }
+.loupist-starter[aria-pressed="true"] { border-color: var(--gg-color-accent); background: var(--gg-color-accent-soft); }
+/* Tone: one choice in three rows, shared by onboarding, New Loupist and Loupist settings. */
+/* Keep grid sizing off the native fieldset: WebKit can collapse its legend to one character. */
+.loupist-tone-field { display: block; min-width: 0; margin: 0; padding: 0; border: 0; }
+.loupist-tone-field legend { width: 100%; margin-bottom: var(--gg-space-2); padding: 0; overflow-wrap: anywhere; color: var(--gg-color-text-primary); font-size: var(--gg-text-control); line-height: var(--gg-leading-control); font-weight: var(--gg-weight-medium); }
+.loupist-tone-options { display: grid; gap: var(--gg-space-2); min-width: 0; }
+.loupist-tone-field .loupist-tone-option { display: flex; align-items: flex-start; gap: var(--gg-space-3); padding: var(--gg-space-3) var(--gg-space-4); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); color: var(--gg-color-text-primary); font-size: var(--gg-text-control); cursor: pointer; }
+.loupist-tone-field .loupist-tone-option:hover { border-color: var(--gg-color-border-strong); }
+.loupist-tone-field .loupist-tone-option[data-selected] { border-color: var(--gg-color-accent); background: var(--gg-color-accent-soft); }
+.loupist-tone-field .loupist-tone-option:has(input:focus-visible) { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
+.loupist-tone-field:disabled .loupist-tone-option { cursor: default; opacity: .6; }
+.loupist-tone-option input { flex: none; margin: 3px 0 0; accent-color: var(--gg-color-accent); }
+.loupist-tone-option > span { display: grid; gap: 2px; min-width: 0; }
+.loupist-tone-option strong { font-weight: var(--gg-weight-semibold); }
+.loupist-tone-field .loupist-tone-option > span > span { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.loupist-tone-field .loupist-tone-note { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); }
+@keyframes onboarding-enter { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: translateX(0); } }
+@media (prefers-reduced-motion: reduce) { @keyframes onboarding-enter { from { opacity: 0; } to { opacity: 1; } } }
+/* Programmatic step announcements are not interactive focus targets. */
+.onboarding-step[tabindex="-1"]:focus { outline: none !important; }
+
+.onboarding-transition { position: relative; }
+.onboarding-step-leaving { position: absolute; inset: 0 0 auto; pointer-events: none; animation: onboarding-leave 180ms var(--gg-ease-out) forwards; }
+@keyframes onboarding-leave { from { opacity: 1; } to { opacity: 0; } }
+
+.onboarding-primary[data-waiting="true"]:disabled { opacity: 1; color: var(--gg-color-action-ink); background: var(--gg-color-action); }
+
+/* Leave room for the required notice at the minimum desktop height. */
+@media (max-height: 700px) {
+  .onboarding-window[data-onboarding="1"] { padding-top: var(--gg-space-6); }
+}
+
+.onboarding-step-actions { display: grid; gap: var(--gg-space-2); }
+/* Step 4 is taller than a short window: its action bar sticks to the bottom edge of the scrolling window. */
+@media (max-height: 800px) {
+  /* The window's bottom padding would leave a strip of scrolling content under the bar. */
+  .onboarding-window[data-onboarding="4"] { padding-bottom: 0; }
+  .onboarding-step[data-step="4"] .onboarding-step-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: var(--gg-z-sticky);
+    padding: var(--gg-space-3) 0 var(--gg-space-5);
+    border-top: 1px solid var(--gg-color-border-subtle);
+    background: var(--gg-color-bg-app);
+  }
+}
+
+/* Step 5, "Meet your Loupist": the event log and the first map side by side, then one clear action set. */
+.onboarding-window[data-onboarding="5"] .onboarding-column { max-width: 960px; }
+.onboarding-step[data-step="5"] { gap: var(--gg-space-4); }
+.onboarding-meet-heading { display: grid; gap: var(--gg-space-1); min-width: 0; }
+.onboarding-meet-heading h1 { overflow-wrap: anywhere; }
+.onboarding-step .onboarding-meet-focus { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.onboarding-meet-banner { display: flex; align-items: center; justify-content: space-between; gap: var(--gg-space-3); padding: var(--gg-space-3); border-radius: var(--gg-radius-sm); background: var(--gg-color-warning-soft); color: var(--gg-color-text-primary); font-size: var(--gg-text-control); }
+.onboarding-meet-proposal { display: grid; gap: var(--gg-space-2); padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
+.onboarding-meet-proposal h2 { margin: 0; font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); font-weight: var(--gg-weight-semibold); }
+.onboarding-step .onboarding-meet-proposal-error { color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
+.onboarding-meet-proposal-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
+.onboarding-meet-columns { display: grid; grid-template-columns: 400px minmax(0, 1fr); grid-template-areas: "log map"; gap: var(--gg-space-6); min-width: 0; }
+.onboarding-meet-map { grid-area: map; position: relative; height: 420px; min-width: 0; overflow: hidden; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-map-bg); }
+/* The map is watched, not handled, while the Loupist prepares it. */
+.onboarding-meet-map[data-seeding] { pointer-events: none; }
+.onboarding-step .onboarding-meet-map-empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: var(--gg-space-4); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); text-align: center; }
+.onboarding-meet-log-section { grid-area: log; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--gg-space-2); min-width: 0; min-height: 0; max-height: 420px; }
+.onboarding-step .onboarding-meet-counter { display: flex; align-items: center; gap: var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); font-variant-numeric: tabular-nums; }
+.onboarding-meet-counter svg { width: 10px; height: 10px; color: var(--gg-color-text-tertiary); }
+.onboarding-meet-log { min-height: 0; overflow-y: auto; border-top: 1px solid var(--gg-color-border-subtle); }
+.onboarding-meet-log:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
+.onboarding-meet-row { display: flex; align-items: baseline; gap: var(--gg-space-2); min-height: 36px; padding: var(--gg-space-2) 0; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); animation: onboarding-meet-row var(--gg-motion-fast) var(--gg-ease-out); }
+.onboarding-meet-row > span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.onboarding-meet-row.is-pending > span, .onboarding-meet-row.is-note > span { color: var(--gg-color-text-secondary); }
+.onboarding-meet-row time { flex: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-variant-numeric: tabular-nums; }
+.onboarding-meet-mark { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--gg-color-map-other); }
+.onboarding-meet-mark.is-company { background: var(--gg-color-map-company); }
+.onboarding-meet-mark.is-product { background: var(--gg-color-map-product); }
+.onboarding-meet-mark.is-person { background: var(--gg-color-map-person); }
+.onboarding-meet-mark.is-event { background: var(--gg-color-map-event); }
+.onboarding-meet-mark.is-market { background: var(--gg-color-map-market); }
+.onboarding-meet-mark.is-link { height: 2px; border-radius: 1px; background: var(--gg-color-map-edge-active); transform: translateY(-3px); }
+.onboarding-meet-mark.is-tracking { border-radius: 1px; background: var(--gg-color-map-perspective); transform: rotate(45deg) scale(.8); }
+/* A plain line about reading what the user follows: an outline where a name would have its colour. */
+.onboarding-meet-mark.is-note { background: transparent; box-shadow: inset 0 0 0 1px var(--gg-color-text-tertiary); }
+.onboarding-meet-mark.is-warning { background: var(--gg-color-warning); }
+.onboarding-meet-actions { display: grid; gap: var(--gg-space-2); }
+.onboarding-step .onboarding-meet-question { color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); }
+.onboarding-meet-buttons { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
+/* Yes and Not now are equal answers: same width, side by side, stacked when narrow. */
+.onboarding-meet-buttons .onboarding-meet-choice { flex: 1 1 200px; min-height: var(--gg-size-control-lg); height: auto; white-space: normal; }
+.onboarding-meet-spinner { flex: none; align-self: center; width: 10px; height: 10px; color: var(--gg-color-text-tertiary); }
+/* Once rows scroll away the top edge fades, so a half-cut row never reads as content. */
+.onboarding-meet-log[data-scrolled] { mask-image: linear-gradient(to bottom, transparent, var(--gg-color-text-primary) var(--gg-space-5)); }
+.onboarding-step .onboarding-meet-caption { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); }
+@keyframes onboarding-meet-row { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { @keyframes onboarding-meet-row { from { opacity: 0; } to { opacity: 1; } } }
+
+/* One column below 1060 px: the map first, then a log that keeps the buttons on screen. */
+@media (max-width: 1059px) {
+  .onboarding-window[data-onboarding="5"] .onboarding-column { max-width: 560px; }
+  .onboarding-step[data-step="5"] { gap: var(--gg-space-3); }
+  .onboarding-step[data-step="5"] h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .onboarding-step .onboarding-meet-focus { -webkit-line-clamp: 1; }
+  .onboarding-meet-columns { grid-template-columns: minmax(0, 1fr); grid-template-areas: "map" "log"; gap: var(--gg-space-3); }
+  .onboarding-meet-map { height: 200px; }
+  .onboarding-meet-log-section { max-height: 200px; }
+}
+@media (max-width: 1059px) and (max-height: 700px) {
+  .onboarding-window[data-onboarding="5"] { padding-top: var(--gg-space-5); }
+  .onboarding-window[data-onboarding="5"] .onboarding-navigation { margin-bottom: var(--gg-space-3); }
+  .onboarding-meet-map { height: 160px; }
+  .onboarding-meet-map[data-empty] { height: 96px; }
+  .onboarding-meet-log-section { max-height: max(76px, calc(100dvh - 520px)); }
+  /* An empty map gives its height to the log, so "Reading what you follow…" stays in view. */
+  .onboarding-meet-columns:has(.onboarding-meet-map[data-empty]) .onboarding-meet-log-section { max-height: max(140px, calc(100dvh - 456px)); }
+  /* A pending suggestion is the thing to act on: one compact row, a smaller map, the counter without the log. */
+  .onboarding-meet-proposal { grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--gg-space-3); row-gap: var(--gg-space-1); padding: var(--gg-space-3); }
+  .onboarding-meet-proposal h2 { grid-column: 1 / -1; }
+  .onboarding-step .onboarding-meet-proposal > p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .onboarding-meet-columns[data-proposal] .onboarding-meet-map { height: 112px; }
+  /* The newest row stays in view next to the suggestion; the log follows the bottom. */
+  .onboarding-meet-columns[data-proposal] .onboarding-meet-log-section { max-height: none; }
+  .onboarding-meet-columns[data-proposal] .onboarding-meet-log { max-height: 44px; }
+}

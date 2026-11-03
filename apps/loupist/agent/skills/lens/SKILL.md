@@ -1,0 +1,79 @@
+---
+name: lens
+description: Use when the user teaches or corrects a reusable method, rule, convention, or preference, or when inspecting this Loupist's perspective and methods. Skip a one-off.
+---
+
+# Lens
+
+Lens records how this Loupist interprets the world. A default perspective explains
+what matters, assumptions, principles, and limits. Methods describe when and how
+to analyze and what would disprove the interpretation. A task-specific scenario
+or a single anecdote belongs in a working note. The turn's Memory settings govern
+reading and saving; selecting this Skill does not change them.
+
+Use the supplied default perspective. If it is marked `readRequired`, exact-read
+it before applying it. Select relevant methods by their applicability and limits,
+then read their complete documents. Follow a returned link only when it can
+change the analysis, and exact-read that method too. Navigation metadata is
+discovery, not evidence. Mark a Lens applied only when you actually use it.
+Distinguish observed evidence from the interpretation a Lens adds.
+
+A method may guide local code, files, app tools, or research. A workspace script
+does not automatically become a Lens. Keep executable details in files and
+promote only a reusable, supported methodology.
+
+A newly taught method is its own Lens, kind `method`, with a title that names
+the method. Search first. Extend a method only when the new rule refines that
+same method. Change the standing perspective only when the user changes their
+overall investing philosophy. A stated one-off is not a method. Do not
+rewrite a prior judgment. Preserve competing interpretations when their
+assumptions differ.
+
+When saving is on, follow `lens_update`: read the current revision before an
+edit and send the complete current document using the tool’s field roles.
+Replace superseded instructions in their owning section; keep the reason for
+the revision in `rationale` or `feedback`. Preserve useful detail, conditions,
+and exceptions without copying the same instructions across sections. Keep
+World, Source, and Journal dependencies out of the reusable body. An edit's title renames that Lens; its
+kind stays fixed, so do not write a new method into the standing perspective.
+For a method grounded in a newly acquired file or page, save the original with
+`source_save` first, then cite its returned `saveRef` in top-level `sourceReads`.
+A capture or fetch `result_ref` alone is not a Source reference. For an existing
+Source, exact-read it and use the returned Source `readRef`.
+If a newer revision was saved first, finish the reply and leave the change as
+a proposal.
+An update may return related-method warnings with exact `lens_read` arguments.
+These flag shared vocabulary, not a proven duplicate or contradiction, and do
+not block saving. Read the candidates before comparing assumptions and limits;
+the warning itself grants no evidence or editing authority.
+
+Link a related method as `[title](lens:recordId)` with a discovered id, and say
+whether it is a prerequisite, alternative, refinement, or countercheck. The link
+follows the current method and grants no authority.
+
+For a library review, separate missing targets from duplicate scope, conflicting
+assumptions, missing limits, and unsupported generalizations. A missing backlink
+alone is not a defect. Read both methods before a repair, and do not claim a
+full audit from a partial page.
+
+Explain the method used, a supported change, why it generalizes, and what would
+invalidate it. A local file edit is not a Lens revision; only a confirmed memory
+commit establishes that change.
+
+## User principles
+
+User principles are the user's own rules. They outrank methods and the standing
+perspective. If your answer departs from a principle, name it and say why.
+Use `principle_save` only for rules the user has explicitly stated. A user's rule
+that names an action (for example "sell if margin falls below 10%") is saved in
+the user's words; check its condition against dated evidence.
+Never save your own recommendations or rules you inferred. Replacing a principle requires its current revision
+in User principles context or an acknowledged `lens_read`; pass its record id as
+`replaces_record_id`. The write commits with the completed turn.
+
+When at least one principle is relevant, end the answer with a short section
+titled in the user's language (en 'Checked against your principles', ko '내 원칙 점검').
+Write one line per relevant principle: the principle as a `lens:` link, the dated
+fact you checked, and the result: meets, conflicts, or not enough information.
+Skip the section when no principle is relevant.
+Include principles that name trade actions and report whether their conditions are met.

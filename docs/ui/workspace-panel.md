@@ -1,0 +1,28 @@
+# Workspace panel
+
+The header's right controls are **Panel kind | Split top and bottom | Split left and right**. Panel kind has three canonical entries: **Lens**, **World**, and **Chat materials** (대화 자료). Lens opens the Loupist's research principles and methods; World opens its observed map, Library, replay and export; Chat materials holds the existing chat map, Evidence, Work, browser and workspace-file readers. Selecting an entry opens it beside the current chat without changing chats or the composer's draft, files, pins, as-of date or selected artifact. Explicit answer links, citations, artifacts and workspace files select Chat materials; a background document badges its Work tab while Lens or World is being read.
+
+A new profile starts with the panel closed and Chat materials selected. A saved layout restores through Rust's bounded workspace UI state. A header split choice applies to all content kinds and is stored there with the panel dimensions; pressing the active split closes the panel, and choosing a kind opens it again. Narrow windows retain the existing focus-trapped sheet instead of forcing a split that cannot fit. Legacy Map/Lens navigation, command-palette actions, ⌘2/⌘3 and knowledge deep links resolve to World/Lens in this same panel. The former saved Map/Lens last-view preference migrates to the panel once. Panel-kind selection itself is session state, while the retained readers stay per-chat bounded typed references.
+
+The panel lists charts, tables and documents for the open Loupist and restores only bounded references. It does not open itself for an empty state or by moving keyboard focus.
+
+Readers preserve selection, focus and scroll through navigation. Workspace panel
+preferences store bounded references, not reader bodies; restoration repeats
+ownership checks. A stored file that is too large, malformed, of an older shape or
+fails validation reads as absent, so the next save replaces it; I/O failures still
+surface as errors and never overwrite a good layout. The panel has one Work tab that
+lists the Loupist's charts, tables and documents across its chats (Rust `loupist_artifact_list`,
+newest first, with chat titles), with "Building…" rows for charts still streaming;
+an item opens inside the tab under a status row with its title, a "Version n ▾" menu of the revisions Rust keeps (`artifact_versions`, newest first with dates) and the shown revision's date, and reads from its own chat. Choosing an earlier version reads it by `revision_id` read-only; "Restore this version" asks once, then `artifact_restore` appends it as the newest revision and the panel follows it, while answers keep the revisions they showed. Charts dock at the bottom
+and reading content at the side by default; using Dock records the choice per kind
+(`dock_by_kind`), and the dock changes only when a different kind comes on screen. "Always dock here" in the panel menu stores the current placement for every kind (checked while every kind docks there); turning it off clears the choices back to the defaults. A closed panel stays closed when background work finishes; document arrivals are retained in Work, while charts and tables render inline. Closing it marks that chat `dismissed` in the Rust-validated workspace UI state until the user opens it again. Content that arrives while
+the user is working in the panel marks its tab with a dot instead of switching. The header
+kind selector and split buttons stay visible while the panel is open. Close on the panel header, pressing the active split, ⌘\, Escape, and the narrow sheet's backdrop close it. A keyboard kind selection or split activation moves focus to Close. Tabs and Add stay on the tab
+bar. Expand, Dock and "Always dock here" live in one panel menu on the docked panel; the
+narrow overlay offers Close only. Expand on the Map tab opens World
+on the name selected in the mini map; on any other tab it covers the main area beside
+the sidebar with that tab in one reading column and "Back to chat" (Esc returns first,
+the next Esc closes the panel; the chat underneath is inert). Closing the panel
+returns focus to the Panel kind selector currently shown on the chat when the control that
+opened it is no longer in that chat. Leaving the
+reading column returns focus to the panel menu.

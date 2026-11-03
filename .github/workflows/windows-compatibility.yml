@@ -1,0 +1,354 @@
+name: Loupist Windows Compatibility
+
+# Experimental only: never a dependency of CI, qualification, or publication.
+on:
+  workflow_dispatch:
+    inputs:
+      signed:
+        description: Also build a signed Windows artifact from a matching v tag (requires Windows signing secrets)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: loupist-windows-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate experimental signed build tag
+    if: ${{ inputs.signed }}
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - id: version
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_TYPE" = tag
+          python3 apps/loupist/scripts/set-version.py --check
+          python3 - <<'PYVERSION' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          from pathlib import Path
+          version = json.loads(Path("apps/loupist/src-tauri/tauri.conf.json").read_text())["version"]
+          if os.environ["GITHUB_REF_NAME"] != f"v{version}":
+              raise SystemExit("signed experimental build requires the matching version tag")
+          print(f"value={version}")
+          PYVERSION
+
+  native-e2e-windows:
+    name: Native Windows interaction
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install CI toolchains
+        uses: ./.github/actions/setup-toolchains
+        with:
+          node: "true"
+          node-cache: |
+            apps/loupist/package-lock.json
+            apps/loupist/e2e/package-lock.json
+          rust: "true"
+          rust-cache-key: e2e
+          python: "true"
+
+      - name: Verify Windows Job Object descendant containment
+        shell: pwsh
+        run: python apps/loupist/scripts/check-sidecars.py --windows-job-self-test
+
+      - name: Install renderer dependencies
+        working-directory: apps/loupist
+        shell: pwsh
+        run: npm ci
+
+      - name: Install native E2E dependencies
+        working-directory: apps/loupist/e2e
+        shell: pwsh
+        run: npm ci
+
+      - name: Stage pinned Windows sidecars
+        shell: pwsh
+        run: apps/loupist/scripts/stage-windows-x64.ps1
+
+      - name: Run native Windows interaction regression suite
+        working-directory: apps/loupist/e2e
+        shell: pwsh
+        env:
+          LOUPIST_E2E_REQUIRE_STAGED_RUNTIMES: "1"
+          # A fresh Windows runner needs a 20-minute cold-build budget before
+          # its WebDriver endpoint can bind. Local runs retain the five-minute default.
+          LOUPIST_E2E_STARTUP_TIMEOUT_MS: "1200000"
+        run: |
+          npm run test:native:windows:full
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:persistence:windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  package-smoke:
+    name: Package smoke (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundle: nsis
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install CI toolchains
+        uses: ./.github/actions/setup-toolchains
+        with:
+          node: "true"
+          rust: "true"
+          rust-targets: ${{ matrix.target }}
+          rust-cache-key: package-smoke
+          python: "true"
+
+      - name: Verify Windows Job Object descendant containment
+        run: python apps/loupist/scripts/check-sidecars.py --windows-job-self-test
+
+      - name: Install renderer dependencies
+        working-directory: apps/loupist
+        run: npm ci
+
+      - name: Stage pinned Windows sidecars
+        shell: pwsh
+        run: apps/loupist/scripts/stage-windows-x64.ps1
+
+      - name: Build unsigned package smoke
+        working-directory: apps/loupist
+        shell: bash
+        run: >-
+          npm exec -- tauri build
+          --target ${{ matrix.target }}
+          --bundles ${{ matrix.bundle }}
+          --config src-tauri/tauri.package-smoke.conf.json
+
+      - name: Assert installer was produced
+        shell: bash
+        env:
+          BUNDLE: ${{ matrix.bundle }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          case "$BUNDLE" in
+            dmg) pattern='*.dmg' ;;
+            nsis) pattern='*-setup.exe' ;;
+            *) exit 1 ;;
+          esac
+          test -n "$(find "apps/loupist/src-tauri/target/$TARGET/release/bundle/$BUNDLE" -type f -name "$pattern" -print -quit)"
+
+      - name: Verify installed Windows package contents and workers
+        shell: pwsh
+        timeout-minutes: 20
+        run: |
+          $bundleRoot = "apps/loupist/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis"
+          $installers = @(Get-ChildItem -LiteralPath $bundleRoot -Filter "*-setup.exe" -File)
+          if ($installers.Count -ne 1) {
+            throw "Expected exactly one final NSIS installer."
+          }
+          $expectedVersion = (
+            Get-Content -LiteralPath "apps/loupist/src-tauri/tauri.conf.json" -Raw |
+              ConvertFrom-Json
+          ).version
+          & apps/loupist/scripts/check-windows-installer.ps1 `
+            -Installer $installers[0].FullName `
+            -ExpectedVersion $expectedVersion
+          if ($LASTEXITCODE -ne 0) {
+            throw "Final NSIS package inspection failed."
+          }
+  build-windows:
+    name: Experimental signed Windows x64 build
+    if: ${{ inputs.signed }}
+    needs: validate
+    runs-on: windows-latest
+    environment: release
+    steps:
+      - name: Require release credentials
+        shell: pwsh
+        env:
+          UPDATER_PUBLIC_KEY: ${{ secrets.LOUPIST_UPDATER_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.LOUPIST_TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.LOUPIST_TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          WINDOWS_CERTIFICATE: ${{ secrets.LOUPIST_WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.LOUPIST_WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $required = @(
+            "UPDATER_PUBLIC_KEY",
+            "TAURI_SIGNING_PRIVATE_KEY",
+            "TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
+            "WINDOWS_CERTIFICATE",
+            "WINDOWS_CERTIFICATE_PASSWORD"
+          )
+          foreach ($name in $required) {
+            if (-not [Environment]::GetEnvironmentVariable($name)) {
+              throw "Required release credential is absent: $name"
+            }
+          }
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install CI toolchains
+        uses: ./.github/actions/setup-toolchains
+        with:
+          node: "true"
+          rust: "true"
+          rust-targets: x86_64-pc-windows-msvc
+          rust-cache-key: release
+          python: "true"
+
+      - name: Install renderer dependencies
+        working-directory: apps/loupist
+        run: npm ci
+
+      - name: Import Authenticode certificate and configure updater
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.LOUPIST_WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.LOUPIST_WINDOWS_CERTIFICATE_PASSWORD }}
+          LOUPIST_UPDATER_PUBLIC_KEY: ${{ secrets.LOUPIST_UPDATER_PUBLIC_KEY }}
+          LOUPIST_RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          LOUPIST_WINDOWS_TIMESTAMP_URL: https://timestamp.digicert.com
+        run: |
+          $pfxPath = Join-Path $env:RUNNER_TEMP "loupist-signing.pfx"
+          $encoded = $env:WINDOWS_CERTIFICATE -replace '\s', ''
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($encoded))
+          $password = ConvertTo-SecureString `
+            -String $env:WINDOWS_CERTIFICATE_PASSWORD `
+            -AsPlainText `
+            -Force
+          $importedCertificates = @(
+            Import-PfxCertificate `
+            -FilePath $pfxPath `
+            -CertStoreLocation Cert:\CurrentUser\My `
+            -Password $password
+          )
+          $privateCertificates = @(
+            $importedCertificates | Where-Object { $_.HasPrivateKey }
+          )
+          if ($privateCertificates.Count -ne 1) {
+            throw "Expected exactly one imported Authenticode certificate with a private key."
+          }
+          $certificate = $privateCertificates[0]
+          $env:LOUPIST_WINDOWS_CERTIFICATE_THUMBPRINT = $certificate.Thumbprint
+          $releaseConfig = Join-Path $env:RUNNER_TEMP "loupist-tauri-release.json"
+          & python apps/loupist/scripts/create-release-config.py `
+            --platform windows `
+            --version $env:LOUPIST_RELEASE_VERSION `
+            --release-config apps/loupist/src-tauri/tauri.release.conf.json `
+            --output $releaseConfig
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to generate the merged Tauri release config."
+          }
+          "LOUPIST_WINDOWS_CERTIFICATE_THUMBPRINT=$($certificate.Thumbprint)" |
+            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "LOUPIST_TAURI_RELEASE_CONFIG=$releaseConfig" |
+            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Stage and sign sidecars and OpenBB runtime
+        shell: pwsh
+        env:
+          LOUPIST_REQUIRE_DISTRIBUTION_SIGNING: "1"
+          LOUPIST_WINDOWS_TIMESTAMP_URL: https://timestamp.digicert.com
+        run: apps/loupist/scripts/stage-windows-x64.ps1
+
+      - name: Build and sign Loupist
+        working-directory: apps/loupist
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.LOUPIST_TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.LOUPIST_TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if ($env:TAURI_CONFIG) {
+            throw "TAURI_CONFIG must remain unset during release builds."
+          }
+          if (-not (Test-Path -LiteralPath $env:LOUPIST_TAURI_RELEASE_CONFIG -PathType Leaf)) {
+            throw "Merged Tauri release config is missing."
+          }
+          & npm exec -- tauri build `
+            --target x86_64-pc-windows-msvc `
+            --bundles nsis `
+            --config $env:LOUPIST_TAURI_RELEASE_CONFIG
+          if ($LASTEXITCODE -ne 0) {
+            throw "Tauri Windows release build failed."
+          }
+
+      - name: Verify Authenticode and updater artifacts
+        shell: pwsh
+        timeout-minutes: 20
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          $bundleRoot = "apps/loupist/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis"
+          $installer = @(Get-ChildItem -Path $bundleRoot -Filter "*-setup.exe" -File)
+          if ($installer.Count -ne 1) {
+            throw "Expected exactly one NSIS installer/updater."
+          }
+          if (-not (Test-Path -LiteralPath ($installer.FullName + ".sig"))) {
+            throw "Windows updater signature is missing."
+          }
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer.FullName
+          if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+            throw "NSIS installer Authenticode verification failed: $($signature.StatusMessage)"
+          }
+          & apps/loupist/scripts/check-windows-installer.ps1 `
+            -Installer $installer[0].FullName `
+            -ExpectedVersion $env:RELEASE_VERSION `
+            -RequireDistributionSigning
+          if ($LASTEXITCODE -ne 0) {
+            throw "Signed final NSIS package inspection failed."
+          }
+
+      - name: Normalize Windows release assets
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          python apps/loupist/scripts/prepare-release-assets.py `
+            --platform windows `
+            --version $env:RELEASE_VERSION `
+            --bundle-root apps/loupist/src-tauri/target/x86_64-pc-windows-msvc/release/bundle `
+            --output release-assets
+
+      - name: Upload Windows release assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: loupist-${{ needs.validate.outputs.version }}-windows-x86_64
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove temporary signing material
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:LOUPIST_WINDOWS_CERTIFICATE_THUMBPRINT) {
+            Remove-Item `
+              -LiteralPath "Cert:\CurrentUser\My\$env:LOUPIST_WINDOWS_CERTIFICATE_THUMBPRINT" `
+              -Force `
+              -ErrorAction SilentlyContinue
+          }
+          foreach ($path in @(
+            (Join-Path $env:RUNNER_TEMP "loupist-signing.pfx"),
+            (Join-Path $env:RUNNER_TEMP "loupist-tauri-release.json")
+          )) {
+            Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+          }

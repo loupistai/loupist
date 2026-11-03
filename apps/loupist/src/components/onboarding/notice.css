@@ -1,0 +1,5 @@
+.notice-card { display: grid; gap: var(--gg-space-3); padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
+.notice-card h2 { margin: 0; font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); font-weight: var(--gg-weight-semibold); }
+.notice-acknowledgment { display: flex; align-items: center; gap: var(--gg-space-2); min-height: var(--gg-size-control-lg); color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); cursor: pointer; }
+.notice-acknowledgment input { flex-shrink: 0; accent-color: var(--gg-color-action); }
+.notice-body { margin-bottom: var(--gg-space-4); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
