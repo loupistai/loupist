@@ -1,8 +1,6 @@
 //! App-level factual context. No suitability profile or agent prompt injection.
 use super::{SqliteStore, StoreError, StoreResult};
-use rusqlite::params;
-#[cfg(any(test, debug_assertions))]
-use rusqlite::OptionalExtension;
+use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
