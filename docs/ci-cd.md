@@ -7,6 +7,10 @@ This page is the release procedure. Product behavior is not defined here. Workfl
 ## GitHub
 
 The official repository is `loupistai/loupist` under the Loupist AI organization.
+Organization members require two-factor authentication. Base repository permissions
+are `none`; grant access explicitly per repository or team. Organization owners
+control repository visibility changes, deletion, transfer and GitHub App installation.
+
 `main` is the integration and release base. Work arrives through short-lived
 branches and pull requests; coding agents use `codex/<topic>`. Use squash merges,
 delete merged branches, require an up-to-date branch and resolved conversations,
@@ -20,6 +24,9 @@ outside contributors before they run. Weekly grouped Dependabot PRs cover Action
 npm, Cargo and uv; review them through the ordinary CI and PR process. Private
 vulnerability reporting, Dependabot alerts/updates, secret scanning and push
 protection belong in the repository settings.
+
+CodeQL default setup analyzes Actions, JavaScript/TypeScript and Python on GitHub.
+Rust is checked by the Rust CI job's formatting, Clippy and behavior/security tests.
 
 Require pull requests for `main`. Restrict `v*` tag creation, update, and deletion. Protect the `release`, `release-qualification`, and `stable-release` environments. If an environment uses selected deployment branches and tags, allow the `v*` **tag** pattern for each tag-triggered release job. Signing secrets live only in `release`. `stable-release` must require at least one reviewer, prevent self-review, and disallow administrator bypass, so the person who dispatches promotion cannot approve or force the publication. Enable immutable GitHub Releases.
 
