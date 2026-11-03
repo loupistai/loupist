@@ -111,12 +111,20 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install Rust
+      - name: Install Rust and runtime test toolchains
         uses: ./.github/actions/setup-toolchains
         with:
+          node: "true"
+          node-cache: |
+            apps/loupist/package-lock.json
+            apps/loupist/e2e/package-lock.json
+          python: "true"
           rust: "true"
           rust-components: clippy,rustfmt
           rust-cache-key: verify
+
+      - name: Install locked runtime test dependencies
+        run: sh apps/loupist/scripts/setup.sh
 
       - name: Verify desktop Rust
         run: |
@@ -163,6 +171,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+
+      - name: Prepare macOS test display
+        if: ${{ needs.changes.outputs.native == 'true' }}
+        run: swift apps/loupist/e2e/prepare-ci-display.swift
 
       - name: Install CI toolchains
         if: ${{ needs.changes.outputs.native == 'true' }}

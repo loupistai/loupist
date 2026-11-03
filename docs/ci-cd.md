@@ -32,6 +32,11 @@ sidecar contracts together rather than proposing incompatible individual majors.
 CodeQL default setup analyzes Actions, JavaScript/TypeScript and Python on GitHub.
 Rust is checked by the Rust CI job's formatting, Clippy and behavior/security tests.
 
+Release, qualification and promotion workflows are initially disabled in GitHub.
+Keep them disabled until a maintainer explicitly authorizes the first release and
+completes signing setup and the release audit. CI package smokes publish only
+short-lived workflow evidence, not GitHub Releases or update manifests.
+
 Require pull requests for `main`. Restrict `v*` tag creation, update, and deletion. Protect the `release`, `release-qualification`, and `stable-release` environments. If an environment uses selected deployment branches and tags, allow the `v*` **tag** pattern for each tag-triggered release job. Signing secrets live only in `release`. `stable-release` must require at least one reviewer, prevent self-review, and disallow administrator bypass, so the person who dispatches promotion cannot approve or force the publication. Enable immutable GitHub Releases.
 
 Before every RC tag and stable promotion, run the checked-in, read-only audit
@@ -72,10 +77,17 @@ Source jobs use the same bounded check runner as local development, with a
 a 60-minute job limit. Their receipts and logs upload on
 success or failure and expire after seven days. The web gate includes agent and
 World evaluator regression tests; Rust also checks the `eval-harness` contracts.
+The Rust job installs the locked Node dependencies and OpenBB Python environment:
+host integration tests exercise Pi prompts and Python process ownership, not just
+Rust code in isolation.
 These gates make no paid model calls. See [broader checks](development.md#broader-checks).
 
 The macOS native job stages the same pinned sidecars used by the package smoke
-and drives an isolated native WebView through onboarding, Loupist management,
+and first selects a supported CI display mode of at least 1920x1080. The helper
+only runs in GitHub Actions and changes the runner's login session; it fails if
+the visible desktop cannot fit the required 1680x820 test window. Test geometry
+and assertions remain the same as local runs. The job drives an isolated native
+WebView through onboarding, Loupist management,
 Connections, Knowledge, Chat lifecycle and accessibility. Its persistence suite
 creates a Loupist, a Chat, Library items (Source, principle, Journal entry) and
 settings, then checks them after a restart and after opening a copy of the Loupist
