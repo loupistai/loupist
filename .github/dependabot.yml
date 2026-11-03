@@ -43,7 +43,14 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "openbb*"
+        update-types: ["version-update:semver-major"]
     groups:
+      openbb-family:
+        patterns: ["openbb*"]
+        update-types: [minor, patch]
       python-minor-and-patch:
         patterns: ["*"]
+        exclude-patterns: ["openbb*"]
         update-types: [minor, patch]

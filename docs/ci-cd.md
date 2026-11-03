@@ -25,6 +25,10 @@ npm, Cargo and uv; review them through the ordinary CI and PR process. Private
 vulnerability reporting, Dependabot alerts/updates, secret scanning and push
 protection belong in the repository settings.
 
+OpenBB and its extensions receive grouped minor/patch updates. Major upgrades are
+coordinated runtime changes: migrate the base package, extensions, manifest and
+sidecar contracts together rather than proposing incompatible individual majors.
+
 CodeQL default setup analyzes Actions, JavaScript/TypeScript and Python on GitHub.
 Rust is checked by the Rust CI job's formatting, Clippy and behavior/security tests.
 

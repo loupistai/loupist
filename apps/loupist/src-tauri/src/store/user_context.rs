@@ -452,10 +452,9 @@ impl SqliteStore {
             crypto: kind(crypto),
         })
     }
-    /// Tests read back a committed snapshot, and debug builds scan outbound
-    /// text for its numbers; the product reads holdings only through `map_context`.
-    #[cfg(any(test, debug_assertions))]
-    pub fn holdings_latest(&self) -> StoreResult<Option<HoldingsSnapshot>> {
+    /// Host privacy checks and tests read the latest committed snapshot.
+    /// Model-facing holdings still come only from `map_context` identities.
+    pub(crate) fn holdings_latest(&self) -> StoreResult<Option<HoldingsSnapshot>> {
         let connection = self.lock()?;
         let snapshot = connection.query_row("SELECT snapshot_id,source,imported_at_ms,currency,note FROM user_holdings_snapshots ORDER BY imported_at_ms DESC,rowid DESC LIMIT 1", [], |r| {
             let source: String = r.get(1)?;
