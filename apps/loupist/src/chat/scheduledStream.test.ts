@@ -49,13 +49,14 @@ it("buffers replay before the watch acknowledgement, joins the existing Chat str
   registry.dispose();
 });
 
-it("retries a not-yet-admitted run and uses ordinary Chat Stop for its exact native run", async () => {
+it.each(["submitted", "streaming"] as const)("retries admission and stops the exact scheduled run while %s", async (status) => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const stop = vi.spyOn(bridge, "chatAbort").mockResolvedValue();
   let observer!: StreamObserver<ChatStreamEvent>;
   const watch = vi.spyOn(bridge, "scheduledTaskWatch").mockResolvedValueOnce(null).mockImplementation(async (_request, next) => {
     observer = next;
     next({ type: "started", run_id: "chat-scheduled-one" });
+    if (status === "streaming") next({ type: "delta", run_id: "chat-scheduled-one", text: "Reviewing sources" });
     return { run: scheduledRunFixture(), thread: baseline() };
   });
   const registry = new ChatSessionRegistry(bridge, handlers());
@@ -64,7 +65,10 @@ it("retries a not-yet-admitted run and uses ordinary Chat Stop for its exact nat
   await Promise.resolve();
   registry.resumeScheduled(scheduledRunFixture());
   const chat = registry.get("loupist-quality", "scheduled-chat")!;
-  await waitFor(() => expect(chat.status).toBe("streaming"));
+  // The SDK remains submitted until content arrives; both phases are active.
+  await waitFor(() => expect(watch).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(chat.status).toBe(status));
+  expect(registry.isActive("loupist-quality", "scheduled-chat")).toBe(true);
   await chat.stop();
   await waitFor(() => expect(stop).toHaveBeenCalledWith("chat-scheduled-one"));
   observer({ type: "aborted", run_id: "chat-scheduled-one" });

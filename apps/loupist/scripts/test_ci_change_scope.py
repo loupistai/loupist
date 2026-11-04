@@ -19,6 +19,10 @@ git_changed_files = SCOPE["git_changed_files"]
 class ChangeScopeTests(unittest.TestCase):
     def test_change_scope_matrix(self) -> None:
         cases = (
+            (["apps/loupist/marketplace/catalog.json"], (True, True)),
+            ([".nvmrc"], (True, True)),
+            (["apps/loupist/package.json"], (True, True)),
+            (["apps/loupist/package-lock.json"], (True, True)),
             (["apps/loupist/src/App.tsx"], (True, False)),
             (["apps/loupist/vite.config.ts"], (True, False)),
             (["docs/ci-cd.md", "README.md", "CHANGELOG.md"], (False, False)),
@@ -63,6 +67,23 @@ class ChangeScopeTests(unittest.TestCase):
             native, packaging = classify(changed)
             self.assertTrue(native)
             self.assertFalse(packaging)
+
+    def test_rename_out_of_native_surface_keeps_deleted_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self._git(repo, "init", "-b", "main")
+            source = repo / "apps/loupist/src/retired.ts"
+            source.parent.mkdir(parents=True)
+            source.write_text("export const retired = true;\n")
+            self._git(repo, "add", ".")
+            self._git(repo, "commit", "-m", "native source")
+            base = self._git(repo, "rev-parse", "HEAD").strip()
+            source.rename(repo / "retired.md")
+            self._git(repo, "add", "-A")
+            self._git(repo, "commit", "-m", "move to documentation")
+            paths = git_changed_files(base, "HEAD", root=repo)
+            self.assertIn("apps/loupist/src/retired.ts", paths)
+            self.assertEqual(classify(paths), (True, False))
 
     def _git(self, repo: Path, *args: str) -> str:
         completed = subprocess.run(

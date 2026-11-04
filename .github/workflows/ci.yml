@@ -20,6 +20,7 @@ env:
 jobs:
   changes:
     name: Classify change scope
+    timeout-minutes: 5
     runs-on: ubuntu-latest
     outputs:
       native: ${{ steps.scope.outputs.native }}
@@ -49,7 +50,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install Node 22.19
+      - name: Install pinned Node LTS
         uses: ./.github/actions/setup-toolchains
         with:
           node: "true"
@@ -65,7 +66,7 @@ jobs:
 
       - name: Retain web check evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: checks-web
           path: apps/loupist/output/checks/*/
@@ -87,14 +88,14 @@ jobs:
         with:
           python: "true"
 
-      - name: Verify OpenBB and graph workers
+      - name: Verify OpenBB and repository scripts
         run: |
           set -euo pipefail
           sh apps/loupist/scripts/check.sh python --install
 
       - name: Retain python check evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: checks-python
           path: apps/loupist/output/checks/*/
@@ -133,7 +134,7 @@ jobs:
 
       - name: Retain rust check evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: checks-rust
           path: apps/loupist/output/checks/*/
@@ -142,7 +143,9 @@ jobs:
 
   verify:
     name: Source and product contracts
+    timeout-minutes: 5
     needs:
+      - changes
       - verify-web
       - verify-python
       - verify-rust
@@ -152,6 +155,7 @@ jobs:
       - name: Require every source check
         run: |
           set -euo pipefail
+          test "${{ needs.changes.result }}" = success
           test "${{ needs.verify-web.result }}" = success
           test "${{ needs.verify-python.result }}" = success
           test "${{ needs.verify-rust.result }}" = success
@@ -216,7 +220,7 @@ jobs:
 
       - name: Retain native interaction evidence
         if: ${{ always() && needs.changes.outputs.native == 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: native-macos-evidence
           path: |
@@ -228,20 +232,13 @@ jobs:
 
   package-smoke:
     timeout-minutes: 60
-    name: Package smoke (${{ matrix.target }})
+    name: Package smoke (aarch64-apple-darwin)
     needs: changes
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-15
-            target: aarch64-apple-darwin
-            bundle: dmg
-    runs-on: ${{ needs.changes.outputs.packaging == 'true' && matrix.os || 'ubuntu-latest' }}
+    runs-on: ${{ needs.changes.outputs.packaging == 'true' && 'macos-15' || 'ubuntu-latest' }}
     steps:
       - name: Skip unchanged packaging surface
         if: ${{ needs.changes.outputs.packaging != 'true' }}
-        run: echo "No packaging-surface changes; skipping ${{ matrix.target }} package smoke."
+        run: echo "No packaging-surface changes; skipping aarch64-apple-darwin package smoke."
 
       - name: Check out repository
         if: ${{ needs.changes.outputs.packaging == 'true' }}
@@ -255,7 +252,7 @@ jobs:
         with:
           node: "true"
           rust: "true"
-          rust-targets: ${{ matrix.target }}
+          rust-targets: aarch64-apple-darwin
           rust-cache-key: package-smoke
           python: "true"
 
@@ -265,7 +262,7 @@ jobs:
         run: npm ci
 
       - name: Stage pinned macOS sidecars
-        if: ${{ needs.changes.outputs.packaging == 'true' && runner.os == 'macOS' }}
+        if: ${{ needs.changes.outputs.packaging == 'true' }}
         run: apps/loupist/scripts/stage-macos-arm64.sh
 
       - name: Build unsigned package smoke
@@ -274,27 +271,12 @@ jobs:
         shell: bash
         run: >-
           npm exec -- tauri build
-          --target ${{ matrix.target }}
-          --bundles ${{ matrix.bundle }}
+          --target aarch64-apple-darwin
+          --bundles dmg
           --config src-tauri/tauri.package-smoke.conf.json
 
-      - name: Assert installer was produced
-        if: ${{ needs.changes.outputs.packaging == 'true' }}
-        shell: bash
-        env:
-          BUNDLE: ${{ matrix.bundle }}
-          TARGET: ${{ matrix.target }}
-        run: |
-          set -euo pipefail
-          case "$BUNDLE" in
-            dmg) pattern='*.dmg' ;;
-            nsis) pattern='*-setup.exe' ;;
-            *) exit 1 ;;
-          esac
-          test -n "$(find "apps/loupist/src-tauri/target/$TARGET/release/bundle/$BUNDLE" -type f -name "$pattern" -print -quit)"
-
       - name: Verify mounted macOS package metadata
-        if: ${{ needs.changes.outputs.packaging == 'true' && matrix.bundle == 'dmg' }}
+        if: ${{ needs.changes.outputs.packaging == 'true' }}
         shell: bash
         run: |
           set -euo pipefail

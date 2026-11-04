@@ -41,12 +41,15 @@ NATIVE_EXACT = {
 NATIVE_NAME_PREFIXES = ("apps/loupist/scripts/stage-",)
 
 PACKAGING_PREFIXES = (
+    "apps/loupist/marketplace/",
     "apps/loupist/src-tauri/",
     "apps/loupist/openbb/",
     "apps/loupist/agent/",
     "src/",
 )
 PACKAGING_EXACT = {
+    "apps/loupist/package.json",
+    "apps/loupist/package-lock.json",
     "LICENSE",
     "NOTICE",
     "apps/loupist/THIRD_PARTY_NOTICES.md",
@@ -61,6 +64,7 @@ PACKAGING_NAME_PREFIXES = (
 )
 
 FORCE_FULL_EXACT = {
+    ".nvmrc",
     ".github/workflows/ci.yml",
     "apps/loupist/scripts/ci_change_scope.py",
 }
@@ -123,6 +127,7 @@ def git_changed_files(
             "git",
             "diff",
             "--name-only",
+            "--no-renames",
             "--diff-filter=ACDMRTUXB",
             f"{base_sha}...{head_sha}",
         ],

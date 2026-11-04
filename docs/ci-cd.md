@@ -66,11 +66,20 @@ rather than adding a broader long-lived credential to every release job.
 PRs and `main` run frontend, Rust and the OpenBB worker,
 repository checks, macOS native interaction, and Apple Silicon package
 smokes. Source checks split across Ubuntu (web, Python) and macOS (Rust) and do
-not block native or package jobs. Repeat compiles restore a per-job Rust cache.
+not block native or package jobs. Repeat compiles restore Rust caches populated
+only by successful jobs on `main` (push or manual); PRs restore them without
+uploading redundant branch caches.
+The signed build shares the package-smoke dependency cache. Official package CI
+has one explicit macOS job; experimental Windows packaging stays manual-only.
 Pull requests that only touch documentation skip native and package jobs while
 still reporting the required check names. Renderer-only pull requests skip
-package smokes. `main` and `workflow_dispatch` always run the full set. Actions
-are pinned to commit SHAs. Toolchain pins: Rust 1.97.1, uv 0.11.2, Syft 1.50.0.
+package smokes. App dependency manifests, lockfiles and the Marketplace catalog
+embedded by Rust still require packaging. Renaming a native file into
+documentation cannot bypass the native gate. `main` and `workflow_dispatch`
+always run the full set. Actions are pinned to commit SHAs. Toolchain pins:
+Node 26.13.0 LTS (root `.nvmrc`), Rust 1.97.1, uv 0.11.2,
+Syft 1.50.0. Node setup in CI and release validation/signature verification reads
+the same pin. npm caching is explicit and disabled in signing/publication jobs.
 
 Source jobs use the same bounded check runner as local development, with a
 60-minute job limit and per-command timeouts. Native and package jobs also have
@@ -96,7 +105,10 @@ no provider or connector credentials; the live release journeys
 (`npm run test:live-journeys` in `apps/loupist/e2e/`) are a pre-release
 acceptance step rather than CI input.
 
-A release tag is accepted only from a `main` commit whose `ci.yml` push run succeeded. The tag workflow builds packages; it does not re-run that source gate.
+A release tag is accepted only from a `main` commit whose `ci.yml` push run
+succeeded. The tag workflow builds packages; it does not re-run that source gate.
+Release validation, assembly/promotion and signing jobs have 15, 30 and 90 minute limits
+respectively; signed package preflight has a 60 minute limit.
 
 Official installers and automatic-update manifests include only macOS Apple
 Silicon. Asset and qualification verifiers require this exact platform set.
