@@ -3,6 +3,84 @@ use serde_json::json;
 use tauri::Manager;
 use FirstProviderBodyWatchdogSelectMode::{Fair, Timeout};
 
+fn memory_ref(read_ref: &str, title: &str, access: MemoryAccess) -> MemoryRefSnapshot {
+    MemoryRefSnapshot {
+        read_ref: read_ref.into(),
+        kind: "source".into(),
+        title: title.into(),
+        excerpt: "Operating margin increased.".into(),
+        as_of: None,
+        section: None,
+        access,
+        full_record_digest: None,
+        record_id: format!("rec_{}", "a".repeat(32)),
+        revision_id: format!("rev_{}", "b".repeat(32)),
+        object_id: "filing".into(),
+        span_id: None,
+        receipt_id: Some("receipt".into()),
+    }
+}
+
+#[test]
+fn durable_memory_trace_retains_the_last_exact_read_in_reference_order() {
+    let last = memory_ref("z-read", "Last read", MemoryAccess::ExactRead);
+    let first = memory_ref("a-read", "Updated read", MemoryAccess::ExactRead);
+    let trace = durable_memory_trace([
+        last.clone(),
+        memory_ref("a-read", "Earlier read", MemoryAccess::ExactRead),
+        memory_ref("m-read", "Discovery", MemoryAccess::SearchDiscovered),
+        first.clone(),
+        memory_ref("a-read", "Later discovery", MemoryAccess::SearchDiscovered),
+    ])
+    .unwrap();
+    let expected = vec![first, last];
+    assert_eq!(trace.refs, expected);
+    assert_eq!(trace.observed_exact_count, 2);
+    assert!(!trace.refs_truncated);
+    assert_eq!(trace.refs_digest, memory_refs_digest(&expected).unwrap());
+}
+
+#[test]
+fn durable_memory_trace_counts_and_digests_all_exact_reads_before_truncation() {
+    for count in [32, 35] {
+        let all_refs = (0..count)
+            .map(|index| {
+                memory_ref(
+                    &format!("read-{index:02}"),
+                    "Exact read",
+                    MemoryAccess::ExactRead,
+                )
+            })
+            .collect::<Vec<_>>();
+        let trace = durable_memory_trace(all_refs.iter().rev().cloned()).unwrap();
+        assert_eq!(trace.refs, all_refs[..32]);
+        assert_eq!(trace.observed_exact_count, count as u64);
+        assert_eq!(trace.refs_truncated, count > 32);
+        assert_eq!(trace.refs_digest, memory_refs_digest(&all_refs).unwrap());
+        if count > 32 {
+            assert_ne!(trace.refs_digest, memory_refs_digest(&trace.refs).unwrap());
+        }
+    }
+}
+
+#[test]
+fn durable_memory_trace_is_empty_without_exact_reads() {
+    for memories in [
+        Vec::new(),
+        vec![memory_ref(
+            "discovered",
+            "Discovery",
+            MemoryAccess::SearchDiscovered,
+        )],
+    ] {
+        let trace = durable_memory_trace(memories).unwrap();
+        assert!(trace.refs.is_empty());
+        assert_eq!(trace.observed_exact_count, 0);
+        assert!(!trace.refs_truncated);
+        assert_eq!(trace.refs_digest, memory_refs_digest(&[]).unwrap());
+    }
+}
+
 #[test]
 fn retry_last_returns_the_original_question_and_date_and_persists_steers() {
     let root = tempfile::tempdir().unwrap();
