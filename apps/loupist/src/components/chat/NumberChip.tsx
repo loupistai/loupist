@@ -294,8 +294,8 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
       {/* A non-modal dialog whether opened by hover, focus or click: it holds buttons, so it is never a tooltip. */}
       <Popover.Content ref={content} id={popoverId} role="dialog" aria-modal={false} aria-labelledby={titleId}
         className="number-chip-popover" data-kind={check.kind} data-overflow={overflowing || undefined} side="top" align="start" sideOffset={6}
-        // The app header and chat sub-header sit above the thread; flip below the number rather than cover them.
-        collisionPadding={{ top: 112, right: 8, bottom: 8, left: 8 }}
+        // Stay under the titlebar and above the composer. A short window scrolls the body; the actions stay pinned.
+        collisionPadding={{ top: 112, right: 8, bottom: composerClearance(chip.current), left: 8 }}
         onOpenAutoFocus={(event) => event.preventDefault()} onCloseAutoFocus={(event) => event.preventDefault()}
         // Shift+Tab back to the number keeps the popover open; it is the popover's own trigger.
         onFocusOutside={(event) => { if (event.target === chip.current) event.preventDefault(); }}
@@ -340,6 +340,13 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
       </Popover.Content>
     </Popover.Portal>
   </Popover.Root>;
+}
+
+/** Pixels to keep clear above the bottom edge so the popover does not cover the composer. */
+function composerClearance(chip: HTMLElement | null): number {
+  const shell = chip?.closest(".chat-workspace")?.querySelector(".composer-shell");
+  if (!(shell instanceof HTMLElement)) return 8;
+  return Math.max(8, Math.round(window.innerHeight - shell.getBoundingClientRect().top + 8));
 }
 
 /** The receipt's "numbers to check": scroll to the first such number in the answer and pin its popover. */
