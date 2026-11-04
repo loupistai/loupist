@@ -389,6 +389,13 @@ html[data-desktop-platform="macos"] .app-shell {
   body:has([data-mobile="true"][data-slot="sidebar"]) :is(.app-titlebar, .app-stage) {
     padding-inline-start: calc(var(--gg-size-sidebar) + var(--gg-space-7) + var(--gg-space-4));
   }
+  /* The remaining header is short. The panel kind keeps its menu button, and the selected name stays inside the profile row. */
+  body:has([data-mobile="true"][data-slot="sidebar"]) .header-panel-toggle > span { display: none; }
+  body:has([data-mobile="true"][data-slot="sidebar"]) .loupist-header-identity[aria-pressed="true"] {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: min(240px, 100%);
+  }
   .shell-tabs { margin-left: 0; }
   .app-header { gap: var(--gg-space-2); padding-inline: var(--gg-space-2); }
 }
