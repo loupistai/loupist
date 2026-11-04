@@ -77,13 +77,12 @@
     "@earendil-works/pi-coding-agent": {
       "undici": "8.12.3"
     },
-    "@earendil-works/chord": "1.0.1",
-    "@earendil-works/pi-agent-core": "1.0.1",
+    "@earendil-works/pi-agent-core": "1.4.0",
     "@earendil-works/pi-ai": "1.4.0",
-    "@earendil-works/pi-codemode": "1.0.1",
-    "@earendil-works/pi-mcp": "1.0.1",
-    "@earendil-works/pi-tui": "1.0.1",
-    "@earendil-works/pi-telemetry": "1.0.1",
+    "@earendil-works/pi-codemode": "1.4.0",
+    "@earendil-works/pi-mcp": "1.4.0",
+    "@earendil-works/pi-tui": "1.4.0",
+    "@earendil-works/pi-telemetry": "1.4.0",
     "minimatch": "11.0.4"
   }
 }

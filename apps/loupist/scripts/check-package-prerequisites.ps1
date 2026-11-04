@@ -24,8 +24,8 @@ function Assert-X64Pe([string]$Path) {
 }
 
 $target = "x86_64-pc-windows-msvc"
-$piVersion = "1.0.1"
-$archiveSha256 = "5f95370368317f7a1520bb0838b12865c9fe9d0d60898bd1c61e986d6a11b75d"
+$piVersion = "1.4.0"
+$archiveSha256 = "0f7256ea8bdac3af20012b94fdc1252a31cc6dc0d2f9b9eb539555d22e3e321b"
 $scriptDir = $PSScriptRoot
 $appRoot = Split-Path -Parent $scriptDir
 $repoRoot = (Resolve-Path (Join-Path $appRoot "..\..")).Path

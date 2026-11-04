@@ -64,10 +64,12 @@ arrives. Both `submitted` and `streaming` are active in the registry. The Stop
 regression tests exercise each phase and require cancellation of the exact
 native run, including retry after admission initially returns no stream.
 
-PR #2 is deferred: it updates Pi AI/coding-agent to 1.4.0 while keeping
-agent-core/telemetry and the signed standalone sidecar at 1.0.1. Its CI evidence
-shows a missing `NOOP_TELEMETRY_METRICS` export and security-pin failures. Do not
-merge that partial upgrade or relax its tests. A Pi upgrade must update the
-whole package family, security pins, platform archive digests and packaged
-runtime checks together, then pass host isolation and native/package tests.
-The pinned 1.0.1 family and existing security overrides remain in place.
+PR #2 upgrades the complete Pi runtime family to 1.4.0. Its initial partial
+update left agent-core/telemetry and the standalone sidecar at 1.0.1, producing
+a missing `NOOP_TELEMETRY_METRICS` export and security-pin failures. The reviewed
+upgrade aligns the npm family, security profile, Rust runtime version, macOS and
+Windows archive digests, staging scripts and packaged-runtime checks. Archive
+digests come from upstream v1.4.0 `SHA256SUMS`. Existing Undici, minimatch and
+brace-expansion security pins remain enforced. The obsolete chord override is
+removed because coding-agent no longer depends on it. Host isolation and
+native/package tests remain required for this runtime upgrade.

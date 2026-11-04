@@ -59,7 +59,7 @@ workspace file discovery, copyright David Peter and contributors, under the
 MIT or Apache License 2.0. Both upstream license texts are included in
 `pi-runtime/workspace-tools/`.
 
-Loupist bundles Pi coding agent 1.0.1, copyright (c) 2025 Mario Zechner,
+Loupist bundles Pi coding agent 1.4.0, copyright (c) 2025 Mario Zechner,
 under the MIT License:
 
 > Permission is hereby granted, free of charge, to any person obtaining a copy

@@ -28,8 +28,11 @@ export function verifyPiDependencies() {
   const minimatch = installedPackage("minimatch", pi.root);
   const braces = installedPackage("brace-expansion", minimatch.root);
   const lock = JSON.parse(readFileSync(join(app, "package-lock.json"), "utf8"));
+  const family = ["pi-ai", "pi-agent-core", "pi-codemode", "pi-mcp", "pi-tui", "pi-telemetry"]
+    .map((name) => installedPackage(`@earendil-works/${name}`, pi.root));
   for (const [pkg, expected] of [
     [pi, profile.pi], [undici, profile.undici], [braces, profile["brace-expansion"]],
+    ...family.map((pkg) => [pkg, profile.pi]),
   ]) {
     assert.equal(pkg.manifest.version, expected, `${pkg.manifest.name} must match the security pin; run npm ci`);
     const key = relative(app, pkg.root).split(sep).join("/");
