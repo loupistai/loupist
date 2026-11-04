@@ -59,5 +59,6 @@ runs:
       with:
         version: 0.11.2
         enable-cache: true
+        save-cache: ${{ github.ref == 'refs/heads/main' }}
         cache-dependency-glob: |
           apps/loupist/openbb/uv.lock

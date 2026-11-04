@@ -69,6 +69,26 @@ class CheckRunnerTests(unittest.TestCase):
         self.assertIn("real failure", (directory / "web-fail.log").read_text())
         self.assertEqual(json.loads((directory / "receipt.json").read_text()), receipt)
 
+    def test_only_lists_the_named_steps_and_refuses_unknown_names(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        from io import StringIO
+
+        listed = StringIO()
+        with redirect_stdout(listed):
+            self.assertEqual(
+                checks.main(["rust", "--list", "--only", "clippy,tests"]), 0
+            )
+        names = [
+            line.split("]", 1)[1].split(":", 1)[0].strip()
+            for line in listed.getvalue().splitlines()
+        ]
+        self.assertEqual(names, ["clippy", "tests"])
+        for only in ("clipy", ""):
+            with self.subTest(only=only), redirect_stderr(StringIO()):
+                with self.assertRaises(SystemExit) as refused:
+                    checks.main(["rust", "--list", "--only", only])
+                self.assertEqual(refused.exception.code, 2)
+
     def test_rust_runs_after_python_install_and_only_when_it_passed(self):
         marker = self.root / "python-ready"
         ready = f"from pathlib import Path; assert Path({str(marker)!r}).exists()"

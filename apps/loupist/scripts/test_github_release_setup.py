@@ -19,16 +19,15 @@ UPDATER_KEY, WINDOWS_CERT = (
     "LOUPIST_WINDOWS_CERTIFICATE",
 )
 ENVIRONMENTS = ("release", "release-qualification", "stable-release")
-CHECKS = (
-    "Source and product contracts",
-    "Native macOS interaction",
-    "Package smoke (aarch64-apple-darwin)",
-)
+CHECKS = ("Source and product contracts",)
 ACTIONS_APP = 15368
 ACTOR = {"actor_id": 1, "actor_type": "User", "bypass_mode": "always"}
 V_TAGS = {"ref_name": {"include": ["refs/tags/v*"]}}
 CUSTOM = {"protected_branches": False, "custom_branch_policies": True}
-WINDOWS_CHECKS = (
+ABSENT_FROM_PULL_REQUESTS = (
+    "Native macOS interaction",
+    "Package smoke (aarch64-apple-darwin)",
+    "Rust contracts (macOS)",
     "Native Windows interaction",
     "Package smoke (x86_64-pc-windows-msvc)",
 )
@@ -37,7 +36,7 @@ WINDOWS_CHECKS = (
 def rulesets():
     status = {
         "do_not_enforce_on_create": False,
-        "strict_required_status_checks_policy": True,
+        "strict_required_status_checks_policy": False,
         "required_status_checks": [
             {"context": name, "integration_id": ACTIONS_APP} for name in CHECKS
         ],
@@ -166,7 +165,7 @@ WEAKENED = [
     ("main bypass omitted", lambda s: main_rule(s).pop("bypass_actors"), "main protection", None),
     ("main bypass actor", lambda s: main_rule(s).update(bypass_actors=[ACTOR]), "main protection", None),
     ("no status rule", lambda s: without(s, "required_status_checks"), "main protection", None),
-    ("loose status rule", lambda s: status(s).update(strict_required_status_checks_policy=False), "main protection", None),
+    ("enforced after create only", lambda s: status(s).update(do_not_enforce_on_create=True), "main protection", None),
     ("wrong status source", lambda s: status(s)["required_status_checks"][0].update(integration_id=1), "main protection", None),
     ("missing context", lambda s: status(s)["required_status_checks"].pop(), "main protection", None),
     ("force push allowed", lambda s: without(s, "non_fast_forward"), "main protection", None),
@@ -199,8 +198,8 @@ WEAKENED = [
     ("qualification secret", lambda s: s["environment_secrets"].update({"release-qualification": {WINDOWS_CERT}}), "environment release-qualification secret isolation", ISOLATION + WINDOWS_CERT),
     ("stable secret", lambda s: s["environment_secrets"].update({"stable-release": {UPDATER_KEY}}), "environment stable-release secret isolation", ISOLATION + UPDATER_KEY),
     *[
-        (f"{source} {context}", lambda s, m=mutation: m(s), "deferred Windows checks", None)
-        for context in WINDOWS_CHECKS
+        (f"{source} {context}", lambda s, m=mutation: m(s), "checks absent from pull requests", None)
+        for context in ABSENT_FROM_PULL_REQUESTS
         for source, mutation in (
             ("ruleset", lambda s, c=context: s["rulesets"].append(windows_ruleset(c))),
             ("legacy checks", lambda s, c=context: s.update(main_legacy_protection={"required_status_checks": {"checks": [{"context": c}]}})),
@@ -239,10 +238,15 @@ class GitHubReleaseSetupTest(unittest.TestCase):
         self.assertFalse(
             errors(self.audit(lambda s: s.update(immutable_releases=owner)))
         )
+
+        def strict(s):
+            status(s).update(strict_required_status_checks_policy=True)
+
+        self.assertFalse(errors(self.audit(strict)))
         classic = {
             "required_pull_request_reviews": {"required_approving_review_count": 1},
             "required_status_checks": {
-                "strict": True,
+                "strict": False,
                 "checks": [{"context": c, "app_id": ACTIONS_APP} for c in CHECKS],
             },
         }

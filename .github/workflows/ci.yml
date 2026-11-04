@@ -16,9 +16,11 @@ on:
 permissions:
   contents: read
 
+# Pull requests cancel their own superseded runs. Every main push keeps its run,
+# because the next push only classifies its own before..after range.
 concurrency:
-  group: loupist-ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: loupist-ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -34,6 +36,7 @@ jobs:
       rust: ${{ steps.scope.outputs.rust }}
       native: ${{ steps.scope.outputs.native }}
       packaging: ${{ steps.scope.outputs.packaging }}
+      macos: ${{ steps.platform.outputs.macos }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -49,6 +52,10 @@ jobs:
           CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           CI_DIFF_MODE: ${{ github.event_name == 'pull_request' && 'merge-base' || 'direct' }}
         run: python3 apps/loupist/scripts/ci_change_scope.py
+
+      - name: Select macOS jobs
+        id: platform
+        run: echo "macos=${{ github.event_name != 'pull_request' }}" >> "$GITHUB_OUTPUT"
 
       - name: Check repository guidance and scope regressions
         run: |
@@ -136,12 +143,20 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     timeout-minutes: 60
-    name: Rust contracts (${{ matrix.os }})
+    name: Rust ${{ matrix.leg }} (Linux)
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, ubuntu-24.04]
-    runs-on: ${{ matrix.os }}
+        include:
+          - leg: lint
+            steps: format,clippy,e2e-feature-clippy
+            runtime: "false"
+            cache: verify-lint
+          - leg: tests
+            steps: tests,headless-eval-contracts
+            runtime: "true"
+            cache: verify
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -149,12 +164,53 @@ jobs:
           persist-credentials: false
 
       - name: Install Linux native development libraries
-        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev procps lsof
+
+      - name: Install Rust and runtime test toolchains
+        uses: ./.github/actions/setup-toolchains
+        with:
+          node: ${{ matrix.runtime }}
+          node-cache: |
+            apps/loupist/package-lock.json
+            apps/loupist/e2e/package-lock.json
+          python: ${{ matrix.runtime }}
+          rust: "true"
+          rust-components: clippy,rustfmt
+          rust-cache-key: ${{ matrix.cache }}
+
+      - name: Install locked runtime test dependencies
+        if: matrix.runtime == 'true'
+        run: sh apps/loupist/scripts/setup.sh
+
+      - name: Verify desktop Rust
+        run: |
+          set -euo pipefail
+          sh apps/loupist/scripts/check.sh rust --only "${{ matrix.steps }}"
+
+      - name: Retain rust check evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: checks-rust-linux-${{ matrix.leg }}
+          path: apps/loupist/output/checks/*/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  verify-rust-macos:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.macos == 'true'
+    timeout-minutes: 60
+    name: Rust contracts (macOS)
+    runs-on: macos-15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Install Rust and runtime test toolchains
         uses: ./.github/actions/setup-toolchains
@@ -180,65 +236,27 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: checks-rust-${{ matrix.os }}
+          name: checks-rust-macos
           path: apps/loupist/output/checks/*/
           retention-days: 7
           if-no-files-found: ignore
 
-  verify:
-    name: Source and product contracts
-    timeout-minutes: 5
-    needs:
-      - changes
-      - verify-web
-      - verify-python
-      - verify-rust
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require every selected source check
-        env:
-          WEB_REQUIRED: ${{ needs.changes.outputs.web }}
-          WEB_RESULT: ${{ needs.verify-web.result }}
-          PYTHON_REQUIRED: ${{ needs.changes.outputs.python }}
-          PYTHON_RESULT: ${{ needs.verify-python.result }}
-          RUST_REQUIRED: ${{ needs.changes.outputs.rust }}
-          RUST_RESULT: ${{ needs.verify-rust.result }}
-        run: |
-          set -euo pipefail
-          test "${{ needs.changes.result }}" = success
-          require_scope() {
-            case "$1:$2" in
-              true:success|false:skipped) return 0 ;;
-              *) echo "Unexpected source check result: $1:$2" >&2; return 1 ;;
-            esac
-          }
-          require_scope "$WEB_REQUIRED" "$WEB_RESULT"
-          require_scope "$PYTHON_REQUIRED" "$PYTHON_RESULT"
-          require_scope "$RUST_REQUIRED" "$RUST_RESULT"
-
   native-e2e:
+    needs: changes
+    if: needs.changes.outputs.native == 'true' && needs.changes.outputs.macos == 'true'
     timeout-minutes: 60
     name: Native macOS interaction
-    needs: changes
-    runs-on: ${{ needs.changes.outputs.native == 'true' && 'macos-15' || 'ubuntu-latest' }}
+    runs-on: macos-15
     steps:
-      - name: Skip unchanged native surface
-        if: ${{ needs.changes.outputs.native != 'true' }}
-        run: echo "No native-surface changes; skipping the macOS interaction suite."
-
       - name: Check out repository
-        if: ${{ needs.changes.outputs.native == 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
       - name: Prepare macOS test display
-        if: ${{ needs.changes.outputs.native == 'true' }}
         run: swift apps/loupist/e2e/prepare-ci-display.swift
 
       - name: Install CI toolchains
-        if: ${{ needs.changes.outputs.native == 'true' }}
         uses: ./.github/actions/setup-toolchains
         with:
           node: "true"
@@ -250,21 +268,17 @@ jobs:
           python: "true"
 
       - name: Install renderer dependencies
-        if: ${{ needs.changes.outputs.native == 'true' }}
         working-directory: apps/loupist
         run: npm ci
 
       - name: Install native E2E dependencies
-        if: ${{ needs.changes.outputs.native == 'true' }}
         working-directory: apps/loupist/e2e
         run: npm ci
 
       - name: Stage pinned macOS sidecars
-        if: ${{ needs.changes.outputs.native == 'true' }}
         run: apps/loupist/scripts/stage-macos-arm64.sh
 
       - name: Run native interaction regression suite
-        if: ${{ needs.changes.outputs.native == 'true' }}
         working-directory: apps/loupist/e2e
         env:
           LOUPIST_E2E_REQUIRE_STAGED_RUNTIMES: "1"
@@ -276,7 +290,7 @@ jobs:
           npm run test:persistence
 
       - name: Retain native interaction evidence
-        if: ${{ always() && needs.changes.outputs.native == 'true' }}
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: native-macos-evidence
@@ -288,23 +302,18 @@ jobs:
           if-no-files-found: ignore
 
   package-smoke:
+    needs: changes
+    if: needs.changes.outputs.packaging == 'true' && needs.changes.outputs.macos == 'true'
     timeout-minutes: 60
     name: Package smoke (aarch64-apple-darwin)
-    needs: changes
-    runs-on: ${{ needs.changes.outputs.packaging == 'true' && 'macos-15' || 'ubuntu-latest' }}
+    runs-on: macos-15
     steps:
-      - name: Skip unchanged packaging surface
-        if: ${{ needs.changes.outputs.packaging != 'true' }}
-        run: echo "No packaging-surface changes; skipping aarch64-apple-darwin package smoke."
-
       - name: Check out repository
-        if: ${{ needs.changes.outputs.packaging == 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
       - name: Install CI toolchains
-        if: ${{ needs.changes.outputs.packaging == 'true' }}
         uses: ./.github/actions/setup-toolchains
         with:
           node: "true"
@@ -314,16 +323,13 @@ jobs:
           python: "true"
 
       - name: Install renderer dependencies
-        if: ${{ needs.changes.outputs.packaging == 'true' }}
         working-directory: apps/loupist
         run: npm ci
 
       - name: Stage pinned macOS sidecars
-        if: ${{ needs.changes.outputs.packaging == 'true' }}
         run: apps/loupist/scripts/stage-macos-arm64.sh
 
       - name: Build unsigned package smoke
-        if: ${{ needs.changes.outputs.packaging == 'true' }}
         working-directory: apps/loupist
         shell: bash
         run: >-
@@ -333,7 +339,6 @@ jobs:
           --config src-tauri/tauri.package-smoke.conf.json
 
       - name: Verify mounted macOS package metadata
-        if: ${{ needs.changes.outputs.packaging == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -372,3 +377,47 @@ jobs:
           detach_dmg_mount
           rmdir "$MOUNT_DIR"
           trap - EXIT HUP INT TERM
+
+  verify:
+    name: Source and product contracts
+    timeout-minutes: 5
+    needs:
+      - changes
+      - verify-web
+      - verify-python
+      - verify-rust
+      - verify-rust-macos
+      - native-e2e
+      - package-smoke
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every selected check
+        env:
+          WEB_REQUIRED: ${{ needs.changes.outputs.web }}
+          WEB_RESULT: ${{ needs.verify-web.result }}
+          PYTHON_REQUIRED: ${{ needs.changes.outputs.python }}
+          PYTHON_RESULT: ${{ needs.verify-python.result }}
+          RUST_REQUIRED: ${{ needs.changes.outputs.rust }}
+          RUST_RESULT: ${{ needs.verify-rust.result }}
+          RUST_MACOS_REQUIRED: ${{ needs.changes.outputs.rust == 'true' && needs.changes.outputs.macos == 'true' }}
+          RUST_MACOS_RESULT: ${{ needs.verify-rust-macos.result }}
+          NATIVE_REQUIRED: ${{ needs.changes.outputs.native == 'true' && needs.changes.outputs.macos == 'true' }}
+          NATIVE_RESULT: ${{ needs.native-e2e.result }}
+          PACKAGE_REQUIRED: ${{ needs.changes.outputs.packaging == 'true' && needs.changes.outputs.macos == 'true' }}
+          PACKAGE_RESULT: ${{ needs.package-smoke.result }}
+        run: |
+          set -euo pipefail
+          test "${{ needs.changes.result }}" = success
+          require_scope() {
+            case "$1:$2" in
+              true:success|false:skipped) return 0 ;;
+              *) echo "Unexpected check result: $1:$2" >&2; return 1 ;;
+            esac
+          }
+          require_scope "$WEB_REQUIRED" "$WEB_RESULT"
+          require_scope "$PYTHON_REQUIRED" "$PYTHON_RESULT"
+          require_scope "$RUST_REQUIRED" "$RUST_RESULT"
+          require_scope "$RUST_MACOS_REQUIRED" "$RUST_MACOS_RESULT"
+          require_scope "$NATIVE_REQUIRED" "$NATIVE_RESULT"
+          require_scope "$PACKAGE_REQUIRED" "$PACKAGE_RESULT"

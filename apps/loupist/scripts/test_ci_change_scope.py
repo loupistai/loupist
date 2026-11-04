@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import re
 import runpy
 import subprocess
 import sys
@@ -199,25 +200,24 @@ class ChangeScopeTests(unittest.TestCase):
         # Execute the workflow's gate with simulated GitHub job results. Checking
         # only job-level `if` strings would miss a gate that accepts all skips.
         workflow = (SCRIPTS.parents[2] / ".github/workflows/ci.yml").read_text()
-        gate = workflow.split("      - name: Require every selected source check\n", 1)[
-            1
-        ]
-        script = textwrap.dedent(
-            gate.split("        run: |\n", 1)[1].split("\n  native-e2e:", 1)[0]
-        )
+        gate = workflow.split("      - name: Require every selected check\n", 1)[1]
+        script = textwrap.dedent(gate.split("        run: |\n", 1)[1])
+        scopes = ("WEB", "PYTHON", "RUST", "RUST_MACOS", "NATIVE", "PACKAGE")
         for required, result, success in (
             ("false", "skipped", True),
             ("true", "success", True),
             ("true", "skipped", False),
             ("true", "failure", False),
             ("true", "cancelled", False),
+            ("true", "abandoned", False),
             ("false", "failure", False),
+            ("false", "success", False),
             ("", "skipped", False),
         ):
-            for scope in ("WEB", "PYTHON", "RUST"):
+            for scope in scopes:
                 with self.subTest(scope=scope, required=required, result=result):
                     environment = dict(os.environ)
-                    for name in ("WEB", "PYTHON", "RUST"):
+                    for name in scopes:
                         environment[f"{name}_REQUIRED"] = "false"
                         environment[f"{name}_RESULT"] = "skipped"
                     environment[f"{scope}_REQUIRED"] = required
@@ -235,6 +235,53 @@ class ChangeScopeTests(unittest.TestCase):
                     self.assertEqual(
                         completed.returncode == 0, success, completed.stderr
                     )
+        for name in (
+            "verify-web",
+            "verify-python",
+            "verify-rust",
+            "verify-rust-macos",
+            "native-e2e",
+            "package-smoke",
+        ):
+            self.assertIn(f"      - {name}\n", self.job_block(workflow, "verify"))
+
+    def test_pull_requests_never_wait_for_macos_runners(self) -> None:
+        workflow = (SCRIPTS.parents[2] / ".github/workflows/ci.yml").read_text()
+        self.assertIn("macos=${{ github.event_name != 'pull_request' }}", workflow)
+        macos_jobs = [
+            job
+            for job in re.findall(r"\n  ([A-Za-z0-9_-]+):\n", workflow)
+            if "runs-on: macos" in self.job_block(workflow, job)
+        ]
+        self.assertEqual(
+            sorted(macos_jobs), ["native-e2e", "package-smoke", "verify-rust-macos"]
+        )
+        for job in macos_jobs:
+            condition = (
+                self.job_block(workflow, job)
+                .split("\n    if: ", 1)[1]
+                .split("\n", 1)[0]
+            )
+            self.assertIn("needs.changes.outputs.macos == 'true'", condition, job)
+
+    def test_linux_rust_legs_cover_the_whole_rust_plan_once(self) -> None:
+        workflow = (SCRIPTS.parents[2] / ".github/workflows/ci.yml").read_text()
+        legs = re.findall(
+            r"\n            steps: (\S+)\n", self.job_block(workflow, "verify-rust")
+        )
+        names = [name for leg in legs for name in leg.split(",")]
+        runner = runpy.run_path(str(SCRIPTS / "check_runner.py"))
+        planned = [item["name"] for item in runner["rust_plan"]()]
+        self.assertEqual(sorted(names), sorted(planned))
+
+    def job_block(self, workflow: str, job_id: str) -> str:
+        match = re.search(
+            rf"\n  {re.escape(job_id)}:\n(.*?)(?=\n  [A-Za-z0-9_-]+:\n|\Z)",
+            workflow,
+            re.S,
+        )
+        self.assertIsNotNone(match, job_id)
+        return match.group(1)
 
     def commit(self, repo):
         self._git(repo, "add", "-A")
