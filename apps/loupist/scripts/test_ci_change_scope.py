@@ -264,6 +264,19 @@ class ChangeScopeTests(unittest.TestCase):
             )
             self.assertIn("needs.changes.outputs.macos == 'true'", condition, job)
 
+    def test_web_legs_split_the_renderer_tests_and_keep_every_web_step(self) -> None:
+        workflow = (SCRIPTS.parents[2] / ".github/workflows/ci.yml").read_text()
+        block = self.job_block(workflow, "verify-web")
+        legs = re.findall(r"- shard: (\S+)\n\s+only: (\S*)\n", block)
+        self.assertEqual(sorted(shard for shard, _ in legs), ["1/2", "2/2"])
+        runner = runpy.run_path(str(SCRIPTS / "check_runner.py"))
+        planned = {item["name"] for item in runner["web_plan"](False, True)}
+        self.assertIn('""', [only for _, only in legs])
+        for _, only in legs:
+            if only != '""':
+                self.assertIn("renderer-tests", only.split(","))
+                self.assertLessEqual(set(only.split(",")), planned)
+
     def test_linux_rust_legs_cover_the_whole_rust_plan_once(self) -> None:
         workflow = (SCRIPTS.parents[2] / ".github/workflows/ci.yml").read_text()
         legs = re.findall(

@@ -610,6 +610,10 @@ def main(argv=None):
         "--only",
         help="comma-separated step names to run from the selected scope (see --list)",
     )
+    parser.add_argument(
+        "--shard",
+        help="run one Vitest shard, such as 1/2, in the renderer-tests step",
+    )
     parser.add_argument("--output", type=Path, default=APP / "output/checks")
     args = parser.parse_args(argv)
     if os.name != "posix":
@@ -633,6 +637,17 @@ def main(argv=None):
             scope: [item for item in steps if item["name"] in wanted]
             for scope, steps in plans.items()
         }
+    if args.shard is not None:
+        index, _, total = args.shard.partition("/")
+        renderer = [
+            i for s in plans.values() for i in s if i["name"] == "renderer-tests"
+        ]
+        if not (index.isdigit() and total.isdigit() and 0 < int(index) <= int(total)):
+            parser.error("--shard must be INDEX/TOTAL, such as 1/2")
+        if not renderer:
+            parser.error("--shard needs a plan that includes renderer-tests")
+        for item in renderer:
+            item["command"] = [*item["command"], "--", f"--shard={args.shard}"]
     if args.list:
         for scope in scopes:
             steps = plans[scope]
