@@ -915,7 +915,7 @@ mod tests {
     }
 
     #[test]
-    fn archives_reject_cloaked_local_filenames_and_invalid_utf8_names() {
+    fn archives_reject_cloaked_local_filenames_and_preserve_legacy_names() {
         let mut cloaked = zip(&[
             ("safe.txt", b"content", 0o644),
             ("loupist-pack.json", b"{}", 0o644),
@@ -926,18 +926,18 @@ mod tests {
         cloaked[30..38].copy_from_slice(b"../x.txt");
         assert!(read_zip(&cloaked, None).is_err());
 
-        let mut invalid = zip(&[("é.txt", b"content", 0o644)]);
-        let name = "é.txt".as_bytes();
-        let offsets: Vec<_> = invalid
+        let mut legacy = zip(&[("cafe.txt", b"content", 0o644)]);
+        let name = b"cafe.txt";
+        let offsets: Vec<_> = legacy
             .windows(name.len())
             .enumerate()
             .filter_map(|(offset, bytes)| (bytes == name).then_some(offset))
             .collect();
-        assert_eq!(offsets.len(), 2, "local and central UTF-8 filenames");
+        assert_eq!(offsets.len(), 2, "local and central filenames");
         for offset in offsets {
-            invalid[offset] = 0xff;
+            legacy[offset + 3] = 0x82; // CP437 é, with the UTF-8 flag unset.
         }
-        assert!(read_zip(&invalid, None).is_err());
+        assert_eq!(read_zip(&legacy, None).unwrap()["café.txt"], b"content");
     }
 
     #[test]
