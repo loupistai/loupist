@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import test from "node:test";
 import { createAgentSession, DefaultResourceLoader, loadSkills, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxProvider, InMemoryCredentialStore } from "@earendil-works/pi-ai";
@@ -30,10 +30,10 @@ function fixture(t) {
 
 function snapshot(root, instructions = [], skills = [], global_root = root) {
   const resource = (path) => ({
-    scope: path.startsWith(join(root, ".loupist") + "/") ? "project"
-      : path.startsWith(join(root, ".agents") + "/") ? "agents"
-        : path.startsWith(join(root, ".pi") + "/") ? "pi"
-          : global_root !== root && path.startsWith(global_root + "/") ? "global" : "workspace",
+    scope: path.startsWith(join(root, ".loupist") + sep) ? "project"
+      : path.startsWith(join(root, ".agents") + sep) ? "agents"
+        : path.startsWith(join(root, ".pi") + sep) ? "pi"
+          : global_root !== root && path.startsWith(global_root + sep) ? "global" : "workspace",
     path,
     sha256: createHash("sha256").update(readFileSync(path)).digest("hex"),
   });

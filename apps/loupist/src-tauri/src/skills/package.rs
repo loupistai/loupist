@@ -105,7 +105,7 @@ pub fn from_zip(bytes: Vec<u8>, selected: Option<&str>) -> Result<Package, Comma
             return Err(invalid("The ZIP contains an unsafe path"));
         }
         if name.ends_with("SKILL.md")
-            && Path::new(&name)
+            && Path::new(name.as_ref())
                 .file_name()
                 .is_some_and(|n| n == "SKILL.md")
         {
