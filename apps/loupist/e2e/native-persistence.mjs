@@ -138,7 +138,7 @@ async function selectLoupist(name) {
 const chatRow = (title) => `.loupist-navigation button.loupist-chat-button[aria-label=${JSON.stringify(title)}]`;
 
 async function chatTitles() {
-  return browser.execute(() => [...document.querySelectorAll(".loupist-navigation button.loupist-chat-button")].map((button) => button.getAttribute("aria-label")));
+  return browser.execute(() => [...document.querySelectorAll(".loupist-navigation button.loupist-chat-button")].map((button) => button.querySelector(".loupist-chat-title")?.textContent?.trim() ?? ""));
 }
 
 async function createLoupist() {
@@ -426,7 +426,7 @@ async function saveRetries(value) {
 
 async function theme(label) {
   await settingsSection("appearance");
-  return displayed(`button[aria-label="${label} theme"]`);
+  return displayed(`button[title="${label} theme"]`);
 }
 
 async function assertPressed(element, message) {
