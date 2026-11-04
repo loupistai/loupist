@@ -4,7 +4,6 @@ import type { ScheduledCadence } from "../../types";
 
 export const weekdays = () => Array.from({ length: 7 }, (_, day) => formatDate(new Date(2023, 0, 1 + day), { weekday: "short", year: undefined, month: undefined, day: undefined }));
 const WEEKDAY_PRESET = [1, 2, 3, 4, 5];
-export const deviceTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 export function friendlyTimeZone(timeZone: string, locale = "en") {
   const language = locale.toLowerCase() === "en-xa" ? "en" : locale;
   try {

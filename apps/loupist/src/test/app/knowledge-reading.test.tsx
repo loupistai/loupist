@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { MemoryWorkspace } from "../../components/knowledge/MemoryWorkspace";
-import { LensTab } from "../../components/knowledge/LensTab";
+import { LensWorkspace } from "../../components/knowledge/LensWorkspace";
 import { ResearchReader } from "../../components/knowledge/ResearchReader";
 import { initialKnowledgeNavigation, openKnowledgeLocation, patchKnowledgeLocation } from "../../knowledge/location";
 import type { LoupistSummary, LoupistBridge, KnowledgeLocation, KnowledgePin } from "../../types";
@@ -26,8 +26,9 @@ describe("Loupist · Memory reading", () => {
     const calls = vi.spyOn(bridge, "knowledgeLensRead").mockRejectedValueOnce(new Error("Approach is temporarily unavailable")).mockImplementation(read);
     const loupist = await firstLoupist(bridge);
     const onAsk = vi.fn();
-    render(<LensTab bridge={bridge} location={{ loupistId: loupist.id, surface: "lens", recordId: "lens-compare-accounts", revisionId: "rev-lens-1" }}
-      refreshKey={0} onPatch={vi.fn()} onOpen={vi.fn()} onBack={vi.fn()} onAsk={onAsk} onOpenLink={vi.fn()} onChanged={vi.fn()} />);
+    render(<LensWorkspace bridge={bridge} catalog={await bridge.knowledgeCatalog({ loupistId: loupist.id })}
+      location={{ loupistId: loupist.id, surface: "lens", recordId: "lens-compare-accounts", revisionId: "rev-lens-1" }}
+      markdownFirst onPatch={vi.fn()} onOpen={vi.fn()} onAsk={onAsk} onOpenLink={vi.fn()} onChanged={vi.fn()} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Approach is temporarily unavailable");
     await user.click(screen.getByRole("button", { name: "Retry Lens" }));
     expect(await screen.findByRole("heading", { name: "Compare independent accounts" })).toHaveFocus();
