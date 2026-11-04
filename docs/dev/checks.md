@@ -13,6 +13,8 @@ headless contracts without paid calls.
 The web scope's `node-contracts` step includes root `scripts/*.test.mjs` contracts.
 The `boundaries` step enforces renderer import boundaries with
 `check-boundaries.mjs --enforce`.
+The `unused-files` step rejects renderer files outside the current app, preview,
+and external script import graph. See [Code cleanup](repository-guidance.md#code-cleanup).
 
 ```sh
 scripts/verify.sh

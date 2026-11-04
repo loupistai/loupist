@@ -108,6 +108,7 @@ def web_plan(harness, install):
         node("ui-copy", "scripts/check-ui-copy.mjs"),
         node("design-tokens", "scripts/check-design-tokens.mjs --enforce"),
         node("boundaries", "scripts/check-boundaries.mjs --enforce"),
+        step("unused-files", ["npm", "run", "check:unused"]),
         step("renderer-tests", ["npm", "test"]),
         step("chat-layout", ["npm", "run", "preview:layout"]),
         step("renderer-build", ["npm", "run", "build"]),

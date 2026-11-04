@@ -35,6 +35,31 @@ Check only reviewed entry points into Git: `.cursor/worktrees.json`,
 cloud-only setup hook in `.claude/settings.json`. Tool-local permissions, chat
 histories, other hooks and personal skills belong to their developer.
 
+## Code cleanup
+
+Trace callers from the current app, preview, native host, scripts, and tests before
+deleting a path. A component imported only by its dedicated test can still be
+obsolete. Move any useful behavior coverage to the current component, then remove
+the old implementation and its test. Keep host commands that agent tools or native
+callers still use, even when React no longer calls them.
+
+Run `npm --prefix apps/loupist run check:unused` to find renderer files unreachable
+from the maintained entry points. The pinned Knip configuration in
+`apps/loupist/knip.jsonc` includes the app, browser preview, feedback exporter, and
+native E2E callers. Tests are excluded so they cannot keep retired UI code alive.
+Declaration files are checked by TypeScript. Add an entry only for a real external
+caller, and name that caller in the change. Do not add a file as an entry merely
+to silence the check. See [Knip project files](https://knip.dev/guides/configuring-project-files).
+
+This check covers renderer file reachability. It does not establish that every
+export, Rust command, Python function, or dynamic import is needed. Inspect callers
+before removing those. Use `scripts/guide.py` to update the owning section and run
+the narrow behavior tests before the full handoff gate.
+
+Keep repeatable checks in the existing check runner. Add a new instruction only
+when a test, type, or existing check cannot enforce the rule. Prefer deleting a
+retired path over preserving a second implementation for a hypothetical caller.
+
 ## Task handoff
 
 When transferring unfinished work, leave a brief PR description or handoff message
