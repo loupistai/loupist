@@ -195,7 +195,8 @@ test("persists credentials through Pi storage without returning secrets", async 
     name: "OpenAI with ChatGPT",
     auth: {
       oauth: {
-        login: async (interaction) => {
+        login: async (interaction, options) => {
+          assert.equal(options.agentName, "Loupist");
           assert.equal(
             await interaction.prompt({
               type: "select",
@@ -516,6 +517,7 @@ test("Sign in with ChatGPT receives a stable installation ID from Pi's settings"
   const ids = [];
   const login = async (_interaction, options) => {
     ids.push(options.getDeviceId());
+    assert.equal(options.agentName, "Loupist");
     return credential;
   };
   const context = {

@@ -12,7 +12,13 @@ and processing bounds independently of Chat.
 
 One `openai` slot holds either a ChatGPT sign-in (Pi's `openai-chatgpt` OAuth with
 its dynamic client; the installation ID stays in Pi's private settings) or an
-OpenAI API key, never both. Claude sign-in is billed as Claude extra usage and says
+OpenAI API key, never both. Pi 1.0.1 labels that sign-in `Pi`
+(`agent_name_hint`) and ignores a caller-supplied agent name, which Pi 1.1.0
+added. Loupist still passes `agentName: Loupist`, and the page it opens rewrites
+`agent_name_hint` and the development Codex browser login's `originator` to
+`Loupist` (`openai_sign_in_presented_as_loupist`). Other query parameters are
+left unchanged. An account already connected under Pi keeps that name until the
+user signs in again. Claude sign-in is billed as Claude extra usage and says
 so before its browser opens; xAI signs in with a SuperGrok device code. Gemini,
 OpenRouter and Pi's other providers connect by API key only. A sign-in times out
 after 10 minutes. The legacy Codex client (`openai-codex`) exists only in debug

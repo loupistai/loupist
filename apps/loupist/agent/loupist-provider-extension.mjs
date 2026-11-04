@@ -430,13 +430,22 @@ export default function loupistTerminalProviderExtension(pi) {
       runtime.registerNativeProvider(provider);
       try {
         // Sign in with ChatGPT names this installation by a stable ID kept in
-        // Pi's private settings directory (`ext_agent_host_id`).
-        const deviceId = providerId === "openai" ? await installationDeviceId() : undefined;
+        // Pi's private settings directory (`ext_agent_host_id`). Pi 1.0.1
+        // ignores `agentName` and still sends its own name; Rust rewrites the
+        // page it opens. A newer Pi uses this name directly.
+        const loginOptions = {};
+        if (providerId === "openai") {
+          const deviceId = await installationDeviceId();
+          loginOptions.getDeviceId = () => deviceId;
+        }
+        if (providerId === "openai" || providerId === "openai-codex") {
+          loginOptions.agentName = "Loupist";
+        }
         await runtime.login(providerId, "oauth", {
           signal: controller.signal,
           prompt: (prompt) => oauthPrompt(ctx, prompt),
           notify: (event) => oauthNotify(ctx, event),
-        }, deviceId ? { getDeviceId: () => deviceId } : undefined);
+        }, Object.keys(loginOptions).length > 0 ? loginOptions : undefined);
       } catch (error) {
         if (!/login cancelled/iu.test(String(error?.message ?? ""))) {
           emit(ctx, { type: "failed", reason: loginFailureReason(error) });
