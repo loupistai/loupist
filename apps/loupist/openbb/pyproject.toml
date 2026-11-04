@@ -64,5 +64,12 @@ line-length = 88
 
 [tool.uv]
 package = true
-# Keep the bundled HTTP/JWT closure above the reviewed security fixes.
-constraint-dependencies = ["urllib3>=2.8.0", "pyjwt>=2.15.0"]
+# Security floors for the bundled HTTP, TLS, JWT and MCP closure. Keep the
+# compatible major lines until the OpenBB integration is migrated with them.
+constraint-dependencies = [
+  "urllib3>=2.8.0", "pyjwt>=2.15.0",
+  "aiohttp>=3.14.4,<4", "authlib>=1.9.1,<2", "certifi>=2026.10.19",
+  "dnspython>=2.9.0", "fastmcp>=3.4.10,<4", "fastmcp-slim>=3.4.10,<4",
+  "joserfc>=1.7.6,<2", "mcp>=1.30.0,<2", "multidict>=6.9.1,<7",
+  "opentelemetry-api>=1.45.1,<2", "setuptools>=84.1.0",
+]

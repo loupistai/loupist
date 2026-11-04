@@ -98,6 +98,9 @@ World extraction and search run in Rust; only their local embedding assets need
 staging. Pi staging verifies its pinned archive and executable regressions.
 Keep the Pi package family on the same exact version and follow the pins in
 `scripts/pi-security.json` when updating dependencies.
+Dependency security floors and platform-specific findings are recorded in
+[dependency review](dependencies.md#dependency-security-review). The native
+dependency set requires Rust 1.90 or newer; use CI's pinned toolchain.
 
 ```sh
 python3 apps/loupist/scripts/stage-embed-assets.py

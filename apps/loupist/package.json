@@ -33,7 +33,7 @@
     "@streamdown/math": "^1.0.2",
     "@streamdown/mermaid": "^1.0.2",
     "@tailwindcss/vite": "^4.3.3",
-    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/api": "2.12.4",
     "ai": "^7.0.58",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -49,7 +49,6 @@
     "react-dom": "^19.1.1",
     "react-force-graph-2d": "1.29.1",
     "react-i18next": "17.0.16",
-    "shadcn": "^4.16.2",
     "streamdown": "^2.5.0",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.3",
@@ -59,7 +58,7 @@
   "devDependencies": {
     "@earendil-works/pi-ai": "1.0.1",
     "@earendil-works/pi-coding-agent": "1.0.1",
-    "@tauri-apps/cli": "2.11.4",
+    "@tauri-apps/cli": "2.12.4",
     "@testing-library/jest-dom": "^6.6.4",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
@@ -84,6 +83,7 @@
     "@earendil-works/pi-codemode": "1.0.1",
     "@earendil-works/pi-mcp": "1.0.1",
     "@earendil-works/pi-tui": "1.0.1",
-    "@earendil-works/pi-telemetry": "1.0.1"
+    "@earendil-works/pi-telemetry": "1.0.1",
+    "minimatch": "11.0.4"
   }
 }

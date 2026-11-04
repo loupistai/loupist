@@ -47,7 +47,7 @@ chat inert, so split fixtures open docked panels only above 1060px.
 
 Native automation uses the embedded `tauri-plugin-wdio-webdriver` 1.3.0 with a
 [pinned local patch](../src-tauri/vendor/tauri-plugin-wdio-webdriver/LOUPIST_PATCH.md)
-and locked `webdriverio` 9.32.0. Browser tools (Playwright, IDE browsers) do not
+and locked `webdriverio` 10.1.0. Browser tools (Playwright, IDE browsers) do not
 attach to this webview and do not qualify the native bridge or WKWebView; do not
 add a second automation plugin without a demonstrated gap.
 
