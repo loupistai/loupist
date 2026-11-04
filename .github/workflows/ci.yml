@@ -214,6 +214,18 @@ jobs:
           npm run test:native:full
           npm run test:persistence
 
+      - name: Retain native interaction evidence
+        if: ${{ always() && needs.changes.outputs.native == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: native-macos-evidence
+          path: |
+            apps/loupist/e2e/artifacts/native-*.png
+            apps/loupist/e2e/artifacts/native-smoke-performance.json
+            apps/loupist/e2e/artifacts/persistence/
+          retention-days: 7
+          if-no-files-found: ignore
+
   package-smoke:
     timeout-minutes: 60
     name: Package smoke (${{ matrix.target }})
