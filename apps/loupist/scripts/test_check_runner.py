@@ -69,6 +69,52 @@ class CheckRunnerTests(unittest.TestCase):
         self.assertIn("real failure", (directory / "web-fail.log").read_text())
         self.assertEqual(json.loads((directory / "receipt.json").read_text()), receipt)
 
+    def test_only_lists_the_named_steps_and_refuses_unknown_names(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        from io import StringIO
+
+        listed = StringIO()
+        with redirect_stdout(listed):
+            self.assertEqual(
+                checks.main(["rust", "--list", "--only", "clippy,tests"]), 0
+            )
+        names = [
+            line.split("]", 1)[1].split(":", 1)[0].strip()
+            for line in listed.getvalue().splitlines()
+        ]
+        self.assertEqual(names, ["clippy", "tests"])
+        for only in ("clipy", ""):
+            with self.subTest(only=only), redirect_stderr(StringIO()):
+                with self.assertRaises(SystemExit) as refused:
+                    checks.main(["rust", "--list", "--only", only])
+                self.assertEqual(refused.exception.code, 2)
+
+    def test_shard_reaches_only_the_renderer_test_command(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        from io import StringIO
+
+        real_app = patch.object(
+            checks, "APP", Path(checks.__file__).resolve().parents[1]
+        )
+        real_app.start()
+        self.addCleanup(real_app.stop)
+        listed = StringIO()
+        with redirect_stdout(listed):
+            checks.main(["web", "--list", "--shard", "2/2"])
+        sharded = [line for line in listed.getvalue().splitlines() if "--shard" in line]
+        self.assertEqual(len(sharded), 1)
+        self.assertIn("renderer-tests: npm test -- --shard=2/2", sharded[0])
+        for scope, shard in (
+            ("web", "3/2"),
+            ("web", "0/2"),
+            ("web", "a/b"),
+            ("rust", "1/2"),
+        ):
+            with self.subTest(scope=scope, shard=shard), redirect_stderr(StringIO()):
+                with self.assertRaises(SystemExit) as refused:
+                    checks.main([scope, "--list", "--shard", shard])
+                self.assertEqual(refused.exception.code, 2)
+
     def test_rust_runs_after_python_install_and_only_when_it_passed(self):
         marker = self.root / "python-ready"
         ready = f"from pathlib import Path; assert Path({str(marker)!r}).exists()"

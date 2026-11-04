@@ -606,6 +606,14 @@ def main(argv=None):
         action="store_true",
         help="print the planned steps without running them",
     )
+    parser.add_argument(
+        "--only",
+        help="comma-separated step names to run from the selected scope (see --list)",
+    )
+    parser.add_argument(
+        "--shard",
+        help="run one Vitest shard, such as 1/2, in the renderer-tests step",
+    )
     parser.add_argument("--output", type=Path, default=APP / "output/checks")
     args = parser.parse_args(argv)
     if os.name != "posix":
@@ -616,9 +624,33 @@ def main(argv=None):
         parser.error("git is required for source evidence")
     scopes = list(SCOPES) if args.scope == "all" else [args.scope]
     install = args.install or args.setup_only
+    plans = {scope: plan(scope, install) for scope in scopes}
+    if args.only is not None:
+        wanted = {name for name in args.only.split(",") if name}
+        known = {item["name"] for steps in plans.values() for item in steps}
+        if not wanted or wanted - known:
+            parser.error(
+                f"--only names unknown steps {sorted(wanted - known) or '(none)'}; "
+                f"choose from {sorted(known)}"
+            )
+        plans = {
+            scope: [item for item in steps if item["name"] in wanted]
+            for scope, steps in plans.items()
+        }
+    if args.shard is not None:
+        index, _, total = args.shard.partition("/")
+        renderer = [
+            i for s in plans.values() for i in s if i["name"] == "renderer-tests"
+        ]
+        if not (index.isdigit() and total.isdigit() and 0 < int(index) <= int(total)):
+            parser.error("--shard must be INDEX/TOTAL, such as 1/2")
+        if not renderer:
+            parser.error("--shard needs a plan that includes renderer-tests")
+        for item in renderer:
+            item["command"] = [*item["command"], "--", f"--shard={args.shard}"]
     if args.list:
         for scope in scopes:
-            steps = plan(scope, install)
+            steps = plans[scope]
             for item in setup_steps(scope, steps) if args.setup_only else steps:
                 words = [part.replace(f"{APP}/", "") for part in item["command"]]
                 shown = " ".join(w if len(w) <= 40 else w[:37] + "..." for w in words)
@@ -627,7 +659,7 @@ def main(argv=None):
     output = args.output.resolve()
     if output == APP / "output/checks":
         prune_old_runs(output)
-    receipt, _ = run(scopes, output, args.timeout, install, args.setup_only)
+    receipt, _ = run(scopes, output, args.timeout, install, args.setup_only, plans)
     return 0 if receipt["status"] == "passed" else 1
 
 

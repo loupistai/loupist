@@ -2,7 +2,7 @@
 
 First-release target: macOS 13+ on Apple Silicon only. Windows implementation is retained for future support; Intel Macs and Linux are also outside the release scope. Repository identity is `loupistai/loupist`.
 
-This page is the release procedure. Product behavior is not defined here. Workflows and scripts in the repo are the source of truth for smoke details.
+This page owns GitHub settings, CI and release gates. Version tags and the manual update qualification are in [Releases](release.md). Workflows and scripts in the repo are the source of truth for smoke details.
 
 ## GitHub
 
@@ -12,11 +12,17 @@ are `none`; grant access explicitly per repository or team. Organization owners
 control repository visibility changes, deletion, transfer and GitHub App installation.
 
 `main` is the integration and release base. Work arrives through short-lived
-branches and pull requests; coding agents use `codex/<topic>`. Use squash merges,
-delete merged branches, require an up-to-date branch and resolved conversations,
-and apply the same `main` rules to administrators. The initial single-maintainer
-setup requires CI and a PR with zero mandatory approving reviews. CODEOWNERS routes
+branches named `<tool>/<topic>` (for example `codex/`, `cursor/` or `claude/`) and
+pull requests. Use squash merges, delete merged branches, require resolved
+conversations, and apply the same `main` rules to administrators. A pull request
+needs only the `Source and product contracts` check and does not have to be current
+with `main`; the `main` push run verifies the merged result. Auto-merge is on, so
+`gh pr merge --auto --squash` lands a PR when that check passes. The
+single-maintainer setup requires zero approving reviews. CODEOWNERS routes
 reviews; add a review-count requirement when another maintainer can provide it.
+
+Before removing a required check, list pull requests with auto-merge armed
+(`gh pr list --json number,autoMergeRequest`). Removing the check merges them at once.
 
 Keep the default workflow token read-only, disable workflow-created approvals,
 and require full commit-SHA pins for third-party Actions. Approve workflows from
@@ -63,11 +69,14 @@ rather than adding a broader long-lived credential to every release job.
 
 ## CI
 
-PRs and `main` pushes select checks by changed paths. Every run checks guide
-links, scope regression tests, credential boundaries and Node pins without
-installing npm, OpenBB or Rust dependencies. The selected source checks run on
-Ubuntu (web, Python) and both macOS and Ubuntu (the same Rust gate), alongside
-native and package jobs. The Linux Rust checks do not need a display.
+Pull requests run only Linux jobs: web, Python, and Rust lint and tests, selected
+by changed paths. They never wait for a macOS runner. The `main` push run, manual
+`workflow_dispatch` and the release call also run the macOS Rust contracts, native
+interaction and package smoke for the selected scopes. To run the macOS jobs on a
+branch before merging, use `gh workflow run ci.yml --ref <branch>`; a dispatch runs
+the full set. Every run checks guide links, scope regression tests, credential
+boundaries and Node pins without installing npm, OpenBB or Rust dependencies. The
+Linux Rust checks do not need a display.
 
 | Changed surface | Selected checks beyond the always-on repository checks |
 | --- | --- |
@@ -86,16 +95,19 @@ also select Rust, and agent eval fixtures select Web and Rust. Inline Rust tests
 in production files retain native/package checks. PRs use a merge-base diff;
 pushes use the complete before/after range. Deleted and renamed source paths
 remain in scope. Missing history or classification errors select all checks.
+Native interaction and packaging in the table run only outside pull requests.
 
-Repeat compiles restore Rust caches populated
-only by successful jobs on `main` (push or manual); PRs restore them without
-uploading redundant branch caches.
-The signed build shares the package-smoke dependency cache. Official package CI
-has one explicit macOS job; experimental Windows packaging stays manual-only.
-Unselected source jobs are skipped; the source gate accepts a skip only when
-the classifier explicitly deselected that scope. Native and package jobs retain
-their required check names using inexpensive Ubuntu no-op steps when unselected.
-Manual `workflow_dispatch` and release validation always run the full set.
+Rust and uv caches are saved only by successful `main` runs; pull requests restore
+them without uploading branch copies. The signed build shares the package-smoke
+dependency cache. Official package CI has one explicit macOS job; experimental
+Windows packaging stays manual-only. Unselected jobs are skipped. The source gate,
+`Source and product contracts`, accepts a skip only for a scope the classifier
+deselected or a macOS job on a pull request, and fails on any other result,
+including `cancelled` and `abandoned`. Pull requests cancel their superseded runs.
+Every `main` push keeps its run, because the next push classifies only its own
+before/after range. Manual `workflow_dispatch` and release validation always run
+the full set. When GitHub cannot assign a macOS runner, the job ends cancelled and
+the `main` run fails; rerun it with `gh run rerun <run-id> --failed`.
 Actions are pinned to commit SHAs. Toolchain pins:
 Node 26.13.0 LTS (root `.nvmrc`), Rust 1.97.1, uv 0.11.2,
 Syft 1.50.0. Node setup in CI and release validation/signature verification reads
@@ -106,13 +118,22 @@ Source jobs use the same bounded check runner as local development, with a
 a 60-minute job limit. Their receipts and logs upload on
 success or failure and expire after seven days. The web gate includes agent and
 World evaluator regression tests; Rust also checks the `eval-harness` contracts.
-Each Rust job installs the locked Node dependencies and OpenBB Python environment:
-host integration tests exercise Pi prompts and Python process ownership, not just
-Rust code in isolation. Ubuntu also installs Tauri's GTK/WebKitGTK development
-libraries; the [Linux development procedure](dev/checks.md#linux-cloud-development)
-uses the same source gate. When Rust is selected, the aggregate source check
-requires both Rust jobs.
-These gates make no paid model calls. See [broader checks](development.md#broader-checks).
+The web job runs as two parallel legs that split the Vitest files with
+`check.sh web --shard 1/2` and `--shard 2/2`. The first leg also runs every other
+web step; the second runs only the installs and its renderer-test shard. Raising
+Vitest workers does not help on the 4-vCPU runner: with the same 1593 tests, four
+workers took 482 s and two took 464 s.
+
+Linux Rust runs as two parallel jobs that split the Rust plan. `lint` runs
+formatting and both Clippy builds and installs only Rust. `tests` runs the Rust
+tests and `eval-harness` contracts and installs the locked Node dependencies and
+OpenBB Python environment, because host integration tests exercise Pi prompts and
+Python process ownership. `check.sh rust --only <steps>` runs one part locally, and
+a scope test keeps the two parts equal to the whole plan. The macOS Rust job runs
+the whole plan. Ubuntu also installs Tauri's GTK/WebKitGTK development libraries;
+the [Linux development procedure](dev/checks.md#linux-cloud-development) uses the
+same source gate. These gates make no paid model calls. See
+[broader checks](dev/checks.md#broader-checks).
 
 The macOS native job stages the same pinned sidecars used by the package smoke
 and first selects a supported CI display mode of at least 1920x1080. The helper
@@ -146,11 +167,11 @@ Authenticode build and uploads workflow artifacts; it requires Windows secrets i
 environment and never publishes release assets or updates. Those optional
 secrets are not prerequisites for the macOS release audit.
 
-`Native Windows interaction` and `Package smoke (x86_64-pc-windows-msvc)` must
-not be required by any applicable `main` ruleset or legacy branch protection.
-Required checks are `Source and product contracts`, `Native macOS interaction`,
-and `Package smoke (aarch64-apple-darwin)`, with strict GitHub Actions ownership and
-no-bypass protections. The read-only release audit flags obsolete Windows gates.
+The only required check is `Source and product contracts`, owned by GitHub Actions,
+with no bypass. Pull requests never report `Native macOS interaction`,
+`Package smoke (aarch64-apple-darwin)`, `Rust contracts (macOS)` or the Windows
+checks, so no `main` ruleset or legacy branch protection may require them. The
+read-only release audit flags them.
 
 ### Model-provider authentication and live acceptance
 
@@ -171,15 +192,6 @@ An authentication failure is a failed live check, not permission to silently
 substitute a mock or another model. Record the tested revision, model, suite and
 result separately from credential-free CI. Stable qualification continues to
 require the signed candidate's Chat/Memory acceptance confirmation and evidence.
-
-## Release
-
-SemVer tags and the version helper. [Releases](release.md#release).
-
-## Candidate update qualification
-
-The manual pass before an update is published. [Releases](release.md#candidate-update-qualification).
-
 
 ## Local bundle inspection
 
