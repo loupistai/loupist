@@ -1,9 +1,19 @@
+/// <reference types="vitest/jsdom" />
 import "@testing-library/jest-dom/vitest";
 import { configure } from "@testing-library/react";
 
 // Streaming-chat tests wait on real timers, so a loaded machine (CI, verify.sh
 // alongside cargo builds) needs a wider async window than the 1s default.
 configure({ asyncUtilTimeout: 20_000 });
+
+// Node 26 exposes Web Storage globals even without a storage file. Renderer
+// tests must use the jsdom window's per-origin storage, never Node's globals.
+for (const name of ["localStorage", "sessionStorage"] as const) {
+  Object.defineProperty(globalThis, name, {
+    configurable: true,
+    get: () => jsdom.window[name],
+  });
+}
 
 // Independent profiles between tests. Remounts inside a test retain their saved state.
 beforeEach(() => { localStorage.clear(); sessionStorage.clear(); });

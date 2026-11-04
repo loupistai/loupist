@@ -30,9 +30,10 @@ export async function openChrome() {
         ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : 'google-chrome');
       chrome = spawn(executable, ['--headless=new', `--user-data-dir=${profile}`, '--remote-debugging-port=0', '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--disable-features=BackForwardCache', '--hide-scrollbars', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
       let stderr = '';
-      const timer = setTimeout(() => reject(new Error('Chrome did not publish a DevTools endpoint')), 15000);
+      const startupError = message => new Error(`${message}${stderr.trim() ? `\n${stderr.trim()}` : ''}`);
+      const timer = setTimeout(() => reject(startupError('Chrome did not publish a DevTools endpoint')), 15000);
       chrome.once('error', error => { clearTimeout(timer); reject(error); });
-      chrome.once('exit', code => { clearTimeout(timer); reject(new Error(`Chrome exited before DevTools was ready (${code})`)); });
+      chrome.once('exit', (code, signal) => { clearTimeout(timer); reject(startupError(`Chrome exited before DevTools was ready (${code ?? signal})`)); });
       chrome.stderr.on('data', chunk => {
         stderr = (stderr + chunk).slice(-16000);
         const match = stderr.match(/DevTools listening on (ws:\/\/[^\s]+)/);

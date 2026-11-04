@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-"""Classify a CI change set so expensive native and package jobs can be skipped.
+"""Select CI jobs by affected surface; unknown paths and failed diffs run all jobs.
 
-Pull requests that only touch documentation skip both native interaction and
-package smoke. Renderer-only changes still run native interaction, because that
-is the user-visible surface, but they skip installer packaging. ``main`` pushes
-and ``workflow_dispatch`` always run the full set. Required GitHub check names
-stay green by running the skipped jobs as cheap no-op steps.
+PRs compare against their merge base. Main pushes compare before/after directly,
+including every commit in the push. Manual and release checks force every scope.
+Repository guidance and security invariants run even when every scope is false.
 """
 
 from __future__ import annotations
@@ -15,56 +13,24 @@ import os
 import subprocess
 import sys
 from collections.abc import Iterable
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
-
-NATIVE_PREFIXES = (
-    "apps/loupist/src/",
-    "apps/loupist/e2e/",
-    "apps/loupist/src-tauri/",
-    "apps/loupist/agent/",
-    "apps/loupist/marketplace/",
-    "apps/loupist/openbb/",
-    "apps/loupist/public/",
-    "src/",
-)
-NATIVE_EXACT = {
-    "apps/loupist/package.json",
-    "apps/loupist/package-lock.json",
-    "apps/loupist/index.html",
-    "apps/loupist/vite.config.ts",
-    "apps/loupist/tsconfig.json",
-    "apps/loupist/tsconfig.app.json",
-    "apps/loupist/tsconfig.node.json",
-    "apps/loupist/components.json",
+SCOPES = ("web", "python", "rust", "native", "packaging")
+APP = "apps/loupist/"
+FULL_PATHS = {
+    ".nvmrc",
+    ".gitattributes",
+    ".gitignore",
+    "scripts/verify.sh",
+    f"{APP}package.json",
+    f"{APP}package-lock.json",
+    f"{APP}scripts/ci_change_scope.py",
+    f"{APP}scripts/check_runner.py",
+    f"{APP}scripts/check.sh",
+    f"{APP}scripts/setup.sh",
+    f"{APP}scripts/verify.sh",
+    f"{APP}scripts/tauri.mjs",
 }
-NATIVE_NAME_PREFIXES = ("apps/loupist/scripts/stage-",)
-
-PACKAGING_PREFIXES = (
-    "apps/loupist/src-tauri/",
-    "apps/loupist/openbb/",
-    "apps/loupist/agent/",
-    "src/",
-)
-PACKAGING_EXACT = {
-    "LICENSE",
-    "NOTICE",
-    "apps/loupist/THIRD_PARTY_NOTICES.md",
-    "apps/loupist/scripts/check-sidecars.py",
-    "apps/loupist/scripts/check_embed_assets.py",
-}
-PACKAGING_NAME_PREFIXES = (
-    "apps/loupist/scripts/stage-",
-    "apps/loupist/scripts/check-macos-",
-    "apps/loupist/scripts/check-windows-",
-    "apps/loupist/scripts/check-package-",
-)
-
-FORCE_FULL_EXACT = {
-    ".github/workflows/ci.yml",
-    "apps/loupist/scripts/ci_change_scope.py",
-}
-FORCE_FULL_PREFIXES = (".github/actions/",)
 
 
 def normalize(path: str) -> str:
@@ -74,57 +40,124 @@ def normalize(path: str) -> str:
     return normalized
 
 
-def _has_prefix(path: str, prefixes: Iterable[str]) -> bool:
-    return any(path.startswith(prefix) for prefix in prefixes)
+def path_scopes(path: str) -> set[str]:
+    """Keep exceptions narrow: Markdown Skills and embedded fixtures are code."""
+    if path in FULL_PATHS or path.startswith(
+        (".github/workflows/", ".github/actions/")
+    ):
+        return set(SCOPES)
+    relative = path.removeprefix(APP)
+    name = PurePosixPath(path).name
 
-
-def forces_full(paths: Iterable[str]) -> bool:
-    for path in paths:
-        normalized = normalize(path)
-        if normalized in FORCE_FULL_EXACT or _has_prefix(
-            normalized, FORCE_FULL_PREFIXES
+    if path.startswith(APP):
+        # Inline tests in production Rust files still take the native path:
+        # filenames cannot separate them from shipped code.
+        if relative.startswith(("src/", "agent/", "e2e/", "scripts/")) and (
+            name.endswith((".test.ts", ".test.tsx", ".test.mjs"))
+            or relative.startswith("src/test/")
         ):
-            return True
-    return False
+            return {"web"}
+        if relative.startswith("src-tauri/") and (
+            relative.startswith(("src-tauri/tests/", "src-tauri/src/eval_harness/"))
+            or "/tests/" in relative
+            or name == "tests.rs"
+            or name.endswith("_tests.rs")
+        ):
+            return {"rust"}
+        if relative.startswith("openbb/tests/") or (
+            relative.startswith(("scripts/", "e2e/"))
+            and name.startswith("test_")
+            and name.endswith(".py")
+        ):
+            return {"python"}
+
+        # These contain embedded Markdown/JSON and shared contracts.
+        if relative.startswith(("agent/", "marketplace/")):
+            return {"web", "rust", "native", "packaging"}
+        if relative.startswith("evals/"):
+            return {"web", "rust"}
+        if relative.startswith("src/contracts/"):
+            return {"web", "rust", "native"}
+        if relative.startswith("src-tauri/"):
+            scopes = {"rust", "native", "packaging"}
+            if relative in {
+                "src-tauri/Cargo.toml",
+                "src-tauri/Info.plist",
+            } or name.startswith("tauri."):
+                scopes.add("python")  # Version/bundle metadata contracts.
+            return scopes
+
+    # Documentation exemptions come after embedded resources and test fixtures.
+    if (
+        path.startswith("docs/")
+        or name.endswith(".md")
+        and (
+            "/" not in path
+            or path
+            in {f"{APP}README.md", f"{APP}e2e/README.md", f"{APP}openbb/README.md"}
+        )
+    ):
+        return set()
+    if path.startswith(".github/ISSUE_TEMPLATE/") or path in {
+        ".github/CODEOWNERS",
+        ".github/dependabot.yml",
+        ".github/pull_request_template.md",
+        "scripts/guide.py",
+    }:
+        return set()
+    if path in {"LICENSE", "NOTICE", f"{APP}THIRD_PARTY_NOTICES.md"}:
+        return {"python", "packaging"}
+    if path.startswith("src/"):
+        return {"rust", "native", "packaging"}
+    if path.startswith(APP):
+        if relative.startswith("openbb/"):
+            return {"python", "rust", "native", "packaging"}
+        if relative.startswith(("src/", "public/")) or relative in {
+            "index.html",
+            "preview.html",
+            "vite.config.ts",
+            "components.json",
+            "tsconfig.json",
+            "tsconfig.app.json",
+            "tsconfig.node.json",
+        }:
+            return {"web", "native"}
+        if relative.startswith("e2e/"):
+            return {"web", "python", "native"}
+        if relative.startswith("scripts/"):
+            if name.startswith(
+                ("stage-", "stage_", "check-macos-", "check-windows-", "check-package-")
+            ) or name in {"check-sidecars.py", "check_embed_assets.py"}:
+                return set(SCOPES)
+            if name.endswith(".py"):
+                return {"python"}
+            if name.endswith((".mjs", ".json")):
+                return {"web"}
+    # A new surface must be classified explicitly before it can skip checks.
+    return set(SCOPES)
 
 
-def is_native_path(path: str) -> bool:
-    normalized = normalize(path)
-    return (
-        normalized in NATIVE_EXACT
-        or _has_prefix(normalized, NATIVE_PREFIXES)
-        or _has_prefix(normalized, NATIVE_NAME_PREFIXES)
-    )
-
-
-def is_packaging_path(path: str) -> bool:
-    normalized = normalize(path)
-    return (
-        normalized in PACKAGING_EXACT
-        or _has_prefix(normalized, PACKAGING_PREFIXES)
-        or _has_prefix(normalized, PACKAGING_NAME_PREFIXES)
-    )
-
-
-def classify(paths: Iterable[str], *, force_full: bool = False) -> tuple[bool, bool]:
-    path_list = [normalize(path) for path in paths if normalize(path)]
-    if force_full or forces_full(path_list):
-        return True, True
-    native = any(is_native_path(path) for path in path_list)
-    packaging = any(is_packaging_path(path) for path in path_list)
-    return native, packaging
+def classify(paths: Iterable[str], *, force_full: bool = False) -> dict[str, bool]:
+    selected = set(SCOPES) if force_full else set()
+    for path in paths:
+        if path:
+            selected.update(path_scopes(normalize(path)))
+    return {scope: scope in selected for scope in SCOPES}
 
 
 def git_changed_files(
-    base_sha: str, head_sha: str, *, root: Path | None = None
+    base_sha: str, head_sha: str, *, merge_base: bool = True, root: Path | None = None
 ) -> list[str]:
     completed = subprocess.run(
         [
             "git",
             "diff",
             "--name-only",
+            "-z",
+            "--no-renames",
             "--diff-filter=ACDMRTUXB",
-            f"{base_sha}...{head_sha}",
+            f"{base_sha}{'...' if merge_base else '..'}{head_sha}",
+            "--",
         ],
         check=False,
         capture_output=True,
@@ -133,18 +166,17 @@ def git_changed_files(
     )
     if completed.returncode != 0:
         raise RuntimeError(completed.stderr.strip() or "git diff failed")
-    return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+    return [path for path in completed.stdout.split("\0") if path]
 
 
-def write_github_output(native: bool, packaging: bool) -> None:
-    payload = f"native={str(native).lower()}\npackaging={str(packaging).lower()}\n"
+def write_github_output(scopes: dict[str, bool]) -> None:
+    payload = "".join(
+        f"{scope}={str(enabled).lower()}\n" for scope, enabled in scopes.items()
+    )
     print(payload, end="")
-    output_path = os.environ.get("GITHUB_OUTPUT")
-    if not output_path:
-        return
-    path = Path(output_path)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(payload)
+    if output_path := os.environ.get("GITHUB_OUTPUT"):
+        with Path(output_path).open("a", encoding="utf-8") as handle:
+            handle.write(payload)
 
 
 def main() -> int:
@@ -152,27 +184,31 @@ def main() -> int:
     parser.add_argument("--force-full", action="store_true")
     parser.add_argument("--base-sha")
     parser.add_argument("--head-sha")
+    parser.add_argument(
+        "--diff-mode",
+        choices=("merge-base", "direct"),
+        default=os.environ.get("CI_DIFF_MODE", "merge-base"),
+    )
     arguments = parser.parse_args()
     force_full = arguments.force_full or os.environ.get("CI_FORCE_FULL") == "1"
     try:
-        if force_full:
-            paths: list[str] = []
-        else:
+        paths: list[str] = []
+        if not force_full:
             base_sha = arguments.base_sha or os.environ.get("CI_BASE_SHA", "")
             head_sha = arguments.head_sha or os.environ.get("CI_HEAD_SHA", "")
             if not base_sha or not head_sha:
-                raise RuntimeError(
-                    "pull_request classification needs base and head SHAs"
-                )
-            paths = git_changed_files(base_sha, head_sha)
-        native, packaging = classify(paths, force_full=force_full)
+                raise RuntimeError("classification needs base and head SHAs")
+            paths = git_changed_files(
+                base_sha, head_sha, merge_base=arguments.diff_mode == "merge-base"
+            )
+        scopes = classify(paths, force_full=force_full)
     except Exception as error:
         print(
             f"change-scope classification failed ({error}); running the full CI set",
             file=sys.stderr,
         )
-        native, packaging = True, True
-    write_github_output(native, packaging)
+        scopes = classify([], force_full=True)
+    write_github_output(scopes)
     return 0
 
 

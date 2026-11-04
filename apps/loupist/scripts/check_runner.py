@@ -31,7 +31,7 @@ import uuid
 APP = Path(__file__).resolve().parent.parent
 SCOPES = ("web", "python", "rust")
 RETENTION_SECONDS = 7 * 24 * 3600
-NODE_VERSION = 'const [a,b]=process.versions.node.split(".").map(Number); if(a<22||(a===22&&b<19))throw Error("Node 22.19+ required"); console.log(process.version)'
+NODE_VERSION = 'const pin=require("node:fs").readFileSync("../../.nvmrc","utf8").trim(); const min=pin.split(".").map(Number), v=process.versions.node.split(".").map(Number); if(v[0]!==min[0]||v[1]<min[1]||(v[1]===min[1]&&v[2]<min[2]))throw Error(`Node ${pin}+ LTS (${min[0]}.x) required`); console.log(process.version)'
 INSTALLED = 'for (const p of process.argv.slice(1)) if (!require("node:fs").existsSync(p)) throw Error(`Locked dependencies missing: ${p}; run setup.sh first`)'
 PROCESS_TOOLS = 'import shutil, sys; missing = [name for name in ("ps", "pgrep", "lsof") if shutil.which(name) is None]; sys.exit("Missing host process tools: " + ", ".join(missing) + "; on Debian/Ubuntu install procps and lsof" if missing else 0)'
 SHELL_SYNTAX = 'for script; do IFS= read -r interpreter < "$script"; case "$interpreter" in *bash) bash -n "$script" ;; *) sh -n "$script" ;; esac || exit; done'

@@ -63,14 +63,42 @@ rather than adding a broader long-lived credential to every release job.
 
 ## CI
 
-PRs and `main` run frontend, Rust and the OpenBB worker,
-repository checks, macOS native interaction, and Apple Silicon package
-smokes. Source checks split across Ubuntu (web, Python) and macOS (Rust) and do
-not block native or package jobs. Repeat compiles restore a per-job Rust cache.
-Pull requests that only touch documentation skip native and package jobs while
-still reporting the required check names. Renderer-only pull requests skip
-package smokes. `main` and `workflow_dispatch` always run the full set. Actions
-are pinned to commit SHAs. Toolchain pins: Rust 1.97.1, uv 0.11.2, Syft 1.50.0.
+PRs and `main` pushes select checks by changed paths. Every run checks guide
+links, scope regression tests, credential boundaries and Node pins without
+installing npm, OpenBB or Rust dependencies. The selected source checks run on
+Ubuntu (web, Python) and macOS (Rust), alongside native and package jobs.
+
+| Changed surface | Selected checks beyond the always-on repository checks |
+| --- | --- |
+| README and ordinary guides | None |
+| Renderer code or styles | Web and native interaction |
+| Renderer/agent JavaScript unit tests | Web |
+| Rust test modules or the headless harness | Rust |
+| OpenBB tests or Python script tests | Python |
+| Production Rust | Rust, native interaction and packaging |
+| OpenBB runtime | Python, Rust, native interaction and packaging |
+| Agent instructions/Skills or Marketplace assets | Web, Rust, native interaction and packaging |
+| App dependencies, toolchain/CI configuration, staging scripts or unknown paths | All |
+
+Mixed changes take the union of their scopes. Shared renderer contract fixtures
+also select Rust, and agent eval fixtures select Web and Rust. Inline Rust tests
+in production files retain native/package checks. PRs use a merge-base diff;
+pushes use the complete before/after range. Deleted and renamed source paths
+remain in scope. Missing history or classification errors select all checks.
+
+Repeat compiles restore Rust caches populated
+only by successful jobs on `main` (push or manual); PRs restore them without
+uploading redundant branch caches.
+The signed build shares the package-smoke dependency cache. Official package CI
+has one explicit macOS job; experimental Windows packaging stays manual-only.
+Unselected source jobs are skipped; the source gate accepts a skip only when
+the classifier explicitly deselected that scope. Native and package jobs retain
+their required check names using inexpensive Ubuntu no-op steps when unselected.
+Manual `workflow_dispatch` and release validation always run the full set.
+Actions are pinned to commit SHAs. Toolchain pins:
+Node 26.13.0 LTS (root `.nvmrc`), Rust 1.97.1, uv 0.11.2,
+Syft 1.50.0. Node setup in CI and release validation/signature verification reads
+the same pin. npm caching is explicit and disabled in signing/publication jobs.
 
 Source jobs use the same bounded check runner as local development, with a
 60-minute job limit and per-command timeouts. Native and package jobs also have
@@ -96,7 +124,13 @@ no provider or connector credentials; the live release journeys
 (`npm run test:live-journeys` in `apps/loupist/e2e/`) are a pre-release
 acceptance step rather than CI input.
 
-A release tag is accepted only from a `main` commit whose `ci.yml` push run succeeded. The tag workflow builds packages; it does not re-run that source gate.
+A release tag is accepted only from a `main` commit whose scoped `ci.yml` push
+run succeeded. Before signing, the tag workflow calls the same-commit `ci.yml`
+with `full: true`: all source, native and unsigned package checks must pass.
+This reusable workflow receives no signing or provider secrets. A green
+documentation-only push is therefore insufficient to sign a release.
+Release validation, assembly/promotion and signing jobs have 15, 30 and 90 minute limits
+respectively; signed package preflight has a 60 minute limit.
 
 Official installers and automatic-update manifests include only macOS Apple
 Silicon. Asset and qualification verifiers require this exact platform set.
@@ -113,6 +147,26 @@ not be required by any applicable `main` ruleset or legacy branch protection.
 Required checks are `Source and product contracts`, `Native macOS interaction`,
 and `Package smoke (aarch64-apple-darwin)`, with strict GitHub Actions ownership and
 no-bypass protections. The read-only release audit flags obsolete Windows gates.
+
+### Model-provider authentication and live acceptance
+
+Ordinary and full CI use scripted Pi responses, connection replays and isolated
+native fixtures. They check runtime contracts, tool execution, permissions,
+Memory persistence and evaluator behavior; they do not measure real model
+answer quality, tool selection or live sign-in. No model-provider secrets are
+required in GitHub Actions.
+
+Real-model checks remain explicit owner-run commands in an authenticated local
+environment: the [headless agent runner](../apps/loupist/evals/README.md#headless-agent-runner)
+for prompt/Skill/Memory changes, and the
+[live release journeys](../apps/loupist/e2e/README.md#explicit-live-suites) for
+app acceptance. They consume model usage. Pass the existing signed-in Pi
+directory in place using `--pi-agent-dir` or `LOUPIST_LIVE_PI_AGENT_DATA_DIR`;
+do not copy credential files into the checkout, Actions secrets or artifacts.
+An authentication failure is a failed live check, not permission to silently
+substitute a mock or another model. Record the tested revision, model, suite and
+result separately from credential-free CI. Stable qualification continues to
+require the signed candidate's Chat/Memory acceptance confirmation and evidence.
 
 ## Release
 
