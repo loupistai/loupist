@@ -407,6 +407,12 @@ pub(super) fn extract_dart_document(
 ) -> Result<(String, bool, usize), FinanceDataError> {
     let mut archive =
         zip::ZipArchive::new(Cursor::new(bytes)).map_err(|_| FinanceDataError::InvalidResponse)?;
+    if archive.len() > 20_000 {
+        return Err(FinanceDataError::InvalidResponse);
+    }
+    archive
+        .validate_header_consistency()
+        .map_err(|_| FinanceDataError::InvalidResponse)?;
     let mut combined = String::new();
     let mut decompressed = 0_usize;
     let mut document_count = 0_usize;
@@ -417,7 +423,10 @@ pub(super) fn extract_dart_document(
         if file.is_dir() || file.enclosed_name().is_none() {
             continue;
         }
-        let name = file.name().to_ascii_lowercase();
+        let name = file
+            .name()
+            .map_err(|_| FinanceDataError::InvalidResponse)?
+            .to_ascii_lowercase();
         if !(name.ends_with(".xml") || name.ends_with(".html") || name.ends_with(".htm")) {
             continue;
         }

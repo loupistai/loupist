@@ -141,11 +141,14 @@ pub(crate) fn read_zip(bytes: &[u8], subpath: Option<&str>) -> Result<Files, Rej
     if archive.len() > 20_000 {
         return Err(Rejection::TooLarge);
     }
+    archive
+        .validate_header_consistency()
+        .map_err(|_| Rejection::Damaged)?;
     let mut entries = Vec::new();
     let mut total = 0usize;
     for index in 0..archive.len() {
         let mut file = archive.by_index(index).map_err(|_| Rejection::Damaged)?;
-        let name = file.name().to_owned();
+        let name = file.name().map_err(|_| Rejection::Damaged)?.into_owned();
         if file.is_dir() || os_metadata(&name) {
             continue;
         }
@@ -912,6 +915,32 @@ mod tests {
             writer.write_all(bytes).unwrap();
         }
         writer.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn archives_reject_cloaked_local_filenames_and_preserve_legacy_names() {
+        let mut cloaked = zip(&[
+            ("safe.txt", b"content", 0o644),
+            ("loupist-pack.json", b"{}", 0o644),
+        ]);
+        // Keep the central directory's safe name while changing only the local
+        // header, with the same byte length. No filesystem extraction occurs.
+        assert_eq!(&cloaked[30..38], b"safe.txt");
+        cloaked[30..38].copy_from_slice(b"../x.txt");
+        assert!(read_zip(&cloaked, None).is_err());
+
+        let mut legacy = zip(&[("cafe.txt", b"content", 0o644)]);
+        let name = b"cafe.txt";
+        let offsets: Vec<_> = legacy
+            .windows(name.len())
+            .enumerate()
+            .filter_map(|(offset, bytes)| (bytes == name).then_some(offset))
+            .collect();
+        assert_eq!(offsets.len(), 2, "local and central filenames");
+        for offset in offsets {
+            legacy[offset + 3] = 0x82; // CP437 é, with the UTF-8 flag unset.
+        }
+        assert_eq!(read_zip(&legacy, None).unwrap()["café.txt"], b"content");
     }
 
     #[test]

@@ -3,6 +3,16 @@
 // round trip is not part of the measurement.
 import { randomUUID } from "node:crypto";
 
+/** Read the current rendered count after routing, ignoring retained hidden maps
+ * and auxiliary badges. Never accept a count from a hidden or inert view. */
+export async function readVisibleMapStats(browser) {
+  return browser.execute(() => [...document.querySelectorAll(".map-view .map-stats > span")]
+    .filter(element => !element.closest('[hidden], [inert], [aria-hidden="true"]')
+      && element.getClientRects().length > 0 && getComputedStyle(element).visibility === "visible")
+    .map(element => element.textContent?.trim() ?? "")
+    .find(text => /^[\d,]+ on the map · [\d,]+ relationships$/.test(text)) ?? "");
+}
+
 export async function onboardingStep(browser) {
   const main = await browser.$("main[data-onboarding]");
   if (!(await main.isExisting())) return null;

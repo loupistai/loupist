@@ -1,5 +1,12 @@
 # Third-party notices
 
+## Component styles
+
+Loupist retains the component state variants and scrollbar utility from
+[shadcn](https://github.com/shadcn-ui/ui) 4.22.1, copyright (c) 2023 shadcn,
+under the MIT License. The complete notice is retained in
+`src/styles/vendor/shadcn.LICENSE`. The shadcn CLI is not an app dependency.
+
 ## Chart rendering
 
 Loupist uses [KLineChart](https://github.com/klinecharts/KLineChart)

@@ -1,7 +1,29 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
-import { measureMapDrawProbe, measureMapProbe, selectLoupistTemplate } from "./native-shell.mjs";
+import { measureMapDrawProbe, measureMapProbe, readVisibleMapStats, selectLoupistTemplate } from "./native-shell.mjs";
+
+test("map counts come from the visible map after routing, never a retained hidden view", async () => {
+  const span = (textContent, { hidden = false, width = 200, visibility = "visible" } = {}) => ({
+    textContent, visibility,
+    closest: () => hidden ? {} : null,
+    getClientRects: () => width ? [{}] : [],
+  });
+  let spans = [span("99 on the map · 88 relationships", { hidden: true }),
+    span("77 on the map · 66 relationships", { width: 0 }),
+    span("55 on the map · 44 relationships", { visibility: "hidden" }),
+    span(" · 1 new this week"), span("34 on the map · 34 relationships")];
+  const browser = { execute: async script => runInNewContext(`(${script})()`, {
+    document: { querySelectorAll: selector => {
+      assert.equal(selector, ".map-view .map-stats > span");
+      return spans;
+    } },
+    getComputedStyle: element => ({ visibility: element.visibility }),
+  }) };
+  assert.equal(await readVisibleMapStats(browser), "34 on the map · 34 relationships");
+  spans = [span("99 on the map · 88 relationships", { hidden: true }), span("Loading")];
+  assert.equal(await readVisibleMapStats(browser), "");
+});
 
 const origin = "http://127.0.0.1:1430";
 const frameSummary = "150 nodes · median 17.00 ms · p95 19.00 ms";

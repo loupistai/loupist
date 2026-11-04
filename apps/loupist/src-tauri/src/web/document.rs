@@ -273,7 +273,12 @@ fn office_kind_from_zip(bytes: &[u8]) -> Result<Option<DocumentKind>, DocumentEr
     for index in 0..entry_count {
         let (entry_size, name) = {
             let file = archive.by_index(index).map_err(|_| DocumentError::Parse)?;
-            (file.size(), file.name().replace('\\', "/"))
+            (
+                file.size(),
+                file.name()
+                    .map_err(|_| DocumentError::Parse)?
+                    .replace('\\', "/"),
+            )
         };
         total_uncompressed = total_uncompressed
             .checked_add(entry_size)
@@ -283,6 +288,9 @@ fn office_kind_from_zip(bytes: &[u8]) -> Result<Option<DocumentKind>, DocumentEr
         }
         names.push(name);
     }
+    archive
+        .validate_header_consistency()
+        .map_err(|_| DocumentError::Parse)?;
     Ok(if names.iter().any(|name| name == "word/document.xml") {
         Some(DocumentKind::Docx)
     } else if names.iter().any(|name| name == "xl/workbook.xml") {

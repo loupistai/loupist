@@ -192,7 +192,7 @@ fn vector_bytes(vector: &[f32]) -> Vec<u8> {
 }
 
 fn vector_from(bytes: &[u8]) -> Option<Vec<f32>> {
-    if bytes.is_empty() || bytes.len() % 4 != 0 {
+    if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
         return None;
     }
     let vector: Vec<f32> = bytes

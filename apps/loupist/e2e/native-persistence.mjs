@@ -24,6 +24,7 @@ import {
   dialogByTitle,
   openMainTab,
   preferEnglish,
+  readVisibleMapStats,
   scrub,
   waitForShell,
 } from "./native-shell.mjs";
@@ -202,7 +203,7 @@ async function verifyChats() {
 async function mapStats() {
   let text = "";
   await browser.waitUntil(async () => {
-    text = (await browser.$(".map-view .map-stats span").getText().catch(() => "")).trim();
+    text = await readVisibleMapStats(browser);
     return /^[\d,]+ on the map · [\d,]+ relationships$/.test(text);
   }, { timeout: 30_000, interval: 200, timeoutMsg: `The Map did not report its size (${text})` });
   return text;
@@ -378,7 +379,7 @@ async function settingsSection(id) {
 
 async function expand(selector) {
   const details = await displayed(selector);
-  if ((await details.getAttribute("open")) === null) await (await details.$("summary")).click();
+  if ((await details.getAttribute("open")) === null) await (await details.$(":scope > summary")).click();
   await browser.waitUntil(async () => (await details.getAttribute("open")) !== null, { timeout: 5_000, timeoutMsg: `${selector} did not open` });
 }
 

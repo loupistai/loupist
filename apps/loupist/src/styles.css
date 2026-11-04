@@ -23,7 +23,7 @@
 @import "./styles/memory.css";
 @import "./styles/lens-workspace.css";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import "./styles/vendor/shadcn.css";
 @import "@fontsource-variable/geist";
 
 @custom-variant dark (&:is(.dark *));

@@ -36,6 +36,29 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
+it('repaints cached names and remeasures after zoom or selection changes', () => {
+  const nodes = [node('a'), node('b', 150)];
+  const props = { ...base, nodes, scopeKey: 'label-frame-invalidation' };
+  const view = render(<MapCanvas {...props} />);
+  const ctx = { save: vi.fn(), restore: vi.fn(), measureText: vi.fn((text: string) => ({ width: text.length * 6 })), strokeText: vi.fn(), fillText: vi.fn() };
+  const paint = (scale = 1) => renderer.props!.onRenderFramePost?.(ctx as unknown as CanvasRenderingContext2D, scale);
+  paint();
+  const measured = ctx.measureText.mock.calls.length;
+  const painted = ctx.fillText.mock.calls.length;
+  expect(measured).toBeGreaterThan(0);
+  expect(painted).toBeGreaterThan(0);
+  paint();
+  expect(ctx.measureText).toHaveBeenCalledTimes(measured);
+  expect(ctx.fillText).toHaveBeenCalledTimes(painted * 2);
+  paint(2);
+  expect(ctx.measureText.mock.calls.length).toBeGreaterThan(measured);
+  ctx.measureText.mockClear(); ctx.fillText.mockClear();
+  view.rerender(<MapCanvas {...props} selectedId="b" />);
+  paint(2);
+  expect(ctx.measureText).toHaveBeenCalled();
+  expect(ctx.fillText).toHaveBeenCalledWith('b', expect.any(Number), expect.any(Number));
+});
+
 it('selects a node without changing zoom, fits on demand, and deselects empty space', () => {
   const onSelect = vi.fn(), onClear = vi.fn(); const controls = { current: null as MapCanvasControls | null };
   render(<MapCanvas {...base} nodes={[node('a'), node('b', 40), node('c', 80)]} scopeKey="camera-controls" controls={controls} onSelect={onSelect} onClear={onClear} stats="3 names" />);

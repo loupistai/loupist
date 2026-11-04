@@ -1,3 +1,4 @@
+import { createLabelFrame } from "./labelFrame";
 import { conflictMark, entityLabel, LIVE_GLOW_REACH, nodeRings, placeLabels, showMetricLabel } from "./labels";
 import { relationName } from "./relations";
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
@@ -455,6 +456,7 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
       // Same work as one steady overview frame: every link, every node, then
       // labels for the hub set the renderer keeps when zoomed out.
       const labelNodes = data.nodes.filter((node) => hubs.has(node.id) && showMetricLabel(node));
+      const labelFrame = createLabelFrame();
       for (let sample = 0; sample < 200; sample += 1) {
         const started = performance.now();
         ctx.save();
@@ -493,7 +495,7 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
           }
         }
         ctx.font = `12px ${palette.font}`;
-        const placed = placeLabels(labelNodes, data.nodes, (text) => ctx.measureText(text).width, scale, { hubs, disputedIds }, 200, () => true, 180, [], i18n.language);
+        const placed = labelFrame(data.nodes, scale, { x: 0, y: 0 }, () => placeLabels(labelNodes, data.nodes, (text) => ctx.measureText(text).width, scale, { hubs, disputedIds }, 200, () => true, 180, [], i18n.language));
         for (const { box, text } of placed) {
           ctx.strokeStyle = palette.colors["label-halo"];
           ctx.lineWidth = 5;
@@ -512,6 +514,7 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
     run();
     return () => { cancelled = true; };
   }, [drawProbe, size.width, size.height, nodes.length, data, palette, hubs, disputedIds, i18n.language]);
+  const labelFrame = createLabelFrame();
   return <div ref={host} className="map-canvas" role="img" aria-label={stats}>
     {size.width > 0 && size.height > 0 && nodes.length ? <ForceGraph<PositionedNode, Link> ref={api} width={size.width} height={size.height} graphData={data}
       nodeVisibility={node => visibleIds.has(node.id) || ghostIds.has(node.id)} linkVisibility={link => edgeVisible(link) || ghostEdgeIds.has(link.id)}
@@ -651,7 +654,7 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
         const labelCapPx = size.width > 0 && size.width < 900 ? 140 : 180;
         // Names stay clear of a glow until it has faded out, so they do not shift while it shows.
         const glowingLive = liveFading ? new Set([...(liveIds ?? []), ...liveFade.current.ids]) : liveIds;
-        const placed = placeLabels(candidates, visible, text => ctx.measureText(text).width, scale, { selectedId: placedSelection, hoveredId: hovered?.id, neighbors: selectedNeighbors, linkedIds, learnedLinkedIds, hubs, highlightIds: activeHighlights, learnedIds, disputedIds, focalId, topHubIds: topHubs, liveIds: glowingLive }, exportLabels ? Infinity : compact ? 10 : 200, onScreen, labelCapPx, data.links, i18n.language);
+        const placed = labelFrame(visible, scale, api.current?.graph2ScreenCoords(0, 0) ?? { x: 0, y: 0 }, () => placeLabels(candidates, visible, text => ctx.measureText(text).width, scale, { selectedId: placedSelection, hoveredId: hovered?.id, neighbors: selectedNeighbors, linkedIds, learnedLinkedIds, hubs, highlightIds: activeHighlights, learnedIds, disputedIds, focalId, topHubIds: topHubs, liveIds: glowingLive }, exportLabels ? Infinity : compact ? 10 : 200, onScreen, labelCapPx, data.links, i18n.language));
         const dimSet = selectedId ? selectedNeighbors : neighbors;
         for (const { node, box, text, callout } of placed) {
           const corner = api.current?.graph2ScreenCoords(box.x, box.y);

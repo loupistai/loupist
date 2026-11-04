@@ -7,6 +7,8 @@ Published archive SHA-256:
 Upstream MIT LICENSE is retained verbatim. No upstream dependency was added.
 The app Cargo.lock pins the complete graph; this is an app-local workspace
 member so its tests use that same graph, with the app as the default member.
+The Tauri dependency is pinned to the app's 2.12.5 version. This keeps the
+debug driver on the same native API after the updater's ZIP security upgrade.
 
 Current change: WebDriver browsing contexts resolve through Tauri `Webview`
 handles, whose owner `Window` is used only for window geometry/management.

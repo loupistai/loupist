@@ -64,6 +64,17 @@ Record dated measurements and execution limits with the candidate's qualificatio
 Keep development page-paint/frame measurements separate from signed-release spawn-to-visible
 qualification. Repeat a missed budget on an idle machine.
 
+Label placement reuses geometry within one React render while the camera and
+node coordinates remain unchanged. A render (including selection, locale,
+viewport obstacles or glow changes), camera movement, zoom, visibility change
+or node movement invalidates it. Halos, labels and fades still paint on every
+frame; pointer interaction and the performance probe remain enabled. The draw
+proxy uses the same cache lifetime for its steady overview samples. Report its
+CPU draw cost separately from actual requestAnimationFrame cadence.
+During a placement pass, node classification, radii and ring clearance are
+computed once per mark. Each pass gets fresh geometry for its zoom and priority
+state, including while the camera moves.
+
 `src/styles/tokens.css` owns the semantic token set: surfaces, text, borders,
 accents, status/Map colors, typography, spacing, radii and motion. Primitive palette
 values stay private to that file; feature styles use semantic tokens. Do not add
