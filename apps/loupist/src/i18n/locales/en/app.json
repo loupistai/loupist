@@ -66,7 +66,6 @@
     "backToApp": "Back",
     "applicationNavigation": "Application navigation",
     "mainViews": "Main views",
-    "searchChats": "Search chats",
     "research": "Research",
     "application": "Application"
   },
@@ -82,15 +81,8 @@
     "homeDescriptor": "Chat, briefings, and alerts"
   },
   "loupistNavigationGroup": {
-    "couldnTLoadChatsRetry": "Couldn’t load chats · Retry",
-    "noMatchingChats": "No matching chats",
-    "selectLoupist": "Select Loupist {{label}}",
     "hasActiveSessions": "{{label}} has active sessions",
-    "optionsForLoupist": "Options for Loupist {{label}}",
-    "newChatWith": "New chat with {{label}}",
-    "chatsFor": "Chats for {{label}}",
-    "showChats": "Show chats for {{label}}",
-    "hideChats": "Hide chats for {{label}}"
+    "newChatWith": "New chat with {{label}}"
   },
   "macTitlebarControls": {
     "showOrHideSidebar": "Show or hide sidebar",
@@ -164,7 +156,6 @@
     "loupists": "Loupists",
     "newLoupist": "New Loupist",
     "newChat": "New chat",
-    "allChats": "All chats",
     "settings": "Settings",
     "search": "Search",
     "newChatShortcut": "New chat {{shortcut}}",
@@ -172,7 +163,6 @@
     "loupistSettings": "Loupist settings",
     "removeLoupist": "Remove Loupist…",
     "wordmark": "Loupist",
-    "reveal": "Reveal in Finder",
     "close": "Close",
     "tabs": {
       "lens": "Lens",
@@ -304,7 +294,6 @@
     "checkLate": "Overdue since {{day}}: {{title}}",
     "more_one": "{{formattedCount}} more",
     "more_other": "{{formattedCount}} more",
-    "waitingFor": "{{label}} is waiting for you",
     "finishedHidden": "Finished while you were away",
     "lineCrossed": "Line crossed · {{name}}",
     "watchAlerts_one": "{{formattedCount}} new alert",

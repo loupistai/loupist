@@ -20,6 +20,7 @@
     "check:python": "sh ./scripts/check.sh python",
     "check:rust": "sh ./scripts/check.sh rust",
     "check:web": "sh ./scripts/check.sh web",
+    "check:unused": "knip --config knip.jsonc",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "sh ./scripts/verify.sh"
@@ -68,6 +69,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.0.2",
     "jsdom": "^26.1.0",
+    "knip": "6.44.1",
     "typescript": "~5.8.3",
     "vite": "^7.1.3",
     "vitest": "4.1.12"

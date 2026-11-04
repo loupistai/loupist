@@ -6,6 +6,9 @@ Start with `git status --short`. Preserve other sessions' edits and window owner
 Use `python3 scripts/guide.py <topic>` to find a section, then pass its
 `path#heading` back to read it. [Browse by area](docs/README.md).
 Update the owning section when behavior or a durable decision changes.
+When replacing a path, remove its obsolete implementation and dedicated tests.
+Preserve behavior coverage through the current entry point. Use the
+[cleanup checks](docs/dev/repository-guidance.md#code-cleanup) before deleting code.
 
 React submits typed intent via `apps/loupist/src/bridge/tauriBridge.ts`. Rust owns
 credentials, persistence, Memory transactions, grants and worker lifetime.

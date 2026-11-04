@@ -12,7 +12,6 @@ export const CRYPTO_WATCH_KINDS = ["cryptoMove", "drawdown", "depeg", "tvl"] as 
 /** Commodity kinds: the front contract's weekly move, CFTC positioning, EIA's weekly petroleum report. */
 export const COMMODITY_WATCH_KINDS = ["futuresMove", "positioning", "oilInventory"] as const;
 export type WatchKind = typeof EQUITY_WATCH_KINDS[number] | typeof CRYPTO_WATCH_KINDS[number] | typeof COMMODITY_WATCH_KINDS[number];
-export const WATCH_KINDS: readonly WatchKind[] = [...EQUITY_WATCH_KINDS, ...CRYPTO_WATCH_KINDS, ...COMMODITY_WATCH_KINDS];
 /** Kinds by asset class, in column order; an asset's kinds all come from one group. */
 export const WATCH_KIND_GROUPS = [
   { id: "equity", kinds: EQUITY_WATCH_KINDS },

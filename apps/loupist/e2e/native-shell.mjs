@@ -80,7 +80,7 @@ export async function clickControl(browser, selector) {
   const state = await browser.execute((sel) => {
     const element = document.querySelector(sel);
     if (!(element instanceof HTMLElement)) return "missing";
-    const actions = element.closest(".loupist-row-actions, .loupist-chat-menu");
+    const actions = element.closest(".loupist-chat-menu");
     if (actions instanceof HTMLElement) actions.style.opacity = "1";
     return element.matches(":disabled") ? "disabled" : "ready";
   }, selector);

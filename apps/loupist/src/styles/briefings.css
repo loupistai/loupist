@@ -37,19 +37,6 @@
 .briefings-back,
 .briefings-continue,
 .briefings-conflicts { margin-inline-start: -0.625rem; }
-.briefings-schedule-dialog { max-width: var(--gg-size-dialog-sm); }
-.briefings-schedule-dialog form { display: grid; gap: var(--gg-space-4); }
-.briefings-days { display: flex; gap: var(--gg-space-1); flex-wrap: wrap; margin-top: var(--gg-space-2); }
-.briefings-days button { min-width: var(--gg-size-control-md); height: var(--gg-size-control-md); padding: 0 var(--gg-space-2); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-full); font-size: var(--gg-text-meta); }
-.briefings-days button[aria-pressed="true"] { background: var(--gg-color-bg-selected); border-color: var(--gg-color-accent); }
-/* Block, not grid: WKWebView collapses a grid fieldset legend to one character. */
-.briefings-schedule-dialog fieldset { display: block; min-width: 0; margin: 0; padding: 0; border: 0; }
-.briefings-schedule-dialog fieldset > legend { display: block; width: 100%; margin: 0 0 var(--gg-space-2); padding: 0; }
-.briefings-time { display: block; }
-.briefings-clock { display: flex; gap: var(--gg-space-2); }
-.briefings-clock > * { flex: 1; min-width: 0; }
-.briefings-resident { display: flex; align-items: flex-start; gap: var(--gg-space-3); }
-.briefings-resident > span { display: grid; gap: var(--gg-space-1); }
 @media (max-width: 899px) {
   .briefings-bar { padding: var(--gg-space-2) var(--gg-space-4); gap: var(--gg-space-2); }
   .briefings-bar > p { flex-basis: 70%; }

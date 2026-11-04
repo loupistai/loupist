@@ -32,4 +32,4 @@ and the morning message never names one as where a value came from.
 
 ## Code
 
-- What you follow (followed assets to the Map, step 5): `src-tauri/src/knowledge/followed.rs`, `src-tauri/src/commands/knowledge/followed.rs`, `src-tauri/src/commands/user_context.rs`, `src/components/onboarding/MeetStep.tsx`, `src/components/knowledge/hostSource.ts`
+- What you follow (followed assets to the Map): `src-tauri/src/knowledge/followed.rs`, `src-tauri/src/commands/knowledge/followed.rs`, `src-tauri/src/commands/user_context.rs`, `src/components/knowledge/hostSource.ts`

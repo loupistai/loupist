@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { main, readRuns } from './runs.mjs';
 
 test('fixture tail filters failures and summary counts percentiles and known usage once', async () => {
@@ -19,7 +20,7 @@ test('fixture tail filters failures and summary counts percentiles and known usa
     ];
     await writeFile(join(dir, 'runs-20261029.jsonl'), records.map(r => JSON.stringify(r)).join('\n') + '\n{"incomplete":');
     assert.equal((await readRuns(dir)).skipped, 1);
-    const tail = execFileSync(process.execPath, ['scripts/runs.mjs', 'tail', '--loupist', root, '--kind', 'world', '--failed'], { encoding: 'utf8' });
+    const tail = execFileSync(process.execPath, [fileURLToPath(new URL('./runs.mjs', import.meta.url)), 'tail', '--loupist', root, '--kind', 'world', '--failed'], { encoding: 'utf8' });
     assert.match(tail, /world failed 900ms/); assert.match(tail, /failure=world_worker_failed/); assert.doesNotMatch(tail, /run-1/);
     const summary = JSON.parse(await main(['summary', '--loupist', root, '--since', '24h']));
     assert.deepEqual(summary.counts, { chat: 1, briefing: 1, world: 1 });

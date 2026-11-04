@@ -58,9 +58,6 @@ export function evidenceDate(evidence: ChatEvidenceRef | undefined, field: "publ
   return unbroken(formatDate(time, /^\d{4}-\d{2}-\d{2}$/u.test(value ?? "") ? { timeZone: "UTC" } : {}));
 }
 
-/** "OpenDART · Mar 18, 2026": who provided an input's source, and when. */
-export const sourceLine = (evidence: ChatEvidenceRef) => [evidence.provider ?? sourceIdentityLabel(evidence), evidenceDate(evidence)].filter(Boolean).join(" · ");
-
 /** The numbered citation an input's source has in this answer, if it has one. */
 export function citationNumber(evidence: ChatEvidenceRef, evidenceRefs: readonly ChatEvidenceRef[]) {
   const index = citationSources(evidenceRefs).findIndex((item) => item.id === evidence.id);

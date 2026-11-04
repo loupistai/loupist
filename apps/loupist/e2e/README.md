@@ -232,7 +232,7 @@ node apps/loupist/e2e/native-layout.mjs apps/loupist/e2e/artifacts/current-sessi
 ```
 
 It checks reading/composer alignment, context and status controls, chart and
-table bounds, All Chats overlays, receipt labels, and restoration of the saved
+table bounds, receipt labels, and restoration of the saved
 panel width. It writes screenshots and measured geometry to
 `apps/loupist/e2e/artifacts/layout/`, then restores the window size, URL and local
 UI preferences. The CLI uses the attached window's URL when the shared development

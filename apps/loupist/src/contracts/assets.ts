@@ -10,7 +10,6 @@ export const ASSET_CLASSES: readonly AssetClass[] = ["equity", "crypto", "fund",
 export type AssetClassSource = "user" | "market" | "lookup" | "world" | "default";
 /** "Holding up" is stored as `holding`; it never reads as ownership. */
 export type Verdict = "holding" | "weakening" | "challenged" | "broken";
-export const VERDICTS: readonly Verdict[] = ["holding", "weakening", "challenged", "broken"];
 
 /** Where a row came from: a retained dataset row, an original URL, a Source, a Map claim or a cited turn result. */
 export type AssetEvidence = {

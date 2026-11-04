@@ -1,0 +1,19 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/main.tsx",
+    "src/preview/main.tsx",
+    "evals/agent/export-feedback.mjs",
+    "e2e/live-preset.mjs",
+    "e2e/native-live-journeys.mjs"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs,css}",
+    "!src/**/*.{test,spec}.{ts,tsx,mts,cts,js,jsx,mjs,cjs}",
+    "!src/test/**",
+    "!src/**/*.d.{ts,mts,cts}"
+  ],
+  "vite": false,
+  "vitest": false,
+  "include": ["files"]
+}

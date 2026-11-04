@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from contextlib import chdir
 from pathlib import Path
 import subprocess
 import sys
@@ -114,6 +115,37 @@ class CheckRunnerTests(unittest.TestCase):
                 with self.assertRaises(SystemExit) as refused:
                     checks.main([scope, "--list", "--shard", shard])
                 self.assertEqual(refused.exception.code, 2)
+
+    def test_full_web_includes_root_contracts_from_another_working_directory(self):
+        app = Path(checks.__file__).resolve().parents[1]
+        contract = app.parents[1] / "scripts/runs.test.mjs"
+        with patch.object(checks, "APP", app), chdir(self.root):
+            web = checks.plan("web")
+            harness = checks.plan("harness")
+        contracts = next(item for item in web if item["name"] == "node-contracts")
+        self.assertIn(
+            contract, [Path(arg).resolve() for arg in contracts["command"][2:]]
+        )
+        harness_contracts = next(
+            item for item in harness if item["name"] == "agent-eval-contracts"
+        )
+        self.assertNotIn(
+            contract,
+            [Path(arg).resolve() for arg in harness_contracts["command"][2:]],
+        )
+        result = checks.execute(
+            {
+                **contracts,
+                "scope": "web",
+                "command": [*contracts["command"][:2], str(contract)],
+            },
+            self.root,
+            10,
+            threading.Event(),
+        )
+        self.assertEqual(
+            result["status"], "passed", (self.root / result["log"]).read_text()
+        )
 
     def test_rust_runs_after_python_install_and_only_when_it_passed(self):
         marker = self.root / "python-ready"

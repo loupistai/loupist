@@ -18,23 +18,15 @@ pub(in crate::commands) fn durable_memory_trace(
         .filter(|memory| memory.access == MemoryAccess::ExactRead)
         .map(|memory| (memory.read_ref.clone(), memory))
         .collect::<BTreeMap<_, _>>();
-    let all_refs = all.values().cloned().collect::<Vec<_>>();
+    let all_refs = all.into_values().collect::<Vec<_>>();
     let observed_exact_count = u64::try_from(all_refs.len())
         .map_err(|_| CommandError::internal("exact Memory read count overflowed"))?;
     let refs_digest = memory_refs_digest(&all_refs).map_err(map_internal)?;
 
-    let mut retained_ids = BTreeSet::new();
-    let mut refs = Vec::with_capacity(all.len().min(MAX_MEMORY_REFS));
-    let mut retain = |record_id: &str| {
-        if refs.len() < MAX_MEMORY_REFS && retained_ids.insert(record_id.to_owned()) {
-            if let Some(memory) = all.get(record_id) {
-                refs.push(memory.clone());
-            }
-        }
-    };
-    for record_id in all.keys() {
-        retain(record_id);
-    }
+    let refs = all_refs
+        .into_iter()
+        .take(MAX_MEMORY_REFS)
+        .collect::<Vec<_>>();
     Ok(DurableMemoryTrace {
         refs_truncated: observed_exact_count > refs.len() as u64,
         refs,

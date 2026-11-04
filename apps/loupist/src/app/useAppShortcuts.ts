@@ -1,7 +1,5 @@
 import { useEffect } from "react";
-import { GLOBAL_KEYS, isMacPlatform, modalDialogOpen } from "./shortcuts";
-
-export const shortcutModifier = () => isMacPlatform() ? "⌘" : "Ctrl+";
+import { GLOBAL_KEYS, modalDialogOpen } from "./shortcuts";
 
 /** Something that takes text (or a menu or dialog) has focus, so a bare "/" belongs to it. */
 const typingTarget = (target: EventTarget | null) => target instanceof HTMLElement
