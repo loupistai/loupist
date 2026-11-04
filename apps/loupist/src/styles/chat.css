@@ -986,6 +986,8 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .composer-footer {
   flex-wrap: wrap;
 }
+/* When the tools wrap, the send control stays at the trailing edge of its row. */
+.composer-submit { margin-left: auto; }
 
 .composer-run-actions {
   display: inline-flex;

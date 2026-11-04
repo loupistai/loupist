@@ -515,6 +515,7 @@ function ComposerSubmit({
   const empty = !prompt.trim() && attachments.files.length === 0;
   return (
     <PromptInputSubmit
+      className="composer-submit"
       aria-label={t("chatComposer.send")}
       status={attachments.isSubmitting ? "submitted" : "ready"}
       disabled={empty || !hasModel || attachments.isSubmitting}
