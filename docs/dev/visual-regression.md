@@ -59,6 +59,8 @@ duration and iteration count in `manifest.json`. The threshold permits near-zero
 the explicit allowlist in `scripts/capture-preview.mjs` is empty. This checks the settled scenario,
 not completed effects or motion triggered by later interactions. Injected CSS hides carets and
 disables smooth scrolling. Chrome restarts between scenarios by default; `--browser-scenarios 1..15` permits bounded reuse for whole-app audits. Each navigation still resets storage and bypasses the network cache. Capture servers disable filesystem watching.
+Chrome has a bounded 45-second startup window for cold hosted runners running the
+parallel contract suite; early process exits still fail immediately with browser diagnostics.
 Capture freezes the fixture clock before app initialization
 (including generated map IDs) and hides native scrollbars to avoid their platform fade animation. Compare runs on the same machine and Chrome version
 (`CHROME_PATH` can select a different executable). A changed browser or font environment can

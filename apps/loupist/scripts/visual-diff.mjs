@@ -31,7 +31,8 @@ export async function openChrome() {
       chrome = spawn(executable, ['--headless=new', `--user-data-dir=${profile}`, '--remote-debugging-port=0', '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--disable-features=BackForwardCache', '--hide-scrollbars', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
       let stderr = '';
       const startupError = message => new Error(`${message}${stderr.trim() ? `\n${stderr.trim()}` : ''}`);
-      const timer = setTimeout(() => reject(startupError('Chrome did not publish a DevTools endpoint')), 15000);
+      // A cold browser competes with the parallel contract suite on hosted runners.
+      const timer = setTimeout(() => reject(startupError('Chrome did not publish a DevTools endpoint')), 45000);
       chrome.once('error', error => { clearTimeout(timer); reject(error); });
       chrome.once('exit', (code, signal) => { clearTimeout(timer); reject(startupError(`Chrome exited before DevTools was ready (${code ?? signal})`)); });
       chrome.stderr.on('data', chunk => {
