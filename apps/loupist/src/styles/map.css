@@ -149,6 +149,10 @@
 .map-lens-menu .map-lens-note { margin:0; padding:var(--gg-space-1) var(--gg-space-2) var(--gg-space-2); color:var(--gg-color-text-secondary); font-size:var(--gg-text-caption); }
 .map-lens-menu:not(.map-around-menu) section h3 { margin:var(--gg-space-2) var(--gg-space-2) var(--gg-space-1); color:var(--gg-color-text-tertiary); font-size:var(--gg-text-caption); font-weight:var(--gg-weight-medium); }
 .map-library { position:absolute; inset:0 auto 0 0; width:var(--gg-size-inspector); max-width:100%; z-index:var(--gg-z-sidebar); background:var(--gg-color-bg-raised); border-right:1px solid var(--gg-color-border-subtle); box-shadow:var(--gg-shadow-sm); display:flex; flex-direction:column; min-height:0; }
+/* The default side panel is 460px. A 360px Library there leaves a strip too narrow to read the status line or the graph. Cover the canvas; closing the Library brings the map back. */
+@container map (max-width: 720px) {
+  .map-library { width: 100%; border-right: 0; box-shadow: none; }
+}
 .map-library > header { display:flex; align-items:center; justify-content:space-between; padding:var(--gg-space-4); }
 .map-library h2 { font-size:var(--gg-text-heading); }
 .map-library > [data-slot=tabs] { flex:1; min-height:0; gap:0; }

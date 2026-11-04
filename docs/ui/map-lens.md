@@ -43,6 +43,7 @@ then name, six per group then "+n more", line weight by claim weight and dashed 
 disputed; Lens entries applied to the name (`applies_to`) close Other on one "Lenses applied" line with dotted rules in the method colour; pointing at a counterpart or Lens entry (hover or focus) widens its line on the canvas to 2.5 px (a Lens line stays dotted in the method colour); clicking a counterpart walks there and Back retraces. Clicking a Lens opens its document.
 
 The Library drawer contains Sources and Notes (Journal and working notes).
+On a map narrower than 720px, including the default 460px side panel, the Library covers the canvas instead of leaving a strip too narrow to read. Closing it brings the map back.
 Entity/claim inspectors and Source and note readers open alongside the map.
 The application filter acts on the World canvas. It highlights the entities a
 Lens was applied to and names them. It does not draw the Lens, and it does not
