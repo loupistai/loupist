@@ -67,7 +67,7 @@ pack, author and version) into the new pack's manifest.
 **Gallery** (`sharing/gallery.rs`). When the build names a community index
 (`LOUPIST_COMMUNITY_INDEX_URL`), New Loupist offers Browse the Gallery: listed packs with
 name, author, focus, counts, license and an optional map image, sortable and searchable,
-kept for offline use. Preview opens the ordinary review and Use adds it as above; the
+kept for offline use. The list scrolls in the page, including below 1060px. Preview opens the ordinary review and Use adds it as above; the
 renderer never sees a pack's location, which Rust resolves from the listing id. The Share
 sheet offers List it in the Gallery only when the build names HTTPS listing terms: the user
 ticks "I agree to the Gallery listing terms" (linked to that URL), and the request carries
