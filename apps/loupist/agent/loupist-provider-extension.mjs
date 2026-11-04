@@ -151,8 +151,25 @@ export async function liveOpenAIModels(ctx, send = globalThis.fetch) {
       signal: AbortSignal.timeout(LIVE_MODELS_TIMEOUT_MS),
     });
     if (!response.ok) return null;
-    const text = await response.text();
-    if (Buffer.byteLength(text, "utf8") > MAX_LIVE_MODELS_BYTES) return null;
+    const reader = response.body?.getReader();
+    if (!reader) return null;
+    const chunks = [];
+    let byteLength = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        byteLength += value.byteLength;
+        if (byteLength > MAX_LIVE_MODELS_BYTES) {
+          await reader.cancel();
+          return null;
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const text = Buffer.concat(chunks, byteLength).toString("utf8");
     const body = JSON.parse(text);
     const entries = Array.isArray(body?.data) ? body.data : Array.isArray(body?.models) ? body.models : null;
     if (!entries) return null;

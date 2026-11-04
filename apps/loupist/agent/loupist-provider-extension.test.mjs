@@ -639,6 +639,85 @@ test("a ChatGPT sign-in lists only the models its plan offers", async (t) => {
   await assert.rejects(() => commands.get("loupist-provider-models").handler("openai --other", context), /invalid/);
 });
 
+test("live ChatGPT model lists enforce the response byte limit while streaming", async (t) => {
+  const { liveOpenAIModels } = await import("./loupist-provider-extension.mjs");
+  const context = {
+    modelRegistry: {
+      getProviderAuth: async () => ({ source: "OAuth", auth: { apiKey: "plan-token" } }),
+    },
+  };
+  const maxBytes = 1024 * 1024;
+
+  await t.test("cancels at the first chunk over the limit", async () => {
+    let pulls = 0;
+    let cancellations = 0;
+    const stream = new ReadableStream({
+      pull(controller) {
+        pulls++;
+        controller.enqueue(new Uint8Array(maxBytes));
+        if (pulls === 4) controller.close();
+      },
+      cancel() { cancellations++; },
+    }, { highWaterMark: 0 });
+
+    assert.equal(await liveOpenAIModels(context, async () => new Response(stream)), null);
+    assert.equal(pulls, 2);
+    assert.equal(cancellations, 1);
+  });
+
+  await t.test("accepts exactly one MiB including split multibyte text", async () => {
+    const body = JSON.stringify({ data: [{ id: "gpt-boundary", display_name: "한국" }] });
+    const encoded = Buffer.from(body + " ".repeat(maxBytes - Buffer.byteLength(body)));
+    const split = encoded.indexOf(Buffer.from("한국")) + 1;
+    let pulls = 0;
+    const chunks = [encoded.subarray(0, split), encoded.subarray(split)];
+    const stream = new ReadableStream({
+      pull(controller) {
+        controller.enqueue(chunks[pulls++]);
+        if (pulls === chunks.length) controller.close();
+      },
+    }, { highWaterMark: 0 });
+
+    assert.deepEqual(
+      await liveOpenAIModels(context, async () => new Response(stream)),
+      new Map([["gpt-boundary", "한국"]]),
+    );
+    assert.equal(
+      await liveOpenAIModels(context, async () => new Response(Buffer.concat([encoded, Buffer.from(" ")]))),
+      null,
+    );
+  });
+
+  await t.test("keeps unnamed models and falls back for unusable responses", async () => {
+    assert.deepEqual(
+      await liveOpenAIModels(context, async () => new Response('{"data":[{"id":"gpt-valid"}]}')),
+      new Map([["gpt-valid", ""]]),
+    );
+    for (const response of [
+      new Response("malformed JSON"),
+      new Response('{"data":[]}'),
+      new Response(null),
+      new Response("unavailable", { status: 503 }),
+    ]) {
+      assert.equal(await liveOpenAIModels(context, async () => response), null);
+    }
+    assert.equal(await liveOpenAIModels(context, async () => { throw new Error("network failed"); }), null);
+  });
+
+  await t.test("falls back when a stream fails after delivering valid JSON", async () => {
+    let pulls = 0;
+    const stream = new ReadableStream({
+      pull(controller) {
+        if (pulls++ === 0) controller.enqueue(Buffer.from('{"data":[{"id":"gpt-valid"}]}'));
+        else controller.error(new Error("stream failed"));
+      },
+    }, { highWaterMark: 0 });
+
+    assert.equal(await liveOpenAIModels(context, async () => new Response(stream)), null);
+    assert.equal(pulls, 2);
+  });
+});
+
 test("search command runs through Pi and publishes only sanitized sources", async (t) => {
   const temporary = mkdtempSync(join(tmpdir(), "loupist-provider-search-"));
   const resultPath = join(temporary, "result.json");

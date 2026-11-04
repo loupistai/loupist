@@ -64,8 +64,10 @@ when Auto changes because that model is gone, or an explicit Chat default leaves
 the catalog, a line above the composer says so once (`model_notice_ack`).
 
 A ChatGPT sign-in lists the models its plan offers (`GET /v1/models`, redirects
-refused); a failed call, or a list sharing no ID with Pi's catalog, keeps Pi's
-catalog, which every other provider uses. A 404 `model_not_found` puts the model
+refused). The list reader retains at most one MiB of response bytes and cancels
+the stream as soon as the total exceeds that limit. A failed call, an oversized or
+malformed response, or a list sharing no ID with Pi's catalog keeps Pi's catalog,
+which every other provider uses. A 404 `model_not_found` puts the model
 on a persistent gone list (`provider_gone_model`); refreshes leave it out until
 the provider is connected again.
 
