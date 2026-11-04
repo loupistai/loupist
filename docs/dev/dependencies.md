@@ -73,3 +73,9 @@ digests come from upstream v1.4.0 `SHA256SUMS`. Existing Undici, minimatch and
 brace-expansion security pins remain enforced. The obsolete chord override is
 removed because coding-agent no longer depends on it. Host isolation and
 native/package tests remain required for this runtime upgrade.
+
+World model recommendations follow the upgraded catalog: Baseten DeepSeek V4.1
+Flash uses its lowest supported enabled effort (`high`), and Together's retired
+Llama 3.3 Turbo fallback is removed. The existing transport contracts verify every
+recommended model and effort through the installed Pi serializer and parser with
+fixture HTTP responses and the host's output-token ceiling.

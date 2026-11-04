@@ -118,7 +118,7 @@
       },
       {
         "id": "deepseek-ai/DeepSeek-V4.1-Flash",
-        "thinking_level": "low"
+        "thinking_level": "high"
       },
       {
         "id": "deepseek-ai/DeepSeek-V4-Flash-0731",
@@ -132,10 +132,6 @@
       {
         "id": "openai/gpt-oss-120b",
         "thinking_level": "medium"
-      },
-      {
-        "id": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
-        "thinking_level": "off"
       },
       {
         "id": "deepseek-ai/DeepSeek-V4.1-Flash",
