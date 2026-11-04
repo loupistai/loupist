@@ -102,14 +102,5 @@
 .lens-markdown-source > summary { display: flex; align-items: center; min-height: var(--gg-size-control-sm); cursor: pointer; }
 .lens-markdown-source pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--gg-text-control); line-height: 1.6; user-select: text; }
 
-.lens-tab { display: grid; grid-template-columns: minmax(10rem, 24%) minmax(0, 1fr); height: 100%; min-height: 0; }
-.lens-index { min-height: 0; overflow: auto; padding: var(--gg-space-4); border-right: 1px solid var(--gg-color-border-subtle); }
-.lens-index h1 { margin: 0 0 var(--gg-space-3); font-size: var(--gg-text-heading); }
-.lens-index ul { margin: 0; padding: 0; list-style: none; }
-.lens-index button { display: grid; gap: var(--gg-space-1); width: 100%; padding: var(--gg-space-3); text-align: start; overflow-wrap: anywhere; border-radius: var(--gg-radius-sm); }
-.lens-index button:hover { background: var(--gg-color-bg-hover); }
-.lens-index button[aria-current=page], .lens-format-picker [aria-pressed=true] { background: var(--gg-color-bg-selected); }
-.lens-index small { font-size: var(--gg-text-caption); color: var(--gg-color-text-secondary); }
-.lens-source-reader { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; }
-.lens-source-reader > button { justify-self: start; }
+.lens-format-picker [aria-pressed=true] { background: var(--gg-color-bg-selected); }
 .lens-format-picker { display: flex; gap: var(--gg-space-1); }

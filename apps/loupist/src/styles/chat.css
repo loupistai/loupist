@@ -1530,18 +1530,6 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .message-details-trigger:hover { background: var(--gg-color-bg-hover); }
 
 .workspace-chat-title { display: flex; align-items: center; gap: var(--gg-space-2); min-width: 0; width: min(100%, calc(var(--gg-size-chat-column) + 2 * var(--chat-gutter, var(--gg-space-5)))); padding-inline: var(--chat-gutter, var(--gg-space-5)); box-sizing: border-box; }
-/* X15: the title edits in place; X12: a private chat shows a crossed eye after it. */
-.workspace-heading h1.chat-title { display: inline-flex; align-items: center; gap: calc(var(--gg-space-1) * 1.5); min-width: 0; }
-/* While renaming, the title takes the room the sub-header has. */
-.workspace-heading h1.chat-title:has(.chat-title-input) { flex: 1 1 auto; }
-.chat-title > span:first-child, .chat-title-button { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-title-button { padding: 0 var(--gg-space-1); margin-left: calc(var(--gg-space-1) * -1); border: 0; border-radius: var(--gg-radius-xs); background: transparent; color: inherit; font: inherit; cursor: text; }
-.chat-title-button:hover { background: var(--gg-color-bg-hover); }
-.chat-title-input { width: clamp(320px, 48vw, 640px); max-width: 100%; height: var(--gg-size-control-sm); padding: 0 var(--gg-space-2); border: 1px solid var(--gg-color-border-strong); border-radius: var(--gg-radius-xs); background: var(--gg-color-bg-raised); color: inherit; font: inherit; }
-/* The sub-header clips overflow, so the ring sits inside the field. */
-.chat-title-input:focus-visible { outline-offset: -2px; }
-.chat-title-private { display: inline-flex; flex: none; color: var(--gg-color-text-secondary); }
-.chat-title-private svg { width: 16px; height: 16px; }
 .workspace-chat-folder { flex: 0 1 auto; min-width: 0; max-width: 300px; color: var(--gg-color-text-secondary); }
 .workspace-chat-folder > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

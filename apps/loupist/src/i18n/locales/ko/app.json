@@ -67,7 +67,6 @@
     "backToApp": "뒤로",
     "applicationNavigation": "앱 탐색",
     "mainViews": "주요 화면",
-    "searchChats": "대화 검색",
     "research": "리서치",
     "application": "앱"
   },
@@ -83,15 +82,8 @@
     "homeDescriptor": "대화, 브리핑, 알림"
   },
   "loupistNavigationGroup": {
-    "couldnTLoadChatsRetry": "대화를 불러오지 못했어요 · 다시 시도",
-    "noMatchingChats": "검색한 대화가 없어요",
-    "selectLoupist": "루피스트 {{label}} 선택",
     "hasActiveSessions": "{{label}}에서 진행 중인 대화가 있어요",
-    "optionsForLoupist": "루피스트 {{label}} 옵션",
-    "newChatWith": "{{label}}와 새 대화",
-    "chatsFor": "{{label}}의 대화",
-    "showChats": "{{label}}의 대화 보이기",
-    "hideChats": "{{label}}의 대화 숨기기"
+    "newChatWith": "{{label}}와 새 대화"
   },
   "macTitlebarControls": {
     "showOrHideSidebar": "사이드바 표시/숨기기",
@@ -165,7 +157,6 @@
     "loupists": "루피스트",
     "newLoupist": "새 루피스트",
     "newChat": "새 대화",
-    "allChats": "모든 대화",
     "settings": "설정",
     "search": "검색",
     "newChatShortcut": "새 대화 {{shortcut}}",
@@ -173,7 +164,6 @@
     "loupistSettings": "루피스트 설정",
     "removeLoupist": "루피스트 제거…",
     "wordmark": "루피스트",
-    "reveal": "폴더에서 보기",
     "close": "닫기",
     "tabs": {
       "lens": "Lens",
@@ -301,7 +291,6 @@
     "checkDue": "{{day}}까지 확인할 것: {{title}}",
     "checkLate": "{{day}} 기한 지남: {{title}}",
     "more_other": "{{formattedCount}}개 더",
-    "waitingFor": "{{label}}이(가) 기다리고 있어요",
     "finishedHidden": "자리를 비운 동안 끝났어요",
     "lineCrossed": "조건 넘음 · {{name}}",
     "watchAlerts_other": "새 알림 {{formattedCount}}개"

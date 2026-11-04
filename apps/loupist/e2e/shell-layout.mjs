@@ -28,7 +28,7 @@ export function measureShellLayout() {
     composer: rect(".composer-shell"),
     heading: rect(".workspace-heading"),
     titleColumn: rect(".workspace-chat-title"), readingColumn: box(content),
-    headingItems: [...document.querySelectorAll(".workspace-heading .chat-title, .workspace-chat-folder, .thread-statuses")].map(box).filter(Boolean),
+    headingItems: [...document.querySelectorAll(".workspace-chat-folder, .thread-statuses")].map(box).filter(Boolean),
     chatWidth: rect(".chat-workspace")?.width,
     chatGutter: content ? parseFloat(getComputedStyle(content).paddingLeft) : null,
     titleGutter: document.querySelector(".workspace-chat-title")

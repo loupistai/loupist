@@ -1414,11 +1414,6 @@
     "useApiKey": "Use an API key",
     "modelGone": "{{old}} isn't offered anymore, so this answer used {{new}}."
   },
-  "chatTitle": {
-    "rename": "Rename chat: {{title}}",
-    "field": "Chat title",
-    "private": "Private chat"
-  },
   "chatRail": {
     "label": "In this chat",
     "previewUnavailable": "Preview unavailable",

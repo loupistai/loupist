@@ -32,7 +32,6 @@ export function measureChatLayout() {
   const reading = contentBox && { ...contentBox, x: contentBox.x + left, right: contentBox.right - right,
     width: contentBox.width - left - right, center: contentBox.center + (left - right) / 2 };
   const panel = document.querySelector(".workspace-panel");
-  const list = document.querySelector(".chat-list-panel");
   const scroll = document.querySelector(".message-scroll");
   const textContext = document.createElement("canvas").getContext("2d");
   const receipts = [...document.querySelectorAll(".chat-receipt-item")].flatMap((item) => {
@@ -70,8 +69,6 @@ export function measureChatLayout() {
     chatBody: rect(".chat-body"), readingPane: rect(".chat-reading-pane"), messageViewport: rect(".message-scroll"),
     railMode: document.querySelector(".chat-workspace")?.dataset.rail,
     statusPill: rect(".chat-status-pill"), scroll: scroll && { top: scroll.scrollTop, height: scroll.clientHeight, total: scroll.scrollHeight },
-    list: box(list), listOverlay: list?.hasAttribute("data-overlay") ?? false,
-    chatInert: Boolean(document.querySelector(".chat-layout")?.inert),
     panel: box(panel), panelPlacement: panel?.dataset.placement, panelOverlay: panel?.getAttribute("aria-modal") === "true",
     identity: rect(".loupist-header-identity"), sidebarTrigger: rect(".app-header-sidebar-trigger"),
     header: rect(".app-header"), cards, receipts, attachmentIcons,
@@ -96,15 +93,6 @@ export function assertChatLayout(layout, { scenario = "", label = scenario, tole
   check(layout.chat.overflow <= tolerance, "conversation overflows internally", layout.chat);
   if (layout.panel && layout.panelPlacement === "side" && !layout.panelOverlay) {
     check(layout.chat.width >= 420 - tolerance, "docked panel leaves less than 420 px for chat", layout.chat);
-  }
-  if (layout.list) {
-    const expectedOverlay = layout.viewport.width < 900 || layout.main.width < 700;
-    check(layout.listOverlay === expectedOverlay, "All Chats did not adapt to its actual region", layout);
-    if (expectedOverlay) {
-      check(near(layout.chat.x, layout.main.x) && near(layout.chat.width, layout.main.width),
-        "All Chats overlay shrinks the conversation", { main: layout.main, chat: layout.chat });
-      check(layout.chatInert, "covered conversation remains interactive");
-    }
   }
   if (["chat-rail-files", "chat-rail-compact", "chat-rail-bottom"].includes(scenario)) check(layout.rail, "chat context is missing");
   if (layout.rail) {

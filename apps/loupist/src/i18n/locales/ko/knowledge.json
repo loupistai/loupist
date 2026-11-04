@@ -16,7 +16,6 @@
   },
   "lensWorkspace": {
     "emptyPerspective": "아직 작성된 기본 관점이 없어요.",
-    "documents": "Lens 문서",
     "formatted": "문서 보기",
     "markdownSource": "마크다운 보기",
     "whenToApply": "적용 시점",

@@ -1364,11 +1364,6 @@
     "useApiKey": "API 키 사용",
     "modelGone": "{{old}}은(는) 더 이상 제공되지 않아 이 답변은 {{new}}(으)로 만들었어요."
   },
-  "chatTitle": {
-    "rename": "대화 이름 바꾸기: {{title}}",
-    "field": "대화 이름",
-    "private": "비공개 대화"
-  },
   "chatRail": {
     "label": "이 대화에서",
     "previewUnavailable": "미리 볼 수 없어요",
