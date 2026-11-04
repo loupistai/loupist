@@ -72,7 +72,7 @@ export function SettingsView({
   const page = SETTINGS_SECTIONS.find((item) => item.id === section)!;
   const [shareTarget, setShareTarget] = useState<LoupistSummary | null>(null);
   return (
-    <section className="settings-page" aria-labelledby="settings-title">
+    <section className="settings-page" aria-labelledby="settings-title" onFocus={(event) => { if (event.target instanceof HTMLElement) event.target.scrollIntoView({ block: "nearest", inline: "nearest" }); }}>
       {section !== "connections" ? <PageHeader className="settings-heading" titleId="settings-title" title={page.label}
         description={page.description} /> : null}
 

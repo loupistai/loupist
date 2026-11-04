@@ -2,11 +2,13 @@
 .settings-page {
   height: 100%;
   overflow-y: auto;
+  scroll-padding-block: 24px;
   padding: var(--gg-space-7) clamp(var(--gg-space-5), 4vw, var(--gg-space-9)) var(--gg-space-9);
   background: var(--gg-color-bg-app);
   scrollbar-gutter: stable;
 }
 .settings-heading, .settings-stack { width: min(100%, 800px); margin-inline: auto; }
+.settings-page :is(input, textarea, select, button) { scroll-margin-block: 24px; }
 .settings-heading { margin-bottom: var(--gg-space-7); }
 .settings-heading .page-description { max-width: 56ch; margin-top: 10px; }
 .settings-stack { display: grid; gap: var(--gg-space-5); min-width: 0; }

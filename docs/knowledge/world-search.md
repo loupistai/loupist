@@ -21,6 +21,7 @@ lookup for the batch.
 
 Fresh folders receive World processing settings from Rust. New Loupist uses these
 defaults; Settings → World processing exposes enablement and model selection.
+Focusing a field there scrolls it into the settings column.
 Defaults prefer connected,
 supported text models using the ordered policy in
 [`world-model-defaults.json`](../../apps/loupist/world-model-defaults.json).

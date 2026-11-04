@@ -341,7 +341,7 @@ export function LoupistSettings({
   // A folder made by an earlier build cannot be opened; removing it is the way forward.
   const removable = available || selectedAgent?.availability.status === "earlier_version";
   return (
-    <section className="settings-page loupist-settings-page" aria-label={i18n.t("app:shell.loupistSettings")}>
+    <section className="settings-page loupist-settings-page" aria-label={i18n.t("app:shell.loupistSettings")} onFocus={(event) => { if (event.target instanceof HTMLElement) event.target.scrollIntoView({ block: "nearest", inline: "nearest" }); }}>
       <header className="loupist-settings-heading">
         <Button variant="ghost" size="sm" data-loupist-settings-back onClick={onBack}><ArrowLeftIcon />{i18n.t("knowledge:memoryPage.back")}</Button>
         <h1 ref={titleRef} tabIndex={-1}>{i18n.t("app:shell.loupistSettings")}</h1>
