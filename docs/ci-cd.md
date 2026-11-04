@@ -97,7 +97,7 @@ pushes use the complete before/after range. Deleted and renamed source paths
 remain in scope. Missing history or classification errors select all checks.
 Native interaction and packaging in the table run only outside pull requests.
 
-Rust and uv caches are saved only by successful `main` runs; pull requests restore
+Rust, uv and Ubuntu package caches are saved only by `main` runs; pull requests restore
 them without uploading branch copies. The signed build shares the package-smoke
 dependency cache. Official package CI has one explicit macOS job; experimental
 Windows packaging stays manual-only. Unselected jobs are skipped. The source gate,

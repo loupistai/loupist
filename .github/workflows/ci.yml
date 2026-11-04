@@ -173,14 +173,32 @@ jobs:
         with:
           persist-credentials: false
 
+      # The Azure Ubuntu mirror can serve the 60 MB of WebKitGTK packages at 100 KB/s.
+      - name: Restore Linux package downloads
+        id: apt-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: apt-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Install Linux native development libraries
-        timeout-minutes: 10
+        timeout-minutes: 15
         run: |
-          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=30"
+          mkdir -p "$HOME/apt-archives/partial"
+          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Dir::Cache::Archives=$HOME/apt-archives"
           sudo apt-get $APT update
           sudo apt-get $APT install -y --no-install-recommends \
             build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev procps lsof
+          sudo chown -R "$(id -u):$(id -g)" "$HOME/apt-archives"
+
+      - name: Save Linux package downloads
+        if: github.ref == 'refs/heads/main' && steps.apt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: ${{ steps.apt-cache.outputs.cache-primary-key }}
 
       - name: Install Rust and runtime test toolchains
         uses: ./.github/actions/setup-toolchains
