@@ -65,7 +65,7 @@ def contract_tests(harness_only=False):
     patterns = ["agent/*.test.mjs", "evals/*.test.mjs", "evals/agent/*.test.mjs"]
     patterns += ["evals/meta/*.test.mjs", "evals/world/*.test.mjs"]
     if not harness_only:
-        patterns += ["e2e/*.test.mjs", "scripts/*.test.mjs"]
+        patterns += ["e2e/*.test.mjs", "scripts/*.test.mjs", "../../scripts/*.test.mjs"]
     return [path for pattern in patterns for path in matches(pattern)]
 
 
@@ -107,7 +107,7 @@ def web_plan(harness, install):
         node("i18n-parity", "scripts/check-i18n-parity.mjs"),
         node("ui-copy", "scripts/check-ui-copy.mjs"),
         node("design-tokens", "scripts/check-design-tokens.mjs --enforce"),
-        node("boundaries-report", "scripts/check-boundaries.mjs --report"),
+        node("boundaries", "scripts/check-boundaries.mjs --enforce"),
         step("renderer-tests", ["npm", "test"]),
         step("chat-layout", ["npm", "run", "preview:layout"]),
         step("renderer-build", ["npm", "run", "build"]),

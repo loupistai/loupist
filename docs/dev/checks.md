@@ -10,6 +10,10 @@ credential-free Pi/eval contracts also included in web. `npm run check` runs all
 three scopes one after another (web → python → rust). Rust includes feature-gated
 headless contracts without paid calls.
 
+The web scope's `node-contracts` step includes root `scripts/*.test.mjs` contracts.
+The `boundaries` step enforces renderer import boundaries with
+`check-boundaries.mjs --enforce`.
+
 ```sh
 scripts/verify.sh
 # Existing dependencies; --list prints the planned steps without running them:
