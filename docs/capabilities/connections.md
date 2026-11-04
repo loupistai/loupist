@@ -4,6 +4,12 @@ A connection's secret stays in Rust. Enabling it is per Loupist, and a custom se
 
 ## Connections and credentials
 
+The official catalog is `apps/loupist/marketplace/marketplace.json` plus its
+`plugins/<name>/` folders. Settings → Connections configures those bundled services
+and the user's own [custom connections](#custom-connections). The Loupist settings
+sheet controls each Loupist's enabled bindings. Open it from the Loupist header or
+Settings → Loupists.
+
 Connection details separate shared setup, credentials and provider context,
 including for keyless services. Readiness/access/search filters help locate entries.
 Model-provider sign-ins and keys are managed in Models & providers;

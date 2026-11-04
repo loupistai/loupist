@@ -106,7 +106,7 @@ WebKit counts focus a script moved from a text field as keyboard focus. Keep ord
 is the focus/identity accent, while data and error states retain semantic colors.
 
 The shell's implemented destinations and reader behavior are described in
-[Architecture](../architecture.md#view-state), [Map and Library](../ui/map-lens.md#map-and-library)
+[Sidebar](../ui/sidebar.md#sidebar), [Map and Library](../ui/map-lens.md#map-and-library)
 and [item surfaces](../analysis/surfaces.md#where-each-item-appears). Review those flows rather
 than assuming a separate World, Lens or Growth page exists.
 For graph work, preserve camera/selection through navigation and use Fit for

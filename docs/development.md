@@ -22,66 +22,24 @@ Keep bridge command names aligned with registered Rust handlers. Do not hand-edi
 `src-tauri/gen/`, staged sidecars, `dist/`, `target/` or dependency directories.
 Use [Architecture](architecture.md) for execution and credential boundaries.
 
-## Maintaining development guidance
+## Find a topic
 
-[Repository guidance](dev/repository-guidance.md) owns discovery, decisions, development procedures and session handoff.
-
-## Desktop design system
-
-Tokens, components and the review rubric. [UI review](dev/ui-qa.md#desktop-design-system).
-
-### Design rubric
-
-What a first-time user would notice, in both themes and at the minimum window. [UI review](dev/ui-qa.md#design-rubric).
-
-### Chat reading column and in-app browser
-
-Column width, the rail breakpoint, and browser ready/blocked/failure. [Evidence and the browser](ui/evidence-browser.md#chat-reading-column-and-in-app-browser).
-
-### Performance budgets
-
-Native paint, switch and map-draw budgets. A miss is recorded; a missing shell fails. [UI review](dev/ui-qa.md#performance-budgets).
-
-#### Visual regression
-
-Capture, diff and baseline acceptance. [Visual regression](dev/visual-regression.md#visual-regression).
-
-### Localization foundation
-
-English and Korean catalogs, and the preview-only pseudo-locale. [UI review](dev/ui-qa.md#localization-foundation).
-
-## Tests
-
-Commands and the filter index. [Tests](dev/tests.md#tests).
-
-## Diagnostics
-
-Content-free local run logs. [Diagnostics](dev/diagnostics.md#diagnostics).
+- [Maintaining development guidance](dev/repository-guidance.md)
+- [Desktop design system](dev/ui-qa.md#desktop-design-system)
+- [Design rubric](dev/ui-qa.md#design-rubric)
+- [Chat reading column and in-app browser](ui/evidence-browser.md#chat-reading-column-and-in-app-browser)
+- [Performance budgets](dev/ui-qa.md#performance-budgets)
+- [Visual regression](dev/visual-regression.md#visual-regression)
+- [Localization foundation](dev/ui-qa.md#localization-foundation)
+- [Tests](dev/tests.md#tests)
+- [Diagnostics](dev/diagnostics.md#diagnostics)
+- [Development loop](dev/checks.md#development-loop)
+- [Work loops](dev/checks.md#work-loops)
+- [Setup across development hosts](dev/checks.md#setup-across-development-hosts)
+- [Generated storage](dev/checks.md#generated-storage)
+- [Runtime staging and package checks](dev/checks.md#runtime-staging-and-package-checks)
+- [Shared window](dev/checks.md#shared-window)
 
 ## Broader checks
 
 Locked gates, loops and worktree setup. [Checks and setup](dev/checks.md#broader-checks).
-
-### Development loop
-
-Reproduce the narrow case and rerun it before widening. [Checks and setup](dev/checks.md#development-loop).
-
-### Work loops
-
-Build, design review, regression, capability and harness loops, each with a stop. [Checks and setup](dev/checks.md#work-loops).
-
-### Setup across development hosts
-
-Worktree setup installs dependencies from lockfiles. [Checks and setup](dev/checks.md#setup-across-development-hosts).
-
-### Generated storage
-
-Share download caches, not mutable build trees. [Checks and setup](dev/checks.md#generated-storage).
-
-## Runtime staging and package checks
-
-Stage pinned Pi and embedding assets before a native or packaging run. [Checks and setup](dev/checks.md#runtime-staging-and-package-checks).
-
-## Shared window
-
-Which native tool to run, and the isolated app-data profile. [Checks and setup](dev/checks.md#shared-window).

@@ -54,7 +54,7 @@ Skill Creator to draft one in Chat; Skill Installer helps add requested workflow
 Folder, single-skill ZIP and public GitHub folder imports preserve supporting files.
 Personal skills use `<app-root>/skills/<id>/SKILL.md`; Loupist skills use
 `<workspace>/.loupist/skills/<id>/SKILL.md`. Changes load on the next Chat turn.
-See [Skills management](../../docs/bundled-capabilities.md) for ownership and limits.
+See [Skills management](../../docs/capabilities/skills.md#skills-management) for ownership and limits.
 
 Isolated suites (`test:native`, `test:persistence`, live native E2E) use their
 own Vite port and a no-watch E2E profile, but share the one-window GUI lease with
