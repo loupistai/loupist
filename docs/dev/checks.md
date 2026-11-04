@@ -73,6 +73,8 @@ dependencies; it does not claim verification.
 
 Project guidance follows the checked-out revision. Setup only installs dependencies.
 
+Linux Cloud Agents use the same `sh apps/loupist/scripts/setup.sh` entry. The host needs the Node.js LTS pin in the root `.nvmrc` (26.13 or newer on the 26.x line), Python 3.12, uv 0.11.2, Rust 1.97.1, and WebKitGTK 4.1 headers so Cargo can compile the desktop crate. `npm run check:web` and `npm run check:python` from `apps/loupist` are the checks that run on Linux. `npm run dev --prefix apps/loupist` serves the design preview at `http://127.0.0.1:1420/preview.html`. `npm run tauri dev` and `apps/loupist/e2e/up.sh` are the macOS window. On Linux, `cargo test --lib` compiles, and process-lease tests return `UnsupportedPlatform`. Secure-deletion tests also fail with `EOPNOTSUPP` when the filesystem rejects the punch-hole used to erase bytes. Those results are the product boundary on this host, not a missing package.
+
 ### Generated storage
 
 Development Rust profiles use `debug = "line-tables-only"`; full variable/type
