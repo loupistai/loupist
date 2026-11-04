@@ -72,7 +72,7 @@ export function CitationChip({ evidence, label, title, source, onOpen, children 
 
   return <Popover.Root open={open} onOpenChange={(next) => { if (next) setOpen(true); else close(); }}>
     <Popover.Anchor asChild>
-      <button type="button" className="loupist-citation" aria-label={label} aria-current={current ? "true" : undefined} aria-describedby={open ? cardId : undefined}
+      <button type="button" className="loupist-citation" data-evidence-id={evidence.id} aria-label={label} aria-current={current ? "true" : undefined} aria-describedby={open ? cardId : undefined}
         aria-expanded={pinned ? true : undefined} aria-controls={pinned ? cardId : undefined}
         onPointerEnter={() => { if (narrowWindow()) return; setByKeyboard(false); schedule(true, OPEN_DELAY_MS); }}
         onPointerLeave={() => { cancelHold(); if (!pinned) schedule(false, CLOSE_DELAY_MS); }}

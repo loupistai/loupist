@@ -34,7 +34,7 @@ Those commands check the renderer. The native step is `verifyNativeBrowserNaviga
 
 A retrieved website citation (`web_fetch`, or another `web_*` page tool other than search) opens that credential-free page in a browser tab first and reuses one tab in that chat for the same address. The saved passage is not written into the workspace layout. View saved passage opens it in the Evidence reader when the open fails and after the page has loaded. The browser tab keeps the citation that opened it, including after a redirect and beside another page. Finance, files and other non-web citations still open the Evidence reader. An equity price-quote basket stays a compact receipt anchored to the control that opened it: provider, retrieval time, the quotes `JSON.parse` could read, coverage, and the technical original on demand. A number or grid cell uses the exact pointer, or the exact ticker only when no pointer was supplied; a pointer and a different ticker are not merged. A truncated or invalid quote-tool excerpt stays that receipt with no rows taken from the broken text. A value the host already checked can be shown as a checked value. It does not open the raw reader. Retrieval time is not the quote time. `quote-evidence` in `src/preview/quoteEvidenceScenarios.ts` is that receipt.
 
-In Chat, the price-quote receipt fits inside the thread above the composer. A short window scrolls the receipt's content without covering the input.
+In Chat, the price-quote receipt fits inside the thread, below the titlebar and above the composer. A short window scrolls the receipt's content without covering the input. A remounted citation is found by its evidence id, so the receipt stays beside that chip.
 
 ## Citations and number chips
 
