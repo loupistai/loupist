@@ -32,6 +32,7 @@ Use [Architecture](architecture.md) for execution and credential boundaries.
 - [Visual regression](dev/visual-regression.md#visual-regression)
 - [Localization foundation](dev/ui-qa.md#localization-foundation)
 - [Tests](dev/tests.md#tests)
+- [Broader checks](dev/checks.md#broader-checks)
 - [Diagnostics](dev/diagnostics.md#diagnostics)
 - [Development loop](dev/checks.md#development-loop)
 - [Work loops](dev/checks.md#work-loops)
@@ -39,7 +40,3 @@ Use [Architecture](architecture.md) for execution and credential boundaries.
 - [Generated storage](dev/checks.md#generated-storage)
 - [Runtime staging and package checks](dev/checks.md#runtime-staging-and-package-checks)
 - [Shared window](dev/checks.md#shared-window)
-
-## Broader checks
-
-Locked gates, loops and worktree setup. [Checks and setup](dev/checks.md#broader-checks).

@@ -28,9 +28,12 @@ changing routes. The web gate runs it too. Inspect Git-visible new files with
 | Codex (GPT), Cursor, Grok Build | Open the trusted repository at its root. Use `AGENTS.md`. |
 | Claude Code | `CLAUDE.md` imports the same root. |
 | Orca | Open the checkout with the selected coding agent. The underlying agent reads its own project entry. |
+| Cursor, Claude Code and Codex cloud agents | The same entry files, plus `scripts/cloud-setup.sh` ([cloud setup](checks.md#setup-across-development-hosts)). |
 
-Check only reviewed entry points into Git. Tool-local permissions, chat histories,
-hooks and personal skills belong to their developer.
+Check only reviewed entry points into Git: `.cursor/worktrees.json`,
+`.cursor/environment.json`, `.codex/environments/environment.toml` and the
+cloud-only setup hook in `.claude/settings.json`. Tool-local permissions, chat
+histories, other hooks and personal skills belong to their developer.
 
 ## Task handoff
 

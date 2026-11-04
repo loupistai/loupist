@@ -71,6 +71,22 @@ call `sh apps/loupist/scripts/setup.sh`; use the same command for any other
 worktree host. Setup installs app/E2E npm and worker uv lockfiles and fetches Cargo
 dependencies; it does not claim verification.
 
+Cloud agent VMs start without the pinned toolchains. `scripts/cloud-setup.sh`
+installs the Linux build libraries, Node from `.nvmrc`, the Rust and uv versions
+pinned in `.github/actions/setup-toolchains/action.yml`, then runs `setup.sh`. It
+skips work already done and links the tools into `/usr/local/bin`, because cloud
+snapshots keep files but not exported variables.
+
+| Cloud agent | Wiring |
+| --- | --- |
+| Cursor Cloud Agents | `.cursor/environment.json` runs it as `install` once per environment build |
+| Claude Code on the web | `.claude/settings.json` runs it at session start when `CLAUDE_CODE_REMOTE` is `true` |
+| Codex cloud | Set the environment's setup script to `sh scripts/cloud-setup.sh` |
+
+The script does not install Chrome, so the web gate's `chat-layout` step needs a
+browser (`CHROME_PATH`) in a cloud session. Without one, run the other web steps
+with `check.sh web --only <steps>` and leave layout to PR CI.
+
 Project guidance follows the checked-out revision. Setup only installs dependencies.
 
 ### Linux cloud development
@@ -138,8 +154,8 @@ mock bridge data. For screenshot/layout checks, install Chrome or Chromium and
 set `CHROME_PATH` to its executable before running `preview:capture` or the web
 gate. See [UI review](ui-qa.md#desktop-design-system).
 
-CI runs Rust on Ubuntu and macOS; macOS also owns WKWebView/native interaction,
-Keychain, file chooser, packaging and signing verification. Linux development
+Pull-request CI runs Rust on Ubuntu; the `main` run adds macOS Rust, WKWebView/native
+interaction and packaging, and releases add signing. Linux development
 does not add a Linux release target. The Linux GTK dependency advisory remains
 documented in [Dependency security review](dependencies.md#dependency-security-review).
 

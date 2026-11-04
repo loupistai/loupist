@@ -98,10 +98,12 @@ def path_scopes(path: str) -> set[str]:
         )
     ):
         return set()
-    if path.startswith(".github/ISSUE_TEMPLATE/") or path in {
+    if path.startswith((".github/ISSUE_TEMPLATE/", ".cursor/", ".codex/")) or path in {
+        ".claude/settings.json",
         ".github/CODEOWNERS",
         ".github/dependabot.yml",
         ".github/pull_request_template.md",
+        "scripts/cloud-setup.sh",
         "scripts/guide.py",
     }:
         return set()

@@ -11,7 +11,8 @@ Loupist is licensed under AGPL-3.0-only. See [Licensing](LICENSING.md) for app c
 - Prefer deleting obsolete pre-1.0 paths over compatibility shims.
 - Prove behavior with tests. Avoid wording and implementation locks; reserve source scans for release pins and security invariants.
 - Update docs when the product story changes.
-- Run `scripts/verify.sh` before requesting review.
+- Run `scripts/verify.sh` before requesting review from a local checkout. Cloud
+  sessions run `check.sh` for the scopes they changed and leave the rest to PR CI.
 - Never include credentials, databases, user memory, staged executables, or generated build output.
 
 ## Branches and pull requests
