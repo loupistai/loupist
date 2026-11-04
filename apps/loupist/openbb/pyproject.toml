@@ -44,7 +44,7 @@ loupist-openbb = "loupist_openbb.server:main"
 dev = [
   "pyinstaller==6.22.3",
   "pytest>=8.3,<10",
-  "ruff==0.15.12",
+  "ruff==0.15.22",
 ]
 
 [tool.hatch.build.targets.wheel]
