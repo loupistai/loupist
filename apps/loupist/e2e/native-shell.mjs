@@ -376,7 +376,7 @@ async function measurePreviewMapProbe(browser, devUrl, scenario, mode, timeout, 
         const status = document.documentElement.dataset;
         if (status.previewReady === "error") return { error: status.previewError || "Preview initialization failed" };
         if (status.previewReady !== "true") return null;
-        const host = document.querySelector("#main-panel-map .map-canvas");
+        const host = document.querySelector('#workspace-panel[data-panel-kind="world"] .map-view .map-canvas');
         const element = host?.querySelector("canvas");
         const box = element?.getBoundingClientRect();
         return {
