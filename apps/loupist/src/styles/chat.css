@@ -1985,7 +1985,7 @@ button.chat-rail-card-header:hover { background: var(--gg-color-bg-hover); }
 .chat-rail-processing { display: inline-flex; align-items: center; gap: var(--gg-space-1); vertical-align: middle; }
 .chat-rail-card-header svg { flex: none; width: 16px; height: 16px; color: var(--gg-color-text-tertiary); }
 .chat-rail-card-title { flex: none; font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); }
-.chat-rail-card-summary { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.chat-rail-card-summary { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; text-align: right; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .chat-rail-card-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gg-space-2); padding: var(--gg-space-2) var(--gg-space-4) var(--gg-space-4); }
 .chat-rail-card-body[hidden] { display: none; }
 .chat-rail-thumbs { display: grid; grid-template-columns: repeat(4, 48px); gap: var(--gg-space-2); }
