@@ -145,7 +145,7 @@ pub(crate) fn read_zip(bytes: &[u8], subpath: Option<&str>) -> Result<Files, Rej
     let mut total = 0usize;
     for index in 0..archive.len() {
         let mut file = archive.by_index(index).map_err(|_| Rejection::Damaged)?;
-        let name = file.name().to_owned();
+        let name = file.name().map_err(|_| Rejection::Damaged)?.into_owned();
         if file.is_dir() || os_metadata(&name) {
             continue;
         }
@@ -912,6 +912,32 @@ mod tests {
             writer.write_all(bytes).unwrap();
         }
         writer.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn archives_reject_cloaked_local_filenames_and_invalid_utf8_names() {
+        let mut cloaked = zip(&[
+            ("safe.txt", b"content", 0o644),
+            ("loupist-pack.json", b"{}", 0o644),
+        ]);
+        // Keep the central directory's safe name while changing only the local
+        // header, with the same byte length. No filesystem extraction occurs.
+        assert_eq!(&cloaked[30..38], b"safe.txt");
+        cloaked[30..38].copy_from_slice(b"../x.txt");
+        assert!(read_zip(&cloaked, None).is_err());
+
+        let mut invalid = zip(&[("é.txt", b"content", 0o644)]);
+        let name = "é.txt".as_bytes();
+        let offsets: Vec<_> = invalid
+            .windows(name.len())
+            .enumerate()
+            .filter_map(|(offset, bytes)| (bytes == name).then_some(offset))
+            .collect();
+        assert_eq!(offsets.len(), 2, "local and central UTF-8 filenames");
+        for offset in offsets {
+            invalid[offset] = 0xff;
+        }
+        assert!(read_zip(&invalid, None).is_err());
     }
 
     #[test]

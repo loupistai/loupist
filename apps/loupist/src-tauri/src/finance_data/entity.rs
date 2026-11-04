@@ -90,7 +90,12 @@ fn extract_corp_code_xml(bytes: &[u8]) -> Result<String, FinanceDataError> {
         let mut file = archive
             .by_index(index)
             .map_err(|_| FinanceDataError::InvalidResponse)?;
-        if !file.name().to_ascii_lowercase().ends_with(".xml") {
+        if !file
+            .name()
+            .map_err(|_| FinanceDataError::InvalidResponse)?
+            .to_ascii_lowercase()
+            .ends_with(".xml")
+        {
             continue;
         }
         let mut xml = String::new();

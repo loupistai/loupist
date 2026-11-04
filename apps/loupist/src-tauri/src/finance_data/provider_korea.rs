@@ -417,7 +417,10 @@ pub(super) fn extract_dart_document(
         if file.is_dir() || file.enclosed_name().is_none() {
             continue;
         }
-        let name = file.name().to_ascii_lowercase();
+        let name = file
+            .name()
+            .map_err(|_| FinanceDataError::InvalidResponse)?
+            .to_ascii_lowercase();
         if !(name.ends_with(".xml") || name.ends_with(".html") || name.ends_with(".htm")) {
             continue;
         }

@@ -100,12 +100,14 @@ pub fn from_zip(bytes: Vec<u8>, selected: Option<&str>) -> Result<Package, Comma
     let mut prefixes = Vec::new();
     for index in 0..zip.len() {
         let file = zip.by_index(index).map_err(io)?;
-        let name = file.name();
+        let name = file.name().map_err(io)?;
         if !relative(name.trim_end_matches('/')) {
             return Err(invalid("The ZIP contains an unsafe path"));
         }
         if name.ends_with("SKILL.md")
-            && Path::new(name).file_name().is_some_and(|n| n == "SKILL.md")
+            && Path::new(&name)
+                .file_name()
+                .is_some_and(|n| n == "SKILL.md")
         {
             let prefix = name.strip_suffix("SKILL.md").expect("skill suffix");
             if selected.is_none_or(|selected| {
@@ -126,7 +128,12 @@ pub fn from_zip(bytes: Vec<u8>, selected: Option<&str>) -> Result<Package, Comma
     let mut package = Package::new();
     for index in 0..zip.len() {
         let file = zip.by_index(index).map_err(io)?;
-        let Some(path) = file.name().strip_prefix(prefix).map(str::to_owned) else {
+        let Some(path) = file
+            .name()
+            .map_err(io)?
+            .strip_prefix(prefix)
+            .map(str::to_owned)
+        else {
             continue;
         };
         if path.is_empty() || file.is_dir() {
