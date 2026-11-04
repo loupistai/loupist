@@ -190,7 +190,8 @@
 .map-library .memory-search { width:100%; min-width:0; }
 .map-library > header h2 { font-size:var(--gg-text-heading); }
 .map-library .knowledge-browser h2 { font-size:var(--gg-text-control); }
-.map-library .source-library-controls,.map-library .research-library-controls { position:static; grid-template-columns:minmax(0,1fr); gap:var(--gg-space-3); padding:var(--gg-space-3) var(--gg-space-4) 0; border-bottom:0; background:transparent; }
+/* Stick to the library list. Static let the search and filters leave a short drawer. */
+.map-library .source-library-controls,.map-library .research-library-controls { position:sticky; top:0; z-index:var(--gg-z-sticky); grid-template-columns:minmax(0,1fr); gap:var(--gg-space-3); padding:var(--gg-space-3) var(--gg-space-4) 0; border-bottom:0; background:var(--gg-color-bg-raised); }
 .map-library .source-library-row,.map-library .research-library-row { padding:var(--gg-space-3) var(--gg-space-4); border-radius:0; }
 .map-library .memory-rail-copy strong { font-size:var(--gg-text-control); display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
 .map-library .source-summary { font-size:var(--gg-text-meta); -webkit-line-clamp:2; }

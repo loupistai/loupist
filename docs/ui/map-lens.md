@@ -44,6 +44,7 @@ disputed; Lens entries applied to the name (`applies_to`) close Other on one "Le
 
 The Library drawer contains Sources and Notes (Journal and working notes).
 On a map narrower than 720px, including the default 460px side panel, the Library covers the canvas instead of leaving a strip too narrow to read. Closing it brings the map back.
+The source and note filters stay at the top of the list while it scrolls.
 Entity/claim inspectors and Source and note readers open alongside the map.
 The inspector's close control stays in the corner while the facts scroll. On a map narrower than 900px the inspector is a bottom sheet, and that control stays inside the sheet.
 The application filter acts on the World canvas. It highlights the entities a
