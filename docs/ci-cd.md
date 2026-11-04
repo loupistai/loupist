@@ -133,7 +133,7 @@ a scope test keeps the two parts equal to the whole plan. The macOS Rust job run
 the whole plan. Ubuntu also installs Tauri's GTK/WebKitGTK development libraries;
 the [Linux development procedure](dev/checks.md#linux-cloud-development) uses the
 same source gate. These gates make no paid model calls. See
-[broader checks](development.md#broader-checks).
+[broader checks](dev/checks.md#broader-checks).
 
 The macOS native job stages the same pinned sidecars used by the package smoke
 and first selects a supported CI display mode of at least 1920x1080. The helper
