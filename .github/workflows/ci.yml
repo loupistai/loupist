@@ -61,6 +61,7 @@ jobs:
         run: |
           python3 scripts/guide.py --check
           python3 -m unittest discover -s apps/loupist/scripts -p test_ci_change_scope.py
+          sh -n scripts/cloud-setup.sh
 
       - name: Install pinned Node for dependency-free security checks
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

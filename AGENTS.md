@@ -29,8 +29,8 @@ generated schemas/build output untouched. Prefer deleting obsolete pre-1.0 paths
 ## Pull requests
 
 Locally, `scripts/verify.sh` is the handoff gate. In a cloud session, run
-`sh apps/loupist/scripts/check.sh <scope>` for each scope you changed; PR CI runs the
-Linux gate and macOS checks run after merge ([CI](docs/ci-cd.md#ci)). Commit, push
+`sh apps/loupist/scripts/check.sh <web|python|rust>` for what you changed; PR CI
+runs the Linux gate and macOS checks run after merge ([CI](docs/ci-cd.md#ci)). Commit, push
 or release only on request; a task that asks for a PR covers pushing its own branch.
 Name the branch `<tool>/<topic>`, sign off with `git commit -s`, target `main`, and
 list the checks you ran. Never push to `main` or create release tags.

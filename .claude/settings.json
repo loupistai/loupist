@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ \"$CLAUDE_CODE_REMOTE\" != true ] || sh \"$CLAUDE_PROJECT_DIR/scripts/cloud-setup.sh\"",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" != true ] || sh \"$CLAUDE_PROJECT_DIR/scripts/cloud-setup.sh\" --quiet",
             "timeout": 1200
           }
         ]
