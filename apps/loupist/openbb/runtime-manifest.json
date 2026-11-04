@@ -3,7 +3,7 @@
   "runtime_id": "openbb",
   "executable": "loupist-openbb",
   "python": "3.12",
-  "uv_lock_sha256": "afa3bc8f7416e14b02452b9834efb0884fe7c534dad08b5521fd9dce03af4e5d",
+  "uv_lock_sha256": "1f5255a764ea914e9bde6a4f3b19989ebfbc25bc451d1a955587ebefd4501ef2",
   "packages": {
     "openbb": "4.7.2",
     "openbb-mcp-server": "1.4.1"
