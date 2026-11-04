@@ -27,6 +27,9 @@
 .map-status-stack { position:absolute; top:var(--gg-space-3); left:calc(var(--map-covered-left, 0px) + var(--gg-space-2)); z-index:var(--gg-z-sticky); width:calc(100% - var(--map-covered-left, 0px) - var(--map-covered-right, 0px) - var(--gg-space-4)); min-width:0; display:grid; justify-items:start; gap:var(--gg-space-2); pointer-events:none; }
 .map-status-stack > * { pointer-events:auto; }
 .map-stats { max-width:calc(100% - var(--gg-space-4)); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; position:relative; z-index:var(--gg-z-sticky); padding:6px 12px; border-radius:var(--gg-radius-full); background:color-mix(in srgb,var(--gg-color-bg-raised) 92%,transparent); box-shadow:var(--gg-shadow-sm); font-size:var(--gg-text-meta); font-variant-numeric:tabular-nums; }
+/* A narrow map wraps the status so the weekly count and disagreements stay whole. The mini map keeps the one-line ellipsis. */
+.map-status-stack .map-stats { display:flex; flex-wrap:wrap; align-items:baseline; white-space:normal; overflow:visible; text-overflow:clip; }
+.map-status-stack .map-stats > * { min-width:0; overflow-wrap:anywhere; }
 .map-stats .map-world-kicker { font-weight:var(--gg-weight-medium); }
 .map-stats .map-world-kicker::after { content:" · "; font-weight:var(--gg-weight-regular); color:var(--gg-color-text-secondary); }
 .map-view[data-hide-map-stats] .map-stats, .map-body[data-hide-map-stats] .map-stats { visibility:hidden; }
