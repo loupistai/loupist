@@ -65,7 +65,7 @@ The first release targets macOS 13 or newer on Apple Silicon only. Windows, Inte
 
 ## Development
 
-Use Node.js 22.19+, Python 3.12 with `uv`, and Rust (CI pins 1.97.1).
+Use Node.js 26.13+ LTS (26.x; see `.nvmrc`), Python 3.12 with `uv`, and Rust (CI pins 1.97.1).
 The clean-checkout verifier installs locked dependencies and runs the web, Rust
 and Python checks:
 

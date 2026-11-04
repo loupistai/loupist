@@ -45,3 +45,29 @@ The bundled sidecar retains OpenBB 4.7.2 and its pinned provider contracts.
 FastMCP stays on 3.x and MCP on 1.x. Update those integrations together before
 accepting their next majors. Never weaken read-only, credential or process
 ownership checks to accommodate an update.
+
+## Dependabot review (2026-11-04)
+
+The CI/toolchain review integrates updates from PRs #1 (PyInstaller 6.22.3 and
+pytest 9.2.0), #4 (six Actions), #6 (rfd 0.17.2), #10 (Rust minor/patch group),
+and #11 (renderer minor/patch group) into one change. Action
+pins also apply to the shared setup action added after #4's original base.
+The OpenBB lock digest must be refreshed with any reviewed `uv.lock` change;
+#1 failed both source and package checks because its digest was stale.
+
+Node 26 exposes its own Web Storage globals. Renderer tests explicitly bind
+Vitest's jsdom storage so profiles remain isolated and do not use a Node storage
+file. Development checks and package engines track the root `.nvmrc` pin.
+
+The updated AI SDK stays `submitted` after a scheduled run starts, until content
+arrives. Both `submitted` and `streaming` are active in the registry. The Stop
+regression tests exercise each phase and require cancellation of the exact
+native run, including retry after admission initially returns no stream.
+
+PR #2 is deferred: it updates Pi AI/coding-agent to 1.4.0 while keeping
+agent-core/telemetry and the signed standalone sidecar at 1.0.1. Its CI evidence
+shows a missing `NOOP_TELEMETRY_METRICS` export and security-pin failures. Do not
+merge that partial upgrade or relax its tests. A Pi upgrade must update the
+whole package family, security pins, platform archive digests and packaged
+runtime checks together, then pass host isolation and native/package tests.
+The pinned 1.0.1 family and existing security overrides remain in place.

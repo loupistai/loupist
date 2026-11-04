@@ -10,14 +10,14 @@ under the MIT License. The complete notice is retained in
 ## Chart rendering
 
 Loupist uses [KLineChart](https://github.com/klinecharts/KLineChart)
-10.0.0, copyright (c) 2019 lihu, under the Apache License 2.0. Its upstream
+10.1.0, copyright (c) 2019 lihu, under the Apache License 2.0. Its upstream
 NOTICE, including the TradingView Lightweight Charts attribution recorded by
 KLineChart, and the Apache license text are retained with the dependency.
 
 Loupist uses [Flint](https://github.com/microsoft/flint-chart) 0.5.0,
 copyright Microsoft Corporation, under the MIT License reproduced below.
 
-Loupist uses Vega 6.3.1, Vega-Lite 6.4.3, and Vega-Embed 7.1.0,
+Loupist uses Vega 6.3.1, Vega-Lite 6.4.3, and Vega-Embed 7.3.0,
 copyright the University of Washington Interactive Data Lab and contributors,
 under the BSD 3-Clause License. Their complete license texts are retained with
 the dependencies.
@@ -25,7 +25,7 @@ the dependencies.
 ## World graph rendering
 
 Loupist uses [react-force-graph-2d](https://github.com/vasturiano/react-force-graph)
-1.29.1 and [force-graph](https://github.com/vasturiano/force-graph) 1.51.4,
+1.29.2 and [force-graph](https://github.com/vasturiano/force-graph) 1.52.0,
 by Vasco Asturiano, under the MIT License reproduced below. The force-graph
 notice is copyright (c) 2018 Vasco Asturiano.
 
@@ -125,7 +125,7 @@ not infer a separate package-level license for them; the repository-wide
 OpenBB license stated above is the verified source-tree notice.
 
 The sidecar embeds CPython 3.12 under the Python Software Foundation License
-Version 2 and its historical license notices, and the PyInstaller 6.21.0
+Version 2 and its historical license notices, and the PyInstaller 6.22.3
 bootloader, copyright (c) 2010-2023 the PyInstaller
 Development Team, 2005-2009 Giovanni Bajo, and 2002 McMillan Enterprises,
 Inc., under GPLv2-or-later with PyInstaller's bootloader exception. Its MCP and
@@ -215,7 +215,7 @@ archives under their `.dist-info` metadata and license directories.
 
 ## Mathematical text rendering
 
-Loupist uses [KaTeX](https://github.com/KaTeX/KaTeX) 0.18.2, including its math
+Loupist uses [KaTeX](https://github.com/KaTeX/KaTeX) 0.19.1, including its math
 styles and fonts, copyright (c) 2013-2020 Khan Academy and other contributors,
 under the MIT License. The MIT terms reproduced above apply. Its complete
 original license is retained with the dependency. The renderer loads these

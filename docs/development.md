@@ -1,7 +1,7 @@
 # Development
 
 This page owns local setup, development workflow, UI review and check selection.
-Commands are repository-relative unless noted. Use Node 22.19+, Python 3.12 with
+Commands are repository-relative unless noted. Use Node 26.13+ LTS (26.x; `nvm install` reads the root `.nvmrc`), Python 3.12 with
 `uv`, and the Rust toolchain pinned by CI. Install from lockfiles. Focused checks
 assume dependencies already exist; setup and the full repository gate install them.
 Web helper contracts also require `ps`, `pgrep` and `lsof`.

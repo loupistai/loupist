@@ -18,6 +18,7 @@ concurrency:
 
 jobs:
   validate:
+    timeout-minutes: 10
     name: Validate experimental signed build tag
     if: ${{ inputs.signed }}
     runs-on: ubuntu-latest
@@ -95,6 +96,7 @@ jobs:
           npm run test:persistence:windows
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   package-smoke:
+    timeout-minutes: 60
     name: Package smoke (${{ matrix.target }})
     strategy:
       fail-fast: false
@@ -173,6 +175,7 @@ jobs:
             throw "Final NSIS package inspection failed."
           }
   build-windows:
+    timeout-minutes: 90
     name: Experimental signed Windows x64 build
     if: ${{ inputs.signed }}
     needs: validate
@@ -210,9 +213,10 @@ jobs:
         uses: ./.github/actions/setup-toolchains
         with:
           node: "true"
+          cache-npm: "false"
           rust: "true"
           rust-targets: x86_64-pc-windows-msvc
-          rust-cache-key: release
+          rust-cache-key: package-smoke
           python: "true"
 
       - name: Install renderer dependencies
@@ -329,7 +333,7 @@ jobs:
             --output release-assets
 
       - name: Upload Windows release assets
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: loupist-${{ needs.validate.outputs.version }}-windows-x86_64
           path: release-assets/*
