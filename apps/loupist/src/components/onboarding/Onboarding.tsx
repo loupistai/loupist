@@ -34,11 +34,11 @@ export function Onboarding({ bridge, catalog, onCatalogChange, onCreate, onCompl
     }
   };
   return <main className="onboarding-window" data-onboarding={step}><div className="onboarding-column">
-    {step === 1 ? <section className="onboarding-step"><h1>{t("wizard.welcomeTitle")}</h1><p>{t("wizard.welcomeLoupist")}</p>
+    {step === 1 ? <section className="onboarding-step" data-step={step}><h1>{t("wizard.welcomeTitle")}</h1><p>{t("wizard.welcomeLoupist")}</p>
       <NoticeCard checked={noticeChecked} onChange={setNoticeChecked} />
       <Button data-onboarding-start disabled={!noticeChecked || saving || busy} onClick={() => alreadyConnected ? void finish() : setStep(2)}>{t("wizard.start")}</Button>
       {onImport && <Button variant="link" disabled={!noticeChecked || busy} onClick={onImport}>{t("wizard.importLoupist")}</Button>}
-    </section> : <section className="onboarding-step"><ConnectStep bridge={bridge} catalog={catalog} onCatalogChange={onCatalogChange} connected={connected}
+    </section> : <section className="onboarding-step" data-step={step}><ConnectStep bridge={bridge} catalog={catalog} onCatalogChange={onCatalogChange} connected={connected}
       onConnected={name => { setConnected(name); void finish(); }} onWaitingChange={() => {}} />
       {connected && error && <Button disabled={saving} onClick={() => void finish()}>{t("wizard.start")}</Button>}
     </section>}
