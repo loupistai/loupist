@@ -379,7 +379,7 @@ async function settingsSection(id) {
 
 async function expand(selector) {
   const details = await displayed(selector);
-  if ((await details.getAttribute("open")) === null) await (await details.$("summary")).click();
+  if ((await details.getAttribute("open")) === null) await (await details.$(":scope > summary")).click();
   await browser.waitUntil(async () => (await details.getAttribute("open")) !== null, { timeout: 5_000, timeoutMsg: `${selector} did not open` });
 }
 
