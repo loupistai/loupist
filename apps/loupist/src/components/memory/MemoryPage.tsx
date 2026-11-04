@@ -7,6 +7,7 @@ import type { GrowthEvent, KnowledgeMapNode, LearningReview, MemoryUsage, Princi
 import type { HoldingsSummary, WatchlistEntry } from "../../contracts/userContext";
 import { useConfiguration } from "../../app/useConfiguration";
 import { errorMessage } from "../../lib/errors";
+import { revealFocused } from "../../lib/revealFocused";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { HOST_STANDING_TITLE } from "../map/lensReading";
@@ -190,7 +191,7 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onBack, onOp
     {paused ? <div className="memory-page-paused" role="status"><span>{t("memoryPage.paused.banner")}</span><Button size="sm" variant="outline" onClick={() => void resume()}>{t("memoryPage.actions.resume")}</Button></div> : null}
     {error ? <div className="memory-page-error" role="alert"><span>{t("memoryPage.error")}</span><Button size="sm" variant="outline" onClick={() => setRefresh(value => value + 1)}>{t("memoryPage.retry")}</Button></div> : null}
     {!data && !error ? <div className="memory-page-loading" role="status" aria-label={t("memoryPage.loading")}><span /><span /><span /></div> : null}
-    {data ? <div className="memory-page-body" data-segment={current}>
+    {data ? <div className="memory-page-body" data-segment={current} onFocus={revealFocused}>
       {current === "about" ? <AboutYou bridge={bridge} loupist={loupist} data={data} onChanged={changed}
         shared={<SharedPacks ref={sharedRef} bridge={bridge} loupistId={loupistId} imports={data.imports} indexConfigured={data.indexConfigured}
           onChanged={imports => { setData(current => current && { ...current, imports }); changed(); }} />} /> : null}

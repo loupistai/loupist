@@ -60,7 +60,7 @@ next-step chips after the latest answer come from the conflicts and names it
 found and fill the composer without sending. Leaving a view or switching Loupist does not cancel an admitted
 Chat. The composer has one private-chat switch, described under
 [Memory permissions](../knowledge/memory.md#memory-permissions-and-retrieval).
-When the reader scrolls away from the bottom, the live status or Jump to latest control
+Focusing a control below the fold scrolls it into the conversation. When the reader scrolls away from the bottom, the live status or Jump to latest control
 occupies its own row between the scroll viewport and composer. It shares the
 conversation’s scroll state, so jumping re-pins the reply while the control stays clear
 of answer text and actions. A short conversation that becomes scrollable when the

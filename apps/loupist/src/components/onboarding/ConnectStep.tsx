@@ -7,6 +7,7 @@ import { ClaudeExtraNote, ConnectSheet, connectedName, type ConnectSheetTarget }
 import { ProviderWays } from "@/components/settings/ProviderWays";
 import { SignInFlow } from "@/components/settings/SignInFlow";
 import { useSignIn } from "@/components/settings/signIn";
+import { revealFocused } from "@/lib/revealFocused";
 import type { LoupistBridge, ModelCatalog } from "@/types";
 import "@/styles/connect.css";
 
@@ -65,7 +66,7 @@ export function ConnectStep({ bridge, catalog, onCatalogChange, connected, onCon
             <p className="connect-meta onboarding-connect-note">{t("wizard.chatgptNote")}</p>
           </div>}
     {flow.state.phase === "error" ? <SignInFlow flow={flow} onUseApiKey={() => { flow.dismiss(); setSheet({ kind: "provider", provider: "openai", method: "api_key" }); }} /> : null}
-    <Disclosure className="onboarding-other" title={t("wizard.other")} open={otherOpen || Boolean(sheet)} onOpenChange={setOtherOpen}>
+    <Disclosure className="onboarding-other" title={t("wizard.other")} open={otherOpen || Boolean(sheet)} onOpenChange={setOtherOpen} onFocus={revealFocused}>
       <ProviderWays catalog={catalog} includePrimary={false} includeMore={false} disabled={locked} actions={{
         onSignIn: signIn,
         onKey: provider => setSheet({ kind: "provider", provider, method: "api_key" }),

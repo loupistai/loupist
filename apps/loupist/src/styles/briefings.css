@@ -20,7 +20,7 @@
 .briefings-summary { margin-top: var(--gg-space-1); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 .briefings-summary svg { display: inline; width: var(--gg-space-3); height: var(--gg-space-3); margin-right: var(--gg-space-1); }
 .briefings-summary[data-failed="true"], .briefings-error { color: var(--gg-color-negative); }
-.briefings-reader-scroll { min-width: 0; overflow: auto; }
+.briefings-reader-scroll { min-width: 0; overflow: auto; scroll-padding-block: var(--gg-space-4); }
 .briefings-reader { max-width: var(--gg-size-reading-column); margin: auto; padding: var(--gg-space-6); }
 .briefings-reader > header { padding-bottom: var(--gg-space-4); margin-bottom: var(--gg-space-5); border-bottom: 1px solid var(--gg-color-border-subtle); }
 .briefings-reader h2, .briefings-empty h2 { font-size: var(--gg-text-heading); line-height: var(--gg-leading-heading); font-weight: var(--gg-weight-semibold); }

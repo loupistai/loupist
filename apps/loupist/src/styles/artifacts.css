@@ -1024,10 +1024,10 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 /* The document scrolls in the reader, so Outline and links stays in the panel.
    Scrolling the whole page carried that toolbar out of the pane. */
 .workspace-lens-content > .memory-page { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; width:100%; max-width:none; overflow:hidden; }
-.workspace-lens-content .memory-page-body { flex:1 1 auto; min-height:0; overflow:auto; }
+.workspace-lens-content .memory-page-body { flex:1 1 auto; min-height:0; overflow:auto; scroll-padding-block: var(--gg-space-4); }
 .workspace-lens-content .memory-page[data-reader-open] .memory-page-body { overflow:hidden; display:flex; flex-direction:column; align-items:stretch; }
 .workspace-lens-content .memory-reader.is-lens { flex:1 1 auto; align-self:stretch; width:100%; min-height:0; height:auto; overflow:hidden; display:flex; flex-direction:column; }
-.workspace-lens-content .memory-page[data-reader-open] .memory-reader:not(.is-lens) { flex:1 1 auto; align-self:stretch; width:100%; min-height:0; overflow:auto; }
+.workspace-lens-content .memory-page[data-reader-open] .memory-reader:not(.is-lens) { flex:1 1 auto; align-self:stretch; width:100%; min-height:0; overflow:auto; scroll-padding-block: var(--gg-space-4); }
 .workspace-lens-content .memory-reader.is-lens .lens-workspace { flex:1 1 auto; min-height:0; height:auto; }
 .workspace-world-content > .memory-workspace { flex:1; min-height:0; }
 .artifact-panel[data-expanded] > .workspace-kind-heading { display:none; }

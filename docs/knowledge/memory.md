@@ -4,7 +4,7 @@ Memory reads and saves are Rust transactions. Delivery counts are not influence 
 
 ## What the Loupist knows
 
-About you is a centered 720px reading column and shares its edges with the header and tabs in the memory pane. Other tabs collapse from a list/reader split based on the pane's width, at 972px. The tabs and search stay whole above an open method, including in the side panel. Model-provider cards fill their own 800px settings column.
+About you is a centered 720px reading column and shares its edges with the header and tabs in the memory pane. Other tabs collapse from a list/reader split based on the pane's width, at 972px. The tabs and search stay whole above an open method, including in the side panel. Focusing a row or a reader action below the fold scrolls it into the pane. Model-provider cards fill their own 800px settings column.
 
 "What {Loupist} knows" opens from the Loupist's name in the header as a page over the
 current tab: About you (followed assets, each opening its [asset page](asset-pages.md#asset-pages),

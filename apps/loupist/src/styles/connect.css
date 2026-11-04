@@ -129,7 +129,7 @@
   .onboarding-window[data-onboarding="2"] { padding-inline: var(--gg-space-4); }
 }
 @media (max-height: 700px) {
-  .onboarding-step[data-step="2"] .onboarding-other > .ui-disclosure-body { max-height: 40dvh; overflow-y: auto; overscroll-behavior: contain; }
+  .onboarding-step[data-step="2"] .onboarding-other > .ui-disclosure-body { max-height: 40dvh; overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: var(--gg-space-3); }
 }
 
 @keyframes connect-cross-fade { from { opacity: 0; } to { opacity: 1; } }

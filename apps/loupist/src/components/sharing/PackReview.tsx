@@ -12,6 +12,7 @@ import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
 import { PackMarkdown } from "./PackMarkdown";
+import { revealFocused } from "../../lib/revealFocused";
 import { licenseName, licenseSummary } from "./sharingText";
 import "@/styles/sharing.css";
 
@@ -84,7 +85,7 @@ function ReviewBody({ bridge, preview, loupists, currentLoupistId, focusAdd, onA
   const tracks = [preview.world.kinds.join(", "), preview.world.relations.join(", ")].filter(Boolean).join(" · ");
 
   return <div className="pack-review-grid">
-    <div className="pack-review-main">
+    <div className="pack-review-main" onFocus={revealFocused}>
     <div className="pack-review-summary">
       <p className="pack-review-name">{manifest.name}</p>
       <p className="pack-review-meta">{meta}</p>
