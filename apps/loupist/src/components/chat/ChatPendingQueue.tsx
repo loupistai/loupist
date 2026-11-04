@@ -127,16 +127,20 @@ function QueuedCard({
   const [editing, setEditing] = useState(false);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const actionsRef = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef(false);
   useEffect(() => {
     if (editing) {
       editorRef.current?.focus();
       editorRef.current?.setSelectionRange(draft.length, draft.length);
+    } else if (returnFocus.current) {
+      returnFocus.current = false;
+      actionsRef.current?.focus();
     }
   }, [editing]);
 
   const finishEdit = () => {
+    returnFocus.current = true;
     setEditing(false);
-    requestAnimationFrame(() => actionsRef.current?.focus());
   };
 
   const commit = () => {
