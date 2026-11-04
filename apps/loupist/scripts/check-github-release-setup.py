@@ -29,15 +29,16 @@ TAG_TRIGGERED_ENVIRONMENTS = frozenset(REQUIRED_ENVIRONMENTS)
 REPOSITORY_PATTERN = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 SECRET_REFERENCE = re.compile(r"\bsecrets\.([A-Z][A-Z0-9_]*)\b")
 GITHUB_ACTIONS_INTEGRATION_ID = 15368
-MAIN_REQUIRED_STATUS_CHECK_CONTEXTS = frozenset(
+MAIN_REQUIRED_STATUS_CHECK_CONTEXTS = frozenset(("Source and product contracts",))
+# Pull requests never report these, so requiring one blocks every merge.
+CHECKS_ABSENT_FROM_PULL_REQUESTS = frozenset(
     (
-        "Source and product contracts",
         "Native macOS interaction",
         "Package smoke (aarch64-apple-darwin)",
+        "Rust contracts (macOS)",
+        "Native Windows interaction",
+        "Package smoke (x86_64-pc-windows-msvc)",
     )
-)
-DEFERRED_WINDOWS_CHECK_CONTEXTS = frozenset(
-    ("Native Windows interaction", "Package smoke (x86_64-pc-windows-msvc)")
 )
 MAIN_BRANCH_RULE_TYPES = frozenset(
     ("pull_request", "required_status_checks", "non_fast_forward")
@@ -105,15 +106,10 @@ def rule_types(value: object) -> set[str] | None:
     return types
 
 
-def status_checks_are_strict_and_github_actions_owned(
-    parameters: object,
-) -> bool:
+def status_checks_are_github_actions_owned(parameters: object) -> bool:
     if not isinstance(parameters, dict):
         return False
-    if (
-        parameters.get("do_not_enforce_on_create") is not False
-        or parameters.get("strict_required_status_checks_policy") is not True
-    ):
+    if parameters.get("do_not_enforce_on_create") is not False:
         return False
     checks = parameters.get("required_status_checks")
     if not isinstance(checks, list):
@@ -131,7 +127,7 @@ def status_checks_are_strict_and_github_actions_owned(
     return MAIN_REQUIRED_STATUS_CHECK_CONTEXTS <= contexts
 
 
-def ruleset_requires_strict_github_actions_ci(ruleset: dict[str, object]) -> bool:
+def ruleset_requires_github_actions_ci(ruleset: dict[str, object]) -> bool:
     rules = ruleset.get("rules")
     if not isinstance(rules, list):
         return False
@@ -140,16 +136,14 @@ def ruleset_requires_strict_github_actions_ci(ruleset: dict[str, object]) -> boo
         for rule in rules
         if isinstance(rule, dict) and rule.get("type") == "required_status_checks"
     ]
-    return len(status_rules) == 1 and status_checks_are_strict_and_github_actions_owned(
+    return len(status_rules) == 1 and status_checks_are_github_actions_owned(
         status_rules[0].get("parameters")
     )
 
 
-def legacy_main_requires_strict_github_actions_ci(
-    protection: dict[str, object],
-) -> bool:
+def legacy_main_requires_github_actions_ci(protection: dict[str, object]) -> bool:
     status_checks = protection.get("required_status_checks")
-    if not isinstance(status_checks, dict) or status_checks.get("strict") is not True:
+    if not isinstance(status_checks, dict):
         return False
     checks = status_checks.get("checks")
     if not isinstance(checks, list):
@@ -297,7 +291,7 @@ def any_ruleset_protects_main_with_ci(
         ):
             continue
         value = require_object(ruleset, "repository ruleset")
-        if ruleset_requires_strict_github_actions_ci(value):
+        if ruleset_requires_github_actions_ci(value):
             return True
     return False
 
@@ -480,7 +474,7 @@ def legacy_main_has_pull_request_protection(value: object | None) -> bool:
     protection = require_object(value, "main branch protection response")
     return isinstance(
         protection.get("required_pull_request_reviews"), dict
-    ) and legacy_main_requires_strict_github_actions_ci(protection)
+    ) and legacy_main_requires_github_actions_ci(protection)
 
 
 def secret_names(value: object, *, response_label: str, item_label: str) -> set[str]:
@@ -595,18 +589,18 @@ def audit_release_setup(
         add(
             "pass",
             "main protection",
-            "a no-bypass pull-request rule and strict GitHub Actions CI checks apply",
+            "a no-bypass pull-request rule and the GitHub Actions source gate apply",
         )
     else:
         add(
             "error",
             "main protection",
-            "require pull requests and strict GitHub Actions CI checks for main "
+            "require pull requests and the GitHub Actions source gate for main "
             "with a branch protection or active ruleset",
         )
 
-    # Rulesets stack: a separate valid macOS rule does not neutralize an old
-    # Windows requirement in another ruleset or legacy branch protection.
+    # Rulesets stack: a separate valid rule does not neutralize a stale
+    # requirement in another ruleset or legacy branch protection.
     required_contexts: set[str] = set()
     if isinstance(main_legacy_protection, dict):
         status = main_legacy_protection.get("required_status_checks")
@@ -626,13 +620,13 @@ def audit_release_setup(
             for check in rule.get("parameters", {}).get("required_status_checks", []):
                 if isinstance(check.get("context"), str):
                     required_contexts.add(check["context"])
-    deferred_checks = required_contexts & DEFERRED_WINDOWS_CHECK_CONTEXTS
-    if deferred_checks:
+    unreported_checks = required_contexts & CHECKS_ABSENT_FROM_PULL_REQUESTS
+    if unreported_checks:
         add(
             "error",
-            "deferred Windows checks",
-            "remove Windows requirements from main rulesets and branch protection: "
-            + ", ".join(sorted(deferred_checks)),
+            "checks absent from pull requests",
+            "remove these requirements from main rulesets and branch protection: "
+            + ", ".join(sorted(unreported_checks)),
         )
 
     release_tag_ref = "refs/tags/v0.0.1"

@@ -17,18 +17,21 @@ Loupist is licensed under AGPL-3.0-only. See [Licensing](LICENSING.md) for app c
 ## Branches and pull requests
 
 Use `main` as the integration and release base. Create a short-lived branch for
-each change; coding agents use `codex/<topic>`. Open a pull request targeting
-`main`, describe the observable change and list the checks that established it.
-Use `git commit -s` to add the required Developer Certificate of Origin sign-off.
-A GitHub-provided noreply address can keep your personal email private.
+each change, named `<tool>/<topic>` for coding agents (`codex/`, `cursor/`,
+`claude/`) and `<name>/<topic>` otherwise. Open a pull request targeting `main`,
+describe the observable change and list the checks that established it. Use
+`git commit -s` to add the required Developer Certificate of Origin sign-off. A
+GitHub-provided noreply address can keep your personal email private.
 
-Merging requires the branch to be current with `main`, the required CI checks to
-pass and review conversations to be resolved. Squash merge preserves a linear
-history; GitHub deletes the merged branch. Direct pushes, force pushes and branch
-deletion are blocked on `main`, including for administrators. While the project has
-one maintainer, another person's approval is not a merge prerequisite; maintainers
-still review changes and the CODEOWNERS file routes review requests. Stable release
-publication has a separate independent-approval gate.
+Merging requires the `Source and product contracts` check to pass and review
+conversations to be resolved. The branch does not need to be current with `main`.
+Pull requests run Linux checks only; macOS native and package checks run after
+merge ([CI](docs/ci-cd.md#ci)). `gh pr merge --auto --squash` lands a PR when the
+check passes. Squash merge preserves a linear history; GitHub deletes the merged
+branch. Direct pushes, force pushes and branch deletion are blocked on `main`,
+including for administrators. While the project has one maintainer, another
+person's approval is not a merge prerequisite; the CODEOWNERS file routes review
+requests. Stable release publication has a separate independent-approval gate.
 
 Dependabot opens grouped weekly updates. Review dependency, license and runtime-pin
 changes and let the same CI run before merging; dependency updates are not

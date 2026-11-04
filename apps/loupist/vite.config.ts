@@ -28,8 +28,8 @@ export default defineConfig({
     css: true,
     // Leaves room for the widened testing-library async window under load.
     testTimeout: 60_000,
-    // jsdom renders of the whole app are CPU-bound; half the cores keeps each
-    // file responsive when the gate's cargo lane shares the machine.
-    maxWorkers: "50%",
+    // jsdom renders of the whole app are CPU-bound. Locally the gate's cargo
+    // lane shares the machine; the Actions web job has its runner to itself.
+    maxWorkers: process.env.GITHUB_ACTIONS === "true" ? "100%" : "50%",
   },
 });
