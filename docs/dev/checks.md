@@ -112,7 +112,10 @@ If host package installation is unavailable and Docker is already available,
 run these steps inside a disposable Debian/Ubuntu development container with
 the pinned toolchains. Mount the checkout and install its locked npm and Python
 environments inside the container; do not reuse a host `.venv` or mutable build
-tree. Keep the normal container procfs mount and PID namespace for process
+tree. Run build and check commands as the checkout's UID/GID (for example,
+`docker run --user "$(id -u):$(id -g)" ...`); mixing root and host-owned build
+commands can leave Tauri's generated files unwritable by the next check.
+Keep the normal container procfs mount and PID namespace for process
 ownership tests. In managed clouds, preserve the supplied network proxy and CA
 trust when building and running the container.
 
