@@ -28,10 +28,29 @@ if [[ ! "$SOURCE_REF" =~ ^refs/tags/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][
     exit 1
 fi
 
+VERSION="${SOURCE_REF#refs/tags/v}"
+UPDATER="Loupist-${VERSION}-darwin-aarch64.app.tar.gz"
+EXPECTED_NAMES=(
+    "Loupist-${VERSION}-aarch64-apple-darwin.dmg"
+    "Loupist-macOS-arm64.dmg"
+    "$UPDATER"
+    "${UPDATER}.sig"
+    "Loupist-${VERSION}.spdx.json"
+    "latest.json"
+    "RELEASE-METADATA.json"
+    "SHA256SUMS"
+)
 shopt -s nullglob
 ASSETS=("$ASSET_DIRECTORY"/*)
-if [ "${#ASSETS[@]}" -ne 11 ]; then
-    echo "Closed release set must contain exactly 11 attested files." >&2
+for name in "${EXPECTED_NAMES[@]}"; do
+    asset="$ASSET_DIRECTORY/$name"
+    if [ ! -f "$asset" ] || [ -L "$asset" ]; then
+        echo "Closed release set is missing attested file: $name" >&2
+        exit 1
+    fi
+done
+if [ "${#ASSETS[@]}" -ne "${#EXPECTED_NAMES[@]}" ]; then
+    echo "Closed release set contains files outside the attested names." >&2
     exit 1
 fi
 

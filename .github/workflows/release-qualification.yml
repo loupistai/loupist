@@ -36,12 +36,14 @@ on:
 
 permissions:
   actions: read
-  contents: read
+  # Draft releases are listed and downloaded only by a token that can write contents.
+  contents: write
   attestations: read
 
 concurrency:
   group: loupist-qualification-${{ inputs.candidate_tag }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   identify:

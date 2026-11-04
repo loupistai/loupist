@@ -92,6 +92,7 @@ class ChangeScopeTests(unittest.TestCase):
             (["apps/loupist/scripts/stage_workspace_tools.py"], ALL),
             ([".github/workflows/ci.yml"], ALL),
             ([".github/workflows/release.yml"], ALL),
+            ([".github/workflows/windows-compatibility.yml"], set()),
             ([".github/actions/setup-toolchains/action.yml"], ALL),
             (["apps/loupist/scripts/check_runner.py"], ALL),
             (["new-runtime/unknown.py"], ALL),

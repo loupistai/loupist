@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import runpy
 import subprocess
 import sys
@@ -101,6 +102,50 @@ class ReleaseAssetsContractTest(unittest.TestCase):
         self.assertEqual(updater_artifact_names(VERSION), {"darwin-aarch64": UPDATER})
         aliases = {"Loupist-macOS-arm64.dmg": DMG}
         self.assertEqual(download_aliases(VERSION), aliases)
+
+    def test_attestation_gate_accepts_the_assembled_set_only(self) -> None:
+        assets = self.assemble()
+        stub = self.root / "bin"
+        stub.mkdir()
+        gh = stub / "gh"
+        gh.write_text("#!/bin/sh\nexit 0\n")
+        gh.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{stub}{os.pathsep}{env.get('PATH', '')}"
+
+        def gate() -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                [
+                    "bash",
+                    str(SCRIPTS / "verify-release-attestations.sh"),
+                    str(assets),
+                    REPOSITORY,
+                    COMMIT,
+                    f"refs/tags/{TAG}",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+
+        accepted = gate()
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        extra = assets / "Loupist-extra.bin"
+        extra.write_bytes(b"extra\n")
+        rejected = gate()
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("Closed release set", rejected.stderr)
+        extra.unlink()
+        self.assertEqual(gate().returncode, 0)
+        latest = assets / "latest.json"
+        displaced = assets / "latest-wrong.json"
+        latest.rename(displaced)
+        renamed = gate()
+        self.assertNotEqual(renamed.returncode, 0)
+        self.assertIn("Closed release set", renamed.stderr)
+        displaced.rename(latest)
+        self.assertEqual(gate().returncode, 0)
 
     def test_prepare_normalizes_macos_and_windows_bundle_outputs(self) -> None:
         bundles = {
