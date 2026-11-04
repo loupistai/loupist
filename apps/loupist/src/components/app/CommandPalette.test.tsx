@@ -126,6 +126,26 @@ describe("search across Loupists", () => {
   });
 });
 
+it("opens the palette with ⌘K while the narrow navigation sheet is open", () => {
+  const onPalette = vi.fn();
+  renderHook(() => useAppShortcuts({ onSettings: vi.fn(), onNewChat: vi.fn(), onPalette, canCreateChat: true }));
+  const sheet = document.createElement("div");
+  sheet.setAttribute("role", "dialog");
+  sheet.setAttribute("data-state", "open");
+  sheet.setAttribute("data-sidebar", "sidebar");
+  document.body.append(sheet);
+  fireEvent.keyDown(window, { key: "k", metaKey: true });
+  expect(onPalette).toHaveBeenCalledTimes(1);
+  const dialog = document.createElement("div");
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("data-state", "open");
+  document.body.append(dialog);
+  fireEvent.keyDown(window, { key: "k", metaKey: true });
+  expect(onPalette).toHaveBeenCalledTimes(1);
+  sheet.remove();
+  dialog.remove();
+});
+
 it("opens the palette with ⌘K and focuses the composer with a bare slash", () => {
   const onPalette = vi.fn();
   renderHook(() => useAppShortcuts({ onSettings: vi.fn(), onNewChat: vi.fn(), onPalette, canCreateChat: true }));

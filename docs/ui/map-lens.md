@@ -89,7 +89,8 @@ reports above Key facts, with source titles, dates and exact Source actions.
 Reports that share a relation and the same role-labelled endpoints are one group,
 because a World claim has no conflict-pair id. Explain the disagreement under them opens
 a new topic Chat whose composer holds the entity, up to three disputed relations as pins
-and a question, never sent. A `world_read` whose view holds disputed claims adds
+and a question, never sent. When the workspace covers the chat, that action closes
+the cover so the draft is on screen. A `world_read` whose view holds disputed claims adds
 `sources_disagree` to its result (the claim count, up to eight entity ids and a hint to
 show the difference with a [conflict card](../analysis/grids.md#grid-cells) instead of averaging or
 picking one). Perspectives, principles and methods appear in the application filter,

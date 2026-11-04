@@ -87,4 +87,5 @@ date; otherwise "Due {date} · Review" (in warning once late) or "No check set".
 back, also in the menu of a reason on an asset page, creates a topic Chat titled
 "Looking back: {judgment}" and fills its composer with the entry's local creation
 day as the as-of date, the entry as a `journal` pin and a question about how well
-what was known then supported the judgment. It never sends.
+what was known then supported the judgment. It never sends. When the workspace
+covers the chat, Look back closes that cover so the new draft is on screen.

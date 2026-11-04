@@ -586,10 +586,11 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
       setMemoryPage(null);
       setAssetPage(null);
       setNoteReaderOpen(false);
+      if (window.matchMedia(workspaceOverlayMedia).matches) workspace.close();
       chat.setActiveThreadForLoupist(loupistId, created.id);
       setTab("chat");
     });
-  }, [threadActions.createThreadForLoupist, drafts, chat.setActiveThreadForLoupist]);
+  }, [threadActions.createThreadForLoupist, drafts, chat.setActiveThreadForLoupist, workspace.close]);
   /**
    * Explain the disagreement (finance-korea-retail-disagreement.md §2.3): a new
    * topic Chat whose composer holds the entity and relation chips and the
@@ -608,10 +609,11 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
       setMemoryPage(null);
       setAssetPage(null);
       setNoteReaderOpen(false);
+      if (window.matchMedia(workspaceOverlayMedia).matches) workspace.close();
       chat.setActiveThreadForLoupist(loupistId, created.id);
       setTab("chat");
     });
-  }, [threadActions.createThreadForLoupist, drafts, chat.setActiveThreadForLoupist]);
+  }, [threadActions.createThreadForLoupist, drafts, chat.setActiveThreadForLoupist, workspace.close]);
   /** Puts text into the current Chat's composer (never sends), as the morning questions do. */
   const askInChat = useCallback((text: string) => {
     if (!selectedLoupistId) return;

@@ -473,9 +473,10 @@
   min-height: var(--gg-size-control-md);
   display: flex;
   flex: none;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--gg-space-1);
-  padding: 0 var(--gg-space-3) 0 var(--gg-space-1);
+  padding: var(--gg-space-1) var(--gg-space-3) var(--gg-space-1) var(--gg-space-1);
   border-bottom: 1px solid var(--gg-color-border-subtle);
   color: var(--gg-color-text-secondary);
   font-size: var(--gg-text-meta);
@@ -487,6 +488,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The title can shrink. The date keeps its words and drops to the next line instead of being cut. */
+.workspace-status-updated {
+  flex: none;
+  max-width: 100%;
 }
 
 /* Work (side-panel.md P6): the open item fills the tab under its back row. */

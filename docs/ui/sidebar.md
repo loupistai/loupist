@@ -39,7 +39,9 @@ used for approvals and runs that finish while the window is hidden. While the ma
 Native menu events reach React through the typed bridge's `onMenuAction` subscription.
 Keyboard shortcuts come from one table (`src/app/shortcuts.ts`) that both the global
 handler and Settings › Keyboard read. ⌘K opens the command palette (also from the
-sidebar search and the "n more" row of Needs attention). The search field keeps its 52px height and the result list scrolls. Results are grouped into Needs
+sidebar search and the "n more" row of Needs attention). The narrow navigation
+sheet is not a modal, so the shortcut still opens the palette while that sheet
+is open. The search field keeps its 52px height and the result list scrolls. Results are grouped into Needs
 attention, Chats, What you follow (opens the asset page), Map names, Principles,
 Briefings and Actions, four rows per group. Map names, Principles and Briefings come from every available Loupist, at most eight (the active one first, then sidebar order), each read through its own `knowledge_map`, `principle_list` and `inbox_list` when the palette opens; a Loupist that has not answered within 2 s is left out of that opening. In each group the active Loupist's rows come first and every row names its Loupist; opening another Loupist's result selects that Loupist first.
 "/" focuses the composer when no text field has focus.

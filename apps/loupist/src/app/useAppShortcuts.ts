@@ -8,6 +8,10 @@ const typingTarget = (target: EventTarget | null) => target instanceof HTMLEleme
   && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
     || target.closest('[role="dialog"], [role="menu"], [role="listbox"]') !== null);
 
+/** A real modal is open. The narrow navigation sheet is a dialog too, and it must not swallow ⌘K. */
+const modalDialogOpen = () => [...document.querySelectorAll('[role="dialog"][data-state="open"]')]
+  .some((dialog) => dialog.getAttribute("data-sidebar") !== "sidebar");
+
 export function useAppShortcuts({ onSettings, onNewChat, onPalette, canCreateChat }: {
   onSettings: () => void;
   onNewChat: () => void;
@@ -22,7 +26,7 @@ export function useAppShortcuts({ onSettings, onNewChat, onPalette, canCreateCha
         if (composer) { event.preventDefault(); composer.focus(); }
         return;
       }
-      if (event.shiftKey || !(event.metaKey || event.ctrlKey) || document.querySelector('[role="dialog"][data-state="open"]')) return;
+      if (event.shiftKey || !(event.metaKey || event.ctrlKey) || modalDialogOpen()) return;
       const key = event.key.toLowerCase();
       if (key === GLOBAL_KEYS.settings) {
         event.preventDefault();
