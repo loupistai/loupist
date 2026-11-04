@@ -3,7 +3,7 @@
 The header selects a Loupist. The sidebar selects a Chat, opens Search, and lists Needs attention. Settings replaces it. The command palette, exports and print live here too.
 On macOS the window controls sit in a full-width titlebar, 44px tall so its contents share the traffic lights' vertical center (those buttons are placed at y 22). The sidebar and its divider start below that bar.
 The shell owns the viewport height. Its body uses the space remaining below the titlebar, and the desktop sidebar is positioned inside that body; it does not subtract a separate titlebar-height estimate from the viewport. The frame, sidebar footer and chat composer stay inside the body when the bar grows. Header sizing has one rule rather than competing fixed heights at each breakpoint.
-The right end of the header selects Lens, World, or Chat materials, followed by top/bottom and left/right split controls.
+The right end of the header selects Lens, World, or Chat materials, followed by top/bottom and left/right split controls. At 1100px and wider, the space before those controls shows the trading status of the markets the user follows (at most two, plus a count of the rest). It hides on a narrower window.
 The application sidebar's Settings action and the Settings sidebar's Back action share one footer style:
 a 32px button with 8px padding and a top divider (49px total), with the same icon and label alignment,
 text color, corner radius and hover state. The footer does not shrink when the navigation scrolls.

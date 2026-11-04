@@ -352,8 +352,9 @@ html[data-desktop-platform="macos"] .app-shell {
 .shell-tabs button { white-space: nowrap; padding: 0 var(--gg-space-4); border-radius: var(--gg-radius-xs); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); }
 .shell-tabs button[aria-selected="true"] { color: var(--gg-color-text-primary); background: var(--gg-color-bg-raised); box-shadow: var(--gg-shadow-xs); font-weight: var(--gg-weight-semibold); }
 .loupist-header-tools { margin-left: auto; gap: var(--gg-space-1); }
-/* Market status: a quiet status line right of the tabs; it yields to the tabs and tools when space runs out. */
-.market-status { display: flex; align-items: center; gap: var(--gg-space-2); min-width: 0; margin-left: var(--gg-space-3); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); white-space: nowrap; overflow: hidden; }
+/* Market status sits in the free space before the panel tools and yields when that space runs out. */
+.header-market-slot { display: flex; flex: 1 1 auto; align-items: center; justify-content: flex-end; min-width: 0; }
+.market-status { display: flex; align-items: center; justify-content: flex-end; gap: var(--gg-space-2); min-width: 0; max-width: 100%; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); white-space: nowrap; overflow: hidden; }
 .market-status > span { overflow: hidden; text-overflow: ellipsis; }
 .market-status > span + span::before { content: "·"; margin-right: var(--gg-space-2); color: var(--gg-color-text-tertiary); }
 .market-status > [data-state="open"], .market-status > [data-state="always"] { color: var(--gg-color-text-primary); }
@@ -420,7 +421,7 @@ html[data-desktop-platform="macos"] .app-shell {
   white-space: nowrap;
 }
 
-.header-workspace-controls { display:flex; flex:none; align-items:center; gap:var(--gg-space-1); margin-inline-start:auto; }
+.header-workspace-controls { display:flex; flex:none; align-items:center; gap:var(--gg-space-1); }
 .header-workspace-controls .header-panel-toggle { max-width:180px; gap:var(--gg-space-2); }
 .header-workspace-controls .header-panel-toggle > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .header-workspace-divider { width:1px; height:18px; margin-inline:var(--gg-space-1); background:var(--gg-color-border-subtle); }

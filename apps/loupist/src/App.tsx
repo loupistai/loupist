@@ -2,6 +2,7 @@ import { attachmentDataUrl } from "./components/ai-elements/prompt-input";
 import { chatTitle as displayThreadTitle } from "./app/chatTitle";
 import { LaunchNotice } from "./components/onboarding/Notice";
 import { useInboxCounts } from "./components/briefings/useInboxCounts";
+import { useFollowedMarkets } from "./app/useFollowedMarkets";
 import { LearningToasts, useLearningNotifications } from "./components/map/LearningToast";
 import { Onboarding } from "./components/onboarding/Onboarding";
 import i18n, { Trans, useTranslation } from "@/i18n";
@@ -311,6 +312,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
   );
 
   const selectedLoupistId = selectedLoupist?.id ?? null;
+  const followedMarkets = useFollowedMarkets(bridge, selectedLoupistId);
   const scheduled = useScheduledRuns(bridge, selectedLoupistId, chat);
   const memory = useKnowledgeNavigation(selectedLoupistId, workspace.open && workspace.kind === "world");
   const lens = useKnowledgeNavigation(selectedLoupistId, workspace.open && workspace.kind === "lens");
@@ -882,6 +884,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
             loupist={selectedLoupist}
             onTabChange={(next) => { setLoupistSettingsOpen(false); setMemoryPage(null); setAssetPage(null); setTab(next); }}
             onLoupistSettings={() => { if (selectedLoupistId) void openLoupistSettingsFor(selectedLoupistId); }}
+            markets={followedMarkets}
             workspaceKind={workspace.kind}
             workspacePlacement={workspace.placement}
             onWorkspaceKind={kind => { setLoupistSettingsOpen(false); setAssetPage(null); setTab("chat"); workspace.selectKind(kind, effectiveChatKey ?? undefined); }}
@@ -937,7 +940,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
             </section>
           ) : null}
 
-          {loupist.mutationError && !dialogs.createLoupistOpen && !dialogs.reconnectLoupistOpen && !loupistSettingsOpen ? <section className="app-selection-error" role="alert"><p>{loupist.mutationError}</p><button onClick={() => loupist.setMutationError(null)}>{i18n.t("app:app.dismiss")}</button></section> : null}
+          {loupist.mutationError && !dialogs.createLoupistOpen && !dialogs.reconnectLoupistOpen && !loupistSettingsOpen ? <section className="app-selection-error" role="alert"><p>{loupist.mutationError}</p><button type="button" className="ghost-button" onClick={() => loupist.setMutationError(null)}>{i18n.t("app:app.dismiss")}</button></section> : null}
 
           {selectedLoupist?.availability.status === "workspace_unavailable" && (tab === "chat" || tab === "map" || tab === "lens") ? (
             <section className="app-selection-error" role="status" aria-label={i18n.t("app:app.workspaceFolderUnavailable")}>
@@ -946,7 +949,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
             </section>
           ) : null}
 
-          <ChatMapProvider bridge={bridge} loupistId={selectedLoupist?.id ?? ""} chatId={workspaceThreadId ?? ""} refreshKey={knowledgeRefresh} messages={threads.find(thread => thread.id === workspaceThreadId)?.messages ?? []} onOpen={() => workspace.selectKind("materials", effectiveChatKey ?? undefined)}>
+          <ChatMapProvider bridge={bridge} loupistId={selectedLoupist?.id ?? ""} chatId={workspaceThreadId ?? ""} refreshKey={knowledgeRefresh} messages={threads.find(thread => thread.id === workspaceThreadId)?.messages ?? []} onOpen={() => workspace.selectKind("materials", effectiveChatKey ?? undefined)} onFirstNames={() => selectedLoupist && workspaceThreadId ? workspace.revealMap(selectedLoupist.id, workspaceThreadId) : "none"}>
           <OpenEvidenceProvider session={workspaceSession} open={tab === "chat" && workspace.open && workspace.kind === "materials"}>
           <div
             className={`app-stage artifact-placement-${workspace.placement}`}
@@ -1004,7 +1007,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                   <div
                     className="app-panel"
                     id="main-panel-settings"
-                    aria-labelledby="main-tab-settings"
+                    aria-label={i18n.t("app:shell.settings")}
                   >
                     <SettingsView
                       bridge={bridge}

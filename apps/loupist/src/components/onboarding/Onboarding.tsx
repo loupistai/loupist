@@ -42,6 +42,6 @@ export function Onboarding({ bridge, catalog, onCatalogChange, onCreate, onCompl
       onConnected={name => { setConnected(name); void finish(); }} onWaitingChange={() => {}} />
       {connected && error && <Button disabled={saving} onClick={() => void finish()}>{t("wizard.start")}</Button>}
     </section>}
-    {error && <p role="alert">{error}</p>}
+    {error && <p className="onboarding-error" role="alert">{error}</p>}
   </div></main>;
 }

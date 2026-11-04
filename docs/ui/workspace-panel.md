@@ -4,7 +4,7 @@ The header's right controls are **Panel kind | Split top and bottom | Split left
 
 A new profile starts with the panel closed and Chat materials selected. A saved layout restores through Rust's bounded workspace UI state. A header split choice applies to all content kinds and is stored there with the panel dimensions; pressing the active split closes the panel, and choosing a kind opens it again. Narrow windows retain the existing focus-trapped sheet instead of forcing a split that cannot fit. Legacy Map/Lens navigation, command-palette actions, ⌘2/⌘3 and knowledge deep links resolve to World/Lens in this same panel. The former saved Map/Lens last-view preference migrates to the panel once. Panel-kind selection itself is session state, while the retained readers stay per-chat bounded typed references.
 
-The panel lists charts, tables and documents for the open Loupist and restores only bounded references. It does not open itself for an empty state or by moving keyboard focus.
+The panel lists charts, tables and documents for the open Loupist and restores only bounded references. It does not open itself for an empty state or by moving keyboard focus. The first names a chat saves do open the Map tab beside that chat when the window is at least 1280px wide and the panel is not the narrow sheet. If the user closed the panel in that chat, it stays closed. If they are already reading another tab, the Map tab is marked instead of taking over.
 
 Readers preserve selection, focus and scroll through navigation. Workspace panel
 preferences store bounded references, not reader bodies; restoration repeats

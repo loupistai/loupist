@@ -12,7 +12,7 @@ import type { WatchlistEntry } from "../../contracts/userContext";
 import { useAssetPageOpener } from "../assets/assetOpener";
 
 const t = i18n.getFixedT(null, "app");
-/** Each group shows this many rows before "More in {group}". */
+/** Each group shows this many rows before "More from {group}". */
 const ROWS_PER_GROUP = 4;
 const RECENT_CHATS = 3;
 /** Names, principles and briefings are read from at most this many Loupists, the active one first. */
@@ -164,7 +164,7 @@ export function CommandPalette({ open, onOpenChange, bridge, loupists, selectedL
     return all;
   }, [query, attention, loupists, threadsByLoupist, selectedLoupistId, loaded, actions, focusGroup, instance.language, onOpenAttention, onOpenThread, onOpenMapNode, onOpenPrinciple, onOpenBriefing, openAsset]);
 
-  // Visible rows per group, with a "More in {group}" row when cut.
+  // Visible rows per group, with a "More from {group}" row when cut.
   const sections = GROUP_ORDER.flatMap((group) => {
     const inGroup = rows.filter((row) => row.group === group);
     if (!inGroup.length) return [];

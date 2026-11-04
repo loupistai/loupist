@@ -222,7 +222,7 @@ export function LensWorkspace({ markdownFirst = false, children, bridge, catalog
         <header className="knowledge-read-head lens-read-head"><div><div className="lens-document-meta"><span className="lens-eyebrow">{t("map.lensWiki")}</span><span>{perspective ? t("lensWorkspace.defaultPerspective") : principle ? t("map.kind.principle") : t("lensWorkspace.researchMethod")}</span></div><h2 ref={readerRef} tabIndex={-1}>{displayTitle}</h2>
           <SharedOrigin bridge={bridge} loupistId={location.loupistId} subjectId={server.recordId} onAbout={() => onOpen({ loupistId: location.loupistId, surface: "lens", recordId: SHARED_SECTION_ITEM })} /></div></header>
         {markdownFirst ? <div className="lens-format-picker">
-          <Button variant="ghost" size="sm" aria-pressed={showMarkdown} onClick={() => setShowMarkdown(true)}>Markdown</Button>
+          <Button variant="ghost" size="sm" aria-pressed={showMarkdown} onClick={() => setShowMarkdown(true)}>{t("lensWorkspace.markdownSource")}</Button>
           <Button variant="ghost" size="sm" aria-pressed={!showMarkdown} onClick={() => setShowMarkdown(false)}>{t("lensWorkspace.formatted")}</Button>
         </div> : <LensMarkdownSource key={`markdown:${scope}`} markdown={server.document.markdown} sections={sections} />}
         {showMarkdown && <div className="lens-markdown-source"><pre>{markdownText(shownDocument.markdown, sections)}</pre></div>}

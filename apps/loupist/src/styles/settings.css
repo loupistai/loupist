@@ -23,7 +23,7 @@
 .settings-search { display: flex; align-items: center; gap: var(--gg-space-2); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-sm); padding: 9px 10px; background: var(--gg-color-bg-app); }
 .settings-search > svg, .settings-search button svg { width: 15px; height: 15px; color: var(--gg-color-text-secondary); }
 .settings-search input { min-width: 0; width: 100%; border: 0; outline: none; background: transparent; font-size: var(--gg-text-control); }
-.settings-search button { flex: 0 0 auto; display: grid; place-items: center; border: 0; background: transparent; cursor: pointer; }
+.settings-search button { flex: 0 0 auto; display: grid; place-items: center; width: var(--gg-size-control-sm); height: var(--gg-size-control-sm); border: 0; border-radius: var(--gg-radius-sm); background: transparent; cursor: pointer; }
 .settings-search:has(input:focus-visible) { outline: 2px solid var(--gg-color-focus); outline-offset: -2px; border-color: transparent; }
 .settings-search input:focus-visible { outline: none !important; }
 @media (forced-colors: active) {
