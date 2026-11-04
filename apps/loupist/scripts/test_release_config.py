@@ -132,8 +132,13 @@ class MacosBundleVersionTest(ReleaseScriptTest):
         metadata = self.root / "metadata"
         metadata.mkdir()
 
-        def allocate(run_number: str):
-            arguments = ["--release-metadata-directory", metadata]
+        def allocate(run_number: str, attempt: str = "1"):
+            arguments = [
+                "--release-metadata-directory",
+                metadata,
+                "--run-attempt",
+                attempt,
+            ]
             return run(
                 "next-macos-bundle-version.py", "--run-number", run_number, *arguments
             )
@@ -143,9 +148,11 @@ class MacosBundleVersionTest(ReleaseScriptTest):
             (metadata / name / "RELEASE-METADATA.json").write_text(json.dumps(value))
 
         self.assertEqual(allocate("17").stdout, "17\n")
+        self.assertEqual(allocate("17", "2").stdout, "18\n")
         retain("older-rc", {"schema_version": 1, "macos_bundle_version": "17"})
         retain("newer-stable", {"schema_version": 1, "macos_bundle_version": "53"})
         self.assertEqual(allocate("42").stdout, "54\n")
+        self.assertEqual(allocate("42", "3").stdout, "54\n")
         for index, invalid in enumerate(
             (
                 {"schema_version": 2, "macos_bundle_version": "1"},

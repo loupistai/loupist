@@ -64,7 +64,8 @@ arrives. Both `submitted` and `streaming` are active in the registry. The Stop
 regression tests exercise each phase and require cancellation of the exact
 native run, including retry after admission initially returns no stream.
 
-PR #2 is deferred: it updates Pi AI/coding-agent to 1.4.0 while keeping
+PR #2 was closed, and Dependabot no longer proposes `@earendil-works/*` version
+updates. It updated Pi AI/coding-agent to 1.4.0 while keeping
 agent-core/telemetry and the signed standalone sidecar at 1.0.1. Its CI evidence
 shows a missing `NOOP_TELEMETRY_METRICS` export and security-pin failures. Do not
 merge that partial upgrade or relax its tests. A Pi upgrade must update the

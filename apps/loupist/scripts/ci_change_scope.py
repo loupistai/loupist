@@ -31,6 +31,9 @@ FULL_PATHS = {
     f"{APP}scripts/verify.sh",
     f"{APP}scripts/tauri.mjs",
 }
+WORKFLOWS_OUTSIDE_CI = {
+    ".github/workflows/windows-compatibility.yml",
+}
 
 
 def normalize(path: str) -> str:
@@ -42,6 +45,8 @@ def normalize(path: str) -> str:
 
 def path_scopes(path: str) -> set[str]:
     """Keep exceptions narrow: Markdown Skills and embedded fixtures are code."""
+    if path in WORKFLOWS_OUTSIDE_CI:
+        return set()
     if path in FULL_PATHS or path.startswith(
         (".github/workflows/", ".github/actions/")
     ):

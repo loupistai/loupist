@@ -50,12 +50,14 @@ def retained_counters(metadata_directory: Path) -> list[int]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-number", required=True)
+    parser.add_argument("--run-attempt", default="1")
     parser.add_argument("--release-metadata-directory", required=True, type=Path)
     arguments = parser.parse_args()
 
     run_counter = positive_counter(arguments.run_number, "GitHub workflow run number")
+    attempt = positive_counter(arguments.run_attempt, "GitHub workflow run attempt")
     previous = max(retained_counters(arguments.release_metadata_directory), default=0)
-    print(max(run_counter, previous + 1))
+    print(max(run_counter + attempt - 1, previous + 1))
     return 0
 
 

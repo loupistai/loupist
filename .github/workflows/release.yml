@@ -96,6 +96,7 @@ jobs:
           MACOS_BUNDLE_VERSION="$(
             python3 apps/loupist/scripts/next-macos-bundle-version.py \
               --run-number "$GITHUB_RUN_NUMBER" \
+              --run-attempt "$GITHUB_RUN_ATTEMPT" \
               --release-metadata-directory "$METADATA_DIRECTORY"
           )"
           [[ "$MACOS_BUNDLE_VERSION" =~ ^[1-9][0-9]*$ ]]
