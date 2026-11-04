@@ -213,6 +213,7 @@ async function mapStats() {
 async function settledMapStats() {
   await openMainTab(browser, "map");
   await closeMapReader();
+  await closeLibrary();
   let previous = await mapStats();
   for (let read = 0; read < 10; read += 1) {
     await browser.pause(1_000);
@@ -232,17 +233,26 @@ async function closeMapReader() {
   });
 }
 
+// Below a 720px map width the Library covers the canvas and its status line.
+async function closeLibrary() {
+  const selector = ".map-view aside.map-library";
+  if (!await browser.$(selector).isDisplayed().catch(() => false)) return;
+  await clickControl(browser, `${selector} > header button[aria-label="Close Library"]`);
+  await browser.waitUntil(async () => !await browser.$(selector).isDisplayed().catch(() => false), {
+    timeout: 10_000, timeoutMsg: "The Map Library did not close",
+  });
+}
+
 async function openLibrary(tabLabel) {
   await openMainTab(browser, "map");
   await closeMapReader();
+  await closeLibrary();
   await mapStats();
-  if (!await browser.$(".map-view aside.map-library").isDisplayed().catch(() => false)) {
-    const direct = await browser.$(".map-view button[data-map-library]");
-    if (await direct.isDisplayed().catch(() => false)) await direct.click();
-    else {
-      await clickControl(browser, ".map-view [data-map-more]");
-      await (await displayed('[role="menuitemcheckbox"][data-map-library]')).click();
-    }
+  const direct = await browser.$(".map-view button[data-map-library]");
+  if (await direct.isDisplayed().catch(() => false)) await direct.click();
+  else {
+    await clickControl(browser, ".map-view [data-map-more]");
+    await (await displayed('[role="menuitemcheckbox"][data-map-library]')).click();
   }
   const library = await displayed(".map-view aside.map-library");
   const tab = await childWithText(library, '[role="tab"]', tabLabel);
