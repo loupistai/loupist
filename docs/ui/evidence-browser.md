@@ -44,7 +44,7 @@ a click opens the page when the citation is a retrieved website with a credentia
 press and hold opens the card as a dialog that stays until a press elsewhere or Esc, and
 a tap still opens that same citation. The number stays inline; the press area is the 28px control size. A number chip ([what it shows](../analysis/surfaces.md#where-each-item-appears))
 is a button named by its value and source ("8.4 percent, calculated. Show the
-math"), with a status other than matched in its description. Its popover is a
+math"), with a status other than matched in its description. The figure stays in the line; its press area is 28px tall. Its popover is a
 non-modal dialog labelled by its title, whether it opened after 150 ms of hover (not
 in windows 720 px wide or narrower), on keyboard focus or on click. A click pins it
 and moves focus to its first action; an unpinned popover closes 120 ms after the

@@ -22,6 +22,19 @@
   transition: background-color var(--gg-motion-fast) var(--gg-ease-out), text-decoration-color var(--gg-motion-fast) var(--gg-ease-out);
 }
 .number-chip:hover, .number-chip[aria-expanded="true"] { background: var(--gg-color-bg-hover); }
+/* The number stays in the line. Its press area is the 28px control size, because a narrow window opens the card on tap only. */
+@media screen {
+  button.number-chip { position: relative; }
+  button.number-chip::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, var(--gg-size-control-sm));
+    height: var(--gg-size-control-sm);
+    transform: translate(-50%, -50%);
+  }
+}
 .number-chip:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 1px; }
 .number-chip[data-status="differs"] { text-decoration-style: wavy; text-decoration-color: var(--gg-color-warning); }
 .number-chip[data-status="pending"] { cursor: text; text-decoration-color: var(--gg-color-border-subtle); }
