@@ -13,7 +13,8 @@ limitations. Discovery is not a read of those fields.
 The **Lens** panel opens Research principles for the current Loupist alongside
 the Chat. It lists user principles, the standing perspective and learned methods;
 the World Library contains Sources and Notes only. Opening a method renders its
-saved document, links and headings. View Markdown reveals the saved body,
+saved document, links and headings. In the side panel the document scrolls on its
+own, and Outline and links stays at the top of that document. View Markdown reveals the saved body,
 including `lens:` links, followed by its populated fields under section headings.
 For a user principle these are the statement, why and example. Rust
 versions these records in local Memory. `LensWorkspace` is a document reader, with applicability,
