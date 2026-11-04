@@ -91,6 +91,7 @@ pub enum ProcessLeaseError {
     UnknownProcessGroup,
     #[error("leased process group did not stop")]
     StopTimeout,
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     #[error("process identity is unsupported on this platform")]
     UnsupportedPlatform,
 }
@@ -793,17 +794,22 @@ fn read_record(descriptor: OwnedFd) -> Result<ProcessLeaseRecord, ProcessLeaseEr
 
 #[cfg(unix)]
 fn validate_record(record: &ProcessLeaseRecord, file_nonce: &str) -> Result<(), ProcessLeaseError> {
-    let expected_source = if cfg!(target_os = "macos") {
-        "macos_proc_bsdinfo_v1"
-    } else {
-        return Err(ProcessLeaseError::UnsupportedPlatform);
-    };
+    #[cfg(target_os = "macos")]
+    let valid_source = record.start.source == "macos_proc_bsdinfo_v1";
+    #[cfg(target_os = "linux")]
+    let valid_source = record
+        .start
+        .source
+        .strip_prefix("linux_proc_stat_v1:")
+        .is_some_and(|boot| Uuid::parse_str(boot).is_ok_and(|id| id.to_string() == boot));
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    let valid_source = return Err(ProcessLeaseError::UnsupportedPlatform);
     if record.schema != LEASE_SCHEMA
         || record.nonce != file_nonce
         || !is_nonce(file_nonce)
         || record.leader_pid <= 1
         || record.process_group_id != record.leader_pid
-        || record.start.source != expected_source
+        || !valid_source
         || record.executable.device == 0
         || record.executable.inode == 0
         || !is_sha256(&record.executable.path_sha256)
@@ -970,7 +976,77 @@ fn platform_process_group_state(process_group_id: i32) -> Result<GroupState, Pro
     macos_process_group_state(process_group_id)
 }
 
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
+fn platform_process_group_state(process_group_id: i32) -> Result<GroupState, ProcessLeaseError> {
+    // A filtered procfs could hide a live descendant while exposing only its
+    // zombie parent. Such a mount cannot establish that a group has exited.
+    require_visible_linux_procfs()?;
+    let mut members = 0_usize;
+    let mut live = false;
+    for entry in fs::read_dir("/proc")? {
+        let entry = entry?;
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse::<i32>().ok())
+        else {
+            continue;
+        };
+        let Some(info) = linux_basic_process(pid)? else {
+            continue;
+        };
+        if info.process_group_id != process_group_id {
+            continue;
+        }
+        members += 1;
+        if members >= MAX_GROUP_MEMBERS {
+            return Err(ProcessLeaseError::LimitExceeded);
+        }
+        live |= !info.zombie;
+    }
+    match (members, live) {
+        (_, true) => Ok(GroupState::Live),
+        (0, false) if !kernel_process_group_exists(process_group_id)? => Ok(GroupState::Gone),
+        (0, false) => Err(ProcessLeaseError::UnknownProcessGroup),
+        (_, false) => Ok(GroupState::ZombiesOnly),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn require_visible_linux_procfs() -> Result<(), ProcessLeaseError> {
+    // A procfs inherited from an ancestor PID namespace describes different
+    // PIDs than kill(2); it cannot authorize this process's group signals.
+    if fs::read_link("/proc/self")? != std::process::id().to_string() {
+        return Err(ProcessLeaseError::UnknownProcessGroup);
+    }
+    let mounts = fs::read_to_string("/proc/self/mountinfo")?;
+    if linux_procfs_mount_visible(&mounts) {
+        Ok(())
+    } else {
+        Err(ProcessLeaseError::UnknownProcessGroup)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_procfs_mount_visible(mounts: &str) -> bool {
+    mounts.lines().any(|line| {
+        let Some((mount, filesystem)) = line.split_once(" - ") else {
+            return false;
+        };
+        let mut fields = filesystem.split_whitespace();
+        mount.split_whitespace().nth(4) == Some("/proc")
+            && fields.next() == Some("proc")
+            && fields.nth(1).is_some_and(|options| {
+                options.split(',').all(|option| {
+                    !option.starts_with("hidepid=")
+                        || option == "hidepid=0"
+                        || option == "hidepid=off"
+                })
+            })
+    })
+}
+
+#[cfg(all(unix, not(any(target_os = "macos", target_os = "linux"))))]
 fn platform_process_group_state(_process_group_id: i32) -> Result<GroupState, ProcessLeaseError> {
     Err(ProcessLeaseError::UnsupportedPlatform)
 }
@@ -1145,7 +1221,147 @@ fn query_process(pid: i32) -> Result<Option<ObservedProcess>, ProcessLeaseError>
     }))
 }
 
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
+#[derive(Debug, Eq, PartialEq)]
+struct LinuxBasicProcess {
+    process_group_id: i32,
+    start_ticks: u64,
+    zombie: bool,
+}
+
+#[cfg(target_os = "linux")]
+fn linux_basic_process(pid: i32) -> Result<Option<LinuxBasicProcess>, ProcessLeaseError> {
+    let file = match fs::File::open(format!("/proc/{pid}/stat")) {
+        Ok(file) => file,
+        Err(error) if linux_process_disappeared(&error) => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    read_linux_process_stat(pid, file)
+}
+
+#[cfg(target_os = "linux")]
+fn read_linux_process_stat(
+    pid: i32,
+    mut file: fs::File,
+) -> Result<Option<LinuxBasicProcess>, ProcessLeaseError> {
+    let mut bytes = Vec::new();
+    match (&mut file)
+        .take(MAX_LEASE_BYTES + 1)
+        .read_to_end(&mut bytes)
+    {
+        Ok(_) => {}
+        // procfs can return ESRCH after a successful open when another owner
+        // reaps the process. An unrelated exit must not abort a group scan.
+        Err(error) if linux_process_disappeared(&error) => return Ok(None),
+        Err(error) => return Err(error.into()),
+    }
+    if bytes.len() > MAX_LEASE_BYTES as usize {
+        return Err(ProcessLeaseError::LimitExceeded);
+    }
+    parse_linux_process_stat(pid, &bytes).map(Some)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_process_disappeared(error: &io::Error) -> bool {
+    matches!(error.raw_os_error(), Some(libc::ENOENT | libc::ESRCH))
+}
+
+#[cfg(target_os = "linux")]
+fn parse_linux_process_stat(
+    pid: i32,
+    bytes: &[u8],
+) -> Result<LinuxBasicProcess, ProcessLeaseError> {
+    // comm (field 2) may contain whitespace, newlines, ')' and non-UTF-8 bytes.
+    // Only the numeric/status fields after its final ')' are ASCII.
+    let end = bytes
+        .iter()
+        .rposition(|byte| *byte == b')')
+        .ok_or(ProcessLeaseError::IdentityMismatch)?;
+    let start = bytes
+        .iter()
+        .position(|byte| *byte == b'(')
+        .ok_or(ProcessLeaseError::IdentityMismatch)?;
+    let found_pid = std::str::from_utf8(&bytes[..start])
+        .ok()
+        .and_then(|value| value.trim().parse::<i32>().ok());
+    let fields =
+        std::str::from_utf8(&bytes[end + 1..]).map_err(|_| ProcessLeaseError::IdentityMismatch)?;
+    let fields: Vec<_> = fields.split_ascii_whitespace().collect();
+    if found_pid != Some(pid) || end < start || fields.len() < 20 || fields[0].len() != 1 {
+        return Err(ProcessLeaseError::IdentityMismatch);
+    }
+    let process_group_id = fields[2]
+        .parse()
+        .map_err(|_| ProcessLeaseError::IdentityMismatch)?;
+    let start_ticks = fields[19]
+        .parse()
+        .map_err(|_| ProcessLeaseError::IdentityMismatch)?;
+    Ok(LinuxBasicProcess {
+        process_group_id,
+        start_ticks,
+        zombie: matches!(fields[0], "Z" | "X" | "x"),
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn query_process(pid: i32) -> Result<Option<ObservedProcess>, ProcessLeaseError> {
+    require_visible_linux_procfs()?;
+    let Some(before) = linux_basic_process(pid)? else {
+        return Ok(None);
+    };
+    // Zombies have no executable image. Their stat entry is liveness evidence
+    // only; it must never authorize signaling a group with live descendants.
+    if before.zombie {
+        return Ok(None);
+    }
+    let executable = PathBuf::from(format!("/proc/{pid}/exe"));
+    let path = match fs::read_link(&executable) {
+        Ok(path) => path,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return if linux_basic_process(pid)?.is_none() {
+                Ok(None)
+            } else {
+                Err(ProcessLeaseError::IdentityMismatch)
+            };
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let metadata = fs::metadata(&executable)?;
+    let boot_id = fs::read_to_string("/proc/sys/kernel/random/boot_id")?;
+    let boot_id =
+        Uuid::parse_str(boot_id.trim()).map_err(|_| ProcessLeaseError::IdentityMismatch)?;
+    let Some(after) = linux_basic_process(pid)? else {
+        return Ok(None);
+    };
+    let after_metadata = fs::metadata(&executable)?;
+    if before != after
+        || !path.is_absolute()
+        || path != fs::read_link(&executable)?
+        || metadata.dev() != after_metadata.dev()
+        || metadata.ino() != after_metadata.ino()
+    {
+        return Err(ProcessLeaseError::IdentityMismatch);
+    }
+    Ok(Some(ObservedProcess {
+        identity: ProcessIdentity {
+            process_group_id: before.process_group_id,
+            start: StartIdentity {
+                // Boot identity prevents a PID/start-tick match after reboot.
+                source: format!("linux_proc_stat_v1:{boot_id}"),
+                primary: before.start_ticks,
+                secondary: 0,
+            },
+            executable: ExecutableIdentity {
+                device: metadata.dev(),
+                inode: metadata.ino(),
+                path_sha256: hash_path(&path),
+            },
+        },
+        zombie: false,
+    }))
+}
+
+#[cfg(all(unix, not(any(target_os = "macos", target_os = "linux"))))]
 fn query_process(_pid: i32) -> Result<Option<ObservedProcess>, ProcessLeaseError> {
     Err(ProcessLeaseError::UnsupportedPlatform)
 }

@@ -73,6 +73,73 @@ dependencies; it does not claim verification.
 
 Project guidance follows the checked-out revision. Setup only installs dependencies.
 
+### Linux cloud development
+
+Linux can run the React preview, Node/Python contracts and the same Rust source
+gate as macOS. Rust tests use the real persistence, Memory and process ownership
+code without opening a window. The crate still links Tauri, so install its native
+development libraries even on a host without a display.
+
+Treat macOS and Linux as development hosts for shared code. Keep both source
+gates working when changing platform adapters or their callers. Select native
+validation separately from the host used to edit the code:
+
+| Surface | macOS | Linux |
+| --- | --- | --- |
+| Shared renderer, Node/Python and Rust source behavior | Normal source gate | Same source gate with native build libraries |
+| Fixed-state React appearance and layout | Browser preview | Browser preview |
+| WKWebView, Keychain, OS dialogs/input and release acceptance | Native macOS suites | Qualify these changes on macOS |
+
+Use [Which tool](../../apps/loupist/e2e/README.md#which-tool) to choose the
+observable surface. A preview uses fixtures; it cannot qualify real persistence
+or the native bridge. Rust source tests exercise the real backend independently.
+
+Use the Node LTS version pinned in root `.nvmrc`, Python 3.12 with `uv`, and
+CI's Rust 1.97.1 with `clippy` and `rustfmt`. On Debian/Ubuntu, install the host
+packages once, then use the normal locked setup and verification commands from
+the repository root:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends \
+  build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
+  libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev procps lsof
+sh apps/loupist/scripts/setup.sh
+scripts/verify.sh
+```
+
+If host package installation is unavailable and Docker is already available,
+run these steps inside a disposable Debian/Ubuntu development container with
+the pinned toolchains. Mount the checkout and install its locked npm and Python
+environments inside the container; do not reuse a host `.venv` or mutable build
+tree. Keep the normal container procfs mount and PID namespace for process
+ownership tests. In managed clouds, preserve the supplied network proxy and CA
+trust when building and running the container.
+
+The `rust` scope includes formatting, Clippy for normal and E2E builds, all-target
+tests and the applicable `eval-harness` contracts. Narrow a development run with
+`sh apps/loupist/scripts/check.sh rust`, or a filtered `cargo test` as described in
+[Tests](tests.md#tests). Linux process leases require procfs access to verify the
+boot, process start and executable identities; restricted or unverifiable owners
+are refused. These checks make no paid model calls and need no Mac sidecar staging.
+
+For interactive UI work, start Vite on the separate preview port:
+
+```sh
+npm --prefix apps/loupist run dev -- --port 1430
+```
+
+Open `http://localhost:1430/preview.html?scenario=chat-empty&theme=light&locale=ko`
+in the cloud host's browser. The preview uses the real React app and deterministic
+mock bridge data. For screenshot/layout checks, install Chrome or Chromium and
+set `CHROME_PATH` to its executable before running `preview:capture` or the web
+gate. See [UI review](ui-qa.md#desktop-design-system).
+
+CI runs Rust on Ubuntu and macOS; macOS also owns WKWebView/native interaction,
+Keychain, file chooser, packaging and signing verification. Linux development
+does not add a Linux release target. The Linux GTK dependency advisory remains
+documented in [Dependency security review](dependencies.md#dependency-security-review).
+
 ### Generated storage
 
 Development Rust profiles use `debug = "line-tables-only"`; full variable/type

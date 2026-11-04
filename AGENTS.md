@@ -16,6 +16,13 @@ project settings or JS extensions to obtain workspace support.
 
 ## Tests
 
+Develop and run source checks on both macOS and Linux using the
+[host setup and check commands](docs/dev/checks.md#linux-cloud-development).
+Keep shared code and its tests working on both hosts. macOS Apple Silicon remains
+the release target; native WKWebView, Keychain, OS input and release acceptance
+must be verified on macOS. A Linux source or browser-preview pass does not
+establish those native results.
+
 Run the narrowest observable behavior or security test. Reserve source scans for
 security invariants and release pins. For native work read
 [Which tool](apps/loupist/e2e/README.md#which-tool). `scripts/verify.sh` is the
