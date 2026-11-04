@@ -16,21 +16,23 @@ project settings or JS extensions to obtain workspace support.
 
 ## Tests
 
-Develop and run source checks on both macOS and Linux using the
-[host setup and check commands](docs/dev/checks.md#linux-cloud-development).
-Keep shared code and its tests working on both hosts. macOS Apple Silicon remains
-the release target; native WKWebView, Keychain, OS input and release acceptance
-must be verified on macOS. A Linux source or browser-preview pass does not
-establish those native results.
+Keep shared code and its tests working on macOS and Linux
+([host setup](docs/dev/checks.md#linux-cloud-development)). macOS Apple Silicon is
+the release target: verify WKWebView, Keychain, OS input and release acceptance on
+macOS. A Linux or browser-preview pass does not establish those native results.
 
 Run the narrowest observable behavior or security test. Reserve source scans for
 security invariants and release pins. For native work read
-[Which tool](apps/loupist/e2e/README.md#which-tool). Chrome design preview does not
-prove WKWebView layout: a `fieldset` with `display: grid` or `flex` collapses its
-legend to one character there and looks fine in Chrome. Measure those headings with
-`assertFormLegendsFit` in the macOS WebView
-([UI review](docs/dev/ui-qa.md#ui-review)). `scripts/verify.sh` is the
-handoff gate. Keep credentials private and generated schemas/build output untouched.
-Prefer deleting obsolete pre-1.0 paths. Commit, push or release only on request.
+[Which tool](apps/loupist/e2e/README.md#which-tool). Keep credentials private and
+generated schemas/build output untouched. Prefer deleting obsolete pre-1.0 paths.
+
+## Pull requests
+
+Locally, `scripts/verify.sh` is the handoff gate. In a cloud session, run
+`sh apps/loupist/scripts/check.sh <scope>` for each scope you changed; PR CI runs the
+Linux gate and macOS checks run after merge ([CI](docs/ci-cd.md#ci)). Commit, push
+or release only on request; a task that asks for a PR covers pushing its own branch.
+Name the branch `<tool>/<topic>`, sign off with `git commit -s`, target `main`, and
+list the checks you ran. Never push to `main` or create release tags.
 
 For cross-session work, leave a brief [task handoff](docs/dev/repository-guidance.md#task-handoff).

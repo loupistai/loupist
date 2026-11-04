@@ -29,6 +29,16 @@ class ChangeScopeTests(unittest.TestCase):
         cases = (
             (["README.md", "docs/ci-cd.md", "CHANGELOG.md"], set()),
             (["apps/loupist/e2e/README.md"], set()),
+            (
+                [
+                    ".cursor/environment.json",
+                    ".codex/environments/environment.toml",
+                    ".claude/settings.json",
+                    "scripts/cloud-setup.sh",
+                    "AGENTS.md",
+                ],
+                set(),
+            ),
             (["apps/loupist/src/App.tsx"], {"web", "native"}),
             (["apps/loupist/src/styles.css"], {"web", "native"}),
             (["apps/loupist/vite.config.ts"], {"web", "native"}),
