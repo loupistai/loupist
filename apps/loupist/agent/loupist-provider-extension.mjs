@@ -161,7 +161,7 @@ export async function liveOpenAIModels(ctx, send = globalThis.fetch) {
         if (done) break;
         byteLength += value.byteLength;
         if (byteLength > MAX_LIVE_MODELS_BYTES) {
-          await reader.cancel();
+          void reader.cancel().catch(() => {});
           return null;
         }
         chunks.push(value);

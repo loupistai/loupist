@@ -665,6 +665,25 @@ test("live ChatGPT model lists enforce the response byte limit while streaming",
     assert.equal(cancellations, 1);
   });
 
+  await t.test("falls back without waiting for cancellation to settle", async () => {
+    let cancelled = false;
+    const stream = new ReadableStream({
+      pull(controller) { controller.enqueue(new Uint8Array(maxBytes + 1)); },
+      cancel() { cancelled = true; return new Promise(() => {}); },
+    }, { highWaterMark: 0 });
+    let timer;
+    try {
+      const result = await Promise.race([
+        liveOpenAIModels(context, async () => new Response(stream)),
+        new Promise(resolve => { timer = setTimeout(() => resolve("pending"), 1000); }),
+      ]);
+      assert.equal(result, null);
+      assert.equal(cancelled, true);
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+
   await t.test("accepts exactly one MiB including split multibyte text", async () => {
     const body = JSON.stringify({ data: [{ id: "gpt-boundary", display_name: "한국" }] });
     const encoded = Buffer.from(body + " ".repeat(maxBytes - Buffer.byteLength(body)));
