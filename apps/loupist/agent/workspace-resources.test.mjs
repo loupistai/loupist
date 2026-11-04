@@ -6,6 +6,7 @@ import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { createAgentSession, DefaultResourceLoader, loadSkills, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxProvider, InMemoryCredentialStore } from "@earendil-works/pi-ai";
 
@@ -392,7 +393,7 @@ test("resource files and parent directories cannot redirect through symlinks", {
 
 test("every bundled Skill loads as a Pi Skill under its folder name", () => {
   // Pi parses frontmatter as YAML: an unquoted ": " in a description drops the Skill.
-  const bundled = join(dirname(new URL(import.meta.url).pathname), "skills");
+  const bundled = join(dirname(fileURLToPath(import.meta.url)), "skills");
   const folders = fs.readdirSync(bundled, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && existsSync(join(bundled, entry.name, "SKILL.md")))
     .map((entry) => entry.name);
