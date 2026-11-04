@@ -1667,8 +1667,9 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 }
 .chat-artifact-block-actions { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--gg-space-1); min-width: 0; margin-left: auto; }
 .chat-artifact-block-error { color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
-/* Short windows keep room for the composer and the answer around the card. */
-.chat-artifact-block-body { position: relative; min-width: 0; height: min(240px, 40vh); min-height: 160px; }
+/* Short windows keep room for the composer and the answer around the card.
+   The plot gives up a header so pinning the thread to the bottom does not slice the title. */
+.chat-artifact-block-body { position: relative; min-width: 0; height: min(240px, calc(40vh - 32px)); min-height: 160px; }
 .chat-artifact-block[data-expanded] .chat-artifact-block-body { height: min(480px, 70vh); }
 .chat-artifact-block-state {
   position: absolute;
