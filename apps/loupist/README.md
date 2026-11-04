@@ -10,6 +10,9 @@ This directory contains the Loupist React and Tauri desktop product, its agent r
 
 ## Development
 
+For Linux cloud development, source tests and browser previews, follow
+[Linux cloud development](../../docs/dev/checks.md#linux-cloud-development).
+
 ```sh
 npm ci
 npm run tauri dev

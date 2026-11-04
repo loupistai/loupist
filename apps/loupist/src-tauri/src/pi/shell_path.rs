@@ -528,30 +528,32 @@ mod tests {
         // A profile that leaves a process holding stdout neither blocks the
         // probe nor outlives it.
         let holder_directory = tempfile::tempdir().unwrap();
-        let pid_file = holder_directory.path().join("holder.pid");
+        let group_file = holder_directory.path().join("holder.group");
         let holder = stand_in_shell(
             holder_directory.path(),
             "dash",
             &format!(
-                "sleep 30 &\necho $! > '{}'\nexec /bin/sh -c \"$4\"",
-                pid_file.display()
+                "sleep 30 &\necho $$ > '{}'\nexec /bin/sh -c \"$4\"",
+                group_file.display()
             ),
         );
         let started = std::time::Instant::now();
         assert!(resolve(&holder, &environment, Duration::from_secs(10)).is_ok());
         assert!(started.elapsed() < Duration::from_secs(5));
-        let holder_pid: i32 = std::fs::read_to_string(&pid_file)
+        let holder_group: i32 = std::fs::read_to_string(&group_file)
             .unwrap()
             .trim()
             .parse()
             .unwrap();
         let stopped = (0..200).any(|_| {
-            // SAFETY: signal 0 only checks whether the process exists.
-            let alive = unsafe { libc::kill(holder_pid, 0) } == 0;
-            if alive {
+            // Container PID 1 may leave an exited orphan unreaped. Its PID
+            // still exists, but only a live group member can keep running or
+            // hold the probe's stdout open.
+            let stopped = crate::process_lease::process_group_has_exited(holder_group).unwrap();
+            if !stopped {
                 std::thread::sleep(Duration::from_millis(10));
             }
-            !alive
+            stopped
         });
         assert!(stopped, "the profile's background process survived");
 

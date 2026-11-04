@@ -3071,8 +3071,7 @@ pub fn deep_link_dismiss() {
 }
 
 /// Validates each arriving `loupist://` URL in Rust and tells the renderer.
-// e2e builds do not register the deep-link plugin, so nothing calls this there.
-#[cfg_attr(feature = "e2e", allow(dead_code))]
+#[cfg(all(any(target_os = "macos", windows), not(feature = "e2e")))]
 pub(crate) fn deliver_links(app: &tauri::AppHandle, urls: impl IntoIterator<Item = String>) {
     use tauri::Emitter;
     for url in urls {
