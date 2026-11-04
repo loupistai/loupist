@@ -118,8 +118,11 @@ Source jobs use the same bounded check runner as local development, with a
 a 60-minute job limit. Their receipts and logs upload on
 success or failure and expire after seven days. The web gate includes agent and
 World evaluator regression tests; Rust also checks the `eval-harness` contracts.
-On Actions the web job gives Vitest every runner core; local runs use half so the
-cargo lane can share the machine.
+The web job runs as two parallel legs that split the Vitest files with
+`check.sh web --shard 1/2` and `--shard 2/2`. The first leg also runs every other
+web step; the second runs only the installs and its renderer-test shard. Raising
+Vitest workers does not help on the 4-vCPU runner: with the same 1593 tests, four
+workers took 482 s and two took 464 s.
 
 Linux Rust runs as two parallel jobs that split the Rust plan. `lint` runs
 formatting and both Clippy builds and installs only Rust. `tests` runs the Rust
