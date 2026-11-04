@@ -407,6 +407,12 @@ pub(super) fn extract_dart_document(
 ) -> Result<(String, bool, usize), FinanceDataError> {
     let mut archive =
         zip::ZipArchive::new(Cursor::new(bytes)).map_err(|_| FinanceDataError::InvalidResponse)?;
+    if archive.len() > 20_000 {
+        return Err(FinanceDataError::InvalidResponse);
+    }
+    archive
+        .validate_header_consistency()
+        .map_err(|_| FinanceDataError::InvalidResponse)?;
     let mut combined = String::new();
     let mut decompressed = 0_usize;
     let mut document_count = 0_usize;

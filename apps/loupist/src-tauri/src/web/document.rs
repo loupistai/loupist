@@ -288,6 +288,9 @@ fn office_kind_from_zip(bytes: &[u8]) -> Result<Option<DocumentKind>, DocumentEr
         }
         names.push(name);
     }
+    archive
+        .validate_header_consistency()
+        .map_err(|_| DocumentError::Parse)?;
     Ok(if names.iter().any(|name| name == "word/document.xml") {
         Some(DocumentKind::Docx)
     } else if names.iter().any(|name| name == "xl/workbook.xml") {

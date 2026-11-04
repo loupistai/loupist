@@ -86,6 +86,12 @@ pub(super) fn parse_opendart_corp_code(
 fn extract_corp_code_xml(bytes: &[u8]) -> Result<String, FinanceDataError> {
     let mut archive =
         zip::ZipArchive::new(Cursor::new(bytes)).map_err(|_| FinanceDataError::InvalidResponse)?;
+    if archive.len() > 20_000 {
+        return Err(FinanceDataError::InvalidResponse);
+    }
+    archive
+        .validate_header_consistency()
+        .map_err(|_| FinanceDataError::InvalidResponse)?;
     for index in 0..archive.len() {
         let mut file = archive
             .by_index(index)

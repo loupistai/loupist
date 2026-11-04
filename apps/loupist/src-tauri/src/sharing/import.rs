@@ -141,6 +141,9 @@ pub(crate) fn read_zip(bytes: &[u8], subpath: Option<&str>) -> Result<Files, Rej
     if archive.len() > 20_000 {
         return Err(Rejection::TooLarge);
     }
+    archive
+        .validate_header_consistency()
+        .map_err(|_| Rejection::Damaged)?;
     let mut entries = Vec::new();
     let mut total = 0usize;
     for index in 0..archive.len() {

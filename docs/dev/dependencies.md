@@ -34,6 +34,13 @@ zbus_names and zvariant/derive. These have no security patch to install; track
 their replacement with their owning upstreams rather than disguising versions
 or forcing incompatible replacements. Re-run the review when upstreams migrate.
 
+Direct app ZIP readers explicitly call ZIP's `validate_header_consistency`
+after their entry-count bounds (and document size checks). Upgrading alone does
+not enable that check on ordinary `by_index` reads. Reject mismatched local and
+central filenames, duplicate names, overlapping entries and unlisted headers;
+continue accepting valid CP437 names. Keep archive decompression bounded before
+reading into memory, including the OpenDART corporate directory.
+
 The bundled sidecar retains OpenBB 4.7.2 and its pinned provider contracts.
 FastMCP stays on 3.x and MCP on 1.x. Update those integrations together before
 accepting their next majors. Never weaken read-only, credential or process

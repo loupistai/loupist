@@ -97,6 +97,7 @@ pub fn from_zip(bytes: Vec<u8>, selected: Option<&str>) -> Result<Package, Comma
     if zip.len() > 20_000 {
         return Err(invalid("The ZIP contains too many entries"));
     }
+    zip.validate_header_consistency().map_err(io)?;
     let mut prefixes = Vec::new();
     for index in 0..zip.len() {
         let file = zip.by_index(index).map_err(io)?;
