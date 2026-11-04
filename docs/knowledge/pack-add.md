@@ -7,7 +7,8 @@ validates it and holds it in memory for review for an hour, at most four at once
 nothing touches a Loupist. A rejected pack names one reason (`notPack`, `newer`,
 `tooLarge`, `unsafe`, `damaged`, `spoof`) and adds nothing. Review before adding shows
 the profile, each perspective, method and principle as read-only Markdown with its scan
-flags and lines. Its typed manifest also exposes the license id, `licenseUrl`,
+flags and lines. Below 1060px the choice and Add stay under that review, so the warning
+and the first section stay readable at the minimum window. Its typed manifest also exposes the license id, `licenseUrl`,
 `redistributable` and `credits` entries with each origin's name, author, license, URL
 and version: review links the license name to `licenseUrl` with its plain line,
 or, when not redistributable, says "For your use only. You can't share these items

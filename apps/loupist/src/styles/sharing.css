@@ -108,6 +108,8 @@
 .pack-review-header { display: flex; align-items: center; gap: var(--gg-space-3); min-height: var(--gg-size-control-lg); margin-bottom: var(--gg-space-6); }
 .pack-review-header h1 { margin: 0; font-size: var(--gg-text-page); line-height: var(--gg-leading-page); font-weight: var(--gg-weight-semibold); }
 .pack-review-grid { display: grid; grid-template-columns: 360px minmax(0, 1fr); grid-template-rows: auto 1fr; gap: var(--gg-space-6) var(--gg-space-8); align-items: start; }
+/* Wide review keeps summary and sections in separate columns. Narrow review scrolls them above Add. */
+.pack-review-main { display: contents; }
 .pack-review-summary { grid-column: 1; grid-row: 1; display: grid; gap: var(--gg-space-2); justify-items: start; }
 .pack-review-add { grid-column: 1; grid-row: 2; position: sticky; top: var(--gg-space-6); display: grid; gap: var(--gg-space-3); }
 .pack-review-sections { grid-column: 2; grid-row: 1 / span 2; display: grid; gap: var(--gg-space-6); min-width: 0; }
@@ -163,11 +165,14 @@
 }
 /* token-exception: breakpoint; vars unsupported in query conditions */
 @media (max-width: 1059px) {
-  .pack-review { padding: var(--gg-space-3) var(--gg-space-4) 0; }
-  .pack-review-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
-  .pack-review-summary, .pack-review-sections, .pack-review-add { grid-column: 1; grid-row: auto; }
-  /* Compact sticky bar: the choice and Add share one row, the note one line under it (about a seventh of 560 px). */
-  .pack-review-add { position: sticky; top: auto; bottom: 0; z-index: var(--gg-z-sticky); grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--gg-space-1) var(--gg-space-4); padding: var(--gg-space-2) var(--gg-space-4); margin: 0 calc(-1 * var(--gg-space-4)); border-top: 1px solid var(--gg-color-border-subtle); background: var(--gg-color-bg-app); }
+  .pack-review-layer { overflow: hidden; }
+  .pack-review { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; padding: var(--gg-space-3) var(--gg-space-4) 0; }
+  .pack-review-header { flex: none; }
+  .pack-review-grid { display: flex; flex: 1 1 auto; flex-direction: column; align-items: stretch; gap: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: none; min-height: 0; overflow: hidden; }
+  .pack-review-main { display: block; flex: 1 1 auto; min-height: 0; overflow: auto; }
+  .pack-review-summary, .pack-review-sections, .pack-review-add { grid-column: auto; grid-row: auto; }
+  /* The choice and Add stay under the review. A sticky bar at 560px covered the warning and the first section. */
+  .pack-review-add { position: static; flex: none; z-index: auto; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--gg-space-1) var(--gg-space-4); padding: var(--gg-space-2) var(--gg-space-4); margin: 0 calc(-1 * var(--gg-space-4)); border-top: 1px solid var(--gg-color-border-subtle); background: var(--gg-color-bg-app); }
   .pack-review-add > .pack-review-mode { grid-column: 1; }
   .pack-review-mode .pack-review-mode-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
   .pack-review-options { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-1) var(--gg-space-5); }
