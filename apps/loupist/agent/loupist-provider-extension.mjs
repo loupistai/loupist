@@ -25,6 +25,9 @@ import {
 } from "./native-search/common.mjs";
 
 const PROTOCOL = "loupist-provider/1";
+/** The name a provider shows for this app. Pi 1.0.1 hardcodes its own. */
+export const LOUPIST_PROVIDER_NAME = "Loupist";
+const XAI_DEVICE_CODE_URL = "https://auth.x.ai/oauth2/device/code";
 /** The title of the paste prompt; Rust answers only this UI request. */
 export const MANUAL_CODE_TITLE = `${PROTOCOL}:manual_code`;
 const MAX_RESULT_BYTES = 512 * 1024;
@@ -167,6 +170,44 @@ export async function liveOpenAIModels(ctx, send = globalThis.fetch) {
   } catch {
     return null;
   }
+}
+
+function requestUrl(input) {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  if (input && typeof input === "object" && typeof input.url === "string") return input.url;
+  return "";
+}
+
+function formParams(body) {
+  if (typeof body === "string") return new URLSearchParams(body);
+  if (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) {
+    return new URLSearchParams(body);
+  }
+  if (typeof Buffer !== "undefined" && Buffer.isBuffer(body)) {
+    return new URLSearchParams(body.toString("utf8"));
+  }
+  return null;
+}
+
+/**
+ * Pi's xAI device login posts `referrer=pi`. Replace that one field with
+ * Loupist. Token exchange and every other provider are left alone: Claude's
+ * sign-in name belongs to Anthropic's published client, and API-key providers
+ * send no sign-in name.
+ */
+export function withLoupistSignInIdentity(fetchImpl, providerId) {
+  if (providerId !== "xai" || typeof fetchImpl !== "function") return fetchImpl;
+  return async (input, init) => {
+    if (requestUrl(input) === XAI_DEVICE_CODE_URL && init?.body != null) {
+      const params = formParams(init.body);
+      if (params?.get("referrer") === "pi") {
+        params.set("referrer", LOUPIST_PROVIDER_NAME);
+        init = { ...init, body: params };
+      }
+    }
+    return fetchImpl(input, init);
+  };
 }
 
 /** Fixed sign-in failure reasons; provider text never leaves this process. */
@@ -428,20 +469,33 @@ export default function loupistTerminalProviderExtension(pi) {
       const controller = new AbortController();
       const runtime = await credentialRuntime();
       runtime.registerNativeProvider(provider);
+      const previousFetch = globalThis.fetch;
+      globalThis.fetch = withLoupistSignInIdentity(previousFetch, providerId);
       try {
         // Sign in with ChatGPT names this installation by a stable ID kept in
-        // Pi's private settings directory (`ext_agent_host_id`).
-        const deviceId = providerId === "openai" ? await installationDeviceId() : undefined;
+        // Pi's private settings directory (`ext_agent_host_id`). Pi 1.0.1
+        // ignores `agentName` and still sends its own name; Rust rewrites the
+        // page it opens. A newer Pi uses this name directly.
+        const loginOptions = {};
+        if (providerId === "openai") {
+          const deviceId = await installationDeviceId();
+          loginOptions.getDeviceId = () => deviceId;
+        }
+        if (providerId === "openai" || providerId === "openai-codex") {
+          loginOptions.agentName = LOUPIST_PROVIDER_NAME;
+        }
         await runtime.login(providerId, "oauth", {
           signal: controller.signal,
           prompt: (prompt) => oauthPrompt(ctx, prompt),
           notify: (event) => oauthNotify(ctx, event),
-        }, deviceId ? { getDeviceId: () => deviceId } : undefined);
+        }, Object.keys(loginOptions).length > 0 ? loginOptions : undefined);
       } catch (error) {
         if (!/login cancelled/iu.test(String(error?.message ?? ""))) {
           emit(ctx, { type: "failed", reason: loginFailureReason(error) });
         }
         throw error;
+      } finally {
+        globalThis.fetch = previousFetch;
       }
 
       writeCredentialUpdated(providerId);
