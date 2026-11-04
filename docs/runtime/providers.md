@@ -62,7 +62,7 @@ llama.cpp on `127.0.0.1` at their default ports in parallel, 600 ms each, withou
 proxy or redirects. It reads model lists and serving context (GET requests, plus
 Ollama's `POST /api/show`) and saves the chosen model, when its known context is at
 least 20,000 tokens, as an OpenAI Chat Completions custom endpoint with a keyless
-placeholder.
+placeholder. The sheet's engine heading is a `fieldset.connect-engine` legend with `display: block` and a full width. Grid or flex on that fieldset collapses the heading to one character in WKWebView, so the title runs down the sheet one glyph per line.
 
 A custom endpoint is a server that speaks OpenAI Responses, OpenAI Chat Completions
 or Anthropic Messages (Ollama, LM Studio, vLLM, a gateway), with a name, address,
