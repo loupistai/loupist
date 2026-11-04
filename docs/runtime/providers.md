@@ -18,7 +18,12 @@ added. Loupist still passes `agentName: Loupist`, and the page it opens rewrites
 `agent_name_hint` and the development Codex browser login's `originator` to
 `Loupist` (`openai_sign_in_presented_as_loupist`). Other query parameters are
 left unchanged. An account already connected under Pi keeps that name until the
-user signs in again. Claude sign-in is billed as Claude extra usage and says
+user signs in again. xAI's device login posts `referrer=pi` to
+`https://auth.x.ai/oauth2/device/code`; Loupist rewrites that field to `Loupist`
+(`withLoupistSignInIdentity`) and leaves the token request unchanged. Claude
+sign-in keeps Anthropic's published client id; replacing it would drop the
+sign-in. API-key providers send no sign-in name.
+Claude sign-in is billed as Claude extra usage and says
 so before its browser opens; xAI signs in with a SuperGrok device code. Gemini,
 OpenRouter and Pi's other providers connect by API key only. A sign-in times out
 after 10 minutes. The legacy Codex client (`openai-codex`) exists only in debug

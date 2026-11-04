@@ -329,6 +329,33 @@ test("persists credentials through Pi storage without returning secrets", async 
   assert.equal(notices.some((notice) => notice.includes("refresh-secret")), false);
 });
 
+test("xAI device login is the only sign-in whose posted name is rewritten", async () => {
+  const { withLoupistSignInIdentity } = await import(
+    `${pathToFileURL(join(import.meta.dirname, "loupist-provider-extension.mjs"))}?identity=${Date.now()}`
+  );
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push(init.body instanceof URLSearchParams ? init.body.toString() : String(init.body));
+    return new Response("{}", { status: 200 });
+  };
+  const xai = withLoupistSignInIdentity(fetchImpl, "xai");
+  await xai("https://auth.x.ai/oauth2/device/code", {
+    body: Buffer.from("client_id=client&referrer=pi"),
+  });
+  await xai("https://auth.x.ai/oauth2/device/code?extra=1", {
+    body: new URLSearchParams({ referrer: "pi" }),
+  });
+  await xai("https://example.com/oauth2/device/code", {
+    body: new URLSearchParams({ referrer: "pi" }),
+  });
+  assert.match(calls[0], /(?:^|&)referrer=Loupist(?:&|$)/u);
+  assert.match(calls[0], /client_id=client/u);
+  assert.equal(calls[1], "referrer=pi");
+  assert.equal(calls[2], "referrer=pi");
+  assert.equal(withLoupistSignInIdentity(fetchImpl, "anthropic"), fetchImpl);
+  assert.equal(withLoupistSignInIdentity(fetchImpl, "openai"), fetchImpl);
+});
+
 test("forwards a device sign-in's user code and verification URL", async (t) => {
   const temporary = mkdtempSync(join(tmpdir(), "loupist-provider-device-"));
   const resultPath = join(temporary, "result.json");
@@ -349,12 +376,32 @@ test("forwards a device sign-in's user code and verification URL", async (t) => 
   });
 
   const notices = [];
+  const seen = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    seen.push({
+      url: String(url),
+      body: init?.body instanceof URLSearchParams ? init.body.toString() : String(init?.body ?? ""),
+    });
+    return new Response("{}", { status: 200 });
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
   const deviceProvider = {
     id: "xai",
     name: "xAI",
     auth: {
       oauth: {
         login: async (interaction) => {
+          await fetch("https://auth.x.ai/oauth2/device/code", {
+            method: "POST",
+            body: new URLSearchParams({ client_id: "client", referrer: "pi", scope: "openid" }),
+          });
+          await fetch("https://auth.x.ai/oauth2/token", {
+            method: "POST",
+            body: "grant_type=refresh_token&referrer=pi",
+          });
           interaction.notify({
             type: "device_code",
             userCode: "WXYZ-1234",
@@ -390,6 +437,16 @@ test("forwards a device sign-in's user code and verification URL", async (t) => 
   };
 
   await commands.get("loupist-provider-login").handler("xai", context);
+  await fetch("https://auth.x.ai/oauth2/device/code", {
+    method: "POST",
+    body: new URLSearchParams({ referrer: "pi" }),
+  });
+  assert.equal(seen[0].url, "https://auth.x.ai/oauth2/device/code");
+  assert.match(seen[0].body, /(?:^|&)referrer=Loupist(?:&|$)/u);
+  assert.doesNotMatch(seen[0].body, /(?:^|&)referrer=pi(?:&|$)/u);
+  assert.match(seen[0].body, /client_id=client/u);
+  assert.equal(seen[1].body, "grant_type=refresh_token&referrer=pi");
+  assert.match(seen[2].body, /(?:^|&)referrer=pi(?:&|$)/u);
   const result = JSON.parse(readFileSync(resultPath, "utf8"));
   assert.equal(result.type, "credential_updated");
   assert.equal(result.provider, "xai");
