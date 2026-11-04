@@ -24,6 +24,11 @@ result proves no persistence, credentials, process isolation, or native window.
 The design preview (`preview.html?scenario=<id>&theme=<light|dark>`) renders the
 real `App` with preview-only fixtures from `src/preview/`. It is development-only,
 starts Vite at port 1430 (falling upward) and leaves the native dev port 1420 alone.
+It uses headless Chrome. A capture that looks right there is not evidence for
+WKWebView. In particular, `display: grid` or `display: flex` on a `fieldset`
+collapses its `legend` to about one character in WKWebView (the heading runs down
+the form) while Chrome keeps the line. Form-heading proof is `assertFormLegendsFit`
+in the macOS WebView (`native-forms.mjs`), not a preview PNG.
 `browser-ready`, `browser-blocked`, and `browser-failure` are the in-app browser
 fixtures in `src/preview/browserScenarios.ts`: one fictional article opened from
 an answer link, then the ready page, a typed blocked navigation that keeps that

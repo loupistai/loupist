@@ -34,6 +34,8 @@ a scenario together with each new or redesigned screen. A scenario marked `media
 emulated, as the print dialog draws it. Final proof of native behavior still uses the tools in
 [Which tool](../../apps/loupist/e2e/README.md#which-tool).
 
+A green Chrome capture is not proof of WKWebView layout. Chrome draws some rules that macOS WKWebView collapses. The known case is a `fieldset` whose computed `display` is `grid` or `flex`: its `legend` shrinks to about one character and the heading runs down the form one glyph per line. Keep the fieldset `display: block`, set the legend to `width: 100%`, and put grid or flex on an element inside it. This applies to every form, including onboarding model setup, journal checks, schedule time, and profile fields, not only the tone control. `assertFormLegendsFit` in `apps/loupist/e2e/native-forms.mjs` measures that the heading uses the field width. Run that measurement in the macOS WebView. Do not accept a preview screenshot as a substitute.
+
 ### Performance budgets
 
 These are native e2e budgets, separate from the 100 ms feedback rubric above.

@@ -18,7 +18,11 @@ project settings or JS extensions to obtain workspace support.
 
 Run the narrowest observable behavior or security test. Reserve source scans for
 security invariants and release pins. For native work read
-[Which tool](apps/loupist/e2e/README.md#which-tool). `scripts/verify.sh` is the
+[Which tool](apps/loupist/e2e/README.md#which-tool). Chrome design preview does not
+prove WKWebView layout: a `fieldset` with `display: grid` or `flex` collapses its
+legend to one character there and looks fine in Chrome. Measure those headings with
+`assertFormLegendsFit` in the macOS WebView
+([UI review](docs/dev/ui-qa.md#ui-review)). `scripts/verify.sh` is the
 handoff gate. Keep credentials private and generated schemas/build output untouched.
 Prefer deleting obsolete pre-1.0 paths. Commit, push or release only on request.
 

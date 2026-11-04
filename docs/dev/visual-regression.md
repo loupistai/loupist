@@ -17,7 +17,11 @@ misalignment, clipped grid controls or an incorrect panel mode. Inspect the PNGs
 In a newly initialized repository, captures keep `gitHead: null` until the first
 commit; capture and layout checks still run normally.
 
-This preview runs the real React components with fixture data. Use the native geometry
+This preview runs the real React components with fixture data in headless Chrome. It does
+not qualify WKWebView. A `fieldset` set to `grid` or `flex` keeps a normal legend in
+Chrome and collapses that legend to one character in WKWebView, so the heading stacks
+down the sheet. Measure those headings with `assertFormLegendsFit`
+(`apps/loupist/e2e/native-forms.mjs`) in the macOS WebView. Use the native geometry
 suite for the system WebView and the native browser smoke for child-WebView/Rust behavior.
 See [Which tool](../../apps/loupist/e2e/README.md#which-tool).
 

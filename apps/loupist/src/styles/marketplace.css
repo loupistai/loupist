@@ -55,7 +55,8 @@
 .marketplace-setup-overview > span { font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); }
 .marketplace-setup-status { display: flex; align-items: center; }
 .marketplace-setup-status [data-slot="badge"] { font-weight: var(--gg-weight-regular); font-size: var(--gg-text-caption); }
-.marketplace-setup-fields { display: grid; gap: 18px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.marketplace-setup-fields { display: block; min-width: 0; margin: 0; padding: 0; border: 0; }
+.marketplace-setup-fields > * + * { margin-top: 18px; }
 .marketplace-setup-fields:empty { display: none; }
 .marketplace-form-section-title { padding-top: var(--gg-space-1); }
 .marketplace-form-section-title:not(:first-child) { border-top: 1px solid var(--gg-color-border-subtle); padding-top: 22px; margin-top: var(--gg-space-1); }

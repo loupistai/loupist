@@ -232,15 +232,15 @@
   font-size: var(--gg-text-control);
 }
 .knowledge-advanced fieldset {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--gg-space-4);
+  display: block;
+  min-width: 0;
   margin: 0;
   padding: var(--gg-space-4) 0;
   border: 0;
 }
 .knowledge-advanced legend {
+  display: block;
+  width: 100%;
   color: var(--gg-color-text-primary);
   font-size: var(--gg-text-control);
 }
@@ -305,8 +305,10 @@ article[data-source-id][tabindex="-1"]:focus { outline: none; }
 .journal-form { display: flex; flex-direction: column; gap: var(--gg-space-2); min-width: 0; padding-block: var(--gg-space-3); }
 .journal-form label, .journal-form legend { font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); color: var(--gg-color-text-secondary); }
 .journal-check-toggle { align-self: flex-start; white-space: normal; height: auto; text-align: start; }
-.journal-check-fields { display: flex; flex-direction: column; gap: var(--gg-space-2); min-width: 0; min-inline-size: 0; margin: 0; padding: 0; border: 0; }
-.journal-form .journal-check-fields > legend { padding: 0; font-size: var(--gg-text-control); line-height: var(--gg-leading-control); font-weight: var(--gg-weight-medium); color: var(--gg-color-text-primary); }
+/* Block, not flex: WKWebView collapses a flex fieldset legend to one character. */
+.journal-check-fields { display: block; min-width: 0; min-inline-size: 0; margin: 0; padding: 0; border: 0; }
+.journal-form .journal-check-fields > legend { display: block; width: 100%; margin: 0 0 var(--gg-space-2); padding: 0; font-size: var(--gg-text-control); line-height: var(--gg-leading-control); font-weight: var(--gg-weight-medium); color: var(--gg-color-text-primary); }
+.journal-check-body { display: flex; flex-direction: column; gap: var(--gg-space-2); min-width: 0; }
 .journal-check-remove { align-self: flex-start; height: auto; min-height: var(--gg-size-control-sm); padding: 0; background: transparent; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-regular); text-decoration: underline; text-underline-offset: var(--gg-space-1); }
 .journal-check-remove:hover { background: transparent; color: var(--gg-color-text-primary); }
 .journal-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gg-space-3); }
