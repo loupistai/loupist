@@ -385,6 +385,10 @@ html[data-desktop-platform="macos"] .app-shell {
 @media (max-width: 899px) {
   .app-header-sidebar-trigger, html[data-desktop-platform="macos"] .app-header-sidebar-trigger { display: inline-flex; }
   [data-mobile="true"][data-slot="sidebar"] { width: calc(var(--gg-size-sidebar) + var(--gg-space-7)); max-width: none; }
+  /* The navigation sheet covers the left side. The page wraps into the strip that stays visible. */
+  body:has([data-mobile="true"][data-slot="sidebar"]) :is(.app-titlebar, .app-stage) {
+    padding-inline-start: calc(var(--gg-size-sidebar) + var(--gg-space-7) + var(--gg-space-4));
+  }
   .shell-tabs { margin-left: 0; }
   .app-header { gap: var(--gg-space-2); padding-inline: var(--gg-space-2); }
 }
