@@ -142,9 +142,12 @@ function labelSlots(node: PositionedNode, scale: number, priority: LabelPriority
 function namedMark(node: PositionedNode, priority: LabelPriority) {
   return !isMetricNode(node) || node.id === priority.selectedId || node.id === priority.hoveredId;
 }
-function hitsNode(box: LabelBox, other: PositionedNode, scale: number, priority: LabelPriority) {
-  if (!namedMark(other, priority)) return false;
-  if (nodeRings(other, scale, priority).some(ring => {
+type MarkGeometry = { radius: number; outer: number; rings: NodeRing[]; named: boolean; inFocus: boolean };
+type GeometryFor = (node: PositionedNode) => MarkGeometry;
+function hitsNode(box: LabelBox, other: PositionedNode, scale: number, geometryFor: GeometryFor) {
+  const geometry = geometryFor(other);
+  if (!geometry.named) return false;
+  if (geometry.rings.some(ring => {
     const radius = ring.radius + ring.width / 2 + 1.5 / scale;
     if (ring.square) return box.x < other.x + radius && box.x + box.w > other.x - radius && box.y < other.y + radius && box.y + box.h > other.y - radius;
     const dx = other.x - Math.max(box.x, Math.min(other.x, box.x + box.w));
@@ -153,7 +156,7 @@ function hitsNode(box: LabelBox, other: PositionedNode, scale: number, priority:
   })) return true;
   const dx = other.x - Math.max(box.x, Math.min(other.x, box.x + box.w));
   const dy = other.y - Math.max(box.y, Math.min(other.y, box.y + box.h));
-  return Math.hypot(dx, dy) < nodeRadius(other);
+  return Math.hypot(dx, dy) < geometry.radius;
 }
 function labelText(node: PositionedNode, measure: (text: string) => number, scale: number, labelCapPx: number, language: string) {
   const label = lensKind(node) ? node.label : entityLabel(node, language);
@@ -161,26 +164,26 @@ function labelText(node: PositionedNode, measure: (text: string) => number, scal
   return fitLabel(label, labelCapPx / Math.max(scale, 0.001), measure);
 }
 /** Edge-to-box distance: how far a node's outermost ring sits from any part of the label. */
-function gapToBox(box: LabelBox, other: PositionedNode, scale: number, priority: LabelPriority) {
-  const outer = Math.max(nodeRadius(other), ...nodeRings(other, scale, priority).map(ring => ring.radius + ring.width / 2));
+function gapToBox(box: LabelBox, other: PositionedNode, geometryFor: GeometryFor) {
+  const outer = geometryFor(other).outer;
   return Math.hypot(other.x - Math.max(box.x, Math.min(other.x, box.x + box.w)), other.y - Math.max(box.y, Math.min(other.y, box.y + box.h))) - outer;
 }
 /** A label reads as its owner's only when every comparable node sits clearly farther from it, and not nearer its centre.
  *  Readers attribute a name to the more prominent mark, so a much smaller node only has to be no closer. */
-function ownsBox(box: LabelBox, node: PositionedNode, nodes: PositionedNode[], scale: number, priority: LabelPriority) {
-  const own = gapToBox(box, node, scale, priority), margin = 5 / scale, radius = nodeRadius(node);
+function ownsBox(box: LabelBox, node: PositionedNode, nodes: PositionedNode[], scale: number, geometryFor: GeometryFor) {
+  const own = gapToBox(box, node, geometryFor), margin = 5 / scale, radius = geometryFor(node).radius;
   const cx = box.x + box.w / 2, cy = box.y + box.h / 2, ownCentre = Math.hypot(cx - node.x, cy - node.y);
   // With a selection, faded nodes still show, so they only have to be no closer than the owner.
-  const inFocus = (other: PositionedNode) => !priority.selectedId || other.id === priority.selectedId || !!priority.neighbors?.has(other.id) || !!priority.linkedIds?.has(other.id);
+  const inFocus = (other: PositionedNode) => geometryFor(other).inFocus;
   // Names sit below their marks by default, so a name centred just under another mark reads as that mark's.
   // Only the owner's own below slot may sit there.
   const under = (other: PositionedNode) => other.y < box.y && Math.abs(other.x - cx) <= box.w / 2;
   const ownBelow = under(node);
   return !nodes.some(other => {
-    if (other.id === node.id || !namedMark(other, priority)) return false;
-    const gap = gapToBox(box, other, scale, priority), centre = Math.hypot(cx - other.x, cy - other.y);
+    if (other.id === node.id || !geometryFor(other).named) return false;
+    const gap = gapToBox(box, other, geometryFor), centre = Math.hypot(cx - other.x, cy - other.y);
     if (!ownBelow && inFocus(other) && under(other) && gap < box.h * 2.5) return true;
-    if (!inFocus(other) || nodeRadius(other) < radius * 0.75) return gap < own || centre < ownCentre * 0.8;
+    if (!inFocus(other) || geometryFor(other).radius < radius * 0.75) return gap < own || centre < ownCentre * 0.8;
     return gap < own + margin || centre < ownCentre;
   });
 }
@@ -202,6 +205,19 @@ function crossesBox(box: LabelBox, a: { x: number; y: number }, b: { x: number; 
 export type LabelEdge = { source: { id?: string; x?: number; y?: number } | string; target: { id?: string; x?: number; y?: number } | string };
 export function placeLabels(candidates: PositionedNode[], nodes: PositionedNode[], measure: (text: string) => number, scale: number, priority: LabelPriority = {}, limit = Infinity, fits: (box: LabelBox) => boolean = () => true, labelCapPx = 180, edges: readonly LabelEdge[] = [], language = "en"): PlacedLabel[] {
   const placed: PlacedLabel[] = [];
+  // A placement pass tests many boxes against each mark. Zoom and priority are
+  // fixed within the pass, so classify and measure each mark only once.
+  const geometry = new Map<PositionedNode, MarkGeometry>();
+  const geometryFor: GeometryFor = node => {
+    let mark = geometry.get(node);
+    if (!mark) {
+      const radius = nodeRadius(node), rings = nodeRings(node, scale, priority);
+      mark = { radius, rings, outer: Math.max(radius, ...rings.map(ring => ring.radius + ring.width / 2)), named: namedMark(node, priority),
+        inFocus: !priority.selectedId || node.id === priority.selectedId || !!priority.neighbors?.has(node.id) || !!priority.linkedIds?.has(node.id) };
+      geometry.set(node, mark);
+    }
+    return mark;
+  };
   const ordered = [...candidates].sort((a, b) => labelPriority(b, priority) - labelPriority(a, priority) || b.degree - a.degree || a.id.localeCompare(b.id));
   // A label lying on a short edge to a node in focus sits between the two nodes and reads as either one's.
   // Long or faded edges pass by the label without making it ambiguous.
@@ -239,7 +255,7 @@ export function placeLabels(candidates: PositionedNode[], nodes: PositionedNode[
   const openSlot = (node: PositionedNode, text: string, rank: number) => {
     const own = ownEdges(node);
     const slots = labelSlots(node, scale, priority, measure(text));
-    const free = (candidate: LabelBox) => fits(candidate) && !placed.some(({ box: prior }) => overlaps(candidate, prior)) && !nodes.some(other => hitsNode(candidate, other, scale, priority)) && ownsBox(candidate, node, nodes, scale, priority);
+    const free = (candidate: LabelBox) => fits(candidate) && !placed.some(({ box: prior }) => overlaps(candidate, prior)) && !nodes.some(other => hitsNode(candidate, other, scale, geometryFor)) && ownsBox(candidate, node, nodes, scale, geometryFor);
     const clear = slots.find(candidate => !own.some(({ a, b }) => crossesBox(candidate, a, b)) && free(candidate));
     // A hub's spokes leave no slot clear of its own edges. Its name may lie across one,
     // since it still sits nearest that hub; ordinary names stay off their edges.
@@ -249,12 +265,12 @@ export function placeLabels(candidates: PositionedNode[], nodes: PositionedNode[
     // Zoomed out, a hub's own small leaves surround it on every side. Its name may sit over
     // them right beside the hub (the halo keeps it legible): readers give a name to the much
     // larger mark. A mark at least two thirds the hub's size still blocks it.
-    const prominent = (other: PositionedNode) => other.id !== node.id && nodeRadius(other) >= nodeRadius(node) * 2 / 3;
-    const besideSmallMarks = slots.slice(0, 4).find(candidate => fits(candidate) && !placed.some(({ box: prior }) => overlaps(candidate, prior)) && !nodes.some(other => prominent(other) && hitsNode(candidate, other, scale, priority)));
+    const prominent = (other: PositionedNode) => other.id !== node.id && geometryFor(other).radius >= geometryFor(node).radius * 2 / 3;
+    const besideSmallMarks = slots.slice(0, 4).find(candidate => fits(candidate) && !placed.some(({ box: prior }) => overlaps(candidate, prior)) && !nodes.some(other => prominent(other) && hitsNode(candidate, other, scale, geometryFor)));
     if (besideSmallMarks) return besideSmallMarks;
     // In a dense overview, a top hub may have no dot-free slot. Keep its name
     // only where the label still reads as that hub's, even if it covers a dot.
-    if (priority.topHubIds?.has(node.id)) return slots.find(candidate => fits(candidate) && !placed.some(({ box: prior }) => overlaps(candidate, prior)) && ownsBox(candidate, node, nodes, scale, priority));
+    if (priority.topHubIds?.has(node.id)) return slots.find(candidate => fits(candidate) && !placed.some(({ box: prior }) => overlaps(candidate, prior)) && ownsBox(candidate, node, nodes, scale, geometryFor));
     return undefined;
   };
   const placeNode = (node: PositionedNode, force: boolean) => {
