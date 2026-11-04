@@ -95,6 +95,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:persistence:windows
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Retain native interaction evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: native-windows-evidence
+          path: |
+            apps/loupist/e2e/artifacts/native-*.png
+            apps/loupist/e2e/artifacts/native-smoke-performance.json
+            apps/loupist/e2e/artifacts/persistence/
+          retention-days: 7
+          if-no-files-found: ignore
+
   package-smoke:
     timeout-minutes: 60
     name: Package smoke (${{ matrix.target }})

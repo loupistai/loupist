@@ -27,7 +27,13 @@ Before removing a required check, list pull requests with auto-merge armed
 Keep the default workflow token read-only, disable workflow-created approvals,
 and require full commit-SHA pins for third-party Actions. Approve workflows from
 outside contributors before they run. Weekly grouped Dependabot PRs cover Actions,
-npm, Cargo and uv; review them through the ordinary CI and PR process. Private
+npm, Cargo and uv; review them through the ordinary CI and PR process. The shared
+toolchain action has its own Actions update directory, so Dependabot sees the
+third-party pins in `.github/actions/setup-toolchains/action.yml`. Dependabot
+accepts only ruff patch updates, because `openbb-core` requires ruff below 0.16.
+It skips `@earendil-works/*` version updates: a Pi upgrade moves the package
+family, security pins and signed sidecar digests together by hand
+([dependency review](dev/dependencies.md#dependabot-review-2026-11-04)). Private
 vulnerability reporting, Dependabot alerts/updates, secret scanning and push
 protection belong in the repository settings.
 
@@ -88,7 +94,7 @@ Linux Rust checks do not need a display.
 | Production Rust | Rust, native interaction and packaging |
 | OpenBB runtime | Python, Rust, native interaction and packaging |
 | Agent instructions/Skills or Marketplace assets | Web, Rust, native interaction and packaging |
-| App dependencies, toolchain/CI configuration, staging scripts or unknown paths | All |
+| App dependencies, toolchain files, workflows other than `windows-compatibility.yml`, staging scripts, or unknown paths | All |
 
 Mixed changes take the union of their scopes. Shared renderer contract fixtures
 also select Rust, and agent eval fixtures select Web and Rust. Inline Rust tests
@@ -162,6 +168,8 @@ Silicon. Asset and qualification verifiers require this exact platform set.
 
 `windows-compatibility.yml` is manual-only and independent of `ci.yml`. It keeps
 Windows native interaction, persistence, and unsigned installer checks available.
+A change that only touches this workflow selects no CI scope. The native Windows
+job keeps its screenshots, performance file and persistence evidence for seven days.
 Its `signed` option, dispatched from the matching version tag, runs the retained
 Authenticode build and uploads workflow artifacts; it requires Windows secrets in the protected `release`
 environment and never publishes release assets or updates. Those optional
