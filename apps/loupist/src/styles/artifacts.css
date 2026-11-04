@@ -903,6 +903,11 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
   .artifact-resize-handle {
     display: none;
   }
+
+  /* The sheet covers the right side. The chat wraps into the strip that stays visible, so a line is not sliced. */
+  .app-stage:has(.artifact-panel:not([data-placement="bottom"])) .app-stage-view {
+    padding-right: min(480px, calc(100% - 64px));
+  }
 }
 
 /* token-exception: breakpoint; vars unsupported in query conditions */
