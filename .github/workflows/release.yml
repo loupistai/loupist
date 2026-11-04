@@ -252,10 +252,17 @@ jobs:
           }
           PY
 
+  full-ci:
+    name: Full release validation
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+    with:
+      full: true
+
   build-macos:
     timeout-minutes: 90
     name: Signed macOS arm64 release
-    needs: validate
+    needs: [validate, full-ci]
     runs-on: macos-15
     environment: release
     steps:
