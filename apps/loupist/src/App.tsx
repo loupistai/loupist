@@ -982,7 +982,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                       onAgentUpdated={loupist.updateLoupist}
                     />
               </Suspense></div> : null}
-              {assetPageOpen && assetPage && selectedLoupist ? <div className="asset-page-layer" inert={loupistSettingsOpen || undefined} aria-hidden={loupistSettingsOpen || undefined}><Suspense fallback={<Spinner />}>
+              {assetPageOpen && assetPage && selectedLoupist ? <div className="asset-page-layer" inert={loupistSettingsOpen || undefined} aria-hidden={loupistSettingsOpen || undefined} onFocus={event => { if (event.target instanceof HTMLElement) event.target.scrollIntoView({ block: "nearest", inline: "nearest" }); }}><Suspense fallback={<Spinner />}>
                 <AssetPage key={assetPage.key} bridge={bridge} loupist={selectedLoupist} target={assetPage} threads={threads}
                   onBack={() => setAssetPage(null)}
                   onAsk={text => { setAssetPage(null); askInChat(text); }}
@@ -995,7 +995,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                   onAddSource={() => { setAssetPage(null); openKnowledgePage({ loupistId: selectedLoupist.id, surface: "source" }); }}
                   onChanged={refreshKnowledge} />
               </Suspense></div> : null}
-              {galleryOpen && !packReview ? <div className="pack-review-layer"><Suspense fallback={<Spinner />}>
+              {galleryOpen && !packReview ? <div className="pack-review-layer" onFocus={event => { if (event.target instanceof HTMLElement) event.target.scrollIntoView({ block: "nearest", inline: "nearest" }); }}><Suspense fallback={<Spinner />}>
                 <Gallery bridge={bridge} onBack={() => setGalleryOpen(false)} onOpened={(result, use) => openPackReview(result, use)} onUseLinkOrFile={() => setPackLinkOpen(true)} />
               </Suspense></div> : null}
               {packReview ? <div className="pack-review-layer"><Suspense fallback={<Spinner />}>

@@ -17,7 +17,7 @@ earlier), thesis history (10, then Show all), Earlier results (up to four other 
 each expanding to its card), At a glance, a Korean equity's
 [investor flows](../analysis/korea.md#korean-asset-rows), what the Loupist checks (failed or
 ungranted sources and what this class is not checked for yet), Watch for (a switch per
-[watch kind](watchers.md#watchers) that applies) and supplier/customer counts from the Map. "Last looked" is a
+[watch kind](watchers.md#watchers) that applies) and supplier/customer counts from the Map. Focusing a control below the fold scrolls it into the page. "Last looked" is a
 per-device value in `localStorage` (`loupist.assetVisit.v1`), written on leaving
 after at least 10 seconds. Holdings quantities and values never enter pages, rows,
 prompts or messages; a page shows only whether the user watches or holds the asset.

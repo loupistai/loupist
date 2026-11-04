@@ -104,6 +104,8 @@
 /* Review before adding: a page in the main area. */
 .app-stage-main:has(> .pack-review-layer) { position: relative; }
 .pack-review-layer { position: absolute; inset: 0; z-index: calc(var(--gg-z-sticky) + 2); overflow: auto; background: var(--gg-color-bg-app); }
+.pack-review-layer:has(.gallery-page) { scroll-padding-block: 24px; }
+.gallery-page :is(input, button, a) { scroll-margin-block: 24px; }
 .pack-review { width: min(100%, var(--gg-size-page)); margin: 0 auto; padding: var(--gg-space-4) var(--gg-space-6) var(--gg-space-8); color: var(--gg-color-text-primary); }
 .pack-review-header { display: flex; align-items: center; gap: var(--gg-space-3); min-height: var(--gg-size-control-lg); margin-bottom: var(--gg-space-6); }
 .pack-review-header h1 { margin: 0; font-size: var(--gg-text-page); line-height: var(--gg-leading-page); font-weight: var(--gg-weight-semibold); }
