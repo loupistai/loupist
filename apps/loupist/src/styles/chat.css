@@ -66,7 +66,7 @@
 .chat-model-setup-notice p { flex: 1; min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .chat-model-setup-notice button { flex: none; }
 /* Focused controls keep breathing room above the separate Jump to latest row. */
-.message-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0; background: var(--gg-color-bg-app); scroll-padding-bottom: var(--gg-space-2); }
+.message-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0; background: var(--gg-color-bg-app); scroll-padding-top: var(--gg-space-4); scroll-padding-bottom: var(--gg-space-2); }
 .conversation-content { width: min(100%, calc(var(--gg-size-chat-column) + 2 * var(--chat-gutter, var(--gg-space-5)))); min-height: 100%; margin-inline: auto; gap: var(--gg-space-7); padding: var(--gg-size-control-sm) var(--chat-gutter, var(--gg-space-5)) var(--gg-size-control-lg); }
 .message-scroll article { min-width: 0; max-width: 100%; }
 .message { margin: 0; }
@@ -986,6 +986,8 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .composer-footer {
   flex-wrap: wrap;
 }
+/* When the tools wrap, the send control stays at the trailing edge of its row. */
+.composer-submit { margin-left: auto; }
 
 .composer-run-actions {
   display: inline-flex;
@@ -1665,8 +1667,9 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 }
 .chat-artifact-block-actions { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--gg-space-1); min-width: 0; margin-left: auto; }
 .chat-artifact-block-error { color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
-/* Short windows keep room for the composer and the answer around the card. */
-.chat-artifact-block-body { position: relative; min-width: 0; height: min(240px, 40vh); min-height: 160px; }
+/* Short windows keep room for the composer and the answer around the card.
+   The plot gives up a header so pinning the thread to the bottom does not slice the title. */
+.chat-artifact-block-body { position: relative; min-width: 0; height: min(240px, calc(40vh - 32px)); min-height: 160px; }
 .chat-artifact-block[data-expanded] .chat-artifact-block-body { height: min(480px, 70vh); }
 .chat-artifact-block-state {
   position: absolute;
@@ -1985,7 +1988,7 @@ button.chat-rail-card-header:hover { background: var(--gg-color-bg-hover); }
 .chat-rail-processing { display: inline-flex; align-items: center; gap: var(--gg-space-1); vertical-align: middle; }
 .chat-rail-card-header svg { flex: none; width: 16px; height: 16px; color: var(--gg-color-text-tertiary); }
 .chat-rail-card-title { flex: none; font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); }
-.chat-rail-card-summary { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.chat-rail-card-summary { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; text-align: right; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .chat-rail-card-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gg-space-2); padding: var(--gg-space-2) var(--gg-space-4) var(--gg-space-4); }
 .chat-rail-card-body[hidden] { display: none; }
 .chat-rail-thumbs { display: grid; grid-template-columns: repeat(4, 48px); gap: var(--gg-space-2); }
@@ -2019,7 +2022,7 @@ button.chat-rail-row:not(:disabled):hover .chat-rail-row-label { text-decoration
 .chat-rail-needs-row:hover .chat-rail-needs-show { text-decoration: underline; }
 .chat-rail-needs-dot { flex: none; width: 8px; height: 8px; border-radius: var(--gg-radius-full); background: var(--gg-color-warning); }
 .chat-rail-needs-title { flex: none; color: var(--gg-color-warning); font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); }
-.chat-rail-needs-row .chat-rail-card-summary { text-align: left; }
+.chat-rail-needs-row .chat-rail-card-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; text-align: left; }
 .chat-rail-needs-show { flex: none; color: var(--gg-color-accent-ink); font-size: var(--gg-text-meta); }
 /* Compact context lives in the header, where it cannot cover an answer or chart. */
 
@@ -2036,7 +2039,7 @@ button.chat-rail-row:not(:disabled):hover .chat-rail-row-label { text-decoration
 .composer-file-chip { display: inline-flex; align-items: center; gap: var(--gg-space-1); height: 32px; max-width: 240px; padding: 0 0 0 var(--gg-space-2); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); font-size: var(--gg-text-control); }
 .composer-file-chip > svg { flex: none; width: 16px; height: 16px; color: var(--gg-color-text-secondary); }
 .composer-file-chip > span { min-width: 0; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.composer-file-chip > .composer-file-size { flex: none; max-width: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+.composer-file-chip > .composer-file-size { flex: none; max-width: none; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .composer-file-chip button svg { width: 14px; height: 14px; }
 /* Dragging files over the chat column: one overlay, no icon, the drop target for the whole column. */
 .composer-drop-overlay { position: absolute; inset: var(--gg-space-4); z-index: var(--gg-z-popover); display: grid; place-content: center; gap: var(--gg-space-1); border: 2px dashed var(--gg-color-border-strong); border-radius: var(--gg-radius-lg); background: color-mix(in srgb, var(--gg-color-bg-raised) 92%, transparent); text-align: center; pointer-events: none; animation: composer-drop-in var(--gg-motion-fast) ease-out; }

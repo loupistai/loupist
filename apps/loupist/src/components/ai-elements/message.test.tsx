@@ -126,3 +126,14 @@ it("opens only host-attached citations and refreshes the binding when evidence a
   expect(openLink).not.toHaveBeenCalled();
   expect(screen.getAllByRole("button")).toHaveLength(1);
 });
+
+
+it("keeps a citation's visible link text in its accessible name", async () => {
+  const { evidenceFixture } = await import("../../test/evidenceFixtures");
+  const evidence = evidenceFixture({ title: "Retained market data" });
+  const open = vi.fn();
+  render(<MessageResponse mode="static" onOpenLink={vi.fn()} onOpenEvidence={open} evidenceRefs={[evidence]}>{`Read the [truncated quote](#evidence-${evidence.id}).`}</MessageResponse>);
+  const citation = await screen.findByRole("button", { name: "truncated quote · Source 1: Retained market data" });
+  await userEvent.setup().click(citation);
+  expect(open).toHaveBeenCalledWith(evidence, citation);
+});

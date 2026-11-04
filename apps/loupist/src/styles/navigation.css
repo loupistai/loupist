@@ -76,6 +76,8 @@
 [data-collapsible="icon"] [data-slot="sidebar-header"] { align-items: center; }
 [data-collapsible="icon"] .navigation-command { flex: none; width: var(--gg-size-control-md); padding: 0; justify-content: center; }
 [data-collapsible="icon"] .loupist-list-heading { justify-content: center; margin-inline: 0; }
+[data-collapsible="icon"] .loupist-chat-button { justify-content: center; padding-inline: 0; }
+[data-collapsible="icon"] .loupist-chat-row :is(.loupist-draft-dot, .loupist-status-dot, .thread-running, .loupist-private-mark) { position: absolute; top: var(--gg-space-1); right: var(--gg-space-1); margin: 0; }
 
 .navigation-chat-search:focus-within { outline: 2px solid var(--gg-color-focus); outline-offset: -2px; border-color: transparent; }
 .navigation-chat-search input:focus-visible { outline: none !important; box-shadow: none; }

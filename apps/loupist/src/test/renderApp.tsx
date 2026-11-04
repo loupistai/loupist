@@ -55,7 +55,7 @@ export const mainTab = async (name: RegExp) => {
   }
   if (!document.querySelector(".header-workspace-controls")) fireEvent.click(screen.getByRole("button", { name: "Back" }));
   if (label === "Map" || label === "Lens") {
-    fireEvent.keyDown(screen.getByRole("button", { name: "Panel kind" }), { key: "Enter" });
+    fireEvent.keyDown(screen.getByRole("button", { name: /Panel kind/ }), { key: "Enter" });
     return screen.findByRole("menuitemradio", { name: label === "Map" ? "World" : "Lens" });
   }
   if (label === "Chat") {
@@ -96,7 +96,7 @@ export function headerAction(name: string) {
   const switcher = name === "New Loupist" || name === "Loupist settings";
   if (switcher) return screen.getByRole("button", { name });
   if (name === "Panel") return screen.getByRole("button", { name: "Split left and right" });
-  const trigger = screen.getByRole("button", { name: "Panel kind" });
+  const trigger = screen.getByRole("button", { name: /Panel kind/ });
   fireEvent.keyDown(trigger, { key: "Enter" });
   return screen.getByRole("menuitemradio", { name });
 }

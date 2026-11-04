@@ -59,7 +59,7 @@ export function AsOfChip({ asOf, onEdit, onRemove }: { asOf: string; onEdit?: ()
   useTranslation("chat");
   const label = t("asOf.chip", { date: formatAsOf(asOf) });
   return <li className="composer-chip composer-asof-chip" data-kind="as_of">
-    <button type="button" className="composer-asof-label" aria-label={`${t("asOf.chipEdit")}: ${t("asOf.chip", { date: formatAsOf(asOf, "long") })}`} onClick={onEdit}>
+    <button type="button" className="composer-asof-label" aria-label={`${label} · ${t("asOf.chipEdit")}`} aria-description={t("asOf.chip", { date: formatAsOf(asOf, "long") })} onClick={onEdit}>
       <CalendarIcon aria-hidden="true" />
       <span>{label}</span>
     </button>

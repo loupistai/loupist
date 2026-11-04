@@ -50,7 +50,7 @@ describe("Loupist · Chat workspace", () => {
     const composer = screen.getByRole("textbox", { name: "Message Loupist" });
     await user.type(composer, "A question I am still writing");
     expect(screen.queryByLabelText("Chat workspace panel")).not.toBeInTheDocument();
-    const kind = screen.getByRole("button", { name: "Panel kind" });
+    const kind = screen.getByRole("button", { name: /Panel kind/ });
     await user.click(kind);
     expect(screen.getAllByRole("menuitemradio").map(item => item.textContent)).toEqual(["Lens", "World", "Chat materials"]);
     await user.click(screen.getByRole("menuitemradio", { name: "Lens" }));

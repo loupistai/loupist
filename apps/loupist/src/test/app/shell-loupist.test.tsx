@@ -258,15 +258,15 @@ describe("Loupist · Shell and Loupist", () => {
       await screen.findByRole("heading", { name: "Bot" });
       await user.click(await mainTab(/Settings/));
       await user.click(screen.getByRole("button", { name: "Appearance" }));
-      await user.click(screen.getByRole("button", { name: "Dark theme" }));
+      await user.click(screen.getByRole("button", { name: "Dark" }));
       expect(document.documentElement).toHaveAttribute("data-theme", "dark");
       expect(await theme()).toBe("dark");
-      await user.click(screen.getByRole("button", { name: "Light theme" }));
+      await user.click(screen.getByRole("button", { name: "Light" }));
       expect(document.documentElement).toHaveAttribute("data-theme", "light");
       expect(await theme()).toBe("light");
       prefersDark = true;
       await act(async () => listeners.forEach((listener) => listener({ matches: true } as MediaQueryListEvent)));
-      await user.click(screen.getByRole("button", { name: "System theme" }));
+      await user.click(screen.getByRole("button", { name: /System Follow your device’s appearance/ }));
       expect(document.documentElement).toHaveAttribute("data-theme", "dark");
       expect(await theme()).toBe("system");
     } finally {
@@ -381,7 +381,7 @@ describe("Loupist · Model providers", () => {
     await user.click(await within(chatgpt).findByRole("switch", { name: "Show GPT-5.6 Luna in Chat" }));
     await waitFor(() => expect(updateVisibility).toHaveBeenCalledWith({ model_profile_id: "model-test", visible_in_chat: false }));
     await user.click(screen.getByRole("button", { name: "Back" }));
-    await user.hover(await screen.findByRole("button", { name: "Model settings for this message" }));
+    await user.hover(await screen.findByRole("button", { name: /Model settings for this message/ }));
     expect(await screen.findByRole("tooltip")).toHaveTextContent("google default");
 
     await openModelSettings(user);
@@ -392,7 +392,7 @@ describe("Loupist · Model providers", () => {
     await user.click(screen.getByRole("button", { name: "Back" }));
     expect(await screen.findByText(/Show or load a model in Settings to send messages/)).toBeVisible();
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Model settings for this message" }));
+    await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
     expect(screen.getByText("No connected models")).toBeVisible();
     expect(screen.queryByRole("menuitemradio", { name: "GPT-5.6 Luna" })).not.toBeInTheDocument();
   });

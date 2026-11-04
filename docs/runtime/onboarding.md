@@ -4,8 +4,8 @@ Creating or importing a Loupist finishes on that Loupist's Chat. A save failure 
 
 ### Onboarding
 
-A new user acknowledges the notice and connects an AI provider. The connect step (`onboarding/ConnectStep.tsx`)
-has one primary Continue with ChatGPT button. Other ways to connect lists Claude and
+A new user acknowledges the notice and connects an AI provider. The welcome title uses the display size. The connect step (`onboarding/ConnectStep.tsx`)
+has one primary Continue with ChatGPT button. On a short window the other ways scroll inside the step so that button stays above the fold, and focusing a way below that list scrolls it into the list. Other ways to connect lists Claude and
 SuperGrok sign-in; API keys for Anthropic, OpenAI, Gemini, xAI, Upstage Solar and
 OpenRouter; a model on this Mac; and a custom endpoint. A browser sign-in shows a
 waiting card with Open again and Cancel (Escape also cancels), plus Copy the

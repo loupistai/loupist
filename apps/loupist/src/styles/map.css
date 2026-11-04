@@ -27,6 +27,9 @@
 .map-status-stack { position:absolute; top:var(--gg-space-3); left:calc(var(--map-covered-left, 0px) + var(--gg-space-2)); z-index:var(--gg-z-sticky); width:calc(100% - var(--map-covered-left, 0px) - var(--map-covered-right, 0px) - var(--gg-space-4)); min-width:0; display:grid; justify-items:start; gap:var(--gg-space-2); pointer-events:none; }
 .map-status-stack > * { pointer-events:auto; }
 .map-stats { max-width:calc(100% - var(--gg-space-4)); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; position:relative; z-index:var(--gg-z-sticky); padding:6px 12px; border-radius:var(--gg-radius-full); background:color-mix(in srgb,var(--gg-color-bg-raised) 92%,transparent); box-shadow:var(--gg-shadow-sm); font-size:var(--gg-text-meta); font-variant-numeric:tabular-nums; }
+/* A narrow map wraps the status so the weekly count and disagreements stay whole. The mini map keeps the one-line ellipsis. */
+.map-status-stack .map-stats { display:flex; flex-wrap:wrap; align-items:baseline; white-space:normal; overflow:visible; text-overflow:clip; }
+.map-status-stack .map-stats > * { min-width:0; overflow-wrap:anywhere; }
 .map-stats .map-world-kicker { font-weight:var(--gg-weight-medium); }
 .map-stats .map-world-kicker::after { content:" · "; font-weight:var(--gg-weight-regular); color:var(--gg-color-text-secondary); }
 .map-view[data-hide-map-stats] .map-stats, .map-body[data-hide-map-stats] .map-stats { visibility:hidden; }
@@ -51,7 +54,8 @@
 .map-swatch.is-watching,.map-swatch.is-holding { background:transparent; border:1.5px dashed var(--gg-color-map-holding-ring); }.map-swatch.is-holding { border:2.5px solid var(--gg-color-map-holding-ring); }
 .map-swatch.is-disputed { background:none; border:2px dashed var(--gg-color-warning); border-radius:var(--gg-radius-full); }
 .map-inspector { position:relative; z-index:var(--gg-z-panel); flex:none; width:var(--gg-size-inspector,360px); min-height:0; overflow:auto; padding:var(--gg-space-5); border-left:1px solid var(--gg-color-border-subtle); background:var(--gg-color-bg-raised); animation:map-inspector-in 180ms var(--gg-ease-out); }
-.map-inspector-close { position:absolute; top:8px; right:8px; }
+/* Sticky, not absolute: in WKWebView an absolute close scrolls with the sheet and the map clips it, so the control leaves the corner. */
+.map-inspector-close { position:sticky; top:var(--gg-space-2); z-index:var(--gg-z-sticky); float:right; margin-bottom:calc(-1 * var(--gg-size-control-sm)); }
 .map-kind-chip { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding-right:20px; font-size:var(--gg-text-caption); color:var(--gg-color-text-secondary); }
 .map-kind-chip > span { background:var(--gg-color-bg-selected); border-radius:var(--gg-radius-full); padding:2px 6px; }
 .map-inspector h2 { font-size:var(--gg-text-title); line-height:var(--gg-leading-title); margin:12px 0; overflow-wrap:anywhere; }
@@ -110,7 +114,7 @@
 .map-probe { position:absolute; bottom:8px; right:8px; padding:4px; background:var(--gg-color-bg-raised); font-size:var(--gg-text-caption); pointer-events:none; }
 .map-view :focus-visible { outline:2px solid var(--gg-color-focus); outline-offset:2px; }
 @container map (max-width:900px) { .map-control-label { display:none; }.map-toolbar { gap:4px; }.map-toolbar-button { width:var(--gg-size-control-md); padding:var(--gg-space-1); }.map-inspector { position:absolute; inset:auto 0 0; height:60%; width:auto; z-index:var(--gg-z-panel); border-left:0; border-top:1px solid var(--gg-color-border-subtle); box-shadow:var(--gg-shadow-sm); }.map-search { flex:1; width:auto; min-width:160px; max-width:420px; }.map-toolbar-spacer { flex:0; } }
-@keyframes map-inspector-in { from { opacity:0; transform:translateX(16px); } to { opacity:1; transform:translateX(0); } }
+@keyframes map-inspector-in { from { opacity:0; } to { opacity:1; } }
 @keyframes map-spin { to { transform:rotate(360deg); } } @keyframes map-shimmer { to { opacity:.02; } }
 @media (prefers-reduced-motion:reduce) { .map-inspector,.map-skeleton { animation:none; } .map-updating i { display:none; } }
 .map-list table + table { margin-top:24px; }.map-list td small { display:block; color:var(--gg-color-map-edge-disputed); }
@@ -149,6 +153,10 @@
 .map-lens-menu .map-lens-note { margin:0; padding:var(--gg-space-1) var(--gg-space-2) var(--gg-space-2); color:var(--gg-color-text-secondary); font-size:var(--gg-text-caption); }
 .map-lens-menu:not(.map-around-menu) section h3 { margin:var(--gg-space-2) var(--gg-space-2) var(--gg-space-1); color:var(--gg-color-text-tertiary); font-size:var(--gg-text-caption); font-weight:var(--gg-weight-medium); }
 .map-library { position:absolute; inset:0 auto 0 0; width:var(--gg-size-inspector); max-width:100%; z-index:var(--gg-z-sidebar); background:var(--gg-color-bg-raised); border-right:1px solid var(--gg-color-border-subtle); box-shadow:var(--gg-shadow-sm); display:flex; flex-direction:column; min-height:0; }
+/* The default side panel is 460px. A 360px Library there leaves a strip too narrow to read the status line or the graph. Cover the canvas; closing the Library brings the map back. */
+@container map (max-width: 720px) {
+  .map-library { width: 100%; border-right: 0; box-shadow: none; }
+}
 .map-library > header { display:flex; align-items:center; justify-content:space-between; padding:var(--gg-space-4); }
 .map-library h2 { font-size:var(--gg-text-heading); }
 .map-library > [data-slot=tabs] { flex:1; min-height:0; gap:0; }
@@ -185,7 +193,8 @@
 .map-library .memory-search { width:100%; min-width:0; }
 .map-library > header h2 { font-size:var(--gg-text-heading); }
 .map-library .knowledge-browser h2 { font-size:var(--gg-text-control); }
-.map-library .source-library-controls,.map-library .research-library-controls { position:static; grid-template-columns:minmax(0,1fr); gap:var(--gg-space-3); padding:var(--gg-space-3) var(--gg-space-4) 0; border-bottom:0; background:transparent; }
+/* Stick to the library list. Static let the search and filters leave a short drawer. */
+.map-library .source-library-controls,.map-library .research-library-controls { position:sticky; top:0; z-index:var(--gg-z-sticky); grid-template-columns:minmax(0,1fr); gap:var(--gg-space-3); padding:var(--gg-space-3) var(--gg-space-4) 0; border-bottom:0; background:var(--gg-color-bg-raised); }
 .map-library .source-library-row,.map-library .research-library-row { padding:var(--gg-space-3) var(--gg-space-4); border-radius:0; }
 .map-library .memory-rail-copy strong { font-size:var(--gg-text-control); display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
 .map-library .source-summary { font-size:var(--gg-text-meta); -webkit-line-clamp:2; }
@@ -304,6 +313,7 @@
   color:var(--gg-color-text-secondary); font-size:var(--gg-text-caption); line-height:var(--gg-leading-caption);
   font-weight:var(--gg-weight-medium); text-transform:uppercase;
 }
+.map-library .source-library-heading.library-section-label:lang(ko) { letter-spacing:0; text-transform:none; }
 .map-library h3.library-section-label { flex-wrap:nowrap; }
 .map-library .library-section-label > :is(h2, h3) { margin:0; font:inherit; color:inherit; text-transform:inherit; }
 .map-library .library-section-label > span { margin-inline-start:auto; flex:none; font:inherit; color:inherit; font-variant-numeric:tabular-nums; }

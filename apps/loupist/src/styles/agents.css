@@ -88,8 +88,11 @@
 .loupist-reconnect-error summary { cursor: pointer; }
 
 .loupist-profile-form { display: grid; gap: var(--gg-space-3); margin-top: var(--gg-space-3); }
-.loupist-profile-form > fieldset { display: grid; gap: var(--gg-space-2); border: 0; padding: 0; min-width: 0; }
+.loupist-profile-form > fieldset { display: block; border: 0; padding: 0; min-width: 0; }
+.loupist-profile-form > fieldset > label { display: block; }
+.loupist-profile-form > fieldset > * + * { margin-top: var(--gg-space-2); }
 .loupist-profile-form label, .loupist-profile-avatars legend { font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); }
+.loupist-profile-avatars > legend { display: block; width: 100%; }
 .loupist-profile-form textarea { field-sizing: fixed; }
 .loupist-profile-form footer { padding-block: var(--gg-space-2); display: flex; align-items: center; gap: var(--gg-space-2); flex-wrap: wrap; }
 .loupist-profile-avatars { border: 0; padding: 0; margin-block: var(--gg-space-2); min-width: 0; }

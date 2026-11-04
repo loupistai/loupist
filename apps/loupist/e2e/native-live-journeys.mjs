@@ -148,7 +148,7 @@ async function visibleMenuItem(exactText) {
 async function choosePreset() {
   await openDestination(browser, "chat");
   const composer = await displayed('textarea[aria-label="Message Loupist"]');
-  const modelMenu = await displayed('[aria-label="Model settings for this message"]');
+  const modelMenu = await displayed('[aria-label$="Model settings for this message"]');
   await browser.waitUntil(async () => modelMenu.isEnabled(), {
     timeout: 90_000,
     timeoutMsg: "The Chat model menu did not become available",
@@ -704,7 +704,7 @@ try {
       await shot("07-custom-form");
       await (await form.$("[data-custom-add]")).click();
       await waitForShell(browser, 30_000);
-      const picker = await displayed('[aria-label="Model settings for this message"]');
+      const picker = await displayed('[aria-label$="Model settings for this message"]');
       // The composer shows "Auto"; the resolved model is the control's description.
       assert.match(await picker.getAttribute("aria-description") ?? "", /local-test-model/u, "Chat did not default to the custom provider's model");
       const firstTiming = await sendPrompt("Say hello.");

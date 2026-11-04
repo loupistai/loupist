@@ -115,7 +115,7 @@ export function AppNavigation({
     <Sidebar className="app-navigation" collapsible="icon" aria-label={i18n.t("app:appNavigation.applicationNavigation")}>
       <SidebarHeader data-tauri-drag-region="deep">
         <div className="navigation-toolbar"><SidebarTrigger /></div>
-        <Button variant="ghost" className="navigation-command navigation-search" aria-label={i18n.t("app:shell.search")}
+        <Button variant="ghost" className="navigation-command navigation-search" aria-label={state === "collapsed" && !isMobile ? i18n.t("app:shell.search") : undefined}
           title={i18n.t("app:shell.searchShortcut", { shortcut: searchShortcut })} onClick={() => { onSearch(); closeMobile(); }}>
           <SearchIcon /><span>{i18n.t("app:shell.search")}</span><kbd aria-hidden="true">{searchShortcut}</kbd>
         </Button>

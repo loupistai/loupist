@@ -610,6 +610,7 @@
     "restore": "Restore",
     "openChat": "Open originating Chat",
     "entities": "Linked entities",
+    "unknownEntity": "Name unavailable",
     "outcome": "Outcome",
     "search": "Search notes",
     "searchPlaceholder": "Search your journal and research notes",

@@ -6,7 +6,7 @@ import { PageHeader } from "../ui/page-header";
 import { DatabaseIcon, RefreshCwIcon, SearchIcon, SlidersHorizontalIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
+import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -162,13 +162,11 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
         <section className="connection-catalog" aria-labelledby="available-connections-title">
           <h2 className="connection-section-heading" id="available-connections-title">{i18n.t("connections:marketplaceView.availableConnections")}</h2>
         <div className="marketplace-browser">
-          <Tabs value={statusFilter} onValueChange={setStatusFilter} className="marketplace-status-tabs">
-            <TabsList aria-label={i18n.t("connections:marketplaceView.connectionReadiness")}>
-              <TabsTrigger value="all">{i18n.t("connections:marketplaceView.allConnections")}</TabsTrigger>
-              <TabsTrigger value="ready">{i18n.t("connections:marketplaceView.readyToUse")}</TabsTrigger>
-              <TabsTrigger value="setup">{i18n.t("connections:marketplaceView.needsAttention")}</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <SegmentedControl value={statusFilter} onValueChange={setStatusFilter} className="marketplace-status-tabs" aria-label={i18n.t("connections:marketplaceView.connectionReadiness")}>
+              <SegmentedControlItem value="all">{i18n.t("connections:marketplaceView.allConnections")}</SegmentedControlItem>
+              <SegmentedControlItem value="ready">{i18n.t("connections:marketplaceView.readyToUse")}</SegmentedControlItem>
+              <SegmentedControlItem value="setup">{i18n.t("connections:marketplaceView.needsAttention")}</SegmentedControlItem>
+            </SegmentedControl>
           <div className="marketplace-controls">
             <label className="marketplace-search">
               <SearchIcon aria-hidden="true" />

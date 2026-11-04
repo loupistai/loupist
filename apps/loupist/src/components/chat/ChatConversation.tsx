@@ -16,6 +16,7 @@ import type {
   GraphJobView,
 } from "../../types";
 import type { LoupistBridge, LoupistTemplateId } from "../../types";
+import { revealFocused } from "../../lib/revealFocused";
 import { ChatMessageCard } from "./ChatMessageCard";
 import type { ProviderErrorAction } from "./ChatErrorState";
 import { QuoteAsk } from "./QuoteAsk";
@@ -275,6 +276,7 @@ export function ChatConversation({
   return (
     <Conversation
       className="message-scroll"
+      onFocus={revealFocused}
       aria-label={t("chatConversation.conversation")}
       aria-relevant="additions"
       scrollRevision={scrollRevision}

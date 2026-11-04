@@ -218,9 +218,9 @@ export function MorningMessage({ bridge, loupistId, loupistName, focus, onAsk, o
       const reasonId = `${reasonIds}-${index}`;
       // The question is the name; why it is offered is the description.
       return <li key={`${question.template}:${text}`}>
-        <button type="button" className="morning-question" aria-label={text} aria-describedby={reason ? reasonId : undefined} onClick={() => onAsk(text)}>
+        <button type="button" className="morning-question" aria-describedby={reason ? reasonId : undefined} onClick={() => onAsk(text)}>
           <span>{text}</span>
-          {reason ? <small id={reasonId}>{reason}</small> : null}
+          {reason ? <small id={reasonId} aria-hidden="true">{reason}</small> : null}
         </button>
       </li>;
     })}</ul>
@@ -314,15 +314,15 @@ function UpcomingStrip({ events, loupistId, nameOf, onOpenAsset, onOpenJournal }
         : onOpenAsset ? () => onOpenAsset({ loupistId, assetId: event.asset.assetId, name, ...(event.kind === "results" ? { section: "results" as const, eventId: event.eventId } : {}) })
           : undefined;
       const cells = <>
-        <time dateTime={event.date}>{date}</time>
-        {name ? <span className="morning-upcoming-name">{name}</span> : null}
+        <time dateTime={event.date}>{date}</time>{" "}
+        {name ? <><span className="morning-upcoming-name">{name}</span>{" "}</> : null}
         <span className="morning-upcoming-event" data-wide={name ? undefined : ""}>{what}</span>
       </>;
       const key = `${event.kind}:${event.kind === "check" ? event.journalId : event.asset.assetId}:${event.date}`;
       // The row reads as one sentence; the full text stays available when a narrow window cuts it.
       const label = [date, name, what].filter(Boolean).join(" · ");
       return <li key={key} data-kind={event.kind}>
-        {open ? <button type="button" className="morning-upcoming-row" aria-label={label} title={label} onClick={open}>{cells}</button>
+        {open ? <button type="button" className="morning-upcoming-row" title={label} onClick={open}>{cells}</button>
           : <span className="morning-upcoming-row" title={label}>{cells}</span>}
       </li>;
     })}</ul>

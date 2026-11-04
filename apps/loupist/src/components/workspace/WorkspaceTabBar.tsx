@@ -66,6 +66,7 @@ export function WorkspaceTabBar({
   useTranslation("chat");
   const chatMap = useChatMap();
   const addMenuRef = useRef<HTMLDetailsElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
   const addTriggerRef = useRef<HTMLElement>(null);
   const menuFocusIndex = useRef<number | null>(null);
   useLayoutEffect(() => {
@@ -124,6 +125,15 @@ export function WorkspaceTabBar({
       document.getElementById(workspaceTabButtonId(nextId))?.focus();
     }
   };
+  useLayoutEffect(() => {
+    const list = tabsRef.current;
+    const selected = list?.querySelector<HTMLElement>('[data-active="true"]');
+    if (!list || !selected) return;
+    const left = selected.offsetLeft;
+    const right = left + selected.offsetWidth;
+    if (left < list.scrollLeft) list.scrollLeft = left;
+    else if (right > list.scrollLeft + list.clientWidth) list.scrollLeft = right - list.clientWidth;
+  }, [activeTab?.id, mapSelected, evidenceSelected, workSelected]);
   const evidenceTitle = t("workspaceTabBar.evidence");
   const workTitle = t("workspaceTabBar.work");
 
@@ -153,19 +163,20 @@ export function WorkspaceTabBar({
   return (
     <div className="workspace-tabbar">
       <div
+        ref={tabsRef}
         className="workspace-tabs"
-        role="tablist"
-        aria-label={t("workspaceTabBar.openWorkspaceTabs")}
+        style={{ gridTemplateColumns: `repeat(${tabIds.length}, max-content)` }}
       >
-        {chatMap ? <div className="workspace-tab workspace-tab-fixed" data-active={mapSelected || undefined}><button id={workspaceTabButtonId(CHAT_MAP_TAB_ID)} type="button" role="tab" aria-selected={mapSelected} aria-controls={workspaceTabPanelId(CHAT_MAP_TAB_ID)} tabIndex={mapSelected ? 0 : -1} onClick={() => chatMap.select()} onKeyDown={event => moveTabFocus(event, CHAT_MAP_TAB_ID)}><NetworkIcon /><span>{t("workspaceTabBar.map")}</span>{chatMap.badged ? <NewContentBadge title={t("workspaceTabBar.map")} /> : null}</button></div> : null}
-        <div className="workspace-tab workspace-tab-fixed" data-active={evidenceSelected || undefined}>
+        <div className="workspace-tab-list" role="tablist" aria-label={t("workspaceTabBar.openWorkspaceTabs")}>
+        {chatMap ? <div className="workspace-tab workspace-tab-fixed" style={{ gridColumn: 1 }} data-active={mapSelected || undefined}><button id={workspaceTabButtonId(CHAT_MAP_TAB_ID)} type="button" role="tab" aria-selected={mapSelected} aria-controls={workspaceTabPanelId(CHAT_MAP_TAB_ID)} tabIndex={mapSelected ? 0 : -1} onClick={() => chatMap.select()} onKeyDown={event => moveTabFocus(event, CHAT_MAP_TAB_ID)}><NetworkIcon /><span>{t("workspaceTabBar.map")}</span>{chatMap.badged ? <NewContentBadge title={t("workspaceTabBar.map")} /> : null}</button></div> : null}
+        <div className="workspace-tab workspace-tab-fixed" style={{ gridColumn: tabIds.indexOf(EVIDENCE_TAB_ID) + 1 }} data-active={evidenceSelected || undefined}>
           <button id={workspaceTabButtonId(EVIDENCE_TAB_ID)} type="button" role="tab" aria-selected={evidenceSelected} aria-controls={workspaceTabPanelId(EVIDENCE_TAB_ID)} tabIndex={evidenceSelected ? 0 : -1}
             onClick={() => { chatMap?.deselect(); onSelectTab(EVIDENCE_TAB_ID); }} onKeyDown={event => moveTabFocus(event, EVIDENCE_TAB_ID)}>
             <BookOpenIcon /><span>{evidenceTitle}</span>
             {badged(EVIDENCE_TAB_ID) && !evidenceSelected ? <NewContentBadge title={evidenceTitle} /> : null}
           </button>
         </div>
-        <div className="workspace-tab workspace-tab-fixed" data-active={workSelected || undefined}>
+        <div className="workspace-tab workspace-tab-fixed" style={{ gridColumn: tabIds.indexOf(WORK_TAB_ID) + 1 }} data-active={workSelected || undefined}>
           <button id={workspaceTabButtonId(WORK_TAB_ID)} type="button" role="tab" aria-selected={workSelected} aria-controls={workspaceTabPanelId(WORK_TAB_ID)} tabIndex={workSelected ? 0 : -1}
             onClick={() => { chatMap?.deselect(); onSelectTab(WORK_TAB_ID); }} onKeyDown={event => moveTabFocus(event, WORK_TAB_ID)}>
             <ChartNoAxesCombinedIcon /><span>{workTitle}</span>
@@ -178,6 +189,8 @@ export function WorkspaceTabBar({
           return (
             <div
               className="workspace-tab"
+              data-tab-id={tab.id}
+              style={{ gridColumn: tabIds.indexOf(tab.id) + 1 }}
               data-active={selected || undefined}
               key={tab.id}
             >
@@ -197,10 +210,19 @@ export function WorkspaceTabBar({
                 {badged(tab.id) && !selected ? <NewContentBadge title={title} /> : null}
                 {tab.kind === "browser" && tab.loading && <Spinner />}
               </button>
-              <button
+            </div>
+          );
+        })}
+        </div>
+        {/* Actions share their tab's grid cell, outside the tablist's semantics. */}
+        <div className="workspace-tab-actions" role="group" aria-label={t("workspaceTabBar.openWorkspaceTabs")}>
+        {closable.map(tab => <button
+                key={tab.id}
                 type="button"
                 className="workspace-tab-close"
-                aria-label={t("workspaceTabBar.closeTab", { title: title })}
+                data-tab-close={tab.id}
+                style={{ gridColumn: tabIds.indexOf(tab.id) + 1 }}
+                aria-label={t("workspaceTabBar.closeTab", { title: workspaceTabTitle(tab) })}
                 onClick={(event) => {
                   const shouldRestore = event.currentTarget === document.activeElement;
                   const index = closable.findIndex((item) => item.id === tab.id);
@@ -210,19 +232,16 @@ export function WorkspaceTabBar({
                 }}
               >
                 <XIcon />
-              </button>
-            </div>
-          );
-        })}
+              </button>)}
+        </div>
       </div>
       <details
         ref={addMenuRef}
         className="workspace-add"
         open={menuOpen}
-        onToggle={(event) => onMenuOpenChange(event.currentTarget.open)}
         onKeyDown={moveMenuFocus}
       >
-        <summary ref={addTriggerRef} aria-label={t("workspaceTabBar.openWorkspaceItem")} title={t("workspaceTabBar.openWorkspaceItem")} aria-haspopup="menu" aria-expanded={menuOpen}>
+        <summary ref={addTriggerRef} onClick={event => { event.preventDefault(); onMenuOpenChange(!menuOpen); }} aria-label={t("workspaceTabBar.openWorkspaceItem")} title={t("workspaceTabBar.openWorkspaceItem")} aria-haspopup="menu" aria-expanded={menuOpen}>
           <PlusIcon />
         </summary>
         <div className="workspace-add-menu" role="menu">

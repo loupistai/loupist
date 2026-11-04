@@ -51,7 +51,8 @@ such as company, concept, period and basis, then the matched cell) or its passag
 span; a calculated check keeps the title, up to eight formula lines, up to twelve inputs
 with their label, unit, source and status, and a DCF grid's size; the popover names and
 prints each input from these and never reads them from the formula or the evidence (an
-input without a unit prints as its bare number). Surfaces are listed in
+input without a unit prints as its bare number). On a short window the popover stays
+above the composer and scrolls, with its actions pinned. Surfaces are listed in
 [Where each item appears](surfaces.md#where-each-item-appears).
 
 ### Number matching

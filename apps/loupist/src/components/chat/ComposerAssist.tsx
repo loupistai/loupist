@@ -213,6 +213,7 @@ export function ComposerAssistMenu({
                   data-kind={assistRowKind(option)}
                   data-row={option.ticker ? "ticker" : trigger.symbol === "/" ? "plain" : undefined}
                   aria-label={option.name}
+                  aria-describedby={option.detail && option.detail !== option.name ? `${id}-${index}-detail` : undefined}
                   aria-selected={index === activeOption}
                   tabIndex={-1}
                   onMouseDown={(event) => event.preventDefault()}
@@ -224,7 +225,7 @@ export function ComposerAssistMenu({
                     : trigger.symbol === "/" ? null : <span className="composer-assist-icon" aria-hidden="true"><Icon /></span>}
                   <span className="composer-assist-copy">
                     <strong>{highlightMatch(option.name, trigger.query)}</strong>
-                    {option.detail && option.detail !== option.name ? <small>{option.detail}</small> : null}
+                    {option.detail && option.detail !== option.name ? <small id={`${id}-${index}-detail`} aria-hidden="true">{option.detail}</small> : null}
                   </span>
                   <span className="composer-assist-enter" aria-hidden="true">
                     {index === activeOption ? <CornerDownLeftIcon /> : null}

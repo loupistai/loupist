@@ -40,7 +40,7 @@ export function LoupistChatItem({ icon, iconOnly = false, thread, active, runnin
       <SidebarMenuButton
         type="button"
         className="loupist-chat-button" data-thread-id={thread.id}
-        aria-label={title}
+        aria-label={thread.home && !iconOnly ? undefined : title}
         aria-describedby={thread.home && !iconOnly ? homeDescId : undefined}
         title={thread.home ? `${title}. ${homeDescriptor}` : title}
         aria-busy={running || undefined}
@@ -50,7 +50,7 @@ export function LoupistChatItem({ icon, iconOnly = false, thread, active, runnin
         onClick={() => onSelect(thread)}
       >
         {thread.home ? <InboxIcon className="loupist-home-icon" aria-hidden="true" /> : icon}
-        {iconOnly ? null : thread.home ? <span className="loupist-home-copy"><span className="loupist-chat-title">{title}</span><small id={homeDescId}>{homeDescriptor}</small></span>
+        {iconOnly ? null : thread.home ? <span className="loupist-home-copy"><span className="loupist-chat-title">{title}</span><small id={homeDescId} aria-hidden="true">{homeDescriptor}</small></span>
           : <span className="loupist-chat-title">{title}</span>}
         {draft ? <span className="loupist-draft-dot" role="img" aria-label={i18n.t("app:loupistChatItem.unsentDraft")} title={i18n.t("app:loupistChatItem.unsentDraft")} /> : null}
         {running ? <Spinner className="thread-running" aria-label={i18n.t("app:loupistChatItem.isRunning", { title: chatTitle(thread) })} />

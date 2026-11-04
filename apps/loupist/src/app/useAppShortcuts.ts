@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { GLOBAL_KEYS, isMacPlatform } from "./shortcuts";
+import { GLOBAL_KEYS, isMacPlatform, modalDialogOpen } from "./shortcuts";
 
 export const shortcutModifier = () => isMacPlatform() ? "⌘" : "Ctrl+";
 
@@ -22,7 +22,7 @@ export function useAppShortcuts({ onSettings, onNewChat, onPalette, canCreateCha
         if (composer) { event.preventDefault(); composer.focus(); }
         return;
       }
-      if (event.shiftKey || !(event.metaKey || event.ctrlKey) || document.querySelector('[role="dialog"][data-state="open"]')) return;
+      if (event.shiftKey || !(event.metaKey || event.ctrlKey) || modalDialogOpen()) return;
       const key = event.key.toLowerCase();
       if (key === GLOBAL_KEYS.settings) {
         event.preventDefault();

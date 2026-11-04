@@ -5,7 +5,7 @@ The Map draws the observed World. Lens highlights names the host already recorde
 ## Map and Library
 
 Map's primary surface is the observed World: entities, claims and the evidence
-behind them, from the `knowledge_map` projection. The status line names World.
+behind them, from the `knowledge_map` projection. The status line names World. On a narrow map it wraps inside the visible canvas, so the weekly count and the disagreement count stay whole.
 World search, layout and replay use the drawable map items. The header's Panel kind selector opens Lens (research principles and methods) or World beside the current chat. The Bot's sidebar contextual menu opens scheduled-task history. Linked principles and methods open the shared reader. Corrections go to the Bot with the item attached. A newly added relationship can open directly from an answer in the World panel. Share exports the image or growth replay.
 
 Under **Filter**, **Highlight Lens applications** highlights the entities the host already recorded with
@@ -43,7 +43,10 @@ then name, six per group then "+n more", line weight by claim weight and dashed 
 disputed; Lens entries applied to the name (`applies_to`) close Other on one "Lenses applied" line with dotted rules in the method colour; pointing at a counterpart or Lens entry (hover or focus) widens its line on the canvas to 2.5 px (a Lens line stays dotted in the method colour); clicking a counterpart walks there and Back retraces. Clicking a Lens opens its document.
 
 The Library drawer contains Sources and Notes (Journal and working notes).
+On a map narrower than 720px, including the default 460px side panel, the Library covers the canvas instead of leaving a strip too narrow to read. Closing it brings the map back.
+The source and note filters stay at the top of the list while it scrolls.
 Entity/claim inspectors and Source and note readers open alongside the map.
+The inspector's close control stays in the corner while the facts scroll. On a map narrower than 900px the inspector is a bottom sheet, and that control stays inside the sheet.
 The application filter acts on the World canvas. It highlights the entities a
 Lens was applied to and names them. It does not draw the Lens, and it does not
 treat a claim line as an application. When every applied name is outside the
@@ -88,7 +91,8 @@ reports above Key facts, with source titles, dates and exact Source actions.
 Reports that share a relation and the same role-labelled endpoints are one group,
 because a World claim has no conflict-pair id. Explain the disagreement under them opens
 a new topic Chat whose composer holds the entity, up to three disputed relations as pins
-and a question, never sent. A `world_read` whose view holds disputed claims adds
+and a question, never sent. When the workspace covers the chat, that action closes
+the cover so the draft is on screen. A `world_read` whose view holds disputed claims adds
 `sources_disagree` to its result (the claim count, up to eight entity ids and a hint to
 show the difference with a [conflict card](../analysis/grids.md#grid-cells) instead of averaging or
 picking one). Perspectives, principles and methods appear in the application filter,

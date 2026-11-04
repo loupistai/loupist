@@ -14,7 +14,7 @@ it("filters connection readiness using the host’s verified state and combines 
   render(<MarketplaceView bridge={bridge} />);
   const user = userEvent.setup();
   expect(await screen.findByRole("heading", { name: ready.name, level: 3 })).toBeVisible();
-  await user.click(screen.getByRole("tab", { name: "Ready to use" }));
+  await user.click(screen.getByRole("radio", { name: "Ready to use" }));
   expect(screen.getByRole("heading", { name: ready.name, level: 3 })).toBeVisible();
   expect(screen.queryByRole("heading", { name: unavailable.name, level: 3 })).toBeNull();
   await user.type(screen.getByRole("searchbox", { name: "Search connections" }), "no-matching-connection");

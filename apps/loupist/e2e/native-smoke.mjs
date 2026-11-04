@@ -267,7 +267,7 @@ try {
     await displayed('input[aria-label="Search connections"]');
     await waitForText(panel, "Market data platform");
     const unsupported = await browser.execute(() =>
-      [...document.querySelectorAll('#main-panel-settings [role="tab"]')]
+      [...document.querySelectorAll('#main-panel-settings [role="tab"], #main-panel-settings [role="radio"]')]
         .map((element) => element.textContent?.trim() ?? "")
         .filter((text) => /Community|Libraries/.test(text)),
     );
@@ -368,20 +368,20 @@ try {
       await browser.keys("Escape");
     }
     await openSettings("appearance");
-    const dark = await displayed('button[aria-label="Dark theme"]');
+    const dark = await displayed('button[title="Dark theme"]');
     await dark.click();
     await browser.waitUntil(async () => (await dark.getAttribute("aria-pressed")) === "true", {
       timeout: 5_000,
       timeoutMsg: "Dark theme was not saved",
     });
     assert.equal(await (await displayed(".app-shell")).getAttribute("data-theme"), "dark");
-    const light = await displayed('button[aria-label="Light theme"]');
+    const light = await displayed('button[title="Light theme"]');
     await light.click();
     await browser.waitUntil(async () => (await light.getAttribute("aria-pressed")) === "true", {
       timeout: 5_000,
       timeoutMsg: "Light theme was not saved",
     });
-    await (await displayed('button[aria-label="System theme"]')).click();
+    await (await displayed('button[title="System theme"]')).click();
     await openSettings("updates");
     await clickButton("Check for updates", panel);
     await waitForText(panel, "Automatic updates are unavailable");

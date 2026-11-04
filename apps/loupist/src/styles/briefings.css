@@ -8,6 +8,7 @@
 .briefings-layout { flex: 1; display: grid; grid-template-columns: var(--gg-size-inspector) minmax(0, 1fr); min-height: 0; }
 .briefings-inbox { overflow: auto; border-right: 1px solid var(--gg-color-border-subtle); }
 .briefings-group { margin: 0; padding: var(--gg-space-4) var(--gg-space-4) var(--gg-space-2); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); text-transform: uppercase; }
+.briefings-group:lang(ko) { letter-spacing: 0; text-transform: none; }
 .briefings-item { display: block; width: 100%; min-height: var(--gg-space-10); padding: var(--gg-space-3) var(--gg-space-4); text-align: left; }
 .briefings-item:hover { background: var(--gg-color-bg-hover); }
 .briefings-item[aria-selected="true"] { background: var(--gg-color-bg-selected); }
@@ -19,7 +20,7 @@
 .briefings-summary { margin-top: var(--gg-space-1); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 .briefings-summary svg { display: inline; width: var(--gg-space-3); height: var(--gg-space-3); margin-right: var(--gg-space-1); }
 .briefings-summary[data-failed="true"], .briefings-error { color: var(--gg-color-negative); }
-.briefings-reader-scroll { min-width: 0; overflow: auto; }
+.briefings-reader-scroll { min-width: 0; overflow: auto; scroll-padding-block: var(--gg-space-4); }
 .briefings-reader { max-width: var(--gg-size-reading-column); margin: auto; padding: var(--gg-space-6); }
 .briefings-reader > header { padding-bottom: var(--gg-space-4); margin-bottom: var(--gg-space-5); border-bottom: 1px solid var(--gg-color-border-subtle); }
 .briefings-reader h2, .briefings-empty h2 { font-size: var(--gg-text-heading); line-height: var(--gg-leading-heading); font-weight: var(--gg-weight-semibold); }
@@ -41,7 +42,10 @@
 .briefings-days { display: flex; gap: var(--gg-space-1); flex-wrap: wrap; margin-top: var(--gg-space-2); }
 .briefings-days button { min-width: var(--gg-size-control-md); height: var(--gg-size-control-md); padding: 0 var(--gg-space-2); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-full); font-size: var(--gg-text-meta); }
 .briefings-days button[aria-pressed="true"] { background: var(--gg-color-bg-selected); border-color: var(--gg-color-accent); }
-.briefings-time { display: grid; gap: var(--gg-space-2); border: 0; margin: 0; padding: 0; }
+/* Block, not grid: WKWebView collapses a grid fieldset legend to one character. */
+.briefings-schedule-dialog fieldset { display: block; min-width: 0; margin: 0; padding: 0; border: 0; }
+.briefings-schedule-dialog fieldset > legend { display: block; width: 100%; margin: 0 0 var(--gg-space-2); padding: 0; }
+.briefings-time { display: block; }
 .briefings-clock { display: flex; gap: var(--gg-space-2); }
 .briefings-clock > * { flex: 1; min-width: 0; }
 .briefings-resident { display: flex; align-items: flex-start; gap: var(--gg-space-3); }

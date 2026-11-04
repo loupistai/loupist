@@ -475,7 +475,7 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onA
             : visibleRows.length ? <ol className="asset-changes">
               {byDay(visibleRows).map(group => group.rows.map((row, index) => <li key={row.id} className="asset-change" data-kind={row.kind} data-arrived={arrived.has(row.id) || undefined}>
                 <span className="asset-change-day gg-num">{index === 0 ? shortDay(group.day) : ""}</span>
-                <span className="asset-change-kind">{row.new ? <i className="asset-new-dot" aria-label={t("row.new")} /> : null}{tDynamic(`kind.${row.kind}`)}</span>
+                <span className="asset-change-kind">{row.new ? <i className="asset-new-dot" role="img" aria-label={t("row.new")} /> : null}{tDynamic(`kind.${row.kind}`)}</span>
                 <div className="asset-change-body">
                   <p><ChangeText row={row} /> <SourceChips evidence={row.evidence} numbers={numbers} onOpen={openEvidence} /></p>
                   {row.sections ? (row.sections.length

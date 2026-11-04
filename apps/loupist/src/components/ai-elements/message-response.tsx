@@ -1,7 +1,7 @@
 import type { OpenLinkOptions } from "@/chat/links";
 import i18n, { useTranslation } from "@/i18n";
 import type { ChatEvidenceRef, MemoryRef, NumberCheck } from "../../types";
-import { citationLabel, evidencePresentation, evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
+import { citationLabel, citationNumber, evidencePresentation, evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
 import { memoryReadForEvidence } from "../../chat/memoryActivity";
 import { checkFor, looksLikeNumber } from "../../chat/numberChecks";
 import { keepNumberParticles } from "../../chat/keepParticles";
@@ -99,7 +99,11 @@ function LoupistMarkdownLink({
     const preview = evidencePresentation(evidence);
     const read = memoryReadForEvidence(evidence, memoryRefs);
     const label = citationLabel(evidence, evidenceRefs ?? [], read?.title);
-    return <CitationChip evidence={evidence} label={label} title={title} source={host || preview.label} onOpen={(anchor) => onOpenEvidence(evidence, anchor)}>{children}</CitationChip>;
+    // Model-written reference numbers can disagree with the retained source list.
+    // Keep the visible number and spoken source number tied to the same evidence.
+    const number = /^\d+$/u.test(linkText) ? citationNumber(evidence, evidenceRefs ?? []) : null;
+    const accessibleLabel = number === null && linkText && !label.toLocaleLowerCase().includes(linkText.toLocaleLowerCase()) ? `${linkText} · ${label}` : label;
+    return <CitationChip evidence={evidence} label={accessibleLabel} title={title} source={host || preview.label} onOpen={(anchor) => onOpenEvidence(evidence, anchor)}>{number ?? children}</CitationChip>;
   }
 
   if (href?.startsWith("#")) {

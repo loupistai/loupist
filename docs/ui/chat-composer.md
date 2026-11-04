@@ -1,6 +1,6 @@
 # Chat composer
 
-The composer and rail attach context and do not send it. Text and object references appear at the textarea cursor; whole-message settings (Skills, as-of date, privacy and model) sit below the text. Keyboard focus draws one outline on the composer's edge; the border and shadow drop out so they do not form a second line. Footer controls keep their own outline. `/asof` is the [date control](../analysis/point-in-time.md#composer-date-control). Width and the browser: [Evidence](evidence-browser.md).
+The composer and rail attach context and do not send it. Text and object references appear at the textarea cursor; whole-message settings (Skills, as-of date, privacy and model) sit below the text. Keyboard focus draws one outline on the composer's edge; the border and shadow drop out so they do not form a second line. Footer controls keep their own outline. When the tools wrap onto another row, Send stays at the trailing edge of that row. `/asof` is the [date control](../analysis/point-in-time.md#composer-date-control). Width and the browser: [Evidence](evidence-browser.md).
 Answer table, code and diagram controls use the current UI language for their tooltips and accessible names. A stopped reply shows the localized run state without the runtime's English stop marker in the answer or its copy action.
 The transcript keeps public progress notes, findings and citations in reading
 order. While work runs, short action labels grow down the conversation between
@@ -60,7 +60,7 @@ next-step chips after the latest answer come from the conflicts and names it
 found and fill the composer without sending. Leaving a view or switching Loupist does not cancel an admitted
 Chat. The composer has one private-chat switch, described under
 [Memory permissions](../knowledge/memory.md#memory-permissions-and-retrieval).
-When the reader scrolls away from the bottom, the live status or Jump to latest control
+Focusing a control below the fold scrolls it into the conversation. When the reader scrolls away from the bottom, the live status or Jump to latest control
 occupies its own row between the scroll viewport and composer. It shares the
 conversation’s scroll state, so jumping re-pins the reply while the control stays clear
 of answer text and actions. A short conversation that becomes scrollable when the
@@ -79,7 +79,7 @@ The "In this chat" rail lists Files & images (up to eight thumbnails; files link
 in answers marked "from Loupist"), Using (principles, methods and connections the
 answers used, plus pins), Learned (this chat's growth events, with name chips that
 highlight on the mini map) and Needs you: one "Needs your OK" row naming the waiting request (or how many) that scrolls to its card in the answer and focuses it; the buttons are only on that card. Its placement follows
-the chat workspace’s width. At 1120 px and wider, the sections share a 300px panel in a reserved right column of the chat body, inset 8px from its top and 12px from its right edge. The conversation and composer center in the remaining space; a transient status header uses that same column. At narrower widths, including beside a split panel, the same cards occupy their own right-aligned row above the transcript. That row can scroll within 30% of the chat body height. Opening a section changes its row height instead of floating over the answer or composer. An empty status header reserves no space. The rail is absent when there is no context. Fold state is remembered per Loupist on the device. The composer's "+" menu opens above the composer, aligned to its left edge like the `@`, `$` and `/` menus, and holds
+the chat workspace’s width. At 1120 px and wider, the sections share a 300px panel in a reserved right column of the chat body, inset 8px from its top and 12px from its right edge. The conversation and composer center in the remaining space; a transient status header uses that same column. At narrower widths, including beside a split panel, the same cards occupy their own right-aligned row above the transcript. A collapsed card's summary wraps so its counts stay visible. The Needs you target stays on one line, so Show stays at the end of that row. That row can scroll within 30% of the chat body height. Opening a section changes its row height instead of floating over the answer or composer. An empty status header reserves no space. The rail is absent when there is no context. Fold state is remembered per Loupist on the device. The composer's "+" menu opens above the composer, aligned to its left edge like the `@`, `$` and `/` menus, and holds
 Files…, Paste image, Screenshot of the map (disabled with a reason when no map is
 open or it is empty) and Add from Evidence (this chat's saved Sources as pins);
 dragging files over the chat column shows one drop overlay with the limits. The tray shows each file's size. Each file may be up to 25 MB (images 5 MB); Rust enforces it in `prepare_chat_attachments` and refuses a larger file with `attachment_too_large`, which the composer words in the reader's language.

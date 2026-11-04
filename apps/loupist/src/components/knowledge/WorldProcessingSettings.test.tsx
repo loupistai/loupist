@@ -6,7 +6,7 @@ import { WorldProcessingSettings } from "./WorldProcessingSettings";
 
 const setup = (bridge = new MockLoupistBridge({ delay_ms: 0 })) => ({ bridge, loupistId: "loupist-quality", onChanged: vi.fn(), onManageProviders: vi.fn() });
 const selection = async (user: ReturnType<typeof userEvent.setup>) => {
-  await user.click(await screen.findByRole("button", { name: "World processing model" }));
+  await user.click(await screen.findByRole("button", { name: /World processing model/ }));
   await user.type(screen.getByRole("searchbox", { name: "Search models" }), "ChatGPT");
   await user.click(screen.getByRole("menuitemradio", { name: "GPT-5.6 Luna" }));
   await user.click(screen.getByRole("menuitem", { name: "Advanced" }));
@@ -45,10 +45,10 @@ it("keeps model preferences per Loupist and independent of the Chat picker", asy
   await user.click(screen.getByRole("button", { name: "Save processing settings" }));
   await screen.findByText("World processing settings saved for this Loupist.");
   rerender(<WorldProcessingSettings {...props} loupistId="loupist-value" />);
-  expect(await screen.findByRole("button", { name: "World processing model" })).toHaveTextContent("Choose model");
+  expect(await screen.findByRole("button", { name: /World processing model/ })).toHaveTextContent("Choose model");
   expect(screen.getByRole("checkbox")).not.toBeChecked();
   rerender(<WorldProcessingSettings {...props} />);
-  expect(await screen.findByRole("button", { name: "World processing model" })).toHaveTextContent("GPT-5.6 Luna · High · Fast");
+  expect(await screen.findByRole("button", { name: /World processing model/ })).toHaveTextContent("GPT-5.6 Luna · High · Fast");
 });
 
 it("offers provider management when there are no connected models without enabling processing", async () => {
@@ -58,7 +58,7 @@ it("offers provider management when there are no connected models without enabli
   render(<WorldProcessingSettings {...props} />);
   const user = userEvent.setup();
   expect(await screen.findByText(/No connected models/)).toBeVisible();
-  expect(screen.queryByRole("button", { name: "World processing model" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /World processing model/ })).toBeNull();
   expect(screen.getByRole("checkbox")).not.toBeChecked();
   await user.click(screen.getByRole("button", { name: "Manage providers" }));
   expect(props.onManageProviders).toHaveBeenCalledOnce();
@@ -92,10 +92,10 @@ it("preserves edits after save or pause errors and retries settings reads", asyn
   await selection(user);
   await user.click(screen.getByRole("button", { name: "Save processing settings" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Settings could not save");
-  expect(screen.getByRole("button", { name: "World processing model" })).toHaveTextContent("High · Fast");
+  expect(screen.getByRole("button", { name: /World processing model/ })).toHaveTextContent("High · Fast");
   await user.click(screen.getByRole("button", { name: "Pause processing" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Processing could not pause");
-  expect(screen.getByRole("button", { name: "World processing model" })).toHaveTextContent("High · Fast");
+  expect(screen.getByRole("button", { name: /World processing model/ })).toHaveTextContent("High · Fast");
   await user.click(screen.getByRole("button", { name: "Save processing settings" }));
   await screen.findByText("World processing settings saved for this Loupist.");
 });
@@ -110,9 +110,9 @@ it("ignores an old Loupist save response after navigation", async () => {
   await selection(user);
   await user.click(screen.getByRole("button", { name: "Save processing settings" }));
   rerender(<WorldProcessingSettings {...props} loupistId="loupist-value" />);
-  expect(await screen.findByRole("button", { name: "World processing model" })).toHaveTextContent("Choose model");
+  expect(await screen.findByRole("button", { name: /World processing model/ })).toHaveTextContent("Choose model");
   await act(async () => resolveSave({ ...old, settings: { ...old.settings, helperModelProfileId: "model-test" } }));
-  expect(screen.getByRole("button", { name: "World processing model" })).toHaveTextContent("Choose model");
+  expect(screen.getByRole("button", { name: /World processing model/ })).toHaveTextContent("Choose model");
   expect(props.onChanged).not.toHaveBeenCalled();
 });
 

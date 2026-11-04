@@ -5,7 +5,7 @@ import type { CustomConnection, CustomConnectionsBridge } from "../../../contrac
 import { Button } from "../../ui/button";
 import { Input } from "../../ui/input";
 import { Textarea } from "../../ui/textarea";
-import { Tabs, TabsList, TabsTrigger } from "../../ui/tabs";
+import { SegmentedControl, SegmentedControlItem } from "../../ui/segmented-control";
 import { Disclosure } from "../../ui/disclosure";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter } from "../../ui/dialog";
 import { ToolReview, reviewComplete } from "./ToolReview";
@@ -110,7 +110,7 @@ export function AddConnectionDialog({ bridge, loupistId, onClose, onChanged }: {
           else setReview(next);
         }} /> : review.pending ? <p role="alert" className="custom-status negative">{t("custom.failed")} <Button variant="link" disabled={busy} onClick={() => void run(() => confirm(review))}>{t("custom.tryAgain")}</Button></p> : <ToolReview bridge={bridge} connection={review} loupistId={loupistId} onChanged={setReview} onError={() => { retry.current = null; setError(true); }} />}
       </> : <>
-        <Tabs value={mode === "command" ? "" : mode} onValueChange={value => { setMode(value); setPending([]); }}><TabsList aria-label={t("custom.method")}><TabsTrigger value="url"><span>{t("custom.serverUrl")}</span><small>{t("custom.recommended")}</small></TabsTrigger><TabsTrigger value="json">{t("custom.pasteJson")}</TabsTrigger></TabsList></Tabs>
+        <SegmentedControl value={mode === "command" ? "" : mode} onValueChange={value => { setMode(value); setPending([]); }} aria-label={t("custom.method")}><SegmentedControlItem value="url"><span>{t("custom.serverUrl")}</span><small>{t("custom.recommended")}</small></SegmentedControlItem><SegmentedControlItem value="json">{t("custom.pasteJson")}</SegmentedControlItem></SegmentedControl>
         {pending.length ? <><p className="custom-meta">{t("custom.nothingRuns")}</p><ul className="custom-tools">{pending.map(record => {
           const local = record.transport.kind === "stdio";
           return <li className="custom-tool" key={record.id}><strong>{record.name}</strong><span className="custom-meta">{t(local ? "custom.localCommand" : "custom.server")}</span><p className="custom-meta">{t("custom.envNames")}: {record.env_keys.join(", ") || t("custom.none")}</p><p className="custom-meta">{t("custom.headerNames")}: {record.header_names.join(", ") || t("custom.none")}</p>{local && record.command_line ? <pre className="custom-command">{record.command_line}</pre> : null}{record.transport.kind === "http" ? <pre className="custom-command">{record.transport.url}</pre> : null}{local ? <p className="custom-status warning">{t("custom.commandWarning")}</p> : null}<Button disabled={busy} onClick={() => void run(() => confirm(record))}>{t("custom.add")}</Button></li>;

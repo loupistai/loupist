@@ -5,6 +5,7 @@ import {
   type ErrorInfo,
   type ReactNode,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { usePacedText } from "../../chat/usePacedText";
@@ -118,7 +119,10 @@ function useDeferredMermaidPlugin(
 }
 
 export function SafeMessageResponse({ text, isAnimating, onOpenLink, onOpenFile, onLensLink, lensLinks, evidenceRefs, memoryRefs, onOpenEvidence, numberChecks, asOf, onOpenEvidenceCell, onShowStep, workspacePath, workspaceBasePath }: Props) {
-  const MessageResponse = readyRenderer ?? LazyMessageResponse;
+  // A cold instance must keep its Lazy type after the module becomes warm.
+  // Switching to the resolved function remounts citations, losing focus and a
+  // press already in progress when unrelated chat state next renders.
+  const MessageResponse = useRef(readyRenderer ?? LazyMessageResponse).current;
   const visibleText = usePacedText(text, isAnimating);
   const fallback = <p className="message-response-fallback">{plainResponseText(visibleText)}</p>;
   const mermaidPlugin = useDeferredMermaidPlugin(text, isAnimating);

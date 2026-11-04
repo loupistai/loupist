@@ -275,7 +275,8 @@
 
 .workspace-tabbar {
   position: relative;
-  z-index: var(--gg-z-sticky);
+  /* Above the browser toolbar, so the add menu is not covered by the address field. */
+  z-index: var(--gg-z-popover);
   min-height: 42px;
   flex-shrink: 0;
   display: flex;
@@ -286,18 +287,26 @@
 
 .workspace-tabs {
   min-width: 0;
-  display: flex;
+  display: grid;
+  grid-auto-columns: max-content;
+  grid-template-rows: minmax(0, 1fr);
   flex: 1 1 auto;
   align-items: stretch;
   overflow-x: auto;
   scrollbar-width: thin;
 }
 
+.workspace-tab-list, .workspace-tab-actions { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; grid-row: 1; }
+.workspace-tab-actions { pointer-events: none; }
+.workspace-tab, .workspace-tab-close { grid-row: 1; }
+
 .workspace-tab {
   min-width: 118px;
   max-width: 220px;
   display: flex;
-  flex: 0 1 180px;
+  /* Size to the title, up to 220px. Shrinking this tab to the 118px floor cut a short host once Map, Evidence and Work used the row. */
+  flex: 0 0 auto;
+  width: max-content;
   align-items: center;
   border-right: 1px solid var(--gg-color-border-subtle);
   color: var(--gg-color-text-secondary);
@@ -331,8 +340,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.workspace-tab:not(.workspace-tab-fixed) > [role="tab"] > span {
+  min-width: 0;
+  max-width: 160px;
+}
+.workspace-tab:not(.workspace-tab-fixed) > [role="tab"] { padding-right: calc(var(--gg-size-control-sm) + var(--gg-space-1)); }
 
 .workspace-tab svg,
+.workspace-tab-close svg,
 .workspace-add svg,
 .workspace-add-menu svg {
   width: 14px;
@@ -345,10 +360,13 @@
 }
 
 .workspace-tab-close {
-  width: 26px;
-  height: 26px;
+  pointer-events: auto;
+  justify-self: end;
+  align-self: center;
+  width: var(--gg-size-control-sm);
+  height: var(--gg-size-control-sm);
   display: grid;
-  flex: 0 0 26px;
+  flex: 0 0 var(--gg-size-control-sm);
   place-items: center;
   margin-right: 3px;
   padding: 0;
@@ -391,6 +409,7 @@
   background: var(--gg-color-bg-app);
 }
 
+.workspace-add:not([open]) > .workspace-add-menu { display: none; }
 .workspace-add-menu {
   position: absolute;
   top: calc(100% + 6px);
@@ -473,9 +492,10 @@
   min-height: var(--gg-size-control-md);
   display: flex;
   flex: none;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--gg-space-1);
-  padding: 0 var(--gg-space-3) 0 var(--gg-space-1);
+  padding: var(--gg-space-1) var(--gg-space-3) var(--gg-space-1) var(--gg-space-1);
   border-bottom: 1px solid var(--gg-color-border-subtle);
   color: var(--gg-color-text-secondary);
   font-size: var(--gg-text-meta);
@@ -487,6 +507,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The title can shrink. The date keeps its words and drops to the next line instead of being cut. */
+.workspace-status-updated {
+  flex: none;
+  max-width: 100%;
 }
 
 /* Work (side-panel.md P6): the open item fills the tab under its back row. */
@@ -856,8 +882,10 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 /* token-exception: breakpoint; vars unsupported in query conditions */
 
 @media (max-width: 1060px) {
+  /* Stay in the stage under the titlebar. A fixed sheet covers the header controls the panel is opened from. */
+  .app-stage { position: relative; }
   .artifact-panel-backdrop {
-    position: fixed;
+    position: absolute;
     inset: 0;
     z-index: var(--gg-z-dialog);
     display: block;
@@ -866,13 +894,13 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
   }
 
   .artifact-panel {
-    position: fixed;
+    position: absolute;
     inset: 0 0 0 auto;
     z-index: var(--gg-z-dialog);
     /* The narrow overlay leaves a strip of the chat visible (side-panel spec P1). */
-    width: min(480px, calc(100vw - 64px));
+    width: min(480px, calc(100% - 64px));
     min-width: 0;
-    height: 100dvh;
+    height: auto;
     padding-left: 0;
     border-left: 2px solid var(--gg-color-border-subtle);
     box-shadow: -20px 0 60px color-mix(in oklch, black 24%, transparent);
@@ -880,8 +908,8 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 
   .artifact-panel[data-placement="bottom"] {
     inset: auto 0 0;
-    width: 100vw;
-    height: min(82dvh, var(--artifact-panel-height));
+    width: 100%;
+    height: min(82%, var(--artifact-panel-height));
     min-height: 0;
     padding-top: 0;
     border-top: 2px solid var(--gg-color-border-subtle);
@@ -891,6 +919,11 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 
   .artifact-resize-handle {
     display: none;
+  }
+
+  /* The sheet covers the right side. The chat wraps into the strip that stays visible, so a line is not sliced. */
+  .app-stage:has(.artifact-panel:not([data-placement="bottom"])) .app-stage-view {
+    padding-right: min(480px, calc(100% - 64px));
   }
 }
 
@@ -1009,6 +1042,25 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 .workspace-kind-heading > strong { font-size:var(--gg-text-control); font-weight:var(--gg-weight-medium); }
 .workspace-kind-content, .workspace-lens-content, .workspace-world-content, .workspace-materials-content { display:flex; flex:1 1 auto; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }
 .workspace-kind-content[hidden], .workspace-lens-content[hidden], .workspace-world-content[hidden], .workspace-materials-content[hidden] { display:none; }
-.workspace-lens-content { overflow:auto; container:memory-pane / inline-size; }
+.workspace-lens-content { overflow:hidden; container:memory-pane / inline-size; }
+/* The document scrolls in the reader, so Outline and links stays in the panel.
+   Scrolling the whole page carried that toolbar out of the pane. */
+.workspace-lens-content > .memory-page { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; width:100%; max-width:none; overflow:hidden; }
+.workspace-lens-content .memory-page-body { flex:1 1 auto; min-height:0; overflow:auto; scroll-padding-block: var(--gg-space-4); }
+.workspace-lens-content .memory-page-body:is([data-segment="principles"], [data-segment="methods"], [data-segment="history"]) { grid-template-rows:minmax(0, 1fr); align-items:stretch; overflow:hidden; }
+.workspace-lens-content .memory-page-list { min-height:0; overflow:auto; scroll-padding-block:var(--gg-space-4); }
+.workspace-lens-content .memory-page-body > .memory-history { min-height:0; overflow:auto; }
+/* Only the compact pane replaces the list with a reader. A wide pane keeps two
+   independently scrolling columns, even with many rules or methods. */
+@container memory-pane (max-width: 971px) {
+  .workspace-lens-content .memory-page[data-reader-open] .memory-page-body { overflow:hidden; display:flex; flex-direction:column; align-items:stretch; }
+}
+.workspace-lens-content .memory-reader.is-lens { flex:1 1 auto; align-self:stretch; width:100%; min-height:0; height:auto; overflow:hidden; display:flex; flex-direction:column; padding:0; border:0; border-radius:0; background:transparent; }
+.workspace-lens-content .memory-page[data-reader-open] .memory-reader:not(.is-lens) { flex:1 1 auto; align-self:stretch; width:100%; min-height:0; overflow:auto; scroll-padding-block: var(--gg-space-4); }
+/* The document fills the card. A long method title was taller than the strip left under the back row and the pause row. */
+.workspace-lens-content .memory-reader.is-lens .lens-workspace { flex:1 1 0; min-height:0; height:auto; overflow:hidden; }
+.workspace-lens-content .memory-reader.is-lens .lens-reader { min-height:0; height:100%; }
+.workspace-lens-content .lens-workspace.is-compact .lens-reader-toolbar { margin-bottom: var(--gg-space-3); }
+.workspace-lens-content .lens-workspace.is-compact .lens-read-head h2 { margin-top: 0; }
 .workspace-world-content > .memory-workspace { flex:1; min-height:0; }
 .artifact-panel[data-expanded] > .workspace-kind-heading { display:none; }

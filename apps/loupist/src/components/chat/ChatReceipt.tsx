@@ -91,7 +91,7 @@ export function ChatReceipt({ receipt, showNothingNew, listId, listExpanded, onO
   if (receipt.names) {
     const label = count("chatReceipt.names", receipt.names);
     segments.push({ key: "names", node: showMap
-      ? <button type="button" className="chat-receipt-segment" data-learned="true" aria-label={count("chatReceipt.namesOnMap", receipt.names)} onClick={showMap}>{label}</button>
+      ? <button type="button" className="chat-receipt-segment" data-learned="true" aria-label={`${label} · ${count("chatReceipt.namesOnMap", receipt.names)}`} onClick={showMap}>{label}</button>
       : <span className="chat-receipt-text" data-learned="true">{label}</span> });
   }
   if (receipt.relationships) {

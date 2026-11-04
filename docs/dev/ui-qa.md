@@ -34,6 +34,8 @@ a scenario together with each new or redesigned screen. A scenario marked `media
 emulated, as the print dialog draws it. Final proof of native behavior still uses the tools in
 [Which tool](../../apps/loupist/e2e/README.md#which-tool).
 
+A green Chrome capture is not proof of WKWebView layout. Chrome draws some rules that macOS WKWebView collapses. The known case is a `fieldset` whose computed `display` is `grid` or `flex`: its `legend` shrinks to about one character and the heading runs down the form one glyph per line. Keep the fieldset `display: block`, set the legend to `width: 100%`, and put grid or flex on an element inside it. This applies to every form, including onboarding model setup, journal checks, schedule time, and profile fields, not only the tone control. `assertFormLegendsFit` in `apps/loupist/e2e/native-forms.mjs` measures that the heading uses the field width. Run that measurement in the macOS WebView. Do not accept a preview screenshot as a substitute.
+
 ### Performance budgets
 
 These are native e2e budgets, separate from the 100 ms feedback rubric above.
@@ -84,6 +86,19 @@ accepts title, description and action; it has no icon prop.
 Use shared `PageHeader`, `Button`, `Input`, `Textarea`, `NativeSelect`, dialog,
 disclosure and empty-state components. `page.css` owns shared page layout;
 `surfaces.css` owns dialog sizing/body/footer. Feature CSS owns content layout.
+Use `SegmentedControl` for one-of-many choices and list filters: these are radio
+groups, with arrow-key selection. Reserve `Tabs` for views with real `TabsContent`
+panels. A search field or action button is not a menu item; the model picker is a
+dialog containing its search, model menus and account actions. Keep visible button
+labels in accessible names, and put supplementary explanations in descriptions.
+Ordinary dropdown menus are non-modal; the model picker explicitly opts into its
+modal focus scope. Opening an ordinary menu must not hide still-focusable app chrome
+from the accessibility tree.
+The searchable model picker permits Tab and Shift+Tab through its controls and restores
+its trigger on Escape. Settings pages with no enabled controls (keyboard shortcuts and
+an update in progress) remain focusable so keyboard users can scroll them. Workspace
+item menus control the details element directly; delayed native toggle events must not
+reopen a menu after selecting Files or a browser tab.
 The native minimum is 700×560. Preserve keyboard focus, scroll, light/dark themes and
 reduced-motion behavior. Menus never ring their container; a trigger or item a press
 reached carries `data-input="pointer"` (`lib/inputModality`) and shows no ring, since

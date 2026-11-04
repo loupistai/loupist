@@ -63,7 +63,7 @@ it("before captured: expected values with their sources, nothing reported yet", 
   expect(within(region).getByText(/^Before: captured /)).toBeVisible();
   // PRICE IMPLIED is one calculation chip with its formula.
   expect(within(region).getByText(/yearly cash-flow growth for 5 years/)).toBeVisible();
-  expect(within(region).getByRole("button", { name: "6.1–9.8%, calculated. Show the math" })).toBeVisible();
+  expect(within(region).getByRole("button", { name: "6.1%–9.8%, calculated. Show the math" })).toBeVisible();
 });
 
 it("after: Rust's differences in words first, the reaction alone in price color, the call's tone and the filed chain", async () => {
@@ -71,7 +71,7 @@ it("after: Rust's differences in words first, the reaction alone in price color,
   const table = within(region).getByRole("table", { name: "Expected versus reported" });
   const revenue = within(table).getAllByRole("row", { name: /^Revenue/ })[0]!;
   expect(within(revenue).getByText("Above the range")).toBeVisible();
-  expect(within(revenue).getByRole("button", { name: "+1.6%, calculated. Show the math" })).toHaveTextContent("+1.6% over the top");
+  expect(within(revenue).getByRole("button", { name: "+1.6% over the top, calculated. Show the math" })).toHaveTextContent("+1.6% over the top");
   expect(within(revenue).getByRole("button", { name: "+3.3%, calculated. Show the math" })).toBeVisible();
   expect(within(table).getByRole("row", { name: /^Operating margin/ })).toHaveTextContent("−1.2 pp");
   const guidance = within(table).getByRole("row", { name: /^Revenue · Q4 2026/ });

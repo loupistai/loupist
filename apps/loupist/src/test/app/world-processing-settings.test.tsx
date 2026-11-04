@@ -17,7 +17,7 @@ it("saves the World model per Loupist without touching global configuration", as
   await openApp(bridge);
   await openWorldProcessing(user);
   expect(await screen.findByRole("textbox", { name: "Name" })).toHaveValue("Quality Compounder");
-  await user.click(await screen.findByRole("button", { name: "World processing model" }));
+  await user.click(await screen.findByRole("button", { name: /World processing model/ }));
   await user.type(screen.getByRole("searchbox", { name: "Search models" }), "ChatGPT");
   await user.click(screen.getByRole("menuitemradio", { name: "GPT-5.6 Luna" }));
   await user.click(screen.getByRole("menuitem", { name: "Advanced" }));
@@ -29,10 +29,10 @@ it("saves the World model per Loupist without touching global configuration", as
   expect(config).not.toHaveBeenCalled();
   await chooseLoupist(user, "Contrarian Value");
   await openWorldProcessing(user);
-  expect(await screen.findByRole("button", { name: "World processing model" })).toHaveTextContent("Choose model");
+  expect(await screen.findByRole("button", { name: /World processing model/ })).toHaveTextContent("Choose model");
   await chooseLoupist(user, "Quality Compounder");
   await openWorldProcessing(user);
-  expect(await screen.findByRole("button", { name: "World processing model" })).toHaveTextContent("GPT-5.6 Luna · High");
+  expect(await screen.findByRole("button", { name: /World processing model/ })).toHaveTextContent("GPT-5.6 Luna · High");
 });
 
 it("recovers World processing and refreshes an uncertain Chat update without retrying extraction", async () => {

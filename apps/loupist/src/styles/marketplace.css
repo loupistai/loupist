@@ -1,6 +1,6 @@
 /* Connections share Settings' reading rhythm, with explicit state and quiet rows. */
-.marketplace-page { height: auto; overflow: visible; padding: 0; background: transparent; }
-.marketplace-shell { width: 100%; margin-inline: 0; display: grid; gap: var(--gg-space-7); }
+.marketplace-page { height: auto; min-width: 0; max-width: 100%; overflow: visible; padding: 0; background: transparent; }
+.marketplace-shell { width: 100%; margin-inline: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gg-space-7); }
 .marketplace-shell > .settings-heading { width: 100%; margin-bottom: 0; }
 .marketplace-page .custom-connections { padding-block: 0; }
 .connection-catalog { display: grid; gap: var(--gg-space-4); min-width: 0; }
@@ -10,12 +10,12 @@
 .marketplace-status-tabs { margin-bottom: 0; }
 .marketplace-status-tabs [data-slot="tabs-list"] { padding: 0; flex-wrap: wrap; height: auto; gap: var(--gg-space-1); }
 .marketplace-status-tabs [data-slot="tabs-trigger"] { padding: var(--gg-space-2) var(--gg-space-3); font-size: var(--gg-text-control); }
-.marketplace-status-tabs [data-slot="tabs-trigger"][data-state="active"] { background: var(--gg-color-bg-selected);  color: var(--gg-color-text-primary); }
-.marketplace-controls { display: flex; align-items: center; gap: 10px; }
+.marketplace-status-tabs [data-slot="tabs-trigger"][data-state="checked"] { background: var(--gg-color-bg-selected);  color: var(--gg-color-text-primary); }
+.marketplace-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .marketplace-search { position: relative; display: block; flex: 1; min-width: 0; margin: 0; }
 .marketplace-search > svg { position: absolute; z-index: var(--gg-z-sticky); top: 50%; left: var(--gg-space-3); width: var(--gg-space-4); height: var(--gg-space-4); color: var(--gg-color-text-secondary); transform: translateY(-50%); }
 .marketplace-search input { padding-left: var(--gg-size-control-lg); }
-.marketplace-filter-select { width: 154px; flex-shrink: 0; }
+.marketplace-filter-select { width: min(154px, 100%); max-width: 100%; min-width: 0; }
 .marketplace-result-count { margin: 0; font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); }
 .marketplace-groups { display: grid; gap: var(--gg-size-control-sm); }
 .marketplace-group > h2 { display: flex; align-items: center; gap: var(--gg-space-2); margin: 0 0 10px; font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); }
@@ -55,7 +55,8 @@
 .marketplace-setup-overview > span { font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); }
 .marketplace-setup-status { display: flex; align-items: center; }
 .marketplace-setup-status [data-slot="badge"] { font-weight: var(--gg-weight-regular); font-size: var(--gg-text-caption); }
-.marketplace-setup-fields { display: grid; gap: 18px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.marketplace-setup-fields { display: block; min-width: 0; margin: 0; padding: 0; border: 0; }
+.marketplace-setup-fields > * + * { margin-top: 18px; }
 .marketplace-setup-fields:empty { display: none; }
 .marketplace-form-section-title { padding-top: var(--gg-space-1); }
 .marketplace-form-section-title:not(:first-child) { border-top: 1px solid var(--gg-color-border-subtle); padding-top: 22px; margin-top: var(--gg-space-1); }

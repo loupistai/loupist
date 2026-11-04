@@ -15,7 +15,7 @@ describe("Loupist · Model changes (W17.5)", () => {
     const line = await waitFor(() => { const found = document.querySelector(".model-notice-line"); expect(found).not.toBeNull(); return found; });
     expect(line).toHaveTextContent("Now using GPT-6.1 Sol. Change");
     await user.click(screen.getByRole("button", { name: "Change" }));
-    expect(await screen.findByRole("menu")).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Available models" })).toBeInTheDocument();
     await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(ack).toHaveBeenCalledExactlyOnceWith({ id: "notice-1" });

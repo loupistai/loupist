@@ -1,6 +1,6 @@
 import i18n, { useTranslation } from "@/i18n";
 import { formatNumber, formatTime } from "@/i18n/format";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { LoupistBridge, LoupistSummary } from "../../types";
 import type { AssetEvidence } from "../../contracts/assets";
 import { WATCH_KIND_GROUPS, type WatchAsset, type WatchEvent, type WatchKind, type WatchSettings } from "../../contracts/watch";
@@ -47,6 +47,24 @@ export function WatchingItem({ settings, current, onOpen }: { settings: WatchSet
  * this computer, hourly while the app is open, and what it found. The privacy
  * line is always shown; nothing here starts a model run.
  */
+/** The sideways fade is only for a table that is actually wider than the pane. */
+function MatrixScroll({ group, label, children }: { group: string; label: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [overflows, setOverflows] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const measure = () => setOverflows(el.scrollWidth > el.clientWidth + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    const table = el.querySelector("table");
+    if (table) observer.observe(table);
+    return () => observer.disconnect();
+  }, [children]);
+  return <div ref={ref} className="watching-matrix-scroll" role="region" tabIndex={0} data-group={group} data-overflows={overflows || undefined} aria-label={label}>{children}</div>;
+}
+
 export function WatchingReader({ bridge, loupist, settings, onBack }: {
   bridge: LoupistBridge;
   loupist: LoupistSummary;
@@ -108,7 +126,7 @@ export function WatchingReader({ bridge, loupist, settings, onBack }: {
     {/* Each matrix scrolls sideways inside its own box; the asset column stays. With more than one class, each table names its class. */}
     {groups.map(group => {
       const label = tDynamic(`watch.group.${group.id}`);
-      return <div key={group.id} className="watching-matrix-scroll" role="region" tabIndex={0} data-group={group.id} aria-label={groups.length > 1 ? `${label} · ${t("watch.scroll")}` : t("watch.scroll")}>
+      return <MatrixScroll key={group.id} group={group.id} label={groups.length > 1 ? `${label} · ${t("watch.scroll")}` : t("watch.scroll")}>
         {groups.length > 1 ? <p className="watching-group" aria-hidden="true">{label}</p> : null}
         <table className="watching-matrix" data-paused={settings.paused || undefined}>
           <caption className="sr-only">{groups.length > 1 ? `${t("watch.title")} · ${label}` : t("watch.title")}</caption>
@@ -128,7 +146,7 @@ export function WatchingReader({ bridge, loupist, settings, onBack }: {
             </tr>;
           })}</tbody>
         </table>
-      </div>;
+      </MatrixScroll>;
     })}
     {[...needed].map(([kind, connection]) => <p key={kind} className="watching-hint">{t("watch.kindNeeds", { kind: watchKindColumn(kind), connection })}</p>)}
     {settings.watched.length > rows.length ? <Button variant="ghost" size="sm" onClick={() => setAllRows(true)}>{t("watch.showAll")}</Button> : null}

@@ -7,6 +7,7 @@ import type { GrowthEvent, KnowledgeMapNode, LearningReview, MemoryUsage, Princi
 import type { HoldingsSummary, WatchlistEntry } from "../../contracts/userContext";
 import { useConfiguration } from "../../app/useConfiguration";
 import { errorMessage } from "../../lib/errors";
+import { revealFocused } from "../../lib/revealFocused";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { HOST_STANDING_TITLE } from "../map/lensReading";
@@ -190,7 +191,7 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onBack, onOp
     {paused ? <div className="memory-page-paused" role="status"><span>{t("memoryPage.paused.banner")}</span><Button size="sm" variant="outline" onClick={() => void resume()}>{t("memoryPage.actions.resume")}</Button></div> : null}
     {error ? <div className="memory-page-error" role="alert"><span>{t("memoryPage.error")}</span><Button size="sm" variant="outline" onClick={() => setRefresh(value => value + 1)}>{t("memoryPage.retry")}</Button></div> : null}
     {!data && !error ? <div className="memory-page-loading" role="status" aria-label={t("memoryPage.loading")}><span /><span /><span /></div> : null}
-    {data ? <div className="memory-page-body" data-segment={current}>
+    {data ? <div className="memory-page-body" data-segment={current} onFocus={revealFocused}>
       {current === "about" ? <AboutYou bridge={bridge} loupist={loupist} data={data} onChanged={changed}
         shared={<SharedPacks ref={sharedRef} bridge={bridge} loupistId={loupistId} imports={data.imports} indexConfigured={data.indexConfigured}
           onChanged={imports => { setData(current => current && { ...current, imports }); changed(); }} />} /> : null}
@@ -234,7 +235,7 @@ function SegmentTabs({ value, counts, onChange }: { value: MemorySegment; counts
     {SEGMENTS.map((segment, index) => <button key={segment} ref={element => { if (element) refs.current.set(segment, element); }} type="button" role="tab" aria-selected={segment === value} tabIndex={segment === value ? 0 : -1} onClick={() => onChange(segment)} onKeyDown={event => keyDown(event, index)}>
       <span className="memory-tab-full">{t(`memoryPage.tabs.${segment}`)}</span>
       <span className="memory-tab-short" aria-hidden="true">{t(`memoryPage.tabsShort.${segment}`)}</span>
-      {counts[segment] ? <span className="memory-tab-count">{formatNumber(counts[segment]!)}</span> : null}
+      {counts[segment] ? <> <span className="memory-tab-count">{formatNumber(counts[segment]!)}</span></> : null}
     </button>)}
   </div>;
 }
@@ -305,25 +306,24 @@ function Reader({ item, bridge, loupistId, usage, paused, threads, onOpenChat, o
     finally { setBusy(false); }
   };
   const pauseAction = <Button size="sm" variant="ghost" disabled={busy} onClick={() => void act(() => bridge.knowledgeLensPause({ loupistId, recordId: item.id, paused: !paused }))}>{t(paused ? "memoryPage.actions.resume" : "memoryPage.actions.pause")}</Button>;
-  const header = <>
-    <Button variant="ghost" size="sm" className="memory-reader-back" onClick={onClose}><ArrowLeftIcon aria-hidden="true" />{backLabel}</Button>
-    <p className="memory-reader-kind">{kindLabel(item)} · {usageLine(item, usage)}</p>
-    {paused ? <p className="memory-meta" role="status">{t("memoryPage.itemPausedHint")}</p> : null}
-  </>;
+  const back = <Button variant="ghost" size="sm" className="memory-reader-back" onClick={onClose}><ArrowLeftIcon aria-hidden="true" /><span className="memory-reader-back-label">{backLabel}</span></Button>;
+  const kind = <p className="memory-reader-kind">{kindLabel(item)} · {usageLine(item, usage)}</p>;
+  const pausedHint = paused ? <p className="memory-meta" role="status">{t("memoryPage.itemPausedHint")}</p> : null;
   if (item.kind !== "principle") {
     // The Lens reader keeps its evidence, saved basis and then-and-now views here.
+    // Back and the learned date share the outline row so a long title can use the card.
     return <aside className="memory-reader is-lens" aria-label={itemTitle(item)}>
-      {header}
-      <UsedIn usage={usage.get(item.id)} threads={threads} onOpenChat={onOpenChat} />
-      <LensWorkspace bridge={bridge} catalog={catalog} location={{ loupistId, surface: "lens", recordId: item.id }}
+      {pausedHint}
+      {error ? <p className="memory-reader-error" role="alert">{error}</p> : null}
+      <LensWorkspace toolbar={<>{back}{kind}</>} bridge={bridge} catalog={catalog} location={{ loupistId, surface: "lens", recordId: item.id }}
         onOpen={onOpenKnowledge} onAsk={pin => onAsk(pin)} onChanged={onChanged} onOpenLink={onOpenLink}>
         {item.kind === "method" && item.lens.learned && !item.lens.archived ? <LensLearningPanel bridge={bridge} loupistId={loupistId}
           node={{ kind: "lens_method", recordId: item.id }}
           onSelect={node => onOpenKnowledge({ loupistId, surface: "world", view: { followCurrent: true }, selection: { kind: "node", id: node.id } })}
           onArchived={onChanged} /> : null}
+        <UsedIn usage={usage.get(item.id)} threads={threads} onOpenChat={onOpenChat} />
+        {item.kind === "method" && !item.lens.readOnly ? <div className="memory-reader-actions">{pauseAction}<Button size="sm" variant="ghost" disabled={busy} onClick={() => void act(() => bridge.knowledgeLensArchive({ loupistId, recordId: item.id, archived: true }))}>{t("memoryPage.actions.archive")}</Button></div> : null}
       </LensWorkspace>
-      {error ? <p className="memory-reader-error" role="alert">{error}</p> : null}
-      {item.kind === "method" && !item.lens.readOnly ? <div className="memory-reader-actions">{pauseAction}<Button size="sm" variant="ghost" disabled={busy} onClick={() => void act(() => bridge.knowledgeLensArchive({ loupistId, recordId: item.id, archived: true }))}>{t("memoryPage.actions.archive")}</Button></div> : null}
     </aside>;
   }
   const principle = item.principle;
@@ -331,7 +331,7 @@ function Reader({ item, bridge, loupistId, usage, paused, threads, onOpenChat, o
     : principle.origin === "chat" ? t("memoryPage.reader.originChat", { date: day(principle.createdAtMs) })
       : t("memoryPage.reader.originSettings", { date: day(principle.createdAtMs) });
   return <aside className="memory-reader" aria-label={itemTitle(item)}>
-    {header}
+    {back}{kind}{pausedHint}
     <p className="memory-reader-statement">{principle.statement}</p><LensMarkdownSource key={principle.revisionId} markdown={principle.statement}
       sections={[[t("memoryPage.reader.why"), principle.why ?? ""], [t("memoryPage.reader.example"), principle.example ?? ""]]} />
     <SharedOrigin bridge={bridge} loupistId={loupistId} subjectId={item.id} onAbout={onAboutShared} />

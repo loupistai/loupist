@@ -12,6 +12,7 @@ import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
 import { PackMarkdown } from "./PackMarkdown";
+import { revealFocused } from "../../lib/revealFocused";
 import { licenseName, licenseSummary } from "./sharingText";
 import "@/styles/sharing.css";
 
@@ -84,6 +85,7 @@ function ReviewBody({ bridge, preview, loupists, currentLoupistId, focusAdd, onA
   const tracks = [preview.world.kinds.join(", "), preview.world.relations.join(", ")].filter(Boolean).join(" · ");
 
   return <div className="pack-review-grid">
+    <div className="pack-review-main" onFocus={revealFocused}>
     <div className="pack-review-summary">
       <p className="pack-review-name">{manifest.name}</p>
       <p className="pack-review-meta">{meta}</p>
@@ -132,6 +134,7 @@ function ReviewBody({ bridge, preview, loupists, currentLoupistId, focusAdd, onA
         {tracks ? <p className="pack-review-meta">{t("mapTracks", { kinds: tracks })}</p> : null}
         <MapFindings world={preview.world} />
       </ReviewSection> : null}
+    </div>
     </div>
     <div className="pack-review-add" data-pack-add>
       <div className="pack-review-mode">

@@ -159,13 +159,15 @@ button.grid-card-empty:focus-visible { outline: 2px solid var(--gg-color-focus);
 
 /* Conflict card: label, a five-column table, the why and the choice. No warning colors. */
 .conflict-card-label { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); letter-spacing: .04em; line-height: var(--gg-leading-caption); text-transform: uppercase; }
+.conflict-card-label:lang(ko) { letter-spacing: 0; text-transform: none; }
 .conflict-card-table { table-layout: fixed; min-width: 520px; }
 /* The label sits right above the table: a one-line header row, no reserved two-line height. */
 .conflict-card .grid-card-header { align-items: center; min-height: 28px; }
 .conflict-card-table thead th { height: auto; padding-bottom: var(--gg-space-2); }
 .conflict-card-table thead th:nth-child(2) { width: 96px; }
 .conflict-card-table thead th:nth-child(3) { width: 88px; }
-.conflict-card-table thead th:nth-child(5) { width: 56px; }
+/* Wide enough for the "used" word. 56px clipped it once the label was longer than English. */
+.conflict-card-table thead th:nth-child(5) { width: 5.5rem; }
 .conflict-card-source { font-weight: var(--gg-weight-regular); text-align: start; }
 .conflict-card-source button { display: inline-flex; align-items: center; gap: var(--gg-space-1); max-width: 100%; min-height: 28px; padding: 0; border: 0; background: transparent; color: var(--gg-color-text-primary); font: inherit; text-align: start; cursor: pointer; }
 .conflict-card-source button:hover { text-decoration: underline; }
@@ -174,7 +176,7 @@ button.grid-card-empty:focus-visible { outline: 2px solid var(--gg-color-focus);
 .conflict-card-table td { color: var(--gg-color-text-secondary); }
 .conflict-card-table td.gg-num { color: var(--gg-color-text-primary); }
 .conflict-card-dated { white-space: nowrap; }
-.conflict-card-used { color: var(--gg-color-text-primary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); text-align: end; }
+.conflict-card-used { color: var(--gg-color-text-primary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); text-align: end; white-space: nowrap; }
 .conflict-card-why { margin: 0; color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
 
 /* Opened from Work: the same card, full panel width, scrolling with the panel. */

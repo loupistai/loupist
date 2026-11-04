@@ -68,10 +68,13 @@ it("updates the tab and Loupist badge on inbox-changed, and routes inbox-open to
   vi.spyOn(bridge, "inboxList").mockResolvedValue({ items: [item], nextCursor: null });
   const counts = vi.spyOn(bridge, "inboxUnreadCounts").mockResolvedValue([{ loupistId: "loupist-quality", count: 2 }]);
   await openApp(bridge);
-  expect(await screen.findByLabelText("2 unread briefings")).toBeVisible();
+  const profile = within(screen.getByRole("navigation", { name: "Loupists" })).getByRole("button", { name: "Quality Compounder" });
+  await waitFor(() => expect(profile).toHaveAccessibleDescription("2 unread briefings"));
+  expect(within(profile).getByText("2")).toBeVisible();
   counts.mockResolvedValue([{ loupistId: "loupist-quality", count: 3 }]);
   await act(async () => listeners.forEach(fn => fn({loupistId:"loupist-quality"})));
-  expect(await screen.findByLabelText("3 unread briefings")).toBeVisible();
+  await waitFor(() => expect(profile).toHaveAccessibleDescription("3 unread briefings"));
+  expect(within(profile).getByText("3")).toBeVisible();
   const other = (await bridge.loupistList()).find(loupist => loupist.id !== "loupist-quality")!;
   await act(async () => open({ loupistId: other.id, runId: item.runId }));
   expect(await screen.findByRole("heading", { name: "Briefing", level: 2 })).toBeVisible();

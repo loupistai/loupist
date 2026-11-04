@@ -47,9 +47,9 @@ it("moves through rows with the arrow keys and folds long groups behind More", a
   const handlers = renderPalette({ attention });
   const list = screen.getByRole("listbox", { name: "Command palette" });
   const group = within(list).getByRole("group", { name: "Needs attention" });
-  // Four rows, then "More in Needs attention".
+  // Four rows, then "More from Needs attention".
   expect(within(group).getAllByRole("option")).toHaveLength(5);
-  fireEvent.click(within(group).getByRole("option", { name: /More in Needs attention/ }));
+  fireEvent.click(within(group).getByRole("option", { name: /More from Needs attention/ }));
   expect(within(within(list).getByRole("group", { name: "Needs attention" })).getAllByRole("option")).toHaveLength(6);
   const input = screen.getByRole("combobox", { name: "Command palette" });
   await user.click(input);
@@ -66,7 +66,7 @@ it("searches names on the active Loupist's Map and its principles", async () => 
   const handlers = { onOpenAttention: vi.fn(), onOpenThread: vi.fn(), onOpenMapNode: vi.fn(), onOpenPrinciple: vi.fn(), onOpenBriefing: vi.fn(), onOpenChange: vi.fn() };
   render(<CommandPalette open bridge={bridge} loupists={[loupist]} selectedLoupistId={loupist.id} threadsByLoupist={{}} attention={[]} actions={[]} {...handlers} />);
   await user.type(screen.getByRole("combobox", { name: "Command palette" }), name.label.slice(0, 4));
-  const group = await waitFor(() => within(screen.getByRole("listbox", { name: "Command palette" })).getByRole("group", { name: "On the Map" }));
+  const group = await waitFor(() => within(screen.getByRole("listbox", { name: "Command palette" })).getByRole("group", { name: "Map" }));
   fireEvent.click(within(group).getAllByRole("option")[0]!);
   expect(handlers.onOpenMapNode).toHaveBeenCalledWith(loupist.id, expect.objectContaining({ kind: "entity" }));
 });
@@ -96,7 +96,7 @@ describe("search across Loupists", () => {
     await user.type(screen.getByRole("combobox", { name: "Command palette" }), "hanul");
     const list = screen.getByRole("listbox", { name: "Command palette" });
     const names = await waitFor(() => {
-      const group = within(list).getByRole("group", { name: "On the Map" });
+      const group = within(list).getByRole("group", { name: "Map" });
       expect(within(group).getAllByRole("option")).toHaveLength(2);
       return group;
     });
@@ -118,12 +118,32 @@ describe("search across Loupists", () => {
     reads.mockImplementation((request) => request.loupistId === "loupist-0" ? new Promise(() => undefined) : answer(request));
     render(<CommandPalette open bridge={bridge} loupists={many} selectedLoupistId="loupist-3" threadsByLoupist={{}} attention={[]} actions={[]} {...handlers()} />);
     await user.type(screen.getByRole("combobox", { name: "Command palette" }), "hanul");
-    fireEvent.click(await screen.findByRole("option", { name: /More in On the Map/ }));
-    const names = () => within(within(screen.getByRole("listbox", { name: "Command palette" })).getByRole("group", { name: "On the Map" })).getAllByRole("option");
+    fireEvent.click(await screen.findByRole("option", { name: /More from Map/ }));
+    const names = () => within(within(screen.getByRole("listbox", { name: "Command palette" })).getByRole("group", { name: "Map" })).getAllByRole("option");
     // The active Loupist leads; the one that has not answered and the two past the cap are missing.
     await waitFor(() => expect(names().map((row) => row.textContent)).toEqual([3, 1, 2, 4, 5, 6, 7].map((index) => `Hanul Loupist ${index}Loupist ${index}`)));
     expect(reads).toHaveBeenCalledTimes(SEARCH_LOUPISTS);
   });
+});
+
+it("opens the palette with ⌘K while the narrow navigation sheet is open", () => {
+  const onPalette = vi.fn();
+  renderHook(() => useAppShortcuts({ onSettings: vi.fn(), onNewChat: vi.fn(), onPalette, canCreateChat: true }));
+  const sheet = document.createElement("div");
+  sheet.setAttribute("role", "dialog");
+  sheet.setAttribute("data-state", "open");
+  sheet.setAttribute("data-sidebar", "sidebar");
+  document.body.append(sheet);
+  fireEvent.keyDown(window, { key: "k", metaKey: true });
+  expect(onPalette).toHaveBeenCalledTimes(1);
+  const dialog = document.createElement("div");
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("data-state", "open");
+  document.body.append(dialog);
+  fireEvent.keyDown(window, { key: "k", metaKey: true });
+  expect(onPalette).toHaveBeenCalledTimes(1);
+  sheet.remove();
+  dialog.remove();
 });
 
 it("opens the palette with ⌘K and focuses the composer with a bare slash", () => {

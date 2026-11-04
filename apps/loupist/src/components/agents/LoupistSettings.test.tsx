@@ -33,13 +33,13 @@ it("filters capabilities by availability and opens the selected connection’s d
   const user = userEvent.setup();
   await user.click(document.querySelector('[data-loupist-section="capabilities"] > summary')!);
   await screen.findByRole("switch", { name: "Research: enabled" });
-  await user.click(screen.getByRole("tab", { name: "Needs setup" }));
+  await user.click(screen.getByRole("radio", { name: "Needs setup" }));
   expect(screen.queryByRole("switch", { name: "Research: enabled" })).toBeNull();
   expect(screen.queryByRole("switch", { name: "World Bank Indicators: enabled" })).toBeNull();
   expect(screen.getByRole("switch", { name: "Korea Investment Open Trading API: disabled" })).toBeDisabled();
   await user.click(screen.getByRole("button", { name: "Connection settings for Korea Investment Open Trading API" }));
   expect(openConnection).toHaveBeenCalledWith("koreainvestment.market-data");
-  await user.click(screen.getByRole("tab", { name: "Enabled" }));
+  await user.click(screen.getByRole("radio", { name: "Enabled" }));
   expect(screen.getByRole("switch", { name: "Research: enabled" })).toBeChecked();
 });
 

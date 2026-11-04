@@ -83,10 +83,16 @@ export function quotePreviewLine(read: QuoteRead): string {
   return shown.join(" · ");
 }
 
+/** The control that opened the receipt, or the citation that replaced it after a remount. */
+function placedAnchor(stored: HTMLElement, evidenceId: string): HTMLElement {
+  if (stored.isConnected && stored.getBoundingClientRect().width > 0) return stored;
+  return document.querySelector<HTMLElement>(`button.loupist-citation[data-evidence-id="${CSS.escape(evidenceId)}"]`) ?? stored;
+}
+
 /**
  * Anchored receipt for a source list, receipt, or citation click.
- * The triggering control stays mounted. Floating UI measures that element, so a
- * click that does not move focus, and later scrolling, keep the receipt with it.
+ * The click's node can be replaced when the answer re-renders. Measuring that
+ * detached node pins the receipt at the top of the window, over the titlebar.
  */
 export function QuoteEvidencePopover({ evidence, anchor, pointer, onClose }: {
   evidence: ChatEvidenceRef;
@@ -96,16 +102,21 @@ export function QuoteEvidencePopover({ evidence, anchor, pointer, onClose }: {
 }) {
   const { t } = useTranslation("chat");
   const read = quoteEvidence(evidence, pointer ? { pointer } : undefined);
-  const virtualRef = useRef<HTMLElement | null>(null);
-  virtualRef.current = anchor;
-  const threadBoundary = anchor.closest<HTMLElement>(".message-scroll") ?? undefined;
+  const anchorRef = useRef(anchor);
+  anchorRef.current = anchor;
+  const virtualRef = useRef({
+    getBoundingClientRect: () => placedAnchor(anchorRef.current, evidence.id).getBoundingClientRect(),
+    getClientRects: () => placedAnchor(anchorRef.current, evidence.id).getClientRects(),
+  });
+  const threadBoundary = placedAnchor(anchor, evidence.id).closest<HTMLElement>(".message-scroll") ?? undefined;
   if (!read) return null;
   return <Popover.Root open onOpenChange={(next) => { if (!next) onClose(); }}>
     <Popover.Anchor virtualRef={virtualRef} />
     <Popover.Portal>
       <Popover.Content className="quote-evidence" role="dialog" aria-modal={false} aria-label={t("quoteEvidence.title")} side="top" align="start" sideOffset={6}
+        updatePositionStrategy="always"
         collisionBoundary={threadBoundary} collisionPadding={{ top: threadBoundary ? 8 : 112, right: 8, bottom: 8, left: 8 }}
-        onCloseAutoFocus={(event) => { event.preventDefault(); anchor.focus(); }}>
+        onCloseAutoFocus={(event) => { event.preventDefault(); placedAnchor(anchor, evidence.id).focus(); }}>
         <QuoteEvidenceBody read={read} evidence={evidence} mode="batch" />
       </Popover.Content>
     </Popover.Portal>

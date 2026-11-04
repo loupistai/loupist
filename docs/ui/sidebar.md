@@ -1,9 +1,9 @@
 # Sidebar
 
-The header selects a Loupist. The sidebar selects a Chat, opens Search, and lists Needs attention. Settings replaces it. The command palette, exports and print live here too.
+The header selects a Loupist. The sidebar selects a Chat, opens Search, and lists Needs attention. Below 900px it opens as a sheet, and the page behind it wraps into the visible strip so a line is not sliced. The header in that strip hides the panel-kind label and keeps the selected Loupist name inside the profile row. Settings replaces it. The command palette, exports and print live here too.
 On macOS the window controls sit in a full-width titlebar, 44px tall so its contents share the traffic lights' vertical center (those buttons are placed at y 22). The sidebar and its divider start below that bar.
 The shell owns the viewport height. Its body uses the space remaining below the titlebar, and the desktop sidebar is positioned inside that body; it does not subtract a separate titlebar-height estimate from the viewport. The frame, sidebar footer and chat composer stay inside the body when the bar grows. Header sizing has one rule rather than competing fixed heights at each breakpoint.
-The right end of the header selects Lens, World, or Chat materials, followed by top/bottom and left/right split controls.
+The right end of the header selects Lens, World, or Chat materials, followed by top/bottom and left/right split controls. At 1100px and wider, the space before those controls shows the trading status of the markets the user follows (at most two, plus a count of the rest). It hides on a narrower window. There the other profiles keep their avatars in the row, and the selected name stays within 240px.
 The application sidebar's Settings action and the Settings sidebar's Back action share one footer style:
 a 32px button with 8px padding and a top divider (49px total), with the same icon and label alignment,
 text color, corner radius and hover state. The footer does not shrink when the navigation scrolls.
@@ -12,7 +12,7 @@ text color, corner radius and hover state. The footer does not shrink when the n
 
 Closing New Loupist returns keyboard focus to the control that opened it, including the header plus after scrolling the form in a narrow window. Cancelling keeps the active profile and its unsent chat draft.
 
-The upper-left Loupist selector switches the entire workspace and opens the selected Loupist’s Bot. Each profile has an avatar and name in a horizontal, scrollable row. An arc rotates around the avatar while that Loupist has an active Chat run, including background runs. With reduced motion, the arc stays still. The adjacent controls create a profile or open the selected profile’s settings. Creation and settings offer ten illustrated navigation objects, including a loupe, caravel, compass and ship’s lantern. Existing icon IDs map to fixed portraits, and profiles without a chosen portrait use a stable choice based on their ID. The sidebar lists Bot first, then recent research sessions. The plus beside Research sessions starts a draft. Search finds older sessions. The sidebar marks the current conversation. World opens the map and Lens opens research principles. The Bot’s menu opens scheduled work. Settings remains in the sidebar footer. Existing Chat and home IDs remain valid.
+The upper-left Loupist selector switches the entire workspace and opens the selected Loupist’s Bot. Each profile has an avatar and name in a horizontal, scrollable row. Below 1100px an unselected profile shows its avatar, and the selected name stays within 240px so those avatars remain in the row. An arc rotates around the avatar while that Loupist has an active Chat run, including background runs. With reduced motion, the arc stays still. The adjacent controls create a profile or open the selected profile’s settings. Creation and settings offer ten illustrated navigation objects, including a loupe, caravel, compass and ship’s lantern. Existing icon IDs map to fixed portraits, and profiles without a chosen portrait use a stable choice based on their ID. The sidebar lists Bot first, then recent research sessions. The plus beside Research sessions starts a draft. Search finds older sessions. The sidebar marks the current conversation. World opens the map and Lens opens research principles. The Bot’s menu opens scheduled work. Settings remains in the sidebar footer. Existing Chat and home IDs remain valid.
 
 ## Needs attention
 
@@ -39,7 +39,9 @@ used for approvals and runs that finish while the window is hidden. While the ma
 Native menu events reach React through the typed bridge's `onMenuAction` subscription.
 Keyboard shortcuts come from one table (`src/app/shortcuts.ts`) that both the global
 handler and Settings › Keyboard read. ⌘K opens the command palette (also from the
-sidebar search and the "n more" row of Needs attention). The search field keeps its 52px height and the result list scrolls. Results are grouped into Needs
+sidebar search and the "n more" row of Needs attention). The narrow navigation
+sheet is not a modal, so ⌘K, the tab keys and the panel shortcut still work
+while that sheet is open, and ⌘B still closes it. The search field keeps its 52px height and the result list scrolls. Results are grouped into Needs
 attention, Chats, What you follow (opens the asset page), Map names, Principles,
 Briefings and Actions, four rows per group. Map names, Principles and Briefings come from every available Loupist, at most eight (the active one first, then sidebar order), each read through its own `knowledge_map`, `principle_list` and `inbox_list` when the palette opens; a Loupist that has not answered within 2 s is left out of that opening. In each group the active Loupist's rows come first and every row names its Loupist; opening another Loupist's result selects that Loupist first.
 "/" focuses the composer when no text field has focus.

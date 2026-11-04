@@ -1,6 +1,7 @@
 /* Asset page (W16.1, finance-asset-page.md §2): a page over the current tab, the "What {Loupist} knows" frame. */
 .app-stage-main:has(> .asset-page-layer) { position: relative; }
-.asset-page-layer { position: absolute; inset: 0; z-index: calc(var(--gg-z-sticky) + 1); overflow: auto; background: var(--gg-color-bg-app); }
+.asset-page-layer { position: absolute; inset: 0; z-index: calc(var(--gg-z-sticky) + 1); overflow: auto; background: var(--gg-color-bg-app); scroll-padding-block: 24px; }
+.asset-page-layer :is(input, textarea, select, button) { scroll-margin-block: 24px; }
 .asset-page { width: min(100%, var(--gg-size-page)); margin: 0 auto; padding: var(--gg-space-4) var(--gg-space-6) var(--gg-space-8); color: var(--gg-color-text-primary); background: var(--gg-color-bg-app); }
 
 .asset-page-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: var(--gg-space-3); min-height: 56px; }

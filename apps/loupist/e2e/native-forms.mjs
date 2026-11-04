@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
-/** Read actual legend geometry; text presence alone misses WebKit's collapsed fieldset headings. */
+/**
+ * Read actual legend geometry. Text presence alone misses a collapsed heading.
+ * WKWebView shrinks a grid or flex fieldset legend to about one character;
+ * Chrome does not. A design-preview PNG is not this measurement.
+ */
 export function formLegendLayout(selector = "fieldset") {
   const context = document.createElement("canvas").getContext("2d");
   return [...document.querySelectorAll(selector)].flatMap((fieldset) => {

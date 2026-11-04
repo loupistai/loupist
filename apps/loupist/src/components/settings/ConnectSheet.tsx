@@ -173,6 +173,7 @@ function KeyView({ provider, catalog, bridge, onBusy, onDone }: { provider: stri
     }
   };
   return <form className="connect-sheet-section" data-key-sheet={provider} onSubmit={event => { event.preventDefault(); void submit(); }}>
+    <div className="connect-sheet-scroll">
     {hasConsole ? <button type="button" className="connect-link" data-get-key onClick={() => void bridge.providerOpenConsole({ provider }).catch(() => {})}>{t("providers.getKey", { provider: preset ? UPSTAGE_COMPANY : name })}<ExternalLinkIcon aria-hidden="true" /></button> : null}
     {provider === "openai" && option?.status.credential_kind === "plan" ? <p className="connect-note" data-tone="info" data-replaces-chatgpt>{t("providers.replacesChatgpt")}</p> : null}
     <div className="connect-field">
@@ -184,6 +185,7 @@ function KeyView({ provider, catalog, bridge, onBusy, onDone }: { provider: stri
       <p id={`${id}-stays`} className="connect-meta">{t("providers.keyStays", { provider: preset ? UPSTAGE_COMPANY : name })}</p>
     </div>
     {error ? <p className="connect-note" data-tone="negative" role="alert">{error}</p> : null}
+    </div>
     <div className="connect-actions"><Button type="submit" disabled={!key.trim() || saving}>{saving ? <LoaderCircleIcon className="animate-spin" aria-hidden="true" /> : null}{t("providers.connect")}</Button></div>
   </form>;
 }
@@ -231,6 +233,7 @@ function LocalView({ bridge, onBusy, onDone }: { bridge: ConnectSheetBridge; onB
     }
   };
   return <div className="connect-sheet-section" data-local-sheet>
+    <div className="connect-sheet-scroll">
     {searching ? <Spinning>{t("providers.localSearching")}</Spinning> : null}
     {!searching && discovery && !running.length ? <p className="connect-note" data-tone="warning" data-local-none>{t("providers.localNone")}</p> : null}
     {!searching && discovery ? discovery.engines.map(engine => engine.running ? <fieldset key={engine.engine} className="connect-engine" data-engine={engine.engine}>
@@ -250,6 +253,7 @@ function LocalView({ bridge, onBusy, onDone }: { bridge: ConnectSheetBridge; onB
     </fieldset> : <p key={engine.engine} className="connect-engine-off" data-engine={engine.engine}>{t("providers.localOff", { engine: engine.label })}</p>) : null}
     {!searching ? <p className="connect-meta">{t("providers.contextNote")}</p> : null}
     {error ? <p className="connect-note" data-tone="negative" role="alert">{error}</p> : null}
+    </div>
     <div className="connect-actions">
       <Button type="button" variant="ghost" disabled={searching || saving} onClick={() => void look()}>{t("providers.lookAgain")}</Button>
       {chosen ? <Button type="button" data-local-connect disabled={searching || saving} onClick={() => void connect()}>{saving ? <LoaderCircleIcon className="animate-spin" aria-hidden="true" /> : null}{t("providers.localConnect", { engine: chosen.label })}</Button> : null}
@@ -315,6 +319,7 @@ function CustomView({ edit, bridge, onBusy, onDone }: { edit?: CustomModelProvid
     return next;
   });
   return <form className="connect-sheet-section" data-custom-sheet onSubmit={event => { event.preventDefault(); void add(); }}>
+    <div className="connect-sheet-scroll">
     <div className="connect-field">
       <Label htmlFor={`${id}-name`}>{t("providers.name")}</Label>
       <Input id={`${id}-name`} value={name} maxLength={60} disabled={saving} placeholder={t("modelSettingsPanel.customNamePlaceholder")} onChange={event => setName(event.target.value)} />
@@ -357,6 +362,7 @@ function CustomView({ edit, bridge, onBusy, onDone }: { edit?: CustomModelProvid
       <p id={`${id}-ids-hint`} className="connect-meta">{t("modelSettingsPanel.customModelIdsHint")}</p>
     </div>}
     {error ? <p className="connect-note" data-tone="negative" role="alert">{error}</p> : null}
+    </div>
     <div className="connect-actions">
       <Button type="submit" data-custom-add disabled={!ready || saving}>{saving ? <LoaderCircleIcon className="animate-spin" aria-hidden="true" /> : null}{t(edit ? "modelSettingsPanel.customSave" : "providers.add")}</Button>
     </div>

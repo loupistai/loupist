@@ -26,7 +26,7 @@ import type { LoupistAvatarId } from "../../contracts/loupist";
 import { Textarea } from "../ui/textarea";
 import { Input } from "../ui/input";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
+import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control";
 import {
   Dialog,
   DialogContent,
@@ -341,7 +341,7 @@ export function LoupistSettings({
   // A folder made by an earlier build cannot be opened; removing it is the way forward.
   const removable = available || selectedAgent?.availability.status === "earlier_version";
   return (
-    <section className="settings-page loupist-settings-page" aria-label={i18n.t("app:shell.loupistSettings")}>
+    <section className="settings-page loupist-settings-page" aria-label={i18n.t("app:shell.loupistSettings")} onFocus={(event) => { if (event.target instanceof HTMLElement) event.target.scrollIntoView({ block: "nearest", inline: "nearest" }); }}>
       <header className="loupist-settings-heading">
         <Button variant="ghost" size="sm" data-loupist-settings-back onClick={onBack}><ArrowLeftIcon />{i18n.t("knowledge:memoryPage.back")}</Button>
         <h1 ref={titleRef} tabIndex={-1}>{i18n.t("app:shell.loupistSettings")}</h1>
@@ -361,7 +361,7 @@ export function LoupistSettings({
       {configurationError && !failedCapabilityId ? <div className="agent-configuration-error" role="alert"><span>{configurationError}</span><Button type="button" size="sm" variant="outline" onClick={() => setReloadToken((current) => current + 1)}><RefreshCwIcon /> {i18n.t("settings:loupistSettings.retry")}</Button></div> : null}
       <div className="loupist-settings-body" ref={bodyRef}>
         {selectedAgent ? (
-          <div className="agent-editor" aria-label={i18n.t("settings:loupistSettings.settingsForName", { name: selectedAgent.name })}>
+          <div className="agent-editor" role="group" aria-label={i18n.t("settings:loupistSettings.settingsForName", { name: selectedAgent.name })}>
             <LoupistProfileEditor key={selectedAgent.id} bridge={bridge} loupist={selectedAgent} disabled={mutationBusy || !available} onUpdated={onAgentUpdated} />
             {available ? <>
               <Disclosure title={i18n.t("settings:loupistSettings.chatPreferences")} defaultOpen={initialSection === "chat"} data-loupist-section="chat">
@@ -379,7 +379,7 @@ export function LoupistSettings({
               <div className="agent-capabilities-toolbar">
                 <div className="agent-capabilities-heading"><span role="status" className="agent-save-status">{savedMessage ? <><CheckIcon aria-hidden="true" />{savedMessage}</> : i18n.t("settings:loupistSettings.changesSaveAutomaticallyForThisLoupist")}</span></div>
                 <div className="agent-capability-search"><SearchIcon aria-hidden="true" /><Input type="search" aria-label={i18n.t("settings:loupistSettings.searchSkillsAndConnections")} placeholder={i18n.t("settings:loupistSettings.findASkillOrConnection")} value={capabilityQuery} onChange={(event) => setCapabilityQuery(event.target.value)} />{capabilityQuery ? <Button variant="ghost" size="icon-sm" aria-label={i18n.t("settings:loupistSettings.clearCapabilitySearch")} onClick={() => setCapabilityQuery("")}><XIcon /></Button> : null}</div>
-                <Tabs value={capabilityFilter} onValueChange={setCapabilityFilter}><TabsList aria-label={i18n.t("settings:loupistSettings.capabilityStatus")}><TabsTrigger value="all">{i18n.t("settings:loupistSettings.all")}</TabsTrigger><TabsTrigger value="enabled">{i18n.t("settings:loupistSettings.enabled")}</TabsTrigger><TabsTrigger value="setup">{i18n.t("settings:loupistSettings.needsSetup")}</TabsTrigger></TabsList></Tabs>
+                <SegmentedControl value={capabilityFilter} onValueChange={setCapabilityFilter} aria-label={i18n.t("settings:loupistSettings.capabilityStatus")}><SegmentedControlItem value="all">{i18n.t("settings:loupistSettings.all")}</SegmentedControlItem><SegmentedControlItem value="enabled">{i18n.t("settings:loupistSettings.enabled")}</SegmentedControlItem><SegmentedControlItem value="setup">{i18n.t("settings:loupistSettings.needsSetup")}</SegmentedControlItem></SegmentedControl>
               </div>
 
               {capabilityFilter !== "setup" ? manageSkills ? <div className="agent-section-heading"><h2>{i18n.t("settings:loupistSettings.skills")}</h2><Button variant="ghost" size="sm" aria-expanded onClick={() => setManageSkills(false)}>{i18n.t("settings:loupistSettings.manageSkills")}</Button></div> : <AgentCapabilityList title={i18n.t("settings:loupistSettings.skills")} action={<Button variant="ghost" size="sm" aria-expanded={manageSkills} onClick={() => setManageSkills(value => !value)}>{i18n.t("settings:loupistSettings.manageSkills")}</Button>} description={i18n.t("settings:loupistSettings.optionalResearchAndDocumentWorkflowsEnabledByDefault")} items={skillItems.filter(matchesCapability)} busyId={busyCapabilityId} error={configurationError && failedCapabilityId ? { id: failedCapabilityId, message: configurationError } : undefined} emptyLabel={configurationLoading ? i18n.t("settings:loupistSettings.loadingSkills") : capabilityQuery || capabilityFilter !== "all" ? i18n.t("settings:loupistSettings.noMatchingSkills") : i18n.t("settings:loupistSettings.noSkillsAvailable")} onToggle={(id) => void toggleSkill(id)} /> : null}

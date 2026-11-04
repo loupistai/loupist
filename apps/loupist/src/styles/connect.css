@@ -4,7 +4,7 @@
 .connect-ways { display: grid; min-width: 0; }
 .connect-group-label { margin: var(--gg-space-4) 0 var(--gg-space-1); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); font-weight: var(--gg-weight-medium); text-transform: uppercase; letter-spacing: .06em; }
 .connect-ways > .connect-group-label:first-child { margin-top: 0; }
-:lang(ko) .connect-group-label { letter-spacing: 0; }
+:lang(ko) .connect-group-label { letter-spacing: 0; text-transform: none; }
 .connect-row { display: flex; align-items: center; gap: var(--gg-space-3); width: 100%; min-height: 44px; padding: 0 var(--gg-space-3); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); text-align: left; cursor: pointer; transition: background-color var(--gg-motion-instant) var(--gg-ease-out); }
 .connect-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 .connect-row:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
@@ -84,15 +84,21 @@
 .connect-secret { position: relative; }
 .connect-secret input { padding-right: calc(var(--gg-space-10) + var(--gg-space-3)); }
 .connect-secret-toggle { position: absolute; top: 50%; right: var(--gg-space-1); transform: translateY(-50%); }
-.connect-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--gg-space-2); }
+.connect-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--gg-space-2); flex: none; }
+/* Fields scroll. The connect or add action stays below them, so a short window does not cover the last field. */
+.connect-sheet .dialog-body:has(.connect-sheet-scroll) { display: flex; flex-direction: column; overflow: hidden; }
+.connect-sheet-section:has(.connect-sheet-scroll) { display: flex; flex-direction: column; min-height: 0; flex: 1; overflow: hidden; }
+.connect-sheet-scroll { min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: var(--gg-space-4); }
 .connect-actions-start { justify-content: flex-start; }
 .connect-primary { justify-self: stretch; min-height: var(--gg-size-control-lg); }
 .connect-progress { display: flex; align-items: center; gap: var(--gg-space-2); margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
 .connect-spinner { flex: none; width: 16px; height: 16px; }
 
-/* Local model apps: one section per engine, model radios inside. */
-.connect-engine { display: grid; gap: var(--gg-space-1); min-width: 0; margin: 0; padding: 0; border: 0; }
-.connect-engine legend { margin-bottom: var(--gg-space-1); padding: 0; color: var(--gg-color-text-primary); font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); font-weight: var(--gg-weight-semibold); }
+/* Local model apps: one section per engine, model radios inside.
+   The fieldset stays a block. Grid or flex on it collapses the legend to one character in WKWebView, so the heading stacks down the sheet. */
+.connect-engine { display: block; min-width: 0; margin: 0; padding: 0; border: 0; }
+.connect-engine legend { display: block; width: 100%; margin: 0 0 var(--gg-space-1); padding: 0; overflow-wrap: anywhere; color: var(--gg-color-text-primary); font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); font-weight: var(--gg-weight-semibold); }
+.connect-engine > .connect-model + .connect-model { margin-top: var(--gg-space-1); }
 .connect-engine-off { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 .connect-model { display: flex; align-items: flex-start; gap: var(--gg-space-3); min-height: 44px; padding: var(--gg-space-2) var(--gg-space-3); border-radius: var(--gg-radius-sm); cursor: pointer; }
 .connect-model:hover:not([data-disabled]) { background: var(--gg-color-bg-hover); }
@@ -116,14 +122,14 @@
 .connect-test-result { display: flex; align-items: center; gap: var(--gg-space-2); margin: 0; color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); animation: connect-rise var(--gg-motion-fast) var(--gg-ease-out); }
 .connect-test-result svg { flex: none; width: 16px; height: 16px; color: var(--gg-color-negative); }
 .connect-test-result[data-outcome="ok"] svg { color: var(--gg-color-positive); }
-.connect-test-models { display: grid; max-height: 240px; margin: 0; padding: 0; overflow-y: auto; border: 0; }
+.connect-test-models { display: block; min-width: 0; max-height: 240px; margin: 0; padding: 0; overflow-y: auto; border: 0; }
 
 /* 700×560: the primary button and waiting card stay above the fold; the ways scroll inside the step. */
 @media (max-width: 760px) {
   .onboarding-window[data-onboarding="2"] { padding-inline: var(--gg-space-4); }
 }
 @media (max-height: 700px) {
-  .onboarding-step[data-step="2"] .onboarding-other > .ui-disclosure-body { max-height: 40dvh; overflow-y: auto; overscroll-behavior: contain; }
+  .onboarding-step[data-step="2"] .onboarding-other > .ui-disclosure-body { max-height: 40dvh; overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: var(--gg-space-3); }
 }
 
 @keyframes connect-cross-fade { from { opacity: 0; } to { opacity: 1; } }

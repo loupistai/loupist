@@ -3,6 +3,19 @@
   border-radius: 5px; background: var(--gg-color-bg-hover); color: var(--gg-color-text-secondary);
   font-size: .8em; font-weight: var(--gg-weight-medium); line-height: 1.4; vertical-align: baseline; cursor: pointer;
 }
+/* The number stays inline. Its press area is the 28px control size, which a narrow window needs because hover opens nothing there. */
+@media screen {
+  button.loupist-citation { position: relative; }
+  button.loupist-citation::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: var(--gg-size-control-sm);
+    height: var(--gg-size-control-sm);
+    transform: translate(-50%, -50%);
+  }
+}
 .loupist-citation:hover { background: var(--gg-color-bg-selected); color: var(--gg-color-text-primary); }
 /* Its passage is open in Evidence, marked in the same accent as the passage there. */
 .loupist-citation[aria-current="true"] { border-color: var(--gg-color-accent); background: var(--gg-color-accent-soft); color: var(--gg-color-accent-ink); }

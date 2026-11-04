@@ -39,7 +39,7 @@ export function ResearchJournalForm({ bridge, loupistId, entry, checkOpen = fals
     } catch { setError(true); }
     finally { setBusy(false); }
   }
-  return <form className="journal-form" aria-label={t(entry ? "journal.editEntry" : "journal.newEntry")} onSubmit={event => void submit(event)}>
+  return <form className="journal-form" aria-label={t(entry ? "journal.editEntry" : "journal.newEntry")} onSubmit={event => void submit(event)} onFocus={event => { if (event.target instanceof HTMLElement) event.target.scrollIntoView({ block: "nearest", inline: "nearest" }); }}>
     <label htmlFor={`${id}-judgment`}>{t("journal.judgment")}</label>
     <Textarea id={`${id}-judgment`} value={judgment} onChange={e => setJudgment(e.target.value)} maxLength={1000} rows={3} required autoFocus />
     <label htmlFor={`${id}-reasoning`}>{t("journal.reasoning")}</label>
@@ -47,6 +47,7 @@ export function ResearchJournalForm({ bridge, loupistId, entry, checkOpen = fals
     {!hasCheck ? <Button type="button" variant="ghost" className="journal-check-toggle" aria-expanded={false} aria-controls={`${id}-check`} disabled={frozen} onClick={() => setHasCheck(true)}>{t("journal.addCheck")}</Button> : null}
     {hasCheck ? <fieldset id={`${id}-check`} className="journal-check-fields" disabled={frozen}>
       <legend>{t("journal.check")}</legend>
+      <div className="journal-check-body">
       <label htmlFor={`${id}-claim`}>{t("journal.claim")}</label><Input id={`${id}-claim`} value={claim} onChange={e => setClaim(e.target.value)} maxLength={2000} required />
       <label htmlFor={`${id}-metric`}>{t("journal.metric")}</label><Input id={`${id}-metric`} value={metric} onChange={e => setMetric(e.target.value)} maxLength={200} required />
       <div className="journal-form-grid">
@@ -57,6 +58,7 @@ export function ResearchJournalForm({ bridge, loupistId, entry, checkOpen = fals
       </div>
       <label htmlFor={`${id}-confidence`}>{t("journal.confidence")}</label><NativeSelect id={`${id}-confidence`} value={confidence} onChange={e => setConfidence(e.target.value)}><option value="">{t("journal.notSure")}</option>{Array.from({ length: 9 }, (_, index) => (index + 1) * 10).map(value => <option key={value} value={value}>{t("journal.confidenceOption", { value })}</option>)}</NativeSelect>
       <Button type="button" variant="link" className="journal-check-remove" disabled={frozen} onClick={() => setHasCheck(false)}>{t("journal.removeCheck")}</Button>
+      </div>
     </fieldset> : null}
     <p className="journal-caption">{t("journal.caption")}</p>
     {error ? <p role="alert">{t("journal.saveError")}</p> : null}

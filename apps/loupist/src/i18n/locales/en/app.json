@@ -321,12 +321,12 @@
     "title": "Command palette",
     "placeholder": "Search chats, names, principles, briefings…",
     "empty": "Nothing matches.",
-    "moreIn": "More in {{group}}",
+    "moreIn": "More from {{group}}",
     "groups": {
       "attention": "Needs attention",
       "chats": "Chats",
       "following": "What you follow",
-      "map": "On the Map",
+      "map": "Map",
       "principles": "Principles",
       "briefings": "Briefings",
       "actions": "Actions"

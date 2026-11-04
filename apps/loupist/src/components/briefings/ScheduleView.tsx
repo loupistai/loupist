@@ -16,6 +16,7 @@ import { BriefingAssets } from "../assets/BriefingAssets";
 import { useWatchSettings } from "../assets/WatchFor";
 import { followedCount, WATCHING_TASK_ID, WatchingItem, WatchingReader } from "./Watching";
 import { BriefingFollowRows, BriefingAheadRows, hasAheadRows, hasFollowRows } from "./BriefingFinance";
+import { revealFocused } from "../../lib/revealFocused";
 import { runSummary } from "./runSummary";
 import { useAssetNames } from "../assets/assetName";
 import { printReader } from "../print/printDocuments";
@@ -236,7 +237,7 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
           })}</ul>}
         </section>
       </div>
-      {readerOpen ? <div className="briefings-reader-scroll">{!selected && watchingFocus && watch ? <WatchingReader bridge={bridge} loupist={loupist} settings={watch} onSettings={setWatch} onBack={() => { setFocusExplicit(false); setFocusTaskId(null); }} />
+      {readerOpen ? <div className="briefings-reader-scroll" onFocus={revealFocused}>{!selected && watchingFocus && watch ? <WatchingReader bridge={bridge} loupist={loupist} settings={watch} onSettings={setWatch} onBack={() => { setFocusExplicit(false); setFocusTaskId(null); }} />
         : selected ? <article className="briefings-reader" ref={readerRef}><Button variant="ghost" className="briefings-back" data-print="omit" onClick={() => setSelected(null)}>{t("schedule.backTo", { title: focusTask ? displayTitle({ kind: focusTask.kind, title: focusTask.title }) : t("schedule.title") })}</Button><header><h2>{displayTitle(selected)}</h2><p className="briefings-meta">{formatDate(selected.startedAtMs)} · {formatTime(selected.startedAtMs)} · {loupist.name}</p></header>
         {selected.briefingContext?.changed ? <BriefingSections bridge={bridge} loupistId={loupist.id} loupistName={loupist.name} context={selected.briefingContext} nextRun={briefingTask ? nextRun(briefingTask) : null} skipped={selected.skippedTools.map(tool => tool.name)}
           onOpenMap={onOpenMap} onOpenCheck={(journalId, title) => onOpenMemory?.(selected, { loupistId: loupist.id, surface: "note", objectId: journalId, selection: { kind: "journal", journalId } }, title)} /> : null}

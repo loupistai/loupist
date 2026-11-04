@@ -10,16 +10,38 @@ The default uses English and light theme. For a localized layout change add
 `-- --locales ko,en-XA --themes light,dark`.
 
 Each row reports measured CSS pixels for the viewport, sidebar space, panel, chat, uncovered
-chat and reading column. On a sheet the reading column extends behind the panel. Check
-`uncoveredChat` to see how much chat is exposed. The command exits nonzero on overflow,
+chat and reading column. Beside a side sheet the chat wraps into the exposed strip;
+its right edge meets the sheet's left edge. The command exits nonzero on overflow,
 misalignment, clipped grid controls or an incorrect panel mode. Inspect the PNGs and
 `manifest.json` at the printed path. The web gate keeps these with its receipt.
 In a newly initialized repository, captures keep `gitHead: null` until the first
 commit; capture and layout checks still run normally.
 
-This preview runs the real React components with fixture data. Use the native geometry
+This preview runs the real React components with fixture data in headless Chrome. It does
+not qualify WKWebView. A `fieldset` set to `grid` or `flex` keeps a normal legend in
+Chrome and collapses that legend to one character in WKWebView, so the heading stacks
+down the sheet. Measure those headings with `assertFormLegendsFit`
+(`apps/loupist/e2e/native-forms.mjs`) in the macOS WebView. Use the native geometry
 suite for the system WebView and the native browser smoke for child-WebView/Rust behavior.
 See [Which tool](../../apps/loupist/e2e/README.md#which-tool).
+
+## Whole-app UI review
+
+The complete scenario registry includes onboarding, every Settings destination,
+per-Loupist preferences, Skill management dialogs, update states, research readers,
+sharing, connections, financial cards and their empty/error/loading states.
+Run the full registry in both languages and themes at the minimum and wide sizes:
+
+```sh
+npm --prefix apps/loupist run preview:capture -- --locales en,ko --themes light,dark --sizes 700x560,1680x1050
+```
+
+Every non-print cell checks shell geometry, title clearance from tab-close buttons,
+and usable Lens reader height. `browser-long-title` updates a browser title through
+the host event, and `lens-reader-many` opens twenty additional methods in an expanded
+Lens; these catch regressions absent from short-title and one-method fixtures.
+Inspect the screenshots as well as the manifest. A successful preview does not
+qualify native file dialogs, the child browser or WKWebView form legends.
 
 ## Pixel comparisons
 
@@ -36,7 +58,9 @@ of total duration (including repetitions) fail the cell and are recorded with ta
 duration and iteration count in `manifest.json`. The threshold permits near-zero guard durations;
 the explicit allowlist in `scripts/capture-preview.mjs` is empty. This checks the settled scenario,
 not completed effects or motion triggered by later interactions. Injected CSS hides carets and
-disables smooth scrolling. Chrome restarts between scenarios to bound page lifetime.
+disables smooth scrolling. Chrome restarts between scenarios by default; `--browser-scenarios 1..15` permits bounded reuse for whole-app audits. Each navigation still resets storage and bypasses the network cache. Capture servers disable filesystem watching.
+Chrome has a bounded 45-second startup window for cold hosted runners running the
+parallel contract suite; early process exits still fail immediately with browser diagnostics.
 Capture freezes the fixture clock before app initialization
 (including generated map IDs) and hides native scrollbars to avoid their platform fade animation. Compare runs on the same machine and Chrome version
 (`CHROME_PATH` can select a different executable). A changed browser or font environment can

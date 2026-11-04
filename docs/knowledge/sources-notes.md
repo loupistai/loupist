@@ -58,7 +58,7 @@ World view and Lens documents captured with the saved work.
 
 A Journal entry records the user's own judgment, with optional reasoning, linked
 World entities and a dated check. The Loupist’s own view belongs in research notes, not in the user’s Journal.
-Map → Library → Notes lists Your journal before Research notes. The user can
+Map → Library → Notes lists Your journal before Research notes. Focusing a field in that form scrolls it clear of the sticky search. The user can
 create, edit and archive entries there through `journal_create`, `journal_update`,
 `journal_archive` and `journal_list`. Chat uses `journal_save`
 and `journal_review` only. Rust accepts `journal_save` for a judgment the user
@@ -87,4 +87,5 @@ date; otherwise "Due {date} · Review" (in warning once late) or "No check set".
 back, also in the menu of a reason on an asset page, creates a topic Chat titled
 "Looking back: {judgment}" and fills its composer with the entry's local creation
 day as the as-of date, the entry as a `journal` pin and a question about how well
-what was known then supported the judgment. It never sends.
+what was known then supported the judgment. It never sends. When the workspace
+covers the chat, Look back closes that cover so the new draft is on screen.

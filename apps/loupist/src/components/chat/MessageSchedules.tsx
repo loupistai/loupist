@@ -45,7 +45,7 @@ function ScheduleCard({ receipt, onOpen, status, gone = receipt.action === "dele
 }) {
   return <article className="message-schedule" aria-label={t("messageSchedules.taskLabel", { title: receipt.title })}>
     <button type="button" className="message-schedule-open" disabled={gone || !onOpen}
-      onClick={() => onOpen?.(receipt.task_id)} aria-label={t("messageSchedules.openTask", { title: receipt.title })}>
+      onClick={() => onOpen?.(receipt.task_id)} title={t("messageSchedules.openTask", { title: receipt.title })}>
       <span className="message-schedule-summary">
         <span className="message-schedule-heading"><strong title={receipt.title}>{receipt.title}</strong><span>{status}</span></span>
         <span className="message-schedule-cadence">{cadenceLabel(receipt.schedule)}</span>

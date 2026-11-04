@@ -1,6 +1,6 @@
 # Schedule
 
-Bot’s More menu opens task history. Active and All filters, task details, run readers, linked evidence and notifications use the same saved task and run IDs. The reader lists watched assets and recent alerts. Creation, edits and cancellation start in conversation. A clear request registers immediately and returns the cadence and next execution time. A research session hands the request to its own Bot and stays open.
+Bot’s More menu opens task history. Active and All filters, task details, run readers, linked evidence and notifications use the same saved task and run IDs. Focusing a control below the fold in a run scrolls it into the reader. The reader lists watched assets and recent alerts. Creation, edits and cancellation start in conversation. A clear request registers immediately and returns the cadence and next execution time. A research session hands the request to its own Bot and stays open.
 
 ## Code
 

@@ -28,7 +28,7 @@ it("selects a filtered model from search with the keyboard", async () => {
   const [entryKey, firstResult, nextKey, selected] = ["ArrowDown", "Research fast", "ArrowDown", "Research deep"];
   const user = userEvent.setup();
   const onSelectionChange = renderMenu();
-  const trigger = screen.getByRole("button", { name: "Model settings" });
+  const trigger = screen.getByRole("button", { name: /Model settings/ });
 
   await user.tab();
   expect(trigger).toHaveFocus();
@@ -46,4 +46,21 @@ it("selects a filtered model from search with the keyboard", async () => {
   expect(onSelectionChange).toHaveBeenCalledExactlyOnceWith({
     model_profile_id: selected, thinking_level: "medium", run_options: {},
   });
+});
+
+
+it("moves between search and model choices with Tab and restores the trigger on Escape", async () => {
+  const user = userEvent.setup();
+  renderMenu();
+  const trigger = screen.getByRole("button", { name: /Model settings/ });
+  await user.click(trigger);
+  const search = screen.getByRole("searchbox", { name: "Search models" });
+  expect(search).toHaveFocus();
+  await user.tab();
+  expect(screen.getByRole("menuitemradio", { name: "General" })).toHaveFocus();
+  await user.tab({ shift: true });
+  expect(search).toHaveFocus();
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(trigger).toHaveFocus();
 });

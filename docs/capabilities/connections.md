@@ -35,7 +35,7 @@ Users can add their own MCP data sources under Settings → Connections → Your
 - **Adding:** by URL (Streamable HTTP; HTTPS, or loopback for local servers), by pasting `mcpServers` JSON, or, under
   Advanced, as a local command with a pinned package version. Nothing runs until the user confirms an entry, and the
   full command line is shown first. Confirming from Add enables the Loupist that opened the dialog, then tool review
-  records Allow or Don't allow. Done closes the dialog. Confirming from the connection detail does not enable a Loupist.
+  records Allow or Don't allow. Done closes the dialog. Confirming from the connection detail does not enable a Loupist. The detail sheet covers the right side of Connections, and the page behind it wraps into the visible strip so a line is not sliced.
   The detail switch still chooses which Loupists may call the connection. A new connection keeps “Don't save results to
   Memory” on until that switch is turned off.
 - **Sign-in:** MCP authorization: protected-resource and authorization-server discovery, Client ID Metadata Documents

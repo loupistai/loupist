@@ -60,9 +60,9 @@ function LensDocumentContent({ title, document, onOpenLink, onLensLink, lensLink
   </>;
 }
 
-type Props = { markdownFirst?: boolean; children?: ReactNode; bridge: LoupistBridge; catalog: KnowledgeCatalog; location: KnowledgeLocation; onOpen: (location: KnowledgeLocation) => void; onPatch?: (location: KnowledgeLocation) => void; onAsk: (pin: KnowledgePin, threadId?: string) => void; onChanged: () => void; onOpenLink?: (url: string) => void | Promise<void> };
+type Props = { markdownFirst?: boolean; children?: ReactNode; toolbar?: ReactNode; bridge: LoupistBridge; catalog: KnowledgeCatalog; location: KnowledgeLocation; onOpen: (location: KnowledgeLocation) => void; onPatch?: (location: KnowledgeLocation) => void; onAsk: (pin: KnowledgePin, threadId?: string) => void; onChanged: () => void; onOpenLink?: (url: string) => void | Promise<void> };
 
-export function LensWorkspace({ markdownFirst = false, children, bridge, catalog, location, onOpen, onPatch, onAsk, onChanged, onOpenLink }: Props) {
+export function LensWorkspace({ markdownFirst = false, children, toolbar, bridge, catalog, location, onOpen, onPatch, onAsk, onChanged, onOpenLink }: Props) {
   const { t } = useTranslation("knowledge");
   const [showMarkdown, setShowMarkdown] = useState(markdownFirst);
   const record = location.recordId ? catalog.lenses.find((item) => item.recordId === location.recordId) : catalog.lenses.find((item) => item.lensKind === "perspective") ?? catalog.lenses[0];
@@ -214,7 +214,7 @@ export function LensWorkspace({ markdownFirst = false, children, bridge, catalog
     {!perspective ? <Button variant="outline" size="sm" data-share-item onClick={() => setShareOpen(true)}>{i18n.t("sharing:share")}</Button> : null}</div> : null;
   return <div ref={workspaceRef} className={`knowledge-lens lens-workspace is-reader-only${compact ? " is-compact" : ""}${wide ? " has-context-pane" : ""}`}>
     <div ref={readerScrollRef} className="knowledge-reading lens-reader" onScroll={event => patchView({ readerScrollTop: event.currentTarget.scrollTop })}>
-      {!wide ? <div className="lens-reader-toolbar"><Button variant="ghost" aria-label={t("lensWorkspace.showOutlineAndLinks")} onClick={() => setContextOpen(true)} disabled={!server}><ListTreeIcon />{t("lensWorkspace.outlineLinks")}</Button></div> : null}
+      {!wide ? <div className="lens-reader-toolbar">{toolbar}<Button className="lens-outline" variant="ghost" onClick={() => setContextOpen(true)} disabled={!server}><ListTreeIcon />{t("lensWorkspace.outlineLinks")}</Button></div> : null}
       {loadError ? <Alert variant="destructive"><AlertDescription>{loadError}</AlertDescription><Button variant="outline" onClick={() => setReload((value) => value + 1)}>{t("lensWorkspace.retryLens")}</Button></Alert> : null}
       {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
       {request && proposalsLoaded && !requestedProposal ? <Alert variant="destructive"><AlertDescription>{proposalMatchError()}</AlertDescription></Alert> : null}
@@ -222,7 +222,7 @@ export function LensWorkspace({ markdownFirst = false, children, bridge, catalog
         <header className="knowledge-read-head lens-read-head"><div><div className="lens-document-meta"><span className="lens-eyebrow">{t("map.lensWiki")}</span><span>{perspective ? t("lensWorkspace.defaultPerspective") : principle ? t("map.kind.principle") : t("lensWorkspace.researchMethod")}</span></div><h2 ref={readerRef} tabIndex={-1}>{displayTitle}</h2>
           <SharedOrigin bridge={bridge} loupistId={location.loupistId} subjectId={server.recordId} onAbout={() => onOpen({ loupistId: location.loupistId, surface: "lens", recordId: SHARED_SECTION_ITEM })} /></div></header>
         {markdownFirst ? <div className="lens-format-picker">
-          <Button variant="ghost" size="sm" aria-pressed={showMarkdown} onClick={() => setShowMarkdown(true)}>Markdown</Button>
+          <Button variant="ghost" size="sm" aria-pressed={showMarkdown} onClick={() => setShowMarkdown(true)}>{t("lensWorkspace.markdownSource")}</Button>
           <Button variant="ghost" size="sm" aria-pressed={!showMarkdown} onClick={() => setShowMarkdown(false)}>{t("lensWorkspace.formatted")}</Button>
         </div> : <LensMarkdownSource key={`markdown:${scope}`} markdown={server.document.markdown} sections={sections} />}
         {showMarkdown && <div className="lens-markdown-source"><pre>{markdownText(shownDocument.markdown, sections)}</pre></div>}

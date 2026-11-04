@@ -19,15 +19,15 @@ it("keeps reasoning under Advanced, recovers an empty thinking selection, and re
     context_window: 272_000, max_tokens: 128_000, thinking_levels: ["off", "medium", "high", "max"], thinking_level_map: { max: "max" }, run_controls: [], credential_source: "saved" as const };
   const provider = { ...chatgpt(), id: "openai-codex" };
   render(<TooltipProvider><ChatModelMenu models={[model]} providers={[provider]} selection={{ model_profile_id: model.id, thinking_level: "", run_options: {} }} onSelectionChange={onSelectionChange} auto={false} onResetToAuto={vi.fn()} /></TooltipProvider>);
-  await user.click(screen.getByRole("button", { name: "Model settings for this message" }));
+  await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
   expect(screen.queryByRole("menuitemradio", { name: "Max" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("menuitem", { name: "Advanced" }));
   await user.click(screen.getByRole("menuitemradio", { name: "Max" }));
   expect(onSelectionChange).toHaveBeenCalledWith({ model_profile_id: model.id, thinking_level: "max", run_options: {} });
   await user.keyboard("{Escape}");
-  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "Model settings for this message" }));
-  expect(screen.getByRole("menu")).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
 });
 
 it("shows Auto without a model name until a model is chosen, and resets to Auto from the menu", async () => {
@@ -38,7 +38,7 @@ it("shows Auto without a model name until a model is chosen, and resets to Auto 
     context_window: 272_000, max_tokens: 128_000, thinking_levels: ["medium"], thinking_level_map: {}, run_controls: [], credential_source: "saved" as const };
   const props = { models: [model], providers: [], selection: { model_profile_id: model.id, thinking_level: "medium", run_options: {} }, onSelectionChange, onResetToAuto };
   const { rerender } = render(<TooltipProvider><ChatModelMenu {...props} auto /></TooltipProvider>);
-  const trigger = screen.getByRole("button", { name: "Model settings for this message" });
+  const trigger = screen.getByRole("button", { name: /Model settings for this message/ });
   expect(trigger).toHaveTextContent(/^Auto$/);
   expect(document.body).not.toHaveTextContent("GPT-5.6 Sol");
   await user.click(trigger);
@@ -49,8 +49,8 @@ it("shows Auto without a model name until a model is chosen, and resets to Auto 
   await user.keyboard("{Escape}");
 
   rerender(<TooltipProvider><ChatModelMenu {...props} auto={false} /></TooltipProvider>);
-  expect(screen.getByRole("button", { name: "Model settings for this message" })).toHaveTextContent("GPT-5.6 Sol");
-  await user.click(screen.getByRole("button", { name: "Model settings for this message" }));
+  expect(screen.getByRole("button", { name: /Model settings for this message/ })).toHaveTextContent("GPT-5.6 Sol");
+  await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
   await user.click(screen.getByRole("menuitemradio", { name: "Reset to Auto" }));
   expect(onResetToAuto).toHaveBeenCalled();
 });
@@ -73,18 +73,18 @@ it("names the plan behind the answer under the model list and turns it to a warn
     context_window: 272_000, max_tokens: 128_000, thinking_levels: ["medium"], thinking_level_map: {}, run_controls: [], credential_source: "saved" as const };
   const props = { models: [model], selection: { model_profile_id: model.id, thinking_level: "medium", run_options: {} }, onSelectionChange: vi.fn(), onResetToAuto: vi.fn(), onOpenUsage, auto: true };
   const { rerender } = render(<TooltipProvider><ChatModelMenu {...props} providers={[chatgpt()]} /></TooltipProvider>);
-  await user.click(screen.getByRole("button", { name: "Model settings for this message" }));
+  await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
   expect(screen.getByText("Using your ChatGPT plan")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Manage usage" }));
   expect(onOpenUsage).toHaveBeenCalledWith("openai");
   await user.keyboard("{Escape}");
   rerender(<TooltipProvider><ChatModelMenu {...props} providers={[chatgpt(planStatus({ kind: "plan_limit", at_ms: 1 }))]} /></TooltipProvider>);
-  await user.click(screen.getByRole("button", { name: "Model settings for this message" }));
+  await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
   const limit = screen.getByText("ChatGPT plan at its limit");
   expect(limit).toHaveAttribute("data-tone", "warning");
   await user.keyboard("{Escape}");
   // A key account has no plan line.
   rerender(<TooltipProvider><ChatModelMenu {...props} providers={[chatgpt({ ...planStatus(), credential_kind: "api_key" })]} /></TooltipProvider>);
-  await user.click(screen.getByRole("button", { name: "Model settings for this message" }));
+  await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
   expect(screen.queryByText("Using your ChatGPT plan")).not.toBeInTheDocument();
 });

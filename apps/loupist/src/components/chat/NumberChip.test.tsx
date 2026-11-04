@@ -56,7 +56,9 @@ it("renders a numeric link as a number chip and a non-numeric one as a numbered 
   expect(margin).toHaveAttribute("aria-haspopup", "dialog");
   expect(margin).toHaveAccessibleName("8.4 percent, calculated. Show the math");
   expect(await chip("₩452.3bn")).toHaveAccessibleName("₩452.3bn, from OpenDART");
-  expect(await screen.findByRole("button", { name: /Source \d+: February guidance call/ })).toHaveClass("loupist-citation");
+  const citation = await screen.findByRole("button", { name: "Source 2: February guidance call" });
+  expect(citation).toHaveClass("loupist-citation");
+  expect(citation).toHaveTextContent("2");
 });
 
 it("keeps a bold attached-note token linked through the workspace-aware answer renderer", async () => {

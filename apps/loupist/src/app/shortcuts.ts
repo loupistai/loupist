@@ -27,6 +27,10 @@ export const SHORTCUTS: readonly Shortcut[] = [
 export const GLOBAL_KEYS = { newChat: "n", palette: "k", settings: ",", panel: "\\", focusComposer: "/" } as const;
 
 export const isMacPlatform = () => /Mac|iPhone|iPad/.test(navigator.platform);
+
+/** A real modal is open. The narrow navigation sheet is a dialog too, and it must not swallow app shortcuts. */
+export const modalDialogOpen = () => [...document.querySelectorAll('[role="dialog"][data-state="open"]')]
+  .some((dialog) => dialog.getAttribute("data-sidebar") !== "sidebar");
 export const shortcutKeys = (shortcut: Shortcut, mac = isMacPlatform()) => (mac ? shortcut.mac : shortcut.other);
 export const shortcutFor = (id: ShortcutId) => shortcutKeys(SHORTCUTS.find((item) => item.id === id)!);
 /** One tab's key from the ⌘1–⌘4 binding, for rows that name a single tab. */

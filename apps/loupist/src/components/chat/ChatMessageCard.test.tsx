@@ -311,7 +311,7 @@ it("cites external grounding once, opens it, and routes saved reads to Memory", 
   expect(screen.queryByRole("button", { name: /^Source 3:/ })).toBeNull();
   await user().click(screen.getByRole("button", { name: "Source 2: Market quote" }));
   expect(props.onOpenEvidence).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: connection.id }), undefined);
-  await user().click(screen.getByRole("button", { name: "Memory: Annual report" }));
+  await user().click(screen.getByRole("button", { name: "world read · Memory: Annual report" }));
   expect(props.onOpenMemory).toHaveBeenCalledWith(expect.objectContaining({ surface: "source", recordId: "source-record" }), "Annual report");
   await user().click(screen.getByRole("button", { name: "Result: World search" }));
   expect(props.onOpenEvidence).toHaveBeenCalledTimes(1);
@@ -432,7 +432,7 @@ it("keeps saved schedule cards current, even after a stopped reply, and opens th
   view.rerender(<TooltipProvider><ChatMessageCard {...props} message={paused} onOpenSchedule={onOpenSchedule} /></TooltipProvider>);
   expect(screen.getAllByRole("article", { name: /Scheduled task:/ })).toHaveLength(2);
   expect(screen.getByRole("article", { name: "Scheduled task: Morning review" })).toHaveTextContent("Paused");
-  await user().click(screen.getByRole("button", { name: "Open scheduled task: Evening review" }));
+  await user().click(screen.getByRole("button", { name: /Evening review/ }));
   expect(onOpenSchedule).toHaveBeenCalledWith("task-b");
   expect(props.onOpenSchedule).not.toHaveBeenCalled();
 });

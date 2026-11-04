@@ -5,7 +5,7 @@ import { openApp, privateChatToggle } from "../renderApp";
 
 type User = ReturnType<typeof userEvent.setup>;
 const composer = () => screen.getByRole("textbox", { name: "Message Loupist" });
-const modelMenuButton = () => screen.getByRole("button", { name: "Model settings for this message" });
+const modelMenuButton = () => screen.getByRole("button", { name: /Model settings for this message/ });
 const chooseModelOption = async (user: User, name: string | RegExp) => {
   await user.click(modelMenuButton());
   if (!screen.queryByRole("menuitemradio", { name })) await user.click(screen.getByRole("menuitem", { name: "Advanced" }));
