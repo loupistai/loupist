@@ -211,6 +211,7 @@ async function mapStats() {
 /** Journal entries are Map nodes, so the size is read once the Library writes have settled. */
 async function settledMapStats() {
   await openMainTab(browser, "map");
+  await closeMapReader();
   let previous = await mapStats();
   for (let read = 0; read < 10; read += 1) {
     await browser.pause(1_000);
@@ -221,8 +222,18 @@ async function settledMapStats() {
   throw new Error(`The Map size did not settle (${previous})`);
 }
 
+async function closeMapReader() {
+  const selector = ".map-view aside.map-reader";
+  if (!await browser.$(selector).isDisplayed().catch(() => false)) return;
+  await clickControl(browser, `${selector} .map-reader-actions button[aria-label]`);
+  await browser.waitUntil(async () => !await browser.$(selector).isDisplayed().catch(() => false), {
+    timeout: 10_000, timeoutMsg: "The Map reader did not close",
+  });
+}
+
 async function openLibrary(tabLabel) {
   await openMainTab(browser, "map");
+  await closeMapReader();
   await mapStats();
   if (!await browser.$(".map-view aside.map-library").isDisplayed().catch(() => false)) {
     const direct = await browser.$(".map-view button[data-map-library]");
@@ -317,6 +328,10 @@ async function addJournalEntry() {
   await reasoning.setValue(JOURNAL.reasoning);
   await clickButton("Save entry", form);
   await waitGone(form, "The Journal form did not close after saving");
+  const reader = await displayed(".map-view aside.map-reader article.knowledge-journal");
+  await waitForText(reader, JOURNAL.judgment);
+  await waitForText(reader, JOURNAL.reasoning);
+  await openLibrary("Journal & notes");
   const row = await visibleWithText(".map-view aside.map-library button.journal-library-row", JOURNAL.judgment);
   return row.getAttribute("data-research-id");
 }
