@@ -15,6 +15,7 @@
 .settings-navigation .app-brand { padding: 0 var(--gg-space-2); font-size: var(--gg-text-subtitle); }
 .settings-navigation [data-slot="sidebar-group"] { padding: var(--gg-space-3) var(--gg-space-4); }
 .settings-navigation [data-slot="sidebar-group-label"] { font-size: var(--gg-text-caption); letter-spacing: .04em; color: var(--gg-color-text-secondary); padding-inline: 10px; margin-bottom: 6px; }
+.settings-navigation:lang(ko) [data-slot="sidebar-group-label"] { letter-spacing: 0; }
 .settings-navigation nav [data-slot="sidebar-menu-button"] { height: var(--gg-space-8); padding-inline: 10px; font-weight: var(--gg-weight-regular); border-radius: var(--gg-radius-sm); }
 .settings-navigation nav [data-slot="sidebar-menu-button"]:has(.settings-nav-caption) { height: auto; min-height: var(--gg-space-8); padding-block: 6px; white-space: normal; overflow: visible; align-items: flex-start; }
 .settings-nav-label { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; line-height: 1.3; }
