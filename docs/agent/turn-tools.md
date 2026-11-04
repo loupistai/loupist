@@ -17,7 +17,7 @@ to name the connection the user needs to configure. Loading cannot grant access.
 An artifact id already returned in this Chat, including by `chart_publish`, or
 supplied by the user, is enough for `artifact_read`. Call `artifact_list` only to
 discover an unknown target id.
-[Connections](../bundled-capabilities.md) owns IDs and credential behavior.
+[Connections](../capabilities/connections.md) owns IDs and credential behavior.
 
 The `schedules` component is independent of Memory. Read current IDs/revisions
 before editing and keep a stable creation key within the turn. Agent modes are

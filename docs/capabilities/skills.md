@@ -39,4 +39,4 @@ Changes are read again at Chat admission and apply on the next turn. Skills cann
 grant connection access or Memory permissions. Their bodies/references load for the
 requested operation; they do not install upstream plugins or office runtimes.
 [Bundled provenance](../../apps/loupist/agent/skills/NOTICE.md) owns licenses and
-adaptations. [Agent development](../agent-development.md) owns prompt/cache behavior.
+adaptations. [Prompt and judgment](../agent/prompt.md) owns prompt/cache behavior.

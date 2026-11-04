@@ -18,7 +18,7 @@ calculation and retained Memory. Each Loupist is a local folder with multiple Ch
 Source retains material, World connects claims, Lens holds principles and methods,
 and the Journal holds the user's own judgments.
 
-[Loupist creation and import](architecture.md#where-data-lives) keep research in local
+[Loupist creation and import](runtime/storage-authority.md#where-data-lives) keep research in local
 folders. Model connections are separate from the saved local data. The desktop does not require a Loupist
 account or provide cloud/mobile synchronization. Local schedules depend on the
 app process; they are not an always-on cloud service.
@@ -32,7 +32,7 @@ or saved method proof of better analysis; evaluation must test subsequent work.
 
 Use the implemented navigation terms Loupist, Thread (ko 기본 대화), Chat, Map, Lens, Schedule and Settings. Use "what you follow" (ko 관심 자산) for the watchlist.
 World names the relationship model; Sources, Lens and the Journal are available
-through [Map’s Library](knowledge-model.md#map-and-library). Do not expose storage IDs, hashes, worker names, raw envelopes
+through [Map’s Library](ui/map-lens.md#map-and-library). Do not expose storage IDs, hashes, worker names, raw envelopes
 or byte offsets as product concepts. Put source limitations, model usage, commands,
 file access and actionable diagnostics in the appropriate details.
 
@@ -58,7 +58,7 @@ Loupist is an AI research companion that can share its view; it is not a license
 and never trades. Journal entries
 record the user's judgment, not an assistant recommendation. Avoid promises of
 returns or improved prediction. Learning means retained evidence/methods, not
-model-weight training. [Agent development](agent-development.md#investment-judgment)
+model-weight training. [Investment judgment](agent/prompt.md#investment-judgment)
 owns the detailed model behavior boundary.
 
 ## Visual language
@@ -67,4 +67,4 @@ Use neutral reading surfaces, clear source access and burnt amber `#a4530c` for
 focus/identity. Reserve price-direction colors for data. Avoid decorative AI brains,
 circuits and opaque intelligence scores. Preserve keyboard focus, long-form reading,
 light/dark themes and the minimum desktop size. The
-[design rubric](development.md#design-rubric) owns measurable review standards.
+[design rubric](dev/ui-qa.md#design-rubric) owns measurable review standards.

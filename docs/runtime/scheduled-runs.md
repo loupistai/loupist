@@ -100,7 +100,8 @@ observations, runs at most eight due captures under a Memory-mutation activity, 
 what each capture did as structured summary items (`RunSummaryItem`: expected or
 reported values with the asset name, period and count, a failed capture, or nothing due)
 that the Schedule tab words in the reader's language, keeps a failure's reason in the
-run's error, and posts what the Thread is owed. Captures read
+run's error, and posts what the Thread is owed. A successful before-capture posts
+nothing. Captures read
 through each Loupist's host executor, as the watchers do; what they read and how values
 are compared is in [Results before and after](../analysis/results.md#results-before-and-after). The
 results card reads `earnings_snapshot_get` and `earnings_events_list` and shows

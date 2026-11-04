@@ -11,54 +11,20 @@ alone does not establish their correctness.
 App services own dataset snapshots, charts, connector credentials and canonical
 Memory writes.
 
-## Where each item appears
+## Find a topic
 
-Reply timeline, numbers and readers: [Where results appear](analysis/surfaces.md#where-each-item-appears). Asset rows, grids, results and alerts: [Cards outside the reply](analysis/cards.md).
-
-## Data and provenance
-
-Snapshots, trust tags, import and export: [Datasets](analysis/datasets.md#data-and-provenance). Publication time, cutoffs and market reads: [Provenance and cutoffs](analysis/provenance.md).
-
-## Calculation
-
-Host arithmetic and the sensitivity card. [Calculation](analysis/calculation.md#calculation).
-
-### Sensitivity cards
-
-A card states the pinned inputs and the result. It does not recommend a trade. [Calculation](analysis/calculation.md#sensitivity-cards).
-
-## Number checks
-
-Match a figure to its pinned input. [Number checks](analysis/number-checks.md#number-checks).
-
-### Number matching
-
-How a close match, a conflict and a missing input are labeled. [Number checks](analysis/number-checks.md#number-matching).
-
-### Grid cells
-
-Checked tables and disagreeing sources. [Grids and conflict cards](analysis/grids.md#grid-cells).
-
-## Results before and after
-
-The comparison of captured figures. [Results before and after](analysis/results.md#results-before-and-after).
-
-## Korean asset rows
-
-Filings, flows and retail rows. [Korean asset rows](analysis/korea.md#korean-asset-rows).
-
-## Point-in-time answers
-
-The cutoff and the composer date control. [Point-in-time answers](analysis/point-in-time.md#point-in-time-answers).
-
-## Execution and history
-
-File writes stick if a reply is cancelled. Historical simulations need an explicit fill time. [Calculation](analysis/calculation.md#execution-and-history).
-
-## Visualizations
-
-Chart cards and their pinned series. [Charts and evaluation](analysis/charts.md#visualizations).
-
-## Evaluation
-
-Credential-free cases and where they live. [Charts and evaluation](analysis/charts.md#evaluation).
+- [Where each item appears](analysis/surfaces.md#where-each-item-appears)
+- [Cards outside the reply](analysis/cards.md)
+- [Data and provenance](analysis/datasets.md#data-and-provenance)
+- [Provenance and cutoffs](analysis/provenance.md)
+- [Calculation](analysis/calculation.md#calculation)
+- [Sensitivity cards](analysis/calculation.md#sensitivity-cards)
+- [Number checks](analysis/number-checks.md#number-checks)
+- [Number matching](analysis/number-checks.md#number-matching)
+- [Grid cells](analysis/grids.md#grid-cells)
+- [Results before and after](analysis/results.md#results-before-and-after)
+- [Korean asset rows](analysis/korea.md#korean-asset-rows)
+- [Point-in-time answers](analysis/point-in-time.md#point-in-time-answers)
+- [Execution and history](analysis/calculation.md#execution-and-history)
+- [Visualizations](analysis/charts.md#visualizations)
+- [Evaluation](analysis/charts.md#evaluation)

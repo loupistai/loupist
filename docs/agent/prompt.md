@@ -1,6 +1,6 @@
 # Prompt and judgment
 
-Effective instructions are the sealed prefix plus the Loupist's tone. The product states what the evidence shows and does not trade or prescribe a position.
+Effective instructions are the sealed prefix plus the Loupist's tone. The product states what the evidence shows and does not trade or prescribe a position. The pages in `docs/agent/` are developer instructions, not text to inject into Chat.
 
 ## Review the effective instructions
 
