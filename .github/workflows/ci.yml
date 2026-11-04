@@ -16,11 +16,11 @@ on:
 permissions:
   contents: read
 
-# Pull requests cancel their own superseded runs. Every main push keeps its run,
-# because the next push only classifies its own before..after range.
+# A newer pull-request or main push cancels the older run. Main runs classify the
+# range since the last green main push, so a cancelled run's changes stay in scope.
 concurrency:
-  group: loupist-ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: loupist-ci-${{ (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main') && github.ref || github.run_id }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -30,6 +30,9 @@ jobs:
     name: Classify change scope
     timeout-minutes: 5
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
     outputs:
       web: ${{ steps.scope.outputs.web }}
       python: ${{ steps.scope.outputs.python }}
@@ -44,11 +47,21 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Find the last green main push
+        id: base
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=1" \
+            --jq '.workflow_runs[0].head_sha // ""')
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
       - name: Classify affected surfaces
         id: scope
         env:
           CI_FORCE_FULL: ${{ (inputs.full || github.event_name == 'workflow_dispatch') && '1' || '0' }}
-          CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha || steps.base.outputs.sha }}
           CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           CI_DIFF_MODE: ${{ github.event_name == 'pull_request' && 'merge-base' || 'direct' }}
         run: python3 apps/loupist/scripts/ci_change_scope.py

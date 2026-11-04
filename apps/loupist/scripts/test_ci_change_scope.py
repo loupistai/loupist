@@ -275,6 +275,21 @@ class ChangeScopeTests(unittest.TestCase):
             )
             self.assertIn("needs.changes.outputs.macos == 'true'", condition, job)
 
+    def test_a_cancelled_main_run_leaves_its_changes_in_scope(self) -> None:
+        # Main pushes cancel older runs, so each must classify from the last green
+        # main push rather than from its own previous commit.
+        workflow = (SCRIPTS.parents[2] / ".github/workflows/ci.yml").read_text()
+        group = workflow.split("concurrency:\n  group: ", 1)[1].split("\n", 1)[0]
+        self.assertIn("github.ref == 'refs/heads/main'", group)
+        self.assertIn("  cancel-in-progress: true\n", workflow)
+        changes = self.job_block(workflow, "changes")
+        self.assertIn("event=push&status=success", changes)
+        self.assertIn(
+            "CI_BASE_SHA: ${{ github.event.pull_request.base.sha || steps.base.outputs.sha }}",
+            changes,
+        )
+        self.assertNotIn("github.event.before", workflow)
+
     def test_web_legs_split_the_renderer_tests_and_keep_every_web_step(self) -> None:
         workflow = (SCRIPTS.parents[2] / ".github/workflows/ci.yml").read_text()
         block = self.job_block(workflow, "verify-web")
