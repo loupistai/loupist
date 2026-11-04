@@ -856,8 +856,10 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 /* token-exception: breakpoint; vars unsupported in query conditions */
 
 @media (max-width: 1060px) {
+  /* Stay in the stage under the titlebar. A fixed sheet covers the header controls the panel is opened from. */
+  .app-stage { position: relative; }
   .artifact-panel-backdrop {
-    position: fixed;
+    position: absolute;
     inset: 0;
     z-index: var(--gg-z-dialog);
     display: block;
@@ -866,13 +868,13 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
   }
 
   .artifact-panel {
-    position: fixed;
+    position: absolute;
     inset: 0 0 0 auto;
     z-index: var(--gg-z-dialog);
     /* The narrow overlay leaves a strip of the chat visible (side-panel spec P1). */
-    width: min(480px, calc(100vw - 64px));
+    width: min(480px, calc(100% - 64px));
     min-width: 0;
-    height: 100dvh;
+    height: auto;
     padding-left: 0;
     border-left: 2px solid var(--gg-color-border-subtle);
     box-shadow: -20px 0 60px color-mix(in oklch, black 24%, transparent);
@@ -880,8 +882,8 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 
   .artifact-panel[data-placement="bottom"] {
     inset: auto 0 0;
-    width: 100vw;
-    height: min(82dvh, var(--artifact-panel-height));
+    width: 100%;
+    height: min(82%, var(--artifact-panel-height));
     min-height: 0;
     padding-top: 0;
     border-top: 2px solid var(--gg-color-border-subtle);
