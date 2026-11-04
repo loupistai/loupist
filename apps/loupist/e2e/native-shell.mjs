@@ -77,17 +77,30 @@ export async function clickControl(browser, selector) {
   if (state === "missing") throw new Error(`Control was not in the page: ${selector}`);
   if (state === "disabled") throw new Error(`Control is disabled: ${selector}`);
   const element = await browser.$(selector);
+  const isMenu = await element.getAttribute("aria-haspopup") === "menu";
   if (await element.isDisplayed().catch(() => false)) {
     await element.click();
-    return;
+  } else {
+    const clicked = await browser.execute((sel) => {
+      const element = document.querySelector(sel);
+      if (!(element instanceof HTMLElement)) return false;
+      element.click();
+      return true;
+    }, selector);
+    if (!clicked) throw new Error(`Control could not be activated: ${selector}`);
   }
-  const clicked = await browser.execute((sel) => {
-    const element = document.querySelector(sel);
-    if (!(element instanceof HTMLElement)) return false;
-    element.click();
-    return true;
-  }, selector);
-  if (!clicked) throw new Error(`Control could not be activated: ${selector}`);
+  if (isMenu) {
+    const opened = () => element.getAttribute("aria-expanded").then(value => value === "true");
+    if (!await browser.waitUntil(opened, { timeout: 750, interval: 50 }).catch(() => false)) {
+      // The pinned WebKit driver can omit Radix's pointerdown. Use the menu's
+      // supported keyboard activation, then assert the real expanded state.
+      await browser.execute((sel) => document.querySelector(sel)?.focus(), selector);
+      await browser.keys("Enter");
+      await browser.waitUntil(opened, {
+        timeout: 5_000, interval: 100, timeoutMsg: `Menu did not open: ${selector}`,
+      });
+    }
+  }
 }
 
 /** The settings sheet is also role=dialog, so the first dialog is not the confirmation. */

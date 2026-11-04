@@ -132,7 +132,12 @@ mod process_ownership {
     use crate::process_lease::confirm_process_group_exit;
 
     fn python() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../openbb/.venv/bin/python")
+        // Match the MCP fixture: launch and lease the same resolved interpreter,
+        // rather than a macOS virtualenv launcher that can re-exec another binary.
+        std::fs::canonicalize(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../openbb/.venv/bin/python"),
+        )
+        .expect("locked OpenBB Python environment")
     }
 
     async fn fixture(root: &Path, leased: bool, leader_exits: bool) -> PiProcess {
