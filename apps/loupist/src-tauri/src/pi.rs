@@ -61,7 +61,7 @@ use std::sync::OnceLock;
 pub const PI_VERSION: &str = "1.0.1";
 pub(crate) const PI_HTTP_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const LOUPIST_SYSTEM_PROMPT: &str = include_str!("../../agent/SYSTEM.md");
-#[cfg(any(test, all(target_os = "macos", target_arch = "aarch64")))]
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 pub const PI_DARWIN_ARM64_ARCHIVE_SHA256: &str =
     "de35e0025b136eb37693054ca658c010b6327a12aaff438ae87c4d1c94f99e6c";
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
