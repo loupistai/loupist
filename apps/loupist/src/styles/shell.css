@@ -360,12 +360,11 @@ html[data-desktop-platform="macos"] .app-shell {
 .market-status > [data-state="open"], .market-status > [data-state="always"] { color: var(--gg-color-text-primary); }
 @media (max-width: 1099px) {
   .market-status, .header-market-slot { display: none; }
-  /* The status slot is empty, and six full names do not fit. Other profiles keep the avatar; the selected name uses the row. */
+  /* The status slot is empty, and six full names do not fit. Other profiles keep the avatar. The selected name stays within 240px and does not push those avatars off the row. */
   .loupist-header-selector, .loupist-header-profiles { flex: 1 1 auto; }
   .loupist-header-identity:not([aria-pressed="true"]) strong { display: none; }
   .loupist-header-identity:not([aria-pressed="true"]) { flex: 0 0 auto; max-width: none; padding-inline: var(--gg-space-1); }
-  .loupist-header-identity[aria-pressed="true"] { flex: 1 0 auto; width: 100%; max-width: 100%; min-width: 0; }
-  .loupist-header-identity[aria-pressed="true"] strong { flex: 1 1 auto; min-width: 0; }
+  .loupist-header-identity[aria-pressed="true"] { flex: 0 0 auto; width: auto; max-width: 240px; }
 }
 .app-header-sidebar-trigger { display: none; }
 .chat-tab-panel { position: relative; display: flex; min-width: 0; }
