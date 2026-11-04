@@ -98,8 +98,13 @@ fn extract_corp_code_xml(bytes: &[u8]) -> Result<String, FinanceDataError> {
         {
             continue;
         }
+        if file.size() > MAX_DECOMPRESSED_DOCUMENT_BYTES as u64 {
+            return Err(FinanceDataError::InvalidResponse);
+        }
         let mut xml = String::new();
-        file.read_to_string(&mut xml)
+        (&mut file)
+            .take(MAX_DECOMPRESSED_DOCUMENT_BYTES as u64 + 1)
+            .read_to_string(&mut xml)
             .map_err(|_| FinanceDataError::InvalidResponse)?;
         if xml.len() > MAX_DECOMPRESSED_DOCUMENT_BYTES {
             return Err(FinanceDataError::InvalidResponse);
@@ -261,6 +266,28 @@ impl FinanceDataService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn corp_code_zip_rejects_oversized_xml_and_reads_an_ordinary_directory() {
+        let archive = |contents: &[u8]| {
+            let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            writer
+                .start_file("CORPCODE.xml", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(contents).unwrap();
+            writer.finish().unwrap().into_inner()
+        };
+        assert_eq!(
+            extract_corp_code_xml(&archive(b"<result/>")).unwrap(),
+            "<result/>"
+        );
+        let oversized = archive(&vec![b'x'; MAX_DECOMPRESSED_DOCUMENT_BYTES + 1]);
+        assert!(matches!(
+            extract_corp_code_xml(&oversized),
+            Err(FinanceDataError::InvalidResponse)
+        ));
+    }
 
     #[test]
     fn dart_entities_resolve_by_symbol_and_registered_names() {
