@@ -8,6 +8,7 @@
 .briefings-layout { flex: 1; display: grid; grid-template-columns: var(--gg-size-inspector) minmax(0, 1fr); min-height: 0; }
 .briefings-inbox { overflow: auto; border-right: 1px solid var(--gg-color-border-subtle); }
 .briefings-group { margin: 0; padding: var(--gg-space-4) var(--gg-space-4) var(--gg-space-2); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); text-transform: uppercase; }
+.briefings-group:lang(ko) { letter-spacing: 0; text-transform: none; }
 .briefings-item { display: block; width: 100%; min-height: var(--gg-space-10); padding: var(--gg-space-3) var(--gg-space-4); text-align: left; }
 .briefings-item:hover { background: var(--gg-color-bg-hover); }
 .briefings-item[aria-selected="true"] { background: var(--gg-color-bg-selected); }

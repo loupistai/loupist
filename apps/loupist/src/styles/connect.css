@@ -4,7 +4,7 @@
 .connect-ways { display: grid; min-width: 0; }
 .connect-group-label { margin: var(--gg-space-4) 0 var(--gg-space-1); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); font-weight: var(--gg-weight-medium); text-transform: uppercase; letter-spacing: .06em; }
 .connect-ways > .connect-group-label:first-child { margin-top: 0; }
-:lang(ko) .connect-group-label { letter-spacing: 0; }
+:lang(ko) .connect-group-label { letter-spacing: 0; text-transform: none; }
 .connect-row { display: flex; align-items: center; gap: var(--gg-space-3); width: 100%; min-height: 44px; padding: 0 var(--gg-space-3); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); text-align: left; cursor: pointer; transition: background-color var(--gg-motion-instant) var(--gg-ease-out); }
 .connect-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 .connect-row:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }

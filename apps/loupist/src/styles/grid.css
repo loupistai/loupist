@@ -159,6 +159,7 @@ button.grid-card-empty:focus-visible { outline: 2px solid var(--gg-color-focus);
 
 /* Conflict card: label, a five-column table, the why and the choice. No warning colors. */
 .conflict-card-label { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); letter-spacing: .04em; line-height: var(--gg-leading-caption); text-transform: uppercase; }
+.conflict-card-label:lang(ko) { letter-spacing: 0; text-transform: none; }
 .conflict-card-table { table-layout: fixed; min-width: 520px; }
 /* The label sits right above the table: a one-line header row, no reserved two-line height. */
 .conflict-card .grid-card-header { align-items: center; min-height: 28px; }

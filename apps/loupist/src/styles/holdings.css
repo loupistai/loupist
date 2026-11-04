@@ -5,6 +5,7 @@
 .holdings-body { gap: var(--gg-space-2); }
 .holdings-section { display: grid; min-width: 0; }
 .holdings-section-label { margin: var(--gg-space-5) 0 var(--gg-space-1); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); font-weight: var(--gg-weight-medium); text-transform: uppercase; letter-spacing: .04em; }
+.holdings-sheet:lang(ko) .holdings-section-label, .holdings-sheet:lang(ko) .holdings-table th { letter-spacing: 0; text-transform: none; }
 .holdings-section:first-child .holdings-section-label { margin-top: 0; }
 .holdings-subhead { margin: var(--gg-space-3) 0 0; font-size: var(--gg-text-body); font-weight: var(--gg-weight-medium); }
 .holdings-source, .holdings-wallet { display: flex; align-items: center; justify-content: space-between; gap: var(--gg-space-3); min-height: 44px; min-width: 0; }

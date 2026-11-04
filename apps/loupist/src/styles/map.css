@@ -310,6 +310,7 @@
   color:var(--gg-color-text-secondary); font-size:var(--gg-text-caption); line-height:var(--gg-leading-caption);
   font-weight:var(--gg-weight-medium); text-transform:uppercase;
 }
+.map-library .source-library-heading.library-section-label:lang(ko) { letter-spacing:0; text-transform:none; }
 .map-library h3.library-section-label { flex-wrap:nowrap; }
 .map-library .library-section-label > :is(h2, h3) { margin:0; font:inherit; color:inherit; text-transform:inherit; }
 .map-library .library-section-label > span { margin-inline-start:auto; flex:none; font:inherit; color:inherit; font-variant-numeric:tabular-nums; }
