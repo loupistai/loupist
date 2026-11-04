@@ -298,7 +298,9 @@
   min-width: 118px;
   max-width: 220px;
   display: flex;
-  flex: 0 1 180px;
+  /* Size to the title, up to 220px. Shrinking this tab to the 118px floor cut a short host once Map, Evidence and Work used the row. */
+  flex: 0 0 auto;
+  width: max-content;
   align-items: center;
   border-right: 1px solid var(--gg-color-border-subtle);
   color: var(--gg-color-text-secondary);
@@ -331,6 +333,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.workspace-tab:not(.workspace-tab-fixed) > [role="tab"] > span {
+  min-width: max-content;
+  max-width: 160px;
 }
 
 .workspace-tab svg,

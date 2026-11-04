@@ -66,6 +66,7 @@ export function WorkspaceTabBar({
   useTranslation("chat");
   const chatMap = useChatMap();
   const addMenuRef = useRef<HTMLDetailsElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
   const addTriggerRef = useRef<HTMLElement>(null);
   const menuFocusIndex = useRef<number | null>(null);
   useLayoutEffect(() => {
@@ -124,6 +125,15 @@ export function WorkspaceTabBar({
       document.getElementById(workspaceTabButtonId(nextId))?.focus();
     }
   };
+  useLayoutEffect(() => {
+    const list = tabsRef.current;
+    const selected = list?.querySelector<HTMLElement>('[data-active="true"]');
+    if (!list || !selected) return;
+    const left = selected.offsetLeft;
+    const right = left + selected.offsetWidth;
+    if (left < list.scrollLeft) list.scrollLeft = left;
+    else if (right > list.scrollLeft + list.clientWidth) list.scrollLeft = right - list.clientWidth;
+  }, [activeTab?.id, mapSelected, evidenceSelected, workSelected]);
   const evidenceTitle = t("workspaceTabBar.evidence");
   const workTitle = t("workspaceTabBar.work");
 
@@ -153,6 +163,7 @@ export function WorkspaceTabBar({
   return (
     <div className="workspace-tabbar">
       <div
+        ref={tabsRef}
         className="workspace-tabs"
         role="tablist"
         aria-label={t("workspaceTabBar.openWorkspaceTabs")}
