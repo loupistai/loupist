@@ -114,8 +114,9 @@ pub(crate) fn parse_github(value: &str) -> Option<GithubLocation> {
 }
 
 /// `loupist://import?url=<allowlisted GitHub link>`; anything else is a bad link.
-// e2e builds do not register the deep-link plugin, so nothing calls this there.
-#[cfg_attr(feature = "e2e", allow(dead_code))]
+// Only supported desktop builds register the deep-link plugin. Keep its pure
+// parser and receiver available to tests on every platform.
+#[cfg(any(test, all(any(target_os = "macos", windows), not(feature = "e2e"))))]
 pub(crate) fn parse_import_link(value: &str) -> Option<GithubLocation> {
     if value.len() > 4_000 {
         return None;
@@ -150,13 +151,12 @@ pub(crate) enum DeepLinkEvent {
     Ok {
         source: String,
     },
-    #[cfg_attr(feature = "e2e", allow(dead_code))]
+    #[cfg(any(test, all(any(target_os = "macos", windows), not(feature = "e2e"))))]
     Bad,
 }
 
 /// Validates an arriving link; a good one replaces any held link.
-// e2e builds do not register the deep-link plugin, so nothing calls this there.
-#[cfg_attr(feature = "e2e", allow(dead_code))]
+#[cfg(any(test, all(any(target_os = "macos", windows), not(feature = "e2e"))))]
 pub(crate) fn receive(value: &str) -> DeepLinkEvent {
     match parse_import_link(value) {
         Some(location) => {

@@ -66,7 +66,8 @@ rather than adding a broader long-lived credential to every release job.
 PRs and `main` pushes select checks by changed paths. Every run checks guide
 links, scope regression tests, credential boundaries and Node pins without
 installing npm, OpenBB or Rust dependencies. The selected source checks run on
-Ubuntu (web, Python) and macOS (Rust), alongside native and package jobs.
+Ubuntu (web, Python) and both macOS and Ubuntu (the same Rust gate), alongside
+native and package jobs. The Linux Rust checks do not need a display.
 
 | Changed surface | Selected checks beyond the always-on repository checks |
 | --- | --- |
@@ -105,9 +106,12 @@ Source jobs use the same bounded check runner as local development, with a
 a 60-minute job limit. Their receipts and logs upload on
 success or failure and expire after seven days. The web gate includes agent and
 World evaluator regression tests; Rust also checks the `eval-harness` contracts.
-The Rust job installs the locked Node dependencies and OpenBB Python environment:
+Each Rust job installs the locked Node dependencies and OpenBB Python environment:
 host integration tests exercise Pi prompts and Python process ownership, not just
-Rust code in isolation.
+Rust code in isolation. Ubuntu also installs Tauri's GTK/WebKitGTK development
+libraries; the [Linux development procedure](dev/checks.md#linux-cloud-development)
+uses the same source gate. When Rust is selected, the aggregate source check
+requires both Rust jobs.
 These gates make no paid model calls. See [broader checks](development.md#broader-checks).
 
 The macOS native job stages the same pinned sidecars used by the package smoke

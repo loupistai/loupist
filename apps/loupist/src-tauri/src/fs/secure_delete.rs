@@ -614,6 +614,68 @@ fn verify_identity_unix(
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+fn pin_deletion_directory_linux(
+    parent: &OwnedFd,
+    name: &OsStr,
+) -> Result<Option<OwnedFd>, CommandError> {
+    // O_PATH can retain a mode-000 directory without granting traversal, and
+    // DIRECTORY | NOFOLLOW refuses a replacement symlink before any chmod.
+    match openat(
+        parent,
+        name,
+        OFlags::PATH | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(descriptor) => Ok(Some(descriptor)),
+        Err(rustix::io::Errno::NOENT) => Ok(None),
+        Err(error) => Err(map_rustix(error)),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn readable_deletion_directory_linux(pinned: &OwnedFd) -> Result<OwnedFd, CommandError> {
+    use rustix::fs::{fstatfs, readlinkat, PROC_SUPER_MAGIC};
+    use std::os::fd::AsRawFd;
+
+    // Linux fchmod rejects O_PATH descriptors and rustix's chmodat does not
+    // support SYMLINK_NOFOLLOW. A verified procfs magic link addresses the
+    // retained inode even if its original name has been renamed or replaced.
+    let proc = open("/proc", directory_flags_unix(), Mode::empty()).map_err(map_rustix)?;
+    let pid = std::process::id().to_string();
+    if fstatfs(&proc).map_err(map_rustix)?.f_type != PROC_SUPER_MAGIC
+        || readlinkat(&proc, "self", Vec::new())
+            .map_err(map_rustix)?
+            .to_bytes()
+            != pid.as_bytes()
+    {
+        return Err(CommandError::internal(
+            "secure deletion requires the current process's procfs",
+        ));
+    }
+    let process =
+        openat(&proc, pid.as_str(), directory_flags_unix(), Mode::empty()).map_err(map_rustix)?;
+    let descriptors =
+        openat(&process, "fd", directory_flags_unix(), Mode::empty()).map_err(map_rustix)?;
+    let name = pinned.as_raw_fd().to_string();
+    let expected = fstat(pinned).map_err(map_rustix)?;
+    let observed = statat(&descriptors, name.as_str(), AtFlags::empty()).map_err(map_rustix)?;
+    if observed.st_dev != expected.st_dev || observed.st_ino != expected.st_ino {
+        return Err(CommandError::internal(
+            "secure deletion procfs descriptor identity changed",
+        ));
+    }
+    chmodat(
+        &descriptors,
+        name.as_str(),
+        Mode::from_raw_mode(0o700),
+        AtFlags::empty(),
+    )
+    .map_err(map_rustix)?;
+    // Descend from the pinned inode rather than looking up its old name again.
+    openat(pinned, ".", directory_flags_unix(), Mode::empty()).map_err(map_rustix)
+}
+
 #[cfg(unix)]
 fn remove_entry_unix(
     parent: &OwnedFd,
@@ -644,6 +706,7 @@ fn remove_entry_unix(
     if file_type == FileType::Directory {
         // An app-owned cache may have crashed after changing its mode. Restore
         // only directory traversal bits, without following a replacement link.
+        #[cfg(not(target_os = "linux"))]
         chmodat(
             parent,
             name,
@@ -651,7 +714,14 @@ fn remove_entry_unix(
             AtFlags::SYMLINK_NOFOLLOW,
         )
         .map_err(map_rustix)?;
-        let Some(descriptor) = open_directory_unix(parent, name, root_device)? else {
+        #[cfg(not(target_os = "linux"))]
+        let Some(descriptor) = open_directory_unix(parent, name, root_device)?
+        else {
+            return Ok(());
+        };
+        #[cfg(target_os = "linux")]
+        let Some(descriptor) = pin_deletion_directory_linux(parent, name)?
+        else {
             return Ok(());
         };
         let opened = fstat(&descriptor).map_err(map_rustix)?;
@@ -664,6 +734,12 @@ fn remove_entry_unix(
                 "deletion target changed across its pinned boundary",
             ));
         }
+        #[cfg(target_os = "linux")]
+        let descriptor = {
+            let readable = readable_deletion_directory_linux(&descriptor)?;
+            drop(descriptor);
+            readable
+        };
         let mut entries = Dir::read_from(&descriptor).map_err(map_rustix)?;
         for entry in &mut entries {
             let entry = entry.map_err(map_rustix)?;
@@ -801,6 +877,76 @@ mod tests {
 
         root.remove_tree(Path::new("linked")).unwrap();
         assert_eq!(fs::read(outside.path().join("sentinel")).unwrap(), b"keep");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn restoring_permissions_uses_the_pinned_inode_after_name_replacement() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+
+        let temporary = tempfile::tempdir().unwrap();
+        let root = SecureDeletionRoot::open(&temporary.path().canonicalize().unwrap()).unwrap();
+        let original = temporary.path().join("original");
+        let moved = temporary.path().join("moved");
+        let outside = tempfile::tempdir().unwrap();
+        fs::create_dir(&original).unwrap();
+        fs::write(original.join("inside"), b"owned").unwrap();
+        fs::write(outside.path().join("sentinel"), b"keep").unwrap();
+        fs::set_permissions(&original, fs::Permissions::from_mode(0o000)).unwrap();
+        fs::set_permissions(outside.path(), fs::Permissions::from_mode(0o750)).unwrap();
+        let pinned = pin_deletion_directory_linux(&root.descriptor, OsStr::new("original"))
+            .unwrap()
+            .unwrap();
+        let expected = fstat(&pinned).unwrap();
+
+        fs::rename(&original, &moved).unwrap();
+        symlink(outside.path(), &original).unwrap();
+        let readable = readable_deletion_directory_linux(&pinned).unwrap();
+
+        let observed = fstat(&readable).unwrap();
+        assert_eq!(
+            (observed.st_dev, observed.st_ino),
+            (expected.st_dev, expected.st_ino)
+        );
+        assert_eq!(fs::read(moved.join("inside")).unwrap(), b"owned");
+        assert_eq!(
+            fs::metadata(&moved).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(outside.path()).unwrap().permissions().mode() & 0o777,
+            0o750
+        );
+        assert_eq!(fs::read(outside.path().join("sentinel")).unwrap(), b"keep");
+        assert!(pin_deletion_directory_linux(&root.descriptor, OsStr::new("original")).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_identity_mismatch_preserves_the_replacement_directory_and_its_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temporary = tempfile::tempdir().unwrap();
+        let root = SecureDeletionRoot::open(&temporary.path().canonicalize().unwrap()).unwrap();
+        let target = temporary.path().join("target");
+        fs::create_dir(&target).unwrap();
+        let expected = root
+            .directory_identity(Path::new("target"))
+            .unwrap()
+            .unwrap();
+        fs::rename(&target, temporary.path().join("old-target")).unwrap();
+        fs::create_dir(&target).unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o000)).unwrap();
+
+        let result = root.remove_tree_expected(Path::new("target"), Some(&expected));
+
+        assert_eq!(result.unwrap_err().code, "conflict");
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o000
+        );
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(temporary.path().join("old-target").exists());
     }
 
     #[cfg(unix)]
