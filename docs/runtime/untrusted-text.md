@@ -72,6 +72,9 @@ now, an expired card or an unattended run refuses it and every later new site in
 turn without asking. Links and text inside a page, its alternates and a saved Source's
 own site never count as known.
 
+These URL privacy checks run in production builds as well as tests. Debug-only
+prompt and tool-result canary logging is separate from this outbound gate.
+
 Text from a [shared Loupist](../knowledge/sharing.md#sharing) is third-party text too
 (`sharing/delivery.rs`). In the turn's Memory context and Memory tool results
 (principle lines, a shared perspective, catalog titles and summaries, relevant-method

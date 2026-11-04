@@ -32,7 +32,7 @@ function browserFixture(frames) {
         location: { href: frame.url ?? requestedUrl },
         document: {
           documentElement: { dataset: { previewReady: frame.ready ?? "true", previewError: frame.error } },
-          querySelector: (selector) => selector === "#main-panel-map .map-canvas" ? host : hidden,
+          querySelector: (selector) => selector === '#workspace-panel[data-panel-kind="world"] .map-view .map-canvas' ? host : hidden,
         },
       });
     },

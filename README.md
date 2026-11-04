@@ -4,6 +4,8 @@
 
 # Loupist
 
+[![CI](https://github.com/loupistai/loupist/actions/workflows/ci.yml/badge.svg)](https://github.com/loupistai/loupist/actions/workflows/ci.yml)
+
 **Watch. Remember. Explain.**
 
 A Loupist is a research colleague for what you invest in: it watches the assets you follow, remembers how you think, and explains what changed with the evidence attached. It runs on your Mac and never trades.

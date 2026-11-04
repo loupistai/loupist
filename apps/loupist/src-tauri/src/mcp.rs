@@ -1633,10 +1633,7 @@ for line in sys.stdin:
     fn descendant_config(root: &Path, mode: &str) -> McpLaunchConfig {
         McpLaunchConfig {
             server_id: "owned-fixture".into(),
-            executable: fs::canonicalize(
-                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../openbb/.venv/bin/python"),
-            )
-            .unwrap(),
+            executable: crate::process_lease::test_python_executable(),
             arguments: vec![
                 "-c".into(),
                 DESCENDANT_MCP_SCRIPT.into(),

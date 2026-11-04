@@ -515,7 +515,7 @@ pub(crate) fn known_provider(provider: &str) -> bool {
 }
 
 pub fn provider_options() -> Vec<ModelProviderOption> {
-    let mut options = vec![
+    let options = vec![
         // One `openai` slot holds either a Sign in with ChatGPT grant or an
         // OpenAI API key (Pi's `openai-chatgpt` flow with the dynamic client).
         ModelProviderOption {
@@ -647,26 +647,30 @@ pub fn provider_options() -> Vec<ModelProviderOption> {
     // The legacy Codex client exists only for the development e2e harness and
     // evaluations that already hold its credential; release builds drop it.
     #[cfg(debug_assertions)]
-    options.insert(
-        1,
-        ModelProviderOption {
-            group: ProviderGroup::More,
-            ..oauth_provider(
-                "openai-codex",
-                "ChatGPT (Codex client, development only)",
-                "ChatGPT account",
-                "Development builds only: the legacy Codex sign-in.",
-                ProviderOauth {
-                    label: "Continue with ChatGPT",
-                    authorization: OauthAuthorizationRule::exact(
-                        "auth.openai.com",
-                        "/oauth/authorize",
-                    ),
-                },
-                false,
-            )
-        },
-    );
+    let options = {
+        let mut options = options;
+        options.insert(
+            1,
+            ModelProviderOption {
+                group: ProviderGroup::More,
+                ..oauth_provider(
+                    "openai-codex",
+                    "ChatGPT (Codex client, development only)",
+                    "ChatGPT account",
+                    "Development builds only: the legacy Codex sign-in.",
+                    ProviderOauth {
+                        label: "Continue with ChatGPT",
+                        authorization: OauthAuthorizationRule::exact(
+                            "auth.openai.com",
+                            "/oauth/authorize",
+                        ),
+                    },
+                    false,
+                )
+            },
+        );
+        options
+    };
     options
 }
 

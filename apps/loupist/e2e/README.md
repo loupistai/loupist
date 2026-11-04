@@ -194,6 +194,7 @@ listeners or delete profiles to resolve a failure.
 | Debug Keychain dialogs repeat | Stop the task-owned app and inspect its credential backend. Do not approve every dialog or delete keys. |
 | Canvas blank or camera unsettled | Unlock the Mac, restore the window and wait for visible frames. DOM presence proves neither rendering nor motion. |
 | Synthetic graph drag/wheel fails | The pinned driver omits fields D3 needs. Verify OS input with computer use; do not alter product handlers. |
+| A clicked Radix menu stays closed | The pinned driver may omit `pointerdown`. The shared `clickControl` helper uses the menu's keyboard activation and requires its actual expanded state before continuing. |
 | macOS WebDriver file input opens no chooser | Its `WKUIDelegate` lacks open-panel forwarding. Use manual mode. |
 
 POSIX launchers and `npm run tauri dev` hold a `flock` lease at

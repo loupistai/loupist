@@ -132,7 +132,7 @@ mod process_ownership {
     use crate::process_lease::confirm_process_group_exit;
 
     fn python() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../openbb/.venv/bin/python")
+        crate::process_lease::test_python_executable()
     }
 
     async fn fixture(root: &Path, leased: bool, leader_exits: bool) -> PiProcess {

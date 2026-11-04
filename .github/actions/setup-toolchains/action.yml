@@ -56,5 +56,4 @@ runs:
         version: 0.11.2
         enable-cache: true
         cache-dependency-glob: |
-          apps/loupist/python/uv.lock
           apps/loupist/openbb/uv.lock
