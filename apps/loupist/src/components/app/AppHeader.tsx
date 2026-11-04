@@ -4,6 +4,7 @@ import i18n, { useTranslation } from "@/i18n";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "../ui/button";
 import { type AppTab } from "../../app/navigation";
+import { modalDialogOpen } from "../../app/shortcuts";
 import type { WorkspacePanelKind } from "../../app/useWorkspacePanel";
 import type { WorkspacePlacement } from "../../chat/workspace";
 import type { LoupistSummary } from "../../types";
@@ -29,7 +30,7 @@ export function AppHeader({ runningLoupists, unreadCounts, loupists, onSelect, o
   useEffect(() => { profiles.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.scrollIntoView?.({ block: "nearest", inline: "nearest" }); }, [loupist?.id]);
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.repeat || event.isComposing || event.altKey || !(event.metaKey || event.ctrlKey) || document.querySelector('[role="dialog"][data-state="open"]')) return;
+      if (event.defaultPrevented || event.repeat || event.isComposing || event.altKey || !(event.metaKey || event.ctrlKey) || modalDialogOpen()) return;
       if (event.key === "\\" && (tab === "chat" || tab === "map")) {
         event.preventDefault();
         if (!workspaceOpen) {

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { GLOBAL_KEYS, isMacPlatform } from "./shortcuts";
+import { GLOBAL_KEYS, isMacPlatform, modalDialogOpen } from "./shortcuts";
 
 export const shortcutModifier = () => isMacPlatform() ? "⌘" : "Ctrl+";
 
@@ -7,10 +7,6 @@ export const shortcutModifier = () => isMacPlatform() ? "⌘" : "Ctrl+";
 const typingTarget = (target: EventTarget | null) => target instanceof HTMLElement
   && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
     || target.closest('[role="dialog"], [role="menu"], [role="listbox"]') !== null);
-
-/** A real modal is open. The narrow navigation sheet is a dialog too, and it must not swallow ⌘K. */
-const modalDialogOpen = () => [...document.querySelectorAll('[role="dialog"][data-state="open"]')]
-  .some((dialog) => dialog.getAttribute("data-sidebar") !== "sidebar");
 
 export function useAppShortcuts({ onSettings, onNewChat, onPalette, canCreateChat }: {
   onSettings: () => void;

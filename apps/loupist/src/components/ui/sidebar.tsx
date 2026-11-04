@@ -19,6 +19,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { PanelLeftIcon } from "lucide-react"
+import { modalDialogOpen } from "@/app/shortcuts"
 
 const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
@@ -88,7 +89,7 @@ function SidebarProvider({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
         !event.defaultPrevented && !event.repeat && !event.isComposing && event.keyCode !== 229 &&
-        !document.querySelector('[role="dialog"][data-state="open"]') &&
+        !modalDialogOpen() &&
         event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
         (event.metaKey || event.ctrlKey)
       ) {
