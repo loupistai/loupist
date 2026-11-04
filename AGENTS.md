@@ -23,3 +23,5 @@ handoff gate. Keep credentials private and generated schemas/build output untouc
 Prefer deleting obsolete pre-1.0 paths. Commit, push or release only on request.
 
 For cross-session work, leave a brief [task handoff](docs/dev/repository-guidance.md#task-handoff).
+
+Linux, including Cloud Agents, does not run the macOS window. Use the design preview and the Linux checks in [Setup across development hosts](docs/dev/checks.md#setup-across-development-hosts).
