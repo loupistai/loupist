@@ -39,7 +39,7 @@ export function ResearchJournalForm({ bridge, loupistId, entry, checkOpen = fals
     } catch { setError(true); }
     finally { setBusy(false); }
   }
-  return <form className="journal-form" aria-label={t(entry ? "journal.editEntry" : "journal.newEntry")} onSubmit={event => void submit(event)}>
+  return <form className="journal-form" aria-label={t(entry ? "journal.editEntry" : "journal.newEntry")} onSubmit={event => void submit(event)} onFocus={event => { if (event.target instanceof HTMLElement) event.target.scrollIntoView({ block: "nearest", inline: "nearest" }); }}>
     <label htmlFor={`${id}-judgment`}>{t("journal.judgment")}</label>
     <Textarea id={`${id}-judgment`} value={judgment} onChange={e => setJudgment(e.target.value)} maxLength={1000} rows={3} required autoFocus />
     <label htmlFor={`${id}-reasoning`}>{t("journal.reasoning")}</label>

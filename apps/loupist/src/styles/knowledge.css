@@ -315,6 +315,8 @@ article[data-source-id][tabindex="-1"]:focus { outline: none; }
 .journal-form-grid label, .journal-date { display: flex; flex-direction: column; justify-content: flex-end; gap: var(--gg-space-1); min-width: 0; }
 .journal-date { grid-column: 1 / -1; }
 .journal-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
+/* The library search sticks to the list. A focused field has to clear that bar, or it stays under it. */
+.map-library .journal-form :is(input, textarea, select, button) { scroll-margin-top: 64px; scroll-margin-bottom: 12px; }
 .journal-check-card, .journal-outcome-card { padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-sm); overflow-wrap: anywhere; }
 .journal-inspector .research-document-head h2 { font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-body); }
 .map-swatch.is-journal { width: 12px; height: 12px; border: 2px solid var(--gg-color-text-primary); border-radius: 50%; background: transparent; }

@@ -58,7 +58,7 @@ World view and Lens documents captured with the saved work.
 
 A Journal entry records the user's own judgment, with optional reasoning, linked
 World entities and a dated check. The Loupist’s own view belongs in research notes, not in the user’s Journal.
-Map → Library → Notes lists Your journal before Research notes. The user can
+Map → Library → Notes lists Your journal before Research notes. Focusing a field in that form scrolls it clear of the sticky search. The user can
 create, edit and archive entries there through `journal_create`, `journal_update`,
 `journal_archive` and `journal_list`. Chat uses `journal_save`
 and `journal_review` only. Rust accepts `journal_save` for a judgment the user
