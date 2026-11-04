@@ -66,7 +66,7 @@ export function ConnectStep({ bridge, catalog, onCatalogChange, connected, onCon
             <p className="connect-meta onboarding-connect-note">{t("wizard.chatgptNote")}</p>
           </div>}
     {flow.state.phase === "error" ? <SignInFlow flow={flow} onUseApiKey={() => { flow.dismiss(); setSheet({ kind: "provider", provider: "openai", method: "api_key" }); }} /> : null}
-    <Disclosure className="onboarding-other" title={t("wizard.other")} open={otherOpen || Boolean(sheet)} onOpenChange={setOtherOpen} onFocus={revealFocused}>
+    <Disclosure className="onboarding-other" title={t("wizard.other")} open={otherOpen || Boolean(sheet)} onOpenChange={setOtherOpen} onFocus={revealFocused} bodyTabIndex={0}>
       <ProviderWays catalog={catalog} includePrimary={false} includeMore={false} disabled={locked} actions={{
         onSignIn: signIn,
         onKey: provider => setSheet({ kind: "provider", provider, method: "api_key" }),

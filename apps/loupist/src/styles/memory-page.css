@@ -75,6 +75,7 @@
 .memory-history-row > time { flex: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
 .memory-history-row:hover { background: var(--gg-color-bg-hover); }
 .memory-history-row[aria-current="true"] { background: var(--gg-color-bg-selected); }
+.memory-history-row[aria-current="true"] > time { color: var(--gg-color-text-secondary); }
 .memory-history-row[data-failed] { color: var(--gg-color-text-secondary); }
 .memory-history-note-date { margin: 0 0 var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .memory-history-note-text { margin: 0 0 var(--gg-space-4); font-size: var(--gg-text-reading); line-height: var(--gg-leading-reading); overflow-wrap: anywhere; }
@@ -91,7 +92,7 @@
   .memory-page-search { width: 100%; }
 }
 @container memory-pane (max-width: 760px) {
-  .memory-tab-full { display: none; }
+  .memory-tab-full { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
   .memory-tab-short { display: inline; }
   .memory-page-tabs { height: auto; min-height: var(--gg-size-control-sm); }
   .memory-row small { display: none; }

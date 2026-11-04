@@ -67,11 +67,11 @@ describe("Morning message event strip", () => {
     const message = await screen.findByRole("article", { name: "Message from Quality Compounder" });
     const strip = await within(message).findByRole("region", { name: "Coming up" });
     expect(source.upcomingEvents).toHaveBeenCalledWith({ loupistId: "loupist" });
-    expect(within(strip).getAllByRole("button").map((row) => row.getAttribute("aria-label"))).toEqual([
-      "Mon, Nov 2 · Morrow Components · Results (expected)",
-      "Tue, Nov 3 · To check: Gross margin stays above 55%",
-      "Fri, Nov 6 · Hanul Precision · Results due (filing deadline)",
-      "Mon, Nov 9 · Bluehaven Memory · Dividend record date",
+    expect(within(strip).getAllByRole("button").map((row) => row.textContent?.trim().replace(/\s+/g, " "))).toEqual([
+      "Mon, Nov 2 Morrow Components Results (expected)",
+      "Tue, Nov 3 To check: Gross margin stays above 55%",
+      "Fri, Nov 6 Hanul Precision Results due (filing deadline)",
+      "Mon, Nov 9 Bluehaven Memory Dividend record date",
     ]);
     // The strip leads; the lead and its bullets follow.
     const lead = await within(message).findByText("One thing since Thursday.");
@@ -80,7 +80,7 @@ describe("Morning message event strip", () => {
     expect(within(message).getByText("Overdue").parentElement).toHaveTextContent("Overdue since Oct 29: Inventory days below 50");
     expect(within(message).queryByText(/To check by Nov 3/)).toBeNull();
 
-    await user.click(within(strip).getByRole("button", { name: /Morrow Components · Results/ }));
+    await user.click(within(strip).getByRole("button", { name: /Morrow Components Results/ }));
     expect(openAsset).toHaveBeenCalledWith({ loupistId: "loupist", assetId: morrow.assetId, name: "Morrow Components", section: "results", eventId: "ern_00000000000000b1" });
     await user.click(within(strip).getByRole("button", { name: /Dividend record date/ }));
     expect(openAsset).toHaveBeenLastCalledWith({ loupistId: "loupist", assetId: "ast_00000000000000a3", name: "Bluehaven Memory" });

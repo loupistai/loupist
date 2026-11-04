@@ -61,7 +61,7 @@ it("enables the current Loupist at confirm, then Allow sticks before Done closes
 it("stages JSON entries without confirming until Add and shows only secret names", async () => {
   const bridge = setup(); const confirm = vi.spyOn(bridge, "customConnectionConfirm");
   render(<AddConnectionDialog bridge={bridge} loupistId="loupist-one" onClose={() => {}} onChanged={() => {}} />);
-  const user = userEvent.setup(); await user.click(screen.getByRole("tab", { name: "Paste JSON" }));
+  const user = userEvent.setup(); await user.click(screen.getByRole("radio", { name: "Paste JSON" }));
   const json = JSON.stringify({ mcpServers: { local: { command: "node", args: ["/research/server.mjs", "two words"], env: { RESEARCH_TOKEN: "fixture-secret" } }, remote: { url: "https://research.example", headers: { Authorization: "fixture-header" } } } });
   await user.click(screen.getByRole("textbox", { name: "Paste JSON" })); await user.paste(json);
   await user.click(screen.getByRole("button", { name: "Review" }));
@@ -78,7 +78,7 @@ it("warns before adding a pasted local command but not an online server", async 
   const bridge = setup();
   render(<AddConnectionDialog bridge={bridge} loupistId="loupist-one" onClose={() => {}} onChanged={() => {}} />);
   const user = userEvent.setup();
-  await user.click(screen.getByRole("tab", { name: "Paste JSON" }));
+  await user.click(screen.getByRole("radio", { name: "Paste JSON" }));
   const json = JSON.stringify({ mcpServers: { local: { command: "npx", args: ["@example/research-archive@1.2.3"] }, remote: { url: "https://research.example" } } });
   await user.click(screen.getByRole("textbox", { name: "Paste JSON" }));
   await user.paste(json);

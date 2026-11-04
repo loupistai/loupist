@@ -86,6 +86,19 @@ accepts title, description and action; it has no icon prop.
 Use shared `PageHeader`, `Button`, `Input`, `Textarea`, `NativeSelect`, dialog,
 disclosure and empty-state components. `page.css` owns shared page layout;
 `surfaces.css` owns dialog sizing/body/footer. Feature CSS owns content layout.
+Use `SegmentedControl` for one-of-many choices and list filters: these are radio
+groups, with arrow-key selection. Reserve `Tabs` for views with real `TabsContent`
+panels. A search field or action button is not a menu item; the model picker is a
+dialog containing its search, model menus and account actions. Keep visible button
+labels in accessible names, and put supplementary explanations in descriptions.
+Ordinary dropdown menus are non-modal; the model picker explicitly opts into its
+modal focus scope. Opening an ordinary menu must not hide still-focusable app chrome
+from the accessibility tree.
+The searchable model picker permits Tab and Shift+Tab through its controls and restores
+its trigger on Escape. Settings pages with no enabled controls (keyboard shortcuts and
+an update in progress) remain focusable so keyboard users can scroll them. Workspace
+item menus control the details element directly; delayed native toggle events must not
+reopen a menu after selecting Files or a browser tab.
 The native minimum is 700×560. Preserve keyboard focus, scroll, light/dark themes and
 reduced-motion behavior. Menus never ring their container; a trigger or item a press
 reached carries `data-input="pointer"` (`lib/inputModality`) and shows no ring, since

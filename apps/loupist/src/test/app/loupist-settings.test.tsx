@@ -41,7 +41,7 @@ it("keeps profile, chat, learning and skills on one page with changes scoped to 
   await screen.findByRole("region", { name: "Loupist settings" });
   act(() => bridge.emitMenuAction("map"));
   expect(screen.queryByRole("region", { name: "Loupist settings" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Panel kind" })).toHaveTextContent("World");
+  expect(screen.getByRole("button", { name: /Panel kind/ })).toHaveTextContent("World");
   expect(await screen.findByRole("region", { name: "Map" })).toBeVisible();
 });
 

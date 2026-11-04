@@ -117,7 +117,7 @@ export function BrowserWorkspaceView({
             {t("browserWorkspaceView.enterAnHTTPOrHTTPSAddressAboveSearchQueries")}</p>
         </div>
       ) : (
-        <div className="browser-viewport" ref={viewportRef} aria-label={t("browserWorkspaceView.browserContent")}>
+        <div className="browser-viewport" ref={viewportRef} role="group" aria-label={t("browserWorkspaceView.browserContent")}>
           {tab.loading && (
             <span className="browser-loading">
               <Spinner /> {t("browserWorkspaceView.loadingPage")}</span>

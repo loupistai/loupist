@@ -55,7 +55,7 @@
 .map-swatch.is-disputed { background:none; border:2px dashed var(--gg-color-warning); border-radius:var(--gg-radius-full); }
 .map-inspector { position:relative; z-index:var(--gg-z-panel); flex:none; width:var(--gg-size-inspector,360px); min-height:0; overflow:auto; padding:var(--gg-space-5); border-left:1px solid var(--gg-color-border-subtle); background:var(--gg-color-bg-raised); animation:map-inspector-in 180ms var(--gg-ease-out); }
 /* Sticky, not absolute: in WKWebView an absolute close scrolls with the sheet and the map clips it, so the control leaves the corner. */
-.map-inspector-close { position:sticky; top:var(--gg-space-2); z-index:2; float:right; margin-bottom:calc(-1 * var(--gg-size-control-sm)); }
+.map-inspector-close { position:sticky; top:var(--gg-space-2); z-index:var(--gg-z-sticky); float:right; margin-bottom:calc(-1 * var(--gg-size-control-sm)); }
 .map-kind-chip { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding-right:20px; font-size:var(--gg-text-caption); color:var(--gg-color-text-secondary); }
 .map-kind-chip > span { background:var(--gg-color-bg-selected); border-radius:var(--gg-radius-full); padding:2px 6px; }
 .map-inspector h2 { font-size:var(--gg-text-title); line-height:var(--gg-leading-title); margin:12px 0; overflow-wrap:anywhere; }

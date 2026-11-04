@@ -26,3 +26,9 @@ the next Esc closes the panel; the chat underneath is inert). Closing the panel
 returns focus to the Panel kind selector currently shown on the chat when the control that
 opened it is no longer in that chat. Leaving the
 reading column returns focus to the panel menu.
+
+A long page title truncates inside its 220px tab, before Close. In a wide Lens,
+the rule/method/history list and its document stay in separate, independently
+scrolling columns; a long list cannot take away the document's height. In a compact
+Lens, opening an item replaces the list, and Back restores it. Compact section tabs
+retain their full accessible names when the visible labels are shortened.

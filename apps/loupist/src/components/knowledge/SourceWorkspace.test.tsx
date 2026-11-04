@@ -154,13 +154,13 @@ it("filters source processing independently of successful source storage", async
   render(<Harness />);
   const user = userEvent.setup();
   expect(screen.getAllByRole("button", { name: /Report \d/ })).toHaveLength(4);
-  await user.click(screen.getByRole("tab", { name: /Processing/ }));
+  await user.click(screen.getByRole("radio", { name: /Processing/ }));
   expect(screen.getAllByRole("button", { name: /Report \d/ })).toHaveLength(1);
   expect(screen.getByRole("button", { name: /Report 0/ })).toHaveTextContent("World is updating");
-  await user.click(screen.getByRole("tab", { name: "Needs attention" }));
+  await user.click(screen.getByRole("radio", { name: "Needs attention" }));
   expect(screen.getAllByRole("button", { name: /Report \d/ })).toHaveLength(2);
   expect(screen.getByRole("button", { name: /Report 2/ })).toHaveTextContent("No text for World processing");
-  await user.click(screen.getByRole("tab", { name: "All" }));
+  await user.click(screen.getByRole("radio", { name: "All" }));
   expect(screen.getAllByRole("button", { name: /Report \d/ })).toHaveLength(4);
 });
 

@@ -123,7 +123,7 @@ describe("Loupist · Chat memory", () => {
       } }], coverage: "sealed_snapshot", indexingState: "ready", truncated: false,
     });
     await openApp(bridge);
-    await user.click(await screen.findByRole("button", { name: "Memory: Protocol world" }));
+    await user.click(await screen.findByRole("button", { name: "Saved record · Memory: Protocol world" }));
     const world = await screen.findByRole("region", { name: "Map" });
     expect(await within(world).findByText("The protocol preserves the sender's original statement.")).toBeVisible();
     expect(query).toHaveBeenCalledWith(expect.objectContaining({ recordId: "world-protocols", revisionId: "saved-revision" }));
@@ -142,7 +142,7 @@ describe("Loupist · Chat memory", () => {
       inputs: { sources: [], worlds: [], lenses: [] },
     });
     await openApp(bridge);
-    const reference = await screen.findByRole("button", { name: "Memory: Private capacity review" });
+    const reference = await screen.findByRole("button", { name: "Saved record · Memory: Private capacity review" });
     expect(read).not.toHaveBeenCalled();
     await userEvent.setup().click(reference);
     expect(await within(await screen.findByLabelText("Journal entry")).findByText("Original private thesis")).toBeVisible();

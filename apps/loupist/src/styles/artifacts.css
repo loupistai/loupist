@@ -287,12 +287,18 @@
 
 .workspace-tabs {
   min-width: 0;
-  display: flex;
+  display: grid;
+  grid-auto-columns: max-content;
+  grid-template-rows: minmax(0, 1fr);
   flex: 1 1 auto;
   align-items: stretch;
   overflow-x: auto;
   scrollbar-width: thin;
 }
+
+.workspace-tab-list, .workspace-tab-actions { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; grid-row: 1; }
+.workspace-tab-actions { pointer-events: none; }
+.workspace-tab, .workspace-tab-close { grid-row: 1; }
 
 .workspace-tab {
   min-width: 118px;
@@ -335,11 +341,13 @@
   white-space: nowrap;
 }
 .workspace-tab:not(.workspace-tab-fixed) > [role="tab"] > span {
-  min-width: max-content;
+  min-width: 0;
   max-width: 160px;
 }
+.workspace-tab:not(.workspace-tab-fixed) > [role="tab"] { padding-right: calc(var(--gg-size-control-sm) + var(--gg-space-1)); }
 
 .workspace-tab svg,
+.workspace-tab-close svg,
 .workspace-add svg,
 .workspace-add-menu svg {
   width: 14px;
@@ -352,10 +360,13 @@
 }
 
 .workspace-tab-close {
-  width: 26px;
-  height: 26px;
+  pointer-events: auto;
+  justify-self: end;
+  align-self: center;
+  width: var(--gg-size-control-sm);
+  height: var(--gg-size-control-sm);
   display: grid;
-  flex: 0 0 26px;
+  flex: 0 0 var(--gg-size-control-sm);
   place-items: center;
   margin-right: 3px;
   padding: 0;
@@ -1036,7 +1047,14 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
    Scrolling the whole page carried that toolbar out of the pane. */
 .workspace-lens-content > .memory-page { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; width:100%; max-width:none; overflow:hidden; }
 .workspace-lens-content .memory-page-body { flex:1 1 auto; min-height:0; overflow:auto; scroll-padding-block: var(--gg-space-4); }
-.workspace-lens-content .memory-page[data-reader-open] .memory-page-body { overflow:hidden; display:flex; flex-direction:column; align-items:stretch; }
+.workspace-lens-content .memory-page-body:is([data-segment="principles"], [data-segment="methods"], [data-segment="history"]) { grid-template-rows:minmax(0, 1fr); align-items:stretch; overflow:hidden; }
+.workspace-lens-content .memory-page-list { min-height:0; overflow:auto; scroll-padding-block:var(--gg-space-4); }
+.workspace-lens-content .memory-page-body > .memory-history { min-height:0; overflow:auto; }
+/* Only the compact pane replaces the list with a reader. A wide pane keeps two
+   independently scrolling columns, even with many rules or methods. */
+@container memory-pane (max-width: 971px) {
+  .workspace-lens-content .memory-page[data-reader-open] .memory-page-body { overflow:hidden; display:flex; flex-direction:column; align-items:stretch; }
+}
 .workspace-lens-content .memory-reader.is-lens { flex:1 1 auto; align-self:stretch; width:100%; min-height:0; height:auto; overflow:hidden; display:flex; flex-direction:column; padding:0; border:0; border-radius:0; background:transparent; }
 .workspace-lens-content .memory-page[data-reader-open] .memory-reader:not(.is-lens) { flex:1 1 auto; align-self:stretch; width:100%; min-height:0; overflow:auto; scroll-padding-block: var(--gg-space-4); }
 /* The document fills the card. A long method title was taller than the strip left under the back row and the pause row. */

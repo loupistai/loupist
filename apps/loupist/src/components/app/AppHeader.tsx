@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { ChevronDownIcon, PanelBottomIcon, PanelRightIcon, PlusIcon, Settings2Icon } from "lucide-react";
 import i18n, { useTranslation } from "@/i18n";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -51,21 +51,21 @@ export function AppHeader({ runningLoupists, unreadCounts, loupists, onSelect, o
     {loupist && tab !== "settings" ? <>
       <nav className="loupist-header-selector" aria-label={i18n.t("app:shell.loupists")}>
         <div className="loupist-header-profiles" ref={profiles}>
-          {loupists.map(item => <button type="button" key={item.id} data-loupist-id={item.id} className="loupist-header-identity" aria-label={loupistOptionLabel(item,loupists)} title={loupistOptionLabel(item,loupists)} aria-pressed={item.id === loupist.id} onClick={() => onSelect(item.id)} onFocus={event => event.currentTarget.scrollIntoView?.({ block: "nearest", inline: "nearest" })}>
+          {loupists.map(item => <Fragment key={item.id}><button type="button" data-loupist-id={item.id} className="loupist-header-identity" aria-describedby={unreadCounts[item.id] > 0 ? `header-unread-${item.id}` : undefined} title={loupistOptionLabel(item,loupists)} aria-pressed={item.id === loupist.id} onClick={() => onSelect(item.id)} onFocus={event => event.currentTarget.scrollIntoView?.({ block: "nearest", inline: "nearest" })}>
             <span className="loupist-header-avatar">
               <LoupistAvatar loupist={item} />
-              {runningLoupists.has(item.id) && <span className="loupist-run-indicator" role="status" aria-label={i18n.t("app:loupistNavigationGroup.hasActiveSessions", { label: item.name })} />}
+              {runningLoupists.has(item.id) && <span className="loupist-run-indicator" aria-hidden="true" />}
             </span>
             <strong>{loupistOptionLabel(item,loupists)}</strong>
-            {unreadCounts[item.id] > 0 && <span className="shell-unread" aria-label={i18n.t("app:shell.unreadBriefings", { count: unreadCounts[item.id] })}>{unreadCounts[item.id]}</span>}
-          </button>)}
+            {unreadCounts[item.id] > 0 && <><span className="shell-unread" aria-hidden="true">{unreadCounts[item.id]}</span><span className="sr-only" aria-hidden="true" id={`header-unread-${item.id}`}>{i18n.t("app:shell.unreadBriefings", { count: unreadCounts[item.id] })}</span></>}
+          </button>{runningLoupists.has(item.id) && <span className="sr-only" role="status" aria-label={i18n.t("app:loupistNavigationGroup.hasActiveSessions", { label: item.name })} />}</Fragment>)}
         </div>
         <Button variant="ghost" size="icon-sm" className="loupist-header-new" aria-label={i18n.t("app:shell.newLoupist")} title={i18n.t("app:shell.newLoupist")} onClick={onCreate}><PlusIcon /></Button>
       </nav>
       <Button variant="ghost" size="icon-sm" data-header-loupist-settings aria-label={i18n.t("app:shell.loupistSettings")} title={i18n.t("app:shell.loupistSettings")} onClick={onLoupistSettings}><Settings2Icon /></Button>
       <div className="header-market-slot"><MarketStatusChip markets={markets} /></div>
       <div className="header-workspace-controls" role="group" aria-label={i18n.t("app:shell.workspaceControls")}>
-        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="header-panel-toggle" onPointerDown={() => { keyboardOpening.current = false; }} onKeyDown={() => { keyboardOpening.current = true; }} aria-label={i18n.t("app:shell.panelKind")} aria-controls={workspaceOpen ? "workspace-panel" : undefined}><span>{panelLabel(workspaceKind)}</span><ChevronDownIcon /></Button></DropdownMenuTrigger>
+        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="header-panel-toggle" onPointerDown={() => { keyboardOpening.current = false; }} onKeyDown={() => { keyboardOpening.current = true; }} aria-label={`${panelLabel(workspaceKind)} · ${i18n.t("app:shell.panelKind")}`} aria-controls={workspaceOpen ? "workspace-panel" : undefined}><span>{panelLabel(workspaceKind)}</span><ChevronDownIcon /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="end" onCloseAutoFocus={event => { if (openingPanel.current) { openingPanel.current = false; event.preventDefault(); if (keyboardOpening.current) requestAnimationFrame(() => focusForKeyboard(document.querySelector<HTMLButtonElement>("[data-workspace-close]"))); } }}>
             <DropdownMenuRadioGroup value={workspaceKind}>
               {(["lens", "world", "materials"] as const).map(kind => <DropdownMenuRadioItem key={kind} data-workspace-kind={kind} value={kind} onSelect={() => { openingPanel.current = !workspaceOpen; notePanelOpenedFromHeader(!workspaceOpen && keyboardOpening.current); onWorkspaceKind(kind); }}>{panelLabel(kind)}</DropdownMenuRadioItem>)}

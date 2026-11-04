@@ -46,13 +46,13 @@ body:has(.custom-detail) .settings-page { padding-inline-end: calc(min(100%, cal
 .custom-stack[data-custom-signing-in] > :is(button, a) { align-self: flex-start; width: auto; max-width: 100%; }
 .custom-add [data-slot="tabs-list"] { display: grid; grid-template-columns: 1fr 1fr; width: 100%; height: auto; gap: 2px; padding: 2px; border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-sunken); }
 .custom-add [data-slot="tabs-trigger"] { height: auto; min-height: var(--gg-size-control-md); flex-direction: column; gap: 0; white-space: normal; border: 0; outline: none; box-shadow: none; background: transparent; color: var(--gg-color-text-secondary); }
-.custom-add [data-slot="tabs-trigger"][data-state="active"] { background: var(--gg-color-bg-selected); box-shadow: inset 0 0 0 1px var(--gg-color-border-strong); color: var(--gg-color-text-primary); }
+.custom-add [data-slot="tabs-trigger"][data-state="checked"] { background: var(--gg-color-bg-selected); box-shadow: inset 0 0 0 1px var(--gg-color-border-strong); color: var(--gg-color-text-primary); }
 .custom-add [data-slot="tabs-trigger"] small { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-regular); line-height: var(--gg-leading-caption); }
 .custom-add [data-slot="tabs-trigger"]:focus { outline: none; box-shadow: none; }
-.custom-add [data-slot="tabs-trigger"][data-state="active"]:focus { box-shadow: inset 0 0 0 1px var(--gg-color-border-strong); }
-.custom-add [data-slot="tabs-trigger"][data-state="active"]:focus-visible { outline: 2px solid var(--gg-color-focus) !important; outline-offset: 2px; }
-.custom-add [data-slot="tabs-trigger"][data-state="inactive"]:focus,
-.custom-add [data-slot="tabs-trigger"][data-state="inactive"]:focus-visible { outline: none !important; box-shadow: none !important; }
+.custom-add [data-slot="tabs-trigger"][data-state="checked"]:focus { box-shadow: inset 0 0 0 1px var(--gg-color-border-strong); }
+.custom-add [data-slot="tabs-trigger"][data-state="checked"]:focus-visible { outline: 2px solid var(--gg-color-focus) !important; outline-offset: 2px; }
+.custom-add [data-slot="tabs-trigger"][data-state="unchecked"]:focus,
+.custom-add [data-slot="tabs-trigger"][data-state="unchecked"]:focus-visible { outline: none !important; box-shadow: none !important; }
 /* A max-height alone does not make this dialog body the scrollport, so a short window clips the next Add. */
 @media (max-height: 640px) {
   .custom-add .dialog-body { max-height: calc(100dvh - 10rem); overflow-y: auto; }

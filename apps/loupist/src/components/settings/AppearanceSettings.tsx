@@ -39,7 +39,7 @@ export function AppearanceSettings({ theme, onThemeChange, language, onLanguageC
             const label = t(`appearance.theme.${option.id}`);
             return (
               <button type="button" key={option.id} className="theme-card" data-active={theme === option.id}
-                aria-label={t("appearance.theme.optionLabel", { theme: label })} aria-pressed={theme === option.id}
+                title={t("appearance.theme.optionLabel", { theme: label })} aria-pressed={theme === option.id}
                 disabled={disabled} onClick={() => onThemeChange(option.id)}>
                 <span className="theme-preview" data-theme-preview={option.id} aria-hidden="true"><i><em /><em /><em /></i><span><b /><b /><b /><em /></span></span>
                 <span className="theme-option-label"><ThemeIcon /><span>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { WorkspaceTabBar } from "./WorkspaceTabBar";
 import type { ChatWorkspaceSession, ChatWorkspaceTab } from "../../chat/workspace";
@@ -22,6 +22,26 @@ function TabBar({ onNewBrowser = vi.fn() }) {
 }
 
 describe("WorkspaceTabBar", () => {
+  it("keeps close actions outside the tablist and restores focus after a keyboard close", async () => {
+    const user = userEvent.setup();
+    render(<TabBar />);
+    expect(within(screen.getByRole("tablist")).queryByRole("button", { name: /Close .* tab/ })).toBeNull();
+    screen.getByRole("button", { name: "Close First page tab" }).focus();
+    await user.keyboard("{Enter}");
+    expect(screen.queryByRole("tab", { name: "First page" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Second page" })).toHaveFocus();
+  });
+  it("closes the menu after opening a workspace item", async () => {
+    const user = userEvent.setup();
+    const onNewBrowser = vi.fn();
+    render(<TabBar onNewBrowser={onNewBrowser} />);
+    const trigger = screen.getByLabelText("Open workspace item");
+    await user.click(trigger);
+    await user.click(screen.getByRole("menuitem", { name: /New browser tab/ }));
+    expect(onNewBrowser).toHaveBeenCalledOnce();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger.closest("details")).not.toHaveAttribute("open");
+  });
   it("opens items with the keyboard and dismisses with Escape", async () => {
     const user = userEvent.setup();
     const onNewBrowser = vi.fn();

@@ -12,6 +12,17 @@ function View({ bridge, loupists }: { bridge: MockLoupistBridge; loupists: Loupi
 async function setup() { const bridge = new MockLoupistBridge({ delay_ms: 0 }); const loupists = await bridge.loupistList(); render(<View bridge={bridge} loupists={loupists} />); await screen.findByRole("switch", { name: "Skill Creator: disabled" }); return { bridge, user: userEvent.setup() }; }
 
 describe("Skills management", () => {
+  it("replaces loading with an error and recovers through Reload", async () => {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const read = vi.spyOn(bridge, "skillsList").mockRejectedValueOnce(new Error("Could not load skills."));
+    render(<View bridge={bridge} loupists={await bridge.loupistList()} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load skills.");
+    expect(screen.queryByText(i18n.t("settings:skillsSettings.loadingSkills"))).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: i18n.t("settings:skillsSettings.reloadSkills") }));
+    await screen.findByRole("switch", { name: "Skill Creator: disabled" });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(read).toHaveBeenCalledTimes(2);
+  });
   it("shows included skills, inherits optional preferences, and restores one local override", async () => {
     const { bridge, user } = await setup();
     expect(screen.queryByRole("switch", { name: /World:/ })).not.toBeInTheDocument();

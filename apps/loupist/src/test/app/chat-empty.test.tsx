@@ -77,7 +77,7 @@ describe("Loupist · New Chat", () => {
     const user = userEvent.setup();
     await openApp();
     await user.type(composer(), "Keep this question");
-    await user.click(screen.getByRole("button", { name: "Model settings for this message" }));
+    await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
     await user.click(screen.getByRole("menuitem", { name: "Manage models & providers" }));
     expect(await screen.findByRole("heading", { name: "Models & providers", level: 1 })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Back" }));

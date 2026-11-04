@@ -129,7 +129,7 @@ export function CalcChip({ calc, children, className, spoken }: { calc: Earnings
   return <Popover.Root open={open} onOpenChange={setOpen}>
     <Popover.Trigger asChild>
       <button type="button" className={["number-chip earnings-calc gg-num", className].filter(Boolean).join(" ")} data-kind="calculated" data-status="matched"
-        aria-haspopup="dialog" aria-label={i18n.t("chat:numberChip.labelCalculated", { value: spoken ?? calc.display })}>{children ?? calc.display}</button>
+        aria-haspopup="dialog" aria-label={i18n.t("chat:numberChip.labelCalculated", { value: spoken ?? (typeof children === "string" ? children : calc.display) })}>{children ?? calc.display}</button>
     </Popover.Trigger>
     <Popover.Portal>
       <Popover.Content role="dialog" aria-modal={false} aria-labelledby={titleId} className="number-chip-popover" data-kind="calculated" side="top" align="start" sideOffset={6}

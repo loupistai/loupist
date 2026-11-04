@@ -21,6 +21,8 @@ import { holdingsScenarios } from "./holdingsScenarios";
 import { dataScenarios } from "./dataScenarios";
 import { browserScenarios } from "./browserScenarios";
 import { quoteEvidenceScenarios } from "./quoteEvidenceScenarios";
+import { settingsScenarios } from "./settingsScenarios";
+import { readerScenarios } from "./readerScenarios";
 
 export type PreviewScenario = {
   id: string;
@@ -41,6 +43,9 @@ export function visible(element: Element | null): element is HTMLElement {
     const style = getComputedStyle(node);
     if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
   }
+  // Closed details and overflow-folded controls can still report display:block.
+  // jsdom has no layout; a browser must actually render a box for the landmark.
+  if (document.documentElement.clientWidth > 0 && ![...element.getClientRects()].some(rect => rect.width > 0 && rect.height > 0)) return false;
   return true;
 }
 const select = (selector: string, root: ParentNode = document) => [...root.querySelectorAll(selector)].find(visible) ?? null;
@@ -634,7 +639,7 @@ export const scenarios: readonly PreviewScenario[] = [
         input.dispatchEvent(new Event("input", { bubbles: true }));
       };
       if (id === "connection-add-json-review") {
-        await click('.custom-add [role="tab"][data-state="inactive"]');
+        await click('.custom-add [role="radio"][data-state="unchecked"]');
         await fill(".custom-add textarea", JSON.stringify({ mcpServers: { investor: { url: "https://research.example/mcp" }, archive: { command: "npx", args: ["@example/research-archive@1.2.3", "--read-only"] } } }));
       } else await fill('.custom-add input[type="url"]', "https://research.example/mcp");
       await click('.custom-add [data-slot="dialog-footer"] button');
@@ -1255,7 +1260,11 @@ export const scenarios: readonly PreviewScenario[] = [
     if (hasLayout() && window.matchMedia("(max-width: 720px)").matches) {
       chip.scrollIntoView({ block: "center" });
       chip.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "touch" }));
-      await until(() => select(".citation-preview"), "The card did not open on a long press", 2000);
+      try {
+        await until(() => select(".citation-preview"), "The card did not open on a long press", 2000);
+      } catch (error) {
+        throw new Error(`The card did not open on a long press (citation connected: ${chip.isConnected})`, { cause: error });
+      }
       chip.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, button: 0, pointerType: "touch" }));
       chip.click();
     } else chip.focus();
@@ -1777,6 +1786,7 @@ export const scenarios: readonly PreviewScenario[] = [
   })),
   ...["map-overview", "map-1000", "map-empty", "map-selected", "map-filtered", "map-lens-overlay", "map-lens-on-world", "map-library-sources", "map-replay-paused", "map-export-menu"].map((id): PreviewScenario => ({
     ...base(id, "Research map", () => {
+      if (id === "map-export-menu") return select(".map-export-menu, .map-more-menu");
       const map = select(".map-view");
       return map?.querySelector("canvas, .map-empty, .map-list") ?? (map?.clientWidth === 0 ? map : null);
     }, async (root) => {
@@ -1821,7 +1831,12 @@ export const scenarios: readonly PreviewScenario[] = [
         for (let frame = 0; frame < 3; frame++) await new Promise(requestAnimationFrame);
         if (id !== "map-replay-paused" && id !== "map-selected") await clickMapAction("[data-map-fit]", map);
       }
-      if (id === "map-export-menu") await click("[data-map-export]", map);
+      if (id === "map-export-menu") {
+        const trigger = map.querySelector("[data-map-export]");
+        if (visible(trigger)) await click("[data-map-export]", map);
+        else pressMenu(await until(() => select("[data-map-more]"), "More actions did not load"));
+        await until(() => select(".map-export-menu, .map-more-menu"), "Export choices did not open");
+      }
     }),
     setup: async (bridge) => {
       await prepareFixture(bridge);
@@ -1897,6 +1912,22 @@ export const scenarios: readonly PreviewScenario[] = [
     await until(() => select(".workspace-lens-content .lens-document"), "Method did not open");
     await click(".workspace-lens-content .lens-markdown-source summary");
   }), setup: prepareFixture },
+  { ...base("lens-reader-many", "A long method list keeps its document readable when the Lens is expanded", () => select('.workspace-lens-content .lens-document'), async root => {
+    await navigate(root, "lens");
+    await click('.memory-page-tabs [role="tab"]:nth-child(3)');
+    const method = await until(() => [...document.querySelectorAll<HTMLButtonElement>(".memory-row")].find(row => row.querySelector(".memory-marker.is-method")), "Method did not list");
+    method.click();
+    await until(() => select('.workspace-lens-content .lens-document'), "Method did not open");
+    if (!window.matchMedia(workspaceOverlayMedia).matches) await click('.workspace-kind-heading button:first-child');
+  }), setup: async bridge => {
+    await prepareFixture(bridge);
+    const read = bridge.knowledgeCatalog.bind(bridge);
+    bridge.knowledgeCatalog = async request => {
+      const catalog = await read(request);
+      const method = catalog.lenses.find(item => item.lensKind === "method")!;
+      return { ...catalog, lenses: [...catalog.lenses, ...Array.from({ length: 20 }, (_, index) => ({ ...method, recordId: `many-method-${index}`, title: `${method.title} · ${index + 1}` }))] };
+    };
+  } },
   // W15.23 and W15.6c: the Schedule tab manages scheduled work; results arrive in the home Thread.
   ...([
     ["schedule-list", "Scheduled tasks with saved names, cadence and a task menu", ".schedule-list"],
@@ -1995,7 +2026,7 @@ export const scenarios: readonly PreviewScenario[] = [
     // Exercise the height contract independently of the current platform's titlebar size.
     (select(".app-titlebar") as HTMLElement).style.minHeight = "72px";
   }),
-  base("shell-bot-rail", "Collapsed navigation with centered icons", () => select('[data-collapsible="icon"] .navigation-search'), async () => {
+  base("shell-bot-rail", "Collapsed navigation with centered icons, or the navigation sheet in a narrow window", () => select(hasLayout() && window.matchMedia("(max-width: 899px)").matches ? '[data-mobile="true"] .navigation-search' : '[data-collapsible="icon"] .navigation-search'), async () => {
     await until(() => select("textarea[data-chat-composer]"), "Bot did not initialize");
     if (!select('[data-collapsible="icon"] .navigation-search')) await click('[data-slot="sidebar-trigger"]');
   }),
@@ -2005,7 +2036,8 @@ export const scenarios: readonly PreviewScenario[] = [
   { ...base("shell-sidebar-many", "Six Loupists with activity and unread briefings", () => select(".loupist-header-profiles"), async () => {
     await until(() => select('textarea[data-chat-composer]'), "Chat did not initialize");
     await until(() => document.querySelectorAll(".loupist-header-profiles .loupist-header-identity").length === 6, "Loupist list did not load");
-    await until(() => select('.loupist-header-identity:nth-child(2) .loupist-run-indicator'), "Background activity did not reach the header");
+    // The visual dot is presentational; its live status is a separate sibling.
+    await until(() => { const dot = document.querySelector('.loupist-header-identity:nth-of-type(2) .loupist-run-indicator'); return dot && (!hasLayout() || dot.getBoundingClientRect().width > 0); }, "Background activity did not reach the header");
   }), setup: async bridge => {
     await prepareFixture(bridge);
     const names = ["Semiconductors — memory chips, foundries, advanced packaging", "US Big Tech", "Dividend Loupist", "Energy transition and industrial infrastructure", previewKo() ? "한국 소비재와 유통" : "Korean consumer goods and retail", "Global supply chains"];
@@ -2017,6 +2049,8 @@ export const scenarios: readonly PreviewScenario[] = [
     bridge.runActivityList = async () => [{ run_id: "preview-background-run", loupist_id: profiles[1]!.id, kind: "chat", target: "preview-chat", started_at_ms: Date.now() - 30_000 }];
   } },
   base("connections", "Connections", () => select("#marketplace-title"), (root) => settings(root, "connections")),
+  ...settingsScenarios({ base, select, settings, until }),
+  ...readerScenarios({ base, select, navigate, selectPanel, click, clickMapAction, until }),
   ...dataScenarios({ base, select, click, settings }),
   // W17.3 (providers §2.3): one card per account; ChatGPT plan line, Claude extra usage, a key account.
   ...([

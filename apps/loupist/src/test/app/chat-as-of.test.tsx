@@ -32,7 +32,7 @@ describe("as-of answers", () => {
     const chatSend = vi.spyOn(bridge, "chatSend").mockImplementationOnce(async (...args) => { await running.promise; return native(...args); });
     await openApp(bridge);
     await type(user, "/asof 2026-03-03 ");
-    const chip = screen.getByRole("button", { name: /Change the as-of date: As of March 3, 2026/ });
+    const chip = screen.getByRole("button", { name: /As of Mar 3, 2026 · Change the as-of date/ });
     expect(chip).toHaveTextContent("As of Mar 3, 2026");
     expect(composer()).toHaveValue("");
     expect(composer()).toHaveAttribute("placeholder", "Ask what was known on Mar 3, 2026…");
@@ -75,7 +75,7 @@ describe("as-of answers", () => {
     fireEvent.change(within(dated).getByLabelText("Month"), { target: { value: "3" } });
     fireEvent.change(within(dated).getByLabelText("Day"), { target: { value: "3" } });
     await user.click(within(dated).getByRole("button", { name: "Set date" }));
-    expect(screen.getByRole("button", { name: /Change the as-of date: As of March 3, 2026/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: /As of Mar 3, 2026 · Change the as-of date/ })).toBeVisible();
   });
 
   it("renders a refused step as neutral and the note from the answer's report", () => {

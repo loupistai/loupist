@@ -26,7 +26,7 @@ it("lists what the answer used and saved in a fixed order, each segment a link",
   const user = userEvent.setup();
   await user.click(within(receipt).getByRole("button", { name: "Read 1 source" }));
   expect(handlers.onOpenSource).toHaveBeenCalledWith(expect.objectContaining({ id: "q3" }), expect.any(HTMLElement));
-  await user.click(within(receipt).getByRole("button", { name: "Show 3 new on the map" }));
+  await user.click(within(receipt).getByRole("button", { name: /Show 3 new on the map/ }));
   await user.click(within(receipt).getByRole("button", { name: "1 relationship updated on the map" }));
   expect(handlers.onShowOnMap).toHaveBeenNthCalledWith(2, highlight);
   // "Used 1 principle" expands the correction panel under the answer.

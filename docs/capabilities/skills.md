@@ -24,6 +24,9 @@ owned-skill create/edit/delete and import. Personal Skills live at global
 `skills/<id>/`; Loupist Skills at `<workspace>/.loupist/skills/<id>/`. Each has `SKILL.md`
 with frontmatter and optional supporting files. Included and other-scope Skills
 are read-only here. Duplicate names expose precedence rather than silently merging.
+A failed initial catalog read replaces the loading message with the error; Reload
+retries the read and restores the list without leaving Settings. The collection
+filters are a keyboard-selectable radio group rather than tabs with missing panels.
 
 Imports accept a local folder, single-skill ZIP or exact public GitHub folder URL.
 They preserve resources and reject symbolic links, unsafe paths, included names

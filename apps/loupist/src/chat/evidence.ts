@@ -58,7 +58,7 @@ export function citationSources(evidence: readonly ChatEvidenceRef[]): ChatEvide
 }
 
 /** Source number shared by the answer citation and its inline sources list. */
-function citationNumber(evidence: ChatEvidenceRef, evidenceRefs: readonly ChatEvidenceRef[]): number | null {
+export function citationNumber(evidence: ChatEvidenceRef, evidenceRefs: readonly ChatEvidenceRef[]): number | null {
   if (!isCitationSource(evidence)) return null;
   const index = citationSources(evidenceRefs).findIndex((item) => evidenceSubjectKey(item) === evidenceSubjectKey(evidence));
   return index < 0 ? null : index + 1;

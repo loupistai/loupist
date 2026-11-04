@@ -235,7 +235,7 @@ function SegmentTabs({ value, counts, onChange }: { value: MemorySegment; counts
     {SEGMENTS.map((segment, index) => <button key={segment} ref={element => { if (element) refs.current.set(segment, element); }} type="button" role="tab" aria-selected={segment === value} tabIndex={segment === value ? 0 : -1} onClick={() => onChange(segment)} onKeyDown={event => keyDown(event, index)}>
       <span className="memory-tab-full">{t(`memoryPage.tabs.${segment}`)}</span>
       <span className="memory-tab-short" aria-hidden="true">{t(`memoryPage.tabsShort.${segment}`)}</span>
-      {counts[segment] ? <span className="memory-tab-count">{formatNumber(counts[segment]!)}</span> : null}
+      {counts[segment] ? <> <span className="memory-tab-count">{formatNumber(counts[segment]!)}</span></> : null}
     </button>)}
   </div>;
 }

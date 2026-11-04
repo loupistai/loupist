@@ -24,7 +24,7 @@ function Surface({ onOpenFull = vi.fn() }: { onOpenFull?: (location: KnowledgeLo
 it('opens the local Map from its answer chip, highlights every added node, and offers list and full-map actions', async () => {
  const bridge = setup(); const onOpen = vi.fn(), onOpenFull = vi.fn();
  render(<ChatMapProvider bridge={bridge} loupistId="loupist" chatId="chat" messages={[answer]} onOpen={onOpen}><Surface onOpenFull={onOpenFull} /></ChatMapProvider>);
- fireEvent.click(await screen.findByRole('button', { name: 'Show 3 new on the map' }));
+ fireEvent.click(await screen.findByRole('button', { name: /Show 3 new on the map/ }));
  expect(onOpen).toHaveBeenCalledOnce();
  expect(screen.getByRole('tab', { name: 'Map' })).toHaveAttribute('aria-selected', 'true');
  expect(await screen.findByRole('img')).toHaveAttribute('data-highlight', 'a,b,c');
@@ -54,7 +54,7 @@ it('retries failed requests and reads every growth-event page before filtering t
  fireEvent.click(screen.getByRole('tab', { name: 'Map' }));
  expect(await screen.findByRole('alert')).toBeVisible();
  fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
- expect(await screen.findByRole('button', { name: 'Show 1 new on the map' })).toBeVisible();
+ expect(await screen.findByRole('button', { name: /Show 1 new on the map/ })).toBeVisible();
  expect(bridge.knowledgeGrowthEvents).toHaveBeenCalledWith({ loupistId: 'loupist', limit: 5000, cursor: 'next' });
 });
 it('fetches on a completed turn without polling or refetching for streaming text', async () => {
@@ -84,9 +84,9 @@ it('shows the answer chip once World processing delivers the saved Source after 
   function SavedSurface() { const state = useChatMap(); return <MessageMemoryRow loupistId="loupist" chatId={state?.chatId} message={saved} onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} />; }
   render(<ChatMapProvider bridge={bridge} loupistId="loupist" chatId="chat" messages={[saved]} onOpen={vi.fn()}><SavedSurface /></ChatMapProvider>);
   await waitFor(() => expect(growth).toHaveBeenCalledTimes(1));
-  expect(screen.queryByRole('button', { name: 'Show 1 new on the map' })).toBeNull();
+  expect(screen.queryByRole('button', { name: /Show 1 new on the map/ })).toBeNull();
   await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
-  expect(await screen.findByRole('button', { name: 'Show 1 new on the map' })).toBeVisible();
+  expect(await screen.findByRole('button', { name: /Show 1 new on the map/ })).toBeVisible();
  } finally { vi.useRealTimers(); }
 });
 const streamingRead = (entityIds: string[]): ChatMessage => ({ id: 'live', role: 'assistant', content: '', created_at: '2026-10-28', status: 'streaming', progress: { startedAtMs: 1, items: [{ id: 'read', kind: 'tool', category: 'memory', operation: 'read', action: 'Read the map', status: 'running', entityIds }] } });

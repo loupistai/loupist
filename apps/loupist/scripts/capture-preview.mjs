@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { openChrome } from "./visual-diff.mjs";
 import { assertChatLayout, measureChatLayout } from "../e2e/native-layout.mjs";
 import { assertShellLayout, measureShellLayout } from "../e2e/shell-layout.mjs";
+import { assertReaderLayout, measureReaderLayout } from "../e2e/reader-layout.mjs";
 import { collectRunningCssMotion, reducedMotionViolations } from "./capture-motion.mjs";
 import { markdownIsRendered } from "./capture-readiness.mjs";
 
@@ -30,8 +31,8 @@ const options = layout ? {
   sizes: "700x560,1060x820,1061x820,1280x820,1920x1080",
 } : {};
 for (let i = 0; i < args.length; i += 2) {
-  if (!["--out", "--scenarios", "--themes", "--sizes", "--locales"].includes(args[i]) || !args[i + 1] || args[i + 1].startsWith("--")) {
-    throw new Error("Usage: capture-preview.mjs [--chat-layout] [--locales en,ko,en-XA] [--out <dir>] [--scenarios a,b] [--themes light,dark] [--sizes 700x560,1280x820,1680x1050]");
+  if (!["--out", "--scenarios", "--themes", "--sizes", "--locales", "--browser-scenarios"].includes(args[i]) || !args[i + 1] || args[i + 1].startsWith("--")) {
+    throw new Error("Usage: capture-preview.mjs [--chat-layout] [--browser-scenarios 1..15] [--locales en,ko,en-XA] [--out <dir>] [--scenarios a,b] [--themes light,dark] [--sizes 700x560,1280x820,1680x1050]");
   }
   options[args[i].slice(2)] = args[i + 1];
 }
@@ -40,6 +41,8 @@ const themes = [...new Set((options.themes ?? "light,dark").split(","))];
 const locales = [...new Set((options.locales ?? "en").split(","))];
 if (locales.some((locale) => !["en", "ko", "en-XA"].includes(locale))) throw new Error("Locales must be en, ko or en-XA");
 const sizes = [...new Set((options.sizes ?? "700x560,1280x820,1680x1050").split(","))];
+const browserScenarios = Number(options["browser-scenarios"] ?? "1");
+if (!Number.isInteger(browserScenarios) || browserScenarios < 1 || browserScenarios > 15) throw new Error("--browser-scenarios must be between 1 and 15");
 if (themes.some((theme) => !["light", "dark"].includes(theme))) throw new Error("Themes must be light or dark");
 if (sizes.some((size) => !/^[1-9]\d{1,4}x[1-9]\d{1,4}$/.test(size))) throw new Error("Sizes must be positive WxH pairs");
 if (typeof WebSocket === "undefined") throw new Error("Node 22 or later with built-in WebSocket is required");
@@ -71,7 +74,7 @@ function checkChatCell(cell, geometry, width, height) {
   }
   if (!stage || (width >= 900) !== (stage.x > 0)) throw new Error("Unexpected sidebar space");
   if (panel.right > width + 1) throw new Error("Panel escapes viewport");
-  if (panelOverlay && (overlap <= 0 || overlap >= chat.width)) throw new Error("Sheet must cover part of chat");
+  if (panelOverlay && Math.abs(chat.right - panel.x) > 1) throw new Error("Chat must wrap into the visible space beside the sheet");
   if (!panelOverlay && Math.abs(chat.right - panel.x) > 1) throw new Error("Dock must sit beside chat");
 }
 
@@ -87,7 +90,8 @@ try {
   const out = options.out ? resolve(options.out) : await mkdtemp(join(previewRoot, `${stamp}-`));
   // A separate dependency optimizer keeps a simultaneous capture or native dev server intact.
   cacheDir = await mkdtemp(join(tmpdir(), "loupist-preview-vite-"));
-  server = await createServer({ root: appRoot, configFile: join(appRoot, "vite.config.ts"), cacheDir, server: { fs: { allow: [appRoot, cacheDir, await realpath(join(appRoot, "node_modules"))] }, host: "127.0.0.1", port: 1430, strictPort: false, open: false, hmr: false, watch: { ignored: ["**/output/**"] } } });
+  // Captures use a static source snapshot; filesystem watchers only consume resources.
+  server = await createServer({ root: appRoot, configFile: join(appRoot, "vite.config.ts"), cacheDir, server: { fs: { allow: [appRoot, cacheDir, await realpath(join(appRoot, "node_modules"))] }, host: "127.0.0.1", port: 1430, strictPort: false, open: false, hmr: false, watch: null } });
   await server.listen();
   const registry = (await server.ssrLoadModule("/src/preview/scenarios.ts")).scenarios;
   const { FIXTURE_TIME } = await server.ssrLoadModule("/src/preview/fixtures.ts");
@@ -100,18 +104,19 @@ try {
   const address = server.httpServer.address();
   const origin = `http://127.0.0.1:${address.port}`;
   // A long-lived page can stop answering CDP after many navigations. Bound its
-  // lifetime to one scenario; close Chrome before starting the next one.
-  for (const scenario of ids) {
+  // lifetime to a bounded number of scenarios (one by default).
+  for (const [scenarioIndex, scenario] of ids.entries()) {
     if (interrupted) throw new Error("Capture interrupted");
-    browser = await openChrome();
+    const freshBrowser = !browser;
+    browser ??= await openChrome();
     const { page, evaluate } = browser;
     const requests = new Set();
     let lastNetworkChange = performance.now();
-    browser.onEvent(({ method, params }) => {
+    const stopNetworkListener = browser.onEvent(({ method, params }) => {
       if (method === "Network.requestWillBeSent" && params.type !== "WebSocket") { requests.add(params.requestId); lastNetworkChange = performance.now(); }
       if (method === "Network.loadingFinished" || method === "Network.loadingFailed") { requests.delete(params.requestId); lastNetworkChange = performance.now(); }
     });
-    await page("Page.addScriptToEvaluateOnNewDocument", { source: `
+    if (freshBrowser) await page("Page.addScriptToEvaluateOnNewDocument", { source: `
       // Freeze before any fixture IDs are created, including the world-graph route
       // whose interactive preview deliberately retains its native clock.
       const NativeDate = globalThis.Date;
@@ -130,6 +135,7 @@ try {
     await page("Emulation.setTimezoneOverride", { timezoneId: "Asia/Seoul" });
     await page("Emulation.setLocaleOverride", { locale: "en-US" });
     await page("Network.enable");
+    await page("Network.setCacheDisabled", { cacheDisabled: true });
     await page("Network.setBlockedURLs", { urls: ["https://*", "http://*.example/*"] });
     for (const theme of themes) for (const size of sizes) for (const locale of locales) {
       if (interrupted) throw new Error("Capture interrupted");
@@ -208,6 +214,8 @@ try {
           if (media !== "print") {
             cell.shell = await evaluate(`(${measureShellLayout.toString()})()`);
             assertShellLayout(cell.shell, { label: file });
+            cell.readers = await evaluate(`(${measureReaderLayout.toString()})()`);
+            assertReaderLayout(cell.readers, { label: file });
           }
           if (layout) checkChatCell(cell, await evaluate(`(${measureChatLayout.toString()})()`), width, height);
           cell.status = "ok";
@@ -223,8 +231,11 @@ try {
       manifest.cells.push(cell);
       console.log(`${cell.status === "ok" ? "OK" : "ERROR"} ${file}${cell.layout ? ` ${JSON.stringify(cell.layout)}` : ""}${cell.error ? `: ${cell.error}` : ""}`);
     }
-    await browser.close();
-    browser = null;
+    stopNetworkListener();
+    if ((scenarioIndex + 1) % browserScenarios === 0 || scenarioIndex === ids.length - 1) {
+      await browser.close();
+      browser = null;
+    }
   }
   manifest.totalCaptureMs = Math.round(performance.now() - started);
   await writeFile(join(out, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");

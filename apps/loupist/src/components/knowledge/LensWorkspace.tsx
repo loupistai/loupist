@@ -214,7 +214,7 @@ export function LensWorkspace({ markdownFirst = false, children, toolbar, bridge
     {!perspective ? <Button variant="outline" size="sm" data-share-item onClick={() => setShareOpen(true)}>{i18n.t("sharing:share")}</Button> : null}</div> : null;
   return <div ref={workspaceRef} className={`knowledge-lens lens-workspace is-reader-only${compact ? " is-compact" : ""}${wide ? " has-context-pane" : ""}`}>
     <div ref={readerScrollRef} className="knowledge-reading lens-reader" onScroll={event => patchView({ readerScrollTop: event.currentTarget.scrollTop })}>
-      {!wide ? <div className="lens-reader-toolbar">{toolbar}<Button className="lens-outline" variant="ghost" aria-label={t("lensWorkspace.showOutlineAndLinks")} onClick={() => setContextOpen(true)} disabled={!server}><ListTreeIcon />{t("lensWorkspace.outlineLinks")}</Button></div> : null}
+      {!wide ? <div className="lens-reader-toolbar">{toolbar}<Button className="lens-outline" variant="ghost" onClick={() => setContextOpen(true)} disabled={!server}><ListTreeIcon />{t("lensWorkspace.outlineLinks")}</Button></div> : null}
       {loadError ? <Alert variant="destructive"><AlertDescription>{loadError}</AlertDescription><Button variant="outline" onClick={() => setReload((value) => value + 1)}>{t("lensWorkspace.retryLens")}</Button></Alert> : null}
       {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
       {request && proposalsLoaded && !requestedProposal ? <Alert variant="destructive"><AlertDescription>{proposalMatchError()}</AlertDescription></Alert> : null}

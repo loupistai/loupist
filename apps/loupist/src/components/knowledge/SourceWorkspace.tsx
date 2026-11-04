@@ -18,6 +18,7 @@ import type { Coverage, LoupistBridge, KnowledgeCatalog, KnowledgeLocation, Know
 import { errorMessage } from "../../lib/errors";
 import { pinForSource } from "../../knowledge/location";
 import { sourceOrigin, sourceTitle } from "./hostSource";
+import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control";
 import { relationName } from "../map/relations";
 
 const originLabel = (): Record<SourceClass, string> => ({
@@ -179,7 +180,7 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
       <div className="source-library-controls">
       {compact ? null : <div className="source-library-heading"><h2>{t("sourceWorkspace.savedSources")}</h2><span>{formatNumber(sources.length)}</span></div>}
       {onQueryChange ? <div className="memory-search source-search"><SearchIcon aria-hidden="true" /><Input aria-label={t("sourceWorkspace.searchSources")} placeholder={t("sourceWorkspace.companyFilingOrSource")} value={query} onChange={(event) => onQueryChange(event.target.value)} />{query ? <Button variant="ghost" size="icon-sm" aria-label={t("sourceWorkspace.clearSearch")} onClick={() => onQueryChange("")}><XIcon /></Button> : null}</div> : null}
-      <Tabs value={filter} onValueChange={(value) => patchView({ sourceFilter: value as "all" | "processing" | "attention", sourceScrollTop: 0 })}><TabsList aria-label={t("sourceWorkspace.sourceProcessingFilters")}><TabsTrigger value="all">{t("sourceWorkspace.all")}</TabsTrigger><TabsTrigger value="processing">{matching.some(({ item }) => isProcessing(item.processing?.status)) ? t("sourceWorkspace.processingCount", { countText: formatNumber(matching.filter(({ item }) => isProcessing(item.processing?.status)).length) }) : t("sourceWorkspace.processing")}</TabsTrigger><TabsTrigger value="attention">{t("sourceWorkspace.needsAttention")}</TabsTrigger></TabsList></Tabs></div>
+      <SegmentedControl value={filter} onValueChange={(value) => patchView({ sourceFilter: value as "all" | "processing" | "attention", sourceScrollTop: 0 })} aria-label={t("sourceWorkspace.sourceProcessingFilters")}><SegmentedControlItem value="all">{t("sourceWorkspace.all")}</SegmentedControlItem><SegmentedControlItem value="processing">{matching.some(({ item }) => isProcessing(item.processing?.status)) ? t("sourceWorkspace.processingCount", { countText: formatNumber(matching.filter(({ item }) => isProcessing(item.processing?.status)).length) }) : t("sourceWorkspace.processing")}</SegmentedControlItem><SegmentedControlItem value="attention">{t("sourceWorkspace.needsAttention")}</SegmentedControlItem></SegmentedControl></div>
       {compact ? <div className="source-library-heading library-section-label"><h2>{t("sourceWorkspace.savedSources")}</h2><span>{formatNumber(sources.length)}</span>{onAddSource ? <Button variant="ghost" className="library-add" onClick={onAddSource}>{t("map.addInLibrary")}</Button> : null}</div> : null}
       {!sources.length ? <EmptyState title={search || filter !== "all" ? t("sourceWorkspace.noMatchingSources") : t("sourceWorkspace.noSourcesYet")} description={search || filter !== "all" ? t("sourceWorkspace.tryAnotherSearchOrChooseAll") : t("sourceWorkspace.addTextAFileOrALinkToUseIn")} /> : null}
       <ul ref={listRef} aria-label={t("sourceWorkspace.sources")}>

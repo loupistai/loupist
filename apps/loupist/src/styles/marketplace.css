@@ -10,7 +10,7 @@
 .marketplace-status-tabs { margin-bottom: 0; }
 .marketplace-status-tabs [data-slot="tabs-list"] { padding: 0; flex-wrap: wrap; height: auto; gap: var(--gg-space-1); }
 .marketplace-status-tabs [data-slot="tabs-trigger"] { padding: var(--gg-space-2) var(--gg-space-3); font-size: var(--gg-text-control); }
-.marketplace-status-tabs [data-slot="tabs-trigger"][data-state="active"] { background: var(--gg-color-bg-selected);  color: var(--gg-color-text-primary); }
+.marketplace-status-tabs [data-slot="tabs-trigger"][data-state="checked"] { background: var(--gg-color-bg-selected);  color: var(--gg-color-text-primary); }
 .marketplace-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .marketplace-search { position: relative; display: block; flex: 1; min-width: 0; margin: 0; }
 .marketplace-search > svg { position: absolute; z-index: var(--gg-z-sticky); top: 50%; left: var(--gg-space-3); width: var(--gg-space-4); height: var(--gg-space-4); color: var(--gg-color-text-secondary); transform: translateY(-50%); }

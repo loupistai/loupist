@@ -2039,7 +2039,7 @@ button.chat-rail-row:not(:disabled):hover .chat-rail-row-label { text-decoration
 .composer-file-chip { display: inline-flex; align-items: center; gap: var(--gg-space-1); height: 32px; max-width: 240px; padding: 0 0 0 var(--gg-space-2); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); font-size: var(--gg-text-control); }
 .composer-file-chip > svg { flex: none; width: 16px; height: 16px; color: var(--gg-color-text-secondary); }
 .composer-file-chip > span { min-width: 0; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.composer-file-chip > .composer-file-size { flex: none; max-width: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+.composer-file-chip > .composer-file-size { flex: none; max-width: none; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .composer-file-chip button svg { width: 14px; height: 14px; }
 /* Dragging files over the chat column: one overlay, no icon, the drop target for the whole column. */
 .composer-drop-overlay { position: absolute; inset: var(--gg-space-4); z-index: var(--gg-z-popover); display: grid; place-content: center; gap: var(--gg-space-1); border: 2px dashed var(--gg-color-border-strong); border-radius: var(--gg-radius-lg); background: color-mix(in srgb, var(--gg-color-bg-raised) 92%, transparent); text-align: center; pointer-events: none; animation: composer-drop-in var(--gg-motion-fast) ease-out; }

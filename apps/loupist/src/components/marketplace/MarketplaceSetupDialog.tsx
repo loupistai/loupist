@@ -379,7 +379,7 @@ export function MarketplaceSetupDialog({
                             type="button"
                             variant="link"
                             size="xs"
-                            aria-label={i18n.t("connections:marketplaceSetupDialog.openSetupHelp", { label: connectionText(field.label) })}
+                            aria-label={`${i18n.t("connections:marketplaceSetupDialog.setupHelp")} · ${i18n.t("connections:marketplaceSetupDialog.openSetupHelp", { label: connectionText(field.label) })}`}
                             disabled={Boolean(setupBusy)}
                             onClick={() => void openSetupHelp(field.help_url!)}
                           >
@@ -459,7 +459,7 @@ export function MarketplaceSetupDialog({
                             type="button"
                             variant="link"
                             size="xs"
-                            aria-label={i18n.t("connections:marketplaceSetupDialog.openSetupHelp", { label: connectionText(field.label) })}
+                            aria-label={`${i18n.t("connections:marketplaceSetupDialog.getAKey")} · ${i18n.t("connections:marketplaceSetupDialog.openSetupHelp", { label: connectionText(field.label) })}`}
                             disabled={Boolean(setupBusy)}
                             onClick={() => void openSetupHelp(field.help_url!)}
                           >

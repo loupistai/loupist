@@ -8,7 +8,7 @@ import { formatAsOf } from "../../chat/asOf";
 import { evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
 import { quoteEvidence } from "../../chat/quoteEvidence";
 import { QuoteEvidenceBody } from "./QuoteEvidence";
-import { citationNumber, copiedFormula, evidenceDate, formulaLines, needsChecking, sourceLine, spokenNumber, unbroken } from "../../chat/numberChecks";
+import { citationNumber, copiedFormula, evidenceDate, formulaLines, needsChecking, spokenNumber, unbroken } from "../../chat/numberChecks";
 import { calcView, dataRows, exactAmount, shownExactly } from "../../chat/numberText";
 import { narrowWindow } from "../../chat/narrowWindow";
 import { Button } from "../ui/button";
@@ -113,8 +113,8 @@ function CalculatedBody({ check, view, evidenceRefs, onOpenEvidence }: { check: 
             <dd className="gg-num">{input.value}</dd>
             <dd className="number-chip-source">{source
               // The provider may wrap above the date; the date and its citation stay together.
-              ? <button type="button" aria-label={sourceLine(source)} onClick={() => onOpenEvidence?.(source)}>
-                <span>{source.provider ?? sourceIdentityLabel(source)}{date ? " ·" : ""}</span>
+              ? <button type="button" onClick={() => onOpenEvidence?.(source)}>
+                <span>{source.provider ?? sourceIdentityLabel(source)}{date ? " · " : ""}</span>
                 {date ? <span className="number-chip-date">{date}{chip}</span> : chip}
               </button>
               : <span className="number-chip-unlinked">{t("numberChip.notLinked")}</span>}</dd>

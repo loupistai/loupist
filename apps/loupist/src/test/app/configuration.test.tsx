@@ -63,7 +63,7 @@ it("rereads defaults before sending and keeps composer choices out of configurat
   await user.click(screen.getByRole("button", { name: "Send" }));
   await waitFor(() => expect(chatSend).toHaveBeenCalled());
   expect(chatSend.mock.calls[0][0]).toMatchObject({ thinking_level: "high", run_options: { performance: "fast" } });
-  await user.click(screen.getByRole("button", { name: "Model settings for this message" }));
+  await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
   await user.click(screen.getByRole("menuitem", { name: "Advanced" }));
   await user.click(await screen.findByRole("menuitemradio", { name: "Max" }));
   await user.keyboard("{Escape}");
@@ -86,7 +86,7 @@ it("keeps saving appearance after Agent settings were saved with application pen
   await user.click(screen.getByRole("button", { name: "Save Maximum retries" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Configuration was saved");
   await user.click(screen.getByRole("button", { name: "Appearance" }));
-  const dark = await screen.findByRole("button", { name: "Dark theme" });
+  const dark = await screen.findByRole("button", { name: "Dark" });
   await user.click(dark);
   await waitFor(() => expect(dark).toHaveAttribute("aria-pressed", "true"));
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -111,7 +111,7 @@ it("keeps appearance current after connector configuration is saved with applica
   await user.click(within(dialog).getByRole("button", { name: "Close" }));
   await user.click(await mainTab(/Settings/));
   await user.click(screen.getByRole("button", { name: "Appearance" }));
-  await user.click(await screen.findByRole("button", { name: "Dark theme" }));
+  await user.click(await screen.findByRole("button", { name: "Dark" }));
   await waitFor(async () => expect((await bridge.configRead({ scope: { kind: "global" } })).explicit?.appearance?.theme).toBe("dark"));
   expect((await bridge.configRead({ scope: { kind: "global" } })).explicit?.connectors?.["community.web-research"]).toEqual({ search_policy: "model_only" });
 });

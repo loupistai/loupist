@@ -317,7 +317,7 @@ export default function FinancialChart({ chart, dataset, theme, onAskRange, comp
         {onAskRange && <button type="button" disabled={rangeStart > rangeEnd || !rows.length} onClick={() => onAskRange({ start: String(rows[rangeStart]?.[timeColumn]), end: String(rows[rangeEnd]?.[timeColumn]) })}>{t("financialChart.askAboutRange")}</button>}
         <output>{rangeStart <= rangeEnd ? t("financialChart.selectedBars", { count: rangeEnd - rangeStart + 1, formattedCount: formatNumber(rangeEnd - rangeStart + 1) }) : t("financialChart.chooseAStartBeforeTheEnd")}</output>
       </div>}
-      <div ref={containerRef} className="chart-financial-canvas" aria-label={t("financialChart.interactiveFinancialChart")} />
+      <div ref={containerRef} className="chart-financial-canvas" role="group" aria-label={t("financialChart.interactiveFinancialChart")} />
     </div>
   );
 }

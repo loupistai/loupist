@@ -23,6 +23,7 @@ type Helpers = {
 
 type BrowserHost = {
   blockLoadedArticle: () => void;
+  setTitle: (title: string) => void;
 };
 
 const ARTICLE_EVIDENCE_ID = `ev_${"c".repeat(32)}`;
@@ -121,6 +122,10 @@ function hostBrowser(bridge: PreviewBridge, mode: "ready" | "blocked" | "failure
     return native;
   };
   return {
+    setTitle(title) {
+      if (!emit || !tabId) throw new Error("Browser tab did not open");
+      emit({ type: "title_changed", tab_id: tabId, title });
+    },
     blockLoadedArticle() {
       if (!emit || !tabId) throw new Error("Browser tab did not open");
       emit({ type: "navigation_blocked", tab_id: tabId, reason: "unsupported_protocol" });
@@ -137,7 +142,7 @@ async function openArticle(root: HTMLElement, until: Helpers["until"], click: He
 }
 
 export function browserScenarios({ base, select, until, click }: Helpers): PreviewScenario[] {
-  const prepare = (mode: "ready" | "blocked" | "failure") => {
+  const prepare = (mode: "ready" | "blocked" | "failure", longTitle = false) => {
     let host: BrowserHost;
     return {
       setup: async (bridge: PreviewBridge) => {
@@ -152,6 +157,12 @@ export function browserScenarios({ base, select, until, click }: Helpers): Previ
           return;
         }
         await until(() => articleReady(select), "Browser did not finish opening the article");
+        if (longTitle) {
+          const title = previewKo() ? "한울정밀 분기 실적과 반도체 공급망의 장기 수익성 전망 및 주요 위험 요인" : "Quarterly earnings and outlook for semiconductor manufacturers and their suppliers";
+          if (import.meta.env.MODE === "test") await act(async () => { host.setTitle(title); });
+          else host.setTitle(title);
+          await until(() => document.querySelector('.workspace-tab:not(.workspace-tab-fixed) [role="tab"]')?.getAttribute("title") === title, "Article title did not update");
+        }
         if (mode === "blocked") {
           // Flush the host event in tests. Waiting on the poll inside `act` never reaches its timer.
           if (import.meta.env.MODE === "test") await act(async () => { host.blockLoadedArticle(); });
@@ -162,12 +173,17 @@ export function browserScenarios({ base, select, until, click }: Helpers): Previ
     };
   };
   const ready = prepare("ready");
+  const longTitle = prepare("ready", true);
   const blocked = prepare("blocked");
   const failure = prepare("failure");
   return [
     {
       ...base("browser-ready", "An answer link opens its article in the in-app browser", () => articleReady(select), ready.enter),
       setup: ready.setup,
+    },
+    {
+      ...base("browser-long-title", "A long article title truncates before the tab's close button", () => articleReady(select), longTitle.enter),
+      setup: longTitle.setup,
     },
     {
       ...base("browser-blocked", "A blocked navigation keeps the article and explains the typed reason", () => articleKept(select, "blocked"), blocked.enter),

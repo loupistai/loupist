@@ -127,7 +127,7 @@ describe("Loupist · Connections", () => {
     const apiKey = within(dialog).getByLabelText("OpenDART API key");
     expect(apiKey).toHaveAttribute("type", "password");
     expect(apiKey).toHaveValue("");
-    await user.click(within(dialog).getByRole("button", { name: "Open OpenDART API key setup help" }));
+    await user.click(within(dialog).getByRole("button", { name: /Open OpenDART API key setup help/ }));
     expect(help).toHaveBeenCalledWith("https://opendart.fss.or.kr/uss/umt/EgovMberInsertView.do");
 
     await user.type(apiKey, "open-dart-test-key");

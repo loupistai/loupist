@@ -132,10 +132,10 @@ export function ModelSelectionMenu({
         };
 
   return (
-    <DropdownMenu open={open} onOpenChange={(next) => { setOpen(next); if (!next) { setQuery(""); setAdvanced(false); } }}>
-      <DropdownMenuTrigger asChild>
+    <DropdownMenu modal open={open} onOpenChange={(next) => { setOpen(next); if (!next) { setQuery(""); setAdvanced(false); } }}>
+      <DropdownMenuTrigger asChild aria-haspopup="dialog">
         {renderTrigger ? renderTrigger(triggerLabel) : (
-          <Button type="button" variant="outline" aria-label={ariaLabel} aria-description={triggerLabel} disabled={disabled || (!models.length && !onManageModels)} className="world-model-menu">
+          <Button type="button" variant="outline" aria-label={ariaLabel ? `${triggerLabel} · ${ariaLabel}` : undefined} aria-description={triggerLabel} disabled={disabled || (!models.length && !onManageModels)} className="world-model-menu">
             <span>{triggerLabel}</span>
             <ChevronDownIcon aria-hidden="true" />
           </Button>
@@ -143,12 +143,27 @@ export function ModelSelectionMenu({
       </DropdownMenuTrigger>
       {open ? (
         <DropdownMenuContent
+          role="dialog"
+          aria-modal="true"
+          aria-orientation={undefined}
+          aria-labelledby={undefined}
           className="composer-model-menu-panel"
           side="top"
           align="start"
           sideOffset={8}
           aria-label={i18n.t("settings:modelSelectionMenu.availableModels")}
           onCloseAutoFocus={() => setQuery("")}
+          onKeyDown={event => {
+            // This searchable picker is a dialog. Radix menus otherwise consume
+            // Tab, leaving keyboard users unable to reach its other controls.
+            if (event.key !== "Tab") return;
+            const controls = [...event.currentTarget.querySelectorAll<HTMLElement>('input:not([disabled]), button:not([disabled]), [role^="menuitem"]:not([aria-disabled="true"])')]
+              .filter(element => !element.closest('[hidden], [inert]') && (document.documentElement.clientWidth === 0 || element.getClientRects().length > 0));
+            if (!controls.length) return;
+            event.preventDefault();
+            const current = controls.indexOf(document.activeElement as HTMLElement);
+            controls[(current + (event.shiftKey ? -1 : 1) + controls.length) % controls.length]?.focus();
+          }}
         >
           <div className="model-menu-header">
             <strong>{contextLabel}</strong>
@@ -166,7 +181,7 @@ export function ModelSelectionMenu({
                 if (event.key !== "Escape" && event.key !== "Tab") event.stopPropagation();
               }} />
           </div>
-          <div className="model-menu-catalog">
+          <div className="model-menu-catalog" role="menu" aria-label={i18n.t("settings:modelSelectionMenu.availableModels")}>
           {auto && models.length ? <>
             <DropdownMenuRadioGroup value={auto.active ? "auto" : ""} onValueChange={() => auto.onSelect()}>
               <DropdownMenuRadioItem value="auto">
@@ -210,7 +225,7 @@ export function ModelSelectionMenu({
           </div>
           {planLine ? <div className="model-menu-plan">{planLine}</div> : null}
           {selectedModel ? (
-            <div className="model-menu-options">
+            <div className="model-menu-options" role="menu" aria-label={i18n.t("chat:chatModelMenu.advanced")}>
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={(event) => { event.preventDefault(); setAdvanced(!advanced); }} aria-expanded={advanced} aria-controls={advanced ? advancedId : undefined} className="model-menu-advanced">
                 {i18n.t("chat:chatModelMenu.advanced")}<ChevronDownIcon aria-hidden="true" />
@@ -268,7 +283,7 @@ export function ModelSelectionMenu({
               </div> : null}
             </div>
           ) : null}
-          {onManageModels ? <div className="model-menu-footer"><DropdownMenuItem onSelect={() => { setOpen(false); onManageModels(); }}><Settings2Icon />{i18n.t("settings:modelSelectionMenu.manageModelsProviders")}</DropdownMenuItem></div> : null}
+          {onManageModels ? <div className="model-menu-footer" role="menu" aria-label={i18n.t("settings:modelSelectionMenu.manageModelsProviders")}><DropdownMenuItem onSelect={() => { setOpen(false); onManageModels(); }}><Settings2Icon />{i18n.t("settings:modelSelectionMenu.manageModelsProviders")}</DropdownMenuItem></div> : null}
         </DropdownMenuContent>
       ) : null}
     </DropdownMenu>

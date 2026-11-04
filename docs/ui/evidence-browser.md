@@ -38,6 +38,8 @@ In Chat, the price-quote receipt fits inside the thread, below the titlebar and 
 
 ## Citations and number chips
 
+Numbered citation chips use the retained source list’s number for both the visible chip and its accessible name, even when the answer supplied a different reference number. Named citation links retain their visible words in the accessible name alongside the source title.
+
 Citation chips open a card (title,
 domain and date, and either a short quote line or the passage) after 150 ms of hover or on keyboard focus; Esc closes it and
 a click opens the page when the citation is a retrieved website with a credential-free URL, the quote receipt when the source is a price basket, and Evidence otherwise. In windows 720 px wide or narrower hover opens nothing: a 500 ms

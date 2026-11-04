@@ -36,7 +36,7 @@ export const ChatModelMenu = memo(function ChatModelMenu({ auto, onResetToAuto, 
   const planLine = onOpenUsage && planLineKind(billing) ? <ProviderPlanLine provider={billing} onOpenUsage={onOpenUsage} /> : undefined;
   return <ModelSelectionMenu contextLabel={t("chatModelMenu.modelForThisMessage")} {...props} planLine={planLine} auto={{ active: auto, onSelect: onResetToAuto }} renderTrigger={(label) => (
     // The model behind "Auto" is one hover away for people who want it, never on the screen by default.
-    <PromptInputButton size="sm" className="composer-model-menu" aria-label={t("chatModelMenu.modelSettingsForThisMessage")} aria-description={label}
+    <PromptInputButton size="sm" className="composer-model-menu" aria-label={`${auto || !selected ? t("chatModelMenu.auto") : selected.name} · ${t("chatModelMenu.modelSettingsForThisMessage")}`} aria-description={label}
       disabled={props.disabled || (!props.models.length && !props.onManageModels)} tooltip={label}>
       {auto || !selected ? <span>{t("chatModelMenu.auto")}</span> : <span className="composer-model-chip">{selected.name}</span>}
       <ChevronDownIcon aria-hidden="true" />
