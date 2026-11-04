@@ -84,7 +84,11 @@
 .connect-secret { position: relative; }
 .connect-secret input { padding-right: calc(var(--gg-space-10) + var(--gg-space-3)); }
 .connect-secret-toggle { position: absolute; top: 50%; right: var(--gg-space-1); transform: translateY(-50%); }
-.connect-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--gg-space-2); }
+.connect-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--gg-space-2); flex: none; }
+/* Fields scroll. The connect or add action stays below them, so a short window does not cover the last field. */
+.connect-sheet .dialog-body:has(.connect-sheet-scroll) { display: flex; flex-direction: column; overflow: hidden; }
+.connect-sheet-section:has(.connect-sheet-scroll) { display: flex; flex-direction: column; min-height: 0; flex: 1; overflow: hidden; }
+.connect-sheet-scroll { min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: var(--gg-space-4); }
 .connect-actions-start { justify-content: flex-start; }
 .connect-primary { justify-self: stretch; min-height: var(--gg-size-control-lg); }
 .connect-progress { display: flex; align-items: center; gap: var(--gg-space-2); margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }

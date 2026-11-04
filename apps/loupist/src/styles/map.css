@@ -51,7 +51,8 @@
 .map-swatch.is-watching,.map-swatch.is-holding { background:transparent; border:1.5px dashed var(--gg-color-map-holding-ring); }.map-swatch.is-holding { border:2.5px solid var(--gg-color-map-holding-ring); }
 .map-swatch.is-disputed { background:none; border:2px dashed var(--gg-color-warning); border-radius:var(--gg-radius-full); }
 .map-inspector { position:relative; z-index:var(--gg-z-panel); flex:none; width:var(--gg-size-inspector,360px); min-height:0; overflow:auto; padding:var(--gg-space-5); border-left:1px solid var(--gg-color-border-subtle); background:var(--gg-color-bg-raised); animation:map-inspector-in 180ms var(--gg-ease-out); }
-.map-inspector-close { position:absolute; top:8px; right:8px; }
+/* Sticky, not absolute: in WKWebView an absolute close scrolls with the sheet and the map clips it, so the control leaves the corner. */
+.map-inspector-close { position:sticky; top:var(--gg-space-2); z-index:2; float:right; margin-bottom:calc(-1 * var(--gg-size-control-sm)); }
 .map-kind-chip { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding-right:20px; font-size:var(--gg-text-caption); color:var(--gg-color-text-secondary); }
 .map-kind-chip > span { background:var(--gg-color-bg-selected); border-radius:var(--gg-radius-full); padding:2px 6px; }
 .map-inspector h2 { font-size:var(--gg-text-title); line-height:var(--gg-leading-title); margin:12px 0; overflow-wrap:anywhere; }
@@ -110,7 +111,7 @@
 .map-probe { position:absolute; bottom:8px; right:8px; padding:4px; background:var(--gg-color-bg-raised); font-size:var(--gg-text-caption); pointer-events:none; }
 .map-view :focus-visible { outline:2px solid var(--gg-color-focus); outline-offset:2px; }
 @container map (max-width:900px) { .map-control-label { display:none; }.map-toolbar { gap:4px; }.map-toolbar-button { width:var(--gg-size-control-md); padding:var(--gg-space-1); }.map-inspector { position:absolute; inset:auto 0 0; height:60%; width:auto; z-index:var(--gg-z-panel); border-left:0; border-top:1px solid var(--gg-color-border-subtle); box-shadow:var(--gg-shadow-sm); }.map-search { flex:1; width:auto; min-width:160px; max-width:420px; }.map-toolbar-spacer { flex:0; } }
-@keyframes map-inspector-in { from { opacity:0; transform:translateX(16px); } to { opacity:1; transform:translateX(0); } }
+@keyframes map-inspector-in { from { opacity:0; } to { opacity:1; } }
 @keyframes map-spin { to { transform:rotate(360deg); } } @keyframes map-shimmer { to { opacity:.02; } }
 @media (prefers-reduced-motion:reduce) { .map-inspector,.map-skeleton { animation:none; } .map-updating i { display:none; } }
 .map-list table + table { margin-top:24px; }.map-list td small { display:block; color:var(--gg-color-map-edge-disputed); }

@@ -7,7 +7,8 @@ Provider accounts, Auto, and the shared World-processing model are host state. T
 Settings › Models & providers owns shared sign-ins, keys and the model catalog.
 Its Add a provider sheet and onboarding share one list of ways to connect
 (`components/settings/ProviderWays.tsx`); the sheet adds Pi's other key providers
-under More providers. Each Loupist saves its own World model, reasoning controls
+under More providers. Connect and add stay at the bottom of the sheet while the
+fields scroll, so a short window does not leave the action below the sheet. Each Loupist saves its own World model, reasoning controls
 and processing bounds independently of Chat.
 
 One `openai` slot holds either a ChatGPT sign-in (Pi's `openai-chatgpt` OAuth with
