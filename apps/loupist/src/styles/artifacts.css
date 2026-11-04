@@ -275,7 +275,8 @@
 
 .workspace-tabbar {
   position: relative;
-  z-index: var(--gg-z-sticky);
+  /* Above the browser toolbar, so the add menu is not covered by the address field. */
+  z-index: var(--gg-z-popover);
   min-height: 42px;
   flex-shrink: 0;
   display: flex;
@@ -391,6 +392,7 @@
   background: var(--gg-color-bg-app);
 }
 
+.workspace-add:not([open]) > .workspace-add-menu { display: none; }
 .workspace-add-menu {
   position: absolute;
   top: calc(100% + 6px);
