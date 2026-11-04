@@ -14,14 +14,14 @@ python3 apps/loupist/scripts/set-version.py --check --version X.Y.Z-rc.N
 The command rejects an already-diverged tree before writing any file, updates every authored version and lockfile copy together, and keeps `Info.plist` at the SemVer base version for RCs. Use `--dry-run` to review a transition first.
 
 Release, qualification, and promotion each use a non-cancelling serialized queue.
-`GITHUB_RUN_NUMBER` is a lower bound for the macOS `CFBundleVersion`. A re-run
-of the same workflow adds one to that lower bound for each attempt after the
-first. The release workflow allocates the larger of that bound and one more
-than every retained `RELEASE-METADATA.json` build counter. The product SemVer
-remains the updater version. The separate build counter is recorded in
-`RELEASE-METADATA.json`, and the qualification workflow compares it to the
-signed candidate DMG. An RC, a stable promotion, and a retried run therefore
-receive distinct macOS build numbers.
+`GITHUB_RUN_NUMBER` is a lower bound for the macOS `CFBundleVersion`, and the
+release workflow allocates the larger of that number and one more than every
+retained `RELEASE-METADATA.json` build counter. The product SemVer remains the
+updater version; the separate build counter is recorded in `RELEASE-METADATA.json`
+and the qualification workflow compares it to the signed candidate DMG. Every
+published release therefore gets a new build number. A rerun of a failed run may
+reuse its number, because the publish step refuses to replace an existing release,
+so the failed attempt published nothing under that number.
 
 1. Set the product to `X.Y.Z-rc.N`, commit it, push it to `main`, and wait for the exact commit's CI run to pass. Create `vX.Y.Z-rc.N`; the workflow publishes that non-draft prerelease.
 2. On clean machines, complete the acceptance flow in `LOUPIST.md`: ordinary Chat retains Source material or revises Lens, and a later relevant turn uses that revision. A write that never changes later work does not qualify.

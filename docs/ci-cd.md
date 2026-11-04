@@ -27,9 +27,9 @@ Before removing a required check, list pull requests with auto-merge armed
 Keep the default workflow token read-only, disable workflow-created approvals,
 and require full commit-SHA pins for third-party Actions. Approve workflows from
 outside contributors before they run. Weekly grouped Dependabot PRs cover Actions,
-npm, Cargo and uv; review them through the ordinary CI and PR process. The shared
-toolchain action has its own Actions update directory, so Dependabot sees the
-third-party pins in `.github/actions/setup-toolchains/action.yml`. Dependabot
+npm, Cargo and uv; review them through the ordinary CI and PR process. The Actions
+update entry also lists the shared toolchain action's directory, so one grouped PR
+moves the pins in workflows and in `.github/actions/setup-toolchains/action.yml`. Dependabot
 accepts only ruff patch updates, because `openbb-core` requires ruff below 0.16.
 It skips `@earendil-works/*` version updates: a Pi upgrade moves the package
 family, security pins and signed sidecar digests together by hand
