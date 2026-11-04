@@ -1155,5 +1155,25 @@ fn hash_path(path: &Path) -> String {
     hex::encode(Sha256::digest(path.as_os_str().as_bytes()))
 }
 
+/// Test fixtures must lease the image that keeps running, not a launcher shim.
+#[cfg(all(test, unix))]
+pub(crate) fn test_python_executable() -> PathBuf {
+    let python = fs::canonicalize(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../openbb/.venv/bin/python"),
+    )
+    .expect("locked OpenBB Python environment");
+    #[cfg(target_os = "macos")]
+    if let Some(prefix) = python.parent().and_then(Path::parent) {
+        // CPython framework launchers re-exec this native image. Symlink
+        // canonicalization alone still leaves the launcher device/inode.
+        // https://github.com/python/cpython/blob/3.12/Mac/Tools/pythonw.c
+        let framework_python = prefix.join("Resources/Python.app/Contents/MacOS/Python");
+        if framework_python.is_file() {
+            return fs::canonicalize(framework_python).expect("framework Python executable");
+        }
+    }
+    python
+}
+
 #[cfg(test)]
 mod tests;
