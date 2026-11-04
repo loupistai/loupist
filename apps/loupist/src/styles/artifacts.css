@@ -1031,8 +1031,12 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 .workspace-lens-content > .memory-page { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; width:100%; max-width:none; overflow:hidden; }
 .workspace-lens-content .memory-page-body { flex:1 1 auto; min-height:0; overflow:auto; scroll-padding-block: var(--gg-space-4); }
 .workspace-lens-content .memory-page[data-reader-open] .memory-page-body { overflow:hidden; display:flex; flex-direction:column; align-items:stretch; }
-.workspace-lens-content .memory-reader.is-lens { flex:1 1 auto; align-self:stretch; width:100%; min-height:0; height:auto; overflow:hidden; display:flex; flex-direction:column; }
+.workspace-lens-content .memory-reader.is-lens { flex:1 1 auto; align-self:stretch; width:100%; min-height:0; height:auto; overflow:hidden; display:flex; flex-direction:column; padding:0; border:0; border-radius:0; background:transparent; }
 .workspace-lens-content .memory-page[data-reader-open] .memory-reader:not(.is-lens) { flex:1 1 auto; align-self:stretch; width:100%; min-height:0; overflow:auto; scroll-padding-block: var(--gg-space-4); }
-.workspace-lens-content .memory-reader.is-lens .lens-workspace { flex:1 1 auto; min-height:0; height:auto; }
+/* The document fills the card. A long method title was taller than the strip left under the back row and the pause row. */
+.workspace-lens-content .memory-reader.is-lens .lens-workspace { flex:1 1 0; min-height:0; height:auto; overflow:hidden; }
+.workspace-lens-content .memory-reader.is-lens .lens-reader { min-height:0; height:100%; }
+.workspace-lens-content .lens-workspace.is-compact .lens-reader-toolbar { margin-bottom: var(--gg-space-3); }
+.workspace-lens-content .lens-workspace.is-compact .lens-read-head h2 { margin-top: 0; }
 .workspace-world-content > .memory-workspace { flex:1; min-height:0; }
 .artifact-panel[data-expanded] > .workspace-kind-heading { display:none; }

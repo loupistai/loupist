@@ -66,9 +66,13 @@
 .lens-workspace.is-reader-only .lens-read-head h2 { font-size: 26px; }
 
 .lens-workspace.knowledge-lens.is-reader-only.has-context-pane { grid-template-columns: minmax(0, 1fr) 210px; }
-.lens-workspace .lens-reader-toolbar { display: flex; justify-content: space-between; align-items: center; gap: var(--gg-space-3); min-height: var(--gg-space-7); margin-bottom: var(--gg-space-5); color: var(--gg-color-text-secondary); }
+.lens-workspace .lens-reader-toolbar { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--gg-space-2); min-height: var(--gg-space-7); min-width: 0; margin-bottom: var(--gg-space-5); color: var(--gg-color-text-secondary); }
 .lens-workspace .lens-reader-toolbar > div { display: flex; align-items: center; gap: var(--gg-space-1); margin-left: auto; }
 .lens-workspace .lens-reader-toolbar button { font-size: var(--gg-text-meta); }
+.lens-workspace .lens-reader-toolbar .memory-reader-back { flex: 0 1 auto; max-width: 42%; min-width: 0; flex-shrink: 1; justify-content: flex-start; margin: 0; overflow: hidden; }
+.lens-workspace .lens-reader-toolbar .memory-reader-back-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lens-workspace .lens-reader-toolbar .memory-reader-kind { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lens-workspace .lens-reader-toolbar .lens-outline { flex: 0 1 auto; max-width: 46%; min-width: 0; flex-shrink: 1; margin-left: auto; overflow: hidden; text-overflow: ellipsis; }
 .lens-context-pane { overflow-y: auto; min-width: 0; padding: 26px 14px var(--gg-size-control-sm); border-left: 1px solid var(--gg-color-border-subtle); background: var(--gg-color-bg-hover); }
 .lens-context-content { display: grid; gap: var(--gg-size-control-sm); color: var(--gg-color-text-primary); }
 .lens-context-section h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 10px; padding-inline: 5px; font-size: var(--gg-text-meta); font-weight: var(--gg-weight-semibold); color: var(--gg-color-text-secondary); }

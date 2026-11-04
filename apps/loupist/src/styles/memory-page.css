@@ -87,6 +87,7 @@
   .memory-page:not([data-reader-open]) .memory-reader { display: none; }
   .memory-page[data-reader-open] .memory-page-list { display: none; }
   .memory-page[data-reader-open] .memory-reader-back { display: inline-flex; margin: 0 0 var(--gg-space-2) calc(var(--gg-space-2) * -1); }
+  .memory-page-tabs { max-width: 100%; min-width: 0; overflow-x: auto; }
   .memory-page-search { width: 100%; }
 }
 @container memory-pane (max-width: 760px) {
