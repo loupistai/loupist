@@ -225,8 +225,12 @@ async function openLibrary(tabLabel) {
   await openMainTab(browser, "map");
   await mapStats();
   if (!await browser.$(".map-view aside.map-library").isDisplayed().catch(() => false)) {
-    await (await displayed(".map-view [data-map-more]")).click();
-    await (await displayed('[role="menuitemcheckbox"][data-map-library]')).click();
+    const direct = await browser.$(".map-view button[data-map-library]");
+    if (await direct.isDisplayed().catch(() => false)) await direct.click();
+    else {
+      await clickControl(browser, ".map-view [data-map-more]");
+      await (await displayed('[role="menuitemcheckbox"][data-map-library]')).click();
+    }
   }
   const library = await displayed(".map-view aside.map-library");
   const tab = await childWithText(library, '[role="tab"]', tabLabel);
