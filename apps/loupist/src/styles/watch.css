@@ -80,9 +80,9 @@
 @media (max-width: 700px) {
   /* The matrix keeps its labelled columns and scrolls sideways under a narrower asset column. */
   .watching-matrix .watching-asset-head, .watching-matrix .watching-asset-cell { width: 136px; min-width: 136px; max-width: 136px; }
-  /* More columns lie past the right edge: it fades, over padding the last column keeps clear. */
-  .watching-matrix-scroll { mask-image: linear-gradient(to left, transparent 0, var(--gg-color-bg-app) 24px); }
-  .watching-matrix .watching-last { padding-right: var(--gg-space-6); }
+  /* More columns lie past the right edge: fade only then, over padding the last column keeps clear. */
+  .watching-matrix-scroll[data-overflows] { mask-image: linear-gradient(to left, transparent 0, var(--gg-color-bg-app) 24px); }
+  .watching-matrix-scroll[data-overflows] .watching-last { padding-right: var(--gg-space-6); }
   .watching-alert { grid-template-columns: minmax(0, 1fr) auto; }
   .watching-alert .asset-change-day { grid-column: 1 / -1; }
 }
