@@ -358,7 +358,15 @@ html[data-desktop-platform="macos"] .app-shell {
 .market-status > span { overflow: hidden; text-overflow: ellipsis; }
 .market-status > span + span::before { content: "·"; margin-right: var(--gg-space-2); color: var(--gg-color-text-tertiary); }
 .market-status > [data-state="open"], .market-status > [data-state="always"] { color: var(--gg-color-text-primary); }
-@media (max-width: 1099px) { .market-status { display: none; } }
+@media (max-width: 1099px) {
+  .market-status, .header-market-slot { display: none; }
+  /* The status slot is empty, and six full names do not fit. Other profiles keep the avatar; the selected name uses the row. */
+  .loupist-header-selector, .loupist-header-profiles { flex: 1 1 auto; }
+  .loupist-header-identity:not([aria-pressed="true"]) strong { display: none; }
+  .loupist-header-identity:not([aria-pressed="true"]) { flex: 0 0 auto; max-width: none; padding-inline: var(--gg-space-1); }
+  .loupist-header-identity[aria-pressed="true"] { flex: 1 0 auto; width: 100%; max-width: 100%; min-width: 0; }
+  .loupist-header-identity[aria-pressed="true"] strong { flex: 1 1 auto; min-width: 0; }
+}
 .app-header-sidebar-trigger { display: none; }
 .chat-tab-panel { position: relative; display: flex; min-width: 0; }
 .chat-list-scrim { display: none; }
