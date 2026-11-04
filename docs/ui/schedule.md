@@ -14,8 +14,10 @@ model. Existing folders keep their canonical SQLite snapshot; leftover
 App exit stops schedule admission, cancels/drains World work and shuts down MCP
 workers and leased processes. The Tauri exit callback allows 30 seconds; unfinished
 cleanup retains leases for startup recovery. Recovery verifies process identity
-before signaling. Process leases are implemented for macOS and Windows; other Unix
-hosts fail closed with `UnsupportedPlatform`.
+before signaling. Process leases are implemented for macOS, Windows and Linux.
+Linux verifies the boot ID, process start ticks and executable identity through
+procfs and requires the process group to remain verifiable. Other Unix hosts
+fail closed with `UnsupportedPlatform`.
 
 Keep running in the menu bar for briefings defaults on, can be
 turned off in the briefing schedule editor, and turning a briefing on sets it again. Closing the main window hides it while

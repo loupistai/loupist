@@ -170,7 +170,7 @@
     },
     "chatgptNote": "Uses your ChatGPT plan's usage. Loupist doesn't charge you.",
     "waitingTitle": "Finish signing in to {{provider}} in your browser",
-    "waitingBody": "This page moves on by itself when you're done. ChatGPT may name \"Pi\", the engine Loupist uses.",
+    "waitingBody": "This page moves on by itself when you're done. ChatGPT shows this connection as Loupist.",
     "openAgain": "Open the sign-in page again",
     "copyLink": "Copy the sign-in link",
     "linkCopied": "Link copied",

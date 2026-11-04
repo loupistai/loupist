@@ -1,4 +1,4 @@
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 mod unix {
     use super::super::*;
     use std::{
@@ -24,6 +24,195 @@ mod unix {
         signal_process_group(process_group_id, libc::SIGKILL).unwrap();
         child.wait().unwrap();
         assert!(wait_for_group_exit_blocking(process_group_id, Duration::from_secs(2)).unwrap());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn proc_stat_identity_tolerates_arbitrary_command_names_and_rejects_invalid_fields() {
+        let mut fields = vec!["S", "1", "4321"];
+        fields.extend(std::iter::repeat_n("0", 16));
+        fields.push("98765");
+        let mut stat = b"1234 (a weird ) name\n\xff) ".to_vec();
+        stat.extend_from_slice(fields.join(" ").as_bytes());
+        assert_eq!(
+            parse_linux_process_stat(1234, &stat).unwrap(),
+            LinuxBasicProcess {
+                process_group_id: 4321,
+                start_ticks: 98765,
+                zombie: false
+            }
+        );
+        assert!(parse_linux_process_stat(1235, &stat).is_err());
+        assert!(parse_linux_process_stat(1234, b"1234 (truncated) S 1 4321").is_err());
+        assert!(parse_linux_process_stat(1234, b"1234 no command delimiters").is_err());
+        fields[0] = "Z";
+        let zombie = format!("1234 (finished) {}", fields.join(" "));
+        assert!(
+            parse_linux_process_stat(1234, zombie.as_bytes())
+                .unwrap()
+                .zombie
+        );
+        fields[19] = "invalid";
+        let invalid = format!("1234 (bad ticks) {}", fields.join(" "));
+        assert!(parse_linux_process_stat(1234, invalid.as_bytes()).is_err());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn filtered_or_missing_procfs_cannot_prove_a_group_has_exited() {
+        let mount = "53 52 0:30 / /proc rw,nosuid,nodev,noexec,relatime - proc proc ";
+        assert!(linux_procfs_mount_visible(&format!("{mount}rw")));
+        assert!(linux_procfs_mount_visible(&format!("{mount}rw,hidepid=0")));
+        for options in [
+            "rw,hidepid=1",
+            "rw,hidepid=2",
+            "rw,hidepid=invisible",
+            "rw,hidepid=ptraceable",
+        ] {
+            assert!(!linux_procfs_mount_visible(&format!("{mount}{options}")));
+        }
+        assert!(!linux_procfs_mount_visible(""));
+        assert!(!linux_procfs_mount_visible(
+            "53 52 0:30 / /proc rw - tmpfs tmpfs rw"
+        ));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn linux_zombies_confirm_exit_without_authorizing_a_live_identity() {
+        let temporary = tempfile::tempdir().unwrap();
+        let leases = temporary.path().join("leases");
+        let mut child = spawn_sleep();
+        let group = child.id() as i32;
+        let lease = ChildProcessLease::register(
+            &leases,
+            ProcessKind::Pi,
+            group,
+            group,
+            Path::new("/bin/sleep"),
+        )
+        .unwrap();
+        signal_process_group(group, libc::SIGKILL).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !linux_basic_process(group)
+            .unwrap()
+            .is_some_and(|info| info.zombie)
+        {
+            assert!(
+                Instant::now() < deadline,
+                "owned leader did not become a zombie"
+            );
+            tokio::time::sleep(POLL_INTERVAL).await;
+        }
+        assert_eq!(unsafe { libc::kill(group, 0) }, 0);
+        assert!(query_process(group).unwrap().is_none());
+        assert_eq!(process_group_state(group).unwrap(), GroupState::ZombiesOnly);
+        assert!(confirm_process_group_exit(group, Duration::from_secs(1))
+            .await
+            .is_confirmed());
+        recover_orphaned_processes(&leases).unwrap();
+        assert_eq!(fs::read_dir(&leases).unwrap().count(), 0);
+        child.wait().unwrap();
+        lease.complete().unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_different_boot_identity_never_authorizes_the_live_process() {
+        let temporary = tempfile::tempdir().unwrap();
+        let leases = temporary.path().join("leases");
+        let mut child = spawn_sleep();
+        let pid = child.id() as i32;
+        let lease = ChildProcessLease::register(
+            &leases,
+            ProcessKind::Pi,
+            pid,
+            pid,
+            Path::new("/bin/sleep"),
+        )
+        .unwrap();
+        let lease_path = leases.join(&lease.file_name);
+        let mut record: ProcessLeaseRecord =
+            serde_json::from_slice(&fs::read(&lease_path).unwrap()).unwrap();
+        record.start.source = format!("linux_proc_stat_v1:{}", Uuid::new_v4());
+        fs::write(&lease_path, serde_json::to_vec(&record).unwrap()).unwrap();
+        assert!(matches!(
+            recover_orphaned_processes(&leases),
+            Err(ProcessLeaseError::IdentityMismatch)
+        ));
+        assert!(child.try_wait().unwrap().is_none());
+        kill_and_reap(&mut child, pid);
+        lease.complete().unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_live_descendant_keeps_a_zombie_leaders_group_live() {
+        let temporary = tempfile::tempdir().unwrap();
+        let leases = temporary.path().join("leases");
+        let ready = temporary.path().join("ready");
+        let exit = temporary.path().join("exit");
+        let mut child = Command::new("/bin/sh")
+            .args([
+                "-c",
+                "sleep 30 & printf '%s' $! > \"$1\"; while ! test -e \"$2\"; do sleep 0.01; done",
+                "lease-child",
+            ])
+            .arg(&ready)
+            .arg(&exit)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let group = child.id() as i32;
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !ready.exists() {
+            assert!(
+                Instant::now() < deadline,
+                "descendant fixture did not start"
+            );
+            std::thread::sleep(POLL_INTERVAL);
+        }
+        let lease = ChildProcessLease::register(
+            &leases,
+            ProcessKind::Mcp,
+            group,
+            group,
+            Path::new("/bin/sh"),
+        )
+        .unwrap();
+        fs::write(&exit, b"exit").unwrap();
+        while !linux_basic_process(group)
+            .unwrap()
+            .is_some_and(|info| info.zombie)
+        {
+            assert!(
+                Instant::now() < deadline,
+                "owned leader did not become a zombie"
+            );
+            std::thread::sleep(POLL_INTERVAL);
+        }
+        assert_eq!(process_group_state(group).unwrap(), GroupState::Live);
+        assert!(query_process(group).unwrap().is_none());
+        assert!(matches!(
+            recover_orphaned_processes(&leases),
+            Err(ProcessLeaseError::UnknownProcessGroup)
+        ));
+        assert!(leases.join(&lease.file_name).is_file());
+        kill_and_reap(&mut child, group);
+        lease.complete().unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_process_reaped_after_stat_is_opened_is_absent() {
+        let mut child = spawn_sleep();
+        let pid = child.id() as i32;
+        let stat = fs::File::open(format!("/proc/{pid}/stat")).unwrap();
+        kill_and_reap(&mut child, pid);
+        assert!(read_linux_process_stat(pid, stat).unwrap().is_none());
     }
 
     #[test]

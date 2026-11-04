@@ -61,7 +61,7 @@ it("replaces the button with a waiting card, offers the link and checks a pasted
   // Only the status line is live; the actions and the paste form are not announced.
   expect(screen.getByRole("status")).toHaveTextContent("Finish signing in to ChatGPT in your browser");
   expect(card).not.toHaveAttribute("aria-live");
-  expect(card).toHaveTextContent('ChatGPT may name "Pi"');
+  expect(card).toHaveTextContent("ChatGPT shows this connection as Loupist.");
   expect(screen.queryByRole("button", { name: "Continue with ChatGPT" })).toBeNull();
   await waitFor(() => expect(onWaitingChange).toHaveBeenLastCalledWith(true));
   // The browser did not open, so the link and the paste route are offered at once.
