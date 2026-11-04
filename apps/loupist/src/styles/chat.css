@@ -2021,7 +2021,7 @@ button.chat-rail-row:not(:disabled):hover .chat-rail-row-label { text-decoration
 .chat-rail-needs-row:hover .chat-rail-needs-show { text-decoration: underline; }
 .chat-rail-needs-dot { flex: none; width: 8px; height: 8px; border-radius: var(--gg-radius-full); background: var(--gg-color-warning); }
 .chat-rail-needs-title { flex: none; color: var(--gg-color-warning); font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); }
-.chat-rail-needs-row .chat-rail-card-summary { text-align: left; }
+.chat-rail-needs-row .chat-rail-card-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; text-align: left; }
 .chat-rail-needs-show { flex: none; color: var(--gg-color-accent-ink); font-size: var(--gg-text-meta); }
 /* Compact context lives in the header, where it cannot cover an answer or chart. */
 
