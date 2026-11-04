@@ -99,7 +99,7 @@ Linux Rust checks do not need a display.
 Mixed changes take the union of their scopes. Shared renderer contract fixtures
 also select Rust, and agent eval fixtures select Web and Rust. Inline Rust tests
 in production files retain native/package checks. PRs use a merge-base diff;
-pushes use the complete before/after range. Deleted and renamed source paths
+`main` pushes diff from the last successful `main` push run. Deleted and renamed source paths
 remain in scope. Missing history or classification errors select all checks.
 Native interaction and packaging in the table run only outside pull requests.
 
@@ -109,9 +109,10 @@ dependency cache. Official package CI has one explicit macOS job; experimental
 Windows packaging stays manual-only. Unselected jobs are skipped. The source gate,
 `Source and product contracts`, accepts a skip only for a scope the classifier
 deselected or a macOS job on a pull request, and fails on any other result,
-including `cancelled` and `abandoned`. Pull requests cancel their superseded runs.
-Every `main` push keeps its run, because the next push classifies only its own
-before/after range. Manual `workflow_dispatch` and release validation always run
+including `cancelled` and `abandoned`. A newer pull-request or `main` push cancels
+the older run. A `main` run classifies every change since the last successful
+`main` push run, so a cancelled run's changes stay in scope, and a burst of merges
+runs the macOS jobs once. Manual `workflow_dispatch` and release validation always run
 the full set. When GitHub cannot assign a macOS runner, the job ends cancelled and
 the `main` run fails; rerun it with `gh run rerun <run-id> --failed`.
 Actions are pinned to commit SHAs. Toolchain pins:

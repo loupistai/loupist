@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Select CI jobs by affected surface; unknown paths and failed diffs run all jobs.
 
-PRs compare against their merge base. Main pushes compare before/after directly,
-including every commit in the push. Manual and release checks force every scope.
+PRs compare against their merge base. Main pushes compare directly against the
+last green main push, including every commit since. Manual and release checks force
+every scope.
 Repository guidance and security invariants run even when every scope is false.
 """
 
