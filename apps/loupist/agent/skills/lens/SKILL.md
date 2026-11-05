@@ -1,6 +1,6 @@
 ---
 name: lens
-description: Use when the user teaches or corrects a reusable method, rule, convention, or preference, or when inspecting this Loupist's perspective and methods. Skip a one-off.
+description: Find and apply reusable research methods, inspect this Loupist's perspective, or retain a method the user teaches or corrects. Skip a one-off.
 ---
 
 # Lens
@@ -17,6 +17,15 @@ then read their complete documents. Follow a returned link only when it can
 change the analysis, and exact-read that method too. Navigation metadata is
 discovery, not evidence. Mark a Lens applied only when you actually use it.
 Distinguish observed evidence from the interpretation a Lens adds.
+
+Methods can come from completed research as well as user teaching. A candidate
+method has a retained basis, not independently measured effectiveness. Check its
+applicability against the current question and evidence; leave it unused when its
+assumptions do not fit. Repeated delivery or use does not prove improvement. When
+research exposes a reusable failure or correction, preserve the evidence-bound
+check in `note_save.researchReview` for the host's bounded learning review. Do not
+turn your own interpretation into a user principle or claim that saving a method
+establishes financial alpha.
 
 A method may guide local code, files, app tools, or research. A workspace script
 does not automatically become a Lens. Keep executable details in files and

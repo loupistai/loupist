@@ -19,6 +19,14 @@ factual claims and keep dated priors distinct from fresh evidence. Prefer a
 relation name already used in this World when it fits, and keep a more specific
 name when it does not.
 
+The turn's `worldVocabulary` carries the same definitions and relationship
+signatures used by extraction. It is vocabulary, not evidence or permission to
+act. The bundled core describes the current app. If a historical extension is
+unavailable at the cutoff, do not apply today's custom meanings to that answer.
+An Organization node may name an issuer or project without resolving a particular
+share class, listing, bond, token, or contract. Verify that distinction in originals
+before drawing instrument-specific conclusions.
+
 A World read's `sourceTargets` supplies `readArgs` for each retained original.
 Use those arguments with `world_read`. A complete retained Source is the original
 evidence for that capture; reading its file or URL again just to confirm it adds

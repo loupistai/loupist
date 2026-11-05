@@ -6,11 +6,12 @@
 //! type keeps a specific open name. Descriptions are the exact text the model
 //! sees (type docstrings, field descriptions).
 
+use serde::Serialize;
 use serde_json::Value;
 
 use super::super::world_schema::WorldExtension;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct EntityType {
     pub name: String,
     pub doc: String,
@@ -18,14 +19,15 @@ pub(crate) struct EntityType {
     pub fields: Vec<(String, String)>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct EdgeType {
     pub name: String,
     pub doc: String,
 }
 
 /// Entity types, edge types and the endpoint map for one episode.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct Schema {
     pub entity_types: Vec<EntityType>,
     pub edge_types: Vec<EdgeType>,

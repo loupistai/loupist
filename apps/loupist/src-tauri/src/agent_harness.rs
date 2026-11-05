@@ -1132,6 +1132,27 @@ pub fn attach_relevant_memory(envelope: &str, relevant: &[RelevantMemoryPointer]
     value.to_string()
 }
 
+pub(crate) fn attach_world_vocabulary(
+    envelope: &str,
+    vocabulary: Option<&crate::knowledge::world_extract::WorldVocabulary>,
+) -> String {
+    let Some(vocabulary) = vocabulary else {
+        return envelope.to_owned();
+    };
+    let Ok(mut value) = serde_json::from_str::<Value>(envelope) else {
+        return envelope.to_owned();
+    };
+    if let Some(protocol) = value
+        .get_mut("memory_protocol")
+        .and_then(Value::as_object_mut)
+    {
+        if protocol.get("active").and_then(Value::as_bool) == Some(true) {
+            protocol.insert("worldVocabulary".into(), json!(vocabulary));
+        }
+    }
+    value.to_string()
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn turn_envelope_block(
     current_utc: DateTime<Utc>,

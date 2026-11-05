@@ -514,6 +514,9 @@ async fn build_turn_envelope(
         if let Some(charter) = &charter {
             capture.turn_taint.protect_private_text(charter);
         }
+        if let Ok(vocabulary) = serde_json::to_string(&memory.world_vocabulary) {
+            capture.turn_taint.protect_private_text(&vocabulary);
+        }
         if memory.shared_pauses {
             // A shared item accepted despite a scan finding pauses commands this turn.
             capture.turn_taint.mark_untrusted_text();
@@ -548,6 +551,10 @@ async fn build_turn_envelope(
         Some(cutoff) => agent_harness::attach_as_of(&turn_envelope, cutoff),
         None => turn_envelope,
     };
+    let turn_envelope = agent_harness::attach_world_vocabulary(
+        &turn_envelope,
+        host_memory.as_ref().map(|memory| &memory.world_vocabulary),
+    );
     let turn_envelope = agent_harness::attach_relevant_memory(
         &turn_envelope,
         host_memory
