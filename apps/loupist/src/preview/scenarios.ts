@@ -1475,6 +1475,25 @@ export const scenarios: readonly PreviewScenario[] = [
       }
     },
   })),
+  ...(["lens-methods-empty", "memory-history-error"] as const).map((id): PreviewScenario => ({
+    ...base(id, id === "lens-methods-empty" ? "Research can build candidate methods without teaching" : "Learning history failed with a retry action",
+      () => select(id === "lens-methods-empty" ? ".memory-empty" : ".memory-page-body [role=alert]"), async root => {
+        await navigate(root, "lens");
+        await until(() => select(".memory-page-body"), "Lens did not load");
+        await click(`.memory-page-tabs [role="tab"]:nth-child(${id === "lens-methods-empty" ? 3 : 4})`);
+      }),
+    setup: async bridge => {
+      await prepareFixture(bridge, "empty");
+      bridge.principleList = async () => [];
+      if (id === "lens-methods-empty") {
+        const catalog = bridge.knowledgeCatalog.bind(bridge);
+        bridge.knowledgeCatalog = async request => {
+          const view = await catalog(request);
+          return { ...view, lenses: view.lenses.filter(item => item.lensKind === "perspective") };
+        };
+      } else bridge.learningReviewList = async () => { throw new Error("Unavailable"); };
+    },
+  })),
   ...(["chat-used-principle-correction", "chat-save-declined"] as const).map((id): PreviewScenario => ({
     ...base(id, id === "chat-save-declined" ? "A secret was not saved to memory" : "A principle that shaped the answer can be set aside",
       () => select(id === "chat-save-declined" ? ".memory-declined" : ".used-memory"), async () => {

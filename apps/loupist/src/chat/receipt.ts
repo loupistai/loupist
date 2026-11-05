@@ -22,6 +22,7 @@ export type ChatReceiptData = {
   /** Reads the answer said it changed but Rust did not save (the page changed first). */
   unsavedTheses: { assetId: string; name: string }[];
   mapHighlightIds: ReadonlySet<string>;
+  /** Lens context supplied to this answer. Delivery does not establish application. */
   usedPrinciples: UsedPrinciple[];
   usedMethods: UsedPrinciple[];
   saved: SavedReceiptGroup[];

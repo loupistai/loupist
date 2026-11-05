@@ -400,12 +400,12 @@
     "namesOnMap_other": "지도에서 새 항목 {{formattedCount}}개 보기",
     "relationships_other": "관계 {{formattedCount}}개 갱신",
     "relationshipsOnMap_other": "지도에서 관계 {{formattedCount}}개 갱신",
-    "usedPrinciples_other": "원칙 {{formattedCount}}개 사용",
-    "principlesUsed": "이 답변에서 사용한 원칙",
-    "usedMethods_other": "작업 방식 {{formattedCount}}개 사용",
-    "methodsUsed": "이 답변에서 사용한 작업 방식",
+    "usedPrinciples_other": "참고 원칙 {{formattedCount}}개",
+    "principlesUsed": "이 답변에 전달한 원칙",
+    "usedMethods_other": "참고 작업 방식 {{formattedCount}}개",
+    "methodsUsed": "이 답변에 전달한 작업 방식",
     "savedSources_other": "자료 {{formattedCount}}개 저장",
-    "savedMethods_other": "새 작업 방식 {{formattedCount}}개 익힘",
+    "savedMethods_other": "작업 방식 {{formattedCount}}개 저장",
     "savedPrinciples_other": "원칙 {{formattedCount}}개 저장",
     "savedJournal_other": "저널 {{formattedCount}}개 저장",
     "savedNotes_other": "리서치 노트 {{formattedCount}}개 저장",
@@ -1287,15 +1287,16 @@
     "conflict": "{{name}}에 대한 상충 근거 중 어느 쪽이 맞아?"
   },
   "usedMemory": {
-    "principleLabel": "내 원칙에서 사용함",
-    "methodLabel": "배운 작업 방식에서 사용함",
+    "principleLabel": "이 답변에 전달한 원칙",
+    "methodLabel": "이 답변에 전달한 작업 방식",
     "notThisTime": "이번엔 제외",
     "setAside": "이 대화에서는 제외했어요",
     "undo": "되돌리기",
     "edit": "편집",
     "archive": "보관",
     "error": "바꾸지 못했어요. 답변이 끝난 뒤 다시 시도해 주세요.",
-    "removed": "삭제됨"
+    "removed": "삭제됨",
+    "contextNotice": "답변에 참고하도록 전달한 내용이에요. 실제로 따랐다는 뜻은 아니에요."
   },
   "saveProof": {
     "declined": "비밀번호나 키 같은 비밀 정보로 보이는 항목 하나는 저장하지 않았어요."

@@ -93,7 +93,7 @@ describe("Loupist · Chat memory", () => {
     await openApp();
     fireEvent.change(screen.getByRole("textbox", { name: "Message Loupist" }), { target: { value: "Learn from this mistake" } });
     await user.click(screen.getByRole("button", { name: "Send" }));
-    const receipt = await screen.findByRole("button", { name: "Learned 1 new way of working" }, { timeout: 40_000 });
+    const receipt = await screen.findByRole("button", { name: "Saved 1 method" }, { timeout: 40_000 });
     await user.type(screen.getByRole("textbox", { name: "Message Loupist" }), "Check the next quarter too");
     await user.click(receipt);
 

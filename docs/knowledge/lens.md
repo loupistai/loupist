@@ -20,13 +20,19 @@ For a user principle these are the statement, why and example. Rust
 versions these records in local Memory. `LensWorkspace` is a document reader, with applicability,
 limitations, outline, links and backlinks. Learned methods on the Research principles
 page retain their provenance panel alongside the saved document. The learned-method inspector shows the
-learning rationale, cited World facts and a Then vs now comparison built from bounded
-growth-event before/after summaries. Keep acknowledges the publication for the current
+learning rationale, cited World claims and a Then vs now comparison built from bounded
+growth-event before/after summaries. The rationale comes from the review named by the saved
+change. A review admission date does not stand in for a missing publication date.
+The candidate label uses the catalog learning provenance. Autonomous methods are
+candidates. Every method reader states that independent evaluation has not established
+its effectiveness. Mark as seen acknowledges the publication for the current
 app session and Loupist. Archive confirms inline and asks Rust to archive the Lens;
 the default perspective cannot be archived. `lens:recordId` links resolve within the
 same Loupist and follow current heads. Discuss in Chat attaches the saved Lens;
 proposals can route back to their originating Chat or be dismissed. Saved basis shows
-the current change rationale and evidence. There is no historical Lens browser.
+the current change rationale and evidence. First-run method guidance invites research in Chat
+and explains that teaching a method is optional. An unavailable learning history shows a retry
+action instead of an empty history. There is no historical Lens browser.
 
 A principle or method can be paused independently of learning. Rust stores paused
 ids in the existing per-Loupist JSON settings, excludes them from automatic context,
@@ -83,6 +89,9 @@ Memory-enabled turns receive active, unpaused principles in their own block,
 newest first, at most 30 rules and 6,000 characters including the overflow notice.
 They outrank the standing perspective. Memory-off turns omit them. Only statements
 actually attached to that bounded block create context receipts and usage deliveries.
+The answer receipt labels these rules and methods as supplied context. The expanded list
+explains that delivery does not establish application. Reply counts also include delivery
+and do not establish influence or effectiveness.
 Delivered context counts as acknowledgement for replacement and does not by
 itself create Map `applies_to` edges. An exact Lens read returns `lens_url` to open the rule or method from an answer. A final-answer `lens:` link to a current
 same-Loupist principle or method records applications to World entities delivered

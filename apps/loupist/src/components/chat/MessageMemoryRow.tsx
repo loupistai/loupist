@@ -189,7 +189,7 @@ export function MessageMemoryRow({
 type UsedItem = { recordId: string; title: string };
 
 /**
- * The principles and methods that shaped this answer, quoted, with "Not this
+ * The principles and methods supplied to this answer, quoted, with "Not this
  * time" (Rust leaves the record out of this chat until Undo) and Edit (opens
  * it on "What {Loupist} knows"). Methods can also be archived here.
  */
@@ -232,8 +232,11 @@ function UsedMemory({ id, bridge, loupistId, refreshKey, principles, methods, on
       {error === item.recordId ? <span role="alert">{t("usedMemory.error")}</span> : null}
     </li>;
   };
-  return <ul className="used-memory" id={id}>
-    {principles.map(item => row(item, "principle"))}
-    {methods.map(item => row(item, "method"))}
-  </ul>;
+  return <>
+    <p className="used-memory-label">{t("usedMemory.contextNotice")}</p>
+    <ul className="used-memory" id={id}>
+      {principles.map(item => row(item, "principle"))}
+      {methods.map(item => row(item, "method"))}
+    </ul>
+  </>;
 }

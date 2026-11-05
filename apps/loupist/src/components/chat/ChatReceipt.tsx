@@ -35,7 +35,7 @@ type Props = {
   listExpanded: boolean;
   onOpenSource?: (evidence: ChatEvidenceRef, anchor?: HTMLElement) => void;
   onShowOnMap?: (ids: ReadonlySet<string>) => void;
-  /** The panel under the answer that quotes the principles and methods used, with Not this time and Edit. */
+  /** The panel under the answer that quotes the supplied principles and methods, with Not this time and Edit. */
   usedListId: string;
   usedExpanded: boolean;
   onToggleUsed: () => void;

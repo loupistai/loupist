@@ -26,7 +26,7 @@ it("opens on the principles the user taught, shows where one was used, and edits
   const page = await screen.findByRole("region", { name: "Research principles" });
   const tabs = within(page).getByRole("tablist");
   expect(within(tabs).getByRole("tab", { name: /Your rules/ })).toHaveAttribute("aria-selected", "true");
-  await user.click(await within(page).findByRole("button", { name: /Prefer companies that publish segment margins.*Rule, used 4 times/ }));
+  await user.click(await within(page).findByRole("button", { name: /Prefer companies that publish segment margins.*Rule, in 4 replies/ }));
   const reader = within(page).getByRole("complementary", { name: /Prefer companies that publish segment margins/ });
   await user.click(within(reader).getByRole("button", { name: "Hanul margin review" }));
   expect(handlers.onOpenChat).toHaveBeenCalledWith("chat-margin");
@@ -143,4 +143,25 @@ it("returns to the originating method after opening its Source", async () => {
   await user.click(screen.getByRole("button", { name: "Back to method" }));
   expect(await screen.findByRole("heading", { name: method.title })).toBeVisible();
   expect(screen.getByRole("tab", { name: /Ways of working/, selected: true })).toBeVisible();
+});
+
+it.each([true, false])("offers automatic learning without required teaching when a standing perspective is present %s", async standing => {
+  const { bridge, view } = await fixture();
+  vi.spyOn(bridge, "principleList").mockResolvedValue([]);
+  const catalog = await bridge.knowledgeCatalog({ loupistId: "loupist-quality" });
+  vi.spyOn(bridge, "knowledgeCatalog").mockResolvedValue({ ...catalog, lenses: standing ? catalog.lenses.filter(item => item.lensKind === "perspective") : [] });
+  render(view());
+  expect(await screen.findByText(/Research in Chat to get started/)).toHaveTextContent("With learning enabled, your Loupist can save candidate methods from its investigations.");
+});
+
+it.each(["learningReviewList", "knowledgeGrowthEvents"] as const)("keeps a failed %s read distinct from empty history and retries", async method => {
+  const { bridge, view, user } = await fixture();
+  const read = vi.spyOn(bridge, method).mockRejectedValueOnce(new Error("Offline"));
+  render(view());
+  await user.click(await screen.findByRole("tab", { name: /History/ }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Could not load the learning history.");
+  expect(screen.queryByText("No history yet.")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Try again" }));
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  expect(read).toHaveBeenCalledTimes(2);
 });
