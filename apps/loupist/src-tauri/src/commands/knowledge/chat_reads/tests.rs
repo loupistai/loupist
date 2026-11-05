@@ -48,6 +48,8 @@ fn note(state: &AppState, loupist: &str, chat_id: &str, title: &str, body: &str)
         })?;
         Ok(write
             .save_research(SaveResearch {
+                research_review: None,
+                as_of: None,
                 loupist_id: loupist.into(),
                 turn_id: chat_id.into(),
                 at_ms: 11,
@@ -83,6 +85,8 @@ fn journal(state: &AppState, chat_id: &str, conclusion: &str, at_ms: i64) {
             at_ms,
         })?;
         write.save_research(SaveResearch {
+            research_review: None,
+            as_of: None,
             loupist_id: "loupist-a".into(),
             turn_id: chat_id.into(),
             at_ms,
@@ -127,6 +131,8 @@ fn legacy_research(state: &AppState, chat_id: &str, observations: &str, at_ms: i
         })?;
         Ok(write
             .save_research(SaveResearch {
+                research_review: None,
+                as_of: None,
                 loupist_id: "loupist-a".into(),
                 turn_id: chat_id.into(),
                 at_ms,

@@ -46,6 +46,8 @@ fn finalized_learning_report_opens_canonical_sources_lens_and_journal() {
         feedback: None,
     };
     let research = StagedResearch {
+        research_review: None,
+        as_of: None,
         source_reads: Vec::new(),
         world_reads: Vec::new(),
         lens_reads: Vec::new(),

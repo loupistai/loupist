@@ -419,6 +419,8 @@ fn journal_freezes_acknowledged_inputs_after_world_and_lens_updates() {
                 &sha256(document_json.as_bytes()),
             )?;
             let saved = write.save_research(SaveResearch {
+                research_review: None,
+                as_of: None,
                 note_inputs: None,
                 working_note: None,
                 loupist_id: "loupist-a".into(),

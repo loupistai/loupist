@@ -800,3 +800,99 @@ async fn a_saved_source_records_at_save_whether_it_may_ever_be_shared() {
         assert_eq!(saved.authorship, expected, "{label}");
     }
 }
+
+#[tokio::test]
+async fn research_review_accepts_only_acknowledged_enclosing_note_references() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let executor = executor_for(&state, Arc::new(ToolCapture::default()));
+    let policy = policy(true, true);
+    let reference = saved_source(
+        &executor,
+        "filing.txt",
+        "Utilization remains below capacity.",
+    )
+    .await;
+    let note = json!({
+        "workingNote": {"title":"Capacity check", "markdown":"Recovery remains uncertain.", "changeSummary":"Checked utilization", "expectedResearchId":null},
+        "sourceReads":[reference],
+        "researchReview": {"question":"Is ramp pressure temporary?", "checks":[{
+            "question":"Has utilization recovered?", "disposition":"mixed", "finding":"The delivered filing shows low utilization.",
+            "evidence":[reference], "limitation":"Only one period is available."
+        }]}
+    });
+    for mutation in [
+        "forged",
+        "outside-note",
+        "wrong-method",
+        "empty-supported",
+        "too-many-checks",
+    ] {
+        let mut request = note.clone();
+        match mutation {
+            "forged" => {
+                request["researchReview"]["checks"][0]["evidence"] = json!(["source-forged"])
+            }
+            "outside-note" => request["sourceReads"] = json!([]),
+            "wrong-method" => {
+                request["researchReview"]["checks"][0]["methodRead"] = json!(reference)
+            }
+            "empty-supported" => request["researchReview"]["checks"][0]["evidence"] = json!([]),
+            _ => {
+                request["researchReview"]["checks"] =
+                    json!(vec![note["researchReview"]["checks"][0].clone(); 7])
+            }
+        }
+        assert!(
+            executor
+                .stage_research(&policy, request, mutation)
+                .await
+                .is_err(),
+            "{mutation}"
+        );
+    }
+    let other = executor_for(&state, Arc::new(ToolCapture::default()));
+    assert!(other
+        .stage_research(&policy, note.clone(), "other-turn")
+        .await
+        .is_err());
+    let mut read_only = policy.clone();
+    read_only.propose_memory_updates = false;
+    assert!(executor
+        .stage_research(&read_only, note.clone(), "read-only")
+        .await
+        .is_err());
+    let mut off = policy.clone();
+    off.use_memory = false;
+    assert!(executor
+        .stage_research(&off, note.clone(), "off")
+        .await
+        .is_err());
+    executor
+        .stage_research(&policy, note.clone(), "accepted")
+        .await
+        .unwrap();
+    assert!(
+        executor.capture.staged_research.lock().await.is_none(),
+        "an unacknowledged note publishes nothing"
+    );
+    executor.capture.discard_delivery("accepted").await;
+    assert!(
+        executor.capture.staged_research.lock().await.is_none(),
+        "Stop discards staged review"
+    );
+    executor
+        .stage_research(&policy, note, "acknowledged")
+        .await
+        .unwrap();
+    executor.capture.commit_delivery("acknowledged").await;
+    assert!(executor
+        .capture
+        .staged_research
+        .lock()
+        .await
+        .as_ref()
+        .unwrap()
+        .research_review
+        .is_some());
+}

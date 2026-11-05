@@ -612,6 +612,8 @@ async fn eval_journal_commits_include_optional_check_and_factual_outcome() {
         })
         .unwrap();
     let request = SaveResearch {
+        research_review: None,
+        as_of: None,
         note_inputs: None,
         working_note: None,
         loupist_id: loupist.id.clone(),

@@ -570,8 +570,51 @@ pub(in crate::commands) fn persist_saved_turn(
             .ensure_asset_page(loupist_id, identity, at_ms)
             .map_err(map_knowledge)?;
     }
+    let research_review = research
+        .research_review
+        .clone()
+        .map(|mut review| {
+            let references: std::collections::BTreeMap<_, _> = source_cites
+                .iter()
+                .zip(&receipt_ids)
+                .chain(world_cites.iter().zip(&world_ids))
+                .chain(
+                    lens_cites
+                        .iter()
+                        .zip(lenses.iter().map(|lens| &lens.delivery_id)),
+                )
+                .map(|(reference, id)| (reference.as_str(), id.clone()))
+                .collect();
+            for check in &mut review.checks {
+                if check.evidence.iter().any(|reference| {
+                    !research.source_reads.contains(reference)
+                        && !research.world_reads.contains(reference)
+                }) || check
+                    .method_read
+                    .as_ref()
+                    .is_some_and(|reference| !research.lens_reads.contains(reference))
+                {
+                    return Err(CommandError::invalid(
+                        "research review must cite its enclosing note inputs",
+                    ));
+                }
+                for reference in check
+                    .evidence
+                    .iter_mut()
+                    .chain(check.method_read.iter_mut())
+                {
+                    *reference = references.get(reference.as_str()).cloned().ok_or_else(|| {
+                        CommandError::invalid("research review reference was not admitted")
+                    })?;
+                }
+            }
+            Ok::<_, CommandError>(review)
+        })
+        .transpose()?;
     let saved = write
         .save_research(crate::knowledge::SaveResearch {
+            research_review,
+            as_of: research.as_of.clone(),
             note_inputs: Some(crate::knowledge::NoteInputDraft {
                 source_receipt_ids: receipt_ids.clone(),
                 world_delivery_ids: world_ids.clone(),

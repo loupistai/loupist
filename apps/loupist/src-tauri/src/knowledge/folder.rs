@@ -148,7 +148,7 @@ pub(crate) fn validate_folder(directory: &Path) -> KnowledgeResult<()> {
         }
     }
     let mut notes =
-        connection.prepare("SELECT body_json, record_digest FROM knowledge_research_records")?;
+        connection.prepare("SELECT body_json, record_digest FROM knowledge_research_records UNION ALL SELECT body_json, body_digest FROM knowledge_research_experiences")?;
     let mut rows = notes.query([])?;
     while let Some(row) = rows.next()? {
         let value: Value = from_json(&row.get::<_, String>(0)?)?;

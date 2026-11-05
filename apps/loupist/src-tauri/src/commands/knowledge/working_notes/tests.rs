@@ -17,6 +17,8 @@ fn fixture() -> (tempfile::TempDir, AppState) {
 
 fn staged(markdown: &str, expected: Option<&str>) -> StagedResearch {
     StagedResearch {
+        research_review: None,
+        as_of: None,
         source_reads: Vec::new(),
         world_reads: Vec::new(),
         lens_reads: Vec::new(),
@@ -135,11 +137,45 @@ fn working_notes_replace_the_body_atomically_and_refuse_stale_or_foreign_access(
 #[test]
 fn working_notes_abort_and_memory_off_publish_nothing_and_context_is_gated() {
     let (_dir, state) = fixture();
-    let item = staged("A plan that must not leak", None);
+    let mut item = staged("A plan that must not leak", None);
+    item.research_review = Some(crate::knowledge::ResearchReviewDraft {
+        question: "What information is missing?".into(),
+        checks: vec![crate::knowledge::ResearchCheckDraft {
+            question: "Can the premise be checked?".into(),
+            disposition: crate::knowledge::CheckDisposition::Unresolved,
+            finding: "No original source was available.".into(),
+            evidence: vec![],
+            method_read: None,
+            limitation: "An original dated account is needed.".into(),
+        }],
+        next_check: None,
+    });
     persist(&state, &item, false, true).unwrap();
     persist(&state, &item, true, false).unwrap();
     assert!(page(&state).current.is_none());
+    let experiences: i64 = state
+        .store
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT COUNT(*) FROM knowledge_research_experiences",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(experiences, 0);
     persist(&state, &item, true, true).unwrap();
+    let experiences: i64 = state
+        .store
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT COUNT(*) FROM knowledge_research_experiences",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(experiences, 1);
     let note = page(&state).current.unwrap();
     let off = r#"{"live_time":{},"memory_protocol":{"active":false}}"#;
     assert_eq!(attach_working_context(off, Some(&note)), off);
@@ -169,6 +205,8 @@ fn selected_private_notes_are_resolved_only_for_the_owning_loupist() {
                 at_ms: 1,
             })?;
             write.save_research(crate::knowledge::SaveResearch {
+                research_review: None,
+                as_of: None,
                 note_inputs: None,
                 loupist_id: "loupist-a".into(),
                 turn_id: "memory-selection-turn".into(),

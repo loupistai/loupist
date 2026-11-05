@@ -33,6 +33,10 @@ are hidden, and removed Lens titles are released for reuse. Pending extraction o
 removed Sources is cancelled and the derived World index reloads through the same
 path as pack removal. A running World job refuses with `world_busy`; changed counts
 require a fresh preview. Rust records the reset in History.
+The same reset erases agent research experiences and learning review inputs and
+outputs for this Loupist. An in-flight review cannot publish after its record is
+erased. User Journals and retained working notes follow the existing preservation
+rules.
 
 ## Memory permissions and retrieval
 

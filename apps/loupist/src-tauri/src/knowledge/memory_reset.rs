@@ -183,6 +183,16 @@ pub fn reset(
     controls.removed.extend(plan.refs.sources);
     controls.paused.retain(|id| !controls.removed.contains(id));
     memory_controls::save(tx, loupist, &controls)?;
+    tx.execute("UPDATE knowledge_erasure SET armed=1 WHERE id=1", [])?;
+    tx.execute(
+        "DELETE FROM knowledge_research_experiences WHERE loupist_id=?1",
+        [loupist],
+    )?;
+    tx.execute("UPDATE knowledge_erasure SET armed=0 WHERE id=1", [])?;
+    tx.execute(
+        "DELETE FROM knowledge_learning_reviews WHERE loupist_id=?1",
+        [loupist],
+    )?;
     // Pending extraction of a removed Source must not put it back later.
     tx.execute("UPDATE knowledge_graph_outbox SET status='cancelled_before_start' WHERE loupist_id=?1 AND status IN ('queued','paused_budget') AND json_extract(payload_json,'$.sourceBinding.sourceRecordId') IN (SELECT value FROM json_each(?2))", params![loupist,serde_json::to_string(&controls.removed)?])?;
     // The existing archive event envelope carries this bulk reset audit without

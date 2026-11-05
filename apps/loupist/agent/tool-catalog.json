@@ -566,6 +566,84 @@
               "minLength": 1,
               "maxLength": 128
             }
+          },
+          "researchReview": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "question",
+              "checks"
+            ],
+            "properties": {
+              "question": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "checks": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 6,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "question",
+                    "disposition",
+                    "finding",
+                    "evidence",
+                    "limitation"
+                  ],
+                  "properties": {
+                    "question": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 300
+                    },
+                    "disposition": {
+                      "type": "string",
+                      "enum": [
+                        "supported",
+                        "mixed",
+                        "not_supported",
+                        "unresolved"
+                      ]
+                    },
+                    "finding": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 800
+                    },
+                    "evidence": {
+                      "type": "array",
+                      "maxItems": 8,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "methodRead": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "limitation": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    }
+                  }
+                }
+              },
+              "nextCheck": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              }
+            },
+            "description": "Optional completed-investigation assessment, not a user Journal or success score. Cite only enclosing sourceReads/worldReads as evidence and an enclosing exact lensReads reference as methodRead. Every check needs evidence unless unresolved; always state its limitation."
           }
         }
       },

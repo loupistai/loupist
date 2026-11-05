@@ -50,21 +50,34 @@ proposal rather than replacing newer content.
 ### Method learning
 
 Method learning defaults on. It also requires World processing and Memory saving
-to stay enabled, and the Loupist must not be paused. After at least five added or
-disputed claims since the previous review, Rust records one pending review. The
-review stays pending until that Loupist has no queued or running World jobs. It is
+to stay enabled, and the Loupist must not be paused. Rust records one pending
+review after at least five added or disputed claims, or two eligible completed
+investigations from distinct turns since the previous review. Investigations need
+acknowledged original Source evidence. Historical investigations do not trigger
+current learning. The review stays pending until that Loupist has no queued or running World jobs. It is
 admitted at most once every six hours and four times in a rolling day, using
 the selected World model on the same isolated inference path as World processing.
-Pending work survives restart, includes claims committed while the batch drains,
-and wakes at the next permitted time even if no later World publication arrives.
+Pending work survives restart and includes evidence committed while the batch
+drains. Admission freezes separate claim-event and experience watermarks. Later
+experiences remain for the next review, including when the current attempt fails.
+Pending reviews wake at the next permitted time without a new World publication.
+Resuming method learning or World processing admits retained eligible experiences
+through the same queue and limits.
 A paid or uncertain attempt is not retried automatically. A review left running
 at startup is marked a failed uncertain attempt.
 
-Publication requires at least two cited claims from that review's input. The
-input includes every active principle statement. If those statements do not fit,
+Publication requires either two distinct cited claims or cited observations from
+two distinct completed turns, each with eligible retained original Source evidence.
+Every cited ID must occur in the frozen input, without duplicates. The saved
+Lens change links the cited observations' exact retained Source revisions and spans.
+A missing or changed Source refuses publication; the host does not substitute the
+current revision. Agent findings remain interpretations, never user Journal
+entries or original facts. Paused Lens and removed Source evidence leave the
+review input. Publication rechecks these controls and refuses a paused refinement
+target. The input includes every active principle statement. If those statements do not fit,
 or they change before publication, the review defers and publishes no method.
 Deferral and failure write a review record and no growth event. Learned means a
-retained method, not model-weight training or a measured quality gain. A saved
+retained method candidate, not model-weight training or a measured quality gain. A saved
 method alone does not demonstrate improved later work; use
 [evaluation](../../apps/loupist/evals/README.md) to test transfer. Loupist settings
 shows Learn methods from new information and the ten most recent reviews. A
