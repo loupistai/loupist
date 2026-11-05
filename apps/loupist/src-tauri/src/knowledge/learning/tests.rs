@@ -1423,3 +1423,101 @@ fn a_refine_target_paused_during_inference_cannot_be_published_or_proposed() {
         })
         .unwrap();
 }
+
+#[test]
+fn completed_research_rechecks_items_excluded_after_their_reads() {
+    for change in ["removed-source", "paused-lens", "removed-lens"] {
+        let (_dir, store) = setup();
+        let mut request = research_request(&store, "turn-one", None);
+        let record_id = if change == "removed-source" {
+            store
+                .list_records(LOUPIST)
+                .unwrap()
+                .into_iter()
+                .find(|record| record.kind == RecordKind::Source)
+                .unwrap()
+                .record_id
+        } else {
+            let document = LensDocument {
+                markdown: "Compare dated capacity accounts.".into(),
+                applicability: "Capacity expansions".into(),
+                assumptions: "Comparable reporting periods".into(),
+                procedure: "Check utilization".into(),
+                principles: "Keep dated attribution".into(),
+                limitations: "One period is insufficient".into(),
+            };
+            let record = store
+                .create_record(CreateRecord {
+                    loupist_id: LOUPIST.into(),
+                    kind: RecordKind::Lens,
+                    title: "Capacity method".into(),
+                    at_ms: AT,
+                })
+                .unwrap();
+            let revision = store
+                .revise_lens(ReviseLens {
+                    loupist_id: LOUPIST.into(),
+                    record_id: record.record_id.clone(),
+                    expected_revision_id: None,
+                    at_ms: AT,
+                    document: document.clone(),
+                    dependencies: vec![],
+                    change: LensChangeInput {
+                        rationale: "Initial check".into(),
+                        references: vec![],
+                        feedback: None,
+                    },
+                })
+                .unwrap();
+            let delivery = store
+                .transact(|w| {
+                    w.record_acked_lens(
+                        LOUPIST,
+                        "turn-one",
+                        AT,
+                        &record.record_id,
+                        &revision.revision_id,
+                        &revision.revision_digest,
+                        &serde_json::to_string(&document).unwrap(),
+                        &crate::util::sha256(document.delivery_text().unwrap().as_bytes()),
+                    )
+                })
+                .unwrap();
+            request
+                .note_inputs
+                .as_mut()
+                .unwrap()
+                .lenses
+                .push(LensAcknowledgement {
+                    delivery_id: delivery.clone(),
+                    status: LensUseStatus::Applied,
+                });
+            request.research_review.as_mut().unwrap().checks[0].method_read = Some(delivery);
+            record.record_id
+        };
+        store
+            .transact(|w| {
+                if change == "paused-lens" {
+                    super::super::memory_controls::pause(w.tx, LOUPIST, &record_id, true)?;
+                } else {
+                    let mut controls = super::super::memory_controls::load(w.tx, LOUPIST)?;
+                    controls.removed.insert(record_id.clone());
+                    super::super::memory_controls::save(w.tx, LOUPIST, &controls)?;
+                }
+                Ok(())
+            })
+            .unwrap();
+        assert!(
+            store.transact(|w| w.save_research(request)).is_err(),
+            "{change}"
+        );
+        store
+            .read(|w| {
+                assert!(read_experiences(w.tx, LOUPIST, 0, i64::MAX)?.is_empty());
+                assert!(w.working_notes(LOUPIST, "research-chat", 10)?.is_empty());
+                Ok(())
+            })
+            .unwrap();
+        assert!(review_states(&store).is_empty());
+    }
+}

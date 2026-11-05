@@ -38,6 +38,14 @@ pub(super) fn save(
         chrono::NaiveDate::parse_from_str(cutoff, "%Y-%m-%d")
             .map_err(|_| KnowledgeError::Invalid("research cutoff is invalid"))?;
     }
+    for record_id in admitted
+        .sources
+        .iter()
+        .map(|source| &source.record_id)
+        .chain(admitted.lenses.iter().map(|lens| &lens.record_id))
+    {
+        super::super::memory_controls::require_delivery(tx, &request.loupist_id, record_id)?;
+    }
     let mut checks = Vec::new();
     for (index, check) in review.checks.iter().enumerate() {
         let mut inputs = JournalInputs {
