@@ -111,7 +111,7 @@ pub(super) fn save(
         }
         if prior_cutoff != request.as_of
             || (prior_digest != digest
-                && !same_inputs(
+                && !same_research_without_receipt_ids(
                     serde_json::from_value(prior)?,
                     serde_json::from_value(body.clone())?,
                 ))
@@ -131,9 +131,7 @@ pub(super) fn save(
     Ok(id)
 }
 
-// A completion retry may mint new acknowledgement IDs for the same delivered bytes.
-// Keep the first immutable receipt references while comparing their exact content.
-fn same_inputs(mut left: Experience, mut right: Experience) -> bool {
+fn same_research_without_receipt_ids(mut left: Experience, mut right: Experience) -> bool {
     for experience in [&mut left, &mut right] {
         for check in &mut experience.checks {
             for source in &mut check.inputs.sources {

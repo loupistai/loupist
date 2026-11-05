@@ -650,7 +650,6 @@ async fn a_folder_made_by_an_earlier_build_is_refused_with_a_typed_state() {
     );
     drop(memory);
     state.close_for_restart_test();
-    // Rewrite one folder as the previous build left it: Knowledge schema 5.
     {
         let connection = rusqlite::Connection::open(old.join(".loupist/loupist.sqlite3")).unwrap();
         connection

@@ -129,7 +129,7 @@ fn enqueue_evidence(
         [loupist], |r| r.get(0),
     ).optional()?;
     if active.is_some() {
-        return admit_pending(tx, loupist, now);
+        return freeze_pending_review(tx, loupist, now);
     }
     let through: i64 = tx.query_row(
         "SELECT COALESCE(MAX(through_event),0) FROM knowledge_learning_reviews WHERE loupist_id=?1",
@@ -144,7 +144,7 @@ fn enqueue_evidence(
     }
     let id = super::model::mint_id("lrn");
     tx.execute("INSERT INTO knowledge_learning_reviews(review_id,loupist_id,world_job_id,status,created_at_ms,through_event,settings_json,call_budget) VALUES (?1,?2,?3,'pending',?4,?5,?6,?7)",params![id,loupist,world_job,now,end,serde_json::to_string(&s)?,s.max_llm_calls.min(1)])?;
-    admit_pending(tx, loupist, now)
+    freeze_pending_review(tx, loupist, now)
 }
 
 fn world_busy(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<bool> {
@@ -156,9 +156,12 @@ fn world_busy(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<bool> {
 
 /// Pending work does not consume the evidence watermark or a rate-limit slot.
 /// Admission and the final World commit share the same SQLite transaction.
-fn admit_pending(tx: &Transaction<'_>, loupist: &str, now: i64) -> KnowledgeResult<Option<String>> {
+fn freeze_pending_review(
+    tx: &Transaction<'_>,
+    loupist: &str,
+    now: i64,
+) -> KnowledgeResult<Option<String>> {
     if world_busy(tx, loupist)? {
-        // Admitted watermarks stay frozen when another World batch arrives.
         return Ok(None);
     }
     let id: Option<String> = tx.query_row(
@@ -448,7 +451,7 @@ pub(super) fn claim(
     if !enabled(tx, loupist, &current)? {
         return Ok(None);
     }
-    admit_pending(tx, loupist, now)?;
+    freeze_pending_review(tx, loupist, now)?;
     if world_busy(tx, loupist)? {
         return Ok(None);
     }

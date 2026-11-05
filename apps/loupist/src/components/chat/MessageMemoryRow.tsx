@@ -188,11 +188,6 @@ export function MessageMemoryRow({
 
 type UsedItem = { recordId: string; title: string };
 
-/**
- * The principles and methods supplied to this answer, quoted, with "Not this
- * time" (Rust leaves the record out of this chat until Undo) and Edit (opens
- * it on "What {Loupist} knows"). Methods can also be archived here.
- */
 function UsedMemory({ id, bridge, loupistId, refreshKey, principles, methods, onEdit, onChanged }: {
   id: string; bridge?: LoupistBridge; loupistId: string; refreshKey?: unknown; principles: readonly UsedItem[]; methods: readonly UsedItem[];
   onEdit: (recordId: string) => void; onChanged?: () => void;
