@@ -20,7 +20,6 @@ import { revealFocused } from "../../lib/revealFocused";
 import { ChatMessageCard } from "./ChatMessageCard";
 import type { ProviderErrorAction } from "./ChatErrorState";
 import { QuoteAsk } from "./QuoteAsk";
-import { assetRefs } from "../../chat/assetTickers";
 import { MorningMessage } from "./MorningMessage";
 import { ThreadDelivery } from "./ThreadDelivery";
 import { ThreadAlert } from "./ThreadAlert";
@@ -303,7 +302,6 @@ export function ChatConversation({
           ) : (
             <ChatMessageCard
               bridge={bridge}
-              asset={message.role === "assistant" ? askedAsset(messages, index) : undefined}
               active={active}
               message={message}
               onSaveFeedback={onSaveFeedback}
@@ -355,12 +353,3 @@ export function ChatConversation({
 
 /** A finished answer, as the "New since you left" divider counts them. */
 const settledAnswer = (message: ChatMessage) => message.role === "assistant" && message.status === "complete";
-
-/** The first `$SYMBOL` the question before this answer carried, if any. */
-function askedAsset(messages: readonly ChatMessage[], index: number) {
-  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-    const message = messages[cursor]!;
-    if (message.role === "user") return assetRefs(message.content)[0];
-  }
-  return undefined;
-}

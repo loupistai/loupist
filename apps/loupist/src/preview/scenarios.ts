@@ -1021,51 +1021,27 @@ export const scenarios: readonly PreviewScenario[] = [
     const trigger = await until(() => select(".composer-model-menu"), "The run-profile control did not render");
     trigger.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
   }) },
-  // W15.30, W15.31, W15.39: `$` assets and `/` commands, the asset card, approval cards, the private marker,
-  // inline chat rename and the unsent-draft dot.
-  ...(["composer-ticker-menu", "composer-command-menu"] as const).map((id): PreviewScenario => ({
-    ...base(id, id === "composer-ticker-menu" ? "$ lists what you follow, then names on your map" : "/ offers finance commands, then Skills", () => select(`.composer-assist[data-symbol="${id === "composer-ticker-menu" ? "$" : "/"}"]`), async root => {
-      const composer = await until(() => root.querySelector<HTMLTextAreaElement>("textarea[data-chat-composer]"), "Composer did not appear");
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(composer, id === "composer-ticker-menu" ? "Compare margins for $" : "/");
-      composer.setSelectionRange(composer.value.length, composer.value.length);
-      composer.dispatchEvent(new Event("input", { bubbles: true }));
-    }),
-    setup: async (bridge) => {
+  { ...base("composer-command-menu", "/ offers finance commands, then Skills", () => select('.composer-assist[data-symbol="/"]'), async root => {
+    const composer = await until(() => root.querySelector<HTMLTextAreaElement>("textarea[data-chat-composer]"), "Composer did not appear");
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(composer, "/");
+    composer.setSelectionRange(composer.value.length, composer.value.length);
+    composer.dispatchEvent(new Event("input", { bubbles: true }));
+  }), setup: bridge => prepareFixture(bridge, "answer") },
+  { ...base("chat-ticker-text", "Historical ticker references remain ordinary message text", () =>
+      [...document.querySelectorAll(".message-user-text")].find(message => visible(message) && message.textContent?.includes("$AAPL:NASDAQ (Apple)")) ?? null),
+    setup: async bridge => {
       await prepareFixture(bridge, "answer");
-      for (const entry of [{ symbol: "HANUL", market: "KRX", displayName: "Hanul Precision" }, { symbol: "AAPL", market: "NASDAQ", displayName: "Apple" }, { symbol: "BTC", market: "UPBIT", displayName: "Bitcoin" }]) await bridge.watchlistAdd(entry);
-    },
-  })),
-  ...(["chat-company-card", "chat-company-card-no-data"] as const).map((id): PreviewScenario => ({
-    ...base(id, id === "chat-company-card" ? "An answer about a followed asset opens with what this computer knows" : "An asset the Loupist knows nothing about yet", () => select(".asset-card"), centerOn(".asset-card", "start")),
-    setup: async (bridge) => {
-      await prepareFixture(bridge, "answer");
-      // The user's own label for the asset, in the language they use.
-      if (id === "chat-company-card") await bridge.watchlistAdd({ symbol: "HANUL", market: "KRX", displayName: previewKo() ? "한울정밀" : "Hanul Precision" });
-      // The last close Rust read through the asset page's KRX price read.
-      if (id === "chat-company-card") {
-        const [loupist] = await bridge.loupistList();
-        bridge.assets.installQuote(loupist!.id, "HANUL", "KRX", {
-          value: 39_920, currency: "KRW", date: "2026-10-27", retrievedAt: "2026-10-28T00:12:00Z", fresh: false,
-          evidence: { tool: "krx_daily_quote", title: "KRX", date: "2026-10-27" },
-        });
-      }
       const original = bridge.loupistSelect.bind(bridge);
       bridge.loupistSelect = async loupistId => {
         const workspace = await original(loupistId);
         const question = workspace.threads[0].messages.find(item => item.role === "user");
-        if (question) question.content = id === "chat-company-card"
-          ? previewKo() ? "$HANUL:KRX (한울정밀) 영업이익률이 왜 떨어졌어?" : "$HANUL:KRX (Hanul Precision) What explains the margin decline?"
-          : previewKo() ? "$NVDA:NASDAQ (NVIDIA) 이번 분기에 무엇이 바뀌었어?" : "$NVDA:NASDAQ (NVIDIA) What changed this quarter?";
-        // The asset with no data gets its own short answer, not the Hanul one.
+        if (question) question.content = previewKo() ? "$AAPL:NASDAQ (Apple) 뭐가 달라졌어? 비용은 $5였어." : "$AAPL:NASDAQ (Apple) What changed? It cost $5.";
         const answer = workspace.threads[0].messages.find(item => item.role === "assistant");
-        if (answer && id === "chat-company-card-no-data") Object.assign(answer, {
-          content: previewKo() ? "NVIDIA에 대해 이 컴퓨터에 저장된 내용이 아직 없어요. 최근 실적 자료를 찾아 읽어 볼게요." : "Nothing about NVIDIA is saved on this computer yet. I can look up its latest results and read them.",
-          evidence_refs: [], memory_update: undefined,
-        });
+        if (answer) Object.assign(answer, { content: previewKo() ? "애플의 영업이익률이 올랐어요." : "Apple's operating margin increased.", evidence_refs: [], memory_update: undefined });
         return workspace;
       };
     },
-  })),
+  },
   // A pending decision remains actionable with the activity summary folded.
   ...([["chat-approval-card", "connection"], ["chat-approval-web-site", "site"]] as const).map(([id, kind]): PreviewScenario => ({
     ...base(id, kind === "site" ? "After third-party text, a new website waits for the user's OK" : "A read-only connection waits for the user's OK",
@@ -1406,7 +1382,7 @@ export const scenarios: readonly PreviewScenario[] = [
   { ...base("chat-quote-ask", "Selecting a phrase in an answer offers to ask about it", () => document.getSelection()?.toString().trim() ? select(".quote-ask") : null, async () => {
     await selectAnswerWords(0, 6);
   }), selection: true, setup: (bridge) => prepareFixture(bridge, "answer") },
-  { ...base("composer-inline-context", "Inline company reference and a Lens mode in a saved question and draft", () =>
+  { ...base("composer-inline-context", "Inline file reference and a Lens mode in a saved question and draft", () =>
     document.querySelector(".composer-prompt-highlight [data-inline-reference]") && select(".message-user-context .message-tool-label")), setup: async bridge => {
     await prepareFixture(bridge, "answer");
     const read = bridge.loupistSelect.bind(bridge);
@@ -1417,14 +1393,14 @@ export const scenarios: readonly PreviewScenario[] = [
         content: previewKo() ? "$lens\n\n지금 어떤 판단 기준을 쓰고 있어?" : "$lens\n\nWhich research principles are active?" }];
       return workspace;
     };
-    const token = "$Apple · AAPL";
+    const token = "@report.md";
     const prompt = previewKo() ? `이 기준으로 ${token} 실적을 살펴봐 줘.` : `Apply these principles to ${token} earnings.`;
     const start = prompt.indexOf(token);
     await bridge.chatDraftWrite({ loupist_id: "loupist-quality", thread_id: "preview-chat" }, {
       prompt, context: { pins: [], asOf: "2026-10-15", chips: [
         { key: "skill:lens", kind: "skill", id: "lens", label: "Lens" },
-        { key: "company:AAPL:NASDAQ", kind: "company", id: "AAPL:NASDAQ", label: "Apple · AAPL", text: "Apple" },
-      ], inlineReferences: [{ key: "chip:company:AAPL:NASDAQ", kind: "company", text: token, start, end: start + token.length }] },
+        { key: "file:report", kind: "file", id: "reports/report.md", label: "report.md" },
+      ], inlineReferences: [{ key: "chip:file:report", kind: "file", text: token, start, end: start + token.length }] },
     });
   } },
   { ...base("composer-chips", "Quoted passages stay inline with the question", () => {

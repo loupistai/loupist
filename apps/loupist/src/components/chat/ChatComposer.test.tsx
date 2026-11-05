@@ -22,6 +22,33 @@ function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), isRunning = t
 describe("ChatComposer input", () => {
   afterEach(async () => { await i18n.changeLanguage("en"); });
 
+  it("sends dollar amounts and ticker-shaped text unchanged without opening shortcuts", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    render(<RunningComposer isRunning={false} onSend={onSend} />);
+    const text = "Compare $AAPL:NASDAQ (Apple), $NVDA and a $5 fee.";
+    await user.type(screen.getByRole("textbox", { name: "Message Loupist" }), text);
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Added to this message" })).not.toBeInTheDocument();
+    await user.keyboard("{Enter}");
+    expect(onSend).toHaveBeenCalledWith(text, [], text);
+  });
+
+  it.each([
+    ["/brief", "Give me a quick briefing on "],
+    ["/compare", "Compare "],
+  ])("starts %s as editable prose", async (command, starter) => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    render(<RunningComposer isRunning={false} onSend={onSend} />);
+    const textarea = screen.getByRole("textbox", { name: "Message Loupist" });
+    await user.type(textarea, command);
+    await user.click(screen.getByRole("option", { name: command }));
+    expect(textarea).toHaveValue(starter);
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
   it("keeps the empty composer short and opens each typed shortcut menu", async () => {
     const user = userEvent.setup();
     render(<div style={{ width: 280 }}><RunningComposer isRunning={false} /></div>);
@@ -36,10 +63,7 @@ describe("ChatComposer input", () => {
     await user.clear(textarea);
 
     await user.type(textarea, "$");
-    const assets = screen.getByRole("listbox", { name: "Prompt shortcuts" });
-    expect(assets).toHaveAttribute("data-symbol", "$");
-    expect(assets).toHaveTextContent("What you follow");
-    expect(assets).toHaveTextContent("Followed first, then names on your map");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
     await user.clear(textarea);
 
     await user.type(textarea, "/");
@@ -94,7 +118,6 @@ describe("ChatComposer input", () => {
     const onSend = vi.fn();
     render(<RunningComposer onFollowUp={onFollowUp} onSend={onSend} />);
     const textarea = screen.getByRole("textbox", { name: "Message Loupist" });
-    // Skills live under `/`; `$` names assets.
     await user.type(textarea, "/res");
     const option = screen.getByRole("option", { name: /Research/ });
     expect(textarea).toHaveAttribute("aria-activedescendant", option.id);
@@ -115,7 +138,7 @@ describe("ChatComposer input", () => {
     window.addEventListener("keydown", escaped);
     render(<RunningComposer onFollowUp={onFollowUp} />);
     const textarea = screen.getByRole("textbox", { name: "Message Loupist" });
-    await user.type(textarea, "$res");
+    await user.type(textarea, "/res");
     escaped.mockClear();
     await user.keyboard("{Escape}");
     expect(escaped).not.toHaveBeenCalled();

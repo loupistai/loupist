@@ -333,6 +333,101 @@ pub struct StoredChatDraft {
     context: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
+impl StoredChatDraft {
+    fn restore(mut self) -> Self {
+        use serde_json::Value;
+        let Some(context) = self.context.as_mut() else {
+            return self;
+        };
+        let mut retired = Vec::new();
+        if let Some(chips) = context.get_mut("chips").and_then(Value::as_array_mut) {
+            chips.retain(|chip| {
+                if matches!(chip["kind"].as_str(), Some("company" | "asset")) {
+                    retired.push(chip.clone());
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+        let keys: std::collections::HashSet<_> = retired
+            .iter()
+            .filter_map(|chip| chip["key"].as_str().map(|key| format!("chip:{key}")))
+            .collect();
+        let mut inline = std::collections::HashSet::new();
+        if let Some(references) = context
+            .get_mut("inlineReferences")
+            .and_then(Value::as_array_mut)
+        {
+            let prompt: Vec<_> = self.prompt.encode_utf16().collect();
+            references.retain(|reference| {
+                let key = reference["key"].as_str().unwrap_or_default();
+                let retired = keys.contains(key)
+                    || (key.starts_with("chip:")
+                        && matches!(reference["kind"].as_str(), Some("company" | "asset")));
+                if retired {
+                    if let (Some(start), Some(end), Some(text)) = (
+                        reference["start"].as_u64(),
+                        reference["end"].as_u64(),
+                        reference["text"].as_str(),
+                    ) {
+                        if prompt.get(start as usize..end as usize)
+                            == Some(text.encode_utf16().collect::<Vec<_>>().as_slice())
+                        {
+                            inline.insert(key.to_owned());
+                        }
+                    }
+                }
+                !retired
+            });
+        }
+        let prose = retired
+            .iter()
+            .filter_map(|chip| {
+                let key = chip["key"].as_str().unwrap_or_default();
+                if inline.contains(&format!("chip:{key}")) {
+                    return None;
+                }
+                let name = chip["text"]
+                    .as_str()
+                    .or_else(|| chip["label"].as_str())
+                    .unwrap_or_default();
+                let id = chip["id"].as_str().unwrap_or_default();
+                Some(if name.is_empty() || name == id {
+                    id.replace(':', " · ")
+                } else if id.is_empty() {
+                    name.to_owned()
+                } else {
+                    format!("{name} ({})", id.replace(':', " · "))
+                })
+            })
+            .filter(|text| !text.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !prose.is_empty() {
+            let prefix = format!("{prose}\n\n");
+            let shift = prefix.encode_utf16().count() as u64;
+            if let Some(references) = context
+                .get_mut("inlineReferences")
+                .and_then(Value::as_array_mut)
+            {
+                for reference in references {
+                    for field in ["start", "end"] {
+                        if let Some(offset) = reference[field]
+                            .as_u64()
+                            .and_then(|offset| offset.checked_add(shift))
+                        {
+                            reference[field] = offset.into();
+                        }
+                    }
+                }
+            }
+            self.prompt.insert_str(0, &prefix);
+        }
+        self
+    }
+}
+
 #[tauri::command]
 pub fn chat_draft_read(
     state: State<'_, AppState>,
@@ -353,7 +448,8 @@ pub fn chat_draft_read(
                 .map(|json| serde_json::from_str(&json))
                 .transpose()
                 .map_err(map_internal)?,
-        })
+        }
+        .restore())
     })
     .transpose()
 }

@@ -234,25 +234,6 @@ export type AssetClassSetRequest = { loupistId: string; assetId: string; class: 
 export type AssetVerdictUndoRequest = { loupistId: string; assetId: string; moveId: string; sinceMs?: number };
 export type AssetPageSeenRequest = { loupistId: string; assetId: string };
 export type UpcomingEventsRequest = { loupistId: string };
-export type AssetQuoteRequest = { loupistId: string; symbol: string; market: string };
-
-/**
- * The last close Rust knows for an asset (the `$` asset card's price): the newest
- * one its asset page recorded, or one read just now through the page's own price
- * read. Never a live tick: a completed session's close, dated, with its source.
- */
-export type AssetQuote = {
-  value: number;
-  currency?: string;
-  /** The session the close belongs to (`YYYY-MM-DD`). */
-  date: string;
-  /** When the source returned it, when known. */
-  retrievedAt?: string;
-  evidence: AssetEvidence;
-  /** Read for this card rather than taken from the asset page. */
-  fresh: boolean;
-};
-
 /** The page an upcoming event belongs to, named in the reader's language by `localAssetName`. */
 export type UpcomingAsset = { assetId: string; symbol: string; market: string; name: string; entityId?: string };
 /**
@@ -274,8 +255,6 @@ export interface AssetBridge {
   assetPageSeen(request: AssetPageSeenRequest): Promise<void>;
   /** The morning message's event strip; read-only, no model call. */
   upcomingEvents(request: UpcomingEventsRequest): Promise<UpcomingEvent[]>;
-  /** The asset card's price; read-only, no model call. `null` when nothing could be read. */
-  assetQuote(request: AssetQuoteRequest): Promise<AssetQuote | null>;
 }
 
 /** Where the asset page opens and which section it scrolls to ("results": the results card, or the event's row in Earlier results). */

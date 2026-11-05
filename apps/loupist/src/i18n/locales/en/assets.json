@@ -1,6 +1,7 @@
 {
   "_status": "translated",
   "page": {
+    "open": "Open page",
     "label": "{{name}} asset page",
     "askAbout": "Ask about it",
     "checkNow": "Check now",
@@ -65,7 +66,7 @@
   "noThesis": {
     "body": "You haven't written why you follow {{name}}. A few reasons and one line that would change your mind are enough.",
     "inChat": "Work it out in Chat",
-    "prompt": "Help me write down why I follow ${{symbol}} and what would change my mind."
+    "prompt": "Help me write down why I follow {{name}} and what would change my mind. I'm referring to {{symbol}} on {{market}}."
   },
   "changed": {
     "title": "What changed",
@@ -306,7 +307,7 @@
     "openRelease": "Open the release",
     "prepareAgain": "Prepare again",
     "ask": "Ask about these results",
-    "askPrompt": "Walk me through {{name}}'s {{period}} results against what was expected.",
+    "askPrompt": "Walk me through the {{period}} results for {{name}} against what was expected. I'm referring to {{symbol}} on {{market}}.",
     "seeBeforeAfter": "See before and after",
     "earlier": "Earlier results",
     "showMore": "Show {{formattedCount}} more",

@@ -13,11 +13,11 @@ it("saves context-only edits and restores references with their original prompt 
     const [, refresh] = useReducer(n => n + 1, 0);
     usePersistedChatDraft(bridge, draft, "draft-key", id.loupist_id, id.thread_id, undefined, select, refresh, writes);
   });
-  const first: ChatDraft = { prompt: "Compare Apple", pins: [], files: [] };
+  const first: ChatDraft = { prompt: "Read @report", pins: [], files: [] };
   const view = mount(first);
   await waitFor(async () => expect((await bridge.chatDraftRead(id))?.prompt).toBe(first.prompt));
-  first.chips = [{ key: "company:AAPL", kind: "company", id: "AAPL:NASDAQ", label: "Apple" }];
-  first.inlineReferences = [{ key: "chip:company:AAPL", kind: "company", text: "Apple", start: 8, end: 13 }];
+  first.chips = [{ key: "file:report", kind: "file", id: "report.md", label: "report" }];
+  first.inlineReferences = [{ key: "chip:file:report", kind: "file", text: "@report", start: 5, end: 12 }];
   first.asOf = "2026-03-05";
   view.rerender();
   await waitFor(async () => expect((await bridge.chatDraftRead(id))?.context?.inlineReferences).toEqual(first.inlineReferences));

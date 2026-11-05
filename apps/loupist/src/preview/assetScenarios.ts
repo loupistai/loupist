@@ -6,7 +6,7 @@
 import { mockAssetId } from "../bridge/mock/assets";
 import type { InboxItem, ScheduledRun } from "../contracts/scheduled";
 import { cryptoFixture, HANUL, hanulFixture, installAsset, noThesisFixture, partialFixture, PREVIEW_LOUPIST, previewLineAlert, privateFixture, type AssetFixture } from "./assets";
-import { prepareFixture, prepareMorningFixture, previewKo, type PreviewBridge } from "./fixtures";
+import { prepareFixture, prepareMorningFixture, type PreviewBridge } from "./fixtures";
 import type { PreviewScenario } from "./scenarios";
 
 type Helpers = {
@@ -125,24 +125,6 @@ export function assetScenarios({ base, select, until, click, enterMap, hasLayout
         eventId: "receipt-thesis", loupistId: PREVIEW_LOUPIST, originChatId: "preview-chat", originMessageId: "preview-answer", atMs: Date.now() - 60_000,
         kind: "thesis_moved", subjectId: assetId, recordId: assetId, actor: "loupist", summary: "Hanul Precision", beforeSummary: "holding", afterSummary: "weakening",
       }], nextCursor: null });
-    } },
-    { ...base("chat-asset-card-thesis", "The asset card names the user's thesis and opens its page", () => {
-      const card = select(".asset-card");
-      return card && card.querySelectorAll(".asset-card-facts").length >= 2 ? card : null;
-    }, async () => {
-      const card = await until(() => select(".asset-card"), "Asset card did not appear");
-      if (hasLayout()) card.scrollIntoView({ block: "start" });
-    }), setup: async bridge => {
-      await prepareFixture(bridge, "answer");
-      hanulOnMap(bridge);
-      await installAsset(bridge, hanulFixture());
-      const original = bridge.loupistSelect.bind(bridge);
-      bridge.loupistSelect = async loupistId => {
-        const workspace = await original(loupistId);
-        const question = workspace.threads[0].messages.find(item => item.role === "user");
-        if (question) question.content = previewKo() ? "$HANUL:KRX (Hanul Precision) 영업이익률이 왜 떨어졌어?" : "$HANUL:KRX (Hanul Precision) What explains the margin decline?";
-        return workspace;
-      };
     } },
     { ...base("map-inspector-thesis", "The Map inspector leads with the user's thesis", () => select(".map-inspector .asset-thesis-summary"), async root => {
       const map = await enterMap(root);

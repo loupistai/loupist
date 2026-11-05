@@ -214,7 +214,8 @@ export function EarningsCard({ bridge, loupistId, loupistName, snapshot, name, n
       setPreparing(false);
     }
   };
-  const ask = () => onAsk?.(`$${current.symbol}:${current.market} ${t("earnings.askPrompt", { name, period: current.period })}`);
+  const questionSubject = `${name} (${current.symbol} · ${current.market})`;
+  const ask = () => onAsk?.(t("earnings.askPrompt", { name, symbol: current.symbol, market: current.market, period: current.period }));
 
   const measures = current.measures.length ? current.measures : [{ period: current.period, expected: [], reported: [], differences: [] } satisfies EarningsMeasure];
   const shown = allMeasures ? measures : measures.slice(0, MEASURES);
@@ -325,7 +326,7 @@ export function EarningsCard({ bridge, loupistId, loupistName, snapshot, name, n
         {/* The whole reverse-DCF grid behind PRICE IMPLIED, at the same dated close. */}
         <SensitivityCard variant="dialog" subject={name} sources={gridSources(current.implied, numbers, onOpenEvidence)}
           grid={{ ...current.implied.grid, price: current.implied.grid.price ?? { value: current.implied.price, display: amount(current.implied.price, current.implied.currency), currency: current.implied.currency, date: current.implied.closeDate } }}
-          onChangeRates={onAsk ? (prompt) => { setGridOpen(false); onAsk(`$${current.symbol}:${current.market} ${prompt}`); } : undefined} />
+          onChangeRates={onAsk ? (prompt) => { setGridOpen(false); onAsk(`${questionSubject}: ${prompt}`); } : undefined} />
       </DialogContent>
     </Dialog> : null}
   </section>;

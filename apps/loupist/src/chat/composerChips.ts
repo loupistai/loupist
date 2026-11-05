@@ -9,10 +9,9 @@ export type { ComposerChip } from "../contracts/workspace";
 const t = i18n.getFixedT(null, "chat");
 
 export const composerChipInlineText = (chip: ComposerChip) => chip.kind === "quote"
-  ? `“${chip.text ?? chip.label}”` : `${chip.kind === "company" ? "$" : "@"}${chip.label}`;
+  ? `“${chip.text ?? chip.label}”` : `@${chip.label}`;
 
 const inlineChipSubmission = (chip: ComposerChip) => {
-  if (chip.kind === "company") return `$${chip.id}${chip.text ? ` (${chip.text})` : ""}`;
   if (chip.kind === "connection") return `@${chip.id}`;
   if (chip.kind === "file") return chip.id;
   if (chip.kind === "quote") return `“${chip.text ?? chip.label}”`;
@@ -80,9 +79,6 @@ export const composeSubmission = (prompt: string, chips: readonly ComposerChip[]
     if (inlineKeys.has(`chip:${chip.key}`)) continue;
     if (chip.kind === "quote") {
       if (chip.text) quotes.push(chip.text.split("\n").map((line) => `> ${line}`).join("\n"));
-    } else if (chip.kind === "company") {
-      const token = `$${chip.id}`;
-      if (!body.includes(token)) prefixes.push(chip.text ? `${token} (${chip.text})` : token);
     } else if (chip.kind === "skill") {
       const token = `$${chip.id}`;
       if (!body.includes(token)) prefixes.push(token);
@@ -96,29 +92,6 @@ export const composeSubmission = (prompt: string, chips: readonly ComposerChip[]
   const asked = body || (quotes.length ? t("composerChips.explainQuote") : "");
   return [...quotes, prefixes.join(" "), asked].filter(Boolean).join("\n\n");
 };
-
-/** A sent message split into plain text and the asset chips `composeSubmission` serialized as `$SYMBOL:MARKET (Name)`. */
-export type SentPart = { type: "text"; value: string } | { type: "asset"; symbol: string; market?: string; name?: string };
-
-// A token counts as an asset only with a market or a display name, so prose like "costs $5" stays text.
-const ASSET_TOKEN = /\$([A-Z0-9][A-Z0-9.^=-]{0,23})(?::([A-Z0-9_-]{1,24}))?(?: \(([^()\n]{1,120})\))?/gu;
-
-export function splitAssetTokens(text: string): SentPart[] {
-  const parts: SentPart[] = [];
-  let last = 0;
-  for (const match of text.matchAll(ASSET_TOKEN)) {
-    const [whole, symbol, market, name] = match;
-    if (!market && !name) continue;
-    const start = match.index ?? 0;
-    if (start > last) parts.push({ type: "text", value: text.slice(last, start) });
-    parts.push({ type: "asset", symbol: symbol!, market, name });
-    last = start + whole.length;
-  }
-  if (last < text.length) parts.push({ type: "text", value: text.slice(last) });
-  // The serializer puts a blank line between the chips and the question; in a bubble one space reads better.
-  return parts.map((part, index) => part.type === "text" && index > 0 && parts[index - 1]!.type === "asset"
-    ? { ...part, value: part.value.replace(/^\s*\n+/u, " ") } : part);
-}
 
 export const mentionLabel = (
   token: string,

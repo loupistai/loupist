@@ -154,7 +154,6 @@ svg foreignObject .katex:has(> math) {
 .message-tool-label { display: inline-flex; align-items: center; gap: var(--gg-space-1); overflow-wrap: anywhere; }
 .message-tool-label svg { width: 13px; height: 13px; flex: none; }
 .message-user-text .message-mention { display: inline; padding: 0; margin: 0; border-radius: 0; background: none; color: var(--gg-color-accent-ink); font-size: inherit; font-weight: var(--gg-weight-medium); }
-.message-user-text .message-asset .composer-chip-marker { display: inline-block; margin-inline-end: var(--gg-space-1); }
 
 .chat-pending-queue {
   width: min(calc(100% - 2 * var(--chat-gutter, var(--gg-space-5))), var(--gg-size-chat-column));
@@ -1302,12 +1301,7 @@ button.chat-progress-names:hover { text-decoration: underline; }
   color: var(--gg-color-text-primary);
 }
 
-/* `$` rows: a 10 px asset marker instead of an icon tile; `/` rows: text only. */
-.composer-assist-option[data-row="ticker"] { grid-template-columns: 10px minmax(0, 1fr) var(--gg-space-4); }
 .composer-assist-option[data-row="plain"] { grid-template-columns: minmax(0, 1fr) var(--gg-space-4); }
-.composer-assist-marker { justify-self: center; }
-/* A ticker for anything other than a company's shares takes the Map's Asset color (`tickerMark`). */
-.composer-chip-marker[data-kind="asset"] { background: var(--gg-color-map-market); }
 
 .composer-assist-icon {
   width: var(--gg-size-control-sm);
@@ -2085,22 +2079,6 @@ button.sent-image { cursor: zoom-in; }
 .chat-editing-note { display: flex; align-items: center; justify-content: space-between; gap: var(--gg-space-3); width: min(calc(100% - 2 * var(--chat-gutter, var(--gg-space-5))), var(--gg-size-chat-column)); margin: 0 auto var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .chat-editing-note button { min-height: var(--gg-size-control-sm); padding: 0; border: 0; background: transparent; color: var(--gg-color-accent-ink); font: inherit; cursor: pointer; }
 
-/* Asset card (D2): what this computer knows about the asset an answer is about; no quantities, no price without a market connection. */
-.asset-card { display: grid; gap: var(--gg-space-1); max-width: 560px; margin: 0 0 var(--gg-space-3); padding: var(--gg-space-3) var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
-.asset-card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; column-gap: var(--gg-space-4); row-gap: var(--gg-space-1); min-width: 0; }
-.asset-card-title { display: flex; align-items: baseline; gap: var(--gg-space-2); min-width: 0; margin: 0; }
-/* The last close sits at the right of the name and wraps under it in a narrow card (composer spec §2.7). */
-.asset-card-price { display: flex; align-items: baseline; gap: var(--gg-space-2); margin: 0; white-space: nowrap; }
-.asset-card-price strong { font-size: var(--gg-text-subtitle); font-weight: var(--gg-weight-medium); }
-.asset-card-price > span { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
-.asset-card-price .loupist-citation { margin-inline: 0; }
-.asset-card-title strong { font-size: var(--gg-text-subtitle); font-weight: var(--gg-weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.asset-card-title span { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); white-space: nowrap; }
-.asset-card-title .composer-chip-marker { align-self: center; width: 10px; height: 10px; }
-.asset-card-facts { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.asset-card-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-1); margin-left: calc(var(--gg-space-2) * -1); }
-.asset-card-actions:empty { display: none; }
-
 /* Approval card (D3): one read-only tool waits for the user's OK; it settles into one line. */
 .approval-cards { display: grid; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 var(--gg-space-3); }
 .approval-card { display: grid; gap: var(--gg-space-2); max-width: 640px; padding: var(--gg-space-4); border: 1px solid var(--gg-color-warning); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
@@ -2177,5 +2155,3 @@ button.sent-image { cursor: zoom-in; }
 .composer-inline-reference-controls li { display:flex; align-items:center; gap:var(--gg-space-2); }
 .composer-inline-reference-controls button { display:inline-flex; flex:none; align-items:center; justify-content:center; width:24px; height:24px; border:0; border-radius:var(--gg-radius-sm); background:transparent; }
 .composer-inline-reference-controls button svg { width:14px; height:14px; }
-.composer-prompt-highlight [data-inline-reference="company"] { background:color-mix(in oklch, var(--gg-color-map-company) 14%, transparent); box-shadow:0 0 0 1px color-mix(in oklch, var(--gg-color-map-company) 25%, transparent); }
-.composer-prompt-highlight [data-inline-reference="asset"] { background:color-mix(in oklch, var(--gg-color-map-market) 14%, transparent); box-shadow:0 0 0 1px color-mix(in oklch, var(--gg-color-map-market) 25%, transparent); }

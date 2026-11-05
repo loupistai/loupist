@@ -32,7 +32,7 @@ export function BriefingAssets({ assets, bridge, loupistId, loupistName, onOpenL
         <div className="briefing-asset-head">
           <strong>{name}</strong>
           {asset.verdict ? <VerdictChip verdict={asset.verdict} loupist={loupistName} /> : null}
-          {open ? <Button type="button" variant="link" size="sm" data-print="omit" onClick={() => open({ loupistId, assetId: asset.assetId, name })}>{i18n.t("chat:assetCard.openPage")}</Button> : null}
+          {open ? <Button type="button" variant="link" size="sm" data-print="omit" onClick={() => open({ loupistId, assetId: asset.assetId, name })}>{i18n.t("assets:page.open")}</Button> : null}
         </div>
         <ul className="briefing-asset-rows">
           {asset.rows.slice(0, ROWS).map(row => <li key={row.id}>{datedSentence(row)} <SourceChips evidence={row.evidence} numbers={numbers} onOpen={openEvidence(asset, name)} /></li>)}

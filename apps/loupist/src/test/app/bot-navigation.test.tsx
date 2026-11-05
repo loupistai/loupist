@@ -76,17 +76,17 @@ it("restores attachment bytes and removes them from the saved draft when discard
   await vi.waitFor(async () => expect(await bridge.chatDraftFilesRead(identity)).toEqual([]));
 });
 
-it("reopens an inline company reference in its sentence and sends its original ticker", async () => {
+it("reopens an inline file reference in its sentence and sends its original path", async () => {
   const user = userEvent.setup();
   const bridge = await openApp();
   const identity = { loupist_id: "loupist-quality", thread_id: "thread-margin" };
-  const visible = "$Apple · AAPL";
+  const visible = "@report.md";
   const start = "Compare ".length;
   const prompt = "Compare " + visible + " with last year.";
   cleanup();
   await bridge.chatDraftWrite(identity, { prompt, context: {
-    chips: [{ key: "company:AAPL:NASDAQ", kind: "company", id: "AAPL:NASDAQ", label: "Apple · AAPL", text: "Apple" }],
-    inlineReferences: [{ key: "chip:company:AAPL:NASDAQ", kind: "company", text: visible, start, end: start + visible.length }],
+    chips: [{ key: "file:report", kind: "file", id: "reports/report.md", label: "report.md" }],
+    inlineReferences: [{ key: "chip:file:report", kind: "file", text: visible, start, end: start + visible.length }],
     pins: [],
   } });
   const send = vi.spyOn(bridge, "chatSend");
@@ -99,5 +99,5 @@ it("reopens an inline company reference in its sentence and sends its original t
   await act(async () => { release(); });
   await screen.findByDisplayValue(prompt);
   await user.click(screen.getByRole("button", { name: "Send" }));
-  await vi.waitFor(() => expect(send.mock.calls[0]?.[0].prompt).toBe("Compare $AAPL:NASDAQ (Apple) with last year."));
+  await vi.waitFor(() => expect(send.mock.calls[0]?.[0].prompt).toBe("Compare reports/report.md with last year."));
 });

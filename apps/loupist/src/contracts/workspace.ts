@@ -40,11 +40,11 @@ export type DraftAttachment = { id: string; filename: string; mediaType: string;
 
 export type ComposerChip = {
   key: string;
-  kind: "skill" | "connection" | "file" | "quote" | "company";
-  /** Skill or connection id, file path, the quoted message's id, or a ticker (`AAPL:NASDAQ`). */
+  kind: "skill" | "connection" | "file" | "quote";
+  /** Skill or connection id, file path, or the quoted message's id. */
   id: string;
   label: string;
-  /** A quote's full selected text (the only chip sent as free text), or a company's display name. */
+  /** A quote's full selected text. */
   text?: string;
 };
 

@@ -4,7 +4,7 @@
  * mock Journal, and mirrors Undo's latest-move check.
  */
 import type {
-  AssetBridge, AssetClass, AssetDelta, AssetLine, AssetPage, AssetPageGetRequest, AssetQuote, AssetQuoteRequest, AssetReason, UpcomingEvent,
+  AssetBridge, AssetClass, AssetDelta, AssetLine, AssetPage, AssetPageGetRequest, AssetReason, UpcomingEvent,
 } from "../../contracts/assets";
 import type { JournalRecord } from "../../contracts/knowledge";
 import type { WatchlistEntry } from "../../contracts/userContext";
@@ -57,7 +57,6 @@ export class MockAssets implements AssetBridge {
   private readonly pages = new Map<string, AssetPage>();
   private readonly deltas = new Map<string, AssetDelta>();
   private readonly upcoming = new Map<string, UpcomingEvent[]>();
-  private readonly quotes = new Map<string, AssetQuote>();
   /** Preview: Check now resolves only when this is false. */
   refreshHold = false;
   refreshFails = false;
@@ -165,13 +164,4 @@ export class MockAssets implements AssetBridge {
     return clone((this.upcoming.get(request.loupistId) ?? []).slice(0, 5));
   }
 
-  /** Installs the close Rust would report for an asset; without one the card shows no price. */
-  installQuote(loupistId: string, symbol: string, market: string, quote: AssetQuote) {
-    this.quotes.set(`${loupistId}:${symbol.toUpperCase()}:${market.toUpperCase()}`, clone(quote));
-  }
-
-  async assetQuote(request: AssetQuoteRequest): Promise<AssetQuote | null> {
-    const quote = this.quotes.get(`${request.loupistId}:${request.symbol.toUpperCase()}:${request.market.toUpperCase()}`);
-    return quote ? clone(quote) : null;
-  }
 }

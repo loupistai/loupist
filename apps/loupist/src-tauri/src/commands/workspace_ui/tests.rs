@@ -1,6 +1,106 @@
 use super::*;
 use crate::commands::tests::{chat, profile};
 use serde_json::{json, Value};
+use tauri::Manager;
+
+fn stored_draft_round_trip(value: Value) -> Value {
+    let (_temporary, state) = fixture();
+    let app = tauri::test::mock_builder()
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    app.manage(state);
+    let identity = || DraftIdentity {
+        loupist_id: "loupist-a".into(),
+        thread_id: "chat-a".into(),
+    };
+    chat_draft_write(
+        app.state(),
+        identity(),
+        serde_json::from_value(value).unwrap(),
+    )
+    .unwrap();
+    let restored = chat_draft_read(app.state(), identity()).unwrap().unwrap();
+    let expected = serde_json::to_value(&restored).unwrap();
+    chat_draft_write(app.state(), identity(), restored).unwrap();
+    assert_eq!(
+        serde_json::to_value(chat_draft_read(app.state(), identity()).unwrap().unwrap()).unwrap(),
+        expected
+    );
+    expected
+}
+
+fn inline_reference(prompt: &str, text: &str, key: &str, kind: &str) -> Value {
+    let start = prompt[..prompt.find(text).unwrap()].encode_utf16().count();
+    json!({ "key": key, "kind": kind, "text": text, "start": start, "end": start + text.encode_utf16().count() })
+}
+
+#[test]
+fn restored_ticker_draft_keeps_inline_text_and_supported_context() {
+    let prompt = "😀 Compare $Apple · AAPL and $Bitcoin · BTC with @report and ⟦Source⟧.";
+    let file = inline_reference(prompt, "@report", "chip:file:report", "file");
+    let source = inline_reference(prompt, "⟦Source⟧", "pin:source", "source");
+    let supported = json!({
+        "pins": [{ "kind": "source", "loupistId": "loupist-a", "objectId": "source", "label": "Source" }],
+        "chips": [
+            { "key": "skill:research", "kind": "skill", "id": "research", "label": "Research" },
+            { "key": "connection:market", "kind": "connection", "id": "market", "label": "Market" },
+            { "key": "file:report", "kind": "file", "id": "report.md", "label": "report" },
+            { "key": "quote:answer", "kind": "quote", "id": "answer", "label": "Margin", "text": "Margin increased." }
+        ],
+        "inlineReferences": [file, source],
+        "asOf": "2026-10-01",
+        "artifact": { "artifact_id": "report", "revision": 1, "kind": "markdown", "title": "Report", "digest": "a".repeat(64) }
+    });
+    let mut context = supported.clone();
+    context["chips"].as_array_mut().unwrap().extend([
+        json!({ "key": "company:AAPL", "kind": "company", "id": "AAPL:NASDAQ", "label": "Apple · AAPL", "text": "Apple" }),
+        json!({ "key": "company:BTC", "kind": "company", "id": "BTC:CRYPTO", "label": "Bitcoin · BTC", "text": "Bitcoin" }),
+    ]);
+    context["inlineReferences"].as_array_mut().unwrap().extend([
+        inline_reference(prompt, "$Apple · AAPL", "chip:company:AAPL", "company"),
+        inline_reference(prompt, "$Bitcoin · BTC", "chip:company:BTC", "asset"),
+    ]);
+    assert_eq!(
+        stored_draft_round_trip(json!({ "prompt": prompt, "context": context })),
+        json!({ "prompt": prompt, "context": supported })
+    );
+}
+
+#[test]
+fn restored_tray_tickers_become_prose_and_preserve_other_reference_positions() {
+    let prompt = "Compare @report with ⟦Source⟧ and $AAPL:NASDAQ (Apple).";
+    let prefix = "Bitcoin 🪙 (BTC · CRYPTO)\nGold (GC · COMEX)\n\n";
+    let restored_prompt = format!("{prefix}{prompt}");
+    let file =
+        json!({ "key": "file:report", "kind": "file", "id": "report.md", "label": "report" });
+    let restored = stored_draft_round_trip(json!({ "prompt": prompt, "context": {
+        "pins": [],
+        "chips": [
+            file,
+            { "key": "company:BTC", "kind": "company", "id": "BTC:CRYPTO", "label": "Bitcoin 🪙 · BTC", "text": "Bitcoin 🪙" },
+            { "key": "company:GC", "kind": "company", "id": "GC:COMEX", "label": "Gold", "text": "Gold" }
+        ],
+        "inlineReferences": [inline_reference(prompt, "@report", "chip:file:report", "file"), inline_reference(prompt, "⟦Source⟧", "pin:source", "source")]
+    } }));
+    assert_eq!(restored["prompt"], restored_prompt);
+    assert_eq!(restored["context"]["chips"], json!([file]));
+    assert_eq!(
+        restored["context"]["inlineReferences"],
+        json!([
+            inline_reference(&restored_prompt, "@report", "chip:file:report", "file"),
+            inline_reference(&restored_prompt, "⟦Source⟧", "pin:source", "source")
+        ])
+    );
+}
+
+#[test]
+fn restored_legacy_tray_ticker_keeps_its_only_content_without_inline_ranges() {
+    let restored = stored_draft_round_trip(json!({ "prompt": "", "context": {
+        "pins": [], "chips": [{ "key": "company:AAPL", "kind": "company", "id": "AAPL:NASDAQ", "label": "Apple", "text": "Apple" }]
+    } }));
+    assert_eq!(restored["prompt"], "Apple (AAPL · NASDAQ)\n\n");
+    assert_eq!(restored["context"], json!({ "pins": [], "chips": [] }));
+}
 
 fn fixture() -> (tempfile::TempDir, AppState) {
     let temporary = tempfile::tempdir().unwrap();

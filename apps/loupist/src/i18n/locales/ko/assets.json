@@ -1,6 +1,7 @@
 {
   "_status": "translated",
   "page": {
+    "open": "페이지 열기",
     "label": "{{name}} 자산 페이지",
     "askAbout": "질문하기",
     "checkNow": "지금 확인",
@@ -65,7 +66,7 @@
   "noThesis": {
     "body": "{{name}}을(를) 왜 지켜보는지 아직 적지 않았어요. 이유 몇 가지와 생각을 바꿀 조건 하나면 충분해요.",
     "inChat": "대화로 정리하기",
-    "prompt": "${{symbol}}을(를) 왜 지켜보는지, 무엇이 생각을 바꿀지 정리하도록 도와줘."
+    "prompt": "{{name}}을(를) 왜 지켜보는지, 무엇이 생각을 바꿀지 정리하도록 도와줘. {{market}}의 {{symbol}} 종목이야."
   },
   "changed": {
     "title": "바뀐 것",
@@ -306,7 +307,7 @@
     "openRelease": "실적 발표 열기",
     "prepareAgain": "다시 준비",
     "ask": "이 실적 질문하기",
-    "askPrompt": "{{name}}의 {{period}} 실적을 예상과 비교해서 설명해 줘.",
+    "askPrompt": "{{name}}의 {{period}} 실적을 예상과 비교해서 설명해 줘. {{market}}의 {{symbol}} 종목이야.",
     "seeBeforeAfter": "전후 비교 보기",
     "earlier": "이전 실적",
     "showMore": "{{formattedCount}}개 더 보기",

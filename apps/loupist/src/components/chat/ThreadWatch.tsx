@@ -88,7 +88,7 @@ export function ThreadWatch({ message, bridge, loupistId, loupistName, active, o
         <div className="thread-watch-actions">
           {event.kind === "results" && typeof event.facts.eventId === "string" && bridge
             ? <Button type="button" variant="outline" size="sm" disabled={preparing !== null} aria-label={`${t("watchMessage.prepare")} · ${name}`} onClick={() => void prepare(event)}>{preparing === event.eventId ? <Spinner /> : null}{t("watchMessage.prepare")}</Button>
-            : openAsset ? <Button type="button" variant="outline" size="sm" aria-label={`${t("assetCard.openPage")} · ${name}`} onClick={() => openPage(event)}>{t("assetCard.openPage")}</Button> : null}
+            : openAsset ? <Button type="button" variant="outline" size="sm" aria-label={`${i18n.t("assets:page.open")} · ${name}`} onClick={() => openPage(event)}>{i18n.t("assets:page.open")}</Button> : null}
           {event.kind === "filings" && openAsset ? <Button type="button" variant="ghost" size="sm" aria-label={`${i18n.t("assets:changed.title")} · ${name}`} onClick={() => openPage(event)}>{i18n.t("assets:changed.title")}</Button> : null}
         </div>
         {failed === event.eventId ? <p className="inline-error" role="alert">{i18n.t("assets:earnings.failed", { name })}</p> : null}
