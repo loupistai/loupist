@@ -567,6 +567,31 @@ training history in the retained profiles. Context captures must omit headers.
 `knowledge-lens-eval-v1.json` holds 40 frozen held-out Lens cases. Record its digest
 with any run; changing it starts a new comparison. Never copy its cases into suites.
 
+The opt-in `live_autonomous_research_v1` development check uses
+`lens/autonomous-research-v1.json` through production Chat and the bounded learning
+worker. Two ordinary research questions have no taught method or seeded principle.
+Their original Source reads must produce two retained experiences and a candidate
+method with no new World claims or user Journal. Fresh read-only B/D profiles then
+receive the same originals; D additionally receives the unedited canonical method.
+The matching probe must exact-read it, while the simple conversion must not mark it
+applied. Each probe must commit no Memory. Full answers remain in the trace for
+semantic comparison; exact reads alone do not establish quality or alpha.
+
+```sh
+LOUPIST_RESEARCH_PI_AGENT_DIR=<absolute-existing-connection-directory> \
+LOUPIST_RESEARCH_MODEL=<provider/model> \
+LOUPIST_RESEARCH_OUT=<new-attempt.jsonl> \
+cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml --locked \
+  --features eval-harness --lib eval_harness::research::live_autonomous_research_v1 \
+  -- --ignored --exact --nocapture
+```
+
+This makes paid calls and refuses an existing output path. It limits each Chat to
+180 seconds and stops subsequent calls after a failed turn or observed input usage
+over 150,000 tokens. The learning call retains its 120-second, one-attempt bound.
+Usage is reported after completion, not a provider-side spend cap. The six-turn
+development demonstration is separate from the frozen held-out outcome comparison.
+
 ## Finance workflow evaluation
 
 `finance-heldout-48.json` contains 48 synthetic tasks: eight each for data, charts,

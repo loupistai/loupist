@@ -308,8 +308,17 @@ export type KnowledgePin = {
   label: string;
 };
 
+export type LearningReviewOrigin = {
+  kind: "learning_review";
+  reviewId: string;
+  worldJobId: string | null;
+  throughExperience?: number;
+  evidenceClaimIds?: string[];
+  evidenceObservationIds?: string[];
+};
+
 export type LensChangeRecord = {
-  origin?: { kind: "learning_review"; reviewId: string; worldJobId: string };
+  origin?: LearningReviewOrigin;
   changeId: string;
   recordId: string;
   newRevisionId?: string;
@@ -677,7 +686,7 @@ export type GrowthEvent = {
   originChatId: string | null;
   originMessageId: string | null;
   actor: "user" | "loupist" | "import" | "processing";
-  origin?: PrincipleOrigin | { kind: "learning_review"; reviewId: string; worldJobId: string } | { kind: "memory_reset"; counts: MemoryResetCounts } | { labels: SchemaLabels };
+  origin?: PrincipleOrigin | LearningReviewOrigin | { kind: "memory_reset"; counts: MemoryResetCounts } | { labels: SchemaLabels };
   summary: string;
   beforeSummary: string | null;
   afterSummary: string | null;

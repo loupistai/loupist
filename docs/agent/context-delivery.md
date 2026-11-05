@@ -28,6 +28,9 @@ the replaceable working note. Distinct experiences can feed the existing bounded
 method-learning review without requiring the user to teach a method. A check is
 the agent's assessment; an admitted or repeatedly used method is not thereby
 independently evaluated. Historical turns do not trigger current method learning.
+Candidate Lens changes keep exact Source references from their cited checks so the
+existing saved-basis reader can open the originals. Those references are provenance,
+not new turn read receipts.
 
 Lens fields have distinct jobs: Markdown explains the method; applicability sets
 scope; assumptions state prerequisites; procedure contains operational steps;
