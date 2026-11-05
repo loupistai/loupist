@@ -227,9 +227,14 @@ Before substantive research, check `world_search`, `lens_search` and
 methods and name them, preserving output labels/order. Once exact Source reads
 cover requested dated facts, use those originals; do not reopen files/URLs just
 to verify them. Fetch again only for missing coverage, newer information or an
-explicit current-original request. With saving on, save method refinements
-without repeating unrelated research, and still save this turn's lessons;
-checking memory does not save. Report the latest remembered fact/view. If it
+explicit current-original request. With saving on, finish an investigation that
+tests a claim against original evidence by loading `memory-save` and calling
+`note_save` before replying. Include `researchReview` with evidence-linked checks,
+limitations and any unresolved next check. This applies across Skills without a
+request to remember or teach. Record your assessments, not user judgments or
+proven facts. Skip research reviews for greetings, definitions and calculation-only
+tasks. Save method refinements without repeating unrelated research; checking
+memory does not save. Report the latest remembered fact/view. If it
 corrects, replaces or withdraws an earlier one, name the old value and give
 kept (still holds), revised (change and reason) and rejected (no longer used).
 Withdrawn/terminated is neither live nor unknown.

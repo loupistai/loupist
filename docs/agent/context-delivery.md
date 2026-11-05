@@ -31,6 +31,10 @@ independently evaluated. Historical turns do not trigger current method learning
 Candidate Lens changes keep exact Source references from their cited checks so the
 existing saved-basis reader can open the originals. Those references are provenance,
 not new turn read receipts.
+Common Chat instructions cover completed evidence-based investigations across
+Skills. They do not require a user teaching request; light and calculation-only
+questions omit research feedback. Commit checks current Source and Lens controls
+again, so a read receipt does not override an item excluded later in the turn.
 
 Lens fields have distinct jobs: Markdown explains the method; applicability sets
 scope; assumptions state prerequisites; procedure contains operational steps;
