@@ -512,7 +512,7 @@ pub struct HomeHandoff {
     pub title: String,
     pub status: crate::chat::handoff::HandoffStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub learned: Option<serde_json::Value>,
+    pub learned: Option<crate::knowledge::LearnedDigest>,
 }
 
 /// Where a host-posted Thread message came from: one finished scheduled run.
@@ -530,7 +530,7 @@ pub struct HomeDelivery {
     pub status: crate::scheduled_tasks::types::RunStatus,
     pub finished_at_ms: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub learned: Option<serde_json::Value>,
+    pub learned: Option<crate::knowledge::LearnedDigest>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

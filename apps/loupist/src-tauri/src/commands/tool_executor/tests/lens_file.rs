@@ -166,9 +166,9 @@ async fn a_world_fact_files_a_section_with_a_claim_basis_and_a_log_row_at_commit
         crate::chat::handoff::learned_digest(&state, "loupist-a", &["assistant-1".into()])
             .unwrap()
             .unwrap();
-    assert_eq!(learned["messageId"], "assistant-1");
-    assert_eq!(learned["pages"][0]["recordId"], json!(change.record_id));
-    assert_eq!(learned["pages"][0]["created"], true);
+    assert_eq!(learned.message_id, "assistant-1");
+    assert_eq!(learned.pages[0].record_id, change.record_id);
+    assert!(learned.pages[0].created);
 }
 
 #[tokio::test]
@@ -543,17 +543,16 @@ async fn a_handoff_card_and_a_scheduled_delivery_carry_what_the_run_learned() {
         created_at_ms: 1,
         finished_at_ms: Some(2),
     };
-    let card = crate::chat::handoff::message(&state, &handoff, None).unwrap();
-    let learned = card
-        .handoff
+    let card = crate::chat::handoff::message(&state, &handoff, None)
         .unwrap()
-        .learned
-        .expect("the card carries learned");
-    assert_eq!(learned["messageId"], "final-1");
-    assert_eq!(learned["pages"][0]["recordId"], json!(record_id));
-    assert_eq!(learned["pages"][0]["title"], "Covenant headroom check");
-    assert_eq!(learned["pages"][0]["created"], true);
-    assert_eq!(learned["pages"][0]["outcomes"][0]["outcome"], "added");
+        .handoff
+        .unwrap();
+    let learned = card.learned.clone().expect("the card carries learned");
+    assert_eq!(learned.message_id, "final-1");
+    let wire = json!({"messageId": "final-1", "pages": [{"recordId": record_id,
+        "title": "Covenant headroom check", "kind": "method", "created": true,
+        "outcomes": [{"opId": learned.pages[0].outcomes[0].op_id, "outcome": "added", "key": "steps"}]}]});
+    assert_eq!(serde_json::to_value(&card).unwrap()["learned"], wire);
 
     let run = crate::scheduled_tasks::types::Run {
         briefing_context: None,
@@ -579,9 +578,10 @@ async fn a_handoff_card_and_a_scheduled_delivery_carry_what_the_run_learned() {
     let post = crate::chat::home::delivery_message(&state, &run).unwrap();
     let delivery = post.delivery.unwrap();
     assert_eq!(
-        delivery.learned.unwrap()["pages"][0]["recordId"],
-        json!(record_id)
+        delivery.learned.as_ref().unwrap().pages[0].record_id,
+        record_id
     );
+    assert_eq!(serde_json::to_value(&delivery).unwrap()["learned"], wire);
     let nothing = crate::chat::handoff::learned_digest(&state, "loupist-a", &["final-9".into()]);
     assert!(nothing.unwrap().is_none());
     assert!(

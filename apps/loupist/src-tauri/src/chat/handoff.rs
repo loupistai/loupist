@@ -577,17 +577,20 @@ pub(crate) fn learned_digest(
     state: &AppState,
     loupist_id: &str,
     message_ids: &[String],
-) -> Result<Option<Value>, CommandError> {
-    crate::commands::knowledge::learned_digests(state, loupist_id, message_ids)?
-        .into_iter()
-        .find(|digest| !digest.pages.is_empty())
-        .map(serde_json::to_value)
-        .transpose()
-        .map_err(|error| CommandError::internal(error.to_string()))
+) -> Result<Option<crate::knowledge::LearnedDigest>, CommandError> {
+    Ok(
+        crate::commands::knowledge::learned_digests(state, loupist_id, message_ids)?
+            .into_iter()
+            .find(|digest| !digest.pages.is_empty()),
+    )
 }
 
 /// A card's digest: a failed read is logged and the card renders without one.
-pub(crate) fn card_learned(state: &AppState, loupist_id: &str, message_id: &str) -> Option<Value> {
+pub(crate) fn card_learned(
+    state: &AppState,
+    loupist_id: &str,
+    message_id: &str,
+) -> Option<crate::knowledge::LearnedDigest> {
     learned_digest(state, loupist_id, &[message_id.to_owned()]).unwrap_or_else(|error| {
         eprintln!("What a run learned could not be read ({error})");
         None
