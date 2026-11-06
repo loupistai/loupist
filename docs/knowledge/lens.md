@@ -20,13 +20,19 @@ For a user principle these are the statement, why and example. Rust
 versions these records in local Memory. `LensWorkspace` is a document reader, with applicability,
 limitations, outline, links and backlinks. Learned methods on the Research principles
 page retain their provenance panel alongside the saved document. The learned-method inspector shows the
-learning rationale, cited World facts and a Then vs now comparison built from bounded
-growth-event before/after summaries. Keep acknowledges the publication for the current
+learning rationale, cited World claims and a Then vs now comparison built from bounded
+growth-event before/after summaries. The rationale comes from the review named by the saved
+change. A review admission date does not stand in for a missing publication date.
+The candidate label uses the catalog learning provenance. Autonomous methods are
+candidates. Every method reader states that independent evaluation has not established
+its effectiveness. Mark as seen acknowledges the publication for the current
 app session and Loupist. Archive confirms inline and asks Rust to archive the Lens;
 the default perspective cannot be archived. `lens:recordId` links resolve within the
 same Loupist and follow current heads. Discuss in Chat attaches the saved Lens;
 proposals can route back to their originating Chat or be dismissed. Saved basis shows
-the current change rationale and evidence. There is no historical Lens browser.
+the current change rationale and evidence. First-run method guidance invites research in Chat
+and explains that teaching a method is optional. An unavailable learning history shows a retry
+action instead of an empty history. There is no historical Lens browser.
 
 A principle or method can be paused independently of learning. Rust stores paused
 ids in the existing per-Loupist JSON settings, excludes them from automatic context,
@@ -44,21 +50,34 @@ proposal rather than replacing newer content.
 ### Method learning
 
 Method learning defaults on. It also requires World processing and Memory saving
-to stay enabled, and the Loupist must not be paused. After at least five added or
-disputed claims since the previous review, Rust records one pending review. The
-review stays pending until that Loupist has no queued or running World jobs. It is
+to stay enabled, and the Loupist must not be paused. Rust records one pending
+review after at least five added or disputed claims, or two eligible completed
+investigations from distinct turns since the previous review. Investigations need
+acknowledged original Source evidence. Historical investigations do not trigger
+current learning. The review stays pending until that Loupist has no queued or running World jobs. It is
 admitted at most once every six hours and four times in a rolling day, using
 the selected World model on the same isolated inference path as World processing.
-Pending work survives restart, includes claims committed while the batch drains,
-and wakes at the next permitted time even if no later World publication arrives.
+Pending work survives restart and includes evidence committed while the batch
+drains. Admission freezes separate claim-event and experience watermarks. Later
+experiences remain for the next review, including when the current attempt fails.
+Pending reviews wake at the next permitted time without a new World publication.
+Resuming method learning or World processing admits retained eligible experiences
+through the same queue and limits.
 A paid or uncertain attempt is not retried automatically. A review left running
 at startup is marked a failed uncertain attempt.
 
-Publication requires at least two cited claims from that review's input. The
-input includes every active principle statement. If those statements do not fit,
+Publication requires either two distinct cited claims or cited observations from
+two distinct completed turns, each with eligible retained original Source evidence.
+Every cited ID must occur in the frozen input, without duplicates. The saved
+Lens change links the cited observations' exact retained Source revisions and spans.
+A missing or changed Source refuses publication; the host does not substitute the
+current revision. Agent findings remain interpretations, never user Journal
+entries or original facts. Paused Lens and removed Source evidence leave the
+review input. Publication rechecks these controls and refuses a paused refinement
+target. The input includes every active principle statement. If those statements do not fit,
 or they change before publication, the review defers and publishes no method.
 Deferral and failure write a review record and no growth event. Learned means a
-retained method, not model-weight training or a measured quality gain. A saved
+retained method candidate, not model-weight training or a measured quality gain. A saved
 method alone does not demonstrate improved later work; use
 [evaluation](../../apps/loupist/evals/README.md) to test transfer. Loupist settings
 shows Learn methods from new information and the ten most recent reviews. A
@@ -83,6 +102,9 @@ Memory-enabled turns receive active, unpaused principles in their own block,
 newest first, at most 30 rules and 6,000 characters including the overflow notice.
 They outrank the standing perspective. Memory-off turns omit them. Only statements
 actually attached to that bounded block create context receipts and usage deliveries.
+The answer receipt labels these rules and methods as supplied context. The expanded list
+explains that delivery does not establish application. Reply counts also include delivery
+and do not establish influence or effectiveness.
 Delivered context counts as acknowledgement for replacement and does not by
 itself create Map `applies_to` edges. An exact Lens read returns `lens_url` to open the rule or method from an answer. A final-answer `lens:` link to a current
 same-Loupist principle or method records applications to World entities delivered

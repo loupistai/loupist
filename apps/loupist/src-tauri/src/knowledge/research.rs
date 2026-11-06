@@ -1,3 +1,5 @@
+pub(super) mod experience;
+
 use std::collections::BTreeMap;
 
 use rusqlite::{params, OptionalExtension, Transaction};
@@ -17,6 +19,8 @@ use super::source::load_receipt;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ResearchBody {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    experience_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     inputs: Option<JournalInputs>,
     #[serde(default)]
@@ -342,6 +346,23 @@ pub(super) fn save_research(
         })
         .transpose()?
         .flatten();
+    let experience_id = request
+        .research_review
+        .as_ref()
+        .map(|review| {
+            if !super::graph_jobs::load_settings(tx, &request.loupist_id)?.save_learning {
+                return Err(KnowledgeError::Unauthorized("Memory saving is disabled"));
+            }
+            experience::save(
+                tx,
+                &request,
+                review,
+                note_inputs.as_ref().ok_or(KnowledgeError::Invalid(
+                    "research review requires admitted inputs",
+                ))?,
+            )
+        })
+        .transpose()?;
     // A note has one retained body per Chat. Keep the expected identity only
     // for optimistic concurrency; it is not a link to a historical version.
     let replaces_note = request.working_note.is_some();
@@ -350,6 +371,7 @@ pub(super) fn save_research(
         note
     });
     let body = ResearchBody {
+        experience_id,
         inputs: note_inputs,
         previous_note_ids: request
             .note_inputs
@@ -1493,6 +1515,8 @@ mod search_tests {
             .unwrap();
         write
             .save_research(SaveResearch {
+                research_review: None,
+                as_of: None,
                 loupist_id: "loupist-a".into(),
                 turn_id: chat.into(),
                 at_ms,

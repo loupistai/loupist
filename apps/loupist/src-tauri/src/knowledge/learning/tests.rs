@@ -223,7 +223,12 @@ fn threshold_switch_and_rate_limits_reset_on_defer() {
     store
         .transact(|w| save_settings(w.tx, LOUPIST, true))
         .unwrap();
-    assert!(queue(&store, AT + 5).is_some());
+    assert_eq!(
+        review_states(&store),
+        ["queued"],
+        "resuming admits retained evidence"
+    );
+    assert!(queue(&store, AT + 5).is_none());
     assert!(queue(&store, AT + 6).is_none());
     let a = begin(&store, AT + 7);
     complete(
@@ -571,7 +576,7 @@ fn world_commit_queues_review_atomically_and_rollbacks_do_not_leak_it() {
             super::super::graph_jobs::complete_reindex(w, &mut settings, &job, attempt, AT + 5)
         })
         .unwrap();
-    assert_eq!(begin(&store, AT + 6).world_job_id, job.job_id);
+    assert_eq!(begin(&store, AT + 6).world_job_id, Some(job.job_id));
 }
 
 #[test]
@@ -685,4 +690,834 @@ fn unchanged_method_defers_without_revision_or_growth_and_principle_races_defer(
         reviews(&store)[0].reason.as_deref(),
         Some("principles_changed")
     );
+}
+
+fn research_request(store: &KnowledgeStore, turn: &str, as_of: Option<&str>) -> SaveResearch {
+    let bytes = b"Quarterly filing: the capacity ramp raised costs before utilization recovered.";
+    let source = store
+        .retain_new_source(RetainNewSource {
+            origin: None,
+            loupist_id: LOUPIST.into(),
+            at_ms: AT,
+            title: "Quarterly filing".into(),
+            source_class: SourceClass::PublisherDocument,
+            origin_locator: "https://example.test/filing".into(),
+            provider_identity: "example-publisher".into(),
+            authorship: Authorship::Publisher,
+            coverage: Coverage::IncludedFull,
+            origin_chat_id: None,
+            request_ref: None,
+            declared_digest: None,
+            publication_time: None,
+            material: Some(RetainMaterial {
+                media_type: "text/plain".into(),
+                role: RepresentationRole::Original,
+                document_id: "filing".into(),
+                parser_version: None,
+                parent_representation_id: None,
+                input_span_ids: vec![],
+                bytes: bytes.to_vec(),
+                selector: Selector::ByteRange {
+                    start: 0,
+                    end: bytes.len() as u64,
+                },
+                context_note: "Exact filing".into(),
+            }),
+        })
+        .unwrap();
+    store
+        .transact(|w| {
+            w.open_turn(OpenTurn {
+                loupist_id: LOUPIST.into(),
+                chat_session_id: "research-chat".into(),
+                turn_id: turn.into(),
+                at_ms: AT,
+            })?;
+            let receipt = w.record_acked_source(
+                LOUPIST,
+                "research-chat",
+                turn,
+                AT,
+                &source.record_id,
+                source.span_id.as_deref().unwrap(),
+                &source.capture_id,
+                source.representation_id.as_deref().unwrap(),
+                source.selected_digest.as_deref().unwrap(),
+                &source.revision_id,
+                &source.revision_digest,
+                "example-publisher",
+                "included_full",
+                None,
+                "text/plain",
+                bytes,
+            )?;
+            let expected = w
+                .working_notes(LOUPIST, "research-chat", 1)?
+                .first()
+                .map(|note| note.research_id.clone());
+            Ok(SaveResearch {
+                research_review: Some(ResearchReviewDraft {
+                    question: "Is ramp pressure temporary?".into(),
+                    checks: vec![ResearchCheckDraft {
+                        question: "Did utilization recover?".into(),
+                        disposition: CheckDisposition::Mixed,
+                        finding: "The new ramp raised costs but recovery is not established."
+                            .into(),
+                        evidence: vec![receipt.clone()],
+                        method_read: None,
+                        limitation: "The filing gives one period; compare successive periods."
+                            .into(),
+                    }],
+                    next_check: Some("Compare inventory and utilization next quarter.".into()),
+                }),
+                as_of: as_of.map(str::to_string),
+                loupist_id: LOUPIST.into(),
+                turn_id: turn.into(),
+                at_ms: AT,
+                observations: String::new(),
+                interpretation: String::new(),
+                assumptions: String::new(),
+                evaluation: String::new(),
+                journal: None,
+                note_inputs: Some(NoteInputDraft {
+                    source_receipt_ids: vec![receipt],
+                    ..Default::default()
+                }),
+                working_note: Some(WorkingNoteDraft {
+                    title: "Capacity research".into(),
+                    markdown: format!("Finding for {turn}"),
+                    change_summary: "Checked ramp recovery".into(),
+                    expected_research_id: expected,
+                }),
+            })
+        })
+        .unwrap()
+}
+
+fn save_experience(store: &KnowledgeStore, turn: &str) -> SavedResearch {
+    let request = research_request(store, turn, None);
+    store.transact(|w| w.save_research(request)).unwrap()
+}
+
+fn observation_output(attempt: &Attempt) -> Value {
+    let mut body = output(attempt);
+    body["evidenceClaimIds"] = json!([]);
+    body["evidenceObservationIds"] = json!(attempt
+        .input
+        .observations
+        .iter()
+        .map(|o| &o.id)
+        .collect::<Vec<_>>());
+    body
+}
+
+#[test]
+fn two_completed_investigations_publish_a_candidate_without_world_claims() {
+    let (_dir, store) = setup();
+    save_experience(&store, "turn-one");
+    assert!(review_states(&store).is_empty());
+    save_experience(&store, "turn-two");
+    assert_eq!(review_states(&store), ["queued"]);
+    let attempt = begin(&store, AT + 1);
+    assert!(attempt.world_job_id.is_none());
+    assert!(attempt.input.claims.is_empty());
+    assert_eq!(attempt.input.observations.len(), 2);
+    assert!(attempt
+        .input
+        .observations
+        .iter()
+        .all(|o| o.eligible_original));
+    complete(&store, &attempt, observation_output(&attempt), AT + 2);
+    let review = reviews(&store).remove(0);
+    assert_eq!(review.status, "created");
+    assert_eq!(review.evidence_count, 2);
+    let cited: BTreeSet<_> = attempt
+        .input
+        .observations
+        .iter()
+        .flat_map(|o| o.sources.iter())
+        .map(|source| {
+            (
+                source.record_id.clone(),
+                source.revision_id.clone(),
+                source.span_id.clone(),
+            )
+        })
+        .collect();
+    store
+        .read(|w| {
+            let learned: bool = w.tx.query_row(
+                "SELECT learned FROM knowledge_lens_metadata WHERE record_id=?1",
+                [review.lens_record_id.unwrap()],
+                |row| row.get(0),
+            )?;
+            assert!(learned);
+            let inputs: String = w.tx.query_row(
+                "SELECT inputs_json FROM knowledge_lens_changes WHERE actor='loupist'",
+                [],
+                |row| row.get(0),
+            )?;
+            let inputs: LensChangeInputs = serde_json::from_str(&inputs)?;
+            assert_eq!(
+                inputs
+                    .references
+                    .iter()
+                    .map(|reference| (
+                        reference.record_id.clone(),
+                        reference.revision_id.clone(),
+                        reference.span_id.clone().unwrap()
+                    ))
+                    .collect::<BTreeSet<_>>(),
+                cited
+            );
+            for reference in inputs.references {
+                assert!(reference.receipt_id.is_none());
+                let object: String = w.tx.query_row(
+                    "SELECT source_id FROM knowledge_sources WHERE record_id=?1",
+                    [&reference.record_id],
+                    |row| row.get(0),
+                )?;
+                assert_eq!(reference.object_id, object);
+                assert_eq!(reference.kind, "source");
+            }
+
+            let journals: i64 =
+                w.tx.query_row("SELECT COUNT(*) FROM knowledge_journals", [], |row| {
+                    row.get(0)
+                })?;
+            assert_eq!(
+                journals, 0,
+                "agent interpretations never become user judgments"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn experience_snapshots_outlive_note_replacement_and_are_idempotent_and_erased() {
+    let (_dir, store) = setup();
+    let mut request = research_request(&store, "turn-one", None);
+    let first = store
+        .transact(|w| w.save_research(request.clone()))
+        .unwrap();
+    let frozen = store
+        .read(|w| read_experiences(w.tx, LOUPIST, 0, i64::MAX))
+        .unwrap();
+    assert_eq!(frozen.len(), 1);
+    let source = &frozen[0].checks[0].inputs.sources[0];
+    let receipt = source.receipt_id.clone();
+    assert_eq!(source.attribution, "example-publisher");
+    let repeated_receipt = store
+        .transact(|w| {
+            let bytes: Vec<u8> = w.tx.query_row(
+                "SELECT selected_bytes FROM knowledge_receipt_snapshots WHERE receipt_id=?1",
+                [&receipt],
+                |row| row.get(0),
+            )?;
+            w.record_acked_source(
+                LOUPIST,
+                "research-chat",
+                "turn-one",
+                AT,
+                &source.record_id,
+                &source.span_id,
+                &source.capture_id,
+                &source.representation_id,
+                &source.selected_digest,
+                &source.revision_id,
+                &source.revision_digest,
+                &source.attribution,
+                &source.coverage,
+                None,
+                "text/plain",
+                &bytes,
+            )
+        })
+        .unwrap();
+    request.note_inputs.as_mut().unwrap().source_receipt_ids = vec![repeated_receipt.clone()];
+    request.research_review.as_mut().unwrap().checks[0].evidence = vec![repeated_receipt];
+    request.working_note.as_mut().unwrap().expected_research_id = Some(first.research_id);
+    let repeated = store
+        .transact(|w| w.save_research(request.clone()))
+        .unwrap();
+    assert_eq!(
+        store
+            .read(|w| read_experiences(w.tx, LOUPIST, 0, i64::MAX))
+            .unwrap()
+            .len(),
+        1
+    );
+    request.working_note.as_mut().unwrap().expected_research_id =
+        Some(repeated.research_id.clone());
+    request.research_review.as_mut().unwrap().checks[0].finding = "Conflicting replacement".into();
+    assert!(store.transact(|w| w.save_research(request)).is_err());
+    save_experience(&store, "turn-two");
+    store
+        .read(|w| {
+            assert!(w.read_working_note(LOUPIST, &repeated.research_id).is_err());
+            let snapshots = read_experiences(w.tx, LOUPIST, 0, i64::MAX)?;
+            assert_eq!(snapshots.len(), 2);
+            assert_eq!(snapshots[1].checks[0].inputs.sources[0], *source);
+            let bytes: Vec<u8> = w.tx.query_row(
+                "SELECT selected_bytes FROM knowledge_receipt_snapshots WHERE receipt_id=?1",
+                [receipt],
+                |row| row.get(0),
+            )?;
+            assert!(String::from_utf8(bytes).unwrap().contains("utilization"));
+            assert!(read_experiences(w.tx, "loupist-other", 0, i64::MAX)?.is_empty());
+            Ok(())
+        })
+        .unwrap();
+    store
+        .transact(|w| {
+            erase_loupist_private(w.tx, LOUPIST)?;
+            Ok(())
+        })
+        .unwrap();
+    store
+        .read(|w| {
+            for table in [
+                "knowledge_research_experiences",
+                "knowledge_learning_reviews",
+                "knowledge_receipt_snapshots",
+            ] {
+                let count: i64 =
+                    w.tx.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                        row.get(0)
+                    })?;
+                assert_eq!(count, 0, "{table}");
+            }
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn experiences_after_admission_survive_settlement_and_restart() {
+    let (_dir, store) = setup();
+    save_experience(&store, "turn-one");
+    save_experience(&store, "turn-two");
+    let first = begin(&store, AT + 1);
+    save_experience(&store, "turn-three");
+    save_experience(&store, "turn-four");
+    assert_eq!(first.input.observations.len(), 2);
+    complete(
+        &store,
+        &first,
+        json!({"action":"defer", "rationale":"No reusable pattern", "evidenceClaimIds":[]}),
+        AT + 2,
+    );
+    assert_eq!(review_states(&store), ["deferred", "pending"]);
+    assert!(store
+        .transact(|w| claim(w.tx, LOUPIST, "Name", "Focus", AT + 3))
+        .unwrap()
+        .is_none());
+    store.transact(|w| recover(w.tx)).unwrap();
+    let second = begin(&store, AT + SIX_HOURS + 2);
+    assert_eq!(
+        second
+            .input
+            .observations
+            .iter()
+            .map(|o| o.turn_id.as_str())
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["turn-three", "turn-four"])
+    );
+    assert!(second.through_experience > first.through_experience);
+    store.transact(|w| recover(w.tx)).unwrap();
+    assert_eq!(
+        reviews(&store)[0].reason.as_deref(),
+        Some("uncertain_paid_attempt")
+    );
+    assert!(store
+        .transact(|w| claim(w.tx, LOUPIST, "Name", "Focus", AT + DAY))
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn experience_publication_refuses_unknown_ids_and_single_turn_evidence() {
+    for mutation in ["unknown", "one-turn", "duplicate"] {
+        let (_dir, store) = setup();
+        save_experience(&store, "turn-one");
+        save_experience(&store, "turn-two");
+        let attempt = begin(&store, AT + 1);
+        let mut body = observation_output(&attempt);
+        body["evidenceObservationIds"] = match mutation {
+            "unknown" => json!([attempt.input.observations[0].id, "obs-forged"]),
+            "one-turn" => json!([attempt.input.observations[0].id]),
+            _ => json!([
+                attempt.input.observations[0].id,
+                attempt.input.observations[0].id
+            ]),
+        };
+        complete(&store, &attempt, body, AT + 2);
+        assert_eq!(reviews(&store)[0].reason.as_deref(), Some("invalid_output"));
+        assert!(reviews(&store)[0].lens_record_id.is_none());
+    }
+}
+
+#[test]
+fn as_of_investigations_and_rolled_back_completion_do_not_admit_learning() {
+    let (_dir, store) = setup();
+    for turn in ["historical-one", "historical-two"] {
+        let request = research_request(&store, turn, Some("2026-01-01"));
+        store.transact(|w| w.save_research(request)).unwrap();
+    }
+    assert!(review_states(&store).is_empty());
+    assert!(store
+        .read(|w| read_experiences(w.tx, LOUPIST, 0, i64::MAX))
+        .unwrap()
+        .is_empty());
+    save_experience(&store, "current-one");
+    let request = research_request(&store, "rollback", None);
+    let result: KnowledgeResult<()> = store.transact(|w| {
+        w.save_research(request)?;
+        Err(KnowledgeError::Invalid("completion failed"))
+    });
+    assert!(result.is_err());
+    assert!(review_states(&store).is_empty());
+    assert_eq!(
+        store
+            .read(|w| read_experiences(w.tx, LOUPIST, 0, i64::MAX))
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn experience_evidence_must_belong_to_the_note_turn_and_owner() {
+    let (_dir, store) = setup();
+    let first = research_request(&store, "turn-one", None);
+    for mutation in ["unknown", "foreign-owner", "foreign-turn", "outside-note"] {
+        let mut request = first.clone();
+        match mutation {
+            "unknown" => {
+                request.research_review.as_mut().unwrap().checks[0].evidence =
+                    vec!["rcp-forged".into()]
+            }
+            "foreign-owner" => request.loupist_id = "loupist-other".into(),
+            "foreign-turn" => {
+                let other = research_request(&store, "turn-two", None);
+                request.turn_id = other.turn_id;
+            }
+            _ => request
+                .note_inputs
+                .as_mut()
+                .unwrap()
+                .source_receipt_ids
+                .clear(),
+        }
+        assert!(
+            store.transact(|w| w.save_research(request)).is_err(),
+            "{mutation}"
+        );
+    }
+    assert!(review_states(&store).is_empty());
+    assert!(store
+        .read(|w| read_experiences(w.tx, LOUPIST, 0, i64::MAX))
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn experience_keeps_exact_world_and_lens_snapshots_after_their_heads_change() {
+    let (_dir, store) = setup();
+    let mut request = research_request(&store, "turn-one", None);
+    let initial = LensDocument {
+        markdown: "Compare dated capacity accounts.".into(),
+        applicability: "Capacity expansions".into(),
+        assumptions: "Comparable reporting periods".into(),
+        procedure: "Check utilization".into(),
+        principles: "Keep dated attribution".into(),
+        limitations: "One period is insufficient".into(),
+    };
+    let lens = store
+        .create_record(CreateRecord {
+            loupist_id: LOUPIST.into(),
+            kind: RecordKind::Lens,
+            title: "Capacity method".into(),
+            at_ms: AT,
+        })
+        .unwrap();
+    let revision = store
+        .revise_lens(ReviseLens {
+            loupist_id: LOUPIST.into(),
+            record_id: lens.record_id.clone(),
+            expected_revision_id: None,
+            at_ms: AT,
+            document: initial.clone(),
+            dependencies: vec![],
+            change: LensChangeInput {
+                rationale: "Initial check".into(),
+                references: vec![],
+                feedback: None,
+            },
+        })
+        .unwrap();
+    let delivery = store
+        .transact(|w| {
+            w.record_acked_lens(
+                LOUPIST,
+                "turn-one",
+                AT,
+                &lens.record_id,
+                &revision.revision_id,
+                &revision.revision_digest,
+                &serde_json::to_string(&initial).unwrap(),
+                &crate::util::sha256(initial.delivery_text().unwrap().as_bytes()),
+            )
+        })
+        .unwrap();
+    request
+        .note_inputs
+        .as_mut()
+        .unwrap()
+        .lenses
+        .push(LensAcknowledgement {
+            delivery_id: delivery.clone(),
+            status: LensUseStatus::Applied,
+        });
+    request.research_review.as_mut().unwrap().checks[0].method_read = Some(delivery);
+    let mut world = seed(&store, 1);
+    let view = store.read(|w| w.query_world(serde_json::from_value(json!({"loupistId":LOUPIST,"recordId":world.record_id,"revisionId":world.expected_revision_id})).unwrap())).unwrap();
+    let view_json = serde_json::to_string(&view).unwrap();
+    let world_delivery = store
+        .transact(|w| {
+            w.record_acked_world(
+                LOUPIST,
+                "turn-one",
+                AT,
+                &view.record_id,
+                &view.revision_id,
+                &view.revision_digest,
+                &view_json,
+                &crate::util::sha256(view_json.as_bytes()),
+            )
+        })
+        .unwrap();
+    request
+        .note_inputs
+        .as_mut()
+        .unwrap()
+        .world_delivery_ids
+        .push(world_delivery.clone());
+    request.research_review.as_mut().unwrap().checks[0]
+        .evidence
+        .push(world_delivery);
+    store.transact(|w| w.save_research(request)).unwrap();
+    add(&store, &mut world, 1, AT + 1);
+    let mut changed = initial.clone();
+    changed.procedure = "Check utilization and inventory".into();
+    store
+        .revise_lens(ReviseLens {
+            loupist_id: LOUPIST.into(),
+            record_id: lens.record_id,
+            expected_revision_id: Some(revision.revision_id.clone()),
+            at_ms: AT + 1,
+            document: changed,
+            dependencies: vec![],
+            change: LensChangeInput {
+                rationale: "Add inventory".into(),
+                references: vec![],
+                feedback: None,
+            },
+        })
+        .unwrap();
+    save_experience(&store, "turn-two");
+    let frozen = store
+        .read(|w| read_experiences(w.tx, LOUPIST, 0, i64::MAX))
+        .unwrap();
+    let method = &frozen[1].checks[0].inputs.lenses[0];
+    assert_eq!(method.revision_id, revision.revision_id);
+    assert_eq!(method.document, initial);
+    let frozen_world = &frozen[1].checks[0].inputs.worlds[0];
+    assert_eq!(frozen_world.delivered_view_json, view_json);
+    assert_eq!(frozen_world.revision_id, view.revision_id);
+    assert_eq!(
+        frozen_world.view_digest,
+        crate::util::sha256(view_json.as_bytes())
+    );
+    let attempt = begin(&store, AT + 3);
+    store
+        .transact(|w| {
+            super::super::memory_controls::pause(w.tx, LOUPIST, &method.record_id, true)?;
+            let input = build_input(w.tx, LOUPIST, 0, i64::MAX, (0, i64::MAX), "Name", "Focus")?;
+            assert!(input
+                .observations
+                .iter()
+                .all(|observation| observation.turn_id != "turn-one"));
+            assert!(input
+                .methods
+                .iter()
+                .all(|candidate| candidate.record_id != method.record_id));
+            Ok(())
+        })
+        .unwrap();
+    complete(&store, &attempt, observation_output(&attempt), AT + 4);
+    assert_eq!(reviews(&store)[0].reason.as_deref(), Some("invalid_output"));
+    assert!(reviews(&store)[0].lens_record_id.is_none());
+}
+
+#[test]
+fn experience_review_waits_for_world_and_rechecks_saving_before_publication() {
+    let (_dir, store) = setup();
+    let world = seed(&store, 1);
+    let job = waiting_world_job(&store, &world);
+    save_experience(&store, "turn-one");
+    save_experience(&store, "turn-two");
+    assert_eq!(review_states(&store), ["pending"]);
+    assert!(store
+        .transact(|w| claim(w.tx, LOUPIST, "Name", "Focus", AT + 1))
+        .unwrap()
+        .is_none());
+    finish_world_job(&store, &job, AT + 2);
+    let attempt = begin(&store, AT + 3);
+    let mut disabled = config();
+    disabled.save_learning = false;
+    store
+        .transact(|w| super::super::graph_jobs::store_settings(w.tx, LOUPIST, &disabled))
+        .unwrap();
+    complete(&store, &attempt, observation_output(&attempt), AT + 4);
+    assert_eq!(
+        reviews(&store)[0].reason.as_deref(),
+        Some("learning_disabled")
+    );
+    let request = research_request(&store, "disabled-save", None);
+    assert!(store.transact(|w| w.save_research(request)).is_err());
+}
+
+#[test]
+fn memory_reset_erases_experiences_and_frozen_reviews_and_stops_publication() {
+    let (_dir, store) = setup();
+    save_experience(&store, "turn-one");
+    save_experience(&store, "turn-two");
+    let attempt = begin(&store, AT + 1);
+    store
+        .transact(|w| {
+            let counts = super::super::memory_reset::preview(w.tx, LOUPIST)?;
+            super::super::memory_reset::reset(w.tx, w.blobs, LOUPIST, &counts, AT + 2)?;
+            assert!(read_experiences(w.tx, LOUPIST, 0, i64::MAX)?.is_empty());
+            let count: i64 = w.tx.query_row(
+                "SELECT COUNT(*) FROM knowledge_learning_reviews",
+                [],
+                |row| row.get(0),
+            )?;
+            assert_eq!(count, 0);
+            assert_eq!(
+                w.working_notes(LOUPIST, "research-chat", 1)?.len(),
+                1,
+                "reset preserves the documented working note"
+            );
+            Ok(())
+        })
+        .unwrap();
+    let reply = InferenceReply {
+        disposition: InferenceDisposition::Completed,
+        body: json!({"json_object":observation_output(&attempt)}),
+    };
+    assert!(store
+        .transact(|w| finish(w, &attempt, &reply, AT + 3))
+        .is_err());
+    assert!(reviews(&store).is_empty());
+}
+
+#[test]
+fn experience_rows_are_immutable_and_corrupt_snapshots_refuse_learning() {
+    let (_dir, store) = setup();
+    save_experience(&store, "turn-one");
+    store
+        .transact(|w| {
+            assert!(w
+                .tx
+                .execute(
+                    "UPDATE knowledge_research_experiences SET body_json='{}'",
+                    []
+                )
+                .is_err());
+            assert!(w
+                .tx
+                .execute("DELETE FROM knowledge_research_experiences", [])
+                .is_err());
+            w.tx.execute_batch("DROP TRIGGER knowledge_research_experiences_no_update")?;
+            w.tx.execute(
+                "UPDATE knowledge_research_experiences SET body_json='{}'",
+                [],
+            )?;
+            assert!(matches!(
+                read_experiences(w.tx, LOUPIST, 0, i64::MAX),
+                Err(KnowledgeError::DigestMismatch)
+            ));
+            Ok(())
+        })
+        .unwrap();
+}
+
+fn read_experiences(
+    tx: &rusqlite::Transaction<'_>,
+    owner: &str,
+    start: i64,
+    end: i64,
+) -> KnowledgeResult<Vec<super::super::research::experience::Experience>> {
+    let mut experiences = Vec::new();
+    super::super::research::experience::visit_recent(tx, owner, start, end, |experience| {
+        experiences.push(experience);
+        Ok(())
+    })?;
+    Ok(experiences)
+}
+
+#[test]
+fn removed_source_evidence_is_not_sent_to_the_learning_reviewer() {
+    let (_dir, store) = setup();
+    let request = research_request(&store, "turn-one", None);
+    store.transact(|w| w.save_research(request)).unwrap();
+    save_experience(&store, "turn-two");
+    store
+        .transact(|w| {
+            let experiences = read_experiences(w.tx, LOUPIST, 0, i64::MAX)?;
+            let source = &experiences[0].checks[0].inputs.sources[0];
+            let mut controls = super::super::memory_controls::load(w.tx, LOUPIST)?;
+            controls.removed.insert(source.record_id.clone());
+            super::super::memory_controls::save(w.tx, LOUPIST, &controls)?;
+            assert!(claim(w.tx, LOUPIST, "Name", "Focus", AT + 1)?.is_none());
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(reviews(&store)[0].status, "deferred");
+    assert!(reviews(&store)[0].lens_record_id.is_none());
+}
+
+#[test]
+fn a_refine_target_paused_during_inference_cannot_be_published_or_proposed() {
+    let (_dir, store) = setup();
+    let mut world = seed(&store, 5);
+    queue(&store, AT + 1);
+    let first = begin(&store, AT + 2);
+    complete(&store, &first, output(&first), AT + 3);
+    let target = reviews(&store)[0].lens_record_id.clone().unwrap();
+    add(&store, &mut world, 5, AT + SIX_HOURS + 3);
+    queue(&store, AT + SIX_HOURS + 4);
+    let attempt = begin(&store, AT + SIX_HOURS + 5);
+    let mut body = output(&attempt);
+    body["action"] = json!("refine");
+    body["targetRecordId"] = json!(target);
+    body["procedure"] =
+        json!("Compare utilization and inventory ageing over three reporting periods.");
+    store
+        .transact(|w| super::super::memory_controls::pause(w.tx, LOUPIST, &target, true))
+        .unwrap();
+    complete(&store, &attempt, body, AT + SIX_HOURS + 6);
+    assert_eq!(reviews(&store)[0].reason.as_deref(), Some("invalid_output"));
+    store
+        .read(|w| {
+            let count: i64 =
+                w.tx.query_row("SELECT COUNT(*) FROM knowledge_lens_drafts", [], |row| {
+                    row.get(0)
+                })?;
+            assert_eq!(count, 0);
+            assert_eq!(w.list_lens_changes(LOUPIST, &target)?.len(), 1);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn completed_research_rechecks_items_excluded_after_their_reads() {
+    for change in ["removed-source", "paused-lens", "removed-lens"] {
+        let (_dir, store) = setup();
+        let mut request = research_request(&store, "turn-one", None);
+        let record_id = if change == "removed-source" {
+            store
+                .list_records(LOUPIST)
+                .unwrap()
+                .into_iter()
+                .find(|record| record.kind == RecordKind::Source)
+                .unwrap()
+                .record_id
+        } else {
+            let document = LensDocument {
+                markdown: "Compare dated capacity accounts.".into(),
+                applicability: "Capacity expansions".into(),
+                assumptions: "Comparable reporting periods".into(),
+                procedure: "Check utilization".into(),
+                principles: "Keep dated attribution".into(),
+                limitations: "One period is insufficient".into(),
+            };
+            let record = store
+                .create_record(CreateRecord {
+                    loupist_id: LOUPIST.into(),
+                    kind: RecordKind::Lens,
+                    title: "Capacity method".into(),
+                    at_ms: AT,
+                })
+                .unwrap();
+            let revision = store
+                .revise_lens(ReviseLens {
+                    loupist_id: LOUPIST.into(),
+                    record_id: record.record_id.clone(),
+                    expected_revision_id: None,
+                    at_ms: AT,
+                    document: document.clone(),
+                    dependencies: vec![],
+                    change: LensChangeInput {
+                        rationale: "Initial check".into(),
+                        references: vec![],
+                        feedback: None,
+                    },
+                })
+                .unwrap();
+            let delivery = store
+                .transact(|w| {
+                    w.record_acked_lens(
+                        LOUPIST,
+                        "turn-one",
+                        AT,
+                        &record.record_id,
+                        &revision.revision_id,
+                        &revision.revision_digest,
+                        &serde_json::to_string(&document).unwrap(),
+                        &crate::util::sha256(document.delivery_text().unwrap().as_bytes()),
+                    )
+                })
+                .unwrap();
+            request
+                .note_inputs
+                .as_mut()
+                .unwrap()
+                .lenses
+                .push(LensAcknowledgement {
+                    delivery_id: delivery.clone(),
+                    status: LensUseStatus::Applied,
+                });
+            request.research_review.as_mut().unwrap().checks[0].method_read = Some(delivery);
+            record.record_id
+        };
+        store
+            .transact(|w| {
+                if change == "paused-lens" {
+                    super::super::memory_controls::pause(w.tx, LOUPIST, &record_id, true)?;
+                } else {
+                    let mut controls = super::super::memory_controls::load(w.tx, LOUPIST)?;
+                    controls.removed.insert(record_id.clone());
+                    super::super::memory_controls::save(w.tx, LOUPIST, &controls)?;
+                }
+                Ok(())
+            })
+            .unwrap();
+        assert!(
+            store.transact(|w| w.save_research(request)).is_err(),
+            "{change}"
+        );
+        store
+            .read(|w| {
+                assert!(read_experiences(w.tx, LOUPIST, 0, i64::MAX)?.is_empty());
+                assert!(w.working_notes(LOUPIST, "research-chat", 10)?.is_empty());
+                Ok(())
+            })
+            .unwrap();
+        assert!(review_states(&store).is_empty());
+    }
 }

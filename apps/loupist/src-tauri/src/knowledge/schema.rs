@@ -9,9 +9,9 @@ use super::error::KnowledgeResult;
 #[cfg(test)]
 use crate::fs::artifact_trust::ensure_private_directory;
 
-/// Version 2 added asset pages. A folder made by an earlier build is refused,
-/// never migrated (pre-1.0): see `made_by_earlier_build`.
-pub const KNOWLEDGE_SCHEMA_VERSION: i64 = 5;
+/// Earlier-build folders are refused, never migrated (pre-1.0).
+/// See `made_by_earlier_build`.
+pub const KNOWLEDGE_SCHEMA_VERSION: i64 = 6;
 pub const KNOWLEDGE_FORMAT_VERSION: u32 = 1;
 
 const EXPECTED_TABLES: &[&str] = &[
@@ -43,6 +43,7 @@ const EXPECTED_TABLES: &[&str] = &[
     "knowledge_record_heads",
     "knowledge_record_revisions",
     "knowledge_records",
+    "knowledge_research_experiences",
     "knowledge_research_records",
     "knowledge_schema",
     "knowledge_schema_proposals",
@@ -71,6 +72,7 @@ const IMMUTABLE_TABLES: &[&str] = &[
     "knowledge_record_revisions",
     "knowledge_records",
     "knowledge_read_receipts",
+    "knowledge_research_experiences",
     "knowledge_research_records",
     "knowledge_source_captures",
     "knowledge_source_representations",
@@ -194,7 +196,7 @@ fn schema_sql() -> String {
         ) STRICT;
         CREATE TABLE knowledge_learning_reviews (
             review_id TEXT PRIMARY KEY NOT NULL, loupist_id TEXT NOT NULL,
-            world_job_id TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending','queued','running','created','refined','deferred','failed')),
+            world_job_id TEXT, through_experience INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL CHECK(status IN ('pending','queued','running','created','refined','deferred','failed')),
             reason TEXT, lens_record_id TEXT, rationale TEXT,
             evidence_count INTEGER NOT NULL DEFAULT 0,
             created_at_ms INTEGER NOT NULL, started_at_ms INTEGER, finished_at_ms INTEGER,
@@ -456,6 +458,18 @@ fn schema_sql() -> String {
         ) STRICT;
         CREATE INDEX knowledge_lens_links_by_target
             ON knowledge_lens_links(loupist_id, target_record_id);
+        CREATE TABLE knowledge_research_experiences (
+            sequence INTEGER PRIMARY KEY,
+            experience_id TEXT NOT NULL UNIQUE,
+            loupist_id TEXT NOT NULL,
+            turn_id TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            as_of TEXT,
+            body_json TEXT NOT NULL,
+            body_digest TEXT NOT NULL,
+            UNIQUE(loupist_id, turn_id)
+        ) STRICT;
+        CREATE INDEX knowledge_experiences_owner ON knowledge_research_experiences(loupist_id, sequence);
         CREATE TABLE knowledge_research_records (
             research_id TEXT PRIMARY KEY NOT NULL,
             loupist_id TEXT NOT NULL,

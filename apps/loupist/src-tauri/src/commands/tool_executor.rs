@@ -381,6 +381,8 @@ pub(super) struct StagedResearchJournal {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct StagedResearch {
+    pub(super) research_review: Option<crate::knowledge::ResearchReviewDraft>,
+    pub(super) as_of: Option<String>,
     pub(super) observations: String,
     pub(super) interpretation: String,
     pub(super) assumptions: String,
@@ -634,6 +636,8 @@ impl ToolCapture {
                 }
                 if research.working_note.is_some() {
                     existing.working_note = research.working_note;
+                    existing.research_review = research.research_review;
+                    existing.as_of = research.as_of;
                     existing.source_reads = research.source_reads;
                     existing.world_reads = research.world_reads;
                     existing.lens_reads = research.lens_reads;

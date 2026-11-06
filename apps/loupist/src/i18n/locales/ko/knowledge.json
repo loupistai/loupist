@@ -538,12 +538,12 @@
     "unavailable": "이 원칙을 불러올 수 없어요."
   },
   "learning": {
-    "heading": "루피스트가 배운 과정",
-    "learnedOn": "{{date}}에 새 사실 {{count}}개에서 배웠어요",
-    "evidence": "근거",
+    "heading": "이 후보를 저장한 이유",
+    "learnedOn": "{{date}} 저장",
+    "evidence": "인용한 근거",
     "showAll": "{{count}}개 모두 보기",
-    "keep": "유지",
-    "kept": "유지됨",
+    "keep": "확인했어요",
+    "kept": "확인함",
     "archive": "보관",
     "archiveConfirm": "이 작업 방식을 보관할까요? 루피스트가 더 이상 사용하지 않아요.",
     "cancel": "취소",
@@ -553,11 +553,11 @@
     "changedBecause": "바뀐 이유: {{rationale}}",
     "earlier": "이전 변경 내역 ({{count}})",
     "new": "새로 배움",
-    "inUse": "사용 중이에요. 유지하면 ‘새로 배움’ 표시가 사라지고, 보관하면 더 이상 쓰지 않아요.",
+    "inUse": "다음 조사에서 참고할 수 있어요. 확인하면 ‘새로 배움’ 표시가 사라지고, 보관하면 더 이상 쓰지 않아요.",
     "learnedOrigin": "루피스트가 배움 · {{date}}",
     "chatOrigin": "대화에서 저장 · {{date}}",
-    "createdToast": "루피스트가 작업 방식을 배웠어요: {{title}}",
-    "refinedToast": "루피스트가 작업 방식을 다듬었어요: {{title}}",
+    "createdToast": "작업 방식 후보를 저장했어요: {{title}}",
+    "refinedToast": "작업 방식 후보를 다듬었어요: {{title}}",
     "view": "보기",
     "dismiss": "닫기",
     "method": "작업 방식",
@@ -567,7 +567,9 @@
     "unknownDate": "날짜 없음",
     "showMore": "더 보기",
     "showLess": "접기",
-    "openError": "작업 방식을 열지 못했어요. 보기를 다시 눌러 주세요."
+    "openError": "작업 방식을 열지 못했어요. 보기를 다시 눌러 주세요.",
+    "notEvaluated": "이 작업 방식의 효과는 별도로 검증되지 않았어요.",
+    "candidateMethod": "작업 방식 후보"
   },
   "journal": {
     "notes": "저널·노트",
@@ -705,11 +707,11 @@
       "history": "기록"
     },
     "row": {
-      "used_other": "{{formattedCount}}번 사용 · 최근 {{date}}",
-      "taught": "{{date}} 가르침 · 아직 사용 안 함",
-      "learned_other": "{{date}} 학습 · {{formattedCount}}번 적용",
-      "learnedOnly": "{{date}} 학습",
-      "neverUsed": "아직 사용 안 함"
+      "used_other": "답변 {{formattedCount}}개에 포함 · 최근 {{date}}",
+      "taught": "{{date}} 저장 · 아직 포함된 답변 없음",
+      "learned_other": "{{date}} 저장 · 답변 {{formattedCount}}개에 포함",
+      "learnedOnly": "{{date}} 저장",
+      "neverUsed": "아직 포함된 답변 없음"
     },
     "kind": {
       "principle": "원칙",
@@ -718,18 +720,18 @@
     "perspective": "관점",
     "perspectiveDescription": "루피스트가 출발점으로 삼는 전체적인 관점이에요.",
     "principles": {
-      "description": "내가 가르친 원칙이에요. 루피스트는 무엇보다 먼저 이 원칙에 비춰 사실을 확인해요.",
+      "description": "조사 방향을 잡고 싶을 때 대화에서 원칙을 추가할 수 있어요. 원칙을 가르치지 않아도 작업 방식을 배울 수 있어요.",
       "add": "+ 원칙 추가",
       "example": "예: 보고된 이익을 믿기 전에 영업현금흐름을 확인한다.",
       "newLabel": "새 원칙",
       "save": "원칙 추가"
     },
     "methods": {
-      "description": "루피스트가 스스로 배웠거나 대화에서 저장한 작업 방식이에요.",
-      "empty": "아직 배운 작업 방식이 없어요. 루피스트가 자료를 몇 개 읽거나 대화에서 점검 방식을 저장하면 여기에 나타나요."
+      "description": "조사나 대화에서 저장한 작업 방식이에요. 효과는 별도로 검증되지 않았어요.",
+      "empty": "대화에서 조사를 시작해 보세요. 학습이 켜져 있으면 조사 과정에서 작업 방식 후보를 저장할 수 있어요. 원하는 방식을 기억해 달라고 해도 돼요."
     },
     "reader": {
-      "usedIn": "사용된 곳",
+      "usedIn": "포함된 답변",
       "origin": "출처",
       "originFeedback": "{{date}}에 “도움이 안 됐어요”를 누르고 이 원칙을 적었어요.",
       "originChat": "{{date}}에 대화에서 저장했어요.",
@@ -742,7 +744,7 @@
       "whatToQuestion": "의심해 볼 점",
       "procedure": "절차",
       "openChat": "대화 열기",
-      "usageDefinition": "답변을 마칠 때 이 항목을 전달받거나 적용했다면 한 번으로 세어요. 답변에 실제로 영향을 줬다는 뜻은 아니에요."
+      "usageDefinition": "답변을 마칠 때 이 항목을 전달받거나 적용했다면 한 번으로 세어요. 실제로 따랐거나 답변이 나아졌다는 뜻은 아니에요."
     },
     "actions": {
       "edit": "편집",
@@ -776,16 +778,17 @@
     },
     "history": {
       "empty": "아직 기록이 없어요.",
-      "learnedMethod": "작업 방식을 배웠어요: {{title}}",
-      "nothing": "남길 만한 내용 없음",
+      "learnedMethod": "작업 방식 후보를 저장했어요: {{title}}",
+      "nothing": "저장한 후보 없음",
       "failed": "이번에는 새 정보에서 배우지 못했어요",
       "taught": "원칙을 가르쳤어요: {{statement}}",
       "mapAdded_other": "{{source}}에서 지도에 이름 {{formattedCount}}개 추가",
       "mapAddedPlain_other": "지도에 이름 {{formattedCount}}개 추가",
-      "learnedUntitled": "작업 방식을 배웠어요",
+      "learnedUntitled": "작업 방식 후보를 저장했어요",
       "failedDetail": "그 대화에서 배우는 작업을 끝내지 못했어요. 바뀐 것은 없어요.",
       "openMap": "지도에서 보기",
-      "reset": "직접 초기화함"
+      "reset": "직접 초기화함",
+      "loadError": "학습 기록을 불러오지 못했어요."
     },
     "reset": {
       "title": "{{loupistSubject}} 배운 내용을 초기화할까요?",

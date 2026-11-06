@@ -22,7 +22,7 @@ it("lists what the answer used and saved in a fixed order, each segment a link",
     saved: [{ kind: "Source", items: [saved("Source", "s")] }, { kind: "Lens", items: [saved("Lens", "m")] }],
   });
   const receipt = screen.getByRole("navigation", { name: "What this answer used and saved" });
-  expect(receipt).toHaveTextContent("Read 1 source·+3 on the map·1 relationship updated·Used 1 of your rules·Saved 1 source·Learned 1 new way of working");
+  expect(receipt).toHaveTextContent("Read 1 source·+3 on the map·1 relationship updated·1 rule in context·Saved 1 source·Saved 1 method");
   const user = userEvent.setup();
   await user.click(within(receipt).getByRole("button", { name: "Read 1 source" }));
   expect(handlers.onOpenSource).toHaveBeenCalledWith(expect.objectContaining({ id: "q3" }), expect.any(HTMLElement));
@@ -30,11 +30,11 @@ it("lists what the answer used and saved in a fixed order, each segment a link",
   await user.click(within(receipt).getByRole("button", { name: "1 relationship updated on the map" }));
   expect(handlers.onShowOnMap).toHaveBeenNthCalledWith(2, highlight);
   // "Used 1 principle" expands the correction panel under the answer.
-  const used = within(receipt).getByRole("button", { name: "Used 1 of your rules" });
+  const used = within(receipt).getByRole("button", { name: "1 rule in context" });
   expect(used).toHaveAttribute("aria-expanded", "false");
   await user.click(used);
   expect(handlers.onToggleUsed).toHaveBeenCalled();
-  await user.click(within(receipt).getByRole("button", { name: "Learned 1 new way of working" }));
+  await user.click(within(receipt).getByRole("button", { name: "Saved 1 method" }));
   expect(handlers.onSaved).toHaveBeenCalledWith(expect.objectContaining({ kind: "Lens" }));
 });
 

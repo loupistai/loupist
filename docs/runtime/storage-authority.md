@@ -71,14 +71,23 @@ Rust routes canonical operations to the owning Loupist. An exclusive folder lock
 prevents concurrent app instances from writing the same data. Loupist databases use
 full synchronous rollback journaling. The host store schema is version 3 (shared-pack
 update and origin columns), the Knowledge format version 1 and
-the Knowledge schema version 5 (class watcher kinds and routes);
+the Knowledge schema version 6 (immutable research experiences and independent
+learning watermarks);
 unsupported data is rejected without migration or replacement. A folder made by an
-earlier build (store schema older than 3 or Knowledge schema older than 5) is never opened: listing marks it
+earlier build (store schema older than 3 or Knowledge schema older than 6) is never opened: listing marks it
 `earlier_version`, and binding its storage (turns, briefings, Memory and asset work) or
 importing it fails with `loupist_earlier_version`. Remove is its only action. A global
 `catalog.sqlite3` from an earlier build is set aside as
 `catalog.sqlite3.earlier-<UTC stamp>` (with its `-wal` and `-shm` files) and the app
 starts with a new, empty catalog (`open_app_store` in `app.rs`).
+
+Completed investigations can retain one immutable `knowledge_research_experiences`
+row per Loupist and turn. The row contains bounded agent assessments and the exact
+admitted Source, World, and Lens inputs. Replacing a working note preserves its
+experience. Memory erasure deletes experiences, receipt snapshots, and frozen
+learning inputs together. Folder validation checks each experience digest and
+owner. Shared packs do not export experiences.
+
 Removing a Loupist unregisters it and preserves its folder. Missing or replaced
 folders require reconnection. Copy/reopen rules are in
 [Folder portability](../knowledge/growth.md#folder-portability).

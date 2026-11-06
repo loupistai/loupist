@@ -219,8 +219,9 @@ export function LensWorkspace({ markdownFirst = false, children, toolbar, bridge
       {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
       {request && proposalsLoaded && !requestedProposal ? <Alert variant="destructive"><AlertDescription>{proposalMatchError()}</AlertDescription></Alert> : null}
       {server && shownDocument ? <article className="lens-document" aria-label={t("lensWorkspace.lensReader")}>
-        <header className="knowledge-read-head lens-read-head"><div><div className="lens-document-meta"><span className="lens-eyebrow">{t("map.lensWiki")}</span><span>{perspective ? t("lensWorkspace.defaultPerspective") : principle ? t("map.kind.principle") : t("lensWorkspace.researchMethod")}</span></div><h2 ref={readerRef} tabIndex={-1}>{displayTitle}</h2>
+        <header className="knowledge-read-head lens-read-head"><div><div className="lens-document-meta"><span className="lens-eyebrow">{t("map.lensWiki")}</span><span>{perspective ? t("lensWorkspace.defaultPerspective") : principle ? t("map.kind.principle") : record?.learned ? t("learning.candidateMethod") : t("lensWorkspace.researchMethod")}</span></div><h2 ref={readerRef} tabIndex={-1}>{displayTitle}</h2>
           <SharedOrigin bridge={bridge} loupistId={location.loupistId} subjectId={server.recordId} onAbout={() => onOpen({ loupistId: location.loupistId, surface: "lens", recordId: SHARED_SECTION_ITEM })} /></div></header>
+        {!perspective && !principle ? <p className="knowledge-hint">{t("learning.notEvaluated")}</p> : null}
         {markdownFirst ? <div className="lens-format-picker">
           <Button variant="ghost" size="sm" aria-pressed={showMarkdown} onClick={() => setShowMarkdown(true)}>{t("lensWorkspace.markdownSource")}</Button>
           <Button variant="ghost" size="sm" aria-pressed={!showMarkdown} onClick={() => setShowMarkdown(false)}>{t("lensWorkspace.formatted")}</Button>

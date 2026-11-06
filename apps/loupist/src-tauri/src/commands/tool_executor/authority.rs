@@ -156,6 +156,22 @@ impl AppToolExecutor {
         })) {
             receipts.validate(scope, field, refs)?;
         }
+        if let Some(review) = &research.research_review {
+            crate::knowledge::validate_research_review(review)
+                .map_err(|error| BrokerError::invalid("researchReview", error.to_string()))?;
+            for check in &review.checks {
+                if check.evidence.iter().any(|reference| {
+                    !research.source_reads.contains(reference)
+                        && !research.world_reads.contains(reference)
+                }) || check
+                    .method_read
+                    .as_ref()
+                    .is_some_and(|reference| !research.lens_reads.contains(reference))
+                {
+                    return Err(BrokerError::invalid("researchReview", "cite only the enclosing note's acknowledged Source/World evidence and exact Lens reads"));
+                }
+            }
+        }
         let cutoff = parse_as_of_date(policy.as_of.as_deref())?;
         let review_day = |at_ms: i64| {
             crate::knowledge::journal::journal_date(at_ms)
@@ -1030,6 +1046,8 @@ impl AppToolExecutor {
             parse_research_journal(&params, now_ms())?
         };
         let research = StagedResearch {
+            research_review: None,
+            as_of: None,
             journal: Some(journal),
             working_note: None,
             observations: String::new(),
@@ -1074,7 +1092,7 @@ impl AppToolExecutor {
         params: Value,
         delivery_id: &str,
     ) -> Result<Value, BrokerError> {
-        if !policy.propose_memory_updates {
+        if !policy.propose_memory_updates || !policy.use_memory {
             return Err(BrokerError::Execution(
                 "Save learning is off, so this turn cannot save research".into(),
             ));
@@ -1082,9 +1100,24 @@ impl AppToolExecutor {
         let object = exact_object(
             &params,
             &["workingNote"],
-            &["sourceReads", "worldReads", "lensReads", "previousNoteIds"],
+            &[
+                "sourceReads",
+                "worldReads",
+                "lensReads",
+                "previousNoteIds",
+                "researchReview",
+            ],
         )?;
         let research = StagedResearch {
+            research_review: object
+                .get("researchReview")
+                .map(|value| {
+                    serde_json::from_value(value.clone()).map_err(|_| {
+                        BrokerError::invalid("researchReview", "invalid research review")
+                    })
+                })
+                .transpose()?,
+            as_of: policy.as_of.clone(),
             source_reads: optional_unique_strings(object.get("sourceReads"), 32, 128).map_err(
                 |_| {
                     BrokerError::invalid(

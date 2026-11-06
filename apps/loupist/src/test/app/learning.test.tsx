@@ -21,14 +21,14 @@ it.each(["created", "refined"] as const)("announces a %s event, highlights its W
   await userEvent.click(await mainTab(/Map/));
   await screen.findByTestId("learning-canvas");
   act(() => bridge.emitLearningReview({ ...review, status }));
-  await screen.findByText(`${status === "created" ? "Your Loupist learned" : "Your Loupist refined"} a way of working: ${node.label}`);
+  await screen.findByText(`${status === "created" ? "Saved" : "Updated"} a candidate way of working: ${node.label}`);
   expect(appliedIds.length).toBeGreaterThan(0);
   expect(screen.getByTestId("learning-canvas")).toHaveAttribute("data-glow", appliedIds.join(","));
   await userEvent.click(screen.getByRole("button", { name: "View" }));
   expect(await screen.findByRole("heading", { name: node.label })).toBeVisible();
   expect(await screen.findByRole("region", { name: "Research principles" })).toBeVisible();
   expect(await screen.findByRole("complementary", { name: node.label })).toBeVisible();
-  const provenance = await screen.findByRole("region", { name: "How your Loupist learned this" });
+  const provenance = await screen.findByRole("region", { name: "Why this candidate was saved" });
   expect(provenance).toHaveTextContent(review.rationale!);
   await userEvent.click(await within(provenance).findByRole("button", { name: "Show all 6" }));
   expect(within(provenance).getAllByRole("listitem")).toHaveLength(6);
@@ -41,9 +41,16 @@ it("announces learning away from Map without starting a hidden glow", async () =
   render(<><App bridge={bridge} /><State /></>);
   await screen.findByRole("button", { name: /Panel kind/ });
   act(() => bridge.emitLearningReview(review));
-  await screen.findByText(`Your Loupist learned a way of working: ${node.label}`);
+  await screen.findByText(`Saved a candidate way of working: ${node.label}`);
   expect(screen.getByTestId("glow-state")).toHaveTextContent("none");
   await userEvent.click(screen.getByRole("button", { name: "View" }));
   expect(await screen.findByRole("heading", { name: node.label })).toBeVisible();
 });
 
+it.each(["deferred", "failed"] as const)("does not announce a candidate from a %s review", async status => {
+  const { bridge, review } = await fixture();
+  render(<App bridge={bridge} />);
+  await screen.findByRole("button", { name: /Panel kind/ });
+  await act(async () => { bridge.emitLearningReview({ ...review, status }); });
+  expect(document.querySelector(".learning-toast")).toBeNull();
+});

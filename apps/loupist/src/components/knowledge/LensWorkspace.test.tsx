@@ -19,6 +19,7 @@ it("reads the saved Lens and attaches its exact version to Chat", async () => {
   const { props, lens } = await fixture();
   render(<LensWorkspace {...props} />);
   await screen.findByRole("heading", { name: lens.title });
+  expect(screen.getByText("This method has not been independently evaluated.")).toBeVisible();
   expect(screen.queryByRole("button", { name: /Edit method|Edit perspective|Lens actions|Add method|Save Lens|Rename|Archive/ })).toBeNull();
   expect(screen.queryByRole("textbox", { name: /Method|Change reason/ })).toBeNull();
   await userEvent.setup().click(screen.getByRole("button", { name: "Ask Bot to revise" }));
@@ -87,4 +88,13 @@ it("dismisses a proposal only once and allows retry after a failure", async () =
   await user.click(screen.getByRole("button", { name: "Dismiss" }));
   await waitFor(() => expect(screen.queryByText("Proposed changes 1")).toBeNull());
   expect(props.onChanged).toHaveBeenCalledOnce();
+});
+
+it("identifies an automatically learned method as a candidate using catalog provenance", async () => {
+  const { props, lens } = await fixture();
+  props.catalog.lenses = props.catalog.lenses.map(item => item.recordId === lens.recordId ? { ...item, learned: true } : item);
+  render(<LensWorkspace {...props} />);
+  await screen.findByRole("heading", { name: lens.title });
+  expect(screen.getByText("Candidate method")).toBeVisible();
+  expect(screen.getByText("This method has not been independently evaluated.")).toBeVisible();
 });

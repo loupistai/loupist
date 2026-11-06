@@ -1,0 +1,67 @@
+{
+  "schema": "loupist-autonomous-research/1",
+  "training": {
+    "id": "BACKLOG-RESEARCH",
+    "title": "Two ordinary investigations without a lesson",
+    "seed": {
+      "instructions": "Use only the retained fictional originals. Research the question and its strongest alternative explanation. Do not fetch external data.",
+      "sources": [
+        {
+          "title": "Meridian Thermal 2026 equipment orders disclosure",
+          "origin": "eval-fixture:meridian-thermal-2026",
+          "text": "Fictional original issuer disclosure, 20 September 2026. Meridian Thermal makes industrial cooling units. Headline backlog rose from USD 150 million to USD 240 million. The new total includes USD 90 million of cancellable framework requests; the previous total excluded such requests. Firm backlog is USD 150 million in both periods. Customer advances are unchanged at USD 15 million. Operating cash flow declined from USD 12 million to USD 4 million, with receivables rising by USD 8 million. Management attributes headline backlog growth to accelerating funded customer demand. Competitor River Cooling has completed the same customer qualification and spare capacity, but the disclosure gives no evidence of orders being transferred to River. No share class, ticker, price, or exchange is supplied."
+        },
+        {
+          "title": "Juniper Grid 2026 converter orders disclosure",
+          "origin": "eval-fixture:juniper-grid-2026",
+          "text": "Fictional original issuer disclosure, 24 September 2026. Juniper Grid makes power converters. Headline backlog rose from EUR 120 million to EUR 180 million. EUR 60 million came from an acquired business; on the same business perimeter, firm backlog remains EUR 120 million. The acquired backlog is binding but deliveries require a customer qualification that is not yet complete. Customer advances on the existing business are unchanged. Operating cash flow is flat. Management says the headline increase demonstrates rapid organic demand acceleration and near-term cash conversion. The disclosure gives no completion date for qualification and no cancellation schedule. No investment instrument or valuation data is supplied."
+        }
+      ]
+    },
+    "sessions": [
+      {
+        "id": "meridian-investigation",
+        "role": "train",
+        "memory": "remember",
+        "turns": [{"user": "Review the saved Meridian Thermal orders disclosure. Does the backlog increase support management's funded-demand explanation, and is River Cooling a supported overlooked beneficiary? Explain the strongest counterevidence and the next fact that would change the conclusion. Use only that original."}]
+      },
+      {
+        "id": "juniper-investigation",
+        "role": "train",
+        "memory": "remember",
+        "turns": [{"user": "Review the saved Juniper Grid orders disclosure. Does it establish organic demand acceleration and near-term cash conversion? Check the alternative explanation and identify the material unresolved condition. Use only that original."}]
+      }
+    ]
+  },
+  "probes": [
+    {
+      "id": "NIMBUS-TRANSFER",
+      "title": "Apply the learned method to new evidence",
+      "seed": {
+        "instructions": "Use only the retained fictional originals. Do not fetch external data.",
+        "sources": [{
+          "title": "Nimbus Controls 2026 order comparison",
+          "origin": "eval-fixture:nimbus-controls-2026",
+          "text": "Fictional original company disclosure, 2 October 2026. Nimbus Controls reports backlog of GBP 140 million versus GBP 100 million a year earlier. The current total includes GBP 30 million of unsigned options, whereas the prior total excluded options. Firm like-for-like backlog is now GBP 110 million versus GBP 100 million. Customer advances rose from GBP 10 million to GBP 11 million. Operating cash flow is GBP 5 million in both periods. Nimbus is qualified for its existing products, but a new controller behind half of the increase in firm backlog still requires customer qualification. Management calls the total backlog increase 40 percent organic funded demand growth that will convert to cash next quarter. No valuation, security identifier, or competitor order transfer is disclosed."
+        }]
+      },
+      "sessions": [{
+        "id": "fresh-investigation",
+        "role": "probe",
+        "memory": "read_only",
+        "turns": [{"user": "Analyze the saved Nimbus Controls order comparison. Does it establish 40% organic funded-demand growth and next-quarter cash conversion, and is there a supported investment opportunity? Give the identifiable change, counterevidence, and what would invalidate your conclusion."}]
+      }]
+    },
+    {
+      "id": "SIMPLE-CONVERSION",
+      "title": "Do not impose an irrelevant learned procedure",
+      "seed": {},
+      "sessions": [{
+        "id": "fresh-simple-question",
+        "role": "probe",
+        "memory": "read_only",
+        "turns": [{"user": "Express USD 30 million in thousands of US dollars. Only the conversion is needed."}]
+      }]
+    }
+  ]
+}

@@ -39,8 +39,7 @@ type Data = {
   catalog: KnowledgeCatalog;
   lenses: KnowledgeRecordSummary[];
   usage: Map<string, MemoryUsage>;
-  reviews: LearningReview[];
-  events: GrowthEvent[];
+  history: { reviews: LearningReview[]; events: GrowthEvent[] } | null;
   learnMethods: boolean | null;
   watchlist: WatchlistEntry[];
   /** Watched and held Map names, for showing a followed asset by its local name. */
@@ -97,8 +96,8 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onBack, onOp
       bridge.principleList({ loupistId }),
       bridge.knowledgeCatalog({ loupistId }),
       bridge.knowledgeMemoryUsage({ loupistId }).catch(() => []),
-      bridge.learningReviewList({ loupistId, limit: 50 }).catch(() => []),
-      bridge.knowledgeGrowthEvents({ loupistId, limit: 500 }).then(page => page.events).catch(() => []),
+      Promise.all([bridge.learningReviewList({ loupistId, limit: 50 }), bridge.knowledgeGrowthEvents({ loupistId, limit: 500 })])
+        .then(([reviews, page]) => ({ reviews, events: page.events })).catch(() => null),
       bridge.memoryLearningSettingsGet({ loupistId }).then(settings => settings.learnMethods).catch(() => null),
       bridge.watchlistList().catch(() => []),
       bridge.holdingsSummary().catch(() => null),
@@ -107,7 +106,7 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onBack, onOp
       bridge.packList({ loupistId }).catch(() => []),
       bridge.githubAccount().then(account => account.indexConfigured).catch(() => false),
       bridge.knowledgeMemoryControls({ loupistId }),
-    ]).then(([principles, catalog, usage, reviews, events, learnMethods, watchlist, holdings, followedNodes, suggestions, imports, indexConfigured, controls]) => {
+    ]).then(([principles, catalog, usage, history, learnMethods, watchlist, holdings, followedNodes, suggestions, imports, indexConfigured, controls]) => {
       if (!live) return;
       setData({
         paused: new Set(controls.paused),
@@ -115,7 +114,7 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onBack, onOp
         catalog,
         lenses: catalog.lenses.filter(item => item.lensKind !== "principle" && !item.archived),
         usage: new Map(usage.map(item => [item.recordId, item])),
-        reviews, events, learnMethods, watchlist, holdings, followedNodes, suggestions, imports, indexConfigured,
+        history, learnMethods, watchlist, holdings, followedNodes, suggestions, imports, indexConfigured,
       });
     }).catch(() => { if (live) setError(true); });
     return () => { live = false; };
@@ -204,10 +203,10 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onBack, onOp
       </> : null}
       {current === "methods" ? <>
         <ItemList label={t("memoryPage.tabs.methods")} description={t("memoryPage.methods.description")} items={methods} selectedId={selected?.id} usage={data.usage} paused={data.paused} onOpen={open}
-          before={suggestions} empty={<p className="memory-empty">{t("memoryPage.methods.empty")}</p>} />
+          before={<>{suggestions}{!terms && methods.length > 0 && !methods.some(item => item.kind === "method") ? <p className="memory-empty">{t("memoryPage.methods.empty")}</p> : null}</>} empty={<p className="memory-empty">{t("memoryPage.methods.empty")}</p>} />
         <Reader item={selected && selected.kind !== "principle" ? selected : undefined} bridge={bridge} loupistId={loupistId} usage={data.usage} paused={Boolean(selected && data.paused.has(selected.id))} threads={threads} onOpenChat={onOpenChat} onChanged={changed} onClose={() => setCompactReader(false)} backLabel={t("memoryPage.tabs.methods")} catalog={data.catalog} onOpenKnowledge={openKnowledge} onAsk={onAsk} onOpenLink={onOpenLink} />
       </> : null}
-      {current === "history" ? (() => {
+      {current === "history" && data.history === null ? <div className="memory-page-error" role="alert"><span>{t("memoryPage.history.loadError")}</span><Button size="sm" variant="outline" onClick={() => setRefresh(value => value + 1)}>{t("memoryPage.retry")}</Button></div> : current === "history" ? (() => {
         // The newest row that names a principle or method opens by default, so the tab shows how something was learned.
         const rows = historyRows(data, threads);
         const row = rows.find(entry => entry.key === historyKey) ?? rows.find(entry => entry.itemId && items.some(item => item.id === entry.itemId)) ?? rows[0];
@@ -425,7 +424,7 @@ type HistoryRow = { key: string; atMs: number; text: string; failed?: boolean; i
 function historyRows(data: Data, threads: readonly ChatThread[]): HistoryRow[] {
   const titles = new Map(data.lenses.map(lens => [lens.recordId, lens.title]));
   const rows: HistoryRow[] = [];
-  for (const review of data.reviews) {
+  for (const review of data.history?.reviews ?? []) {
     const title = review.lensRecordId ? titles.get(review.lensRecordId) : undefined;
     if (review.status === "created" || review.status === "refined") rows.push({ key: review.reviewId, atMs: review.createdAtMs, text: title ? t("memoryPage.history.learnedMethod", { title }) : t("memoryPage.history.learnedUntitled"), itemId: title ? review.lensRecordId ?? undefined : undefined });
     else if (review.status === "deferred") rows.push({ key: review.reviewId, atMs: review.createdAtMs, text: t("memoryPage.history.nothing") });
@@ -434,7 +433,7 @@ function historyRows(data: Data, threads: readonly ChatThread[]): HistoryRow[] {
   for (const principle of data.principles) rows.push({ key: `principle:${principle.recordId}`, atMs: principle.createdAtMs, text: t("memoryPage.history.taught", { statement: principle.statement }), itemId: principle.recordId });
   // Names added by one answer (or one day without a chat) form one row.
   const groups = new Map<string, { atMs: number; count: number; chatId: string | null }>();
-  for (const event of data.events) {
+  for (const event of data.history?.events ?? []) {
     if (event.origin && typeof event.origin === "object" && "kind" in event.origin && event.origin.kind === "memory_reset" && !event.recordId) rows.push({ key: event.eventId, atMs: event.atMs, text: t("memoryPage.history.reset") });
     if (event.kind !== "entity_added") continue;
     const key = event.originMessageId ?? `day:${new Date(event.atMs).toDateString()}`;

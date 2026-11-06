@@ -942,9 +942,81 @@ pub struct JournalDraft {
     pub entities: Vec<String>,
 }
 
+/// Agent assessments of completed research, separate from the user's Journal.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckDisposition {
+    Supported,
+    Mixed,
+    NotSupported,
+    Unresolved,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResearchCheckDraft {
+    pub question: String,
+    pub disposition: CheckDisposition,
+    pub finding: String,
+    pub evidence: Vec<String>,
+    #[serde(default)]
+    pub method_read: Option<String>,
+    pub limitation: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResearchReviewDraft {
+    pub question: String,
+    pub checks: Vec<ResearchCheckDraft>,
+    #[serde(default)]
+    pub next_check: Option<String>,
+}
+
+pub(crate) fn validate_research_review(review: &ResearchReviewDraft) -> KnowledgeResult<()> {
+    validate_text(&review.question, 500, false, "research question is invalid")?;
+    if !(1..=6).contains(&review.checks.len()) {
+        return Err(KnowledgeError::Invalid(
+            "research requires one to six checks",
+        ));
+    }
+    if let Some(next) = &review.next_check {
+        validate_text(next, 500, false, "research next check is invalid")?;
+    }
+    for check in &review.checks {
+        validate_text(&check.question, 300, false, "check question is invalid")?;
+        validate_text(&check.finding, 800, false, "check finding is invalid")?;
+        validate_text(
+            &check.limitation,
+            500,
+            false,
+            "check limitation is required",
+        )?;
+        if check.evidence.len() > 8
+            || (check.evidence.is_empty() && check.disposition != CheckDisposition::Unresolved)
+        {
+            return Err(KnowledgeError::Invalid(
+                "check needs bounded evidence or an unresolved gap",
+            ));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for reference in check.evidence.iter().chain(check.method_read.iter()) {
+            validate_text(reference, 128, false, "check reference is invalid")?;
+            if !seen.insert(reference) {
+                return Err(KnowledgeError::Invalid("check references must be distinct"));
+            }
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveResearch {
+    #[serde(default)]
+    pub research_review: Option<ResearchReviewDraft>,
+    #[serde(default)]
+    pub as_of: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note_inputs: Option<NoteInputDraft>,
     pub loupist_id: String,

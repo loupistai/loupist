@@ -962,6 +962,10 @@ fn erase_guarded_rows(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult
         )?;
     }
     tx.execute(
+        "DELETE FROM knowledge_research_experiences WHERE loupist_id = ?1",
+        [loupist_id],
+    )?;
+    tx.execute(
         "DELETE FROM knowledge_research_records WHERE loupist_id = ?1",
         [loupist_id],
     )?;

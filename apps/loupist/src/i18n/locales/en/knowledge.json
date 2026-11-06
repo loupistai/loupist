@@ -545,12 +545,12 @@
     "unavailable": "This rule is unavailable."
   },
   "learning": {
-    "heading": "How your Loupist learned this",
-    "learnedOn": "Learned on {{date}} from {{count}} new facts",
-    "evidence": "Evidence",
+    "heading": "Why this candidate was saved",
+    "learnedOn": "Saved on {{date}}",
+    "evidence": "Cited evidence",
     "showAll": "Show all {{count}}",
-    "keep": "Keep",
-    "kept": "Kept",
+    "keep": "Mark as seen",
+    "kept": "Seen",
     "archive": "Archive",
     "archiveConfirm": "Archive this way of working? Your Loupist will stop using it.",
     "cancel": "Cancel",
@@ -560,11 +560,11 @@
     "changedBecause": "Changed because: {{rationale}}",
     "earlier": "Earlier changes ({{count}})",
     "new": "New",
-    "inUse": "In use. Keep it to stop seeing 'New', or archive it.",
+    "inUse": "Available for future research. Mark as seen to clear 'New', or archive it.",
     "learnedOrigin": "Learned by your Loupist · {{date}}",
     "chatOrigin": "Saved from Chat · {{date}}",
-    "createdToast": "Your Loupist learned a way of working: {{title}}",
-    "refinedToast": "Your Loupist refined a way of working: {{title}}",
+    "createdToast": "Saved a candidate way of working: {{title}}",
+    "refinedToast": "Updated a candidate way of working: {{title}}",
     "view": "View",
     "dismiss": "Dismiss",
     "method": "Way of working",
@@ -574,7 +574,9 @@
     "unknownDate": "Date unavailable",
     "showMore": "Show more",
     "showLess": "Show less",
-    "openError": "Could not open this way of working. Try View again."
+    "openError": "Could not open this way of working. Try View again.",
+    "notEvaluated": "This method has not been independently evaluated.",
+    "candidateMethod": "Candidate method"
   },
   "journal": {
     "notes": "Journal & notes",
@@ -712,13 +714,13 @@
       "history": "History"
     },
     "row": {
-      "used_one": "used {{formattedCount}} time · last {{date}}",
-      "used_other": "used {{formattedCount}} times · last {{date}}",
-      "taught": "taught {{date}} · not used yet",
-      "learned_one": "learned {{date}} · applied {{formattedCount}} time",
-      "learned_other": "learned {{date}} · applied {{formattedCount}} times",
-      "learnedOnly": "learned {{date}}",
-      "neverUsed": "not used yet"
+      "used_one": "in {{formattedCount}} reply · last {{date}}",
+      "used_other": "in {{formattedCount}} replies · last {{date}}",
+      "taught": "saved {{date}} · no replies yet",
+      "learned_one": "saved {{date}} · in {{formattedCount}} reply",
+      "learned_other": "saved {{date}} · in {{formattedCount}} replies",
+      "learnedOnly": "saved {{date}}",
+      "neverUsed": "no replies yet"
     },
     "kind": {
       "principle": "Rule",
@@ -727,18 +729,18 @@
     "perspective": "Perspective",
     "perspectiveDescription": "The overall view your Loupist starts from.",
     "principles": {
-      "description": "Rules you taught. Your Loupist checks facts against them before anything else.",
+      "description": "Optional rules you add in Chat to guide research. Your Loupist can learn methods without them.",
       "add": "+ Add rule",
       "example": "Example: Check operating cash flow before trusting reported profit.",
       "newLabel": "New rule",
       "save": "Add rule"
     },
     "methods": {
-      "description": "Ways of working your Loupist learned by itself or you saved from Chat.",
-      "empty": "Nothing learned yet. Ways of working appear after your Loupist reads a few sources or you save a check from Chat."
+      "description": "Methods saved from research or Chat. None has been independently evaluated.",
+      "empty": "Research in Chat to get started. With learning enabled, your Loupist can save candidate methods from its investigations. You can also ask it to remember a method."
     },
     "reader": {
-      "usedIn": "Used in",
+      "usedIn": "Included in replies",
       "origin": "Where it came from",
       "originFeedback": "You said “Not helpful” on {{date}} and wrote this rule.",
       "originChat": "Saved from Chat on {{date}}.",
@@ -751,7 +753,7 @@
       "whatToQuestion": "What to question",
       "procedure": "Procedure",
       "openChat": "Open the chat",
-      "usageDefinition": "Counted once per completed reply when this item was supplied or applied. A count does not prove it influenced the answer."
+      "usageDefinition": "Counted once per completed reply when this item was supplied or applied. This does not establish that it was followed or improved the answer."
     },
     "actions": {
       "edit": "Edit",
@@ -786,18 +788,19 @@
     },
     "history": {
       "empty": "No history yet.",
-      "learnedMethod": "Learned a way of working: {{title}}",
-      "nothing": "Nothing worth keeping",
+      "learnedMethod": "Saved a candidate way of working: {{title}}",
+      "nothing": "No candidate saved",
       "failed": "Couldn’t learn from new information this time",
       "taught": "You taught a rule: {{statement}}",
       "mapAdded_one": "+{{formattedCount}} name on the map from {{source}}",
       "mapAdded_other": "+{{formattedCount}} names on the map from {{source}}",
       "mapAddedPlain_one": "+{{formattedCount}} name on the map",
       "mapAddedPlain_other": "+{{formattedCount}} names on the map",
-      "learnedUntitled": "Learned a way of working",
+      "learnedUntitled": "Saved a candidate way of working",
       "failedDetail": "Your Loupist could not finish learning from that conversation. Nothing was changed.",
       "openMap": "Show on the Map",
-      "reset": "Reset by you"
+      "reset": "Reset by you",
+      "loadError": "Could not load the learning history."
     },
     "reset": {
       "title": "Reset what {{loupistSubject}} learned?",

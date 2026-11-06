@@ -231,7 +231,7 @@ it("summarizes saved Memory changes and opens each target", async () => {
     ] },
   }));
   const receipt = screen.getByRole("navigation", { name: "What this answer used and saved" });
-  expect(receipt).toHaveTextContent("Saved 1 source·Learned 1 new way of working");
+  expect(receipt).toHaveTextContent("Saved 1 source·Saved 1 method");
   // A single saved Source opens directly from its receipt segment; the list stays open for the rest.
   await user().click(within(receipt).getByRole("button", { name: "Saved 1 source" }));
   const memory = screen.getByRole("list", { name: "Saved in this answer" });

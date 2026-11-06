@@ -35,6 +35,12 @@ Person, Asset, Product, Place, Policy, Event and Metric, and twelve relation typ
 LEADS, OFFERS, USES, REPORTS, LOCATED_IN, AFFECTS) with allowed endpoint types. An
 entity that fits no type stays `Entity`, and a relationship that fits no type keeps
 a specific open name, so the schema guides extraction without closing it.
+Chat receives these same definitions, attribute meanings, and endpoint signatures
+as bounded vocabulary with a digest. A changed extension refreshes the next turn's
+context. This vocabulary is not factual evidence. Under a historical cutoff, a
+later extension is omitted because earlier extension versions are not retained;
+the bundled core remains explicitly current application vocabulary. Memory off
+omits personal vocabulary ([context delivery](../agent/context-delivery.md#memory-and-context)).
 Each Loupist may store a small World extension on top of that core: at most four
 entity types and six relations. The extension applies to Sources processed from
 then on; extraction does not reclassify nodes already extracted. A semiconductors,

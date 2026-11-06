@@ -24,13 +24,13 @@ it("Keep clears the recent ring and stays acknowledged across a Map remount", as
   bridge.learningReviewList = async request => (await list(request)).map(review => ({ ...review, createdAtMs: review.createdAtMs - 60000 }));
   function Harness() { const [where, setWhere] = useState(location); return <MapView bridge={bridge} catalog={catalog} location={where} onPatch={setWhere} onOpen={setWhere} onAsk={vi.fn()} />; }
   const first = render(<Harness />);
-  await screen.findByRole("button", { name: "Keep" });
+  await screen.findByRole("button", { name: "Mark as seen" });
   expect((await screen.findByTestId("learning-canvas")).getAttribute("data-new")?.split(",")).toContain(node.id);
-  await userEvent.click(screen.getByRole("button", { name: "Keep" }));
+  await userEvent.click(screen.getByRole("button", { name: "Mark as seen" }));
   expect(screen.getByTestId("learning-canvas").getAttribute("data-new")?.split(",")).not.toContain(node.id);
   first.unmount();
   render(<Harness />);
-  expect(await screen.findByRole("button", { name: "Kept" })).toBeDisabled();
+  expect(await screen.findByRole("button", { name: "Seen" })).toBeDisabled();
   expect(screen.getByTestId("learning-canvas").getAttribute("data-new")?.split(",")).not.toContain(node.id);
 });
 

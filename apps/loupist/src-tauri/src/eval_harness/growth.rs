@@ -68,7 +68,7 @@ fn retain(
     }
     Ok(())
 }
-async fn drain(state: &AppState, loupist: &str) -> Result<Value> {
+pub(super) async fn drain(state: &AppState, loupist: &str) -> Result<Value> {
     let store = KnowledgeStore::for_loupist(state.store.clone(), loupist)?;
     let result = tokio::time::timeout(Duration::from_secs(900), async {
         loop {

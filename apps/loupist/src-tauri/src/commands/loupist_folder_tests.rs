@@ -642,19 +642,36 @@ async fn a_folder_made_by_an_earlier_build_is_refused_with_a_typed_state() {
     let state = AppState::for_folder_test(temp.path().join("app"));
     let current = create_folder_loupist(&state, &fresh).await.unwrap();
     let earlier = create_folder_loupist(&state, &old).await.unwrap();
+    let memory = KnowledgeStore::for_loupist(state.store.clone(), &earlier.id).unwrap();
+    let source = retain(
+        &memory,
+        &earlier.id,
+        "Original retained research must survive refusal.",
+    );
+    drop(memory);
     state.close_for_restart_test();
-    // Rewrite one folder as the previous build left it: Memory schema 1 and no
-    // asset page tables.
     {
         let connection = rusqlite::Connection::open(old.join(".loupist/loupist.sqlite3")).unwrap();
         connection
             .execute_batch(
-                "DROP TABLE knowledge_asset_pages; DROP TABLE knowledge_asset_observations;
-                 DROP TABLE knowledge_asset_moves; DROP TABLE knowledge_asset_section_deltas;
-                 UPDATE knowledge_schema SET version = 1;",
+                "DROP TABLE knowledge_research_experiences; UPDATE knowledge_schema SET version = 5;",
             )
             .unwrap();
     }
+    let saved_payload = {
+        let connection = rusqlite::Connection::open_with_flags(
+            old.join(".loupist/loupist.sqlite3"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
+        connection
+            .query_row(
+                "SELECT payload_json FROM knowledge_record_revisions WHERE revision_id=?1",
+                [&source.revision_id],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap()
+    };
     let state = AppState::for_folder_test(temp.path().join("app"));
     let listed = list_available_loupists(&state).await.unwrap();
     let availability = |id: &str| {
@@ -695,4 +712,39 @@ async fn a_folder_made_by_an_earlier_build_is_refused_with_a_typed_state() {
     let reopened = create_folder_loupist(&state, &old).await.unwrap_err();
     assert_eq!(reopened.code, "loupist_earlier_version");
     assert!(reopened.message.contains("earlier version"));
+    let connection = rusqlite::Connection::open_with_flags(
+        old.join(".loupist/loupist.sqlite3"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    let version: i64 = connection
+        .query_row("SELECT version FROM knowledge_schema", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 5);
+    let payload: String = connection
+        .query_row(
+            "SELECT payload_json FROM knowledge_record_revisions WHERE revision_id=?1",
+            [&source.revision_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(payload, saved_payload);
+    let added: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='knowledge_research_experiences')", [], |row| row.get(0)).unwrap();
+    assert!(!added, "refusal never initializes the new schema");
+}
+
+#[tokio::test]
+async fn importing_a_folder_checks_research_experience_digests() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("research");
+    fs::create_dir(&root).unwrap();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let loupist = create_folder_loupist(&state, &root).await.unwrap();
+    state.close_for_restart_test();
+    let connection = rusqlite::Connection::open(root.join(".loupist/loupist.sqlite3")).unwrap();
+    connection.execute("INSERT INTO knowledge_research_experiences(experience_id,loupist_id,turn_id,created_at_ms,body_json,body_digest) VALUES ('exp-corrupt',?1,'turn',1,'{}','wrong-digest')", [&loupist.id]).unwrap();
+    drop(connection);
+    let other = AppState::for_folder_test(temp.path().join("other-app"));
+    assert!(create_folder_loupist(&other, &root).await.is_err());
+    assert!(other.store.list_loupists().unwrap().is_empty());
 }

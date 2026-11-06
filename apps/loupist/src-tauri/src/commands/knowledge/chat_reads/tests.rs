@@ -1,5 +1,5 @@
 use super::*;
-use crate::agent_harness::{attach_relevant_memory, turn_envelope_block};
+use crate::agent_harness::{attach_relevant_memory, attach_world_vocabulary, turn_envelope_block};
 use crate::broker::{ToolExecutor, ToolMethod, ToolPolicy};
 use crate::commands::tests::{chat, profile, seed_profile};
 use crate::commands::tool_executor::{AppToolExecutor, ToolCapture};
@@ -48,6 +48,8 @@ fn note(state: &AppState, loupist: &str, chat_id: &str, title: &str, body: &str)
         })?;
         Ok(write
             .save_research(SaveResearch {
+                research_review: None,
+                as_of: None,
                 loupist_id: loupist.into(),
                 turn_id: chat_id.into(),
                 at_ms: 11,
@@ -83,6 +85,8 @@ fn journal(state: &AppState, chat_id: &str, conclusion: &str, at_ms: i64) {
             at_ms,
         })?;
         write.save_research(SaveResearch {
+            research_review: None,
+            as_of: None,
             loupist_id: "loupist-a".into(),
             turn_id: chat_id.into(),
             at_ms,
@@ -127,6 +131,8 @@ fn legacy_research(state: &AppState, chat_id: &str, observations: &str, at_ms: i
         })?;
         Ok(write
             .save_research(SaveResearch {
+                research_review: None,
+                as_of: None,
                 loupist_id: "loupist-a".into(),
                 turn_id: chat_id.into(),
                 at_ms,
@@ -155,7 +161,108 @@ fn envelope(context: &HostMemoryContext, enabled: bool) -> Value {
         &[],
     )
     .unwrap();
+    let base = attach_world_vocabulary(&base, Some(&context.world_vocabulary));
     serde_json::from_str(&attach_relevant_memory(&base, &context.relevant)).unwrap()
+}
+
+#[test]
+fn world_vocabulary_changes_refresh_context_and_respect_memory_and_cutoff() {
+    let (_dir, state) = fixture();
+    let original = host_memory_context(&state, "loupist-a", "Research suppliers").unwrap();
+    let original_envelope = envelope(&original, true).to_string();
+    let original_digest = crate::agent_harness::envelope_context_digest(&original_envelope);
+    let recorded_at = chrono::DateTime::parse_from_rfc3339("2026-07-01T12:00:00Z")
+        .unwrap()
+        .timestamp_millis();
+    let extension = crate::knowledge::curated_seed(
+        Some("semiconductors"),
+        "Chips, memory, foundries and equipment",
+        recorded_at,
+    )
+    .unwrap();
+    with_loupist_knowledge(&state, "loupist-a", |tx, _| {
+        let mut settings = crate::knowledge::load_settings(tx, "loupist-a")?;
+        settings.extension = extension.clone();
+        crate::knowledge::store_settings(tx, "loupist-a", &settings)
+    })
+    .unwrap();
+
+    let current = host_memory_context(&state, "loupist-a", "Research suppliers").unwrap();
+    let current_envelope = envelope(&current, true);
+    let vocabulary = &current_envelope["memory_protocol"]["worldVocabulary"];
+    assert_eq!(
+        vocabulary,
+        &serde_json::to_value(
+            crate::knowledge::world_extract::vocabulary_context(Some(&extension)).unwrap()
+        )
+        .unwrap()
+    );
+    assert_ne!(current.revision, original.revision);
+    let (resent, current_digest) = crate::agent_harness::maybe_abbreviate_envelope(
+        &current_envelope.to_string(),
+        Some(&original_digest),
+        true,
+    );
+    assert_ne!(current_digest, original_digest);
+    assert_eq!(
+        serde_json::from_str::<Value>(&resent).unwrap(),
+        current_envelope
+    );
+    let (warm, _) = crate::agent_harness::maybe_abbreviate_envelope(
+        &current_envelope.to_string(),
+        Some(&current_digest),
+        true,
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(&warm).unwrap()["context"]["unchanged"],
+        true
+    );
+
+    let historical = host_memory_context_for_turn(
+        &state,
+        "loupist-a",
+        "Research suppliers",
+        true,
+        &[],
+        super::super::as_of::Cutoff::parse(Some("2026-06-01")),
+    )
+    .unwrap()
+    .unwrap();
+    let historical = envelope(&historical, true);
+    let vocabulary = &historical["memory_protocol"]["worldVocabulary"];
+    assert_eq!(vocabulary["historicalExtensionUnavailable"], true);
+    assert!(vocabulary["extensionVersion"].is_null());
+    assert!(!vocabulary.to_string().contains("ProcessNode"));
+    assert_eq!(
+        vocabulary["definitions"],
+        envelope(&original, true)["memory_protocol"]["worldVocabulary"]["definitions"]
+    );
+
+    let known = host_memory_context_for_turn(
+        &state,
+        "loupist-a",
+        "Research suppliers",
+        true,
+        &[],
+        super::super::as_of::Cutoff::parse(Some("2026-08-01")),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        envelope(&known, true)["memory_protocol"]["worldVocabulary"],
+        current_envelope["memory_protocol"]["worldVocabulary"]
+    );
+    assert!(host_memory_context_for_turn(
+        &state,
+        "loupist-a",
+        "Research suppliers",
+        false,
+        &[],
+        None
+    )
+    .unwrap()
+    .is_none());
+    assert!(envelope(&current, false).get("memory_protocol").is_none());
 }
 
 #[tokio::test]

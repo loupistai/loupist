@@ -55,6 +55,7 @@ pub(in crate::commands) struct HostMemoryEntry {
 
 pub(in crate::commands) struct HostMemoryContext {
     pub revision: String,
+    pub world_vocabulary: crate::knowledge::world_extract::WorldVocabulary,
     pub principles: Vec<crate::knowledge::Principle>,
     pub principle_receipts: Vec<crate::domain::LensReceipt>,
     pub principles_block: String,
@@ -123,7 +124,7 @@ pub(in crate::commands) fn host_memory_context_for_turn(
     if !use_memory {
         return Ok(None);
     }
-    let mut context = host_memory_context_excluding(state, loupist_id, message, set_aside)?;
+    let mut context = host_memory_context_excluding(state, loupist_id, message, set_aside, cutoff)?;
     if let Some(cutoff) = cutoff {
         as_of_context(state, loupist_id, &mut context, cutoff)?;
     }
@@ -205,7 +206,7 @@ pub(in crate::commands) fn host_memory_context(
     loupist_id: &str,
     message: &str,
 ) -> Result<HostMemoryContext, CommandError> {
-    host_memory_context_excluding(state, loupist_id, message, &[])
+    host_memory_context_excluding(state, loupist_id, message, &[], None)
 }
 
 fn host_memory_context_excluding(
@@ -213,8 +214,14 @@ fn host_memory_context_excluding(
     loupist_id: &str,
     message: &str,
     set_aside: &[String],
+    cutoff: Option<super::as_of::Cutoff>,
 ) -> Result<HostMemoryContext, CommandError> {
     admit(state, loupist_id)?;
+    let world_vocabulary = with_loupist_knowledge(state, loupist_id, |tx, _| {
+        let settings = crate::knowledge::load_settings(tx, loupist_id)?;
+        let known = cutoff.is_none_or(|cutoff| cutoff.recorded(settings.extension.updated_at_ms));
+        crate::knowledge::world_extract::vocabulary_context(known.then_some(&settings.extension))
+    })?;
     let controls = with_loupist_knowledge(state, loupist_id, |tx, _| {
         crate::knowledge::memory_controls::load(tx, loupist_id)
     })?;
@@ -393,7 +400,11 @@ fn host_memory_context_excluding(
             pointer.snippet = snippet;
         }
     }
-    let revision = crate::util::sha256(format!("{revision}\n{principles_block}").as_bytes());
+    let vocabulary_json = serde_json::to_string(&world_vocabulary)
+        .map_err(|error| CommandError::internal(error.to_string()))?;
+    let revision = crate::util::sha256(
+        format!("{revision}\n{principles_block}\n{vocabulary_json}").as_bytes(),
+    );
     let principle_receipts = with_loupist_knowledge(state, loupist_id, |tx, blobs| {
         let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
         principles
@@ -417,6 +428,7 @@ fn host_memory_context_excluding(
         principles,
         principles_block,
         revision,
+        world_vocabulary,
         charter,
         charter_read_ref,
         charter_delivery,

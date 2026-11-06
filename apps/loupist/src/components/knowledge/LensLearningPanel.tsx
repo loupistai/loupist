@@ -33,6 +33,7 @@ export function LensLearningPanel({ bridge, loupistId, node, map, onSelect, onAr
   useEffect(() => {
     let active = true;
     setError(false);
+    setReview(undefined); setChange(undefined); setEvidence([]); setMissingEvidence(false); setAll(false); setEvents([]);
     void (async () => {
       const history: GrowthEvent[] = [];
       let cursor: string | undefined;
@@ -47,8 +48,9 @@ export function LensLearningPanel({ bridge, loupistId, node, map, onSelect, onAr
     if (node.kind === "lens_method" && node.recordId) void (async () => {
       const [reviews, changes] = await Promise.all([bridge.learningReviewList({ loupistId, limit: 200 }), bridge.knowledgeLensChanges({ loupistId, recordId: node.recordId! })]);
       if (!active) return;
-      const latest = reviews.filter(item => item.lensRecordId === node.recordId && (item.status === "created" || item.status === "refined")).sort((a, b) => b.createdAtMs - a.createdAtMs)[0];
-      const basis = changes.filter(item => item.origin?.kind === "learning_review").sort((a, b) => (b.createdAtMs ?? 0) - (a.createdAtMs ?? 0))[0];
+      const basis = changes.filter(item => item.recordId === node.recordId && item.origin?.kind === "learning_review").sort((a, b) => (b.createdAtMs ?? 0) - (a.createdAtMs ?? 0))[0];
+      const origin = basis?.origin;
+      const latest = origin?.kind === "learning_review" ? reviews.find(item => item.reviewId === origin.reviewId && item.lensRecordId === node.recordId && (item.status === "created" || item.status === "refined")) : undefined;
       setReview(latest); setChange(basis);
       const refs = basis?.inputs.references.filter(ref => ref.kind === "world_claim") ?? [];
       const rows = await Promise.allSettled(refs.map(async ref => {
@@ -65,7 +67,7 @@ export function LensLearningPanel({ bridge, loupistId, node, map, onSelect, onAr
     return () => { active = false; };
   }, [bridge, loupistId, node.recordId, node.learnedAtMs, reload]);
   // Map provenance is the publication time; review.createdAtMs is admission time.
-  const learnedAt = node.learnedAtMs ?? change?.createdAtMs ?? review?.createdAtMs;
+  const learnedAt = node.learnedAtMs ?? change?.createdAtMs;
   const rationale = review?.rationale ?? change?.rationale ?? node.learnedRationale;
   const kept = !!node.recordId && learnedAt !== undefined && (learning.acknowledged.get(node.recordId) ?? -Infinity) >= learnedAt;
   async function archive() {
@@ -79,7 +81,7 @@ export function LensLearningPanel({ bridge, loupistId, node, map, onSelect, onAr
     {error ? <p role="alert">{t("learning.loadError")} <Button variant="link" onClick={() => setReload(value => value + 1)}>{t("map.retry")}</Button></p> : null}
     {node.kind === "lens_method" && learnedAt !== undefined ? <section className="method-learning" aria-label={t("learning.heading")}>
       <h3>{t("learning.heading")}</h3>
-      <p className="learning-meta">{t("learning.learnedOn", { date: formatDate(learnedAt), count: review?.evidenceCount ?? change?.inputs.references.length ?? evidence.length })}</p>
+      <p className="learning-meta">{t("learning.learnedOn", { date: formatDate(learnedAt) })}</p>
       {rationale ? <blockquote>“{rationale}”</blockquote> : null}
       {evidence.length ? <><h4>{t("learning.evidence")}</h4><ul className="learning-evidence">{(all ? evidence : evidence.slice(0, 5)).map(row => <li key={row.id}><button type="button" disabled={!row.entity} onClick={() => row.entity && onSelect(row.entity)}><span>{row.text}</span><small>{[row.entity ? entityLabel(row.entity, i18n.language) : undefined, row.date ? dateValue(row.date) : undefined].filter(Boolean).join(" · ")}</small></button></li>)}</ul>{evidence.length > 5 ? <Button variant="link" aria-expanded={all} onClick={() => setAll(value => !value)}>{all ? t("map.less") : t("learning.showAll", { count: evidence.length })}</Button> : null}</> : null}
       {missingEvidence ? <p className="learning-meta">{t("learning.evidenceMissing")}</p> : null}

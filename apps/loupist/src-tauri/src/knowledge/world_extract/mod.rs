@@ -17,6 +17,7 @@ mod pyjson;
 mod schema;
 mod search;
 mod text;
+mod vocabulary;
 
 use std::path::Path;
 
@@ -27,6 +28,7 @@ use super::model::WorldSnapshotBody;
 use super::KnowledgeStore;
 
 pub(crate) use job::drive_job;
+pub(crate) use vocabulary::{vocabulary_context, WorldVocabulary};
 
 const QUERY_LIMIT: usize = 25;
 

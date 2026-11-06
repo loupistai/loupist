@@ -56,6 +56,9 @@ pub fn save_settings(
         learn_methods: enabled,
     };
     tx.execute("INSERT INTO knowledge_learning_settings(loupist_id,learn_methods) VALUES (?1,?2) ON CONFLICT(loupist_id) DO UPDATE SET learn_methods=excluded.learn_methods",params![loupist,enabled])?;
+    if enabled {
+        enqueue_experiences(tx, loupist, chrono::Utc::now().timestamp_millis())?;
+    }
     Ok(value)
 }
 pub fn list(tx: &Transaction<'_>, request: &ReviewQuery) -> KnowledgeResult<Vec<Review>> {
@@ -100,6 +103,23 @@ pub(super) fn enqueue(
     world_job: &str,
     now: i64,
 ) -> KnowledgeResult<Option<String>> {
+    enqueue_evidence(tx, loupist, Some(world_job), now)
+}
+
+pub(crate) fn enqueue_experiences(
+    tx: &Transaction<'_>,
+    loupist: &str,
+    now: i64,
+) -> KnowledgeResult<Option<String>> {
+    enqueue_evidence(tx, loupist, None, now)
+}
+
+fn enqueue_evidence(
+    tx: &Transaction<'_>,
+    loupist: &str,
+    world_job: Option<&str>,
+    now: i64,
+) -> KnowledgeResult<Option<String>> {
     let s = load_settings(tx, loupist)?;
     if !enabled(tx, loupist, &s)? {
         return Ok(None);
@@ -109,7 +129,7 @@ pub(super) fn enqueue(
         [loupist], |r| r.get(0),
     ).optional()?;
     if active.is_some() {
-        return admit_pending(tx, loupist, now);
+        return freeze_pending_review(tx, loupist, now);
     }
     let through: i64 = tx.query_row(
         "SELECT COALESCE(MAX(through_event),0) FROM knowledge_learning_reviews WHERE loupist_id=?1",
@@ -117,12 +137,14 @@ pub(super) fn enqueue(
         |r| r.get(0),
     )?;
     let (count,end):(i64,i64)=tx.query_row("SELECT COUNT(*),COALESCE(MAX(rowid),0) FROM knowledge_growth_events WHERE loupist_id=?1 AND rowid>?2 AND kind IN ('claim_added','claim_disputed')",params![loupist,through],|r|Ok((r.get(0)?,r.get(1)?)))?;
-    if count < 5 {
+    let experience_start: i64 = tx.query_row("SELECT COALESCE(MAX(through_experience),0) FROM knowledge_learning_reviews WHERE loupist_id=?1 AND status<>'pending'", [loupist], |row| row.get(0))?;
+    let experience_count: i64 = tx.query_row("SELECT COUNT(*) FROM knowledge_research_experiences e WHERE loupist_id=?1 AND sequence>?2 AND as_of IS NULL AND EXISTS(SELECT 1 FROM json_each(e.body_json,'$.checks') c WHERE json_extract(c.value,'$.eligibleOriginal')=1)", params![loupist,experience_start], |row| row.get(0))?;
+    if count < 5 && experience_count < 2 {
         return Ok(None);
     }
     let id = super::model::mint_id("lrn");
     tx.execute("INSERT INTO knowledge_learning_reviews(review_id,loupist_id,world_job_id,status,created_at_ms,through_event,settings_json,call_budget) VALUES (?1,?2,?3,'pending',?4,?5,?6,?7)",params![id,loupist,world_job,now,end,serde_json::to_string(&s)?,s.max_llm_calls.min(1)])?;
-    admit_pending(tx, loupist, now)
+    freeze_pending_review(tx, loupist, now)
 }
 
 fn world_busy(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<bool> {
@@ -134,10 +156,12 @@ fn world_busy(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<bool> {
 
 /// Pending work does not consume the evidence watermark or a rate-limit slot.
 /// Admission and the final World commit share the same SQLite transaction.
-fn admit_pending(tx: &Transaction<'_>, loupist: &str, now: i64) -> KnowledgeResult<Option<String>> {
+fn freeze_pending_review(
+    tx: &Transaction<'_>,
+    loupist: &str,
+    now: i64,
+) -> KnowledgeResult<Option<String>> {
     if world_busy(tx, loupist)? {
-        // A new batch may arrive after admission but before the inference claim.
-        tx.execute("UPDATE knowledge_learning_reviews SET status='pending' WHERE loupist_id=?1 AND status='queued'", [loupist])?;
         return Ok(None);
     }
     let id: Option<String> = tx.query_row(
@@ -149,7 +173,7 @@ fn admit_pending(tx: &Transaction<'_>, loupist: &str, now: i64) -> KnowledgeResu
         return Ok(None);
     }
     // Include every claim committed while the review waited for the batch.
-    tx.execute("UPDATE knowledge_learning_reviews SET status='queued',created_at_ms=?2,through_event=COALESCE((SELECT MAX(rowid) FROM knowledge_growth_events WHERE loupist_id=?3 AND kind IN ('claim_added','claim_disputed')),through_event) WHERE review_id=?1 AND status='pending'", params![id,now,loupist])?;
+    tx.execute("UPDATE knowledge_learning_reviews SET status='queued',created_at_ms=?2,through_experience=COALESCE((SELECT MAX(sequence) FROM knowledge_research_experiences WHERE loupist_id=?3 AND as_of IS NULL),0),through_event=COALESCE((SELECT MAX(rowid) FROM knowledge_growth_events WHERE loupist_id=?3 AND kind IN ('claim_added','claim_disputed')),through_event) WHERE review_id=?1 AND status='pending'", params![id,now,loupist])?;
     Ok(Some(id))
 }
 fn rate_limit_until(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<i64> {
@@ -201,12 +225,30 @@ struct Claim {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct LearningObservation {
+    id: String,
+    turn_id: String,
+    research_question: String,
+    next_check: Option<String>,
+    question: String,
+    disposition: super::CheckDisposition,
+    finding: String,
+    limitation: String,
+    sources: Vec<super::JournalSourceInput>,
+    method_revision: Option<(String, String)>,
+    eligible_original: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct Input {
     loupist_name: String,
     focus: String,
     principles: Vec<String>,
     methods: Vec<Method>,
     claims: Vec<Claim>,
+    #[serde(default)]
+    observations: Vec<LearningObservation>,
 }
 impl Input {
     fn text(&self) -> KnowledgeResult<String> {
@@ -218,6 +260,7 @@ fn build_input(
     loupist: &str,
     start: i64,
     end: i64,
+    experience_range: (i64, i64),
     name: &str,
     focus: &str,
 ) -> KnowledgeResult<Input> {
@@ -233,6 +276,7 @@ fn build_input(
         principles,
         methods: vec![],
         claims: vec![],
+        observations: vec![],
     };
     // Never silently omit a principle. If all cannot fit, defer without inference.
     if input.text()?.chars().count() > MAX_INPUT {
@@ -263,6 +307,48 @@ fn build_input(
             break;
         }
     }
+    super::research::experience::visit_recent(
+        tx,
+        loupist,
+        experience_range.0,
+        experience_range.1,
+        |experience| {
+            let before = input.observations.len();
+            for observation in experience.checks {
+                if observation
+                    .inputs
+                    .sources
+                    .iter()
+                    .map(|source| &source.record_id)
+                    .chain(observation.inputs.lenses.iter().map(|lens| &lens.record_id))
+                    .any(|id| controls.paused.contains(id) || controls.removed.contains(id))
+                {
+                    continue;
+                }
+                input.observations.push(LearningObservation {
+                    research_question: experience.question.clone(),
+                    next_check: experience.next_check.clone(),
+                    id: observation.id,
+                    turn_id: observation.turn_id,
+                    question: observation.question,
+                    disposition: observation.disposition,
+                    finding: observation.finding,
+                    limitation: observation.limitation,
+                    sources: observation.inputs.sources,
+                    method_revision: observation
+                        .inputs
+                        .lenses
+                        .first()
+                        .map(|lens| (lens.record_id.clone(), lens.revision_id.clone())),
+                    eligible_original: observation.eligible_original,
+                });
+            }
+            if input.text()?.chars().count() > MAX_INPUT {
+                input.observations.truncate(before);
+            }
+            Ok(())
+        },
+    )?;
     let body:Option<String>=tx.query_row("SELECT s.snapshot_json FROM knowledge_world_snapshots s JOIN knowledge_record_heads h ON h.revision_id=s.revision_id JOIN knowledge_records r ON r.record_id=h.record_id WHERE r.owner_loupist_id=?1 AND r.kind='world'",[loupist],|r|r.get(0)).optional()?;
     if let Some(body) = body {
         let body: WorldSnapshotBody = serde_json::from_str(&body)?;
@@ -327,7 +413,10 @@ struct Output {
     limitations: String,
     #[serde(default)]
     markdown: String,
+    #[serde(default)]
     evidence_claim_ids: Vec<String>,
+    #[serde(default)]
+    evidence_observation_ids: Vec<String>,
     rationale: String,
 }
 impl Output {
@@ -346,7 +435,8 @@ impl Output {
 pub(super) struct Attempt {
     pub review_id: String,
     pub loupist_id: String,
-    pub world_job_id: String,
+    pub world_job_id: Option<String>,
+    pub through_experience: i64,
     pub input: Input,
     pub settings: GraphProcessingSettings,
 }
@@ -361,12 +451,12 @@ pub(super) fn claim(
     if !enabled(tx, loupist, &current)? {
         return Ok(None);
     }
-    admit_pending(tx, loupist, now)?;
+    freeze_pending_review(tx, loupist, now)?;
     if world_busy(tx, loupist)? {
         return Ok(None);
     }
-    let row:Option<(String,String,i64,String,u32)>=tx.query_row("SELECT review_id,world_job_id,through_event,settings_json,call_budget FROM knowledge_learning_reviews WHERE loupist_id=?1 AND status='queued' ORDER BY created_at_ms LIMIT 1",[loupist],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).optional()?;
-    let Some((id, world_job_id, end, frozen, budget)) = row else {
+    let row:Option<(String,Option<String>,i64,String,u32,i64)>=tx.query_row("SELECT review_id,world_job_id,through_event,settings_json,call_budget,through_experience FROM knowledge_learning_reviews WHERE loupist_id=?1 AND status='queued' ORDER BY created_at_ms LIMIT 1",[loupist],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?))).optional()?;
+    let Some((id, world_job_id, end, frozen, budget, through_experience)) = row else {
         return Ok(None);
     };
     // Frozen zero budgets wait just like World chunks; settings alone do not authorize a paid retry.
@@ -386,7 +476,16 @@ pub(super) fn claim(
         return Ok(None);
     }
     let start:i64=tx.query_row("SELECT COALESCE(MAX(through_event),0) FROM knowledge_learning_reviews WHERE loupist_id=?1 AND review_id<>?2",params![loupist,id],|r|r.get(0))?;
-    let input = match build_input(tx, loupist, start, end, name, focus) {
+    let experience_start: i64 = tx.query_row("SELECT COALESCE(MAX(through_experience),0) FROM knowledge_learning_reviews WHERE loupist_id=?1 AND review_id<>?2 AND status<>'pending'", params![loupist,id], |row| row.get(0))?;
+    let input = match build_input(
+        tx,
+        loupist,
+        start,
+        end,
+        (experience_start, through_experience),
+        name,
+        focus,
+    ) {
         Ok(i) => i,
         Err(KnowledgeError::Invalid(reason)) => {
             settle(tx, &id, "deferred", Some(reason), None, None, 0, now)?;
@@ -394,7 +493,16 @@ pub(super) fn claim(
         }
         Err(e) => return Err(e),
     };
-    if input.claims.len() < 2 {
+    if input.claims.len() < 2
+        && input
+            .observations
+            .iter()
+            .filter(|o| o.eligible_original)
+            .map(|o| &o.turn_id)
+            .collect::<BTreeSet<_>>()
+            .len()
+            < 2
+    {
         settle(
             tx,
             &id,
@@ -412,6 +520,7 @@ pub(super) fn claim(
         review_id: id,
         loupist_id: loupist.into(),
         world_job_id,
+        through_experience,
         input,
         settings: s,
     }))
@@ -428,10 +537,25 @@ fn settle(
     now: i64,
 ) -> KnowledgeResult<()> {
     tx.execute("UPDATE knowledge_learning_reviews SET status=?2,reason=?3,lens_record_id=?4,rationale=?5,evidence_count=?6,finished_at_ms=?7 WHERE review_id=?1",params![id,status,reason,lens,rationale,count as i64,now])?;
+    let loupist: String = tx.query_row(
+        "SELECT loupist_id FROM knowledge_learning_reviews WHERE review_id=?1",
+        [id],
+        |row| row.get(0),
+    )?;
+    enqueue_experiences(tx, &loupist, now)?;
     Ok(())
 }
 pub(super) fn recover(tx: &Transaction<'_>) -> KnowledgeResult<()> {
     tx.execute("UPDATE knowledge_learning_reviews SET status='failed',reason='uncertain_paid_attempt',finished_at_ms=started_at_ms WHERE status='running'",[])?;
+    let mut query = tx.prepare(
+        "SELECT DISTINCT loupist_id FROM knowledge_research_experiences WHERE as_of IS NULL",
+    )?;
+    let owners = query
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    for owner in owners {
+        enqueue_experiences(tx, &owner, chrono::Utc::now().timestamp_millis())?;
+    }
     Ok(())
 }
 pub(super) fn request(attempt: &Attempt) -> KnowledgeResult<Value> {
@@ -524,6 +648,19 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
     if o.rationale.trim().is_empty() || o.rationale.chars().count() > 400 {
         return Err(invalid());
     }
+    let ids: BTreeSet<_> = o.evidence_claim_ids.iter().collect();
+    let observation_ids: BTreeSet<_> = o.evidence_observation_ids.iter().collect();
+    if ids.len() != o.evidence_claim_ids.len()
+        || observation_ids.len() != o.evidence_observation_ids.len()
+        || ids
+            .iter()
+            .any(|id| !a.input.claims.iter().any(|c| &c.claim_id == *id))
+        || observation_ids
+            .iter()
+            .any(|id| !a.input.observations.iter().any(|c| &c.id == *id))
+    {
+        return Err(invalid());
+    }
     if o.action == "defer" {
         return settle(
             write.tx,
@@ -542,14 +679,19 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
     {
         return Err(invalid());
     }
-    let ids: BTreeSet<_> = o.evidence_claim_ids.iter().collect();
-    if ids.len() < 2
-        || ids
-            .iter()
-            .any(|id| !a.input.claims.iter().any(|c| &c.claim_id == *id))
-    {
+    let turns: BTreeSet<_> = a
+        .input
+        .observations
+        .iter()
+        .filter(|observation| {
+            observation_ids.contains(&observation.id) && observation.eligible_original
+        })
+        .map(|observation| &observation.turn_id)
+        .collect();
+    if ids.len() < 2 && turns.len() < 2 {
         return Err(invalid());
     }
+    let evidence_count = ids.len() + observation_ids.len();
     let doc = o.document();
     if [
         &doc.markdown,
@@ -567,6 +709,15 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
     write.validate_lens_publication(&a.loupist_id, &o.title, &doc, &BTreeSet::new())?;
     // A newly added/edited principle invalidates this bounded review's authority.
     let controls = super::memory_controls::load(write.tx, &a.loupist_id)?;
+    if a.input
+        .observations
+        .iter()
+        .filter(|observation| observation_ids.contains(&observation.id))
+        .filter_map(|observation| observation.method_revision.as_ref())
+        .any(|(record, _)| controls.paused.contains(record) || controls.removed.contains(record))
+    {
+        return Err(invalid());
+    }
     let current: Vec<_> = super::principles::principle_list(write.tx, &a.loupist_id, false)?
         .into_iter()
         .filter(|p| !controls.paused.contains(&p.record_id))
@@ -580,7 +731,7 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
             Some("principles_changed"),
             None,
             Some(&o.rationale),
-            ids.len(),
+            evidence_count,
             now,
         );
     }
@@ -591,6 +742,11 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
             .iter()
             .find(|m| Some(&m.record_id) == o.target_record_id.as_ref())
             .ok_or_else(invalid)?;
+        if controls.paused.contains(&method.record_id)
+            || controls.removed.contains(&method.record_id)
+        {
+            return Err(invalid());
+        }
         let active:bool=write.tx.query_row("SELECT EXISTS(SELECT 1 FROM knowledge_lens_metadata m WHERE m.loupist_id=?1 AND m.record_id=?2 AND m.archived_at_ms IS NULL AND m.lens_kind='method' AND NOT EXISTS(SELECT 1 FROM knowledge_standing_selection s WHERE s.record_id=m.record_id))",params![a.loupist_id,method.record_id],|r|r.get(0))?;
         if !active {
             return Err(invalid());
@@ -622,7 +778,7 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
                 Some("stale_head_proposal"),
                 Some(&method.record_id),
                 Some(&o.rationale),
-                ids.len(),
+                evidence_count,
                 now,
             );
         }
@@ -634,7 +790,7 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
                 Some("method_unchanged"),
                 None,
                 Some(&o.rationale),
-                ids.len(),
+                evidence_count,
                 now,
             );
         }
@@ -655,8 +811,42 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
             None,
         )
     };
-    let origin =
-        json!({"kind":"learning_review","reviewId":a.review_id,"worldJobId":a.world_job_id});
+    let mut references = Vec::new();
+    let mut seen_sources = BTreeSet::new();
+    for observation in a
+        .input
+        .observations
+        .iter()
+        .filter(|o| observation_ids.contains(&o.id))
+    {
+        for source in &observation.sources {
+            if controls.removed.contains(&source.record_id)
+                || controls.paused.contains(&source.record_id)
+            {
+                return Err(invalid());
+            }
+            if !seen_sources.insert((&source.record_id, &source.revision_id, &source.span_id)) {
+                continue;
+            }
+            let source_id: String = write.tx.query_row(
+                "SELECT source_id FROM knowledge_sources WHERE record_id=?1",
+                [&source.record_id],
+                |row| row.get(0),
+            )?;
+            references.push(crate::domain::KnowledgeReference {
+                kind: "source".into(),
+                record_id: source.record_id.clone(),
+                revision_id: source.revision_id.clone(),
+                object_id: source_id,
+                span_id: Some(source.span_id.clone()),
+                receipt_id: None,
+            });
+        }
+    }
+    if references.len() > 56 {
+        return Err(invalid());
+    }
+    let origin = json!({"kind":"learning_review","reviewId":a.review_id,"worldJobId":a.world_job_id,"throughExperience":a.through_experience,"evidenceClaimIds":ids,"evidenceObservationIds":observation_ids});
     let view = super::lens::revise_lens_with_provenance(
         write.tx,
         super::ReviseLens {
@@ -668,7 +858,7 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
             dependencies: vec![],
             change: super::LensChangeInput {
                 rationale: o.rationale.clone(),
-                references: vec![],
+                references,
                 feedback: None,
             },
         },
@@ -712,7 +902,7 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
         None,
         Some(&record_id),
         Some(&o.rationale),
-        ids.len(),
+        evidence_count,
         now,
     )
 }

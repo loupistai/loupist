@@ -95,6 +95,8 @@ fn research(
     lens_reads: Vec<String>,
 ) -> StagedResearch {
     StagedResearch {
+        research_review: None,
+        as_of: None,
         source_reads: Vec::new(),
         world_reads: Vec::new(),
         lens_reads: Vec::new(),
@@ -647,6 +649,8 @@ fn journals_keep_the_acknowledged_snapshot_and_refuse_unacknowledged_or_foreign_
     assert!(save("loupist-a", "turn-unacked", &[], &cited).is_err());
     assert!(save("loupist-b", "turn-foreign", &reads, &cited).is_err());
     let analysis = StagedResearch {
+        research_review: None,
+        as_of: None,
         journal: None,
         ..research(Vec::new(), Vec::new(), Vec::new())
     };
@@ -814,6 +818,8 @@ fn staged_source_refs_freeze_note_inputs_and_world_jobs_only_on_commit() {
     crate::knowledge::store_settings(&store.lock().unwrap(), "loupist-a", &settings).unwrap();
     let source = staged("Original issuer claim, not the researcher's conclusion.");
     let note = StagedResearch {
+        research_review: None,
+        as_of: None,
         source_reads: vec![source.request_ref.clone()],
         journal: None,
         working_note: Some(crate::knowledge::WorkingNoteDraft {
@@ -1092,3 +1098,107 @@ fn custom_connection_origin_is_retained_in_source_readers_catalog_and_map() {
 }
 
 mod controls;
+
+#[test]
+fn resuming_method_learning_or_world_processing_admits_completed_research_backlog() {
+    use tauri::Manager;
+    for control in ["learning", "processing"] {
+        let directory = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(directory.path().join("app"));
+        state
+            .store
+            .create_loupist(&loupist_profile("loupist-a"))
+            .unwrap();
+        with_loupist_knowledge(&state, "loupist-a", |tx, _| {
+            crate::knowledge::store_settings(
+                tx,
+                "loupist-a",
+                &crate::knowledge::GraphProcessingSettings {
+                    enrichment_enabled: true,
+                    paused: control == "processing",
+                    ..Default::default()
+                },
+            )?;
+            crate::knowledge::learning::save_settings(tx, "loupist-a", control != "learning")?;
+            Ok(())
+        })
+        .unwrap();
+        for turn in ["research-one", "research-two"] {
+            let source = staged("The original filing reports a delayed capacity recovery.");
+            let mut note = research(vec![], vec![], vec![]);
+            note.journal = None;
+            note.source_reads = vec![source.request_ref.clone()];
+            note.working_note = Some(crate::knowledge::WorkingNoteDraft {
+                title: "Capacity check".into(),
+                markdown: "Recovery is unresolved.".into(),
+                change_summary: "Checked recovery".into(),
+                expected_research_id: None,
+            });
+            note.research_review = Some(crate::knowledge::ResearchReviewDraft {
+                question: "Is recovery established?".into(),
+                checks: vec![crate::knowledge::ResearchCheckDraft {
+                    question: "Did utilization recover?".into(),
+                    disposition: crate::knowledge::CheckDisposition::Mixed,
+                    finding: "A delay is documented.".into(),
+                    evidence: vec![source.request_ref.clone()],
+                    method_read: None,
+                    limitation: "One reporting period is available.".into(),
+                }],
+                next_check: None,
+            });
+            with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
+                persist_saved_turn(
+                    tx,
+                    blobs,
+                    "loupist-a",
+                    turn,
+                    turn,
+                    crate::commands::now_ms(),
+                    &[],
+                    true,
+                    &[source],
+                    &[],
+                    Some(&note),
+                    &[],
+                )
+                .map_err(|_| {
+                    crate::knowledge::KnowledgeError::Invalid("fixture completion failed")
+                })?;
+                Ok(())
+            })
+            .unwrap();
+        }
+        assert_eq!(
+            count(
+                state.store.as_ref(),
+                "SELECT COUNT(*) FROM knowledge_learning_reviews"
+            ),
+            0
+        );
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        app.manage(state);
+        if control == "learning" {
+            super::method_learning::memory_learning_settings_set(
+                app.state(),
+                super::method_learning::SettingsRequest {
+                    loupist_id: "loupist-a".into(),
+                    learn_methods: true,
+                },
+            )
+            .unwrap();
+        } else {
+            knowledge_graph_pause(
+                KnowledgeGraphPauseRequest {
+                    loupist_id: "loupist-a".into(),
+                    paused: false,
+                },
+                app.state(),
+            )
+            .unwrap();
+        }
+        let state = app.state::<AppState>();
+        assert_eq!(count(state.store.as_ref(), "SELECT COUNT(*) FROM knowledge_learning_reviews WHERE status='queued' AND world_job_id IS NULL AND through_experience=2"), 1, "{control}");
+    }
+}

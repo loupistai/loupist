@@ -729,6 +729,8 @@ async fn later_notes_are_not_named_under_a_cutoff() {
                     at_ms,
                 })?;
                 write.save_research(crate::knowledge::SaveResearch {
+                    research_review: None,
+                    as_of: None,
                     loupist_id: "loupist-a".into(),
                     turn_id: chat.into(),
                     at_ms,

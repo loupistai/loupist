@@ -844,6 +844,11 @@ pub fn knowledge_graph_pause(
                 )?;
             }
             crate::knowledge::store_settings(tx, &request.loupist_id, &settings)?;
+            crate::knowledge::learning::enqueue_experiences(
+                tx,
+                &request.loupist_id,
+                crate::commands::now_ms(),
+            )?;
             Ok(settings)
         })?;
     if !request.paused {
@@ -901,6 +906,11 @@ pub fn knowledge_graph_settings_set(
             crate::knowledge::KnowledgeWrite::bind(tx, blobs).enqueue_existing_sources(
                 &request.loupist_id,
                 &current,
+                crate::commands::now_ms(),
+            )?;
+            crate::knowledge::learning::enqueue_experiences(
+                tx,
+                &request.loupist_id,
                 crate::commands::now_ms(),
             )?;
             Ok(current)

@@ -5,7 +5,7 @@ Under an as-of date, automatic context keeps to the cutoff. Shared text keeps it
 ## Memory and context
 
 With saving enabled, taught methods and accepted reusable corrections use
-`lens_update`; user-stated facts and progress use `note_save`; handed-over originals
+`lens_update`; user-stated facts and research progress use `note_save`; handed-over originals
 use acknowledged capture followed by `source_save`. Chatter, light questions and
 explicit one-offs are not saved. A reply promising to remember is not a Memory write.
 World processing extracts relationships from retained Sources and can queue a
@@ -21,6 +21,20 @@ notes, then exact-read useful matches. Existing retained originals can answer da
 questions without refetching unchanged files. Fresh retrieval is for missing
 coverage, newer evidence or an explicit request to inspect the current original.
 Native file reads and Bash output alone do not retain Sources.
+
+Substantive research can attach receipt-bound checks in `note_save.researchReview`.
+The completed-turn transaction retains an immutable experience independently of
+the replaceable working note. Distinct experiences can feed the existing bounded
+method-learning review without requiring the user to teach a method. A check is
+the agent's assessment; an admitted or repeatedly used method is not thereby
+independently evaluated. Historical turns do not trigger current method learning.
+Candidate Lens changes keep exact Source references from their cited checks so the
+existing saved-basis reader can open the originals. Those references are provenance,
+not new turn read receipts.
+Common Chat instructions cover completed evidence-based investigations across
+Skills. They do not require a user teaching request; light and calculation-only
+questions omit research feedback. Commit checks current Source and Lens controls
+again, so a read receipt does not override an item excluded later in the turn.
 
 Lens fields have distinct jobs: Markdown explains the method; applicability sets
 scope; assumptions state prerequisites; procedure contains operational steps;
@@ -46,6 +60,17 @@ Under an as-of date, automatic context follows
 catalog method (6c) whose current version is later is left out, Journal pointers and
 counts (6b, 6d) use only entries created by then with later outcomes read as pending,
 and later notes (6e, 6g) are left out; principles (2) stay as they are today.
+
+Memory context includes `worldVocabulary`, derived from the same entity definitions,
+attributes, relation definitions, and endpoint signatures used by World extraction.
+The complete payload is bounded to 64 KiB and is never silently truncated. It
+includes core and combined definition digests and the active extension version.
+Definitions are vocabulary rather than factual evidence or tool authority. The
+core describes the current application. When the saved extension was updated
+after an as-of cutoff, only the core is delivered and
+`historicalExtensionUnavailable` is true; an earlier extension is not reconstructed.
+Memory off omits this context. Schema changes refresh the warm-turn digest even
+when no World record has changed. An in-flight turn keeps the definitions it received.
 
 Automatic context never serializes holdings position fields. It reads the Map's
 identity-only SQL projection and serializes an explicit symbol/market/name allowlist.
