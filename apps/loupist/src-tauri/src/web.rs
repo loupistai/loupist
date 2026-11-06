@@ -674,8 +674,8 @@ async fn fetch_generic(source: &WebSource, requested: &Url) -> Result<WebFetchSn
         quality_warnings: {
             let mut warnings =
                 quality_warnings(&decoded.content, decoded.extraction_method == "readability");
-            for warning in &decoded.warnings {
-                push_warning(&mut warnings, *warning);
+            for warning in decoded.warnings.iter().copied() {
+                push_warning(&mut warnings, warning);
             }
             warnings
         },
