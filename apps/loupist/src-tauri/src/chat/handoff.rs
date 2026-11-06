@@ -571,16 +571,27 @@ pub(crate) fn for_delivery(
     Ok(shown)
 }
 
+/// What the first of these messages that filed anything filed; `None` when
+/// none did.
 pub(crate) fn learned_digest(
     state: &AppState,
     loupist_id: &str,
     message_ids: &[String],
-) -> Option<Value> {
-    crate::commands::knowledge::learned_digests(state, loupist_id, message_ids)
-        .ok()?
+) -> Result<Option<Value>, CommandError> {
+    crate::commands::knowledge::learned_digests(state, loupist_id, message_ids)?
         .into_iter()
         .find(|digest| !digest.pages.is_empty())
-        .and_then(|digest| serde_json::to_value(digest).ok())
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|error| CommandError::internal(error.to_string()))
+}
+
+/// A card's digest: a failed read is logged and the card renders without one.
+pub(crate) fn card_learned(state: &AppState, loupist_id: &str, message_id: &str) -> Option<Value> {
+    learned_digest(state, loupist_id, &[message_id.to_owned()]).unwrap_or_else(|error| {
+        eprintln!("What a run learned could not be read ({error})");
+        None
+    })
 }
 
 fn summary(state: &AppState, handoff: &Handoff) -> String {
@@ -644,7 +655,7 @@ pub(crate) fn message(
         .message_id
         .as_ref()
         .filter(|_| handoff.status == HandoffStatus::Done)
-        .and_then(|id| learned_digest(state, &handoff.loupist_id, std::slice::from_ref(id)));
+        .and_then(|id| card_learned(state, &handoff.loupist_id, id));
     message.handoff = Some(HomeHandoff {
         handoff_id: handoff.id.clone(),
         chat_id: handoff.chat_id.clone(),

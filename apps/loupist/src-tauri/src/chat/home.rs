@@ -139,9 +139,10 @@ pub(crate) fn delivery_message(state: &AppState, run: &Run) -> Result<ChatMessag
             run_thread_id: run.thread_id.clone(),
             status: run.status,
             finished_at_ms: finished,
-            learned: run.message_id.as_ref().and_then(|id| {
-                super::handoff::learned_digest(state, &run.loupist_id, std::slice::from_ref(id))
-            }),
+            learned: run
+                .message_id
+                .as_ref()
+                .and_then(|id| super::handoff::card_learned(state, &run.loupist_id, id)),
         }),
         as_of: None,
         number_checks: Vec::new(),

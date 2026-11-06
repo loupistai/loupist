@@ -163,7 +163,9 @@ async fn a_world_fact_files_a_section_with_a_claim_basis_and_a_log_row_at_commit
         vec![("added".into(), "turn".into(), Some("assistant-1".into()))]
     );
     let learned =
-        crate::chat::handoff::learned_digest(&state, "loupist-a", &["assistant-1".into()]).unwrap();
+        crate::chat::handoff::learned_digest(&state, "loupist-a", &["assistant-1".into()])
+            .unwrap()
+            .unwrap();
     assert_eq!(learned["messageId"], "assistant-1");
     assert_eq!(learned["pages"][0]["recordId"], json!(change.record_id));
     assert_eq!(learned["pages"][0]["created"], true);
@@ -581,7 +583,21 @@ async fn a_handoff_card_and_a_scheduled_delivery_carry_what_the_run_learned() {
         json!(record_id)
     );
     let nothing = crate::chat::handoff::learned_digest(&state, "loupist-a", &["final-9".into()]);
-    assert!(nothing.is_none());
+    assert!(nothing.unwrap().is_none());
+    assert!(
+        crate::chat::handoff::learned_digest(&state, "loupist-gone", &["final-1".into()]).is_err(),
+        "a failed read is not 'nothing filed'"
+    );
+    let unreadable = crate::chat::handoff::message(
+        &state,
+        &crate::chat::handoff::Handoff {
+            loupist_id: "loupist-gone".into(),
+            ..handoff
+        },
+        None,
+    )
+    .unwrap();
+    assert!(unreadable.handoff.unwrap().learned.is_none());
 }
 
 fn said() -> Value {
