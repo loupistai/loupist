@@ -47,6 +47,11 @@ const drawn = () => screen.getByTestId("map-canvas").dataset.ids!.split(",");
 
 beforeEach(() => localStorage.clear());
 
+it("draws a highlighted path even when it lies outside the focal neighbourhood of a large Map", async () => {
+  await setup({ initialView: { highlightEntityIds: ["filler-3", "filler-4", "filler-5"] } });
+  expect(drawn()).toEqual(["amat", "asml", "filler-3", "filler-4", "filler-5", "shin", "tsmc"]);
+});
+
 it("opens a large Map around the watched company at one hop and widens to two hops and the whole Map", async () => {
   const { user } = await setup();
   expect(screen.getByRole("button", { name: "Around TSMC" })).toBeVisible();

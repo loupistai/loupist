@@ -169,7 +169,7 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
   const focalId = map && localAvailable ? defaultFocal(worldNodes, focalChoice) : undefined;
   const focal = focalId ? map?.nodes.find((node) => node.id === focalId) : undefined;
   const scope: MapScope = focal ? scopeOverride ?? scopeChoice ?? "1" : "all";
-  const local = useMemo(() => map && focalId && scope !== "all" ? localSet(worldNodes, worldEdges, focalId, scope === "2" ? 2 : 1) : undefined, [map, worldNodes, worldEdges, focalId, scope]);
+  const local = useMemo(() => map && focalId && scope !== "all" ? localSet(worldNodes, worldEdges, focalId, scope === "2" ? 2 : 1, undefined, highlightIds ?? []) : undefined, [map, worldNodes, worldEdges, focalId, scope, highlightIds]);
   const visible = useMemo(() => {
     const disputed = new Set(worldEdges.filter((e) => e.status === "disputed").flatMap((e) => [e.source, e.target]));
     return filterMapNodes(worldNodes.filter((node) => !local || local.ids.has(node.id)), disputed, filters);

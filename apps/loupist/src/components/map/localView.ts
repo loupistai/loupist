@@ -41,9 +41,10 @@ function claimAdjacency(edges: readonly KnowledgeMapEdge[]) {
  * The focal name, the names within `hops` relationships of it, and the Lens and
  * Journal items attached to those names. Expansion follows stated relationships
  * only; a Lens never pulls in further names. Over `cap` names the focal and its
- * first ring stay, then second-ring names by degree.
+ * first ring stay, then second-ring names by degree. `pinned` names (a path the
+ * user asked to see) are always included, wherever they sit.
  */
-export function localSet(nodes: readonly KnowledgeMapNode[], edges: readonly KnowledgeMapEdge[], focalId: string, hops: 1 | 2, cap = LOCAL_VIEW_CAP): LocalSet {
+export function localSet(nodes: readonly KnowledgeMapNode[], edges: readonly KnowledgeMapEdge[], focalId: string, hops: 1 | 2, cap = LOCAL_VIEW_CAP, pinned: Iterable<string> = []): LocalSet {
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const adjacent = claimAdjacency(edges);
   const ring = (from: Iterable<string>, exclude: Set<string>) => {
@@ -57,6 +58,7 @@ export function localSet(nodes: readonly KnowledgeMapNode[], edges: readonly Kno
   const ordered = [focalId, ...[...first].map((id) => byId.get(id)!).sort(byDegree).map((node) => node.id), ...[...second].map((id) => byId.get(id)!).sort(byDegree).map((node) => node.id)];
   const names = ordered.slice(0, cap);
   const ids = new Set(names);
+  for (const id of pinned) if (byId.get(id)?.kind === "entity") ids.add(id);
   for (const edge of edges) {
     if (edge.kind !== "applies_to" && edge.kind !== "about") continue;
     for (const [inside, outside] of [[edge.source, edge.target], [edge.target, edge.source]]) {
