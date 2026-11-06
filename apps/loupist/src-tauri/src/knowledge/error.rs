@@ -41,6 +41,8 @@ pub enum KnowledgeError {
     NotFound,
     #[error("invalid knowledge value: {0}")]
     Invalid(&'static str),
+    #[error("the map already tracks a kind with that name")]
+    KindAlreadyKnown,
     #[error("{code}: {expected}")]
     JournalField {
         code: &'static str,
@@ -77,6 +79,7 @@ impl KnowledgeError {
             Self::ItemTooLarge => "item_too_large",
             Self::NotFound => "not_found",
             Self::Invalid(_) => "invalid",
+            Self::KindAlreadyKnown => "kind_already_known",
             Self::JournalField { code, .. } | Self::AssetField { code, .. } => code,
             Self::LockPoisoned => "lock_poisoned",
             Self::EarlierVersion => "loupist_earlier_version",

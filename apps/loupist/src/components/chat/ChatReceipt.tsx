@@ -117,6 +117,11 @@ export function ChatReceipt({ receipt, showNothingNew, listId, listExpanded, onO
   for (const unsaved of receipt.unsavedTheses) {
     segments.push({ key: `thesis-unsaved:${unsaved.assetId}`, node: <span className="chat-receipt-text" data-unsaved="true">{t("chatReceipt.thesisNotSaved", { name: unsaved.name })}</span> });
   }
+  const korean = i18n.language.toLowerCase().startsWith("ko");
+  for (const kind of receipt.skippedKinds) {
+    const name = korean && kind.labelKo ? kind.labelKo : kind.label;
+    segments.push({ key: `kind-skipped:${kind.name}`, node: <span className="chat-receipt-text" data-unsaved="true">{t("chatReceipt.kindNotAdded", { name })}</span> });
+  }
   if (receipt.usedPages.length) segments.push({ key: "used", node: <button type="button" className="chat-receipt-segment" data-receipt-used="pages"
     aria-expanded={usedExpanded} aria-controls={usedExpanded ? usedListId : undefined} onClick={onToggleUsed}>{count("chatReceipt.usedPages", receipt.usedPages.length)}</button> });
   for (const group of receipt.saved) segments.push({ key: `saved:${group.kind}`, node: <button

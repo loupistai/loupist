@@ -397,7 +397,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         unattended,
                     )
                     .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
-                    crate::commands::tool_executor::commit_vocabulary(
+                    let skipped_kinds = crate::commands::tool_executor::commit_vocabulary(
                         transaction,
                         task_loupist_id,
                         thread_id,
@@ -447,6 +447,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         &message_id,
                         task_update_memory,
                         changes,
+                        skipped_kinds,
                         Some(performance),
                         turn_assets.trace_notes(elapsed_millis(chat_started_at)),
                     )?;

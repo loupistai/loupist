@@ -119,6 +119,19 @@ pub struct MemoryUpdateResult {
     #[serde(deserialize_with = "required_option")]
     pub commit_id: Option<String>,
     pub changes: Vec<MemoryUpdateChange>,
+    /// Kinds the answer asked the map to track that its commit skipped: the
+    /// map gained a kind of that name after the call was staged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped_kinds: Vec<SkippedKind>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SkippedKind {
+    pub name: String,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_ko: Option<String>,
 }
 
 impl MemoryUpdateResult {
@@ -157,6 +170,16 @@ impl MemoryUpdateResult {
                 2_048,
                 "memory update future use is invalid",
             )?;
+        }
+        if self.skipped_kinds.len() > 18 {
+            return Err(DomainError::Invalid("memory update skipped too many kinds"));
+        }
+        for kind in &self.skipped_kinds {
+            require_bounded_text(&kind.name, 64, "skipped kind is invalid")?;
+            require_bounded_text(&kind.label, 512, "skipped kind is invalid")?;
+            if let Some(label) = &kind.label_ko {
+                require_bounded_text(label, 512, "skipped kind is invalid")?;
+            }
         }
         match self.status {
             MemoryUpdateStatus::Applied => {
@@ -1604,6 +1627,7 @@ mod tests {
             status: MemoryUpdateStatus::NoChange,
             commit_id: None,
             changes: vec![],
+            skipped_kinds: Vec::new(),
         });
         assert!(prepare_chat_retry(&saved, 4).is_err());
     }

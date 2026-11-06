@@ -427,6 +427,7 @@
     "thesisMoved": "{{name}}: {{verdict}}",
     "thesisMovedFrom": "{{name}}: {{from}} → {{verdict}}",
     "thesisNotSaved": "{{name}}: read not changed (the page changed first)",
+    "kindNotAdded": "{{name}}: not added to the map (it already tracks that name)",
     "numbersToCheck_one": "{{formattedCount}} number to check",
     "numbersToCheck_other": "{{formattedCount}} numbers to check",
     "learned_one": "Learned {{formattedCount}}",

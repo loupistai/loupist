@@ -76,6 +76,7 @@ fn chat_messages_round_trip_memory_provenance_status_and_progress_without_loss()
             basis: "Exact filing".into(),
             future_use: "Changes later earnings checks.".into(),
         }],
+        skipped_kinds: Vec::new(),
     };
     let memory_ref = MemoryRefSnapshot {
         read_ref: "lens:source".into(),

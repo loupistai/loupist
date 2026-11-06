@@ -1,4 +1,4 @@
-import type { ChatEvidenceRef, ChatMessage, GrowthEvent, LearnedDigest, LensKind, MemoryUpdateChange } from "../types";
+import type { ChatEvidenceRef, ChatMessage, GrowthEvent, LearnedDigest, LensKind, MemoryUpdateChange, SkippedKind } from "../types";
 import type { Verdict } from "../contracts/assets";
 import { citationSources } from "./evidence";
 import { numbersToCheck } from "./numberChecks";
@@ -31,6 +31,8 @@ export type ChatReceiptData = {
   thesisMoves: ThesisMove[];
   /** Reads the answer said it changed but Rust did not save (the page changed first). */
   unsavedTheses: { assetId: string; name: string }[];
+  /** Kinds the answer asked the map to track that Rust did not add. */
+  skippedKinds: SkippedKind[];
   mapHighlightIds: ReadonlySet<string>;
   usedPrinciples: UsedPrinciple[];
   usedMethods: UsedPrinciple[];
@@ -77,6 +79,7 @@ export function chatReceipt(message: ChatMessage, additions?: MapAdditions, opti
   const relationships = additions?.edgeIds.size ?? 0;
   const thesisMoves = options.thesisMoves ?? [];
   const unsavedTheses = (message.unsaved_theses ?? []).map(({ assetId, name }) => ({ assetId, name }));
+  const skippedKinds = update?.skippedKinds ?? [];
   const toCheck = numbersToCheck(message);
   return {
     readSources,
@@ -84,6 +87,7 @@ export function chatReceipt(message: ChatMessage, additions?: MapAdditions, opti
     relationships,
     thesisMoves,
     unsavedTheses,
+    skippedKinds,
     mapHighlightIds: names + relationships > 0 && additions ? additions.highlightIds : emptyIds,
     usedPrinciples,
     usedMethods,
@@ -91,7 +95,7 @@ export function chatReceipt(message: ChatMessage, additions?: MapAdditions, opti
     learned,
     saved,
     numbersToCheck: toCheck,
-    empty: !readSources.length && !names && !relationships && !thesisMoves.length && !unsavedTheses.length && !usedPages.length && !learned && !saved.length && !toCheck,
+    empty: !readSources.length && !names && !relationships && !thesisMoves.length && !unsavedTheses.length && !skippedKinds.length && !usedPages.length && !learned && !saved.length && !toCheck,
   };
 }
 

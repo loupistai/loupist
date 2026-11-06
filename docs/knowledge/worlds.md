@@ -66,8 +66,10 @@ stored. Every change validates, applies at once and writes a `schema_extended` o
   lower typed share than the same Sources without it, or it reports `hold`.
 - **Chat.** `world_schema_update` (`memory_write`, in `memory-save`, interactive
   turns only, one per turn) is staged and commits with the reply, so a stopped
-  turn applies nothing. The user's sentence is the approval, and the change keeps the
-  asking message. The Memory envelope carries a `worldKinds` block so the agent can
+  turn applies nothing. A change naming a kind the map gained after staging is
+  skipped, and the answer's `memory_update.skippedKinds` lists its kinds so the
+  receipt says they were not added; any other refusal at commit is an error. The
+  user's sentence is the approval, and the change keeps the asking message. The Memory envelope carries a `worldKinds` block so the agent can
   tell what is already tracked.
 - **Review.** After about ten later Source jobs, once a day and when the World queue
   is idle, the World model may promote what the World already shows. Nothing waits

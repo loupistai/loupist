@@ -92,6 +92,58 @@ async fn a_completed_reply_applies_the_kinds_with_the_message_that_asked() {
 }
 
 #[tokio::test]
+async fn a_name_the_map_gained_since_staging_is_skipped_and_reported_and_other_errors_surface() {
+    let temporary = tempfile::tempdir().unwrap();
+    let executor = executor(&temporary);
+    executor
+        .stage_world_schema_update(&policy(true), request("ProcessStep"), "delivery-1")
+        .await
+        .unwrap();
+    let _ = executor.commit_delivery(&policy(true), "delivery-1").await;
+    let saved = executor.capture.staged_vocabulary.lock().await.clone();
+    let mut reviewed = saved[0].types.clone();
+    reviewed[0].labels.en = "Fab step".into();
+    let commit = |staged: &[StagedVocabulary], at_ms: i64| {
+        crate::commands::assets::with_assets(&executor.state, LOUPIST, true, |tx| {
+            commit_vocabulary(tx, LOUPIST, "chat-a", at_ms, staged)
+        })
+    };
+    crate::commands::assets::with_assets(&executor.state, LOUPIST, true, |tx| {
+        crate::knowledge::add_kinds(
+            tx,
+            LOUPIST,
+            reviewed,
+            Vec::new(),
+            crate::knowledge::Provenance::new(crate::knowledge::Producer::Review, json!({})),
+            50,
+        )
+        .map(|_| ())
+    })
+    .unwrap();
+    let skipped = commit(&saved, 100).unwrap();
+    assert_eq!(
+        serde_json::to_value(&skipped).unwrap(),
+        json!([
+            {"name": "ProcessStep", "label": "Process step", "labelKo": "공정 단계"},
+            {"name": "PRECEDES_STEP", "label": "runs before", "labelKo": "이전 단계"},
+        ])
+    );
+    assert_eq!(
+        changes(&executor),
+        vec![("review".into(), None, None)],
+        "only the review's change applied"
+    );
+    let mut orphan = saved[0].clone();
+    orphan.types.clear();
+    orphan.relations[0].name = "FOLLOWS_STEP".into();
+    orphan.relations[0].signatures = vec![("GhostStep".into(), "GhostStep".into())];
+    assert!(
+        commit(&[orphan], 200).is_err(),
+        "a change the map cannot take for another reason is not swallowed"
+    );
+}
+
+#[tokio::test]
 async fn a_stopped_reply_applies_nothing() {
     let temporary = tempfile::tempdir().unwrap();
     let executor = executor(&temporary);

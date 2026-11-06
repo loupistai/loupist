@@ -169,7 +169,8 @@ pub(crate) fn commit_turn(
     chat_id: &str,
     at_ms: i64,
     staged: &[StagedVocabulary],
-) -> Result<(), crate::knowledge::KnowledgeError> {
+) -> Result<Vec<crate::domain::SkippedKind>, crate::knowledge::KnowledgeError> {
+    let mut skipped = Vec::new();
     for record in staged {
         let message = record.user_message_id.as_deref().unwrap_or_default();
         let mut provenance = crate::knowledge::Provenance::new(
@@ -177,18 +178,31 @@ pub(crate) fn commit_turn(
             json!({ "said": message }),
         );
         provenance.origin = (!message.is_empty()).then_some((chat_id, message));
-        let applied = crate::knowledge::add_kinds(
+        match crate::knowledge::add_kinds(
             tx,
             loupist_id,
             record.types.clone(),
             record.relations.clone(),
             provenance,
             at_ms,
-        );
-        if let Err(crate::knowledge::KnowledgeError::Invalid(_)) = applied {
-            continue;
+        ) {
+            Ok(_) => {}
+            Err(crate::knowledge::KnowledgeError::KindAlreadyKnown) => {
+                let types = record.types.iter().map(|item| (&item.name, &item.labels));
+                let relations = record
+                    .relations
+                    .iter()
+                    .map(|item| (&item.name, &item.labels));
+                skipped.extend(types.chain(relations).map(|(name, labels)| {
+                    crate::domain::SkippedKind {
+                        name: name.clone(),
+                        label: labels.en.clone(),
+                        label_ko: labels.ko.clone(),
+                    }
+                }));
+            }
+            Err(error) => return Err(error),
         }
-        applied?;
     }
-    Ok(())
+    Ok(skipped)
 }

@@ -619,7 +619,7 @@ pub(crate) fn add_kinds(
             .iter()
             .any(|item| relation_already_known(&item.name, &next))
     {
-        return Err(KnowledgeError::Invalid("schema kind already exists"));
+        return Err(KnowledgeError::KindAlreadyKnown);
     }
     next.types.extend(types);
     next.relations.extend(relations);

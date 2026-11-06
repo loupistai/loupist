@@ -6,7 +6,7 @@ import { ChatReceipt } from "./ChatReceipt";
 
 const source = (id: string): ChatEvidenceRef => ({ id, title: `Report ${id}`, kind: "original", tool_name: "web_fetch", url: `https://hanul.example/${id}`, retrieved_at: "2026-10-28T00:00:00Z", excerpt: "", excerpt_truncated: false, content_sha256: "a".repeat(64), warnings: [] });
 const saved = (kind: "Source" | "principle", recordId: string) => ({ kind, recordId, operation: "create", title: recordId, lesson: "", basis: "", futureUse: "", knowledge: { kind: kind === "principle" ? "lens" : "source", recordId, revisionId: "r", objectId: recordId } }) as MemoryUpdateChange;
-const empty: ChatReceiptData = { readSources: [], names: 0, relationships: 0, thesisMoves: [], unsavedTheses: [], mapHighlightIds: new Set(), usedPrinciples: [], usedMethods: [], usedPages: [], learned: null, saved: [], numbersToCheck: 0, empty: true };
+const empty: ChatReceiptData = { readSources: [], names: 0, relationships: 0, thesisMoves: [], unsavedTheses: [], skippedKinds: [], mapHighlightIds: new Set(), usedPrinciples: [], usedMethods: [], usedPages: [], learned: null, saved: [], numbersToCheck: 0, empty: true };
 const panels = { learnedListId: "learned", learnedExpanded: false, onToggleLearned: vi.fn() };
 
 function renderReceipt(receipt: Partial<ChatReceiptData>, showNothingNew = false) {
@@ -70,6 +70,15 @@ it("says a read the answer changed was not saved when Rust could not keep it", (
   expect(receipt.empty).toBe(false);
   render(<ChatReceipt receipt={receipt} showNothingNew={false} listId="list" listExpanded={false} usedListId="used" usedExpanded={false} onToggleUsed={vi.fn()} onSaved={vi.fn()} {...panels} />);
   expect(screen.getByRole("navigation", { name: "What this answer used and saved" })).toHaveTextContent("Hanul Precision: read not changed (the page changed first)");
+});
+
+it("says a kind the answer asked for was not added when the map gained that name first", () => {
+  const message = { id: "answer", role: "assistant", content: "Your map now also tracks Process step.", created_at: "2026-10-28T00:00:00Z", status: "complete",
+    memory_update: { status: "no_change", commitId: null, changes: [], skippedKinds: [{ name: "ProcessStep", label: "Process step", labelKo: "공정 단계" }] } } as unknown as import("../../types").ChatMessage;
+  const receipt = chatReceipt(message);
+  expect(receipt.empty).toBe(false);
+  render(<ChatReceipt receipt={receipt} showNothingNew listId="list" listExpanded={false} usedListId="used" usedExpanded={false} onToggleUsed={vi.fn()} onSaved={vi.fn()} {...panels} />);
+  expect(screen.getByRole("navigation", { name: "What this answer used and saved" })).toHaveTextContent("Process step: not added to the map (it already tracks that name)");
 });
 
 it("names a moved read after the relationships and opens the asset page at its history", async () => {

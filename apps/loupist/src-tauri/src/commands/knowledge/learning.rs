@@ -634,12 +634,14 @@ pub(in crate::commands) fn retain_staged_sources(
 
 /// Replace the just-written provisional Chat with finalized, canonical targets
 /// before the surrounding Chat/Knowledge transaction commits.
+#[allow(clippy::too_many_arguments)]
 pub(in crate::commands) fn write_chat_learning_report(
     tx: &rusqlite::Transaction<'_>,
     provisional: &crate::domain::ChatSession,
     turn_id: &str,
     save_learning: bool,
     changes: Vec<MemoryUpdateChange>,
+    skipped_kinds: Vec<crate::domain::SkippedKind>,
     performance: Option<crate::domain::ChatPerformance>,
     // Run-log entries the commit itself produced (an asset read it could not save).
     trace_notes: Vec<crate::domain::ChatToolTraceEntry>,
@@ -666,6 +668,7 @@ pub(in crate::commands) fn write_chat_learning_report(
         },
         commit_id: (!changes.is_empty()).then(|| turn_id.to_string()),
         changes,
+        skipped_kinds,
     });
     if message.host_composed {
         // Only receipts in this same atomic transaction can supply this answer.

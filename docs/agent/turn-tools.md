@@ -88,7 +88,8 @@ per reply, not on the scheduled-run allowlist) takes up to two `types` and three
 `relations` for a kind of thing or link the user asked the map to track. Rust checks
 names against the live vocabulary and its limits when the call arrives, stages the
 change, and applies it with the reply together with the asking message; a stopped
-reply applies nothing. [Worlds](../knowledge/worlds.md#presets-changes-and-undo) owns the rules.
+reply applies nothing, and a change whose name the map gained since staging is
+skipped and listed in the answer's `memory_update.skippedKinds`. [Worlds](../knowledge/worlds.md#presets-changes-and-undo) owns the rules.
 
 `thesis_update` (Memory save, staged until the reply commits) takes `assetId`, 1–3
 `evidence` citation URLs from the turn and either `to` with a `reason` (≤ 280

@@ -394,6 +394,7 @@
     "thesisMoved": "{{name}}: {{verdict}}",
     "thesisMovedFrom": "{{name}}: {{from}} → {{verdict}}",
     "thesisNotSaved": "{{name}}: 판단은 바뀌지 않았어요 (먼저 페이지가 바뀜)",
+    "kindNotAdded": "{{name}}: 지도에 추가하지 않았어요 (이미 같은 이름을 추적 중)",
     "numbersToCheck_other": "확인할 숫자 {{formattedCount}}개",
     "learned_other": "새로 배운 것 {{formattedCount}}개",
     "ideas_other": "아이디어 {{formattedCount}}개",

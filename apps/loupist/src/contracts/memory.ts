@@ -43,10 +43,14 @@ export type MemoryUpdateChange = {
   | { kind: Exclude<MemoryKind, "Research">; knowledge: KnowledgeReference }
 );
 
+/** A kind the answer asked the map to track that its commit skipped: the map gained that name first. */
+export type SkippedKind = { name: string; label: string; labelKo?: string };
+
 export type MemoryUpdateResult = {
   status: "applied" | "no_change";
   commitId: string | null;
   changes: MemoryUpdateChange[];
+  skippedKinds?: SkippedKind[];
 };
 
 /** Kind and delivery recorded by Rust when the item reached this turn. */
