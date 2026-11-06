@@ -14,7 +14,7 @@ const follows = (first: Element, second: Element) => Boolean(first.compareDocume
 function withActivity(detail: ChatActivityDetail) {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const read = vi.spyOn(bridge, "chatActivityRead").mockResolvedValue(detail);
-  const wrapper = ({ children }: { children: ReactNode }) => <ChatExecutionProvider value={{ bridge, loupistId: "loupist", threadId: "chat", theme: "dark", active: true }}>{children}</ChatExecutionProvider>;
+  const wrapper = ({ children }: { children: ReactNode }) => <ChatExecutionProvider value={{ bridge, loupistId: "loupist", threadId: "chat", surface: "session", theme: "dark", active: true }}>{children}</ChatExecutionProvider>;
   return { read, wrapper };
 }
 

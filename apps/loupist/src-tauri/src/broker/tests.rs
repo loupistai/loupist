@@ -618,6 +618,18 @@ fn turn_budgets_bound_saves_and_publications_but_rollbacks_are_free() {
         cardinality.consume(ToolMethod::ArtifactPublish, &policy),
         Err(BrokerError::BudgetExceeded)
     ));
+
+    cardinality
+        .consume(ToolMethod::ResearchOpen, &policy)
+        .unwrap();
+    assert!(matches!(
+        cardinality.consume(ToolMethod::ResearchOpen, &policy),
+        Err(BrokerError::BudgetExceeded)
+    ));
+    cardinality.rollback(ToolMethod::ResearchOpen);
+    cardinality
+        .consume(ToolMethod::ResearchOpen, &policy)
+        .unwrap();
 }
 
 #[tokio::test]

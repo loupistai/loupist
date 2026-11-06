@@ -1,0 +1,11 @@
+# Unit B: Bot surface and research hand-off (delegate checklist)
+- [x] Read contract, grounding, current Bot code
+- [x] ChatSurface enum in chat/surface.rs; resolve in setup, freeze in AgentHostContext, cache seal
+- [x] chat_surface envelope block in agent_harness.rs
+- [x] research_open tool: catalog, broker (Bot only, <=1), staging, commit (chat_handoffs + session chat)
+- [x] Delegated launch via send_chat with ChatAdmission; recovery pass; delivery of handoff record
+- [x] Bridge research_handoff_start + tauriBridge + mock
+- [x] Renderer: contracts, ThreadHandoff, MessageSchedules surface, i18n
+- [x] SYSTEM.md section, docs
+- [x] Rust tests, vitest
+- [x] check.sh web passed; check.sh rust: format, clippy, e2e-feature-clippy passed; tests: 9 process-lease fixtures fail for a missing openbb/.venv in this worktree (host setup, not code)

@@ -438,6 +438,24 @@ export type ChatFailureKind = "empty_reply" | "provider_error" | "rate_limited" 
 
 export type ChatToolRefusal = { connection_id: string; connection_name: string; tool_name: string; reason: "needs_approval" | "blocked_unattended" | "taint" | "sensitive_memory" | "declined" };
 
+/**
+ * What a reply filed into Memory. The Lens unit's `contracts/lens.ts` owns this
+ * shape; it moves there when that file lands.
+ */
+export type LearnedDigest = {
+  messageId: string;
+  pages: Array<{ recordId: string; title: string; kind: string; created: boolean; outcomes: Array<{ opId: string; outcome: string; key?: string }> }>;
+};
+
+/** A research session the Bot handed off (Rust `HomeHandoff`): one card per hand-off, its status changing in place. */
+export type HomeHandoff = {
+  handoffId: string;
+  chatId: string;
+  title: string;
+  status: "running" | "done" | "failed" | "stopped";
+  learned?: LearnedDigest;
+};
+
 /** A scheduled result the host posted into the Loupist's home Thread. */
 export type HomeDelivery = {
   run_id: string;
@@ -449,6 +467,7 @@ export type HomeDelivery = {
   run_thread_id: string | null;
   status: ScheduledRun["status"];
   finished_at_ms: number;
+  learned?: LearnedDigest;
 };
 
 /** A crossed red line the host announced in the home Thread (Rust `HomeAlert`). Names and the user's claim only. */
@@ -610,6 +629,8 @@ export type ChatMessage = {
   earnings?: HomeEarnings;
   /** Present on a host-posted "your map now also tracks" message. */
   vocabulary?: HomeVocabulary;
+  /** Present on a host-posted research hand-off card. */
+  handoff?: HomeHandoff;
   tool_refusals?: ChatToolRefusal[];
   feedback?: ChatFeedback | null;
   failure_kind?: ChatFailureKind;
@@ -684,6 +705,17 @@ export type ChatAttachmentInput = {
 };
 
 export type ChatMemorySetAsideRequest = { loupist_id: string; thread_id: string; record_id: string; set_aside: boolean };
+
+/** `research_handoff_start`: the same hand-off the Bot's `research_open` makes. */
+export type ResearchHandoffRequest = {
+  loupistId: string;
+  title: string;
+  question: string;
+  brief?: string;
+  pins?: Array<{ lens: string } | { world: string }>;
+  requestKey: string;
+};
+export type ResearchHandoffReceipt = { chatId: string; handoffId: string };
 
 export type ChatThread = {
   id: string;

@@ -1181,6 +1181,10 @@
       "running": "Updating the plan",
       "done": "Updated the plan"
     },
+    "research_open": {
+      "running": "Opening a research session",
+      "done": "Opened a research session"
+    },
     "worldbank_series": {
       "running": "Reading macro data",
       "done": "Read macro data"
@@ -1350,7 +1354,15 @@
     "open": "Open",
     "couldNotFinish": "{{title}} couldn't finish this time.",
     "deliveryLabel": "Result from {{title}}",
-    "earningsReported": "{{name}} reported {{period}} results."
+    "earningsReported": "{{name}} reported {{period}} results.",
+    "handoffLabel": "Research: {{title}}",
+    "researched": "Researched: {{title}}",
+    "researching": "Researching: {{title}}",
+    "handoffRunning": "Running",
+    "handoffDone": "Done",
+    "handoffFailed": "Couldn't finish",
+    "handoffStopped": "Stopped",
+    "learned": "Learned {{count}}"
   },
   "watchMessage": {
     "filing": "{{name}} filed {{title}} ({{form}}, {{date}}).",

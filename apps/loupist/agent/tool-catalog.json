@@ -1752,6 +1752,88 @@
       }
     },
     {
+      "name": "research_open",
+      "method": "research.open",
+      "permission": "always",
+      "component": null,
+      "label": "Open a research session",
+      "description": "Bot only. Hand a question that needs depth or several steps to a research session that runs on its own and reports back here. Give a short title the user will see, the question, a brief with what to check and what a good answer covers, and pins to the Memory it should read first. Use a distinct requestKey per hand-off, reused only on a retry. One per reply. Tell the user the session title; do not also research it here.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "question",
+          "requestKey"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "brief": {
+            "type": "string",
+            "maxLength": 8000,
+            "description": "What to check, which sources matter and what a complete answer covers."
+          },
+          "pins": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "lens"
+                  ],
+                  "properties": {
+                    "lens": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "description": "A Lens record id from the index or lens_search."
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "world"
+                  ],
+                  "properties": {
+                    "world": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "description": "A World node id."
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "requestKey": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          }
+        }
+      },
+      "progress": {
+        "category": "capability",
+        "operation": "generic",
+        "running": "Opening a research session",
+        "done": "Opened a research session"
+      }
+    },
+    {
       "name": "worldbank_series",
       "method": "worldbank.series",
       "permission": "always",

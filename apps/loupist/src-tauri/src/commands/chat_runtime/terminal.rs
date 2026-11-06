@@ -192,6 +192,7 @@ pub(super) fn persist_and_emit_terminal_chat(
         watch: None,
         earnings: None,
         vocabulary: None,
+        handoff: None,
         id: message_id.to_owned(),
         role: ChatRole::Assistant,
         status: match terminal_status {

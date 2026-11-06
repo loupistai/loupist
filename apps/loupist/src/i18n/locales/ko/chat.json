@@ -1131,6 +1131,10 @@
       "running": "계획 정리 중",
       "done": "계획 정리함"
     },
+    "research_open": {
+      "running": "조사 세션 여는 중",
+      "done": "조사 세션 열었음"
+    },
     "worldbank_series": {
       "running": "거시 데이터 읽는 중",
       "done": "거시 데이터 읽음"
@@ -1300,7 +1304,15 @@
     "open": "열기",
     "couldNotFinish": "{{title}} 실행을 이번에는 끝내지 못했어요.",
     "deliveryLabel": "{{title}} 결과",
-    "earningsReported": "{{name}}이(가) {{period}} 실적을 발표했어요."
+    "earningsReported": "{{name}}이(가) {{period}} 실적을 발표했어요.",
+    "handoffLabel": "조사: {{title}}",
+    "researched": "조사 완료: {{title}}",
+    "researching": "조사 중: {{title}}",
+    "handoffRunning": "진행 중",
+    "handoffDone": "완료",
+    "handoffFailed": "끝내지 못했어요",
+    "handoffStopped": "중지됨",
+    "learned": "배운 것 {{count}}"
   },
   "watchMessage": {
     "filing": "{{name}}이(가) {{title}}을(를) 제출했어요 ({{form}}, {{date}}).",

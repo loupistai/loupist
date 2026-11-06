@@ -28,6 +28,14 @@ posts one message (`earnings` record) when reported figures first arrive ("{name
 a before-capture failed (Try again runs `earnings_prepare`); a successful before-capture
 posts nothing, and its runs, which target the Thread itself, get no `delivery` message.
 Neither carries holdings or sends an OS notification.
+A research hand-off (`src-tauri/src/chat/handoff.rs`) posts one message with a `handoff`
+record (`handoffId`, `chatId`, `title`, `status`, optional `learned`) when its session
+starts and rewrites that same message in place as the run ends, so the card reads
+"Researching: {title} · Running", then "Researched: {title} · Done · Learned n · Open"
+with the session's first paragraph, or "Couldn't finish" / "Stopped". The Bot's
+`research_open` tool and the bridge's `research_handoff_start` both commit through the
+same function; the Bot is never selected and its draft never changes. A finished
+`delivery` record may carry the same optional `learned` digest.
 
 An empty home Thread opens on the Loupist's morning message; a Thread with history
 shows it at the end when there is news since a counted last visit and the user has

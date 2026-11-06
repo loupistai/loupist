@@ -1270,6 +1270,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     return loupistChat.chatArtifactRestore(this.state, request);
   }
 
+  researchHandoffStart(request: Contract.ResearchHandoffRequest) { return loupistChat.researchHandoffStart(this.state, request); }
   chatSend(
     request: Contract.ChatSendRequest,
     observer: Contract.StreamObserver<Contract.ChatStreamEvent>,

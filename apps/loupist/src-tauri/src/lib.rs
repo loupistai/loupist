@@ -351,6 +351,7 @@ pub fn run() {
             commands::chat_runtime::chat_send,
             commands::chat_runtime::chat_steer,
             commands::chat_runtime::chat_retry_last,
+            commands::handoff::research_handoff_start,
             commands::chat_runtime::chat_abort,
             commands::knowledge::knowledge_catalog,
             commands::knowledge::knowledge_growth_events,

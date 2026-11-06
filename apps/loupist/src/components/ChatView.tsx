@@ -824,8 +824,8 @@ export function ChatView({
   }, [activeSteers, isRunning, messageKeys, messages]);
   const guidingTexts = useMemo(() => (isRunning ? (activeSteers ?? []).map((item) => item.text) : []), [activeSteers, isRunning]);
   const executionScope = useMemo(() => activeThread ? ({
-    bridge, loupistId: loupist.id, threadId: activeThread.id, theme, active,
-  }) : null, [active, activeThread?.id, bridge, loupist.id, theme]);
+    bridge, loupistId: loupist.id, threadId: activeThread.id, surface: activeThread.home ? "bot" as const : "session" as const, theme, active,
+  }) : null, [active, activeThread?.id, activeThread?.home, bridge, loupist.id, theme]);
   const dismissProposal = useCallback((target: { recordId: string; messageId: string }) => {
     const chatId = activeThread?.id;
     return dismissLensProposal(bridge, {

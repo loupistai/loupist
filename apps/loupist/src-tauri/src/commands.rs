@@ -10,6 +10,7 @@ pub(crate) mod dialog;
 pub(crate) mod earnings;
 pub(crate) mod export_file;
 pub(crate) mod export_trust;
+pub(crate) mod handoff;
 pub(crate) mod knowledge;
 pub(crate) mod loupist;
 mod memory_updates;

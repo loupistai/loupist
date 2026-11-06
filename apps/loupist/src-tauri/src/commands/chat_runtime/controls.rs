@@ -42,6 +42,7 @@ pub(in crate::commands) fn persist_chat_control_message(
         watch: None,
         earnings: None,
         vocabulary: None,
+        handoff: None,
         id: message_id.clone(),
         role: ChatRole::User,
         status: ChatMessageStatus::Complete,

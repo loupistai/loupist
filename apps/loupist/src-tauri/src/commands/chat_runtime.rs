@@ -506,14 +506,12 @@ async fn send_chat_inner(
                 model_gone::Relaunch::Settled => return,
             };
         }
-        let bot = (launched.thread_id == crate::chat::home::home_thread_id(&launched.loupist_id))
-            .then(|| (launched.app_state.clone(), launched.loupist_id.clone()));
+        let surface = launched.capture.surface.clone();
+        let (state, loupist_id) = (launched.app_state.clone(), launched.loupist_id.clone());
         finalize::finalize_chat_turn(launched, streamed).await;
-        // The Bot's run lease has dropped. Deliver any registrations that arrived while it was busy.
-        if let Some((state, id)) = bot {
-            if crate::chat::home::deliver_finished_runs(&state, &id).is_ok_and(|count| count > 0) {
-                crate::briefings::desktop::changed(&id);
-            }
+        // The run lease has dropped; what the surface owes after a reply runs now.
+        if let Some(surface) = surface {
+            surface.after_turn(&state, &loupist_id);
         }
     });
     Ok(RunStarted { run_id })

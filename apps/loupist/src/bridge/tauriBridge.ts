@@ -180,6 +180,7 @@ export const createLoupistBridge = (): LoupistBridge => ({
   chatSend: (body, observer) => stream("chat_send", { request: body }, observer),
   chatSteer: request("chat_steer"),
   chatRetryLast: request("chat_retry_last"),
+  researchHandoffStart: request("research_handoff_start"),
   chatAbort: (run_id) => call("chat_abort", { run_id }),
   runActivityList: () => call("run_activity_list"),
 

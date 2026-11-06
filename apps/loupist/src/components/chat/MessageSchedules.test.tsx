@@ -17,7 +17,7 @@ async function proposed() {
   });
   const receipt: ScheduleReceipt = { task_id: task.id, title: task.title, revision: task.revision, action: "created", status: "paused", schedule: weekly,
     target: { kind: "new_chat" }, next_run_at_ms: null, use_memory: true, update_memory: false, awaiting_confirmation: true };
-  const view = () => <ChatExecutionProvider value={{ bridge, loupistId, threadId: "chat", theme: "light", active: true }}>
+  const view = () => <ChatExecutionProvider value={{ bridge, loupistId, threadId: "chat", surface: "session", theme: "light", active: true }}>
     <MessageSchedules receipts={[receipt]} onOpen={vi.fn()} />
   </ChatExecutionProvider>;
   return { bridge, task, view };
@@ -51,4 +51,18 @@ it("discards a declined routine and shows the confirmed state after a reload", a
   render(second.view());
   expect(await screen.findByText("Active")).toBeVisible();
   expect(screen.queryByRole("button", { name: "Turn on" })).not.toBeInTheDocument();
+});
+
+it("labels a hand-off receipt by the conversation's surface, not its id", () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const receipt: ScheduleReceipt = { task_id: "bot-handoff-abc", title: "Weekly comparison", revision: 1, action: "created", status: "active", schedule: weekly,
+    target: { kind: "new_chat" }, next_run_at_ms: null, use_memory: true, update_memory: false, awaiting_confirmation: false };
+  const view = (surface: "bot" | "session") => <ChatExecutionProvider value={{ bridge, loupistId, threadId: "any", surface, theme: "light", active: true }}>
+    <MessageSchedules receipts={[receipt]} />
+  </ChatExecutionProvider>;
+  const { rerender } = render(view("session"));
+  expect(screen.getByText("Handed to Bot · Active")).toBeVisible();
+  rerender(view("bot"));
+  expect(screen.getByText("Active")).toBeVisible();
+  expect(screen.queryByText(/Handed to Bot/)).toBeNull();
 });

@@ -25,6 +25,8 @@ import type {
   LoupistWorkspace,
   MemoryRef,
   MemoryUpdateResult,
+  ResearchHandoffReceipt,
+  ResearchHandoffRequest,
   StreamObserver,
 } from "../../types";
 import {
@@ -130,6 +132,31 @@ export const chatCreate = async (
   state.threads[request.loupist_id] ??= [];
   state.threads[request.loupist_id].unshift(thread);
   return clone(thread);
+};
+
+/**
+ * The mock's `research_handoff_start`: one session per request key, its first
+ * message the question and brief, and one card in the Bot that reads as done.
+ */
+export const researchHandoffStart = async (
+  state: MockBridgeState,
+  request: ResearchHandoffRequest,
+): Promise<ResearchHandoffReceipt> => {
+  const handoffId = `handoff-${request.loupistId}-${request.requestKey}`;
+  const home = ensureHomeThread(state, request.loupistId);
+  const existing = home.messages.find((message) => message.handoff?.handoffId === handoffId);
+  if (existing?.handoff) return { chatId: existing.handoff.chatId, handoffId };
+  const session: ChatThread = {
+    id: makeId("thread"), loupist_id: request.loupistId, title: request.title, updated_at: new Date().toISOString(),
+    use_memory: true, update_memory: true,
+    messages: [{ id: makeId("message"), role: "user", content: [request.question, request.brief].filter(Boolean).join("\n\n"), status: "complete", created_at: new Date().toISOString() }],
+  };
+  state.threads[request.loupistId].unshift(session);
+  home.messages.push({
+    id: makeId("message"), role: "assistant", content: `Researched: ${request.title}.`, status: "complete", created_at: new Date().toISOString(), host_composed: true,
+    handoff: { handoffId, chatId: session.id, title: request.title, status: "done" },
+  });
+  return { chatId: session.id, handoffId };
 };
 
 export const chatRename = async (

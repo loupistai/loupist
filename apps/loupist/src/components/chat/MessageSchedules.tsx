@@ -20,7 +20,7 @@ export function MessageSchedules({ receipts, onOpen }: {
 }) {
   useTranslation("chat");
   const scope = useChatExecution();
-  const status = (receipt: TaskReceipt) => scope && scope.threadId !== `home-${scope.loupistId}` && receipt.action === "created" && receipt.task_id.startsWith("bot-handoff-")
+  const status = (receipt: TaskReceipt) => scope?.surface === "session" && receipt.action === "created" && receipt.task_id.startsWith("bot-handoff-")
     ? t("messageSchedules.handedToBot", { status: receiptStatus(receipt) }) : receiptStatus(receipt);
   if (!receipts.length) return null;
   return <div className="message-schedules" aria-label={t("messageSchedules.scheduledTasks")}>

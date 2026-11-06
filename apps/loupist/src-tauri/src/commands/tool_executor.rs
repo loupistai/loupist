@@ -125,7 +125,11 @@ pub(super) struct ToolCapture {
     pub(super) turn_taint: crate::custom_connections::taint::TurnTaint,
     pub(crate) unattended_run_id: Option<String>,
     pub(super) tool_trace: Arc<crate::broker::ToolTraceCapture>,
+    /// Which conversation this turn runs in; None for a host-driven executor.
+    pub(crate) surface: Option<crate::chat::surface::ChatSurface>,
     pub(super) schedule_context: Option<schedules::ScheduleContext>,
+    /// The research hand-off this Bot reply commits, at most one per turn.
+    pub(in crate::commands) staged_handoff: Mutex<Option<crate::chat::handoff::StagedHandoff>>,
     pub(super) schedule_sink:
         Option<Arc<dyn Fn(crate::scheduled_tasks::types::ScheduleReceipt) + Send + Sync>>,
     pub(super) memories: Mutex<HashMap<String, MemoryRefSnapshot>>,
@@ -198,6 +202,7 @@ struct PendingToolCapture {
     vocabulary: Vec<StagedVocabulary>,
     artifacts: Vec<ArtifactCommit>,
     artifact_reads: BTreeSet<(String, u32)>,
+    handoff: Option<crate::chat::handoff::StagedHandoff>,
     call_id: Option<String>,
 }
 
@@ -692,6 +697,59 @@ impl ToolCapture {
             .lock()
             .await
             .extend(pending.artifact_reads);
+        if let Some(handoff) = pending.handoff {
+            *self.staged_handoff.lock().await = Some(handoff);
+        }
+    }
+
+    /// `research_open`: the Bot stages one hand-off for its reply to commit.
+    /// Every other surface is refused by name.
+    async fn stage_research_open(
+        &self,
+        policy: &ToolPolicy,
+        params: Value,
+        delivery_id: &str,
+    ) -> Result<Value, BrokerError> {
+        let refusal = |where_: &str| {
+            BrokerError::Execution(format!(
+                "research_open is unavailable in a {where_} turn: only the Bot opens a research session"
+            ))
+        };
+        match &self.surface {
+            Some(surface) if surface.is_bot() => {}
+            Some(surface) => return Err(refusal(surface.name())),
+            None => return Err(refusal("host")),
+        }
+        if policy.as_of.is_some() {
+            return Err(BrokerError::Execution(
+                "A research session needs a present-day request. Leave the historical cutoff before handing off.".into(),
+            ));
+        }
+        let request = crate::chat::handoff::HandoffRequest::parse(&params)
+            .map_err(|(field, expected)| BrokerError::InvalidArguments { field, expected })?;
+        let context = self
+            .schedule_context
+            .as_ref()
+            .ok_or(BrokerError::MethodDenied)?;
+        let staged = crate::chat::handoff::StagedHandoff {
+            request,
+            run: crate::chat::handoff::HandoffRun {
+                model_profile_id: context.model_profile_id.clone(),
+                thinking_level: context.thinking_level.clone(),
+                run_options: context.run_options.clone(),
+                use_memory: context.use_memory,
+                update_memory: context.update_memory,
+            },
+        };
+        let result = serde_json::json!({
+            "staged": true,
+            "title": staged.request.title,
+            "requestKey": staged.request.request_key,
+            "notice": "The session opens when this reply finishes and its result arrives here. Tell the user the session title; do not repeat the research in this reply."
+        });
+        self.stage(delivery_id, |pending| pending.handoff = Some(staged))
+            .await;
+        Ok(result)
     }
 }
 
@@ -985,6 +1043,11 @@ impl AppToolExecutor {
             | ToolMethod::ScheduleDelete
             | ToolMethod::ScheduleRunNow
             | ToolMethod::ScheduleStop => self.schedule_tool(policy, method, params).await,
+            ToolMethod::ResearchOpen => {
+                self.capture
+                    .stage_research_open(policy, params, delivery_id)
+                    .await
+            }
             ToolMethod::ChatHistory => self.chat_history(policy, params),
             ToolMethod::DatasetExport => self.dataset_export(policy, params),
             ToolMethod::DatasetDescribe | ToolMethod::DatasetQuery => {

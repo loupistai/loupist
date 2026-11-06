@@ -81,10 +81,15 @@ pub(crate) fn enforce(
             .and_then(|v| v.as_str().map(str::to_owned))
             .unwrap_or_default()
     };
-    store
-        .scheduled_run_skip_tool(loupist_id, run_id, &name, REFUSAL)
-        .map_err(|_| {
-            crate::broker::BrokerError::Execution("Could not record refused unattended tool".into())
-        })?;
+    // A delegated research run has no scheduled run row; its refusals stay in
+    // the tool trace. A scheduled run records them on its run as well.
+    match store.scheduled_run_skip_tool(loupist_id, run_id, &name, REFUSAL) {
+        Ok(()) | Err(crate::store::StoreError::Invalid(_)) => {}
+        Err(_) => {
+            return Err(crate::broker::BrokerError::Execution(
+                "Could not record refused unattended tool".into(),
+            ))
+        }
+    }
     Err(crate::broker::BrokerError::Execution(REFUSAL.into()))
 }

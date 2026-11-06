@@ -22,6 +22,7 @@ import type { ProviderErrorAction } from "./ChatErrorState";
 import { QuoteAsk } from "./QuoteAsk";
 import { MorningMessage } from "./MorningMessage";
 import { ThreadDelivery } from "./ThreadDelivery";
+import { ThreadHandoff } from "./ThreadHandoff";
 import { ThreadAlert } from "./ThreadAlert";
 import { ThreadWatch } from "./ThreadWatch";
 import { ThreadEarnings } from "./ThreadEarnings";
@@ -302,6 +303,8 @@ export function ChatConversation({
             <ThreadAlert message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} onOpenLink={url => void onOpenLink(url)} />
           ) : message.delivery ? (
             <ThreadDelivery message={message} loupistName={loupistName} onOpenRunChat={onOpenRunChat} />
+          ) : message.handoff ? (
+            <ThreadHandoff message={message} loupistName={loupistName} onOpenRunChat={onOpenRunChat} />
           ) : (
             <ChatMessageCard
               bridge={bridge}

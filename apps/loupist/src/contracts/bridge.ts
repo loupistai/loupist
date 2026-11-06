@@ -42,6 +42,8 @@ import type {
   ChatStreamEvent,
   ChatThread,
   LoupistWorkspace,
+  ResearchHandoffReceipt,
+  ResearchHandoffRequest,
 } from "./chat";
 import type {
   AgentSkillSummary,
@@ -298,6 +300,8 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   chatSteer(request: ChatControlRequest): Promise<ChatControlReceipt>;
   /** `as_of` is the date the failed request was sent with; Retry repeats it. */
   chatRetryLast(request: ChatRetryRequest): Promise<{ prompt: string; as_of?: string }>;
+  /** Opens a research session that runs on its own and reports into the Bot; a repeated key returns the same one. */
+  researchHandoffStart(request: ResearchHandoffRequest): Promise<ResearchHandoffReceipt>;
   chatAbort(run_id: string): Promise<void>;
   runActivityList(): Promise<RunActivity[]>;
   knowledgeGrowthEvents(request: import("./knowledge").GrowthEventsQuery): Promise<import("./knowledge").GrowthEventsPage>;

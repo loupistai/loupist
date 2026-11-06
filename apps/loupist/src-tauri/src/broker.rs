@@ -227,6 +227,7 @@ pub enum ToolMethod {
     ScheduleDelete,
     ScheduleRunNow,
     ScheduleStop,
+    ResearchOpen,
     ChatHistory,
     DatasetDescribe,
     DatasetQuery,
@@ -584,6 +585,7 @@ struct TransactionCardinality {
     proposals: u8,
     schema_updates: u8,
     artifact_publishes: u8,
+    research_opens: u8,
 }
 
 impl TransactionCardinality {
@@ -608,10 +610,14 @@ impl TransactionCardinality {
             {
                 return Err(BrokerError::BudgetExceeded);
             }
+            ToolMethod::ResearchOpen if self.research_opens >= 1 => {
+                return Err(BrokerError::BudgetExceeded);
+            }
             _ => {}
         }
         match method {
             ToolMethod::WorldSchemaUpdate => self.schema_updates += 1,
+            ToolMethod::ResearchOpen => self.research_opens += 1,
             ToolMethod::NoteSave => self.journals += 1,
             ToolMethod::SourceSave => self.evidence_creations += 1,
             ToolMethod::LensUpdate | ToolMethod::PrincipleSave => self.proposals += 1,
@@ -625,6 +631,7 @@ impl TransactionCardinality {
 
     fn rollback(&mut self, method: ToolMethod) {
         match method {
+            ToolMethod::ResearchOpen => self.research_opens = self.research_opens.saturating_sub(1),
             ToolMethod::NoteSave => self.journals = self.journals.saturating_sub(1),
             ToolMethod::SourceSave => {
                 self.evidence_creations = self.evidence_creations.saturating_sub(1)

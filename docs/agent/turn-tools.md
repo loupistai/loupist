@@ -19,6 +19,16 @@ supplied by the user, is enough for `artifact_read`. Call `artifact_list` only t
 discover an unknown target id.
 [Connections](../capabilities/connections.md) owns IDs and credential behavior.
 
+`research_open` (always permitted, no component, Bot only, one per reply) hands a
+question that needs depth or several steps to a research session: `title`, `question`,
+`brief`, `pins` of `{lens}` or `{world}` ids and a `requestKey`. It stages; the reply's
+commit inserts one `chat_handoffs` row and the session Chat in the same transaction, a
+repeated key creates nothing, and a reply that does not finish hands nothing off. After
+the commit the host runs the session once through ordinary Chat admission with the
+unattended allowlist and the Bot turn's model and Memory flags, and the Bot shows a
+`handoff` card ([Home Thread](../ui/home-thread.md#home-thread)). A session or an
+unattended run does not list the tool and the broker refuses it by surface.
+
 The `schedules` component is independent of Memory. Read current IDs/revisions
 before editing and keep a stable creation key within the turn. Agent modes are
 fresh history or the task's own dedicated Chat; scheduled runs cannot mutate

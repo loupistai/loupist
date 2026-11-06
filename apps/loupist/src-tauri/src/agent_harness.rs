@@ -917,6 +917,8 @@ pub struct AgentHostContext {
     pub workspace: AgentWorkspaceSnapshot,
     pub preload_component_ids: Vec<String>,
     pub explicit_skill_names: Vec<String>,
+    /// Bot, session, scheduled or delegated: frozen with the turn.
+    pub surface: crate::chat::surface::ChatSurface,
 }
 
 impl AgentHostContext {
@@ -1068,6 +1070,19 @@ pub fn as_of_envelope(cutoff: &str) -> Value {
 }
 
 /// Adds the as-of envelope beside the live-time envelope.
+/// The `chat_surface` block tells the model which conversation it is in. It
+/// is present every turn, with Memory on or off.
+pub fn attach_chat_surface(envelope: &str, surface: &crate::chat::surface::ChatSurface) -> String {
+    let Ok(mut value) = serde_json::from_str::<Value>(envelope) else {
+        return envelope.to_owned();
+    };
+    let Some(object) = value.as_object_mut() else {
+        return envelope.to_owned();
+    };
+    object.insert("chat_surface".into(), surface.envelope_block());
+    serde_json::to_string(&value).unwrap_or_else(|_| envelope.to_owned())
+}
+
 pub fn attach_as_of(envelope: &str, cutoff: &str) -> String {
     let Ok(mut value) = serde_json::from_str::<Value>(envelope) else {
         return envelope.to_owned();
@@ -1370,6 +1385,7 @@ pub(crate) fn render_turn_context(envelope: &str) -> String {
         "Instructions from the user for this Loupist",
         "What the user follows",
         "Loupist tone",
+        "chat_surface",
         "memory_protocol",
         "mentioned_connections",
     ] {
@@ -2046,6 +2062,7 @@ mod tests {
                 .unwrap(),
                 preload_component_ids: Vec::new(),
                 explicit_skill_names: explicit_skill_names("$world $skill:lens"),
+                surface: crate::chat::surface::ChatSurface::Session,
             };
             let policy = context.tool_policy("loupist-a".into(), "chat-a".into(), None);
             assert_eq!(

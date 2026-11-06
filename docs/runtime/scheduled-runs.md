@@ -23,7 +23,11 @@ Scheduled work reuses ordinary Chat admission, execution and persistence. A save
 definition has title, prompt, schedule, target, model/reasoning options and separate
 Memory read/save flags. Supported schedules are once, interval, daily and weekly;
 daily/weekly use IANA time zones. A run can target a new Chat per run, the task's
-own continuing Chat, or an existing Chat. Bot manages schedules. A research session can submit a typed schedule handoff with its own model and Memory flags. The host registers the task idempotently and posts a receipt in the same Loupist’s Bot. A busy Bot receives pending receipts on the next delivery pass or workspace load. Unattended runs cannot manage or hand off schedules. Legacy confirmation-pending tasks remain paused. The Bot’s briefing and watch tools handle explicit requests separately. Existing briefing-based watcher consent is captured on first access.
+own continuing Chat, or an existing Chat. Bot manages schedules. A research session can submit a typed schedule handoff with its own model and Memory flags. The host registers the task idempotently and posts a receipt in the same Loupist’s Bot. A busy Bot receives pending receipts on the next delivery pass or workspace load. Unattended runs cannot manage or hand off schedules. A research hand-off from the Bot
+(`chat_handoffs`, [Home Thread](../ui/home-thread.md#home-thread)) is a delegated run on
+the same admission path with the same unattended allowlist, without a scheduled task: a
+`created` row with no run is sent once by the Bot's next delivery pass, a `running` row
+whose run is gone is marked stopped, and a run that started is never sent again. Legacy confirmation-pending tasks remain paused. The Bot’s briefing and watch tools handle explicit requests separately. Existing briefing-based watcher consent is captured on first access.
 
 The shared Rust service handles create/edit, pause/resume, delete, Run now and
 Stop. Edits check definition revisions; Chat creation keys prevent duplicate

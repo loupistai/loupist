@@ -6,6 +6,8 @@ export type ChatExecutionScope = {
   bridge: LoupistBridge;
   loupistId: string;
   threadId: string;
+  /** The Bot (the home Thread) or a research session, from the thread's `home` flag. */
+  surface: "bot" | "session";
   theme: "light" | "dark";
   active: boolean;
 };

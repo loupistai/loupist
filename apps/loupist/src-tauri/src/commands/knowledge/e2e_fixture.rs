@@ -164,6 +164,7 @@ pub(crate) fn seed_e2e_knowledge_fixture(state: &AppState) -> Result<(), Command
                 watch: None,
                 earnings: None,
                 vocabulary: None,
+                handoff: None,
                 failure_kind: None,
                 host_composed: false,
                 steer: false,

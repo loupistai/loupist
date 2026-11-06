@@ -139,6 +139,9 @@ pub(crate) fn delivery_message(state: &AppState, run: &Run) -> Result<ChatMessag
             run_thread_id: run.thread_id.clone(),
             status: run.status,
             finished_at_ms: finished,
+            learned: run.message_id.as_ref().and_then(|id| {
+                super::handoff::learned_digest(state, &run.loupist_id, std::slice::from_ref(id))
+            }),
         }),
         as_of: None,
         number_checks: Vec::new(),
@@ -148,6 +151,7 @@ pub(crate) fn delivery_message(state: &AppState, run: &Run) -> Result<ChatMessag
         watch: None,
         earnings: None,
         vocabulary: None,
+        handoff: None,
     })
 }
 
@@ -227,11 +231,12 @@ pub(crate) fn alert_message(
         watch: None,
         earnings: None,
         vocabulary: None,
+        handoff: None,
     })
 }
 
 /// A host message with nothing but its text; the caller sets its record.
-fn host_message(
+pub(crate) fn host_message(
     prefix: &str,
     content: String,
     created_at_ms: i64,
@@ -274,6 +279,7 @@ fn host_message(
         watch: None,
         earnings: None,
         vocabulary: None,
+        handoff: None,
     })
 }
 
@@ -605,6 +611,33 @@ pub(crate) fn deliver_finished_runs(
         .collect::<Vec<_>>();
     let delivered = delivered_in(&home);
     let (watch_events, notices) = pending_host_news(state, loupist_id);
+    let research = super::handoff::for_delivery(state, loupist_id)?;
+    // A research hand-off posts once at `running` and then changes that card in place.
+    let research_changes = |chat: &ChatSession| -> Vec<(super::handoff::Handoff, Option<usize>)> {
+        research
+            .iter()
+            .filter_map(|handoff| {
+                let posted = chat.messages.iter().position(|message| {
+                    message
+                        .handoff
+                        .as_ref()
+                        .is_some_and(|record| record.handoff_id == handoff.id)
+                });
+                match posted {
+                    Some(index)
+                        if chat.messages[index]
+                            .handoff
+                            .as_ref()
+                            .map(|record| record.status)
+                            == Some(handoff.status) =>
+                    {
+                        None
+                    }
+                    posted => Some((handoff.clone(), posted)),
+                }
+            })
+            .collect()
+    };
     if !runs.iter().any(|run| deliverable(run, &home, &delivered))
         && handoffs
             .iter()
@@ -612,6 +645,7 @@ pub(crate) fn deliver_finished_runs(
         && questions
             .iter()
             .all(|q| home.messages.iter().any(|m| m.id == q.receipt.task_id))
+        && research_changes(&home).is_empty()
         && pending_alerts(state, loupist_id, &home).is_empty()
         && pending_vocabulary(state, loupist_id, &home).is_empty()
         && watch_events.is_empty()
@@ -671,6 +705,19 @@ pub(crate) fn deliver_finished_runs(
     for run in &pending {
         posted.push(delivery_message(state, run)?);
     }
+    let mut chat = expected.clone();
+    let mut changed = 0;
+    for (handoff, index) in research_changes(&expected) {
+        let message =
+            super::handoff::message(state, &handoff, index.map(|i| &expected.messages[i]))?;
+        match index {
+            Some(index) => {
+                chat.messages[index] = message;
+                changed += 1;
+            }
+            None => posted.push(message),
+        }
+    }
     for alert in pending_alerts(state, loupist_id, &expected) {
         posted.push(alert_message(&alert)?);
     }
@@ -688,12 +735,11 @@ pub(crate) fn deliver_finished_runs(
     for (notice, snapshot) in &notices {
         posted.push(earnings_message(notice, snapshot)?);
     }
-    if posted.is_empty() {
+    if posted.is_empty() && changed == 0 {
         return Ok(0);
     }
     posted.sort_by_key(|message| message.created_at_ms);
-    let count = posted.len();
-    let mut chat = expected.clone();
+    let count = posted.len() + changed;
     chat.messages.extend(posted);
     // The Pi transcript no longer matches; the next turn starts cold and can
     // read these messages through Chat history.

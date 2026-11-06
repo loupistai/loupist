@@ -187,6 +187,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
             Vec::new()
         };
         let saved_principles = capture.staged_principles.lock().await.clone();
+        let staged_handoff = capture.staged_handoff.lock().await.clone();
         let citation_reads = capture.staged_reads.lock().await.clone();
         // Asset pages change only with Memory saving on and never under an as-of date.
         let asset_work = task_update_memory && !capture.as_of_turn();
@@ -252,6 +253,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                     watch: None,
                     earnings: None,
                     vocabulary: None,
+                    handoff: None,
                     id: message_id.clone(),
                     role: ChatRole::Assistant,
                     status: ChatMessageStatus::Complete,
@@ -375,6 +377,14 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         &saved_vocabulary,
                     )
                     .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
+                    if let Some(staged) = &staged_handoff {
+                        crate::chat::handoff::commit(
+                            transaction,
+                            task_loupist_id,
+                            staged,
+                            created_at_ms,
+                        )?;
+                    }
                     if host_composed && changes.is_empty() {
                         on_event.set_failure_kind(ChatFailureKind::EmptyReply);
                         return Err(crate::store::StoreError::Invalid(

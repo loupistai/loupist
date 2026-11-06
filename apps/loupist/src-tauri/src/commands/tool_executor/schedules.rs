@@ -1,13 +1,19 @@
 //! Agent-facing scheduling. All effects use the same service as the native UI.
 use super::*;
-use crate::scheduled_tasks::{
-    service,
-    types::{Schedule, ScheduleAction, ScheduleReceipt, Task, TaskDraft, TaskStatus, TaskTarget},
+use crate::{
+    chat::surface::ChatSurface,
+    scheduled_tasks::{
+        service,
+        types::{
+            Schedule, ScheduleAction, ScheduleReceipt, Task, TaskDraft, TaskStatus, TaskTarget,
+        },
+    },
 };
 
+/// The model, effort and Memory flags of the turn that creates a schedule or
+/// hands off research; both inherit them.
 #[derive(Clone)]
 pub(crate) struct ScheduleContext {
-    pub management_enabled: bool,
     pub model_profile_id: String,
     pub thinking_level: String,
     pub run_options: BTreeMap<String, String>,
@@ -146,16 +152,11 @@ impl AppToolExecutor {
             return Err(BrokerError::MethodDenied);
         }
         let read_only = matches!(method, ToolMethod::ScheduleList | ToolMethod::ScheduleRead);
-        if !read_only
-            && !self
-                .capture
-                .schedule_context
-                .as_ref()
-                .is_some_and(|context| context.management_enabled)
-        {
+        let surface = self.capture.surface.as_ref();
+        if !read_only && !surface.is_some_and(ChatSurface::interactive) {
             return Err(BrokerError::Execution("Schedule management is available only in an interactive Chat. A scheduled run cannot create, change, run, stop, or delete schedules.".into()));
         }
-        let is_bot = policy.session_id == crate::chat::home::home_thread_id(&self.loupist_id);
+        let is_bot = surface.is_some_and(ChatSurface::is_bot);
         if !read_only && policy.as_of.is_some() {
             return Err(BrokerError::Execution("A scheduled task needs a present-day request. Leave the historical cutoff before scheduling.".into()));
         }
@@ -563,8 +564,12 @@ mod tests {
         });
         let mut capture = ToolCapture::for_chat("message-a".into());
         capture.bound_chat_id = Some(thread.into());
+        capture.surface = Some(match (management_enabled, thread == "home-loupist-a") {
+            (true, true) => ChatSurface::Bot,
+            (true, false) => ChatSurface::Session,
+            (false, _) => ChatSurface::Scheduled,
+        });
         capture.schedule_context = Some(ScheduleContext {
-            management_enabled,
             model_profile_id: "fixture".into(),
             thinking_level: "medium".into(),
             run_options: BTreeMap::new(),

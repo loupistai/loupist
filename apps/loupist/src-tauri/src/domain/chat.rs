@@ -338,6 +338,9 @@ pub struct ChatMessage {
     /// Watcher alerts the host posted in the home Thread.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub watch: Option<HomeWatch>,
+    /// A research hand-off the host posted in the home Thread: running, then its result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handoff: Option<HomeHandoff>,
     /// A results snapshot (or a failed capture) the host posted in the home Thread.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub earnings: Option<HomeEarnings>,
@@ -426,6 +429,21 @@ pub struct HomeEarnings {
     pub measures: Vec<serde_json::Value>,
 }
 
+/// A research session the Bot handed off (`chat/handoff.rs`). One message per
+/// hand-off: posted when the run starts and rewritten in place when it ends.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HomeHandoff {
+    pub handoff_id: String,
+    pub chat_id: String,
+    pub title: String,
+    pub status: crate::chat::handoff::HandoffStatus,
+    /// What the session filed into Memory (`LearnedDigest`), once the Lens
+    /// unit's digest is plugged in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub learned: Option<serde_json::Value>,
+}
+
 /// Where a host-posted Thread message came from: one finished scheduled run.
 /// The text is the run's first paragraph; the run's own Chat keeps the answer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -440,6 +458,10 @@ pub struct HomeDelivery {
     pub run_thread_id: Option<String>,
     pub status: crate::scheduled_tasks::types::RunStatus,
     pub finished_at_ms: i64,
+    /// What the run filed into Memory (`LearnedDigest`), once the Lens unit's
+    /// digest is plugged in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub learned: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
