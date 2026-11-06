@@ -690,7 +690,7 @@ impl ToolCapture {
     }
 
     /// `research_open`: the Bot stages one hand-off for its reply to commit.
-    /// Every other surface is refused by name.
+    /// Every other surface, and a second call in the same turn, is refused by name.
     async fn stage_research_open(
         &self,
         policy: &ToolPolicy,
@@ -714,6 +714,19 @@ impl ToolCapture {
         }
         let request = crate::chat::handoff::HandoffRequest::parse(&params)
             .map_err(|(field, expected)| BrokerError::InvalidArguments { field, expected })?;
+        if self.staged_handoff.lock().await.is_some()
+            || self
+                .pending_deliveries
+                .lock()
+                .await
+                .values()
+                .any(|pending| pending.handoff.is_some())
+        {
+            return Err(BrokerError::Execution(
+                "This reply already opens a research session: one research session per reply."
+                    .into(),
+            ));
+        }
         let context = self
             .schedule_context
             .as_ref()

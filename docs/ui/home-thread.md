@@ -39,7 +39,8 @@ same function; the Bot is never selected and its draft never changes. A finished
 A link [discovery](../knowledge/worlds.md#discovery-after-publication) found posts one
 message with a `link` record (`connectionId`, `seedName`, `farName`, `path` of
 `{name, relation, reversed}`, `nodeIds` seed first) through the same delivery pass, at
-most three per Loupist per UTC day; further links wait as `new` for a later day. It
+most three per Loupist per UTC day, counted by when each was shown, so opening or
+dismissing an earlier link leaves the day's three; further links wait as `new` for a later day. It
 reads "New link: A ↔ C through B." over the path with its relations; clicking the path
 opens the Map with those names highlighted. Look into it submits the same hand-off as
 `research_handoff_start` (title "Link: A and C", a question built from the path, the

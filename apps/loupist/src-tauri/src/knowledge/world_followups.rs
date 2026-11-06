@@ -291,7 +291,8 @@ pub(super) fn set_status(
 }
 
 /// `new` links the Bot may still post today: the day's allowance less what it
-/// already showed, best first. Days are UTC.
+/// showed today, best first. Opening or dismissing a link shown earlier uses
+/// none of it. Days are UTC.
 pub(crate) fn to_show(
     tx: &Transaction<'_>,
     loupist_id: &str,
@@ -300,7 +301,7 @@ pub(crate) fn to_show(
     let day_start = at_ms - at_ms.rem_euclid(DAY_MS);
     let shown_today: i64 = tx.query_row(
         "SELECT COUNT(*) FROM knowledge_connections
-         WHERE loupist_id = ?1 AND status <> 'new' AND status_at_ms >= ?2",
+         WHERE loupist_id = ?1 AND shown_at_ms >= ?2",
         params![loupist_id, day_start],
         |row| row.get(0),
     )?;
@@ -324,7 +325,7 @@ pub(crate) fn mark_shown(
 ) -> KnowledgeResult<()> {
     for connection_id in connection_ids {
         tx.execute(
-            "UPDATE knowledge_connections SET status = 'shown', status_at_ms = ?3
+            "UPDATE knowledge_connections SET status = 'shown', status_at_ms = ?3, shown_at_ms = ?3
              WHERE loupist_id = ?1 AND connection_id = ?2 AND status = 'new'",
             params![loupist_id, connection_id, at_ms],
         )?;
@@ -596,6 +597,51 @@ mod tests {
             )),
             Err(KnowledgeError::NotFound)
         ));
+    }
+
+    #[test]
+    fn opening_or_dismissing_yesterdays_links_leaves_todays_allowance() {
+        let (_directory, store) = open_store();
+        let record = world(&store);
+        let mut nodes = base_nodes();
+        let mut claims = vec![claim("c1", "a", "b")];
+        for far in ["c", "d", "e", "f"] {
+            nodes.push(node(far, far, "Technology", None));
+            claims.push(claim(&format!("c-{far}"), "b", far));
+        }
+        seal(&store, &record, nodes, claims, &[item("A", "KRX")], 10);
+        let yesterday = store
+            .transact(|write| {
+                let shown = to_show(write.tx, LOUPIST, 20)?;
+                let ids: Vec<String> = shown
+                    .iter()
+                    .map(|link| link.connection_id.clone())
+                    .collect();
+                mark_shown(write.tx, LOUPIST, &ids, 20)?;
+                Ok(shown)
+            })
+            .unwrap();
+        assert_eq!(yesterday.len(), SHOWN_PER_DAY);
+        let today = 20 + DAY_MS;
+        for (link, status) in yesterday.iter().zip([
+            ConnectionStatus::Dismissed,
+            ConnectionStatus::Opened,
+            ConnectionStatus::Dismissed,
+        ]) {
+            store
+                .transact(|write| {
+                    write.connection_set_status(LOUPIST, &link.connection_id, status, today)
+                })
+                .unwrap();
+        }
+        let shown_today = store
+            .transact(|write| to_show(write.tx, LOUPIST, today + 1))
+            .unwrap();
+        assert_eq!(
+            shown_today.len(),
+            1,
+            "nothing was shown today, so the fourth link is"
+        );
     }
 
     #[test]

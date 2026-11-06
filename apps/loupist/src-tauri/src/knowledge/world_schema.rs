@@ -194,6 +194,31 @@ impl Delta {
             && self.added_relations.is_empty()
             && self.removed_relations.is_empty()
     }
+
+    /// This delta without the kinds `later` added or removed.
+    fn untouched_by(mut self, later: &Delta) -> Self {
+        let types: Vec<&str> = later
+            .added_types
+            .iter()
+            .chain(&later.removed_types)
+            .map(|item| item.name.as_str())
+            .collect();
+        let relations: Vec<&str> = later
+            .added_relations
+            .iter()
+            .chain(&later.removed_relations)
+            .map(|item| item.name.as_str())
+            .collect();
+        self.added_types
+            .retain(|item| !types.contains(&item.name.as_str()));
+        self.removed_types
+            .retain(|item| !types.contains(&item.name.as_str()));
+        self.added_relations
+            .retain(|item| !relations.contains(&item.name.as_str()));
+        self.removed_relations
+            .retain(|item| !relations.contains(&item.name.as_str()));
+        self
+    }
 }
 
 fn names<T>(items: &[T], name: impl Fn(&T) -> &str) -> Vec<String> {
@@ -231,10 +256,20 @@ fn without_type(extension: &mut WorldExtension, name: &str) {
         .retain(|relation| !relation.signatures.is_empty());
 }
 
-/// The live extension after reversing `change`: its added kinds go away and its
-/// removed kinds come back, while later changes to other kinds stay.
-fn reversed(current: &WorldExtension, change: &SchemaChange) -> Option<WorldExtension> {
-    let delta = Delta::between(&change.before, &change.after);
+/// The live extension after reversing `change` (`later` holds every change
+/// after it): the kinds it added go away and the kinds it removed come back,
+/// except a kind a later change added or removed, which stays as that change
+/// left it. None when nothing is left to reverse. Undo and the view's
+/// `undoable` both decide here.
+fn reversed(
+    current: &WorldExtension,
+    change: &SchemaChange,
+    later: &[SchemaChange],
+) -> Option<WorldExtension> {
+    let delta = later.iter().fold(
+        Delta::between(&change.before, &change.after),
+        |delta, other| delta.untouched_by(&Delta::between(&other.before, &other.after)),
+    );
     let mut next = current.clone();
     for item in &delta.added_relations {
         next.relations.retain(|other| other.name != item.name);
@@ -242,15 +277,8 @@ fn reversed(current: &WorldExtension, change: &SchemaChange) -> Option<WorldExte
     for item in &delta.added_types {
         without_type(&mut next, &item.name);
     }
-    for item in delta.removed_types {
-        if !next.types.iter().any(|other| other.name == item.name) {
-            next.types.push(item);
-        }
-    }
+    next.types.extend(delta.removed_types);
     for mut item in delta.removed_relations {
-        if next.relations.iter().any(|other| other.name == item.name) {
-            continue;
-        }
         let type_names: Vec<String> = next.types.iter().map(|other| other.name.clone()).collect();
         item.signatures.retain(|(source, target)| {
             endpoint_allowed(source, &type_names) && endpoint_allowed(target, &type_names)
@@ -263,20 +291,22 @@ fn reversed(current: &WorldExtension, change: &SchemaChange) -> Option<WorldExte
     (!unchanged).then_some(next)
 }
 
-fn load_change(
+/// The change `change_id` and every change after it, newest first.
+fn change_and_later(
     connection: &rusqlite::Connection,
     loupist_id: &str,
     change_id: &str,
-) -> KnowledgeResult<SchemaChange> {
+) -> KnowledgeResult<(SchemaChange, Vec<SchemaChange>)> {
     validate_loupist_id(loupist_id)?;
-    read_changes(
+    let mut changes = read_changes(
         connection,
-        "WHERE loupist_id = ?1 AND change_id = ?2",
+        "WHERE loupist_id = ?1 AND rowid >= (
+             SELECT rowid FROM knowledge_schema_changes WHERE loupist_id = ?1 AND change_id = ?2
+         )",
         params![loupist_id, change_id],
-    )?
-    .into_iter()
-    .next()
-    .ok_or(KnowledgeError::NotFound)
+    )?;
+    let change = changes.pop().ok_or(KnowledgeError::NotFound)?;
+    Ok((change, changes))
 }
 
 pub(crate) fn recent_changes(
@@ -329,7 +359,11 @@ fn read_changes(
         .collect()
 }
 
-fn change_view(change: &SchemaChange, current: &WorldExtension) -> SchemaChangeView {
+fn change_view(
+    change: &SchemaChange,
+    later: &[SchemaChange],
+    current: &WorldExtension,
+) -> SchemaChangeView {
     let delta = Delta::between(&change.before, &change.after);
     let labelled = |label: &dyn Fn(&str) -> Option<ExtensionLabels>, names: &[String]| {
         names
@@ -386,7 +420,7 @@ fn change_view(change: &SchemaChange, current: &WorldExtension) -> SchemaChangeV
         removed_relations,
         kind_labels,
         created_at_ms: change.created_at_ms,
-        undoable: reversed(current, change).is_some(),
+        undoable: reversed(current, change, later).is_some(),
     }
 }
 
@@ -395,9 +429,12 @@ pub(crate) fn schema_view(
     loupist_id: &str,
 ) -> KnowledgeResult<WorldSchemaView> {
     let extension = live_extension(connection, loupist_id)?;
-    let changes = recent_changes(connection, loupist_id, VIEW_CHANGES)?
+    // Newest first, so every change after the one at `index` is listed before it.
+    let recent = recent_changes(connection, loupist_id, VIEW_CHANGES)?;
+    let changes = recent
         .iter()
-        .map(|change| change_view(change, &extension))
+        .enumerate()
+        .map(|(index, change)| change_view(change, &recent[..index], &extension))
         .collect();
     Ok(WorldSchemaView { extension, changes })
 }
@@ -611,16 +648,17 @@ pub(crate) fn add_kinds(
 }
 
 /// Reverses one change without touching later ones: its added kinds are
-/// removed (with the links that depended on them) and its removed kinds return.
+/// removed (with the links that depended on them) and its removed kinds return,
+/// except the kinds a later change added or removed.
 pub(crate) fn undo_change(
     tx: &Transaction<'_>,
     loupist_id: &str,
     change_id: &str,
     now_ms: i64,
 ) -> KnowledgeResult<SchemaChange> {
-    let change = load_change(tx, loupist_id, change_id)?;
+    let (change, later) = change_and_later(tx, loupist_id, change_id)?;
     let current = live_extension(tx, loupist_id)?;
-    let next = reversed(&current, &change).ok_or(KnowledgeError::Invalid(
+    let next = reversed(&current, &change, &later).ok_or(KnowledgeError::Invalid(
         "schema change has nothing left to undo",
     ))?;
     record_change(
@@ -1281,6 +1319,47 @@ mod tests {
         assert!(undo_change(&tx, "loupist-a", &first.change_id, 40).is_err());
         undo_change(&tx, "loupist-a", &second.change_id, 50).unwrap();
         assert!(type_names(&tx).is_empty());
+    }
+
+    #[test]
+    fn undo_leaves_every_kind_a_later_change_added_or_removed() {
+        let mut db = memory();
+        let tx = db.transaction().unwrap();
+        let first = add(
+            &tx,
+            Producer::Chat,
+            vec![kind("Alpha"), kind("Gamma")],
+            Vec::new(),
+            10,
+        );
+        let removed = remove_schema_item(&tx, "loupist-a", "type", "Alpha", 20).unwrap();
+        let mut again = kind("Alpha");
+        again.description = "The same name added again later with another meaning.".into();
+        let third = add(&tx, Producer::Chat, vec![again.clone()], Vec::new(), 30);
+        let undoable = |change_id: &str| {
+            schema_view(&tx, "loupist-a")
+                .unwrap()
+                .changes
+                .into_iter()
+                .find(|change| change.change_id == change_id)
+                .unwrap()
+                .undoable
+        };
+        assert!(undoable(&first.change_id), "Gamma is still its own");
+        assert!(
+            !undoable(&removed.change_id),
+            "Alpha came back in a later change"
+        );
+        assert!(undoable(&third.change_id));
+        undo_change(&tx, "loupist-a", &first.change_id, 40).unwrap();
+        assert_eq!(
+            live_extension(&tx, "loupist-a").unwrap().types,
+            [again.clone()],
+            "only Gamma goes; the Alpha added later stays"
+        );
+        assert!(!undoable(&first.change_id));
+        assert!(undo_change(&tx, "loupist-a", &first.change_id, 50).is_err());
+        assert_eq!(live_extension(&tx, "loupist-a").unwrap().types, [again]);
     }
 
     #[test]

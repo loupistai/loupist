@@ -462,7 +462,8 @@ fn schema_sql() -> String {
             score INTEGER NOT NULL,
             status TEXT NOT NULL CHECK (status IN ('new', 'shown', 'opened', 'dismissed', 'filed')),
             created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0),
-            status_at_ms INTEGER NOT NULL CHECK (status_at_ms >= 0)
+            status_at_ms INTEGER NOT NULL CHECK (status_at_ms >= 0),
+            shown_at_ms INTEGER CHECK (shown_at_ms IS NULL OR shown_at_ms >= 0)
         ) STRICT;
         CREATE UNIQUE INDEX knowledge_connections_pair
             ON knowledge_connections(loupist_id, seed_node_id, far_node_id);

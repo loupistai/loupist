@@ -79,7 +79,9 @@ stored. Every change validates, applies at once and writes a `schema_extended` o
 - **Undo.** "Undo" on a change, or Remove on one kind, appends a change. Undoing a
   change removes only the kinds it added (with links that depended on them) and
   restores the kinds it removed, so an older change can be undone after a newer
-  one without touching the newer kinds. A preset or review change also posts one
+  one without touching the newer kinds. A kind a later change added or removed
+  stays as that change left it, even under the same name; a change with nothing
+  else left to reverse offers no Undo. A preset or review change also posts one
   Bot message, "Your map now also tracks ...", in the labels the user sees, with
   Undo. A chat change is already in the reply. Settings shows these under
   [What the map tracks](../ui/map-lens.md#what-the-map-tracks).

@@ -453,12 +453,23 @@ pub(crate) fn finish(
     Ok(())
 }
 
+/// Its own task: a hand-off starts a Chat turn, and a delivery pass runs where
+/// a Chat turn ends. The sessions that started reach the Bot on the pass after.
+fn send_created(state: &AppState, loupist_id: &str) {
+    let state = state.clone();
+    let loupist_id = loupist_id.to_owned();
+    tauri::async_runtime::spawn(async move {
+        match launch_created(&state, &loupist_id).await {
+            Ok(0) => {}
+            Ok(_) => super::surface::deliver(&state, &loupist_id),
+            Err(error) => eprintln!("Research hand-off could not start ({error})"),
+        }
+    });
+}
+
 /// Sends every committed hand-off that has not started: a first send after a
 /// crash between commit and launch, never a retry of a run that started.
-pub(crate) async fn launch_created(
-    state: &AppState,
-    loupist_id: &str,
-) -> Result<usize, CommandError> {
+async fn launch_created(state: &AppState, loupist_id: &str) -> Result<usize, CommandError> {
     let mut launched = 0;
     for handoff in list(state, loupist_id)? {
         if handoff.status != HandoffStatus::Created {
@@ -554,21 +565,29 @@ async fn launch(state: &AppState, handoff: &Handoff) -> Result<bool, CommandErro
     Ok(true)
 }
 
-/// Hand-offs the Bot should show: every one that started, after marking a
-/// `running` row whose run no longer exists (the app stopped mid-run) as
-/// stopped. Such a run is reported, never sent again.
+/// The delivery pass's hand-off step. Every committed hand-off that has not
+/// started is sent, on its own task: the Bot reply's own, or one a crash left
+/// between commit and launch. A `running` row whose run no longer exists (the
+/// app stopped mid-run) is marked stopped: reported, never sent again. Returns
+/// every hand-off that started, for the Bot to show.
 pub(crate) fn for_delivery(
     state: &AppState,
     loupist_id: &str,
 ) -> Result<Vec<Handoff>, CommandError> {
+    // Rows before runs: a launch registers its run before it marks the row
+    // `running`, so a row read as running has its run in this list.
+    let rows = list(state, loupist_id)?;
     let live = state
         .run_coordinator
         .activities()?
         .into_iter()
         .map(|activity| activity.run_id)
         .collect::<std::collections::HashSet<_>>();
+    if rows.iter().any(|row| row.status == HandoffStatus::Created) {
+        send_created(state, loupist_id);
+    }
     let mut shown = Vec::new();
-    for mut handoff in list(state, loupist_id)? {
+    for mut handoff in rows {
         if handoff.status == HandoffStatus::Created {
             continue;
         }

@@ -107,29 +107,19 @@ impl ChatSurface {
     }
 
     /// Runs once the turn's reply settled and its run lease and Memory writer
-    /// dropped. The Bot launches the hand-offs its reply committed and receives
-    /// what finished while it was busy; an unattended run posts its own result
-    /// into the Bot, which its sink could not do while the writer was held.
+    /// dropped. The delivery pass sends the hand-offs the Bot's reply committed
+    /// and gives the Bot what finished while it was busy; an unattended run
+    /// posts its own result into the Bot, which its sink could not do while the
+    /// writer was held.
     pub(crate) fn after_turn(&self, state: &AppState, loupist_id: &str) {
         match self {
             Self::Session => {}
-            Self::Scheduled | Self::Delegated { .. } => deliver(state, loupist_id),
-            Self::Bot => {
-                let state = state.clone();
-                let loupist_id = loupist_id.to_owned();
-                // Its own task: a hand-off starts a Chat turn, and a Chat turn ends here.
-                tauri::async_runtime::spawn(async move {
-                    if let Err(error) = super::handoff::launch_created(&state, &loupist_id).await {
-                        eprintln!("Research hand-off could not start ({error})");
-                    }
-                    deliver(&state, &loupist_id);
-                });
-            }
+            Self::Bot | Self::Scheduled | Self::Delegated { .. } => deliver(state, loupist_id),
         }
     }
 }
 
-fn deliver(state: &AppState, loupist_id: &str) {
+pub(super) fn deliver(state: &AppState, loupist_id: &str) {
     if super::home::deliver_finished_runs(state, loupist_id).is_ok_and(|count| count > 0) {
         crate::briefings::desktop::changed(loupist_id);
     }

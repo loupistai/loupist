@@ -117,6 +117,26 @@ async fn research_open_is_staged_in_the_bot_and_refused_elsewhere_by_name() {
     }
 }
 
+#[tokio::test]
+async fn a_second_research_open_in_one_turn_is_refused_and_the_first_stays_staged() {
+    let temporary = tempfile::tempdir().unwrap();
+    let bot = executor(&temporary, Some(ChatSurface::Bot));
+    bot.execute(&policy(), ToolMethod::ResearchOpen, arguments())
+        .await
+        .unwrap();
+    let mut second = arguments();
+    second["title"] = json!("DRAM pricing");
+    second["requestKey"] = json!("dram-2027");
+    let error = bot
+        .execute(&policy(), ToolMethod::ResearchOpen, second)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("one research session per reply"), "{error}");
+    let staged = bot.capture.staged_handoff.lock().await.clone().unwrap();
+    assert_eq!(staged.request.request_key, "hbm-2027");
+}
+
 #[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
 mod turns {
     use super::*;
@@ -317,7 +337,7 @@ mod turns {
     }
 
     #[tokio::test]
-    async fn a_committed_hand_off_without_a_run_is_sent_once_by_the_delivery_pass() {
+    async fn a_committed_hand_off_left_unsent_is_sent_once_by_the_next_delivery_passes() {
         let fixture = fixture();
         let staged = handoff::StagedHandoff {
             request: handoff::HandoffRequest::parse(&arguments()).unwrap(),
@@ -337,27 +357,18 @@ mod turns {
         assert_eq!(committed, again);
         assert_eq!(committed.status, HandoffStatus::Created);
         assert_eq!(fixture.chats().len(), 2);
-        // Nothing is shown for a hand-off that has not started.
-        assert_eq!(
-            crate::chat::home::deliver_finished_runs(&fixture.state, &fixture.loupist_id).unwrap(),
-            0
-        );
-
-        assert_eq!(
-            handoff::launch_created(&fixture.state, &fixture.loupist_id)
-                .await
-                .unwrap(),
-            1
-        );
+        // The app stopped before the launch. Opening the Loupist runs the
+        // delivery pass, and another pass can follow at once.
+        let deliver =
+            || crate::chat::home::deliver_finished_runs(&fixture.state, &fixture.loupist_id);
+        deliver().unwrap();
+        deliver().unwrap();
         let rows = fixture.settled_handoffs().await;
+        assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].status, HandoffStatus::Done, "{:?}", rows[0].error);
-        assert_eq!(
-            handoff::launch_created(&fixture.state, &fixture.loupist_id)
-                .await
-                .unwrap(),
-            0
-        );
-        assert_eq!(fixture.calls().len(), 1);
         assert_eq!(fixture.settled_cards().await.len(), 1);
+        deliver().unwrap();
+        assert_eq!(fixture.calls().len(), 1, "one session run");
+        assert_eq!(fixture.chats().len(), 2);
     }
 }

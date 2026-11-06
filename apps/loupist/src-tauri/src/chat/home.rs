@@ -622,8 +622,9 @@ fn pending_alerts(
 
 /// Posts every finished, undelivered scheduled run into the home Thread, oldest
 /// first. A reply running in the Thread owns it, so delivery waits: the next
-/// completion or workspace load delivers what is still pending. Returns how
-/// many messages were posted.
+/// completion or workspace load delivers what is still pending. Every pass
+/// also sends the committed research hand-offs that have not started, busy
+/// Thread or not. Returns how many messages were posted.
 pub(crate) fn deliver_finished_runs(
     state: &AppState,
     loupist_id: &str,
