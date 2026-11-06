@@ -3,11 +3,11 @@
 ## Needs a product decision
 
 - **Vocabulary changes apply without a prompt.** The user did not decide this; the orchestrator chose it from the candidates' arguments (an approval an ordinary user cannot judge never gets answered). Review producers are gated on evidence in the graph and every change has Undo. To require approval instead, route the `review` producer in `knowledge/schema_writer.rs` back to a pending state; chat and preset changes would stay immediate.
+- **An interrupted World extraction is lost for good.** No extraction call is retried, so an uncertain usage receipt is never charged twice. But quitting the app during a job (jobs took 85–185 s with GPT-6-Luna at high thinking) or a provider timeout drops that Source's facts from the World permanently. In the native walk, dev-app restarts lost 8 of 14 attempted Sources this way. One bounded retry for a span whose call never mutated the graph would cap the cost at two calls; the change belongs in `graph_jobs::finish_job` and `recover_interrupted`.
 
 ## Not verified
 
-- No run with a real model: `lens_file`, `research_open` and discovery are covered by unit tests and scripted Pi fixtures only. The paid `compounding` style evaluation (session one files, session two must read the page with the original Sources withdrawn) is not written or run.
-- No native run: WKWebView layout, the Tauri bridge and the native file dialogs were not exercised. Browser previews only (`memory-pages`, `chat-learned`, English and Korean).
+- The real-model walk (GPT-6.1-Sol medium, ChatGPT sign-in) covered a research session, a Bot hand-off and World growth on the development build ([journey](journey.md)). The paid `compounding` style evaluation (session one files, session two must read the page with the original Sources withdrawn) is not written or run.
 - `template-seed-grade.mjs` has no recorded traces for the broader core, so curated seeds are unmeasured against it; its hand-written relation list still names the old 12.
 
 ## Product gaps from the design's Later list
@@ -20,8 +20,10 @@
 
 ## Copy and fixtures
 
-- The chat context card calls methods "way of working" (작업 방식) while the Pages tab says "Methods" (분석 방법).
 - The `memory-pages` preview fixture shows a learned date later than its updated date.
+- World extraction named a metric in English from a Korean KRX filing; the Bot's suggested question then reads "TC BONDER 4.5 GRIFFIN equipment order contract amount KRW 44.2 billion (VAT excluded) 변화는 어떻게 설명돼?". Names should follow the Source's language, and long metric names need a short label in questions.
+- The Bot's chat materials panel says nothing was discussed while the Bot's own catch-up lists 17 new names.
+- A hand-off card posted before `briefings::summary` keeps its stored "# heading" summary; only new cards are fixed.
 
 ## Code structure flags from the comment review (not changed here)
 
