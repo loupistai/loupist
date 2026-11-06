@@ -490,9 +490,9 @@ export default function loupistTerminalProviderExtension(pi) {
       globalThis.fetch = withLoupistSignInIdentity(previousFetch, providerId);
       try {
         // Sign in with ChatGPT names this installation by a stable ID kept in
-        // Pi's private settings directory (`ext_agent_host_id`). Pi sends
-        // `agentName` as the page's agent name; Rust's rewrite of the page it
-        // opens is now only a fallback.
+        // Pi's private settings directory (`ext_agent_host_id`). Pi puts
+        // `agentName` on the page it opens (`agent_name_hint`, or Codex's
+        // `originator`), so OpenAI shows Loupist.
         const loginOptions = {};
         if (providerId === "openai") {
           const deviceId = await installationDeviceId();

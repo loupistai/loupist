@@ -13,12 +13,10 @@ and processing bounds independently of Chat.
 
 One `openai` slot holds either a ChatGPT sign-in (Pi's `openai-chatgpt` OAuth with
 its dynamic client; the installation ID stays in Pi's private settings) or an
-OpenAI API key, never both. Loupist passes `agentName: Loupist`, which Pi 1.5.0
-sends as `agent_name_hint` (Pi 1.0.1 ignored it and sent `Pi`). As a fallback the
-page it opens still rewrites `agent_name_hint` and the development Codex browser
-login's `originator` to `Loupist` (`openai_sign_in_presented_as_loupist`). Other query parameters are
-left unchanged. An account already connected under Pi keeps that name until the
-user signs in again. xAI's device login posts `referrer=pi` to
+OpenAI API key, never both. Loupist passes `agentName: Loupist`. Pi puts it on the
+sign-in page as `agent_name_hint`, and on the development Codex browser login as
+`originator`. The host opens and stores that page exactly as Pi wrote it. An account
+connected while Pi sent its own name keeps that name until the user signs in again. xAI's device login posts `referrer=pi` to
 `https://auth.x.ai/oauth2/device/code`; Loupist rewrites that field to `Loupist`
 (`withLoupistSignInIdentity`) and leaves the token request unchanged. Claude
 sign-in keeps Anthropic's published client id; replacing it would drop the
