@@ -618,8 +618,9 @@ fn pending_alerts(
 
 /// Posts every finished, undelivered scheduled run into the home Thread, oldest
 /// first. A reply running in the Thread owns it, so delivery waits: the next
-/// completion or workspace load delivers what is still pending. Returns how
-/// many messages were posted.
+/// completion or workspace load delivers what is still pending. Every write
+/// tells the renderer, whichever caller ran the pass. Returns how many
+/// messages were posted or updated.
 pub(crate) fn deliver_finished_runs(
     state: &AppState,
     loupist_id: &str,
@@ -791,6 +792,7 @@ pub(crate) fn deliver_finished_runs(
         .store
         .replace_chat(&expected, &chat)
         .map_err(map_store)?;
+    crate::briefings::desktop::changed(loupist_id);
     // Delivered once: the alerts and notices now live in the Thread.
     let notice_ids: Vec<String> = notices
         .iter()

@@ -36,6 +36,12 @@ with the session's first paragraph, or "Couldn't finish" / "Stopped". The Bot's
 `research_open` tool and the bridge's `research_handoff_start` both commit through the
 same function; the Bot is never selected and its draft never changes. A finished
 `delivery` record may carry the same optional `learned` digest.
+Every delivery pass that writes the Thread, whichever caller runs it, emits
+`inbox-changed`, and so does the end of every unattended turn (scheduled or handed off),
+since nobody streamed its reply. The renderer answers with one workspace refresh that
+reconciles every idle chat it holds, so the open Bot and a session opened later show the
+stored messages without a reload; a refresh that cannot read the store is retried on the
+next two-second poll.
 A link [discovery](../knowledge/worlds.md#discovery-after-publication) found posts one
 message with a `link` record (`connectionId`, `seedName`, `farName`, `path` of
 `{name, relation, reversed}`, `nodeIds` seed first) through the same delivery pass, at

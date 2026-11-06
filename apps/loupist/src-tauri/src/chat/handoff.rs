@@ -433,7 +433,9 @@ fn send_created(state: &AppState, loupist_id: &str) {
     tauri::async_runtime::spawn(async move {
         match launch_created(&state, &loupist_id).await {
             Ok(0) => {}
-            Ok(_) => super::surface::deliver(&state, &loupist_id),
+            Ok(_) => {
+                let _ = super::home::deliver_finished_runs(&state, &loupist_id);
+            }
             Err(error) => eprintln!("Research hand-off could not start ({error})"),
         }
     });
@@ -672,7 +674,88 @@ pub(crate) fn message(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runs::coordinator::{RunKind, RunTarget};
     use serde_json::json;
+
+    fn state_with_loupist(id: &str) -> (tempfile::TempDir, AppState) {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("workspace");
+        std::fs::create_dir_all(workspace.join(".loupist")).unwrap();
+        let workspace = workspace.canonicalize().unwrap();
+        let bound =
+            crate::fs::loupist_root::BoundLoupistRoot::open_unbound(workspace.clone()).unwrap();
+        let state = AppState::for_test(root.path().join("app"));
+        state
+            .store
+            .create_loupist(&crate::domain::LoupistProfile {
+                workspace_root: workspace.to_string_lossy().into_owned(),
+                root_filesystem_identity: bound.identity(),
+                ..crate::test_fixtures::loupist_profile(id)
+            })
+            .unwrap();
+        super::super::home::ensure_home_thread(&state, id).unwrap();
+        (root, state)
+    }
+
+    #[test]
+    fn every_host_write_of_a_hand_off_reaches_the_renderer() {
+        let loupist = "loupist-handoff-signal";
+        let (_root, state) = state_with_loupist(loupist);
+        let staged = StagedHandoff {
+            request: HandoffRequest::parse(&json!({
+                "title": "Hynix HBM supply",
+                "question": "Who else can supply HBM4 in 2027?",
+                "requestKey": "hbm-2027"
+            }))
+            .unwrap(),
+            run: HandoffRun {
+                model_profile_id: "fixture".into(),
+                thinking_level: "medium".into(),
+                run_options: BTreeMap::new(),
+                use_memory: false,
+                update_memory: false,
+            },
+        };
+        let handoff = commit_standalone(&state, loupist, &staged).unwrap();
+        let run = state
+            .register_run(
+                "handoff-signal".into(),
+                loupist.into(),
+                RunKind::Chat,
+                RunTarget::ChatThread(handoff.chat_id.clone()),
+            )
+            .unwrap();
+        assert!(mark_running(&state, loupist, &handoff.id, "handoff-signal").unwrap());
+        let told = || crate::briefings::desktop::changed_count(loupist);
+        let deliver = || super::super::home::deliver_finished_runs(&state, loupist).unwrap();
+
+        // A pass from any caller (opening the Loupist runs one) posts the card and says so.
+        assert_eq!(deliver(), 1);
+        assert_eq!(told(), 1);
+
+        finish(
+            &state,
+            loupist,
+            &handoff.id,
+            HandoffStatus::Done,
+            None,
+            None,
+            now_ms(),
+        )
+        .unwrap();
+        drop(run);
+        assert_eq!(deliver(), 1, "the running card turns done in place");
+        assert_eq!(told(), 2);
+        assert_eq!(deliver(), 0);
+        assert_eq!(told(), 2, "a pass that writes nothing stays quiet");
+
+        // The run's end changed its own session even though the Bot has nothing new.
+        ChatSurface::Delegated {
+            handoff_id: handoff.id.clone(),
+        }
+        .after_turn(&state, loupist);
+        assert_eq!(told(), 3);
+    }
 
     #[test]
     fn parse_checks_each_field_and_renders_the_first_message() {
