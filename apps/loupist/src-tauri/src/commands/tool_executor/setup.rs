@@ -268,12 +268,13 @@ pub(crate) fn apply_watchlist(
     changes
 }
 
-/// Focus and preset kinds, inside the reply's transaction. The profile and
-/// the World settings take the same focus in one write so they cannot drift;
-/// the caller resyncs the folder registration after commit. A preset's
-/// default focus fills only an empty focus.
+/// Focus and preset kinds, inside the reply's transaction. The profile, the
+/// World settings and the perspective page's `focus` section take the same
+/// focus in one write so they cannot drift; the caller resyncs the folder
+/// registration after commit. A preset's default focus fills only an empty focus.
 pub(crate) fn commit_turn(
     tx: &Transaction<'_>,
+    blobs: &crate::knowledge::BlobStore,
     loupist_id: &str,
     chat_id: &str,
     at_ms: i64,
@@ -301,6 +302,16 @@ pub(crate) fn commit_turn(
             })?;
             settings.research_focus = focus.to_owned();
             crate::knowledge::store_settings(tx, loupist_id, &settings).map_err(knowledge)?;
+            match crate::commands::knowledge::sync_perspective_focus(
+                &crate::knowledge::KnowledgeWrite::bind(tx, blobs),
+                loupist_id,
+                focus,
+                at_ms,
+            ) {
+                // Text a Lens page refuses still sets the Loupist's focus.
+                Ok(_) | Err(crate::knowledge::KnowledgeError::LensBodyForbidden) => {}
+                Err(error) => return Err(knowledge(error)),
+            }
             changes.push(SetupChange::Focus {
                 focus: focus.to_owned(),
             });

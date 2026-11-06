@@ -34,7 +34,9 @@ A new Loupist with a focus gets its perspective page at creation
 one `focus` section headed "Focus" holding the focus text. The focus is what the
 Loupist researches, not a belief, so it is not seeded under `beliefs`. The interface
 shows the host-default title and heading in its own language. An empty focus seeds
-no page; the first filed perspective becomes it.
+no page; the first filed perspective becomes it. A later focus change, from Loupist
+settings or `loupist_setup`, rewrites only that `focus` section
+(`sync_perspective_focus`); clearing the focus leaves the page as it was.
 
 Bodies link `lens:rec_…` (navigation, resolved by record id, with backlinks from the
 link index) and, on subject and idea pages, `world:<node id>` of this Loupist's

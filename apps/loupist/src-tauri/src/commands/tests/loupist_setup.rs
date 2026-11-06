@@ -299,6 +299,29 @@ mod turns {
             (profile.focus, settings.research_focus)
         }
 
+        /// The perspective page's `focus` section, when the page exists.
+        fn page_focus(&self) -> Option<String> {
+            let knowledge = crate::knowledge::KnowledgeStore::for_loupist(
+                self.state.store.clone(),
+                &self.loupist_id,
+            )
+            .unwrap();
+            knowledge
+                .read(|write| {
+                    let Some(record_id) = write.active_perspective(&self.loupist_id)? else {
+                        return Ok(None);
+                    };
+                    Ok(write
+                        .read_page(&self.loupist_id, &record_id)?
+                        .body
+                        .sections()
+                        .iter()
+                        .find(|section| section.key.as_str() == "focus")
+                        .map(|section| section.markdown.clone()))
+                })
+                .unwrap()
+        }
+
         fn preset_changes(&self) -> Vec<(String, Option<String>)> {
             let connection = self.state.store.lock_loupist(&self.loupist_id).unwrap();
             let mut query = connection
@@ -336,6 +359,11 @@ mod turns {
         );
         let focus = "Semiconductor supply chain".to_owned();
         assert_eq!(fixture.focus(), (focus.clone(), focus.clone()));
+        assert_eq!(
+            fixture.page_focus(),
+            Some(focus.clone()),
+            "the Lens page shows the same focus"
+        );
         let home = home_thread_id(&fixture.loupist_id);
         assert_eq!(
             fixture.preset_changes(),
@@ -410,6 +438,7 @@ mod turns {
         assert_eq!(fixture.reply().status, ChatMessageStatus::Aborted);
         assert!(fixture.watchlist().is_empty());
         assert_eq!(fixture.focus(), (String::new(), String::new()));
+        assert_eq!(fixture.page_focus(), None);
         assert!(fixture.preset_changes().is_empty());
     }
 }

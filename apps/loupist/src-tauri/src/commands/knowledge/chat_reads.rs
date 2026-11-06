@@ -2,60 +2,98 @@ use super::*;
 
 pub(in crate::commands) const PERSPECTIVE_TITLE: &str = "Outlook";
 
-/// The Loupist's one perspective page, seeded from its focus at creation. An
-/// empty focus files nothing; the first filed perspective becomes the page.
+/// The Loupist's one perspective page, kept in step with its focus: creation
+/// seeds it, a later focus change from settings rewrites its `focus` section.
 pub(in crate::commands) fn ensure_perspective(
     state: &AppState,
     loupist_id: &str,
     focus: &str,
 ) -> Result<Option<String>, CommandError> {
-    use crate::knowledge::lens_page::{
-        Basis, FilingOrigin, LensOp, PageDelta, PageKind, PageTarget, SectionKey,
-    };
     let at_ms = crate::commands::now_ms();
     with_loupist_knowledge(state, loupist_id, |tx, blobs| {
-        let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
-        if let Some(record_id) = write.active_perspective(loupist_id)? {
-            return Ok(Some(record_id));
-        }
-        let focus = focus.trim();
-        if focus.is_empty() {
-            return Ok(None);
-        }
-        let filed = write.file(
+        sync_perspective_focus(
+            &crate::knowledge::KnowledgeWrite::bind(tx, blobs),
             loupist_id,
-            &FilingOrigin::User {
-                chat_id: None,
-                message_id: None,
-            },
-            vec![PageDelta {
-                target: PageTarget::Create {
-                    kind: PageKind::Perspective,
-                    title: PERSPECTIVE_TITLE.into(),
-                    anchors: Vec::new(),
-                },
-                ops: vec![LensOp::Put {
-                    key: SectionKey::new("focus")?,
-                    heading: "Focus".into(),
-                    markdown: focus
-                        .chars()
-                        .take(crate::knowledge::lens_page::MAX_SECTION_CHARS)
-                        .collect(),
-                    basis: Basis::default(),
-                    expected: None,
-                }],
-            }],
+            focus,
             at_ms,
-        )?;
-        if filed.iter().any(|page| page.refused_text()) {
-            return Err(crate::knowledge::KnowledgeError::LensBodyForbidden);
-        }
-        Ok(filed
-            .into_iter()
-            .next()
-            .filter(|page| !page.record_id.is_empty())
-            .map(|page| page.record_id))
+        )
     })
+}
+
+/// Make the perspective page's `focus` section hold `focus`, creating the page
+/// when there is none. Other sections stay as written. An empty focus files
+/// nothing; the first filed perspective then becomes the page.
+pub(in crate::commands) fn sync_perspective_focus(
+    write: &crate::knowledge::KnowledgeWrite<'_>,
+    loupist_id: &str,
+    focus: &str,
+    at_ms: i64,
+) -> crate::knowledge::KnowledgeResult<Option<String>> {
+    use crate::knowledge::lens_page::{
+        Basis, FilingOrigin, LensOp, PageDelta, PageKind, PageTarget, SectionKey, MAX_SECTION_CHARS,
+    };
+    let page = write.active_perspective(loupist_id)?;
+    let focus: String = focus.trim().chars().take(MAX_SECTION_CHARS).collect();
+    if focus.is_empty() {
+        return Ok(page);
+    }
+    let key = SectionKey::new("focus")?;
+    let (target, heading, expected) = match &page {
+        Some(record_id) => {
+            let read = write.read_page(loupist_id, record_id)?;
+            let current = read
+                .body
+                .sections()
+                .iter()
+                .find(|section| section.key == key);
+            if current.is_some_and(|section| section.markdown == focus) {
+                return Ok(page);
+            }
+            (
+                PageTarget::Existing {
+                    record_id: record_id.clone(),
+                },
+                current.map_or_else(|| "Focus".to_owned(), |section| section.heading.clone()),
+                current.map(|section| section.digest.clone()),
+            )
+        }
+        None => (
+            PageTarget::Create {
+                kind: PageKind::Perspective,
+                title: PERSPECTIVE_TITLE.into(),
+                anchors: Vec::new(),
+            },
+            "Focus".to_owned(),
+            None,
+        ),
+    };
+    let filed = write.file(
+        loupist_id,
+        &FilingOrigin::User {
+            chat_id: None,
+            message_id: None,
+        },
+        vec![PageDelta {
+            target,
+            ops: vec![LensOp::Put {
+                key,
+                heading,
+                markdown: focus,
+                basis: Basis::default(),
+                expected,
+            }],
+        }],
+        at_ms,
+    )?;
+    if filed.iter().any(|page| page.refused_text()) {
+        return Err(crate::knowledge::KnowledgeError::LensBodyForbidden);
+    }
+    Ok(filed
+        .into_iter()
+        .next()
+        .filter(|page| !page.record_id.is_empty())
+        .map(|page| page.record_id)
+        .or(page))
 }
 
 #[derive(Clone)]

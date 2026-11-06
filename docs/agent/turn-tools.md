@@ -103,8 +103,8 @@ reply's transaction, so its changes apply just before that transaction through t
 watchlist commands' own functions (`commands/user_context.rs`) and stay if the commit
 then fails; a market the user did not give stays unknown, and an asset already
 followed under any market is not added again. In the reply's
-transaction the focus is written to the Loupist profile and to the World settings'
-`research_focus` together, and the preset adds its curated kinds the map lacks as one
+transaction the focus is written to the Loupist profile, the World settings'
+`research_focus` and the perspective page's `focus` section together, and the preset adds its curated kinds the map lacks as one
 `preset` change carrying the asking message. A preset's default focus (the New
 Loupist dialog's copy) fills only an empty focus, so a repeated preset changes
 nothing. The answer's `memory_update.setup` lists each applied change (`followed`,

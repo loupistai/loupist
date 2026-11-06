@@ -528,6 +528,13 @@ pub(super) async fn update_profile_inner(
             now_ms(),
         )
         .map_err(map_store)?;
+    if request.focus.is_some()
+        && crate::commands::knowledge::ensure_perspective(state, &profile.id, &profile.focus)
+            .is_err()
+    {
+        // The focus is saved; only its copy on the perspective page lags.
+        eprintln!("the perspective page could not take the new focus");
+    }
     profile_summary(state, &profile).await
 }
 
@@ -808,6 +815,24 @@ mod loupist_profile_tests {
         assert_eq!(updated.instructions, "Use primary evidence.");
         assert_eq!(updated.avatar, "loupist-10");
         assert_eq!(updated.workspace_path, original.workspace_path);
+        let page_focus = || {
+            let knowledge =
+                crate::knowledge::KnowledgeStore::for_loupist(state.store.clone(), &original.id)
+                    .unwrap();
+            knowledge
+                .read(|write| {
+                    let record_id = write.active_perspective(&original.id)?.unwrap();
+                    Ok(write
+                        .read_page(&original.id, &record_id)?
+                        .body
+                        .sections()
+                        .iter()
+                        .find(|section| section.key.as_str() == "focus")
+                        .map(|section| section.markdown.clone()))
+                })
+                .unwrap()
+        };
+        assert_eq!(page_focus().as_deref(), Some("Semiconductors"));
         let partial = update_profile_inner(
             &state,
             LoupistProfileUpdateRequest {
@@ -822,6 +847,11 @@ mod loupist_profile_tests {
         assert_eq!(partial.avatar, "loupist-10");
         assert_eq!(partial.tone, crate::domain::LoupistTone::Careful);
         assert_eq!(partial.philosophy, "");
+        assert_eq!(
+            page_focus().as_deref(),
+            Some("Semiconductors"),
+            "clearing the focus leaves the page as it was"
+        );
         let rejected = update_profile_inner(
             &state,
             LoupistProfileUpdateRequest {

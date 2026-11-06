@@ -425,6 +425,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                     if let Some(staged) = &saved_setup {
                         let (changed, skipped) = crate::commands::tool_executor::commit_setup(
                             transaction,
+                            &blobs,
                             task_loupist_id,
                             thread_id,
                             created_at_ms,

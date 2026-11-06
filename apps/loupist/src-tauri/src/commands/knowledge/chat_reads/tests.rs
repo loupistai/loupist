@@ -518,3 +518,64 @@ fn the_seeded_perspective_holds_the_focus_in_a_focus_section() {
         )]
     );
 }
+
+#[test]
+fn a_new_focus_rewrites_only_the_perspective_focus_section() {
+    let (_dir, state) = fixture();
+    let record_id = ensure_perspective(&state, "loupist-a", "Semiconductor supply chain")
+        .unwrap()
+        .unwrap();
+    let sections = || {
+        with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
+            KnowledgeWrite::bind(tx, blobs).read_page("loupist-a", &record_id)
+        })
+        .unwrap()
+        .body
+        .sections()
+        .iter()
+        .map(|section| (section.key.as_str().to_owned(), section.markdown.clone()))
+        .collect::<Vec<_>>()
+    };
+    with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
+        use crate::knowledge::lens_page::{
+            Basis, FilingOrigin, LensOp, PageDelta, PageTarget, SectionKey,
+        };
+        KnowledgeWrite::bind(tx, blobs).file(
+            "loupist-a",
+            &FilingOrigin::User {
+                chat_id: None,
+                message_id: None,
+            },
+            vec![PageDelta {
+                target: PageTarget::Existing {
+                    record_id: record_id.clone(),
+                },
+                ops: vec![LensOp::Put {
+                    key: SectionKey::new("avoid")?,
+                    heading: "Avoid".into(),
+                    markdown: "Short-term price calls".into(),
+                    basis: Basis::default(),
+                    expected: None,
+                }],
+            }],
+            2,
+        )
+    })
+    .unwrap();
+    assert_eq!(
+        ensure_perspective(&state, "loupist-a", " HBM packaging equipment ").unwrap(),
+        Some(record_id.clone())
+    );
+    let expected = vec![
+        ("focus".to_owned(), "HBM packaging equipment".to_owned()),
+        ("avoid".to_owned(), "Short-term price calls".to_owned()),
+    ];
+    assert_eq!(sections(), expected);
+    ensure_perspective(&state, "loupist-a", "HBM packaging equipment").unwrap();
+    ensure_perspective(&state, "loupist-a", "").unwrap();
+    assert_eq!(
+        sections(),
+        expected,
+        "the same or an empty focus changes nothing"
+    );
+}
