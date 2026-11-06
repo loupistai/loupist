@@ -374,4 +374,21 @@ async fn rust_engine_drives_queued_jobs_without_a_staged_worker_or_runtime() {
     assert!(finished.document.inference_attempted);
     assert!(!finished.document.mutation_sent);
     assert!(!directory.path().join("graph-instance").exists());
+    // The next pump rebuilds the quarantined World without a settings visit
+    // and never replays the interrupted call.
+    let rebuild = supervisor
+        .pump_once()
+        .await
+        .unwrap()
+        .expect("an unattended rebuild runs");
+    assert_ne!(rebuild, job.job_id);
+    assert_eq!(
+        knowledge.graph_job(loupist, &rebuild).unwrap().status,
+        super::super::graph_jobs::JOB_COMPLETED
+    );
+    assert_eq!(
+        knowledge.graph_job(loupist, &job.job_id).unwrap().status,
+        super::super::graph_jobs::JOB_RECONCILED
+    );
+    assert_eq!(supervisor.pump_once().await.unwrap(), None);
 }

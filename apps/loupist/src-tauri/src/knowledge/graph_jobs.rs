@@ -912,6 +912,43 @@ pub fn recover_world(
     )
 }
 
+/// Queue the rebuild a quarantined World needs without waiting for the user.
+/// The rebuild calls no model and never retries the interrupted call. A
+/// rebuild that failed waits for the explicit action, so it cannot loop.
+pub(crate) fn recover_world_unattended(
+    tx: &Transaction<'_>,
+    blobs: &BlobStore,
+    loupist_id: &str,
+    at_ms: i64,
+) -> KnowledgeResult<Option<GraphJobView>> {
+    if recovery_status(tx, loupist_id)? != Some("reconciliation_required") {
+        return Ok(None);
+    }
+    let last_rebuild: Option<String> = tx
+        .query_row(
+            "SELECT status FROM knowledge_graph_outbox
+             WHERE loupist_id = ?1 AND json_extract(payload_json, '$.episodeKind') = ?2
+             ORDER BY created_at_ms DESC, job_id DESC LIMIT 1",
+            params![loupist_id, EPISODE_RECOVERY],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if matches!(
+        last_rebuild.as_deref(),
+        Some(JOB_FAILED_BEFORE | JOB_RECONCILE)
+    ) {
+        return Ok(None);
+    }
+    match recover_world(tx, blobs, loupist_id, at_ms) {
+        Ok(job) => Ok(Some(job)),
+        // Running work, an inactive Loupist or no World yet: a later pump looks again.
+        Err(
+            KnowledgeError::Invalid(_) | KnowledgeError::Unauthorized(_) | KnowledgeError::NotFound,
+        ) => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
 /// Rebuild the derived index after a shared pack's Add or Remove, ahead of
 /// queued extraction. A rebuild still waiting for an older head is cancelled
 /// first. No model is called; it runs while

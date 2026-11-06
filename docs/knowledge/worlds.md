@@ -28,6 +28,13 @@ World history or restore feature. Recovery rebuilds the derived index from the
 current canonical World and retained Source evidence. An uncertain publication
 instead keeps its extraction JSON while quarantined for reconciliation.
 
+An interrupted or uncertain extraction call quarantines its generation and is never
+retried. The graph worker then queues the recovery itself
+(`recover_world_unattended`): the rebuild calls no model, re-queues the jobs that
+never ran, and enqueues Sources saved during the quarantine. If that rebuild fails,
+the next one waits for World processing recovery in Loupist settings, so a broken
+rebuild cannot loop.
+
 Long Sources become bounded episodes retaining the original span as evidence.
 Every World extracts with one shared core vocabulary, listed once in
 `knowledge/world_extract/ontology.rs`: the entity types Organization, Person, Asset,

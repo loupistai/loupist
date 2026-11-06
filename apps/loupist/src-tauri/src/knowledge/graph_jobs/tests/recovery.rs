@@ -277,3 +277,55 @@ fn moved_world_head_and_stale_attempt_cannot_retire_uncertainty() {
         job.document.generation_id
     );
 }
+
+#[test]
+fn a_quarantined_world_rebuilds_without_the_user_and_a_failed_rebuild_waits_for_them() {
+    let (_dir, store) = open();
+    let loupist = "loupist-unattended";
+    let (first, second) = queued_pair(&store, loupist);
+    let unattended = |at_ms: i64| {
+        store
+            .transact(|write| recover_world_unattended(write.tx, write.blobs, loupist, at_ms))
+            .unwrap()
+    };
+    assert!(unattended(AT).is_none(), "nothing needs recovery");
+    interrupt_paid(&store, &first);
+    let rebuild = unattended(AT + 1).expect("a quarantined World queues its rebuild");
+    assert_eq!(rebuild.document.extraction.max_llm_calls, 0);
+    assert!(unattended(AT + 2).is_none(), "one rebuild at a time");
+    let settings = settings_of(&store, loupist);
+    claim(&store, &settings, &rebuild.job_id, AT + 3);
+    store
+        .transact(|write| fail_recovery(write.tx, &rebuild.job_id))
+        .unwrap();
+    assert!(
+        unattended(AT + 4).is_none(),
+        "a failed rebuild waits for the explicit action"
+    );
+    let explicit = recover(&store, loupist, AT + 5);
+    finish_recovery(&store, &explicit).unwrap();
+    assert_eq!(status(&store, &first), JOB_RECONCILED);
+    assert_eq!(heads(&store), std::slice::from_ref(&second.job_id));
+    let settings = settings_of(&store, loupist);
+    let running = claim(&store, &settings, &second.job_id, AT + 6);
+    let attempt = running.document.attempt_id.as_deref().unwrap();
+    store.graph_note_inference(&second.job_id, attempt).unwrap();
+    let mut settings = settings;
+    store
+        .graph_finish(
+            &mut settings,
+            &second.job_id,
+            attempt,
+            JOB_RECONCILE,
+            true,
+            false,
+        )
+        .unwrap();
+    store
+        .transact(|write| store_settings(write.tx, loupist, &settings))
+        .unwrap();
+    assert!(
+        unattended(AT + 7).is_some(),
+        "after a completed rebuild, the next interruption rebuilds unattended again"
+    );
+}

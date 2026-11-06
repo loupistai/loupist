@@ -455,6 +455,7 @@ impl Inner {
         if let Some(id) = self.pump_learning().await? {
             return Ok(Some(id));
         }
+        self.recover_quarantined()?;
         let candidates = self
             .store
             .for_each_database(|_, connection| {
@@ -750,6 +751,40 @@ impl Inner {
                 .schema_events
                 .send(super::schema_writer::schema_change_event(loupist));
         }
+    }
+
+    /// An interrupted provider call quarantines its World until a rebuild.
+    /// Queue that rebuild here so the map keeps growing without a settings visit.
+    fn recover_quarantined(&self) -> KnowledgeResult<()> {
+        let quarantined = self
+            .store
+            .for_each_database(|_, connection| {
+                let mut query = connection.prepare(
+                    "SELECT DISTINCT loupist_id FROM knowledge_graph_outbox WHERE status = 'reconcile_required'",
+                )?;
+                let rows = query
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(rows)
+            })
+            .map_err(|_| KnowledgeError::Invalid("could not read Loupist jobs"))?;
+        for loupist in quarantined.into_iter().flatten() {
+            // One unreadable folder must not stop the other Loupists' processing;
+            // its settings still offer the explicit recovery.
+            let Ok(knowledge) = loupist_knowledge(self.store.clone(), &loupist, &self.app_data)
+            else {
+                continue;
+            };
+            let _ = knowledge.transact(|write| {
+                super::graph_jobs::recover_world_unattended(
+                    write.tx,
+                    write.blobs,
+                    &loupist,
+                    now_ms(),
+                )
+            });
+        }
+        Ok(())
     }
 
     async fn pump_learning(&self) -> KnowledgeResult<Option<String>> {
