@@ -369,7 +369,7 @@ function ComposerPromptTools({
   // The + menu shows its focus ring for keys only (WebKit would ring it after a click from the composer).
   const modality = useInputModality();
   // Radix places a menu against its trigger. The + menu opens from the whole composer instead, like the
-  // `@`, `$` and `/` menus: left edges aligned, just above the composer's top edge.
+  // `@` and `/` menus: left edges aligned, just above the composer's top edge.
   const anchorAddMenu = (open: boolean) => {
     const trigger = addTrigger.current;
     const composer = trigger?.closest<HTMLElement>('[data-slot="input-group"]');
