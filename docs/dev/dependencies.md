@@ -71,4 +71,20 @@ shows a missing `NOOP_TELEMETRY_METRICS` export and security-pin failures. Do no
 merge that partial upgrade or relax its tests. A Pi upgrade must update the
 whole package family, security pins, platform archive digests and packaged
 runtime checks together, then pass host isolation and native/package tests.
-The pinned 1.0.1 family and existing security overrides remain in place.
+
+## Pi 1.5.0 (2026-11-06)
+
+The whole `@earendil-works/*` family moves from 1.0.1 to 1.5.0 together, along
+with `pi-security.json`, `PI_VERSION`, the stage and check scripts, and the
+macOS arm64 and Windows x64 archive digests. The digests are checked against the
+release's `SHA256SUMS`. `@earendil-works/pi-schema` is new in the family, and
+Pi no longer depends on `chord`. Pi itself now pins undici 8.12.3, and the
+minimatch 11.0.4 override still applies.
+
+Pi 1.5 validates tool arguments with pi-schema, which coerces values. A lone
+value becomes a one-item array, and `null` drops the field. Rust still checks
+every id and reference, so a coerced value cannot pass the host. Two World
+defaults followed Pi's model catalog. Baseten DeepSeek-V4.1-Flash now offers
+off/high/max, so its default moves from low to high. Together no longer lists
+Llama-3.3-70B. Native, package and macOS acceptance runs remain required before
+release.

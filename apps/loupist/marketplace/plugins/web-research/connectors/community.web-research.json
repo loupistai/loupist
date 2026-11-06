@@ -31,7 +31,7 @@
     "Current public web"
   ],
   "attribution": "Selected search provider and original source publishers",
-  "terms_url": "https://github.com/nicobailon/pi-web-access/tree/v0.24.0",
+  "terms_url": "https://github.com/nicobailon/pi-web-access/tree/v0.47.0",
   "permissions": {
     "network_hosts": [
       "mcp.exa.ai",

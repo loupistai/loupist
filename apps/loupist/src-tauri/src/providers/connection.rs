@@ -1402,9 +1402,10 @@ fn valid_user_code(code: &str) -> bool {
             .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
-/// The name OpenAI shows for this app. Pi 1.0.1 hardcodes its own name and
-/// ignores a caller-supplied agent name, so the page Loupist opens is renamed
-/// here. Other query parameters stay byte for byte.
+/// The name OpenAI shows for this app. Pi 1.0.1 ignored a caller-supplied
+/// agent name; Pi 1.5.0 sends Loupist's `agentName`, so this rename is now a
+/// fallback that leaves an already-correct page unchanged. Other query
+/// parameters stay byte for byte.
 const OPENAI_SIGN_IN_NAME: &str = "Loupist";
 
 fn openai_sign_in_presented_as_loupist(url: &str) -> String {

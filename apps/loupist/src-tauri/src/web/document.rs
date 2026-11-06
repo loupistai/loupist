@@ -111,21 +111,40 @@ pub fn extract(
 }
 
 pub fn extract_html(html: &str, fallback_title: &str) -> (String, String) {
-    let (title, content_html) = match dom_smoothie::Readability::new(html, None, None)
-        .ok()
-        .and_then(|mut reader| reader.parse().ok())
-    {
-        Some(article) => {
-            let title = article.title.trim();
-            let title = if title.is_empty() {
-                fallback_title.to_owned()
-            } else {
-                title.to_owned()
-            };
-            (title, article.content.to_string())
-        }
-        None => (fallback_title.to_owned(), html.to_owned()),
-    };
+    let page = extract_html_page(html, fallback_title);
+    (page.title, page.markdown)
+}
+
+pub struct HtmlPage {
+    pub title: String,
+    pub markdown: String,
+    /// The publication time the page declares in its metadata (JSON-LD
+    /// `datePublished`, `article:published_time`, `dcterms.issued` and the
+    /// like), exactly as written. Modification times are never used.
+    pub published_time: Option<String>,
+}
+
+pub fn extract_html_page(html: &str, fallback_title: &str) -> HtmlPage {
+    let (title, content_html, published_time) =
+        match dom_smoothie::Readability::new(html, None, None)
+            .ok()
+            .and_then(|mut reader| reader.parse().ok())
+        {
+            Some(article) => {
+                let title = article.title.trim();
+                let title = if title.is_empty() {
+                    fallback_title.to_owned()
+                } else {
+                    title.to_owned()
+                };
+                (
+                    title,
+                    article.content.to_string(),
+                    article.published_time.filter(|value| value.len() <= 128),
+                )
+            }
+            None => (fallback_title.to_owned(), html.to_owned(), None),
+        };
     let content_html = strip_inert_html(&content_html);
     let markdown = htmd::convert(&content_html).unwrap_or_else(|_| {
         content_html
@@ -133,7 +152,44 @@ pub fn extract_html(html: &str, fallback_title: &str) -> (String, String) {
             .collect::<Vec<_>>()
             .join(" ")
     });
-    (bounded_text(&title, 512), markdown)
+    HtmlPage {
+        title: bounded_text(&title, 512),
+        markdown: elide_data_uris(&markdown),
+        published_time,
+    }
+}
+
+/// Inline `data:` payloads (base64 images, fonts, SVG) carry no readable text
+/// and can fill a whole page budget. Keep the media type and size instead.
+fn elide_data_uris(markdown: &str) -> String {
+    const KEEP_BYTES: usize = 64;
+    let mut output = String::with_capacity(markdown.len());
+    let mut rest = markdown;
+    while let Some(start) = rest.find("data:") {
+        let after = &rest[start + 5..];
+        let end = after
+            .find(|character: char| {
+                character.is_whitespace() || matches!(character, ')' | '"' | '\'' | '>' | ']')
+            })
+            .unwrap_or(after.len());
+        let elided = after[..end].split_once(',').filter(|(media, payload)| {
+            payload.len() > KEEP_BYTES
+                && media.contains('/')
+                && media
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"/+-.;=_".contains(&byte))
+        });
+        if let Some((media, payload)) = elided {
+            output.push_str(&rest[..start]);
+            output.push_str(&format!("data:{media},[{} bytes omitted]", payload.len()));
+            rest = &after[end..];
+        } else {
+            output.push_str(&rest[..start + 5]);
+            rest = after;
+        }
+    }
+    output.push_str(rest);
+    output
 }
 
 pub fn split_extracted_markdown(markdown: &str, part_bytes: usize) -> Vec<String> {
@@ -708,6 +764,22 @@ mod tests {
             MAX_ARCHIVE_ENTRY_BYTES + 1,
             MAX_ARCHIVE_ENTRY_BYTES + 1
         ));
+    }
+
+    #[test]
+    fn html_extraction_elides_inline_data_payloads_but_keeps_prose() {
+        let payload = "iVBORw0KGgo".repeat(400);
+        let html = format!(
+            "<html><body><article><h1>Chart</h1><p>Revenue rose. Note on data: the series is quarterly.</p><img alt=\"chart\" src=\"data:image/png;base64,{payload}\"><p>Margins held.</p></article></body></html>"
+        );
+        let (_, markdown) = extract_html(&html, "fallback");
+        assert!(!markdown.contains(&payload[..200]), "{markdown}");
+        assert!(markdown.contains(&format!(
+            "data:image/png;base64,[{} bytes omitted]",
+            payload.len()
+        )));
+        assert!(markdown.contains("Note on data: the series is quarterly."));
+        assert!(markdown.contains("Margins held."));
     }
 
     #[test]

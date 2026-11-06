@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-PI_VERSION=1.0.1
-PI_ARCHIVE_SHA256=de35e0025b136eb37693054ca658c010b6327a12aaff438ae87c4d1c94f99e6c
+PI_VERSION=1.5.0
+PI_ARCHIVE_SHA256=a9bf0d82d58d2a7d337f4ae4171b5fc9ebffe42509527a831364c4b65adf2cdf
 PI_ARCHIVE_URL="https://github.com/earendil-works/pi/releases/download/v${PI_VERSION}/pi-darwin-arm64.tar.gz"
 TARGET=aarch64-apple-darwin
 

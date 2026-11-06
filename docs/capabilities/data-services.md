@@ -58,6 +58,24 @@ instruction-file writes and keeps `web_fetch` to sites the turn already knows fo
 rest of that turn. Saved Sources and retained datasets holding such text raise it again
 when they come back.
 
+Search and reading follow pi-web-access 0.47's behavior where it applies to a
+host-side reader. Exa results take `URL:` and `Published:` only from each result's
+header, so a date quoted in page text never dates a hit. An untitled hit is named
+by its host. A throttled Exa reply (`_meta["ai.exa/rateLimited"]`) counts as rate
+limited and falls back like a 429. `web_fetch` (`apps/loupist/src-tauri/src/web.rs`)
+decodes text the way a browser picks an encoding: byte-order mark, HTTP charset,
+an HTML `<meta>` charset, UTF-8, then chardetng's guess. The guess reads
+undeclared EUC-KR or Shift_JIS pages and CSV files. A few invalid bytes become
+U+FFFD with the `decoding_replaced` warning. One request budget covers every
+redirect hop. A Cloudflare challenge (header or interstitial) fails with a clear
+error instead of returning the interstitial. Inline `data:` payloads become a
+media-type and size marker. A page with almost no readable text but more than
+three executable scripts gets `javascript_required`. Publication comes from the
+page's article meta tags, then its schema.org JSON-LD `datePublished`, never a
+modified time. Anthropic native search uses the basic `web_search_20250305` tool
+on the cheapest available model (Haiku 5.5 first, at low effort) with
+`max_uses: 3`. Absolute `page_age` text becomes a date.
+
 The host writes each OpenBB tool description
 (`apps/loupist/src-tauri/src/commands/tool_executor/mcp_host/openbb.rs`):
 what the route returns, key arguments, granted providers with official sources

@@ -98,10 +98,10 @@ fn product_versions_are_consistent_and_release_compatible() {
         package_lock["packages"][""]["version"].as_str(),
         Some(product_version.as_str())
     );
-    assert_eq!(app["devDependencies"]["@earendil-works/pi-ai"], "1.0.1");
+    assert_eq!(app["devDependencies"]["@earendil-works/pi-ai"], "1.5.0");
     assert_eq!(
         app["devDependencies"]["@earendil-works/pi-coding-agent"],
-        "1.0.1"
+        "1.5.0"
     );
     assert_eq!(tauri["version"].as_str(), Some(product_version.as_str()));
     assert_macos_bundle_version(
@@ -172,12 +172,12 @@ fn release_workflows_pin_actions_and_identity() {
     let stage_pi_macos = text("apps/loupist/scripts/stage-pi-macos-arm64.sh");
     let stage_pi_windows = text("apps/loupist/scripts/stage-pi-windows-x64.ps1");
     let pi_runtime = text("apps/loupist/src-tauri/src/pi.rs");
-    assert!(stage_pi_macos.contains("PI_VERSION=1.0.1"));
-    assert!(stage_pi_windows.contains("$piVersion = \"1.0.1\""));
+    assert!(stage_pi_macos.contains("PI_VERSION=1.5.0"));
+    assert!(stage_pi_windows.contains("$piVersion = \"1.5.0\""));
     let macos_pi_archive_sha256 =
-        "de35e0025b136eb37693054ca658c010b6327a12aaff438ae87c4d1c94f99e6c";
+        "a9bf0d82d58d2a7d337f4ae4171b5fc9ebffe42509527a831364c4b65adf2cdf";
     let windows_pi_archive_sha256 =
-        "5f95370368317f7a1520bb0838b12865c9fe9d0d60898bd1c61e986d6a11b75d";
+        "12d58a70e80b16ba9f764950b7a42bdeb07959495c0db68396cf2988c0b71af3";
     assert!(stage_pi_macos.contains(macos_pi_archive_sha256));
     assert!(stage_pi_windows.contains(windows_pi_archive_sha256));
     assert!(pi_runtime.contains(macos_pi_archive_sha256));

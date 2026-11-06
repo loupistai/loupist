@@ -589,8 +589,15 @@ test("note_save prepares misplaced and identical repeated fields but preserves c
     { workingNote: { ...workingNote, extra: "keep invalid" } }, { workingNote, sourceReads: "not an array" }]) {
     const before = structuredClone(invalid);
     assert.deepEqual(definition.prepareArguments(invalid), before);
+  }
+  for (const invalid of [null, [], {}, { workingNote: null }, { workingNote: [] },
+    { workingNote: { ...workingNote, extra: "keep invalid" } }]) {
     assert.throws(() => validate(invalid));
   }
+  // Pi 1.5's validator wraps a lone value into a one-item array; the host then
+  // checks each id, so an unknown read is still refused there.
+  assert.deepEqual(validate({ workingNote, sourceReads: "not an array" }),
+    { workingNote, sourceReads: ["not an array"] });
 });
 
 test("lens_update prepares misplaced evidence siblings without merging conflicts", (t) => {

@@ -334,7 +334,7 @@ try {
     Assert-SameFile (Join-Path $repoRoot "NOTICE") (Join-Path $installRoot "NOTICE")
     Assert-SameFile (Join-Path $appRoot "THIRD_PARTY_NOTICES.md") (Join-Path $installRoot "THIRD_PARTY_NOTICES.md")
 
-    $piVersion = "1.0.1"
+    $piVersion = "1.5.0"
     if ((Get-Content -LiteralPath (Join-Path $runtimeDir ".pi-version") -Raw).Trim() -ne $piVersion -or
         (Get-Content -LiteralPath (Join-Path $runtimeDir "package.json") -Raw | ConvertFrom-Json).version -ne $piVersion) {
         throw "Installed Pi runtime identity is invalid."

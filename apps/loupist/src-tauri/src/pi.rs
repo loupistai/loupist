@@ -58,15 +58,15 @@ use tokio::{
 #[cfg(not(debug_assertions))]
 use std::sync::OnceLock;
 
-pub const PI_VERSION: &str = "1.0.1";
+pub const PI_VERSION: &str = "1.5.0";
 pub(crate) const PI_HTTP_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const LOUPIST_SYSTEM_PROMPT: &str = include_str!("../../agent/SYSTEM.md");
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 pub const PI_DARWIN_ARM64_ARCHIVE_SHA256: &str =
-    "de35e0025b136eb37693054ca658c010b6327a12aaff438ae87c4d1c94f99e6c";
+    "a9bf0d82d58d2a7d337f4ae4171b5fc9ebffe42509527a831364c4b65adf2cdf";
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 pub const PI_WINDOWS_X64_ARCHIVE_SHA256: &str =
-    "5f95370368317f7a1520bb0838b12865c9fe9d0d60898bd1c61e986d6a11b75d";
+    "12d58a70e80b16ba9f764950b7a42bdeb07959495c0db68396cf2988c0b71af3";
 const MAX_RPC_FRAME_BYTES: usize = 8 * 1024 * 1024;
 const PI_EVENT_BUFFER_CAPACITY: usize = 1_024;
 const MAX_HOST_CONTEXT_BYTES: usize = 64 * 1024;
