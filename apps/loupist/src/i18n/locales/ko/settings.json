@@ -103,6 +103,7 @@
     "loadingModels": "모델 불러오는 중…",
     "modelsNotLoadedYet": "아직 모델을 불러오지 않았어요",
     "couldNotRefreshModels": "모델을 새로고침하지 못했어요. 연결 상태를 확인해 주세요.",
+    "modelsBusy": "다른 계정 연결이 아직 끝나지 않았어요. 잠시 후 다시 시도해 주세요.",
     "couldNotConfigureThisProvider": "AI 서비스를 설정하지 못했어요. 입력 내용을 확인해 주세요.",
     "couldNotUpdateModelVisibility": "모델 표시 여부를 바꾸지 못했어요. 다시 시도해 주세요.",
     "removingLabel": "{{label}} 제거 중…",

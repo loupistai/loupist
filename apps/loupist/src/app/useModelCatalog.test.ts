@@ -37,7 +37,7 @@ describe("startup model discovery", () => {
     vi.spyOn(bridge, "providerModels").mockRejectedValue(new Error("Provider unavailable"));
     const { result } = renderHook(() => useModelCatalog(bridge));
     await waitFor(() => expect(result.current.resolved).toBe(true));
-    expect(result.current.settingsError).toBe("Provider unavailable");
+    expect(result.current.settingsError).toBe("Could not load available models.");
   });
 
   it("ignores an old discovery after switching bridges", async () => {

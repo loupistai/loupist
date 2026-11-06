@@ -41,9 +41,9 @@ export function useModelCatalog(bridge: LoupistBridge) {
               setCatalog(next);
               setSettingsError(null);
               if (visibleCatalogModels(next).length > 0) break;
-            } catch (cause: unknown) {
+            } catch {
               if (!active) return;
-              setSettingsError(errorMessage(cause, i18n.t("app:useModelCatalog.couldNotLoadAvailableModels")));
+              setSettingsError(i18n.t("app:useModelCatalog.couldNotLoadAvailableModels"));
             }
           }
         }
