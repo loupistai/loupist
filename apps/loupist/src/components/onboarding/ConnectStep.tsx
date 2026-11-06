@@ -11,9 +11,12 @@ import { revealFocused } from "@/lib/revealFocused";
 import type { LoupistBridge, ModelCatalog } from "@/types";
 import "@/styles/connect.css";
 
+/** Sign-ins onboarding shows as its own buttons, so the disclosure leaves them out. */
+const ONBOARDING_SIGN_IN = ["openai", "xai"] as const;
+
 /**
- * Onboarding step 2 (providers spec §2.1): one primary ChatGPT sign-in, and
- * every other way behind a disclosure. Sign-in rows run in place; key, local
+ * Onboarding step 2 (providers spec §2.1): ChatGPT and SuperGrok sign-in up
+ * front, and every other way behind a disclosure. Sign-in rows run in place; key, local
  * and custom rows open the shared connect sheet.
  */
 export function ConnectStep({ bridge, catalog, onCatalogChange, connected, onConnected, onWaitingChange }: {
@@ -64,10 +67,12 @@ export function ConnectStep({ bridge, catalog, onCatalogChange, connected, onCon
           : <div className="connect-primary-block">
             <Button className="onboarding-primary" data-onboarding-connect onClick={() => signIn("openai")}>{t("wizard.chatgpt")}</Button>
             <p className="connect-meta onboarding-connect-note">{t("wizard.chatgptNote")}</p>
+            <Button className="onboarding-primary" variant="outline" data-onboarding-connect="xai" onClick={() => signIn("xai")}>{t("wizard.supergrok")}</Button>
+            <p className="connect-meta onboarding-connect-note">{t("wizard.supergrokNote")}</p>
           </div>}
     {flow.state.phase === "error" ? <SignInFlow flow={flow} onUseApiKey={() => { flow.dismiss(); setSheet({ kind: "provider", provider: "openai", method: "api_key" }); }} /> : null}
     <Disclosure className="onboarding-other" title={t("wizard.other")} open={otherOpen || Boolean(sheet)} onOpenChange={setOtherOpen} onFocus={revealFocused} bodyTabIndex={0}>
-      <ProviderWays catalog={catalog} includePrimary={false} includeMore={false} disabled={locked} actions={{
+      <ProviderWays catalog={catalog} omitSignIn={ONBOARDING_SIGN_IN} includeMore={false} disabled={locked} actions={{
         onSignIn: signIn,
         onKey: provider => setSheet({ kind: "provider", provider, method: "api_key" }),
         onUpstage: () => setSheet({ kind: "upstage" }),

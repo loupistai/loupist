@@ -112,7 +112,7 @@ export function ConnectSheet({ target, catalog, bridge, onCatalogChange, onConne
         <DialogTitle>{title}</DialogTitle>
       </DialogHeader>
       <DialogBody className="connect-sheet-body">
-        {view?.kind === "picker" ? <ProviderWays catalog={catalog} includePrimary includeMore actions={{
+        {view?.kind === "picker" ? <ProviderWays catalog={catalog} includeMore actions={{
           onSignIn: provider => { setView({ kind: "provider", provider, method: "sign_in" }); if (provider !== "anthropic") void flow.start(provider); },
           onKey: provider => setView({ kind: "provider", provider, method: "api_key" }),
           onUpstage: () => setView({ kind: "upstage" }),

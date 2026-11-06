@@ -728,9 +728,10 @@ export const scenarios: readonly PreviewScenario[] = [
           if (state === "connect-paste") await click("[data-paste-toggle]");
           return;
         }
+        if (state === "connect-device") { await click('[data-onboarding-connect="xai"]', root); return; }
         await openOtherWays();
         if (state === "connect") return;
-        const row = state === "connect-device" ? "sign-in-xai" : state === "connect-key" ? "key-google" : state === "connect-openai-replaces" ? "key-openai" : state.startsWith("connect-local") ? "local" : "custom";
+        const row = state === "connect-key" ? "key-google" : state === "connect-openai-replaces" ? "key-openai" : state.startsWith("connect-local") ? "local" : "custom";
         await click(`[data-connect-row="${row}"]`);
         if (state === "connect-custom-test" || state === "connect-custom-error") {
           const form = await until(() => select("[data-custom-sheet]"), "Custom endpoint sheet did not open");

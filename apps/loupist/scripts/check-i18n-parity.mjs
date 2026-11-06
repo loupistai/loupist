@@ -56,6 +56,7 @@ const exceptions = new Map([
   ["knowledge.lensWorkspace.openALensCtrlO", { terms: ["Ctrl"], reason: "Keyboard shortcut must remain unchanged" }],
   ["settings.modelSettingsPanel.descriptionChatGpt", { terms: ["Plus", "Business", "Enterprise"], reason: "Official ChatGPT subscription names" }],
   ["settings.modelSettingsPanel.descriptionXai", { terms: ["Premium"], reason: "Official X subscription name" }],
+  ["onboarding.wizard.supergrokNote", { terms: ["Premium"], reason: "Official X subscription name" }],
   ["settings.modelSettingsPanel.customAdvancedBody", { terms: ["Ollama", "Studio", "vLLM"], reason: "Product names of compatible model servers" }],
   ["settings.modelSettingsPanel.customNamePlaceholder", { terms: ["Ollama"], reason: "Product name in an example provider name" }],
   ["settings.modelSettingsPanel.customApiOpenAi", { terms: ["Chat", "Completions"], reason: "Official name of the OpenAI Chat Completions API" }],

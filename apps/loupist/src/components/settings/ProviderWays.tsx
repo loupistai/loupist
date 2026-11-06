@@ -51,10 +51,10 @@ function GroupLabel({ children }: { children: ReactNode }) {
  * and Settings › Add a provider: sign-in, API key, this Mac and a custom
  * endpoint, then (Settings only) the rest of Pi's key providers collapsed.
  */
-export function ProviderWays({ catalog, includePrimary, includeMore, disabled, actions }: {
+export function ProviderWays({ catalog, omitSignIn = [], includeMore, disabled, actions }: {
   catalog: ModelCatalog | null;
-  /** The ChatGPT row; onboarding shows it as its primary button instead. */
-  includePrimary: boolean;
+  /** Sign-in rows to leave out; onboarding shows them as its own buttons. */
+  omitSignIn?: readonly string[];
   includeMore: boolean;
   disabled?: boolean;
   actions: ProviderWaysActions;
@@ -69,7 +69,7 @@ export function ProviderWays({ catalog, includePrimary, includeMore, disabled, a
     if (status && (status.credential_kind === "plan") === signInRow) return <ProviderStateLabel status={status} />;
     return !status && signInRow && option?.recommended ? <span className="connect-recommended">{ts("providers.connectedRecommended")}</span> : null;
   };
-  const signIn = SIGN_IN.filter(id => (includePrimary || id !== "openai") && find(id)?.sign_in_flow);
+  const signIn = SIGN_IN.filter(id => !omitSignIn.includes(id) && find(id)?.sign_in_flow);
   const keys = KEY_ROWS.filter(id => id === "upstage" || find(id)?.api_key);
   const upstage = (catalog?.custom_providers ?? []).find(item => item.base_url.startsWith(UPSTAGE_BASE_URL));
   const more = includeMore ? providers.filter(option => option.group === "more" && option.api_key && !(KEY_ROWS as readonly string[]).includes(option.id)) : [];
