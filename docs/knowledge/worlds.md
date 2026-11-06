@@ -28,8 +28,11 @@ World history or restore feature. Recovery rebuilds the derived index from the
 current canonical World and retained Source evidence. An uncertain publication
 instead keeps its extraction JSON while quarantined for reconciliation.
 
-An interrupted or uncertain extraction call quarantines its generation and is never
-retried. The graph worker then queues the recovery itself
+A Source extraction whose paid call was interrupted, timed out or failed without
+publishing runs once more (`retry_once` in `knowledge/graph_jobs.rs`), on the app's next
+pump or after a restart. Publication is one transaction, so a failed attempt left the
+World unchanged; the retry caps that Source at two charged attempts. A second such
+attempt quarantines its generation and is not retried. The graph worker then queues the recovery itself
 (`recover_world_unattended`): the rebuild calls no model, re-queues the jobs that
 never ran, and enqueues Sources saved during the quarantine. If that rebuild fails,
 the next one waits for World processing recovery in Loupist settings, so a broken

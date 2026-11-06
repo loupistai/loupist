@@ -1,8 +1,9 @@
 //! Durable graph outbox. Job inputs live in SQLite, not in process memory.
 //!
-//! An inference attempt is not an exactly-once key, so no job is retried
-//! automatically. An expired lease after a mutation or an inference attempt
-//! becomes `reconcile_required` and is not dispatched again.
+//! An inference attempt is not an exactly-once key, so a retry may be charged.
+//! A Source extraction whose paid attempt published nothing runs once more;
+//! after a second such attempt, or a mutation, the job becomes
+//! `reconcile_required` and is not dispatched again.
 
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
@@ -96,6 +97,10 @@ pub struct JobDocument {
     pub sealed_revision_id: Option<String>,
     #[serde(default)]
     pub attempt_id: Option<String>,
+    /// Paid attempts that ended without publishing anything. The first runs
+    /// again; the second quarantines the generation.
+    #[serde(default)]
+    pub interrupted_attempts: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -742,6 +747,7 @@ pub fn accept_episode(
             lease_expires_at_ms: None,
             sealed_revision_id: Some(request.world_revision_id.clone()),
             attempt_id: None,
+            interrupted_attempts: 0,
         };
         let job = insert_job(
             tx,
@@ -841,6 +847,7 @@ pub fn accept_sealed_world(
         lease_expires_at_ms: None,
         sealed_revision_id: Some(request.world_revision_id.clone()),
         attempt_id: None,
+        interrupted_attempts: 0,
     };
     insert_job(
         tx,
@@ -1045,6 +1052,7 @@ fn insert_world_load(
         lease_expires_at_ms: None,
         sealed_revision_id: Some(revision.to_owned()),
         attempt_id: None,
+        interrupted_attempts: 0,
     };
     insert_job(
         tx,
@@ -1231,7 +1239,8 @@ pub fn resume_processing(
 
 /// Called once after acquiring the app-data lock and reclaiming orphaned processes.
 /// No prior process can still own these running attempts; wall-clock lease expiry
-/// is irrelevant on startup. A dispatched/uncertain call is never replayed.
+/// is irrelevant on startup. A Source's interrupted paid call runs once more
+/// (`retry_once`); any other dispatched or uncertain call is never replayed.
 pub(crate) fn recover_interrupted(tx: &Transaction<'_>) -> KnowledgeResult<u32> {
     let mut changed = 0;
     for job in list_all(tx)?
@@ -1240,15 +1249,14 @@ pub(crate) fn recover_interrupted(tx: &Transaction<'_>) -> KnowledgeResult<u32> 
     {
         let mut settings = load_settings(tx, &job.loupist_id)?;
         let mut document = job.document.clone();
-        let uncertain =
-            document.mutation_sent || document.inference_attempted || document.usage_uncertain;
+        let retried = retry_once(&mut document);
+        let uncertain = !retried
+            && (document.mutation_sent || document.inference_attempted || document.usage_uncertain);
         let next = if uncertain {
             quarantine(&mut settings, &document.generation_id);
             JOB_RECONCILE
-        } else if settings.paused && document.episode_kind != EPISODE_RECOVERY {
-            JOB_PAUSED
         } else {
-            JOB_QUEUED
+            requeued(&settings, &document)
         };
         clear_lease(&mut document);
         if write_status(tx, &job.job_id, JOB_RUNNING, next, &document)? {
@@ -1425,6 +1433,8 @@ pub fn finish_job(
             JOB_FAILED_BEFORE
         } else if outcome == JOB_COMPLETED && validated && !usage_uncertain {
             JOB_COMPLETED
+        } else if retry_once(&mut document) {
+            requeued(settings, &document)
         } else if document.mutation_sent || document.inference_attempted || usage_uncertain {
             quarantine(settings, &document.generation_id);
             JOB_RECONCILE
@@ -1687,6 +1697,32 @@ fn ensure_active(settings: &GraphProcessingSettings, loupist_id: &str) -> Knowle
         Err(KnowledgeError::Unauthorized("loupist is not active"))
     } else {
         Ok(())
+    }
+}
+
+/// A Source's paid attempt that published nothing runs once more: the World is
+/// unchanged, and the Source's cost stays at two calls at most. Returns false,
+/// leaving the document as it was, for any other attempt.
+fn retry_once(document: &mut JobDocument) -> bool {
+    let paid = document.inference_attempted || document.usage_uncertain;
+    if document.episode_kind != EPISODE_SPAN
+        || document.mutation_sent
+        || !paid
+        || document.interrupted_attempts > 0
+    {
+        return false;
+    }
+    document.interrupted_attempts += 1;
+    document.inference_attempted = false;
+    document.usage_uncertain = false;
+    true
+}
+
+fn requeued(settings: &GraphProcessingSettings, document: &JobDocument) -> &'static str {
+    if settings.paused && document.episode_kind != EPISODE_RECOVERY {
+        JOB_PAUSED
+    } else {
+        JOB_QUEUED
     }
 }
 

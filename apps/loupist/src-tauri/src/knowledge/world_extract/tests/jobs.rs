@@ -384,7 +384,7 @@ fn jobs_seal_the_world_and_its_index_together_and_reuse_stored_entities() {
 }
 
 #[test]
-fn an_uncertain_paid_call_quarantines_without_touching_the_world_or_index() {
+fn an_uncertain_paid_call_runs_once_more_then_quarantines_without_touching_the_world_or_index() {
     let mut fixture = Fixture::new();
     let (_, _, script) = two_sources(&mut fixture);
     let head = fixture.head();
@@ -397,8 +397,21 @@ fn an_uncertain_paid_call_quarantines_without_touching_the_world_or_index() {
             .insert("ExtractedEdges".into(), InferenceDisposition::Uncertain);
     }
     let job = fixture.queue("Deal note", "Acme Corp acquired Delta Inc.");
+    let retried = drive(&mut fixture, &job, &script, "fixture");
+    assert_eq!(
+        retried.status,
+        graph_jobs::JOB_QUEUED,
+        "the first cut runs again"
+    );
+    assert!(fixture.settings.quarantined_generations.is_empty());
+    assert_eq!(fixture.head(), head);
+    script
+        .lock()
+        .unwrap()
+        .reply("ExtractedEntities", entities(&["Acme Corp", "Delta Inc"]));
     let finished = drive(&mut fixture, &job, &script, "fixture");
     assert_eq!(finished.status, graph_jobs::JOB_RECONCILE);
+    assert_eq!(finished.document.interrupted_attempts, 1);
     assert!(finished.document.usage_uncertain);
     assert!(finished.document.inference_attempted);
     assert!(!finished.document.mutation_sent);
@@ -432,7 +445,7 @@ fn a_failed_commit_rolls_back_the_seal_and_leaves_no_partial_index() {
         .unwrap();
     let initial = fixture.head();
     let script = Arc::new(Mutex::new(Script::default()));
-    {
+    let replies = || {
         let mut script = script.lock().unwrap();
         script.reply("ExtractedEntities", entities(&["Acme Corp", "Beta Motors"]));
         script.reply(
@@ -440,8 +453,17 @@ fn a_failed_commit_rolls_back_the_seal_and_leaves_no_partial_index() {
             json!({"edges": [relation("Acme Corp", "Beta Motors", "SUPPLIES", SUPPLY)]}),
         );
         script.reply("CoreAttributeBatch", json!({"entities": []}));
-    }
+    };
+    replies();
     let job = fixture.queue("Supply note", SUPPLY);
+    let retried = drive(&mut fixture, &job, &script, "fixture");
+    assert_eq!(
+        retried.status,
+        graph_jobs::JOB_QUEUED,
+        "the first cut runs again"
+    );
+    assert_eq!(fixture.head(), initial);
+    replies();
     let finished = drive(&mut fixture, &job, &script, "fixture");
     assert_eq!(finished.status, graph_jobs::JOB_RECONCILE);
     assert_eq!(fixture.head(), initial, "the World seal rolled back");
@@ -454,11 +476,19 @@ fn a_failed_commit_rolls_back_the_seal_and_leaves_no_partial_index() {
 fn recovery_reindexes_from_the_confirmed_world_and_clears_quarantine() {
     let mut fixture = Fixture::new();
     let (_, _, script) = two_sources(&mut fixture);
-    script.lock().unwrap().reply(
-        "ExtractedEntities",
-        json!({"extracted_entities": "not a list"}),
-    );
+    let bad_reply = || {
+        script.lock().unwrap().reply(
+            "ExtractedEntities",
+            json!({"extracted_entities": "not a list"}),
+        )
+    };
+    bad_reply();
     let job = fixture.queue("Bad reply", "Acme Corp is mentioned.");
+    assert_eq!(
+        drive(&mut fixture, &job, &script, "fixture").status,
+        graph_jobs::JOB_QUEUED
+    );
+    bad_reply();
     let failed = drive(&mut fixture, &job, &script, "fixture");
     assert_eq!(failed.status, graph_jobs::JOB_RECONCILE);
     // Drop the derived rows: recovery must rebuild them from the sealed World alone.

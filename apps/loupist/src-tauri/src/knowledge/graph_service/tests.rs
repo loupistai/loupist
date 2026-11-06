@@ -364,12 +364,16 @@ async fn rust_engine_drives_queued_jobs_without_a_staged_worker_or_runtime() {
         )
         .unwrap();
     // No worker or graph runtime is staged; the job still runs in-process. With
-    // no provider service the paid call is not sent, and the attempt is quarantined.
-    assert_eq!(
-        supervisor.pump_once().await.unwrap().as_deref(),
-        Some(job.job_id.as_str())
-    );
+    // no provider service the paid call is not sent. The first attempt runs
+    // again, and the second is quarantined.
+    for _ in 0..2 {
+        assert_eq!(
+            supervisor.pump_once().await.unwrap().as_deref(),
+            Some(job.job_id.as_str())
+        );
+    }
     let finished = knowledge.graph_job(loupist, &job.job_id).unwrap();
+    assert_eq!(finished.document.interrupted_attempts, 1);
     assert_eq!(finished.status, super::super::graph_jobs::JOB_RECONCILE);
     assert!(finished.document.inference_attempted);
     assert!(!finished.document.mutation_sent);

@@ -1,10 +1,10 @@
 # Follow-ups left open by this change
 
-## Needs a product decision
+## Product decisions
 
-- **Vocabulary changes apply without a prompt.** The user did not decide this; the orchestrator chose it from the candidates' arguments (an approval an ordinary user cannot judge never gets answered). Review producers are gated on evidence in the graph and every change has Undo. To require approval instead, route the `review` producer in `knowledge/schema_writer.rs` back to a pending state; chat and preset changes would stay immediate.
-- **An interrupted World extraction is lost for good.** No extraction call is retried, so an uncertain usage receipt is never charged twice. But quitting the app during a job (jobs took 85–185 s with GPT-6-Luna at high thinking) or a provider timeout drops that Source's facts from the World permanently. In the native walk, dev-app restarts and one provider failure lost 10 of 15 attempted Sources this way. One bounded retry for a span whose call never mutated the graph would cap the cost at two calls; the change belongs in `graph_jobs::finish_job` and `recover_interrupted`.
-- **The map trails research by half an hour.** One graph worker serves every Loupist, one Source at a time, and the reviewed default runs GPT-6-Luna at high thinking for 3–5 calls per Source. Of the 14 Sources the battery Loupist saved between 03:33 and 03:48, one was on the map at 03:52 and 11 were still queued behind another Loupist's work. Medium thinking for extraction (`world-model-defaults.json`) or one worker per Loupist would shorten it; either needs an extraction-quality check first.
+- **Decided (2026-11-07): vocabulary changes keep applying without a prompt.** The owner chose this over approval for background reviews or for all changes. Review producers stay gated on evidence in the graph, and every change has Undo. To add a prompt later, route the `review` producer in `knowledge/schema_writer.rs` back to a pending state.
+- **Decided (2026-11-07): an interrupted World extraction runs once more.** Before, no extraction call was retried, so quitting the app during a job or a provider timeout dropped that Source's facts for good (10 of 15 attempted Sources in the native walk). Now a paid attempt that published nothing runs again once (`retry_once`); a second quarantines as before, and the World rebuilds itself.
+- **Kept for later (2026-11-07): the map trails research by half an hour.** One graph worker serves every Loupist, one Source at a time, and the reviewed default runs GPT-6-Luna at high thinking for 3–5 calls per Source. Of the 14 Sources the battery Loupist saved between 03:33 and 03:48, one was on the map at 03:52 and 11 were still queued behind another Loupist's work. Medium thinking for extraction (`world-model-defaults.json`) or one worker per Loupist would shorten it; either needs an extraction-quality check first.
 
 ## Not verified
 

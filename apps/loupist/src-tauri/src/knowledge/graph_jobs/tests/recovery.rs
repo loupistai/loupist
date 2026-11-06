@@ -48,6 +48,14 @@ fn interrupt_paid(store: &KnowledgeStore, job: &GraphJobView) -> GraphJobView {
     interrupted
 }
 
+/// Use up the one retry so the generation is quarantined.
+fn quarantine_by_interruptions(store: &KnowledgeStore, job: &GraphJobView) -> GraphJobView {
+    assert_eq!(interrupt_paid(store, job).status, JOB_QUEUED);
+    let interrupted = interrupt_paid(store, job);
+    assert_eq!(interrupted.status, JOB_RECONCILE);
+    interrupted
+}
+
 fn recover(store: &KnowledgeStore, loupist: &str, at_ms: i64) -> GraphJobView {
     store
         .transact(|write| recover_world(write.tx, write.blobs, loupist, at_ms))
@@ -95,6 +103,8 @@ fn startup_recovers_future_leases_and_persists_each_loupists_pause_and_quarantin
         document.lease_expires_at_ms = Some(9_000_000_000_000);
         document.inference_attempted = uncertain;
         document.usage_uncertain = uncertain;
+        // Its one retry is already spent, so the uncertain call quarantines.
+        document.interrupted_attempts = u8::from(uncertain);
         let settings = GraphProcessingSettings {
             paused,
             ..enabled()
@@ -167,7 +177,7 @@ fn empty_world_recovery_retires_uncertain_work_without_paid_replay_and_unblocks_
             .unwrap()
     };
     assert_eq!(status_of(loupist), None);
-    let interrupted = interrupt_paid(&store, &first);
+    let interrupted = quarantine_by_interruptions(&store, &first);
     assert_eq!(status_of(loupist), Some("reconciliation_required"));
     assert_eq!(status_of("loupist-other"), None);
     assert!(heads(&store).is_empty());
@@ -207,7 +217,7 @@ fn failed_recovery_uses_a_new_generation_and_preserves_disabled_paused_preferenc
     let (_dir, store) = open();
     let loupist = "loupist-retry";
     let (first, _) = queued_pair(&store, loupist);
-    interrupt_paid(&store, &first);
+    quarantine_by_interruptions(&store, &first);
     let settings = GraphProcessingSettings {
         paused: true,
         enrichment_enabled: false,
@@ -241,7 +251,7 @@ fn moved_world_head_and_stale_attempt_cannot_retire_uncertainty() {
     let (_dir, store) = open();
     let loupist = "loupist-fenced";
     let (first, _) = queued_pair(&store, loupist);
-    interrupt_paid(&store, &first);
+    quarantine_by_interruptions(&store, &first);
     let job = recover(&store, loupist, AT + 1);
     let mut settings = settings_of(&store, loupist);
     let running = claim(&store, &settings, &job.job_id, AT + 2);
@@ -289,7 +299,7 @@ fn a_quarantined_world_rebuilds_without_the_user_and_a_failed_rebuild_waits_for_
             .unwrap()
     };
     assert!(unattended(AT).is_none(), "nothing needs recovery");
-    interrupt_paid(&store, &first);
+    quarantine_by_interruptions(&store, &first);
     let rebuild = unattended(AT + 1).expect("a quarantined World queues its rebuild");
     assert_eq!(rebuild.document.extraction.max_llm_calls, 0);
     assert!(unattended(AT + 2).is_none(), "one rebuild at a time");
@@ -306,26 +316,71 @@ fn a_quarantined_world_rebuilds_without_the_user_and_a_failed_rebuild_waits_for_
     finish_recovery(&store, &explicit).unwrap();
     assert_eq!(status(&store, &first), JOB_RECONCILED);
     assert_eq!(heads(&store), std::slice::from_ref(&second.job_id));
-    let settings = settings_of(&store, loupist);
-    let running = claim(&store, &settings, &second.job_id, AT + 6);
-    let attempt = running.document.attempt_id.as_deref().unwrap();
-    store.graph_note_inference(&second.job_id, attempt).unwrap();
-    let mut settings = settings;
-    store
-        .graph_finish(
-            &mut settings,
-            &second.job_id,
-            attempt,
-            JOB_RECONCILE,
-            true,
-            false,
-        )
-        .unwrap();
-    store
-        .transact(|write| store_settings(write.tx, loupist, &settings))
-        .unwrap();
+    quarantine_by_interruptions(&store, &second);
     assert!(
         unattended(AT + 7).is_some(),
         "after a completed rebuild, the next interruption rebuilds unattended again"
     );
+}
+
+#[test]
+fn an_interrupted_paid_attempt_runs_once_more_and_a_second_quarantines() {
+    let (_dir, store) = open();
+    let loupist = "loupist-retry-once";
+    let (first, _) = queued_pair(&store, loupist);
+    let retried = interrupt_paid(&store, &first);
+    assert_eq!(retried.status, JOB_QUEUED, "nothing reached the World");
+    assert_eq!(retried.document.interrupted_attempts, 1);
+    assert!(!retried.document.inference_attempted && !retried.document.usage_uncertain);
+    assert!(settings_of(&store, loupist)
+        .quarantined_generations
+        .is_empty());
+    assert_eq!(
+        store
+            .read(|write| recovery_status(write.tx, loupist))
+            .unwrap(),
+        None
+    );
+    assert_eq!(interrupt_paid(&store, &first).status, JOB_RECONCILE);
+    assert!(settings_of(&store, loupist)
+        .quarantined_generations
+        .contains(&first.document.generation_id));
+}
+
+#[test]
+fn startup_runs_an_interrupted_paid_attempt_once_more() {
+    let (_dir, store) = open();
+    for (loupist, earlier, expected) in [
+        ("loupist-first-cut", 0, JOB_QUEUED),
+        ("loupist-second-cut", 1, JOB_RECONCILE),
+    ] {
+        let (job, _) = queued_pair(&store, loupist);
+        let mut document = claim(&store, &enabled(), &job.job_id, AT).document;
+        document.inference_attempted = true;
+        document.interrupted_attempts = earlier;
+        store
+            .transact(|write| {
+                assert!(write_status(
+                    write.tx,
+                    &job.job_id,
+                    JOB_RUNNING,
+                    JOB_RUNNING,
+                    &document
+                )?);
+                Ok(())
+            })
+            .unwrap();
+        store
+            .transact(|write| recover_interrupted(write.tx))
+            .unwrap();
+        let recovered = store.graph_job(loupist, &job.job_id).unwrap();
+        assert_eq!(recovered.status, expected, "{loupist}");
+        assert_eq!(
+            settings_of(&store, loupist)
+                .quarantined_generations
+                .contains(&job.document.generation_id),
+            expected == JOB_RECONCILE,
+            "{loupist}"
+        );
+    }
 }

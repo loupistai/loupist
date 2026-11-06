@@ -622,8 +622,10 @@ impl Inner {
         }
         driven.map(|view| {
             // A queued job that could not be claimed needs a settings change or
-            // another attempt to finish before this loop can make progress.
-            (view.status != super::graph_jobs::JOB_QUEUED).then_some(view.job_id)
+            // another attempt to finish before this loop can make progress. A
+            // job queued again for its one retry did make progress.
+            let retrying = view.document.interrupted_attempts > job.document.interrupted_attempts;
+            (view.status != super::graph_jobs::JOB_QUEUED || retrying).then_some(view.job_id)
         })
     }
 
