@@ -12,6 +12,7 @@ import type {
   ChatProgressPatch,
   ChatStreamEvent,
   ChatThread,
+  HostPostRecords,
   LoupistBridge,
   MemoryRef,
   MemoryUpdateResult,
@@ -23,8 +24,11 @@ import type { ChatAdmission } from "./submission";
 
 const t = i18n.getFixedT(null, "chat");
 
-const HOST_POST_FIELDS = ["delivery", "alert", "watch", "earnings", "vocabulary", "handoff", "link"] as const;
-type HostPostRecords = Pick<ChatMessage, (typeof HOST_POST_FIELDS)[number]>;
+// Typed from the contract, so tsc fails when a host-post record is missing here.
+const HOST_POST_KEYS: Record<keyof HostPostRecords, true> = {
+  delivery: true, alert: true, watch: true, earnings: true, vocabulary: true, handoff: true, link: true,
+};
+const HOST_POST_FIELDS = Object.keys(HOST_POST_KEYS) as (keyof HostPostRecords)[];
 
 const hostPostRecords = (source: HostPostRecords | undefined): HostPostRecords =>
   Object.fromEntries(HOST_POST_FIELDS.filter((field) => source?.[field]).map((field) => [field, source![field]]));

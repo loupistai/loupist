@@ -625,7 +625,8 @@ export type AsOfReport = {
   left_out: { facts: number; sources: number; notes: number; methods: number };
 };
 
-export type ChatMessage = {
+/** The record each kind of host-posted Thread message carries. */
+export type HostPostRecords = {
   /** Present on host-posted Thread messages. */
   delivery?: HomeDelivery;
   /** Present on a host-posted crossed-line message. */
@@ -640,6 +641,9 @@ export type ChatMessage = {
   handoff?: HomeHandoff;
   /** Present on a host-posted "New link" card from discovery. */
   link?: HomeLink;
+};
+
+export type ChatMessage = HostPostRecords & {
   tool_refusals?: ChatToolRefusal[];
   feedback?: ChatFeedback | null;
   failure_kind?: ChatFailureKind;
