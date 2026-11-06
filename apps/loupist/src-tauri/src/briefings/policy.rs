@@ -62,32 +62,33 @@ pub(crate) fn allowed_method(method: ToolMethod) -> bool {
 pub(crate) fn enforce(
     store: &crate::store::SqliteStore,
     loupist_id: &str,
-    run_id: &str,
+    scheduled_run_id: Option<&str>,
     method: ToolMethod,
     params: &serde_json::Value,
 ) -> Result<(), crate::broker::BrokerError> {
     if allowed_method(method) {
         return Ok(());
     }
-    let name = if method == ToolMethod::NativeAuthorize {
-        params
-            .get("name")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("native")
-            .to_owned()
-    } else {
-        serde_json::to_value(method)
-            .ok()
-            .and_then(|v| v.as_str().map(str::to_owned))
-            .unwrap_or_default()
-    };
-    match store.scheduled_run_skip_tool(loupist_id, run_id, &name, REFUSAL) {
-        Ok(()) | Err(crate::store::StoreError::Invalid(_)) => {}
-        Err(_) => {
-            return Err(crate::broker::BrokerError::Execution(
-                "Could not record refused unattended tool".into(),
-            ))
-        }
+    if let Some(run_id) = scheduled_run_id {
+        let name = if method == ToolMethod::NativeAuthorize {
+            params
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("native")
+                .to_owned()
+        } else {
+            serde_json::to_value(method)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .unwrap_or_default()
+        };
+        store
+            .scheduled_run_skip_tool(loupist_id, run_id, &name, REFUSAL)
+            .map_err(|_| {
+                crate::broker::BrokerError::Execution(
+                    "Could not record refused unattended tool".into(),
+                )
+            })?;
     }
     Err(crate::broker::BrokerError::Execution(REFUSAL.into()))
 }

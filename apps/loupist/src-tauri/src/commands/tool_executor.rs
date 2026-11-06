@@ -973,11 +973,11 @@ impl AppToolExecutor {
             .map_err(|_| BrokerError::Execution("Loupist is unavailable".into()))?;
         self.ensure_scope(policy)?;
         self.enforce_turn_policy(method, &params)?;
-        if let Some(run_id) = &self.capture.unattended_run_id {
+        if self.capture.unattended_run_id.is_some() {
             crate::briefings::policy::enforce(
                 self.state.store.as_ref(),
                 &self.loupist_id,
-                run_id,
+                self.capture.scheduled_run_id(),
                 method,
                 &params,
             )?;
@@ -1480,6 +1480,15 @@ fn delivered_world_node_ids(reads: &[StagedKnowledgeRead]) -> Vec<String> {
 mod tests;
 
 impl ToolCapture {
+    /// The scheduled run whose row records refused tools; a delegated hand-off
+    /// run is unattended too but has no such row.
+    fn scheduled_run_id(&self) -> Option<&str> {
+        match self.surface {
+            Some(crate::chat::surface::ChatSurface::Scheduled) => self.unattended_run_id.as_deref(),
+            _ => None,
+        }
+    }
+
     fn record_tool_refusal(&self, refusal: crate::domain::ChatToolRefusal) {
         let mut entries = self.tool_refusals.lock().unwrap_or_else(|e| e.into_inner());
         if entries.len() < 64 && !entries.contains(&refusal) {

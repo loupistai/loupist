@@ -79,7 +79,9 @@ Unattended runs, both briefing and custom, may call only the fixed allowlist in
 (including `asset_page_read`, `thesis_update` and `earnings_snapshot_save`).
 Journal saves, principle saves, publishing charts, tables or documents, native tools and
 schedule management are refused
-and recorded on the run as skipped tools. A custom MCP call still requires an
+and recorded on the run as skipped tools; a delegated hand-off run has no scheduled
+run row, so its refusals are not recorded, and a scheduled run whose row cannot take
+the record fails the call. A custom MCP call still requires an
 unchanged Always approval.
 The inbox is read with `inbox_list`, `inbox_mark_read` and `inbox_unread_counts`.
 The agent's schedule reader still uses the internal run history. Completed,
