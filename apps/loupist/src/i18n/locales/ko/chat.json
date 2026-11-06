@@ -1089,9 +1089,9 @@
       "running": "지도가 추적하는 것 고치는 중",
       "done": "지도가 추적하는 것 고침"
     },
-    "lens_update": {
-      "running": "Lens 고치는 중",
-      "done": "Lens 고침"
+    "lens_file": {
+      "running": "알게 된 것 Lens에 기록 중",
+      "done": "알게 된 것 Lens에 기록함"
     },
     "lens_search": {
       "running": "Lens 검색 중",

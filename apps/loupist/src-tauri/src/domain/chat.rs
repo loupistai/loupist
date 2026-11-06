@@ -69,6 +69,19 @@ pub struct MemoryUpdateChange {
     pub lesson: String,
     pub basis: String,
     pub future_use: String,
+    /// Each op a Lens filing applied to this page, with its outcome.
+    #[serde(default)]
+    pub outcomes: Vec<FiledOutcome>,
+}
+
+/// One `lens_file` op's result on a filed page, as the log recorded it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FiledOutcome {
+    pub op_id: String,
+    pub outcome: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 impl Serialize for MemoryUpdateChange {
@@ -93,6 +106,9 @@ impl Serialize for MemoryUpdateChange {
         }
         if self.kind == "principle" {
             map.serialize_entry("statement", &self.title)?;
+        }
+        if !self.outcomes.is_empty() {
+            map.serialize_entry("outcomes", &self.outcomes)?;
         }
         map.end()
     }

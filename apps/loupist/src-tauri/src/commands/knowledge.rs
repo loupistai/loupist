@@ -438,13 +438,21 @@ pub fn memory_learned(
     request: MemoryLearnedRequest,
     state: State<'_, AppState>,
 ) -> Result<Vec<crate::knowledge::LearnedDigest>, CommandError> {
-    admit(&state, &request.loupist_id)?;
     if request.message_ids.len() > 64 {
         return Err(CommandError::invalid("at most 64 messages per request"));
     }
-    with_loupist_knowledge(&state, &request.loupist_id.clone(), |tx, blobs| {
-        crate::knowledge::KnowledgeWrite::bind(tx, blobs)
-            .learned_digest(&request.loupist_id, &request.message_ids)
+    learned_digests(&state, &request.loupist_id, &request.message_ids)
+}
+
+/// What each message filed into Lens, from the log.
+pub(crate) fn learned_digests(
+    state: &AppState,
+    loupist_id: &str,
+    message_ids: &[String],
+) -> Result<Vec<crate::knowledge::LearnedDigest>, CommandError> {
+    admit(state, loupist_id)?;
+    with_loupist_knowledge(state, loupist_id, |tx, blobs| {
+        crate::knowledge::KnowledgeWrite::bind(tx, blobs).learned_digest(loupist_id, message_ids)
     })
 }
 

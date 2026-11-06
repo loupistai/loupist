@@ -26,7 +26,13 @@ fn journal_hook_is_empty_and_unattended_native_tools_are_denied() {
     ] {
         assert!(!policy::allowed_name(name), "{name}");
     }
-    for name in ["world_read", "source_save", "web_search", "plan_update"] {
+    for name in [
+        "world_read",
+        "source_save",
+        "web_search",
+        "plan_update",
+        "lens_file",
+    ] {
         assert!(policy::allowed_name(name), "{name}");
     }
 }

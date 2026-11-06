@@ -44,8 +44,8 @@ it("hands Look into it to the same research hand-off and marks the link opened",
     title: "Link: Alpha and Gamma",
     pins: [{ world: "a" }, { world: "b" }, { world: "c" }],
     requestKey: "link-con_1",
+    question: expect.stringContaining("Alpha"),
   }));
-  expect(researchHandoffStart.mock.calls[0]![0].question).toContain("Alpha");
   expect(knowledgeConnectionOpen).toHaveBeenCalledWith({ loupistId: "loupist-a", connectionId: "con_1" });
   expect(await screen.findByRole("status")).toHaveTextContent("Researching it.");
   expect(screen.queryByRole("button", { name: "Look into it" })).toBeNull();

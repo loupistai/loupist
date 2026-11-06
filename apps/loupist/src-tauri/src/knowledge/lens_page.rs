@@ -726,6 +726,21 @@ impl OpOutcome {
         }
     }
 
+    pub fn key(&self) -> Option<&SectionKey> {
+        match self {
+            Self::Added { key }
+            | Self::Replaced { key }
+            | Self::Retired { key }
+            | Self::AlreadyKnown { key }
+            | Self::SkippedStale { key }
+            | Self::RefusedForgotten { key }
+            | Self::RefusedBasis { key } => Some(key),
+            Self::Summarized | Self::StatusSet { .. } | Self::RefusedFull | Self::RefusedKind => {
+                None
+            }
+        }
+    }
+
     /// The page changed because of this op.
     pub fn changed(&self) -> bool {
         matches!(

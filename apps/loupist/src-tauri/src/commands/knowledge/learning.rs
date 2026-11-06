@@ -1,7 +1,16 @@
 use super::*;
 use crate::domain::{KnowledgeReference, MemoryUpdateChange};
 
-// This boundary keeps the host transaction and exact provenance inputs explicit.
+/// What one completed turn retained: the answer's changes and the Sources
+/// a same-turn `saveRef` now names.
+#[derive(Default)]
+pub(in crate::commands) struct SavedTurn {
+    pub changes: Vec<MemoryUpdateChange>,
+    pub retained: Vec<(String, crate::knowledge::RetainedSource)>,
+}
+
+/// The changes alone, for callers that never cite a same-turn save.
+#[cfg(any(test, feature = "e2e"))]
 #[allow(clippy::too_many_arguments)]
 pub(in crate::commands) fn persist_saved_turn(
     tx: &rusqlite::Transaction<'_>,
@@ -16,6 +25,37 @@ pub(in crate::commands) fn persist_saved_turn(
     reads: &[crate::commands::tool_executor::StagedKnowledgeRead],
     research: Option<&crate::commands::tool_executor::StagedResearch>,
 ) -> Result<Vec<MemoryUpdateChange>, CommandError> {
+    persist_saved_turn_sources(
+        tx,
+        blobs,
+        loupist_id,
+        chat_id,
+        turn_id,
+        at_ms,
+        pins,
+        save_learning,
+        sources,
+        reads,
+        research,
+    )
+    .map(|saved| saved.changes)
+}
+
+// This boundary keeps the host transaction and exact provenance inputs explicit.
+#[allow(clippy::too_many_arguments)]
+pub(in crate::commands) fn persist_saved_turn_sources(
+    tx: &rusqlite::Transaction<'_>,
+    blobs: &BlobStore,
+    loupist_id: &str,
+    chat_id: &str,
+    turn_id: &str,
+    at_ms: i64,
+    pins: &[crate::commands::ChatKnowledgePin],
+    save_learning: bool,
+    sources: &[crate::commands::tool_executor::StagedSource],
+    reads: &[crate::commands::tool_executor::StagedKnowledgeRead],
+    research: Option<&crate::commands::tool_executor::StagedResearch>,
+) -> Result<SavedTurn, CommandError> {
     for (index, pin) in pins.iter().enumerate() {
         let pin_json =
             serde_json::to_string(pin).map_err(|error| CommandError::invalid(error.to_string()))?;
@@ -27,7 +67,7 @@ pub(in crate::commands) fn persist_saved_turn(
         .map_err(|error| CommandError::internal(error.to_string()))?;
     }
     if !save_learning {
-        return Ok(Vec::new());
+        return Ok(SavedTurn::default());
     }
     let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
     let retained =
@@ -52,6 +92,7 @@ pub(in crate::commands) fn persist_saved_turn(
             .source_processing(loupist_id, &retained.record_id)
             .map_err(map_knowledge)?;
         changes.push(MemoryUpdateChange {
+            outcomes: Vec::new(),
             world_job_id: processing.job_id,
             world_status: Some(processing.status),
             record_id: retained.source_id.clone(),
@@ -73,7 +114,7 @@ pub(in crate::commands) fn persist_saved_turn(
     }
     let staged_journal = research.and_then(|item| item.journal.as_ref());
     if staged_journal.is_none() && research.is_none() {
-        return Ok(changes);
+        return Ok(SavedTurn { changes, retained });
     }
     let (
         conclusion,
@@ -342,7 +383,7 @@ pub(in crate::commands) fn persist_saved_turn(
         });
     }
     let Some(research) = research else {
-        return Ok(changes);
+        return Ok(SavedTurn { changes, retained });
     };
     let earlier = match staged_journal {
         Some(staged) => staged
@@ -409,6 +450,7 @@ pub(in crate::commands) fn persist_saved_turn(
         .map_err(map_knowledge)?;
     if let Some(journal) = saved.journal {
         changes.push(MemoryUpdateChange {
+            outcomes: Vec::new(),
             world_job_id: None,
             world_status: None,
             record_id: journal.journal_id.clone(),
@@ -439,6 +481,7 @@ pub(in crate::commands) fn persist_saved_turn(
         });
     } else {
         changes.push(MemoryUpdateChange {
+            outcomes: Vec::new(),
             world_job_id: None,
             world_status: None,
             record_id: saved.research_id,
@@ -459,7 +502,7 @@ pub(in crate::commands) fn persist_saved_turn(
             knowledge: None,
         });
     }
-    Ok(changes)
+    Ok(SavedTurn { changes, retained })
 }
 
 pub(in crate::commands) fn earlier_research<'a>(

@@ -91,6 +91,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
     let has_staged_memory = task_update_memory
         && (!capture.staged_principles.lock().await.is_empty()
             || !capture.staged_sources.lock().await.is_empty()
+            || !capture.staged_filings.lock().await.is_empty()
             || capture.staged_research.lock().await.is_some());
     if host_composed && !has_staged_memory {
         *failure = Some("Pi settled without an assistant message".into());
@@ -200,6 +201,11 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
         } else {
             Vec::new()
         };
+        let saved_filings = if task_update_memory {
+            capture.staged_filings.lock().await.clone()
+        } else {
+            Vec::new()
+        };
         let unattended = capture.unattended_run_id.is_some();
         let turn_observations = match asset_work
             .then(|| crate::commands::assets::view_context(app_state).ok())
@@ -294,7 +300,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                     task_loupist_id,
                 )?;
                 let persist = |transaction: &rusqlite::Transaction<'_>| {
-                    let mut changes = crate::commands::knowledge::persist_saved_turn(
+                    let saved = crate::commands::knowledge::persist_saved_turn_sources(
                         transaction,
                         &blobs,
                         task_loupist_id,
@@ -314,6 +320,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         ));
                         crate::store::StoreError::Invalid(error.to_string())
                     })?;
+                    let mut changes = saved.changes;
                     if task_update_memory {
                         changes.extend(
                             crate::commands::knowledge::principles::persist_principles(
@@ -327,6 +334,26 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                                     &error,
                                     ChatFailureKind::MemoryCommitFailed,
                                 ));
+                                crate::store::StoreError::Invalid(error.to_string())
+                            })?,
+                        );
+                        changes.extend(
+                            crate::commands::tool_executor::commit_filings(
+                                transaction,
+                                &blobs,
+                                task_loupist_id,
+                                &crate::knowledge::lens_page::FilingOrigin::Turn {
+                                    chat_id: thread_id.to_owned(),
+                                    message_id: message_id.clone(),
+                                    user_message_id: capture.principle_user_message_id.clone(),
+                                    unattended,
+                                },
+                                created_at_ms,
+                                &saved_filings,
+                                &saved.retained,
+                            )
+                            .map_err(|error| {
+                                on_event.set_failure_kind(ChatFailureKind::MemoryCommitFailed);
                                 crate::store::StoreError::Invalid(error.to_string())
                             })?,
                         );

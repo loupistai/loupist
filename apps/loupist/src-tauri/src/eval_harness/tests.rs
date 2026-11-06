@@ -205,6 +205,97 @@ pub(super) fn scripted(state: &mut AppState, root: &Path) {
 }
 #[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
 #[tokio::test]
+async fn eval_two_sessions_commit_and_retrieve_lens_through_broker() {
+    let root = tempfile::Builder::new()
+        .prefix("eval-test-")
+        .tempdir_in("/tmp")
+        .unwrap();
+    let workspace = root.path().join("workspace");
+    fs::create_dir(&workspace).unwrap();
+    let mut state = AppState::for_eval(root.path().join("app"));
+    scripted(&mut state, root.path());
+    let loupist = crate::commands::loupist::create_folder_loupist(&state, &workspace)
+        .await
+        .unwrap();
+    let teach = new_chat(&state, &loupist.id, "teach").unwrap();
+    let session = Session {
+        id: "teach".into(),
+        role: "train".into(),
+        memory: "remember".into(),
+        turns: vec![],
+    };
+    let first = run_turn(
+        &state,
+        &teach,
+        &session,
+        &Turn {
+            user: "TEACH_EVAL: save my fully diluted share method".into(),
+            as_of: None,
+            ..Default::default()
+        },
+        "fixture",
+        "medium",
+        600000,
+    )
+    .await
+    .unwrap();
+    assert_eq!(first["status"], "completed", "{first}");
+    let commit = first["memory_commits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["kind"] == "lens" && c["title"] == "Hanbit diluted-share rule")
+        .expect("first turn must commit the filed page");
+    assert_eq!(commit["operation"], "create");
+    assert!(first["tool_calls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|call| call["name"] == "lens_file" && call["outcome"] == "ok"));
+    let probe = new_chat(&state, &loupist.id, "probe").unwrap();
+    assert_ne!(teach.id, probe.id);
+    assert_ne!(teach.pi_session_id, probe.pi_session_id);
+    assert!(probe.messages.is_empty());
+    let session = Session {
+        id: "probe".into(),
+        role: "probe".into(),
+        memory: "read_only".into(),
+        turns: vec![],
+    };
+    let second = run_turn(
+        &state,
+        &probe,
+        &session,
+        &Turn {
+            user: "Value fictional Hanbit: equity 720, basic shares 15, warrants 3.".into(),
+            as_of: None,
+            ..Default::default()
+        },
+        "fixture",
+        "medium",
+        600000,
+    )
+    .await
+    .unwrap();
+    assert_eq!(second["status"], "completed", "{second}");
+    assert!(
+        second["memory_reads"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|read| read["record_id"] == commit["record_id"] && read["access"] == "exact_read"),
+        "{second}"
+    );
+    assert!(second["memory_commits"].as_array().unwrap().is_empty());
+    assert!(second["answer"]
+        .as_str()
+        .unwrap()
+        .contains("720 / (15 + 3) = 40"));
+    state.shutdown().await.unwrap();
+}
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+#[tokio::test]
 async fn eval_replay_broker_preserves_production_evidence() {
     let root = tempfile::Builder::new()
         .prefix("eval-replay-")
@@ -463,7 +554,7 @@ async fn eval_memory_write_without_reply_commits_receipts_but_provider_failure_d
                     .as_array()
                     .unwrap()
                     .iter()
-                    .any(|call| call["name"] == "principle_save" && call["outcome"] == "ok"),
+                    .any(|call| call["name"] == "lens_file" && call["outcome"] == "ok"),
                 "{result}"
             );
         }
@@ -571,6 +662,7 @@ async fn eval_journal_commits_include_optional_check_and_factual_outcome() {
     let changes = [&prior, &review]
         .iter()
         .map(|d| MemoryUpdateChange {
+            outcomes: Vec::new(),
             world_job_id: None,
             world_status: None,
             knowledge: None,
@@ -753,7 +845,7 @@ async fn chat_runtime_stalled_provider_after_tool_fails_and_drains_before_long_t
                 .unwrap()
                 .entries
                 .iter()
-                .any(|call| call.name == "principle_save"),
+                .any(|call| call.name == "lens_file"),
             "tool must have executed before the provider wait"
         );
         let records = KnowledgeStore::for_loupist(state.store.clone(), &loupist.id)

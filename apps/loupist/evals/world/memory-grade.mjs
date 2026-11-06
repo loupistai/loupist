@@ -34,7 +34,7 @@ export function validateMemorySuite(suite) {
       if (!step.id || steps.has(step.id) || !step.user?.trim() || !step.checks?.length) throw new Error('Invalid or duplicate step');
       if (step.sources?.length || step.query) throw new Error('Memory steps must be driven by Chat, not harness ingestion or retrieval');
       // This validates eval inputs, not product prompt wording. Natural teaching and one-off scope are intentional.
-      if (/\b(?:world|lens|memory|remember|save|source_save|lens_update|world_read|note_save|result_ref|capability_load|json)\b|저장|기억|보관/iu.test(step.user)) {
+      if (/\b(?:world|lens|memory|remember|save|source_save|lens_file|world_read|note_save|result_ref|capability_load|json)\b|저장|기억|보관/iu.test(step.user)) {
         throw new Error(`Explicit Memory hint in ${scenario.id}/${step.id}`);
       }
       if (!['remember', 'read_only', 'off'].includes(step.memory) || !['train', 'probe'].includes(step.role)) throw new Error('Missing Memory mode/role');

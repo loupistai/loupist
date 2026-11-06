@@ -629,6 +629,16 @@ fn turn_budgets_bound_saves_and_publications_but_rollbacks_are_free() {
     cardinality
         .consume(ToolMethod::ResearchOpen, &policy)
         .unwrap();
+
+    for _ in 0..MAX_CHAT_TURN_FILINGS {
+        cardinality.consume(ToolMethod::LensFile, &policy).unwrap();
+    }
+    assert!(matches!(
+        cardinality.consume(ToolMethod::LensFile, &policy),
+        Err(BrokerError::BudgetExceeded)
+    ));
+    cardinality.rollback(ToolMethod::LensFile);
+    cardinality.consume(ToolMethod::LensFile, &policy).unwrap();
 }
 
 #[tokio::test]

@@ -63,8 +63,10 @@ growth event per changed page (`lens_created` or `lens_revised`). The log origin
 `undoes_op_id` and refuses when a later op changed that section, summary or status,
 or the op was undone already. `forget_section` is a user retire: a later non-user
 `put` of that key is refused until the user puts it back. `learned_digest` lists,
-per message id, the pages and outcomes that message filed. Principles are saved by
-`principle_save` through the same metadata row and log.
+per message id, the pages and outcomes that message filed. The agent reaches this
+writer through `lens_file` ([turn tools](../agent/turn-tools.md#turn-tools)) with
+`FilingOrigin::Turn`. Principles are saved by `principle_save` through the same
+metadata row and log.
 
 The bridge reads a page as `PageView` (`knowledge_lens_read`): kind, title, archived,
 paused, learned, the body with section keys, digests, basis and chip, suggested

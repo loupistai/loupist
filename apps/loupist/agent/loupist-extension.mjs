@@ -321,6 +321,32 @@ function prepareSiblingArguments(input, container, fields) {
   return input;
 }
 
+// A page named by its bare id and a basis given as the refs array alone are
+// reshaped; refs beside the basis move into it only when the basis has none.
+// Nothing here adds a handle the model did not write.
+function prepareLensFileArguments(input) {
+  if (!input || typeof input !== "object" || !Array.isArray(input.pages)) return input;
+  for (const page of input.pages) {
+    if (!page || typeof page !== "object" || Array.isArray(page)) continue;
+    if (typeof page.page === "string") page.page = { recordId: page.page };
+    if (!Array.isArray(page.ops)) continue;
+    for (const op of page.ops) {
+      if (!op || typeof op !== "object" || Array.isArray(op) || op.op !== "put") continue;
+      if (Array.isArray(op.basis)) op.basis = { refs: op.basis };
+      if (!Object.hasOwn(op, "refs")) continue;
+      if (op.basis === undefined) {
+        op.basis = { refs: op.refs };
+        delete op.refs;
+      } else if (op.basis && typeof op.basis === "object" && !Array.isArray(op.basis)
+        && (!Object.hasOwn(op.basis, "refs") || isDeepStrictEqual(op.basis.refs, op.refs))) {
+        op.basis.refs = op.refs;
+        delete op.refs;
+      }
+    }
+  }
+  return input;
+}
+
 function register(pi, name, label, description, parameters, method) {
   pi.registerTool({
     name,
@@ -329,6 +355,8 @@ function register(pi, name, label, description, parameters, method) {
     parameters,
     ...(name === "note_save" ? {
       prepareArguments: (input) => prepareSiblingArguments(input, "workingNote", ["sourceReads", "worldReads", "lensReads", "previousNoteIds"]),
+    } : name === "lens_file" ? {
+      prepareArguments: prepareLensFileArguments,
     } : {}),
     async execute(toolCallId, input, signal) {
       return textResult(await requestBroker(method, input, signal, toolCallId));

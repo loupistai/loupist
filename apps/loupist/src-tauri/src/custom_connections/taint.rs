@@ -297,6 +297,7 @@ impl TurnTaint {
                     | ToolMethod::JournalSave
                     | ToolMethod::JournalReview
                     | ToolMethod::PrincipleSave
+                    | ToolMethod::LensFile
                     | ToolMethod::WorldJob
             )
         {

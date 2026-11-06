@@ -109,7 +109,7 @@ prove deletion.
 Not this time is stored per chat in Rust (`chat_memory_set_aside`): later turns of
 that chat leave the record out of the principles block, the method catalog and the
 relevant-method pointers, and the answer shows "Set aside for this chat · Undo".
-Rust refuses `note_save`, `principle_save` and Journal writes whose
+Rust refuses `note_save`, `principle_save`, `lens_file` and Journal writes whose
 text looks like a credential; the refusal is a tool refusal with reason
 `sensitive_memory`, and the chat says once that the item was not saved.
 

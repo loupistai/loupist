@@ -12,6 +12,9 @@ mod authority;
 mod calculation;
 #[cfg(test)]
 mod calculation_tests;
+mod lens_file;
+pub(crate) use lens_file::commit_turn as commit_filings;
+pub(super) use lens_file::StagedFiling;
 mod principles;
 pub(super) use principles::StagedPrinciple;
 mod chat_history;
@@ -155,6 +158,8 @@ pub(super) struct ToolCapture {
     pub(in crate::commands) staged_earnings: Mutex<Vec<earnings::EarningsSave>>,
     /// Kinds the user asked the map to track, committed with the reply.
     pub(in crate::commands) staged_vocabulary: Mutex<Vec<StagedVocabulary>>,
+    /// Lens pages this turn files, written by the reply's commit.
+    pub(in crate::commands) staged_filings: Mutex<Vec<StagedFiling>>,
     /// Assets with a thesis update in this turn (staged or in flight), by
     /// delivery: parallel calls cannot both move one asset's read.
     pub(super) thesis_assets: Mutex<BTreeMap<String, String>>,
@@ -198,6 +203,7 @@ struct PendingToolCapture {
     theses: Vec<crate::knowledge::assets::ThesisUpdate>,
     earnings: Vec<earnings::EarningsSave>,
     vocabulary: Vec<StagedVocabulary>,
+    filings: Vec<StagedFiling>,
     artifacts: Vec<ArtifactCommit>,
     artifact_reads: BTreeSet<(String, u32)>,
     handoff: Option<crate::chat::handoff::StagedHandoff>,
@@ -657,6 +663,12 @@ impl ToolCapture {
                 .await
                 .extend(std::mem::take(&mut pending.vocabulary));
         }
+        if !pending.filings.is_empty() {
+            self.staged_filings
+                .lock()
+                .await
+                .extend(std::mem::take(&mut pending.filings));
+        }
         for principle in pending.principles {
             let mut staged = self.staged_principles.lock().await;
             staged.retain(|p| p.record_id != principle.record_id);
@@ -1076,6 +1088,7 @@ impl AppToolExecutor {
                 self.stage_world_schema_update(policy, params, delivery_id)
                     .await
             }
+            ToolMethod::LensFile => self.stage_lens_file(policy, params, delivery_id).await,
             ToolMethod::ArtifactList => self.artifact_list(policy, params),
             ToolMethod::ArtifactRead => self.artifact_read(policy, params, delivery_id).await,
             ToolMethod::ArtifactPublish => self.artifact_publish(policy, params, delivery_id).await,
@@ -1486,6 +1499,7 @@ fn refuse_sensitive_memory(
         method,
         ToolMethod::NoteSave
             | ToolMethod::PrincipleSave
+            | ToolMethod::LensFile
             | ToolMethod::WorldSchemaUpdate
             | ToolMethod::JournalSave
             | ToolMethod::JournalReview

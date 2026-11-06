@@ -265,6 +265,7 @@ fn run_result_receipts_record_origin_provider_and_warnings() {
 }
 
 mod knowledge_seam;
+mod lens_file;
 mod memory_as_of;
 mod memory_authority;
 mod scope_and_artifacts;

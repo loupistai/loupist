@@ -91,7 +91,7 @@ test('one run id still distinguishes turns when labels join judgments', async (t
   const smokeTraces = [
     {
       ...shared, session_id: 'teach-1', session_role: 'train', memory_mode: 'remember', user: 'Save the method.', answer: 'Saved the diluted-share rule.',
-      tool_calls: [{ name: 'capability_load', args: { id: 'lens-learning' }, outcome: 'ok', error_code: null, error_message: null }],
+      tool_calls: [{ name: 'capability_load', args: { id: 'memory-save' }, outcome: 'ok', error_code: null, error_message: null }],
     },
     { ...shared, session_id: 'probe-1', session_role: 'probe', memory_mode: 'read_only', user: 'Value Aurora.', answer: 'Fair value per share is 40.' },
   ];

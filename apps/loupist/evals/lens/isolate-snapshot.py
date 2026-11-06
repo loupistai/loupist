@@ -56,9 +56,9 @@ import {
   createBashToolDefinition,''')
 change('workspace-tools.mjs', '        command,\n        cwd: workspaceRoot,', '        command: evalShell(command, realpathSync(workspaceRoot)),\n        cwd: workspaceRoot,')
 change('loupist-extension.mjs', '      originalPi.registerTool(tool);', '''      originalPi.registerTool({ ...tool, execute(id, input, ...rest) {
-        const allowed = new Set(['read','write','edit','bash','ls','find','grep','capability_load','world_search','world_read','lens_search','lens_read','world_job','conversation_memory','run_results_list','artifact_list','artifact_read','lens_update','source_save','note_save','chat_history']);
+        const allowed = new Set(['read','write','edit','bash','ls','find','grep','capability_load','world_search','world_read','lens_search','lens_read','world_job','conversation_memory','run_results_list','artifact_list','artifact_read','lens_file','source_save','note_save','chat_history']);
         if (!allowed.has(tool.name)) throw new Error('Evaluation control: this operation is unavailable.');
-        if (tool.name === 'capability_load' && !['lens-learning','memory-save'].includes(input.id))
+        if (tool.name === 'capability_load' && input.id !== 'memory-save')
           throw new Error('Evaluation control: only Memory capabilities are available.');
         if (['read','write','edit','ls','find','grep'].includes(tool.name)) {
           const pathModule = evalPath;

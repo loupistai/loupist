@@ -200,6 +200,7 @@ pub(in crate::commands) fn persist_principles(
         )
         .map_err(map_knowledge)?;
         changes.push(crate::domain::MemoryUpdateChange {
+            outcomes: Vec::new(),
             world_job_id: None,
             world_status: None,
             record_id: saved.record_id.clone(),

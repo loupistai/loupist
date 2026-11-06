@@ -1138,9 +1138,9 @@
       "running": "Updating what the map tracks",
       "done": "Updated what the map tracks"
     },
-    "lens_update": {
-      "running": "Updating Lens",
-      "done": "Updated Lens"
+    "lens_file": {
+      "running": "Filing what this turn established",
+      "done": "Filed what this turn established"
     },
     "lens_search": {
       "running": "Searching Lens",

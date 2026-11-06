@@ -594,14 +594,18 @@ pub(crate) fn for_delivery(
     Ok(shown)
 }
 
-/// What a message filed into Memory. The Lens unit's `learned_digest` plugs
-/// in here; until then no post carries a digest.
+/// What a message filed into Memory, for the card that reports it. None
+/// when nothing was filed or the digest cannot be read: the post still lands.
 pub(crate) fn learned_digest(
-    _state: &AppState,
-    _loupist_id: &str,
-    _message_ids: &[String],
+    state: &AppState,
+    loupist_id: &str,
+    message_ids: &[String],
 ) -> Option<Value> {
-    None
+    crate::commands::knowledge::learned_digests(state, loupist_id, message_ids)
+        .ok()?
+        .into_iter()
+        .find(|digest| !digest.pages.is_empty())
+        .and_then(|digest| serde_json::to_value(digest).ok())
 }
 
 /// The first paragraph of the session's final reply, for the Bot.

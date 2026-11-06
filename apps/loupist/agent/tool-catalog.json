@@ -482,7 +482,7 @@
       "permission": "memory_write",
       "component": "memory-save",
       "label": "Save a working note",
-      "description": "Save the Loupist’s research notes for this Chat. Send workingNote {title, markdown (complete), changeSummary, expectedResearchId}; expectedResearchId is the current note id from memory_protocol.workingNote.current or null. Cite acknowledged sourceReads, worldReads, lensReads and previousNoteIds from this turn. Earlier Chats’ notes belong in previousNoteIds, never expectedResearchId. A user judgment belongs in journal_save.",
+      "description": "Save this Chat's own progress and the facts the user stated in it: send workingNote {title, markdown (complete), changeSummary, expectedResearchId}; expectedResearchId is the current note id from memory_protocol.workingNote.current or null. Cite acknowledged sourceReads, worldReads, lensReads and previousNoteIds from this turn. Earlier Chats' notes belong in previousNoteIds, never expectedResearchId. A durable conclusion (a dated fact with its source, a mechanism, a reusable check) goes to lens_file; a user judgment belongs in journal_save.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -820,7 +820,7 @@
       "name": "principle_save",
       "method": "principle.save",
       "permission": "memory_write",
-      "component": "lens-learning",
+      "component": "memory-save",
       "label": "Save user principle",
       "description": "Save only rules the user has explicitly stated. A user's rule that names an action (for example \"sell if margin falls below 10%\") is saved in the user's words; check its condition against dated evidence. Never save your own recommendations or rules you inferred.",
       "parameters": {
@@ -854,6 +854,374 @@
         "operation": "write",
         "running": "Saving your principle",
         "done": "Saved your principle",
+        "source": "memory"
+      }
+    },
+    {
+      "name": "lens_file",
+      "method": "lens.file",
+      "permission": "memory_write",
+      "component": "memory-save",
+      "label": "File what this turn established",
+      "description": "File what this turn established into this Loupist's Lens pages when saving is on: a dated fact with its source, a mechanism, a value-chain link, a contradiction, a reusable check. Read the relevant pages first (the index and pointers in the turn envelope, lens_search, then lens_read). Revise the page you read by putting only the sections that change, each with the digest from that read, or create a page; a taken title merges into that page. Subject and idea sections cite this turn's reads as their basis: {world, claimId} for a claim a world_read delivered, {source} for a retained original read or saved this turn, {said: true} for the user's own words, {lens} for synthesis from another page. Synthesis, and any section without a read, states its uncertainty. Method and perspective sections may carry no basis. Suggested keys: subject overview, facts, value-chain, drivers, risks, views, open-questions; method use-when, steps, checks, limits; idea claim, mechanism, evidence-for, evidence-against, would-break, checks; perspective beliefs, priorities, avoid. Chatter, light questions and stated one-offs file nothing. At most two calls, 8 pages and 40 ops per reply. Pages land when the reply completes; say something was saved only after that commit.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "pages",
+          "rationale"
+        ],
+        "properties": {
+          "pages": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "page",
+                "ops"
+              ],
+              "properties": {
+                "page": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "recordId"
+                      ],
+                      "properties": {
+                        "recordId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "description": "A page read with lens_read this turn."
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "create"
+                      ],
+                      "properties": {
+                        "create": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "kind",
+                            "title"
+                          ],
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "subject",
+                                "idea",
+                                "method",
+                                "perspective"
+                              ]
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "about": {
+                              "type": "array",
+                              "maxItems": 8,
+                              "items": {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                      "nodeId"
+                                    ],
+                                    "properties": {
+                                      "nodeId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 128
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                      "name"
+                                    ],
+                                    "properties": {
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 200
+                                      }
+                                    }
+                                  }
+                                ]
+                              },
+                              "description": "What a subject page is about: a World node id, or a name not yet on the map."
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "ops": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 12,
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "op",
+                          "key",
+                          "heading",
+                          "markdown"
+                        ],
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "enum": [
+                              "put"
+                            ]
+                          },
+                          "key": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9-]{1,48}$"
+                          },
+                          "heading": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          "markdown": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2000,
+                            "description": "Links only lens:recordId and world:nodeId."
+                          },
+                          "basis": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "refs": {
+                                "type": "array",
+                                "maxItems": 8,
+                                "items": {
+                                  "oneOf": [
+                                    {
+                                      "type": "object",
+                                      "additionalProperties": false,
+                                      "required": [
+                                        "world",
+                                        "claimId"
+                                      ],
+                                      "properties": {
+                                        "world": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 128,
+                                          "description": "readRef of a world_read (scope world) this turn."
+                                        },
+                                        "claimId": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 128,
+                                          "description": "A claim id (edges[].claim.id) that read delivered."
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "type": "object",
+                                      "additionalProperties": false,
+                                      "required": [
+                                        "source"
+                                      ],
+                                      "properties": {
+                                        "source": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 128,
+                                          "description": "readRef of a Source read (world_read scope source) or saveRef of a source_save this turn."
+                                        },
+                                        "spanId": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 128,
+                                          "description": "The span that read delivered; omit for a saveRef."
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "type": "object",
+                                      "additionalProperties": false,
+                                      "required": [
+                                        "said"
+                                      ],
+                                      "properties": {
+                                        "said": {
+                                          "type": "boolean",
+                                          "enum": [
+                                            true
+                                          ],
+                                          "description": "The user's message of this turn said it. Not available in unattended runs."
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "type": "object",
+                                      "additionalProperties": false,
+                                      "required": [
+                                        "lens"
+                                      ],
+                                      "properties": {
+                                        "lens": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 128,
+                                          "description": "recordId of a page read with lens_read this turn: synthesis, not evidence."
+                                        },
+                                        "key": {
+                                          "type": "string",
+                                          "pattern": "^[a-z0-9-]{1,48}$"
+                                        }
+                                      }
+                                    }
+                                  ]
+                                }
+                              },
+                              "uncertainty": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 300,
+                                "description": "Required when the refs include a lens page or no read: how sure this synthesis is and what would change it."
+                              }
+                            }
+                          },
+                          "expected": {
+                            "type": "string",
+                            "minLength": 64,
+                            "maxLength": 64,
+                            "description": "The section's digest from this turn's lens_read; omit to add a new key."
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "op",
+                          "key",
+                          "expected",
+                          "why"
+                        ],
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "enum": [
+                              "retire"
+                            ]
+                          },
+                          "key": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9-]{1,48}$"
+                          },
+                          "expected": {
+                            "type": "string",
+                            "minLength": 64,
+                            "maxLength": 64,
+                            "description": "The section's digest from this turn's lens_read."
+                          },
+                          "why": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 400
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "op",
+                          "text"
+                        ],
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "enum": [
+                              "summary"
+                            ]
+                          },
+                          "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 400,
+                            "description": "One paragraph; the index shows it."
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "op",
+                          "status",
+                          "why"
+                        ],
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "enum": [
+                              "idea_status"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "open",
+                              "supported",
+                              "weakened",
+                              "refuted",
+                              "retired"
+                            ]
+                          },
+                          "why": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 400
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "What this turn established and why it is worth keeping."
+          }
+        }
+      },
+      "progress": {
+        "category": "memory",
+        "operation": "write",
+        "running": "Filing what this turn established",
+        "done": "Filed what this turn established",
         "source": "memory"
       }
     },
@@ -5116,12 +5484,7 @@
     {
       "id": "memory-save",
       "name": "Source retention and journals",
-      "description": "Keep user-supplied facts and progress for later with note_save, retain delivered originals with source_save, save the user's explicitly stated judgment as a Journal, or add a kind of thing or link to what the map tracks with world_schema_update."
-    },
-    {
-      "id": "lens-learning",
-      "name": "Memory learning",
-      "description": "Save a user-stated research rule with principle_save when saving is enabled."
+      "description": "Keep this Chat's progress and user-stated facts with note_save, retain delivered originals with source_save, file what a turn established into Lens pages with lens_file, save the user's explicitly stated rule with principle_save or their stated judgment as a Journal, or add a kind of thing or link to what the map tracks with world_schema_update."
     },
     {
       "id": "charts",

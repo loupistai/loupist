@@ -36,6 +36,13 @@ exact reads or valid same-turn Source save references. Rust commits the complete
 Chat, authorized Memory changes and graph jobs together. Lens pages change only
 through `KnowledgeWrite::file` ([filing](lens.md#filing)): every op lands or is
 logged with its outcome, and a stale section edit is skipped, never a proposal.
+`lens_file` ([turn tools](../agent/turn-tools.md#turn-tools)) stages page deltas
+whose basis handles Rust resolved against the turn's reads; the commit files them
+with `FilingOrigin::Turn` (chat, assistant message, user message, unattended) in the
+reply's transaction after the Sources, so a same-turn `saveRef` names the retained
+Source. The answer's `memory_update` reports each filed page once with its op
+outcomes, and `learned_digest` derives the hand-off and delivery cards' `learned`
+from the log.
 
 A staged Source returns `saveRef`; job lookup before commit reports
 `waiting_for_turn_commit`. Processing begins after completion. Failed/cancelled

@@ -29,23 +29,21 @@ overall investing philosophy. A stated one-off is not a method. Do not
 rewrite a prior judgment. Preserve competing interpretations when their
 assumptions differ.
 
-When saving is on, read the current page before an edit and put only the
-sections that change, each with the digest from that read. Replace superseded
-instructions in their owning section; keep the reason for the revision in
-`rationale`. Preserve useful detail, conditions,
-and exceptions without copying the same instructions across sections. Keep
-World, Source, and Journal dependencies out of the reusable body. An edit's title renames that Lens; its
-kind stays fixed, so do not write a new method into the standing perspective.
-For a method grounded in a newly acquired file or page, save the original with
-`source_save` first, then cite its returned `saveRef` in top-level `sourceReads`.
-A capture or fetch `result_ref` alone is not a Source reference. For an existing
-Source, exact-read it and use the returned Source `readRef`.
-If a newer revision was saved first, finish the reply and leave the change as
-a proposal.
-An update may return related-method warnings with exact `lens_read` arguments.
-These flag shared vocabulary, not a proven duplicate or contradiction, and do
-not block saving. Read the candidates before comparing assumptions and limits;
-the warning itself grants no evidence or editing authority.
+When saving is on, file with `lens_file`. Read the current page before an edit
+and put only the sections that change, each with `expected` set to the digest
+from that read; a section that changed since is skipped, never a proposal, so
+read again and refile. A create with a taken title merges into that page.
+Replace superseded instructions in their owning section; keep the reason for
+the filing in `rationale`. Preserve useful detail, conditions and exceptions
+without copying the same instructions across sections. Keep World, Source and
+Journal dependencies out of a method's body; a method or perspective section
+needs no basis. A kind is fixed, so do not write a new method into the standing
+perspective. For a method grounded in a newly acquired file or page, save the
+original with `source_save` first and cite its `saveRef` as `{source}` in the
+section's basis; a capture or fetch `result_ref` alone is not a Source
+reference. For an existing Source, exact-read it and cite the returned
+`readRef`. Subject and idea pages are filed the same way from research turns;
+their sections cite this turn's reads.
 
 Link a related method as `[title](lens:recordId)` with a discovered id, and say
 whether it is a prerequisite, alternative, refinement, or countercheck. The link

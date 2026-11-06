@@ -43,6 +43,24 @@ example without the local embedding assets). Empty partial results do not prove 
 A Source read returns retained attribution/coverage alongside its bytes. A World
 read can supply `sourceTargets` for the original spans.
 
+`lens_file` (Memory save in `memory-save`, on the unattended allowlist, at most two
+calls, 8 pages and 40 ops per reply) files what the turn established into Lens
+pages: each entry of `pages` names a page read with `lens_read` this turn
+(`page.recordId`) or a create (`page.create` with `kind`, `title` and `about`), and
+its `ops` are `put`, `retire`, `summary` and `idea_status`
+([filing](../knowledge/lens.md#filing)). A section's basis cites the turn's handles:
+`{world: readRef, claimId}` must name a claim that `world_read` delivered,
+`{source: readRef | saveRef}` a Source read or a same-turn `source_save` (its span
+resolves at commit, once the Source exists), `{said: true}` the user's message of
+this turn (refused in unattended runs) and `{lens: recordId, key?}` a page read this
+turn. Rust refuses an unknown or foreign handle by its field with a repair hint, a
+`put` or `retire` with `expected` needs that page's acknowledged exact read, a
+create with `expected` is refused, and credential-like text returns
+`sensitive_memory`. The reply's commit writes every staged delta through
+`KnowledgeWrite::file` with `FilingOrigin::Turn`; the answer's `memory_update` lists
+each filed page once (kind `Lens`, operation `create` or `revise`, `outcomes` with
+`opId`, `outcome` and `key`), and a stopped reply files nothing.
+
 [Asset pages](../knowledge/asset-pages.md#asset-pages) have three catalog tools, all on the
 unattended allowlist. `asset_page_read` (Memory read, by `assetId` or symbol and
 market) returns the user's reasons and lines, the current read with its latest

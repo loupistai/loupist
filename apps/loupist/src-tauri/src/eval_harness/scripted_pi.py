@@ -131,9 +131,13 @@ for line in sys.stdin:
         elif "TIMEOUT_EVAL" in request["message"]:
             continue  # Remain responsive to the production abort RPC.
         elif "TEACH_EVAL" in request["message"]:
-            name, method = "principle_save", "principle.save"
-            args = {"statement": "Hanbit diluted-share rule",
-                    "why": "Divide equity value by fully diluted shares including warrants."}
+            name, method = "lens_file", "lens.file"
+            args = {"pages": [{"page": {"create": {"kind": "method", "title": "Hanbit diluted-share rule"}},
+                               "ops": [{"op": "put", "key": "use-when", "heading": "Use when",
+                                        "markdown": "Valuing fictional Hanbit companies."},
+                                       {"op": "put", "key": "steps", "heading": "Steps",
+                                        "markdown": "Divide equity value by fully diluted shares including warrants."}]}],
+                    "rationale": "The user taught a reusable valuation method."}
         else:
             assert learned, "new chat host memory context did not include the learned Lens"
             name, method = "lens_read", "lens.read"
@@ -155,7 +159,7 @@ for line in sys.stdin:
             assert "citation_url" in json.dumps(reply["result"]), "host did not create citation"
         if learned:
             assert "diluted" in json.dumps(reply["result"]), "exact Lens read missing method"
-        answer = "Saved the rule." if name == "principle_save" else 'Applied saved Hanbit method: 720 / (15 + 3) = 40. {"metrics":{"fair_value_per_share":40}}'
+        answer = "Saved the rule." if name == "lens_file" else 'Applied saved Hanbit method: 720 / (15 + 3) = 40. {"metrics":{"fair_value_per_share":40}}'
         if provider_replay:
             answer = "Read the fictional Hanbit filing through provider replay."
         if replay_case:

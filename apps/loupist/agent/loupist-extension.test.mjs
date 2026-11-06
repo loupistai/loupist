@@ -32,8 +32,7 @@ const BUNDLED_COMPONENTS = [
   tool("datasets", "Datasets and local files", ["dataset_describe", "dataset_query", "dataset_export", "dataset_import"]),
   tool("calculations", "Calculations", ["calculate"]),
   tool("documents", "Markdown artifact publishing", ["artifact_publish"]),
-  tool("memory-save", "Source retention and journals", ["source_save", "note_save"]),
-  tool("lens-learning", "Memory learning", ["principle_save"]),
+  tool("memory-save", "Source retention and journals", ["source_save", "note_save", "lens_file", "principle_save"]),
   tool("charts", "Chart authoring", ["chart_query", "chart_publish"]),
   tool("world-bank", "World Bank", ["worldbank_series"], { connection: "world-bank" }),
   tool("krx", "KRX", ["krx_daily_quote"], { connection: "krx" }),
@@ -408,7 +407,7 @@ test("registers only the host allowlist, defers components, and round-trips thro
   const capabilityLoad = registered.get("capability_load");
   await capabilityLoad.execute("load-source-retention", { id: "memory-save" });
   assert(active().includes("source_save") && active().includes("note_save"));
-  assert(!active().includes("principle_save"));
+  assert(active().includes("lens_file") && active().includes("principle_save"));
   const loadedAnalysis = await capabilityLoad.execute("load-analysis", { id: "datasets" });
   assert.equal(typeof loadedAnalysis.details.tools.find((item) => item.name === "dataset_import").parameters, "object");
   const receipt = JSON.parse(loadedAnalysis.content[0].text);
@@ -591,6 +590,101 @@ test("note_save prepares misplaced and identical repeated fields but preserves c
     assert.deepEqual(definition.prepareArguments(invalid), before);
     assert.throws(() => validate(invalid));
   }
+});
+
+test("lens_file prepares a bare page id and misplaced basis refs without inventing evidence", (t) => {
+  useHostContext(t, runtimeContext("chat", ["capability_load"], BUNDLED_COMPONENTS));
+  const definition = loadExtension().registered.get("lens_file");
+  const validate = (args) => validateToolArguments(definition, { id: "file", name: definition.name, arguments: args });
+  const refs = [{ world: "rdg_world", claimId: "claim-1" }];
+  const put = { op: "put", key: "facts", heading: "Facts", markdown: "Ada described the engine." };
+  const request = (page, op) => ({ pages: [{ page, ops: [op] }], rationale: "A dated fact with its source." });
+  const canonical = request({ recordId: "rec_page" }, { ...put, basis: { refs } });
+  assert.deepEqual(validate(structuredClone(canonical)), canonical);
+  // A bare id and a bare refs array are the model's own handles in the wrong shape.
+  for (const misplaced of [
+    request("rec_page", { ...put, basis: { refs } }),
+    request({ recordId: "rec_page" }, { ...put, basis: refs }),
+    request({ recordId: "rec_page" }, { ...put, refs }),
+    request({ recordId: "rec_page" }, { ...put, basis: {}, refs }),
+    request({ recordId: "rec_page" }, { ...put, basis: { refs }, refs: structuredClone(refs) }),
+  ]) {
+    assert.throws(() => validate(structuredClone(misplaced)));
+    const prepared = definition.prepareArguments(misplaced);
+    assert.deepEqual(prepared, canonical);
+    assert.deepEqual(validate(prepared), prepared);
+  }
+  // Differing refs are never merged or chosen; the schema rejects the pair.
+  const conflict = request({ recordId: "rec_page" }, { ...put, basis: { refs }, refs: [{ said: true }] });
+  const before = structuredClone(conflict);
+  assert.deepEqual(definition.prepareArguments(conflict), before);
+  assert.throws(() => validate(conflict));
+  for (const invalid of [null, [], {}, { pages: null, rationale: "x" }, { pages: [null], rationale: "x" },
+    request({ recordId: "rec_page" }, { ...put, basis: { refs: [{ world: "rdg_world" }] } }),
+    request({ create: { kind: "subject", title: "Engine" } }, { ...put, basis: { refs }, expected: "short" })]) {
+    const unchanged = structuredClone(invalid);
+    assert.deepEqual(definition.prepareArguments(invalid), unchanged);
+    assert.throws(() => validate(invalid));
+  }
+});
+
+test("native Pi exposes the registered Lens schema after rejection and only dispatches the corrected call", async (t) => {
+  const components = BUNDLED_COMPONENTS.filter((item) => item.id === "memory-save");
+  const context = runtimeContext("chat", ["capability_load"], components);
+  const { temporary: root, path } = useHostContext(t, context);
+  context.workspace = emptyWorkspace(root);
+  writeFileSync(path, JSON.stringify(context), { mode: 0o600 });
+  const brokerCalls = await startToolBroker(t, () => ({ status: "staged", durable: false, pages: [{ title: "Product stages", kind: "method", ops: 2 }] }));
+  const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
+  const loader = new DefaultResourceLoader({ cwd: root, agentDir: root, settingsManager,
+    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+    extensionFactories: [loupistTerminalExtension] });
+  await loader.reload();
+  assert.deepEqual(loader.getExtensions().errors, []);
+  const modelRuntime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, refreshOnCreate: false });
+  const faux = fauxProvider();
+  modelRuntime.registerNativeProvider(faux.provider);
+  const ops = [
+    { op: "put", key: "use-when", heading: "Use when", markdown: "Comparing semiconductor product progress." },
+    { op: "put", key: "steps", heading: "Steps", markdown: "Separate samples, qualification, readiness, shipment and revenue; check evidence for each stage." },
+  ];
+  const request = { pages: [{ page: { create: { kind: "method", title: "Product stages" } }, ops }], rationale: "User taught a reusable method." };
+  const call = (name, input) => fauxAssistantMessage(fauxToolCall(name, input), { stopReason: "toolUse" });
+  const inspectRejection = (modelContext) => {
+    const result = modelContext.messages.findLast((item) => item.role === "toolResult");
+    assert.equal(result.toolName, "lens_file");
+    assert.equal(result.isError, true);
+    assert.equal(brokerCalls.length, 0);
+    const schema = JSON.parse(result.content.at(-1).text.split("\n").slice(1).join("\n"));
+    assert.deepEqual(schema, CATALOG.tools.find((item) => item.name === "lens_file").parameters);
+  };
+  faux.setResponses([
+    call("capability_load", { id: "memory-save" }),
+    call("lens_file", { ...request, pages: [{ page: { create: { kind: "method", title: "Product stages" } }, ops: [{ op: "put", key: "Steps" }] }] }),
+    (modelContext) => {
+      inspectRejection(modelContext);
+      return call("lens_file", { ...request, pages: [{ page: { create: { kind: "method", title: "Product stages" } }, ops, sourceReads: [] }] });
+    },
+    (modelContext) => {
+      inspectRejection(modelContext);
+      return call("lens_file", { ...request, pages: [{ page: "rec_unread", ops }] });
+    },
+    (modelContext) => {
+      const result = modelContext.messages.findLast((item) => item.role === "toolResult");
+      assert.equal(result.isError, false);
+      assert.equal(JSON.parse(result.content[0].text).status, "staged");
+      return fauxAssistantMessage("The method is staged.");
+    },
+  ]);
+  const { session } = await createAgentSession({ cwd: root, agentDir: root, modelRuntime, model: faux.getModel(),
+    settingsManager, resourceLoader: loader, sessionManager: SessionManager.inMemory(root), noTools: "builtin" });
+  t.after(() => session.dispose());
+  await session.bindExtensions({ mode: "rpc" });
+  await session.prompt("Remember the product-stage method.");
+  assert.equal(brokerCalls.length, 1, JSON.stringify(session.messages));
+  assert.equal(brokerCalls[0].method, "lens.file");
+  assert.deepEqual(brokerCalls[0].params, { ...request, pages: [{ page: { recordId: "rec_unread" }, ops }] });
+  assert.equal(session.messages.filter((item) => item.role === "toolResult" && item.isError).length, 2);
 });
 
 test("scoped dataset, finance and chart calls reach the broker unchanged and cannot forge scope", async (t) => {
