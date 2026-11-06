@@ -25,7 +25,7 @@ import {
 } from "./native-search/common.mjs";
 
 const PROTOCOL = "loupist-provider/1";
-/** The name a provider shows for this app. Pi 1.0.1 hardcodes its own. */
+/** The name a provider shows for this app (Pi's `agentName`). */
 export const LOUPIST_PROVIDER_NAME = "Loupist";
 const XAI_DEVICE_CODE_URL = "https://auth.x.ai/oauth2/device/code";
 /** The title of the paste prompt; Rust answers only this UI request. */
@@ -490,9 +490,9 @@ export default function loupistTerminalProviderExtension(pi) {
       globalThis.fetch = withLoupistSignInIdentity(previousFetch, providerId);
       try {
         // Sign in with ChatGPT names this installation by a stable ID kept in
-        // Pi's private settings directory (`ext_agent_host_id`). Pi 1.0.1
-        // ignores `agentName` and still sends its own name; Rust rewrites the
-        // page it opens. A newer Pi uses this name directly.
+        // Pi's private settings directory (`ext_agent_host_id`). Pi puts
+        // `agentName` on the page it opens (`agent_name_hint`, or Codex's
+        // `originator`), so OpenAI shows Loupist.
         const loginOptions = {};
         if (providerId === "openai") {
           const deviceId = await installationDeviceId();

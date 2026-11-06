@@ -18,7 +18,7 @@ use std::{
 };
 
 use chrono::{DateTime, NaiveDate, SecondsFormat, Utc};
-use encoding_rs::{Encoding, UTF_8};
+use encoding_rs::Encoding;
 use futures_util::StreamExt;
 use reqwest::{
     header::{ACCEPT, CONTENT_LENGTH, CONTENT_TYPE, LOCATION, USER_AGENT},
@@ -93,6 +93,8 @@ pub enum WebError {
     ResponseTooLarge,
     #[error("web response content type is not supported")]
     UnsupportedContent,
+    #[error("web page answered with a bot challenge instead of its content; read another source or the publisher's own document")]
+    Challenge,
     #[error("web response bytes do not match the declared content type")]
     TypeMismatch,
     #[error("web document has no extractable text layer")]
@@ -623,6 +625,9 @@ async fn fetch_official(
 
 async fn fetch_generic(source: &WebSource, requested: &Url) -> Result<WebFetchSnapshot, WebError> {
     let response = get_with_429_retry(requested.clone(), FETCH_ACCEPT).await?;
+    if response.challenge {
+        return Err(WebError::Challenge);
+    }
     if !response.status.is_success() {
         return Err(status_error(response.status));
     }
@@ -666,10 +671,14 @@ async fn fetch_generic(source: &WebSource, requested: &Url) -> Result<WebFetchSn
         page_count: decoded.page_count,
         content: decoded.content.clone(),
         extraction_truncated: decoded.extraction_truncated,
-        quality_warnings: quality_warnings(
-            &decoded.content,
-            decoded.extraction_method == "readability",
-        ),
+        quality_warnings: {
+            let mut warnings =
+                quality_warnings(&decoded.content, decoded.extraction_method == "readability");
+            for warning in decoded.warnings.iter().copied() {
+                push_warning(&mut warnings, warning);
+            }
+            warnings
+        },
         alternates: decoded.alternates,
         retrieved_at: now_rfc3339(),
         published_at: source.published_at.clone().or(decoded.published_at),
@@ -749,6 +758,8 @@ fn markdown_heading(markdown: &str) -> Option<String> {
 
 struct BoundedResponse {
     status: StatusCode,
+    /// `cf-mitigated: challenge`: the body is a bot challenge, not the page.
+    challenge: bool,
     content_type: String,
     final_url: Url,
     bytes: Vec<u8>,
@@ -775,13 +786,21 @@ async fn request_bounded(
         }
         return Ok(BoundedResponse {
             status: StatusCode::from_u16(response.status).map_err(|_| WebError::Provider)?,
+            challenge: false,
             content_type: response.content_type,
             final_url: url,
             bytes,
             retry_after: None,
         });
     }
+    // One budget covers every redirect hop and the body, so a redirect chain
+    // cannot multiply the caller's timeout.
+    let deadline = Instant::now() + timeout;
     for redirect_count in 0..=MAX_REDIRECTS {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(WebError::Timeout);
+        }
         #[cfg(test)]
         if let Some(scripted) = script::take(&url, accept) {
             if (300..400).contains(&scripted.status) && scripted.status != 304 {
@@ -798,6 +817,7 @@ async fn request_bounded(
             }
             return Ok(BoundedResponse {
                 status: StatusCode::from_u16(scripted.status).map_err(|_| WebError::Provider)?,
+                challenge: scripted.challenge,
                 content_type: scripted.content_type,
                 final_url: url,
                 bytes: scripted.body,
@@ -814,8 +834,8 @@ async fn request_bounded(
         let client = Client::builder()
             .redirect(Policy::none())
             .no_proxy()
-            .connect_timeout(Duration::from_secs(5))
-            .timeout(timeout)
+            .connect_timeout(Duration::from_secs(5).min(remaining))
+            .timeout(remaining)
             .resolve_to_addrs(&host, &addresses)
             .build()
             .map_err(|_| WebError::Provider)?;
@@ -861,6 +881,11 @@ async fn request_bounded(
         let status = response.status();
         let retry_after =
             parse_retry_after_header(response.headers().get(reqwest::header::RETRY_AFTER));
+        let challenge = response
+            .headers()
+            .get("cf-mitigated")
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.trim().eq_ignore_ascii_case("challenge"));
         let final_url = response.url().clone();
         let mut stream = response.bytes_stream();
         let mut bytes = Vec::new();
@@ -873,6 +898,7 @@ async fn request_bounded(
         }
         return Ok(BoundedResponse {
             status,
+            challenge,
             content_type,
             final_url,
             bytes,
@@ -967,6 +993,10 @@ fn mcp_text(body: &str) -> Result<String, WebError> {
         let Ok(value) = serde_json::from_str::<Value>(candidate) else {
             continue;
         };
+        // Exa's keyless endpoint reports throttling inside a 200 response.
+        if value["result"]["_meta"]["ai.exa/rateLimited"] == Value::Bool(true) {
+            return Err(WebError::RateLimited { retry_after: None });
+        }
         if value.get("error").is_some() || value["result"]["isError"] == Value::Bool(true) {
             return Err(WebError::Provider);
         }
@@ -996,8 +1026,7 @@ fn parse_search_results(text: &str) -> Result<Vec<WebSource>, WebError> {
                     .title
                     .as_deref()
                     .filter(|value| !value.trim().is_empty())
-                    .unwrap_or("Untitled source");
-                let title = bounded_text(title, 512);
+                    .map_or_else(|| untitled_label(&url), |title| bounded_text(title, 512));
                 let snippet = result
                     .highlights
                     .filter(|items| !items.is_empty())
@@ -1023,9 +1052,17 @@ fn parse_search_results(text: &str) -> Result<Vec<WebSource>, WebError> {
     let mut sources = Vec::new();
     for block in text.split("\nTitle: ") {
         let block = block.strip_prefix("Title: ").unwrap_or(block);
-        let mut lines = block.lines();
-        let title = lines.next().unwrap_or("Untitled source").trim();
-        let url = block
+        // Metadata lines come before the page text; a "URL:" or "Published:"
+        // line quoted inside that text says nothing about this result.
+        let header_end = ["\nText: ", "\nHighlights:"]
+            .iter()
+            .filter_map(|marker| block.find(marker))
+            .min()
+            .unwrap_or(block.len());
+        let header = &block[..header_end];
+        let mut lines = header.lines();
+        let title = lines.next().unwrap_or("").trim();
+        let url = header
             .lines()
             .find_map(|line| line.strip_prefix("URL: "))
             .map(str::trim);
@@ -1040,14 +1077,19 @@ fn parse_search_results(text: &str) -> Result<Vec<WebSource>, WebError> {
             .unwrap_or("")
             .trim_end_matches("\n---")
             .trim();
-        let published_at = block
+        let published_at = header
             .lines()
             .find_map(|line| line.strip_prefix("Published: "))
             .map(str::trim)
             .filter(|value| !value.is_empty() && *value != "N/A")
             .map(|value| bounded_text(value, 128));
+        let title = if title.is_empty() {
+            untitled_label(url)
+        } else {
+            bounded_text(title, 512)
+        };
         sources.push(web_source(
-            bounded_text(title, 512),
+            title,
             url.to_owned(),
             bounded_text(snippet, 2_000),
             published_at,
@@ -1063,6 +1105,15 @@ fn parse_search_results(text: &str) -> Result<Vec<WebSource>, WebError> {
     } else {
         Ok(sources)
     }
+}
+
+/// A result without a title is labeled by its host, not a generic placeholder.
+fn untitled_label(url: &str) -> String {
+    Url::parse(url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_owned))
+        .filter(|host| !host.is_empty())
+        .unwrap_or_else(|| "Untitled source".into())
 }
 
 pub fn source_from_url(value: &str) -> Result<WebSource, WebError> {
@@ -1104,6 +1155,8 @@ struct DecodedContent {
     extraction_truncated: bool,
     alternates: Vec<WebAlternate>,
     published_at: Option<String>,
+    /// Decoding notes the content itself cannot show (see `quality_warnings`).
+    warnings: Vec<&'static str>,
 }
 
 fn decode_fetched_content(
@@ -1144,6 +1197,7 @@ fn decode_fetched_content(
             extraction_truncated: extracted.truncated,
             alternates: Vec::new(),
             published_at: None,
+            warnings: Vec::new(),
         });
     }
     if !is_text_content_type(content_type)
@@ -1151,22 +1205,41 @@ fn decode_fetched_content(
     {
         return Err(WebError::UnsupportedContent);
     }
-    let (text, charset) = decode_web_text(bytes, raw_content_type)?;
-    if !is_probably_text(&text) {
-        return Err(WebError::UnsupportedContent);
-    }
     let declared_html = matches!(content_type, "text/html" | "application/xhtml+xml");
     let sniff_html = matches!(content_type, "" | "application/octet-stream")
         && crate::web::document::looks_like_html(bytes);
     let html = declared_html || sniff_html;
-    let published_at = html.then(|| html_publication_time(&text)).flatten();
-    let (title, content, extraction_method, alternates) = if html {
-        let (title, content) = crate::web::document::extract_html(&text, fallback_title);
+    let decoded = decode_web_text(bytes, raw_content_type, html, base_url.host_str())?;
+    let text = decoded.text;
+    if !is_probably_text(&text) {
+        return Err(WebError::UnsupportedContent);
+    }
+    let mut warnings = Vec::new();
+    if decoded.replaced {
+        warnings.push("decoding_replaced");
+    }
+    let (title, content, extraction_method, alternates, published_at) = if html {
+        let document = Html::parse_document(&text);
+        if is_challenge_page(&document, &text) {
+            return Err(WebError::Challenge);
+        }
+        let page = crate::web::document::extract_html_page(&text, fallback_title);
+        // Prefer the explicit Open Graph / microdata tags; then the page's
+        // JSON-LD publication the readability parser found.
+        let published_at = html_publication_time(&document).or_else(|| {
+            page.published_time
+                .as_deref()
+                .and_then(normalized_publication_time)
+        });
+        if is_script_shell(&document, &page.markdown) {
+            warnings.push("javascript_required");
+        }
         (
-            title,
-            content,
+            page.title,
+            page.markdown,
             "readability",
-            collect_alternates(&text, base_url),
+            collect_alternates(&document, base_url),
+            published_at,
         )
     } else {
         let extraction_method = if content_type == "text/markdown" {
@@ -1179,6 +1252,7 @@ fn decode_fetched_content(
             text,
             extraction_method,
             Vec::new(),
+            None,
         )
     };
     if content.trim().is_empty() {
@@ -1188,7 +1262,7 @@ fn decode_fetched_content(
     Ok(DecodedContent {
         title,
         content,
-        charset: Some(charset),
+        charset: Some(decoded.charset),
         document_kind: if html {
             "html".to_owned()
         } else {
@@ -1199,13 +1273,11 @@ fn decode_fetched_content(
         extraction_truncated,
         alternates,
         published_at,
+        warnings,
     })
 }
 
-fn html_publication_time(text: &str) -> Option<String> {
-    use scraper::{Html, Selector};
-
-    let document = Html::parse_document(text);
+fn html_publication_time(document: &Html) -> Option<String> {
     let selector = Selector::parse(
         "meta[property='article:published_time'], meta[itemprop='datePublished'], time[itemprop='datePublished']",
     )
@@ -1216,19 +1288,71 @@ fn html_publication_time(text: &str) -> Option<String> {
             .attr("content")
             .or_else(|| element.value().attr("datetime"))?
             .trim();
-        if value.len() > 128 {
-            return None;
-        }
-        chrono::DateTime::parse_from_rfc3339(value)
-            .map(|time| time.to_rfc3339())
-            .ok()
-            .or_else(|| {
-                (value.len() == 10)
-                    .then(|| chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").ok())
-                    .flatten()
-                    .map(|date| date.to_string())
-            })
+        normalized_publication_time(value)
     })
+}
+
+/// An RFC 3339 time or a bare `YYYY-MM-DD` date, normalized; anything else
+/// is unknown rather than guessed.
+fn normalized_publication_time(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.len() > 128 {
+        return None;
+    }
+    chrono::DateTime::parse_from_rfc3339(value)
+        .or_else(|_| chrono::DateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%z"))
+        .map(|time| time.to_rfc3339())
+        .ok()
+        .or_else(|| {
+            (value.len() == 10)
+                .then(|| chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").ok())
+                .flatten()
+                .map(|date| date.to_string())
+        })
+}
+
+/// Cloudflare's "Just a moment..." interstitial: a script challenge that a
+/// host-side reader can never pass, so its text is not the page.
+fn is_challenge_page(document: &Html, text: &str) -> bool {
+    let title = Selector::parse("title")
+        .ok()
+        .and_then(|selector| document.select(&selector).next())
+        .map(|title| title.text().collect::<String>())
+        .unwrap_or_default();
+    title.trim().eq_ignore_ascii_case("just a moment...")
+        && (text.contains("window._cf_chl_opt") || text.contains("/cdn-cgi/challenge-platform/"))
+}
+
+/// A page whose readable text is tiny but that ships several executable
+/// scripts is a client-rendered shell; its extracted text is not the page.
+/// JSON-LD and template scripts do not run, so they do not count.
+fn is_script_shell(document: &Html, extracted: &str) -> bool {
+    let visible = extracted
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .count();
+    if visible >= 500 {
+        return false;
+    }
+    let Ok(selector) = Selector::parse("script") else {
+        return false;
+    };
+    let executable = document
+        .select(&selector)
+        .filter(|script| {
+            let kind = script
+                .value()
+                .attr("type")
+                .unwrap_or("")
+                .trim()
+                .to_ascii_lowercase();
+            kind.is_empty()
+                || kind == "module"
+                || kind.ends_with("/javascript")
+                || kind.ends_with("/ecmascript")
+        })
+        .count();
+    executable > 3
 }
 
 fn quality_warnings(content: &str, html_extract: bool) -> Vec<&'static str> {
@@ -1273,8 +1397,7 @@ fn is_navigation_heavy(content: &str) -> bool {
     link_count.saturating_mul(4) > words
 }
 
-fn collect_alternates(html: &str, base_url: &Url) -> Vec<WebAlternate> {
-    let document = Html::parse_document(html);
+fn collect_alternates(document: &Html, base_url: &Url) -> Vec<WebAlternate> {
     let mut seen = HashSet::new();
     let mut markdown = Vec::new();
     let mut documents = Vec::new();
@@ -1387,8 +1510,28 @@ fn document_error(error: crate::web::document::DocumentError) -> WebError {
     }
 }
 
-fn decode_web_text(bytes: &[u8], content_type: &str) -> Result<(String, String), WebError> {
-    let declared = content_type.split(';').skip(1).find_map(|parameter| {
+struct DecodedText {
+    text: String,
+    charset: String,
+    /// Some bytes were not valid in the chosen encoding and became U+FFFD.
+    replaced: bool,
+}
+
+/// Decode web text the way a browser picks its encoding: a byte-order mark,
+/// then the HTTP `charset`, then (HTML only) a `<meta>` charset in the first
+/// 1024 bytes, then UTF-8. Text that declares nothing and is not UTF-8 —
+/// common for Korean and Japanese pages and CSV downloads — gets
+/// chardetng's guess, hinted by the host's top-level domain.
+fn decode_web_text(
+    bytes: &[u8],
+    content_type: &str,
+    html: bool,
+    host: Option<&str>,
+) -> Result<DecodedText, WebError> {
+    if let Some((encoding, bom_length)) = Encoding::for_bom(bytes) {
+        return decode_with(encoding, &bytes[bom_length..]).ok_or(WebError::UnsupportedContent);
+    }
+    let header = content_type.split(';').skip(1).find_map(|parameter| {
         let (name, value) = parameter.split_once('=')?;
         name.trim().eq_ignore_ascii_case("charset").then(|| {
             value
@@ -1396,19 +1539,101 @@ fn decode_web_text(bytes: &[u8], content_type: &str) -> Result<(String, String),
                 .trim_matches(|character| matches!(character, '\'' | '"'))
         })
     });
-    let declared_encoding = match declared {
-        Some(label) => {
-            Some(Encoding::for_label(label.as_bytes()).ok_or(WebError::UnsupportedContent)?)
+    // An unknown label is ignored, as browsers do, rather than failing the page.
+    let declared = header
+        .and_then(|label| Encoding::for_label(label.as_bytes()))
+        .or_else(|| html.then(|| html_meta_charset(bytes)).flatten());
+    if let Some(encoding) = declared {
+        if let Some(decoded) = decode_with(encoding, bytes) {
+            return Ok(decoded);
         }
-        None => None,
-    };
-    let (encoding, bom_length) = Encoding::for_bom(bytes)
-        .or_else(|| declared_encoding.map(|encoding| (encoding, 0)))
-        .unwrap_or((UTF_8, 0));
-    let text = encoding
-        .decode_without_bom_handling_and_without_replacement(&bytes[bom_length..])
-        .ok_or(WebError::UnsupportedContent)?;
-    Ok((text.into_owned(), encoding.name().to_ascii_lowercase()))
+    } else if let Ok(text) = std::str::from_utf8(bytes) {
+        return Ok(DecodedText {
+            text: text.to_owned(),
+            charset: "utf-8".into(),
+            replaced: false,
+        });
+    }
+    // Nothing declared and not UTF-8, or a declaration the bytes contradict.
+    let mut detector = chardetng::EncodingDetector::new(chardetng::Iso2022JpDetection::Deny);
+    detector.feed(bytes, true);
+    let tld = host
+        .and_then(|host| host.trim_end_matches('.').rsplit('.').next())
+        .map(str::as_bytes);
+    let guessed = detector.guess(tld, chardetng::Utf8Detection::Allow);
+    if Some(guessed) == declared {
+        return Err(WebError::UnsupportedContent);
+    }
+    decode_with(guessed, bytes).ok_or(WebError::UnsupportedContent)
+}
+
+/// Decode with replacement. A handful of broken bytes should not lose a page,
+/// but text that is mostly replacement characters was not in this encoding.
+fn decode_with(encoding: &'static Encoding, bytes: &[u8]) -> Option<DecodedText> {
+    let (text, had_errors) = encoding.decode_without_bom_handling(bytes);
+    if had_errors {
+        let mut total = 0usize;
+        let mut replaced = 0usize;
+        for character in text.chars() {
+            total += 1;
+            replaced += usize::from(character == char::REPLACEMENT_CHARACTER);
+        }
+        if replaced.saturating_mul(200) > total.max(1) {
+            return None;
+        }
+    }
+    Some(DecodedText {
+        text: text.into_owned(),
+        charset: encoding.name().to_ascii_lowercase(),
+        replaced: had_errors,
+    })
+}
+
+/// The `<meta charset>` or `<meta http-equiv content="...; charset=...">`
+/// label in the first 1024 bytes (the WHATWG prescan window).
+fn html_meta_charset(bytes: &[u8]) -> Option<&'static Encoding> {
+    let head = bytes[..bytes.len().min(1024)].to_ascii_lowercase();
+    let mut cursor = 0;
+    while let Some(start) = find_bytes(&head[cursor..], b"<meta") {
+        let tag_start = cursor + start + 5;
+        let tag_end = head[tag_start..]
+            .iter()
+            .position(|byte| *byte == b'>')
+            .map_or(head.len(), |end| tag_start + end);
+        let tag = &head[tag_start..tag_end];
+        cursor = tag_end;
+        let Some(position) = find_bytes(tag, b"charset") else {
+            continue;
+        };
+        let value = tag[position + 7..].trim_ascii_start();
+        let Some(value) = value.strip_prefix(b"=") else {
+            continue;
+        };
+        let value = value.trim_ascii_start();
+        let value = value
+            .strip_prefix(b"\"")
+            .or_else(|| value.strip_prefix(b"'"))
+            .unwrap_or(value);
+        let length = value
+            .iter()
+            .position(|byte| byte.is_ascii_whitespace() || b";/>\"'".contains(byte))
+            .unwrap_or(value.len());
+        if let Some(encoding) = Encoding::for_label(&value[..length]) {
+            // A meta UTF-16 label inside ASCII-compatible bytes means UTF-8.
+            return Some(if encoding == encoding_rs::X_USER_DEFINED {
+                encoding_rs::WINDOWS_1252
+            } else {
+                encoding.output_encoding()
+            });
+        }
+    }
+    None
+}
+
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
 }
 
 fn is_probably_text(value: &str) -> bool {
@@ -1560,6 +1785,7 @@ pub(crate) mod script {
         pub body: Vec<u8>,
         pub retry_after: Option<String>,
         pub location: Option<String>,
+        pub challenge: bool,
     }
 
     struct Route {
@@ -1618,6 +1844,7 @@ pub(crate) mod script {
             if url_s.contains(&route.needle) {
                 if route.next >= route.responses.len() {
                     return Some(ScriptedResponse {
+                        challenge: false,
                         status: 500,
                         content_type: "text/plain".into(),
                         body: b"script exhausted".to_vec(),
@@ -1648,6 +1875,7 @@ pub(crate) mod script {
 
     pub fn ok(content_type: &str, body: impl Into<Vec<u8>>) -> ScriptedResponse {
         ScriptedResponse {
+            challenge: false,
             status: 200,
             content_type: content_type.to_owned(),
             body: body.into(),
@@ -1725,6 +1953,36 @@ mod tests {
         for empty in [r#"{"results":[]}"#, "No relevant results found."] {
             assert!(parse_search_results(empty).unwrap().is_empty());
         }
+
+        // Only the result header carries metadata; quoted page text cannot
+        // date a result or replace its URL, and an untitled hit names its host.
+        let quoted = "Title: \nURL: https://news.example.com/a\nPublished: 2026-03-01T00:00:00.000Z\nText: The memo said\nPublished: 1999-01-01\nURL: https://evil.example/\n---";
+        let parsed = parse_search_results(quoted).unwrap();
+        assert_eq!(parsed[0].url, "https://news.example.com/a");
+        assert_eq!(parsed[0].title, "news.example.com");
+        assert_eq!(
+            parsed[0].published_at.as_deref(),
+            Some("2026-03-01T00:00:00.000Z")
+        );
+        let undated = parse_search_results(
+            "Title: Memo\nURL: https://example.com/m\nText: Published: 2020-01-01\n---",
+        )
+        .unwrap();
+        assert_eq!(undated[0].published_at, None);
+        let json = parse_search_results(
+            r#"{"results":[{"url":"https://ir.example.com/q3","title":" "}]}"#,
+        )
+        .unwrap();
+        assert_eq!(json[0].title, "ir.example.com");
+    }
+
+    #[test]
+    fn exa_rate_limit_inside_a_successful_response_is_rate_limited() {
+        let throttled = r#"{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"You've hit Exa's free MCP rate limit."}],"isError":true,"_meta":{"ai.exa/rateLimited":true}}}"#;
+        assert!(matches!(
+            mcp_text(throttled),
+            Err(WebError::RateLimited { retry_after: None })
+        ));
     }
 
     #[test]
@@ -1791,6 +2049,119 @@ mod tests {
             &base,
         )
         .is_err());
+    }
+
+    #[test]
+    fn decodes_undeclared_legacy_korean_pages_and_tolerates_a_few_bad_bytes() {
+        let (korean, _, _) =
+            encoding_rs::EUC_KR.encode("삼성전자 2025년 영업이익은 12.166조 원입니다.");
+        let base = Url::parse("https://finance.example.co.kr/report").unwrap();
+        // A `<meta>` charset in an HTML page served without a header charset.
+        let mut page = b"<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=euc-kr\"><title>Report</title></head><body><article><p>".to_vec();
+        page.extend_from_slice(&korean);
+        page.extend_from_slice(b"</p></article></body></html>");
+        let html =
+            decode_fetched_content(&page, "text/html", "text/html", "fallback", &base).unwrap();
+        assert_eq!(html.charset.as_deref(), Some("euc-kr"));
+        assert!(html.content.contains("영업이익은 12.166조 원"));
+        assert!(html.warnings.is_empty());
+
+        // A CSV download with no charset anywhere: the detector reads it.
+        let mut csv = b"name,value\n".to_vec();
+        csv.extend_from_slice(&korean);
+        csv.extend_from_slice(b",1\n");
+        let download =
+            decode_fetched_content(&csv, "text/csv", "text/csv", "data.csv", &base).unwrap();
+        assert!(
+            download.content.contains("삼성전자"),
+            "{}",
+            download.content
+        );
+
+        // An unknown header label is ignored rather than failing the page.
+        let unknown = decode_fetched_content(
+            "plain text 한국어".as_bytes(),
+            "text/plain; charset=x-not-a-charset",
+            "text/plain",
+            "fallback",
+            &base,
+        )
+        .unwrap();
+        assert_eq!(unknown.content, "plain text 한국어");
+
+        // One stray byte in otherwise valid UTF-8 is replaced and reported.
+        let mut mostly = "영업이익 ".repeat(200).into_bytes();
+        mostly.push(0xff);
+        let lossy = decode_fetched_content(
+            &mostly,
+            "text/plain; charset=utf-8",
+            "text/plain",
+            "fallback",
+            &base,
+        )
+        .unwrap();
+        assert!(lossy.content.contains('\u{FFFD}'));
+        assert_eq!(lossy.warnings, ["decoding_replaced"]);
+    }
+
+    #[tokio::test]
+    async fn bot_challenges_fail_clearly_instead_of_returning_the_interstitial() {
+        let interstitial = "<html><head><title>Just a moment...</title></head><body><script>window._cf_chl_opt={cType:'managed'};</script><p>Checking your browser.</p></body></html>";
+        let mut by_header = script::ok("text/html", b"<html><body>blocked</body></html>".to_vec());
+        by_header.status = 403;
+        by_header.challenge = true;
+        let _guard = script::install(vec![
+            (
+                "https://blocked.example.com/body",
+                vec![script::ok("text/html", interstitial.as_bytes().to_vec())],
+            ),
+            ("https://blocked.example.com/header", vec![by_header]),
+        ]);
+        for path in ["body", "header"] {
+            let source = source_from_url(&format!("https://blocked.example.com/{path}")).unwrap();
+            assert!(
+                matches!(fetch(&source).await, Err(WebError::Challenge)),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn client_rendered_shells_warn_but_short_static_pages_do_not() {
+        let base = Url::parse("https://app.example.com/").unwrap();
+        let scripts = "<script src=\"/a.js\"></script><script type=\"module\" src=\"/b.js\"></script><script>boot()</script><script src=\"/c.js\"></script>";
+        let shell = format!("<html><head><title>Quote</title>{scripts}</head><body><div id=\"root\">Loading quote</div></body></html>");
+        let decoded =
+            decode_fetched_content(shell.as_bytes(), "text/html", "text/html", "Quote", &base)
+                .unwrap();
+        assert!(decoded.warnings.contains(&"javascript_required"));
+
+        let data_only = "<script type=\"application/ld+json\">{}</script>".repeat(6);
+        let static_page = format!("<html><head><title>Notice</title>{data_only}</head><body><article><p>The annual meeting is on 3 March.</p></article></body></html>");
+        let decoded = decode_fetched_content(
+            static_page.as_bytes(),
+            "text/html",
+            "text/html",
+            "Notice",
+            &base,
+        )
+        .unwrap();
+        assert!(!decoded.warnings.contains(&"javascript_required"));
+    }
+
+    #[test]
+    fn meta_charset_prescan_reads_both_forms_and_maps_utf16_to_utf8() {
+        assert_eq!(
+            html_meta_charset(b"<!doctype html><META CHARSET='Shift_JIS'>"),
+            Some(encoding_rs::SHIFT_JIS)
+        );
+        assert_eq!(
+            html_meta_charset(b"<meta name=x><meta charset=utf-16>"),
+            Some(encoding_rs::UTF_8)
+        );
+        assert_eq!(html_meta_charset(b"<meta name=\"charset\">"), None);
+        let late = format!("{}<meta charset=euc-kr>", " ".repeat(1024));
+        assert_eq!(html_meta_charset(late.as_bytes()), None);
     }
 
     #[test]
@@ -1889,6 +2260,7 @@ mod tests {
             "https://example.com/limited",
             vec![
                 script::ScriptedResponse {
+                    challenge: false,
                     status: 429,
                     content_type: "text/plain".into(),
                     body: b"slow down".to_vec(),
@@ -1922,6 +2294,14 @@ mod tests {
             ),
             (
                 r#"<meta property="article:published_time" content="not-a-date">"#,
+                None,
+            ),
+            (
+                r#"<script type="application/ld+json">{"@context":"https://schema.org","@type":"NewsArticle","headline":"Report","datePublished":"2026-04-24T18:30:00+0900","dateModified":"2026-04-27T09:00:00Z"}</script>"#,
+                Some("2026-04-24T18:30:00+09:00"),
+            ),
+            (
+                r#"<script type="application/ld+json">{"@context":"https://schema.org","@type":"NewsArticle","dateModified":"2026-04-27T09:00:00Z"}</script>"#,
                 None,
             ),
         ] {
@@ -2007,6 +2387,7 @@ mod tests {
             (
                 "en.wikipedia.org/w/api.php",
                 vec![script::ScriptedResponse {
+                    challenge: false,
                     status: 302,
                     content_type: String::new(),
                     body: Vec::new(),

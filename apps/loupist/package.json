@@ -57,8 +57,8 @@
     "vega-embed": "^7.3.0"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "1.0.1",
-    "@earendil-works/pi-coding-agent": "1.0.1",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-coding-agent": "1.5.0",
     "@tauri-apps/cli": "2.12.4",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
@@ -79,13 +79,13 @@
     "@earendil-works/pi-coding-agent": {
       "undici": "8.12.3"
     },
-    "@earendil-works/chord": "1.0.1",
-    "@earendil-works/pi-agent-core": "1.0.1",
-    "@earendil-works/pi-ai": "1.0.1",
-    "@earendil-works/pi-codemode": "1.0.1",
-    "@earendil-works/pi-mcp": "1.0.1",
-    "@earendil-works/pi-tui": "1.0.1",
-    "@earendil-works/pi-telemetry": "1.0.1",
+    "@earendil-works/pi-agent-core": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-codemode": "1.5.0",
+    "@earendil-works/pi-mcp": "1.5.0",
+    "@earendil-works/pi-schema": "1.5.0",
+    "@earendil-works/pi-tui": "1.5.0",
+    "@earendil-works/pi-telemetry": "1.5.0",
     "minimatch": "11.0.4"
   }
 }

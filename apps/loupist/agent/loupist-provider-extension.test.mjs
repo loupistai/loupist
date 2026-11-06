@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
-import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
+import { builtinProviders, getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 
 test("keeps provider-result nofollow protection off Windows only", async () => {
   const moduleUrl = `${pathToFileURL(join(import.meta.dirname, "loupist-provider-extension.mjs"))}?nofollow=${Date.now()}`;
@@ -567,6 +567,40 @@ test("sign-in failures map to fixed reasons", async () => {
   ]) {
     assert.equal(loginFailureReason(new Error(message)), reason, message);
   }
+});
+
+test("Pi's own OpenAI sign-in pages name Loupist from agentName", async () => {
+  // The real Pi flows, stopped at the page they would open: no network request.
+  const signInPage = async (providerId, method) => {
+    const controller = new AbortController();
+    let page;
+    const interaction = {
+      signal: controller.signal,
+      notify: (event) => {
+        if (event.type === "auth_url") {
+          page = event.url;
+          controller.abort();
+        }
+      },
+      prompt: (request) => request.type === "select" ? Promise.resolve(method) : new Promise((_, reject) => {
+        const cancel = () => reject(new Error("Login cancelled"));
+        if (controller.signal.aborted) cancel();
+        else controller.signal.addEventListener("abort", cancel, { once: true });
+      }),
+    };
+    const oauth = builtinProviders().find((provider) => provider.id === providerId).auth.oauth;
+    await assert.rejects(oauth.login(interaction, {
+      agentName: "Loupist",
+      getDeviceId: () => "11111111-2222-3333-4444-555555555555",
+    }), /Login cancelled/u);
+    return new URL(page);
+  };
+  const chatgpt = await signInPage("openai");
+  assert.equal(chatgpt.host, "auth.openai.com");
+  assert.equal(chatgpt.searchParams.get("agent_name_hint"), "Loupist");
+  const codex = await signInPage("openai-codex", "browser");
+  assert.equal(codex.host, "auth.openai.com");
+  assert.equal(codex.searchParams.get("originator"), "Loupist");
 });
 
 test("Sign in with ChatGPT receives a stable installation ID from Pi's settings", async (t) => {

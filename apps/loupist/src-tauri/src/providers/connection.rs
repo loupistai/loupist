@@ -1402,56 +1402,14 @@ fn valid_user_code(code: &str) -> bool {
             .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
-/// The name OpenAI shows for this app. Pi 1.0.1 hardcodes its own name and
-/// ignores a caller-supplied agent name, so the page Loupist opens is renamed
-/// here. Other query parameters stay byte for byte.
-const OPENAI_SIGN_IN_NAME: &str = "Loupist";
-
-fn openai_sign_in_presented_as_loupist(url: &str) -> String {
-    let Some((base, query)) = url.split_once('?') else {
-        return url.to_owned();
-    };
-    let Ok(parsed) = reqwest::Url::parse(url) else {
-        return url.to_owned();
-    };
-    if parsed.host_str() != Some("auth.openai.com") {
-        return url.to_owned();
-    }
-    let mut changed = false;
-    let query = query
-        .split('&')
-        .map(|pair| match pair.split_once('=') {
-            Some((key, value))
-                if (key == "agent_name_hint" || key == "originator")
-                    && value != OPENAI_SIGN_IN_NAME =>
-            {
-                changed = true;
-                format!("{key}={OPENAI_SIGN_IN_NAME}")
-            }
-            _ => pair.to_owned(),
-        })
-        .collect::<Vec<_>>()
-        .join("&");
-    if changed {
-        format!("{base}?{query}")
-    } else {
-        url.to_owned()
-    }
-}
-
-/// Records the sign-in page on the lease and opens it. A browser that cannot
+/// Records the sign-in page on the lease and opens it, exactly as Pi wrote it
+/// (Pi names Loupist on OpenAI's page from `agentName`). A browser that cannot
 /// open does not end the sign-in: the renderer offers the link to copy.
-/// Returns the page that was stored, which for OpenAI names Loupist.
-fn present_sign_in_page(
-    admission: &ProviderSupportLease,
-    url: &str,
-) -> Result<(bool, String), CommandError> {
-    let url = openai_sign_in_presented_as_loupist(url);
-    validate_authorization_url(&url)?;
-    admission.set_oauth_authorization_url(url.clone())?;
+fn present_sign_in_page(admission: &ProviderSupportLease, url: &str) -> Result<bool, CommandError> {
+    validate_authorization_url(url)?;
+    admission.set_oauth_authorization_url(url.to_owned())?;
     // Unit tests exercise the event path without launching a browser.
-    let opened = cfg!(test) || crate::web::external_browser::open(&url).is_ok();
-    Ok((opened, url))
+    Ok(cfg!(test) || crate::web::external_browser::open(url).is_ok())
 }
 
 fn handle_provider_event(
@@ -1464,7 +1422,7 @@ fn handle_provider_event(
             let _ = instructions;
             let session = oauth
                 .ok_or_else(|| CommandError::internal("unexpected OAuth authorization event"))?;
-            let (opened, url) = present_sign_in_page(admission, &url)?;
+            let opened = present_sign_in_page(admission, &url)?;
             send_event(
                 session.events,
                 ProviderConnectionEvent::OpeningBrowser {
@@ -1484,7 +1442,7 @@ fn handle_provider_event(
             if !valid_user_code(&user_code) {
                 return Err(CommandError::internal("Pi returned an invalid device code"));
             }
-            let (_opened, verification_uri) = present_sign_in_page(admission, &verification_uri)?;
+            present_sign_in_page(admission, &verification_uri)?;
             send_event(
                 session.events,
                 ProviderConnectionEvent::DeviceCode {
@@ -1616,40 +1574,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn openai_sign_in_replaces_pi_and_keeps_the_rest_of_the_page() {
-        let chatgpt = "https://auth.openai.com/api/accounts/authorize?client_id=dynamic_agent_client&agent_name_hint=Pi&ext_agent_host_id=urn%3Auuid%3Aabc&scope=openid+profile&state=state-value&code_challenge=challenge-value&redirect_uri=http%3A%2F%2F127.0.0.1%3A1455%2Fauth%2Fcallback";
-        let shown = openai_sign_in_presented_as_loupist(chatgpt);
-        assert!(shown.contains("agent_name_hint=Loupist"), "{shown}");
-        assert!(!shown.contains("agent_name_hint=Pi"), "{shown}");
-        assert!(
-            shown.contains("ext_agent_host_id=urn%3Auuid%3Aabc"),
-            "{shown}"
-        );
-        assert!(shown.contains("scope=openid+profile"), "{shown}");
-        assert!(shown.contains("state=state-value"), "{shown}");
-        assert!(shown.contains("code_challenge=challenge-value"), "{shown}");
-        assert!(
-            shown.contains("redirect_uri=http%3A%2F%2F127.0.0.1%3A1455%2Fauth%2Fcallback"),
-            "{shown}"
-        );
-        assert_eq!(openai_sign_in_presented_as_loupist(&shown), shown);
-
-        let codex = "https://auth.openai.com/oauth/authorize?client_id=app&originator=pi&state=abc";
-        let codex_shown = openai_sign_in_presented_as_loupist(codex);
-        assert!(codex_shown.contains("originator=Loupist"), "{codex_shown}");
-        assert!(codex_shown.contains("client_id=app"), "{codex_shown}");
-        assert!(codex_shown.contains("state=abc"), "{codex_shown}");
-        assert!(!codex_shown.contains("originator=pi"), "{codex_shown}");
-
-        let claude = "https://claude.ai/oauth/authorize?client_id=test&agent_name_hint=Pi";
-        assert_eq!(openai_sign_in_presented_as_loupist(claude), claude);
-        let device = "https://accounts.x.ai/oauth2/device?user_code=ABCD";
-        assert_eq!(openai_sign_in_presented_as_loupist(device), device);
-    }
-
     #[tokio::test]
-    async fn chatgpt_sign_in_page_stored_for_the_browser_names_loupist() {
+    async fn chatgpt_sign_in_page_is_stored_exactly_as_pi_wrote_it() {
         let coordinator = crate::providers::support::ProviderSupportCoordinator::default();
         let admission = coordinator.acquire_oauth().await.unwrap();
         let (channel, _events) = capture_channel();
@@ -1660,7 +1586,7 @@ mod tests {
             answers,
             failure: std::sync::Mutex::new(None),
         };
-        let original = "https://auth.openai.com/api/accounts/authorize?client_id=dynamic_agent_client&agent_name_hint=Pi&ext_agent_host_id=urn%3Auuid%3Aabc&state=state-value";
+        let original = "https://auth.openai.com/api/accounts/authorize?client_id=dynamic_agent_client&agent_name_hint=Loupist&ext_agent_host_id=urn%3Auuid%3Aabc&state=state-value";
         let event = provider_event(&notify(serde_json::json!({
             "type": "authorization_url",
             "url": original,
@@ -1670,13 +1596,7 @@ mod tests {
         .unwrap();
         handle_provider_event(event, Some(&session), &admission).unwrap();
         let stored = coordinator.oauth_authorization_url().unwrap();
-        assert!(stored.contains("agent_name_hint=Loupist"), "{stored}");
-        assert!(!stored.contains("=Pi"), "{stored}");
-        assert!(
-            stored.contains("ext_agent_host_id=urn%3Auuid%3Aabc"),
-            "{stored}"
-        );
-        assert!(stored.contains("state=state-value"), "{stored}");
+        assert_eq!(stored, original);
         assert!(validate_authorization_url(&stored).is_ok(), "{stored}");
     }
 

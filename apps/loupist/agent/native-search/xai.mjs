@@ -24,6 +24,14 @@ function collectAnnotationSources(annotations, sources) {
   }
 }
 
+/** xAI lists a source either as a bare URL string or as an object. */
+function addLinkedSource(sources, source) {
+  const url = typeof source === "string" ? source : source?.url ?? source?.source_website_url;
+  if (typeof url !== "string") return;
+  const title = typeof source === "string" ? url : source.title ?? source.caption ?? url;
+  addSource(sources, { title, url });
+}
+
 export function parseXaiSearchResponse(response) {
   if (!response || typeof response !== "object") {
     throw new NativeSearchError("malformed", "xAI search response is invalid");
@@ -41,15 +49,11 @@ export function parseXaiSearchResponse(response) {
     invoked = true;
     for (const group of [item.action?.sources, item.sources, item.results]) {
       if (!Array.isArray(group)) continue;
-      for (const source of group) {
-        const url = source?.url ?? source?.source_website_url;
-        if (typeof url !== "string") continue;
-        addSource(sources, { title: source.title ?? source.caption ?? url, url });
-      }
+      for (const source of group) addLinkedSource(sources, source);
     }
   }
-  for (const url of Array.isArray(response.citations) ? response.citations : []) {
-    if (typeof url === "string") addSource(sources, { title: url, url });
+  for (const citation of Array.isArray(response.citations) ? response.citations : []) {
+    addLinkedSource(sources, citation);
   }
   if (!invoked) {
     throw new NativeSearchError(

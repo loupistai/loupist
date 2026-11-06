@@ -9,15 +9,35 @@ import {
 
 // Hosted-search parsing is derived from Oh My Pi. See ../loupist-native-search.mjs
 // for the pinned upstream revision and MIT notice.
+// Collecting source URLs needs no deep reasoning: prefer the cheapest model.
+// These take the basic `web_search_20250305` tool; the dynamic-filtering
+// variant needs Sonnet/Opus 4.6+ and only pays off when the model reads pages.
 const ANTHROPIC_SEARCH_MODELS = Object.freeze([
+  "claude-haiku-5-5",
   "claude-haiku-4-5",
-  "claude-sonnet-4-5",
   "claude-sonnet-4-6",
+  "claude-sonnet-4-5",
 ]);
+/** One query rarely needs more; a cap bounds a provider-billed search loop. */
+const MAX_SEARCH_USES = 3;
+/** Models that accept `output_config.effort` (Haiku 4.5 and Sonnet 4.5 reject it). */
+const EFFORT_MODELS = new Set(["claude-haiku-5-5", "claude-sonnet-4-6"]);
 
-function parsePageAge(pageAge) {
+/** `page_age` is display text ("April 30, 2025", "3 days ago"). An absolute
+ * date with a year becomes YYYY-MM-DD so recency and as-of checks can use it;
+ * other text stays as written and counts as undated on the host. */
+export function parsePageAge(pageAge) {
   if (!pageAge || typeof pageAge !== "string") return undefined;
-  return pageAge;
+  const text = pageAge.trim();
+  if (/^\d{4}-\d{2}-\d{2}/u.test(text)) return text;
+  if (/\b(?:19|20)\d{2}\b/u.test(text) && /[a-z]/iu.test(text)) {
+    const parsed = new Date(Date.parse(text));
+    if (!Number.isNaN(parsed.getTime())) {
+      const pad = (value) => String(value).padStart(2, "0");
+      return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`;
+    }
+  }
+  return text;
 }
 
 function toolErrorCode(block) {
@@ -67,6 +87,8 @@ function parseAnthropicSearchResponse(response) {
     if (block.type === "web_search_tool_result") {
       invoked = true;
       const errorCode = toolErrorCode(block);
+      // The search cap stops further searches; earlier results still stand.
+      if (errorCode === "max_uses_exceeded") continue;
       if (errorCode) {
         throw new NativeSearchError(
           classifyToolError(errorCode),
@@ -221,7 +243,7 @@ export function completedAnthropicTransportPrefix(text) {
 }
 
 export function buildAnthropicBody(request, model, basePayload = {}) {
-  const tool = { type: "web_search_20250305", name: "web_search" };
+  const tool = { type: "web_search_20250305", name: "web_search", max_uses: MAX_SEARCH_USES };
   if (request.include_domains?.length) tool.allowed_domains = request.include_domains.slice(0, 10);
   else if (request.exclude_domains?.length) {
     tool.blocked_domains = request.exclude_domains.slice(0, 10);
@@ -232,6 +254,7 @@ export function buildAnthropicBody(request, model, basePayload = {}) {
     max_tokens: 4096,
     messages: [{ role: "user", content: searchQueryText(request) }],
     tools: [tool],
+    ...(EFFORT_MODELS.has(model) ? { output_config: { effort: "low" } } : {}),
     system:
       basePayload && typeof basePayload === "object" && basePayload.system
         ? basePayload.system

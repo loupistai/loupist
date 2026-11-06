@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { runNativeSearch } from "./loupist-native-search.mjs";
 import {
+  buildAnthropicBody,
   completedAnthropicTransportPrefix,
   parseAnthropicSearchPayload,
+  parsePageAge,
 } from "./native-search/anthropic.mjs";
 import { completedCodexTransportPrefix, parseCodexSearchPayload } from "./native-search/codex.mjs";
 import { classifyHttpFailure, toSearchErrorResult, toSearchResult } from "./native-search/common.mjs";
@@ -296,10 +298,55 @@ test("Anthropic search through Pi keeps Pi's system blocks and replaces only the
   assert.deepEqual(captured.body.system, system);
   assert.equal(captured.body.model, "claude-haiku-4-5");
   assert.equal(captured.body.max_tokens, 4096);
-  assert.deepEqual(captured.body.tools, [{ type: "web_search_20250305", name: "web_search", allowed_domains: ["example.org"] }]);
+  assert.deepEqual(captured.body.tools, [{ type: "web_search_20250305", name: "web_search", max_uses: 3, allowed_domains: ["example.org"] }]);
+  // Haiku 4.5 rejects effort, so none is sent.
+  assert.equal(captured.body.output_config, undefined);
   assert.match(captured.body.messages[0].content, /^latest primary report/);
   assert.equal(result.sources[0].url, "https://example.org/streaming-report");
   assert.equal(JSON.stringify(result).includes("sk-ant-secret"), false);
+});
+
+test("Anthropic search prefers the cheapest search model and asks it for low effort", () => {
+  const request = { query: "quarterly results", limit: 5 };
+  assert.equal(
+    buildAnthropicBody(request, "claude-haiku-5-5").output_config.effort,
+    "low",
+  );
+  assert.equal(buildAnthropicBody(request, "claude-sonnet-4-5").output_config, undefined);
+});
+
+test("Anthropic's search cap keeps earlier results, and page ages become dates when absolute", () => {
+  const capped = parseAnthropicSearchPayload(JSON.stringify({
+    ...ANTHROPIC_SEARCH_JSON,
+    content: [
+      ...ANTHROPIC_SEARCH_JSON.content,
+      { type: "server_tool_use", name: "web_search", input: { query: "more" } },
+      { type: "web_search_tool_result", content: { type: "web_search_tool_result_error", error_code: "max_uses_exceeded" } },
+    ],
+  }));
+  assert.deepEqual(capped.sources.map((source) => source.url), ["https://example.org/un-report"]);
+  assert.throws(() => parseAnthropicSearchPayload(JSON.stringify({
+    ...ANTHROPIC_SEARCH_JSON,
+    content: [{ type: "web_search_tool_result", content: { type: "web_search_tool_result_error", error_code: "too_many_requests" } }],
+  })), (error) => error.kind === "rate_limited");
+
+  assert.equal(parsePageAge("April 30, 2025"), "2025-04-30");
+  assert.equal(parsePageAge("2025-04-30T08:00:00Z"), "2025-04-30T08:00:00Z");
+  assert.equal(parsePageAge("2 days ago"), "2 days ago");
+  assert.equal(parsePageAge(""), undefined);
+});
+
+test("xAI sources and citations count as either URL strings or objects", () => {
+  const parsed = parseXaiSearchResponse({
+    model: "grok-4.5",
+    output: [{ type: "web_search_call", action: { sources: ["https://example.org/a", { url: "https://example.org/b", title: "B" }] } }],
+    citations: [{ url: "https://example.org/c", title: "C" }, "https://example.org/a"],
+  });
+  assert.deepEqual(parsed.sources.map((source) => [source.url, source.title]), [
+    ["https://example.org/a", "https://example.org/a"],
+    ["https://example.org/b", "B"],
+    ["https://example.org/c", "C"],
+  ]);
 });
 
 test("xAI search uses the Responses API with bounded filters and keeps only cited sources", async () => {

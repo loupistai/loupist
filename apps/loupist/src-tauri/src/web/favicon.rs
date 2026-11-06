@@ -91,6 +91,7 @@ mod tests {
                 script::ok("image/png", b"<svg onload='alert(1)'/>".to_vec()),
                 script::ok("image/png", vec![0; MAX_BYTES + 1]),
                 script::ScriptedResponse {
+                    challenge: false,
                     status: 302,
                     content_type: String::new(),
                     body: Vec::new(),
