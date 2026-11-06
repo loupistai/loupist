@@ -40,9 +40,11 @@ After the user connected ChatGPT, the live preset moved to GPT-6.1-Sol at medium
 | J19 | Copy | The Bot's catch-up named a visit earlier the same day by weekday: "토요일 이후 한 가지예요" on a Saturday. | A visit earlier today reads as its time ("오전 2:32 이후"). |
 | J20 | Copy | Opening a built-in tool group showed its internal English name, "Opened Source retention and journals", in the Korean chat. | Built-in groups use the translated catalog wording; connection names stay (follow-up). |
 | J21 | Bug | `loupist_setup` and Loupist settings changed the focus, but the perspective page kept the text seeded at creation. | Every focus change rewrites only the page's `focus` section. |
+| J22 | UX | After J13, the re-walk's hand-off card summarized its run with the answer's bold dateline, "조사 기준일: 2026년 11월 6일". | A short paragraph that is only bold text is a label; the summary starts at the prose after it (scheduled results too). |
 
 ## Re-walk after the fixes (GPT-6.1-Sol, medium)
 
 - New Loupist "배터리 루피스트" from the dialog's custom preset, with no focus. Its Bot asked what it researches. The reply to "나는 2차전지 소재 공급망을 리서치해. LG에너지솔루션이랑 에코프로비엠 팔로우해 줘." called `loupist_setup`; the receipt read "LG에너지솔루션 관심 자산에 추가 · 에코프로비엠 관심 자산에 추가 · 리서치 주제 바꿈", and Lens showed the perspective page "관점" with "관심 분야: 2차전지 소재 공급망".
 - The Pages tab, the used-pages receipt and the reader show "관점" and "신념" in Korean; subject pages have their marker.
 - The semiconductor World, stalled at 18 names, rebuilt itself after the fix and reached 61 names and 73 relationships.
+- A deep-research request in the new Bot opened one research session, which appeared in the sidebar at once with the card "조사 중 … 진행 중 · 열기". When its run finished, the card turned into "조사 완료 … 완료 · 새로 배운 것 4개 · 열기" in the open window, without a reload (J10, J11, J12). The run found no direct contract between the two companies in public sources and said so.
