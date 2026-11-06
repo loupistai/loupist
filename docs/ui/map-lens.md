@@ -19,9 +19,10 @@ The projection also carries watchlist and holding markers. `applies_to`
 weights count turns, not correctness or causal influence. Per-kind
 total/shown/truncated counts make the bounded projection explicit. The standing
 perspective is the base view a Loupist starts from. In the application filter and the
-Lens detail, the host's untouched title "Standing philosophy" is shown in the
-interface language as the default perspective. A title someone chose is kept and
-still marked as that base perspective. The seeded placeholder sentence is not
+Lens detail, the Pages list and the page reader, the host's untouched title "Outlook"
+and the English default heading of a suggested section key (Beliefs, Focus, ...) show
+in the interface language (`knowledge/hostDefaults.ts`). A title or heading someone
+chose is kept, and the title stays marked as the base perspective. The seeded placeholder sentence is not
 presented as something the Loupist learned.
 
 Entities draw in eight categories, in legend and filter order: Company (World kind
@@ -50,7 +51,7 @@ Idea beside new Methods and Rules.
 
 ### What the map tracks
 
-Loupist settings list, in plain words, the kinds of things and links the map tracks
+Loupist settings list, under World processing and in plain words, the kinds of things and links the map tracks
 beyond the basics, with Stop tracking on each kind, and the twenty most recent
 changes. Each change says who made it (starting setup, you, a background review),
 what it added or removed, and offers Undo while it still changes something. There

@@ -81,3 +81,9 @@ it.each([
     parts.mockRestore();
   }
 });
+
+it("names methods one way in both languages", () => {
+  const text = JSON.stringify(resources);
+  expect(text).not.toContain("작업 방식");
+  expect(text).not.toMatch(/ways? of working/i);
+});

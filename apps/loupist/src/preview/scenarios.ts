@@ -681,6 +681,7 @@ export const scenarios: readonly PreviewScenario[] = [
   { ...base("onboarding-bot", "First launch opens Bot after the notice", () => document.getElementById("current-location")?.textContent === i18n.t("app:thread.title") ? select(".chat-layout") : null, async root => {
     await click("[data-notice-acknowledgment]", root);
     await click("[data-onboarding-start]", root);
+    await click("[data-onboarding-create]", root);
     await until(() => select("textarea[data-chat-composer]"), "Bot did not initialize");
   }), setup: async bridge => {
     await prepareFixture(bridge, "loupist");
@@ -1994,7 +1995,7 @@ export const scenarios: readonly PreviewScenario[] = [
   base("loupist-settings", "Editable Loupist profile", () => select(".loupist-settings-page #loupist-profile-focus"), async () => { await openLoupistSettings(); await until(() => select("#loupist-profile-name"), "Profile editor did not open"); }),
   { ...base("loupist-settings-tracking", "What the map tracks", () => select(".loupist-tracking-changes"), async () => {
     await openLoupistSettings();
-    await click('[data-loupist-section="learning"] > summary');
+    await click('[data-loupist-section="world"] > summary');
     await until(() => select(".loupist-tracking-list"), "Tracking list did not load");
     select(".loupist-tracking")?.scrollIntoView({ block: "start" });
   }), setup: async bridge => { await prepareFixture(bridge); bridge.installWorldSchema("loupist-quality", semiconductorTrackingView()); } },

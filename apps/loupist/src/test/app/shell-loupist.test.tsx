@@ -185,6 +185,7 @@ describe("Loupist · Shell and Loupist", () => {
     render(<App bridge={bridge} />);
     await user.click(await screen.findByRole("checkbox", { name: "I understand" }));
     await user.click(await screen.findByRole("button", { name: "Get started" }));
+    await user.click(await screen.findByRole("button", { name: "Create Loupist" }));
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "New Loupist" })).not.toBeInTheDocument());
     expect(createLoupist).toHaveBeenCalledTimes(1);

@@ -4,13 +4,13 @@ import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { TooltipProvider } from "../ui/tooltip";
 import { PageReader } from "./PageReader";
 
-async function open(recordId = "lens-subject-tcp", tweak?: (bridge: MockLoupistBridge) => void) {
+async function open(recordId = "lens-subject-tcp", tweak?: (bridge: MockLoupistBridge) => void, pageName = "Page") {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const loupistId = (await bridge.loupistList())[0].id;
   tweak?.(bridge);
   const handlers = { onOpen: vi.fn(), onOpenPage: vi.fn(), onAsk: vi.fn(), onChanged: vi.fn() };
   render(<TooltipProvider><PageReader bridge={bridge} loupistId={loupistId} recordId={recordId} catalog={await bridge.knowledgeCatalog({ loupistId })} {...handlers} /></TooltipProvider>);
-  return { bridge, loupistId, handlers, user: userEvent.setup(), page: await screen.findByRole("article", { name: "Page" }) };
+  return { bridge, loupistId, handlers, user: userEvent.setup(), page: await screen.findByRole("article", { name: pageName }) };
 }
 
 it("reads sections in order, each with its basis chip, and marks a contested one", async () => {
@@ -65,4 +65,27 @@ it("opens a linked page and a Map name, and lists a short history", async () => 
 it("keeps an idea's status and a principle's own fields", async () => {
   const idea = await open("lens-idea-quic");
   expect(within(idea.page).getByText("Not checked yet")).toBeVisible();
+});
+
+it("shows the host-default perspective title and English default headings in Korean", async () => {
+  const { default: i18n } = await import("@/i18n");
+  await i18n.changeLanguage("ko");
+  try {
+    const { page } = await open("lens-perspective", bridge => {
+      const read = bridge.knowledgeLensRead.bind(bridge);
+      vi.spyOn(bridge, "knowledgeLensRead").mockImplementation(async request => {
+        const view = await read(request);
+        if (view.body.kind === "principle") return view;
+        view.title = "Outlook";
+        view.body.sections[0] = { ...view.body.sections[0]!, key: "beliefs", heading: "Beliefs" };
+        return view;
+      });
+    }, "페이지");
+    expect(within(page).getByRole("heading", { level: 2 })).toHaveTextContent("관점");
+    expect(within(page).getByRole("heading", { name: "신념" })).toBeVisible();
+    expect(within(page).queryByText("Outlook")).toBeNull();
+    expect(within(page).queryByRole("heading", { name: "Beliefs" })).toBeNull();
+  } finally {
+    await i18n.changeLanguage("en");
+  }
 });

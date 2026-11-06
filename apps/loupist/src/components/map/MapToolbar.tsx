@@ -1,15 +1,28 @@
+import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
 import { PlayIcon, BookOpenIcon, ChevronDownIcon, HistoryIcon, ImageIcon, ListIcon, MoreHorizontalIcon, NetworkIcon, ScanIcon, SearchIcon, SlidersHorizontalIcon, VideoIcon, WaypointsIcon } from "lucide-react";
+import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
+import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
 import { useTranslation } from "../../i18n";
+import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
 import { Button } from "../ui/button";
+import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "../ui/dropdown-menu";
+import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
 import { Input } from "../ui/input";
+import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
+import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
 import { entityCategories, nodeCategory } from "./kinds";
+import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
 import { entityLabel } from "./labels";
+import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
 import { mapScopes, type MapScope } from "./localView";
+import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
 import { foldProps, useToolbarOverflow, type MapOverflowItem } from "./toolbarOverflow";
+import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
 import { formatNumber } from "../../i18n/format";
 export type MapFilters = { kinds: string[]; personal: boolean; disputed: boolean; metrics: boolean };
 export const defaultFilters = (): MapFilters => ({ kinds: [...entityCategories], personal: false, disputed: false, metrics: true });
@@ -118,6 +131,7 @@ function LensMenu({ lenses, overlayId, onOverlay, disabled, appliedCounts, lensT
 }) {
   const { t } = useTranslation("knowledge");
   const defaultPerspective = t("lensWorkspace.defaultPerspective");
+  const hostTitle = displayPageTitle("perspective", HOST_PERSPECTIVE_TITLE);
   const titleOf = (node: KnowledgeMapNode) => lensTitles?.[node.id] ?? node.label;
   const groups = lensGroups.map(id => ({
     id,
@@ -133,7 +147,7 @@ function LensMenu({ lenses, overlayId, onOverlay, disabled, appliedCounts, lensT
         const applied = appliedCounts?.[lens.id] ?? 0;
         return <Button disabled={disabled} variant="ghost" key={lens.id} data-lens-id={lens.id} aria-pressed={overlayId === lens.id} onClick={() => { onOverlay(lens.id); onClose(); }}>
           <i className={`map-swatch is-${nodeCategory(lens)}`} aria-hidden="true" />
-          <span>{title}{baseLensIds?.has(lens.id) && title !== defaultPerspective ? <small>{defaultPerspective}</small> : null}<small>{applied ? t("map.appliedTo", { count: applied }) : t("map.notApplied")}</small></span>
+          <span>{title}{baseLensIds?.has(lens.id) && title !== hostTitle ? <small>{defaultPerspective}</small> : null}<small>{applied ? t("map.appliedTo", { count: applied }) : t("map.notApplied")}</small></span>
         </Button>;
       })}
     </section>)}

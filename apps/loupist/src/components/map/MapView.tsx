@@ -297,7 +297,7 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
   const conflicts = replayed.edges.filter((edge) => edge.status === "disputed").length;
   const appliedInView = appliedEntities.filter(node => shownIds.has(node.id));
   const overlayHighlight = appliedInView.length ? new Set(appliedInView.map(node => node.id)) : undefined;
-  const lensTitles = useMemo(() => Object.fromEntries((map?.nodes ?? []).filter(isLensNode).map(node => [node.id, lensDisplayTitle(node, catalog.lenses, t("lensWorkspace.defaultPerspective"))])), [map, catalog.lenses, t]);
+  const lensTitles = useMemo(() => Object.fromEntries((map?.nodes ?? []).filter(isLensNode).map(node => [node.id, lensDisplayTitle(node, catalog.lenses)])), [map, catalog.lenses, t]);
   const baseLensIds = useMemo(() => new Set((map?.nodes ?? []).filter(node => isBasePerspective(node, catalog.lenses)).map(node => node.id)), [map, catalog.lenses]);
   const appliedCounts = useMemo(() => Object.fromEntries((map?.nodes ?? []).filter(isLensNode).map(node => [node.id, map ? lensAppliedEntities(map.nodes, map.edges, node.id).length : 0])), [map]);
   const overlayTitle = overlay ? lensTitles[overlay.id] ?? overlay.label : "";

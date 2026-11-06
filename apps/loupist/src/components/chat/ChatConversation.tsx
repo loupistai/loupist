@@ -216,6 +216,7 @@ export function ChatConversation({
   }, [clearNewSince, lastUserIndex, newSinceId, newSinceIndex]);
   // Once the user writes in the Thread this visit, the morning news has been answered.
   const [visitStartMs] = useState(() => Date.now());
+  const hasUserMessage = lastUserIndex >= 0;
   const repliedThisVisit = messages.some((message) => message.role === "user" && Date.parse(message.created_at) > visitStartMs);
   // Results posted into the Thread count as read once the Thread shows them.
   const deliveredRunIds = useMemo(() => messages.flatMap((message) => message.delivery ? [message.delivery.run_id] : []).slice(-20), [messages]);
@@ -350,7 +351,7 @@ export function ChatConversation({
             />
           )}
           </Fragment>)}
-          {home && !repliedThisVisit ? morning("news") : null}
+          {home && !hasUserMessage ? morning("full") : home && !repliedThisVisit ? morning("news") : null}
         </>)}
       </ConversationContent>
     </Conversation>

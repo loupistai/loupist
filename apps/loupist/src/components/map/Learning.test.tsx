@@ -40,7 +40,7 @@ it("requires inline confirmation before calling the archive bridge", async () =>
   const close = vi.fn(), changed = vi.fn();
   render(<MapInspector bridge={bridge} map={map} node={node} location={location} catalog={catalog} onSelect={vi.fn()} onClose={close} onChanged={changed} onOpen={vi.fn()} onAsk={vi.fn()} />);
   await userEvent.click(await screen.findByRole("button", { name: "Archive" }));
-  expect(screen.getByText("Archive this way of working? Your Loupist will stop using it.")).toBeVisible();
+  expect(screen.getByText("Archive this method? Your Loupist will stop using it.")).toBeVisible();
   expect(archive).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(archive).not.toHaveBeenCalled();

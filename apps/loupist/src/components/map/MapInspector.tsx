@@ -43,7 +43,7 @@ export function MapInspector({ node, map, bridge, location, onClose, onSelect, o
   const catalogLenses = catalog?.lenses ?? [];
   const lens = catalogLenses.find(l => l.recordId === node.recordId);
   const basePerspective = isBasePerspective(node, catalogLenses);
-  const headingText = isLensNode(node) ? lensDisplayTitle(node, catalogLenses, t("lensWorkspace.defaultPerspective")) : name;
+  const headingText = isLensNode(node) ? lensDisplayTitle(node, catalogLenses) : name;
   const entity = graph?.nodes.find((n) => n.id === node.id);
   const [notes, setNotes] = useState<PageSummary[]>([]);
   const noteScope = node.kind === "entity" ? node.id : undefined;
@@ -134,7 +134,7 @@ export function MapInspector({ node, map, bridge, location, onClose, onSelect, o
       {notes.length ? <section className="map-notes" aria-label={t("map.notes")}><h3>{t("map.notes")}</h3>
         <ul>{notes.map((note) => <li key={note.recordId}><button type="button" onClick={() => onOpen({ loupistId: location.loupistId, surface: "lens", recordId: note.recordId, objectId: note.recordId, selection: { kind: "lens", recordId: note.recordId } })}>
           <strong>{note.title}</strong><small>{t(`pageReader.kind.${note.kind}`)}</small>{note.summary ? <span>{note.summary}</span> : null}</button></li>)}</ul></section> : null}
-      <h3>{t("map.seenThrough")}</h3>{lenses.map((item) => <Button variant="ghost" className="map-connection" key={item.id} onClick={() => onSelect(item)}><i className={`map-swatch is-${nodeCategory(item)}`} />{lensDisplayTitle(item, catalogLenses, t("lensWorkspace.defaultPerspective"))}</Button>)}{!lenses.length ? <p className="map-muted">{t("map.noLens")}</p> : null}
+      <h3>{t("map.seenThrough")}</h3>{lenses.map((item) => <Button variant="ghost" className="map-connection" key={item.id} onClick={() => onSelect(item)}><i className={`map-swatch is-${nodeCategory(item)}`} />{lensDisplayTitle(item, catalogLenses)}</Button>)}{!lenses.length ? <p className="map-muted">{t("map.noLens")}</p> : null}
     </> : <><h3>{connected.filter((e) => e.kind === "applies_to").length ? t("map.appliedTo", { count: connected.filter((e) => e.kind === "applies_to").length }) : t("map.notApplied")}</h3>{connected.filter((e) => e.kind === "applies_to").map((e) => { const target = map.nodes.find((n) => n.id === e.target); return target ? <Button className="map-connection" variant="ghost" key={e.id} onClick={() => onSelect(target)}>{entityLabel(target, i18n.language)}</Button> : null; })}{node.recordId ? <Button variant="outline" onClick={() => onOpen({ loupistId: location.loupistId, surface: "lens", recordId: node.recordId })}>{t("map.openDocument")}</Button> : null}</>}
     {/* The Relationships view already shows every connection with its direction; the flat list belongs to Facts. */}
     {showRelationships ? null : <><h3>{t("map.connections", { count: connections.length })}</h3>{(allConnections ? connections : connections.slice(0, 8)).map((edge, index, rows) => { const neighbor = map.nodes.find((n) => n.id === (edge.source === node.id ? edge.target : edge.source)); return neighbor ? <div key={edge.id}>{index === 0 || rows[index - 1].relation !== edge.relation ? <small className="map-relation">{(edge.relation ? relationName(edge.relation, t) : undefined)}</small> : null}<Button variant="ghost" className="map-connection" onClick={() => onSelect(neighbor)}><i className={`map-swatch is-${nodeCategory(neighbor)}`} />{entityLabel(neighbor, i18n.language)}</Button></div> : null; })}

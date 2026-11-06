@@ -55,6 +55,7 @@ it("opens a new user's Bot after the notice and skips watchlist and scheduling s
   render(<App bridge={bridge} />);
   await user.click(await screen.findByRole("checkbox", { name: "I understand" }));
   await user.click(screen.getByRole("button", { name: "Get started" }));
+  await user.click(await screen.findByRole("button", { name: "Create Loupist" }));
   expect(await screen.findByRole("heading", { name: "Bot" })).toBeVisible();
   expect(screen.getByRole("textbox", { name: "Message Loupist" })).toBeEnabled();
   expect(create).toHaveBeenCalledTimes(1);
