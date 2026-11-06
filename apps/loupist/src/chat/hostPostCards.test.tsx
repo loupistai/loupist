@@ -12,7 +12,6 @@ vi.mock("../components/chat/SafeMessageResponse", () => ({
 
 const base = { role: "assistant" as const, status: "complete" as const, created_at: "2026-11-06T09:00:00.000Z", host_composed: true };
 
-/** The three host cards this branch posts, plus a scheduled delivery that already round-trips. */
 const posted: ChatMessage[] = [
   {
     ...base, id: "link-1", content: "New link: Alpha ↔ Gamma through Beta.",

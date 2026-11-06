@@ -510,7 +510,6 @@ fn pending_host_news(
     (events, notices)
 }
 
-/// The Thread message for kinds a preset or a background review added.
 pub(crate) fn vocabulary_message(
     change: &crate::knowledge::SchemaChange,
 ) -> Result<ChatMessage, CommandError> {
@@ -538,8 +537,6 @@ pub(crate) fn vocabulary_message(
     Ok(message)
 }
 
-/// The Thread message for one link discovery found: "New link: A ↔ C through
-/// B". The renderer words it; the path's names are all it carries.
 pub(crate) fn link_message(
     view: &crate::knowledge::ConnectionView,
     at_ms: i64,
@@ -564,7 +561,6 @@ pub(crate) fn link_message(
     Ok(message)
 }
 
-/// Links discovery found that the Bot may still show today, best first.
 fn pending_links(state: &AppState, loupist_id: &str) -> Vec<crate::knowledge::ConnectionView> {
     let at = now_ms();
     crate::commands::assets::with_assets(state, loupist_id, false, |tx| {
@@ -573,7 +569,6 @@ fn pending_links(state: &AppState, loupist_id: &str) -> Vec<crate::knowledge::Co
     .unwrap_or_default()
 }
 
-/// Preset and review changes the Thread has not announced yet, oldest first.
 fn pending_vocabulary(
     state: &AppState,
     loupist_id: &str,
@@ -622,9 +617,8 @@ fn pending_alerts(
 
 /// Posts every finished, undelivered scheduled run into the home Thread, oldest
 /// first. A reply running in the Thread owns it, so delivery waits: the next
-/// completion or workspace load delivers what is still pending. Every pass
-/// also sends the committed research hand-offs that have not started, busy
-/// Thread or not. Returns how many messages were posted.
+/// completion or workspace load delivers what is still pending. Returns how
+/// many messages were posted.
 pub(crate) fn deliver_finished_runs(
     state: &AppState,
     loupist_id: &str,
@@ -651,7 +645,6 @@ pub(crate) fn deliver_finished_runs(
     let delivered = delivered_in(&home);
     let (watch_events, notices) = pending_host_news(state, loupist_id);
     let research = super::handoff::for_delivery(state, loupist_id)?;
-    // A research hand-off posts once at `running` and then changes that card in place.
     let research_changes = |chat: &ChatSession| -> Vec<(super::handoff::Handoff, Option<usize>)> {
         research
             .iter()

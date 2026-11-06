@@ -915,7 +915,6 @@ fn lens_delivery_includes_every_section_and_large_base_requires_an_exact_read() 
     assert_eq!(delivered, read(&lens));
     assert_eq!(delivered.body.sections().len(), 3);
     assert!(context.charter_delivery.is_some());
-    // The perspective is delivered whole; it never takes an index line.
     assert!(context.entries.iter().all(|entry| entry.id != lens));
 
     for index in 0..13 {
@@ -1130,7 +1129,6 @@ fn lens_reads_links_search_and_filing_stay_within_the_loupist() {
     .unwrap();
     assert_eq!(mine.len(), 1);
     assert_eq!(mine[0].record_id, private.record_id);
-    // B's page may link A's record: the link stays unresolved and grants no read.
     let linked = with_loupist_knowledge(&state, "loupist-b", |tx, blobs| {
         KnowledgeWrite::bind(tx, blobs).file_section(
             "loupist-b",
@@ -1149,7 +1147,6 @@ fn lens_reads_links_search_and_filing_stay_within_the_loupist() {
         .contains("PRIVATE_BODY"));
     let read_a = lens_read(&state, request("loupist-a")).unwrap();
     assert!(read_a.backlinks.is_empty());
-    // Filing into another Loupist's record is refused before any op runs.
     let refused = with_loupist_knowledge(&state, "loupist-b", |tx, blobs| {
         KnowledgeWrite::bind(tx, blobs).file(
             "loupist-b",

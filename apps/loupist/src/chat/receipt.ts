@@ -3,18 +3,15 @@ import type { Verdict } from "../contracts/assets";
 import { citationSources } from "./evidence";
 import { numbersToCheck } from "./numberChecks";
 
-/** Saved kinds in receipt order. Lens pages are counted by what the Chat learned, not here. */
 export const SAVED_RECEIPT_KINDS = ["Source", "principle", "Journal", "Research", "World"] as const;
 export type SavedReceiptKind = (typeof SAVED_RECEIPT_KINDS)[number];
 export type SavedReceiptGroup = { kind: SavedReceiptKind; items: MemoryUpdateChange[] };
 export type UsedPrinciple = { recordId: string; title: string };
 export type UsedPage = UsedPrinciple & { kind: LensKind };
 
-/** What an answer filed into the Lens: changed sections, in the order Rust logged them. */
 export type LearnedSummary = { sections: number; ideas: number; pages: LearnedDigest["pages"] };
 const CHANGED = new Set(["added", "replaced", "retired"]);
 
-/** "Learned n" counts sections added, replaced or retired; a page with only a new summary is not counted. */
 export function learnedSummary(digest: LearnedDigest | undefined): LearnedSummary | null {
   const pages = (digest?.pages ?? []).filter(page => page.outcomes.some(outcome => CHANGED.has(outcome.outcome)));
   if (!pages.length) return null;
@@ -37,7 +34,6 @@ export type ChatReceiptData = {
   mapHighlightIds: ReadonlySet<string>;
   usedPrinciples: UsedPrinciple[];
   usedMethods: UsedPrinciple[];
-  /** Every Lens page the answer read or was given, of any kind. */
   usedPages: UsedPage[];
   learned: LearnedSummary | null;
   saved: SavedReceiptGroup[];

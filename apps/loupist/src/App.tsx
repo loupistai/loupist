@@ -569,11 +569,11 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     else chat.setActiveThreadForLoupist(selectedLoupistId, targetThreadId);
     setTab("chat");
   }, [selectedLoupistId, threads, effectiveThreadId, drafts.get, drafts.addPin, threadActions.openDraftChatForLoupist, chat.setActiveThreadForLoupist, workspace.close]);
+  const fixMemory = useCallback((pin: KnowledgePin) => useKnowledgeInChat(pin, undefined, { correct: true }), [useKnowledgeInChat]);
   /**
    * Look back (finance-point-in-time.md §2.5): a new topic Chat whose composer
    * holds the entry's as-of date, its journal pin and the question. Never sends.
    */
-  const fixMemory = useCallback((pin: KnowledgePin) => useKnowledgeInChat(pin, undefined, { correct: true }), [useKnowledgeInChat]);
   const lookBack = useCallback((entry: LookBackEntry) => {
     const loupistId = entry.loupistId;
     const draft = lookBackDraft(entry);

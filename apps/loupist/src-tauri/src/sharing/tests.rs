@@ -210,7 +210,6 @@ fn section(key: &str, heading: &str, markdown: &str) -> PackSection {
     }
 }
 
-/// A method page with the same sections a fixture pack carries.
 fn method_page(markdown: &str) -> PackDoc {
     PackDoc {
         summary: markdown.into(),
@@ -226,7 +225,6 @@ fn method_page(markdown: &str) -> PackDoc {
     }
 }
 
-/// Sets one section's text, adding the section when the page lacks it.
 fn set_section(document: &mut PackDoc, key: &str, text: &str) {
     match document.sections.iter_mut().find(|s| s.key == key) {
         Some(existing) => existing.markdown = text.into(),

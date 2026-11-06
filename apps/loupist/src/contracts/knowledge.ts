@@ -541,10 +541,8 @@ export type KnowledgeSelection =
   | { kind: "journal"; journalId: string }
   | { kind: "snapshot"; pin: KnowledgePin };
 
-/** One hop of a discovered link (Rust `connections::Hop`). */
 export type ConnectionHop = { claimId: string; relation: string; fromRole: string; toRole: string; reversed: boolean; nodeId: string; name: string };
 export type ConnectionStatus = "new" | "shown" | "opened" | "dismissed" | "filed";
-/** A link discovery found after a World publication (`knowledge_connections`). */
 export type ConnectionView = {
   connectionId: string;
   seedNodeId: string;

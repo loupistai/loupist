@@ -10,8 +10,6 @@ use crate::{
     },
 };
 
-/// The model, effort and Memory flags of the turn that creates a schedule or
-/// hands off research; both inherit them.
 #[derive(Clone)]
 pub(crate) struct ScheduleContext {
     pub model_profile_id: String,

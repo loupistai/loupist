@@ -128,10 +128,8 @@ pub(super) struct ToolCapture {
     pub(super) turn_taint: crate::custom_connections::taint::TurnTaint,
     pub(crate) unattended_run_id: Option<String>,
     pub(super) tool_trace: Arc<crate::broker::ToolTraceCapture>,
-    /// Which conversation this turn runs in; None for a host-driven executor.
     pub(crate) surface: Option<crate::chat::surface::ChatSurface>,
     pub(super) schedule_context: Option<schedules::ScheduleContext>,
-    /// The research hand-off this Bot reply commits, at most one per turn.
     pub(in crate::commands) staged_handoff: Mutex<Option<crate::chat::handoff::StagedHandoff>>,
     pub(super) schedule_sink:
         Option<Arc<dyn Fn(crate::scheduled_tasks::types::ScheduleReceipt) + Send + Sync>>,
@@ -156,9 +154,7 @@ pub(super) struct ToolCapture {
     pub(in crate::commands) staged_theses: Mutex<Vec<crate::knowledge::assets::ThesisUpdate>>,
     /// Checked results saves, committed with the reply.
     pub(in crate::commands) staged_earnings: Mutex<Vec<earnings::EarningsSave>>,
-    /// Kinds the user asked the map to track, committed with the reply.
     pub(in crate::commands) staged_vocabulary: Mutex<Vec<StagedVocabulary>>,
-    /// Lens pages this turn files, written by the reply's commit.
     pub(in crate::commands) staged_filings: Mutex<Vec<StagedFiling>>,
     /// Assets with a thesis update in this turn (staged or in flight), by
     /// delivery: parallel calls cannot both move one asset's read.
@@ -689,8 +685,6 @@ impl ToolCapture {
         }
     }
 
-    /// `research_open`: the Bot stages one hand-off for its reply to commit.
-    /// Every other surface, and a second call in the same turn, is refused by name.
     async fn stage_research_open(
         &self,
         policy: &ToolPolicy,

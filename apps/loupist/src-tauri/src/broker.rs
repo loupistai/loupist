@@ -51,7 +51,6 @@ pub const MAX_MEMORY_PROPOSALS: u8 = 8;
 // A multi-company comparison can retain several primary sources per company.
 // Keep retention bounded without exhausting it after the first company.
 pub const MAX_CHAT_TURN_SOURCES: u8 = 16;
-/// `lens_file` calls one reply may make.
 pub const MAX_CHAT_TURN_FILINGS: u8 = 2;
 const MAX_CONCURRENT_CONNECTIONS: usize = 64;
 const RESPONSE_WRITE_TIMEOUT: Duration = Duration::from_secs(10);

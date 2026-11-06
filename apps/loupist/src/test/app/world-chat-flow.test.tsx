@@ -111,7 +111,6 @@ describe("World and Lens in the single Chat flow", () => {
     await user.click(within(overview).getByRole("button", { name: "Source" }));
     expect(await screen.findByRole("button", { name: "Add to question" })).toBeVisible();
     expect(read).toHaveBeenCalledWith(expect.objectContaining({ recordId: source.recordId, revisionId: source.revisionId }));
-    // The Source stays in the Lens tab, and Back returns to the page.
     const page = screen.getByRole("region", { name: /What .* knows/ });
     await user.click(within(page).getByRole("button", { name: /Back to/ }));
     expect(await screen.findByRole("heading", { name: "Overview" })).toBeVisible();

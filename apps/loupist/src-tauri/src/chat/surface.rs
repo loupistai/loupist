@@ -1,7 +1,3 @@
-//! Which conversation a turn runs in. Resolved once in setup and frozen in
-//! `AgentHostContext`; every difference between the Bot, a research session,
-//! a scheduled run and a delegated hand-off run reads this one value.
-
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -13,18 +9,13 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ChatSurface {
-    /// The Loupist's one continuing conversation with the user.
     Bot,
-    /// A research session the user opened.
     Session,
-    /// An unattended run the scheduler admitted.
     Scheduled,
-    /// An unattended run the Bot handed off through `research_open`.
     Delegated { handoff_id: String },
 }
 
 impl ChatSurface {
-    /// `interactive` is false for a run the scheduler or a hand-off admitted.
     pub(crate) fn resolve(
         state: &AppState,
         loupist_id: &str,
@@ -63,10 +54,6 @@ impl ChatSurface {
         matches!(self, Self::Bot)
     }
 
-    /// Whether this surface may call a tool the catalog otherwise exposes.
-    /// Unattended runs keep to the briefing allowlist; the Bot manages
-    /// schedules and opens research sessions; a session only hands a
-    /// scheduling request to the Bot.
     pub(crate) fn admits_tool(&self, name: &str) -> bool {
         match self {
             Self::Bot => name != "schedule_handoff",
@@ -92,7 +79,6 @@ impl ChatSurface {
         runtime
     }
 
-    /// The `chat_surface` envelope block: present every turn, Memory on or off.
     pub(crate) fn envelope_block(&self) -> Value {
         json!({ "surface": self.name(), "hint": self.hint() })
     }
@@ -106,11 +92,6 @@ impl ChatSurface {
         }
     }
 
-    /// Runs once the turn's reply settled and its run lease and Memory writer
-    /// dropped. The delivery pass sends the hand-offs the Bot's reply committed
-    /// and gives the Bot what finished while it was busy; an unattended run
-    /// posts its own result into the Bot, which its sink could not do while the
-    /// writer was held.
     pub(crate) fn after_turn(&self, state: &AppState, loupist_id: &str) {
         match self {
             Self::Session => {}

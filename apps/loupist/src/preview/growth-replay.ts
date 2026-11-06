@@ -6,7 +6,6 @@ import recorded from "./growth-replay.json";
 
 export const growthReplayPending = "fixturePending" in recorded && recorded.fixturePending === true;
 
-/** The recorded growth fixture predates keyed sections; its six fields become the sections of a method page. */
 type RecordedLens = { recordId: string; revisionId: string; revisionDigest: string; title: string; lensKind: LensKind; document: { applicability: string; assumptions: string; procedure: string; principles: string; limitations: string } };
 const SECTION_FIELDS = [["use-when", "When to use it", "applicability"], ["assumptions", "Assumptions", "assumptions"], ["steps", "Steps", "procedure"], ["checks", "Checks", "principles"], ["limits", "Limits", "limitations"]] as const;
 function recordedPage(lens: RecordedLens): PageView {

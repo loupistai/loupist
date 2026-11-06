@@ -1,6 +1,5 @@
 import type { LearnedDigest, LensLogEntryView, PageView, SectionView } from "../types";
 
-/** The answer whose Learned line the `chat-learned` scenario opens. */
 export const LEARNED_MESSAGE = "preview-answer";
 const AT = Date.parse("2026-10-27T09:30:00Z");
 
@@ -14,7 +13,6 @@ const page = (recordId: string, kind: PageView["kind"], title: string, summary: 
   suggestedSections: [], anchors: [], links: [], backlinks: [], history: [], ...extra,
 });
 
-/** Fictional pages in English or Korean: a topic with every kind of basis chip, an idea, a method and an outlook. */
 export function previewPages(ko: boolean, methodTitle: string): PageView[] {
   const text = (en: string, kr: string) => ko ? kr : en;
   const subject = page("preview-subject", "subject", text("Hanul Precision", "한울정밀"),

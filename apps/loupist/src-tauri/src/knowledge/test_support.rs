@@ -43,8 +43,6 @@ impl KnowledgeStore {
         self.read(|write| write.list_sources(loupist_id, record_id))
     }
 
-    /// Files one method page section through the only Lens writer: creates
-    /// the page when `title` is new, otherwise replaces that section.
     pub(crate) fn file_method(
         &self,
         loupist_id: &str,
@@ -102,7 +100,6 @@ impl KnowledgeWrite<'_> {
     }
 }
 
-/// The user filing from the bridge.
 pub(crate) fn user_origin() -> lens_page::FilingOrigin {
     lens_page::FilingOrigin::User {
         chat_id: None,
@@ -110,7 +107,6 @@ pub(crate) fn user_origin() -> lens_page::FilingOrigin {
     }
 }
 
-/// The Loupist filing at a turn's commit.
 pub(crate) fn turn_origin(chat_id: &str, message_id: &str) -> lens_page::FilingOrigin {
     lens_page::FilingOrigin::Turn {
         chat_id: chat_id.into(),
@@ -121,8 +117,6 @@ pub(crate) fn turn_origin(chat_id: &str, message_id: &str) -> lens_page::FilingO
 }
 
 impl KnowledgeWrite<'_> {
-    /// Creates or merges into the page `(kind, title)` and puts one section,
-    /// replacing it when the key already exists.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn file_section(
         &self,
@@ -182,7 +176,6 @@ impl KnowledgeWrite<'_> {
         self.read_page(loupist_id, &page.record_id)
     }
 
-    /// Replaces or adds one section of an existing page.
     pub(crate) fn put_section(
         &self,
         loupist_id: &str,

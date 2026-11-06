@@ -187,7 +187,6 @@ struct Method {
     record_id: String,
     title: String,
     applicability: String,
-    /// Section digests at read time: a section changed since is skipped at publish.
     #[serde(skip_serializing, default)]
     digests: BTreeMap<String, String>,
 }
@@ -359,9 +358,6 @@ impl Output {
         ]
     }
 
-    /// The six fields as method page sections. The summary is the first
-    /// paragraph of the markdown; assumptions travel with the applicability.
-    /// `read` holds the section digests of the revision this review read.
     fn ops(&self, read: &BTreeMap<String, String>) -> KnowledgeResult<Vec<LensOp>> {
         let section = |key: &str, heading: &str, text: String| -> KnowledgeResult<LensOp> {
             let key = SectionKey::new(key)?;
@@ -643,8 +639,6 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
             Ok(page) if !page.archived && page.kind == super::lens_page::LensKind::Method => {}
             _ => return Err(invalid()),
         }
-        // Digests from the read this review was given, so a section the user
-        // changed since is skipped instead of overwritten.
         (
             PageTarget::Existing {
                 record_id: method.record_id.clone(),
@@ -678,8 +672,6 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
         now,
     )?;
     let page = filed.into_iter().next().ok_or_else(invalid)?;
-    // The page moved since this review read it: the fold skipped what changed
-    // and kept the rest, so nothing becomes a proposal.
     let stale = page
         .outcomes
         .iter()

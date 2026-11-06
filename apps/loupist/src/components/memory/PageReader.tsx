@@ -19,11 +19,9 @@ const WORLD_LINK = /\]\(world:([^)\s]+)\)/gu;
 const WORLD_PREFIX = "world~";
 const SHARABLE: ReadonlySet<LensKind> = new Set(["principle", "perspective", "method"]);
 
-/** A page's own title; the host's untouched standing title reads as the default perspective. */
 export const pageTitle = (page: Pick<PageView, "title" | "kind">) =>
   page.kind === "perspective" && page.title === HOST_STANDING_TITLE ? i18n.t("knowledge:lensWorkspace.defaultPerspective") : page.title;
 
-/** Rewrites `world:` links to indexed `lens:` links the markdown renderer already makes clickable. */
 function withMapLinks(markdown: string, nodeIds: string[]) {
   return markdown.replace(WORLD_LINK, (_, nodeId: string) => {
     let index = nodeIds.indexOf(nodeId);
@@ -36,25 +34,18 @@ export type PageReaderProps = {
   bridge: LoupistBridge;
   loupistId: string;
   recordId: string;
-  /** Resolves Source chips to their retained record. */
   catalog?: KnowledgeCatalog;
-  /** Left of the title: a back button and the page's use line. */
   toolbar?: React.ReactNode;
-  /** After the history: "Used in", pause and archive. */
   children?: React.ReactNode;
-  /** The chat's display title (the home Thread reads as the Bot). */
   chatTitle?: (chatId: string) => string | undefined;
   onOpenPage: (recordId: string) => void;
-  /** Opens a Source, claim or Map name. */
   onOpen: (location: KnowledgeLocation) => void;
   onOpenLink?: (url: string) => void | Promise<void>;
   onAsk?: (pin: KnowledgePin) => void;
   onChanged?: () => void;
-  /** Shown to the host when the page loads. */
   onLoaded?: (page: PageView) => void;
 };
 
-/** One Lens page: Markdown sections with their basis, what is contested, Forget with Undo, links and a short history. */
 export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, children, chatTitle, onOpenPage, onOpen, onOpenLink, onAsk, onChanged, onLoaded }: PageReaderProps) {
   const { t } = useTranslation("knowledge");
   const [page, setPage] = useState<PageView | null>(null);

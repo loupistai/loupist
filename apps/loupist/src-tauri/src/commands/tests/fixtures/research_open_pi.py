@@ -1,6 +1,3 @@
-"""Single-turn RPC fixture for the research hand-off tests: every prompt calls
-research_open through the broker, records the broker's answer, then replies."""
-
 import json
 import os
 import pathlib

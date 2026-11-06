@@ -211,7 +211,6 @@ pub(super) fn admit_chat_turn(
     // starting the broker.
     #[cfg(feature = "eval-harness")]
     let pi_agent_data_dir = state.pi_agent_data_dir()?;
-    // Interactive turns admit here; a scheduled or delegated run arrives admitted.
     let interactive = admission.is_none();
     let chat_started_at = Instant::now();
     on_event.tool_trace = Arc::default();

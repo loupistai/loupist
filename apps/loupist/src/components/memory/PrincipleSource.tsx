@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "@/i18n";
 
-/** The Markdown a principle is stored as, for people who want to copy it. */
 export function PrincipleSource({ statement, why, example }: { statement: string; why: string; example: string }) {
   const { t } = useTranslation("knowledge");
   const [open, setOpen] = useState(false);

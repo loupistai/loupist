@@ -1,12 +1,3 @@
-//! Background review of the World's vocabulary.
-//!
-//! After enough new Sources, one isolated call on the Loupist's World model may
-//! propose kinds the World already shows: a relationship from an open name, or a
-//! type for names the extraction left unclassified. The host counts the
-//! evidence from the snapshot and applies what it supports at once. The call
-//! uses the same gate as a learning review: processing must be enabled,
-//! unpaused, and have a model.
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use rusqlite::{params, OptionalExtension, Transaction};
@@ -23,10 +14,8 @@ use super::world_schema::{
 };
 use super::{KnowledgeError, KnowledgeResult, KnowledgeWrite};
 
-/// A relationship needs this many live claims across this many Sources.
 pub(crate) const RELATION_CLAIMS: usize = 6;
 pub(crate) const RELATION_SOURCES: usize = 3;
-/// A type needs this many currently unclassified names.
 pub(crate) const TYPE_NAMES: usize = 5;
 
 const REVIEW_SOURCES: i64 = 10;
@@ -89,8 +78,6 @@ struct ModelDraft {
     relations: Vec<ExtensionRelation>,
 }
 
-/// Whether a review could run now: a model is ready, the World is idle, a day
-/// has passed and ten Sources finished since the last review or change.
 pub(super) fn due(
     connection: &rusqlite::Connection,
     loupist_id: &str,
@@ -127,8 +114,6 @@ pub(super) fn due(
     Ok(completed >= REVIEW_SOURCES)
 }
 
-/// Stamps the review and builds its call. A call that never finishes waits for
-/// the next day instead of repeating.
 pub(super) fn claim(
     tx: &Transaction<'_>,
     loupist_id: &str,
@@ -251,8 +236,6 @@ fn relation_key(name: &str) -> String {
         .collect()
 }
 
-/// Keeps only what the snapshot shows: a relationship from an open name with
-/// enough claims across enough Sources, a type over enough unclassified names.
 fn supported(
     tx: &Transaction<'_>,
     snapshot: &WorldSnapshotBody,

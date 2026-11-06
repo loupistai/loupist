@@ -1,4 +1,3 @@
-//! `world_schema_update`: staged in the reply, applied only when it completes.
 use super::*;
 use crate::commands::tests::{chat, profile, seed_profile};
 
@@ -100,7 +99,6 @@ async fn a_stopped_reply_applies_nothing() {
         .stage_world_schema_update(&policy(true), request("ProcessStep"), "delivery-1")
         .await
         .unwrap();
-    // The turn was stopped: its capture is dropped without a commit.
     executor.discard_delivery(&policy(true), "delivery-1").await;
     assert!(executor.capture.staged_vocabulary.lock().await.is_empty());
     assert!(changes(&executor).is_empty());

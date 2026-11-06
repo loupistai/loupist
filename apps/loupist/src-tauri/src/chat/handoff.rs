@@ -1,10 +1,3 @@
-//! A research hand-off from the Bot. `research_open` stages it; the Bot's
-//! reply commits one `chat_handoffs` row and the session Chat in its own
-//! transaction; the host then runs that session once, unattended, and posts
-//! the result into the Bot. The row is the hand-off's whole lifecycle:
-//! `created` (committed, not yet sent), `running`, then `done`, `failed` or
-//! `stopped`. A run that stopped is reported, never sent again.
-
 use std::collections::BTreeMap;
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -43,7 +36,6 @@ pub(crate) const MAX_TITLE_CHARS: usize = 120;
 pub(crate) const MAX_QUESTION_CHARS: usize = 2_000;
 pub(crate) const MAX_BRIEF_CHARS: usize = 8_000;
 pub(crate) const MAX_PINS: usize = 8;
-/// How much of a finished session's answer the Bot shows.
 const SUMMARY_CHARS: usize = 2_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,7 +60,6 @@ impl HandoffStatus {
     }
 }
 
-/// Memory the session should read first: a Lens record or a World node.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum HandoffPin {
@@ -76,7 +67,6 @@ pub(crate) enum HandoffPin {
     World { world: String },
 }
 
-/// What the Bot asks a session to do, checked at the tool and bridge boundary.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct HandoffRequest {
     pub title: String,
@@ -120,8 +110,6 @@ fn identifier(value: &str, max: usize) -> bool {
 }
 
 impl HandoffRequest {
-    /// Validates the tool's or the bridge's arguments; an error names the field
-    /// and what it expects.
     pub(crate) fn parse(value: &Value) -> Result<Self, (String, String)> {
         let object = value.as_object().ok_or_else(|| {
             (
@@ -182,8 +170,6 @@ impl HandoffRequest {
         })
     }
 
-    /// The session's first user message: the question, the brief and the pins
-    /// as read targets, so the session's first turn sees all three.
     pub(crate) fn first_message(&self) -> String {
         let mut text = self.question.clone();
         if !self.brief.is_empty() {
@@ -205,7 +191,6 @@ impl HandoffRequest {
     }
 }
 
-/// The run settings a hand-off inherits from the Bot turn that staged it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct HandoffRun {
     pub model_profile_id: String,
@@ -215,7 +200,6 @@ pub(crate) struct HandoffRun {
     pub update_memory: bool,
 }
 
-/// A hand-off the broker accepted; it becomes a row when the reply commits.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct StagedHandoff {
     pub request: HandoffRequest,
@@ -229,12 +213,10 @@ pub(crate) struct Handoff {
     pub request_key: String,
     pub chat_id: String,
     pub title: String,
-    /// The session's first user message, sent when the run starts.
     pub prompt: String,
     pub run: HandoffRun,
     pub status: HandoffStatus,
     pub run_id: Option<String>,
-    /// The session's final reply once the run finished.
     pub message_id: Option<String>,
     pub error: Option<String>,
     pub created_at_ms: i64,
@@ -282,7 +264,6 @@ fn save(connection: &Connection, handoff: &Handoff) -> StoreResult<()> {
     Ok(())
 }
 
-/// The hand-off this Chat is running for, if any.
 pub(crate) fn open_for_chat(
     state: &AppState,
     loupist_id: &str,
@@ -299,9 +280,6 @@ pub(crate) fn open_for_chat(
         .map_err(map_internal)
 }
 
-/// Commits a staged hand-off inside the Bot reply's transaction: the row and
-/// the session Chat. A request key already used returns that hand-off and
-/// creates nothing. The one way to delegate, for the tool and the bridge.
 pub(crate) fn commit(
     transaction: &Connection,
     loupist_id: &str,
@@ -375,7 +353,6 @@ pub(crate) fn commit(
     Ok(handoff)
 }
 
-/// Commits a hand-off outside a Chat turn (the bridge's `research_handoff_start`).
 pub(crate) fn commit_standalone(
     state: &AppState,
     loupist_id: &str,
@@ -395,8 +372,6 @@ pub(crate) fn list(state: &AppState, loupist_id: &str) -> Result<Vec<Handoff>, C
     load_all(&connection, loupist_id).map_err(map_store)
 }
 
-/// Moves `created` to `running` once the run is registered. False when another
-/// pass already sent it.
 fn mark_running(
     state: &AppState,
     loupist_id: &str,
@@ -440,7 +415,6 @@ pub(crate) fn finish(
     let Some(mut handoff) = load(&transaction, loupist_id, id).map_err(map_store)? else {
         return Ok(());
     };
-    // A run reports its end once; a later signal cannot rewrite it.
     if handoff.status != HandoffStatus::Running {
         return Ok(());
     }
@@ -453,8 +427,6 @@ pub(crate) fn finish(
     Ok(())
 }
 
-/// Its own task: a hand-off starts a Chat turn, and a delivery pass runs where
-/// a Chat turn ends. The sessions that started reach the Bot on the pass after.
 fn send_created(state: &AppState, loupist_id: &str) {
     let state = state.clone();
     let loupist_id = loupist_id.to_owned();
@@ -467,8 +439,6 @@ fn send_created(state: &AppState, loupist_id: &str) {
     });
 }
 
-/// Sends every committed hand-off that has not started: a first send after a
-/// crash between commit and launch, never a retry of a run that started.
 async fn launch_created(state: &AppState, loupist_id: &str) -> Result<usize, CommandError> {
     let mut launched = 0;
     for handoff in list(state, loupist_id)? {
@@ -478,16 +448,12 @@ async fn launch_created(state: &AppState, loupist_id: &str) -> Result<usize, Com
         match launch(state, &handoff).await {
             Ok(true) => launched += 1,
             Ok(false) => {}
-            // A busy session or model stays `created` for the next pass.
             Err(error) => eprintln!("Research hand-off {} waits ({error})", handoff.id),
         }
     }
     Ok(launched)
 }
 
-/// Starts one delegated run through ordinary Chat admission, as a scheduled
-/// run does: the unattended tool policy, the session as the run's target and
-/// the Bot turn's model and Memory flags.
 async fn launch(state: &AppState, handoff: &Handoff) -> Result<bool, CommandError> {
     // Short: the run id names the broker's Unix socket, which allows 103 bytes.
     let run_id = format!("handoff-{}", &Uuid::new_v4().simple().to_string()[..8]);
@@ -514,7 +480,6 @@ async fn launch(state: &AppState, handoff: &Handoff) -> Result<bool, CommandErro
                 }
                 _ => None,
             };
-            // The Bot card changes once the run's lease drops (`ChatSurface::after_turn`).
             if let Some((status, message_id, error)) = outcome {
                 if let Err(error) = finish(
                     &state,
@@ -565,17 +530,10 @@ async fn launch(state: &AppState, handoff: &Handoff) -> Result<bool, CommandErro
     Ok(true)
 }
 
-/// The delivery pass's hand-off step. Every committed hand-off that has not
-/// started is sent, on its own task: the Bot reply's own, or one a crash left
-/// between commit and launch. A `running` row whose run no longer exists (the
-/// app stopped mid-run) is marked stopped: reported, never sent again. Returns
-/// every hand-off that started, for the Bot to show.
 pub(crate) fn for_delivery(
     state: &AppState,
     loupist_id: &str,
 ) -> Result<Vec<Handoff>, CommandError> {
-    // Rows before runs: a launch registers its run before it marks the row
-    // `running`, so a row read as running has its run in this list.
     let rows = list(state, loupist_id)?;
     let live = state
         .run_coordinator
@@ -613,8 +571,6 @@ pub(crate) fn for_delivery(
     Ok(shown)
 }
 
-/// What a message filed into Memory, for the card that reports it. None
-/// when nothing was filed or the digest cannot be read: the post still lands.
 pub(crate) fn learned_digest(
     state: &AppState,
     loupist_id: &str,
@@ -627,7 +583,6 @@ pub(crate) fn learned_digest(
         .and_then(|digest| serde_json::to_value(digest).ok())
 }
 
-/// The first paragraph of the session's final reply, for the Bot.
 fn summary(state: &AppState, handoff: &Handoff) -> String {
     let Some(message_id) = &handoff.message_id else {
         return String::new();
@@ -656,8 +611,6 @@ fn summary(state: &AppState, handoff: &Handoff) -> String {
         .unwrap_or_default()
 }
 
-/// The Bot message for one hand-off. Posted once at `running`, then rewritten
-/// in place as the run ends, so the status stays visible on one card.
 pub(crate) fn message(
     state: &AppState,
     handoff: &Handoff,

@@ -91,7 +91,6 @@ fn paused_principles_and_methods_leave_context_search_and_exact_reads_until_resu
         let (_, resumed) = host_prepare_read(&state, "loupist-a", &empty_read(id)).unwrap();
         assert_eq!(resumed.lens_receipt("exact_read").unwrap().kind, kind);
         let context = host_memory_context(&state, "loupist-a", "durable cash").unwrap();
-        // Principles return to their own block; pages return to the index.
         assert!(
             context.principles.iter().any(|p| &p.record_id == id)
                 || context.entries.iter().any(|entry| &entry.id == id)

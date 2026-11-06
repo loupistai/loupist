@@ -54,7 +54,6 @@ fn claim(id: &str, from: &str, to: &str) -> GraphClaim {
     }
 }
 
-/// A World with one followed name whose new claims reach four far names.
 fn publish_four_links(state: &AppState) {
     let blobs =
         crate::commands::knowledge::knowledge_blobs_for_loupist(state, "loupist-a").unwrap();

@@ -1,4 +1,3 @@
-//! Shared validation for references carried by notes and Journals.
 use super::*;
 
 /// Only acknowledged identifiers are copied; discovery and pending deliveries

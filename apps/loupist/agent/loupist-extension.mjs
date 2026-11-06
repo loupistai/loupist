@@ -321,9 +321,6 @@ function prepareSiblingArguments(input, container, fields) {
   return input;
 }
 
-// A page named by its bare id and a basis given as the refs array alone are
-// reshaped; refs beside the basis move into it only when the basis has none.
-// Nothing here adds a handle the model did not write.
 function prepareLensFileArguments(input) {
   if (!input || typeof input !== "object" || !Array.isArray(input.pages)) return input;
   for (const page of input.pages) {

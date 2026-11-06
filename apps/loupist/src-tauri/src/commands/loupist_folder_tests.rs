@@ -255,7 +255,6 @@ async fn folder_copy_reopens_chat_source_lens_and_paused_tasks_without_app_data(
     fs::create_dir(&other).unwrap();
     let state = AppState::for_folder_test(temp.path().join("app-a"));
     let a = create_folder_loupist(&state, &original).await.unwrap();
-    // A focus files the perspective page: one Memory record before any chat.
     let b = super::loupist::create_folder_loupist_with_setup(
         &state,
         &other,

@@ -266,7 +266,6 @@ pub(in crate::commands) fn persist_citations(
         if page.archived {
             continue;
         }
-        // A stale explicitly delivered page cannot count as a current-head citation.
         if reads
             .iter()
             .any(|r| r.scope == "lens" && r.record_id == id && r.revision_id != page.revision_id)

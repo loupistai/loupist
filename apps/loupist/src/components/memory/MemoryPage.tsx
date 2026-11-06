@@ -30,7 +30,6 @@ import "@/styles/memory-page.css";
 const t = i18n.getFixedT(null, "knowledge");
 export type MemorySegment = "about" | "pages" | "history";
 const SEGMENTS: readonly MemorySegment[] = ["about", "pages", "history"];
-/** Groups in reading order: what the Loupist knows about things first, then how it works, then your own rules. */
 const KIND_ORDER: readonly LensKind[] = ["subject", "idea", "method", "principle", "perspective"];
 const day = (ms: number) => formatDate(ms, { year: undefined, month: "short", day: "numeric" });
 
@@ -49,7 +48,6 @@ type Data = {
   paused: Set<string>;
   principles: Principle[];
   catalog: KnowledgeCatalog;
-  /** Sections the user forgot or undid, read from the pages those edits touched. */
   userRows: HistoryRow[];
   usage: Map<string, MemoryUsage>;
   reviews: LearningReview[];
@@ -121,7 +119,6 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onBack, onOp
       bridge.githubAccount().then(account => account.indexConfigured).catch(() => false),
       bridge.knowledgeMemoryControls({ loupistId }),
     ]).then(async ([principles, catalog, usage, reviews, events, learnMethods, watchlist, holdings, followedNodes, suggestions, imports, indexConfigured, controls]) => {
-      // The pages a user edit touched say which sections were forgotten or undone.
       const touched = [...new Set(events.filter(event => event.kind === "lens_revised" && event.actor === "user" && event.recordId).map(event => event.recordId!))].slice(0, 20);
       const pages = await Promise.all(touched.map(recordId => bridge.knowledgeLensRead({ loupistId, recordId }).catch(() => null)));
       if (!live) return;
@@ -146,7 +143,6 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onBack, onOp
       title: lens.lensKind === "perspective" && lens.title === HOST_STANDING_TITLE ? t("lensWorkspace.defaultPerspective") : lens.title,
     })),
   ], [data]);
-  // Arriving with an item opens the Pages tab on it; otherwise the first group that has pages.
   useEffect(() => {
     if (!data || segment) return;
     const target = items.find(item => item.id === initialItem);
@@ -161,7 +157,6 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onBack, onOp
   const suggestions = data ? <PackSuggestions bridge={bridge} loupistId={loupistId} groups={data.suggestions}
     onChanged={groups => { setData(current => current && { ...current, suggestions: groups }); changed(); }} /> : null;
 
-  // Search asks Rust for pages; a principle matches on its own words.
   const terms = query.trim().toLowerCase();
   const [hits, setHits] = useState<ReadonlySet<string> | null>(null);
   useEffect(() => {
@@ -437,7 +432,6 @@ function followedName(entry: WatchlistEntry, nodes: readonly KnowledgeMapNode[])
 
 type HistoryRow = { key: string; atMs: number; text: string; failed?: boolean; itemId?: string; map?: boolean };
 
-/** What the user did to a page's sections: forgot one, or undid that. */
 function sectionRows(page: PageView): HistoryRow[] {
   const heading = (key?: string) => key ? (page.body.kind === "principle" ? undefined : page.body.sections.find(section => section.key === key)?.heading) ?? key : "";
   return page.history.filter(entry => entry.origin === "user" && entry.outcome !== "summarized" && ["added", "retired"].includes(entry.outcome) && (entry.undoesOpId || entry.outcome === "retired")).map(entry => ({
@@ -446,11 +440,9 @@ function sectionRows(page: PageView): HistoryRow[] {
   }));
 }
 
-/** Dated learning events, newest first: pages filed after a chat, sections you forgot, principles taught, names added to the Map. */
 function historyRows(data: Data, threads: readonly ChatThread[]): HistoryRow[] {
   const titles = new Map(data.catalog.lenses.map(lens => [lens.recordId, lens.title]));
   const rows: HistoryRow[] = [...data.userRows];
-  // One row per answer that filed pages; the home Thread reads as the Bot, never its stored title.
   const filed = new Map<string, { atMs: number; chatId: string; recordIds: string[] }>();
   for (const event of data.events) {
     if ((event.kind !== "lens_created" && event.kind !== "lens_revised") || event.actor === "user" || !event.originChatId || !event.recordId) continue;

@@ -1,6 +1,3 @@
-//! `research_handoff_start`: the renderer delegates research the same way the
-//! Bot's `research_open` does, through `chat::handoff::commit`, then the host
-//! starts the session run.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::State;

@@ -1,27 +1,15 @@
-//! Multi-hop links a World publication makes new to this Loupist: paths of two
-//! or three hops from something the user follows (or an open idea is about),
-//! through a claim this publication added, to a name the seed could not reach
-//! within two hops before. Pure: two snapshots in, candidates out, no model
-//! call. A link is "new to this Loupist", never a claim of alpha.
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
 use super::model::{ClaimStatus, GraphClaim, WorldSnapshotBody};
 
-/// A middle node with more neighbours than this explains nothing: it joins everything.
 pub const HUB_DEGREE: usize = 40;
-/// Claims examined when expanding one node; the rest of a hub-like node is skipped.
 const MAX_INCIDENCES: usize = 64;
-/// Node expansions per detection, across every seed.
 const MAX_EXPANSIONS: usize = 4_000;
-/// Candidates kept per publication, best first.
 const MAX_CANDIDATES: usize = 50;
 const DAY_MS: i64 = 86_400_000;
 
-/// One hop of a path: the claim walked and the node it reaches. Roles keep the
-/// claim's direction when the walk goes against it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Hop {
@@ -29,7 +17,6 @@ pub struct Hop {
     pub relation: String,
     pub from_role: String,
     pub to_role: String,
-    /// The walk went against the claim: the node reached is an earlier endpoint.
     pub reversed: bool,
     pub node_id: String,
     pub name: String,
@@ -47,18 +34,14 @@ pub struct Candidate {
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Detection {
     pub candidates: Vec<Candidate>,
-    /// Work stopped at a bound; some links may be missing.
     pub truncated: bool,
 }
 
 pub struct DetectInput<'a> {
     pub previous: Option<&'a WorldSnapshotBody>,
     pub next: &'a WorldSnapshotBody,
-    /// Node ids in `next` to start from.
     pub seeds: &'a [String],
-    /// (seed, far) pairs already recorded; one candidate per pair ever.
     pub already: &'a BTreeSet<(String, String)>,
-    /// Map category of a node kind (company, market, technology, ...).
     pub category_of: &'a dyn Fn(&str) -> &'static str,
     pub at_ms: i64,
 }
@@ -71,7 +54,6 @@ struct Edge<'a> {
     reversed: bool,
 }
 
-/// Outgoing edges per node over claims that are not withdrawn, in claim order.
 fn adjacency(body: &WorldSnapshotBody) -> BTreeMap<&str, Vec<Edge<'_>>> {
     let mut out: BTreeMap<&str, Vec<Edge<'_>>> = BTreeMap::new();
     for claim in &body.claims {
@@ -100,7 +82,6 @@ fn neighbours<'a>(edges: Option<&Vec<Edge<'a>>>) -> BTreeSet<&'a str> {
     edges.into_iter().flatten().map(|edge| edge.to).collect()
 }
 
-/// Nodes within two hops of `seed`, the seed included.
 fn within_two(adjacency: &BTreeMap<&str, Vec<Edge<'_>>>, seed: &str) -> BTreeSet<String> {
     let mut reach = BTreeSet::new();
     reach.insert(seed.to_owned());
@@ -173,7 +154,6 @@ impl<'a> Walk<'a> {
         score + self.recency(hops, input.at_ms)
     }
 
-    /// Depth-first over `next` from `seed`, collecting the best path per far end.
     fn walk(
         &mut self,
         input: &DetectInput<'_>,
@@ -198,7 +178,6 @@ impl<'a> Walk<'a> {
             if edges.len() > MAX_INCIDENCES {
                 self.truncated = true;
             }
-            // The stack reverses order; walk the last edges first so claim order wins ties.
             for edge in edges.iter().take(MAX_INCIDENCES).rev() {
                 let to = edge.to;
                 if to == seed || hops.iter().any(|hop| hop.node_id == to) {
@@ -239,7 +218,6 @@ impl<'a> Walk<'a> {
                         );
                     }
                 }
-                // Only a low-degree middle node continues the walk.
                 if next_hops.len() < 3 && *self.degree.get(to).unwrap_or(&0) <= HUB_DEGREE {
                     stack.push((to.to_owned(), next_hops, is_new));
                 }
@@ -312,7 +290,6 @@ pub fn detect(input: &DetectInput<'_>) -> Detection {
     }
 }
 
-/// The Map category of a core World kind, as `src/components/map/kinds.ts` draws it.
 pub fn core_category(kind: &str) -> &'static str {
     match kind.trim().to_lowercase().as_str() {
         "organization" => "company",
@@ -428,7 +405,6 @@ mod tests {
                 )
             })
             .collect();
-        // The second hop walks c2 against its direction: b is its customer, c its supplier.
         assert_eq!(
             path,
             [

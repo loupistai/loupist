@@ -1,7 +1,3 @@
-//! Import exact learned method pages into disposable evaluation Loupists. Only
-//! declared Source record/revision identities may change; normal Lens
-//! authority still applies.
-
 use super::{AppState, Result, Source};
 use crate::knowledge::lens_page::{
     Basis, FilingOrigin, LensOp, PageDelta, PageKind, PageTarget, SectionKey,
@@ -19,7 +15,6 @@ pub(super) struct SeedSection {
     markdown: String,
 }
 
-/// A method page as a scenario declares it: summary plus keyed sections.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(super) struct SeedDoc {
@@ -84,7 +79,6 @@ struct PreparedLens {
     mapped_sources: Vec<MappedSource>,
 }
 
-/// sha256 over the sorted-key canonical JSON of the declared page.
 fn document_sha256(document: &SeedDoc) -> Result<String> {
     Ok(crate::util::sha256(
         crate::knowledge::canonicalize_json_text(&serde_json::to_string(document)?)?.as_bytes(),
@@ -584,7 +578,6 @@ mod tests {
             edit(&mut seed);
             assert!(validate(&[seed], &[source()]).is_err(), "{name}");
         }
-        // A fixture cannot ask to change the perspective or bind a raw Source id.
         for field in ["perspective", "select"] {
             let mut value = serde_json::to_value(learned()).unwrap();
             value[field] = json!(true);

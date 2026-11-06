@@ -69,12 +69,10 @@ pub struct MemoryUpdateChange {
     pub lesson: String,
     pub basis: String,
     pub future_use: String,
-    /// Each op a Lens filing applied to this page, with its outcome.
     #[serde(default)]
     pub outcomes: Vec<FiledOutcome>,
 }
 
-/// One `lens_file` op's result on a filed page, as the log recorded it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FiledOutcome {
@@ -354,16 +352,13 @@ pub struct ChatMessage {
     /// Watcher alerts the host posted in the home Thread.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub watch: Option<HomeWatch>,
-    /// A research hand-off the host posted in the home Thread: running, then its result.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub handoff: Option<HomeHandoff>,
     /// A results snapshot (or a failed capture) the host posted in the home Thread.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub earnings: Option<HomeEarnings>,
-    /// New kinds of things the Loupist's map now tracks, posted by the host.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vocabulary: Option<HomeVocabulary>,
-    /// A link discovery found after a World publication, posted by the host.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link: Option<HomeLink>,
     /// The as-of date the user set for this request (`YYYY-MM-DD`), kept on
@@ -416,21 +411,16 @@ pub struct HomeWatch {
     pub more: usize,
 }
 
-/// "Your map now also tracks ..." after a preset or a background review changed
-/// the World's vocabulary. Labels are display words, never type names.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HomeVocabulary {
     pub change_id: String,
     pub producer: String,
     pub labels: Vec<String>,
-    /// The same kinds in Korean, in the same order, when every label has one.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub labels_ko: Vec<String>,
 }
 
-/// One hop of a link's path as the Bot shows it: the name reached and the
-/// relation walked, against its claim when `reversed`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HomeLinkHop {
@@ -440,9 +430,6 @@ pub struct HomeLinkHop {
     pub reversed: bool,
 }
 
-/// A link discovery found new to this Loupist (`knowledge/connections.rs`):
-/// seed to far end through the path's names. `node_ids` (seed first) let the
-/// Map highlight the path. Never holdings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HomeLink {
@@ -494,8 +481,6 @@ pub struct HomeEarnings {
     pub measures: Vec<serde_json::Value>,
 }
 
-/// A research session the Bot handed off (`chat/handoff.rs`). One message per
-/// hand-off: posted when the run starts and rewritten in place when it ends.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HomeHandoff {
@@ -503,8 +488,6 @@ pub struct HomeHandoff {
     pub chat_id: String,
     pub title: String,
     pub status: crate::chat::handoff::HandoffStatus,
-    /// What the session filed into Memory (`LearnedDigest`), once the Lens
-    /// unit's digest is plugged in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub learned: Option<serde_json::Value>,
 }
@@ -523,8 +506,6 @@ pub struct HomeDelivery {
     pub run_thread_id: Option<String>,
     pub status: crate::scheduled_tasks::types::RunStatus,
     pub finished_at_ms: i64,
-    /// What the run filed into Memory (`LearnedDigest`), once the Lens unit's
-    /// digest is plugged in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub learned: Option<serde_json::Value>,
 }

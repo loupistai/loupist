@@ -7,19 +7,11 @@ import { Button } from "../ui/button";
 
 const t = i18n.getFixedT(null, "chat");
 
-/**
- * "New link: A ↔ C through B", posted once into the home Thread when a World
- * publication joined something the user follows to a name it could not reach
- * before. The path is the whole claim: no alpha, only "new to this Loupist".
- * Look into it hands the question to a research session the same way the Bot
- * does; Not useful keeps the link from coming back.
- */
 export function ThreadLink({ message, bridge, loupistId, loupistName, onOpenMap }: {
   message: ChatMessage;
   bridge?: LoupistBridge;
   loupistId: string;
   loupistName: string;
-  /** Opens the Map with these names highlighted, seed first. */
   onOpenMap?: (nodeIds: string[]) => void;
 }) {
   useTranslation("chat");

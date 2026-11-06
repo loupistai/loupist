@@ -942,7 +942,6 @@ pub struct JournalLensInput {
     pub revision_id: String,
     pub revision_digest: String,
     pub body_digest: String,
-    /// The page as delivered, rendered to Markdown with section keys.
     pub markdown: String,
     pub status: LensUseStatus,
 }

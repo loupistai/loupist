@@ -51,7 +51,7 @@ export function MapInspector({ node, map, bridge, location, onClose, onSelect, o
     setNotes([]);
     if (!noteScope) return;
     let live = true;
-    void bridge.knowledgeLensPagesForNode({ loupistId: location.loupistId, nodeId: noteScope }).then(found => { if (live) setNotes(found); }).catch(() => { /* Notes are an extra; the facts still show. */ });
+    void bridge.knowledgeLensPagesForNode({ loupistId: location.loupistId, nodeId: noteScope }).then(found => { if (live) setNotes(found); }).catch(() => {});
     return () => { live = false; };
   }, [bridge, location.loupistId, noteScope, catalog]);
   // Facts or Relationships; the choice stays while the user walks from name to name.

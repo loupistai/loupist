@@ -23,7 +23,6 @@ import type { ChatAdmission } from "./submission";
 
 const t = i18n.getFixedT(null, "chat");
 
-/** Every record the host posts into a Thread; the Rust `ChatMessage` carries these and the UI message must round-trip all of them. */
 const HOST_POST_FIELDS = ["delivery", "alert", "watch", "earnings", "vocabulary", "handoff", "link"] as const;
 type HostPostRecords = Pick<ChatMessage, (typeof HOST_POST_FIELDS)[number]>;
 

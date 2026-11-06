@@ -115,7 +115,6 @@ fn live(store: &KnowledgeStore, loupist: &str) -> WorldExtension {
         .unwrap()
 }
 
-/// Retains `count` Sources and returns the span of each.
 fn spans(store: &KnowledgeStore, loupist: &str, count: usize) -> Vec<String> {
     (0..count)
         .map(|index| {
@@ -459,7 +458,6 @@ fn review_waits_for_ten_later_sources_and_a_quiet_day() {
     assert!(due(AT + 50));
     let attempt = claim_ready(&store, LOUPIST, "Battery suppliers", AT + 60);
     assert!(attempt.request.get("tools").is_none());
-    // Claiming stamps the review: a day must pass, then ten more Sources.
     assert!(!due(AT + 61));
     complete_sources(&store, LOUPIST, &(AT + 100..AT + 110).collect::<Vec<_>>());
     assert!(!due(AT + 62));

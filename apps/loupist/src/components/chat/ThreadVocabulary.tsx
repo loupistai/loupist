@@ -6,11 +6,6 @@ import { Button } from "../ui/button";
 
 const t = i18n.getFixedT(null, "chat");
 
-/**
- * "Your map now also tracks ...", posted once into the home Thread after a
- * starting setup or a background review changed what the map tracks. Undo
- * reverses only that change.
- */
 export function ThreadVocabulary({ message, bridge, loupistId, loupistName }: {
   message: ChatMessage;
   bridge?: LoupistBridge;

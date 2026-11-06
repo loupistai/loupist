@@ -512,9 +512,6 @@ pub(super) fn query(
     })
 }
 
-/// Lens pages applied to World entities: `applied` anchors from final-answer
-/// links and method learning, and `subject` anchors of topic pages. Each
-/// anchor turn counts once per (page, entity).
 fn applications(
     tx: &Transaction<'_>,
     loupist: &str,

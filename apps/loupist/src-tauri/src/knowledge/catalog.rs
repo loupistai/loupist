@@ -9,8 +9,6 @@ use super::revision::{load_revision, StoredRevision};
 use super::{model::RecordSnapshot, schema::KNOWLEDGE_FORMAT_VERSION};
 use rusqlite::{params, Transaction};
 
-/// Source and World records. A Lens page is created by `KnowledgeWrite::file`
-/// and a principle by `principle_save`.
 pub(super) fn create_record(
     tx: &Transaction<'_>,
     request: CreateRecord,

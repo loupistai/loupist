@@ -1,5 +1,3 @@
-//! Which World nodes a followed symbol or an asset page means.
-
 use std::collections::BTreeSet;
 
 use serde_json::Value;
@@ -8,8 +6,6 @@ use super::assets::class::exchange_time_zone;
 use super::GraphNode;
 use crate::store::user_context::MapContextItem;
 
-/// A hit on a symbol or name never picks among several nodes: `Ambiguous`
-/// matches nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum IdentityMatch {
     Exact(String),
@@ -66,8 +62,6 @@ enum MarketAgreement {
     Undecided,
 }
 
-/// Two markets conflict only when both are recognized venues in different
-/// places; an unrecognized name ("New York Stock Exchange") cannot exclude a node.
 fn market_agreement(stated: &str, followed: &str) -> MarketAgreement {
     if stated.eq_ignore_ascii_case(followed) {
         return MarketAgreement::Agrees;
@@ -79,7 +73,6 @@ fn market_agreement(stated: &str, followed: &str) -> MarketAgreement {
     }
 }
 
-/// Onboarding stores `UNKNOWN` when the user gave no market.
 fn followed_market(item: &MapContextItem) -> &str {
     let market = item.market.trim();
     if market.eq_ignore_ascii_case("UNKNOWN") {
@@ -148,8 +141,6 @@ pub(crate) fn resolve_followed(item: &MapContextItem, nodes: &[GraphNode]) -> Id
     }
 }
 
-/// The nodes each followed item resolves to, and the items that resolve to none
-/// (an ambiguous item is unmatched).
 pub(crate) fn match_items(
     items: &[MapContextItem],
     nodes: &[GraphNode],

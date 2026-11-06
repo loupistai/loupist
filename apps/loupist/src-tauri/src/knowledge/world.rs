@@ -23,7 +23,6 @@ pub(super) fn seal_world(
     seal_world_with_actor(tx, request, "user", None, None, &[])
 }
 
-/// `followed` seeds discovery; a caller without the app's watchlist passes none.
 pub(super) fn seal_world_with_actor(
     tx: &Transaction<'_>,
     request: SealWorld,

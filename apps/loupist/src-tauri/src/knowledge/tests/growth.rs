@@ -134,7 +134,6 @@ fn knowledge_growth_lens_changes_keep_origin_and_skip_noops() {
             )
         })
         .unwrap();
-    // Replaying the same section adds no revision and no event.
     store
         .transact(|write| {
             write.put_section(

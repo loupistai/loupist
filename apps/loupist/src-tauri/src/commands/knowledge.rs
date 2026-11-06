@@ -156,7 +156,6 @@ pub struct SourceDetailDto {
 pub struct KnowledgeLensReadRequest {
     pub loupist_id: String,
     pub record_id: String,
-    /// The tool pins a read to the revision it was told about.
     #[serde(default)]
     pub revision_id: Option<String>,
 }
@@ -380,7 +379,6 @@ fn connection_set_status(
     })
 }
 
-/// Not useful: the link stays recorded so it is never found again.
 #[tauri::command]
 pub fn knowledge_connection_dismiss(
     request: KnowledgeConnectionRequest,
@@ -393,7 +391,6 @@ pub fn knowledge_connection_dismiss(
     )
 }
 
-/// Look into it: the renderer started a research hand-off for this link.
 #[tauri::command]
 pub fn knowledge_connection_open(
     request: KnowledgeConnectionRequest,
@@ -444,7 +441,6 @@ pub fn memory_learned(
     learned_digests(&state, &request.loupist_id, &request.message_ids)
 }
 
-/// What each message filed into Lens, from the log.
 pub(crate) fn learned_digests(
     state: &AppState,
     loupist_id: &str,
@@ -1274,7 +1270,6 @@ pub(crate) fn lens_search(
             let Some(record_id) = hit.get("recordId").and_then(|v| v.as_str()) else {
                 continue;
             };
-            // One hit per page: the index holds a metadata and a body document.
             if found.iter().any(|seen| seen.record_id == record_id) {
                 continue;
             }
@@ -1504,7 +1499,6 @@ fn summarize(
     })
 }
 
-/// True when `record_id` is one of this Loupist's Lens records.
 pub(crate) fn is_loupist_lens_record(
     state: &AppState,
     loupist_id: &str,

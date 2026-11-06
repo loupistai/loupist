@@ -917,7 +917,6 @@ pub struct AgentHostContext {
     pub workspace: AgentWorkspaceSnapshot,
     pub preload_component_ids: Vec<String>,
     pub explicit_skill_names: Vec<String>,
-    /// Bot, session, scheduled or delegated: frozen with the turn.
     pub surface: crate::chat::surface::ChatSurface,
 }
 
@@ -1069,9 +1068,6 @@ pub fn as_of_envelope(cutoff: &str) -> Value {
     })
 }
 
-/// Adds the as-of envelope beside the live-time envelope.
-/// The `chat_surface` block tells the model which conversation it is in. It
-/// is present every turn, with Memory on or off.
 pub fn attach_chat_surface(envelope: &str, surface: &crate::chat::surface::ChatSurface) -> String {
     let Ok(mut value) = serde_json::from_str::<Value>(envelope) else {
         return envelope.to_owned();
@@ -1083,6 +1079,7 @@ pub fn attach_chat_surface(envelope: &str, surface: &crate::chat::surface::ChatS
     serde_json::to_string(&value).unwrap_or_else(|_| envelope.to_owned())
 }
 
+/// Adds the as-of envelope beside the live-time envelope.
 pub fn attach_as_of(envelope: &str, cutoff: &str) -> String {
     let Ok(mut value) = serde_json::from_str::<Value>(envelope) else {
         return envelope.to_owned();
@@ -1112,7 +1109,6 @@ pub struct LearnedMemoryIndexEntry {
     pub summary: String,
     pub as_of: String,
     pub kind: String,
-    /// Lens pages: page kind, section count and up to three map names.
     #[serde(rename = "pageKind", skip_serializing_if = "Option::is_none")]
     pub lens_kind: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1154,7 +1150,6 @@ pub fn attach_relevant_memory(envelope: &str, relevant: &[RelevantMemoryPointer]
     value.to_string()
 }
 
-/// Adds the `worldKinds` block to an active Memory protocol.
 pub fn attach_world_kinds(envelope: &str, kinds: &Value) -> String {
     let Ok(mut value) = serde_json::from_str::<Value>(envelope) else {
         return envelope.to_owned();

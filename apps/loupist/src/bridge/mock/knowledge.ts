@@ -98,7 +98,6 @@ type Store = {
   sources: SourceDetail[];
   acquisitions: Record<string, RetainedSource>;
   lenses: PageView[];
-  /** Append-only Lens log; `before` holds what Undo restores. */
   log: LogRow[];
   settings: GraphProcessingSettings;
   jobs: GraphJobView[];
@@ -672,7 +671,6 @@ export const knowledgeLensSearch = async (state: MockBridgeState, request: { lou
     .map((lens) => ({ recordId: lens.recordId, revisionId: lens.revisionId, kind: lens.kind, title: lens.title, summary: pageSummary(lens), snippet: pageSummary(lens).slice(0, 180) }));
 };
 
-/** What a turn that files a section does to a mock page; the chat mock and the section controls share it. */
 export function mockFileSection(state: MockBridgeState, loupistId: string, recordId: string, next: { key: string; heading: string; markdown: string; chatId?: string; messageId?: string }): PageView {
   const store = ensure(state, loupistId);
   const page = store.lenses.find((item) => item.recordId === recordId);

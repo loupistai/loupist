@@ -1,5 +1,3 @@
-// In-memory World vocabulary store for the mock bridge and previews.
-
 import type { ExtensionType, SchemaChange, SchemaChangeProducer, SchemaRemovalKind, WorldExtension, WorldSchemaView } from "../../contracts/knowledge";
 
 const MAX_TYPES = 4;
@@ -10,7 +8,6 @@ function emptyWorldSchema(now = 0): WorldSchemaView {
   return { extension: { version: 0, types: [], relations: [], updatedAtMs: now }, changes: [] };
 }
 
-/** The preset a template starts with, whatever the focus text says (Rust `curated_seed`). */
 export function curatedSeedView(template: string | undefined, now = 0): WorldSchemaView | null {
   const extension = template === "semiconductors"
     ? semiconductorExtension(now)
@@ -26,7 +23,6 @@ function names(extension: WorldExtension) {
   return { types: extension.types.map(type => type.name), relations: extension.relations.map(relation => relation.name) };
 }
 
-/** The view after `next` replaces the live extension, with one more change recorded. */
 function changed(view: WorldSchemaView, next: WorldExtension, producer: SchemaChangeProducer, now: number, changeId = `change-${view.changes.length + 1}`): WorldSchemaView {
   const before = names(view.extension);
   const after = names(next);
@@ -47,7 +43,6 @@ function changed(view: WorldSchemaView, next: WorldExtension, producer: SchemaCh
   return refreshUndoable({ extension, changes: [change, ...view.changes].slice(0, MAX_CHANGES) });
 }
 
-/** A change is undoable while one of its added kinds is still tracked or one of its removed kinds is gone. */
 function refreshUndoable(view: WorldSchemaView): WorldSchemaView {
   const live = names(view.extension);
   return {
@@ -140,7 +135,6 @@ function macroExtension(now: number): WorldExtension {
   };
 }
 
-/** Semiconductors preset plus a later background-review change, for the tracking previews. */
 export function semiconductorTrackingView(now = 0): WorldSchemaView {
   const preset = curatedSeedView("semiconductors", now)!;
   const capacityPlan: ExtensionType = {

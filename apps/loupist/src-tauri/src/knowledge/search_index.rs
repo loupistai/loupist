@@ -821,8 +821,6 @@ fn documents(
             source_documents(blobs, title, &parsed, &mut drafts)?;
         }
         RecordKind::Lens => {
-            // The kind lives in metadata; a principle payload is the only
-            // shape that refuses a page's fields.
             let body = match super::principles::PrincipleInput::deserialize(payload) {
                 Ok(principle) => [Some(principle.statement), principle.why, principle.example]
                     .into_iter()

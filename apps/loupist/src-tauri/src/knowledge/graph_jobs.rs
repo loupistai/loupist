@@ -146,8 +146,6 @@ pub struct GraphProcessingSettings {
     /// Optional cheaper model for Graphiti's small calls. Empty uses the main model.
     #[serde(default)]
     pub fast_model: Option<String>,
-    /// Extra entity and relation kinds for this Loupist, read from the latest
-    /// `knowledge_schema_changes` row on load and never stored with the settings.
     #[serde(skip)]
     pub extension: super::world_schema::WorldExtension,
     /// Item delivery and removal controls share the existing per-Loupist JSON row.

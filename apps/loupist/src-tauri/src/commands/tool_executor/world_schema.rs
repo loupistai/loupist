@@ -1,6 +1,3 @@
-//! `world_schema_update`: the user asks the map to track a new kind of thing or
-//! link. The call is checked here against the live vocabulary and committed
-//! with the reply, so a stopped turn changes nothing.
 use rusqlite::Transaction;
 
 use super::*;
@@ -12,7 +9,6 @@ use crate::knowledge::{
 pub(in crate::commands) struct StagedVocabulary {
     pub types: Vec<ExtensionType>,
     pub relations: Vec<ExtensionRelation>,
-    /// The user message that asked for it.
     pub user_message_id: Option<String>,
 }
 
@@ -167,8 +163,6 @@ impl ToolLabels {
     }
 }
 
-/// Applies the staged kinds inside the reply's own transaction. A name that
-/// turned up since staging is skipped; the reply does not fail for it.
 pub(crate) fn commit_turn(
     tx: &Transaction<'_>,
     loupist_id: &str,

@@ -1,8 +1,3 @@
-//! Research hand-off behavior at its boundaries: the tool executor refuses
-//! `research_open` outside the Bot; a Bot turn commits one hand-off and one
-//! session, the host runs that session unattended once and the Bot shows the
-//! result; a repeated key, a failed Bot reply and a crash before launch each
-//! converge to one row, one chat and one run.
 use std::collections::BTreeSet;
 
 use serde_json::json;
@@ -204,8 +199,6 @@ mod turns {
             drain(&self.state).await;
         }
 
-        /// The Bot's cards for hand-offs, once every one shows a terminal status.
-        /// The card changes after the run's lease drops, a little after its row.
         async fn settled_cards(&self) -> Vec<ChatMessage> {
             tokio::time::timeout(std::time::Duration::from_secs(20), async {
                 loop {
@@ -276,8 +269,6 @@ mod turns {
         assert_eq!(reply.status, ChatMessageStatus::Complete);
         assert_eq!(Some(&reply.id), row.message_id.as_ref());
 
-        // The Bot staged the hand-off; the delegated session ran under the
-        // unattended policy, which refuses research_open before anything else.
         let calls = fixture.calls();
         assert_eq!(calls.len(), 2, "{calls:?}");
         assert_eq!(calls[0]["result"]["ok"], true);
@@ -303,7 +294,6 @@ mod turns {
         assert_eq!(cards[0].content, "HBM4 supply widens in 2027.");
         assert!(cards[0].host_composed);
 
-        // The same request key again creates no second session and no second run.
         let chats_before = fixture.chats().len();
         fixture.bot_turn("bot-2").await;
         let rows = fixture.settled_handoffs().await;
@@ -349,7 +339,6 @@ mod turns {
                 update_memory: false,
             },
         };
-        // The bridge and the tool commit through the same function.
         let committed =
             handoff::commit_standalone(&fixture.state, &fixture.loupist_id, &staged).unwrap();
         let again =
@@ -357,8 +346,6 @@ mod turns {
         assert_eq!(committed, again);
         assert_eq!(committed.status, HandoffStatus::Created);
         assert_eq!(fixture.chats().len(), 2);
-        // The app stopped before the launch. Opening the Loupist runs the
-        // delivery pass, and another pass can follow at once.
         let deliver =
             || crate::chat::home::deliver_finished_runs(&fixture.state, &fixture.loupist_id);
         deliver().unwrap();

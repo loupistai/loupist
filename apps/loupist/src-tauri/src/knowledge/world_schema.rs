@@ -111,7 +111,6 @@ impl Producer {
     }
 }
 
-/// One append-only row of `knowledge_schema_changes`.
 #[derive(Debug, Clone)]
 pub(crate) struct SchemaChange {
     pub change_id: String,
@@ -123,7 +122,6 @@ pub(crate) struct SchemaChange {
     pub created_at_ms: i64,
 }
 
-/// A kind's name with the labels the interface shows for it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct KindLabel {
     pub name: String,
@@ -140,7 +138,6 @@ pub struct SchemaChangeView {
     pub added_relations: Vec<String>,
     pub removed_types: Vec<String>,
     pub removed_relations: Vec<String>,
-    /// Display labels for every name above, so a removed kind still reads in plain words.
     pub kind_labels: Vec<KindLabel>,
     pub created_at_ms: i64,
     pub undoable: bool,
@@ -195,7 +192,6 @@ impl Delta {
             && self.removed_relations.is_empty()
     }
 
-    /// This delta without the kinds `later` added or removed.
     fn untouched_by(mut self, later: &Delta) -> Self {
         let types: Vec<&str> = later
             .added_types
@@ -256,11 +252,6 @@ fn without_type(extension: &mut WorldExtension, name: &str) {
         .retain(|relation| !relation.signatures.is_empty());
 }
 
-/// The live extension after reversing `change` (`later` holds every change
-/// after it): the kinds it added go away and the kinds it removed come back,
-/// except a kind a later change added or removed, which stays as that change
-/// left it. None when nothing is left to reverse. Undo and the view's
-/// `undoable` both decide here.
 fn reversed(
     current: &WorldExtension,
     change: &SchemaChange,
@@ -291,7 +282,6 @@ fn reversed(
     (!unchanged).then_some(next)
 }
 
-/// The change `change_id` and every change after it, newest first.
 fn change_and_later(
     connection: &rusqlite::Connection,
     loupist_id: &str,
@@ -429,7 +419,6 @@ pub(crate) fn schema_view(
     loupist_id: &str,
 ) -> KnowledgeResult<WorldSchemaView> {
     let extension = live_extension(connection, loupist_id)?;
-    // Newest first, so every change after the one at `index` is listed before it.
     let recent = recent_changes(connection, loupist_id, VIEW_CHANGES)?;
     let changes = recent
         .iter()
@@ -441,7 +430,6 @@ pub(crate) fn schema_view(
 
 const WORLD_KINDS_MAX_BYTES: usize = 1536;
 
-/// The first sentence of a model-facing description, at most `max` characters.
 fn means(description: &str, max: usize) -> String {
     let first = description
         .split(['.', '\n'])
@@ -457,8 +445,6 @@ fn means(description: &str, max: usize) -> String {
     text
 }
 
-/// The `worldKinds` block of the Memory envelope: what the World's extraction
-/// can name, in the model's words, bounded to 1.5 KiB.
 pub(crate) fn world_kinds_block(extension: &WorldExtension) -> serde_json::Value {
     let core_types = || {
         super::world_extract::ontology::core_entity_types()
@@ -503,8 +489,6 @@ pub(crate) fn world_kinds_block(extension: &WorldExtension) -> serde_json::Value
     }
 }
 
-/// The vocabulary the World had when `visible` last held for a change, so an
-/// as-of turn never sees kinds added after its cutoff.
 pub(crate) fn visible_extension(
     connection: &rusqlite::Connection,
     loupist_id: &str,
@@ -517,7 +501,6 @@ pub(crate) fn visible_extension(
         .unwrap_or_default())
 }
 
-/// Labels of the kinds a change added, for the Bot's vocabulary card.
 pub(crate) fn added_labels(change: &SchemaChange) -> Vec<KindLabel> {
     let delta = Delta::between(&change.before, &change.after);
     let types = delta
@@ -537,7 +520,6 @@ pub(crate) fn added_labels(change: &SchemaChange) -> Vec<KindLabel> {
         .collect()
 }
 
-/// Who made a change, what supports it, and the Chat message that asked.
 pub(crate) struct Provenance<'a> {
     pub producer: Producer,
     pub evidence: serde_json::Value,
@@ -554,8 +536,6 @@ impl<'a> Provenance<'a> {
     }
 }
 
-/// Appends a change taking the live extension to `next`, after the same
-/// validation every producer shares. A change that alters nothing is refused.
 pub(crate) fn record_change(
     tx: &Transaction<'_>,
     loupist_id: &str,
@@ -623,7 +603,6 @@ pub(crate) fn record_change(
     Ok(change)
 }
 
-/// Adds new kinds to the live extension. A name the World already has is refused.
 pub(crate) fn add_kinds(
     tx: &Transaction<'_>,
     loupist_id: &str,
@@ -647,9 +626,6 @@ pub(crate) fn add_kinds(
     record_change(tx, loupist_id, next, provenance, now_ms)
 }
 
-/// Reverses one change without touching later ones: its added kinds are
-/// removed (with the links that depended on them) and its removed kinds return,
-/// except the kinds a later change added or removed.
 pub(crate) fn undo_change(
     tx: &Transaction<'_>,
     loupist_id: &str,
@@ -670,7 +646,6 @@ pub(crate) fn undo_change(
     )
 }
 
-/// The user's Remove on one tracked kind or link.
 pub(crate) fn remove_schema_item(
     tx: &Transaction<'_>,
     loupist_id: &str,
@@ -703,7 +678,6 @@ pub(crate) fn remove_schema_item(
     )
 }
 
-/// The curated extension a template starts with, whatever the focus text says.
 pub fn curated_seed(template: Option<&str>, now_ms: i64) -> Option<WorldExtension> {
     let mut extension = match template? {
         "semiconductors" => semiconductors(),
@@ -716,7 +690,6 @@ pub fn curated_seed(template: Option<&str>, now_ms: i64) -> Option<WorldExtensio
     Some(extension)
 }
 
-/// Applies the template's curated kinds to a new Loupist, once.
 pub(crate) fn apply_preset(
     tx: &Transaction<'_>,
     loupist_id: &str,
@@ -1438,7 +1411,6 @@ mod tests {
         );
         assert_eq!(full["added"]["types"].as_object().unwrap().len(), 4);
         assert_eq!(full["version"], 1);
-        // An as-of turn before the change sees none of it.
         let before = visible_extension(&tx, "loupist-a", &|at| at < 10).unwrap();
         assert!(before.types.is_empty());
         let after = visible_extension(&tx, "loupist-a", &|at| at <= 10).unwrap();

@@ -1,5 +1,3 @@
-//! `lens_file`: handles resolve against this turn's acknowledged reads and
-//! saves; pages are written only when the reply commits.
 use super::knowledge_seam::{retain_publisher_source, seal_world};
 use super::*;
 use crate::knowledge::lens_page::{BasisRef, FilingOrigin};
@@ -20,8 +18,6 @@ fn turn_capture() -> Arc<ToolCapture> {
     })
 }
 
-/// Reads the World and acknowledges the delivery; returns the readRef and
-/// the first claim id the view carried.
 async fn acknowledged_world_read(executor: &AppToolExecutor, world: &Value) -> (String, String) {
     let read = executor
         .world_read(
@@ -47,7 +43,6 @@ fn subject_fact(basis: Value) -> Value {
     })
 }
 
-/// Commits the staged turn as the chat runtime does: Sources first, then filings.
 async fn commit_turn(
     state: &AppState,
     capture: &ToolCapture,
@@ -192,7 +187,6 @@ async fn a_turn_stopped_before_completion_files_nothing() {
         )
         .await
         .unwrap();
-    // The turn stopped: its delivery is dropped and no commit runs.
     executor.capture.discard_delivery("file").await;
     assert!(capture.staged_filings.lock().await.is_empty());
     assert!(log_rows(&state).is_empty());
@@ -242,7 +236,6 @@ async fn unknown_or_foreign_handles_refuse_by_field_without_echoing_them() {
         refusal(json!({"refs": [{"lens": "rdg_forged_model_text"}]})).await,
         "pages[0].ops[0].basis.refs[0].lens"
     );
-    // A World readRef is not a Source handle: the field names the scope it needs.
     assert_eq!(
         refusal(json!({"refs": [{"source": read_ref}]})).await,
         "pages[0].ops[0].basis.refs[0].source"
@@ -289,7 +282,6 @@ async fn lens_file_requires_an_acknowledged_exact_read_and_saved_sources() {
         .await
         .is_err());
     executor.capture.commit_delivery("lens-read").await;
-    // A page admitted only as turn context has not been exact-read by the model.
     let acknowledged = std::mem::take(&mut *capture.staged_reads.lock().await);
     *capture.context_reads.lock().await = acknowledged.clone();
     let context_only = executor
@@ -346,7 +338,6 @@ async fn lens_file_requires_an_acknowledged_exact_read_and_saved_sources() {
     executor.capture.commit_delivery("valid").await;
     assert_eq!(capture.staged_filings.lock().await.len(), 1);
 
-    // At commit the same-turn save resolves to the Source the commit retained.
     let changes = commit_turn(&state, &capture, "assistant-2").await;
     let change = changes
         .iter()
@@ -465,7 +456,6 @@ async fn an_unattended_run_refuses_said_and_admits_lens_file() {
     assert!(crate::briefings::policy::allowed_method(
         ToolMethod::LensFile
     ));
-    // The same call in an interactive turn cites the user's message.
     let interactive = executor_for(&state, turn_capture());
     let staged = interactive
         .stage_lens_file(
@@ -590,7 +580,6 @@ async fn a_handoff_card_and_a_scheduled_delivery_carry_what_the_run_learned() {
         delivery.learned.unwrap()["pages"][0]["recordId"],
         json!(record_id)
     );
-    // A message that filed nothing carries no digest.
     let nothing = crate::chat::handoff::learned_digest(&state, "loupist-a", &["final-9".into()]);
     assert!(nothing.is_none());
 }

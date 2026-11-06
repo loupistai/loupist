@@ -963,7 +963,6 @@ mod loupist_profile_tests {
             assert!(!extension.types.is_empty() && !events.is_empty(), "{name}");
             assert_eq!(changes, vec!["preset".to_owned()], "{name}");
         }
-        // A template without a curated seed, and a blank desk, leave the core alone.
         for (name, template) in [
             ("Portfolio", Some("portfolio")),
             ("Custom", Some("custom")),

@@ -506,11 +506,6 @@ export type HomeWatch = {
   more: number;
 };
 
-/**
- * A results snapshot the host posted (Rust `HomeEarnings`): "{name} reported
- * {period} results." with the two most material measures, or a failed
- * before-capture with Try again. Successful before-captures post nothing.
- */
 /** New kinds of things the map tracks after a preset or a background review. Labels are display words. */
 export type HomeVocabulary = {
   changeId: string;
@@ -519,6 +514,11 @@ export type HomeVocabulary = {
   /** The same kinds in Korean, in the same order, when each has one. */
   labelsKo?: string[];
 };
+/**
+ * A results snapshot the host posted (Rust `HomeEarnings`): "{name} reported
+ * {period} results." with the two most material measures, or a failed
+ * before-capture with Try again. Successful before-captures post nothing.
+ */
 export type HomeEarnings = {
   asset_id: string;
   event_id: string;
@@ -715,7 +715,6 @@ export type ChatAttachmentInput = {
 
 export type ChatMemorySetAsideRequest = { loupist_id: string; thread_id: string; record_id: string; set_aside: boolean };
 
-/** `research_handoff_start`: the same hand-off the Bot's `research_open` makes. */
 export type ResearchHandoffRequest = {
   loupistId: string;
   title: string;

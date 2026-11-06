@@ -46,7 +46,6 @@ impl AppToolExecutor {
             .as_str()
             .ok_or(BrokerError::Malformed)?
             .to_owned();
-        // The delivered text is the exact page; the receipt digest binds it.
         crate::commands::knowledge::lens_read(
             &self.state,
             crate::commands::knowledge::KnowledgeLensReadRequest {

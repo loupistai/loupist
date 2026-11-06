@@ -134,10 +134,6 @@ export const chatCreate = async (
   return clone(thread);
 };
 
-/**
- * The mock's `research_handoff_start`: one session per request key, its first
- * message the question and brief, and one card in the Bot that reads as done.
- */
 export const researchHandoffStart = async (
   state: MockBridgeState,
   request: ResearchHandoffRequest,

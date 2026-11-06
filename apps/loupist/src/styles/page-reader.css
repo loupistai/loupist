@@ -1,4 +1,3 @@
-/* A Lens page: Markdown sections with their basis, what is contested, links and a short history. */
 .page-reader { display: grid; gap: var(--gg-space-5); min-width: 0; font-size: var(--gg-text-reading); line-height: var(--gg-leading-reading); }
 .page-reader-toolbar { display: flex; align-items: center; gap: var(--gg-space-2); min-width: 0; color: var(--gg-color-text-secondary); }
 .page-reader-toolbar .memory-reader-back { flex: 0 1 auto; max-width: 42%; min-width: 0; overflow: hidden; }
@@ -39,7 +38,6 @@ button.page-chip:hover { border-color: var(--gg-color-border-strong); color: var
 .page-history time { flex: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
 .page-reader-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
 
-/* The group under an answer that lists what it filed. */
 .learned-card { display: grid; gap: var(--gg-space-3); margin-top: var(--gg-space-2); padding: var(--gg-space-3) var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
 .learned-page > header { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gg-space-1) var(--gg-space-3); margin-bottom: var(--gg-space-1); }
 .learned-page-title { padding: 0; border: 0; background: transparent; color: var(--gg-color-accent-ink); font: inherit; font-weight: var(--gg-weight-medium); text-align: left; cursor: pointer; overflow-wrap: anywhere; }

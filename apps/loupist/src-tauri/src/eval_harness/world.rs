@@ -86,8 +86,6 @@ struct Scenario {
     /// Custom research focus, the same text the product stores on a new Loupist.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     research_focus: String,
-    /// `template` applies the curated preset a new Loupist gets from `template`.
-    /// `none` leaves the World extension empty. Absent matches `none`.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     seed: String,
     /// The template whose curated seed `seed: "template"` applies.
@@ -344,7 +342,6 @@ fn custom_focus(scenario: &Scenario) -> Result<()> {
     }
 }
 
-/// The product's curated preset for this scenario's template.
 fn template_seed(scenario: &Scenario, now_ms: i64) -> Option<crate::knowledge::WorldExtension> {
     crate::knowledge::curated_seed(Some(scenario.template.as_str()), now_ms)
 }

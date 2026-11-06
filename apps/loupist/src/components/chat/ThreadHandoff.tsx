@@ -11,11 +11,6 @@ const statusLabel = (status: HomeHandoff["status"]) => ({
   stopped: t("thread.handoffStopped"),
 })[status];
 
-/**
- * A research session the Bot handed off: its title, where it stands and, once
- * it finished, the first paragraph of its answer. The full answer stays in the
- * session, which Open reaches.
- */
 export function ThreadHandoff({ message, loupistName, onOpenRunChat }: {
   message: ChatMessage;
   loupistName: string;

@@ -509,7 +509,6 @@ async fn send_chat_inner(
         let surface = launched.capture.surface.clone();
         let (state, loupist_id) = (launched.app_state.clone(), launched.loupist_id.clone());
         finalize::finalize_chat_turn(launched, streamed).await;
-        // The run lease has dropped; what the surface owes after a reply runs now.
         if let Some(surface) = surface {
             surface.after_turn(&state, &loupist_id);
         }

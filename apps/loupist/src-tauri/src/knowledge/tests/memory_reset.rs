@@ -44,7 +44,6 @@ fn reset_removes_only_loupist_authored_memory_and_queues_world_reload() {
         .unwrap();
     let learned = method(&store, "Learned research method", "loupist");
     let user_method = method(&store, "My own method", "user");
-    // A Loupist section on the user's own page goes; the page stays.
     store
         .transact(|write| {
             write.put_section(

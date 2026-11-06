@@ -34,11 +34,9 @@ type Props = {
   listExpanded: boolean;
   onOpenSource?: (evidence: ChatEvidenceRef, anchor?: HTMLElement) => void;
   onShowOnMap?: (ids: ReadonlySet<string>) => void;
-  /** The panel under the answer that quotes the pages used, with Not this time and Edit. */
   usedListId: string;
   usedExpanded: boolean;
   onToggleUsed: () => void;
-  /** The card that lists each page this answer filed. */
   learnedListId: string;
   learnedExpanded: boolean;
   onToggleLearned: () => void;

@@ -48,7 +48,6 @@ function lensKind(event: GrowthEvent, node: KnowledgeMapNode | undefined): "meth
   // Unlinked Lens entries may be missing from a bounded Map; the event origin still tells them apart.
   if (typeof event.origin === "string") return "principle";
   if (event.origin && "kind" in event.origin && event.origin.kind === "learning_review") return "method";
-  // A page the Loupist filed after a chat: its Map node has not drawn yet, so the kind is not known.
   return undefined;
 }
 

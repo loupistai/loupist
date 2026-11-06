@@ -266,7 +266,6 @@ export class PreviewBridge extends MockLoupistBridge {
     const page = this.pages().get(request.recordId);
     if (page) return this.pageView(page);
     if ((await this.principleList({ loupistId: request.loupistId, includeArchived: true })).some(p => p.recordId === request.recordId)) return super.knowledgeLensRead(request);
-    // Any other record reads as a way of working, as the Map and learning fixtures expect.
     return this.pageView({ ...this.pages().get("preview-method")!, recordId: request.recordId });
   }
   override async knowledgeLensPagesForNode({ nodeId }: { loupistId: string; nodeId: string }): Promise<PageSummary[]> {

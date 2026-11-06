@@ -1037,7 +1037,6 @@ fn lens_wiki_links_are_owned_follow_current_heads_and_exclude_code() {
             .code(),
         "unauthorized"
     );
-    // Backlinks follow current heads: once A drops its link, B has none.
     store
         .transact(|write| {
             write.put_section(

@@ -1,8 +1,3 @@
-//! What one World publication changes beyond the World, in its transaction:
-//! Lens sections whose cited claims fell, pending name anchors, and the links
-//! the publication made new (`connections`). This module also owns the
-//! `knowledge_connections` table.
-
 use std::collections::BTreeSet;
 
 use super::connections::{self, Candidate, DetectInput, Hop};
@@ -13,7 +8,6 @@ use crate::store::user_context::MapContextItem;
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 
-/// Links the Bot shows per Loupist per day; the rest wait as `new`.
 pub const SHOWN_PER_DAY: usize = 3;
 const LIST_LIMIT: usize = 200;
 const DAY_MS: i64 = 86_400_000;
@@ -51,7 +45,6 @@ impl ConnectionStatus {
     }
 }
 
-/// The stored path: the seed's name at detection time and the hops after it.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StoredPath {
@@ -81,7 +74,6 @@ pub(super) struct Followups {
     pub truncated: bool,
 }
 
-/// Claims a page may have cited that this publication disputed, withdrew or dropped.
 fn fallen_claims(
     previous: Option<&WorldSnapshotBody>,
     next: &WorldSnapshotBody,
@@ -104,7 +96,6 @@ fn fallen_claims(
     fallen
 }
 
-/// Nodes an open idea page is anchored to.
 fn idea_seeds(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<Vec<String>> {
     let mut statement = tx.prepare(
         "SELECT DISTINCT a.node_id FROM knowledge_lens_anchors a
@@ -143,7 +134,6 @@ fn insert(
         seed_name: candidate.seed_name.clone(),
         hops: candidate.hops.clone(),
     };
-    // The pair index keeps one row per (seed, far) when two publications race.
     Ok(tx.execute(
         "INSERT OR IGNORE INTO knowledge_connections
             (connection_id, loupist_id, seed_node_id, far_node_id, path_json, score, status, created_at_ms, status_at_ms)
@@ -160,7 +150,6 @@ fn insert(
     )?)
 }
 
-/// Runs inside the publication's transaction, after `growth::world_diff`.
 pub(super) fn after_seal(
     tx: &Transaction<'_>,
     loupist_id: &str,
@@ -290,9 +279,6 @@ pub(super) fn set_status(
     .ok_or(KnowledgeError::NotFound)
 }
 
-/// `new` links the Bot may still post today: the day's allowance less what it
-/// showed today, best first. Opening or dismissing a link shown earlier uses
-/// none of it. Days are UTC.
 pub(crate) fn to_show(
     tx: &Transaction<'_>,
     loupist_id: &str,
@@ -720,7 +706,6 @@ mod tests {
             .collect();
         assert_eq!(contested.len(), 1);
         assert_eq!(contested[0].record_id.as_deref(), Some(page_id.as_str()));
-        // Publishing the withdrawn claim again changes nothing on the page.
         seal(&store, &record, base_nodes(), vec![withdrawn], &[], 30);
         let again = store.read_page(LOUPIST, &page_id).unwrap();
         assert_eq!(again.revision_id, page.revision_id);

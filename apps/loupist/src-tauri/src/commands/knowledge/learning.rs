@@ -1,15 +1,12 @@
 use super::*;
 use crate::domain::{KnowledgeReference, MemoryUpdateChange};
 
-/// What one completed turn retained: the answer's changes and the Sources
-/// a same-turn `saveRef` now names.
 #[derive(Default)]
 pub(in crate::commands) struct SavedTurn {
     pub changes: Vec<MemoryUpdateChange>,
     pub retained: Vec<(String, crate::knowledge::RetainedSource)>,
 }
 
-/// The changes alone, for callers that never cite a same-turn save.
 #[cfg(any(test, feature = "e2e"))]
 #[allow(clippy::too_many_arguments)]
 pub(in crate::commands) fn persist_saved_turn(
@@ -41,7 +38,6 @@ pub(in crate::commands) fn persist_saved_turn(
     .map(|saved| saved.changes)
 }
 
-// This boundary keeps the host transaction and exact provenance inputs explicit.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::commands) fn persist_saved_turn_sources(
     tx: &rusqlite::Transaction<'_>,

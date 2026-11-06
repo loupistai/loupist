@@ -11,17 +11,11 @@ const t = i18n.getFixedT(null, "chat");
 const CHANGED = ["added", "replaced", "retired"] as const;
 type Change = { opId: string; key: string; outcome: (typeof CHANGED)[number] };
 
-/** The first words of a section, for a row that says what was filed. */
 const excerpt = (section: SectionView | undefined) => {
   const text = section?.markdown.replace(/\[([^\]]*)\]\([^)]*\)/gu, "$1").replace(/[#*_`>]/gu, "").replace(/\s+/gu, " ").trim() ?? "";
   return text.length > 140 ? `${text.slice(0, 140).trimEnd()}…` : text;
 };
 
-/**
- * What an answer filed into the Lens, page by page: each added, replaced or
- * retired section with Fix (a correction in the Bot composer) and Forget
- * (retired by you; Undo brings it back). Nothing waits for approval.
- */
 export function LearnedCard({ id, bridge, loupistId, digest, onOpenPage, onChanged }: {
   id: string;
   bridge?: LoupistBridge;

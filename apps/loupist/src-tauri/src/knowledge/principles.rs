@@ -1,5 +1,3 @@
-//! User-authored research rules, stored as Lens records of kind `principle`
-//! whose payload is the input itself.
 use super::{KnowledgeError, KnowledgeResult, RecordKind};
 use rusqlite::{params, Transaction};
 use serde::{Deserialize, Serialize};

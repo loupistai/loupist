@@ -601,7 +601,6 @@ test("lens_file prepares a bare page id and misplaced basis refs without inventi
   const request = (page, op) => ({ pages: [{ page, ops: [op] }], rationale: "A dated fact with its source." });
   const canonical = request({ recordId: "rec_page" }, { ...put, basis: { refs } });
   assert.deepEqual(validate(structuredClone(canonical)), canonical);
-  // A bare id and a bare refs array are the model's own handles in the wrong shape.
   for (const misplaced of [
     request("rec_page", { ...put, basis: { refs } }),
     request({ recordId: "rec_page" }, { ...put, basis: refs }),
@@ -614,7 +613,6 @@ test("lens_file prepares a bare page id and misplaced basis refs without inventi
     assert.deepEqual(prepared, canonical);
     assert.deepEqual(validate(prepared), prepared);
   }
-  // Differing refs are never merged or chosen; the schema rejects the pair.
   const conflict = request({ recordId: "rec_page" }, { ...put, basis: { refs }, refs: [{ said: true }] });
   const before = structuredClone(conflict);
   assert.deepEqual(definition.prepareArguments(conflict), before);

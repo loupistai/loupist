@@ -31,7 +31,6 @@ it("lists what the answer learned, put on the map and used in a fixed order, eac
   await user.click(within(receipt).getByRole("button", { name: /Show 3 new on the map/ }));
   await user.click(within(receipt).getByRole("button", { name: "1 relationship updated on the map" }));
   expect(handlers.onShowOnMap).toHaveBeenNthCalledWith(2, highlight);
-  // "Used 2 pages" expands the correction panel under the answer.
   const used = within(receipt).getByRole("button", { name: "Used 2 pages" });
   expect(used).toHaveAttribute("aria-expanded", "false");
   await user.click(used);

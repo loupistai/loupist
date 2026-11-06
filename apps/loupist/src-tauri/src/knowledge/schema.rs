@@ -9,10 +9,6 @@ use super::error::KnowledgeResult;
 #[cfg(test)]
 use crate::fs::artifact_trust::ensure_private_directory;
 
-/// Version 6 made Lens a keyed-section wiki with an append-only log and
-/// replaced World schema proposals with an append-only change log. A folder
-/// made by an earlier build is refused, never migrated (pre-1.0): see
-/// `made_by_earlier_build`.
 pub const KNOWLEDGE_SCHEMA_VERSION: i64 = 6;
 pub const KNOWLEDGE_FORMAT_VERSION: u32 = 1;
 
@@ -610,8 +606,6 @@ pub fn embedded_ddl() -> String {
 mod tests {
     use super::*;
 
-    /// A version-5 folder keeps its own tables and version; this build refuses
-    /// it with the typed earlier-version state instead of half-working.
     #[test]
     fn version_five_folder_is_an_earlier_build() {
         let connection = Connection::open_in_memory().unwrap();

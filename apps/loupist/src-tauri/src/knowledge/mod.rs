@@ -174,8 +174,6 @@ impl KnowledgeStore {
         self.with_locked(true, body)
     }
 
-    /// What the user follows, read from the app database before a Loupist
-    /// transaction opens (the two have separate locks). Identity only.
     pub fn followed_items(&self) -> Vec<crate::store::user_context::MapContextItem> {
         self.connection
             .map_context()
@@ -568,7 +566,6 @@ impl<'a> KnowledgeWrite<'a> {
         world::seal_world(self.tx, request)
     }
 
-    /// A publication whose discovery seeds from what the user follows.
     #[cfg(test)]
     pub(crate) fn seal_world_followed(
         &self,
@@ -582,7 +579,6 @@ impl<'a> KnowledgeWrite<'a> {
         world::query_world(self.tx, query)
     }
 
-    /// The only Lens page writer.
     pub fn file(
         &self,
         loupist_id: &str,
@@ -632,7 +628,6 @@ impl<'a> KnowledgeWrite<'a> {
         lens::resolve_anchors(self.tx, loupist_id, nodes)
     }
 
-    /// Links the user can act on, newest first.
     pub fn connections(&self, loupist_id: &str) -> KnowledgeResult<Vec<ConnectionView>> {
         world_followups::list(self.tx, loupist_id)
     }
