@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import type { ChatMessage } from "../../types";
 import { ChatSetAsideProvider } from "../../chat/chatSetAside";
 import { MessageMemoryRow } from "./MessageMemoryRow";
+import i18n from "@/i18n";
 
 const answer = (overrides: Partial<ChatMessage> = {}): ChatMessage => ({
   id: "answer-1", role: "assistant", status: "complete", created_at: "2026-10-28T00:00:00Z",
@@ -59,4 +60,16 @@ it("labels a deleted receipt target without offering edit or archive actions", a
   expect(screen.getByText("Deleted method").tagName).toBe("S");
   expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Archive" })).toBeNull();
+});
+
+it("shows the default perspective under its interface-language name", async () => {
+  await i18n.changeLanguage("ko");
+  try {
+    render(<Harness toggle={vi.fn()} messages={[answer({ lens_receipts: [{ recordId: "perspective-default", revisionId: "rev", kind: "perspective", title: "Outlook", delivery: "context" }] })]} />);
+    await userEvent.click(screen.getByRole("button", { name: "페이지 1개 사용" }));
+    const panel = screen.getByText("사용함 · 관점").closest("li")!;
+    expect(within(panel).getByRole("blockquote")).toHaveTextContent(/^관점$/);
+  } finally {
+    await i18n.changeLanguage("en");
+  }
 });

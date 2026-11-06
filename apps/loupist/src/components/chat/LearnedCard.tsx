@@ -73,7 +73,7 @@ export function LearnedCard({ id, bridge, loupistId, digest, onOpenPage, onChang
       const changes: Change[] = page.outcomes.flatMap(outcome => CHANGED.includes(outcome.outcome as Change["outcome"]) && outcome.key ? [{ opId: outcome.opId, key: outcome.key, outcome: outcome.outcome as Change["outcome"] }] : []);
       return <section key={page.recordId} className="learned-page" data-learned-page={page.recordId}>
         <header>
-          <button type="button" className="learned-page-title" onClick={() => onOpenPage(page.recordId)}>{view ? pageTitle(view) : page.title}</button>
+          <button type="button" className="learned-page-title" onClick={() => onOpenPage(page.recordId)}>{pageTitle(view ?? page)}</button>
           <span className="learned-page-kind">{i18n.t(`knowledge:pageReader.kind.${page.kind}`)}{page.created ? ` · ${t("learnedCard.new")}` : ""}</span>
         </header>
         <ul>

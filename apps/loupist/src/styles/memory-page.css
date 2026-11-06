@@ -39,6 +39,8 @@
 .memory-marker.is-principle { background: var(--gg-color-map-principle); }
 .memory-marker.is-method { border: 2px solid var(--gg-color-map-method); }
 .memory-marker.is-perspective { background: var(--gg-color-map-perspective); border-radius: 1px; transform: rotate(45deg) scale(.85); }
+.memory-marker.is-subject { background: var(--gg-color-map-subject); }
+.memory-marker.is-idea { border: 2px solid var(--gg-color-map-idea); }
 .memory-example { margin: var(--gg-space-2) var(--gg-space-4); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-body); font-style: italic; }
 .memory-empty { margin: var(--gg-space-2) 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); }
 .memory-add { margin-bottom: var(--gg-space-2); }

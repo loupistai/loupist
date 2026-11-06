@@ -18,6 +18,7 @@ import { addedMapItems } from "../workspace/chatMapData";
 import { SavedPrinciple } from "./SavedPrinciple";
 import { useLearnedDigest } from "../../chat/useLearnedDigest";
 import { LearnedCard } from "./LearnedCard";
+import { pageTitle } from "../memory/PageReader";
 import { WorldProcessingStatus } from "./WorldProcessingStatus";
 
 const t = i18n.getFixedT(null, "chat");
@@ -197,10 +198,10 @@ function UsedMemory({ id, bridge, loupistId, refreshKey, pages, onEdit, onChange
     const aside = setAside?.ids.has(item.recordId) ?? false;
     return <li key={item.recordId} className="used-memory-item" data-set-aside={aside || undefined}>
       <span className="used-memory-label">{t("usedMemory.pageLabel", { kind: i18n.t(`knowledge:pageReader.kind.${item.kind}`) })}</span>
-      {available && !available.has(item.recordId) ? <p className="used-memory-aside"><s>{item.title}</s> · {t("usedMemory.removed")}</p> : aside ? <p className="used-memory-aside" role="status">{t("usedMemory.setAside")} · <button type="button" disabled={pending !== null} onClick={() => void run(item.recordId, () => setAside!.toggle(item.recordId, false))}>{t("usedMemory.undo")}</button></p>
+      {available && !available.has(item.recordId) ? <p className="used-memory-aside"><s>{pageTitle(item)}</s> · {t("usedMemory.removed")}</p> : aside ? <p className="used-memory-aside" role="status">{t("usedMemory.setAside")} · <button type="button" disabled={pending !== null} onClick={() => void run(item.recordId, () => setAside!.toggle(item.recordId, false))}>{t("usedMemory.undo")}</button></p>
         : archived.has(item.recordId) ? <p className="used-memory-aside" role="status">{t("messageMemoryRow.dismissed")}</p>
           : <>
-            <blockquote>{item.title}</blockquote>
+            <blockquote>{pageTitle(item)}</blockquote>
             <div className="used-memory-actions">
               {setAside ? <button type="button" disabled={pending !== null} onClick={() => void run(item.recordId, () => setAside.toggle(item.recordId, true))}>{t("usedMemory.notThisTime")}</button> : null}
               <button type="button" onClick={() => onEdit(item.recordId)}>{t("usedMemory.edit")}</button>
