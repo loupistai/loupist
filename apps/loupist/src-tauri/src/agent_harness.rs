@@ -2005,13 +2005,14 @@ mod tests {
 
     #[test]
     fn memory_write_tools_exist_only_when_learning_is_enabled() {
-        const MEMORY_WRITES: [&str; 6] = [
+        const MEMORY_WRITES: [&str; 7] = [
             "source_save",
             "note_save",
             "journal_save",
             "journal_review",
             "principle_save",
             "world_schema_update",
+            "loupist_setup",
         ];
         let tools = |profile: &AgentRuntimeProfile| {
             profile

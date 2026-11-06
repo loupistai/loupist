@@ -585,11 +585,13 @@ fn pending_vocabulary(
         crate::knowledge::recent_changes(tx, loupist_id, 20)
     })
     .unwrap_or_default();
+    // A change a chat reply made is already on that reply's receipt.
     changes.retain(|change| {
         matches!(
             change.producer,
             crate::knowledge::Producer::Preset | crate::knowledge::Producer::Review
-        ) && !posted.contains(change.change_id.as_str())
+        ) && change.origin.is_none()
+            && !posted.contains(change.change_id.as_str())
             && !crate::knowledge::added_labels(change).is_empty()
     });
     changes.reverse();

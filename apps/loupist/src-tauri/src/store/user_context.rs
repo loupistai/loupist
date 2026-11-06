@@ -114,7 +114,7 @@ fn text(value: &str, maximum: usize) -> StoreResult<String> {
     }
     Ok(value.to_owned())
 }
-fn identity(value: &str) -> StoreResult<String> {
+pub(crate) fn identity(value: &str) -> StoreResult<String> {
     let value = text(value, 64)?.to_uppercase();
     if !value.is_ascii() || value.chars().any(char::is_whitespace) {
         return Err(invalid(
@@ -123,7 +123,7 @@ fn identity(value: &str) -> StoreResult<String> {
     }
     Ok(value)
 }
-fn name(value: Option<&str>) -> StoreResult<Option<String>> {
+pub(crate) fn name(value: Option<&str>) -> StoreResult<Option<String>> {
     value
         .filter(|v| !v.trim().is_empty())
         .map(|v| text(v, 256))

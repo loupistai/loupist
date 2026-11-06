@@ -119,19 +119,99 @@ pub struct MemoryUpdateResult {
     #[serde(deserialize_with = "required_option")]
     pub commit_id: Option<String>,
     pub changes: Vec<MemoryUpdateChange>,
-    /// Kinds the answer asked the map to track that its commit skipped: the
-    /// map gained a kind of that name after the call was staged.
+    /// Kinds the answer asked the map to track that its commit could not add:
+    /// the map gained a kind of that name first, or has no room left.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub skipped_kinds: Vec<SkippedKind>,
+    pub skipped_kinds: Vec<MapKind>,
+    /// How `loupist_setup` changed what this Loupist follows and researches.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub setup: Vec<SetupChange>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SkippedKind {
+pub struct MapKind {
     pub name: String,
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label_ko: Option<String>,
+}
+
+/// One applied `loupist_setup` change. A market the user did not give is `None`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "change",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum SetupChange {
+    Followed {
+        symbol: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        market: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    },
+    Unfollowed {
+        symbol: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        market: Option<String>,
+    },
+    Focus {
+        focus: String,
+    },
+    Tracks {
+        kinds: Vec<MapKind>,
+    },
+}
+
+impl MapKind {
+    fn validate(&self) -> Result<(), DomainError> {
+        require_bounded_text(&self.name, 64, "map kind is invalid")?;
+        require_bounded_text(&self.label, 512, "map kind is invalid")?;
+        if let Some(label) = &self.label_ko {
+            require_bounded_text(label, 512, "map kind is invalid")?;
+        }
+        Ok(())
+    }
+}
+
+impl SetupChange {
+    fn validate(&self) -> Result<(), DomainError> {
+        let invalid = "setup change is invalid";
+        match self {
+            Self::Followed {
+                symbol,
+                market,
+                name,
+            } => {
+                require_bounded_text(symbol, 64, invalid)?;
+                if let Some(market) = market {
+                    require_bounded_text(market, 64, invalid)?;
+                }
+                if let Some(name) = name {
+                    require_bounded_text(name, 256, invalid)?;
+                }
+            }
+            Self::Unfollowed { symbol, market } => {
+                require_bounded_text(symbol, 64, invalid)?;
+                if let Some(market) = market {
+                    require_bounded_text(market, 64, invalid)?;
+                }
+            }
+            Self::Focus { focus } => require_bounded_text(focus, 1_120, invalid)?,
+            Self::Tracks { kinds } => {
+                if kinds.is_empty() || kinds.len() > 18 {
+                    return Err(DomainError::Invalid(invalid));
+                }
+                for kind in kinds {
+                    kind.validate()?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl MemoryUpdateResult {
@@ -175,20 +255,25 @@ impl MemoryUpdateResult {
             return Err(DomainError::Invalid("memory update skipped too many kinds"));
         }
         for kind in &self.skipped_kinds {
-            require_bounded_text(&kind.name, 64, "skipped kind is invalid")?;
-            require_bounded_text(&kind.label, 512, "skipped kind is invalid")?;
-            if let Some(label) = &kind.label_ko {
-                require_bounded_text(label, 512, "skipped kind is invalid")?;
-            }
+            kind.validate()?;
         }
+        if self.setup.len() > 32 {
+            return Err(DomainError::Invalid(
+                "memory update has too many setup changes",
+            ));
+        }
+        for change in &self.setup {
+            change.validate()?;
+        }
+        let changed = !self.changes.is_empty() || !self.setup.is_empty();
         match self.status {
             MemoryUpdateStatus::Applied => {
-                if self.commit_id.as_deref().is_none_or(str::is_empty) || self.changes.is_empty() {
+                if self.commit_id.as_deref().is_none_or(str::is_empty) || !changed {
                     return Err(DomainError::Invalid("applied memory update is invalid"));
                 }
             }
             MemoryUpdateStatus::NoChange => {
-                if self.commit_id.is_some() || !self.changes.is_empty() {
+                if self.commit_id.is_some() || changed {
                     return Err(DomainError::Invalid("unchanged memory update is invalid"));
                 }
             }
@@ -1628,6 +1713,7 @@ mod tests {
             commit_id: None,
             changes: vec![],
             skipped_kinds: Vec::new(),
+            setup: Vec::new(),
         });
         assert!(prepare_chat_retry(&saved, 4).is_err());
     }

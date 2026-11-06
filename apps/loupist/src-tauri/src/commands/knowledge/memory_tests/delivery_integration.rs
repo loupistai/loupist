@@ -92,6 +92,7 @@ fn finalized_learning_report_opens_canonical_sources_lens_and_journal() {
                 true,
                 changes,
                 Vec::new(),
+                Vec::new(),
                 Some(performance.clone()),
                 Vec::new(),
             )?);

@@ -690,35 +690,46 @@ pub fn curated_seed(template: Option<&str>, now_ms: i64) -> Option<WorldExtensio
     Some(extension)
 }
 
+pub(crate) fn missing_preset_kinds(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    template: &str,
+) -> KnowledgeResult<(Vec<ExtensionType>, Vec<ExtensionRelation>)> {
+    let Some(seed) = curated_seed(Some(template), 0) else {
+        return Ok((Vec::new(), Vec::new()));
+    };
+    let live = live_extension(tx, loupist_id)?;
+    Ok((
+        seed.types
+            .into_iter()
+            .filter(|item| !type_already_known(&item.name, &live))
+            .collect(),
+        seed.relations
+            .into_iter()
+            .filter(|item| !relation_already_known(&item.name, &live))
+            .collect(),
+    ))
+}
+
+/// Adds the template's missing curated kinds as one preset change; `None`
+/// when the template has no curated kinds or the map tracks them all.
 pub(crate) fn apply_preset(
     tx: &Transaction<'_>,
     loupist_id: &str,
-    template: Option<&str>,
+    template: &str,
+    origin: Option<(&str, &str)>,
     now_ms: i64,
 ) -> KnowledgeResult<Option<SchemaChange>> {
-    let Some(seed) = curated_seed(template, now_ms) else {
-        return Ok(None);
-    };
-    let applied: bool = tx.query_row(
-        "SELECT EXISTS(SELECT 1 FROM knowledge_schema_changes WHERE loupist_id = ?1 AND producer = 'preset')",
-        [loupist_id],
-        |row| row.get(0),
-    )?;
-    if applied {
+    let (types, relations) = missing_preset_kinds(tx, loupist_id, template)?;
+    if types.is_empty() && relations.is_empty() {
         return Ok(None);
     }
-    add_kinds(
-        tx,
-        loupist_id,
-        seed.types,
-        seed.relations,
-        Provenance::new(
-            Producer::Preset,
-            serde_json::json!({ "template": template }),
-        ),
-        now_ms,
-    )
-    .map(Some)
+    let mut provenance = Provenance::new(
+        Producer::Preset,
+        serde_json::json!({ "template": template }),
+    );
+    provenance.origin = origin;
+    add_kinds(tx, loupist_id, types, relations, provenance, now_ms).map(Some)
 }
 
 pub fn validate_extension(extension: &WorldExtension) -> KnowledgeResult<()> {
@@ -1226,10 +1237,10 @@ mod tests {
             );
             let mut db = memory();
             let tx = db.transaction().unwrap();
-            assert!(apply_preset(&tx, "loupist-a", Some(template), 7)
+            assert!(apply_preset(&tx, "loupist-a", template, None, 7)
                 .unwrap()
                 .is_some());
-            assert!(apply_preset(&tx, "loupist-a", Some(template), 8)
+            assert!(apply_preset(&tx, "loupist-a", template, None, 8)
                 .unwrap()
                 .is_none());
             let rows: i64 = tx

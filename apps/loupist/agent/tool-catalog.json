@@ -1400,6 +1400,106 @@
       }
     },
     {
+      "name": "loupist_setup",
+      "method": "loupist.setup",
+      "permission": "memory_write",
+      "component": "memory-save",
+      "label": "Set up this Loupist",
+      "description": "Set up this Loupist from what the user says: when they say what they research, which assets to follow or stop following, or pick a starting point, call it in that reply instead of pointing them to settings. follow adds assets to what the user follows; unfollow removes them. focus replaces this Loupist's research focus, in the user's words and language; pass it whenever their research changes. preset applies a starting point: the map starts tracking that preset's kinds it lacks, and the preset's default focus fills only an empty focus. One call per reply, in the Bot or a research session only; it applies when the reply finishes. Say what changed in plain words; never say ontology or schema. Saving must be enabled.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 1,
+        "properties": {
+          "follow": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "symbol"
+              ],
+              "properties": {
+                "symbol": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "description": "Ticker or code as the market lists it, such as NVDA or 000660."
+                },
+                "market": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "description": "Exchange or market code such as NASDAQ or KRX. Omit it unless the user or a delivered read named it."
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "description": "The asset's name as the user knows it."
+                }
+              }
+            }
+          },
+          "unfollow": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "symbol"
+              ],
+              "properties": {
+                "symbol": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "description": "Ticker or code as the market lists it, such as NVDA or 000660."
+                },
+                "market": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "description": "Exchange or market code such as NASDAQ or KRX. Omit it unless the user or a delivered read named it."
+                }
+              }
+            }
+          },
+          "focus": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 280,
+            "description": "What this Loupist researches, replacing the current focus."
+          },
+          "preset": {
+            "type": "string",
+            "enum": [
+              "portfolio",
+              "semiconductors",
+              "dividends",
+              "technology",
+              "crypto",
+              "macro",
+              "commodities",
+              "realAssets",
+              "custom"
+            ]
+          }
+        }
+      },
+      "progress": {
+        "category": "memory",
+        "operation": "edit",
+        "running": "Setting up this Loupist",
+        "done": "Set up this Loupist",
+        "source": "memory"
+      }
+    },
+    {
       "name": "lens_search",
       "method": "lens.search",
       "permission": "memory_read",
@@ -5484,7 +5584,7 @@
     {
       "id": "memory-save",
       "name": "Source retention and journals",
-      "description": "Keep this Chat's progress and user-stated facts with note_save, retain delivered originals with source_save, file what a turn established into Lens pages with lens_file, save the user's explicitly stated rule with principle_save or their stated judgment as a Journal, or add a kind of thing or link to what the map tracks with world_schema_update."
+      "description": "Keep this Chat's progress and user-stated facts with note_save, retain delivered originals with source_save, file what a turn established into Lens pages with lens_file, save the user's explicitly stated rule with principle_save or their stated judgment as a Journal,, add a kind of thing or link to what the map tracks with world_schema_update, or set up what this Loupist follows and researches with loupist_setup."
     },
     {
       "id": "charts",

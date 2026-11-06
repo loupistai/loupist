@@ -1,4 +1,4 @@
-import type { ChatEvidenceRef, ChatMessage, GrowthEvent, LearnedDigest, LensKind, MemoryUpdateChange, SkippedKind } from "../types";
+import type { ChatEvidenceRef, ChatMessage, GrowthEvent, LearnedDigest, LensKind, MapKind, MemoryUpdateChange, SetupChange } from "../types";
 import type { Verdict } from "../contracts/assets";
 import { citationSources } from "./evidence";
 import { numbersToCheck } from "./numberChecks";
@@ -32,7 +32,9 @@ export type ChatReceiptData = {
   /** Reads the answer said it changed but Rust did not save (the page changed first). */
   unsavedTheses: { assetId: string; name: string }[];
   /** Kinds the answer asked the map to track that Rust did not add. */
-  skippedKinds: SkippedKind[];
+  skippedKinds: MapKind[];
+  /** What the answer changed in what this Loupist follows and researches. */
+  setup: SetupChange[];
   mapHighlightIds: ReadonlySet<string>;
   usedPrinciples: UsedPrinciple[];
   usedMethods: UsedPrinciple[];
@@ -60,7 +62,9 @@ export function thesisMovesFor(events: readonly GrowthEvent[] | undefined, messa
 export function chatReceipt(message: ChatMessage, additions?: MapAdditions, options: { saveOff?: boolean; thesisMoves?: ThesisMove[]; learned?: LearnedDigest } = {}): ChatReceiptData {
   const update = message.memory_update;
   // A chat with saving off (private) cannot have saved anything; never claim it did.
-  const changes = update?.status === "applied" && !options.saveOff ? update.changes : [];
+  const applied = update?.status === "applied" && !options.saveOff;
+  const changes = applied ? update.changes : [];
+  const setup = applied ? update.setup ?? [] : [];
   const saved = SAVED_RECEIPT_KINDS.flatMap((kind): SavedReceiptGroup[] => {
     const items = changes.filter((change) => change.kind === kind);
     return items.length ? [{ kind, items }] : [];
@@ -88,6 +92,7 @@ export function chatReceipt(message: ChatMessage, additions?: MapAdditions, opti
     thesisMoves,
     unsavedTheses,
     skippedKinds,
+    setup,
     mapHighlightIds: names + relationships > 0 && additions ? additions.highlightIds : emptyIds,
     usedPrinciples,
     usedMethods,
@@ -95,7 +100,7 @@ export function chatReceipt(message: ChatMessage, additions?: MapAdditions, opti
     learned,
     saved,
     numbersToCheck: toCheck,
-    empty: !readSources.length && !names && !relationships && !thesisMoves.length && !unsavedTheses.length && !skippedKinds.length && !usedPages.length && !learned && !saved.length && !toCheck,
+    empty: !readSources.length && !names && !relationships && !thesisMoves.length && !unsavedTheses.length && !skippedKinds.length && !setup.length && !usedPages.length && !learned && !saved.length && !toCheck,
   };
 }
 

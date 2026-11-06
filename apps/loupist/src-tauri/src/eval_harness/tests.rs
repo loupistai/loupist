@@ -681,6 +681,7 @@ async fn eval_journal_commits_include_optional_check_and_factual_outcome() {
             commit_id: None,
             changes,
             skipped_kinds: Vec::new(),
+            setup: Vec::new(),
         }),
         ..crate::test_fixtures::chat_message("review-message", ChatRole::Assistant, "Reviewed")
     };

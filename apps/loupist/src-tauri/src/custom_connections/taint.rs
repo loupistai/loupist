@@ -298,6 +298,7 @@ impl TurnTaint {
                     | ToolMethod::JournalReview
                     | ToolMethod::PrincipleSave
                     | ToolMethod::LensFile
+                    | ToolMethod::LoupistSetup
                     | ToolMethod::WorldJob
             )
         {

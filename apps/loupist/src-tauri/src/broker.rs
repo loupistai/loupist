@@ -263,6 +263,7 @@ pub enum ToolMethod {
     PrincipleSave,
     LensFile,
     WorldSchemaUpdate,
+    LoupistSetup,
     LensSearch,
     LensRead,
     WorldJob,
@@ -585,6 +586,7 @@ struct TransactionCardinality {
     evidence_creations: u8,
     proposals: u8,
     schema_updates: u8,
+    setups: u8,
     filings: u8,
     artifact_publishes: u8,
     research_opens: u8,
@@ -605,6 +607,9 @@ impl TransactionCardinality {
             ToolMethod::WorldSchemaUpdate if self.schema_updates >= 1 => {
                 return Err(BrokerError::BudgetExceeded);
             }
+            ToolMethod::LoupistSetup if self.setups >= 1 => {
+                return Err(BrokerError::BudgetExceeded);
+            }
             ToolMethod::LensFile if self.filings >= MAX_CHAT_TURN_FILINGS => {
                 return Err(BrokerError::BudgetExceeded);
             }
@@ -620,6 +625,7 @@ impl TransactionCardinality {
         }
         match method {
             ToolMethod::WorldSchemaUpdate => self.schema_updates += 1,
+            ToolMethod::LoupistSetup => self.setups += 1,
             ToolMethod::LensFile => self.filings += 1,
             ToolMethod::ResearchOpen => self.research_opens += 1,
             ToolMethod::NoteSave => self.journals += 1,
@@ -644,6 +650,7 @@ impl TransactionCardinality {
             ToolMethod::WorldSchemaUpdate => {
                 self.schema_updates = self.schema_updates.saturating_sub(1)
             }
+            ToolMethod::LoupistSetup => self.setups = self.setups.saturating_sub(1),
             ToolMethod::LensFile => self.filings = self.filings.saturating_sub(1),
             ToolMethod::ArtifactPublish | ToolMethod::ChartPublish | ToolMethod::GridPublish => {
                 self.artifact_publishes = self.artifact_publishes.saturating_sub(1)

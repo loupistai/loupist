@@ -678,7 +678,8 @@ async fn setup(
         crate::knowledge::apply_preset(
             &tx,
             &loupist.id,
-            Some(scenario.template.as_str()),
+            scenario.template.as_str(),
+            None,
             crate::commands::now_ms(),
         )?;
         tx.commit()?;

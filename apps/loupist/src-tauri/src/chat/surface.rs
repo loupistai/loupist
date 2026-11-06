@@ -128,11 +128,13 @@ mod tests {
         assert!(bot.iter().any(|name| name == "research_open"));
         assert!(bot.iter().any(|name| name == "schedule_create"));
         assert!(!bot.iter().any(|name| name == "schedule_handoff"));
+        assert!(bot.iter().any(|name| name == "loupist_setup"));
 
         let session = tools(&ChatSurface::Session.restrict(runtime()));
         assert!(!session.iter().any(|name| name == "research_open"));
         assert!(!session.iter().any(|name| name == "schedule_create"));
         assert!(session.iter().any(|name| name == "schedule_handoff"));
+        assert!(session.iter().any(|name| name == "loupist_setup"));
 
         for unattended in [
             ChatSurface::Scheduled,
@@ -142,6 +144,7 @@ mod tests {
         ] {
             let names = tools(&unattended.restrict(runtime()));
             assert!(!names.iter().any(|name| name == "research_open"));
+            assert!(!names.iter().any(|name| name == "loupist_setup"));
             assert!(!names.iter().any(|name| name.starts_with("schedule_")));
             assert!(names.iter().any(|name| name == "lens_read"));
         }

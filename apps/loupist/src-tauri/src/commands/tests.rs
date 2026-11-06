@@ -23,6 +23,7 @@ mod home_links;
 mod home_thread;
 mod home_vocabulary;
 mod loupist;
+mod loupist_setup;
 mod research_handoff;
 mod support;
 

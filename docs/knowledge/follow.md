@@ -20,6 +20,13 @@ per-episode anchor limit). Each new asset becomes an anchor (its symbol, plus
 `symbol:market` for a known market), and each Source gets one ordinary World job.
 Unfollowing or selling removes nothing; following again adds nothing.
 
+The user can also follow from chat: when they name what to follow or stop following,
+the agent calls [`loupist_setup`](../agent/turn-tools.md#turn-tools), whose commit goes
+through the same `follow` and `watchlist_remove` functions as the watchlist commands
+and the open Loupist takes the asset's watch defaults. A market the user did not give
+is stored as unknown, never guessed, and an asset already followed under any market is
+not added twice. The reply's receipt lists each asset it followed or stopped following.
+
 Rust brings a Loupist up to date when it is created, when it is opened, and for every
 Loupist about three seconds after the last follow, holdings import or wallet read, so a
 burst makes one Source and one job per Loupist. A Loupist that is unavailable or under

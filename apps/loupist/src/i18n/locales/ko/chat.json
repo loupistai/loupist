@@ -394,7 +394,11 @@
     "thesisMoved": "{{name}}: {{verdict}}",
     "thesisMovedFrom": "{{name}}: {{from}} → {{verdict}}",
     "thesisNotSaved": "{{name}}: 판단은 바뀌지 않았어요 (먼저 페이지가 바뀜)",
-    "kindNotAdded": "{{name}}: 지도에 추가하지 않았어요 (이미 같은 이름을 추적 중)",
+    "following": "{{name}} 관심 자산에 추가",
+    "unfollowed": "{{name}} 관심 자산에서 뺌",
+    "focusUpdated": "리서치 주제 바꿈",
+    "mapTracks": "이제 지도가 {{list}}도 추적해요",
+    "kindNotAdded": "{{name}}: 지도에 추가하지 않았어요",
     "numbersToCheck_other": "확인할 숫자 {{formattedCount}}개",
     "learned_other": "새로 배운 것 {{formattedCount}}개",
     "ideas_other": "아이디어 {{formattedCount}}개",
@@ -1089,6 +1093,10 @@
     "world_schema_update": {
       "running": "지도가 추적하는 것 고치는 중",
       "done": "지도가 추적하는 것 고침"
+    },
+    "loupist_setup": {
+      "running": "이 루피스트 설정하는 중",
+      "done": "이 루피스트 설정함"
     },
     "lens_file": {
       "running": "알게 된 것 Lens에 기록 중",

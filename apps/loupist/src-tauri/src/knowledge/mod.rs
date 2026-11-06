@@ -96,9 +96,9 @@ pub(crate) use schema::made_by_earlier_build;
 pub use world_schema::curated_seed;
 pub(crate) use world_schema::WorldExtension;
 pub(crate) use world_schema::{
-    add_kinds, added_labels, apply_preset, live_extension, recent_changes, relation_already_known,
-    remove_schema_item, schema_view, type_already_known, undo_change, validate_extension,
-    visible_extension, world_kinds_block, Producer, Provenance, SchemaChange,
+    add_kinds, added_labels, apply_preset, live_extension, missing_preset_kinds, recent_changes,
+    relation_already_known, remove_schema_item, schema_view, type_already_known, undo_change,
+    validate_extension, visible_extension, world_kinds_block, Producer, Provenance, SchemaChange,
 };
 pub use world_schema::{
     ExtensionCategory, ExtensionField, ExtensionLabels, ExtensionRelation, ExtensionType,

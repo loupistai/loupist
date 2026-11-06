@@ -1,12 +1,13 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import i18n from "@/i18n";
 import type { ChatEvidenceRef, MemoryUpdateChange } from "../../types";
 import { chatReceipt, type ChatReceiptData } from "../../chat/receipt";
 import { ChatReceipt } from "./ChatReceipt";
 
 const source = (id: string): ChatEvidenceRef => ({ id, title: `Report ${id}`, kind: "original", tool_name: "web_fetch", url: `https://hanul.example/${id}`, retrieved_at: "2026-10-28T00:00:00Z", excerpt: "", excerpt_truncated: false, content_sha256: "a".repeat(64), warnings: [] });
 const saved = (kind: "Source" | "principle", recordId: string) => ({ kind, recordId, operation: "create", title: recordId, lesson: "", basis: "", futureUse: "", knowledge: { kind: kind === "principle" ? "lens" : "source", recordId, revisionId: "r", objectId: recordId } }) as MemoryUpdateChange;
-const empty: ChatReceiptData = { readSources: [], names: 0, relationships: 0, thesisMoves: [], unsavedTheses: [], skippedKinds: [], mapHighlightIds: new Set(), usedPrinciples: [], usedMethods: [], usedPages: [], learned: null, saved: [], numbersToCheck: 0, empty: true };
+const empty: ChatReceiptData = { readSources: [], names: 0, relationships: 0, thesisMoves: [], unsavedTheses: [], skippedKinds: [], setup: [], mapHighlightIds: new Set(), usedPrinciples: [], usedMethods: [], usedPages: [], learned: null, saved: [], numbersToCheck: 0, empty: true };
 const panels = { learnedListId: "learned", learnedExpanded: false, onToggleLearned: vi.fn() };
 
 function renderReceipt(receipt: Partial<ChatReceiptData>, showNothingNew = false) {
@@ -78,7 +79,32 @@ it("says a kind the answer asked for was not added when the map gained that name
   const receipt = chatReceipt(message);
   expect(receipt.empty).toBe(false);
   render(<ChatReceipt receipt={receipt} showNothingNew listId="list" listExpanded={false} usedListId="used" usedExpanded={false} onToggleUsed={vi.fn()} onSaved={vi.fn()} {...panels} />);
-  expect(screen.getByRole("navigation", { name: "What this answer used and saved" })).toHaveTextContent("Process step: not added to the map (it already tracks that name)");
+  expect(screen.getByRole("navigation", { name: "What this answer used and saved" })).toHaveTextContent("Process step: not added to the map");
+});
+
+it("says what a setup reply now follows, its new focus and what the map now also tracks, in the reader's language", async () => {
+  // The memory update as Rust commits it for a Bot reply that called loupist_setup.
+  const message = { id: "answer", role: "assistant", content: "Done.", created_at: "2026-11-07T00:00:00Z", status: "complete",
+    memory_update: { status: "applied", commitId: "answer", changes: [], setup: [
+      { change: "followed", symbol: "NVDA", market: "NASDAQ", name: "Nvidia" },
+      { change: "followed", symbol: "000660" },
+      { change: "unfollowed", symbol: "AAPL", market: "NASDAQ" },
+      { change: "focus", focus: "Semiconductor supply chain" },
+      { change: "tracks", kinds: [{ name: "ProcessNode", label: "Process node", labelKo: "공정 노드" }, { name: "Fab", label: "Fab" }] },
+    ] } } as unknown as import("../../types").ChatMessage;
+  const receipt = chatReceipt(message);
+  expect(receipt.empty).toBe(false);
+  expect(chatReceipt(message, undefined, { saveOff: true }).setup).toEqual([]);
+  render(<ChatReceipt receipt={receipt} showNothingNew listId="list" listExpanded={false} usedListId="used" usedExpanded={false} onToggleUsed={vi.fn()} onSaved={vi.fn()} {...panels} />);
+  const line = screen.getByRole("navigation", { name: "What this answer used and saved" });
+  expect(line).toHaveTextContent("·Following Nvidia·Following 000660·Stopped following AAPL·Focus updated·Map now also tracks Process node, Fab");
+  expect(line).not.toHaveTextContent("Nothing new saved");
+  await act(async () => { await i18n.changeLanguage("ko"); });
+  try {
+    expect(line).toHaveTextContent("·Nvidia 관심 자산에 추가·000660 관심 자산에 추가·AAPL 관심 자산에서 뺌·리서치 주제 바꿈·이제 지도가 공정 노드, Fab도 추적해요");
+  } finally {
+    await act(async () => { await i18n.changeLanguage("en"); });
+  }
 });
 
 it("names a moved read after the relationships and opens the asset page at its history", async () => {

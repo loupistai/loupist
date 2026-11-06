@@ -36,7 +36,15 @@ pub(crate) fn initialize_new_world(
     if let Some(settings) = settings {
         with_loupist_knowledge(state, loupist_id, |tx, _| {
             crate::knowledge::store_settings(tx, loupist_id, settings)?;
-            crate::knowledge::apply_preset(tx, loupist_id, template, crate::commands::now_ms())?;
+            if let Some(template) = template {
+                crate::knowledge::apply_preset(
+                    tx,
+                    loupist_id,
+                    template,
+                    None,
+                    crate::commands::now_ms(),
+                )?;
+            }
             Ok(())
         })?;
     }
