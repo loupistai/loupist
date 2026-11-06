@@ -1354,8 +1354,7 @@
     "handoffRunning": "Running",
     "handoffDone": "Done",
     "handoffFailed": "Couldn't finish",
-    "handoffStopped": "Stopped",
-    "learned": "Learned {{count}}"
+    "handoffStopped": "Stopped"
   },
   "watchMessage": {
     "filing": "{{name}} filed {{title}} ({{form}}, {{date}}).",

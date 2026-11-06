@@ -336,10 +336,7 @@ impl AppToolExecutor {
                     if let Some(sink) = &self.capture.schedule_sink {
                         sink(ScheduleReceipt::Question(saved.receipt.clone()));
                     }
-                    if crate::chat::home::deliver_finished_runs(state, loupist).is_ok_and(|n| n > 0)
-                    {
-                        crate::briefings::desktop::changed(loupist);
-                    }
+                    let _ = crate::chat::home::deliver_finished_runs(state, loupist);
                     return Ok(
                         json!({"handed_off":true,"scheduled":false,"notice":"Bot will ask for the missing details. Keep the user in this session and do not repeat the question here."}),
                     );
@@ -393,11 +390,8 @@ impl AppToolExecutor {
                     questions::resolve(state, loupist, &q.receipt.task_id).map_err(error)?;
                 }
                 // The durable task also serves as the Bot's pending delivery if its chat is busy.
-                if !is_bot
-                    && crate::chat::home::deliver_finished_runs(state, loupist)
-                        .is_ok_and(|count| count > 0)
-                {
-                    crate::briefings::desktop::changed(loupist);
+                if !is_bot {
+                    let _ = crate::chat::home::deliver_finished_runs(state, loupist);
                 }
                 (task, ScheduleAction::Created)
             }

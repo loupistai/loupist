@@ -39,7 +39,12 @@ one of those kinds sets its notice and `needs_reconnect` sets Needs reconnect;
 rate limits, outages and a gone model change nothing; any request that goes
 through clears both. Disconnecting deletes the row unless schedules, the Chat
 default or a World model still use the account; a Disconnected card then says so
-until Remove.
+until Remove. Rust runs one provider support operation at a time (sign-in, key
+change or model discovery) and refuses a second with `conflict`. A sign-in or key
+returns the provider's models itself, so Settings starts no model load while the
+connect sheet is open, and a card that cannot load its models shows localized text
+(a busy load reads "Another account change is still finishing") with Reload models,
+never the backend's English error.
 
 While a provider needs reconnect or carries a notice, World processing and method
 learning wait on it. Background inference records its outcomes too: Pi passes the

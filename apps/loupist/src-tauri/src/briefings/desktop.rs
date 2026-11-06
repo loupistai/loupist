@@ -230,7 +230,26 @@ pub(crate) fn emit(event: &str, payload: serde_json::Value) {
     }
 }
 
+#[cfg(test)]
+static CHANGED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// How many times the renderer was told this Loupist's chats changed.
+#[cfg(test)]
+pub(crate) fn changed_count(loupist_id: &str) -> usize {
+    CHANGED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .iter()
+        .filter(|id| id.as_str() == loupist_id)
+        .count()
+}
+
 pub(crate) fn changed(loupist_id: &str) {
+    #[cfg(test)]
+    CHANGED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push(loupist_id.to_owned());
     if let Some(app) = APP.get() {
         NativeEffects(app.clone()).changed(loupist_id);
         crate::commands::attention::refresh_indicator(app);

@@ -93,16 +93,14 @@ impl ChatSurface {
     }
 
     pub(crate) fn after_turn(&self, state: &AppState, loupist_id: &str) {
-        match self {
-            Self::Session => {}
-            Self::Bot | Self::Scheduled | Self::Delegated { .. } => deliver(state, loupist_id),
+        if matches!(self, Self::Session) {
+            return;
         }
-    }
-}
-
-pub(super) fn deliver(state: &AppState, loupist_id: &str) {
-    if super::home::deliver_finished_runs(state, loupist_id).is_ok_and(|count| count > 0) {
-        crate::briefings::desktop::changed(loupist_id);
+        let _ = super::home::deliver_finished_runs(state, loupist_id);
+        if !self.interactive() {
+            // Nobody streamed this turn, so its reply reaches the renderer only here.
+            crate::briefings::desktop::changed(loupist_id);
+        }
     }
 }
 

@@ -151,7 +151,9 @@ export function ModelSettingsPanel({
       await onLoadModels(nextProviderId);
     } catch (cause) {
       if (generation !== discoveryGenerationRef.current) return;
-      setModelLoadErrors((current) => ({ ...current, [nextProviderId]: errorMessage(cause, i18n.t("settings:modelSettingsPanel.couldNotRefreshModels")) }));
+      // Pi and Rust word these failures in English for logs; the card words its own.
+      const busy = (cause as { code?: unknown } | null)?.code === "conflict";
+      setModelLoadErrors((current) => ({ ...current, [nextProviderId]: i18n.t(busy ? "settings:modelSettingsPanel.modelsBusy" : "settings:modelSettingsPanel.couldNotRefreshModels") }));
     } finally {
       if (generation === discoveryGenerationRef.current) {
         loadingProviderIdsRef.current.delete(nextProviderId);
@@ -163,14 +165,15 @@ export function ModelSettingsPanel({
   refreshModelsRef.current = refreshModels;
 
   useEffect(() => {
-    if (!catalog || busy !== null || loadingProviderIds.size > 0) return;
+    // A sign-in or key returns the provider's models itself; loading them alongside it collides.
+    if (!catalog || busy !== null || sheet !== null || loadingProviderIds.size > 0) return;
     const pending = connectedProviders.find((option) => {
       const hasModels = catalog.models.some((model) => model.provider === option.id);
       return !hasModels && !discoveredProviderIds.has(option.id);
     });
     if (!pending) return;
     void refreshModelsRef.current(pending.id);
-  }, [busy, catalog, connectedProviders, discoveredProviderIds, loadingProviderIds]);
+  }, [busy, catalog, connectedProviders, discoveredProviderIds, loadingProviderIds, sheet]);
 
   const updateVisibility = async (request: ModelVisibilityUpdateRequest) => {
     if (visibilityBusyId) return;

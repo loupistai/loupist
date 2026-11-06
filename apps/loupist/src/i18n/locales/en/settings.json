@@ -102,6 +102,7 @@
     "loadingModels": "Loading models…",
     "modelsNotLoadedYet": "Models not loaded yet",
     "couldNotRefreshModels": "Could not refresh models.",
+    "modelsBusy": "Another account change is still finishing. Try again in a moment.",
     "couldNotConfigureThisProvider": "Could not configure this provider.",
     "couldNotUpdateModelVisibility": "Could not update model visibility.",
     "removingLabel": "Removing {{label}}…",

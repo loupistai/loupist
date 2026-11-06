@@ -1305,8 +1305,7 @@
     "handoffRunning": "진행 중",
     "handoffDone": "완료",
     "handoffFailed": "끝내지 못했어요",
-    "handoffStopped": "중지됨",
-    "learned": "배운 것 {{count}}"
+    "handoffStopped": "중지됨"
   },
   "watchMessage": {
     "filing": "{{name}}이(가) {{title}}을(를) 제출했어요 ({{form}}, {{date}}).",
