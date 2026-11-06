@@ -874,7 +874,7 @@ export const graphProcessingView = (settings: GraphProcessingSettings, catalog: 
   const model = catalog.models.find((item) => item.id === settings.helperModelProfileId);
   const provider = catalog.providers.find((item) => item.id === model?.provider);
   const status = jobs.some((job) => job.status === "reconcile_required") ? "reconciliation_required" : !settings.enrichmentEnabled ? "disabled" : settings.paused ? "paused" : !settings.helperModelProfileId ? "model_required" : !model ? "model_unavailable" : model.credential_source === "missing" || provider?.credential_source === "missing" ? "provider_disconnected" : "ready";
-  return { settings, readiness: { status, providerName: provider?.label ?? null, modelName: model?.name ?? null, authKind: provider?.api_key === false && provider?.oauth ? "oauth" : model ? "api_key" : null, message: null } };
+  return { settings, readiness: { status, providerName: provider?.label ?? null, modelName: model?.name ?? null, authKind: provider?.api_key === false && provider?.oauth ? "oauth" : model ? "api_key" : null, note: null } };
 };
 
 export const knowledgeGraphRecover = async (state: MockBridgeState, request: { loupistId: string }) => {

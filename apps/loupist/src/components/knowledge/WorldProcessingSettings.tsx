@@ -6,7 +6,7 @@ import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import { ModelSelectionMenu } from "../models/ModelSelectionMenu";
 import { errorMessage } from "../../lib/errors";
-import type { GraphProcessingSettings, GraphProcessingView, LoupistBridge, ModelCatalog } from "../../types";
+import type { GraphProcessingSettings, GraphProcessingView, GraphReadinessNote, LoupistBridge, ModelCatalog } from "../../types";
 
 type Props = {
   bridge: LoupistBridge;
@@ -28,6 +28,20 @@ const readinessLabels = (): Record<GraphProcessingView["readiness"]["status"], s
   model_unavailable: i18n.t("knowledge:worldProcessingSettings.modelIsUnavailable"),
   reconciliation_required: i18n.t("knowledge:worldProcessingSettings.recoveryRequired"),
   recovering: i18n.t("knowledge:worldProcessingSettings.recoveringWorldProcessing"),
+});
+const readinessNotes = (): Record<GraphReadinessNote, string> => ({
+  recovery_required: i18n.t("settings:worldSettings.readiness.recoveryRequired"),
+  recovering: i18n.t("settings:worldSettings.readiness.recovering"),
+  runtime_unavailable: i18n.t("settings:worldSettings.readiness.runtimeUnavailable"),
+  awaiting_provider: i18n.t("settings:worldSettings.readiness.awaitingProvider"),
+  choose_model: i18n.t("settings:worldSettings.readiness.chooseModel"),
+  model_unavailable: i18n.t("settings:worldSettings.readiness.modelUnavailable"),
+  connect_provider: i18n.t("settings:worldSettings.readiness.connectProvider"),
+  isolation_unsupported: i18n.t("settings:worldSettings.readiness.isolationUnsupported"),
+  runtime_missing: i18n.t("settings:worldSettings.readiness.runtimeMissing"),
+  choose_connected_model: i18n.t("settings:worldSettings.readiness.chooseConnectedModel"),
+  not_connected: i18n.t("settings:worldSettings.readiness.notConnected"),
+  account_waiting: i18n.t("settings:worldSettings.readiness.accountWaiting"),
 });
 const recoveryComplete = () => i18n.t("knowledge:worldProcessingSettings.worldProcessingRecoveredSavedSourcesAreRetainedInterruptedProcessingWas");
 
@@ -104,7 +118,7 @@ export function WorldProcessingSettings({ bridge, loupistId, active = true, coll
   const busy = action !== null || recovering;
   const models = catalog.models.filter((model) => model.credential_source !== "missing" && catalog.providers.find((provider) => provider.id === model.provider)?.credential_source !== "missing");
   const readinessLabel = view.readiness.status === "model_required" && !models.length ? t("worldProcessingSettings.waitingForAProvider") : readinessLabels()[view.readiness.status];
-  const readinessMessage = view.readiness.message || (!models.length ? t("worldProcessingSettings.noConnectedModelsConnectAProviderToStartProcessing") : null);
+  const readinessMessage = (view.readiness.note ? readinessNotes()[view.readiness.note] : null) || (!models.length ? t("worldProcessingSettings.noConnectedModelsConnectAProviderToStartProcessing") : null);
   const selectedModel = models.find((model) => model.id === draft.helperModelProfileId);
   const savedRelations = (view.settings.relationHints ?? []).join(", ");
   const savedAnchors = (view.settings.anchors ?? []).map((anchor) => [anchor.name, ...(anchor.aliases ?? []), ...(anchor.identifiers ?? [])].join(" | ")).join("; ");

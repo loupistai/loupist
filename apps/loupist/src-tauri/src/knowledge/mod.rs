@@ -85,7 +85,7 @@ pub use graph_jobs::SealedWorldIndex;
 pub use graph_jobs::{
     get_job, list_jobs, load_settings, pause_processing, recover_world, recovery_status,
     resume_processing, store_settings, GraphJobView, GraphProcessingSettings, GraphProcessingView,
-    GraphPublicSettings, GraphReadiness,
+    GraphPublicSettings, GraphReadiness, ReadinessNote,
 };
 pub use graph_service::GraphSupervisor;
 pub use model::*;

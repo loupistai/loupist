@@ -425,4 +425,45 @@ pub(super) mod tests {
         }
         assert_eq!(state.store.list_loupists().unwrap().len(), 1);
     }
+
+    #[tokio::test]
+    async fn world_readiness_names_its_note_by_code_for_the_interface_to_word() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_folder_test(root.path().join("app"));
+        let loupist_id = create(&state, root.path(), "waiting").await;
+        let note = || {
+            let settings = load_graph_settings(&state, &loupist_id).unwrap();
+            let view = super::super::graph_settings_view(&state, &loupist_id, &settings).unwrap();
+            let readiness = serde_json::to_value(view.readiness).unwrap();
+            assert!(readiness.get("message").is_none(), "{readiness}");
+            (readiness["status"].clone(), readiness["note"].clone())
+        };
+        assert_eq!(
+            note(),
+            (
+                serde_json::json!("model_required"),
+                serde_json::json!("awaiting_provider")
+            )
+        );
+        with_loupist_knowledge(&state, &loupist_id, |tx, _| {
+            let mut settings = crate::knowledge::load_settings(tx, &loupist_id)?;
+            settings.awaiting_default_model = false;
+            crate::knowledge::store_settings(tx, &loupist_id, &settings)
+        })
+        .unwrap();
+        assert_eq!(
+            note(),
+            (
+                serde_json::json!("model_required"),
+                serde_json::json!("choose_model")
+            )
+        );
+        assert_eq!(
+            serde_json::to_value(crate::knowledge::ReadinessNote::Provider(
+                crate::providers::inference::UnreadyReason::AccountWaiting
+            ))
+            .unwrap(),
+            "account_waiting"
+        );
+    }
 }

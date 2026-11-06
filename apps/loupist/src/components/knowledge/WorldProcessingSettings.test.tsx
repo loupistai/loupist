@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import i18n from "@/i18n";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { GraphProcessingView } from "../../types";
 import { WorldProcessingSettings } from "./WorldProcessingSettings";
@@ -71,12 +72,29 @@ it("shows host readiness for a disconnected provider", async () => {
   const [status, label] = ["provider_disconnected", "Reconnect provider"] as const;
   const props = setup();
   const view = await props.bridge.knowledgeGraphSettingsGet({ loupistId: props.loupistId });
-  vi.spyOn(props.bridge, "knowledgeGraphSettingsGet").mockResolvedValue({ ...view, settings: { ...view.settings, enrichmentEnabled: true, helperModelProfileId: "removed-model" }, readiness: { status, message: "Reconnect or select an available model.", modelName: "Saved model", providerName: "Saved provider", authKind: "oauth" } });
+  vi.spyOn(props.bridge, "knowledgeGraphSettingsGet").mockResolvedValue({ ...view, settings: { ...view.settings, enrichmentEnabled: true, helperModelProfileId: "removed-model" }, readiness: { status, note: "not_connected", modelName: "Saved model", providerName: "Saved provider", authKind: "oauth" } });
   render(<WorldProcessingSettings {...props} />);
   const readiness = await screen.findByLabelText("World processing readiness");
   expect(within(readiness).getByText(label)).toBeVisible();
   expect(readiness).toHaveTextContent("Saved model");
+  expect(within(readiness).getByText("Connect the model provider in Settings.")).toBeVisible();
   expect(screen.getByText(/The saved model is unavailable/)).toBeVisible();
+});
+
+it("words the host's readiness note in the interface language", async () => {
+  const props = setup();
+  const view = await props.bridge.knowledgeGraphSettingsGet({ loupistId: props.loupistId });
+  vi.spyOn(props.bridge, "knowledgeGraphSettingsGet").mockResolvedValue({ ...view, readiness: { status: "model_required", note: "awaiting_provider", modelName: null, providerName: null, authKind: null } });
+  render(<WorldProcessingSettings {...props} />);
+  const readiness = await screen.findByLabelText("World processing readiness");
+  expect(readiness).toHaveTextContent("Waiting for a supported model provider. A recommended World model will be selected when one is connected.");
+  await act(async () => { await i18n.changeLanguage("ko"); });
+  try {
+    expect(readiness).toHaveTextContent("지원되는 AI 서비스를 기다리는 중이에요. 연결되면 추천 World 모델을 골라 드려요.");
+    expect(readiness).not.toHaveTextContent("Waiting for a supported model provider");
+  } finally {
+    await act(async () => { await i18n.changeLanguage("en"); });
+  }
 });
 
 it("preserves edits after save or pause errors and retries settings reads", async () => {

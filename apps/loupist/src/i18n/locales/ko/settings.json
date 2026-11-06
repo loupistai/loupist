@@ -270,7 +270,21 @@
     "noAvailableLoupists": "사용 가능한 루피스트가 없어요",
     "worldProcessingPreferences": "World 처리 설정",
     "reconnectLoupistFolder": "World 처리를 설정하려면 루피스트 설정에서 루피스트 폴더를 다시 연결해 주세요.",
-    "openALoupistFolderToConfigureWorldProcessing": "World 처리를 설정하려면 루피스트 폴더를 열어 주세요."
+    "openALoupistFolderToConfigureWorldProcessing": "World 처리를 설정하려면 루피스트 폴더를 열어 주세요.",
+    "readiness": {
+      "recoveryRequired": "World 처리가 중단됐어요. 계속하려면 마지막으로 확인된 World를 복구해 주세요. 중단된 자료는 자동으로 다시 처리하지 않아요.",
+      "recovering": "마지막으로 확인된 World를 복원하는 중이에요. 모델을 쓰지 않고 중단된 처리도 다시 시도하지 않아요.",
+      "runtimeUnavailable": "World 처리를 사용할 수 없어요. 앱을 업데이트하거나 다시 설치해 주세요.",
+      "awaitingProvider": "지원되는 AI 서비스를 기다리는 중이에요. 연결되면 추천 World 모델을 골라 드려요.",
+      "chooseModel": "World 처리 모델을 골라 주세요.",
+      "modelUnavailable": "선택한 모델은 World 처리에 쓸 수 없어요.",
+      "connectProvider": "설정에서 선택한 AI 서비스를 연결해 주세요.",
+      "isolationUnsupported": "이 AI 서비스는 격리된, 재시도 없는 World 처리를 지원하지 않아요.",
+      "runtimeMissing": "모델 런타임을 사용할 수 없어요.",
+      "chooseConnectedModel": "연결된 모델 중 사용할 수 있는 것을 골라 주세요.",
+      "notConnected": "설정에서 AI 서비스를 연결해 주세요.",
+      "accountWaiting": "이 계정은 요청이 통과될 때까지 기다리는 중이에요. 설정 › AI 모델 및 서비스를 확인해 주세요."
+    }
   },
   "useAppUpdate": {
     "couldNotReadUpdateStatus": "업데이트 상태를 읽지 못했어요. 다시 시도해 주세요.",

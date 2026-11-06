@@ -106,11 +106,22 @@ impl ProviderInferenceReply {
     }
 }
 
+/// Why a provider cannot run World processing now.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnreadyReason {
+    IsolationUnsupported,
+    RuntimeMissing,
+    ChooseConnectedModel,
+    NotConnected,
+    AccountWaiting,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderInferenceReadiness {
     pub available: bool,
-    pub reason: Option<String>,
+    pub reason: Option<UnreadyReason>,
     pub auth_kind: Option<String>,
     pub provider_label: Option<String>,
     pub model_label: Option<String>,
@@ -181,13 +192,13 @@ impl ProviderInferenceService {
             None
         };
         let reason = if !supports_isolated_inference(provider) {
-            Some("This provider does not support isolated, non-retrying World processing.")
+            Some(UnreadyReason::IsolationUnsupported)
         } else if self.artifacts.pi.is_none() {
-            Some("The model runtime is unavailable.")
+            Some(UnreadyReason::RuntimeMissing)
         } else if option.is_none() || selected.is_none() {
-            Some("Choose an available connected model.")
+            Some(UnreadyReason::ChooseConnectedModel)
         } else if auth_kind.is_none() {
-            Some("Connect the model provider in Settings.")
+            Some(UnreadyReason::NotConnected)
         } else if crate::providers::status::background_hold(
             &self.store,
             provider,
@@ -197,13 +208,13 @@ impl ProviderInferenceService {
             // Plan limit, a plan that cannot be shared, a sign-in to reconnect or
             // an empty balance: background work waits until a request goes
             // through, apart from one probe per back-off window.
-            Some("This account is waiting until a request goes through. See Settings › Models & providers.")
+            Some(UnreadyReason::AccountWaiting)
         } else {
             None
         };
         Ok(ProviderInferenceReadiness {
             available: reason.is_none(),
-            reason: reason.map(str::to_owned),
+            reason,
             auth_kind,
             provider_label: option.map(|item| item.label.into()),
             model_label: selected.map(|item| item.name),
