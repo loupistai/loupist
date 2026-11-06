@@ -541,6 +541,22 @@ export type KnowledgeSelection =
   | { kind: "journal"; journalId: string }
   | { kind: "snapshot"; pin: KnowledgePin };
 
+/** One hop of a discovered link (Rust `connections::Hop`). */
+export type ConnectionHop = { claimId: string; relation: string; fromRole: string; toRole: string; reversed: boolean; nodeId: string; name: string };
+export type ConnectionStatus = "new" | "shown" | "opened" | "dismissed" | "filed";
+/** A link discovery found after a World publication (`knowledge_connections`). */
+export type ConnectionView = {
+  connectionId: string;
+  seedNodeId: string;
+  farNodeId: string;
+  seedName: string;
+  farName: string;
+  path: ConnectionHop[];
+  score: number;
+  status: ConnectionStatus;
+  createdAtMs: number;
+};
+
 export type KnowledgeViewState = {
   highlightEntityIds?: string[];
   onlyDisputed?: boolean;
@@ -586,6 +602,8 @@ export type KnowledgeLocation = {
 export type GrowthEventKind =
   | "entity_added" | "claim_added" | "claim_disputed" | "claim_withdrawn"
   | "lens_created" | "lens_revised" | "lens_renamed" | "lens_archived" | "lens_restored"
+  /** A World publication disputed, withdrew or dropped a claim a page section cites. */
+  | "lens_contested"
   | "source_retained" | "schema_extended" | "schema_reduced" | "growth_truncated"
   /** An asset page's read moved: summary is the asset's name, before/after the steps. */
   | "thesis_moved";

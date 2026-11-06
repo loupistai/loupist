@@ -125,6 +125,9 @@ highlight is on, one row for the highlighted names; the
 least-drawn rows fold under More.
 Below 900×600 the legend floats over the map without shrinking the fit. It starts open on a person's first Map
 visit at any window size, and a collapse is remembered app-wide. The stats chip carries the conflicting count.
+A link card in the Bot opens the Map with `view.highlightEntityIds` set to the
+path's nodes, seed first, so the same highlight that marks disputed names marks the
+seed, each middle name and the far end; nothing else on the canvas changes.
 
 ## Code
 

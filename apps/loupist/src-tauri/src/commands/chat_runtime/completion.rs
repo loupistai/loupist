@@ -248,6 +248,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                     earnings: None,
                     vocabulary: None,
                     handoff: None,
+                    link: None,
                     id: message_id.clone(),
                     role: ChatRole::Assistant,
                     status: ChatMessageStatus::Complete,

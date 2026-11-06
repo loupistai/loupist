@@ -181,6 +181,9 @@ export const createLoupistBridge = (): LoupistBridge => ({
   chatSteer: request("chat_steer"),
   chatRetryLast: request("chat_retry_last"),
   researchHandoffStart: request("research_handoff_start"),
+  knowledgeConnections: request("knowledge_connections"),
+  knowledgeConnectionDismiss: request("knowledge_connection_dismiss"),
+  knowledgeConnectionOpen: request("knowledge_connection_open"),
   chatAbort: (run_id) => call("chat_abort", { run_id }),
   runActivityList: () => call("run_activity_list"),
 

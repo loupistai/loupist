@@ -448,6 +448,21 @@ export type HomeHandoff = {
   learned?: LearnedDigest;
 };
 
+/** One hop of a discovered link's path: the name reached and the relation walked, against its claim when `reversed`. */
+export type HomeLinkHop = { name: string; relation: string; reversed?: boolean };
+
+/**
+ * A link discovery found new to this Loupist (Rust `HomeLink`): seed to far end
+ * through the path's names. `nodeIds` (seed first) highlight the path on the Map.
+ */
+export type HomeLink = {
+  connectionId: string;
+  seedName: string;
+  farName: string;
+  path: HomeLinkHop[];
+  nodeIds: string[];
+};
+
 /** A scheduled result the host posted into the Loupist's home Thread. */
 export type HomeDelivery = {
   run_id: string;
@@ -623,6 +638,8 @@ export type ChatMessage = {
   vocabulary?: HomeVocabulary;
   /** Present on a host-posted research hand-off card. */
   handoff?: HomeHandoff;
+  /** Present on a host-posted "New link" card from discovery. */
+  link?: HomeLink;
   tool_refusals?: ChatToolRefusal[];
   feedback?: ChatFeedback | null;
   failure_kind?: ChatFailureKind;

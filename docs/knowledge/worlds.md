@@ -106,6 +106,30 @@ instants; date-only precision is retained in the fact text. Invalidation needs
 ordered start instants on both claims, so a date-only correction can be retained
 without structurally ending the earlier claim.
 
+### Discovery after publication
+
+Every World publication runs `world_followups::after_seal` in the transaction that
+writes its growth events, with no model call. Three things follow from the diff
+between the previous and the new snapshot. Lens sections whose `claim` basis names
+a claim the publication disputed, withdrew or dropped become contested (one page
+revision and one `lens_contested` growth event per page; the section's text is
+kept). Pending name anchors resolve by canonical name or alias. Then
+`connections::detect` walks two or three hops from each seed over claims that are
+not withdrawn, keeping each claim's direction and endpoint roles, to a name the seed
+could not reach within two hops before, with at least one hop on a claim this
+publication added. Seeds are the followed assets that `resolve_followed` matches
+exactly (an ambiguous symbol seeds nothing; the watchlist and holdings are read from
+the app database before the Loupist transaction opens) plus the nodes open idea
+pages are anchored to. A middle node with more than 40 neighbours is never walked
+through; the score prefers a far name in another Map category, short paths,
+low-degree middles, parallel support and recent claims. Work is bounded (claims per
+node, expansions per publication, 50 candidates), and a result says when it was
+cut short. `knowledge_connections` keeps one row per (seed, far) pair for ever, with
+`status` moving `new → shown → opened | dismissed | filed`; the Bot shows at most
+three a day ([link posts](../ui/home-thread.md#home-thread)). A link is new to this
+Loupist, never a claim that the market missed it.
+
 ## Code
 
+- Discovery: `src-tauri/src/knowledge/connections.rs` (pure detector), `src-tauri/src/knowledge/world_followups.rs` (post-seal steps and the `knowledge_connections` table)
 - World extraction and index: `src-tauri/src/knowledge/world_extract/` (`pipeline`, `bridge`, `index`, `search`, `job`)

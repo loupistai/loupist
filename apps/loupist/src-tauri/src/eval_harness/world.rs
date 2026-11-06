@@ -679,7 +679,7 @@ async fn setup(
     if scenario.seed == "template" {
         // As `loupist_create` does for a template Loupist that keeps its default focus.
         config.extension = template_seed(scenario, crate::commands::now_ms())
-            .ok_or("template seed requires its default focus")?;
+            .ok_or("template seed requires a curated template")?;
         let mut connection = state.store.lock_loupist(&loupist.id)?;
         let tx = connection.transaction()?;
         crate::knowledge::apply_preset(
@@ -1186,16 +1186,17 @@ mod tests {
                 value["scenarios"][0]["research_focus"] = json!("Clinical-stage biotech pipelines");
                 value["scenarios"][0]["seed"] = json!("none");
             }),
-            ("seed model", |value| {
-                value["scenarios"][0]["research_focus"] = json!("Clinical-stage biotech pipelines");
-                value["scenarios"][0]["seed"] = json!("model");
-            }),
             ("seed-only first step", |value| {
                 value["scenarios"][0]["steps"] = json!([{"id":"ingest_sources"}]);
             }),
             ("seed template", |value| {
                 value["scenarios"][0]["research_focus"] =
                     json!("Chips, memory, foundries and equipment");
+                value["scenarios"][0]["seed"] = json!("template");
+                value["scenarios"][0]["template"] = json!("semiconductors");
+            }),
+            ("template seed with an edited focus", |value| {
+                value["scenarios"][0]["research_focus"] = json!("Only memory manufacturers");
                 value["scenarios"][0]["seed"] = json!("template");
                 value["scenarios"][0]["template"] = json!("semiconductors");
             }),
@@ -1208,28 +1209,18 @@ mod tests {
                 value["scenarios"][0]["research_focus"] = json!("Pipelines");
                 value["scenarios"][0]["seed"] = json!("later");
             }),
-            ("template seed with an edited focus", |value| {
-                value["scenarios"][0]["research_focus"] = json!("Only memory manufacturers");
-                value["scenarios"][0]["seed"] = json!("template");
-                value["scenarios"][0]["template"] = json!("semiconductors");
+            ("retired model seed", |value| {
+                value["scenarios"][0]["research_focus"] = json!("Clinical-stage biotech pipelines");
+                value["scenarios"][0]["seed"] = json!("model");
             }),
             ("template seed without a curated template", |value| {
                 value["scenarios"][0]["research_focus"] = json!("Companies I hold and watch");
                 value["scenarios"][0]["seed"] = json!("template");
                 value["scenarios"][0]["template"] = json!("portfolio");
             }),
-            ("model seed without focus", |value| {
-                value["scenarios"][0]["research_focus"] = json!("  ");
-                value["scenarios"][0]["seed"] = json!("model");
-            }),
             ("oversized focus", |value| {
                 value["scenarios"][0]["research_focus"] = json!("x".repeat(281));
                 value["scenarios"][0]["seed"] = json!("none");
-            }),
-            ("model seed without World processing", |value| {
-                value["scenarios"][0]["research_focus"] = json!("Pipelines");
-                value["scenarios"][0]["seed"] = json!("model");
-                value["scenarios"][0]["world_enabled"] = json!(false);
             }),
             ("empty first step", |value| {
                 value["scenarios"][0]["seed_sources"] = json!([]);

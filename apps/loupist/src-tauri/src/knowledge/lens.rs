@@ -801,10 +801,77 @@ pub(super) fn record_applied(
     Ok(())
 }
 
+/// Sections citing one of `claim_ids` become contested, one revision and one
+/// `lens_contested` growth event per page. Returns how many pages changed.
+/// Discovery calls this after every World publication; no op is logged
+/// because the World, not an actor, changed the page.
+pub(super) fn contest_pages(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    claim_ids: &BTreeSet<String>,
+    at_ms: i64,
+) -> KnowledgeResult<usize> {
+    let mut candidates = BTreeSet::new();
+    let mut statement = tx.prepare(
+        "SELECT m.record_id FROM knowledge_lens_metadata m
+         JOIN knowledge_record_heads h ON h.record_id = m.record_id
+         JOIN knowledge_record_revisions v ON v.revision_id = h.revision_id
+         WHERE m.loupist_id = ?1 AND m.archived_at_ms IS NULL AND m.kind <> 'principle'
+           AND instr(v.payload_json, ?2) > 0",
+    )?;
+    for claim_id in claim_ids {
+        let rows =
+            statement.query_map(params![loupist_id, claim_id], |row| row.get::<_, String>(0))?;
+        for row in rows {
+            candidates.insert(row?);
+        }
+    }
+    drop(statement);
+    let mut changed_pages = 0;
+    for record_id in candidates {
+        let loaded = load(tx, loupist_id, &record_id)?;
+        let mut next = loaded.body.clone();
+        let changed = next.contest(claim_ids, at_ms);
+        if changed.is_empty() {
+            continue;
+        }
+        publish_revision(
+            tx,
+            &loaded.record,
+            loupist_id,
+            loaded.record.head_revision_id.as_deref(),
+            &next.to_payload()?,
+            &[],
+            at_ms,
+        )?;
+        tx.execute(
+            "UPDATE knowledge_lens_metadata SET updated_at_ms = ?1 WHERE record_id = ?2",
+            params![at_ms, record_id],
+        )?;
+        let mut event = super::growth::GrowthEvent::new(
+            loupist_id,
+            &record_id,
+            at_ms,
+            "lens_contested",
+            "processing",
+            &loaded.record.title,
+        );
+        event.after_summary = Some(super::growth::one_line(
+            &changed
+                .iter()
+                .map(SectionKey::as_str)
+                .collect::<Vec<_>>()
+                .join(", "),
+        ));
+        event.insert(tx)?;
+        changed_pages += 1;
+    }
+    Ok(changed_pages)
+}
+
 /// Pending name anchors resolve once the World knows the name or an alias.
 /// Returns how many anchors gained a node. Discovery calls this after every
-/// World publication (a later unit).
-#[allow(dead_code)]
+/// World publication.
 pub(super) fn resolve_anchors(
     tx: &Transaction<'_>,
     loupist_id: &str,
@@ -2264,10 +2331,11 @@ mod tests {
                 dependencies: Vec::new(),
             })
             .unwrap();
+        // The publication itself resolved the anchor; a second pass finds nothing pending.
         let resolved = store
             .transact(|write| write.resolve_anchors(LOUPIST, std::slice::from_ref(&node)))
             .unwrap();
-        assert_eq!(resolved, 1);
+        assert_eq!(resolved, 0);
         file_in(
             &store,
             &turn("m3"),

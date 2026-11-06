@@ -87,5 +87,6 @@ pub(crate) fn chat_message(id: &str, role: ChatRole, content: &str) -> ChatMessa
         earnings: None,
         vocabulary: None,
         handoff: None,
+        link: None,
     }
 }

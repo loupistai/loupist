@@ -24,6 +24,7 @@ const EXPECTED_TABLES: &[&str] = &[
     "knowledge_blobs",
     "knowledge_capture_lineage",
     "knowledge_chat_origins",
+    "knowledge_connections",
     "knowledge_earnings_events",
     "knowledge_earnings_notices",
     "knowledge_earnings_rows",
@@ -180,7 +181,7 @@ fn schema_sql() -> String {
             event_id TEXT PRIMARY KEY NOT NULL,
             loupist_id TEXT NOT NULL,
             at_ms INTEGER NOT NULL CHECK (at_ms >= 0),
-            kind TEXT NOT NULL CHECK (kind IN ('entity_added', 'claim_added', 'claim_disputed', 'claim_withdrawn', 'lens_created', 'lens_revised', 'lens_renamed', 'lens_archived', 'lens_restored', 'source_retained', 'journal_created', 'journal_updated', 'journal_archived', 'journal_restored', 'journal_reviewed', 'schema_extended', 'schema_reduced', 'thesis_moved', 'growth_truncated')),
+            kind TEXT NOT NULL CHECK (kind IN ('entity_added', 'claim_added', 'claim_disputed', 'claim_withdrawn', 'lens_created', 'lens_revised', 'lens_renamed', 'lens_archived', 'lens_restored', 'lens_contested', 'source_retained', 'journal_created', 'journal_updated', 'journal_archived', 'journal_restored', 'journal_reviewed', 'schema_extended', 'schema_reduced', 'thesis_moved', 'growth_truncated')),
             record_id TEXT,
             subject_id TEXT,
             origin_chat_id TEXT,
@@ -452,6 +453,21 @@ fn schema_sql() -> String {
             ON knowledge_lens_anchors(record_id, role, COALESCE(node_id, ''), name_fold, COALESCE(turn_id, ''));
         CREATE INDEX knowledge_lens_anchors_by_node
             ON knowledge_lens_anchors(loupist_id, node_id, role);
+        CREATE TABLE knowledge_connections (
+            connection_id TEXT PRIMARY KEY NOT NULL,
+            loupist_id TEXT NOT NULL,
+            seed_node_id TEXT NOT NULL,
+            far_node_id TEXT NOT NULL,
+            path_json TEXT NOT NULL,
+            score INTEGER NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('new', 'shown', 'opened', 'dismissed', 'filed')),
+            created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0),
+            status_at_ms INTEGER NOT NULL CHECK (status_at_ms >= 0)
+        ) STRICT;
+        CREATE UNIQUE INDEX knowledge_connections_pair
+            ON knowledge_connections(loupist_id, seed_node_id, far_node_id);
+        CREATE INDEX knowledge_connections_by_status
+            ON knowledge_connections(loupist_id, status, status_at_ms);
         CREATE TABLE knowledge_lens_links (
             loupist_id TEXT NOT NULL,
             source_record_id TEXT NOT NULL REFERENCES knowledge_records(record_id) ON DELETE RESTRICT,

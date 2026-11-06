@@ -11,7 +11,7 @@ use crate::{
     commands::{map_internal, map_store, new_id, now_ms},
     domain::{
         memory_refs_digest, ChatMessage, ChatMessageStatus, ChatRole, ChatSession, HomeAlert,
-        HomeDelivery, MemoryPolicy,
+        HomeDelivery, HomeLink, MemoryPolicy,
     },
     runs::coordinator::{RunKind, RunTarget},
     scheduled_tasks::types::{Run, RunStatus},
@@ -152,6 +152,7 @@ pub(crate) fn delivery_message(state: &AppState, run: &Run) -> Result<ChatMessag
         earnings: None,
         vocabulary: None,
         handoff: None,
+        link: None,
     })
 }
 
@@ -232,6 +233,7 @@ pub(crate) fn alert_message(
         earnings: None,
         vocabulary: None,
         handoff: None,
+        link: None,
     })
 }
 
@@ -280,6 +282,7 @@ pub(crate) fn host_message(
         earnings: None,
         vocabulary: None,
         handoff: None,
+        link: None,
     })
 }
 
@@ -535,6 +538,41 @@ pub(crate) fn vocabulary_message(
     Ok(message)
 }
 
+/// The Thread message for one link discovery found: "New link: A ↔ C through
+/// B". The renderer words it; the path's names are all it carries.
+pub(crate) fn link_message(
+    view: &crate::knowledge::ConnectionView,
+    at_ms: i64,
+) -> Result<ChatMessage, CommandError> {
+    let through: Vec<&str> = view
+        .path
+        .iter()
+        .take(view.path.len().saturating_sub(1))
+        .map(|hop| hop.name.as_str())
+        .collect();
+    let mut message = host_message(
+        "link",
+        format!(
+            "New link: {} ↔ {} through {}.",
+            view.seed_name,
+            view.far_name,
+            through.join(", ")
+        ),
+        at_ms,
+    )?;
+    message.link = Some(HomeLink::from(view));
+    Ok(message)
+}
+
+/// Links discovery found that the Bot may still show today, best first.
+fn pending_links(state: &AppState, loupist_id: &str) -> Vec<crate::knowledge::ConnectionView> {
+    let at = now_ms();
+    crate::commands::assets::with_assets(state, loupist_id, false, |tx| {
+        crate::knowledge::connections_to_show(tx, loupist_id, at)
+    })
+    .unwrap_or_default()
+}
+
 /// Preset and review changes the Thread has not announced yet, oldest first.
 fn pending_vocabulary(
     state: &AppState,
@@ -648,6 +686,7 @@ pub(crate) fn deliver_finished_runs(
         && research_changes(&home).is_empty()
         && pending_alerts(state, loupist_id, &home).is_empty()
         && pending_vocabulary(state, loupist_id, &home).is_empty()
+        && pending_links(state, loupist_id).is_empty()
         && watch_events.is_empty()
         && notices.is_empty()
     {
@@ -724,6 +763,14 @@ pub(crate) fn deliver_finished_runs(
     for change in pending_vocabulary(state, loupist_id, &expected) {
         posted.push(vocabulary_message(&change)?);
     }
+    let links = pending_links(state, loupist_id);
+    let link_ids: Vec<String> = links
+        .iter()
+        .map(|link| link.connection_id.clone())
+        .collect();
+    for link in &links {
+        posted.push(link_message(link, now_ms())?);
+    }
     let (watch_events, notices) = pending_host_news(state, loupist_id);
     let watch_ids: Vec<String> = watch_events
         .iter()
@@ -754,11 +801,12 @@ pub(crate) fn deliver_finished_runs(
         .iter()
         .map(|(notice, _)| notice.notice_id.clone())
         .collect();
-    if !watch_ids.is_empty() || !notice_ids.is_empty() {
+    if !watch_ids.is_empty() || !notice_ids.is_empty() || !link_ids.is_empty() {
         let at = now_ms();
         crate::commands::assets::with_assets(state, loupist_id, true, |tx| {
             crate::knowledge::watch::mark_delivered(tx, loupist_id, &watch_ids, "message", at)?;
-            crate::knowledge::earnings::mark_notices_posted(tx, loupist_id, &notice_ids, at)
+            crate::knowledge::earnings::mark_notices_posted(tx, loupist_id, &notice_ids, at)?;
+            crate::knowledge::connections_mark_shown(tx, loupist_id, &link_ids, at)
         })?;
         crate::commands::watch::changed(loupist_id);
     }

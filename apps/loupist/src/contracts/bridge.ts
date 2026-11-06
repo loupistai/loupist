@@ -299,6 +299,12 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   chatRetryLast(request: ChatRetryRequest): Promise<{ prompt: string; as_of?: string }>;
   /** Opens a research session that runs on its own and reports into the Bot; a repeated key returns the same one. */
   researchHandoffStart(request: ResearchHandoffRequest): Promise<ResearchHandoffReceipt>;
+  /** Links discovery found after World publications, newest first. */
+  knowledgeConnections(request: { loupistId: string }): Promise<import("./knowledge").ConnectionView[]>;
+  /** Not useful: the link stays recorded so it is never found again. */
+  knowledgeConnectionDismiss(request: { loupistId: string; connectionId: string }): Promise<import("./knowledge").ConnectionView>;
+  /** Look into it: records that a research hand-off was started for the link. */
+  knowledgeConnectionOpen(request: { loupistId: string; connectionId: string }): Promise<import("./knowledge").ConnectionView>;
   chatAbort(run_id: string): Promise<void>;
   runActivityList(): Promise<RunActivity[]>;
   knowledgeGrowthEvents(request: import("./knowledge").GrowthEventsQuery): Promise<import("./knowledge").GrowthEventsPage>;

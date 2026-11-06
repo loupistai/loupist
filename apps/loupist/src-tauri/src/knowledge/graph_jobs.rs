@@ -1981,6 +1981,7 @@ pub fn publish_and_complete(
     logical_digest: &str,
     at_ms: i64,
     usage_uncertain: bool,
+    followed: &[crate::store::user_context::MapContextItem],
 ) -> KnowledgeResult<GraphJobView> {
     use super::model::{SealWorld, WorldSnapshotBody};
     if sha256(artifact_utf8.as_bytes()) != logical_digest {
@@ -2050,6 +2051,7 @@ pub fn publish_and_complete(
         "processing",
         job.document.origin_chat_id.as_deref(),
         job.document.origin_message_id.as_deref(),
+        followed,
     )?;
     let mut document = job.document.clone();
     finish_artifact(&mut document, logical_digest);

@@ -1939,6 +1939,10 @@ div.message-action-bar > .answer-correction { order: 1; }
 .thread-delivery[data-status="failed"] .thread-delivery-text { color: var(--gg-color-text-secondary); }
 .thread-delivery-source { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gg-space-2); margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
 .thread-delivery-source .morning-link { font-size: var(--gg-text-meta); }
+.thread-link-path { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gg-space-1); margin: 0; text-align: left; }
+.thread-link-hop { display: inline-flex; gap: var(--gg-space-1); align-items: baseline; }
+.thread-link-name { font-weight: 600; }
+.thread-link-relation { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
 /* An empty topic Chat offers only the questions. */
 .morning-ask-only .morning-ask { margin-top: 0; }
 

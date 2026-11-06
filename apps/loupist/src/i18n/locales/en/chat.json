@@ -1539,6 +1539,18 @@
     "undone": "Undone. The map tracks the basics again for these.",
     "error": "Couldn't undo this. Try again."
   },
+  "link": {
+    "label": "New link: {{seed}} and {{far}}",
+    "message": "New link: {{seed}} ↔ {{far}} through {{through}}.",
+    "pathLabel": "Show this path on the map",
+    "lookInto": "Look into it",
+    "notUseful": "Not useful",
+    "opened": "Researching it. The result will arrive here.",
+    "dismissed": "Set aside. This link won't come up again.",
+    "error": "Couldn't do that. Try again.",
+    "question": "What connects {{seed}} and {{far}}? The map now links them through {{through}}. Check whether the link holds and what it would mean for {{seed}}.",
+    "title": "Link: {{seed}} and {{far}}"
+  },
   "redLine": {
     "message": "{{name}} crossed the line you set on {{date}}: {{claim}} — {{value}} ({{factDate}}). Thesis marked Broken.",
     "review": "Review thesis"

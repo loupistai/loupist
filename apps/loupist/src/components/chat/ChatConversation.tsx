@@ -26,6 +26,7 @@ import { ThreadHandoff } from "./ThreadHandoff";
 import { ThreadAlert } from "./ThreadAlert";
 import { ThreadWatch } from "./ThreadWatch";
 import { ThreadEarnings } from "./ThreadEarnings";
+import { ThreadLink } from "./ThreadLink";
 import { ThreadVocabulary } from "./ThreadVocabulary";
 import { ChatDivider } from "./ChatDivider";
 import { chatSeenAt, dividersBefore, firstNewSince, markChatSeen } from "../../chat/dividers";
@@ -297,6 +298,8 @@ export function ChatConversation({
             <ThreadEarnings message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} onOpenLink={url => void onOpenLink(url)} />
           ) : message.vocabulary ? (
             <ThreadVocabulary message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} />
+          ) : message.link ? (
+            <ThreadLink message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} onOpenMap={(nodeIds) => onOpenMemoryPage({ loupistId, surface: "world", view: { highlightEntityIds: nodeIds } })} />
           ) : message.alert ? (
             <ThreadAlert message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} onOpenLink={url => void onOpenLink(url)} />
           ) : message.delivery ? (

@@ -14,22 +14,33 @@ use super::model::{
 };
 use super::revision::{normalize_dependencies, publish_revision, visible_by_digest};
 use super::world_filter::{filter as filter_world, WorldFilters};
+use crate::store::user_context::MapContextItem;
 
 pub(super) fn seal_world(
     tx: &Transaction<'_>,
     request: SealWorld,
 ) -> KnowledgeResult<WorldRevision> {
-    seal_world_with_actor(tx, request, "user", None, None)
+    seal_world_with_actor(tx, request, "user", None, None, &[])
 }
 
+/// `followed` seeds discovery; a caller without the app's watchlist passes none.
 pub(super) fn seal_world_with_actor(
     tx: &Transaction<'_>,
     request: SealWorld,
     actor: &str,
     origin_chat_id: Option<&str>,
     origin_message_id: Option<&str>,
+    followed: &[MapContextItem],
 ) -> KnowledgeResult<WorldRevision> {
-    seal_world_with_origin(tx, request, actor, origin_chat_id, origin_message_id, None)
+    seal_world_with_origin(
+        tx,
+        request,
+        actor,
+        origin_chat_id,
+        origin_message_id,
+        None,
+        followed,
+    )
 }
 
 /// A publication without a Chat origin whose growth events carry `origin`
@@ -40,7 +51,7 @@ pub(super) fn seal_world_with_provenance(
     actor: &str,
     origin: Option<serde_json::Value>,
 ) -> KnowledgeResult<WorldRevision> {
-    seal_world_with_origin(tx, request, actor, None, None, origin)
+    seal_world_with_origin(tx, request, actor, None, None, origin, &[])
 }
 
 fn seal_world_with_origin(
@@ -50,6 +61,7 @@ fn seal_world_with_origin(
     origin_chat_id: Option<&str>,
     origin_message_id: Option<&str>,
     origin: Option<serde_json::Value>,
+    followed: &[MapContextItem],
 ) -> KnowledgeResult<WorldRevision> {
     validate_loupist_id(&request.loupist_id)?;
     validate_knowledge_id(&request.record_id, "rec")?;
@@ -99,6 +111,14 @@ fn seal_world_with_origin(
     event.origin_message_id = origin_message_id.map(str::to_owned);
     event.origin = origin;
     super::growth::world_diff(tx, &event, previous.as_ref(), &body)?;
+    super::world_followups::after_seal(
+        tx,
+        &request.loupist_id,
+        previous.as_ref(),
+        &body,
+        followed,
+        request.at_ms,
+    )?;
     let snapshot_id = mint_id("snp");
     insert_snapshot(
         tx,

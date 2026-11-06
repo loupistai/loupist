@@ -368,6 +368,51 @@ impl LensBody {
         }
     }
 
+    /// Marks every section whose claim basis names one of `claim_ids` as
+    /// contested, keeping an earlier `since_ms`. Returns the keys that changed.
+    pub fn contest(&mut self, claim_ids: &BTreeSet<String>, at_ms: i64) -> Vec<SectionKey> {
+        let mut changed = Vec::new();
+        let Some(page) = self.page_mut() else {
+            return changed;
+        };
+        for section in &mut page.sections {
+            let cited: Vec<String> = section
+                .basis
+                .refs
+                .iter()
+                .filter_map(|r| match r {
+                    BasisRef::Claim { claim_id } if claim_ids.contains(claim_id) => {
+                        Some(claim_id.clone())
+                    }
+                    _ => None,
+                })
+                .collect();
+            if cited.is_empty() {
+                continue;
+            }
+            let (since_ms, mut ids) = match &section.state {
+                SectionState::Current => (at_ms, Vec::new()),
+                SectionState::Contested {
+                    since_ms,
+                    claim_ids,
+                } => (*since_ms, claim_ids.clone()),
+            };
+            let before = ids.len();
+            ids.extend(cited);
+            ids.sort();
+            ids.dedup();
+            if ids.len() == before && matches!(section.state, SectionState::Contested { .. }) {
+                continue;
+            }
+            section.state = SectionState::Contested {
+                since_ms,
+                claim_ids: ids,
+            };
+            changed.push(section.key.clone());
+        }
+        changed
+    }
+
     pub fn idea(&self) -> Option<&IdeaState> {
         match self {
             Self::Idea(_, state) => Some(state),

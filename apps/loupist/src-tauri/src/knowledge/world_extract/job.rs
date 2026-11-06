@@ -163,6 +163,7 @@ where
         );
     }
     let mut vectors = extracted.vectors;
+    let followed = store.followed_items();
     let committed = store.transact(|write| {
         let finished = graph_jobs::publish_and_complete(
             write,
@@ -173,6 +174,7 @@ where
             &extracted.digest,
             now_ms,
             uncertain,
+            &followed,
         )?;
         if finished.status == graph_jobs::JOB_COMPLETED {
             if let Some(revision) = finished.document.sealed_revision_id.as_deref() {

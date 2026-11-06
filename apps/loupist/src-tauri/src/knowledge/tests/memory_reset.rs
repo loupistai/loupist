@@ -152,6 +152,7 @@ fn reset_removes_only_loupist_authored_memory_and_queues_world_reload() {
                     actor,
                     None,
                     None,
+                    &[],
                 )
             })
             .unwrap();
@@ -303,6 +304,7 @@ fn reset_keeps_user_claims_and_independent_support_and_removes_owned_unbacked_cl
                 "user",
                 None,
                 None,
+                &[],
             )
         })
         .unwrap();
@@ -341,6 +343,7 @@ fn reset_keeps_user_claims_and_independent_support_and_removes_owned_unbacked_cl
                 "loupist",
                 None,
                 None,
+                &[],
             )
         })
         .unwrap();

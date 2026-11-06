@@ -481,6 +481,7 @@ pub(super) fn admit_chat_turn(
         earnings: None,
         vocabulary: None,
         handoff: None,
+        link: None,
         id: user_message_id.clone(),
         role: ChatRole::User,
         status: ChatMessageStatus::Complete,

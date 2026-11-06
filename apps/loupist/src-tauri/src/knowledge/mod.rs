@@ -18,6 +18,7 @@ pub(crate) use folder::validate_folder;
 mod blob;
 mod canonical;
 mod catalog;
+pub(crate) mod connections;
 mod error;
 mod followed;
 mod graph_inference;
@@ -57,6 +58,11 @@ mod time;
 mod worker;
 mod world;
 pub(crate) mod world_extract;
+mod world_followups;
+pub(crate) use world_followups::{
+    mark_shown as connections_mark_shown, to_show as connections_to_show,
+};
+pub use world_followups::{ConnectionStatus, ConnectionView};
 mod world_filter;
 pub(crate) use world_filter::{last_day, published_by};
 mod world_schema;
@@ -166,6 +172,21 @@ impl KnowledgeStore {
         body: impl FnOnce(&KnowledgeWrite<'_>) -> KnowledgeResult<T>,
     ) -> KnowledgeResult<T> {
         self.with_locked(true, body)
+    }
+
+    /// What the user follows, read from the app database before a Loupist
+    /// transaction opens (the two have separate locks). Identity only.
+    pub fn followed_items(&self) -> Vec<crate::store::user_context::MapContextItem> {
+        self.connection
+            .map_context()
+            .map(|context| {
+                context
+                    .watchlist
+                    .into_iter()
+                    .chain(context.holdings)
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     pub fn read<T>(
@@ -327,6 +348,7 @@ impl KnowledgeStore {
         at_ms: i64,
         usage_uncertain: bool,
     ) -> KnowledgeResult<GraphJobView> {
+        let followed = self.followed_items();
         self.transact(|write| {
             graph_jobs::publish_and_complete(
                 write,
@@ -337,6 +359,7 @@ impl KnowledgeStore {
                 logical_digest,
                 at_ms,
                 usage_uncertain,
+                &followed,
             )
         })
     }
@@ -545,6 +568,16 @@ impl<'a> KnowledgeWrite<'a> {
         world::seal_world(self.tx, request)
     }
 
+    /// A publication whose discovery seeds from what the user follows.
+    #[cfg(test)]
+    pub(crate) fn seal_world_followed(
+        &self,
+        request: SealWorld,
+        followed: &[crate::store::user_context::MapContextItem],
+    ) -> KnowledgeResult<WorldRevision> {
+        world::seal_world_with_actor(self.tx, request, "user", None, None, followed)
+    }
+
     pub fn query_world(&self, query: WorldGraphQuery) -> KnowledgeResult<WorldGraphView> {
         world::query_world(self.tx, query)
     }
@@ -594,10 +627,24 @@ impl<'a> KnowledgeWrite<'a> {
         lens::learned_digest(self.tx, loupist_id, message_ids)
     }
 
-    /// Called after every World publication by discovery; nothing calls it yet.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn resolve_anchors(&self, loupist_id: &str, nodes: &[GraphNode]) -> KnowledgeResult<usize> {
         lens::resolve_anchors(self.tx, loupist_id, nodes)
+    }
+
+    /// Links the user can act on, newest first.
+    pub fn connections(&self, loupist_id: &str) -> KnowledgeResult<Vec<ConnectionView>> {
+        world_followups::list(self.tx, loupist_id)
+    }
+
+    pub fn connection_set_status(
+        &self,
+        loupist_id: &str,
+        connection_id: &str,
+        status: ConnectionStatus,
+        at_ms: i64,
+    ) -> KnowledgeResult<ConnectionView> {
+        world_followups::set_status(self.tx, loupist_id, connection_id, status, at_ms)
     }
 
     pub fn record_applied(
@@ -939,6 +986,7 @@ fn erase_guarded_rows(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult
         "knowledge_lens_anchors",
         "knowledge_lens_links",
         "knowledge_lens_metadata",
+        "knowledge_connections",
     ] {
         tx.execute(
             &format!("DELETE FROM {table} WHERE loupist_id = ?1"),

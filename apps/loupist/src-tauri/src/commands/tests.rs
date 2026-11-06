@@ -19,6 +19,7 @@ use crate::{
 
 mod chat_behavior;
 mod contracts;
+mod home_links;
 mod home_thread;
 mod home_vocabulary;
 mod loupist;

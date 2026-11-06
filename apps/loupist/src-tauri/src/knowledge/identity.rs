@@ -122,9 +122,15 @@ pub(crate) fn resolve_followed(item: &MapContextItem, nodes: &[GraphNode]) -> Id
             .iter()
             .map(|value| market_agreement(value, market))
             .collect();
-        if verdicts.iter().any(|v| matches!(v, MarketAgreement::Agrees)) {
+        if verdicts
+            .iter()
+            .any(|v| matches!(v, MarketAgreement::Agrees))
+        {
             agreeing.push(node.id.clone());
-        } else if !verdicts.iter().all(|v| matches!(v, MarketAgreement::Conflicts)) {
+        } else if !verdicts
+            .iter()
+            .all(|v| matches!(v, MarketAgreement::Conflicts))
+        {
             unstated.push(node.id.clone());
         }
     }
@@ -236,7 +242,12 @@ mod tests {
 
     #[test]
     fn an_unknown_or_unrecognized_market_cannot_exclude_a_node() {
-        let nodes = [node("n1", "Alpha Inc", "A", Some("New York Stock Exchange"))];
+        let nodes = [node(
+            "n1",
+            "Alpha Inc",
+            "A",
+            Some("New York Stock Exchange"),
+        )];
         assert_eq!(
             resolve_followed(&item("A", "UNKNOWN"), &nodes),
             IdentityMatch::Exact("n1".into())

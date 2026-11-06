@@ -170,6 +170,19 @@ pub struct KnowledgeLensPagesForNodeRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct KnowledgeConnectionsRequest {
+    pub loupist_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct KnowledgeConnectionRequest {
+    pub loupist_id: String,
+    pub connection_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MemorySectionForgetRequest {
     pub loupist_id: String,
     pub record_id: String,
@@ -338,6 +351,55 @@ pub fn knowledge_lens_pages_for_node(
         crate::knowledge::KnowledgeWrite::bind(tx, blobs)
             .pages_for_node(&request.loupist_id, &request.node_id)
     })
+}
+
+#[tauri::command]
+pub fn knowledge_connections(
+    request: KnowledgeConnectionsRequest,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::knowledge::ConnectionView>, CommandError> {
+    admit(&state, &request.loupist_id)?;
+    with_loupist_knowledge(&state, &request.loupist_id.clone(), |tx, blobs| {
+        crate::knowledge::KnowledgeWrite::bind(tx, blobs).connections(&request.loupist_id)
+    })
+}
+
+fn connection_set_status(
+    state: &AppState,
+    request: &KnowledgeConnectionRequest,
+    status: crate::knowledge::ConnectionStatus,
+) -> Result<crate::knowledge::ConnectionView, CommandError> {
+    let _activity = admit_mutation(state, &request.loupist_id)?;
+    with_loupist_knowledge(state, &request.loupist_id, |tx, blobs| {
+        crate::knowledge::KnowledgeWrite::bind(tx, blobs).connection_set_status(
+            &request.loupist_id,
+            &request.connection_id,
+            status,
+            crate::commands::now_ms(),
+        )
+    })
+}
+
+/// Not useful: the link stays recorded so it is never found again.
+#[tauri::command]
+pub fn knowledge_connection_dismiss(
+    request: KnowledgeConnectionRequest,
+    state: State<'_, AppState>,
+) -> Result<crate::knowledge::ConnectionView, CommandError> {
+    connection_set_status(
+        &state,
+        &request,
+        crate::knowledge::ConnectionStatus::Dismissed,
+    )
+}
+
+/// Look into it: the renderer started a research hand-off for this link.
+#[tauri::command]
+pub fn knowledge_connection_open(
+    request: KnowledgeConnectionRequest,
+    state: State<'_, AppState>,
+) -> Result<crate::knowledge::ConnectionView, CommandError> {
+    connection_set_status(&state, &request, crate::knowledge::ConnectionStatus::Opened)
 }
 
 #[tauri::command]

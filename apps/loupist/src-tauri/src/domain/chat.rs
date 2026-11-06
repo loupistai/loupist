@@ -347,6 +347,9 @@ pub struct ChatMessage {
     /// New kinds of things the Loupist's map now tracks, posted by the host.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vocabulary: Option<HomeVocabulary>,
+    /// A link discovery found after a World publication, posted by the host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<HomeLink>,
     /// The as-of date the user set for this request (`YYYY-MM-DD`), kept on
     /// the request and on its answer (finance-point-in-time.md).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -408,6 +411,52 @@ pub struct HomeVocabulary {
     /// The same kinds in Korean, in the same order, when every label has one.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub labels_ko: Vec<String>,
+}
+
+/// One hop of a link's path as the Bot shows it: the name reached and the
+/// relation walked, against its claim when `reversed`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HomeLinkHop {
+    pub name: String,
+    pub relation: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reversed: bool,
+}
+
+/// A link discovery found new to this Loupist (`knowledge/connections.rs`):
+/// seed to far end through the path's names. `node_ids` (seed first) let the
+/// Map highlight the path. Never holdings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HomeLink {
+    pub connection_id: String,
+    pub seed_name: String,
+    pub far_name: String,
+    pub path: Vec<HomeLinkHop>,
+    pub node_ids: Vec<String>,
+}
+
+impl From<&crate::knowledge::ConnectionView> for HomeLink {
+    fn from(view: &crate::knowledge::ConnectionView) -> Self {
+        let mut node_ids = vec![view.seed_node_id.clone()];
+        node_ids.extend(view.path.iter().map(|hop| hop.node_id.clone()));
+        Self {
+            connection_id: view.connection_id.clone(),
+            seed_name: view.seed_name.clone(),
+            far_name: view.far_name.clone(),
+            path: view
+                .path
+                .iter()
+                .map(|hop| HomeLinkHop {
+                    name: hop.name.clone(),
+                    relation: hop.relation.clone(),
+                    reversed: hop.reversed,
+                })
+                .collect(),
+            node_ids,
+        }
+    }
 }
 
 /// A results message: "{name} reported {period} results." with the two most
