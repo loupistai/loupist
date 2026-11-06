@@ -3,7 +3,7 @@
 ## Needs a product decision
 
 - **Vocabulary changes apply without a prompt.** The user did not decide this; the orchestrator chose it from the candidates' arguments (an approval an ordinary user cannot judge never gets answered). Review producers are gated on evidence in the graph and every change has Undo. To require approval instead, route the `review` producer in `knowledge/schema_writer.rs` back to a pending state; chat and preset changes would stay immediate.
-- **An interrupted World extraction is lost for good.** No extraction call is retried, so an uncertain usage receipt is never charged twice. But quitting the app during a job (jobs took 85–185 s with GPT-6-Luna at high thinking) or a provider timeout drops that Source's facts from the World permanently. In the native walk, dev-app restarts lost 8 of 14 attempted Sources this way. One bounded retry for a span whose call never mutated the graph would cap the cost at two calls; the change belongs in `graph_jobs::finish_job` and `recover_interrupted`.
+- **An interrupted World extraction is lost for good.** No extraction call is retried, so an uncertain usage receipt is never charged twice. But quitting the app during a job (jobs took 85–185 s with GPT-6-Luna at high thinking) or a provider timeout drops that Source's facts from the World permanently. In the native walk, dev-app restarts and one provider failure lost 10 of 15 attempted Sources this way. One bounded retry for a span whose call never mutated the graph would cap the cost at two calls; the change belongs in `graph_jobs::finish_job` and `recover_interrupted`.
 
 ## Not verified
 
@@ -24,6 +24,7 @@
 - World extraction named a metric in English from a Korean KRX filing; the Bot's suggested question then reads "TC BONDER 4.5 GRIFFIN equipment order contract amount KRW 44.2 billion (VAT excluded) 변화는 어떻게 설명돼?". Names should follow the Source's language, and long metric names need a short label in questions.
 - The Bot's chat materials panel says nothing was discussed while the Bot's own catch-up lists 17 new names.
 - A hand-off card posted before `briefings::summary` keeps its stored "# heading" summary; only new cards are fixed.
+- Opening a connection's tools reads "Opened OpenDART" in the Korean interface: the host composes the English verb with the name, and the renderer passes composed labels through. A step that carries the connection name as its own field would let the interface word it.
 
 ## Code structure flags from the comment review (not changed here)
 
