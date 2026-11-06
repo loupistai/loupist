@@ -64,7 +64,8 @@ recommended connection it lacks (Tiingo, FRED or EIA; enabled and available for 
 Loupist counts as having it),
 and three locally generated questions that fill the composer without sending. A first
 visit counts what there is to look at instead of naming a day; general questions fill
-the list when the Loupist has little to point at. It is
+the list when the Loupist has little to point at. A Thread with no user-written message yet
+keeps this first-visit message below any host post, such as the preset's vocabulary card. It is
 computed in the renderer (no model call) and is not persisted. "Last seen" is a
 per-device value per Loupist in `localStorage` (`loupist.loupistVisit.v1`), written
 when the user leaves a Loupist after a visit of at least five minutes.

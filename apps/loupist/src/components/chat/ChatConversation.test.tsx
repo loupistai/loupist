@@ -123,3 +123,29 @@ it("follows a writing preamble into a tool step before WebKit delivers its layou
   expect(top).toBe(954);
   expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
 });
+
+describe("home Thread guidance", () => {
+  const post: ChatMessage = { id: "host-1", role: "assistant", content: "Your map now also tracks suppliers.", status: "complete", created_at: "2026-10-24T00:00:00Z" };
+  const render_ = (messages: ChatMessage[]) => {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const chat = new Chat<LoupistUIMessage>({ transport: new TauriChatTransport(bridge), messages: messages.map(toLoupistUIMessage) });
+    function Conversation() {
+      const { messages: list, messageKeys } = useLoupistChat({ bridge, chat, loupistId: "loupist-quality", activeThread: undefined, setThreads: vi.fn() });
+      return <ChatConversation loupistId="loupist-quality" loupistName="Loupist" bridge={bridge} home messages={list} messageKeys={messageKeys} onSuggestion={vi.fn()} onEditUser={vi.fn()}
+        onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} onOpenArtifact={vi.fn()} onOpenLink={vi.fn()} onReadAttachment={vi.fn()} />;
+    }
+    return render(<Conversation />);
+  };
+
+  it("keeps the first-visit questions beside a host post until the user writes", async () => {
+    render_([post]);
+    expect(screen.getByText("Your map now also tracks suppliers.")).toBeVisible();
+    expect(await screen.findByRole("region", { name: "You could ask" })).toBeVisible();
+  });
+
+  it("drops the first-visit questions once the user has written", async () => {
+    render_([post, { ...post, id: "user-1", role: "user", content: "Hello" }]);
+    expect(screen.getByText("Hello")).toBeVisible();
+    expect(screen.queryByRole("region", { name: "You could ask" })).toBeNull();
+  });
+});

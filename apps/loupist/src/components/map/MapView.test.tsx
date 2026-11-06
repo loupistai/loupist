@@ -148,13 +148,13 @@ it('reads the World through a Lens and clears back to the World', async () => {
   expect(canvas()).toHaveAttribute('data-overlay', '');
   expect(await screen.findByText('37 on the map · 36 relationships')).toBeVisible();
 });
-it('shows the host standing title as the default perspective', async () => {
+it('shows the host default title as the localized perspective', async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const catalog = await bridge.knowledgeCatalog({ loupistId: 'loupist-quality' });
   const map = await bridge.knowledgeMap({ loupistId: catalog.loupistId });
   const standing = map.nodes.find(node => node.id === 'map-lens-0');
-  standing!.label = 'Standing philosophy';
-  catalog.lenses.push({ ...catalog.lenses[0]!, recordId: 'map-lens-0', title: 'Standing philosophy', lensKind: 'perspective', applicability: 'This Loupist has not recorded a standing philosophy.', isStanding: true } as typeof catalog.lenses[number]);
+  standing!.label = 'Outlook';
+  catalog.lenses.push({ ...catalog.lenses[0]!, recordId: 'map-lens-0', title: 'Outlook', lensKind: 'perspective', applicability: 'This Loupist has not recorded a standing philosophy.', isStanding: true } as typeof catalog.lenses[number]);
   vi.spyOn(bridge, 'knowledgeMap').mockResolvedValue(map);
   function Harness() {
     const [location, setLocation] = useState<KnowledgeLocation>({ loupistId: catalog.loupistId, surface: 'world', recordId: catalog.worlds[0]?.recordId, revisionId: catalog.worlds[0]?.revisionId });
@@ -165,8 +165,8 @@ it('shows the host standing title as the default perspective', async () => {
   const user = userEvent.setup();
   await user.click(screen.getByRole('button', { name: 'Filter' }));
   await user.click(screen.getByText('Highlight Lens applications'));
-  expect(screen.getByRole('button', { name: /Default perspective/ })).toBeVisible();
-  expect(screen.queryByRole('button', { name: /Standing philosophy/ })).toBeNull();
+  expect(screen.getByRole('button', { name: /Outlook/ })).toBeVisible();
+  expect(screen.queryByRole('button', { name: /Standing/ })).toBeNull();
   await user.keyboard('{Escape}');
   await user.type(screen.getByRole('combobox'), 'Standing');
   expect(await screen.findByText('No match on the map. Try Sources in the Library.')).toBeVisible();

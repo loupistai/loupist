@@ -23,7 +23,7 @@ it("keeps profile, chat, learning and skills on one page with changes scoped to 
     set: { chat: { use_memory: false, update_memory: false } },
   })));
   await user.click(within(page).getByRole("button", { name: "Learning" }));
-  const learn = await within(page).findByRole("switch", { name: /^Learn ways of working/ });
+  const learn = await within(page).findByRole("switch", { name: /^Learn methods/ });
   await waitFor(() => expect(learn).toBeEnabled());
   const enabled = learn.getAttribute("data-state") === "checked";
   await user.click(learn);
@@ -108,4 +108,16 @@ it("distinguishes Loupists with matching folder names and opens the intended one
   await chooseLoupist(user, "research · /Users/work");
   await waitFor(() => expect(select).toHaveBeenLastCalledWith(loupists[1].id));
   expect(selectedLoupistButton()).toHaveTextContent("research");
+});
+
+it("keeps what the map tracks in World processing, not Learning", async () => {
+  const user = userEvent.setup();
+  await openApp();
+  await user.click(headerAction("Loupist settings"));
+  const page = await screen.findByRole("region", { name: "Loupist settings" });
+  await user.click(within(page).getByRole("button", { name: "World processing" }));
+  const world = page.querySelector<HTMLElement>('[data-loupist-section="world"]')!;
+  const learning = page.querySelector<HTMLElement>('[data-loupist-section="learning"]')!;
+  expect(await within(world).findByText("What the map tracks")).toBeVisible();
+  expect(within(learning).queryByText("What the map tracks")).toBeNull();
 });

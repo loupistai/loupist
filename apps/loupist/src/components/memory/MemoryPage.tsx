@@ -11,7 +11,7 @@ import { errorMessage } from "../../lib/errors";
 import { revealFocused } from "../../lib/revealFocused";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { HOST_STANDING_TITLE } from "../map/lensReading";
+import { displayPageTitle, displaySectionHeading } from "../../knowledge/hostDefaults";
 import { chatTitle } from "../../app/chatTitle";
 import { LensLearningPanel } from "../knowledge/LensLearningPanel";
 import { PageReader } from "./PageReader";
@@ -140,7 +140,7 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onBack, onOp
     ...data.principles.map(principle => ({ kind: "principle" as const, id: principle.recordId, title: principle.statement, summary: principle.why ?? "", updatedAtMs: principle.createdAtMs, paused: data.paused.has(principle.recordId), principle })),
     ...data.catalog.lenses.filter(lens => lens.lensKind && lens.lensKind !== "principle" && !lens.archived).map(lens => ({
       kind: lens.lensKind as LensKind, id: lens.recordId, summary: lens.summary ?? "", updatedAtMs: lens.updatedAtMs, paused: data.paused.has(lens.recordId), learned: lens.learned,
-      title: lens.lensKind === "perspective" && lens.title === HOST_STANDING_TITLE ? t("lensWorkspace.defaultPerspective") : lens.title,
+      title: displayPageTitle(lens.lensKind as LensKind, lens.title),
     })),
   ], [data]);
   useEffect(() => {
@@ -278,7 +278,7 @@ function ItemList({ label, description, items, selectedId, usage, onOpen, before
     <p className="memory-section-description">{description}</p>
     {before}
     {groups.length ? groups.map(group => <section key={group.kind} className="memory-page-group" aria-label={t(`memoryPage.groups.${group.kind}`)}>
-      <h3 className="memory-group-label">{t(`memoryPage.groups.${group.kind}`)}<span>{formatNumber(group.items.length)}</span></h3>
+      <h3 className="memory-group-label"><span>{t(`memoryPage.groups.${group.kind}`)}</span><span className="memory-group-count" aria-hidden="true">{formatNumber(group.items.length)}</span><span className="sr-only">{t("memoryPage.groupCount", { count: group.items.length, formattedCount: formatNumber(group.items.length) })}</span></h3>
       <ul>
         {group.items.map(item => <li key={item.id}>
           <button ref={element => { if (element) refs.current.set(item.id, element); else refs.current.delete(item.id); }} type="button" className="memory-row" aria-current={item.id === selectedId || undefined}
@@ -433,10 +433,10 @@ function followedName(entry: WatchlistEntry, nodes: readonly KnowledgeMapNode[])
 type HistoryRow = { key: string; atMs: number; text: string; failed?: boolean; itemId?: string; map?: boolean };
 
 function sectionRows(page: PageView): HistoryRow[] {
-  const heading = (key?: string) => key ? (page.body.kind === "principle" ? undefined : page.body.sections.find(section => section.key === key)?.heading) ?? key : "";
+  const heading = (key?: string) => key ? displaySectionHeading(key, (page.body.kind === "principle" ? undefined : page.body.sections.find(section => section.key === key)?.heading) ?? key) : "";
   return page.history.filter(entry => entry.origin === "user" && entry.outcome !== "summarized" && ["added", "retired"].includes(entry.outcome) && (entry.undoesOpId || entry.outcome === "retired")).map(entry => ({
     key: `section:${entry.opId}`, atMs: entry.createdAtMs, itemId: page.recordId,
-    text: t(entry.undoesOpId ? "memoryPage.history.undone" : "memoryPage.history.forgot", { section: heading(entry.key), page: page.title }),
+    text: t(entry.undoesOpId ? "memoryPage.history.undone" : "memoryPage.history.forgot", { section: heading(entry.key), page: displayPageTitle(page.kind, page.title) }),
   }));
 }
 

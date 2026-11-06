@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { SafeMessageResponse } from "../chat/SafeMessageResponse";
-import { HOST_STANDING_TITLE } from "../map/lensReading";
+import { displayPageTitle, displaySectionHeading } from "../../knowledge/hostDefaults";
 import { SharedOrigin } from "../sharing/SharedOrigin";
 import { SHARED_SECTION_ITEM } from "../sharing/SharedPacks";
 import { ShareSheet } from "../sharing/ShareSheet";
@@ -19,8 +19,7 @@ const WORLD_LINK = /\]\(world:([^)\s]+)\)/gu;
 const WORLD_PREFIX = "world~";
 const SHARABLE: ReadonlySet<LensKind> = new Set(["principle", "perspective", "method"]);
 
-export const pageTitle = (page: Pick<PageView, "title" | "kind">) =>
-  page.kind === "perspective" && page.title === HOST_STANDING_TITLE ? i18n.t("knowledge:lensWorkspace.defaultPerspective") : page.title;
+export const pageTitle = (page: Pick<PageView, "title" | "kind">) => displayPageTitle(page.kind, page.title);
 
 function withMapLinks(markdown: string, nodeIds: string[]) {
   return markdown.replace(WORLD_LINK, (_, nodeId: string) => {
@@ -85,7 +84,7 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, chil
     finally { setBusy(false); }
   }, [busy, onChanged, t]);
 
-  const sections = page && page.body.kind !== "principle" ? page.body.sections : [];
+  const sections = useMemo(() => page && page.body.kind !== "principle" ? page.body.sections.map(section => ({ ...section, heading: displaySectionHeading(section.key, section.heading) })) : [], [page]);
   const rewritten = useMemo(() => {
     const ids: string[] = [];
     return { texts: sections.map(section => withMapLinks(section.markdown, ids)), ids };

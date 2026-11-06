@@ -1372,13 +1372,13 @@
     "using": {
       "title": "사용 중",
       "principles_other": "원칙 {{formattedCount}}개",
-      "methods_other": "작업 방식 {{formattedCount}}개",
+      "methods_other": "분석 방법 {{formattedCount}}개",
       "connections_other": "연결 {{formattedCount}}개",
       "pins_other": "추가 {{formattedCount}}개",
       "kind": {
         "pin": "추가함",
         "principle": "원칙",
-        "method": "작업 방식",
+        "method": "분석 방법",
         "connection": "연결"
       }
     },
@@ -1387,7 +1387,7 @@
       "processing": "자료 정리 중…",
       "names_other": "지도에 +{{formattedCount}}",
       "relationships_other": "관계 {{formattedCount}}개",
-      "methods_other": "작업 방식 {{formattedCount}}개"
+      "methods_other": "분석 방법 {{formattedCount}}개"
     },
     "needsYou": {
       "title": "승인이 필요해요",

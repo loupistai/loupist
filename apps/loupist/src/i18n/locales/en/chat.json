@@ -1424,8 +1424,8 @@
       "title": "Using",
       "principles_one": "{{formattedCount}} rule",
       "principles_other": "{{formattedCount}} rules",
-      "methods_one": "{{formattedCount}} way of working",
-      "methods_other": "{{formattedCount}} ways of working",
+      "methods_one": "{{formattedCount}} method",
+      "methods_other": "{{formattedCount}} methods",
       "connections_one": "{{formattedCount}} connection",
       "connections_other": "{{formattedCount}} connections",
       "pins_one": "{{formattedCount}} added",
@@ -1433,7 +1433,7 @@
       "kind": {
         "pin": "Added",
         "principle": "Rule",
-        "method": "Way of working",
+        "method": "Method",
         "connection": "Connection"
       }
     },
@@ -1444,8 +1444,8 @@
       "names_other": "+{{formattedCount}} on the map",
       "relationships_one": "{{formattedCount}} relationship",
       "relationships_other": "{{formattedCount}} relationships",
-      "methods_one": "{{formattedCount}} way of working",
-      "methods_other": "{{formattedCount}} ways of working"
+      "methods_one": "{{formattedCount}} method",
+      "methods_other": "{{formattedCount}} methods"
     },
     "needsYou": {
       "title": "Needs your OK",

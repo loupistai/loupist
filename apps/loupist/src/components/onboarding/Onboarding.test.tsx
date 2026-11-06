@@ -15,11 +15,27 @@ async function start(bridge: MockLoupistBridge) {
   await user.click(await screen.findByRole("button", { name: "Get started" })); return user;
 }
 
+const createLoupist = async (user: ReturnType<typeof userEvent.setup>) => user.click(await screen.findByRole("button", { name: "Create Loupist" }));
+
+it("offers the presets after connecting and creates the Loupist from the chosen one", async () => {
+  const bridge = await fresh();
+  const create = vi.spyOn(bridge, "loupistCreate");
+  const user = await start(bridge);
+  expect(screen.getByRole("button", { name: /My portfolio/ })).toHaveAttribute("aria-pressed", "true");
+  await user.click(screen.getByRole("button", { name: /Semiconductors/ }));
+  expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Chip Loupist");
+  expect(create).not.toHaveBeenCalled();
+  await createLoupist(user);
+  expect(await screen.findByRole("textbox", { name: "Message Loupist" })).toBeEnabled();
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({ template: "semiconductors", name: "Chip Loupist" }));
+});
+
 it("creates the default Bot and lets the user ask immediately", async () => {
   const bridge = await fresh();
   const create = vi.spyOn(bridge, "loupistCreate");
   const schedule = vi.spyOn(bridge, "briefingSettingsSet");
-  await start(bridge);
+  await createLoupist(await start(bridge));
   expect(await screen.findByRole("textbox", { name: "Message Loupist" })).toBeEnabled();
   expect(create).toHaveBeenCalledTimes(1);
   expect(schedule).not.toHaveBeenCalled();
@@ -29,8 +45,9 @@ it("allows retry after creating the default Bot fails", async () => {
   const bridge = await fresh();
   vi.spyOn(bridge, "loupistCreate").mockRejectedValueOnce(new Error("Storage unavailable"));
   const user = await start(bridge);
+  await createLoupist(user);
   expect(await screen.findByRole("alert")).toHaveTextContent("Storage unavailable");
-  await user.click(screen.getByRole("button", { name: "Get started" }));
+  await createLoupist(user);
   expect(await screen.findByRole("textbox", { name: "Message Loupist" })).toBeEnabled();
 });
 
@@ -52,6 +69,7 @@ it("cancels OAuth, ignores its stale completion, and retries provider errors", a
   await user.click(screen.getByRole("button", { name: "Continue with ChatGPT" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Sign-in expired");
   await user.click(screen.getByRole("button", { name: "Try again" }));
+  await createLoupist(user);
   expect(await screen.findByRole("textbox", { name: "Message Loupist" })).toBeVisible();
   expect(connect).toHaveBeenCalledTimes(3);
 });
@@ -81,6 +99,7 @@ it("gates welcome on acknowledgment and persists the version when onboarding com
   expect(screen.getByRole("checkbox", { name: "I understand" })).not.toBeChecked();
   await user.click(screen.getByRole("checkbox", { name: "I understand" }));
   await user.click(startButton);
+  await createLoupist(user);
   await waitFor(() => expect(acknowledge).toHaveBeenCalledTimes(1));
 });
 
@@ -89,6 +108,7 @@ it("keeps acknowledgment required if saving at onboarding completion fails", asy
   const create = vi.spyOn(bridge, "loupistCreate");
   vi.spyOn(bridge, "noticeAcknowledge").mockRejectedValueOnce(new Error("Storage unavailable"));
   const user = await start(bridge);
+  await createLoupist(user);
   const dialog = await screen.findByRole("dialog", { name: "Before you start" });
   await waitFor(() => expect(within(dialog).getByRole("checkbox")).toBeEnabled());
   expect(within(dialog).getByRole("button", { name: "Continue" })).toBeDisabled();

@@ -127,6 +127,11 @@ it("groups pages by kind and narrows them with search", async () => {
   await screen.findByRole("region", { name: /What .* knows/ });
   const groups = await screen.findAllByRole("region", { name: /^(Topics|Ideas|Methods|Your principles|Outlook)$/ });
   expect(groups.map(group => group.getAttribute("aria-label"))).toEqual(["Topics", "Ideas", "Methods", "Your principles", "Outlook"]);
+  const header = within(groups[0]!).getByRole("heading", { level: 3 });
+  expect(header.children).toHaveLength(3);
+  expect(header.children[0]).toHaveTextContent(/^Topics$/);
+  expect(header.children[1]).toHaveAttribute("aria-hidden", "true");
+  expect(header.children[2]).toHaveTextContent(/^1 page$/);
   expect(within(groups[0]!).getByRole("button", { name: /^TCP, Topic/ })).toBeVisible();
   expect(within(groups[1]!).getByRole("button", { name: /QUIC could displace TCP/ })).toBeVisible();
   await user.type(screen.getByRole("searchbox", { name: "Search what it knows" }), "head-of-line");

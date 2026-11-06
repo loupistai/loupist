@@ -369,7 +369,6 @@ export function LoupistSettings({
               </Disclosure>
               <Disclosure title={i18n.t("knowledge:memoryPage.about.learning")} data-loupist-section="learning">
                 <LoupistLearningSettings key={selectedAgent.id} bridge={bridge} loupistId={selectedAgent.id} onChanged={onChanged} />
-                <LoupistTracking key={`${selectedAgent.id}:tracking`} bridge={bridge} loupistId={selectedAgent.id} />
                 <Button variant="destructive" size="sm" data-memory-reset onClick={() => setResetOpen(true)}>{i18n.t("knowledge:memoryPage.about.reset")}</Button>
                 <MemoryResetDialog bridge={bridge} loupistId={selectedAgent.id} name={selectedAgent.name} open={resetOpen} onOpenChange={setResetOpen} onChanged={onChanged} />
               </Disclosure>
@@ -388,6 +387,7 @@ export function LoupistSettings({
             </Disclosure> : null}
             {available ? <Disclosure title={i18n.t("app:navigation.worldProcessing")} open={worldOpen} onOpenChange={setWorldOpen} data-loupist-section="world">
               <div className="world-settings-card"><WorldProcessingSettings key={selectedAgent.id} bridge={bridge} loupistId={selectedAgent.id} active={worldOpen} onChanged={onChanged} onManageProviders={onManageProviders} /></div>
+              <LoupistTracking key={`${selectedAgent.id}:tracking`} bridge={bridge} loupistId={selectedAgent.id} />
             </Disclosure> : null}
             <Disclosure title={i18n.t("settings:loupistSettings.localWorkspace")} data-loupist-section="workspace">
             <section className="agent-workspace-card" aria-labelledby="agent-workspace-heading">

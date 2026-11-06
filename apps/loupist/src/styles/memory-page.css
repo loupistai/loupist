@@ -109,3 +109,5 @@
 .memory-reset-counts dd { margin: 0; font-variant-numeric: tabular-nums; }
 .memory-reset-confirm { display: grid; gap: var(--gg-space-2); margin-top: var(--gg-space-4); }
 .memory-source-page > .knowledge-sources { min-height: 0; flex: 1; }
+.memory-group-label { display: flex; align-items: baseline; gap: var(--gg-space-2); }
+.memory-group-count { color: var(--gg-color-text-tertiary); font-variant-numeric: tabular-nums; }
