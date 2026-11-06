@@ -214,10 +214,18 @@ struct WatchSeed {
     display_name: Option<String>,
 }
 #[derive(Deserialize, Serialize)]
+struct LensSeedSection {
+    pub key: String,
+    pub heading: String,
+    pub markdown: String,
+}
+#[derive(Deserialize, Serialize)]
 struct LensSeed {
     pub title: String,
-    #[serde(flatten)]
-    pub document: LensDocument,
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default)]
+    pub sections: Vec<LensSeedSection>,
 }
 #[derive(Deserialize, Serialize)]
 struct SourceSeed {
@@ -755,25 +763,39 @@ fn seed(state: &AppState, loupist_id: &str, seed: &Seed) -> Result<()> {
             })?;
         }
         for lens in &seed.lens {
-            let record = write.create_record(CreateRecord {
-                loupist_id: loupist_id.into(),
-                kind: RecordKind::Lens,
-                title: lens.title.clone(),
-                at_ms: now,
-            })?;
-            write.revise_lens(ReviseLens {
-                loupist_id: loupist_id.into(),
-                record_id: record.record_id,
-                expected_revision_id: None,
-                at_ms: now,
-                document: lens.document.clone(),
-                dependencies: vec![],
-                change: LensChangeInput {
-                    rationale: "Fictional eval seed".into(),
-                    references: vec![],
-                    feedback: None,
+            use crate::knowledge::lens_page::{
+                Basis, FilingOrigin, LensOp, PageDelta, PageKind, PageTarget, SectionKey,
+            };
+            let mut ops = Vec::new();
+            if !lens.summary.trim().is_empty() {
+                ops.push(LensOp::Summary {
+                    text: lens.summary.clone(),
+                });
+            }
+            for section in &lens.sections {
+                ops.push(LensOp::Put {
+                    key: SectionKey::new(&section.key)?,
+                    heading: section.heading.clone(),
+                    markdown: section.markdown.clone(),
+                    basis: Basis::default(),
+                    expected: None,
+                });
+            }
+            write.file(
+                loupist_id,
+                &FilingOrigin::Import {
+                    pack: json!({"kind": "eval_seed"}),
                 },
-            })?;
+                vec![PageDelta {
+                    target: PageTarget::Create {
+                        kind: PageKind::Method,
+                        title: lens.title.clone(),
+                        anchors: Vec::new(),
+                    },
+                    ops,
+                }],
+                now,
+            )?;
         }
         Ok(())
     })?;

@@ -2,31 +2,25 @@ use super::authority::require_record;
 use super::error::{KnowledgeError, KnowledgeResult};
 use super::model::{
     mint_id, validate_knowledge_id, validate_loupist_id, validate_time, validate_title,
-    CreateRecord, LensDocument, OwnedRecord, RecordKind, RecordRevision,
+    CreateRecord, OwnedRecord, RecordKind, RecordRevision,
 };
 use super::revision::{load_revision, StoredRevision};
 #[cfg(feature = "eval-harness")]
-use super::{
-    canonical::from_json,
-    lens::{enforce_lens_closure, enforce_lens_text},
-    model::{EvidenceRevision, RecordSnapshot},
-    schema::KNOWLEDGE_FORMAT_VERSION,
-};
+use super::{model::RecordSnapshot, schema::KNOWLEDGE_FORMAT_VERSION};
 use rusqlite::{params, Transaction};
 
+/// Source and World records. A Lens page is created by `KnowledgeWrite::file`
+/// and a principle by `principle_save`.
 pub(super) fn create_record(
     tx: &Transaction<'_>,
     request: CreateRecord,
 ) -> KnowledgeResult<OwnedRecord> {
-    create_record_with_id(tx, request, None)
-}
-
-pub(super) fn create_record_with_id(
-    tx: &Transaction<'_>,
-    request: CreateRecord,
-    record_id: Option<String>,
-) -> KnowledgeResult<OwnedRecord> {
-    create_record_typed(tx, request, record_id, false)
+    if request.kind == RecordKind::Lens {
+        return Err(KnowledgeError::Invalid(
+            "Lens pages are filed, not created as bare records",
+        ));
+    }
+    create_record_typed(tx, request, None, false)
 }
 
 pub(super) fn create_principle_record(
@@ -55,30 +49,17 @@ fn create_record_typed(
             return Err(KnowledgeError::Invalid("Loupist already owns a World"));
         }
     }
-    if request.kind == RecordKind::Lens {
-        super::lens::enforce_lens_text(
-            tx,
-            &request.loupist_id,
-            &request.title,
-            &LensDocument {
-                markdown: request.title.clone(),
-                applicability: String::new(),
-                assumptions: String::new(),
-                procedure: String::new(),
-                principles: String::new(),
-                limitations: String::new(),
-            },
-        )?;
-        if !principle {
-            super::lens::require_unique_lens_title(tx, &request.loupist_id, &request.title, None)?;
-        }
+    if principle
+        && super::lens_page::text_forbidden(super::lens_page::LensKind::Principle, &request.title)
+    {
+        return Err(KnowledgeError::LensBodyForbidden);
     }
     let record_id = record_id.unwrap_or_else(|| mint_id("rec"));
     tx.execute("INSERT INTO knowledge_records(record_id,kind,owner_loupist_id,title,created_at_ms) VALUES (?1,?2,?3,?4,?5)", params![record_id,request.kind.as_str(),request.loupist_id,request.title,request.at_ms])?;
-    if request.kind == RecordKind::Lens {
+    if principle {
         tx.execute(
-            "INSERT INTO knowledge_lens_metadata (record_id, loupist_id, title, title_fold, archived_at_ms, updated_at_ms, lens_kind) VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?6)",
-            params![record_id, request.loupist_id, request.title, super::lens::fold_lens_title(&request.title), request.at_ms, if principle {"principle"} else {"method"}],
+            "INSERT INTO knowledge_lens_metadata (record_id, loupist_id, title, title_fold, archived_at_ms, updated_at_ms, kind) VALUES (?1, ?2, ?3, ?4, NULL, ?5, 'principle')",
+            params![record_id, request.loupist_id, request.title, super::lens::fold_lens_title(&request.title), request.at_ms],
         )?;
     }
     Ok(OwnedRecord {
@@ -106,13 +87,6 @@ pub(super) fn record_snapshot(
     revision_id: &str,
 ) -> KnowledgeResult<RecordSnapshot> {
     let revision = visible_revision(tx, loupist_id, revision_id)?;
-    if revision.kind == RecordKind::Lens {
-        let module = require_record(tx, loupist_id, &revision.record_id)?;
-        let document = from_json::<LensDocument>(&revision.payload_json)?;
-        enforce_lens_text(tx, loupist_id, &module.title, &document)?;
-        let dependencies = from_json::<Vec<EvidenceRevision>>(&revision.dependency_json)?;
-        enforce_lens_closure(tx, loupist_id, &dependencies)?;
-    }
     let model = revision.to_model()?;
     Ok(RecordSnapshot {
         format_version: KNOWLEDGE_FORMAT_VERSION,

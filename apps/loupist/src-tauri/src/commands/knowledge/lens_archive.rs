@@ -43,10 +43,11 @@ fn archive(state: &AppState, request: LensArchiveRequest) -> Result<(), CommandE
 mod tests {
     use super::*;
     use crate::commands::tests::{profile, seed_profile};
-    use crate::knowledge::{KnowledgeStore, LensChangeInput, LensDocument, ReviseLens};
+    use crate::knowledge::test_support::user_origin;
+    use crate::knowledge::KnowledgeStore;
 
     #[test]
-    fn method_archive_changes_listing_and_growth_but_refuses_default_perspective() {
+    fn method_archive_changes_listing_and_growth_and_stays_with_its_loupist() {
         let temp = tempfile::tempdir().unwrap();
         let state = AppState::for_test(temp.path().join("app"));
         let workspace = temp.path().join("loupist");
@@ -54,34 +55,13 @@ mod tests {
         seed_profile(state.store.as_ref(), &profile("loupist-a", &workspace, 1));
         let store = KnowledgeStore::for_loupist(state.store.clone(), "loupist-a").unwrap();
         let method = store
-            .transact(|write| {
-                let record = write.create_record(CreateRecord {
-                    loupist_id: "loupist-a".into(),
-                    kind: RecordKind::Lens,
-                    title: "Compare cash conversion".into(),
-                    at_ms: 1,
-                })?;
-                write.revise_lens(ReviseLens {
-                    loupist_id: "loupist-a".into(),
-                    record_id: record.record_id,
-                    expected_revision_id: None,
-                    at_ms: 2,
-                    dependencies: vec![],
-                    document: LensDocument {
-                        markdown: "Compare cash conversion across dated periods.".into(),
-                        applicability: "Quarterly research".into(),
-                        assumptions: String::new(),
-                        procedure: String::new(),
-                        principles: String::new(),
-                        limitations: String::new(),
-                    },
-                    change: LensChangeInput {
-                        rationale: "Reusable comparison".into(),
-                        references: vec![],
-                        feedback: None,
-                    },
-                })
-            })
+            .file_method(
+                "loupist-a",
+                "Compare cash conversion",
+                "Compare cash conversion across dated periods.",
+                &user_origin(),
+                2,
+            )
             .unwrap();
         archive(
             &state,
@@ -95,9 +75,9 @@ mod tests {
         with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
             let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
             assert!(write.lens_listing("loupist-a", &method.record_id)?.1);
+            assert!(write.read_page("loupist-a", &method.record_id)?.archived);
             let count: i64 = tx.query_row("SELECT count(*) FROM knowledge_growth_events WHERE loupist_id = 'loupist-a' AND record_id = ?1 AND kind = 'lens_archived'", [&method.record_id], |row| row.get(0))?;
             assert_eq!(count, 1);
-            tx.execute("INSERT INTO knowledge_standing_selection(loupist_id,record_id,revision_id,role,selected_at_ms) VALUES('loupist-a',?1,?2,'standing_philosophy',3) ON CONFLICT(loupist_id) DO UPDATE SET record_id=excluded.record_id,revision_id=excluded.revision_id", rusqlite::params![method.record_id, method.revision_id])?;
             Ok(())
         }).unwrap();
         archive(
@@ -109,15 +89,12 @@ mod tests {
             },
         )
         .unwrap();
-        assert!(archive(
-            &state,
-            LensArchiveRequest {
-                loupist_id: "loupist-a".into(),
-                record_id: method.record_id.clone(),
-                archived: true
-            }
-        )
-        .is_err());
+        assert!(
+            !store
+                .read_page("loupist-a", &method.record_id)
+                .unwrap()
+                .archived
+        );
         assert!(archive(
             &state,
             LensArchiveRequest {

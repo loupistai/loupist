@@ -24,8 +24,8 @@
       "bytes": 24
     },
     "method-opal-capex-read.md": {
-      "sha256": "5d599427eec9cfe09d4962bb4d599ca9e640b6cecccb430fc506ecd8566377fe",
-      "bytes": 250
+      "sha256": "ce11e62deb6cec3598a4919703bc221c8c876a0b4c73eb4921db2dd22b5d0a30",
+      "bytes": 264
     }
   },
   "app": "0.0.1"

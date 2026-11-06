@@ -147,7 +147,8 @@ fn snapshot(state: &AppState, loupist: &str) -> Result<Value> {
         if record.kind == RecordKind::Lens
             && !principles.iter().any(|p| p.record_id == record.record_id)
         {
-            methods.push(json!({"record":record,"lens":store.read_lens(loupist,&record.record_id)?,"changes":store.list_lens_changes(loupist,&record.record_id)?}));
+            let page = store.read(|read| read.read_page(loupist, &record.record_id))?;
+            methods.push(json!({"record":record,"page":page}));
         }
     }
     let inbox = state

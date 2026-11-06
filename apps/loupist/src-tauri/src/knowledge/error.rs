@@ -29,12 +29,8 @@ pub enum KnowledgeError {
     MissingBytes,
     #[error("renderer inspection receipt cannot authorize a journal citation")]
     InspectionReceiptNotCitable,
-    #[error("lens dependency is forbidden")]
-    LensDependencyForbidden,
     #[error("lens body contains a forbidden reference")]
     LensBodyForbidden,
-    #[error("dependency cycle")]
-    DependencyCycle,
     #[error("conflicting required revisions of one record")]
     ConflictingDependencyRevision,
     #[error("query cursor does not match this revision and filter")]
@@ -75,9 +71,7 @@ impl KnowledgeError {
             Self::DigestMismatch => "digest_mismatch",
             Self::MissingBytes => "missing_bytes",
             Self::InspectionReceiptNotCitable => "inspection_receipt_not_citable",
-            Self::LensDependencyForbidden => "lens_dependency_forbidden",
             Self::LensBodyForbidden => "lens_body_forbidden",
-            Self::DependencyCycle => "dependency_cycle",
             Self::ConflictingDependencyRevision => "conflicting_dependency_revision",
             Self::CursorStale => "cursor_stale",
             Self::ItemTooLarge => "item_too_large",

@@ -23,7 +23,7 @@ export const suite = {
           user: 'Hanbit Robotics is fictional. Its diluted shares are 120 million. Remember that for later valuation.',
           expect: {
             trace: [
-              { assert: 'tool_called', tool: 'lens_update', metric: 'save_recall' },
+              { assert: 'tool_called', tool: 'principle_save', metric: 'save_recall' },
               { assert: 'no_repeated_failed_call', metric: 'tool_validity' },
             ],
             memory: [{ assert: 'committed', kind: 'lens', min: 1, title_contains: 'Diluted', metric: 'save_recall' }],
@@ -78,7 +78,7 @@ export const traces = [
     user: suite.scenarios[0].sessions[0].turns[0].user,
     answer: 'Recorded diluted shares of 120 million for fictional Hanbit Robotics.',
     tool_calls: [
-      { call_id: 'c1', name: 'lens_update', component: 'lens', args: { title: 'Diluted shares' }, duration_ms: 10, outcome: 'ok', error_code: null, error_message: null, result_bytes: 20 },
+      { call_id: 'c1', name: 'principle_save', component: 'lens', args: { title: 'Diluted shares' }, duration_ms: 10, outcome: 'ok', error_code: null, error_message: null, result_bytes: 20 },
       { call_id: 'c2', name: 'missing_tool', component: null, args: {}, duration_ms: 5, outcome: 'error', error_code: 'tool_not_found', error_message: 'Tool "missing_tool" not found', result_bytes: 0 },
     ],
     memory_commits: [{ kind: 'lens', record_id: 'lens-1', title: 'Diluted share count', summary: 'Use 120 million diluted shares when valuing fictional Hanbit Robotics.' }],

@@ -5,9 +5,7 @@ use rusqlite::{params, Transaction};
 use serde::{Deserialize, Serialize};
 
 use super::error::{KnowledgeError, KnowledgeResult};
-use super::model::{
-    mint_id, validate_loupist_id, validate_time, ClaimStatus, LensDocument, WorldSnapshotBody,
-};
+use super::model::{mint_id, validate_loupist_id, validate_time, ClaimStatus, WorldSnapshotBody};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -68,16 +66,6 @@ pub(super) fn one_line(text: &str) -> String {
         .chars()
         .take(240)
         .collect()
-}
-
-pub(super) fn lens_summary(document: &LensDocument, title: &str) -> String {
-    one_line(
-        document
-            .applicability
-            .lines()
-            .find(|line| !line.trim().is_empty())
-            .unwrap_or(title),
-    )
 }
 
 impl GrowthEvent {

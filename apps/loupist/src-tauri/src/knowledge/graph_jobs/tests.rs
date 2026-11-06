@@ -342,12 +342,13 @@ fn graph_jobs_require_the_loupists_own_world_revision() {
         binding_role: "extracted_from".to_string(),
     };
     let lens = store
-        .create_record(CreateRecord {
-            loupist_id: "loupist-a".to_string(),
-            kind: RecordKind::Lens,
-            title: "Lens".to_string(),
-            at_ms: 10,
-        })
+        .file_method(
+            "loupist-a",
+            "Lens",
+            "A method body.",
+            &crate::knowledge::test_support::user_origin(),
+            10,
+        )
         .unwrap();
     let wrong_kind = store.graph_accept_episode(&settings, request("loupist-a", &lens.record_id));
     assert_eq!(wrong_kind.unwrap_err().code(), "invalid");

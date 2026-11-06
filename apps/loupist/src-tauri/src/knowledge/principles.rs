@@ -1,6 +1,7 @@
-//! User-authored research rules, stored as ordinary Lens record revisions.
-use super::{KnowledgeError, KnowledgeResult, LensDocument, RecordKind};
-use rusqlite::{params, OptionalExtension, Transaction};
+//! User-authored research rules, stored as Lens records of kind `principle`
+//! whose payload is the input itself.
+use super::{KnowledgeError, KnowledgeResult, RecordKind};
+use rusqlite::{params, Transaction};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -80,16 +81,12 @@ pub(super) fn require_unique_statement(
     statement: &str,
     except: Option<&str>,
 ) -> KnowledgeResult<()> {
-    let found:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM knowledge_lens_metadata WHERE loupist_id=?1 AND lens_kind='principle' AND archived_at_ms IS NULL AND principle_statement_fold=?2 AND record_id<>?3)",params![loupist,super::lens::fold_lens_title(statement),except.unwrap_or("")],|r|r.get(0))?;
+    let found:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM knowledge_lens_metadata WHERE loupist_id=?1 AND kind='principle' AND archived_at_ms IS NULL AND principle_statement_fold=?2 AND record_id<>?3)",params![loupist,super::lens::fold_lens_title(statement),except.unwrap_or("")],|r|r.get(0))?;
     if found {
         Err(KnowledgeError::DuplicatePrinciple)
     } else {
         Ok(())
     }
-}
-
-pub fn principle_kind(tx: &Transaction<'_>, loupist: &str, id: &str) -> KnowledgeResult<bool> {
-    Ok(tx.query_row("SELECT COALESCE(json_extract(r.payload_json,'$.lensKind'),'') = 'principle' FROM knowledge_record_revisions r JOIN knowledge_record_heads h ON h.revision_id=r.revision_id JOIN knowledge_records m ON m.record_id=h.record_id WHERE m.owner_loupist_id=?1 AND m.record_id=?2 AND m.kind='lens'", params![loupist,id], |r| r.get(0)).optional()?.unwrap_or(false))
 }
 
 pub fn principle_list(
@@ -98,7 +95,7 @@ pub fn principle_list(
     include_archived: bool,
 ) -> KnowledgeResult<Vec<Principle>> {
     super::model::validate_loupist_id(loupist)?;
-    let mut query = tx.prepare("SELECT m.record_id,h.revision_id,r.payload_json,m.created_at_ms,meta.updated_at_ms,meta.archived_at_ms IS NOT NULL FROM knowledge_records m JOIN knowledge_record_heads h ON h.record_id=m.record_id JOIN knowledge_record_revisions r ON r.revision_id=h.revision_id JOIN knowledge_lens_metadata meta ON meta.record_id=m.record_id WHERE m.owner_loupist_id=?1 AND json_extract(r.payload_json,'$.lensKind')='principle' AND (?2 OR meta.archived_at_ms IS NULL) ORDER BY meta.updated_at_ms DESC,m.record_id")?;
+    let mut query = tx.prepare("SELECT m.record_id,h.revision_id,r.payload_json,m.created_at_ms,meta.updated_at_ms,meta.archived_at_ms IS NOT NULL FROM knowledge_records m JOIN knowledge_record_heads h ON h.record_id=m.record_id JOIN knowledge_record_revisions r ON r.revision_id=h.revision_id JOIN knowledge_lens_metadata meta ON meta.record_id=m.record_id WHERE m.owner_loupist_id=?1 AND meta.kind='principle' AND (?2 OR meta.archived_at_ms IS NULL) ORDER BY meta.updated_at_ms DESC,m.record_id")?;
     let rows = query.query_map(params![loupist, include_archived], |row| {
         Ok((
             row.get::<_, String>(0)?,
@@ -116,8 +113,7 @@ pub fn principle_list(
     })
     .map(|row| {
         let (record_id, revision_id, json, created_at_ms, updated_at_ms, archived) = row?;
-        let value: serde_json::Value = serde_json::from_str(&json)?;
-        let input: PrincipleInput = serde_json::from_value(value["userPrinciple"].clone())?;
+        let input: PrincipleInput = serde_json::from_str(&json)?;
         Ok(Principle {
             record_id,
             revision_id,
@@ -205,25 +201,21 @@ pub fn principle_save(
     }
     let record = super::authority::require_record(tx, loupist, &record_id)?;
     super::authority::require_edit(&record, loupist)?;
-    let document = LensDocument {
-        markdown: input.statement.clone(),
-        applicability: input.why.clone().unwrap_or_default(),
-        assumptions: String::new(),
-        procedure: input.example.clone().unwrap_or_default(),
-        principles: input.statement.clone(),
-        limitations: String::new(),
-    };
-    super::lens::validate_lens_publication(tx, loupist, &title, &document, &Default::default())?;
-    let mut payload = serde_json::to_value(&document)?;
-    payload["lensKind"] = serde_json::json!("principle");
-    payload["statement"] = serde_json::json!(input.statement);
-    payload["why"] = serde_json::json!(input.why);
-    payload["example"] = serde_json::json!(input.example);
-    payload["userPrinciple"] = serde_json::to_value(&input)?;
+    for text in [
+        Some(&input.statement),
+        input.why.as_ref(),
+        input.example.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        super::lens::check_text(tx, super::lens_page::LensKind::Principle, text)?;
+    }
+    let body = super::lens_page::LensBody::Principle(input.clone());
+    let payload = body.to_payload()?;
     let saved =
         super::revision::publish_revision(tx, &record, loupist, expected, &payload, &[], at_ms)?;
     tx.execute("UPDATE knowledge_lens_metadata SET title=?1,title_fold=?2,updated_at_ms=?3,principle_statement_fold=?5 WHERE record_id=?4",params![title,super::lens::fold_lens_title(&title),at_ms,record_id,super::lens::fold_lens_title(&input.statement)])?;
-    super::lens::replace_lens_links(tx, loupist, &record_id, &document)?;
     super::search_index::index_payload(
         tx,
         None,
@@ -248,10 +240,12 @@ pub fn principle_save(
     event.origin = Some(serde_json::json!(input.origin));
     event.origin_chat_id = input.origin_chat_id.clone();
     event.origin_message_id = input.origin_message_id.clone();
-    event.before_summary = before.map(|p| super::growth::one_line(&p.statement));
+    event.before_summary = before
+        .as_ref()
+        .map(|p| super::growth::one_line(&p.statement));
     event.after_summary = Some(super::growth::one_line(&input.statement));
     event.insert(tx)?;
-    tx.execute("INSERT INTO knowledge_lens_changes (change_id,loupist_id,record_id,new_revision_id,rationale,inputs_json,created_at_ms,change_kind,actor,origin_chat_id,origin_message_id) VALUES (?1,?2,?3,?4,?5,'{\"references\":[],\"feedback\":null}',?6,'revise','user',?7,?8)",params![super::model::mint_id("chg"),loupist,record_id,saved.revision_id,input.why.clone().unwrap_or_else(||input.statement.clone()),at_ms,input.origin_chat_id,input.origin_message_id])?;
+    super::lens::log_principle(tx, loupist, &record_id, &input, before.as_ref(), at_ms)?;
     principle_read(tx, loupist, &record_id)
 }
 
@@ -401,8 +395,10 @@ mod tests {
             .read(|w| principle_list(w.tx, "g", false))
             .unwrap()
             .is_empty());
-        let lens = store.read_lens("g", &p.record_id).unwrap();
-        assert_eq!(lens.document.markdown, newer.statement);
+        let lens = store.read(|w| w.read_page("g", &p.record_id)).unwrap();
+        assert_eq!(lens.body.summary(), newer.statement);
+        assert_eq!(lens.kind, crate::knowledge::lens_page::LensKind::Principle);
+        assert_eq!(lens.history[0].origin, "user");
         // User-authored principles keep trade-action wording.
         save(&store, "You should buy when cash flow improves", 7).unwrap();
         let growth = store

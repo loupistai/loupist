@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::knowledge::{LensDocument, TimePoint};
+use crate::knowledge::TimePoint;
 
 pub(crate) const FORMAT: &str = "loupist-pack/1";
 pub(crate) const MANIFEST: &str = "loupist-pack.json";
@@ -29,15 +29,11 @@ pub(crate) const MAX_NAME: usize = 240;
 /// A profile focus, in characters: the same cap as creating a Loupist.
 pub(crate) const MAX_FOCUS: usize = 280;
 pub(crate) const ASSET_CLASSES: [&str; 5] = ["stocks", "etfs", "bonds", "crypto", "economy"];
-const HEADINGS: [&str; 7] = [
-    "Applicability",
-    "Assumptions",
-    "Procedure",
-    "Principles",
-    "Limitations",
-    "Why",
-    "Example",
-];
+/// Page section limits, in characters, as `knowledge::lens_page` enforces them.
+const MAX_PAGE_SECTIONS: usize = 16;
+const MAX_SECTION_CHARS: usize = 2_000;
+const MAX_HEADING_CHARS: usize = 80;
+const MAX_SUMMARY_CHARS: usize = 400;
 
 pub(crate) type Files = BTreeMap<String, Vec<u8>>;
 
@@ -400,6 +396,48 @@ struct MethodFront {
     title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     origin: Option<ItemOrigin>,
+    /// Section keys and headings in page order; the body carries their text.
+    #[serde(default)]
+    sections: Vec<SectionFront>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SectionFront {
+    key: String,
+    heading: String,
+}
+
+/// One keyed section of a shared page. Basis never travels: a pack carries
+/// text, and an accepted section starts with an empty basis and shared origin.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct PackSection {
+    pub key: String,
+    pub heading: String,
+    pub markdown: String,
+}
+
+/// A method or perspective page as a pack carries it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct PackDoc {
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default)]
+    pub sections: Vec<PackSection>,
+}
+
+impl PackDoc {
+    pub(crate) fn texts(&self) -> Vec<&str> {
+        std::iter::once(self.summary.as_str())
+            .chain(
+                self.sections
+                    .iter()
+                    .flat_map(|section| [section.heading.as_str(), section.markdown.as_str()]),
+            )
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -415,7 +453,7 @@ pub(crate) struct MethodDoc {
     pub key: String,
     pub title: String,
     pub origin: Option<ItemOrigin>,
-    pub document: LensDocument,
+    pub document: PackDoc,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -564,10 +602,7 @@ pub(crate) fn content_hash(files: &Files) -> String {
 }
 
 fn is_heading_line(line: &str) -> bool {
-    let rest = line.trim_start_matches('\\');
-    HEADINGS
-        .iter()
-        .any(|heading| rest.strip_prefix("## ") == Some(*heading))
+    line.trim_start_matches('\\').starts_with("## ")
 }
 
 /// One more backslash before any line that looks like a section heading, so a
@@ -650,49 +685,59 @@ fn sections(body: &str, headings: &[&str]) -> Result<Vec<String>, Rejection> {
 
 pub(crate) fn render_method(method: &MethodDoc) -> String {
     let document = &method.document;
-    format!(
-        "---\n{}---\n\n{}\n\n## Applicability\n\n{}\n\n## Assumptions\n\n{}\n\n## Procedure\n\n{}\n\n## Principles\n\n{}\n\n## Limitations\n\n{}\n",
+    let mut text = format!(
+        "---\n{}---\n\n{}",
         frontmatter(&MethodFront {
             key: method.key.clone(),
             title: method.title.clone(),
             origin: method.origin.clone(),
+            sections: document
+                .sections
+                .iter()
+                .map(|section| SectionFront {
+                    key: section.key.clone(),
+                    heading: section.heading.clone(),
+                })
+                .collect(),
         }),
-        escape(&document.markdown),
-        escape(&document.applicability),
-        escape(&document.assumptions),
-        escape(&document.procedure),
-        escape(&document.principles),
-        escape(&document.limitations),
-    )
+        escape(&document.summary),
+    );
+    for section in &document.sections {
+        text.push_str(&format!(
+            "\n\n## {}\n\n{}",
+            section.heading,
+            escape(&section.markdown)
+        ));
+    }
+    text.push('\n');
+    text
 }
 
 pub(crate) fn parse_method(text: &str) -> Result<MethodDoc, Rejection> {
     let (yaml, body) = split_frontmatter(text)?;
     let front: MethodFront = front(yaml)?;
-    let mut fields = sections(
-        body,
-        &[
-            "Applicability",
-            "Assumptions",
-            "Procedure",
-            "Principles",
-            "Limitations",
-        ],
-    )?
-    .into_iter();
-    let mut next = || fields.next().ok_or(Rejection::Damaged);
+    let headings: Vec<&str> = front
+        .sections
+        .iter()
+        .map(|section| section.heading.as_str())
+        .collect();
+    let mut fields = sections(body, &headings)?.into_iter();
+    let summary = fields.next().ok_or(Rejection::Damaged)?;
+    let sections = front
+        .sections
+        .iter()
+        .zip(fields)
+        .map(|(section, markdown)| PackSection {
+            key: section.key.clone(),
+            heading: section.heading.clone(),
+            markdown,
+        })
+        .collect();
     Ok(MethodDoc {
         key: front.key,
         title: front.title,
         origin: front.origin,
-        document: LensDocument {
-            markdown: next()?,
-            applicability: next()?,
-            assumptions: next()?,
-            procedure: next()?,
-            principles: next()?,
-            limitations: next()?,
-        },
+        document: PackDoc { summary, sections },
     })
 }
 
@@ -1006,18 +1051,21 @@ fn jsonl<T: serde::de::DeserializeOwned>(bytes: &[u8], cap: usize) -> Result<Vec
     Ok(records)
 }
 
-fn validate_lens_doc(document: &LensDocument) -> bool {
-    [
-        &document.markdown,
-        &document.applicability,
-        &document.assumptions,
-        &document.procedure,
-        &document.principles,
-        &document.limitations,
-    ]
-    .into_iter()
-    .all(|field| bounded_text(field, MAX_MARKDOWN, true))
-        && !document.markdown.trim().is_empty()
+fn validate_lens_doc(document: &PackDoc) -> bool {
+    let mut keys = std::collections::BTreeSet::new();
+    document.sections.len() <= MAX_PAGE_SECTIONS
+        && bounded_text(&document.summary, MAX_MARKDOWN, true)
+        && document.summary.chars().count() <= MAX_SUMMARY_CHARS
+        && !document.summary.contains('\n')
+        && (!document.summary.trim().is_empty() || !document.sections.is_empty())
+        && document.sections.iter().all(|section| {
+            section.key.len() <= 48
+                && valid_slug(&section.key)
+                && keys.insert(section.key.clone())
+                && single_line(&section.heading, MAX_HEADING_CHARS, false)
+                && bounded_text(&section.markdown, MAX_MARKDOWN, false)
+                && section.markdown.chars().count() <= MAX_SECTION_CHARS
+        })
 }
 
 fn valid_origin_entry(origin: &OriginEntry) -> bool {

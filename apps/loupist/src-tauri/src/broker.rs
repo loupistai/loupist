@@ -259,7 +259,6 @@ pub enum ToolMethod {
     NoteSave,
     JournalSave,
     JournalReview,
-    LensUpdate,
     PrincipleSave,
     WorldSchemaUpdate,
     LensSearch,
@@ -597,9 +596,7 @@ impl TransactionCardinality {
             ToolMethod::SourceSave if self.evidence_creations >= MAX_CHAT_TURN_SOURCES => {
                 return Err(BrokerError::BudgetExceeded);
             }
-            ToolMethod::LensUpdate | ToolMethod::PrincipleSave
-                if self.proposals >= policy.memory_proposal_budget =>
-            {
+            ToolMethod::PrincipleSave if self.proposals >= policy.memory_proposal_budget => {
                 return Err(BrokerError::BudgetExceeded);
             }
             ToolMethod::WorldSchemaUpdate if self.schema_updates >= 1 => {
@@ -620,7 +617,7 @@ impl TransactionCardinality {
             ToolMethod::ResearchOpen => self.research_opens += 1,
             ToolMethod::NoteSave => self.journals += 1,
             ToolMethod::SourceSave => self.evidence_creations += 1,
-            ToolMethod::LensUpdate | ToolMethod::PrincipleSave => self.proposals += 1,
+            ToolMethod::PrincipleSave => self.proposals += 1,
             ToolMethod::ArtifactPublish | ToolMethod::ChartPublish | ToolMethod::GridPublish => {
                 self.artifact_publishes += 1
             }
@@ -636,9 +633,7 @@ impl TransactionCardinality {
             ToolMethod::SourceSave => {
                 self.evidence_creations = self.evidence_creations.saturating_sub(1)
             }
-            ToolMethod::LensUpdate | ToolMethod::PrincipleSave => {
-                self.proposals = self.proposals.saturating_sub(1)
-            }
+            ToolMethod::PrincipleSave => self.proposals = self.proposals.saturating_sub(1),
             ToolMethod::WorldSchemaUpdate => {
                 self.schema_updates = self.schema_updates.saturating_sub(1)
             }

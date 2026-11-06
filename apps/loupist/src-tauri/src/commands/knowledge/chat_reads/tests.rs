@@ -22,16 +22,17 @@ fn fixture() -> (tempfile::TempDir, AppState) {
     (dir, state)
 }
 
-fn method(state: &AppState, title: &str, body: &str, at_ms: i64) -> OwnedRecord {
+fn method(state: &AppState, title: &str, body: &str, at_ms: i64) -> crate::knowledge::PageRead {
     with_loupist_knowledge(state, "loupist-a", |tx, blobs| {
-        let write = KnowledgeWrite::bind(tx, blobs);
-        let created = write.create_record(CreateRecord {
-            loupist_id: "loupist-a".into(),
-            kind: RecordKind::Lens,
-            title: title.into(),
+        KnowledgeWrite::bind(tx, blobs).file_section(
+            "loupist-a",
+            crate::knowledge::lens_page::PageKind::Method,
+            title,
+            "steps",
+            body,
+            &crate::knowledge::test_support::user_origin(),
             at_ms,
-        })?;
-        seed_initial_revision(&write, created, body, at_ms)
+        )
     })
     .unwrap()
 }
@@ -167,12 +168,12 @@ async fn host_memory_relevant_old_method_and_cross_chat_note_are_executable_not_
         "Stress liquidity against the Acme covenant before assessing solvency.",
         1,
     );
-    for i in 0..41 {
+    for i in 0..LENS_INDEX_LINES {
         method(
             &state,
             &format!("Unrelated gardening {i}"),
             "Prune roses in spring.",
-            (i + 2) * 1000,
+            (i as i64 + 2) * 1000,
         );
     }
     let note_id = note(
@@ -280,7 +281,6 @@ async fn host_memory_relevant_old_method_and_cross_chat_note_are_executable_not_
             &[],
             &[],
             Some(&pointer_only),
-            &[],
         )
         .is_err());
     }
@@ -300,7 +300,6 @@ async fn host_memory_relevant_old_method_and_cross_chat_note_are_executable_not_
             &[],
             &reads,
             Some(&acknowledged),
-            &[],
         )
         .unwrap();
         tx.commit().unwrap();
@@ -324,7 +323,9 @@ fn host_memory_relevant_excludes_archived_standing_weak_and_empty_and_caps_each_
             .relevant
             .is_empty()
     );
-    let standing = ensure_standing_lens(&state, "loupist-a", "Acme liquidity covenant").unwrap();
+    let standing = ensure_perspective(&state, "loupist-a", "Acme liquidity covenant")
+        .unwrap()
+        .unwrap();
     let archived = method(
         &state,
         "Archived Acme liquidity covenant",
@@ -360,7 +361,7 @@ fn host_memory_relevant_excludes_archived_standing_weak_and_empty_and_caps_each_
     let context = host_memory_context(&state, "loupist-a", "Acme liquidity covenant").unwrap();
     assert_eq!(
         context.relevant.iter().filter(|p| p.kind == "Lens").count(),
-        3
+        4
     );
     assert_eq!(
         context
@@ -373,7 +374,7 @@ fn host_memory_relevant_excludes_archived_standing_weak_and_empty_and_caps_each_
     assert!(!context
         .relevant
         .iter()
-        .any(|p| p.read_args["recordId"] == standing.record_id
+        .any(|p| p.read_args["recordId"] == standing
             || p.read_args["recordId"] == archived.record_id));
     assert!(envelope(&context, false).get("memory_protocol").is_none());
     for message in ["", "*", "Please tell me", "Acme orchid watering"] {

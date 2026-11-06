@@ -281,7 +281,7 @@ async fn create_bound_loupist(
             error,
         ));
     }
-    if let Err(error) = crate::commands::knowledge::ensure_standing_lens(state, &loupist_id, &focus)
+    if let Err(error) = crate::commands::knowledge::ensure_perspective(state, &loupist_id, &focus)
         .and_then(|_| {
             crate::commands::knowledge::initialize_new_world(
                 state,

@@ -148,7 +148,6 @@ pub(super) struct ToolCapture {
     /// Standing Lens body admitted with the turn envelope. This is not a tool ACK.
     pub(super) context_reads: Mutex<Vec<StagedKnowledgeRead>>,
     pub(super) staged_research: Mutex<Option<StagedResearch>>,
-    pub(super) staged_lenses: Mutex<Vec<StagedLensRevision>>,
     pub(super) staged_principles: Mutex<Vec<StagedPrinciple>>,
     /// Checked thesis updates, committed with the reply.
     pub(in crate::commands) staged_theses: Mutex<Vec<crate::knowledge::assets::ThesisUpdate>>,
@@ -195,7 +194,6 @@ struct PendingToolCapture {
     staged_reads: Vec<StagedKnowledgeRead>,
     note_reads: BTreeSet<String>,
     research: Option<StagedResearch>,
-    lenses: Vec<StagedLensRevision>,
     principles: Vec<StagedPrinciple>,
     theses: Vec<crate::knowledge::assets::ThesisUpdate>,
     earnings: Vec<earnings::EarningsSave>,
@@ -404,21 +402,6 @@ pub(super) struct StagedResearch {
     pub(super) world_reads: Vec<String>,
     pub(super) lens_reads: Vec<String>,
     pub(super) previous_note_ids: Vec<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct StagedLensRevision {
-    pub(super) title: Option<String>,
-    pub(super) kind: Option<String>,
-    pub(super) record_id: String,
-    pub(super) expected_revision_id: String,
-    pub(super) document: crate::knowledge::LensDocument,
-    pub(super) rationale: String,
-    pub(super) source_reads: Vec<String>,
-    pub(super) world_reads: Vec<String>,
-    pub(super) journal_reads: Vec<String>,
-    pub(super) previous_note_ids: Vec<String>,
-    pub(super) feedback: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -678,14 +661,6 @@ impl ToolCapture {
             let mut staged = self.staged_principles.lock().await;
             staged.retain(|p| p.record_id != principle.record_id);
             staged.push(principle);
-        }
-        if !pending.lenses.is_empty() {
-            let mut staged = self.staged_lenses.lock().await;
-            for revision in pending.lenses {
-                let record_id = revision.record_id.clone();
-                staged.retain(|existing| existing.record_id != record_id);
-                staged.push(revision);
-            }
         }
         if !pending.artifacts.is_empty() {
             self.artifacts
@@ -1097,7 +1072,6 @@ impl AppToolExecutor {
             ToolMethod::PrincipleSave => {
                 self.stage_principle_save(policy, params, delivery_id).await
             }
-            ToolMethod::LensUpdate => self.stage_lens_update(policy, params, delivery_id).await,
             ToolMethod::WorldSchemaUpdate => {
                 self.stage_world_schema_update(policy, params, delivery_id)
                     .await
@@ -1512,7 +1486,6 @@ fn refuse_sensitive_memory(
         method,
         ToolMethod::NoteSave
             | ToolMethod::PrincipleSave
-            | ToolMethod::LensUpdate
             | ToolMethod::WorldSchemaUpdate
             | ToolMethod::JournalSave
             | ToolMethod::JournalReview

@@ -111,7 +111,6 @@ fn memory_reads_and_writes_need_their_own_permission() {
         (ToolMethod::ConversationMemory, false),
         (ToolMethod::SourceSave, true),
         (ToolMethod::NoteSave, true),
-        (ToolMethod::LensUpdate, true),
     ] {
         let mut authority = policy();
         assert!(enforce_policy(&authority, method).is_err(), "{method:?}");

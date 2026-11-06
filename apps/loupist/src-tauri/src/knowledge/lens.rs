@@ -1,644 +1,29 @@
+//! The one Lens page writer and its readers. `lens_page` decides what a filing
+//! means; this module stores it: one head revision per page, an append-only
+//! op log, links, anchors, growth events and the search index.
+
 use std::collections::{BTreeMap, BTreeSet};
 
-use pulldown_cmark::{Event, Parser, Tag};
-
 use rusqlite::{params, OptionalExtension, Transaction};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
-use super::authority::{require_edit, require_record};
+use super::authority::{require_edit, require_record, OwnedRecordState};
 use super::canonical::{canonical_string, from_json, to_value};
 use super::error::{KnowledgeError, KnowledgeResult};
+use super::lens_page::{
+    apply, links, section_digest, text_forbidden, AnchorInput, ApplyContext, Basis, BasisChip,
+    FiledOp, FiledPage, FilingOrigin, IdeaState, IdeaStatus, LensBody, LensKind, LensOp, OpOutcome,
+    Origin, PageDelta, PageKind, PageSection, PageTarget, SectionKey, SectionState,
+};
 use super::model::{
-    mint_id, validate_knowledge_id, validate_loupist_id, validate_optional_knowledge_id,
-    validate_text, validate_time, EvidenceRevision, LensChangeInput, LensChangeInputs,
-    LensChangeRecord, LensDocument, LensDraftRecord, LensNavigationLink, LensView, RecordKind,
-    ReviseLens, MAX_MARKDOWN_BYTES,
+    mint_id, validate_knowledge_id, validate_loupist_id, validate_time, GraphNode, RecordKind,
+    WorldSnapshotBody,
 };
-use super::revision::{
-    load_revision, normalize_dependencies, publish_revision, visible_by_digest, StoredRevision,
-};
-use super::world::require_snapshot;
+use super::revision::{load_revision, publish_revision, StoredRevision};
 
-pub(super) fn revise_lens(tx: &Transaction<'_>, request: ReviseLens) -> KnowledgeResult<LensView> {
-    revise_lens_with_origin(tx, request, "user", None, None)
-}
-
-pub(super) fn revise_lens_with_origin(
-    tx: &Transaction<'_>,
-    request: ReviseLens,
-    actor: &str,
-    origin_chat_id: Option<&str>,
-    origin_message_id: Option<&str>,
-) -> KnowledgeResult<LensView> {
-    revise_lens_with_provenance(tx, request, actor, origin_chat_id, origin_message_id, None)
-}
-
-pub(super) fn revise_lens_with_provenance(
-    tx: &Transaction<'_>,
-    request: ReviseLens,
-    actor: &str,
-    origin_chat_id: Option<&str>,
-    origin_message_id: Option<&str>,
-    origin: Option<serde_json::Value>,
-) -> KnowledgeResult<LensView> {
-    validate_loupist_id(&request.loupist_id)?;
-    if super::principles::principle_kind(tx, &request.loupist_id, &request.record_id)? {
-        return Err(KnowledgeError::Invalid(
-            "Use principle_save to revise a user principle",
-        ));
-    }
-    validate_knowledge_id(&request.record_id, "rec")?;
-    validate_optional_knowledge_id(&request.expected_revision_id, "rev")?;
-    validate_time(request.at_ms)?;
-    validate_lens_document(&request.document)?;
-    let dependencies = normalize_dependencies(&request.dependencies, RecordKind::Lens)?;
-    enforce_lens_closure(tx, &request.loupist_id, &dependencies)?;
-    let module = require_record(tx, &request.loupist_id, &request.record_id)?;
-    if module.kind != RecordKind::Lens {
-        return Err(KnowledgeError::Invalid("record is not a Lens"));
-    }
-    enforce_lens_text(tx, &request.loupist_id, &module.title, &request.document)?;
-    require_edit(&module, &request.loupist_id)?;
-    validate_change(&request.change)?;
-    authorize_change_inputs(tx, &request.loupist_id, &request.change)?;
-    let before = module
-        .head_revision_id
-        .as_deref()
-        .map(|id| {
-            load_revision(tx, id)
-                .and_then(|revision| from_json::<LensDocument>(&revision.payload_json))
-        })
-        .transpose()?;
-    let published = publish_revision(
-        tx,
-        &module,
-        &request.loupist_id,
-        request.expected_revision_id.as_deref(),
-        &to_value(&request.document)?,
-        &dependencies,
-        request.at_ms,
-    )?;
-    if before.as_ref() != Some(&request.document) {
-        let mut event = super::growth::GrowthEvent::new(
-            &request.loupist_id,
-            &module.record_id,
-            request.at_ms,
-            if before.is_none() {
-                "lens_created"
-            } else {
-                "lens_revised"
-            },
-            actor,
-            &request.change.rationale,
-        );
-        event.before_summary = before
-            .as_ref()
-            .map(|document| super::growth::lens_summary(document, &module.title));
-        event.after_summary = Some(super::growth::lens_summary(
-            &request.document,
-            &module.title,
-        ));
-        event.rationale = origin.as_ref().map(|_| request.change.rationale.clone());
-        event.origin = origin.clone();
-        event.origin_chat_id = origin_chat_id.map(str::to_owned);
-        event.origin_message_id = origin_message_id.map(str::to_owned);
-        event.insert(tx)?;
-    }
-    let inputs = LensChangeInputs {
-        references: request.change.references,
-        feedback: request.change.feedback,
-    };
-    tx.execute(
-        "INSERT INTO knowledge_lens_changes (
-            change_id, loupist_id, record_id, new_revision_id, rationale,
-            inputs_json, created_at_ms, change_kind, actor, origin_chat_id, origin_message_id, origin_json
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'revise', ?8, ?9, ?10, ?11)",
-        params![
-            mint_id("chg"),
-            request.loupist_id,
-            module.record_id,
-            published.revision_id,
-            request.change.rationale,
-            canonical_string(&to_value(&inputs)?),
-            request.at_ms,
-            actor,
-            origin_chat_id,
-            origin_message_id,
-            origin.as_ref().map(serde_json::Value::to_string)
-        ],
-    )?;
-    tx.execute(
-        "UPDATE knowledge_lens_metadata SET updated_at_ms = ?1, learned = learned OR ?4 WHERE record_id = ?2 AND loupist_id = ?3",
-        params![request.at_ms, module.record_id, request.loupist_id, request.expected_revision_id.is_some()],
-    )?;
-    replace_lens_links(
-        tx,
-        &request.loupist_id,
-        &module.record_id,
-        &request.document,
-    )?;
-    super::search_index::index_payload(
-        tx,
-        None,
-        &module.record_id,
-        &published.revision_id,
-        RecordKind::Lens,
-        &module.title,
-        &to_value(&request.document)?,
-    )?;
-    Ok(LensView {
-        record_id: module.record_id,
-        revision_id: published.revision_id,
-        revision_digest: published.revision_digest,
-        document: request.document,
-        dependencies,
-    })
-}
-
-pub(super) fn read_lens(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-    record_id: &str,
-) -> KnowledgeResult<LensView> {
-    let module = require_record(tx, loupist_id, record_id)?;
-    if module.kind != RecordKind::Lens {
-        return Err(KnowledgeError::Invalid("record is not a Lens"));
-    }
-    let revision_id = module
-        .head_revision_id
-        .clone()
-        .ok_or(KnowledgeError::NotFound)?;
-    let revision = load_revision(tx, &revision_id)?;
-    let view = lens_view(&revision)?;
-    enforce_lens_text(tx, loupist_id, &module.title, &view.document)?;
-    Ok(view)
-}
-
-/// Links are navigational, not evidence dependencies. Cycles need no traversal.
-/// Outgoing links come from the document being read. Backlinks come from the
-/// current-head link index.
-pub(super) fn lens_navigation(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-    record_id: &str,
-    document: &LensDocument,
-) -> KnowledgeResult<super::model::LensNavigation> {
-    if require_record(tx, loupist_id, record_id)?.kind != RecordKind::Lens {
-        return Err(KnowledgeError::Invalid("record is not a Lens"));
-    }
-    const LIMIT: usize = 64;
-    let mut outgoing = lens_link_ids(document);
-    let mut navigation = super::model::LensNavigation::default();
-    let mut resolved = lookup_lens_links(tx, loupist_id, &outgoing)?;
-    resolved.sort_by(|left, right| {
-        left.title
-            .cmp(&right.title)
-            .then(left.record_id.cmp(&right.record_id))
-    });
-    for link in resolved {
-        outgoing.remove(&link.record_id);
-        if navigation.links.len() < LIMIT {
-            navigation.links.push(link);
-        } else {
-            navigation.links_truncated = true;
-        }
-    }
-    let mut backlinks = current_backlinks(tx, loupist_id, record_id)?;
-    navigation.backlinks_truncated = backlinks.len() > LIMIT;
-    backlinks.truncate(LIMIT);
-    navigation.backlinks = backlinks;
-    navigation.unresolved_links_truncated = outgoing.len() > LIMIT;
-    navigation.unresolved_links = outgoing.into_iter().take(LIMIT).collect();
-    Ok(navigation)
-}
-
-fn lens_link_ids(document: &LensDocument) -> BTreeSet<String> {
-    lens_publication_text("", document)
-        .into_iter()
-        .flat_map(Parser::new)
-        .filter_map(|event| match event {
-            Event::Start(Tag::Link { dest_url, .. }) => dest_url
-                .strip_prefix("lens:")
-                .filter(|id| {
-                    !id.is_empty()
-                        && id.len() <= 128
-                        && !id.chars().any(|c| {
-                            c.is_whitespace() || c.is_control() || matches!(c, '/' | '?' | '#')
-                        })
-                })
-                .map(str::to_owned),
-            _ => None,
-        })
-        .collect()
-}
-
-pub(super) fn list_lens_changes(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-    record_id: &str,
-) -> KnowledgeResult<Vec<LensChangeRecord>> {
-    let module = require_record(tx, loupist_id, record_id)?;
-    if module.kind != RecordKind::Lens {
-        return Err(KnowledgeError::Invalid("record is not a Lens"));
-    }
-    let mut statement = tx.prepare(
-        "SELECT change_id, new_revision_id, rationale, inputs_json, created_at_ms,
-                change_kind, actor, origin_chat_id, origin_message_id, new_title, origin_json
-         FROM knowledge_lens_changes WHERE record_id = ?1 AND loupist_id = ?2",
-    )?;
-    let rows = statement.query_map(params![record_id, loupist_id], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, Option<String>>(1)?,
-            row.get::<_, String>(2)?,
-            row.get::<_, String>(3)?,
-            row.get::<_, i64>(4)?,
-            row.get::<_, String>(5)?,
-            row.get::<_, String>(6)?,
-            row.get::<_, Option<String>>(7)?,
-            row.get::<_, Option<String>>(8)?,
-            row.get::<_, Option<String>>(9)?,
-            row.get::<_, Option<String>>(10)?,
-        ))
-    })?;
-    let mut records = Vec::new();
-    for row in rows {
-        let (
-            change_id,
-            new_revision_id,
-            rationale,
-            inputs_json,
-            created_at_ms,
-            change_kind,
-            actor,
-            origin_chat_id,
-            origin_message_id,
-            new_title,
-            origin_json,
-        ) = row?;
-        records.push(LensChangeRecord {
-            origin: origin_json.map(|s| serde_json::from_str(&s)).transpose()?,
-            change_id,
-            loupist_id: loupist_id.into(),
-            record_id: record_id.into(),
-            new_revision_id,
-            rationale,
-            inputs: from_json(&inputs_json)?,
-            created_at_ms,
-            change_kind,
-            actor,
-            origin_chat_id,
-            origin_message_id,
-            new_title,
-        });
-    }
-    Ok(records)
-}
-
-pub(super) fn enforce_lens_text(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-    title: &str,
-    document: &LensDocument,
-) -> KnowledgeResult<()> {
-    enforce_lens_text_allowing(tx, loupist_id, title, document, &BTreeSet::new())
-}
-
-pub(super) fn enforce_lens_text_allowing(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-    title: &str,
-    document: &LensDocument,
-    pending_lens_ids: &BTreeSet<String>,
-) -> KnowledgeResult<()> {
-    for text in lens_publication_text(title, document) {
-        if portable_lens_text_forbidden(text)
-            || unresolved_or_world_reference(tx, loupist_id, text, pending_lens_ids)?
-        {
-            return Err(KnowledgeError::LensBodyForbidden);
-        }
-    }
-    Ok(())
-}
-
-pub(super) fn validate_lens_publication(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-    title: &str,
-    document: &LensDocument,
-    pending_lens_ids: &BTreeSet<String>,
-) -> KnowledgeResult<()> {
-    validate_lens_document(document)?;
-    enforce_lens_text_allowing(tx, loupist_id, title, document, pending_lens_ids)
-}
-
-pub(super) fn portable_lens_text_forbidden(text: &str) -> bool {
-    let lower = text.to_ascii_lowercase();
-    lower.contains("world://")
-        || lower.contains("journal://")
-        || lower.contains("[[world:")
-        || lower.contains("[[journal:")
-        || reserved_knowledge_id(text, "jnl_")
-        || reserved_knowledge_id(text, "snp_")
-}
-
-fn lens_publication_text<'a>(title: &'a str, document: &'a LensDocument) -> [&'a str; 7] {
-    [
-        title,
-        &document.markdown,
-        &document.applicability,
-        &document.assumptions,
-        &document.procedure,
-        &document.principles,
-        &document.limitations,
-    ]
-}
-
-fn unresolved_or_world_reference(
-    tx: &Transaction<'_>,
-    _loupist_id: &str,
-    text: &str,
-    pending_lens_ids: &BTreeSet<String>,
-) -> KnowledgeResult<bool> {
-    for record_id in knowledge_id_candidates(text, "rec_")? {
-        if pending_lens_ids.contains(&record_id) {
-            continue;
-        }
-        // Another Loupist's Source or Lens stays in the text as an unresolved link.
-        // Only a World record, or an id this database cannot identify, is forbidden.
-        if !matches!(
-            any_record_kind(tx, &record_id)?.as_deref(),
-            Some("source" | "lens")
-        ) {
-            return Ok(true);
-        }
-    }
-    for revision_id in knowledge_id_candidates(text, "rev_")? {
-        let kind: Option<String> = tx
-            .query_row(
-                "SELECT m.kind FROM knowledge_record_revisions r
-                 JOIN knowledge_records m ON m.record_id = r.record_id
-                 WHERE r.revision_id = ?1",
-                params![revision_id],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if !matches!(kind.as_deref(), Some("source" | "lens")) {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-fn any_record_kind(tx: &Transaction<'_>, record_id: &str) -> KnowledgeResult<Option<String>> {
-    Ok(tx
-        .query_row(
-            "SELECT kind FROM knowledge_records WHERE record_id = ?1",
-            params![record_id],
-            |row| row.get(0),
-        )
-        .optional()?)
-}
-
-fn knowledge_id_candidates(text: &str, prefix: &str) -> KnowledgeResult<Vec<String>> {
-    let mut found = Vec::new();
-    let bytes = text.as_bytes();
-    let prefix_bytes = prefix.as_bytes();
-    let mut index = 0;
-    while index + prefix_bytes.len() + 32 <= bytes.len() {
-        if bytes[index..].starts_with(prefix_bytes)
-            && boundary_before(text, index)
-            && bytes[index + prefix_bytes.len()..index + prefix_bytes.len() + 32]
-                .iter()
-                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-            && boundary_after(text, index + prefix_bytes.len() + 32)
-        {
-            found.push(text[index..index + prefix_bytes.len() + 32].to_string());
-            if found.len() > 32 {
-                return Err(KnowledgeError::LensBodyForbidden);
-            }
-            index += prefix_bytes.len() + 32;
-            continue;
-        }
-        index += 1;
-    }
-    Ok(found)
-}
-
-fn reserved_knowledge_id(text: &str, prefix: &str) -> bool {
-    matches!(knowledge_id_candidates(text, prefix), Ok(found) if !found.is_empty())
-        || knowledge_id_candidates(text, prefix).is_err()
-}
-
-fn boundary_before(text: &str, index: usize) -> bool {
-    index == 0 || !is_id_character(text[..index].chars().next_back().unwrap_or(' '))
-}
-
-fn boundary_after(text: &str, index: usize) -> bool {
-    text[index..]
-        .chars()
-        .next()
-        .is_none_or(|character| !is_id_character(character))
-}
-
-fn is_id_character(character: char) -> bool {
-    character.is_ascii_alphanumeric() || matches!(character, '_' | '-')
-}
-
-pub(super) fn enforce_lens_closure(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-    dependencies: &[EvidenceRevision],
-) -> KnowledgeResult<()> {
-    let mut stack = Vec::new();
-    let mut seen = BTreeMap::new();
-    for dependency in dependencies {
-        if !dependency.role.allowed_in_lens() {
-            return Err(KnowledgeError::LensDependencyForbidden);
-        }
-        walk_lens_dependency(
-            tx,
-            loupist_id,
-            &dependency.record_id,
-            &dependency.revision_digest,
-            &mut stack,
-            &mut seen,
-        )?;
-    }
-    Ok(())
-}
-
-pub(super) fn lens_view(revision: &StoredRevision) -> KnowledgeResult<LensView> {
-    Ok(LensView {
-        record_id: revision.record_id.clone(),
-        revision_id: revision.revision_id.clone(),
-        revision_digest: revision.revision_digest.clone(),
-        document: from_json(&revision.payload_json)?,
-        dependencies: from_json(&revision.dependency_json)?,
-    })
-}
-
-fn walk_lens_dependency(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-    record_id: &str,
-    digest: &str,
-    stack: &mut Vec<String>,
-    seen: &mut BTreeMap<String, String>,
-) -> KnowledgeResult<()> {
-    if stack.iter().any(|existing| existing == record_id) {
-        return Err(KnowledgeError::DependencyCycle);
-    }
-    if let Some(prior) = seen.get(record_id) {
-        return if prior == digest {
-            Ok(())
-        } else {
-            Err(KnowledgeError::ConflictingDependencyRevision)
-        };
-    }
-    let module = require_record(tx, loupist_id, record_id)?;
-    let revision = visible_by_digest(tx, &module, digest)?;
-    stack.push(record_id.to_string());
-    match revision.kind {
-        RecordKind::World => return Err(KnowledgeError::LensDependencyForbidden),
-        RecordKind::Source => {
-            let dependencies: Vec<EvidenceRevision> = from_json(&revision.dependency_json)?;
-            for dependency in &dependencies {
-                walk_lens_dependency(
-                    tx,
-                    loupist_id,
-                    &dependency.record_id,
-                    &dependency.revision_digest,
-                    stack,
-                    seen,
-                )?;
-            }
-        }
-        RecordKind::Lens => {
-            let document: LensDocument = from_json(&revision.payload_json)?;
-            enforce_lens_text(tx, loupist_id, &module.title, &document)?;
-            let dependencies: Vec<EvidenceRevision> = from_json(&revision.dependency_json)?;
-            for dependency in &dependencies {
-                if !dependency.role.allowed_in_lens() {
-                    return Err(KnowledgeError::LensDependencyForbidden);
-                }
-                walk_lens_dependency(
-                    tx,
-                    loupist_id,
-                    &dependency.record_id,
-                    &dependency.revision_digest,
-                    stack,
-                    seen,
-                )?;
-            }
-        }
-    }
-    stack.pop();
-    seen.insert(record_id.to_string(), digest.to_string());
-    Ok(())
-}
-
-fn validate_lens_document(document: &LensDocument) -> KnowledgeResult<()> {
-    validate_text(
-        &document.markdown,
-        MAX_MARKDOWN_BYTES,
-        false,
-        "lens markdown is invalid",
-    )?;
-    for text in [
-        &document.applicability,
-        &document.assumptions,
-        &document.procedure,
-        &document.principles,
-        &document.limitations,
-    ] {
-        validate_text(text, MAX_MARKDOWN_BYTES, true, "lens section is invalid")?;
-    }
-    Ok(())
-}
-
-fn validate_change(change: &LensChangeInput) -> KnowledgeResult<()> {
-    validate_text(
-        &change.rationale,
-        16_000,
-        false,
-        "change rationale is invalid",
-    )?;
-    if let Some(feedback) = &change.feedback {
-        validate_text(feedback, 16_000, true, "change feedback is invalid")?;
-    }
-    if change.references.len() > 56 {
-        return Err(KnowledgeError::Invalid("change inputs are too large"));
-    }
-    Ok(())
-}
-
-fn authorize_change_inputs(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-    change: &LensChangeInput,
-) -> KnowledgeResult<()> {
-    for reference in &change.references {
-        match reference.kind.as_str() {
-            "source" => {
-                let record = require_record(tx, loupist_id, &reference.record_id)?;
-                let revision = load_revision(tx, &reference.revision_id)?;
-                super::authority::revision_in_record(&revision.record_id, &record.record_id)?;
-                if revision.kind != RecordKind::Source {
-                    return Err(KnowledgeError::Invalid("Lens evidence is not a Source"));
-                }
-                let payload: super::model::SourceRecordPayload = from_json(&revision.payload_json)?;
-                if !(payload.source.source_id == reference.object_id
-                    && payload.source.captures.iter().any(|capture| {
-                        capture.representations.iter().any(|representation| {
-                            representation
-                                .spans
-                                .iter()
-                                .any(|span| Some(&span.span_id) == reference.span_id.as_ref())
-                        })
-                    }))
-                {
-                    return Err(KnowledgeError::NotFound);
-                }
-            }
-            "world" => {
-                let record_id = require_snapshot(tx, loupist_id, &reference.object_id)?;
-                let revision_id: String = tx.query_row(
-                    "SELECT revision_id FROM knowledge_world_snapshots WHERE snapshot_id = ?1",
-                    [&reference.object_id],
-                    |row| row.get(0),
-                )?;
-                if record_id != reference.record_id || revision_id != reference.revision_id {
-                    return Err(KnowledgeError::Invalid(
-                        "World evidence revision does not match",
-                    ));
-                }
-            }
-            "research" => {
-                super::research::read_working_note(tx, loupist_id, &reference.object_id)?;
-            }
-            "journal" => {
-                let owner: Option<String> = tx
-                    .query_row(
-                        "SELECT loupist_id FROM knowledge_journals WHERE journal_id = ?1",
-                        [&reference.object_id],
-                        |row| row.get(0),
-                    )
-                    .optional()?;
-                if owner.as_deref() != Some(loupist_id) {
-                    return Err(KnowledgeError::Unauthorized(
-                        "journal belongs to another Loupist",
-                    ));
-                }
-            }
-            _ => {
-                return Err(KnowledgeError::Invalid(
-                    "Lens change evidence kind is invalid",
-                ))
-            }
-        }
-    }
-    Ok(())
-}
+const HISTORY_LIMIT: usize = 20;
+const LINK_LIMIT: usize = 64;
 
 pub(super) fn fold_lens_title(title: &str) -> String {
     title
@@ -648,229 +33,1671 @@ pub(super) fn fold_lens_title(title: &str) -> String {
         .to_lowercase()
 }
 
-pub(super) fn require_unique_lens_title(
+/// The stored kind of a Lens record.
+pub(super) fn lens_kind(
     tx: &Transaction<'_>,
     loupist_id: &str,
-    title: &str,
-    except_record_id: Option<&str>,
-) -> KnowledgeResult<()> {
-    let fold = fold_lens_title(title);
-    let duplicate: Option<String> = tx
+    record_id: &str,
+) -> KnowledgeResult<LensKind> {
+    let kind: Option<String> = tx
         .query_row(
-            "SELECT record_id FROM knowledge_lens_metadata
-             WHERE loupist_id = ?1 AND title_fold = ?2 AND archived_at_ms IS NULL AND lens_kind <> 'principle' AND record_id != ?3",
-            params![loupist_id, fold, except_record_id.unwrap_or("")],
+            "SELECT kind FROM knowledge_lens_metadata WHERE record_id = ?1 AND loupist_id = ?2",
+            params![record_id, loupist_id],
             |row| row.get(0),
         )
         .optional()?;
-    if duplicate.is_some() {
-        return Err(KnowledgeError::Invalid(
-            "an active Lens already uses this title",
-        ));
+    kind.as_deref()
+        .and_then(LensKind::parse)
+        .ok_or(KnowledgeError::NotFound)
+}
+
+/// Whether an active page of `kind` already uses `title`.
+pub(super) fn title_taken(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    kind: LensKind,
+    title: &str,
+) -> KnowledgeResult<bool> {
+    Ok(active_by_title(tx, loupist_id, kind, title)?.is_some())
+}
+
+fn active_by_title(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    kind: LensKind,
+    title: &str,
+) -> KnowledgeResult<Option<String>> {
+    Ok(tx
+        .query_row(
+            "SELECT record_id FROM knowledge_lens_metadata
+             WHERE loupist_id = ?1 AND kind = ?2 AND title_fold = ?3 AND archived_at_ms IS NULL",
+            params![loupist_id, kind.as_str(), fold_lens_title(title)],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
+pub(super) fn active_perspective(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+) -> KnowledgeResult<Option<String>> {
+    Ok(tx
+        .query_row(
+            "SELECT record_id FROM knowledge_lens_metadata
+             WHERE loupist_id = ?1 AND kind = 'perspective' AND archived_at_ms IS NULL",
+            [loupist_id],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
+struct Loaded {
+    record: OwnedRecordState,
+    kind: LensKind,
+    revision: Option<StoredRevision>,
+    body: LensBody,
+}
+
+fn load(tx: &Transaction<'_>, loupist_id: &str, record_id: &str) -> KnowledgeResult<Loaded> {
+    let record = require_record(tx, loupist_id, record_id)?;
+    if record.kind != RecordKind::Lens {
+        return Err(KnowledgeError::Invalid("record is not a Lens"));
+    }
+    let kind = lens_kind(tx, loupist_id, record_id)?;
+    let revision = record
+        .head_revision_id
+        .as_deref()
+        .map(|id| load_revision(tx, id))
+        .transpose()?;
+    let body = match (&revision, kind.page_kind()) {
+        (Some(revision), _) => LensBody::from_payload(kind, from_json(&revision.payload_json)?)?,
+        (None, Some(page_kind)) => LensBody::empty(page_kind, 0),
+        (None, None) => return Err(KnowledgeError::NotFound),
+    };
+    Ok(Loaded {
+        record,
+        kind,
+        revision,
+        body,
+    })
+}
+
+/// Node ids and folded names of the Loupist's current World.
+struct WorldIndex {
+    ids: BTreeSet<String>,
+    names: BTreeMap<String, String>,
+    labels: BTreeMap<String, String>,
+}
+
+fn world_index(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<WorldIndex> {
+    let payload: Option<String> = tx
+        .query_row(
+            "SELECT v.payload_json FROM knowledge_records r
+             JOIN knowledge_record_heads h ON h.record_id = r.record_id
+             JOIN knowledge_record_revisions v ON v.revision_id = h.revision_id
+             WHERE r.owner_loupist_id = ?1 AND r.kind = 'world'",
+            [loupist_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let mut index = WorldIndex {
+        ids: BTreeSet::new(),
+        names: BTreeMap::new(),
+        labels: BTreeMap::new(),
+    };
+    let Some(payload) = payload else {
+        return Ok(index);
+    };
+    let body: WorldSnapshotBody = from_json(&payload)?;
+    index_nodes(&mut index, &body.nodes);
+    Ok(index)
+}
+
+fn index_nodes(index: &mut WorldIndex, nodes: &[GraphNode]) {
+    for node in nodes {
+        index.ids.insert(node.id.clone());
+        index.labels.insert(node.id.clone(), node.name.clone());
+        for name in std::iter::once(&node.name).chain(&node.aliases) {
+            index
+                .names
+                .entry(fold_lens_title(name))
+                .or_insert_with(|| node.id.clone());
+        }
+    }
+}
+
+/// Keys the user retired on this page and did not re-add since.
+fn forgotten_keys(tx: &Transaction<'_>, record_id: &str) -> KnowledgeResult<BTreeSet<SectionKey>> {
+    let mut statement = tx.prepare(
+        "SELECT section_key, outcome FROM knowledge_lens_log
+         WHERE record_id = ?1 AND origin = 'user' AND section_key IS NOT NULL
+         ORDER BY created_at_ms, rowid",
+    )?;
+    let rows = statement.query_map([record_id], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    let mut forgotten = BTreeSet::new();
+    for row in rows {
+        let (key, outcome) = row?;
+        let Ok(key) = SectionKey::new(&key) else {
+            continue;
+        };
+        match outcome.as_str() {
+            "retired" => {
+                forgotten.insert(key);
+            }
+            "added" | "replaced" => {
+                forgotten.remove(&key);
+            }
+            _ => {}
+        }
+    }
+    Ok(forgotten)
+}
+
+enum Resolved {
+    Found(Box<Loaded>),
+    /// No active page matched; the record is minted only once an op changes it.
+    Pending {
+        kind: PageKind,
+        title: String,
+        anchors: Vec<AnchorInput>,
+    },
+}
+
+fn resolve_target(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    target: &PageTarget,
+    world: &mut Option<WorldIndex>,
+) -> KnowledgeResult<Resolved> {
+    match target {
+        PageTarget::Existing { record_id } => {
+            let loaded = load(tx, loupist_id, record_id)?;
+            if loaded.record.archived_at_ms.is_some() {
+                return Err(KnowledgeError::Invalid(
+                    "restore this page before filing to it",
+                ));
+            }
+            Ok(Resolved::Found(Box::new(loaded)))
+        }
+        PageTarget::Create {
+            kind,
+            title,
+            anchors,
+        } => {
+            let lens_kind = kind.lens_kind();
+            let mut found = if *kind == PageKind::Perspective {
+                active_perspective(tx, loupist_id)?
+            } else {
+                None
+            };
+            if found.is_none() && *kind == PageKind::Subject {
+                found = subject_by_anchor(tx, loupist_id, anchors, world)?;
+            }
+            if found.is_none() {
+                found = active_by_title(tx, loupist_id, lens_kind, title)?;
+            }
+            Ok(match found {
+                Some(record_id) => Resolved::Found(Box::new(load(tx, loupist_id, &record_id)?)),
+                None => Resolved::Pending {
+                    kind: *kind,
+                    title: title.trim().to_owned(),
+                    anchors: anchors.clone(),
+                },
+            })
+        }
+    }
+}
+
+fn subject_by_anchor(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    anchors: &[AnchorInput],
+    world: &mut Option<WorldIndex>,
+) -> KnowledgeResult<Option<String>> {
+    let Some(primary) = anchors.first() else {
+        return Ok(None);
+    };
+    let (node_id, name_fold) = match primary {
+        AnchorInput::Node { node_id } => (Some(node_id.clone()), String::new()),
+        AnchorInput::Name { name } => {
+            let fold = fold_lens_title(name);
+            let node = ensure_world(tx, loupist_id, world)?
+                .names
+                .get(&fold)
+                .cloned();
+            (node, fold)
+        }
+    };
+    Ok(tx
+        .query_row(
+            "SELECT a.record_id FROM knowledge_lens_anchors a
+             JOIN knowledge_lens_metadata m ON m.record_id = a.record_id
+             WHERE a.loupist_id = ?1 AND a.role = 'subject' AND m.kind = 'subject'
+               AND m.archived_at_ms IS NULL
+               AND ((?2 <> '' AND a.node_id = ?2) OR (?3 <> '' AND a.name_fold = ?3))
+             ORDER BY m.updated_at_ms DESC LIMIT 1",
+            params![loupist_id, node_id.unwrap_or_default(), name_fold],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
+fn ensure_world<'a>(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    world: &'a mut Option<WorldIndex>,
+) -> KnowledgeResult<&'a WorldIndex> {
+    if world.is_none() {
+        *world = Some(world_index(tx, loupist_id)?);
+    }
+    Ok(world.as_ref().expect("world index loaded"))
+}
+
+fn create_page(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    kind: PageKind,
+    title: &str,
+    anchors: &[AnchorInput],
+    world: &mut Option<WorldIndex>,
+    at_ms: i64,
+) -> KnowledgeResult<Loaded> {
+    let record_id = mint_id("rec");
+    let lens_kind = kind.lens_kind();
+    tx.execute(
+        "INSERT INTO knowledge_records(record_id, kind, owner_loupist_id, title, created_at_ms) VALUES (?1, 'lens', ?2, ?3, ?4)",
+        params![record_id, loupist_id, title, at_ms],
+    )?;
+    tx.execute(
+        "INSERT INTO knowledge_lens_metadata (record_id, loupist_id, title, title_fold, kind, archived_at_ms, updated_at_ms)
+         VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6)",
+        params![record_id, loupist_id, title, fold_lens_title(title), lens_kind.as_str(), at_ms],
+    )?;
+    for anchor in anchors {
+        let (node_id, name_fold) = match anchor {
+            AnchorInput::Node { node_id } => {
+                if !ensure_world(tx, loupist_id, world)?.ids.contains(node_id) {
+                    return Err(KnowledgeError::Invalid(
+                        "anchor names an unknown World node",
+                    ));
+                }
+                (Some(node_id.clone()), String::new())
+            }
+            AnchorInput::Name { name } => {
+                let fold = fold_lens_title(name);
+                if fold.is_empty() || fold.len() > 256 {
+                    return Err(KnowledgeError::Invalid("anchor name is invalid"));
+                }
+                let node = ensure_world(tx, loupist_id, world)?
+                    .names
+                    .get(&fold)
+                    .cloned();
+                (node, fold)
+            }
+        };
+        tx.execute(
+            "INSERT OR IGNORE INTO knowledge_lens_anchors (loupist_id, record_id, role, node_id, name_fold, turn_id, created_at_ms)
+             VALUES (?1, ?2, 'subject', ?3, ?4, NULL, ?5)",
+            params![loupist_id, record_id, node_id, name_fold, at_ms],
+        )?;
+    }
+    load(tx, loupist_id, &record_id)
+}
+
+/// Text policy for any text a page stores: private references never enter a
+/// page, and a canonical record or revision id must belong to a Source or a
+/// Lens page of this database. A World record or revision id, or an id this
+/// database cannot identify, is forbidden. Another Loupist's Source or page
+/// stays as an unresolved link.
+pub(super) fn check_text(tx: &Transaction<'_>, kind: LensKind, text: &str) -> KnowledgeResult<()> {
+    if text_forbidden(kind, text) {
+        return Err(KnowledgeError::LensBodyForbidden);
+    }
+    for record_id in super::lens_page::id_candidates(text, "rec_") {
+        let found: Option<String> = tx
+            .query_row(
+                "SELECT kind FROM knowledge_records WHERE record_id = ?1",
+                [&record_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if !matches!(found.as_deref(), Some("source" | "lens")) {
+            return Err(KnowledgeError::LensBodyForbidden);
+        }
+    }
+    for revision_id in super::lens_page::id_candidates(text, "rev_") {
+        let found: Option<String> = tx
+            .query_row(
+                "SELECT m.kind FROM knowledge_record_revisions r
+                 JOIN knowledge_records m ON m.record_id = r.record_id
+                 WHERE r.revision_id = ?1",
+                [&revision_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if !matches!(found.as_deref(), Some("source" | "lens")) {
+            return Err(KnowledgeError::LensBodyForbidden);
+        }
     }
     Ok(())
 }
 
-pub(super) fn replace_lens_links(
+/// Text policy for one op, plus every `world:` link naming a node of this
+/// Loupist's World.
+fn check_op_text(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    kind: LensKind,
+    op: &LensOp,
+    world: &mut Option<WorldIndex>,
+) -> KnowledgeResult<()> {
+    let texts: Vec<&str> = match op {
+        LensOp::Put {
+            heading,
+            markdown,
+            basis,
+            ..
+        } => vec![
+            heading.as_str(),
+            markdown.as_str(),
+            basis.uncertainty.as_deref().unwrap_or(""),
+        ],
+        LensOp::Summary { text } => vec![text.as_str()],
+        LensOp::Retire { why, .. } | LensOp::IdeaStatus { why, .. } => vec![why.as_str()],
+    };
+    for text in &texts {
+        check_text(tx, kind, text)?;
+    }
+    if let LensOp::Put { markdown, .. } = op {
+        let probe = LensBody::Subject(super::lens_page::Page {
+            summary: String::new(),
+            sections: vec![PageSection {
+                key: SectionKey::new("probe")?,
+                heading: String::new(),
+                markdown: markdown.clone(),
+                basis: Basis::default(),
+                origin: Origin::Loupist,
+                state: SectionState::Current,
+                updated_at_ms: 0,
+            }],
+        });
+        let (_, world_links) = links(&probe);
+        if !world_links.is_empty() {
+            let index = ensure_world(tx, loupist_id, world)?;
+            if world_links.iter().any(|id| !index.ids.contains(id)) {
+                return Err(KnowledgeError::Invalid(
+                    "a world: link names an unknown node",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The only page writer. Resolves targets (idempotent create), folds every
+/// delta with `apply`, publishes one revision per changed page, logs one row
+/// per op, rebuilds links and mention anchors and emits one growth event per
+/// changed page.
+pub(super) fn file(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    origin: &FilingOrigin,
+    deltas: Vec<PageDelta>,
+    at_ms: i64,
+) -> KnowledgeResult<Vec<FiledPage>> {
+    file_with(tx, loupist_id, origin, deltas, at_ms, None)
+}
+
+fn file_with(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    origin: &FilingOrigin,
+    deltas: Vec<PageDelta>,
+    at_ms: i64,
+    undoes_op_id: Option<&str>,
+) -> KnowledgeResult<Vec<FiledPage>> {
+    validate_loupist_id(loupist_id)?;
+    validate_time(at_ms)?;
+    for delta in &deltas {
+        delta.validate()?;
+    }
+    let mut world: Option<WorldIndex> = None;
+    let mut filed = Vec::with_capacity(deltas.len());
+    for delta in deltas {
+        if let PageTarget::Create { kind, title, .. } = &delta.target {
+            check_text(tx, kind.lens_kind(), title)?;
+        }
+        let resolved = resolve_target(tx, loupist_id, &delta.target, &mut world)?;
+        let kind = match &resolved {
+            Resolved::Found(loaded) => loaded.kind,
+            Resolved::Pending { kind, .. } => kind.lens_kind(),
+        };
+        for op in &delta.ops {
+            check_op_text(tx, loupist_id, kind, op, &mut world)?;
+        }
+        let (loaded, created) = match resolved {
+            Resolved::Found(loaded) => {
+                require_edit(&loaded.record, loupist_id)?;
+                (*loaded, false)
+            }
+            Resolved::Pending {
+                kind,
+                title,
+                anchors,
+            } => {
+                // Fold against an empty page first: a create whose ops all
+                // refuse leaves no record behind.
+                let empty = LensBody::empty(kind, at_ms);
+                let ctx = ApplyContext {
+                    origin: origin.section_origin(),
+                    at_ms,
+                    forgotten: BTreeSet::new(),
+                };
+                let (_, outcomes) = apply(&empty, &delta.ops, &ctx)?;
+                if !outcomes.iter().any(OpOutcome::changed) {
+                    filed.push(FiledPage {
+                        record_id: String::new(),
+                        revision_id: String::new(),
+                        title,
+                        kind: kind.lens_kind(),
+                        created: false,
+                        changed: false,
+                        outcomes: outcomes
+                            .into_iter()
+                            .map(|outcome| FiledOp {
+                                op_id: String::new(),
+                                outcome,
+                            })
+                            .collect(),
+                    });
+                    continue;
+                }
+                (
+                    create_page(tx, loupist_id, kind, &title, &anchors, &mut world, at_ms)?,
+                    true,
+                )
+            }
+        };
+        let record_id = loaded.record.record_id.clone();
+        let ctx = ApplyContext {
+            origin: origin.section_origin(),
+            at_ms,
+            forgotten: forgotten_keys(tx, &record_id)?,
+        };
+        let (next, outcomes) = apply(&loaded.body, &delta.ops, &ctx)?;
+        let changed = created || next != loaded.body;
+        let mut revision_id = loaded
+            .revision
+            .as_ref()
+            .map(|revision| revision.revision_id.clone())
+            .unwrap_or_default();
+        if changed {
+            let published = publish_revision(
+                tx,
+                &loaded.record,
+                loupist_id,
+                loaded.record.head_revision_id.as_deref(),
+                &next.to_payload()?,
+                &[],
+                at_ms,
+            )?;
+            revision_id = published.revision_id.clone();
+            let learned = matches!(
+                origin,
+                FilingOrigin::Turn { .. } | FilingOrigin::Learning { .. }
+            );
+            tx.execute(
+                "UPDATE knowledge_lens_metadata SET updated_at_ms = ?1, learned = learned OR ?3 WHERE record_id = ?2",
+                params![at_ms, record_id, learned],
+            )?;
+            replace_links(tx, loupist_id, &record_id, &next, at_ms)?;
+            super::search_index::index_payload(
+                tx,
+                None,
+                &record_id,
+                &published.revision_id,
+                RecordKind::Lens,
+                &loaded.record.title,
+                &next.to_payload()?,
+            )?;
+            let mut event = super::growth::GrowthEvent::new(
+                loupist_id,
+                &record_id,
+                at_ms,
+                if created {
+                    "lens_created"
+                } else {
+                    "lens_revised"
+                },
+                origin.actor(),
+                &loaded.record.title,
+            );
+            event.before_summary = (!created).then(|| {
+                super::growth::one_line(&summary_or_title(&loaded.body, &loaded.record.title))
+            });
+            event.after_summary = Some(super::growth::one_line(&summary_or_title(
+                &next,
+                &loaded.record.title,
+            )));
+            event.origin = growth_origin(origin);
+            event.origin_chat_id = origin.chat_id().map(str::to_owned);
+            event.origin_message_id = origin.message_id().map(str::to_owned);
+            event.insert(tx)?;
+        }
+        let mut filed_ops = Vec::with_capacity(outcomes.len());
+        for (op, outcome) in delta.ops.iter().zip(outcomes) {
+            let op_id = log_op(
+                tx,
+                loupist_id,
+                &record_id,
+                op,
+                &outcome,
+                &loaded.body,
+                &next,
+                origin,
+                at_ms,
+                undoes_op_id,
+            )?;
+            filed_ops.push(FiledOp { op_id, outcome });
+        }
+        filed.push(FiledPage {
+            record_id,
+            revision_id,
+            title: loaded.record.title,
+            kind: loaded.kind,
+            created,
+            changed,
+            outcomes: filed_ops,
+        });
+    }
+    Ok(filed)
+}
+
+fn summary_or_title(body: &LensBody, title: &str) -> String {
+    let summary = body.summary();
+    if summary.trim().is_empty() {
+        title.to_owned()
+    } else {
+        summary
+    }
+}
+
+fn growth_origin(origin: &FilingOrigin) -> Option<Value> {
+    match origin {
+        FilingOrigin::Learning {
+            review_id,
+            world_job_id,
+        } => Some(
+            json!({"kind": "learning_review", "reviewId": review_id, "worldJobId": world_job_id}),
+        ),
+        FilingOrigin::Import { pack } => Some(pack.clone()),
+        FilingOrigin::Turn { unattended, .. } => {
+            unattended.then(|| json!({"kind": "unattended_turn"}))
+        }
+        FilingOrigin::User { .. } => None,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn log_op(
     tx: &Transaction<'_>,
     loupist_id: &str,
     record_id: &str,
-    document: &LensDocument,
+    op: &LensOp,
+    outcome: &OpOutcome,
+    before: &LensBody,
+    after: &LensBody,
+    origin: &FilingOrigin,
+    at_ms: i64,
+    undoes_op_id: Option<&str>,
+) -> KnowledgeResult<String> {
+    let key = op.key();
+    let section_of = |body: &LensBody| {
+        key.and_then(|key| body.page().and_then(|page| page.section(key).cloned()))
+    };
+    let (before_digest, after_digest, before_json) = match op {
+        LensOp::Put { .. } | LensOp::Retire { .. } => {
+            let previous = section_of(before);
+            (
+                previous.as_ref().map(section_digest),
+                section_of(after).as_ref().map(section_digest),
+                previous.map(|section| to_value(&section)).transpose()?,
+            )
+        }
+        LensOp::Summary { .. } => (
+            None,
+            None,
+            before.page().map(|page| json!({"summary": page.summary})),
+        ),
+        LensOp::IdeaStatus { .. } => (
+            None,
+            None,
+            before.idea().map(|idea| json!({"status": idea.status})),
+        ),
+    };
+    let op_id = mint_id("lop");
+    tx.execute(
+        "INSERT INTO knowledge_lens_log (op_id, loupist_id, record_id, op_json, outcome, section_key,
+            before_digest, after_digest, before_json, origin, chat_id, message_id, created_at_ms, undoes_op_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+        params![
+            op_id,
+            loupist_id,
+            record_id,
+            canonical_string(&to_value(op)?),
+            outcome.name(),
+            key.map(SectionKey::as_str),
+            before_digest,
+            after_digest,
+            before_json.map(|value| canonical_string(&value)),
+            origin.log_name(),
+            origin.chat_id(),
+            origin.message_id(),
+            at_ms,
+            undoes_op_id,
+        ],
+    )?;
+    Ok(op_id)
+}
+
+/// A principle save through the same log, as a put of its statement.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn log_principle(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    record_id: &str,
+    input: &super::principles::PrincipleInput,
+    before: Option<&super::principles::Principle>,
+    at_ms: i64,
+) -> KnowledgeResult<String> {
+    let op = LensOp::Put {
+        key: SectionKey::new("statement")?,
+        heading: "Statement".into(),
+        markdown: input.statement.clone(),
+        basis: Basis::default(),
+        expected: None,
+    };
+    let outcome = if before.is_some() {
+        OpOutcome::Replaced {
+            key: SectionKey::new("statement")?,
+        }
+    } else {
+        OpOutcome::Added {
+            key: SectionKey::new("statement")?,
+        }
+    };
+    let op_id = mint_id("lop");
+    tx.execute(
+        "INSERT INTO knowledge_lens_log (op_id, loupist_id, record_id, op_json, outcome, section_key,
+            before_digest, after_digest, before_json, origin, chat_id, message_id, created_at_ms, undoes_op_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'statement', NULL, NULL, ?6, 'user', ?7, ?8, ?9, NULL)",
+        params![
+            op_id,
+            loupist_id,
+            record_id,
+            canonical_string(&to_value(&op)?),
+            outcome.name(),
+            before
+                .map(|p| canonical_string(&json!({"statement": p.statement, "why": p.why, "example": p.example}))),
+            input.origin_chat_id,
+            input.origin_message_id,
+            at_ms,
+        ],
+    )?;
+    Ok(op_id)
+}
+
+/// Rebuilds the link index and mention anchors of one page from its body.
+fn replace_links(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    record_id: &str,
+    body: &LensBody,
+    at_ms: i64,
 ) -> KnowledgeResult<()> {
+    let (lens, world) = links(body);
     tx.execute(
         "DELETE FROM knowledge_lens_links WHERE source_record_id = ?1",
         [record_id],
     )?;
-    for target in lens_link_ids(document) {
+    for target in lens {
         tx.execute(
             "INSERT INTO knowledge_lens_links (loupist_id, source_record_id, target_record_id) VALUES (?1, ?2, ?3)",
             params![loupist_id, record_id, target],
         )?;
     }
+    tx.execute(
+        "DELETE FROM knowledge_lens_anchors WHERE record_id = ?1 AND role = 'mention'",
+        [record_id],
+    )?;
+    for node_id in world {
+        tx.execute(
+            "INSERT OR IGNORE INTO knowledge_lens_anchors (loupist_id, record_id, role, node_id, name_fold, turn_id, created_at_ms)
+             VALUES (?1, ?2, 'mention', ?3, '', NULL, ?4)",
+            params![loupist_id, record_id, node_id, at_ms],
+        )?;
+    }
     Ok(())
 }
 
-fn lookup_lens_links(
+/// A final-answer `lens:` link applied a page to the World nodes of that turn.
+pub(super) fn record_applied(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    turn_id: &str,
+    record_id: &str,
+    node_ids: &BTreeSet<String>,
+    at_ms: i64,
+) -> KnowledgeResult<()> {
+    for node_id in node_ids {
+        tx.execute(
+            "INSERT OR IGNORE INTO knowledge_lens_anchors (loupist_id, record_id, role, node_id, name_fold, turn_id, created_at_ms)
+             VALUES (?1, ?2, 'applied', ?3, '', ?4, ?5)",
+            params![loupist_id, record_id, node_id, turn_id, at_ms],
+        )?;
+    }
+    Ok(())
+}
+
+/// Pending name anchors resolve once the World knows the name or an alias.
+/// Returns how many anchors gained a node. Discovery calls this after every
+/// World publication (a later unit).
+#[allow(dead_code)]
+pub(super) fn resolve_anchors(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    nodes: &[GraphNode],
+) -> KnowledgeResult<usize> {
+    let mut index = WorldIndex {
+        ids: BTreeSet::new(),
+        names: BTreeMap::new(),
+        labels: BTreeMap::new(),
+    };
+    index_nodes(&mut index, nodes);
+    let mut statement = tx.prepare(
+        "SELECT rowid, name_fold FROM knowledge_lens_anchors
+         WHERE loupist_id = ?1 AND node_id IS NULL AND name_fold <> ''",
+    )?;
+    let pending = statement
+        .query_map([loupist_id], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(statement);
+    let mut resolved = 0;
+    for (rowid, name_fold) in pending {
+        if let Some(node_id) = index.names.get(&name_fold) {
+            resolved += tx.execute(
+                "UPDATE OR IGNORE knowledge_lens_anchors SET node_id = ?1 WHERE rowid = ?2",
+                params![node_id, rowid],
+            )?;
+        }
+    }
+    Ok(resolved)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AnchorRole {
+    Subject,
+    Mention,
+    Applied,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnchorView {
+    pub role: AnchorRole,
+    pub node_id: Option<String>,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LensLinkView {
+    pub record_id: String,
+    pub title: String,
+    pub kind: LensKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LensLogEntry {
+    pub op_id: String,
+    pub op: String,
+    pub outcome: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    pub origin: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
+    pub created_at_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undoes_op_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SectionView {
+    pub key: SectionKey,
+    pub heading: String,
+    pub markdown: String,
+    pub digest: String,
+    pub basis: Basis,
+    pub chip: BasisChip,
+    pub origin: Origin,
+    pub contested: bool,
+    pub contested_claim_ids: Vec<String>,
+    pub updated_at_ms: i64,
+}
+
+impl SectionView {
+    fn of(section: &PageSection) -> Self {
+        let (contested, contested_claim_ids) = match &section.state {
+            SectionState::Current => (false, Vec::new()),
+            SectionState::Contested { claim_ids, .. } => (true, claim_ids.clone()),
+        };
+        Self {
+            key: section.key.clone(),
+            heading: section.heading.clone(),
+            markdown: section.markdown.clone(),
+            digest: section_digest(section),
+            basis: section.basis.clone(),
+            chip: section.basis.chip(),
+            origin: section.origin,
+            contested,
+            contested_claim_ids,
+            updated_at_ms: section.updated_at_ms,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LensBodyView {
+    Principle {
+        statement: String,
+        why: String,
+        example: String,
+        origin: String,
+    },
+    Perspective {
+        summary: String,
+        sections: Vec<SectionView>,
+    },
+    Method {
+        summary: String,
+        sections: Vec<SectionView>,
+    },
+    Subject {
+        summary: String,
+        sections: Vec<SectionView>,
+    },
+    Idea {
+        summary: String,
+        sections: Vec<SectionView>,
+        idea: IdeaState,
+    },
+}
+
+impl LensBodyView {
+    fn of(body: &LensBody) -> Self {
+        let views = |page: &super::lens_page::Page| {
+            page.sections
+                .iter()
+                .map(SectionView::of)
+                .collect::<Vec<_>>()
+        };
+        match body {
+            LensBody::Principle(p) => Self::Principle {
+                statement: p.statement.clone(),
+                why: p.why.clone().unwrap_or_default(),
+                example: p.example.clone().unwrap_or_default(),
+                origin: p.origin.clone(),
+            },
+            LensBody::Perspective(page) => Self::Perspective {
+                summary: page.summary.clone(),
+                sections: views(page),
+            },
+            LensBody::Method(page) => Self::Method {
+                summary: page.summary.clone(),
+                sections: views(page),
+            },
+            LensBody::Subject(page) => Self::Subject {
+                summary: page.summary.clone(),
+                sections: views(page),
+            },
+            LensBody::Idea(page, idea) => Self::Idea {
+                summary: page.summary.clone(),
+                sections: views(page),
+                idea: idea.clone(),
+            },
+        }
+    }
+
+    pub fn sections(&self) -> &[SectionView] {
+        match self {
+            Self::Principle { .. } => &[],
+            Self::Perspective { sections, .. }
+            | Self::Method { sections, .. }
+            | Self::Subject { sections, .. }
+            | Self::Idea { sections, .. } => sections,
+        }
+    }
+
+    fn sections_mut(&mut self) -> Option<&mut Vec<SectionView>> {
+        match self {
+            Self::Principle { .. } => None,
+            Self::Perspective { sections, .. }
+            | Self::Method { sections, .. }
+            | Self::Subject { sections, .. }
+            | Self::Idea { sections, .. } => Some(sections),
+        }
+    }
+
+    /// The stored body behind this view, for rendering.
+    pub fn to_body(&self) -> LensBody {
+        let page = |summary: &str, sections: &[SectionView]| super::lens_page::Page {
+            summary: summary.to_owned(),
+            sections: sections
+                .iter()
+                .map(|section| PageSection {
+                    key: section.key.clone(),
+                    heading: section.heading.clone(),
+                    markdown: section.markdown.clone(),
+                    basis: section.basis.clone(),
+                    origin: section.origin,
+                    state: if section.contested {
+                        SectionState::Contested {
+                            since_ms: section.updated_at_ms,
+                            claim_ids: section.contested_claim_ids.clone(),
+                        }
+                    } else {
+                        SectionState::Current
+                    },
+                    updated_at_ms: section.updated_at_ms,
+                })
+                .collect(),
+        };
+        match self {
+            Self::Principle {
+                statement,
+                why,
+                example,
+                origin,
+            } => LensBody::Principle(super::principles::PrincipleInput {
+                statement: statement.clone(),
+                why: Some(why.clone()).filter(|t| !t.is_empty()),
+                example: Some(example.clone()).filter(|t| !t.is_empty()),
+                origin: origin.clone(),
+                origin_chat_id: None,
+                origin_message_id: None,
+            }),
+            Self::Perspective { summary, sections } => {
+                LensBody::Perspective(page(summary, sections))
+            }
+            Self::Method { summary, sections } => LensBody::Method(page(summary, sections)),
+            Self::Subject { summary, sections } => LensBody::Subject(page(summary, sections)),
+            Self::Idea {
+                summary,
+                sections,
+                idea,
+            } => LensBody::Idea(page(summary, sections), idea.clone()),
+        }
+    }
+
+    pub fn summary(&self) -> &str {
+        match self {
+            Self::Principle { statement, .. } => statement,
+            Self::Perspective { summary, .. }
+            | Self::Method { summary, .. }
+            | Self::Subject { summary, .. }
+            | Self::Idea { summary, .. } => summary,
+        }
+    }
+}
+
+/// One page as the bridge and the `lens_read` tool deliver it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageRead {
+    pub record_id: String,
+    pub revision_id: String,
+    pub revision_digest: String,
+    pub kind: LensKind,
+    pub title: String,
+    pub archived: bool,
+    pub paused: bool,
+    pub learned: bool,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+    pub body: LensBodyView,
+    /// Suggested section keys for this kind: an ordering hint, not a closed set.
+    pub suggested_sections: Vec<String>,
+    pub anchors: Vec<AnchorView>,
+    pub links: Vec<LensLinkView>,
+    pub backlinks: Vec<LensLinkView>,
+    /// Newest first, at most 20.
+    pub history: Vec<LensLogEntry>,
+}
+
+impl PageRead {
+    /// The exact model-facing text; its digest binds a read receipt.
+    pub fn delivery_text(&self) -> KnowledgeResult<String> {
+        Ok(canonical_string(&to_value(self)?))
+    }
+
+    pub fn markdown(&self, with_keys: bool) -> String {
+        super::lens_page::render_markdown(&self.title, &self.body.to_body(), with_keys)
+    }
+
+    /// Under an as-of cutoff a section updated later is left out.
+    pub fn retain_sections(&mut self, known: impl Fn(i64) -> bool) {
+        if let Some(sections) = self.body.sections_mut() {
+            sections.retain(|section| known(section.updated_at_ms));
+        }
+    }
+}
+
+pub(super) fn read_page(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    record_id: &str,
+) -> KnowledgeResult<PageRead> {
+    let loaded = load(tx, loupist_id, record_id)?;
+    let Some(revision) = loaded.revision else {
+        return Err(KnowledgeError::NotFound);
+    };
+    let (archived, learned, updated_at_ms): (bool, bool, i64) = tx.query_row(
+        "SELECT archived_at_ms IS NOT NULL, learned, updated_at_ms FROM knowledge_lens_metadata WHERE record_id = ?1",
+        [record_id],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )?;
+    let created_at_ms: i64 = tx.query_row(
+        "SELECT created_at_ms FROM knowledge_records WHERE record_id = ?1",
+        [record_id],
+        |row| row.get(0),
+    )?;
+    let paused = super::memory_controls::load(tx, loupist_id)?
+        .paused
+        .contains(record_id);
+    let (lens_links, _) = links(&loaded.body);
+    Ok(PageRead {
+        record_id: record_id.to_owned(),
+        revision_id: revision.revision_id,
+        revision_digest: revision.revision_digest,
+        kind: loaded.kind,
+        title: loaded.record.title,
+        archived,
+        paused,
+        learned,
+        created_at_ms,
+        updated_at_ms,
+        body: LensBodyView::of(&loaded.body),
+        suggested_sections: super::lens_page::suggested_sections(loaded.kind)
+            .iter()
+            .map(|key| (*key).to_owned())
+            .collect(),
+        anchors: anchors_of(tx, loupist_id, record_id)?,
+        links: lookup_links(tx, loupist_id, &lens_links)?,
+        backlinks: backlinks_of(tx, loupist_id, record_id)?,
+        history: history(tx, record_id, HISTORY_LIMIT)?,
+    })
+}
+
+fn anchors_of(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    record_id: &str,
+) -> KnowledgeResult<Vec<AnchorView>> {
+    let mut statement = tx.prepare(
+        "SELECT role, node_id, name_fold FROM knowledge_lens_anchors
+         WHERE loupist_id = ?1 AND record_id = ?2
+         GROUP BY role, node_id, name_fold ORDER BY role, node_id, name_fold",
+    )?;
+    let rows = statement
+        .query_map(params![loupist_id, record_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(statement);
+    let mut labels: Option<BTreeMap<String, String>> = None;
+    let mut anchors = Vec::new();
+    for (role, node_id, name_fold) in rows {
+        let role = match role.as_str() {
+            "subject" => AnchorRole::Subject,
+            "mention" => AnchorRole::Mention,
+            _ => AnchorRole::Applied,
+        };
+        let name = if !name_fold.is_empty() {
+            name_fold
+        } else if let Some(node_id) = &node_id {
+            if labels.is_none() {
+                labels = Some(world_index(tx, loupist_id)?.labels);
+            }
+            labels
+                .as_ref()
+                .and_then(|labels| labels.get(node_id).cloned())
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+        anchors.push(AnchorView {
+            role,
+            node_id,
+            name,
+        });
+    }
+    Ok(anchors)
+}
+
+fn lookup_links(
     tx: &Transaction<'_>,
     loupist_id: &str,
     ids: &BTreeSet<String>,
-) -> KnowledgeResult<Vec<LensNavigationLink>> {
-    let mut links = Vec::new();
-    for record_id in ids {
-        let found = tx
+) -> KnowledgeResult<Vec<LensLinkView>> {
+    let mut found = Vec::new();
+    for record_id in ids.iter().take(LINK_LIMIT) {
+        let link = tx
             .query_row(
-                "SELECT meta.title, head.revision_id, meta.archived_at_ms
-                 FROM knowledge_lens_metadata meta
-                 JOIN knowledge_record_heads head ON head.record_id = meta.record_id
-                 WHERE meta.loupist_id = ?1 AND meta.record_id = ?2",
+                "SELECT title, kind FROM knowledge_lens_metadata WHERE loupist_id = ?1 AND record_id = ?2",
                 params![loupist_id, record_id],
-                |row| {
-                    Ok(LensNavigationLink {
-                        record_id: record_id.clone(),
-                        title: row.get(0)?,
-                        revision_id: row.get(1)?,
-                        archived: row.get::<_, Option<i64>>(2)?.is_some(),
-                    })
-                },
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
             )
             .optional()?;
-        if let Some(link) = found {
-            links.push(link);
+        if let Some((title, kind)) = link {
+            if let Some(kind) = LensKind::parse(&kind) {
+                found.push(LensLinkView {
+                    record_id: record_id.clone(),
+                    title,
+                    kind,
+                });
+            }
+        }
+    }
+    found.sort_by(|a, b| a.title.cmp(&b.title).then(a.record_id.cmp(&b.record_id)));
+    Ok(found)
+}
+
+fn backlinks_of(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    record_id: &str,
+) -> KnowledgeResult<Vec<LensLinkView>> {
+    let mut statement = tx.prepare(
+        "SELECT link.source_record_id, meta.title, meta.kind
+         FROM knowledge_lens_links link
+         JOIN knowledge_lens_metadata meta
+           ON meta.record_id = link.source_record_id AND meta.loupist_id = link.loupist_id
+         WHERE link.loupist_id = ?1 AND link.target_record_id = ?2 AND meta.archived_at_ms IS NULL
+         ORDER BY meta.title, link.source_record_id LIMIT ?3",
+    )?;
+    let rows = statement.query_map(params![loupist_id, record_id, LINK_LIMIT as i64], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+        ))
+    })?;
+    let mut links = Vec::new();
+    for row in rows {
+        let (record_id, title, kind) = row?;
+        if let Some(kind) = LensKind::parse(&kind) {
+            links.push(LensLinkView {
+                record_id,
+                title,
+                kind,
+            });
         }
     }
     Ok(links)
 }
 
-fn current_backlinks(
+pub(super) fn history(
     tx: &Transaction<'_>,
-    loupist_id: &str,
     record_id: &str,
-) -> KnowledgeResult<Vec<LensNavigationLink>> {
+    limit: usize,
+) -> KnowledgeResult<Vec<LensLogEntry>> {
     let mut statement = tx.prepare(
-        "SELECT link.source_record_id, meta.title, head.revision_id
-         FROM knowledge_lens_links link
-         JOIN knowledge_lens_metadata meta
-           ON meta.record_id = link.source_record_id AND meta.loupist_id = link.loupist_id
-         JOIN knowledge_record_heads head ON head.record_id = link.source_record_id
-         WHERE link.loupist_id = ?1 AND link.target_record_id = ?2 AND meta.archived_at_ms IS NULL
-         ORDER BY meta.title, link.source_record_id",
+        "SELECT op_id, op_json, outcome, section_key, origin, chat_id, message_id, created_at_ms, undoes_op_id
+         FROM knowledge_lens_log WHERE record_id = ?1
+         ORDER BY created_at_ms DESC, rowid DESC LIMIT ?2",
     )?;
-    let rows = statement.query_map(params![loupist_id, record_id], |row| {
-        Ok(LensNavigationLink {
-            record_id: row.get(0)?,
-            title: row.get(1)?,
-            revision_id: row.get(2)?,
-            archived: false,
+    let rows = statement.query_map(params![record_id, limit as i64], |row| {
+        Ok(LensLogEntry {
+            op_id: row.get(0)?,
+            op: row.get(1)?,
+            outcome: row.get(2)?,
+            key: row.get(3)?,
+            origin: row.get(4)?,
+            chat_id: row.get(5)?,
+            message_id: row.get(6)?,
+            created_at_ms: row.get(7)?,
+            undoes_op_id: row.get(8)?,
         })
     })?;
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(KnowledgeError::from)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn record_metadata_change(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-    record_id: &str,
-    kind: &str,
-    rationale: &str,
-    at_ms: i64,
-    actor: &str,
-    origin_chat_id: Option<&str>,
-    origin_message_id: Option<&str>,
-    new_title: Option<&str>,
-    head_revision_id: Option<&str>,
-) -> KnowledgeResult<()> {
-    let inputs = LensChangeInputs {
-        references: Vec::new(),
-        feedback: None,
-    };
-    tx.execute(
-        "DELETE FROM knowledge_lens_changes WHERE record_id = ?1",
-        [record_id],
-    )?;
-    tx.execute(
-        "INSERT INTO knowledge_lens_changes (
-            change_id, loupist_id, record_id, new_revision_id, rationale,
-            inputs_json, created_at_ms, change_kind, actor, origin_chat_id, origin_message_id,
-            new_title
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-        params![
-            mint_id("chg"),
-            loupist_id,
-            record_id,
-            head_revision_id,
-            rationale,
-            canonical_string(&to_value(&inputs)?),
-            at_ms,
-            kind,
-            actor,
-            origin_chat_id,
-            origin_message_id,
-            new_title
-        ],
-    )?;
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(super) fn rename_lens(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-    record_id: &str,
-    title: &str,
-    rationale: &str,
-    at_ms: i64,
-    actor: &str,
-    origin_chat_id: Option<&str>,
-    origin_message_id: Option<&str>,
-) -> KnowledgeResult<String> {
-    validate_text(title, 200, false, "lens title is invalid")?;
-    validate_text(rationale, 16_000, false, "change rationale is invalid")?;
-    let module = require_record(tx, loupist_id, record_id)?;
-    if module.kind != RecordKind::Lens {
-        return Err(KnowledgeError::Invalid("record is not a Lens"));
+    let mut entries = Vec::new();
+    for row in rows {
+        let mut entry = row?;
+        let op: LensOp = from_json(&entry.op)?;
+        entry.op = op.name().to_owned();
+        entries.push(entry);
     }
-    if module.archived_at_ms.is_some() {
+    Ok(entries)
+}
+
+struct LogRow {
+    record_id: String,
+    op: LensOp,
+    outcome: String,
+    section_key: Option<String>,
+    after_digest: Option<String>,
+    before_json: Option<String>,
+}
+
+fn log_row(tx: &Transaction<'_>, loupist_id: &str, op_id: &str) -> KnowledgeResult<LogRow> {
+    validate_knowledge_id(op_id, "lop")?;
+    let row = tx
+        .query_row(
+            "SELECT record_id, op_json, outcome, section_key, after_digest, before_json
+             FROM knowledge_lens_log WHERE op_id = ?1 AND loupist_id = ?2",
+            params![op_id, loupist_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                ))
+            },
+        )
+        .optional()?
+        .ok_or(KnowledgeError::NotFound)?;
+    Ok(LogRow {
+        record_id: row.0,
+        op: from_json(&row.1)?,
+        outcome: row.2,
+        section_key: row.3,
+        after_digest: row.4,
+        before_json: row.5,
+    })
+}
+
+/// Appends the inverse of one logged op. Refuses when a later op changed the
+/// same section (or the summary or status), or when the op was undone already.
+pub(super) fn undo_op(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    op_id: &str,
+    at_ms: i64,
+) -> KnowledgeResult<PageRead> {
+    let row = log_row(tx, loupist_id, op_id)?;
+    let undone: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM knowledge_lens_log WHERE undoes_op_id = ?1)",
+        [op_id],
+        |row| row.get(0),
+    )?;
+    if undone {
+        return Err(KnowledgeError::Invalid("this change was undone already"));
+    }
+    let later_changed: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM knowledge_lens_log
+         WHERE record_id = ?1 AND op_id <> ?2
+           AND rowid > (SELECT rowid FROM knowledge_lens_log WHERE op_id = ?2)
+           AND COALESCE(section_key, '') = COALESCE(?3, '')
+           AND outcome IN ('added', 'replaced', 'retired', 'summarized', 'status_set')
+           AND (?3 IS NOT NULL OR json_extract(op_json, '$.op') = ?4))",
+        params![row.record_id, op_id, row.section_key, row.op.name()],
+        |row| row.get(0),
+    )?;
+    if later_changed {
         return Err(KnowledgeError::Invalid(
-            "restore this Lens before renaming it",
+            "a later change touched this section; undo it first",
         ));
     }
-    let next = title.trim();
-    if next == module.title {
-        return Ok(module.title);
+    let before: Option<Value> = row.before_json.as_deref().map(from_json).transpose()?;
+    let restore_section = |before: &Option<Value>, expected: Option<String>| {
+        let section: PageSection = serde_json::from_value(
+            before
+                .clone()
+                .ok_or(KnowledgeError::Invalid("nothing to restore"))?,
+        )?;
+        Ok::<_, KnowledgeError>(LensOp::Put {
+            key: section.key,
+            heading: section.heading,
+            markdown: section.markdown,
+            basis: section.basis,
+            expected,
+        })
+    };
+    let inverse = match (&row.op, row.outcome.as_str()) {
+        (LensOp::Put { key, .. }, "added") => LensOp::Retire {
+            key: key.clone(),
+            expected: row.after_digest.clone().unwrap_or_default(),
+            why: "Undone by you".into(),
+        },
+        (LensOp::Put { .. }, "replaced") => restore_section(&before, row.after_digest.clone())?,
+        (LensOp::Retire { .. }, "retired") => restore_section(&before, None)?,
+        (LensOp::Summary { .. }, "summarized") => LensOp::Summary {
+            text: before
+                .as_ref()
+                .and_then(|value| value["summary"].as_str())
+                .filter(|text| !text.trim().is_empty())
+                .unwrap_or("—")
+                .to_owned(),
+        },
+        (LensOp::IdeaStatus { .. }, "status_set") => LensOp::IdeaStatus {
+            status: before
+                .as_ref()
+                .map(|value| serde_json::from_value::<IdeaStatus>(value["status"].clone()))
+                .transpose()?
+                .unwrap_or(IdeaStatus::Open),
+            why: "Undone by you".into(),
+        },
+        _ => {
+            return Err(KnowledgeError::Invalid(
+                "this entry changed nothing to undo",
+            ))
+        }
+    };
+    let record_id = row.record_id.clone();
+    let filed = file_with(
+        tx,
+        loupist_id,
+        &FilingOrigin::User {
+            chat_id: None,
+            message_id: None,
+        },
+        vec![PageDelta {
+            target: PageTarget::Existing {
+                record_id: record_id.clone(),
+            },
+            ops: vec![inverse],
+        }],
+        at_ms,
+        Some(op_id),
+    )?;
+    if !filed.iter().any(|page| page.changed) {
+        return Err(KnowledgeError::Invalid(
+            "the page no longer holds what this change wrote",
+        ));
     }
-    require_unique_lens_title(tx, loupist_id, next, Some(record_id))?;
-    let revision_id = module
-        .head_revision_id
-        .clone()
+    read_page(tx, loupist_id, &record_id)
+}
+
+/// The user retires a section. Only a user put may bring that key back.
+pub(super) fn forget_section(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    record_id: &str,
+    key: &str,
+    at_ms: i64,
+) -> KnowledgeResult<PageRead> {
+    let key = SectionKey::new(key)?;
+    let loaded = load(tx, loupist_id, record_id)?;
+    let section = loaded
+        .body
+        .page()
+        .and_then(|page| page.section(&key))
         .ok_or(KnowledgeError::NotFound)?;
-    let revision = load_revision(tx, &revision_id)?;
-    let document: LensDocument = from_json(&revision.payload_json)?;
-    enforce_lens_text(tx, loupist_id, next, &document)?;
-    tx.execute(
-        "UPDATE knowledge_lens_metadata SET title = ?1, title_fold = ?2, updated_at_ms = ?3 WHERE record_id = ?4 AND loupist_id = ?5",
-        params![next, fold_lens_title(next), at_ms, record_id, loupist_id],
-    )?;
-    super::search_index::index_payload(
-        tx,
-        None,
-        record_id,
-        &revision_id,
-        RecordKind::Lens,
-        next,
-        &revision
-            .payload_json
-            .parse()
-            .map_err(|_| KnowledgeError::Invalid("lens payload is invalid"))?,
-    )?;
-    record_metadata_change(
+    file(
         tx,
         loupist_id,
-        record_id,
-        "rename",
-        rationale,
+        &FilingOrigin::User {
+            chat_id: None,
+            message_id: None,
+        },
+        vec![PageDelta {
+            target: PageTarget::Existing {
+                record_id: record_id.to_owned(),
+            },
+            ops: vec![LensOp::Retire {
+                key,
+                expected: section_digest(section),
+                why: "Forgotten by you".into(),
+            }],
+        }],
         at_ms,
-        actor,
-        origin_chat_id,
-        origin_message_id,
-        Some(next),
-        Some(&revision_id),
     )?;
-    let mut event = super::growth::GrowthEvent::new(
-        loupist_id,
-        record_id,
-        at_ms,
-        "lens_renamed",
-        actor,
-        rationale,
-    );
-    event.before_summary = Some(super::growth::one_line(&module.title));
-    event.after_summary = Some(super::growth::one_line(next));
-    event.origin_chat_id = origin_chat_id.map(str::to_owned);
-    event.origin_message_id = origin_message_id.map(str::to_owned);
-    event.insert(tx)?;
-    Ok(next.to_string())
+    read_page(tx, loupist_id, record_id)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LearnedOutcome {
+    pub op_id: String,
+    pub outcome: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LearnedPage {
+    pub record_id: String,
+    pub title: String,
+    pub kind: LensKind,
+    pub created: bool,
+    pub outcomes: Vec<LearnedOutcome>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LearnedDigest {
+    pub message_id: String,
+    pub pages: Vec<LearnedPage>,
+}
+
+/// What each message filed, derived from the log.
+pub(super) fn learned_digest(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    message_ids: &[String],
+) -> KnowledgeResult<Vec<LearnedDigest>> {
+    let mut digests = Vec::with_capacity(message_ids.len());
+    for message_id in message_ids {
+        let mut statement = tx.prepare(
+            "SELECT l.op_id, l.record_id, l.outcome, l.section_key, m.title, m.kind
+             FROM knowledge_lens_log l JOIN knowledge_lens_metadata m ON m.record_id = l.record_id
+             WHERE l.loupist_id = ?1 AND l.message_id = ?2
+             ORDER BY l.created_at_ms, l.rowid",
+        )?;
+        let rows = statement
+            .query_map(params![loupist_id, message_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(statement);
+        let mut pages: Vec<LearnedPage> = Vec::new();
+        for (op_id, record_id, outcome, key, title, kind) in rows {
+            let page = match pages.iter_mut().find(|page| page.record_id == record_id) {
+                Some(page) => page,
+                None => {
+                    let created: bool = tx.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM knowledge_growth_events
+                         WHERE loupist_id = ?1 AND record_id = ?2 AND kind = 'lens_created' AND origin_message_id = ?3)",
+                        params![loupist_id, record_id, message_id],
+                        |row| row.get(0),
+                    )?;
+                    pages.push(LearnedPage {
+                        record_id: record_id.clone(),
+                        title,
+                        kind: LensKind::parse(&kind).unwrap_or(LensKind::Subject),
+                        created,
+                        outcomes: Vec::new(),
+                    });
+                    pages.last_mut().expect("pushed")
+                }
+            };
+            page.outcomes.push(LearnedOutcome {
+                op_id,
+                outcome,
+                key,
+            });
+        }
+        digests.push(LearnedDigest {
+            message_id: message_id.clone(),
+            pages,
+        });
+    }
+    Ok(digests)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageSummary {
+    pub record_id: String,
+    pub title: String,
+    pub kind: LensKind,
+    pub summary: String,
+}
+
+/// Active pages anchored to a World node, by any role.
+pub(super) fn pages_for_node(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    node_id: &str,
+) -> KnowledgeResult<Vec<PageSummary>> {
+    let mut statement = tx.prepare(
+        "SELECT DISTINCT m.record_id, m.title, m.kind FROM knowledge_lens_anchors a
+         JOIN knowledge_lens_metadata m ON m.record_id = a.record_id
+         WHERE a.loupist_id = ?1 AND a.node_id = ?2 AND m.archived_at_ms IS NULL
+         ORDER BY m.updated_at_ms DESC, m.record_id",
+    )?;
+    let rows = statement
+        .query_map(params![loupist_id, node_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(statement);
+    let removed = super::memory_controls::load(tx, loupist_id)?.removed;
+    let mut pages = Vec::new();
+    for (record_id, title, kind) in rows {
+        if removed.contains(&record_id) {
+            continue;
+        }
+        let Some(kind) = LensKind::parse(&kind) else {
+            continue;
+        };
+        let summary = load(tx, loupist_id, &record_id)?.body.summary();
+        pages.push(PageSummary {
+            record_id,
+            title,
+            kind,
+            summary,
+        });
+    }
+    Ok(pages)
+}
+
+/// One line of the Lens index: what a turn sees of a page before reading it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexEntry {
+    pub record_id: String,
+    pub kind: LensKind,
+    pub title: String,
+    pub summary: String,
+    pub section_count: usize,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+    pub node_ids: BTreeSet<String>,
+    pub map_names: Vec<String>,
+    pub learned: bool,
+}
+
+/// Every active, unpaused page of the Loupist with its anchors resolved to names.
+pub(super) fn index_entries(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+) -> KnowledgeResult<Vec<IndexEntry>> {
+    validate_loupist_id(loupist_id)?;
+    let controls = super::memory_controls::load(tx, loupist_id)?;
+    let mut statement = tx.prepare(
+        "SELECT m.record_id, m.kind, m.title, m.updated_at_ms, m.learned, r.created_at_ms
+         FROM knowledge_lens_metadata m JOIN knowledge_records r ON r.record_id = m.record_id
+         WHERE m.loupist_id = ?1 AND m.archived_at_ms IS NULL AND r.owner_loupist_id = ?1
+         ORDER BY m.updated_at_ms DESC, m.record_id",
+    )?;
+    let rows = statement
+        .query_map([loupist_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, bool>(4)?,
+                row.get::<_, i64>(5)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(statement);
+    let mut anchors = tx.prepare(
+        "SELECT node_id, name_fold FROM knowledge_lens_anchors
+         WHERE loupist_id = ?1 AND record_id = ?2 AND role IN ('subject', 'mention')
+         ORDER BY role, created_at_ms",
+    )?;
+    let labels = world_index(tx, loupist_id)?.labels;
+    let mut entries = Vec::new();
+    for (record_id, kind, title, updated_at_ms, learned, created_at_ms) in rows {
+        if controls.paused.contains(&record_id) || controls.removed.contains(&record_id) {
+            continue;
+        }
+        let Some(kind) = LensKind::parse(&kind) else {
+            continue;
+        };
+        let loaded = load(tx, loupist_id, &record_id)?;
+        let mut node_ids = BTreeSet::new();
+        let mut map_names = Vec::new();
+        for row in anchors.query_map(params![loupist_id, record_id], |row| {
+            Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?))
+        })? {
+            let (node_id, name_fold) = row?;
+            let name = node_id
+                .as_ref()
+                .and_then(|id| labels.get(id).cloned())
+                .unwrap_or(name_fold);
+            if let Some(node_id) = node_id {
+                node_ids.insert(node_id);
+            }
+            if !name.is_empty() && !map_names.contains(&name) && map_names.len() < 3 {
+                map_names.push(name);
+            }
+        }
+        entries.push(IndexEntry {
+            record_id,
+            kind,
+            title,
+            summary: loaded.body.summary(),
+            section_count: loaded.body.page().map_or(0, |page| page.sections.len()),
+            created_at_ms,
+            updated_at_ms,
+            node_ids,
+            map_names,
+            learned,
+        });
+    }
+    Ok(entries)
 }
 
 pub(super) fn set_lens_archived(
@@ -882,28 +1709,17 @@ pub(super) fn set_lens_archived(
     at_ms: i64,
     actor: &str,
 ) -> KnowledgeResult<()> {
-    validate_text(rationale, 16_000, false, "change rationale is invalid")?;
+    super::model::validate_text(rationale, 16_000, false, "change rationale is invalid")?;
     let module = require_record(tx, loupist_id, record_id)?;
     if module.kind != RecordKind::Lens {
         return Err(KnowledgeError::Invalid("record is not a Lens"));
     }
-    let standing = tx
-        .query_row(
-            "SELECT record_id FROM knowledge_standing_selection WHERE loupist_id = ?1",
-            [loupist_id],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()?;
-    if archived && standing.as_deref() == Some(record_id) {
-        return Err(KnowledgeError::Invalid(
-            "the default perspective cannot be archived",
-        ));
-    }
     if archived == module.archived_at_ms.is_some() {
         return Ok(());
     }
+    let kind = lens_kind(tx, loupist_id, record_id)?;
     if !archived {
-        if super::principles::principle_kind(tx, loupist_id, record_id)? {
+        if kind == LensKind::Principle {
             let p = super::principles::principle_read(tx, loupist_id, record_id)?;
             super::principles::require_unique_statement(
                 tx,
@@ -911,26 +1727,17 @@ pub(super) fn set_lens_archived(
                 &p.statement,
                 Some(record_id),
             )?;
-        } else {
-            require_unique_lens_title(tx, loupist_id, &module.title, Some(record_id))?;
+        } else if active_by_title(tx, loupist_id, kind, &module.title)?.is_some()
+            || (kind == LensKind::Perspective && active_perspective(tx, loupist_id)?.is_some())
+        {
+            return Err(KnowledgeError::Invalid(
+                "an active page already uses this title",
+            ));
         }
     }
     tx.execute(
         "UPDATE knowledge_lens_metadata SET archived_at_ms = ?1, updated_at_ms = ?2 WHERE record_id = ?3 AND loupist_id = ?4",
         params![archived.then_some(at_ms), at_ms, record_id, loupist_id],
-    )?;
-    record_metadata_change(
-        tx,
-        loupist_id,
-        record_id,
-        if archived { "archive" } else { "restore" },
-        rationale,
-        at_ms,
-        actor,
-        None,
-        None,
-        None,
-        module.head_revision_id.as_deref(),
     )?;
     let mut event = super::growth::GrowthEvent::new(
         loupist_id,
@@ -954,216 +1761,594 @@ pub(super) fn set_lens_archived(
         module.title,
         if archived { "archived" } else { "active" }
     )));
-    if super::principles::principle_kind(tx, loupist_id, record_id)? {
+    if kind == LensKind::Principle {
         event.origin = Some("settings".into());
     }
     event.insert(tx)
-}
-
-pub(super) fn list_lens_drafts(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-    record_id: Option<&str>,
-    author: Option<&str>,
-) -> KnowledgeResult<Vec<LensDraftRecord>> {
-    validate_loupist_id(loupist_id)?;
-    let mut statement = tx.prepare(
-        "SELECT draft_id, loupist_id, author, record_id, base_revision_id, document_json, rationale,
-                title, origin_chat_id, origin_message_id, updated_at_ms
-         FROM knowledge_lens_drafts
-         WHERE loupist_id = ?1
-           AND (?2 = '' OR record_id = ?2)
-           AND (?3 = '' OR author = ?3)
-         ORDER BY updated_at_ms DESC, draft_id",
-    )?;
-    let rows = statement.query_map(
-        params![loupist_id, record_id.unwrap_or(""), author.unwrap_or("")],
-        |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, String>(4)?,
-                row.get::<_, String>(5)?,
-                row.get::<_, String>(6)?,
-                row.get::<_, Option<String>>(7)?,
-                row.get::<_, Option<String>>(8)?,
-                row.get::<_, Option<String>>(9)?,
-                row.get::<_, i64>(10)?,
-            ))
-        },
-    )?;
-    let mut drafts = Vec::new();
-    for row in rows {
-        let (
-            draft_id,
-            loupist_id,
-            author,
-            record_id,
-            base_revision_id,
-            document_json,
-            rationale,
-            title,
-            origin_chat_id,
-            origin_message_id,
-            updated_at_ms,
-        ) = row?;
-        drafts.push(LensDraftRecord {
-            draft_id,
-            loupist_id,
-            author,
-            record_id,
-            base_revision_id,
-            document: from_json(&document_json)?,
-            rationale,
-            title,
-            origin_chat_id,
-            origin_message_id,
-            updated_at_ms,
-        });
-    }
-    Ok(drafts)
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(super) fn save_lens_proposal(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-    record_id: &str,
-    base_revision_id: &str,
-    document: &LensDocument,
-    rationale: &str,
-    title: Option<&str>,
-    origin_chat_id: &str,
-    origin_message_id: &str,
-    at_ms: i64,
-) -> KnowledgeResult<LensDraftRecord> {
-    let module = require_record(tx, loupist_id, record_id)?;
-    if module.kind != RecordKind::Lens {
-        return Err(KnowledgeError::Invalid("record is not a Lens"));
-    }
-    validate_lens_document(document)?;
-    let draft_id = mint_id("dft");
-    tx.execute(
-        "INSERT INTO knowledge_lens_drafts (
-            draft_id, loupist_id, author, record_id, base_revision_id, document_json, rationale,
-            title, origin_chat_id, origin_message_id, updated_at_ms
-         ) VALUES (?1, ?2, 'loupist', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-        params![
-            draft_id,
-            loupist_id,
-            record_id,
-            base_revision_id,
-            canonical_string(&to_value(document)?),
-            rationale,
-            title,
-            origin_chat_id,
-            origin_message_id,
-            at_ms
-        ],
-    )?;
-    Ok(LensDraftRecord {
-        draft_id,
-        loupist_id: loupist_id.to_string(),
-        author: "loupist".into(),
-        record_id: record_id.to_string(),
-        base_revision_id: base_revision_id.to_string(),
-        document: document.clone(),
-        rationale: rationale.to_string(),
-        title: title.map(str::to_string),
-        origin_chat_id: Some(origin_chat_id.to_string()),
-        origin_message_id: Some(origin_message_id.to_string()),
-        updated_at_ms: at_ms,
-    })
-}
-
-pub(super) fn dismiss_lens_proposal(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-    draft_id: &str,
-) -> KnowledgeResult<()> {
-    validate_knowledge_id(draft_id, "dft")?;
-    let changed = tx.execute(
-        "DELETE FROM knowledge_lens_drafts WHERE draft_id = ?1 AND loupist_id = ?2 AND author = 'loupist'",
-        params![draft_id, loupist_id],
-    )?;
-    if changed == 1 {
-        Ok(())
-    } else {
-        Err(KnowledgeError::NotFound)
-    }
 }
 
 pub(super) fn lens_listing(
     tx: &Transaction<'_>,
     loupist_id: &str,
     record_id: &str,
-) -> KnowledgeResult<(i64, bool, u32, bool)> {
+) -> KnowledgeResult<(i64, bool, bool)> {
     let (updated_at_ms, archived_at_ms, learned) = tx.query_row(
         "SELECT updated_at_ms, archived_at_ms, learned FROM knowledge_lens_metadata WHERE loupist_id = ?1 AND record_id = ?2",
         params![loupist_id, record_id],
         |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?, row.get::<_, bool>(2)?)),
     )?;
-    let proposals: i64 = tx.query_row(
-        "SELECT COUNT(*) FROM knowledge_lens_drafts WHERE loupist_id = ?1 AND record_id = ?2 AND author = 'loupist'",
-        params![loupist_id, record_id],
-        |row| row.get(0),
-    )?;
-    Ok((
-        updated_at_ms,
-        archived_at_ms.is_some(),
-        proposals as u32,
-        learned,
-    ))
-}
-
-pub(super) fn archived_lens_ids(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-) -> KnowledgeResult<BTreeSet<String>> {
-    let mut statement = tx.prepare(
-        "SELECT record_id FROM knowledge_lens_metadata WHERE loupist_id = ?1 AND archived_at_ms IS NOT NULL",
-    )?;
-    let ids = statement
-        .query_map(params![loupist_id], |row| row.get::<_, String>(0))?
-        .collect::<Result<BTreeSet<_>, _>>()?;
-    Ok(ids)
+    Ok((updated_at_ms, archived_at_ms.is_some(), learned))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::portable_lens_text_forbidden;
+    use super::*;
+    use crate::knowledge::lens_page::{BasisRef, PageKind};
     use crate::knowledge::{
-        Authorship, Coverage, CreateRecord, KnowledgeError, KnowledgeStore, LensChangeInput,
-        LensDocument, RecordKind, RepresentationRole, RetainMaterial, RetainNewSource, ReviseLens,
-        SealWorld, Selector, SourceClass,
+        Authorship, Coverage, CreateRecord, KnowledgeStore, RepresentationRole, RetainMaterial,
+        RetainNewSource, SealWorld, Selector, SourceClass,
     };
 
-    fn create(
-        store: &KnowledgeStore,
-        kind: RecordKind,
-        title: &str,
-    ) -> crate::knowledge::KnowledgeResult<String> {
-        store
-            .create_record(CreateRecord {
-                loupist_id: "loupist-a".into(),
-                kind,
+    const LOUPIST: &str = "loupist-a";
+
+    fn store() -> (tempfile::TempDir, KnowledgeStore) {
+        let directory = tempfile::tempdir().unwrap();
+        let store = KnowledgeStore::open(directory.path().join("knowledge.sqlite")).unwrap();
+        (directory, store)
+    }
+
+    fn turn(message: &str) -> FilingOrigin {
+        FilingOrigin::Turn {
+            chat_id: "chat-1".into(),
+            message_id: message.into(),
+            user_message_id: Some("user-1".into()),
+            unattended: false,
+        }
+    }
+
+    fn user() -> FilingOrigin {
+        FilingOrigin::User {
+            chat_id: None,
+            message_id: None,
+        }
+    }
+
+    fn claim() -> Basis {
+        Basis {
+            refs: vec![BasisRef::Claim {
+                claim_id: "clm_1".into(),
+            }],
+            uncertainty: None,
+        }
+    }
+
+    fn put(key: &str, markdown: &str, expected: Option<String>) -> LensOp {
+        LensOp::Put {
+            key: SectionKey::new(key).unwrap(),
+            heading: key.to_uppercase(),
+            markdown: markdown.into(),
+            basis: claim(),
+            expected,
+        }
+    }
+
+    fn create_subject(title: &str, ops: Vec<LensOp>) -> PageDelta {
+        PageDelta {
+            target: PageTarget::Create {
+                kind: PageKind::Subject,
                 title: title.into(),
-                at_ms: 1,
+                anchors: vec![AnchorInput::Name { name: title.into() }],
+            },
+            ops,
+        }
+    }
+
+    fn existing(record_id: &str, ops: Vec<LensOp>) -> PageDelta {
+        PageDelta {
+            target: PageTarget::Existing {
+                record_id: record_id.into(),
+            },
+            ops,
+        }
+    }
+
+    fn file_in(
+        store: &KnowledgeStore,
+        origin: &FilingOrigin,
+        deltas: Vec<PageDelta>,
+        at_ms: i64,
+    ) -> Vec<FiledPage> {
+        store
+            .transact(|write| write.file(LOUPIST, origin, deltas, at_ms))
+            .unwrap()
+    }
+
+    fn read(store: &KnowledgeStore, record_id: &str) -> PageRead {
+        store
+            .read(|write| write.read_page(LOUPIST, record_id))
+            .unwrap()
+    }
+
+    fn digest(page: &PageRead, key: &str) -> String {
+        page.body
+            .sections()
+            .iter()
+            .find(|section| section.key.as_str() == key)
+            .unwrap()
+            .digest
+            .clone()
+    }
+
+    fn log_rows(store: &KnowledgeStore, record_id: &str) -> Vec<(String, String)> {
+        store
+            .read(|write| {
+                let mut statement = write.tx.prepare(
+                    "SELECT outcome, origin FROM knowledge_lens_log WHERE record_id = ?1 ORDER BY created_at_ms, rowid",
+                )?;
+                let rows = statement
+                    .query_map([record_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(rows)
             })
-            .map(|record| record.record_id)
+            .unwrap()
+    }
+
+    fn revision_count(store: &KnowledgeStore, record_id: &str) -> i64 {
+        store
+            .read(|write| {
+                Ok(write.tx.query_row(
+                    "SELECT count(*) FROM knowledge_record_revisions WHERE record_id = ?1",
+                    [record_id],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap()
+    }
+
+    fn event_count(store: &KnowledgeStore, record_id: &str) -> i64 {
+        store
+            .read(|write| {
+                Ok(write.tx.query_row(
+                    "SELECT count(*) FROM knowledge_growth_events WHERE record_id = ?1",
+                    [record_id],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap()
     }
 
     #[test]
-    fn lens_rejects_world_snapshot_and_journal_ids_and_keeps_source_links() {
-        let directory = tempfile::tempdir().unwrap();
-        let store = KnowledgeStore::open(directory.path().join("knowledge.sqlite")).unwrap();
+    fn filing_a_sourced_subject_page_reads_back_with_digests_and_log() {
+        let (_dir, store) = store();
+        let filed = file_in(
+            &store,
+            &turn("msg-1"),
+            vec![create_subject(
+                "NVIDIA",
+                vec![
+                    put("facts", "Data center revenue doubled.", None),
+                    LensOp::Summary {
+                        text: "GPU maker.".into(),
+                    },
+                ],
+            )],
+            100,
+        );
+        assert_eq!(filed.len(), 1);
+        assert!(filed[0].created && filed[0].changed);
+        assert_eq!(filed[0].kind, LensKind::Subject);
+        assert!(matches!(
+            filed[0].outcomes[0].outcome,
+            OpOutcome::Added { .. }
+        ));
+        let page = read(&store, &filed[0].record_id);
+        assert_eq!(page.kind, LensKind::Subject);
+        assert_eq!(page.title, "NVIDIA");
+        assert_eq!(page.body.summary(), "GPU maker.");
+        let section = &page.body.sections()[0];
+        assert_eq!(section.chip, BasisChip::Source);
+        assert_eq!(section.origin, Origin::Loupist);
+        assert_eq!(section.digest.len(), 64);
+        assert_eq!(page.anchors[0].role, AnchorRole::Subject);
+        assert_eq!(page.anchors[0].name, "nvidia");
+        assert_eq!(page.history.len(), 2);
+        assert_eq!(page.history[0].origin, "turn");
+        assert_eq!(page.history[0].message_id.as_deref(), Some("msg-1"));
+        assert!(page.learned);
+        assert_eq!(revision_count(&store, &page.record_id), 1);
+        assert_eq!(event_count(&store, &page.record_id), 1);
+        let learned = store
+            .read(|write| write.learned_digest(LOUPIST, &["msg-1".into()]))
+            .unwrap();
+        assert_eq!(learned[0].pages.len(), 1);
+        assert!(learned[0].pages[0].created);
+        assert_eq!(learned[0].pages[0].outcomes.len(), 2);
+    }
+
+    #[test]
+    fn disjoint_edits_land_overlap_is_logged_stale_and_replay_is_a_no_op() {
+        let (_dir, store) = store();
+        let filed = file_in(
+            &store,
+            &turn("msg-1"),
+            vec![create_subject(
+                "NVIDIA",
+                vec![put("facts", "A", None), put("risks", "B", None)],
+            )],
+            100,
+        );
+        let id = filed[0].record_id.clone();
+        let page = read(&store, &id);
+        let facts = digest(&page, "facts");
+        let risks = digest(&page, "risks");
+        let first = file_in(
+            &store,
+            &turn("msg-2"),
+            vec![existing(&id, vec![put("facts", "A2", Some(facts.clone()))])],
+            200,
+        );
+        let second = file_in(
+            &store,
+            &FilingOrigin::Learning {
+                review_id: "rev-1".into(),
+                world_job_id: "job-1".into(),
+            },
+            vec![existing(
+                &id,
+                vec![
+                    put("risks", "B2", Some(risks)),
+                    put("facts", "A3", Some(facts)),
+                ],
+            )],
+            300,
+        );
+        assert!(matches!(
+            first[0].outcomes[0].outcome,
+            OpOutcome::Replaced { .. }
+        ));
+        assert!(matches!(
+            second[0].outcomes[0].outcome,
+            OpOutcome::Replaced { .. }
+        ));
+        assert!(matches!(
+            second[0].outcomes[1].outcome,
+            OpOutcome::SkippedStale { .. }
+        ));
+        let page = read(&store, &id);
+        let text = |key: &str| {
+            page.body
+                .sections()
+                .iter()
+                .find(|s| s.key.as_str() == key)
+                .unwrap()
+                .markdown
+                .clone()
+        };
+        assert_eq!(text("facts"), "A2");
+        assert_eq!(text("risks"), "B2");
+        let rows = log_rows(&store, &id);
+        assert_eq!(rows.len(), 5);
+        assert_eq!(rows[4], ("skipped_stale".into(), "learning".into()));
+        let revisions = revision_count(&store, &id);
+        let events = event_count(&store, &id);
+        let replay = file_in(
+            &store,
+            &turn("msg-3"),
+            vec![existing(
+                &id,
+                vec![put("facts", "A2", Some(digest(&page, "facts")))],
+            )],
+            400,
+        );
+        assert!(matches!(
+            replay[0].outcomes[0].outcome,
+            OpOutcome::AlreadyKnown { .. }
+        ));
+        assert!(!replay[0].changed);
+        assert_eq!(revision_count(&store, &id), revisions);
+        assert_eq!(event_count(&store, &id), events);
+        assert_eq!(log_rows(&store, &id).len(), 6);
+    }
+
+    #[test]
+    fn duplicate_title_create_merges_and_perspective_is_single() {
+        let (_dir, store) = store();
+        let first = file_in(
+            &store,
+            &turn("msg-1"),
+            vec![create_subject("NVIDIA", vec![put("facts", "A", None)])],
+            100,
+        );
+        let second = file_in(
+            &store,
+            &turn("msg-2"),
+            vec![PageDelta {
+                target: PageTarget::Create {
+                    kind: PageKind::Subject,
+                    title: "  nvidia ".into(),
+                    anchors: vec![],
+                },
+                ops: vec![put("drivers", "B", None)],
+            }],
+            200,
+        );
+        assert_eq!(first[0].record_id, second[0].record_id);
+        assert!(!second[0].created);
+        assert_eq!(read(&store, &first[0].record_id).body.sections().len(), 2);
+        let perspective = |title: &str, at| {
+            file_in(
+                &store,
+                &turn("msg-p"),
+                vec![PageDelta {
+                    target: PageTarget::Create {
+                        kind: PageKind::Perspective,
+                        title: title.into(),
+                        anchors: vec![],
+                    },
+                    ops: vec![LensOp::Put {
+                        key: SectionKey::new("beliefs").unwrap(),
+                        heading: "Beliefs".into(),
+                        markdown: format!("Belief {at}"),
+                        basis: Basis::default(),
+                        expected: None,
+                    }],
+                }],
+                at,
+            )
+        };
+        let a = perspective("Outlook", 300);
+        let b = perspective("Different title", 400);
+        assert_eq!(a[0].record_id, b[0].record_id);
+        assert!(matches!(
+            b[0].outcomes[0].outcome,
+            OpOutcome::SkippedStale { .. }
+        ));
+        let all_refused = file_in(
+            &store,
+            &turn("msg-x"),
+            vec![PageDelta {
+                target: PageTarget::Create {
+                    kind: PageKind::Subject,
+                    title: "Empty".into(),
+                    anchors: vec![],
+                },
+                ops: vec![LensOp::Put {
+                    key: SectionKey::new("facts").unwrap(),
+                    heading: "Facts".into(),
+                    markdown: "no basis".into(),
+                    basis: Basis::default(),
+                    expected: None,
+                }],
+            }],
+            500,
+        );
+        assert!(all_refused[0].record_id.is_empty());
+        assert!(matches!(
+            all_refused[0].outcomes[0].outcome,
+            OpOutcome::RefusedBasis { .. }
+        ));
+    }
+
+    #[test]
+    fn forget_blocks_later_loupist_puts_and_undo_restores_until_a_later_edit() {
+        let (_dir, store) = store();
+        let filed = file_in(
+            &store,
+            &turn("msg-1"),
+            vec![create_subject("NVIDIA", vec![put("facts", "A", None)])],
+            100,
+        );
+        let id = filed[0].record_id.clone();
+        let forgotten = store
+            .transact(|write| write.forget_section(LOUPIST, &id, "facts", 200))
+            .unwrap();
+        assert!(forgotten.body.sections().is_empty());
+        let refused = file_in(
+            &store,
+            &FilingOrigin::Learning {
+                review_id: "r".into(),
+                world_job_id: "j".into(),
+            },
+            vec![existing(&id, vec![put("facts", "A again", None)])],
+            300,
+        );
+        assert!(matches!(
+            refused[0].outcomes[0].outcome,
+            OpOutcome::RefusedForgotten { .. }
+        ));
+        let page = read(&store, &id);
+        assert_eq!(page.history[0].outcome, "refused_forgotten");
+        let forget_op = page.history[1].op_id.clone();
+        assert_eq!(page.history[1].outcome, "retired");
+        let back = store
+            .transact(|write| write.undo_op(LOUPIST, &forget_op, 400))
+            .unwrap();
+        assert_eq!(back.body.sections()[0].markdown, "A");
+        assert_eq!(
+            back.history[0].undoes_op_id.as_deref(),
+            Some(forget_op.as_str())
+        );
+        assert!(matches!(
+            store.transact(|write| write.undo_op(LOUPIST, &forget_op, 450)),
+            Err(KnowledgeError::Invalid(_))
+        ));
+        // The key is the user's again: a learning put lands.
+        let relearned = file_in(
+            &store,
+            &FilingOrigin::Learning {
+                review_id: "r2".into(),
+                world_job_id: "j".into(),
+            },
+            vec![existing(
+                &id,
+                vec![put("facts", "A2", Some(digest(&back, "facts")))],
+            )],
+            500,
+        );
+        assert!(relearned[0].changed);
+        let undo_of_restore =
+            store.transact(|write| write.undo_op(LOUPIST, &back.history[0].op_id, 600));
+        assert!(matches!(undo_of_restore, Err(KnowledgeError::Invalid(_))));
+        // A user put of a new key is undone by retiring it.
+        let user_put = file_in(
+            &store,
+            &user(),
+            vec![existing(&id, vec![put("views", "Mine", None)])],
+            700,
+        );
+        let undone = store
+            .transact(|write| write.undo_op(LOUPIST, &user_put[0].outcomes[0].op_id, 800))
+            .unwrap();
+        assert!(undone
+            .body
+            .sections()
+            .iter()
+            .all(|s| s.key.as_str() != "views"));
+    }
+
+    #[test]
+    fn world_links_need_known_nodes_and_resolve_pending_anchors() {
+        let (_dir, store) = store();
+        let world = store
+            .create_record(CreateRecord {
+                loupist_id: LOUPIST.into(),
+                kind: RecordKind::World,
+                title: "World".into(),
+                at_ms: 1,
+            })
+            .unwrap();
+        let node = GraphNode {
+            id: "nod_1".into(),
+            name: "NVIDIA".into(),
+            aliases: vec!["NVDA".into()],
+            description: String::new(),
+            kind: "Organization".into(),
+            source_role: "subject".into(),
+            properties: Default::default(),
+        };
+        let filed = file_in(
+            &store,
+            &turn("m"),
+            vec![PageDelta {
+                target: PageTarget::Create {
+                    kind: PageKind::Subject,
+                    title: "Chips".into(),
+                    anchors: vec![AnchorInput::Name {
+                        name: "nvda".into(),
+                    }],
+                },
+                ops: vec![put("facts", "A", None)],
+            }],
+            5,
+        );
+        let id = filed[0].record_id.clone();
+        assert!(read(&store, &id).anchors[0].node_id.is_none());
+        let unknown = store.transact(|write| {
+            write.file(
+                LOUPIST,
+                &turn("m2"),
+                vec![existing(&id, vec![put("views", "[x](world:nod_1)", None)])],
+                6,
+            )
+        });
+        assert!(matches!(unknown, Err(KnowledgeError::Invalid(_))));
+        store
+            .seal_world(SealWorld {
+                loupist_id: LOUPIST.into(),
+                record_id: world.record_id,
+                expected_revision_id: None,
+                at_ms: 7,
+                nodes: vec![node.clone()],
+                claims: Vec::new(),
+                annotations: Vec::new(),
+                dependencies: Vec::new(),
+            })
+            .unwrap();
+        let resolved = store
+            .transact(|write| write.resolve_anchors(LOUPIST, std::slice::from_ref(&node)))
+            .unwrap();
+        assert_eq!(resolved, 1);
+        file_in(
+            &store,
+            &turn("m3"),
+            vec![existing(&id, vec![put("views", "[x](world:nod_1)", None)])],
+            8,
+        );
+        let page = read(&store, &id);
+        assert!(page
+            .anchors
+            .iter()
+            .any(|a| a.role == AnchorRole::Mention && a.node_id.as_deref() == Some("nod_1")));
+        assert_eq!(page.anchors[0].node_id.as_deref(), Some("nod_1"));
+        let pages = store
+            .read(|write| write.pages_for_node(LOUPIST, "nod_1"))
+            .unwrap();
+        assert_eq!(pages[0].record_id, id);
+        let portable = store.transact(|write| {
+            write.file(
+                LOUPIST,
+                &turn("m4"),
+                vec![PageDelta {
+                    target: PageTarget::Create {
+                        kind: PageKind::Method,
+                        title: "Method".into(),
+                        anchors: vec![],
+                    },
+                    ops: vec![LensOp::Put {
+                        key: SectionKey::new("steps").unwrap(),
+                        heading: "Steps".into(),
+                        markdown: "[x](world:nod_1)".into(),
+                        basis: Basis::default(),
+                        expected: None,
+                    }],
+                }],
+                9,
+            )
+        });
+        assert!(matches!(portable, Err(KnowledgeError::LensBodyForbidden)));
+    }
+
+    fn seal(
+        store: &KnowledgeStore,
+        loupist: &str,
+        node_id: &str,
+    ) -> crate::knowledge::WorldRevision {
+        let world = store
+            .create_record(CreateRecord {
+                loupist_id: loupist.into(),
+                kind: RecordKind::World,
+                title: "World".into(),
+                at_ms: 1,
+            })
+            .unwrap();
+        store
+            .seal_world(SealWorld {
+                loupist_id: loupist.into(),
+                record_id: world.record_id,
+                expected_revision_id: None,
+                at_ms: 2,
+                nodes: vec![GraphNode {
+                    id: node_id.into(),
+                    name: node_id.to_uppercase(),
+                    aliases: vec![],
+                    description: String::new(),
+                    kind: "Organization".into(),
+                    source_role: "subject".into(),
+                    properties: Default::default(),
+                }],
+                claims: Vec::new(),
+                annotations: Vec::new(),
+                dependencies: Vec::new(),
+            })
+            .unwrap()
+    }
+
+    fn retain(store: &KnowledgeStore) -> crate::knowledge::RetainedSource {
         let bytes = b"account text";
-        let source = store
+        store
             .retain_new_source(RetainNewSource {
                 origin: None,
-                loupist_id: "loupist-a".into(),
+                loupist_id: LOUPIST.into(),
                 at_ms: 2,
                 title: "Notes".into(),
                 source_class: SourceClass::UserStatement,
@@ -1190,131 +2375,297 @@ mod tests {
                     context_note: "Original text".into(),
                 }),
             })
-            .unwrap();
-        let lens = create(&store, RecordKind::Lens, "Method").unwrap();
-        let linked = store
-            .revise_lens(lens_revision(
-                &lens,
-                None,
-                format!("Use source {} when comparing accounts.", source.record_id),
-            ))
-            .unwrap();
-        let prose = store
-            .revise_lens(lens_revision(
-                &lens,
-                Some(linked.revision_id),
-                "Compare the world of the accounts before preferring one.".into(),
-            ))
-            .unwrap();
-        assert!(!portable_lens_text_forbidden(&prose.document.markdown));
+            .unwrap()
+    }
 
-        let world = create(&store, RecordKind::World, "Accounts").unwrap();
-        let sealed = store
-            .seal_world(SealWorld {
-                loupist_id: "loupist-a".into(),
-                record_id: world.clone(),
-                expected_revision_id: None,
-                at_ms: 5,
-                nodes: Vec::new(),
-                claims: Vec::new(),
-                annotations: Vec::new(),
-                dependencies: Vec::new(),
-            })
-            .unwrap();
-        for markdown in [
-            format!("Apply after reading snapshot {}.", sealed.snapshot_id),
-            format!("Use world revision {}.", sealed.revision_id),
-            format!("Open world {world}."),
-            "See world://accounts before applying this method.".into(),
-            format!("Cite journal jnl_{}.", "ab".repeat(16)),
-            format!("Open module rec_{}.", "cd".repeat(16)),
-        ] {
-            let request = lens_revision(&lens, Some(prose.revision_id.clone()), markdown);
-            let error = store.revise_lens(request).unwrap_err();
-            assert!(
-                matches!(error, KnowledgeError::LensBodyForbidden),
-                "{error}"
-            );
+    /// A delta of `kind` carrying `text` in one field; `page` is an existing
+    /// page of that kind when the field needs one.
+    fn delta_with(kind: PageKind, field: &str, text: &str, page: Option<&PageRead>) -> PageDelta {
+        let basis = if matches!(kind, PageKind::Subject | PageKind::Idea) {
+            claim()
+        } else {
+            Basis::default()
+        };
+        let target = match page {
+            Some(page) => PageTarget::Existing {
+                record_id: page.record_id.clone(),
+            },
+            None => PageTarget::Create {
+                kind,
+                title: if field == "title" {
+                    text.into()
+                } else {
+                    "Page".into()
+                },
+                anchors: vec![],
+            },
+        };
+        let op = match field {
+            "title" | "markdown" => LensOp::Put {
+                key: SectionKey::new("facts").unwrap(),
+                heading: "Facts".into(),
+                markdown: if field == "markdown" {
+                    text.into()
+                } else {
+                    "ok".into()
+                },
+                basis,
+                expected: None,
+            },
+            "heading" => LensOp::Put {
+                key: SectionKey::new("facts").unwrap(),
+                heading: text.into(),
+                markdown: "ok".into(),
+                basis,
+                expected: None,
+            },
+            "uncertainty" => LensOp::Put {
+                key: SectionKey::new("views").unwrap(),
+                heading: "Views".into(),
+                markdown: "ok".into(),
+                basis: Basis {
+                    refs: vec![BasisRef::Page {
+                        record_id: "rec_x".into(),
+                        section_key: None,
+                    }],
+                    uncertainty: Some(text.into()),
+                },
+                expected: None,
+            },
+            "summary" => LensOp::Summary { text: text.into() },
+            "why" => LensOp::Retire {
+                key: SectionKey::new("facts").unwrap(),
+                expected: page
+                    .map(|page| digest(page, "facts"))
+                    .unwrap_or_else(|| "0".repeat(64)),
+                why: text.into(),
+            },
+            other => panic!("{other}"),
+        };
+        PageDelta {
+            target,
+            ops: vec![op],
         }
-        let title = create(&store, RecordKind::Lens, "Method for journal://private");
-        assert!(matches!(title, Err(KnowledgeError::LensBodyForbidden)));
     }
 
     #[test]
-    fn lens_rename_rejects_collisions_and_archive_hides_backlinks() {
-        let directory = tempfile::tempdir().unwrap();
-        let store = KnowledgeStore::open(directory.path().join("knowledge.sqlite")).unwrap();
-        let lens = create(&store, RecordKind::Lens, "Method").unwrap();
-        let related = create(&store, RecordKind::Lens, "Related method").unwrap();
-        let saved = store
-            .revise_lens(lens_revision(
-                &lens,
-                None,
-                format!("Start from [Related method](lens:{related})."),
-            ))
-            .unwrap();
-        store
-            .revise_lens(lens_revision(
-                &related,
-                None,
-                format!("Check [Method](lens:{lens})."),
-            ))
-            .unwrap();
-        let navigation = |store: &KnowledgeStore| {
-            store
-                .read(|write| write.lens_navigation("loupist-a", &lens, &saved.document))
+    fn private_references_are_refused_in_every_text_of_every_kind() {
+        let (_dir, store) = store();
+        let sealed = seal(&store, LOUPIST, "nod_1");
+        let source = retain(&store);
+        let forbidden = [
+            "See journal://private".to_string(),
+            "See [[journal:private]]".to_string(),
+            format!("Cite jnl_{}.", "ab".repeat(16)),
+            format!("After snapshot {}.", sealed.snapshot_id),
+            format!("Open world {}.", sealed.record_id),
+            format!("Use revision {}.", sealed.revision_id),
+            format!("Open module rec_{}.", "cd".repeat(16)),
+            "See world://accounts".to_string(),
+            "See [[world:accounts]]".to_string(),
+        ];
+        let kinds = [
+            PageKind::Perspective,
+            PageKind::Method,
+            PageKind::Subject,
+            PageKind::Idea,
+        ];
+        for kind in kinds {
+            let page = file_in(
+                &store,
+                &user(),
+                vec![delta_with(kind, "markdown", "A plain section.", None)],
+                3,
+            );
+            let page = read(&store, &page[0].record_id);
+            for text in &forbidden {
+                for field in [
+                    "title",
+                    "heading",
+                    "markdown",
+                    "uncertainty",
+                    "summary",
+                    "why",
+                ] {
+                    let existing = (field != "title").then_some(&page);
+                    let refused = store.transact(|write| {
+                        write.file(
+                            LOUPIST,
+                            &user(),
+                            vec![delta_with(kind, field, text, existing)],
+                            4,
+                        )
+                    });
+                    assert!(
+                        matches!(refused, Err(KnowledgeError::LensBodyForbidden)),
+                        "{kind:?} {field} {text}: {refused:?}"
+                    );
+                }
+            }
+            let stored = read(&store, &page.record_id).delivery_text().unwrap();
+            assert!(!stored.contains(&sealed.snapshot_id));
+            assert!(!stored.contains(&sealed.revision_id));
+            assert!(!stored.contains("journal"));
+            // A Source record id is an ordinary link and stays.
+            let kept = file_in(
+                &store,
+                &user(),
+                vec![existing(
+                    &page.record_id,
+                    vec![LensOp::Put {
+                        key: SectionKey::new("sources").unwrap(),
+                        heading: "Sources".into(),
+                        markdown: format!("See {}", source.record_id),
+                        basis: if matches!(kind, PageKind::Subject | PageKind::Idea) {
+                            claim()
+                        } else {
+                            Basis::default()
+                        },
+                        expected: None,
+                    }],
+                )],
+                5,
+            );
+            assert!(kept[0].changed, "{kind:?}");
+            assert!(read(&store, &page.record_id)
+                .delivery_text()
                 .unwrap()
-        };
-        assert_eq!(navigation(&store).backlinks[0].record_id, related);
-        let rename = |title: &str| {
-            store.transact(|write| {
-                write.rename_lens(
-                    "loupist-a",
-                    &lens,
-                    title,
-                    "Clearer name.",
-                    8,
-                    "user",
-                    None,
-                    None,
-                )
-            })
-        };
-        assert_eq!(rename("Renamed method").unwrap(), "Renamed method");
-        assert!(matches!(
-            rename("related method"),
-            Err(KnowledgeError::Invalid(_))
-        ));
-        store
-            .transact(|write| {
-                write.set_lens_archived("loupist-a", &related, true, "Hide it.", 10, "user")
-            })
-            .unwrap();
-        let after = navigation(&store);
-        assert!(after.backlinks.is_empty());
-        assert!(after.links[0].archived);
+                .contains(&source.record_id));
+        }
+        let principle = store.transact(|write| {
+            crate::knowledge::principles::principle_save(
+                write.tx,
+                LOUPIST,
+                None,
+                None,
+                crate::knowledge::PrincipleInput {
+                    statement: "Check cash".into(),
+                    why: Some(format!("Because of {}", sealed.snapshot_id)),
+                    example: None,
+                    origin: "settings".into(),
+                    origin_chat_id: None,
+                    origin_message_id: None,
+                },
+                6,
+            )
+        });
+        assert!(matches!(principle, Err(KnowledgeError::LensBodyForbidden)));
     }
 
-    fn lens_revision(record_id: &str, expected: Option<String>, markdown: String) -> ReviseLens {
-        ReviseLens {
-            loupist_id: "loupist-a".into(),
-            record_id: record_id.to_string(),
-            expected_revision_id: expected,
-            at_ms: 20,
-            document: LensDocument {
-                markdown,
-                applicability: String::new(),
-                assumptions: String::new(),
-                procedure: String::new(),
-                principles: String::new(),
-                limitations: String::new(),
-            },
-            dependencies: Vec::new(),
-            change: LensChangeInput {
-                rationale: "Check the reference.".into(),
-                references: Vec::new(),
-                feedback: None,
-            },
+    #[test]
+    fn world_links_are_allowed_only_on_local_pages_to_this_loupists_nodes() {
+        let (_dir, store) = store();
+        seal(&store, LOUPIST, "nod_1");
+        seal(&store, "loupist-b", "nod_b");
+        for kind in [PageKind::Perspective, PageKind::Method] {
+            let refused = store.transact(|write| {
+                write.file(
+                    LOUPIST,
+                    &user(),
+                    vec![delta_with(kind, "markdown", "[x](world:nod_1)", None)],
+                    3,
+                )
+            });
+            assert!(
+                matches!(refused, Err(KnowledgeError::LensBodyForbidden)),
+                "{kind:?}"
+            );
         }
+        for kind in [PageKind::Subject, PageKind::Idea] {
+            let filed = file_in(
+                &store,
+                &user(),
+                vec![delta_with(kind, "markdown", "[x](world:nod_1)", None)],
+                3,
+            );
+            let page = read(&store, &filed[0].record_id);
+            assert!(page
+                .anchors
+                .iter()
+                .any(|a| a.role == AnchorRole::Mention && a.node_id.as_deref() == Some("nod_1")));
+            for link in ["[x](world:nod_b)", "[x](world:nod_missing)"] {
+                let refused = store.transact(|write| {
+                    write.file(
+                        LOUPIST,
+                        &user(),
+                        vec![delta_with(kind, "markdown", link, Some(&page))],
+                        4,
+                    )
+                });
+                assert!(
+                    matches!(refused, Err(KnowledgeError::Invalid(_))),
+                    "{kind:?} {link}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn archive_hides_backlinks_and_restore_refuses_a_taken_title() {
+        let (_dir, store) = store();
+        let method = |title: &str, markdown: String| PageDelta {
+            target: PageTarget::Create {
+                kind: PageKind::Method,
+                title: title.into(),
+                anchors: vec![],
+            },
+            ops: vec![LensOp::Put {
+                key: SectionKey::new("steps").unwrap(),
+                heading: "Steps".into(),
+                markdown,
+                basis: Basis::default(),
+                expected: None,
+            }],
+        };
+        let related = file_in(&store, &user(), vec![method("Related", "x".into())], 1);
+        let related_id = related[0].record_id.clone();
+        let main = file_in(
+            &store,
+            &user(),
+            vec![method(
+                "Main",
+                format!("Start from [Related](lens:{related_id})."),
+            )],
+            2,
+        );
+        let main_id = main[0].record_id.clone();
+        assert_eq!(read(&store, &main_id).links[0].record_id, related_id);
+        assert_eq!(read(&store, &related_id).backlinks[0].record_id, main_id);
+        store
+            .transact(|write| write.set_lens_archived(LOUPIST, &main_id, true, "Hide.", 3, "user"))
+            .unwrap();
+        assert!(read(&store, &related_id).backlinks.is_empty());
+        let again = file_in(&store, &user(), vec![method("main", "fresh".into())], 4);
+        assert_ne!(again[0].record_id, main_id);
+        assert!(matches!(
+            store.transact(
+                |write| write.set_lens_archived(LOUPIST, &main_id, false, "Back.", 5, "user")
+            ),
+            Err(KnowledgeError::Invalid(_))
+        ));
+    }
+
+    #[test]
+    fn index_entries_carry_summary_section_count_and_map_names() {
+        let (_dir, store) = store();
+        file_in(
+            &store,
+            &turn("m"),
+            vec![create_subject(
+                "NVIDIA",
+                vec![
+                    put("facts", "A", None),
+                    LensOp::Summary {
+                        text: "GPU maker.".into(),
+                    },
+                ],
+            )],
+            1,
+        );
+        let entries = store.read(|write| write.lens_index(LOUPIST)).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].summary, "GPU maker.");
+        assert_eq!(entries[0].section_count, 1);
+        assert_eq!(entries[0].map_names, vec!["nvidia".to_string()]);
     }
 }

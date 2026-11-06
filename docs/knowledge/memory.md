@@ -10,9 +10,10 @@ About you is a centered 720px reading column and shares its edges with the heade
 current tab: About you (followed assets, each opening its [asset page](asset-pages.md#asset-pages),
 with remove and add, holdings as a count and date per kind (stocks and funds, crypto)
 from `holdings_summary` with Update opening [Your holdings](../runtime/storage-authority.md#where-data-lives)),
-Your principles (edit, pause/resume, archive, origin chat), Methods (the
-Lens reader with pause/resume and archive), and History (learning reviews, taught
-principles and names added). Each item lists the chats that used it. Rust's
+Your principles (edit, pause/resume, archive, origin chat), Pages (topics, ideas,
+methods, principles and the outlook in the Lens reader with pause/resume, archive,
+Forget and Undo per section), and History (from the Lens log: what each chat filed,
+what the user forgot or undid; learning reviews and names added). Each item lists the chats that used it. Rust's
 `knowledge_memory_usage` counts distinct completed turns that received the item in
 bounded context or an acknowledged exact read, or recorded an application; repeated
 delivery in one turn counts once. This measures delivery, not influence or correctness.
@@ -22,11 +23,12 @@ switches are off, and Resume enables them again. Tone, instructions and learning
 preferences live on the [Loupist settings page](../ui/sidebar.md#sidebar).
 
 Loupist settings → Learning offers Reset what it learned. Rust previews counts for principles,
-methods, names, relationships and Sources; the dialog requires RESET (초기화 in
+pages, sections, names, relationships and Sources; the dialog requires RESET (초기화 in
 Korean) and sends those counts back with confirmation. One transaction removes only
-items with known Loupist authorship. User-created or user-revised Lens items, shared
-items, the standing perspective, manually saved Sources, Journal, watchlist and
-holdings stay. Relationships with independent user/shared support and names still
+items with known Loupist authorship: whole pages the Loupist created that hold no
+user or shared section, and Loupist-origin sections retired from pages the user
+keeps (a user retire, so the Loupist cannot refile that key). User-created pages,
+shared items, manually saved Sources, Journal, watchlist and holdings stay. Relationships with independent user/shared support and names still
 used by preserved relationships stay. A Source also stays if it is the sole basis
 of a protected user/shared/unknown-authored relationship. Immutable removed Sources and Lens records
 are hidden, and removed Lens titles are released for reuse. Pending extraction of
@@ -68,7 +70,7 @@ counts.
 | --- | --- |
 | Sources | Known when a capture (for a span, the capture holding it) was published by then; a capture without a publication date counts only as the user's own statement received by then. Search hits need such a capture; a later Source read fails with `as_of_later` |
 | World | Only relationships published by then, keeping evidence from Sources known by then; one whose evidence was all published later is left out with the names only it connected. An invalidation or expiry dated later, or undated, is not shown, so a relationship reads as it stood then. Names keep only their name and kind. This holds for `world_read` views and `world_search` hits, hybrid World index hits included; a name hit needs one relationship published by then, and an annotation needs every Source it cites known by then (one that cites none is left out) |
-| Methods and the standing perspective | Only when their current version was written by then; otherwise left out of search, reads (`as_of_later`) and automatic context |
+| Lens pages (perspective, methods, subjects, ideas) | A page created by then is known; a section updated after the cutoff is hidden from its read. A page created later is left out of search, reads (`as_of_later`), the index and pointers |
 | Principles | Every active principle, as today |
 | Journal | Entries created by then; an outcome observed later is removed, so its check reads as pending. Due pointers count from the cutoff day; a later entry read fails with `as_of_later` |
 | Notes | Working and research notes recorded by then, with pointers only to later notes written by then; the current Chat's working note and relevant-note pointers follow the same rule |
@@ -92,7 +94,7 @@ prove deletion.
 Not this time is stored per chat in Rust (`chat_memory_set_aside`): later turns of
 that chat leave the record out of the principles block, the method catalog and the
 relevant-method pointers, and the answer shows "Set aside for this chat · Undo".
-Rust refuses `note_save`, `principle_save`, `lens_update` and Journal writes whose
+Rust refuses `note_save`, `principle_save` and Journal writes whose
 text looks like a credential; the refusal is a tool refusal with reason
 `sensitive_memory`, and the chat says once that the item was not saved.
 

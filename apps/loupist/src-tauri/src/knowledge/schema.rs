@@ -9,8 +9,10 @@ use super::error::KnowledgeResult;
 #[cfg(test)]
 use crate::fs::artifact_trust::ensure_private_directory;
 
-/// Version 2 added asset pages. A folder made by an earlier build is refused,
-/// never migrated (pre-1.0): see `made_by_earlier_build`.
+/// Version 6 made Lens a keyed-section wiki with an append-only log and
+/// replaced World schema proposals with an append-only change log. A folder
+/// made by an earlier build is refused, never migrated (pre-1.0): see
+/// `made_by_earlier_build`.
 pub const KNOWLEDGE_SCHEMA_VERSION: i64 = 6;
 pub const KNOWLEDGE_FORMAT_VERSION: u32 = 1;
 
@@ -32,11 +34,10 @@ const EXPECTED_TABLES: &[&str] = &[
     "knowledge_journals",
     "knowledge_learning_reviews",
     "knowledge_learning_settings",
-    "knowledge_lens_applications",
-    "knowledge_lens_changes",
+    "knowledge_lens_anchors",
     "knowledge_lens_deliveries",
-    "knowledge_lens_drafts",
     "knowledge_lens_links",
+    "knowledge_lens_log",
     "knowledge_lens_metadata",
     "knowledge_read_receipts",
     "knowledge_receipt_snapshots",
@@ -52,7 +53,6 @@ const EXPECTED_TABLES: &[&str] = &[
     "knowledge_source_representations",
     "knowledge_source_spans",
     "knowledge_sources",
-    "knowledge_standing_selection",
     "knowledge_turn_pins",
     "knowledge_turns",
     "knowledge_watch_assets",
@@ -69,6 +69,7 @@ const IMMUTABLE_TABLES: &[&str] = &[
     "knowledge_blobs",
     "knowledge_capture_lineage",
     "knowledge_lens_deliveries",
+    "knowledge_lens_log",
     "knowledge_record_revisions",
     "knowledge_records",
     "knowledge_read_receipts",
@@ -398,62 +399,59 @@ fn schema_sql() -> String {
             snapshot_json TEXT NOT NULL,
             created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0)
         ) STRICT;
-        CREATE TABLE knowledge_lens_changes (
-            origin_json TEXT,
-            change_id TEXT PRIMARY KEY NOT NULL,
-            loupist_id TEXT NOT NULL,
-            record_id TEXT NOT NULL UNIQUE REFERENCES knowledge_records(record_id) ON DELETE RESTRICT,
-            new_revision_id TEXT REFERENCES knowledge_record_revisions(revision_id) ON DELETE RESTRICT,
-            rationale TEXT NOT NULL,
-            inputs_json TEXT NOT NULL,
-            created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0),
-            change_kind TEXT NOT NULL DEFAULT 'revise' CHECK (change_kind IN ('revise', 'rename', 'archive', 'restore')),
-            actor TEXT NOT NULL DEFAULT 'user' CHECK (actor IN ('user', 'loupist', 'import')),
-            origin_chat_id TEXT,
-            origin_message_id TEXT,
-            new_title TEXT
-        ) STRICT;
-        CREATE TABLE knowledge_lens_applications (
-            loupist_id TEXT NOT NULL, turn_id TEXT NOT NULL,
-            record_id TEXT NOT NULL, revision_id TEXT NOT NULL, entity_id TEXT NOT NULL,
-            at_ms INTEGER NOT NULL CHECK (at_ms >= 0),
-            PRIMARY KEY (loupist_id, turn_id, record_id, entity_id)
-        ) STRICT;
         CREATE TABLE knowledge_lens_metadata (
             record_id TEXT PRIMARY KEY NOT NULL REFERENCES knowledge_records(record_id) ON DELETE RESTRICT,
             loupist_id TEXT NOT NULL,
             title TEXT NOT NULL,
             title_fold TEXT NOT NULL,
-            lens_kind TEXT NOT NULL DEFAULT 'method' CHECK (lens_kind IN ('perspective', 'method', 'principle')),
+            kind TEXT NOT NULL CHECK (kind IN ('principle', 'perspective', 'method', 'subject', 'idea')),
             principle_statement_fold TEXT,
             archived_at_ms INTEGER,
             learned INTEGER NOT NULL DEFAULT 0 CHECK (learned IN (0, 1)),
             updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= 0)
         ) STRICT;
         CREATE UNIQUE INDEX knowledge_lens_active_title
-            ON knowledge_lens_metadata(loupist_id, title_fold)
-            WHERE archived_at_ms IS NULL AND lens_kind <> 'principle';
+            ON knowledge_lens_metadata(loupist_id, kind, title_fold)
+            WHERE archived_at_ms IS NULL AND kind <> 'principle';
         CREATE UNIQUE INDEX knowledge_principle_active_statement
             ON knowledge_lens_metadata(loupist_id, principle_statement_fold)
-            WHERE archived_at_ms IS NULL AND lens_kind = 'principle';
-        CREATE TABLE knowledge_lens_drafts (
-            draft_id TEXT PRIMARY KEY NOT NULL,
+            WHERE archived_at_ms IS NULL AND kind = 'principle';
+        CREATE UNIQUE INDEX knowledge_lens_one_perspective
+            ON knowledge_lens_metadata(loupist_id)
+            WHERE archived_at_ms IS NULL AND kind = 'perspective';
+        CREATE TABLE knowledge_lens_log (
+            op_id TEXT PRIMARY KEY NOT NULL,
             loupist_id TEXT NOT NULL,
-            author TEXT NOT NULL CHECK (author IN ('user', 'loupist')),
             record_id TEXT NOT NULL REFERENCES knowledge_records(record_id) ON DELETE RESTRICT,
-            base_revision_id TEXT NOT NULL,
-            document_json TEXT NOT NULL,
-            rationale TEXT NOT NULL,
-            title TEXT,
-            origin_chat_id TEXT,
-            origin_message_id TEXT,
-            updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= 0)
+            op_json TEXT NOT NULL,
+            outcome TEXT NOT NULL,
+            section_key TEXT,
+            before_digest TEXT,
+            after_digest TEXT,
+            before_json TEXT,
+            origin TEXT NOT NULL CHECK (origin IN ('turn', 'user', 'learning', 'import')),
+            chat_id TEXT,
+            message_id TEXT,
+            created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0),
+            undoes_op_id TEXT
         ) STRICT;
-        CREATE UNIQUE INDEX knowledge_lens_user_draft
-            ON knowledge_lens_drafts(loupist_id, record_id)
-            WHERE author = 'user';
-        CREATE INDEX knowledge_lens_drafts_by_record
-            ON knowledge_lens_drafts(loupist_id, record_id, author);
+        CREATE INDEX knowledge_lens_log_by_record
+            ON knowledge_lens_log(record_id, created_at_ms, op_id);
+        CREATE INDEX knowledge_lens_log_by_message
+            ON knowledge_lens_log(loupist_id, message_id, created_at_ms, op_id);
+        CREATE TABLE knowledge_lens_anchors (
+            loupist_id TEXT NOT NULL,
+            record_id TEXT NOT NULL REFERENCES knowledge_records(record_id) ON DELETE RESTRICT,
+            role TEXT NOT NULL CHECK (role IN ('subject', 'mention', 'applied')),
+            node_id TEXT,
+            name_fold TEXT NOT NULL DEFAULT '',
+            turn_id TEXT,
+            created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0)
+        ) STRICT;
+        CREATE UNIQUE INDEX knowledge_lens_anchors_identity
+            ON knowledge_lens_anchors(record_id, role, COALESCE(node_id, ''), name_fold, COALESCE(turn_id, ''));
+        CREATE INDEX knowledge_lens_anchors_by_node
+            ON knowledge_lens_anchors(loupist_id, node_id, role);
         CREATE TABLE knowledge_lens_links (
             loupist_id TEXT NOT NULL,
             source_record_id TEXT NOT NULL REFERENCES knowledge_records(record_id) ON DELETE RESTRICT,
@@ -538,8 +536,6 @@ fn schema_sql() -> String {
             WHERE json_type(body_json, '$.workingNote') = 'object';
         CREATE INDEX knowledge_journals_by_loupist ON knowledge_journals(loupist_id, journal_id);
         CREATE INDEX knowledge_journal_due ON knowledge_journals(loupist_id, json_extract(body_json, '$.check.byDate'), created_at_ms, journal_id);
-        CREATE INDEX knowledge_lens_changes_by_record
-            ON knowledge_lens_changes(record_id, created_at_ms, change_id);
         CREATE INDEX knowledge_chat_origins_by_capture ON knowledge_chat_origins(capture_id);
         "#,
     );
@@ -563,10 +559,6 @@ fn schema_sql() -> String {
         ));
     }
     sql.push_str(
-        "CREATE TRIGGER knowledge_lens_changes_no_update BEFORE UPDATE ON knowledge_lens_changes
-         BEGIN SELECT RAISE(ABORT, 'immutable'); END;",
-    );
-    sql.push_str(
         "CREATE TABLE knowledge_receipt_snapshots (
             receipt_id TEXT PRIMARY KEY NOT NULL,
             revision_id TEXT NOT NULL,
@@ -587,14 +579,7 @@ fn schema_sql() -> String {
            WHERE NOT EXISTS (
              SELECT 1 FROM knowledge_erasure WHERE id = 1 AND armed = 1
            );
-         END;
-         CREATE TABLE knowledge_standing_selection (
-            loupist_id TEXT PRIMARY KEY NOT NULL,
-            record_id TEXT NOT NULL,
-            revision_id TEXT NOT NULL,
-            role TEXT NOT NULL CHECK (role = 'standing_philosophy'),
-            selected_at_ms INTEGER NOT NULL CHECK (selected_at_ms >= 0)
-         );",
+         END;",
     );
     sql
 }
@@ -602,4 +587,47 @@ fn schema_sql() -> String {
 /// Knowledge DDL without its own transaction, for the app database initializer.
 pub fn embedded_ddl() -> String {
     schema_sql()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A version-5 folder keeps its own tables and version; this build refuses
+    /// it with the typed earlier-version state instead of half-working.
+    #[test]
+    fn version_five_folder_is_an_earlier_build() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(&schema_sql()).unwrap();
+        let tables = |connection: &Connection| {
+            let mut statement = connection
+                .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+                .unwrap();
+            statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+        };
+        assert_eq!(
+            inspect_knowledge(&connection, &tables(&connection)).unwrap(),
+            SchemaState::Current
+        );
+        assert!(!made_by_earlier_build(&connection).unwrap());
+        connection
+            .execute_batch(
+                "DROP TABLE knowledge_lens_anchors; DROP TABLE knowledge_lens_log;
+                 CREATE TABLE knowledge_lens_changes (change_id TEXT PRIMARY KEY NOT NULL) STRICT;
+                 CREATE TABLE knowledge_lens_drafts (draft_id TEXT PRIMARY KEY NOT NULL) STRICT;
+                 CREATE TABLE knowledge_lens_applications (loupist_id TEXT NOT NULL) STRICT;
+                 CREATE TABLE knowledge_standing_selection (loupist_id TEXT PRIMARY KEY NOT NULL);
+                 UPDATE knowledge_schema SET version = 5;",
+            )
+            .unwrap();
+        assert_eq!(
+            inspect_knowledge(&connection, &tables(&connection)).unwrap(),
+            SchemaState::Unsupported(5)
+        );
+        assert!(made_by_earlier_build(&connection).unwrap());
+    }
 }

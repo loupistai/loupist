@@ -1112,6 +1112,13 @@ pub struct LearnedMemoryIndexEntry {
     pub summary: String,
     pub as_of: String,
     pub kind: String,
+    /// Lens pages: page kind, section count and up to three map names.
+    #[serde(rename = "pageKind", skip_serializing_if = "Option::is_none")]
+    pub lens_kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sections: Option<usize>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub names: Vec<String>,
 }
 
 /// Discovery metadata only; never a read receipt or admitted context read.
@@ -2003,12 +2010,11 @@ mod tests {
 
     #[test]
     fn memory_write_tools_exist_only_when_learning_is_enabled() {
-        const MEMORY_WRITES: [&str; 7] = [
+        const MEMORY_WRITES: [&str; 6] = [
             "source_save",
             "note_save",
             "journal_save",
             "journal_review",
-            "lens_update",
             "principle_save",
             "world_schema_update",
         ];

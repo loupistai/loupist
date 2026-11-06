@@ -19,13 +19,20 @@ fn clean_pack(root: &Path) -> std::path::PathBuf {
         key: "m-4444444444444444".into(),
         title: "Berth utilization".into(),
         origin: None,
-        document: crate::knowledge::LensDocument {
-            markdown: "Compare berth utilization across ferry operators.".into(),
-            applicability: "Fictional ferry operators.".into(),
-            assumptions: String::new(),
-            procedure: "Compare the two operators year by year.".into(),
-            principles: String::new(),
-            limitations: String::new(),
+        document: pack::PackDoc {
+            summary: "Compare berth utilization across ferry operators.".into(),
+            sections: vec![
+                pack::PackSection {
+                    key: "use-when".into(),
+                    heading: "Use when".into(),
+                    markdown: "Fictional ferry operators.".into(),
+                },
+                pack::PackSection {
+                    key: "steps".into(),
+                    heading: "Steps".into(),
+                    markdown: "Compare the two operators year by year.".into(),
+                },
+            ],
         },
     };
     let manifest = pack::Manifest {
@@ -92,35 +99,16 @@ fn own_method(state: &AppState) -> String {
     crate::sharing::commands::with_tx(state, "loupist-a", |tx, blobs| {
         let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
         let record = write
-            .create_record(crate::knowledge::CreateRecord {
-                loupist_id: "loupist-a".into(),
-                kind: crate::knowledge::RecordKind::Lens,
-                title: "Berth turnover".into(),
-                at_ms: 1,
-            })
-            .unwrap();
-        write
-            .revise_lens(crate::knowledge::ReviseLens {
-                loupist_id: "loupist-a".into(),
-                record_id: record.record_id.clone(),
-                expected_revision_id: None,
-                at_ms: 1,
-                document: crate::knowledge::LensDocument {
-                    markdown: "Compare berth turnover year by year.".into(),
-                    applicability: String::new(),
-                    assumptions: String::new(),
-                    procedure: String::new(),
-                    principles: String::new(),
-                    limitations: String::new(),
-                },
-                dependencies: vec![],
-                change: crate::knowledge::LensChangeInput {
-                    references: vec![],
-                    rationale: "Own".into(),
-                    feedback: None,
-                },
-            })
-            .unwrap();
+            .file_section(
+                "loupist-a",
+                crate::knowledge::lens_page::PageKind::Method,
+                "Berth turnover",
+                "steps",
+                "Compare berth turnover year by year.",
+                &crate::knowledge::test_support::user_origin(),
+                1,
+            )
+            .map_err(|error| crate::app::CommandError::invalid(error.to_string()))?;
         Ok(record.record_id)
     })
     .unwrap()

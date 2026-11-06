@@ -30,6 +30,8 @@ mod growth;
 pub(crate) mod journal;
 pub mod learning;
 mod lens;
+pub mod lens_page;
+pub use lens::{IndexEntry, LearnedDigest, PageRead, PageSummary};
 pub mod memory_controls;
 pub mod memory_reset;
 pub mod principles;
@@ -62,6 +64,8 @@ mod world_source;
 pub use world_source::{SourceWorldClaim, WorldSourceTarget};
 
 pub use blob::BlobStore;
+#[cfg(feature = "eval-harness")]
+pub use canonical::canonicalize_json_text;
 pub use error::{KnowledgeError, KnowledgeResult};
 #[cfg(test)]
 pub(crate) use followed::{anchor_followed, followed_text, FOLLOWED_PER_SOURCE};
@@ -95,10 +99,6 @@ pub use world_schema::{
 };
 #[cfg(test)]
 pub(crate) use {graph_jobs::AddToWorld, growth::GrowthEvent};
-
-pub fn mint_lens_record_id() -> String {
-    model::mint_id("rec")
-}
 
 pub fn fold_lens_title(title: &str) -> String {
     lens::fold_lens_title(title)
@@ -549,91 +549,82 @@ impl<'a> KnowledgeWrite<'a> {
         world::query_world(self.tx, query)
     }
 
-    pub fn revise_lens(&self, request: ReviseLens) -> KnowledgeResult<LensView> {
-        lens::revise_lens(self.tx, request)
-    }
-
-    pub fn read_lens(&self, loupist_id: &str, record_id: &str) -> KnowledgeResult<LensView> {
-        lens::read_lens(self.tx, loupist_id, record_id)
-    }
-
-    pub fn lens_navigation(
+    /// The only Lens page writer.
+    pub fn file(
         &self,
         loupist_id: &str,
-        record_id: &str,
-        document: &LensDocument,
-    ) -> KnowledgeResult<LensNavigation> {
-        lens::lens_navigation(self.tx, loupist_id, record_id, document)
-    }
-
-    pub fn list_lens_changes(
-        &self,
-        loupist_id: &str,
-        record_id: &str,
-    ) -> KnowledgeResult<Vec<LensChangeRecord>> {
-        lens::list_lens_changes(self.tx, loupist_id, record_id)
-    }
-
-    pub fn revise_lens_with_origin(
-        &self,
-        request: ReviseLens,
-        actor: &str,
-        origin_chat_id: Option<&str>,
-        origin_message_id: Option<&str>,
-    ) -> KnowledgeResult<LensView> {
-        lens::revise_lens_with_origin(self.tx, request, actor, origin_chat_id, origin_message_id)
-    }
-
-    pub fn create_record_with_id(
-        &self,
-        request: CreateRecord,
-        record_id: Option<String>,
-    ) -> KnowledgeResult<OwnedRecord> {
-        catalog::create_record_with_id(self.tx, request, record_id)
-    }
-
-    pub fn ensure_lens_title(
-        &self,
-        loupist_id: &str,
-        title: &str,
-        except_record_id: Option<&str>,
-    ) -> KnowledgeResult<()> {
-        lens::require_unique_lens_title(self.tx, loupist_id, title, except_record_id)
-    }
-
-    pub fn validate_lens_publication(
-        &self,
-        loupist_id: &str,
-        title: &str,
-        document: &LensDocument,
-        pending_lens_ids: &std::collections::BTreeSet<String>,
-    ) -> KnowledgeResult<()> {
-        lens::validate_lens_publication(self.tx, loupist_id, title, document, pending_lens_ids)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn rename_lens(
-        &self,
-        loupist_id: &str,
-        record_id: &str,
-        title: &str,
-        rationale: &str,
+        origin: &lens_page::FilingOrigin,
+        deltas: Vec<lens_page::PageDelta>,
         at_ms: i64,
-        actor: &str,
-        origin_chat_id: Option<&str>,
-        origin_message_id: Option<&str>,
-    ) -> KnowledgeResult<String> {
-        lens::rename_lens(
-            self.tx,
-            loupist_id,
-            record_id,
-            title,
-            rationale,
-            at_ms,
-            actor,
-            origin_chat_id,
-            origin_message_id,
-        )
+    ) -> KnowledgeResult<Vec<lens_page::FiledPage>> {
+        lens::file(self.tx, loupist_id, origin, deltas, at_ms)
+    }
+
+    pub fn read_page(&self, loupist_id: &str, record_id: &str) -> KnowledgeResult<PageRead> {
+        lens::read_page(self.tx, loupist_id, record_id)
+    }
+
+    pub fn lens_kind(
+        &self,
+        loupist_id: &str,
+        record_id: &str,
+    ) -> KnowledgeResult<lens_page::LensKind> {
+        lens::lens_kind(self.tx, loupist_id, record_id)
+    }
+
+    pub fn undo_op(&self, loupist_id: &str, op_id: &str, at_ms: i64) -> KnowledgeResult<PageRead> {
+        lens::undo_op(self.tx, loupist_id, op_id, at_ms)
+    }
+
+    pub fn forget_section(
+        &self,
+        loupist_id: &str,
+        record_id: &str,
+        key: &str,
+        at_ms: i64,
+    ) -> KnowledgeResult<PageRead> {
+        lens::forget_section(self.tx, loupist_id, record_id, key, at_ms)
+    }
+
+    pub fn learned_digest(
+        &self,
+        loupist_id: &str,
+        message_ids: &[String],
+    ) -> KnowledgeResult<Vec<LearnedDigest>> {
+        lens::learned_digest(self.tx, loupist_id, message_ids)
+    }
+
+    /// Called after every World publication by discovery; nothing calls it yet.
+    #[allow(dead_code)]
+    pub fn resolve_anchors(&self, loupist_id: &str, nodes: &[GraphNode]) -> KnowledgeResult<usize> {
+        lens::resolve_anchors(self.tx, loupist_id, nodes)
+    }
+
+    pub fn record_applied(
+        &self,
+        loupist_id: &str,
+        turn_id: &str,
+        record_id: &str,
+        node_ids: &std::collections::BTreeSet<String>,
+        at_ms: i64,
+    ) -> KnowledgeResult<()> {
+        lens::record_applied(self.tx, loupist_id, turn_id, record_id, node_ids, at_ms)
+    }
+
+    pub fn pages_for_node(
+        &self,
+        loupist_id: &str,
+        node_id: &str,
+    ) -> KnowledgeResult<Vec<PageSummary>> {
+        lens::pages_for_node(self.tx, loupist_id, node_id)
+    }
+
+    pub fn lens_index(&self, loupist_id: &str) -> KnowledgeResult<Vec<IndexEntry>> {
+        lens::index_entries(self.tx, loupist_id)
+    }
+
+    pub fn active_perspective(&self, loupist_id: &str) -> KnowledgeResult<Option<String>> {
+        lens::active_perspective(self.tx, loupist_id)
     }
 
     pub fn set_lens_archived(
@@ -650,59 +641,12 @@ impl<'a> KnowledgeWrite<'a> {
         )
     }
 
-    pub fn list_lens_drafts(
-        &self,
-        loupist_id: &str,
-        record_id: Option<&str>,
-        author: Option<&str>,
-    ) -> KnowledgeResult<Vec<LensDraftRecord>> {
-        lens::list_lens_drafts(self.tx, loupist_id, record_id, author)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn save_lens_proposal(
-        &self,
-        loupist_id: &str,
-        record_id: &str,
-        base_revision_id: &str,
-        document: &LensDocument,
-        rationale: &str,
-        title: Option<&str>,
-        origin_chat_id: &str,
-        origin_message_id: &str,
-        at_ms: i64,
-    ) -> KnowledgeResult<LensDraftRecord> {
-        lens::save_lens_proposal(
-            self.tx,
-            loupist_id,
-            record_id,
-            base_revision_id,
-            document,
-            rationale,
-            title,
-            origin_chat_id,
-            origin_message_id,
-            at_ms,
-        )
-    }
-
-    pub fn dismiss_lens_proposal(&self, loupist_id: &str, draft_id: &str) -> KnowledgeResult<()> {
-        lens::dismiss_lens_proposal(self.tx, loupist_id, draft_id)
-    }
-
     pub fn lens_listing(
         &self,
         loupist_id: &str,
         record_id: &str,
-    ) -> KnowledgeResult<(i64, bool, u32, bool)> {
+    ) -> KnowledgeResult<(i64, bool, bool)> {
         lens::lens_listing(self.tx, loupist_id, record_id)
-    }
-
-    pub fn archived_lens_ids(
-        &self,
-        loupist_id: &str,
-    ) -> KnowledgeResult<std::collections::BTreeSet<String>> {
-        lens::archived_lens_ids(self.tx, loupist_id)
     }
 
     pub fn save_research(&self, request: SaveResearch) -> KnowledgeResult<SavedResearch> {
@@ -822,23 +766,6 @@ impl<'a> KnowledgeWrite<'a> {
             document_json,
             body_digest,
         )
-    }
-
-    pub fn select_standing_lens(
-        &self,
-        loupist_id: &str,
-        record_id: &str,
-        revision_id: &str,
-        at_ms: i64,
-    ) -> KnowledgeResult<()> {
-        research::select_standing_lens(self.tx, loupist_id, record_id, revision_id, at_ms)
-    }
-
-    pub fn load_standing_selection(
-        &self,
-        loupist_id: &str,
-    ) -> KnowledgeResult<Option<(String, String)>> {
-        research::load_standing_selection(self.tx, loupist_id)
     }
 
     pub fn research_history(
@@ -989,7 +916,7 @@ fn erase_guarded_rows(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult
         [loupist_id],
     )?;
     tx.execute(
-        "DELETE FROM knowledge_lens_changes WHERE loupist_id = ?1",
+        "DELETE FROM knowledge_lens_log WHERE loupist_id = ?1",
         [loupist_id],
     )?;
     tx.execute(
@@ -1004,18 +931,13 @@ fn erase_guarded_rows(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult
         "DELETE FROM knowledge_chat_origins WHERE loupist_id = ?1",
         [loupist_id],
     )?;
-    tx.execute(
-        "DELETE FROM knowledge_standing_selection WHERE loupist_id = ?1",
-        [loupist_id],
-    )?;
     for table in [
         "knowledge_learning_reviews",
         "knowledge_learning_settings",
         "knowledge_schema_changes",
         "knowledge_schema_reviews",
-        "knowledge_lens_applications",
+        "knowledge_lens_anchors",
         "knowledge_lens_links",
-        "knowledge_lens_drafts",
         "knowledge_lens_metadata",
     ] {
         tx.execute(
@@ -1067,7 +989,7 @@ fn erase_guarded_rows(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult
 }
 
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;
 #[cfg(test)]
 mod tests;
 

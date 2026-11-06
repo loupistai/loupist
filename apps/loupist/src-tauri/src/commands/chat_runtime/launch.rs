@@ -492,6 +492,9 @@ async fn build_turn_envelope(
                     "world" => "World".to_string(),
                     other => other.to_string(),
                 },
+                lens_kind: entry.lens_kind.map(|kind| kind.as_str().to_string()),
+                sections: entry.lens_kind.map(|_| entry.sections),
+                names: entry.map_names.clone(),
             })
             .collect::<Vec<_>>();
         let charter = memory

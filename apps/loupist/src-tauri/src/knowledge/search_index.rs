@@ -12,8 +12,8 @@ use serde::Deserialize;
 use super::blob::BlobStore;
 use super::error::{KnowledgeError, KnowledgeResult};
 use super::model::{
-    LensDocument, PublishedRepresentation, PublishedSpan, RecordKind, Selector,
-    SourceRecordPayload, WorldSnapshotBody,
+    PublishedRepresentation, PublishedSpan, RecordKind, Selector, SourceRecordPayload,
+    WorldSnapshotBody,
 };
 
 const INDEXED_TEXT_CHARS: usize = 64 * 1024;
@@ -821,16 +821,24 @@ fn documents(
             source_documents(blobs, title, &parsed, &mut drafts)?;
         }
         RecordKind::Lens => {
-            let document = LensDocument::deserialize(payload)?;
-            let body = [
-                document.markdown.as_str(),
-                document.applicability.as_str(),
-                document.assumptions.as_str(),
-                document.procedure.as_str(),
-                document.principles.as_str(),
-                document.limitations.as_str(),
-            ]
-            .join("\n");
+            // The kind lives in metadata; a principle payload is the only
+            // shape that refuses a page's fields.
+            let body = match super::principles::PrincipleInput::deserialize(payload) {
+                Ok(principle) => [Some(principle.statement), principle.why, principle.example]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                Err(_) => {
+                    let page = super::lens_page::Page::deserialize(payload)?;
+                    std::iter::once(page.summary.as_str())
+                        .chain(page.sections.iter().flat_map(|section| {
+                            [section.heading.as_str(), section.markdown.as_str()]
+                        }))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                }
+            };
             drafts.push(text_document(kind, title, "", "", &body, ""));
         }
         RecordKind::World => {
@@ -1020,9 +1028,9 @@ mod tests {
     use super::*;
 
     use crate::knowledge::{
-        Authorship, Coverage, CreateRecord, GraphClaim, GraphNode, KnowledgeStore, LensChangeInput,
-        LensDocument, RecordKind, RepresentationRole, RetainMaterial, RetainNewSource, ReviseLens,
-        SealWorld, Selector, SourceClass,
+        test_support, Authorship, Coverage, CreateRecord, GraphClaim, GraphNode, KnowledgeStore,
+        RecordKind, RepresentationRole, RetainMaterial, RetainNewSource, SealWorld, Selector,
+        SourceClass,
     };
     use std::collections::BTreeMap;
 
@@ -1091,37 +1099,10 @@ mod tests {
     }
 
     fn save_method(store: &KnowledgeStore, title: &str, body: &str) -> String {
-        let created = store
-            .create_record(CreateRecord {
-                loupist_id: "loupist-a".into(),
-                kind: RecordKind::Lens,
-                title: title.into(),
-                at_ms: 20,
-            })
-            .unwrap();
         store
-            .revise_lens(ReviseLens {
-                loupist_id: "loupist-a".into(),
-                record_id: created.record_id.clone(),
-                expected_revision_id: None,
-                at_ms: 21,
-                document: LensDocument {
-                    markdown: body.into(),
-                    applicability: String::new(),
-                    assumptions: String::new(),
-                    procedure: String::new(),
-                    principles: String::new(),
-                    limitations: String::new(),
-                },
-                dependencies: Vec::new(),
-                change: LensChangeInput {
-                    rationale: "Method".into(),
-                    references: Vec::new(),
-                    feedback: None,
-                },
-            })
-            .unwrap();
-        created.record_id
+            .file_method("loupist-a", title, body, &test_support::user_origin(), 21)
+            .unwrap()
+            .record_id
     }
 
     #[test]
@@ -1151,29 +1132,16 @@ mod tests {
             .recv_timeout(std::time::Duration::from_secs(2))
             .unwrap();
         // A search owns its inputs while another operation writes the library.
-        let current = store
-            .read(|write| write.owned_record("loupist-a", &changed))
-            .unwrap();
         store
-            .revise_lens(ReviseLens {
-                loupist_id: "loupist-a".into(),
-                record_id: changed,
-                expected_revision_id: current.revision_id,
-                at_ms: 30,
-                document: LensDocument {
-                    markdown: "Updated method".into(),
-                    applicability: String::new(),
-                    assumptions: String::new(),
-                    procedure: String::new(),
-                    principles: String::new(),
-                    limitations: String::new(),
-                },
-                dependencies: Vec::new(),
-                change: LensChangeInput {
-                    rationale: "Correct the method".into(),
-                    references: Vec::new(),
-                    feedback: None,
-                },
+            .transact(|write| {
+                write.put_section(
+                    "loupist-a",
+                    &changed,
+                    "steps",
+                    "Updated method",
+                    &test_support::user_origin(),
+                    30,
+                )
             })
             .unwrap();
         store

@@ -34,7 +34,6 @@ pub(crate) fn allowed_name(name: &str) -> bool {
             | "world_search"
             | "world_read"
             | "note_save"
-            | "lens_update"
             | "lens_search"
             | "lens_read"
             | "world_job"

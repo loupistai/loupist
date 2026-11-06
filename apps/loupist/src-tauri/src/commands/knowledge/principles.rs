@@ -229,6 +229,7 @@ pub(in crate::commands) fn persist_principles(
 
 pub(in crate::commands) fn persist_citations(
     tx: &rusqlite::Transaction<'_>,
+    blobs: &BlobStore,
     loupist: &str,
     turn: &str,
     answer: &str,
@@ -236,7 +237,6 @@ pub(in crate::commands) fn persist_citations(
     at_ms: i64,
 ) -> crate::knowledge::KnowledgeResult<()> {
     use pulldown_cmark::{Event, Parser, Tag};
-    use rusqlite::OptionalExtension;
     let ids = Parser::new(answer)
         .filter_map(|event| match event {
             Event::Start(Tag::Link { dest_url, .. }) => {
@@ -257,21 +257,22 @@ pub(in crate::commands) fn persist_citations(
             }
         }
     }
+    let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
     for id in ids {
-        let head:Option<String>=tx.query_row("SELECT h.revision_id FROM knowledge_record_heads h JOIN knowledge_records r ON r.record_id=h.record_id JOIN knowledge_lens_metadata m ON m.record_id=h.record_id WHERE r.owner_loupist_id=?1 AND r.record_id=?2 AND r.kind='lens' AND m.archived_at_ms IS NULL AND NOT EXISTS (SELECT 1 FROM knowledge_standing_selection s WHERE s.loupist_id=?1 AND s.record_id=r.record_id)",rusqlite::params![loupist,id],|r|r.get(0)).optional()?;
-        let Some(revision) = head else {
+        let Ok(page) = write.read_page(loupist, &id) else {
             continue;
         };
-        // A stale explicitly delivered Lens cannot count as a current-head citation.
+        if page.archived {
+            continue;
+        }
+        // A stale explicitly delivered page cannot count as a current-head citation.
         if reads
             .iter()
-            .any(|r| r.scope == "lens" && r.record_id == id && r.revision_id != revision)
+            .any(|r| r.scope == "lens" && r.record_id == id && r.revision_id != page.revision_id)
         {
             continue;
         }
-        for entity in &entities {
-            tx.execute("INSERT OR IGNORE INTO knowledge_lens_applications (loupist_id,turn_id,record_id,revision_id,entity_id,at_ms) VALUES (?1,?2,?3,?4,?5,?6)",rusqlite::params![loupist,turn,id,revision,entity,at_ms])?;
-        }
+        write.record_applied(loupist, turn, &id, &entities, at_ms)?;
     }
     Ok(())
 }
@@ -414,9 +415,10 @@ mod tests {
                 view_digest: "digest".into(),
             },
         };
-        with_loupist_knowledge(&state, "loupist-a", |tx, _| {
+        with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
             persist_citations(
                 tx,
+                blobs,
                 "loupist-a",
                 "turn-1",
                 "Plain answer",
@@ -424,13 +426,14 @@ mod tests {
                 10,
             )?;
             let n: i64 = tx.query_row(
-                "SELECT count(*) FROM knowledge_lens_applications",
+                "SELECT count(*) FROM knowledge_lens_anchors WHERE role = 'applied'",
                 [],
                 |r| r.get(0),
             )?;
             assert_eq!(n, 0);
             persist_citations(
                 tx,
+                blobs,
                 "loupist-a",
                 "turn-2",
                 &format!("[Cash flow](lens:{})", p.record_id),
@@ -439,6 +442,7 @@ mod tests {
             )?;
             persist_citations(
                 tx,
+                blobs,
                 "loupist-a",
                 "turn-2",
                 &format!("[Cash flow](lens:{})", p.record_id),
@@ -446,13 +450,14 @@ mod tests {
                 11,
             )?;
             let n: i64 = tx.query_row(
-                "SELECT count(*) FROM knowledge_lens_applications",
+                "SELECT count(*) FROM knowledge_lens_anchors WHERE role = 'applied'",
                 [],
                 |r| r.get(0),
             )?;
             assert_eq!(n, 2);
             persist_citations(
                 tx,
+                blobs,
                 "other",
                 "turn-3",
                 &format!("[Cash flow](lens:{})", p.record_id),
@@ -460,7 +465,7 @@ mod tests {
                 12,
             )?;
             let n: i64 = tx.query_row(
-                "SELECT count(*) FROM knowledge_lens_applications",
+                "SELECT count(*) FROM knowledge_lens_anchors WHERE role = 'applied'",
                 [],
                 |r| r.get(0),
             )?;

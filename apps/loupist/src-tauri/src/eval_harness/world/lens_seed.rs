@@ -1,20 +1,58 @@
-//! Import exact learned methods into disposable evaluation Loupists. Only declared
-//! Source record/revision identities may change; normal Lens authority still applies.
+//! Import exact learned method pages into disposable evaluation Loupists. Only
+//! declared Source record/revision identities may change; normal Lens
+//! authority still applies.
 
 use super::{AppState, Result, Source};
-use crate::knowledge::{
-    CreateRecord, DependencyRole, EvidenceRevision, KnowledgeError, KnowledgeStore,
-    LensChangeInput, LensDocument, RecordKind, RetainedSource, ReviseLens,
+use crate::knowledge::lens_page::{
+    Basis, FilingOrigin, LensOp, PageDelta, PageKind, PageTarget, SectionKey,
 };
+use crate::knowledge::{KnowledgeError, KnowledgeStore, RecordKind, RetainedSource};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(super) struct SeedSection {
+    key: String,
+    heading: String,
+    markdown: String,
+}
+
+/// A method page as a scenario declares it: summary plus keyed sections.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(super) struct SeedDoc {
+    #[serde(default)]
+    summary: String,
+    #[serde(default)]
+    sections: Vec<SeedSection>,
+}
+
+impl SeedDoc {
+    fn remap(&self, mapping: &BTreeMap<String, String>) -> Result<Self> {
+        Ok(Self {
+            summary: remap_text(&self.summary, mapping)?,
+            sections: self
+                .sections
+                .iter()
+                .map(|section| {
+                    Ok(SeedSection {
+                        key: section.key.clone(),
+                        heading: remap_text(&section.heading, mapping)?,
+                        markdown: remap_text(&section.markdown, mapping)?,
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?,
+        })
+    }
+}
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct SeedLens {
     title: String,
-    document: LensDocument,
+    document: SeedDoc,
     original_document_sha256: String,
     #[serde(default)]
     source_links: Vec<SourceLink>,
@@ -26,7 +64,6 @@ struct SourceLink {
     original_record_id: String,
     original_revision_id: String,
     fixture_id: String,
-    methodological_dependency: bool,
 }
 
 #[derive(Serialize)]
@@ -37,20 +74,21 @@ struct MappedSource {
     record_id: String,
     revision_id: String,
     revision_digest: String,
-    methodological_dependency: bool,
 }
 
 struct PreparedLens {
-    document: LensDocument,
+    document: SeedDoc,
     document_sha256: String,
     roundtrip_document_sha256: String,
     source_links_sha256: String,
     mapped_sources: Vec<MappedSource>,
-    dependencies: Vec<EvidenceRevision>,
 }
 
-fn document_sha256(document: &LensDocument) -> Result<String> {
-    Ok(crate::util::sha256(document.delivery_text()?.as_bytes()))
+/// sha256 over the sorted-key canonical JSON of the declared page.
+fn document_sha256(document: &SeedDoc) -> Result<String> {
+    Ok(crate::util::sha256(
+        crate::knowledge::canonicalize_json_text(&serde_json::to_string(document)?)?.as_bytes(),
+    ))
 }
 
 // The sidecar hash uses sorted object keys and preserves the declared array order.
@@ -60,10 +98,6 @@ fn source_links_sha256(links: &[SourceLink]) -> Result<String> {
         .map(|link| {
             BTreeMap::from([
                 ("fixture_id", json!(link.fixture_id)),
-                (
-                    "methodological_dependency",
-                    json!(link.methodological_dependency),
-                ),
                 ("original_record_id", json!(link.original_record_id)),
                 ("original_revision_id", json!(link.original_revision_id)),
             ])
@@ -114,8 +148,7 @@ fn replacement<'a>(token: &'a str, mapping: &'a BTreeMap<String, String>) -> Res
             | "gen"
             | "job"
             | "atm"
-            | "chg"
-            | "dft"
+            | "lop"
     );
     let other_canonical = prefix.len() == 3
         && prefix.bytes().all(|byte| byte.is_ascii_lowercase())
@@ -149,20 +182,6 @@ fn remap_text(text: &str, mapping: &BTreeMap<String, String>) -> Result<String> 
     Ok(rewritten)
 }
 
-fn remap_document(
-    document: &LensDocument,
-    mapping: &BTreeMap<String, String>,
-) -> Result<LensDocument> {
-    Ok(LensDocument {
-        markdown: remap_text(&document.markdown, mapping)?,
-        applicability: remap_text(&document.applicability, mapping)?,
-        assumptions: remap_text(&document.assumptions, mapping)?,
-        procedure: remap_text(&document.procedure, mapping)?,
-        principles: remap_text(&document.principles, mapping)?,
-        limitations: remap_text(&document.limitations, mapping)?,
-    })
-}
-
 fn validate_lens(seed: &SeedLens, fixtures: &BTreeSet<&str>) -> Result<()> {
     if document_sha256(&seed.document)? != seed.original_document_sha256 {
         return Err("seed_lens_original_document_sha256_mismatch".into());
@@ -193,7 +212,7 @@ fn validate_lens(seed: &SeedLens, fixtures: &BTreeSet<&str>) -> Result<()> {
             identities.insert(identity.clone(), identity.clone());
         }
     }
-    remap_document(&seed.document, &identities)?;
+    seed.document.remap(&identities)?;
     Ok(())
 }
 
@@ -230,7 +249,6 @@ fn prepare(seed: &SeedLens, sources: &BTreeMap<String, RetainedSource>) -> Resul
     let mut forward = BTreeMap::new();
     let mut reverse = BTreeMap::new();
     let mut mapped_sources = Vec::new();
-    let mut dependencies = Vec::new();
     for link in &seed.source_links {
         let saved = sources
             .get(&link.fixture_id)
@@ -244,13 +262,6 @@ fn prepare(seed: &SeedLens, sources: &BTreeMap<String, RetainedSource>) -> Resul
                 return Err("seed_lens_source_mapping_not_invertible".into());
             }
         }
-        if link.methodological_dependency {
-            dependencies.push(EvidenceRevision {
-                record_id: saved.record_id.clone(),
-                revision_digest: saved.revision_digest.clone(),
-                role: DependencyRole::MethodologicalSource,
-            });
-        }
         mapped_sources.push(MappedSource {
             original_record_id: link.original_record_id.clone(),
             original_revision_id: link.original_revision_id.clone(),
@@ -258,11 +269,10 @@ fn prepare(seed: &SeedLens, sources: &BTreeMap<String, RetainedSource>) -> Resul
             record_id: saved.record_id.clone(),
             revision_id: saved.revision_id.clone(),
             revision_digest: saved.revision_digest.clone(),
-            methodological_dependency: link.methodological_dependency,
         });
     }
-    let document = remap_document(&seed.document, &forward)?;
-    let roundtrip = remap_document(&document, &reverse)?;
+    let document = seed.document.remap(&forward)?;
+    let roundtrip = document.remap(&reverse)?;
     if roundtrip != seed.document {
         return Err("seed_lens_document_roundtrip_mismatch".into());
     }
@@ -272,8 +282,42 @@ fn prepare(seed: &SeedLens, sources: &BTreeMap<String, RetainedSource>) -> Resul
         source_links_sha256: source_links_sha256(&seed.source_links)?,
         document,
         mapped_sources,
-        dependencies,
     })
+}
+
+fn page_ops(document: &SeedDoc) -> crate::knowledge::KnowledgeResult<Vec<LensOp>> {
+    let mut ops = Vec::new();
+    if !document.summary.trim().is_empty() {
+        ops.push(LensOp::Summary {
+            text: document.summary.clone(),
+        });
+    }
+    for section in &document.sections {
+        ops.push(LensOp::Put {
+            key: SectionKey::new(&section.key)?,
+            heading: section.heading.clone(),
+            markdown: section.markdown.clone(),
+            basis: Basis::default(),
+            expected: None,
+        });
+    }
+    Ok(ops)
+}
+
+fn stored_doc(page: &crate::knowledge::PageRead) -> SeedDoc {
+    SeedDoc {
+        summary: page.body.summary().to_owned(),
+        sections: page
+            .body
+            .sections()
+            .iter()
+            .map(|section| SeedSection {
+                key: section.key.as_str().to_owned(),
+                heading: section.heading.clone(),
+                markdown: section.markdown.clone(),
+            })
+            .collect(),
+    }
 }
 
 pub(super) fn seed(
@@ -290,10 +334,9 @@ pub(super) fn seed(
     let store = KnowledgeStore::for_loupist(state.store.clone(), loupist_id)?;
     let at_ms = chrono::Utc::now().timestamp_millis();
     Ok(store.transact(|write| {
-        let selection_before = write.load_standing_selection(loupist_id)?;
-        let standing_before = selection_before
-            .as_ref()
-            .map(|(record, _)| write.read_lens(loupist_id, record))
+        let perspective_before = write
+            .active_perspective(loupist_id)?
+            .map(|record| write.read_page(loupist_id, &record))
             .transpose()?;
         let mut receipts = Vec::new();
         for (original, prepared) in lenses.iter().zip(&prepared) {
@@ -310,27 +353,27 @@ pub(super) fn seed(
                     ));
                 }
             }
-            let created = write.create_record(CreateRecord {
-                loupist_id: loupist_id.into(),
-                kind: RecordKind::Lens,
-                title: original.title.clone(),
-                at_ms,
-            })?;
-            let saved = write.revise_lens(ReviseLens {
-                loupist_id: loupist_id.into(),
-                record_id: created.record_id.clone(),
-                expected_revision_id: None,
-                at_ms,
-                document: prepared.document.clone(),
-                dependencies: prepared.dependencies.clone(),
-                change: LensChangeInput {
-                    rationale: "Evaluation import of a learned method with declared Source identity remapping".into(),
-                    references: Vec::new(),
-                    feedback: None,
+            let filed = write.file(
+                loupist_id,
+                &FilingOrigin::Import {
+                    pack: json!({"kind": "eval_seed"}),
                 },
-            })?;
-            let stored = write.read_lens(loupist_id, &saved.record_id)?;
-            if stored.document != prepared.document || created.title != original.title {
+                vec![PageDelta {
+                    target: PageTarget::Create {
+                        kind: PageKind::Method,
+                        title: original.title.clone(),
+                        anchors: Vec::new(),
+                    },
+                    ops: page_ops(&prepared.document)?,
+                }],
+                at_ms,
+            )?;
+            let page = filed.into_iter().next().ok_or(KnowledgeError::NotFound)?;
+            if !page.created || !page.outcomes.iter().all(|op| op.outcome.changed()) {
+                return Err(KnowledgeError::Invalid("seed_lens_stored_document_changed"));
+            }
+            let stored = write.read_page(loupist_id, &page.record_id)?;
+            if stored_doc(&stored) != prepared.document || stored.title != original.title {
                 return Err(KnowledgeError::Invalid("seed_lens_stored_document_changed"));
             }
             receipts.push(json!({
@@ -340,25 +383,23 @@ pub(super) fn seed(
                 "remapped_document":prepared.document,"remapped_document_sha256":prepared.document_sha256,
                 "roundtrip_document_sha256":prepared.roundtrip_document_sha256,"roundtrip_equal":true,
                 "unchanged_bytes_outside_declared_source_ids":true,"mapped_sources":prepared.mapped_sources,
-                "created":{"record_id":saved.record_id,"revision_id":saved.revision_id,
-                    "revision_digest":saved.revision_digest,"dependencies":saved.dependencies},
-                "remap_fields":["markdown","applicability","assumptions","procedure","principles","limitations"]
+                "created":{"record_id":stored.record_id,"revision_id":stored.revision_id,
+                    "revision_digest":stored.revision_digest},
+                "remap_fields":["summary","sections[].heading","sections[].markdown"]
             }));
         }
-        let selection_after = write.load_standing_selection(loupist_id)?;
-        let standing_after = selection_after
-            .as_ref()
-            .map(|(record, _)| write.read_lens(loupist_id, record))
+        let perspective_after = write
+            .active_perspective(loupist_id)?
+            .map(|record| write.read_page(loupist_id, &record))
             .transpose()?;
-        if selection_before != selection_after || standing_before != standing_after {
-            return Err(KnowledgeError::Invalid("seed_lens_standing_lens_changed"));
+        if perspective_before != perspective_after {
+            return Err(KnowledgeError::Invalid("seed_lens_perspective_changed"));
         }
         Ok(json!({"status":"completed","at_ms":at_ms,"lenses":receipts,
-            "standing_selection_before":selection_before,"standing_selection_after":selection_after,
-            "standing_lens_unchanged":true,"paid_inference_calls":0,
-            "fidelity_scope":"original title, all six document fields, and declared actual MethodologicalSource dependency membership",
-            "not_imported":["authoring change history","Chat records"],
-            "document_hash_contract":"sha256(LensDocument.delivery_text UTF-8); sorted six-field canonical JSON",
+            "perspective_unchanged":true,"paid_inference_calls":0,
+            "fidelity_scope":"original title, summary and every section's key, heading and markdown",
+            "not_imported":["authoring change history","Chat records","section basis"],
+            "document_hash_contract":"sha256(sorted-key canonical JSON of {summary, sections[]})",
             "source_links_hash_contract":"sha256(sorted-key canonical JSON array); declared array order preserved"}))
     })?)
 }
@@ -366,7 +407,7 @@ pub(super) fn seed(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::knowledge::{Authorship, GraphProcessingSettings, LensView};
+    use crate::knowledge::{Authorship, GraphProcessingSettings, PageRead};
 
     const ORIGINAL_RECORD: &str = "rec_11111111111111111111111111111111";
     const ORIGINAL_REVISION: &str = "rev_22222222222222222222222222222222";
@@ -383,14 +424,30 @@ mod tests {
         }
     }
 
+    fn section(key: &str, markdown: String) -> SeedSection {
+        SeedSection {
+            key: key.into(),
+            heading: key.to_uppercase(),
+            markdown,
+        }
+    }
+
     fn learned() -> SeedLens {
-        let document = LensDocument {
-            markdown: format!("# 저장된 방법\r\n[원문](source:{ORIGINAL_RECORD})\n  공백 유지  \n"),
-            applicability: format!("범위가 일치할 때.\t{ORIGINAL_REVISION}"),
-            assumptions: "입력 0007.50, ≤ 3; 문자열 그대로.".into(),
-            procedure: format!("1. {ORIGINAL_RECORD}\n2. {ORIGINAL_REVISION}"),
-            principles: "\"관측\"과 판단을 분리한다.".into(),
-            limitations: "추가 자료가 없으면 한계를 남긴다.\n".into(),
+        let document = SeedDoc {
+            summary: "저장된 방법".into(),
+            sections: vec![
+                section(
+                    "use-when",
+                    format!(
+                        "범위가 일치할 때.\t{ORIGINAL_REVISION} [원문](source:{ORIGINAL_RECORD})"
+                    ),
+                ),
+                section(
+                    "steps",
+                    format!("1. {ORIGINAL_RECORD}\n2. {ORIGINAL_REVISION}\n  공백 유지  "),
+                ),
+                section("limits", "추가 자료가 없으면 한계를 남긴다.".into()),
+            ],
         };
         SeedLens {
             title: "Exact learned method".into(),
@@ -400,7 +457,6 @@ mod tests {
                 original_record_id: ORIGINAL_RECORD.into(),
                 original_revision_id: ORIGINAL_REVISION.into(),
                 fixture_id: "method-source".into(),
-                methodological_dependency: true,
             }],
         }
     }
@@ -409,7 +465,7 @@ mod tests {
         seed.original_document_sha256 = document_sha256(&seed.document).unwrap();
     }
 
-    async fn fixture() -> (tempfile::TempDir, AppState, String, Value, LensView) {
+    async fn fixture() -> (tempfile::TempDir, AppState, String, Value, PageRead) {
         let temporary = tempfile::tempdir().unwrap();
         let state = AppState::for_eval(temporary.path().join("app"));
         let workspace = temporary.path().join("workspace");
@@ -423,74 +479,55 @@ mod tests {
         };
         let ingestion = super::super::ingest(&state, &loupist.id, &config, &[source()]).unwrap();
         let store = KnowledgeStore::for_loupist(state.store.clone(), &loupist.id).unwrap();
-        let standing = store
+        let perspective = store
             .transact(|write| {
-                let record = write.create_record(CreateRecord {
-                    loupist_id: loupist.id.clone(),
-                    kind: RecordKind::Lens,
-                    title: "Existing perspective".into(),
-                    at_ms: 10,
-                })?;
-                let standing = write.revise_lens(ReviseLens {
-                    loupist_id: loupist.id.clone(),
-                    record_id: record.record_id,
-                    expected_revision_id: None,
-                    at_ms: 10,
-                    document: LensDocument {
-                        markdown: "Keep the existing perspective.".into(),
-                        applicability: String::new(),
-                        assumptions: String::new(),
-                        procedure: String::new(),
-                        principles: String::new(),
-                        limitations: String::new(),
-                    },
-                    dependencies: Vec::new(),
-                    change: LensChangeInput {
-                        rationale: "Existing fixture perspective".into(),
-                        references: Vec::new(),
-                        feedback: None,
-                    },
-                })?;
-                write.select_standing_lens(
+                let filed = write.file(
                     &loupist.id,
-                    &standing.record_id,
-                    &standing.revision_id,
+                    &FilingOrigin::User {
+                        chat_id: None,
+                        message_id: None,
+                    },
+                    vec![PageDelta {
+                        target: PageTarget::Create {
+                            kind: PageKind::Perspective,
+                            title: "Existing perspective".into(),
+                            anchors: Vec::new(),
+                        },
+                        ops: vec![LensOp::Put {
+                            key: SectionKey::new("beliefs").unwrap(),
+                            heading: "Beliefs".into(),
+                            markdown: "Keep the existing perspective.".into(),
+                            basis: Basis::default(),
+                            expected: None,
+                        }],
+                    }],
                     10,
                 )?;
-                Ok(standing)
+                write.read_page(&loupist.id, &filed[0].record_id)
             })
             .unwrap();
-        (temporary, state, loupist.id, ingestion, standing)
+        (temporary, state, loupist.id, ingestion, perspective)
     }
 
     #[test]
-    fn seed_lenses_hash_the_exact_six_field_delivery() {
-        let document = LensDocument {
-            markdown: "m".into(),
-            applicability: "a".into(),
-            assumptions: "s".into(),
-            procedure: "p".into(),
-            principles: "r".into(),
-            limitations: "l".into(),
+    fn seed_lenses_hash_the_declared_page() {
+        let document = SeedDoc {
+            summary: "m".into(),
+            sections: vec![section("steps", "p".into())],
         };
-        let canonical = br#"{"applicability":"a","assumptions":"s","limitations":"l","markdown":"m","principles":"r","procedure":"p"}"#;
+        let canonical =
+            br#"{"sections":[{"heading":"STEPS","key":"steps","markdown":"p"}],"summary":"m"}"#;
         assert_eq!(
             document_sha256(&document).unwrap(),
             crate::util::sha256(canonical)
         );
         let seed = learned();
         let canonical_links = format!(
-            "[{{\"fixture_id\":\"method-source\",\"methodological_dependency\":true,\"original_record_id\":\"{ORIGINAL_RECORD}\",\"original_revision_id\":\"{ORIGINAL_REVISION}\"}}]"
+            "[{{\"fixture_id\":\"method-source\",\"original_record_id\":\"{ORIGINAL_RECORD}\",\"original_revision_id\":\"{ORIGINAL_REVISION}\"}}]"
         );
         assert_eq!(
             source_links_sha256(&seed.source_links).unwrap(),
             crate::util::sha256(canonical_links.as_bytes())
-        );
-        let mut mapping_only = seed.clone();
-        mapping_only.source_links[0].methodological_dependency = false;
-        assert_ne!(
-            source_links_sha256(&seed.source_links).unwrap(),
-            source_links_sha256(&mapping_only.source_links).unwrap()
         );
     }
 
@@ -526,7 +563,7 @@ mod tests {
                 seed.source_links[0].fixture_id = "later-step-source".into()
             }),
             ("undeclared record", |seed| {
-                seed.document.limitations = "rec_33333333333333333333333333333333".into();
+                seed.document.sections[2].markdown = "rec_33333333333333333333333333333333".into();
                 rehash(seed);
             }),
             ("ambiguous link", |seed| {
@@ -537,7 +574,7 @@ mod tests {
                 seed.title = format!("Method from {ORIGINAL_RECORD}")
             }),
             ("span reference", |seed| {
-                seed.document.procedure =
+                seed.document.sections[1].markdown =
                     "[reference](evidence:spn_33333333333333333333333333333333)".into();
                 rehash(seed);
             }),
@@ -547,8 +584,8 @@ mod tests {
             edit(&mut seed);
             assert!(validate(&[seed], &[source()]).is_err(), "{name}");
         }
-        // A fixture cannot ask to change the standing selection or bind a raw Source id.
-        for field in ["standingLens", "select"] {
+        // A fixture cannot ask to change the perspective or bind a raw Source id.
+        for field in ["perspective", "select"] {
             let mut value = serde_json::to_value(learned()).unwrap();
             value[field] = json!(true);
             assert!(serde_json::from_value::<SeedLens>(value).is_err());
@@ -558,8 +595,9 @@ mod tests {
         assert!(serde_json::from_value::<SeedLens>(value).is_err());
     }
 
-    async fn assert_commit_exact_method(has_dependency: bool) {
-        let (_temporary, state, loupist, ingestion, standing) = fixture().await;
+    #[tokio::test]
+    async fn seed_lenses_commit_exact_method_pages_with_remapped_source_ids() {
+        let (_temporary, state, loupist, ingestion, perspective) = fixture().await;
         let store = KnowledgeStore::for_loupist(state.store.clone(), &loupist).unwrap();
         let saved_source: RetainedSource =
             serde_json::from_value(ingestion[0]["saved"].clone()).unwrap();
@@ -569,45 +607,34 @@ mod tests {
                 .unwrap(),
         )
         .unwrap();
-        let mut original = learned();
-        original.source_links[0].methodological_dependency = has_dependency;
+        let original = learned();
         let receipt = seed(&state, &loupist, &[original.clone()], &ingestion).unwrap();
         assert_eq!(receipt["status"], "completed");
         assert_eq!(receipt["lenses"].as_array().unwrap().len(), 1);
         let imported = &receipt["lenses"][0];
-        let view = store
-            .read_lens(&loupist, imported["created"]["record_id"].as_str().unwrap())
+        let page = store
+            .read(|read| {
+                read.read_page(&loupist, imported["created"]["record_id"].as_str().unwrap())
+            })
             .unwrap();
         let mut expected = original.document.clone();
-        for text in [
-            &mut expected.markdown,
-            &mut expected.applicability,
-            &mut expected.assumptions,
-            &mut expected.procedure,
-            &mut expected.principles,
-            &mut expected.limitations,
-        ] {
-            *text = text
+        for section in &mut expected.sections {
+            section.markdown = section
+                .markdown
                 .replace(ORIGINAL_RECORD, &saved_source.record_id)
                 .replace(ORIGINAL_REVISION, &saved_source.revision_id);
         }
-        assert_eq!(view.document, expected);
-        let expected_dependencies = if has_dependency {
-            vec![EvidenceRevision {
-                record_id: saved_source.record_id.clone(),
-                revision_digest: saved_source.revision_digest.clone(),
-                role: DependencyRole::MethodologicalSource,
-            }]
-        } else {
-            Vec::new()
-        };
-        assert_eq!(view.dependencies, expected_dependencies);
+        assert_eq!(stored_doc(&page), expected);
+        assert_eq!(page.kind, crate::knowledge::lens_page::LensKind::Method);
+        assert_eq!(page.history[0].origin, "import");
         assert_eq!(imported["roundtrip_equal"], true);
         assert_eq!(
-            store.read_lens(&loupist, &standing.record_id).unwrap(),
-            standing
+            store
+                .read(|read| read.read_page(&loupist, &perspective.record_id))
+                .unwrap(),
+            perspective
         );
-        assert_eq!(receipt["standing_lens_unchanged"], true);
+        assert_eq!(receipt["perspective_unchanged"], true);
         assert_eq!(
             serde_json::to_value(
                 store
@@ -623,20 +650,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn seed_lenses_commit_exact_methods_with_or_without_source_dependencies() {
-        for has_dependency in [true, false] {
-            assert_commit_exact_method(has_dependency).await;
-        }
-    }
-
-    #[tokio::test]
     async fn seed_lenses_roll_back_the_whole_import_when_product_validation_rejects_a_method() {
-        let (_temporary, state, loupist, ingestion, standing) = fixture().await;
+        let (_temporary, state, loupist, ingestion, perspective) = fixture().await;
         let store = KnowledgeStore::for_loupist(state.store.clone(), &loupist).unwrap();
         let before = serde_json::to_value(store.list_records(&loupist).unwrap()).unwrap();
         let mut invalid = learned();
         invalid.title = "Invalid second method".into();
-        invalid.document.markdown.clear();
+        invalid.document.sections[0].markdown.clear();
         rehash(&mut invalid);
         assert!(seed(&state, &loupist, &[learned(), invalid], &ingestion).is_err());
         assert_eq!(
@@ -644,14 +664,10 @@ mod tests {
             before
         );
         assert_eq!(
-            store.read_lens(&loupist, &standing.record_id).unwrap(),
-            standing
-        );
-        assert_eq!(
             store
-                .read(|write| write.load_standing_selection(&loupist))
+                .read(|read| read.read_page(&loupist, &perspective.record_id))
                 .unwrap(),
-            Some((standing.record_id, standing.revision_id))
+            perspective
         );
         state.shutdown().await.unwrap();
     }

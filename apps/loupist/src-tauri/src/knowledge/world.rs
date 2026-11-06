@@ -624,24 +624,6 @@ pub(super) fn insert_snapshot(
     Ok(())
 }
 
-pub(super) fn require_snapshot(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-    snapshot_id: &str,
-) -> KnowledgeResult<String> {
-    validate_knowledge_id(snapshot_id, "snp")?;
-    let record_id: String = tx
-        .query_row(
-            "SELECT record_id FROM knowledge_world_snapshots WHERE snapshot_id = ?1",
-            [snapshot_id],
-            |row| row.get(0),
-        )
-        .optional()?
-        .ok_or(KnowledgeError::NotFound)?;
-    require_record(tx, loupist_id, &record_id)?;
-    Ok(record_id)
-}
-
 pub(super) fn authorize_spans(
     tx: &Transaction<'_>,
     loupist_id: &str,

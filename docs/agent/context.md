@@ -36,7 +36,7 @@ are listed in their serialized order inside that block.
 
 | Envelope order | Block | Bound | Presence |
 | --- | --- | --- | --- |
-| 1 | Standing perspective | ≤32 KiB exact body; otherwise a small `readRequired` pointer | Memory on and a selected perspective; admitted exact-read reference stays in `memory_protocol` |
+| 1 | Perspective | The active perspective page as its exact `PageView` JSON, ≤32 KiB; otherwise a small `readRequired` pointer | Memory on and an active perspective; admitted exact-read reference stays in `memory_protocol` |
 | 2 | User principles and revision identities | ≤30 active rules, ≤6,000 characters including overflow notice | Memory on and at least one fitting principle |
 | 3 | Instructions from the user for this Loupist | ≤4,000 Unicode scalar characters, checked on save and again at delivery | Every turn, including Memory off and an empty definition |
 | 4 | What the user follows | ≤60 unique `(symbol, market)` identities; holdings fill the cap first, then the watchlist, alphabetical within each list; one row can be both holding and watching; symbol/market ≤64 characters and name ≤256. Under an as-of date: watched identities only, alphabetical, without flags, with a hint that holdings are left out | Memory on; empty list is explicit. Never quantity, cost basis, currency or market value |
@@ -44,9 +44,9 @@ are listed in their serialized order inside that block.
 | 5b | `chat_surface` | `{surface, hint}`: `bot`, `session`, `scheduled` or `delegated` (`src-tauri/src/chat/surface.rs`), resolved once in setup, frozen in `AgentHostContext` and part of the runtime surface seal; one fixed hint per surface | Every turn, including Memory off |
 | 6a | Memory active flag and standing-perspective read reference | One flag/reference | Memory on; read reference only after full delivery |
 | 6b | Due Journal review pointers | ≤5; judgment ≤1,000 characters, reasoning ≤2,000; check claim ≤2,000, metric ≤200, unit ≤80, date 10; exact-read args | Memory on; excludes frozen evidence, nested earlier-Journal text and read receipts |
-| 6c | Learned Memory catalog, then Lens catalog counts | Standing Lens + ≤40 other Lenses + ≤24 Worlds; title ≤200 characters; Lens preview ≤180 characters each for applicability/limitations, World preview is its title | Memory on; counts disclose truncation |
+| 6c | Lens index, then counts | ≤60 page lines (kind, title ≤200 characters, summary ≤120, section count, updated time, ≤3 map names), pages anchored to a followed name first, then most recently filed; principles and the perspective have their own blocks; ≤24 Worlds with the title as preview | Memory on; counts disclose truncation |
 | 6d | Journal record counts | Four integer aggregates | Memory on |
-| 6e | Relevant methods and working-note pointers | ≤3 Lens + ≤3 note matches; snippet ≤180 characters; ≤3 later-note pointers per note | Memory on and relevant matches; exact-read required |
+| 6e | Relevant page and working-note pointers | ≤4 pages (those anchored to World nodes the request names first, then lexical matches) + ≤3 note matches; snippet ≤180 characters; ≤3 later-note pointers per note | Memory on and relevant matches; exact-read required |
 | 6f | Selected Memory references | ≤8 references and ≤8 KiB serialized | Memory on and valid user pins |
 | 6g | Current Chat working note | One note; title ≤160 bytes, body ≤16,000 bytes, change summary ≤500 bytes, ≤16 prior-note IDs and ≤3 later-note pointers | Memory on; excludes frozen `inputs`; context, not evidence |
 | 6h | World catalog counts/hint | Fixed metadata and integer counts | Memory on |

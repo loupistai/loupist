@@ -12,7 +12,6 @@ use serde_json::{json, Value};
 
 use super::pack::{self, Files, ItemOrigin, License, PackKind, ParsedPack, Rejection};
 use super::scan::{clean_and_scan, strip_hidden, Flag, ItemFinding};
-use crate::knowledge::LensDocument;
 
 const STAGING_TTL: Duration = Duration::from_secs(60 * 60);
 /// Four reviews at once; unit tests share this process-wide map in parallel.
@@ -232,7 +231,7 @@ pub(crate) struct Fetched {
 pub(crate) struct StoredItem {
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub document: Option<LensDocument>,
+    pub document: Option<pack::PackDoc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub statement: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -407,20 +406,17 @@ pub(crate) fn unstage(staging_id: &str) {
     }
 }
 
-pub(crate) fn method_markdown(document: &LensDocument) -> String {
-    let mut text = document.markdown.clone();
-    for (heading, field) in [
-        ("Applicability", &document.applicability),
-        ("Assumptions", &document.assumptions),
-        ("Procedure", &document.procedure),
-        ("Principles", &document.principles),
-        ("Limitations", &document.limitations),
-    ] {
-        if !field.trim().is_empty() {
-            text.push_str(&format!("\n\n## {heading}\n\n{field}"));
+pub(crate) fn method_markdown(document: &pack::PackDoc) -> String {
+    let mut text = document.summary.clone();
+    for section in &document.sections {
+        if !section.markdown.trim().is_empty() {
+            text.push_str(&format!(
+                "\n\n## {}\n\n{}",
+                section.heading, section.markdown
+            ));
         }
     }
-    text
+    text.trim_start().to_owned()
 }
 
 pub(crate) fn principle_markdown(
@@ -460,13 +456,17 @@ fn method_item(method: &pack::MethodDoc) -> StoredItem {
     let document = &method.document;
     StoredItem {
         title: cleaned(&method.title),
-        document: Some(LensDocument {
-            markdown: cleaned(&document.markdown),
-            applicability: cleaned(&document.applicability),
-            assumptions: cleaned(&document.assumptions),
-            procedure: cleaned(&document.procedure),
-            principles: cleaned(&document.principles),
-            limitations: cleaned(&document.limitations),
+        document: Some(pack::PackDoc {
+            summary: cleaned(&document.summary),
+            sections: document
+                .sections
+                .iter()
+                .map(|section| pack::PackSection {
+                    key: section.key.clone(),
+                    heading: cleaned(&section.heading),
+                    markdown: cleaned(&section.markdown),
+                })
+                .collect(),
         }),
         statement: None,
         why: None,

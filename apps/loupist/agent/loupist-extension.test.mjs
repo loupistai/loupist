@@ -33,7 +33,7 @@ const BUNDLED_COMPONENTS = [
   tool("calculations", "Calculations", ["calculate"]),
   tool("documents", "Markdown artifact publishing", ["artifact_publish"]),
   tool("memory-save", "Source retention and journals", ["source_save", "note_save"]),
-  tool("lens-learning", "Memory learning", ["principle_save", "lens_update"]),
+  tool("lens-learning", "Memory learning", ["principle_save"]),
   tool("charts", "Chart authoring", ["chart_query", "chart_publish"]),
   tool("world-bank", "World Bank", ["worldbank_series"], { connection: "world-bank" }),
   tool("krx", "KRX", ["krx_daily_quote"], { connection: "krx" }),
@@ -64,7 +64,7 @@ function runtimeContext(mode, coreToolNames, components = [], extra = {}) {
       schema: "loupist-agent-runtime/1",
       mode,
       memory_access_enabled: coreToolNames.some((name) => ["world_search", "world_read", "lens_search", "lens_read", "world_job", "conversation_memory"].includes(name)),
-      memory_update_enabled: components.some((component) => component.tool_names.some((name) => ["source_save", "note_save", "lens_update", "principle_save"].includes(name))),
+      memory_update_enabled: components.some((component) => component.tool_names.some((name) => ["source_save", "note_save", "principle_save"].includes(name))),
       core_tool_names: coreToolNames,
       components,
     },
@@ -116,7 +116,7 @@ function probeNativeExtensionStartup(temporary, context, runOptions = "{}", prom
 test("rejects Memory tools outside the host's explicit read and save settings before Pi can reach a provider", (t) => {
   const temporary = realpathSync(mkdtempSync(join(tmpdir(), "loupist-memory-profile-")));
   t.after(() => rmSync(temporary, { recursive: true, force: true }));
-  for (const name of ["world_read", "source_save", "note_save", "lens_update"]) {
+  for (const name of ["world_read", "source_save", "note_save", "principle_save"]) {
     const context = runtimeContext("chat", [name], [], { workspace: emptyWorkspace(temporary) });
     context.agent_runtime.memory_access_enabled = false;
     context.agent_runtime.memory_update_enabled = false;
@@ -408,7 +408,7 @@ test("registers only the host allowlist, defers components, and round-trips thro
   const capabilityLoad = registered.get("capability_load");
   await capabilityLoad.execute("load-source-retention", { id: "memory-save" });
   assert(active().includes("source_save") && active().includes("note_save"));
-  assert(!active().includes("lens_update"));
+  assert(!active().includes("principle_save"));
   const loadedAnalysis = await capabilityLoad.execute("load-analysis", { id: "datasets" });
   assert.equal(typeof loadedAnalysis.details.tools.find((item) => item.name === "dataset_import").parameters, "object");
   const receipt = JSON.parse(loadedAnalysis.content[0].text);
@@ -591,106 +591,6 @@ test("note_save prepares misplaced and identical repeated fields but preserves c
     assert.deepEqual(definition.prepareArguments(invalid), before);
     assert.throws(() => validate(invalid));
   }
-});
-
-test("lens_update prepares misplaced evidence siblings without merging conflicts", (t) => {
-  useHostContext(t, runtimeContext("chat", ["capability_load"], BUNDLED_COMPONENTS));
-  const definition = loadExtension().registered.get("lens_update");
-  const validate = (args) => validateToolArguments(definition, { id: "lens", name: definition.name, arguments: args });
-  const document = { markdown: "Align units.", applicability: "Period comparisons", assumptions: "", procedure: "Convert units before comparing.", principles: "Keep originals.", limitations: "Missing stays unknown." };
-  const request = { title: "Comparable periods", kind: "method", document, rationale: "User taught a method." };
-  // An empty unsupported section carries nothing to preserve; substantive extras stay for rejection.
-  const emptyExtra = { ...request, document: { ...document, "source note": "" } };
-  assert.throws(() => validate(structuredClone(emptyExtra)));
-  assert.deepEqual(definition.prepareArguments(emptyExtra), request);
-  for (const extra of ["Retain this evidence.", null, [], {}]) {
-    const substantive = { ...request, document: { ...document, "source note": extra } };
-    const before = structuredClone(substantive);
-    assert.deepEqual(definition.prepareArguments(substantive), before);
-    assert.throws(() => validate(substantive));
-  }
-  const siblings = { sourceReads: ["source-read"], worldReads: ["world-read"], journalReads: ["journal-read"], previousNoteIds: ["note-id"] };
-  const prepared = definition.prepareArguments({ ...request, document: { ...document, ...siblings } });
-  assert.deepEqual(prepared, { ...request, ...siblings });
-  assert.deepEqual(validate(prepared), prepared);
-  for (const [key, value] of Object.entries(siblings)) {
-    assert.deepEqual(definition.prepareArguments({ ...request, document: { ...document, [key]: value }, [key]: [...value] }), { ...request, [key]: value });
-    for (const conflict of [
-      { ...request, document: { ...document, [key]: value }, [key]: ["different-reference"] },
-      { ...request, document: { ...document, [key]: value }, [key]: null },
-      { ...request, [key]: value, document: { ...document, [key]: "" } },
-    ]) {
-      const before = structuredClone(conflict);
-      assert.deepEqual(definition.prepareArguments(conflict), before);
-      assert.throws(() => validate(conflict));
-    }
-  }
-  for (const invalid of [null, [], {}, { ...request, document: null }, { ...request, document: [] },
-    { ...request, document: { ...document, applicability: { sourceReads: [] } } }]) {
-    const before = structuredClone(invalid);
-    assert.deepEqual(definition.prepareArguments(invalid), before);
-    assert.throws(() => validate(invalid));
-  }
-});
-
-test("native Pi exposes the registered Lens schema after rejection and only dispatches the corrected call", async (t) => {
-  const components = BUNDLED_COMPONENTS.filter((item) => item.id === "lens-learning");
-  const context = runtimeContext("chat", ["capability_load"], components);
-  const { temporary: root, path } = useHostContext(t, context);
-  context.workspace = emptyWorkspace(root);
-  writeFileSync(path, JSON.stringify(context), { mode: 0o600 });
-  const brokerCalls = await startToolBroker(t, () => ({ status: "staged", durable: false, recordId: "test-method" }));
-  const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
-  const loader = new DefaultResourceLoader({ cwd: root, agentDir: root, settingsManager,
-    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
-    extensionFactories: [loupistTerminalExtension] });
-  await loader.reload();
-  assert.deepEqual(loader.getExtensions().errors, []);
-  const modelRuntime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, refreshOnCreate: false });
-  const faux = fauxProvider();
-  modelRuntime.registerNativeProvider(faux.provider);
-  const document = {
-    markdown: "Separate samples, qualification, readiness, shipment, and revenue.",
-    applicability: "Comparing semiconductor product progress.",
-    assumptions: "", procedure: "Check evidence for each stage.", principles: "Do not infer later stages.", limitations: "Missing evidence stays unknown.",
-  };
-  const request = { title: "Product stages", kind: "method", document, rationale: "User taught a reusable method." };
-  const call = (name, input) => fauxAssistantMessage(fauxToolCall(name, input), { stopReason: "toolUse" });
-  const inspectRejection = (modelContext) => {
-    const result = modelContext.messages.findLast((item) => item.role === "toolResult");
-    assert.equal(result.toolName, "lens_update");
-    assert.equal(result.isError, true);
-    assert.equal(brokerCalls.length, 0);
-    const schema = JSON.parse(result.content.at(-1).text.split("\n").slice(1).join("\n"));
-    assert.deepEqual(schema, CATALOG.tools.find((item) => item.name === "lens_update").parameters);
-  };
-  faux.setResponses([
-    call("capability_load", { id: "lens-learning" }),
-    call("lens_update", { ...request, document: { markdown: document.markdown } }),
-    (modelContext) => {
-      inspectRejection(modelContext);
-      return call("lens_update", { ...request, document: { ...document, applicability: { ...document } } });
-    },
-    (modelContext) => {
-      inspectRejection(modelContext);
-      return call("lens_update", { ...request, document: { ...document, sourceReads: [], worldReads: [], journalReads: [], "source note": "" } });
-    },
-    (modelContext) => {
-      const result = modelContext.messages.findLast((item) => item.role === "toolResult");
-      assert.equal(result.isError, false);
-      assert.equal(JSON.parse(result.content[0].text).status, "staged");
-      return fauxAssistantMessage("The method is staged.");
-    },
-  ]);
-  const { session } = await createAgentSession({ cwd: root, agentDir: root, modelRuntime, model: faux.getModel(),
-    settingsManager, resourceLoader: loader, sessionManager: SessionManager.inMemory(root), noTools: "builtin" });
-  t.after(() => session.dispose());
-  await session.bindExtensions({ mode: "rpc" });
-  await session.prompt("Remember the product-stage method.");
-  assert.equal(brokerCalls.length, 1, JSON.stringify(session.messages));
-  assert.equal(brokerCalls[0].method, "lens.update");
-  assert.deepEqual(brokerCalls[0].params, { ...request, sourceReads: [], worldReads: [], journalReads: [] });
-  assert.equal(session.messages.filter((item) => item.role === "toolResult" && item.isError).length, 2);
 });
 
 test("scoped dataset, finance and chart calls reach the broker unchanged and cannot forge scope", async (t) => {

@@ -2145,8 +2145,8 @@ mod tests {
             ),
             ("note_save", json!({"journal":{"thesis":"private thesis"}})),
             (
-                "lens_update",
-                json!({"recordId":"private-id", "document":{"markdown":"private method"}}),
+                "principle_save",
+                json!({"statement":"private rule", "why":"private reason"}),
             ),
             (
                 "capability_load",

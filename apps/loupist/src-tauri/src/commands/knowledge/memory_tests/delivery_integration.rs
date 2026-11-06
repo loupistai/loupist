@@ -1,5 +1,5 @@
 use super::*;
-use crate::commands::tool_executor::{StagedLensRevision, StagedResearch, StagedResearchJournal};
+use crate::commands::tool_executor::{StagedResearch, StagedResearchJournal};
 
 #[test]
 fn finalized_learning_report_opens_canonical_sources_lens_and_journal() {
@@ -12,39 +12,19 @@ fn finalized_learning_report_opens_canonical_sources_lens_and_journal() {
     let original = chat("chat-1", "loupist-a");
     state.store.create_chat(&original).unwrap();
     let lens = with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
-        let write = KnowledgeWrite::bind(tx, blobs);
-        let created = write.create_record(CreateRecord {
-            loupist_id: "loupist-a".into(),
-            kind: RecordKind::Lens,
-            title: "Compare original accounts".into(),
-            at_ms: 3,
-        })?;
-        seed_initial_revision(&write, created, "Compare original accounts", 3)
+        KnowledgeWrite::bind(tx, blobs).file_section(
+            "loupist-a",
+            crate::knowledge::lens_page::PageKind::Method,
+            "Compare original accounts",
+            "steps",
+            "Compare original accounts",
+            &crate::knowledge::test_support::user_origin(),
+            3,
+        )
     })
     .unwrap();
-    let revised_method = crate::knowledge::LensDocument {
-        markdown: "Compare units before combining observations.".into(),
-        applicability: "Comparable accounts".into(),
-        assumptions: String::new(),
-        procedure: String::new(),
-        principles: String::new(),
-        limitations: "Missing units".into(),
-    };
     let (_, lens_delivery) =
         host_prepare_read(&state, "loupist-a", &empty_read(&lens.record_id)).unwrap();
-    let lens_change = StagedLensRevision {
-        title: None,
-        kind: None,
-        record_id: lens.record_id.clone(),
-        expected_revision_id: lens.revision_id.clone().unwrap(),
-        document: revised_method.clone(),
-        rationale: "Keep a reusable comparison method.".into(),
-        source_reads: Vec::new(),
-        world_reads: Vec::new(),
-        journal_reads: Vec::new(),
-        previous_note_ids: Vec::new(),
-        feedback: None,
-    };
     let research = StagedResearch {
         source_reads: Vec::new(),
         world_reads: Vec::new(),
@@ -103,7 +83,6 @@ fn finalized_learning_report_opens_canonical_sources_lens_and_journal() {
                 &[source],
                 &[lens_delivery],
                 Some(&research),
-                &[lens_change],
             )
             .map_err(|error| StoreError::Invalid(error.to_string()))?;
             emitted = Some(write_chat_learning_report(
@@ -127,7 +106,7 @@ fn finalized_learning_report_opens_canonical_sources_lens_and_journal() {
     );
     let report = emitted.memory_update.unwrap();
     assert_eq!(report.status, crate::domain::MemoryUpdateStatus::Applied);
-    assert_eq!(report.changes.len(), 3);
+    assert_eq!(report.changes.len(), 2);
     let change = |kind: &str| {
         report
             .changes
@@ -162,23 +141,6 @@ fn finalized_learning_report_opens_canonical_sources_lens_and_journal() {
             .as_deref(),
         Some("Unmodified delivered source bytes.")
     );
-
-    let lens_change = change("Lens");
-    let lens_ref = lens_change.knowledge.as_ref().unwrap();
-    assert_eq!(lens_ref.record_id, lens.record_id);
-    assert_ne!(Some(lens_ref.revision_id.clone()), lens.revision_id);
-    let read = lens_read(
-        &state,
-        KnowledgeLensReadRequest {
-            include_navigation: None,
-            loupist_id: "loupist-a".into(),
-            record_id: lens_ref.record_id.clone(),
-            revision_id: Some(lens_ref.revision_id.clone()),
-        },
-    )
-    .unwrap();
-    assert_eq!(lens_change.title, read.title);
-    assert_eq!(read.document, revised_method);
 
     let journal_change = change("Journal");
     let journal_ref = journal_change.knowledge.as_ref().unwrap();

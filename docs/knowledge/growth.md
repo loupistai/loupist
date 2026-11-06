@@ -6,7 +6,7 @@ Growth is an append-only event log of Memory changes. A folder copy is the porta
 
 Rust records committed Source, World and Lens changes in the append-only
 `knowledge_growth_events` table. Events include retained Sources, added entities,
-added/disputed/withdrawn claims, Lens creation/revision/metadata changes and moves
+added/disputed/withdrawn claims, Lens page creation, revision, archive and restore (one event per page a filing changed) and moves
 of an asset page's read (`thesis_moved`: the asset as subject and summary, the steps
 as before/after summaries, the reason as rationale), with bounded summaries, actor
 and available originating Chat/message IDs. They commit
@@ -29,12 +29,13 @@ an accepted shared method or perspective carries its `shared_pack` origin.
 
 ## Saving one completed turn
 
-`source_save`, `note_save` and `lens_update` stage changes using acknowledged material.
+`source_save` and `note_save` stage changes using acknowledged material.
 `principle_save` uses the [User principles](lens.md#user-principles) contract.
-Source retention preserves delivered bytes; note/Journal/Lens evidence must name
-exact reads or valid same-turn Source save references. Editing a Lens requires its
-explicit acknowledged read. Rust commits the completed Chat, authorized Memory
-changes and graph jobs together. Lens conflicts become proposals.
+Source retention preserves delivered bytes; note and Journal evidence must name
+exact reads or valid same-turn Source save references. Rust commits the completed
+Chat, authorized Memory changes and graph jobs together. Lens pages change only
+through `KnowledgeWrite::file` ([filing](lens.md#filing)): every op lands or is
+logged with its outcome, and a stale section edit is skipped, never a proposal.
 
 A staged Source returns `saveRef`; job lookup before commit reports
 `waiting_for_turn_commit`. Processing begins after completion. Failed/cancelled

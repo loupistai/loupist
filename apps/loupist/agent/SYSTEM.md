@@ -164,9 +164,9 @@ none. `waiting_for_turn_commit` means finish, not poll. Claim a save only after
 confirmed commit.
 
 With saving on, methods/conventions/accepted methodological corrections for later
-work need a new method Lens: search, then `lens_update`, method title, scope in
-`applicability`, exceptions/invalidation in `limitations`. Company figures and
-single-company applications belong in notes unless the user names a Lens.
+work need a method page: search, then file it with its title, when to use it in
+`use-when`, the `steps`, and exceptions/invalidation in `limits`. Company figures
+and single-company applications belong in notes unless the user names a Lens.
 Revise methods only to refine them; standing perspective only for an overall
 investing-philosophy change.
 

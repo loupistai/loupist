@@ -205,97 +205,6 @@ pub(super) fn scripted(state: &mut AppState, root: &Path) {
 }
 #[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
 #[tokio::test]
-async fn eval_two_sessions_commit_and_retrieve_lens_through_broker() {
-    let root = tempfile::Builder::new()
-        .prefix("eval-test-")
-        .tempdir_in("/tmp")
-        .unwrap();
-    let workspace = root.path().join("workspace");
-    fs::create_dir(&workspace).unwrap();
-    let mut state = AppState::for_eval(root.path().join("app"));
-    scripted(&mut state, root.path());
-    let loupist = crate::commands::loupist::create_folder_loupist(&state, &workspace)
-        .await
-        .unwrap();
-    let teach = new_chat(&state, &loupist.id, "teach").unwrap();
-    let session = Session {
-        id: "teach".into(),
-        role: "train".into(),
-        memory: "remember".into(),
-        turns: vec![],
-    };
-    let first = run_turn(
-        &state,
-        &teach,
-        &session,
-        &Turn {
-            user: "TEACH_EVAL: save my fully diluted share method".into(),
-            as_of: None,
-            ..Default::default()
-        },
-        "fixture",
-        "medium",
-        600000,
-    )
-    .await
-    .unwrap();
-    assert_eq!(first["status"], "completed", "{first}");
-    let commit = first["memory_commits"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|c| c["kind"] == "lens" && c["title"] == "Hanbit diluted-share rule")
-        .expect("first turn must commit learned Lens");
-    assert_eq!(commit["operation"], "create");
-    assert!(first["tool_calls"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|call| call["name"] == "lens_update" && call["outcome"] == "ok"));
-    let probe = new_chat(&state, &loupist.id, "probe").unwrap();
-    assert_ne!(teach.id, probe.id);
-    assert_ne!(teach.pi_session_id, probe.pi_session_id);
-    assert!(probe.messages.is_empty());
-    let session = Session {
-        id: "probe".into(),
-        role: "probe".into(),
-        memory: "read_only".into(),
-        turns: vec![],
-    };
-    let second = run_turn(
-        &state,
-        &probe,
-        &session,
-        &Turn {
-            user: "Value fictional Hanbit: equity 720, basic shares 15, warrants 3.".into(),
-            as_of: None,
-            ..Default::default()
-        },
-        "fixture",
-        "medium",
-        600000,
-    )
-    .await
-    .unwrap();
-    assert_eq!(second["status"], "completed", "{second}");
-    assert!(
-        second["memory_reads"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|read| read["record_id"] == commit["record_id"] && read["access"] == "exact_read"),
-        "{second}"
-    );
-    assert!(second["memory_commits"].as_array().unwrap().is_empty());
-    assert!(second["answer"]
-        .as_str()
-        .unwrap()
-        .contains("720 / (15 + 3) = 40"));
-    state.shutdown().await.unwrap();
-}
-
-#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
-#[tokio::test]
 async fn eval_replay_broker_preserves_production_evidence() {
     let root = tempfile::Builder::new()
         .prefix("eval-replay-")
@@ -363,7 +272,7 @@ async fn eval_seeds_use_canonical_folder_memory_and_factual_context() {
         .await
         .unwrap();
     let input: Seed = serde_json::from_value(json!({
-        "lens":[{"title":"Seeded dilution method","markdown":"Use diluted shares","applicability":"Fictional valuations","assumptions":"All shares known","procedure":"Divide by total shares","principles":"Consistent denominator","limitations":"No missing warrants"}],
+        "lens":[{"title":"Seeded dilution method","summary":"Use diluted shares","sections":[{"key":"use-when","heading":"Use when","markdown":"Fictional valuations"},{"key":"steps","heading":"Steps","markdown":"Divide by total shares"}]}],
         "sources":[{"title":"Fictional source","text":"Fictional shares outstanding: 18","origin":"https://fictional.example/filing"}],
         "watchlist":[{"symbol":"ZQLM","market":"NYSE","display_name":"Zircon Loom"}],
         "holdings_csv":"symbol,market,display_name,quantity,cost_basis,market_value,currency\nZQLM,NYSE,Zircon Loom,73,41,3285,USD\nQZ731,KRX,Quartz Loom,31,8200,279000,KRW\n",
@@ -379,9 +288,10 @@ async fn eval_seeds_use_canonical_folder_memory_and_factual_context() {
                 .iter()
                 .find(|record| record.title == "Seeded dilution method")
                 .unwrap();
-            let revision = read.get_revision(&loupist.id, lens.revision_id.as_deref().unwrap())?;
-            let document: LensDocument = serde_json::from_value(revision.payload)?;
-            assert_eq!(document, input.lens[0].document);
+            let page = read.read_page(&loupist.id, &lens.record_id)?;
+            assert_eq!(page.body.summary(), input.lens[0].summary);
+            assert_eq!(page.body.sections().len(), 2);
+            assert_eq!(page.body.sections()[1].markdown, "Divide by total shares");
             assert!(records
                 .iter()
                 .any(|record| record.kind == RecordKind::Source
@@ -515,7 +425,7 @@ async fn eval_memory_write_without_reply_commits_receipts_but_provider_failure_d
             .unwrap();
         if mode.contains("COMMIT_FAILURE_EVAL") {
             state.store.lock_loupist(&loupist.id).unwrap().execute_batch(
-                "CREATE TRIGGER reject_fixture_commit BEFORE INSERT ON knowledge_lens_changes BEGIN SELECT RAISE(ABORT, 'private fixture commit detail'); END;"
+                "CREATE TRIGGER reject_fixture_commit BEFORE INSERT ON knowledge_lens_log BEGIN SELECT RAISE(ABORT, 'private fixture commit detail'); END;"
             ).unwrap();
         }
         let chat = new_chat(&state, &loupist.id, "teach").unwrap();
@@ -553,7 +463,7 @@ async fn eval_memory_write_without_reply_commits_receipts_but_provider_failure_d
                     .as_array()
                     .unwrap()
                     .iter()
-                    .any(|call| call["name"] == "lens_update" && call["outcome"] == "ok"),
+                    .any(|call| call["name"] == "principle_save" && call["outcome"] == "ok"),
                 "{result}"
             );
         }
@@ -843,7 +753,7 @@ async fn chat_runtime_stalled_provider_after_tool_fails_and_drains_before_long_t
                 .unwrap()
                 .entries
                 .iter()
-                .any(|call| call.name == "lens_update"),
+                .any(|call| call.name == "principle_save"),
             "tool must have executed before the provider wait"
         );
         let records = KnowledgeStore::for_loupist(state.store.clone(), &loupist.id)

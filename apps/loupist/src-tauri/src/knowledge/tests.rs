@@ -25,40 +25,25 @@ fn create(store: &KnowledgeStore, loupist_id: &str, kind: RecordKind, title: &st
         .unwrap()
 }
 
-fn lens_document(markdown: &str) -> LensDocument {
-    LensDocument {
-        markdown: markdown.to_string(),
-        applicability: "Use when comparing accounts of a mechanism.".to_string(),
-        assumptions: "The accounts can be read independently.".to_string(),
-        procedure: "compare several independent accounts".to_string(),
-        principles: "Keep attribution with each account.".to_string(),
-        limitations: "This method does not certify truth.".to_string(),
-    }
+fn method(store: &KnowledgeStore, loupist_id: &str, title: &str, markdown: &str) -> PageRead {
+    store
+        .file_method(
+            loupist_id,
+            title,
+            markdown,
+            &test_support::user_origin(),
+            AT,
+        )
+        .unwrap()
 }
 
-fn empty_change(rationale: &str) -> LensChangeInput {
-    LensChangeInput {
-        rationale: rationale.to_string(),
-        references: Vec::new(),
-        feedback: None,
-    }
-}
-
-fn lens_request(
-    loupist_id: &str,
-    record_id: &str,
-    expected: Option<String>,
-    markdown: &str,
-) -> ReviseLens {
-    ReviseLens {
-        loupist_id: loupist_id.into(),
-        record_id: record_id.into(),
-        expected_revision_id: expected,
-        at_ms: AT,
-        document: lens_document(markdown),
-        dependencies: Vec::new(),
-        change: empty_change("Refine method"),
-    }
+fn section_text(page: &PageRead, key: &str) -> String {
+    page.body
+        .sections()
+        .iter()
+        .find(|section| section.key.as_str() == key)
+        .map(|section| section.markdown.clone())
+        .unwrap_or_default()
 }
 
 /// The app retains every acquisition as a new Loupist-owned Source.
@@ -205,93 +190,88 @@ fn world_query(loupist_id: &str, revision: &WorldRevision) -> WorldGraphQuery {
 }
 
 #[test]
-fn concurrent_lens_revisions_keep_one_winner_and_reject_the_stale_writer() {
+fn concurrent_section_edits_from_one_read_keep_one_winner_and_skip_the_stale_writer() {
     let (_directory, store) = open_store();
-    let record = create(&store, "loupist-a", RecordKind::Lens, "Shared method");
-    let original = store
-        .revise_lens(lens_request(
-            "loupist-a",
-            &record.record_id,
-            None,
-            "Original",
-        ))
-        .unwrap();
+    let original = method(&store, "loupist-a", "Shared method", "Original");
+    let digest = original.body.sections()[0].digest.clone();
     let barrier = std::sync::Barrier::new(2);
     let results: Vec<_> = std::thread::scope(|scope| {
         let handles: Vec<_> = ["First revision", "Second revision"]
             .into_iter()
             .map(|body| {
-                let (store, barrier) = (&store, &barrier);
-                let request = lens_request(
-                    "loupist-a",
-                    &record.record_id,
-                    Some(original.revision_id.clone()),
-                    body,
-                );
+                let (store, barrier, digest, record_id) =
+                    (&store, &barrier, digest.clone(), original.record_id.clone());
                 scope.spawn(move || {
                     barrier.wait();
-                    store.revise_lens(request)
+                    store.transact(|write| {
+                        write.file(
+                            "loupist-a",
+                            &test_support::user_origin(),
+                            vec![lens_page::PageDelta {
+                                target: lens_page::PageTarget::Existing { record_id },
+                                ops: vec![lens_page::LensOp::Put {
+                                    key: lens_page::SectionKey::new("steps").unwrap(),
+                                    heading: "STEPS".into(),
+                                    markdown: body.into(),
+                                    basis: lens_page::Basis::default(),
+                                    expected: Some(digest),
+                                }],
+                            }],
+                            AT + 1,
+                        )
+                    })
                 })
             })
             .collect();
         handles
             .into_iter()
-            .map(|handle| handle.join().unwrap())
+            .map(|handle| handle.join().unwrap().unwrap().remove(0))
             .collect()
     });
-    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
-    let loser = results.iter().find_map(|result| result.as_ref().err());
-    assert_eq!(loser.unwrap().code(), "revision_conflict");
-    let winner = results.into_iter().find_map(Result::ok).unwrap();
-    let current = store.read_lens("loupist-a", &record.record_id).unwrap();
-    assert_eq!(current.revision_id, winner.revision_id);
-    assert_eq!(current.document, winner.document);
+    let landed: Vec<_> = results.iter().filter(|page| page.changed).collect();
+    assert_eq!(landed.len(), 1);
+    assert!(results.iter().any(|page| matches!(
+        page.outcomes[0].outcome,
+        lens_page::OpOutcome::SkippedStale { .. }
+    )));
+    let current = store.read_page("loupist-a", &original.record_id).unwrap();
+    assert_eq!(current.revision_id, landed[0].revision_id);
+    assert!(
+        ["First revision", "Second revision"].contains(&section_text(&current, "steps").as_str())
+    );
 }
 
 #[test]
 fn lens_reads_and_writes_are_owned_by_one_loupist() {
     let (_directory, store) = open_store();
-    let lens = create(&store, "loupist-a", RecordKind::Lens, "Compare hypotheses");
-    let saved = store
-        .revise_lens(lens_request(
-            "loupist-a",
-            &lens.record_id,
-            None,
-            "state hypotheses",
-        ))
-        .unwrap();
-    let read = store.read_lens("loupist-b", &lens.record_id).unwrap_err();
+    let saved = method(
+        &store,
+        "loupist-a",
+        "Compare hypotheses",
+        "state hypotheses",
+    );
+    let read = store.read_page("loupist-b", &saved.record_id).unwrap_err();
     assert_eq!(read.code(), "unauthorized");
     assert!(store.list_records("loupist-b").unwrap().is_empty());
-    let foreign = lens_request(
-        "loupist-b",
-        &lens.record_id,
-        Some(saved.revision_id),
-        "foreign",
-    );
-    assert_eq!(
-        store.revise_lens(foreign).unwrap_err().code(),
-        "unauthorized"
-    );
-    let current = store.read_lens("loupist-a", &lens.record_id).unwrap();
-    assert_eq!(current.document.markdown, "state hypotheses");
+    let foreign = store.transact(|write| {
+        write.put_section(
+            "loupist-b",
+            &saved.record_id,
+            "steps",
+            "foreign",
+            &test_support::user_origin(),
+            AT + 1,
+        )
+    });
+    assert_eq!(foreign.unwrap_err().code(), "unauthorized");
+    let current = store.read_page("loupist-a", &saved.record_id).unwrap();
+    assert_eq!(section_text(&current, "steps"), "state hypotheses");
 }
 
 #[test]
-fn lens_rejects_world_dependencies_and_keeps_private_references_out_of_its_payload() {
+fn lens_keeps_private_references_out_of_its_payload() {
     let (_directory, store) = open_store();
     let world = new_world(&store, "loupist-a", Vec::new(), Vec::new());
-    let lens = create(&store, "loupist-a", RecordKind::Lens, "Method");
-    let mut request = lens_request("loupist-a", &lens.record_id, None, "compare accounts");
-    request.dependencies = vec![EvidenceRevision {
-        record_id: world.record_id.clone(),
-        revision_digest: world.revision_digest.clone(),
-        role: DependencyRole::MethodologicalSource,
-    }];
-    assert_eq!(
-        store.revise_lens(request.clone()).unwrap_err().code(),
-        "lens_dependency_forbidden"
-    );
     let journal = store
         .transact(|write| {
             journal::create(
@@ -308,33 +288,25 @@ fn lens_rejects_world_dependencies_and_keeps_private_references_out_of_its_paylo
             )
         })
         .unwrap();
-    request.dependencies.clear();
-    request.change.references = vec![
-        crate::domain::KnowledgeReference {
-            kind: "world".into(),
-            record_id: world.record_id.clone(),
-            revision_id: world.revision_id.clone(),
-            object_id: world.snapshot_id.clone(),
-            span_id: None,
-            receipt_id: None,
-        },
-        crate::domain::KnowledgeReference {
-            kind: "journal".into(),
-            record_id: String::new(),
-            revision_id: String::new(),
-            object_id: journal.journal_id.clone(),
-            span_id: None,
-            receipt_id: None,
-        },
-    ];
-    let saved = store.revise_lens(request).unwrap();
-    let payload = store
-        .get_revision("loupist-a", &saved.revision_id)
+    for text in [
+        format!("compare accounts of {}", world.snapshot_id),
+        format!("see {}", journal.journal_id),
+        format!("open [world]({})", world.record_id),
+    ] {
+        let refused = store.file_method(
+            "loupist-a",
+            "Method",
+            &text,
+            &test_support::user_origin(),
+            AT,
+        );
+        assert_eq!(refused.unwrap_err().code(), "lens_body_forbidden", "{text}");
+    }
+    assert!(store
+        .list_records("loupist-a")
         .unwrap()
-        .payload
-        .to_string();
-    assert!(!payload.contains(&journal.journal_id));
-    assert!(!payload.contains(&world.snapshot_id));
+        .iter()
+        .all(|r| r.kind != RecordKind::Lens));
 }
 
 #[test]
@@ -359,15 +331,7 @@ fn journal_freezes_acknowledged_inputs_after_world_and_lens_updates() {
             "stream",
         )],
     );
-    let lens = create(&store, "loupist-a", RecordKind::Lens, "Method");
-    let method = store
-        .revise_lens(lens_request(
-            "loupist-a",
-            &lens.record_id,
-            None,
-            "compare accounts",
-        ))
-        .unwrap();
+    let method = method(&store, "loupist-a", "Method", "compare accounts");
     // The same acknowledgement writes the app performs when a turn saves its journal.
     let (journal_id, receipt) = store
         .transact(|write| {
@@ -407,12 +371,12 @@ fn journal_freezes_acknowledged_inputs_after_world_and_lens_updates() {
                 &view_json,
                 &sha256(view_json.as_bytes()),
             )?;
-            let document_json = method.document.delivery_text()?;
+            let document_json = method.delivery_text()?;
             let lens_delivery = write.record_acked_lens(
                 "loupist-a",
                 "turn-7",
                 AT,
-                &lens.record_id,
+                &method.record_id,
                 &method.revision_id,
                 &method.revision_digest,
                 &document_json,
@@ -460,13 +424,18 @@ fn journal_freezes_acknowledged_inputs_after_world_and_lens_updates() {
             "stream",
         )],
     );
-    let later = lens_request(
-        "loupist-a",
-        &lens.record_id,
-        Some(method.revision_id.clone()),
-        "a later method body",
-    );
-    store.revise_lens(later).unwrap();
+    store
+        .transact(|write| {
+            write.put_section(
+                "loupist-a",
+                &method.record_id,
+                "steps",
+                "a later method body",
+                &test_support::user_origin(),
+                AT + 1,
+            )
+        })
+        .unwrap();
 
     let journal = store.get_journal("loupist-a", &journal_id).unwrap();
     let world_input = &journal.inputs.worlds[0].edges[0].claim;
@@ -475,7 +444,12 @@ fn journal_freezes_acknowledged_inputs_after_world_and_lens_updates() {
         journal.inputs.lenses[0].revision_digest,
         method.revision_digest
     );
-    assert_eq!(journal.inputs.lenses[0].document, method.document);
+    assert!(journal.inputs.lenses[0]
+        .markdown
+        .contains("compare accounts"));
+    assert!(!journal.inputs.lenses[0]
+        .markdown
+        .contains("a later method body"));
     assert_eq!(journal.inputs.sources[0].revision_id, source.revision_id);
     let hidden = store.get_journal("loupist-b", &journal_id).unwrap_err();
     assert_eq!(hidden.code(), "unauthorized");
@@ -1014,90 +988,85 @@ fn world_size_caps_are_enforced() {
 }
 
 #[test]
-fn lens_wiki_navigation_is_owned_revision_aware_and_excludes_code() {
+fn lens_wiki_links_are_owned_follow_current_heads_and_exclude_code() {
     let (_directory, store) = open_store();
-    let a = create(&store, "loupist-a", RecordKind::Lens, "A");
-    let b = create(&store, "loupist-a", RecordKind::Lens, "B");
-    let foreign = create(&store, "loupist-b", RecordKind::Lens, "Private method");
+    let b = method(&store, "loupist-a", "B", "An independent method");
+    let foreign = method(&store, "loupist-b", "Private method", "Private content");
     let source = create(&store, "loupist-a", RecordKind::Source, "Source");
-    let code = create(&store, "loupist-a", RecordKind::Lens, "Code examples");
-    let save = |loupist: &str, record: &OwnedRecord, markdown: String| {
-        let current = store
-            .read(|write| write.owned_record(loupist, &record.record_id))
-            .unwrap();
-        let request = lens_request(loupist, &record.record_id, current.revision_id, &markdown);
-        store.revise_lens(request).unwrap()
-    };
-    save("loupist-b", &foreign, "Private content".into());
-    let original = save(
+    let a = method(
+        &store,
         "loupist-a",
-        &a,
-        format!(
+        "A",
+        &format!(
             "[B](lens:{}) [Foreign](lens:{}) [Source](lens:{}) [Missing](lens:missing-method)",
             b.record_id, foreign.record_id, source.record_id
         ),
     );
-    save(
+    let code = method(
+        &store,
         "loupist-a",
-        &b,
-        format!("[A][method]\n\n[method]: lens:{}", a.record_id),
-    );
-    save(
-        "loupist-a",
-        &code,
-        format!(
+        "Code examples",
+        &format!(
             "`[A](lens:{0})`\n\n```md\n[A](lens:{0})\n```\n\n![image](lens:{0})",
             a.record_id
         ),
     );
-    let nav = |loupist: &str, document: &LensDocument| {
-        store.read(|write| write.lens_navigation(loupist, &a.record_id, document))
-    };
-    let ids = |links: &[LensNavigationLink]| {
+    let ids = |links: &[crate::knowledge::lens::LensLinkView]| {
         links
             .iter()
             .map(|link| link.record_id.clone())
             .collect::<Vec<_>>()
     };
-    let result = nav("loupist-a", &original.document).unwrap();
-    assert_eq!(ids(&result.links), std::slice::from_ref(&b.record_id));
-    assert_eq!(ids(&result.backlinks), std::slice::from_ref(&b.record_id));
-    assert_eq!(result.unresolved_links.len(), 3);
-    assert!(!serde_json::to_string(&result)
+    let read_a = store.read_page("loupist-a", &a.record_id).unwrap();
+    assert_eq!(ids(&read_a.links), std::slice::from_ref(&b.record_id));
+    assert!(read_a.backlinks.is_empty());
+    assert!(!serde_json::to_string(&read_a)
         .unwrap()
         .contains("Private method"));
-    let denied = nav("loupist-b", &original.document).unwrap_err();
-    assert_eq!(denied.code(), "unauthorized");
-    // Historical outgoing links remain; backlinks and targets follow current heads.
-    let refreshed_b = save("loupist-a", &b, "An independent method".into());
-    save("loupist-a", &a, "No outgoing links".into());
-    let historical = nav("loupist-a", &original.document).unwrap();
-    assert_eq!(historical.links[0].revision_id, refreshed_b.revision_id);
-    assert!(historical.backlinks.is_empty());
+    let read_b = store.read_page("loupist-a", &b.record_id).unwrap();
+    assert_eq!(ids(&read_b.backlinks), std::slice::from_ref(&a.record_id));
+    assert!(store
+        .read_page("loupist-a", &code.record_id)
+        .unwrap()
+        .links
+        .is_empty());
+    assert_eq!(
+        store
+            .read_page("loupist-b", &a.record_id)
+            .unwrap_err()
+            .code(),
+        "unauthorized"
+    );
+    // Backlinks follow current heads: once A drops its link, B has none.
+    store
+        .transact(|write| {
+            write.put_section(
+                "loupist-a",
+                &a.record_id,
+                "steps",
+                "No outgoing links",
+                &test_support::user_origin(),
+                AT + 1,
+            )
+        })
+        .unwrap();
+    assert!(store
+        .read_page("loupist-a", &b.record_id)
+        .unwrap()
+        .backlinks
+        .is_empty());
 }
 
 #[test]
-fn lens_wiki_navigation_bounds_unresolved_discovery_without_changing_document() {
+fn lens_unresolved_links_stay_in_the_text_without_entering_the_link_index() {
     let (_directory, store) = open_store();
-    let record = create(&store, "loupist-a", RecordKind::Lens, "Many topics");
-    let markdown = (0..80)
+    let markdown = (0..40)
         .map(|i| format!("[Topic {i}](lens:missing-{i})"))
         .collect::<Vec<_>>()
         .join("\n");
-    let saved = store
-        .revise_lens(lens_request(
-            "loupist-a",
-            &record.record_id,
-            None,
-            &markdown,
-        ))
-        .unwrap();
-    let navigation = store
-        .read(|write| write.lens_navigation("loupist-a", &record.record_id, &saved.document))
-        .unwrap();
-    assert!(navigation.unresolved_links.len() < 80);
-    assert!(navigation.unresolved_links_truncated);
-    assert_eq!(saved.document.markdown, markdown);
+    let saved = method(&store, "loupist-a", "Many topics", &markdown);
+    assert!(saved.links.is_empty());
+    assert_eq!(section_text(&saved, "steps"), markdown);
 }
 
 mod growth;

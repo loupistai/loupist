@@ -173,14 +173,10 @@ fn lens_current_known(
     record_id: &str,
     cutoff: Cutoff,
 ) -> crate::knowledge::KnowledgeResult<bool> {
-    let record = write.owned_record(loupist_id, record_id)?;
-    let Some(revision_id) = record.revision_id else {
-        return Ok(false);
-    };
-    Ok(cutoff.recorded(write.get_revision(loupist_id, &revision_id)?.created_at_ms))
+    Ok(cutoff.recorded(write.read_page(loupist_id, record_id)?.created_at_ms))
 }
 
-/// Whether the current version of a method or perspective was written by the cutoff.
+/// Whether a page existed by the cutoff. Sections filed later are hidden by the read.
 pub(in crate::commands) fn lens_known(
     state: &AppState,
     loupist_id: &str,

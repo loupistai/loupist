@@ -133,7 +133,6 @@ async fn persist_turn(state: &AppState, chat_id: &str, turn_id: &str, capture: &
     let sources = capture.staged_sources.lock().await.clone();
     let reads = capture.staged_reads.lock().await.clone();
     let research = capture.staged_research.lock().await.clone();
-    let lenses = capture.staged_lenses.lock().await.clone();
     let blobs = crate::commands::knowledge::knowledge_blobs(state).unwrap();
     let mut connection = state.store.lock().unwrap();
     let tx = connection.transaction().unwrap();
@@ -149,7 +148,6 @@ async fn persist_turn(state: &AppState, chat_id: &str, turn_id: &str, capture: &
         &sources,
         &reads,
         research.as_ref(),
-        &lenses,
     )
     .unwrap();
     tx.commit().unwrap();

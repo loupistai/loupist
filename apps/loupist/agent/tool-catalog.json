@@ -1032,136 +1032,6 @@
       }
     },
     {
-      "name": "lens_update",
-      "method": "lens.update",
-      "permission": "memory_write",
-      "component": "lens-learning",
-      "label": "Update Lens",
-      "description": "Create or revise one perspective or method when saving is on. Search before creating a duplicate. A new Lens omits recordId and expectedRevisionId and supplies title plus kind, perspective or method. An edit sends recordId and the expectedRevisionId from a prior lens_read and omits kind; an existing Lens kind cannot change. document has six sibling text fields: markdown, applicability, assumptions, procedure, principles, and limitations. Supply all six; use an empty string for a section with nothing to add. Do not nest fields inside applicability or serialize an object into a text field. The document must not contain World or Journal references. Link related methods as [title](lens:recordId) with a real id. Put acknowledged evidence in top-level sourceReads, worldReads, and journalReads, beside document; previousNoteIds is also top-level. For a newly acquired original, call source_save first and put its returned saveRef in sourceReads; a raw result_ref is not a Source reference. If the revision changed first, the reply still completes and the change is kept as a proposal. Related-method warnings include lens_read arguments for checking overlapping scope or conflicting assumptions; they do not establish a conflict, block the save, or grant a read receipt.",
-      "parameters": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "document",
-          "rationale"
-        ],
-        "properties": {
-          "recordId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "title": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 180,
-            "description": "Name the current method or perspective. On edits, include an updated title when its scope or meaning has changed."
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "perspective",
-              "method"
-            ],
-            "description": "Required only when creating a new Lens. Omit on edits with recordId."
-          },
-          "expectedRevisionId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "rationale": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Why this creation or revision is justified, including what changed and why. Revision history belongs here rather than in the reusable document."
-          },
-          "document": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "markdown",
-              "applicability",
-              "assumptions",
-              "procedure",
-              "principles",
-              "limitations"
-            ],
-            "properties": {
-              "markdown": {
-                "type": "string",
-                "minLength": 1,
-                "description": "Purpose, explanation, and examples that complement the structured sections; do not repeat their full instructions."
-              },
-              "applicability": {
-                "type": "string",
-                "description": "When to use this method or perspective, as a short readable summary."
-              },
-              "assumptions": {
-                "type": "string",
-                "description": "Assumptions the method relies on; empty string when none are stated."
-              },
-              "procedure": {
-                "type": "string",
-                "description": "Operational steps with necessary formulas and checks; keep these here rather than repeating them in markdown. Empty string when no procedure applies."
-              },
-              "principles": {
-                "type": "string",
-                "description": "Rules or principles to follow; empty string when none are stated."
-              },
-              "limitations": {
-                "type": "string",
-                "description": "Limits, exceptions, or conditions that invalidate the method; empty string when none are stated."
-              }
-            },
-            "description": "The six fields together are the complete current method. Put each substantive instruction in one owning section and retain necessary detail. Replace superseded guidance in place; keep change history in rationale or feedback. Each property is readable text, not nested or JSON-encoded."
-          },
-          "sourceReads": {
-            "type": "array",
-            "maxItems": 32,
-            "uniqueItems": true,
-            "items": {
-              "type": "string"
-            },
-            "description": "Source readRef values from world_read with scope source, or acknowledged saveRef values returned by source_save in this turn. A workspace_capture or fetch result_ref must first be saved with source_save; do not pass the result_ref here."
-          },
-          "worldReads": {
-            "type": "array",
-            "maxItems": 8,
-            "uniqueItems": true,
-            "items": {
-              "type": "string"
-            }
-          },
-          "journalReads": {
-            "type": "array",
-            "maxItems": 8,
-            "uniqueItems": true,
-            "items": {
-              "type": "string"
-            }
-          },
-          "previousNoteIds": {
-            "type": "array",
-            "maxItems": 8,
-            "uniqueItems": true,
-            "items": {
-              "type": "string"
-            }
-          },
-          "feedback": {
-            "type": "string",
-            "description": "The teaching or correction that motivated this revision, separate from the current method."
-          }
-        }
-      },
-      "progress": {
-        "category": "memory",
-        "operation": "edit",
-        "running": "Updating Lens",
-        "done": "Updated Lens",
-        "source": "memory"
-      }
-    },
-    {
       "name": "lens_search",
       "method": "lens.search",
       "permission": "memory_read",
@@ -5251,7 +5121,7 @@
     {
       "id": "lens-learning",
       "name": "Memory learning",
-      "description": "Save a user-stated research rule with principle_save, or revise a perspective or method with lens_update when saving is enabled."
+      "description": "Save a user-stated research rule with principle_save when saving is enabled."
     },
     {
       "id": "charts",

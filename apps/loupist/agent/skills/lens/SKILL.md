@@ -29,10 +29,10 @@ overall investing philosophy. A stated one-off is not a method. Do not
 rewrite a prior judgment. Preserve competing interpretations when their
 assumptions differ.
 
-When saving is on, follow `lens_update`: read the current revision before an
-edit and send the complete current document using the tool’s field roles.
-Replace superseded instructions in their owning section; keep the reason for
-the revision in `rationale` or `feedback`. Preserve useful detail, conditions,
+When saving is on, read the current page before an edit and put only the
+sections that change, each with the digest from that read. Replace superseded
+instructions in their owning section; keep the reason for the revision in
+`rationale`. Preserve useful detail, conditions,
 and exceptions without copying the same instructions across sections. Keep
 World, Source, and Journal dependencies out of the reusable body. An edit's title renames that Lens; its
 kind stays fixed, so do not write a new method into the standing perspective.

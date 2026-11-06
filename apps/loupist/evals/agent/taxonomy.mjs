@@ -31,7 +31,7 @@ export function classifyFailure(check, trace = {}) {
   if (/observable.*test|confirm.or.refute test|only (?:forward check|test)|(?:no|without) (?:observable )?(?:tests?\b|falsifier\b)/u.test(text)) return 'test';
   if (/^save_/u.test(check.metric ?? '') || /committed|not_committed/u.test(check.assert ?? '')
     || /records-user-judgment|saves-titled|keeps-source/u.test(text)
-    || tools.some(t => /^(?:note_save|lens_update|source_save|principle_save|journal_save)$/u.test(t.name)) && /save|fil(?:e|ing)/u.test(text)) return 'save';
+    || tools.some(t => /^(?:note_save|principle_save|source_save|principle_save|journal_save)$/u.test(t.name)) && /save|fil(?:e|ing)/u.test(text)) return 'save';
   if (check.metric === 'revision_disclosure' || /records-termination/u.test(text)) return 'revision';
   if (check.assert === 'metrics') return 'format';
   if (['retrieval', 'carry_forward'].includes(check.metric)) return 'retrieval';

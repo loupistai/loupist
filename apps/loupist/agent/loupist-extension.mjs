@@ -321,20 +321,6 @@ function prepareSiblingArguments(input, container, fields) {
   return input;
 }
 
-function prepareLensArguments(input, parameters) {
-  const references = ["sourceReads", "worldReads", "journalReads", "previousNoteIds"];
-  const prepared = prepareSiblingArguments(input, "document", references);
-  const document = prepared?.document;
-  if (!document || typeof document !== "object" || Array.isArray(document)) return prepared;
-  // An empty unsupported section contains no text or evidence to preserve.
-  // Keep substantive extras and misplaced/conflicting references for validation.
-  for (const [key, value] of Object.entries(document)) {
-    if (value === "" && !Object.hasOwn(parameters.properties.document.properties, key)
-      && !references.includes(key)) delete document[key];
-  }
-  return prepared;
-}
-
 function register(pi, name, label, description, parameters, method) {
   pi.registerTool({
     name,
@@ -343,8 +329,6 @@ function register(pi, name, label, description, parameters, method) {
     parameters,
     ...(name === "note_save" ? {
       prepareArguments: (input) => prepareSiblingArguments(input, "workingNote", ["sourceReads", "worldReads", "lensReads", "previousNoteIds"]),
-    } : name === "lens_update" ? {
-      prepareArguments: (input) => prepareLensArguments(input, parameters),
     } : {}),
     async execute(toolCallId, input, signal) {
       return textResult(await requestBroker(method, input, signal, toolCallId));

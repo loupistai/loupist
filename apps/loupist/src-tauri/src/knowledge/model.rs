@@ -4,7 +4,6 @@ use serde_json::Value;
 use super::error::{KnowledgeError, KnowledgeResult};
 
 pub const MAX_BLOB_BYTES: usize = 8 * 1024 * 1024;
-pub const MAX_MARKDOWN_BYTES: usize = 400_000;
 pub const DEFAULT_NODE_LIMIT: u32 = 25;
 pub const MAX_NODE_LIMIT: u32 = 100;
 pub const DEFAULT_BYTE_LIMIT: u32 = 262_144;
@@ -145,10 +144,6 @@ impl DependencyRole {
             Self::ComposedWorld => "composed_world",
             Self::SourceDerivation => "source_derivation",
         }
-    }
-
-    pub fn allowed_in_lens(self) -> bool {
-        matches!(self, Self::MethodologicalSource | Self::ComposedLens)
     }
 }
 
@@ -746,120 +741,6 @@ pub struct QueryScan {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LensDocument {
-    pub markdown: String,
-    pub applicability: String,
-    pub assumptions: String,
-    pub procedure: String,
-    pub principles: String,
-    pub limitations: String,
-}
-
-impl LensDocument {
-    /// The exact model-facing document. All sections participate in delivery and its digest.
-    pub fn delivery_text(&self) -> KnowledgeResult<String> {
-        Ok(super::canonical::canonical_string(
-            &super::canonical::to_value(self)?,
-        ))
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct LensChangeInput {
-    pub references: Vec<crate::domain::KnowledgeReference>,
-    pub rationale: String,
-    pub feedback: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ReviseLens {
-    pub loupist_id: String,
-    pub record_id: String,
-    pub expected_revision_id: Option<String>,
-    pub at_ms: i64,
-    pub document: LensDocument,
-    pub dependencies: Vec<EvidenceRevision>,
-    pub change: LensChangeInput,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct LensView {
-    pub record_id: String,
-    pub revision_id: String,
-    pub revision_digest: String,
-    pub document: LensDocument,
-    pub dependencies: Vec<EvidenceRevision>,
-}
-
-/// Discovery metadata only. Following a link requires a separate exact Lens read.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct LensNavigationLink {
-    pub record_id: String,
-    pub title: String,
-    pub revision_id: String,
-    #[serde(default)]
-    pub archived: bool,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct LensNavigation {
-    pub links: Vec<LensNavigationLink>,
-    pub backlinks: Vec<LensNavigationLink>,
-    pub unresolved_links: Vec<String>,
-    pub unresolved_links_truncated: bool,
-    pub links_truncated: bool,
-    pub backlinks_truncated: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct LensChangeInputs {
-    pub references: Vec<crate::domain::KnowledgeReference>,
-    pub feedback: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct LensChangeRecord {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub origin: Option<serde_json::Value>,
-    pub change_id: String,
-    pub loupist_id: String,
-    pub record_id: String,
-    pub new_revision_id: Option<String>,
-    pub rationale: String,
-    pub inputs: LensChangeInputs,
-    pub created_at_ms: i64,
-    pub change_kind: String,
-    pub actor: String,
-    pub origin_chat_id: Option<String>,
-    pub origin_message_id: Option<String>,
-    pub new_title: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct LensDraftRecord {
-    pub draft_id: String,
-    pub loupist_id: String,
-    pub author: String,
-    pub record_id: String,
-    pub base_revision_id: String,
-    pub document: LensDocument,
-    pub rationale: String,
-    pub title: Option<String>,
-    pub origin_chat_id: Option<String>,
-    pub origin_message_id: Option<String>,
-    pub updated_at_ms: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LensAcknowledgement {
     pub delivery_id: String,
@@ -1061,7 +942,8 @@ pub struct JournalLensInput {
     pub revision_id: String,
     pub revision_digest: String,
     pub body_digest: String,
-    pub document: LensDocument,
+    /// The page as delivered, rendered to Markdown with section keys.
+    pub markdown: String,
     pub status: LensUseStatus,
 }
 

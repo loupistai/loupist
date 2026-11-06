@@ -243,11 +243,12 @@ async fn a_cutoff_leaves_out_later_sources_and_world_facts_and_counts_them() {
 async fn a_perspective_written_later_is_left_out_of_the_turn_and_its_reads() {
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
-    let standing = crate::commands::knowledge::ensure_standing_lens(
+    let standing = crate::commands::knowledge::ensure_perspective(
         &state,
         "loupist-a",
         "Buy durable compounders.",
     )
+    .unwrap()
     .unwrap();
     let today = crate::commands::knowledge::host_memory_context_for_turn(
         &state,
@@ -273,14 +274,14 @@ async fn a_perspective_written_later_is_left_out_of_the_turn_and_its_reads() {
     .unwrap();
     // The perspective was written after the cutoff; principles still apply.
     assert!(earlier.charter.is_none());
-    assert!(earlier.left_out.methods.contains(&standing.record_id));
+    assert!(earlier.left_out.methods.contains(&standing));
     let capture = Arc::new(ToolCapture::default());
     let executor = executor_for(&state, capture.clone());
     let refused = executor
         .execute(
             &as_of("2026-03-10"),
             ToolMethod::LensRead,
-            json!({"recordId": standing.record_id}),
+            json!({"recordId": standing}),
         )
         .await
         .unwrap_err();

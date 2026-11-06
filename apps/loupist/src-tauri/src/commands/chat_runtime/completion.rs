@@ -90,7 +90,6 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
     let host_composed = content.trim().is_empty();
     let has_staged_memory = task_update_memory
         && (!capture.staged_principles.lock().await.is_empty()
-            || !capture.staged_lenses.lock().await.is_empty()
             || !capture.staged_sources.lock().await.is_empty()
             || capture.staged_research.lock().await.is_some());
     if host_composed && !has_staged_memory {
@@ -180,11 +179,6 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
             capture.staged_research.lock().await.clone()
         } else {
             None
-        };
-        let saved_lenses = if task_update_memory {
-            capture.staged_lenses.lock().await.clone()
-        } else {
-            Vec::new()
         };
         let saved_principles = capture.staged_principles.lock().await.clone();
         let staged_handoff = capture.staged_handoff.lock().await.clone();
@@ -311,7 +305,6 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         &saved_sources,
                         &saved_reads,
                         saved_research.as_ref(),
-                        &saved_lenses,
                     )
                     .map_err(|error| {
                         on_event.set_failure_kind(classify_turn_failure(
@@ -328,7 +321,13 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                                 &saved_principles,
                                 created_at_ms,
                             )
-                            .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?,
+                            .map_err(|error| {
+                                on_event.set_failure_kind(classify_turn_failure(
+                                    &error,
+                                    ChatFailureKind::MemoryCommitFailed,
+                                ));
+                                crate::store::StoreError::Invalid(error.to_string())
+                            })?,
                         );
                     }
                     crate::commands::knowledge::memory_usage::persist_deliveries(
@@ -343,6 +342,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                     .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
                     crate::commands::knowledge::principles::persist_citations(
                         transaction,
+                        &blobs,
                         task_loupist_id,
                         &message_id,
                         &content,
