@@ -16,3 +16,19 @@ Steps: notice → connect (local model) → automatic Portfolio Loupist and Bot 
 | J6 | Bug (pre-existing) | World processing status shows an English sentence in the Korean UI ("Waiting for a supported model provider…"). | Localize by status code. |
 | J7 | UX | "What the map tracks" sits inside the Learning disclosure; users look for it under World. | Move it to the World section. |
 | J8 | Copy | The chat context card calls methods "way of working" (작업 방식); the Pages tab says Methods (분석 방법). | One term. |
+
+## Real-model walk (GPT-6.1-Sol, medium)
+
+After the user connected ChatGPT, the live preset moved to GPT-6.1-Sol at medium (`agent-driver.mjs live-preset`).
+
+- Research session: "TC bonder supply chain by customer". The agent searched Lens and earlier chats, read 11 web sources, saved 9 Sources and filed a new subject page "HBM TC본더 고객사별 공급망" with four dated sections. Receipt: "자료 11개 읽음 · 새로 배운 것 4개 · 페이지 1개 사용 · 자료 9개 저장".
+- Bot hand-off: a deep-research request in the Bot called `research_open`; the Bot showed "조사 중 … 진행 중 · 열기", the session appeared in the sidebar, and its run read the earlier page first. The run finished (`chat_handoffs.status = done`), saved 16 Sources, revised the earlier page and created another ("새로 배운 것 6개 · 페이지 2개 사용").
+- World: the map grew to 18 names and 14 relationships while processing continued.
+
+| ID | Kind | Finding | Fix |
+| --- | --- | --- | --- |
+| J9 | Bug | Right after connecting ChatGPT, the AI account card shows "ChatGPT 모델을 불러오지 못했어요" with the raw English error "another provider support operation is already active" (a model reload raced the connect). | Do not start a second model load while one is active; show localized text, never a raw backend error. |
+| J10 | Bug | A session whose run the host started (a hand-off) shows no answer until the app reloads, although the store has it. | Refresh chats changed by host runs. |
+| J11 | Bug | The Bot's hand-off card stays "진행 중" after the run finished until the app reloads (the store already says done with a learned digest). | Same refresh path for the Bot thread. |
+| J12 | UX | The hand-off card says "배운 것 2" (pages) while the session receipt says "새로 배운 것 6개" (sections). | Count and word it the same way as the receipt. |
+| J13 | UX | The hand-off card summary is the run's first line, a Markdown heading shown with its "#". | Use the first body paragraph as plain text. |
