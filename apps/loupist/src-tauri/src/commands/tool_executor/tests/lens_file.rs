@@ -732,6 +732,106 @@ async fn an_op_the_policy_refuses_at_commit_is_logged_and_the_reply_still_commit
     );
 }
 
+#[tokio::test]
+async fn a_page_archived_or_removed_before_the_reply_commits_is_logged_refused_and_the_rest_files()
+{
+    use crate::knowledge::lens_page::{Basis, LensOp, PageDelta, PageKind, PageTarget, SectionKey};
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let method = |title: &str| PageDelta {
+        target: PageTarget::Create {
+            kind: PageKind::Method,
+            title: title.into(),
+            anchors: Vec::new(),
+        },
+        ops: vec![LensOp::Put {
+            key: SectionKey::new("steps").unwrap(),
+            heading: "Steps".into(),
+            markdown: "Read the filing.".into(),
+            basis: Basis::default(),
+            expected: None,
+        }],
+    };
+    let pages: Vec<String> = knowledge(&state)
+        .transact(|write| {
+            write.file(
+                "loupist-a",
+                &crate::knowledge::test_support::turn_origin("chat-a", "assistant-0"),
+                vec![method("Archived check"), method("Removed check")],
+                1_000,
+            )
+        })
+        .unwrap()
+        .into_iter()
+        .map(|page| page.record_id)
+        .collect();
+    let capture = turn_capture();
+    let executor = executor_for(&state, capture.clone());
+    let policy = policy(true, true);
+    for (index, record_id) in pages.iter().enumerate() {
+        let delivery = format!("read-{index}");
+        executor
+            .lens_read(&policy, json!({"recordId": record_id}), &delivery)
+            .await
+            .unwrap();
+        executor.capture.commit_delivery(&delivery).await;
+    }
+    let revise = |record_id: &str| json!({"page": {"recordId": record_id}, "ops": [{"op": "summary", "text": "Checked again."}]});
+    executor
+        .stage_lens_file(
+            &policy,
+            json!({"pages": [revise(&pages[0]), revise(&pages[1]),
+                {"page": {"create": {"kind": "method", "title": "Fresh check"}},
+                    "ops": [{"op": "put", "key": "steps", "heading": "Steps", "markdown": "Start here."}]}],
+                "rationale": "Revised two checks and wrote a third."}),
+            "file",
+        )
+        .await
+        .unwrap();
+    executor.capture.commit_delivery("file").await;
+    knowledge(&state)
+        .transact(|write| {
+            write.set_lens_archived("loupist-a", &pages[0], true, "Hide.", 1_001, "user")
+        })
+        .unwrap();
+    {
+        let mut connection = state.store.lock().unwrap();
+        let tx = connection.transaction().unwrap();
+        let mut controls = crate::knowledge::memory_controls::load(&tx, "loupist-a").unwrap();
+        controls.removed.insert(pages[1].clone());
+        crate::knowledge::memory_controls::save(&tx, "loupist-a", &controls).unwrap();
+        tx.commit().unwrap();
+    }
+    let changes = commit_turn(&state, &capture, "assistant-1").await;
+    let outcomes: Vec<(&str, Vec<&str>)> = changes
+        .iter()
+        .map(|change| {
+            (
+                change.title.as_str(),
+                change
+                    .outcomes
+                    .iter()
+                    .map(|outcome| outcome.outcome.as_str())
+                    .collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        outcomes,
+        [
+            ("Archived check", vec!["refused_inactive"]),
+            ("Removed check", vec!["refused_inactive"]),
+            ("Fresh check", vec!["added"]),
+        ]
+    );
+    assert!(
+        knowledge(&state)
+            .transact(|write| write.forget_section("loupist-a", &pages[0], "steps", 1_002))
+            .is_err(),
+        "the user restores an archived page before editing it"
+    );
+}
+
 fn method_pages(prefix: &str, pages: usize, ops: usize) -> Value {
     let pages: Vec<Value> = (0..pages)
         .map(|page| {

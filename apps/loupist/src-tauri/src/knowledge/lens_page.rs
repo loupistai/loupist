@@ -741,6 +741,8 @@ pub enum OpOutcome {
     /// The text policy refused the op: a private reference, a `world:` link
     /// on a portable page, or a World node this Loupist's World lacks.
     RefusedText,
+    /// The page was archived or removed after the filing read it.
+    RefusedInactive,
 }
 
 impl OpOutcome {
@@ -758,6 +760,7 @@ impl OpOutcome {
             Self::RefusedFull => "refused_full",
             Self::RefusedKind => "refused_kind",
             Self::RefusedText => "refused_text",
+            Self::RefusedInactive => "refused_inactive",
         }
     }
 
@@ -774,7 +777,8 @@ impl OpOutcome {
             | Self::StatusSet { .. }
             | Self::RefusedFull
             | Self::RefusedKind
-            | Self::RefusedText => None,
+            | Self::RefusedText
+            | Self::RefusedInactive => None,
         }
     }
 

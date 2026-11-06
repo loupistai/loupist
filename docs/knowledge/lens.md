@@ -56,7 +56,8 @@ mismatch, missing key, or an edit through a create), refused_forgotten (the user
 retired that key), refused_basis, refused_full (16 sections), refused_kind or
 refused_text (the text policy: a private reference, a `world:` link on a portable
 page, or a node this World lacks; a refused title or new page's `about` node refuses
-every op of its delta). Disjoint edits from the same read both
+every op of its delta) or refused_inactive (every op of a delta whose existing page was
+archived or removed; the user restores a page before editing it). Disjoint edits from the same read both
 land; an edit of a section that changed since is skipped, never a proposal. A create
 whose ops all refuse leaves no record. An empty summary clears it. A written
 section is contested when its basis cites a claim the live World withdrew, disputed

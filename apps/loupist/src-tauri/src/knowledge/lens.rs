@@ -243,6 +243,54 @@ fn resolve_target(
     }
 }
 
+/// The existing page a delta targets when it was archived or removed: the
+/// filed page with no outcomes yet.
+fn inactive_target(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    target: &PageTarget,
+) -> KnowledgeResult<Option<FiledPage>> {
+    let PageTarget::Existing { record_id } = target else {
+        return Ok(None);
+    };
+    let Some((title, kind, archived, revision_id)) = tx
+        .query_row(
+            "SELECT m.title, m.kind, m.archived_at_ms IS NOT NULL, h.revision_id
+             FROM knowledge_lens_metadata m
+             LEFT JOIN knowledge_record_heads h ON h.record_id = m.record_id
+             WHERE m.record_id = ?1 AND m.loupist_id = ?2",
+            params![record_id, loupist_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, bool>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            },
+        )
+        .optional()?
+    else {
+        return Ok(None);
+    };
+    if !archived
+        && !super::memory_controls::load(tx, loupist_id)?
+            .removed
+            .contains(record_id)
+    {
+        return Ok(None);
+    }
+    Ok(Some(FiledPage {
+        record_id: record_id.clone(),
+        revision_id: revision_id.unwrap_or_default(),
+        title,
+        kind: LensKind::parse(&kind).ok_or(KnowledgeError::NotFound)?,
+        created: false,
+        changed: false,
+        outcomes: Vec::new(),
+    }))
+}
+
 /// The active page an idempotent create lands on: the perspective, a
 /// subject with the same primary anchor, or the page with the same kind and
 /// folded title.
@@ -590,6 +638,31 @@ fn file_with(
     let mut world: Option<WorldIndex> = None;
     let mut filed = Vec::with_capacity(deltas.len());
     for delta in deltas {
+        // The user acts on a page they see and must restore it first; any
+        // other filer read the page earlier and only logs the refusal.
+        if !matches!(origin, FilingOrigin::User { .. }) {
+            if let Some(page) = inactive_target(tx, loupist_id, &delta.target)? {
+                let mut outcomes = Vec::with_capacity(delta.ops.len());
+                for op in &delta.ops {
+                    outcomes.push(FiledOp {
+                        op_id: log_op(
+                            tx,
+                            loupist_id,
+                            &page.record_id,
+                            op,
+                            &OpOutcome::RefusedInactive,
+                            None,
+                            origin,
+                            at_ms,
+                            undoes_op_id,
+                        )?,
+                        outcome: OpOutcome::RefusedInactive,
+                    });
+                }
+                filed.push(FiledPage { outcomes, ..page });
+                continue;
+            }
+        }
         let resolved = resolve_target(tx, loupist_id, &delta.target, &mut world)?;
         let (kind, base, record) = match &resolved {
             Resolved::Found(loaded) => {
@@ -733,8 +806,7 @@ fn file_with(
                 &record_id,
                 op,
                 &step.outcome,
-                &step.before,
-                after,
+                Some((&step.before, after)),
                 origin,
                 at_ms,
                 undoes_op_id,
@@ -789,8 +861,7 @@ fn log_op(
     record_id: &str,
     op: &LensOp,
     outcome: &OpOutcome,
-    before: &LensBody,
-    after: &LensBody,
+    bodies: Option<(&LensBody, &LensBody)>,
     origin: &FilingOrigin,
     at_ms: i64,
     undoes_op_id: Option<&str>,
@@ -799,8 +870,9 @@ fn log_op(
     let section_of = |body: &LensBody| {
         key.and_then(|key| body.page().and_then(|page| page.section(key).cloned()))
     };
-    let (before_digest, after_digest, before_json) = match op {
-        LensOp::Put { .. } | LensOp::Retire { .. } => {
+    let (before_digest, after_digest, before_json) = match (op, bodies) {
+        (_, None) => (None, None, None),
+        (LensOp::Put { .. } | LensOp::Retire { .. }, Some((before, after))) => {
             let previous = section_of(before);
             (
                 previous.as_ref().map(section_digest),
@@ -808,12 +880,12 @@ fn log_op(
                 previous.map(|section| to_value(&section)).transpose()?,
             )
         }
-        LensOp::Summary { .. } => (
+        (LensOp::Summary { .. }, Some((before, _))) => (
             None,
             None,
             before.page().map(|page| json!({"summary": page.summary})),
         ),
-        LensOp::IdeaStatus { .. } => (
+        (LensOp::IdeaStatus { .. }, Some((before, _))) => (
             None,
             None,
             before.idea().map(|idea| json!({"status": idea.status})),

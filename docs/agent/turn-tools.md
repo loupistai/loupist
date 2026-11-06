@@ -63,7 +63,8 @@ unread page may only add sections ("read and revise" otherwise). Each call reser
 its pages and ops under one lock, so parallel calls share the budget and an
 undelivered call frees its share. The reply's commit writes every staged delta through
 `KnowledgeWrite::file` with `FilingOrigin::Turn`; an op the policy refuses by then
-(say, a node the World dropped) is logged `refused_text` and the reply still commits; the answer's `memory_update` lists
+(say, a node the World dropped) is logged `refused_text`, and an op on a page archived
+or removed since is logged `refused_inactive`; the reply still commits. The answer's `memory_update` lists
 each filed page once (kind `Lens`, operation `create` or `revise`, `outcomes` with
 `opId`, `outcome` and `key`), and a stopped reply files nothing.
 
