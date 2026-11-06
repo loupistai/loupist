@@ -59,7 +59,7 @@ calls_file = fixture_root / "research-open-calls.jsonl"
 key_file = fixture_root / "request-key"
 
 entries = []
-answer = "HBM4 supply widens in 2027.\n\nTwo more suppliers announced capacity."
+answer = "# HBM4 supply\n\n**HBM4** supply widens in [2027](https://example.com/hbm4).\n\nTwo more suppliers announced capacity."
 
 for line in sys.stdin:
     request = json.loads(line)

@@ -36,7 +36,6 @@ pub(crate) const MAX_TITLE_CHARS: usize = 120;
 pub(crate) const MAX_QUESTION_CHARS: usize = 2_000;
 pub(crate) const MAX_BRIEF_CHARS: usize = 8_000;
 pub(crate) const MAX_PINS: usize = 8;
-const SUMMARY_CHARS: usize = 2_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -610,20 +609,10 @@ fn summary(state: &AppState, handoff: &Handoff) -> String {
         .flatten()
         .and_then(|chat| {
             chat.messages
-                .iter()
+                .into_iter()
                 .find(|message| &message.id == message_id)
-                .map(|message| message.content.clone())
         })
-        .map(|content| {
-            content
-                .trim()
-                .split("\n\n")
-                .next()
-                .unwrap_or_default()
-                .chars()
-                .take(SUMMARY_CHARS)
-                .collect()
-        })
+        .map(|message| crate::briefings::summary(&message.content))
         .unwrap_or_default()
 }
 

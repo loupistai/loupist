@@ -32,7 +32,10 @@ A research hand-off (`src-tauri/src/chat/handoff.rs`) posts one message with a `
 record (`handoffId`, `chatId`, `title`, `status`, optional `learned`) when its session
 starts and rewrites that same message in place as the run ends, so the card reads
 "Researching: {title} · Running", then "Researched: {title} · Done · Learned n · Open"
-with the session's first paragraph, or "Couldn't finish" / "Stopped". The Bot's
+with the session answer's first body paragraph as plain text (headings and Markdown
+markers dropped, the same 280-character summary a scheduled result uses), or
+"Couldn't finish" / "Stopped". "Learned n" counts changed sections, not pages, in the
+answer receipt's own words ("새로 배운 것 n개" in Korean). The Bot's
 `research_open` tool and the bridge's `research_handoff_start` both commit through the
 same function; the Bot is never selected and its draft never changes. A finished
 `delivery` record may carry the same optional `learned` digest.

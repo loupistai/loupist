@@ -1,5 +1,6 @@
 import i18n, { useTranslation } from "@/i18n";
-import { formatTime } from "@/i18n/format";
+import { formatNumber, formatTime } from "@/i18n/format";
+import { learnedSummary } from "../../chat/receipt";
 import type { ChatMessage, HomeHandoff } from "../../types";
 
 const t = i18n.getFixedT(null, "chat");
@@ -20,7 +21,8 @@ export function ThreadHandoff({ message, loupistName, onOpenRunChat }: {
   const handoff = message.handoff!;
   const done = handoff.status === "done";
   const heading = done ? t("thread.researched", { title: handoff.title }) : t("thread.researching", { title: handoff.title });
-  const learned = handoff.learned?.pages.length;
+  // The same count and words as the session answer's receipt.
+  const learned = learnedSummary(handoff.learned)?.sections;
   return <article className="message assistant thread-delivery" data-status={handoff.status} aria-label={t("thread.handoffLabel", { title: handoff.title })}>
     <div className="message-meta">
       <span>{loupistName}</span>
@@ -31,7 +33,7 @@ export function ThreadHandoff({ message, loupistName, onOpenRunChat }: {
       <span>{heading}</span>
       <span aria-hidden="true">·</span>
       <span>{statusLabel(handoff.status)}</span>
-      {learned ? <><span aria-hidden="true">·</span><span>{t("thread.learned", { count: learned })}</span></> : null}
+      {learned ? <><span aria-hidden="true">·</span><span>{t("chatReceipt.learned", { count: learned, formattedCount: formatNumber(learned) })}</span></> : null}
       {onOpenRunChat ? <><span aria-hidden="true">·</span><button type="button" className="morning-link" onClick={() => onOpenRunChat(handoff.chatId)}>{t("thread.open")}</button></> : null}
     </p>
   </article>;
