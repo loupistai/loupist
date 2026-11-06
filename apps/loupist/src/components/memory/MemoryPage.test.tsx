@@ -175,3 +175,14 @@ it("returns to the page after opening a Source from its basis chip", async () =>
   expect(await screen.findByRole("heading", { name: "TCP" })).toBeVisible();
   expect(screen.getByRole("tab", { name: /Pages/, selected: true })).toBeVisible();
 });
+
+it("never takes focus for the page it opens by itself, and focuses the page you open", async () => {
+  const { view, user } = await fixture();
+  render(<><button type="button">Elsewhere</button>{view()}</>);
+  const elsewhere = screen.getByRole("button", { name: "Elsewhere" });
+  elsewhere.focus();
+  expect(await screen.findByRole("heading", { level: 2, name: "TCP" })).toBeVisible();
+  expect(elsewhere).toHaveFocus();
+  await user.click(screen.getByRole("button", { name: /^QUIC could displace TCP for mobile traffic, Idea/ }));
+  await waitFor(() => expect(screen.getByRole("heading", { level: 2, name: /QUIC could displace TCP/ })).toHaveFocus());
+});

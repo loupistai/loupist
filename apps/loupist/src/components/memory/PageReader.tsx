@@ -43,9 +43,11 @@ export type PageReaderProps = {
   onAsk?: (pin: KnowledgePin) => void;
   onChanged?: () => void;
   onLoaded?: (page: PageView) => void;
+  /** False for a page shown without being asked for, so it never takes focus. */
+  takeFocus?: boolean;
 };
 
-export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, children, chatTitle, onOpenPage, onOpen, onOpenLink, onAsk, onChanged, onLoaded }: PageReaderProps) {
+export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, children, chatTitle, onOpenPage, onOpen, onOpenLink, onAsk, onChanged, onLoaded, takeFocus = true }: PageReaderProps) {
   const { t } = useTranslation("knowledge");
   const [page, setPage] = useState<PageView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -70,7 +72,7 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, chil
     }).catch((cause: unknown) => { if (ticket === generation.current) setLoadError(errorMessage(cause, t("pageReader.loadError"))); });
     return () => { generation.current++; };
   }, [bridge, loupistId, recordId, reload]);
-  useEffect(() => { if (page) heading.current?.focus({ preventScroll: true }); }, [page?.recordId]);
+  useEffect(() => { if (page && takeFocus) heading.current?.focus({ preventScroll: true }); }, [page?.recordId, takeFocus]);
 
   const act = useCallback(async (run: () => Promise<PageView>, after?: (next: PageView) => void) => {
     if (busy) return;
