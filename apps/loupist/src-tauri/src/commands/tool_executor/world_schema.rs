@@ -187,7 +187,10 @@ pub(crate) fn commit_turn(
             at_ms,
         ) {
             Ok(_) => {}
-            Err(crate::knowledge::KnowledgeError::KindAlreadyKnown) => {
+            Err(
+                crate::knowledge::KnowledgeError::KindAlreadyKnown
+                | crate::knowledge::KnowledgeError::Invalid(_),
+            ) => {
                 let types = record.types.iter().map(|item| (&item.name, &item.labels));
                 let relations = record
                     .relations

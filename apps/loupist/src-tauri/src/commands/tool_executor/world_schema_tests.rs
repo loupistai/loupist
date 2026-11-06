@@ -92,7 +92,7 @@ async fn a_completed_reply_applies_the_kinds_with_the_message_that_asked() {
 }
 
 #[tokio::test]
-async fn a_name_the_map_gained_since_staging_is_skipped_and_reported_and_other_errors_surface() {
+async fn a_change_the_map_can_no_longer_take_is_skipped_and_reported_and_the_reply_commits() {
     let temporary = tempfile::tempdir().unwrap();
     let executor = executor(&temporary);
     executor
@@ -137,9 +137,15 @@ async fn a_name_the_map_gained_since_staging_is_skipped_and_reported_and_other_e
     orphan.types.clear();
     orphan.relations[0].name = "FOLLOWS_STEP".into();
     orphan.relations[0].signatures = vec![("GhostStep".into(), "GhostStep".into())];
-    assert!(
-        commit(&[orphan], 200).is_err(),
-        "a change the map cannot take for another reason is not swallowed"
+    assert_eq!(
+        serde_json::to_value(commit(&[orphan], 200).unwrap()).unwrap(),
+        json!([{"name": "FOLLOWS_STEP", "label": "runs before", "labelKo": "이전 단계"}]),
+        "a change whose endpoint kind is gone is reported, never fails the reply"
+    );
+    assert_eq!(
+        changes(&executor).len(),
+        1,
+        "the orphan relation applied nothing"
     );
 }
 
