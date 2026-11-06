@@ -8,6 +8,13 @@ fn summary_is_first_prose_paragraph_without_markdown() {
         "Revenue grew today. Next line."
     );
     assert_eq!(summary(&"한".repeat(400)).chars().count(), 280);
+    // A paragraph that is only a bold label, such as a dateline, is a heading
+    // in disguise; the summary starts at the prose after it.
+    assert_eq!(
+        summary("# Title\n**조사 기준일: 2026년 11월 6일**\n\n**No direct contract** was found."),
+        "No direct contract was found."
+    );
+    assert_eq!(summary("**Only a label**"), "Only a label");
 }
 #[test]
 fn journal_hook_is_empty_and_unattended_native_tools_are_denied() {
