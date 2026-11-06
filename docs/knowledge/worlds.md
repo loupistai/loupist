@@ -39,6 +39,8 @@ the next one waits for World processing recovery in Loupist settings, so a broke
 rebuild cannot loop.
 
 Long Sources become bounded episodes retaining the original span as evidence.
+Each episode runs after the one before it, whose text is its extraction context; once
+that episode completed or can no longer finish, the next one runs.
 Every World extracts with one shared core vocabulary, listed once in
 `knowledge/world_extract/ontology.rs`: the entity types Organization, Person, Asset,
 Product, Place, Policy, Event, Metric, Technology and Segment, and seventeen relation

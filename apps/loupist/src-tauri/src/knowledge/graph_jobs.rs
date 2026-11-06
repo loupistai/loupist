@@ -1132,10 +1132,16 @@ pub fn get_job(
 pub(super) fn queued_loupist_heads(tx: &Transaction<'_>) -> KnowledgeResult<Vec<GraphJobView>> {
     // Read predecessor keys once. A correlated scan of full job JSON for each
     // queued chunk makes a large backfill quadratic and blocks other folder reads.
+    // A chunk waits for the chunk before it, which is only extraction context:
+    // once that chunk can no longer finish, the rest of the Source still runs.
     let mut statement = tx.prepare(
         "WITH completed AS MATERIALIZED (
            SELECT loupist_id, json_extract(payload_json, '$.episodeKey') AS episode_key
            FROM knowledge_graph_outbox WHERE status = 'completed'
+         ), pending AS MATERIALIZED (
+           SELECT loupist_id, json_extract(payload_json, '$.episodeKey') AS episode_key
+           FROM knowledge_graph_outbox
+           WHERE status IN ('queued', 'running', 'paused_budget', 'reconcile_required')
          )
          SELECT job_id, loupist_id, world_record_id, world_revision_id, status, payload_json,
                 payload_digest, created_at_ms
@@ -1157,6 +1163,11 @@ pub(super) fn queued_loupist_heads(tx: &Transaction<'_>) -> KnowledgeResult<Vec<
                AND (json_extract(payload_json, '$.previousEpisodeKey') IS NULL
                  OR EXISTS (
                    SELECT 1 FROM completed previous
+                   WHERE previous.loupist_id = candidate.loupist_id
+                     AND previous.episode_key = json_extract(candidate.payload_json, '$.previousEpisodeKey')
+                 )
+                 OR NOT EXISTS (
+                   SELECT 1 FROM pending previous
                    WHERE previous.loupist_id = candidate.loupist_id
                      AND previous.episode_key = json_extract(candidate.payload_json, '$.previousEpisodeKey')
                  ))

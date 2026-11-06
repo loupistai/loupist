@@ -1035,3 +1035,33 @@ fn processed_chat_source_stamps_world_growth_and_a_map_source_does_not() {
         .iter()
         .all(|event| event.origin_chat_id.is_none() && event.origin_message_id.is_none()));
 }
+
+#[test]
+fn a_chunk_runs_once_its_earlier_chunk_can_no_longer_finish() {
+    let (_directory, store) = open();
+    let settings = enabled();
+    let loupist = "loupist-a";
+    let text = format!("{}\n\n{}", "A".repeat(7_000), "Tail of the note.");
+    let first = queued(&store, &settings, loupist, text.as_bytes());
+    let second = store
+        .graph_jobs(loupist)
+        .unwrap()
+        .into_iter()
+        .find(|job| job.job_id != first.job_id)
+        .unwrap();
+    assert_eq!(heads(&store), std::slice::from_ref(&first.job_id));
+    store
+        .transact(|write| {
+            assert!(write_status(
+                write.tx,
+                &first.job_id,
+                JOB_QUEUED,
+                JOB_CANCELLED,
+                &first.document
+            )?);
+            Ok(())
+        })
+        .unwrap();
+    // The earlier chunk is only context; without it the rest of the Source still reaches the World.
+    assert_eq!(heads(&store), std::slice::from_ref(&second.job_id));
+}

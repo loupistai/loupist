@@ -41,6 +41,7 @@ After the user connected ChatGPT, the live preset moved to GPT-6.1-Sol at medium
 | J20 | Copy | Opening a built-in tool group showed its internal English name, "Opened Source retention and journals", in the Korean chat. | Built-in groups use the translated catalog wording; connection names stay (follow-up). |
 | J21 | Bug | `loupist_setup` and Loupist settings changed the focus, but the perspective page kept the text seeded at creation. | Every focus change rewrites only the page's `focus` section. |
 | J22 | UX | After J13, the re-walk's hand-off card summarized its run with the answer's bold dateline, "조사 기준일: 2026년 11월 6일". | A short paragraph that is only bold text is a label; the summary starts at the prose after it (scheduled results too). |
+| J23 | Bug (pre-existing) | A long Source runs as chained chunks, each waiting for the one before it to complete. When an earlier chunk was lost, the rest of that Source stayed queued forever and the map kept saying "업데이트 중"; the semiconductor World had 7 such chunks. | A chunk runs once its earlier chunk completed or can no longer finish; that chunk was only extraction context. |
 
 ## Re-walk after the fixes (GPT-6.1-Sol, medium)
 
