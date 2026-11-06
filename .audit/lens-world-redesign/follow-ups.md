@@ -4,10 +4,13 @@
 
 - **Vocabulary changes apply without a prompt.** The user did not decide this; the orchestrator chose it from the candidates' arguments (an approval an ordinary user cannot judge never gets answered). Review producers are gated on evidence in the graph and every change has Undo. To require approval instead, route the `review` producer in `knowledge/schema_writer.rs` back to a pending state; chat and preset changes would stay immediate.
 - **An interrupted World extraction is lost for good.** No extraction call is retried, so an uncertain usage receipt is never charged twice. But quitting the app during a job (jobs took 85–185 s with GPT-6-Luna at high thinking) or a provider timeout drops that Source's facts from the World permanently. In the native walk, dev-app restarts and one provider failure lost 10 of 15 attempted Sources this way. One bounded retry for a span whose call never mutated the graph would cap the cost at two calls; the change belongs in `graph_jobs::finish_job` and `recover_interrupted`.
+- **The map trails research by half an hour.** One graph worker serves every Loupist, one Source at a time, and the reviewed default runs GPT-6-Luna at high thinking for 3–5 calls per Source. Of the 14 Sources the battery Loupist saved between 03:33 and 03:48, one was on the map at 03:52 and 11 were still queued behind another Loupist's work. Medium thinking for extraction (`world-model-defaults.json`) or one worker per Loupist would shorten it; either needs an extraction-quality check first.
 
 ## Not verified
 
 - The real-model walk (GPT-6.1-Sol medium, ChatGPT sign-in) covered a research session, a Bot hand-off and World growth on the development build ([journey](journey.md)). The paid `compounding` style evaluation (session one files, session two must read the page with the original Sources withdrawn) is not written or run.
+- Discovery links were not seen live: the semiconductor Loupist follows no asset, and the battery Loupist's World had not processed its Sources before hand-back. Unit tests cover detection and the daily Bot cap.
+- `npm run test:native` and `test:persistence` were not run after the walk; the development window held the GUI lease throughout.
 - `template-seed-grade.mjs` has no recorded traces for the broader core, so curated seeds are unmeasured against it; its hand-written relation list still names the old 12.
 
 ## Product gaps from the design's Later list
