@@ -42,6 +42,7 @@ After the user connected ChatGPT, the live preset moved to GPT-6.1-Sol at medium
 | J21 | Bug | `loupist_setup` and Loupist settings changed the focus, but the perspective page kept the text seeded at creation. | Every focus change rewrites only the page's `focus` section. |
 | J22 | UX | After J13, the re-walk's hand-off card summarized its run with the answer's bold dateline, "조사 기준일: 2026년 11월 6일". | A short paragraph that is only bold text is a label; the summary starts at the prose after it (scheduled results too). |
 | J23 | Bug (pre-existing) | A long Source runs as chained chunks, each waiting for the one before it to complete. When an earlier chunk was lost, the rest of that Source stayed queued forever and the map kept saying "업데이트 중"; the semiconductor World had 7 such chunks. | A chunk runs once its earlier chunk completed or can no longer finish; that chunk was only extraction context. |
+| J24 | UX | The battery Bot's first three link cards (of 133 detected) joined EcoPro BM to "South Korea" and to a plant-capacity metric: crossing Map categories scored higher, so a country and a number won. | Places and metrics are neither link ends nor bridges. |
 
 ## Re-walk after the fixes (GPT-6.1-Sol, medium)
 
@@ -49,3 +50,4 @@ After the user connected ChatGPT, the live preset moved to GPT-6.1-Sol at medium
 - The Pages tab, the used-pages receipt and the reader show "관점" and "신념" in Korean; subject pages have their marker.
 - The semiconductor World, stalled at 18 names, rebuilt itself after the fix and reached 61 names and 73 relationships.
 - A deep-research request in the new Bot opened one research session, which appeared in the sidebar at once with the card "조사 중 … 진행 중 · 열기". When its run finished, the card turned into "조사 완료 … 완료 · 새로 배운 것 4개 · 열기" in the open window, without a reload (J10, J11, J12). The run found no direct contract between the two companies in public sources and said so.
+- Discovery worked live once the battery World had processed its Sources: 187 names, 133 links detected, three posted to the Bot (the daily cap), each with its path.

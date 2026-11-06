@@ -9,7 +9,6 @@
 ## Not verified
 
 - The real-model walk (GPT-6.1-Sol medium, ChatGPT sign-in) covered a research session, a Bot hand-off and World growth on the development build ([journey](journey.md)). The paid `compounding` style evaluation (session one files, session two must read the page with the original Sources withdrawn) is not written or run.
-- Discovery links were not seen live: the semiconductor Loupist follows no asset, and the battery Loupist's World had not processed its Sources before hand-back. Unit tests cover detection and the daily Bot cap.
 - `npm run test:native` and `test:persistence` were not run after the walk; the development window held the GUI lease throughout.
 - `template-seed-grade.mjs` has no recorded traces for the broader core, so curated seeds are unmeasured against it; its hand-written relation list still names the old 12.
 
@@ -25,6 +24,7 @@
 
 - The `memory-pages` preview fixture shows a learned date later than its updated date.
 - World extraction named a metric in English from a Korean KRX filing; the Bot's suggested question then reads "TC BONDER 4.5 GRIFFIN equipment order contract amount KRW 44.2 billion (VAT excluded) 변화는 어떻게 설명돼?". Names should follow the Source's language, and long metric names need a short label in questions.
+- A link card showed the relation "developing": extraction emitted a relation outside the vocabulary, and the card prints an unknown relation as is.
 - The Bot's chat materials panel says nothing was discussed while the Bot's own catch-up lists 17 new names.
 - A hand-off card posted before `briefings::summary` keeps its stored "# heading" summary; only new cards are fixed.
 - Opening a connection's tools reads "Opened OpenDART" in the Korean interface: the host composes the English verb with the name, and the renderer passes composed labels through. A step that carries the connection name as its own field would let the interface word it.

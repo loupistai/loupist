@@ -139,7 +139,8 @@ publication added. Seeds are the followed assets that `resolve_followed` matches
 exactly (an ambiguous symbol seeds nothing; the watchlist and holdings are read from
 the app database before the Loupist transaction opens) plus the nodes open idea
 pages are anchored to. A middle node with more than 40 neighbours is never walked
-through; the score prefers a far name in another Map category, short paths,
+through, and a Place or Metric node is neither a far name nor a middle: a shared
+country or a reported number is not a connection. The score prefers a far name in another Map category, short paths,
 low-degree middles, parallel support and recent claims. Work is bounded (claims per
 node, expansions per publication, 50 candidates), and a result says when it was
 cut short. `knowledge_connections` keeps one row per (seed, far) pair for ever, with

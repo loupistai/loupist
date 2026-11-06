@@ -98,6 +98,9 @@ struct Walk<'a> {
     adjacency: &'a BTreeMap<&'a str, Vec<Edge<'a>>>,
     degree: BTreeMap<&'a str, usize>,
     names: BTreeMap<&'a str, &'a str>,
+    /// Places and metrics: a shared country or a reported number is not a
+    /// connection worth surfacing, so the walk neither ends at nor passes through one.
+    unlinkable: BTreeSet<&'a str>,
     prior_claims: BTreeSet<&'a str>,
     recorded: BTreeMap<&'a str, Option<i64>>,
     expansions: usize,
@@ -180,7 +183,10 @@ impl<'a> Walk<'a> {
             }
             for edge in edges.iter().take(MAX_INCIDENCES).rev() {
                 let to = edge.to;
-                if to == seed || hops.iter().any(|hop| hop.node_id == to) {
+                if to == seed
+                    || self.unlinkable.contains(to)
+                    || hops.iter().any(|hop| hop.node_id == to)
+                {
                     continue;
                 }
                 let is_new = has_new || !self.prior_claims.contains(edge.claim.id.as_str());
@@ -245,10 +251,18 @@ pub fn detect(input: &DetectInput<'_>) -> Detection {
         .flat_map(|body| &body.claims)
         .map(|claim| claim.id.as_str())
         .collect();
+    let unlinkable = input
+        .next
+        .nodes
+        .iter()
+        .filter(|node| matches!(node.kind.trim().to_lowercase().as_str(), "place" | "metric"))
+        .map(|node| node.id.as_str())
+        .collect();
     let mut walk = Walk {
         adjacency: &next_adjacency,
         degree,
         names,
+        unlinkable,
         prior_claims,
         recorded: input
             .next
@@ -415,6 +429,38 @@ mod tests {
         assert!(
             candidate.score > 100,
             "crossing categories scores above base"
+        );
+    }
+
+    #[test]
+    fn a_place_or_a_metric_is_neither_a_link_nor_a_bridge() {
+        let next = body(
+            vec![
+                node("a", "Organization"),
+                node("b", "Product"),
+                node("korea", "Place"),
+                node("capacity", "Metric"),
+                node("d", "Organization"),
+                node("e", "Technology"),
+            ],
+            vec![
+                claim("c1", "a", "b", ClaimStatus::Active),
+                claim("c2", "b", "korea", ClaimStatus::Active),
+                claim("c3", "b", "capacity", ClaimStatus::Active),
+                claim("c4", "a", "korea", ClaimStatus::Active),
+                claim("c5", "korea", "d", ClaimStatus::Active),
+                claim("c6", "b", "e", ClaimStatus::Active),
+            ],
+        );
+        let far: Vec<String> = run(None, &next)
+            .candidates
+            .into_iter()
+            .map(|candidate| candidate.far_node_id)
+            .collect();
+        assert_eq!(
+            far,
+            ["e"],
+            "only the technology behind the product is a link"
         );
     }
 
