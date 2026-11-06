@@ -32,7 +32,7 @@ pub(crate) mod journal;
 pub mod learning;
 mod lens;
 pub mod lens_page;
-pub use lens::{IndexEntry, LearnedDigest, PageRead, PageSummary};
+pub use lens::{IndexEntry, LearnedDigest, PageRead, PageSummary, Screen};
 pub mod memory_controls;
 pub mod memory_reset;
 pub mod principles;
@@ -591,6 +591,15 @@ impl<'a> KnowledgeWrite<'a> {
 
     pub fn read_page(&self, loupist_id: &str, record_id: &str) -> KnowledgeResult<PageRead> {
         lens::read_page(self.tx, loupist_id, record_id)
+    }
+
+    /// What `file` would make of one delta now, for a caller that stages it.
+    pub fn screen_delta(
+        &self,
+        loupist_id: &str,
+        delta: &lens_page::PageDelta,
+    ) -> KnowledgeResult<Screen> {
+        lens::screen(self.tx, loupist_id, delta)
     }
 
     pub fn lens_kind(

@@ -672,6 +672,9 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
         now,
     )?;
     let page = filed.into_iter().next().ok_or_else(invalid)?;
+    if page.refused_text() {
+        return Err(invalid());
+    }
     let stale = page
         .outcomes
         .iter()

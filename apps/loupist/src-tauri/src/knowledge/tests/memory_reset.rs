@@ -1,6 +1,84 @@
 use super::*;
 use crate::knowledge::{memory_controls, memory_reset};
 
+fn summarize(store: &KnowledgeStore, record_id: &str, text: &str, actor: &str, at_ms: i64) {
+    use crate::knowledge::lens_page::{LensOp, PageDelta, PageTarget};
+    store
+        .transact(|write| {
+            write.file(
+                "loupist-a",
+                &origin(actor),
+                vec![PageDelta {
+                    target: PageTarget::Existing {
+                        record_id: record_id.into(),
+                    },
+                    ops: vec![LensOp::Summary { text: text.into() }],
+                }],
+                at_ms,
+            )
+        })
+        .unwrap();
+}
+
+#[test]
+fn reset_clears_a_loupist_summary_on_a_kept_page_and_keeps_the_users() {
+    let (_temp, store) = open_store();
+    store
+        .transact(|write| {
+            settings_table(write);
+            Ok(())
+        })
+        .unwrap();
+    let learned = method(&store, "My research method", "user");
+    store
+        .transact(|write| {
+            write.put_section(
+                "loupist-a",
+                &learned.record_id,
+                "risks",
+                "Market collapse is certain.",
+                &origin("loupist"),
+                AT + 1,
+            )
+        })
+        .unwrap();
+    summarize(
+        &store,
+        &learned.record_id,
+        "Market collapse is certain.",
+        "loupist",
+        AT + 1,
+    );
+    let mine = method(&store, "My own summary", "user");
+    summarize(
+        &store,
+        &mine.record_id,
+        "My own conclusion.",
+        "user",
+        AT + 1,
+    );
+    let counts = store
+        .read(|write| memory_reset::preview(write.tx, "loupist-a"))
+        .unwrap();
+    assert_eq!(counts.sections, 2, "the Loupist's section and its summary");
+    store
+        .transact(|write| memory_reset::reset(write.tx, write.blobs, "loupist-a", &counts, AT + 2))
+        .unwrap();
+    let learned = store.read_page("loupist-a", &learned.record_id).unwrap();
+    assert!(
+        !learned.markdown(false).contains("Market collapse"),
+        "{}",
+        learned.markdown(false)
+    );
+    assert_eq!(learned.body.sections().len(), 1);
+    let mine = store.read_page("loupist-a", &mine.record_id).unwrap();
+    assert_eq!(mine.body.summary(), "My own conclusion.");
+    let remaining = store
+        .read(|write| memory_reset::preview(write.tx, "loupist-a"))
+        .unwrap();
+    assert_eq!(remaining, memory_reset::ResetCounts::default());
+}
+
 fn node(id: &str, name: &str, kind: &str, properties: BTreeMap<String, Value>) -> GraphNode {
     GraphNode {
         source_role: "source".into(),

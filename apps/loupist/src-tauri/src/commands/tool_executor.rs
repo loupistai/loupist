@@ -156,6 +156,9 @@ pub(super) struct ToolCapture {
     pub(in crate::commands) staged_earnings: Mutex<Vec<earnings::EarningsSave>>,
     pub(in crate::commands) staged_vocabulary: Mutex<Vec<StagedVocabulary>>,
     pub(in crate::commands) staged_filings: Mutex<Vec<StagedFiling>>,
+    /// Pages and ops each `lens_file` delivery reserved from the turn's
+    /// budget; an undelivered call frees its share.
+    lens_file_budget: Mutex<BTreeMap<String, (usize, usize)>>,
     /// Assets with a thesis update in this turn (staged or in flight), by
     /// delivery: parallel calls cannot both move one asset's read.
     pub(super) thesis_assets: Mutex<BTreeMap<String, String>>,
@@ -564,6 +567,7 @@ impl ToolCapture {
             .lock()
             .await
             .retain(|_, delivery| delivery != delivery_id);
+        self.lens_file_budget.lock().await.remove(delivery_id);
     }
 
     async fn commit_delivery(&self, delivery_id: &str) {

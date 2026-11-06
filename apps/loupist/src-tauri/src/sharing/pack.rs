@@ -29,11 +29,6 @@ pub(crate) const MAX_NAME: usize = 240;
 /// A profile focus, in characters: the same cap as creating a Loupist.
 pub(crate) const MAX_FOCUS: usize = 280;
 pub(crate) const ASSET_CLASSES: [&str; 5] = ["stocks", "etfs", "bonds", "crypto", "economy"];
-/// Page section limits, in characters, as `knowledge::lens_page` enforces them.
-const MAX_PAGE_SECTIONS: usize = 16;
-const MAX_SECTION_CHARS: usize = 2_000;
-const MAX_HEADING_CHARS: usize = 80;
-const MAX_SUMMARY_CHARS: usize = 400;
 
 pub(crate) type Files = BTreeMap<String, Vec<u8>>;
 
@@ -1051,20 +1046,19 @@ fn jsonl<T: serde::de::DeserializeOwned>(bytes: &[u8], cap: usize) -> Result<Vec
     Ok(records)
 }
 
+/// A page document under the Lens writer's own rules, so every page a
+/// Loupist can hold exports and imports.
 fn validate_lens_doc(document: &PackDoc) -> bool {
+    use crate::knowledge::lens_page;
     let mut keys = std::collections::BTreeSet::new();
-    document.sections.len() <= MAX_PAGE_SECTIONS
-        && bounded_text(&document.summary, MAX_MARKDOWN, true)
-        && document.summary.chars().count() <= MAX_SUMMARY_CHARS
-        && !document.summary.contains('\n')
+    document.sections.len() <= lens_page::MAX_SECTIONS
+        && lens_page::summary_ok(&document.summary)
         && (!document.summary.trim().is_empty() || !document.sections.is_empty())
         && document.sections.iter().all(|section| {
-            section.key.len() <= 48
-                && valid_slug(&section.key)
+            lens_page::SectionKey::new(&section.key).is_ok()
                 && keys.insert(section.key.clone())
-                && single_line(&section.heading, MAX_HEADING_CHARS, false)
-                && bounded_text(&section.markdown, MAX_MARKDOWN, false)
-                && section.markdown.chars().count() <= MAX_SECTION_CHARS
+                && lens_page::heading_ok(&section.heading)
+                && lens_page::markdown_ok(&section.markdown)
         })
 }
 
@@ -1322,8 +1316,7 @@ pub(crate) fn validate(files: &Files) -> Result<ParsedPack, Rejection> {
                     PathRole::Perspective => {
                         let method = parse_method(text)?;
                         if method.key != "perspective"
-                            || !bounded_chars(&method.title, 200, false)
-                            || method.title.contains('\n')
+                            || !crate::knowledge::lens_page::title_ok(&method.title)
                             || !validate_lens_doc(&method.document)
                             || !validate_origin(&method.origin)
                         {
@@ -1334,8 +1327,7 @@ pub(crate) fn validate(files: &Files) -> Result<ParsedPack, Rejection> {
                     PathRole::Method | PathRole::FlatMethod => {
                         let method = parse_method(text)?;
                         if !valid_key(&method.key, 'm')
-                            || !bounded_chars(&method.title, 200, false)
-                            || method.title.contains('\n')
+                            || !crate::knowledge::lens_page::title_ok(&method.title)
                             || !validate_lens_doc(&method.document)
                             || !validate_origin(&method.origin)
                         {

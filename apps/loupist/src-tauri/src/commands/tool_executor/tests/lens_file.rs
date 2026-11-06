@@ -583,3 +583,312 @@ async fn a_handoff_card_and_a_scheduled_delivery_carry_what_the_run_learned() {
     let nothing = crate::chat::handoff::learned_digest(&state, "loupist-a", &["final-9".into()]);
     assert!(nothing.is_none());
 }
+
+fn said() -> Value {
+    json!({"refs": [{"said": true}]})
+}
+
+#[tokio::test]
+async fn text_the_commit_would_refuse_is_refused_at_staging_by_its_field() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let source = retain_publisher_source(&state, b"Ada described the engine.");
+    seal_world(&state, &source, &["Ada described the engine"]);
+    let subject = |about: Value, ops: Value| json!({"page": {"create": {"kind": "subject", "title": "Hanbit Battery", "about": about}}, "ops": ops});
+    let method = |markdown: &str| {
+        json!({"page": {"create": {"kind": "method", "title": "Graph check"}},
+            "ops": [{"op": "put", "key": "steps", "heading": "Steps", "markdown": markdown}]})
+    };
+    let cases = [
+        (
+            subject(
+                json!([]),
+                json!([{"op": "put", "key": "facts", "heading": "Facts",
+                    "markdown": "Supplies [Northgate](world:northgate-motors).", "basis": said()}]),
+            ),
+            "pages[0].ops[0].markdown",
+        ),
+        (
+            subject(
+                json!([{"nodeId": "hanbit-battery"}]),
+                json!([{"op": "put", "key": "facts", "heading": "Facts",
+                    "markdown": "Makes LFP cathode.", "basis": said()}]),
+            ),
+            "pages[0].page.create.about[0].nodeId",
+        ),
+        (
+            subject(
+                json!([]),
+                json!([{"op": "put", "key": "facts", "heading": "Facts", "markdown": "Makes cathode.", "basis": said()},
+                    {"op": "summary", "text": "Partner of [Northgate](world:northgate-motors)."}]),
+            ),
+            "pages[0].ops[1].text",
+        ),
+        (
+            method("Open world://ada first."),
+            "pages[0].ops[0].markdown",
+        ),
+        (
+            method("Start at [Ada](world:ada)."),
+            "pages[0].ops[0].markdown",
+        ),
+        (
+            method("Start at [Ada][a].\n\n[a]: world:ada"),
+            "pages[0].ops[0].markdown",
+        ),
+    ];
+    for (page, field) in cases {
+        let capture = turn_capture();
+        let executor = executor_for(&state, capture.clone());
+        let refused = executor
+            .execute(
+                &policy(true, true),
+                ToolMethod::LensFile,
+                json!({"pages": [page], "rationale": "What the user said."}),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(field_of(refused), field);
+        assert!(capture.staged_filings.lock().await.is_empty());
+    }
+    // A link to a node the World holds stages on a subject page.
+    let capture = turn_capture();
+    executor_for(&state, capture.clone())
+        .execute(
+            &policy(true, true),
+            ToolMethod::LensFile,
+            json!({"pages": [subject(json!([{"nodeId": "ada"}]), json!([{"op": "put", "key": "facts",
+                "heading": "Facts", "markdown": "Read by [Ada](world:ada).", "basis": said()}]))],
+                "rationale": "What the user said."}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(capture.staged_filings.lock().await.len(), 1);
+}
+
+#[tokio::test]
+async fn an_op_the_policy_refuses_at_commit_is_logged_and_the_reply_still_commits() {
+    use crate::knowledge::{GraphNode, SealWorld};
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let source = retain_publisher_source(&state, b"Ada described the engine.");
+    let world = seal_world(&state, &source, &["Ada described the engine"]);
+    let capture = turn_capture();
+    let executor = executor_for(&state, capture.clone());
+    executor
+        .stage_lens_file(
+            &policy(true, true),
+            json!({"pages": [{"page": {"create": {"kind": "subject", "title": "Analytical Engine"}},
+                "ops": [{"op": "put", "key": "facts", "heading": "Facts",
+                        "markdown": "Ada described [the engine](world:engine).", "basis": said()},
+                    {"op": "put", "key": "overview", "heading": "Overview",
+                        "markdown": "A mechanical computer.", "basis": said()}]}],
+                "rationale": "What the user said."}),
+            "file",
+        )
+        .await
+        .unwrap();
+    executor.capture.commit_delivery("file").await;
+    // The World drops the engine before the reply commits.
+    knowledge(&state)
+        .transact(|write| {
+            write.seal_world(SealWorld {
+                loupist_id: "loupist-a".into(),
+                record_id: world.record_id.clone(),
+                expected_revision_id: Some(world.revision_id.clone()),
+                at_ms: 1_700_000_000_001,
+                nodes: vec![GraphNode {
+                    id: "ada".into(),
+                    name: "ada".into(),
+                    aliases: Vec::new(),
+                    description: "The ada.".into(),
+                    kind: "Person".into(),
+                    source_role: "source".into(),
+                    properties: Default::default(),
+                }],
+                claims: Vec::new(),
+                annotations: Vec::new(),
+                dependencies: Vec::new(),
+            })
+        })
+        .unwrap();
+    let changes = commit_turn(&state, &capture, "assistant-1").await;
+    assert_eq!(changes.len(), 1);
+    let outcomes: Vec<(&str, Option<&str>)> = changes[0]
+        .outcomes
+        .iter()
+        .map(|outcome| (outcome.outcome.as_str(), outcome.key.as_deref()))
+        .collect();
+    assert_eq!(
+        outcomes,
+        [("refused_text", None), ("added", Some("overview"))]
+    );
+    assert_eq!(
+        log_rows(&state)
+            .iter()
+            .map(|(outcome, ..)| outcome.as_str())
+            .collect::<Vec<_>>(),
+        ["refused_text", "added"]
+    );
+}
+
+fn method_pages(prefix: &str, pages: usize, ops: usize) -> Value {
+    let pages: Vec<Value> = (0..pages)
+        .map(|page| {
+            json!({
+                "page": {"create": {"kind": "method", "title": format!("{prefix} method {page}")}},
+                "ops": (0..ops).map(|op| json!({
+                    "op": "put", "key": format!("s{op}"), "heading": format!("Step {op}"),
+                    "markdown": format!("Check {op}.")
+                })).collect::<Vec<_>>()
+            })
+        })
+        .collect();
+    json!({"pages": pages, "rationale": "Budget check."})
+}
+
+#[tokio::test]
+async fn parallel_lens_file_calls_share_one_turn_budget() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let policy = policy(true, true);
+    let capture = turn_capture();
+    let executor = executor_for(&state, capture.clone());
+    let first =
+        executor.execute_for_delivery(&policy, ToolMethod::LensFile, method_pages("a", 8, 5), "p1");
+    let second =
+        executor.execute_for_delivery(&policy, ToolMethod::LensFile, method_pages("b", 1, 1), "p2");
+    let (first, second) = tokio::join!(first, second);
+    let refused = match (first, second) {
+        (Ok(_), Err(refused)) | (Err(refused), Ok(_)) => refused,
+        (first, second) => panic!("exactly one call fits: {first:?} {second:?}"),
+    };
+    assert_eq!(field_of(refused), "pages");
+    // A call that was never delivered gives its share back.
+    capture.discard_delivery("p1").await;
+    capture.discard_delivery("p2").await;
+    executor
+        .execute_for_delivery(&policy, ToolMethod::LensFile, method_pages("c", 8, 5), "p3")
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn a_create_landing_on_a_page_the_turn_did_not_read_only_adds_sections() {
+    use crate::knowledge::lens_page::{
+        Basis, BasisRef, LensOp, PageDelta, PageKind, PageTarget, SectionKey,
+    };
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    crate::commands::knowledge::ensure_perspective(&state, "loupist-a", "Liquidity first.")
+        .unwrap()
+        .unwrap();
+    let idea = knowledge(&state)
+        .transact(|write| {
+            write.file(
+                "loupist-a",
+                &crate::knowledge::test_support::turn_origin("chat-a", "assistant-0"),
+                vec![PageDelta {
+                    target: PageTarget::Create {
+                        kind: PageKind::Idea,
+                        title: "Hanbit pricing power".into(),
+                        anchors: Vec::new(),
+                    },
+                    ops: vec![
+                        LensOp::Put {
+                            key: SectionKey::new("claim").unwrap(),
+                            heading: "Claim".into(),
+                            markdown: "Hanbit can raise LFP prices.".into(),
+                            basis: Basis {
+                                refs: vec![BasisRef::UserSaid {
+                                    message_id: "user-0".into(),
+                                }],
+                                uncertainty: None,
+                            },
+                            expected: None,
+                        },
+                        LensOp::Summary {
+                            text: "The user's idea: Hanbit can raise prices.".into(),
+                        },
+                    ],
+                }],
+                1_000,
+            )
+        })
+        .unwrap()[0]
+        .record_id
+        .clone();
+    let capture = turn_capture();
+    let executor = executor_for(&state, capture.clone());
+    let policy = policy(true, true);
+    let call = |page: Value| json!({"pages": [page], "rationale": "Rewrote what the turn found."});
+    for page in [
+        json!({"page": {"create": {"kind": "perspective", "title": "Anything at all"}},
+            "ops": [{"op": "summary", "text": "Momentum over liquidity."}]}),
+        json!({"page": {"create": {"kind": "idea", "title": "hanbit PRICING power"}},
+            "ops": [{"op": "put", "key": "checks", "heading": "Checks", "markdown": "Watch prices.", "basis": said()},
+                {"op": "idea_status", "status": "refuted", "why": "No basis."}]}),
+    ] {
+        let refused = executor
+            .stage_lens_file(&policy, call(page), "unread")
+            .await
+            .unwrap_err();
+        assert!(refused.to_string().contains("lens_read"), "{refused}");
+        assert!(field_of(refused).ends_with(".op"));
+    }
+    assert!(capture.staged_filings.lock().await.is_empty());
+    // After an exact read the same create revises the page.
+    executor
+        .lens_read(&policy, json!({"recordId": idea}), "read")
+        .await
+        .unwrap();
+    executor.capture.commit_delivery("read").await;
+    executor
+        .stage_lens_file(
+            &policy,
+            call(
+                json!({"page": {"create": {"kind": "idea", "title": "hanbit PRICING power"}},
+                "ops": [{"op": "summary", "text": "Refuted by the 2026 contract."}]}),
+            ),
+            "read-then-file",
+        )
+        .await
+        .unwrap();
+    executor.capture.commit_delivery("read-then-file").await;
+    let changes = commit_turn(&state, &capture, "assistant-1").await;
+    assert_eq!(changes[0].record_id, idea);
+    assert_eq!(changes[0].outcomes[0].outcome, "summarized");
+}
+
+#[tokio::test]
+async fn control_characters_are_refused_before_staging() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let call = |title: &str, heading: &str, markdown: &str, summary: &str, rationale: &str| {
+        json!({"pages": [{"page": {"create": {"kind": "method", "title": title}},
+            "ops": [{"op": "put", "key": "steps", "heading": heading, "markdown": markdown},
+                {"op": "summary", "text": summary}]}],
+            "rationale": rationale})
+    };
+    let clean = [
+        "Hanbit rule",
+        "Steps",
+        "Divide by shares.",
+        "Summary",
+        "Why.",
+    ];
+    for field in 0..clean.len() {
+        let mut texts = clean;
+        texts[field] = "Hidden\u{1b}[8m text\u{8}";
+        let capture = turn_capture();
+        let refused = executor_for(&state, capture.clone())
+            .execute(
+                &policy(true, true),
+                ToolMethod::LensFile,
+                call(texts[0], texts[1], texts[2], texts[3], texts[4]),
+            )
+            .await;
+        assert!(refused.is_err(), "{field}");
+        assert!(capture.staged_filings.lock().await.is_empty());
+    }
+}

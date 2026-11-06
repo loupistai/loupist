@@ -904,3 +904,53 @@ fn product_eval_budget_counts_cached_input_and_unknown_usage() {
     assert_eq!(record["budget_stop"]["error"], "budget_usage_unknown");
     assert_eq!(record["status"], "failed");
 }
+
+/// A `lens_file` call whose text the commit would refuse is refused when it
+/// is staged, so the answer completes and Memory never fails the reply.
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+#[tokio::test]
+async fn a_filing_the_text_policy_refuses_never_fails_the_answer() {
+    let root = tempfile::Builder::new()
+        .prefix("eval-test-")
+        .tempdir_in("/tmp")
+        .unwrap();
+    let workspace = root.path().join("workspace");
+    fs::create_dir(&workspace).unwrap();
+    let mut state = AppState::for_eval(root.path().join("app"));
+    scripted(&mut state, root.path());
+    let loupist = crate::commands::loupist::create_folder_loupist(&state, &workspace)
+        .await
+        .unwrap();
+    let chat = new_chat(&state, &loupist.id, "badlink").unwrap();
+    let session = Session {
+        id: "badlink".into(),
+        role: "train".into(),
+        memory: "remember".into(),
+        turns: vec![],
+    };
+    let result = run_turn(
+        &state,
+        &chat,
+        &session,
+        &Turn {
+            user: "BADLINK_EVAL: Hanbit supplies Northgate; remember it".into(),
+            as_of: None,
+            ..Default::default()
+        },
+        "fixture",
+        "medium",
+        600000,
+    )
+    .await
+    .unwrap();
+    assert_eq!(result["status"], "completed", "{result}");
+    assert!(
+        result["memory_commits"].as_array().unwrap().is_empty(),
+        "{result}"
+    );
+    let stored = state.store.get_chat(&chat.id).unwrap().unwrap();
+    let answer = stored.messages.last().unwrap();
+    assert_eq!(answer.status, crate::domain::ChatMessageStatus::Complete);
+    assert!(answer.failure_kind.is_none());
+    assert_eq!(answer.content, "Noted, without saving the link.");
+}

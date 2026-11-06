@@ -20,7 +20,6 @@ pub const MAX_SECTION_CHARS: usize = 2_000;
 pub const MAX_BASIS_REFS: usize = 8;
 pub const MAX_UNCERTAINTY_CHARS: usize = 300;
 pub const MAX_OPS_PER_DELTA: usize = 12;
-pub const MAX_TITLE_CHARS: usize = 200;
 pub const MAX_WHY_CHARS: usize = 400;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -591,27 +590,19 @@ impl LensOp {
                 expected,
                 ..
             } => {
-                let heading_ok = !heading.trim().is_empty()
-                    && heading.chars().count() <= MAX_HEADING_CHARS
-                    && !heading.contains(['\n', '\r', '\0']);
-                if !heading_ok {
+                if !heading_ok(heading) {
                     return Err(KnowledgeError::Invalid("section heading is invalid"));
                 }
-                if markdown.trim().is_empty()
-                    || markdown.chars().count() > MAX_SECTION_CHARS
-                    || markdown.contains('\0')
-                {
+                if !markdown_ok(markdown) {
                     return Err(KnowledgeError::Invalid("section markdown is invalid"));
                 }
                 if basis.refs.len() > MAX_BASIS_REFS {
                     return Err(KnowledgeError::Invalid("section cites too many references"));
                 }
-                if basis
-                    .uncertainty
-                    .as_deref()
-                    .is_some_and(|text| text.chars().count() > MAX_UNCERTAINTY_CHARS)
-                {
-                    return Err(KnowledgeError::Invalid("section uncertainty is too long"));
+                if basis.uncertainty.as_deref().is_some_and(|text| {
+                    text.chars().count() > MAX_UNCERTAINTY_CHARS || !plain_text(text, true)
+                }) {
+                    return Err(KnowledgeError::Invalid("section uncertainty is invalid"));
                 }
                 if expected.as_deref().is_some_and(|d| d.len() != 64) {
                     return Err(KnowledgeError::Invalid("expected digest is invalid"));
@@ -619,28 +610,60 @@ impl LensOp {
                 Ok(())
             }
             Self::Retire { expected, why, .. } => {
-                if expected.len() != 64 || why.chars().count() > MAX_WHY_CHARS {
+                if expected.len() != 64 || !why_ok(why) {
                     return Err(KnowledgeError::Invalid("retire op is invalid"));
                 }
                 Ok(())
             }
             Self::Summary { text } => {
-                if text.trim().is_empty()
-                    || text.chars().count() > MAX_SUMMARY_CHARS
-                    || text.contains(['\n', '\r', '\0'])
-                {
+                if !summary_ok(text) {
                     return Err(KnowledgeError::Invalid("summary is invalid"));
                 }
                 Ok(())
             }
             Self::IdeaStatus { why, .. } => {
-                if why.chars().count() > MAX_WHY_CHARS {
-                    return Err(KnowledgeError::Invalid("status reason is too long"));
+                if !why_ok(why) {
+                    return Err(KnowledgeError::Invalid("status reason is invalid"));
                 }
                 Ok(())
             }
         }
     }
+}
+
+/// No control character; `multiline` admits line breaks and tabs.
+fn plain_text(text: &str, multiline: bool) -> bool {
+    !text
+        .chars()
+        .any(|c| c.is_control() && !(multiline && matches!(c, '\n' | '\r' | '\t')))
+}
+
+/// A page title, as the writer has always accepted it.
+pub fn title_ok(title: &str) -> bool {
+    super::model::validate_title(title).is_ok()
+}
+
+/// A section heading: one line of at most 80 characters.
+pub fn heading_ok(heading: &str) -> bool {
+    !heading.trim().is_empty()
+        && heading.chars().count() <= MAX_HEADING_CHARS
+        && plain_text(heading, false)
+}
+
+/// Section Markdown: at most 2,000 characters.
+pub fn markdown_ok(markdown: &str) -> bool {
+    !markdown.trim().is_empty()
+        && markdown.chars().count() <= MAX_SECTION_CHARS
+        && plain_text(markdown, true)
+}
+
+/// A summary: one line of at most 400 characters; an empty one clears it.
+pub fn summary_ok(summary: &str) -> bool {
+    summary.chars().count() <= MAX_SUMMARY_CHARS && plain_text(summary, false)
+}
+
+fn why_ok(why: &str) -> bool {
+    why.chars().count() <= MAX_WHY_CHARS && plain_text(why, true)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -656,14 +679,19 @@ impl PageDelta {
             return Err(KnowledgeError::Invalid("a page delta carries 1 to 12 ops"));
         }
         if let PageTarget::Create { title, anchors, .. } = &self.target {
-            if title.trim().is_empty()
-                || title.chars().count() > MAX_TITLE_CHARS
-                || title.contains(['\n', '\r', '\0'])
-            {
+            if !title_ok(title) {
                 return Err(KnowledgeError::Invalid("page title is invalid"));
             }
             if anchors.len() > 8 {
                 return Err(KnowledgeError::Invalid("a page names at most 8 anchors"));
+            }
+            for anchor in anchors {
+                if let AnchorInput::Name { name } = anchor {
+                    let fold = super::fold_lens_title(name);
+                    if fold.is_empty() || fold.len() > 256 || !plain_text(name, false) {
+                        return Err(KnowledgeError::Invalid("anchor name is invalid"));
+                    }
+                }
             }
         }
         self.ops.iter().try_for_each(LensOp::validate)
@@ -694,9 +722,12 @@ pub enum OpOutcome {
     AlreadyKnown {
         key: SectionKey,
     },
-    /// Digest mismatch or key missing; the text stays in the log.
+    /// Digest mismatch, key missing, or an edit of a page this filing did
+    /// not read (a create that resolved to an existing page); the text stays
+    /// in the log.
     SkippedStale {
-        key: SectionKey,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<SectionKey>,
     },
     /// The user retired this key; only origin user may re-add it.
     RefusedForgotten {
@@ -707,6 +738,9 @@ pub enum OpOutcome {
     },
     RefusedFull,
     RefusedKind,
+    /// The text policy refused the op: a private reference, a `world:` link
+    /// on a portable page, or a World node this Loupist's World lacks.
+    RefusedText,
 }
 
 impl OpOutcome {
@@ -723,6 +757,7 @@ impl OpOutcome {
             Self::RefusedBasis { .. } => "refused_basis",
             Self::RefusedFull => "refused_full",
             Self::RefusedKind => "refused_kind",
+            Self::RefusedText => "refused_text",
         }
     }
 
@@ -732,12 +767,14 @@ impl OpOutcome {
             | Self::Replaced { key }
             | Self::Retired { key }
             | Self::AlreadyKnown { key }
-            | Self::SkippedStale { key }
             | Self::RefusedForgotten { key }
             | Self::RefusedBasis { key } => Some(key),
-            Self::Summarized | Self::StatusSet { .. } | Self::RefusedFull | Self::RefusedKind => {
-                None
-            }
+            Self::SkippedStale { key } => key.as_ref(),
+            Self::Summarized
+            | Self::StatusSet { .. }
+            | Self::RefusedFull
+            | Self::RefusedKind
+            | Self::RefusedText => None,
         }
     }
 
@@ -759,6 +796,12 @@ pub struct ApplyContext {
     pub at_ms: i64,
     /// Keys the user retired on this page and did not re-add.
     pub forgotten: BTreeSet<SectionKey>,
+    /// A create resolved to an existing page the filer did not read: only
+    /// absent sections may be added; everything else is skipped as stale.
+    pub add_only: bool,
+    /// Claim ids the live World withdrew, disputed or does not hold. A
+    /// section citing one is written contested.
+    pub fallen_claims: BTreeSet<String>,
 }
 
 /// Folds ops into a body. Never fails on one bad op; every op gets an outcome.
@@ -795,7 +838,7 @@ pub fn apply(
                         markdown: markdown.clone(),
                         basis: basis.clone(),
                         origin: ctx.origin,
-                        state: SectionState::Current,
+                        state: written_state(basis, &ctx.fallen_claims, ctx.at_ms),
                         updated_at_ms: ctx.at_ms,
                     };
                     match page.sections.iter().position(|s| &s.key == key) {
@@ -804,14 +847,20 @@ pub fn apply(
                             let current_digest = section_digest(current);
                             if current_digest == section_digest(&incoming) {
                                 OpOutcome::AlreadyKnown { key: key.clone() }
-                            } else if expected.as_deref() == Some(current_digest.as_str()) {
+                            } else if !ctx.add_only
+                                && expected.as_deref() == Some(current_digest.as_str())
+                            {
                                 page.sections[index] = incoming;
                                 OpOutcome::Replaced { key: key.clone() }
                             } else {
-                                OpOutcome::SkippedStale { key: key.clone() }
+                                OpOutcome::SkippedStale {
+                                    key: Some(key.clone()),
+                                }
                             }
                         }
-                        None if expected.is_some() => OpOutcome::SkippedStale { key: key.clone() },
+                        None if expected.is_some() => OpOutcome::SkippedStale {
+                            key: Some(key.clone()),
+                        },
                         None if page.sections.len() >= MAX_SECTIONS => OpOutcome::RefusedFull,
                         None => {
                             page.sections.push(incoming);
@@ -826,12 +875,19 @@ pub fn apply(
                     continue;
                 };
                 match page.sections.iter().position(|s| &s.key == key) {
-                    Some(index) if section_digest(&page.sections[index]) == *expected => {
+                    Some(index)
+                        if !ctx.add_only && section_digest(&page.sections[index]) == *expected =>
+                    {
                         page.sections.remove(index);
                         OpOutcome::Retired { key: key.clone() }
                     }
-                    _ => OpOutcome::SkippedStale { key: key.clone() },
+                    _ => OpOutcome::SkippedStale {
+                        key: Some(key.clone()),
+                    },
                 }
+            }
+            LensOp::Summary { .. } | LensOp::IdeaStatus { .. } if ctx.add_only => {
+                OpOutcome::SkippedStale { key: None }
             }
             LensOp::Summary { text } => match next.page_mut() {
                 Some(page) => {
@@ -854,6 +910,28 @@ pub fn apply(
         outcomes.push(outcome);
     }
     Ok((next, outcomes))
+}
+
+/// A section is written contested when its basis cites a fallen claim.
+fn written_state(basis: &Basis, fallen: &BTreeSet<String>, at_ms: i64) -> SectionState {
+    let mut claim_ids: Vec<String> = basis
+        .refs
+        .iter()
+        .filter_map(|r| match r {
+            BasisRef::Claim { claim_id } if fallen.contains(claim_id) => Some(claim_id.clone()),
+            _ => None,
+        })
+        .collect();
+    claim_ids.sort();
+    claim_ids.dedup();
+    if claim_ids.is_empty() {
+        SectionState::Current
+    } else {
+        SectionState::Contested {
+            since_ms: at_ms,
+            claim_ids,
+        }
+    }
 }
 
 /// sha256 over key, heading, markdown and basis. Origin, state and time are
@@ -916,18 +994,45 @@ fn link_id_ok(id: &str) -> bool {
             .any(|c| c.is_whitespace() || c.is_control() || matches!(c, '/' | '?' | '#'))
 }
 
+/// Every link destination in `text` as a Markdown reader resolves it:
+/// inline, reference-style and autolinks.
+fn link_destinations(text: &str) -> Vec<String> {
+    Parser::new(text)
+        .filter_map(|event| match event {
+            Event::Start(Tag::Link { dest_url, .. }) => Some(dest_url.into_string()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The rest of `destination` after `scheme`, compared without case.
+fn after_scheme<'a>(destination: &'a str, scheme: &str) -> Option<&'a str> {
+    destination
+        .get(..scheme.len())
+        .filter(|prefix| prefix.eq_ignore_ascii_case(scheme))
+        .map(|_| &destination[scheme.len()..])
+}
+
+/// The node ids `text` links as `world:`.
+pub fn world_link_ids(text: &str) -> Vec<String> {
+    link_destinations(text)
+        .iter()
+        .filter_map(|destination| after_scheme(destination, "world:"))
+        .map(str::to_owned)
+        .collect()
+}
+
 /// `lens:` record ids and `world:` node ids linked from a body.
 pub fn links(body: &LensBody) -> (BTreeSet<String>, BTreeSet<String>) {
     let mut lens = BTreeSet::new();
     let mut world = BTreeSet::new();
     for text in body.texts() {
-        for event in Parser::new(text) {
-            let Event::Start(Tag::Link { dest_url, .. }) = event else {
-                continue;
-            };
-            if let Some(id) = dest_url.strip_prefix("lens:").filter(|id| link_id_ok(id)) {
+        for destination in link_destinations(text) {
+            if let Some(id) = after_scheme(&destination, "lens:").filter(|id| link_id_ok(id)) {
                 lens.insert(id.to_owned());
-            } else if let Some(id) = dest_url.strip_prefix("world:").filter(|id| link_id_ok(id)) {
+            } else if let Some(id) =
+                after_scheme(&destination, "world:").filter(|id| link_id_ok(id))
+            {
                 world.insert(id.to_owned());
             }
         }
@@ -935,21 +1040,22 @@ pub fn links(body: &LensBody) -> (BTreeSet<String>, BTreeSet<String>) {
     (lens, world)
 }
 
-/// Text no Lens body may carry: Journal references, private snapshot or
-/// journal ids and the private `world://` forms. Portable kinds may not link
-/// `world:` nodes either; subject and idea pages may.
-pub fn text_forbidden(kind: LensKind, text: &str) -> bool {
+/// Journal references, private snapshot or journal ids and the private
+/// `world://` forms: no Lens text may carry them.
+pub fn private_reference(text: &str) -> bool {
     let lower = text.to_ascii_lowercase();
-    let private = lower.contains("journal://")
+    lower.contains("journal://")
         || lower.contains("[[journal:")
         || lower.contains("world://")
         || lower.contains("[[world:")
         || !id_candidates(text, "jnl_").is_empty()
-        || !id_candidates(text, "snp_").is_empty();
-    if private {
-        return true;
-    }
-    kind.is_portable() && (lower.contains("](world:") || lower.contains("<world:"))
+        || !id_candidates(text, "snp_").is_empty()
+}
+
+/// Text no body of `kind` may carry: a private reference, or on a portable
+/// kind any `world:` link; subject and idea pages may link `world:` nodes.
+pub fn text_forbidden(kind: LensKind, text: &str) -> bool {
+    private_reference(text) || (kind.is_portable() && !world_link_ids(text).is_empty())
 }
 
 /// Canonical knowledge ids (`prefix` + 32 lowercase hex) found in `text`.
@@ -988,6 +1094,50 @@ fn boundary_after(text: &str, index: usize) -> bool {
 
 fn is_id_character(character: char) -> bool {
     character.is_ascii_alphanumeric() || matches!(character, '_' | '-')
+}
+
+/// Where a filing's text broke the text policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextField {
+    Title,
+    /// An `about` anchor of a create, by index.
+    About(usize),
+    /// One text of an op, by op index: `heading`, `markdown`,
+    /// `basis.uncertainty`, `text` or `why`.
+    Op(usize, &'static str),
+}
+
+/// Why the text policy refused a text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextRefusal {
+    /// A Journal or private World reference, a snapshot or journal id, or a
+    /// record or revision id that is neither a Source nor a Lens page.
+    Private,
+    /// A `world:` link on a kind shared packs carry.
+    PortableWorldLink,
+    /// A `world:` link or anchor naming a node this Loupist's World lacks.
+    UnknownNode,
+}
+
+/// The texts of one op the policy reads, by field name.
+pub fn op_texts(op: &LensOp) -> Vec<(&'static str, &str)> {
+    match op {
+        LensOp::Put {
+            heading,
+            markdown,
+            basis,
+            ..
+        } => vec![
+            ("heading", heading.as_str()),
+            ("markdown", markdown.as_str()),
+            (
+                "basis.uncertainty",
+                basis.uncertainty.as_deref().unwrap_or(""),
+            ),
+        ],
+        LensOp::Summary { text } => vec![("text", text.as_str())],
+        LensOp::Retire { why, .. } | LensOp::IdeaStatus { why, .. } => vec![("why", why.as_str())],
+    }
 }
 
 /// Who filed, as the writer records it in the log and on sections.
@@ -1080,6 +1230,15 @@ pub struct FiledPage {
     pub outcomes: Vec<FiledOp>,
 }
 
+impl FiledPage {
+    /// The text policy refused one of this page's ops.
+    pub fn refused_text(&self) -> bool {
+        self.outcomes
+            .iter()
+            .any(|op| op.outcome == OpOutcome::RefusedText)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1112,6 +1271,8 @@ mod tests {
             origin,
             at_ms: 10,
             forgotten: BTreeSet::new(),
+            add_only: false,
+            fallen_claims: BTreeSet::new(),
         }
     }
 
@@ -1162,7 +1323,9 @@ mod tests {
             outcomes,
             vec![
                 OpOutcome::Replaced { key: key("facts") },
-                OpOutcome::SkippedStale { key: key("facts") },
+                OpOutcome::SkippedStale {
+                    key: Some(key("facts"))
+                },
                 OpOutcome::Added {
                     key: key("drivers")
                 },
@@ -1191,9 +1354,11 @@ mod tests {
             vec![
                 OpOutcome::AlreadyKnown { key: key("facts") },
                 OpOutcome::SkippedStale {
-                    key: key("missing")
+                    key: Some(key("missing"))
                 },
-                OpOutcome::SkippedStale { key: key("facts") },
+                OpOutcome::SkippedStale {
+                    key: Some(key("facts"))
+                },
             ]
         );
     }
@@ -1327,7 +1492,9 @@ mod tests {
             vec![
                 OpOutcome::Summarized,
                 OpOutcome::RefusedKind,
-                OpOutcome::SkippedStale { key: key("facts") },
+                OpOutcome::SkippedStale {
+                    key: Some(key("facts"))
+                },
                 OpOutcome::Retired { key: key("facts") },
             ]
         );
@@ -1365,6 +1532,83 @@ mod tests {
         )
         .unwrap();
         assert_eq!(outcomes, vec![OpOutcome::RefusedKind]);
+    }
+
+    #[test]
+    fn control_characters_are_refused_in_every_text_a_page_stores() {
+        let create = |title: &str, op: LensOp| PageDelta {
+            target: PageTarget::Create {
+                kind: PageKind::Method,
+                title: title.into(),
+                anchors: vec![],
+            },
+            ops: vec![op],
+        };
+        let section = |heading: &str, markdown: &str, uncertainty: Option<&str>| LensOp::Put {
+            key: key("steps"),
+            heading: heading.into(),
+            markdown: markdown.into(),
+            basis: Basis {
+                refs: Vec::new(),
+                uncertainty: uncertainty.map(str::to_owned),
+            },
+            expected: None,
+        };
+        let digest = "0".repeat(64);
+        for bad in [
+            "Hanbit\u{1b}[8m rule",
+            "Steps\u{7}",
+            "Sum\u{7f}mary",
+            "x\u{8}\u{8}",
+        ] {
+            let ops = [
+                section(bad, "Divide by shares.", None),
+                section("Steps", bad, None),
+                section("Steps", "Divide by shares.", Some(bad)),
+                LensOp::Summary { text: bad.into() },
+                LensOp::Retire {
+                    key: key("steps"),
+                    expected: digest.clone(),
+                    why: bad.into(),
+                },
+                LensOp::IdeaStatus {
+                    status: IdeaStatus::Weakened,
+                    why: bad.into(),
+                },
+            ];
+            for op in ops {
+                assert!(create("Rule", op.clone()).validate().is_err(), "{op:?}");
+            }
+            let titled = create(bad, section("Steps", "Divide by shares.", None));
+            assert!(titled.validate().is_err(), "{bad:?}");
+        }
+        // Line breaks and tabs stay in multi-line text only.
+        assert!(
+            create("Rule", section("Steps", "One.\n\tTwo.\r\n", Some("a\nb")))
+                .validate()
+                .is_ok()
+        );
+        for single_line in [
+            create("Rule", section("Ste\tps", "One.", None)),
+            create("Ru\tle", section("Steps", "One.", None)),
+            create(
+                "Rule",
+                LensOp::Summary {
+                    text: "a\tb".into(),
+                },
+            ),
+        ] {
+            assert!(single_line.validate().is_err(), "{single_line:?}");
+        }
+        // An empty summary clears the page's summary.
+        assert!(create(
+            "Rule",
+            LensOp::Summary {
+                text: String::new()
+            }
+        )
+        .validate()
+        .is_ok());
     }
 
     #[test]

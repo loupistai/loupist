@@ -47,6 +47,9 @@ pub(in crate::commands) fn ensure_perspective(
             }],
             at_ms,
         )?;
+        if filed.iter().any(|page| page.refused_text()) {
+            return Err(crate::knowledge::KnowledgeError::LensBodyForbidden);
+        }
         Ok(filed
             .into_iter()
             .next()
@@ -181,6 +184,11 @@ fn as_of_context(
         let record_id = pointer.read_args["recordId"].as_str().unwrap_or_default();
         let note_id = pointer.read_args["noteId"].as_str().unwrap_or_default();
         if later_lenses.contains(record_id) {
+            continue;
+        }
+        if !record_id.is_empty() && !super::as_of::lens_known(state, loupist_id, record_id, cutoff)?
+        {
+            later_lenses.insert(record_id.to_owned());
             continue;
         }
         if !note_id.is_empty() {
@@ -1681,7 +1689,16 @@ pub(in crate::commands) fn capture_lens_read(
         return Err(crate::knowledge::KnowledgeError::NotFound);
     }
     if let Some(cutoff) = request.as_of.map(super::as_of::Cutoff) {
-        page.retain_sections(|updated_at_ms| cutoff.recorded(updated_at_ms));
+        // The page itself passed `as_of::lens_visible`; what surrounds it keeps to the cutoff too.
+        page.history
+            .retain(|entry| cutoff.recorded(entry.created_at_ms));
+        let mut backlinks = Vec::with_capacity(page.backlinks.len());
+        for link in std::mem::take(&mut page.backlinks) {
+            if super::as_of::lens_visible(write, loupist_id, &link.record_id, cutoff)? {
+                backlinks.push(link);
+            }
+        }
+        page.backlinks = backlinks;
     }
     let document_json = page.delivery_text()?;
     let body_digest = crate::util::sha256(document_json.as_bytes());

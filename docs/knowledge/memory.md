@@ -42,7 +42,8 @@ pages, sections, names, relationships and Sources; the dialog requires RESET (ì´
 Korean) and sends those counts back with confirmation. One transaction removes only
 items with known Loupist authorship: whole pages the Loupist created that hold no
 user or shared section, and Loupist-origin sections retired from pages the user
-keeps (a user retire, so the Loupist cannot refile that key). User-created pages,
+keeps (a user retire, so the Loupist cannot refile that key), with the summary
+cleared when the log shows the Loupist wrote it last (counted with the sections). User-created pages,
 shared items, manually saved Sources, Journal, watchlist and holdings stay. Relationships with independent user/shared support and names still
 used by preserved relationships stay. A Source also stays if it is the sole basis
 of a protected user/shared/unknown-authored relationship. Immutable removed Sources and Lens records
@@ -85,7 +86,7 @@ counts.
 | --- | --- |
 | Sources | Known when a capture (for a span, the capture holding it) was published by then; a capture without a publication date counts only as the user's own statement received by then. Search hits need such a capture; a later Source read fails with `as_of_later` |
 | World | Only relationships published by then, keeping evidence from Sources known by then; one whose evidence was all published later is left out with the names only it connected. An invalidation or expiry dated later, or undated, is not shown, so a relationship reads as it stood then. Names keep only their name and kind. This holds for `world_read` views and `world_search` hits, hybrid World index hits included; a name hit needs one relationship published by then, and an annotation needs every Source it cites known by then (one that cites none is left out) |
-| Lens pages (perspective, methods, subjects, ideas) | A page created by then is known; a section updated after the cutoff is hidden from its read. A page created later is left out of search, reads (`as_of_later`), the index and pointers |
+| Lens pages (perspective, methods, subjects, ideas) | A page is known when its whole current version was written by then (`as_of::lens_visible`, one rule for reads, search and context). A page written or revised later is left out of search, reads (`as_of_later`), the index and pointers; a known page's read lists only backlinks from known pages and log entries made by then |
 | Principles | Every active principle, as today |
 | Journal | Entries created by then; an outcome observed later is removed, so its check reads as pending. Due pointers count from the cutoff day; a later entry read fails with `as_of_later` |
 | Notes | Working and research notes recorded by then, with pointers only to later notes written by then; the current Chat's working note and relevant-note pointers follow the same rule |

@@ -12,13 +12,14 @@ use super::authority::{require_edit, require_record, OwnedRecordState};
 use super::canonical::{canonical_string, from_json, to_value};
 use super::error::{KnowledgeError, KnowledgeResult};
 use super::lens_page::{
-    apply, links, section_digest, text_forbidden, AnchorInput, ApplyContext, Basis, BasisChip,
-    FiledOp, FiledPage, FilingOrigin, IdeaState, IdeaStatus, LensBody, LensKind, LensOp, OpOutcome,
-    Origin, PageDelta, PageKind, PageSection, PageTarget, SectionKey, SectionState,
+    apply, links, op_texts, private_reference, section_digest, text_forbidden, world_link_ids,
+    AnchorInput, ApplyContext, Basis, BasisChip, BasisRef, FiledOp, FiledPage, FilingOrigin,
+    IdeaState, IdeaStatus, LensBody, LensKind, LensOp, OpOutcome, Origin, PageDelta, PageKind,
+    PageSection, PageTarget, SectionKey, SectionState, TextField, TextRefusal,
 };
 use super::model::{
-    mint_id, validate_knowledge_id, validate_loupist_id, validate_time, GraphNode, RecordKind,
-    WorldSnapshotBody,
+    mint_id, validate_knowledge_id, validate_loupist_id, validate_time, ClaimStatus, GraphNode,
+    RecordKind, WorldSnapshotBody,
 };
 use super::revision::{load_revision, publish_revision, StoredRevision};
 
@@ -122,11 +123,13 @@ fn load(tx: &Transaction<'_>, loupist_id: &str, record_id: &str) -> KnowledgeRes
     })
 }
 
-/// Node ids and folded names of the Loupist's current World.
+/// Node ids, folded names and active claims of the Loupist's current World.
+#[derive(Default)]
 struct WorldIndex {
     ids: BTreeSet<String>,
     names: BTreeMap<String, String>,
     labels: BTreeMap<String, String>,
+    active_claims: BTreeSet<String>,
 }
 
 fn world_index(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<WorldIndex> {
@@ -140,16 +143,18 @@ fn world_index(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<WorldI
             |row| row.get(0),
         )
         .optional()?;
-    let mut index = WorldIndex {
-        ids: BTreeSet::new(),
-        names: BTreeMap::new(),
-        labels: BTreeMap::new(),
-    };
+    let mut index = WorldIndex::default();
     let Some(payload) = payload else {
         return Ok(index);
     };
     let body: WorldSnapshotBody = from_json(&payload)?;
     index_nodes(&mut index, &body.nodes);
+    index.active_claims = body
+        .claims
+        .iter()
+        .filter(|claim| claim.status == ClaimStatus::Active)
+        .map(|claim| claim.id.clone())
+        .collect();
     Ok(index)
 }
 
@@ -225,29 +230,42 @@ fn resolve_target(
             kind,
             title,
             anchors,
-        } => {
-            let lens_kind = kind.lens_kind();
-            let mut found = if *kind == PageKind::Perspective {
-                active_perspective(tx, loupist_id)?
-            } else {
-                None
-            };
-            if found.is_none() && *kind == PageKind::Subject {
-                found = subject_by_anchor(tx, loupist_id, anchors, world)?;
-            }
-            if found.is_none() {
-                found = active_by_title(tx, loupist_id, lens_kind, title)?;
-            }
-            Ok(match found {
+        } => Ok(
+            match create_resolves_to(tx, loupist_id, *kind, title, anchors, world)? {
                 Some(record_id) => Resolved::Found(Box::new(load(tx, loupist_id, &record_id)?)),
                 None => Resolved::Pending {
                     kind: *kind,
                     title: title.trim().to_owned(),
                     anchors: anchors.clone(),
                 },
-            })
-        }
+            },
+        ),
     }
+}
+
+/// The active page an idempotent create lands on: the perspective, a
+/// subject with the same primary anchor, or the page with the same kind and
+/// folded title.
+fn create_resolves_to(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    kind: PageKind,
+    title: &str,
+    anchors: &[AnchorInput],
+    world: &mut Option<WorldIndex>,
+) -> KnowledgeResult<Option<String>> {
+    let mut found = if kind == PageKind::Perspective {
+        active_perspective(tx, loupist_id)?
+    } else {
+        None
+    };
+    if found.is_none() && kind == PageKind::Subject {
+        found = subject_by_anchor(tx, loupist_id, anchors, world)?;
+    }
+    if found.is_none() {
+        found = active_by_title(tx, loupist_id, kind.lens_kind(), title)?;
+    }
+    Ok(found)
 }
 
 fn subject_by_anchor(
@@ -327,9 +345,6 @@ fn create_page(
             }
             AnchorInput::Name { name } => {
                 let fold = fold_lens_title(name);
-                if fold.is_empty() || fold.len() > 256 {
-                    return Err(KnowledgeError::Invalid("anchor name is invalid"));
-                }
                 let node = ensure_world(tx, loupist_id, world)?
                     .names
                     .get(&fold)
@@ -352,9 +367,14 @@ fn create_page(
 /// database cannot identify, is forbidden. Another Loupist's Source or page
 /// stays as an unresolved link.
 pub(super) fn check_text(tx: &Transaction<'_>, kind: LensKind, text: &str) -> KnowledgeResult<()> {
-    if text_forbidden(kind, text) {
+    if text_forbidden(kind, text) || unknown_id(tx, text)? {
         return Err(KnowledgeError::LensBodyForbidden);
     }
+    Ok(())
+}
+
+/// A canonical record or revision id in `text` that is not a Source or a Lens page.
+fn unknown_id(tx: &Transaction<'_>, text: &str) -> KnowledgeResult<bool> {
     for record_id in super::lens_page::id_candidates(text, "rec_") {
         let found: Option<String> = tx
             .query_row(
@@ -364,7 +384,7 @@ pub(super) fn check_text(tx: &Transaction<'_>, kind: LensKind, text: &str) -> Kn
             )
             .optional()?;
         if !matches!(found.as_deref(), Some("source" | "lens")) {
-            return Err(KnowledgeError::LensBodyForbidden);
+            return Ok(true);
         }
     }
     for revision_id in super::lens_page::id_candidates(text, "rev_") {
@@ -378,62 +398,166 @@ pub(super) fn check_text(tx: &Transaction<'_>, kind: LensKind, text: &str) -> Kn
             )
             .optional()?;
         if !matches!(found.as_deref(), Some("source" | "lens")) {
-            return Err(KnowledgeError::LensBodyForbidden);
+            return Ok(true);
         }
     }
-    Ok(())
+    Ok(false)
 }
 
-/// Text policy for one op, plus every `world:` link naming a node of this
-/// Loupist's World.
-fn check_op_text(
+/// The text policy for one text of a page of `kind`, with every `world:`
+/// link the Markdown reader sees naming a node of this Loupist's World.
+fn text_refusal(
     tx: &Transaction<'_>,
     loupist_id: &str,
     kind: LensKind,
-    op: &LensOp,
+    text: &str,
     world: &mut Option<WorldIndex>,
-) -> KnowledgeResult<()> {
-    let texts: Vec<&str> = match op {
-        LensOp::Put {
-            heading,
-            markdown,
-            basis,
-            ..
-        } => vec![
-            heading.as_str(),
-            markdown.as_str(),
-            basis.uncertainty.as_deref().unwrap_or(""),
-        ],
-        LensOp::Summary { text } => vec![text.as_str()],
-        LensOp::Retire { why, .. } | LensOp::IdeaStatus { why, .. } => vec![why.as_str()],
-    };
-    for text in &texts {
-        check_text(tx, kind, text)?;
+) -> KnowledgeResult<Option<TextRefusal>> {
+    if private_reference(text) || unknown_id(tx, text)? {
+        return Ok(Some(TextRefusal::Private));
     }
-    if let LensOp::Put { markdown, .. } = op {
-        let probe = LensBody::Subject(super::lens_page::Page {
-            summary: String::new(),
-            sections: vec![PageSection {
-                key: SectionKey::new("probe")?,
-                heading: String::new(),
-                markdown: markdown.clone(),
-                basis: Basis::default(),
-                origin: Origin::Loupist,
-                state: SectionState::Current,
-                updated_at_ms: 0,
-            }],
-        });
-        let (_, world_links) = links(&probe);
-        if !world_links.is_empty() {
-            let index = ensure_world(tx, loupist_id, world)?;
-            if world_links.iter().any(|id| !index.ids.contains(id)) {
-                return Err(KnowledgeError::Invalid(
-                    "a world: link names an unknown node",
-                ));
+    let world_links = world_link_ids(text);
+    if world_links.is_empty() {
+        return Ok(None);
+    }
+    if kind.is_portable() {
+        return Ok(Some(TextRefusal::PortableWorldLink));
+    }
+    let index = ensure_world(tx, loupist_id, world)?;
+    Ok(world_links
+        .iter()
+        .any(|id| !index.ids.contains(id))
+        .then_some(TextRefusal::UnknownNode))
+}
+
+/// Every text of a delta the policy refuses, in field order: the create's
+/// title and `about` nodes, then each op's texts.
+fn text_refusals(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    kind: LensKind,
+    delta: &PageDelta,
+    world: &mut Option<WorldIndex>,
+) -> KnowledgeResult<Vec<(TextField, TextRefusal)>> {
+    let mut refusals = Vec::new();
+    if let PageTarget::Create { title, anchors, .. } = &delta.target {
+        if let Some(reason) = text_refusal(tx, loupist_id, kind, title, world)? {
+            refusals.push((TextField::Title, reason));
+        }
+        for (index, anchor) in anchors.iter().enumerate() {
+            if let AnchorInput::Node { node_id } = anchor {
+                if !ensure_world(tx, loupist_id, world)?.ids.contains(node_id) {
+                    refusals.push((TextField::About(index), TextRefusal::UnknownNode));
+                }
             }
         }
     }
-    Ok(())
+    for (index, op) in delta.ops.iter().enumerate() {
+        for (field, text) in op_texts(op) {
+            if let Some(reason) = text_refusal(tx, loupist_id, kind, text, world)? {
+                refusals.push((TextField::Op(index, field), reason));
+            }
+        }
+    }
+    Ok(refusals)
+}
+
+/// What the writer will make of one delta, known before the reply commits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Screen {
+    /// The active page a create resolves to.
+    pub existing: Option<String>,
+    /// Every text the policy refuses, in field order.
+    pub refusals: Vec<(TextField, TextRefusal)>,
+}
+
+/// Screens one delta as the writer would see it now: the page a create
+/// resolves to and the texts the policy refuses.
+pub(super) fn screen(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    delta: &PageDelta,
+) -> KnowledgeResult<Screen> {
+    let mut world = None;
+    let (kind, existing) = match &delta.target {
+        PageTarget::Existing { record_id } => (lens_kind(tx, loupist_id, record_id)?, None),
+        PageTarget::Create {
+            kind,
+            title,
+            anchors,
+        } => (
+            kind.lens_kind(),
+            create_resolves_to(tx, loupist_id, *kind, title, anchors, &mut world)?,
+        ),
+    };
+    Ok(Screen {
+        existing,
+        refusals: text_refusals(tx, loupist_id, kind, delta, &mut world)?,
+    })
+}
+
+/// Claim ids the delta's puts cite that the live World withdrew, disputed or
+/// does not hold.
+fn fallen_claims(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    ops: &[LensOp],
+    world: &mut Option<WorldIndex>,
+) -> KnowledgeResult<BTreeSet<String>> {
+    let cited: BTreeSet<&str> = ops
+        .iter()
+        .filter_map(|op| match op {
+            LensOp::Put { basis, .. } => Some(basis),
+            _ => None,
+        })
+        .flat_map(|basis| &basis.refs)
+        .filter_map(|reference| match reference {
+            BasisRef::Claim { claim_id } => Some(claim_id.as_str()),
+            _ => None,
+        })
+        .collect();
+    if cited.is_empty() {
+        return Ok(BTreeSet::new());
+    }
+    let active = &ensure_world(tx, loupist_id, world)?.active_claims;
+    Ok(cited
+        .into_iter()
+        .filter(|id| !active.contains(*id))
+        .map(str::to_owned)
+        .collect())
+}
+
+/// One op of a filing as the fold met it.
+struct Step {
+    outcome: OpOutcome,
+    before: LensBody,
+}
+
+/// Folds ops one at a time, so each log row records the body its op found.
+/// An op the text policy refused changes nothing.
+fn fold(
+    base: &LensBody,
+    ops: &[LensOp],
+    refused: &BTreeSet<usize>,
+    ctx: &ApplyContext,
+) -> KnowledgeResult<(LensBody, Vec<Step>)> {
+    let mut body = base.clone();
+    let mut steps = Vec::with_capacity(ops.len());
+    for (index, op) in ops.iter().enumerate() {
+        if refused.contains(&index) {
+            steps.push(Step {
+                outcome: OpOutcome::RefusedText,
+                before: body.clone(),
+            });
+            continue;
+        }
+        let (next, mut outcomes) = apply(&body, std::slice::from_ref(op), ctx)?;
+        steps.push(Step {
+            outcome: outcomes.pop().expect("one outcome per op"),
+            before: std::mem::replace(&mut body, next),
+        });
+    }
+    Ok((body, steps))
 }
 
 /// The only page writer. Resolves targets (idempotent create), folds every
@@ -466,37 +590,58 @@ fn file_with(
     let mut world: Option<WorldIndex> = None;
     let mut filed = Vec::with_capacity(deltas.len());
     for delta in deltas {
-        if let PageTarget::Create { kind, title, .. } = &delta.target {
-            check_text(tx, kind.lens_kind(), title)?;
-        }
         let resolved = resolve_target(tx, loupist_id, &delta.target, &mut world)?;
-        let kind = match &resolved {
-            Resolved::Found(loaded) => loaded.kind,
-            Resolved::Pending { kind, .. } => kind.lens_kind(),
-        };
-        for op in &delta.ops {
-            check_op_text(tx, loupist_id, kind, op, &mut world)?;
-        }
-        let (loaded, created) = match resolved {
+        let (kind, base, record) = match &resolved {
             Resolved::Found(loaded) => {
                 require_edit(&loaded.record, loupist_id)?;
-                (*loaded, false)
+                (
+                    loaded.kind,
+                    loaded.body.clone(),
+                    Some(loaded.record.record_id.clone()),
+                )
             }
+            Resolved::Pending { kind, .. } => {
+                (kind.lens_kind(), LensBody::empty(*kind, at_ms), None)
+            }
+        };
+        // A refused title, or an unknown `about` node on a page about to be
+        // minted, refuses the whole delta; any other refusal refuses its op.
+        let refusals = text_refusals(tx, loupist_id, kind, &delta, &mut world)?;
+        let refused: BTreeSet<usize> = if refusals.iter().any(|(field, _)| match field {
+            TextField::Title => true,
+            TextField::About(_) => record.is_none(),
+            TextField::Op(..) => false,
+        }) {
+            (0..delta.ops.len()).collect()
+        } else {
+            refusals
+                .iter()
+                .filter_map(|(field, _)| match field {
+                    TextField::Op(index, _) => Some(*index),
+                    _ => None,
+                })
+                .collect()
+        };
+        let ctx = ApplyContext {
+            origin: origin.section_origin(),
+            at_ms,
+            forgotten: match &record {
+                Some(record_id) => forgotten_keys(tx, record_id)?,
+                None => BTreeSet::new(),
+            },
+            add_only: record.is_some() && matches!(delta.target, PageTarget::Create { .. }),
+            fallen_claims: fallen_claims(tx, loupist_id, &delta.ops, &mut world)?,
+        };
+        let (next, steps) = fold(&base, &delta.ops, &refused, &ctx)?;
+        let (loaded, created) = match resolved {
+            Resolved::Found(loaded) => (*loaded, false),
             Resolved::Pending {
                 kind,
                 title,
                 anchors,
             } => {
-                // Fold against an empty page first: a create whose ops all
-                // refuse leaves no record behind.
-                let empty = LensBody::empty(kind, at_ms);
-                let ctx = ApplyContext {
-                    origin: origin.section_origin(),
-                    at_ms,
-                    forgotten: BTreeSet::new(),
-                };
-                let (_, outcomes) = apply(&empty, &delta.ops, &ctx)?;
-                if !outcomes.iter().any(OpOutcome::changed) {
+                // A create whose ops all refuse leaves no record behind.
+                if !steps.iter().any(|step| step.outcome.changed()) {
                     filed.push(FiledPage {
                         record_id: String::new(),
                         revision_id: String::new(),
@@ -504,11 +649,11 @@ fn file_with(
                         kind: kind.lens_kind(),
                         created: false,
                         changed: false,
-                        outcomes: outcomes
+                        outcomes: steps
                             .into_iter()
-                            .map(|outcome| FiledOp {
+                            .map(|step| FiledOp {
                                 op_id: String::new(),
-                                outcome,
+                                outcome: step.outcome,
                             })
                             .collect(),
                     });
@@ -521,13 +666,7 @@ fn file_with(
             }
         };
         let record_id = loaded.record.record_id.clone();
-        let ctx = ApplyContext {
-            origin: origin.section_origin(),
-            at_ms,
-            forgotten: forgotten_keys(tx, &record_id)?,
-        };
-        let (next, outcomes) = apply(&loaded.body, &delta.ops, &ctx)?;
-        let changed = created || next != loaded.body;
+        let changed = created || next != base;
         let mut revision_id = loaded
             .revision
             .as_ref()
@@ -574,9 +713,8 @@ fn file_with(
                 origin.actor(),
                 &loaded.record.title,
             );
-            event.before_summary = (!created).then(|| {
-                super::growth::one_line(&summary_or_title(&loaded.body, &loaded.record.title))
-            });
+            event.before_summary = (!created)
+                .then(|| super::growth::one_line(&summary_or_title(&base, &loaded.record.title)));
             event.after_summary = Some(super::growth::one_line(&summary_or_title(
                 &next,
                 &loaded.record.title,
@@ -586,21 +724,25 @@ fn file_with(
             event.origin_message_id = origin.message_id().map(str::to_owned);
             event.insert(tx)?;
         }
-        let mut filed_ops = Vec::with_capacity(outcomes.len());
-        for (op, outcome) in delta.ops.iter().zip(outcomes) {
+        let mut filed_ops = Vec::with_capacity(steps.len());
+        for (index, (op, step)) in delta.ops.iter().zip(&steps).enumerate() {
+            let after = steps.get(index + 1).map_or(&next, |later| &later.before);
             let op_id = log_op(
                 tx,
                 loupist_id,
                 &record_id,
                 op,
-                &outcome,
-                &loaded.body,
-                &next,
+                &step.outcome,
+                &step.before,
+                after,
                 origin,
                 at_ms,
                 undoes_op_id,
             )?;
-            filed_ops.push(FiledOp { op_id, outcome });
+            filed_ops.push(FiledOp {
+                op_id,
+                outcome: step.outcome.clone(),
+            });
         }
         filed.push(FiledPage {
             record_id,
@@ -877,11 +1019,7 @@ pub(super) fn resolve_anchors(
     loupist_id: &str,
     nodes: &[GraphNode],
 ) -> KnowledgeResult<usize> {
-    let mut index = WorldIndex {
-        ids: BTreeSet::new(),
-        names: BTreeMap::new(),
-        labels: BTreeMap::new(),
-    };
+    let mut index = WorldIndex::default();
     index_nodes(&mut index, nodes);
     let mut statement = tx.prepare(
         "SELECT rowid, name_fold FROM knowledge_lens_anchors
@@ -1056,16 +1194,6 @@ impl LensBodyView {
         }
     }
 
-    fn sections_mut(&mut self) -> Option<&mut Vec<SectionView>> {
-        match self {
-            Self::Principle { .. } => None,
-            Self::Perspective { sections, .. }
-            | Self::Method { sections, .. }
-            | Self::Subject { sections, .. }
-            | Self::Idea { sections, .. } => Some(sections),
-        }
-    }
-
     /// The stored body behind this view, for rendering.
     pub fn to_body(&self) -> LensBody {
         let page = |summary: &str, sections: &[SectionView]| super::lens_page::Page {
@@ -1160,13 +1288,6 @@ impl PageRead {
 
     pub fn markdown(&self, with_keys: bool) -> String {
         super::lens_page::render_markdown(&self.title, &self.body.to_body(), with_keys)
-    }
-
-    /// Under an as-of cutoff a section updated later is left out.
-    pub fn retain_sections(&mut self, known: impl Fn(i64) -> bool) {
-        if let Some(sections) = self.body.sections_mut() {
-            sections.retain(|section| known(section.updated_at_ms));
-        }
     }
 }
 
@@ -1459,8 +1580,7 @@ pub(super) fn undo_op(
             text: before
                 .as_ref()
                 .and_then(|value| value["summary"].as_str())
-                .filter(|text| !text.trim().is_empty())
-                .unwrap_or("—")
+                .unwrap_or_default()
                 .to_owned(),
         },
         (LensOp::IdeaStatus { .. }, "status_set") => LensOp::IdeaStatus {
@@ -2118,6 +2238,156 @@ mod tests {
     }
 
     #[test]
+    fn undo_restores_what_its_own_op_found_within_one_filing() {
+        let (_dir, store) = store();
+        let filed = file_in(
+            &store,
+            &user(),
+            vec![create_subject(
+                "Undo probe",
+                vec![
+                    put("facts", "Original fact.", None),
+                    LensOp::Summary {
+                        text: "Original summary.".into(),
+                    },
+                ],
+            )],
+            100,
+        );
+        let record_id = &filed[0].record_id;
+        let revised = file_in(
+            &store,
+            &turn("msg-2"),
+            vec![existing(
+                record_id,
+                vec![
+                    LensOp::Summary {
+                        text: "Intermediate summary.".into(),
+                    },
+                    LensOp::Summary {
+                        text: "Final summary.".into(),
+                    },
+                ],
+            )],
+            200,
+        );
+        let undone = store
+            .transact(|write| write.undo_op(LOUPIST, &revised[0].outcomes[1].op_id, 300))
+            .unwrap();
+        assert_eq!(undone.body.summary(), "Intermediate summary.");
+        // A summary written over none is undone to none.
+        let bare = file_in(
+            &store,
+            &user(),
+            vec![create_subject("Bare", vec![put("facts", "A fact.", None)])],
+            400,
+        );
+        let summarized = file_in(
+            &store,
+            &turn("msg-3"),
+            vec![existing(
+                &bare[0].record_id,
+                vec![LensOp::Summary {
+                    text: "A later summary.".into(),
+                }],
+            )],
+            500,
+        );
+        let cleared = store
+            .transact(|write| write.undo_op(LOUPIST, &summarized[0].outcomes[0].op_id, 600))
+            .unwrap();
+        assert_eq!(cleared.body.summary(), "");
+    }
+
+    #[test]
+    fn a_create_landing_on_an_existing_page_only_adds_absent_sections() {
+        let (_dir, store) = store();
+        let idea = |title: &str, ops: Vec<LensOp>| PageDelta {
+            target: PageTarget::Create {
+                kind: PageKind::Idea,
+                title: title.into(),
+                anchors: vec![],
+            },
+            ops,
+        };
+        let first = file_in(
+            &store,
+            &turn("msg-1"),
+            vec![idea(
+                "Hanbit pricing power",
+                vec![
+                    put("claim", "Hanbit can raise LFP prices.", None),
+                    LensOp::Summary {
+                        text: "The user's idea: Hanbit can raise prices.".into(),
+                    },
+                ],
+            )],
+            100,
+        );
+        let id = first[0].record_id.clone();
+        let claim_digest = digest(&read(&store, &id), "claim");
+        let again = file_in(
+            &store,
+            &turn("msg-2"),
+            vec![idea(
+                "hanbit PRICING power",
+                vec![
+                    LensOp::IdeaStatus {
+                        status: IdeaStatus::Refuted,
+                        why: "No basis given.".into(),
+                    },
+                    LensOp::Summary {
+                        text: "Refuted.".into(),
+                    },
+                    put(
+                        "claim",
+                        "Hanbit cannot raise prices.",
+                        Some(claim_digest.clone()),
+                    ),
+                    LensOp::Retire {
+                        key: SectionKey::new("claim").unwrap(),
+                        expected: claim_digest,
+                        why: "Wrong.".into(),
+                    },
+                    put("checks", "Watch LFP contract prices.", None),
+                ],
+            )],
+            200,
+        );
+        assert_eq!(again[0].record_id, id);
+        let claim = || Some(SectionKey::new("claim").unwrap());
+        assert_eq!(
+            again[0]
+                .outcomes
+                .iter()
+                .map(|op| op.outcome.clone())
+                .collect::<Vec<_>>(),
+            vec![
+                OpOutcome::SkippedStale { key: None },
+                OpOutcome::SkippedStale { key: None },
+                OpOutcome::SkippedStale { key: claim() },
+                OpOutcome::SkippedStale { key: claim() },
+                OpOutcome::Added {
+                    key: SectionKey::new("checks").unwrap()
+                },
+            ]
+        );
+        let page = read(&store, &id);
+        assert_eq!(
+            page.body.summary(),
+            "The user's idea: Hanbit can raise prices."
+        );
+        assert!(
+            matches!(&page.body, LensBodyView::Idea { idea, .. } if idea.status == IdeaStatus::Open)
+        );
+        assert_eq!(
+            page.body.sections()[0].markdown,
+            "Hanbit can raise LFP prices."
+        );
+        assert_eq!(page.body.sections().len(), 2);
+    }
+
+    #[test]
     fn duplicate_title_create_merges_and_perspective_is_single() {
         let (_dir, store) = store();
         let first = file_in(
@@ -2310,15 +2580,14 @@ mod tests {
         );
         let id = filed[0].record_id.clone();
         assert!(read(&store, &id).anchors[0].node_id.is_none());
-        let unknown = store.transact(|write| {
-            write.file(
-                LOUPIST,
-                &turn("m2"),
-                vec![existing(&id, vec![put("views", "[x](world:nod_1)", None)])],
-                6,
-            )
-        });
-        assert!(matches!(unknown, Err(KnowledgeError::Invalid(_))));
+        let unknown = file_in(
+            &store,
+            &turn("m2"),
+            vec![existing(&id, vec![put("views", "[x](world:nod_1)", None)])],
+            6,
+        );
+        assert_eq!(unknown[0].outcomes[0].outcome, OpOutcome::RefusedText);
+        assert!(!unknown[0].changed);
         store
             .seal_world(SealWorld {
                 loupist_id: LOUPIST.into(),
@@ -2352,28 +2621,27 @@ mod tests {
             .read(|write| write.pages_for_node(LOUPIST, "nod_1"))
             .unwrap();
         assert_eq!(pages[0].record_id, id);
-        let portable = store.transact(|write| {
-            write.file(
-                LOUPIST,
-                &turn("m4"),
-                vec![PageDelta {
-                    target: PageTarget::Create {
-                        kind: PageKind::Method,
-                        title: "Method".into(),
-                        anchors: vec![],
-                    },
-                    ops: vec![LensOp::Put {
-                        key: SectionKey::new("steps").unwrap(),
-                        heading: "Steps".into(),
-                        markdown: "[x](world:nod_1)".into(),
-                        basis: Basis::default(),
-                        expected: None,
-                    }],
+        let portable = file_in(
+            &store,
+            &turn("m4"),
+            vec![PageDelta {
+                target: PageTarget::Create {
+                    kind: PageKind::Method,
+                    title: "Method".into(),
+                    anchors: vec![],
+                },
+                ops: vec![LensOp::Put {
+                    key: SectionKey::new("steps").unwrap(),
+                    heading: "Steps".into(),
+                    markdown: "[x](world:nod_1)".into(),
+                    basis: Basis::default(),
+                    expected: None,
                 }],
-                9,
-            )
-        });
-        assert!(matches!(portable, Err(KnowledgeError::LensBodyForbidden)));
+            }],
+            9,
+        );
+        assert!(portable[0].record_id.is_empty());
+        assert_eq!(portable[0].outcomes[0].outcome, OpOutcome::RefusedText);
     }
 
     fn seal(
@@ -2556,18 +2824,18 @@ mod tests {
                     "why",
                 ] {
                     let existing = (field != "title").then_some(&page);
-                    let refused = store.transact(|write| {
-                        write.file(
-                            LOUPIST,
-                            &user(),
-                            vec![delta_with(kind, field, text, existing)],
-                            4,
-                        )
-                    });
-                    assert!(
-                        matches!(refused, Err(KnowledgeError::LensBodyForbidden)),
-                        "{kind:?} {field} {text}: {refused:?}"
+                    let refused = file_in(
+                        &store,
+                        &user(),
+                        vec![delta_with(kind, field, text, existing)],
+                        4,
                     );
+                    assert_eq!(
+                        refused[0].outcomes[0].outcome,
+                        OpOutcome::RefusedText,
+                        "{kind:?} {field} {text}"
+                    );
+                    assert!(!refused[0].changed, "{kind:?} {field} {text}");
                 }
             }
             let stored = read(&store, &page.record_id).delivery_text().unwrap();
@@ -2625,19 +2893,27 @@ mod tests {
         let (_dir, store) = store();
         seal(&store, LOUPIST, "nod_1");
         seal(&store, "loupist-b", "nod_b");
+        // Every link form a Markdown reader resolves counts, whatever the scheme's case.
         for kind in [PageKind::Perspective, PageKind::Method] {
-            let refused = store.transact(|write| {
-                write.file(
-                    LOUPIST,
+            for link in [
+                "[x](world:nod_1)",
+                "See [Ada][a].\n\n[a]: world:nod_1",
+                "<world:nod_1>",
+                "[x](WORLD:nod_1)",
+            ] {
+                let refused = file_in(
+                    &store,
                     &user(),
-                    vec![delta_with(kind, "markdown", "[x](world:nod_1)", None)],
+                    vec![delta_with(kind, "markdown", link, None)],
                     3,
-                )
-            });
-            assert!(
-                matches!(refused, Err(KnowledgeError::LensBodyForbidden)),
-                "{kind:?}"
-            );
+                );
+                assert!(refused[0].record_id.is_empty(), "{kind:?} {link}");
+                assert_eq!(
+                    refused[0].outcomes[0].outcome,
+                    OpOutcome::RefusedText,
+                    "{kind:?} {link}"
+                );
+            }
         }
         for kind in [PageKind::Subject, PageKind::Idea] {
             let filed = file_in(
@@ -2651,17 +2927,20 @@ mod tests {
                 .anchors
                 .iter()
                 .any(|a| a.role == AnchorRole::Mention && a.node_id.as_deref() == Some("nod_1")));
-            for link in ["[x](world:nod_b)", "[x](world:nod_missing)"] {
-                let refused = store.transact(|write| {
-                    write.file(
-                        LOUPIST,
-                        &user(),
-                        vec![delta_with(kind, "markdown", link, Some(&page))],
-                        4,
-                    )
-                });
-                assert!(
-                    matches!(refused, Err(KnowledgeError::Invalid(_))),
+            for link in [
+                "[x](world:nod_b)",
+                "[x](world:nod_missing)",
+                "See [it][b].\n\n[b]: world:nod_missing",
+            ] {
+                let refused = file_in(
+                    &store,
+                    &user(),
+                    vec![delta_with(kind, "markdown", link, Some(&page))],
+                    4,
+                );
+                assert_eq!(
+                    refused[0].outcomes[0].outcome,
+                    OpOutcome::RefusedText,
                     "{kind:?} {link}"
                 );
             }

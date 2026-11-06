@@ -288,6 +288,222 @@ async fn a_perspective_written_later_is_left_out_of_the_turn_and_its_reads() {
     assert!(refused.to_string().contains("as_of_later"), "{refused}");
 }
 
+/// A page whose section and summary were revised after the cutoff: its head
+/// is later, so the whole page is later. Returns (revised page, untouched page).
+fn revised_after_the_cutoff(state: &AppState) -> (String, String) {
+    use crate::knowledge::lens_page::{LensOp, PageDelta, PageTarget};
+    let store = knowledge(state);
+    let origin = crate::knowledge::test_support::turn_origin("chat-a", "assistant-0");
+    let revised = store
+        .file_method(
+            "loupist-a",
+            "Cutoff review",
+            "Original check.",
+            &origin,
+            noon("2026-03-01"),
+        )
+        .unwrap();
+    let untouched = store
+        .file_method(
+            "loupist-a",
+            "Cutoff baseline",
+            "Original check.",
+            &origin,
+            noon("2026-03-01"),
+        )
+        .unwrap();
+    store
+        .file_method(
+            "loupist-a",
+            "Cutoff review",
+            "LATERSECTION result is 452.3bn.",
+            &origin,
+            noon("2026-03-18"),
+        )
+        .unwrap();
+    store
+        .transact(|write| {
+            write.file(
+                "loupist-a",
+                &origin,
+                vec![PageDelta {
+                    target: PageTarget::Existing {
+                        record_id: revised.record_id.clone(),
+                    },
+                    ops: vec![LensOp::Summary {
+                        text: "LATERSUMMARY revenue was 452.3bn.".into(),
+                    }],
+                }],
+                noon("2026-03-18") + 1,
+            )
+        })
+        .unwrap();
+    (revised.record_id, untouched.record_id)
+}
+
+#[tokio::test]
+async fn a_page_revised_after_the_cutoff_is_left_out_of_reads_search_and_context() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let (revised, untouched) = revised_after_the_cutoff(&state);
+    let capture = Arc::new(ToolCapture::default());
+    let executor = executor_for(&state, capture.clone());
+    let cutoff = as_of("2026-03-10");
+
+    let refused = executor
+        .execute(&cutoff, ToolMethod::LensRead, json!({"recordId": revised}))
+        .await
+        .unwrap_err();
+    assert!(refused.to_string().contains("as_of_later"), "{refused}");
+    assert!(!refused.to_string().contains("LATER"), "{refused}");
+    let read = executor
+        .execute(
+            &cutoff,
+            ToolMethod::LensRead,
+            json!({"recordId": untouched}),
+        )
+        .await
+        .unwrap();
+    assert!(read["text"].as_str().unwrap().contains("Original check."));
+
+    for query in ["LATERSECTION", "Cutoff"] {
+        let found = executor
+            .execute(&cutoff, ToolMethod::LensSearch, json!({"query": query}))
+            .await
+            .unwrap();
+        let text = found.to_string();
+        assert!(!text.contains("LATER"), "{query}: {text}");
+        assert!(!text.contains(&revised), "{query}: {text}");
+    }
+
+    let context = crate::commands::knowledge::host_memory_context_for_turn(
+        &state,
+        "loupist-a",
+        "Cutoff review",
+        true,
+        &[],
+        crate::commands::knowledge::as_of::Cutoff::parse(Some("2026-03-10")),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(context.entries.iter().all(|entry| entry.id != revised));
+    assert!(context.entries.iter().any(|entry| entry.id == untouched));
+    assert!(context
+        .relevant
+        .iter()
+        .all(|pointer| pointer.read_args["recordId"] != revised.as_str()));
+    assert!(context.left_out.methods.contains(&revised));
+    assert!(capture
+        .as_of_left_out
+        .lock()
+        .unwrap()
+        .methods
+        .contains(&revised));
+}
+
+#[tokio::test]
+async fn an_as_of_read_lists_only_backlinks_and_history_known_by_then() {
+    use crate::knowledge::lens_page::{
+        Basis, BasisRef, LensOp, PageDelta, PageKind, PageTarget, SectionKey,
+    };
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let origin = crate::knowledge::test_support::turn_origin("chat-a", "assistant-0");
+    let said = |key: &str, markdown: &str, expected: Option<String>| LensOp::Put {
+        key: SectionKey::new(key).unwrap(),
+        heading: key.to_uppercase(),
+        markdown: markdown.into(),
+        basis: Basis {
+            refs: vec![BasisRef::UserSaid {
+                message_id: "user-0".into(),
+            }],
+            uncertainty: None,
+        },
+        expected,
+    };
+    let subject = |title: &str, ops: Vec<LensOp>| PageDelta {
+        target: PageTarget::Create {
+            kind: PageKind::Subject,
+            title: title.into(),
+            anchors: Vec::new(),
+        },
+        ops,
+    };
+    let store = knowledge(&state);
+    let hanbit = store
+        .transact(|write| {
+            write.file(
+                "loupist-a",
+                &origin,
+                vec![subject(
+                    "Hanbit Battery",
+                    vec![said("facts", "Hanbit supplies Northgate.", None)],
+                )],
+                noon("2026-01-10"),
+            )
+        })
+        .unwrap()[0]
+        .record_id
+        .clone();
+    // In June: a stale edit is logged on Hanbit without changing it, and a new
+    // page links to it.
+    store
+        .transact(|write| {
+            write.file(
+                "loupist-a",
+                &origin,
+                vec![
+                    PageDelta {
+                        target: PageTarget::Existing {
+                            record_id: hanbit.clone(),
+                        },
+                        ops: vec![said(
+                            "facts",
+                            "JUNE-ONLY cancellation.",
+                            Some("0".repeat(64)),
+                        )],
+                    },
+                    subject(
+                        "JUNE-ONLY Northgate cancellation",
+                        vec![said(
+                            "facts",
+                            &format!("Cancelled [Hanbit](lens:{hanbit}) in June."),
+                            None,
+                        )],
+                    ),
+                ],
+                noon("2026-06-10"),
+            )
+        })
+        .unwrap();
+    let executor = executor_for(&state, Arc::new(ToolCapture::default()));
+    let read = executor
+        .execute(
+            &as_of("2026-02-01"),
+            ToolMethod::LensRead,
+            json!({"recordId": hanbit}),
+        )
+        .await
+        .unwrap();
+    let text = read["text"].as_str().unwrap();
+    let page: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(page["backlinks"], json!([]));
+    assert_eq!(page["history"].as_array().unwrap().len(), 1, "{text}");
+    assert!(!text.contains("JUNE-ONLY"), "{text}");
+    // Today both are there.
+    let today = executor
+        .execute(
+            &policy(true, false),
+            ToolMethod::LensRead,
+            json!({"recordId": hanbit}),
+        )
+        .await
+        .unwrap();
+    let today: Value = serde_json::from_str(today["text"].as_str().unwrap()).unwrap();
+    assert_eq!(today["backlinks"].as_array().unwrap().len(), 1);
+    assert_eq!(today["history"].as_array().unwrap().len(), 2);
+}
+
 #[tokio::test]
 async fn journal_entries_and_history_keep_to_the_cutoff_and_reviews_wait_for_the_check_date() {
     let temporary = tempfile::tempdir().unwrap();

@@ -1257,6 +1257,21 @@ pub(crate) fn lens_read(
     })
 }
 
+/// What the Lens writer would make of each delta now, for `lens_file` staging.
+pub(in crate::commands) fn screen_filing(
+    state: &AppState,
+    loupist_id: &str,
+    deltas: &[crate::knowledge::lens_page::PageDelta],
+) -> Result<Vec<crate::knowledge::Screen>, CommandError> {
+    with_loupist_knowledge(state, loupist_id, |tx, blobs| {
+        let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
+        deltas
+            .iter()
+            .map(|delta| write.screen_delta(loupist_id, delta))
+            .collect()
+    })
+}
+
 pub(crate) fn lens_search(
     state: &AppState,
     request: KnowledgeLensSearchRequest,

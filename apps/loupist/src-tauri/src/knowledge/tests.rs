@@ -293,14 +293,31 @@ fn lens_keeps_private_references_out_of_its_payload() {
         format!("see {}", journal.journal_id),
         format!("open [world]({})", world.record_id),
     ] {
-        let refused = store.file_method(
-            "loupist-a",
-            "Method",
-            &text,
-            &test_support::user_origin(),
-            AT,
-        );
-        assert_eq!(refused.unwrap_err().code(), "lens_body_forbidden", "{text}");
+        let refused = store
+            .transact(|write| {
+                write.file(
+                    "loupist-a",
+                    &test_support::user_origin(),
+                    vec![lens_page::PageDelta {
+                        target: lens_page::PageTarget::Create {
+                            kind: lens_page::PageKind::Method,
+                            title: "Method".into(),
+                            anchors: Vec::new(),
+                        },
+                        ops: vec![lens_page::LensOp::Put {
+                            key: lens_page::SectionKey::new("steps")?,
+                            heading: "Steps".into(),
+                            markdown: text.clone(),
+                            basis: lens_page::Basis::default(),
+                            expected: None,
+                        }],
+                    }],
+                    AT,
+                )
+            })
+            .unwrap();
+        assert!(refused[0].refused_text(), "{text}");
+        assert!(refused[0].record_id.is_empty(), "{text}");
     }
     assert!(store
         .list_records("loupist-a")
@@ -1068,6 +1085,122 @@ fn lens_unresolved_links_stay_in_the_text_without_entering_the_link_index() {
     assert_eq!(section_text(&saved, "steps"), markdown);
 }
 
+/// Every page the Lens writer accepts exports a pack its importer accepts:
+/// one set of key, heading and character limits.
+#[test]
+fn a_page_the_writer_accepts_exports_a_pack_the_importer_accepts() {
+    use crate::knowledge::lens_page::{Basis, LensOp, PageDelta, PageKind, PageTarget, SectionKey};
+    use crate::sharing::export::{self, Choice, Scope, Sections};
+    use crate::sharing::pack;
+    for (key, heading) in [
+        ("steps", "Steps".to_owned()),
+        ("steps", "가".repeat(27)),
+        ("-steps", "Steps".to_owned()),
+    ] {
+        let (_directory, store) = open_store();
+        let filed = store
+            .transact(|write| {
+                write.file(
+                    "loupist-a",
+                    &test_support::user_origin(),
+                    vec![PageDelta {
+                        target: PageTarget::Create {
+                            kind: PageKind::Method,
+                            title: "Method".into(),
+                            anchors: vec![],
+                        },
+                        ops: vec![LensOp::Put {
+                            key: SectionKey::new(key)?,
+                            heading: heading.clone(),
+                            markdown: "Read the cash flow.".into(),
+                            basis: Basis::default(),
+                            expected: None,
+                        }],
+                    }],
+                    AT,
+                )
+            })
+            .unwrap();
+        let snapshot = store
+            .read(|write| shared_pack::export_snapshot(write.tx, "loupist-a"))
+            .unwrap();
+        let meta = export::PackMeta {
+            pack_id: "7f1d1c3e-0000-4000-8000-000000000001".into(),
+            version: 1,
+            created_at: "2026-11-01T00:00:00Z".into(),
+            license: pack::License::Cc0,
+            terms_url: None,
+            byline: None,
+            notice: String::new(),
+            open_url: None,
+            app: "0.0.1".into(),
+            origin: vec![],
+        };
+        let input = export::ExportInput {
+            snapshot,
+            ..Default::default()
+        };
+        let prepared = export::prepare(&input, &meta.pack_id);
+        let choice = Choice {
+            scope: Scope::Item(filed[0].record_id.clone()),
+            sections: Sections::ALL,
+            excluded: Default::default(),
+            acknowledged: Default::default(),
+        };
+        let (_, files) = export::build(&export::select(&prepared, &choice), &choice, &meta);
+        assert!(pack::validate(&files).is_ok(), "{key} {heading}");
+    }
+}
+
+#[test]
+fn replacing_a_shared_page_applies_its_empty_summary() {
+    use crate::sharing::pack::{PackDoc, PackSection};
+    let (_directory, store) = open_store();
+    let section = |markdown: &str| PackSection {
+        key: "steps".into(),
+        heading: "Steps".into(),
+        markdown: markdown.into(),
+    };
+    let original = PackDoc {
+        summary: "Obsolete shared conclusion.".into(),
+        sections: vec![section("Old steps.")],
+    };
+    let record_id = store
+        .transact(|write| {
+            shared_pack::create_shared_method(
+                write.tx,
+                "loupist-a",
+                "Method",
+                "Shared",
+                &original,
+                json!({"kind": "shared_pack"}),
+                AT,
+            )
+        })
+        .unwrap();
+    let replacement = PackDoc {
+        summary: String::new(),
+        sections: vec![section("Replacement steps.")],
+    };
+    store
+        .transact(|write| {
+            shared_pack::revise_shared_lens(
+                write.tx,
+                "loupist-a",
+                &record_id,
+                &replacement,
+                json!({"kind": "shared_pack"}),
+                AT + 2,
+            )
+        })
+        .unwrap();
+    let page = store.read_page("loupist-a", &record_id).unwrap();
+    assert_eq!(page.body.summary(), "");
+    assert_eq!(page.body.sections()[0].markdown, "Replacement steps.");
+}
+
 mod growth;
 
 mod memory_reset;
+
+mod contest;

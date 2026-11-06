@@ -10,7 +10,8 @@ pub struct ResetCounts {
     pub principles: usize,
     /// Whole Loupist-origin pages that disappear.
     pub pages: usize,
-    /// Loupist-origin sections retired from pages the user keeps.
+    /// Loupist-origin sections retired, and Loupist-written summaries
+    /// cleared, on pages the user keeps.
     pub sections: usize,
     pub names: usize,
     pub relationships: usize,
@@ -21,6 +22,8 @@ struct ResetPlan {
     lenses: BTreeSet<String>,
     /// (record id, section key, section digest) of Loupist-origin sections on kept pages.
     sections: Vec<(String, String, String)>,
+    /// Kept pages whose summary the Loupist wrote last.
+    summaries: Vec<String>,
     refs: shared_pack::ImportRefs,
     counts: ResetCounts,
 }
@@ -33,6 +36,7 @@ fn plan(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<ResetPlan> {
     // The creation event owns authorship. Editing a shared or user-created item
     // never turns it into something Reset may remove.
     let mut sections = Vec::new();
+    let mut summaries = Vec::new();
     let mut q = tx.prepare("SELECT r.record_id, r.kind, COALESCE(m.kind,''), m.archived_at_ms IS NOT NULL FROM knowledge_records r LEFT JOIN knowledge_lens_metadata m ON m.record_id=r.record_id WHERE r.owner_loupist_id=?1 AND (r.kind='source' OR m.record_id IS NOT NULL)")?;
     let rows = q
         .query_map([loupist], |r| {
@@ -79,6 +83,14 @@ fn plan(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<ResetPlan> {
                         section.key.as_str().to_owned(),
                         section.digest.clone(),
                     ));
+                    counts.sections += 1;
+                }
+                // The log knows who wrote the summary the page shows now.
+                let summarized_by: Option<String> = tx.query_row("SELECT origin FROM knowledge_lens_log WHERE record_id=?1 AND outcome='summarized' ORDER BY created_at_ms DESC, rowid DESC LIMIT 1", [&id], |r| r.get(0)).optional()?;
+                if !page.body.summary().is_empty()
+                    && matches!(summarized_by.as_deref(), Some("turn" | "learning"))
+                {
+                    summaries.push(id.clone());
                     counts.sections += 1;
                 }
             }
@@ -175,6 +187,7 @@ fn plan(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<ResetPlan> {
     Ok(ResetPlan {
         lenses,
         sections,
+        summaries,
         refs,
         counts,
     })
@@ -220,6 +233,14 @@ pub fn reset(
                 key: super::lens_page::SectionKey::new(&key)?,
                 expected: digest,
                 why: "Reset by you".into(),
+            });
+    }
+    for record_id in plan.summaries {
+        by_page
+            .entry(record_id)
+            .or_default()
+            .push(super::lens_page::LensOp::Summary {
+                text: String::new(),
             });
     }
     for (record_id, ops) in by_page {

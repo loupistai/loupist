@@ -130,6 +130,13 @@ for line in sys.stdin:
             args = {"company":"00999999", "start":"2020-01-01", "end":"2020-12-31", "limit":1}
         elif "TIMEOUT_EVAL" in request["message"]:
             continue  # Remain responsive to the production abort RPC.
+        elif "BADLINK_EVAL" in request["message"]:
+            name, method = "lens_file", "lens.file"
+            args = {"pages": [{"page": {"create": {"kind": "subject", "title": "Hanbit Battery"}},
+                               "ops": [{"op": "put", "key": "facts", "heading": "Facts",
+                                        "markdown": "Supplies [Northgate](world:northgate-motors).",
+                                        "basis": {"refs": [{"said": True}]}}]}],
+                    "rationale": "The user said who Hanbit supplies."}
         elif "TEACH_EVAL" in request["message"]:
             name, method = "lens_file", "lens.file"
             args = {"pages": [{"page": {"create": {"kind": "method", "title": "Hanbit diluted-share rule"}},
@@ -152,6 +159,9 @@ for line in sys.stdin:
         if replay_case and replay_case.get("error"):
             assert not reply["ok"], "expected native rejection"
             assert replay_case["error"] in json.dumps(reply), str(reply)
+        elif "BADLINK_EVAL" in request["message"]:
+            assert not reply["ok"], "a world: link to an unknown node must be refused when staged"
+            assert "pages[0].ops[0].markdown" in json.dumps(reply), str(reply)
         else:
             assert reply["ok"], str(reply.get("error"))
         if provider_replay:
@@ -159,7 +169,8 @@ for line in sys.stdin:
             assert "citation_url" in json.dumps(reply["result"]), "host did not create citation"
         if learned:
             assert "diluted" in json.dumps(reply["result"]), "exact Lens read missing method"
-        answer = "Saved the rule." if name == "lens_file" else 'Applied saved Hanbit method: 720 / (15 + 3) = 40. {"metrics":{"fair_value_per_share":40}}'
+        answer = ("Noted, without saving the link." if "BADLINK_EVAL" in request["message"]
+                  else "Saved the rule.") if name == "lens_file" else 'Applied saved Hanbit method: 720 / (15 + 3) = 40. {"metrics":{"fair_value_per_share":40}}'
         if provider_replay:
             answer = "Read the fictional Hanbit filing through provider replay."
         if replay_case:

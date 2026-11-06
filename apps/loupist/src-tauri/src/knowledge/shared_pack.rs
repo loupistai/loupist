@@ -46,8 +46,9 @@ fn pack_doc(page: &super::lens::PageRead) -> PackDoc {
 }
 
 /// Ops that make a page read as `document`: retire every current section,
-/// then put the pack's sections and summary. Accepted sections start with an
-/// empty basis (method and perspective allow one) and shared origin.
+/// then put the pack's sections and summary (an empty one clears the old).
+/// Accepted sections start with an empty basis (method and perspective allow
+/// one) and shared origin.
 fn replace_ops(
     current: Option<&super::lens::PageRead>,
     document: &PackDoc,
@@ -69,7 +70,7 @@ fn replace_ops(
             expected: None,
         });
     }
-    if !document.summary.trim().is_empty() {
+    if current.is_some() || !document.summary.trim().is_empty() {
         ops.push(LensOp::Summary {
             text: document.summary.clone(),
         });
@@ -104,6 +105,9 @@ fn file_pack_page(
             at_ms,
         )?;
         let page = pages.into_iter().next().ok_or(KnowledgeError::NotFound)?;
+        if page.refused_text() {
+            return Err(KnowledgeError::LensBodyForbidden);
+        }
         if page.record_id.is_empty() {
             return Err(KnowledgeError::Invalid(
                 "the shared page has no text to keep",

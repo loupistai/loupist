@@ -32,7 +32,9 @@ priorities, avoid`.
 Bodies link `lens:rec_…` (navigation, resolved by record id, with backlinks from the
 link index) and, on subject and idea pages, `world:<node id>` of this Loupist's
 World. Principle, perspective and method pages keep the World-reference ban; no
-page may reference a Journal, a snapshot or a World record id. A `world:` link
+page may reference a Journal, a snapshot or a World record id. Links are what the
+Markdown parser reads (inline, reference-style and autolinks, any scheme case),
+for the index and the policy alike. A `world:` link
 becomes a `mention` anchor; a page created with anchors gets `subject` anchors (a
 name anchor without a node stays pending until a World publication names it); a
 final-answer `lens:` link records `applied` anchors to the World nodes delivered
@@ -46,18 +48,25 @@ and at most 12 ops: `put` (add or replace a section; `expected` is the digest fr
 the exact read, absent means add only), `retire` (needs the digest), `summary` and
 `idea_status`. A create is idempotent: it resolves to the active page with the same
 kind and folded title, or for a subject the same primary anchor, or the active
-perspective, before minting a record. A taken title merges; nothing is dropped. The
-fold never fails on one bad op; each op gets an outcome: added, replaced, retired,
+perspective, before minting a record. A create that lands on an existing page only
+adds absent sections: its summary, status, retire and replacing puts are skipped as
+stale. The fold never fails on one bad op; each op gets an outcome: added, replaced, retired,
 summarized, status_set, already_known (identical content), skipped_stale (digest
-mismatch or missing key), refused_forgotten (the user retired that key), refused_basis,
-refused_full (16 sections) or refused_kind. Disjoint edits from the same read both
+mismatch, missing key, or an edit through a create), refused_forgotten (the user
+retired that key), refused_basis, refused_full (16 sections), refused_kind or
+refused_text (the text policy: a private reference, a `world:` link on a portable
+page, or a node this World lacks; a refused title or new page's `about` node refuses
+every op of its delta). Disjoint edits from the same read both
 land; an edit of a section that changed since is skipped, never a proposal. A create
-whose ops all refuse leaves no record.
+whose ops all refuse leaves no record. An empty summary clears it. A written
+section is contested when its basis cites a claim the live World withdrew, disputed
+or does not hold, whoever writes it, undo included; text may hold no control
+character but line breaks and tabs in Markdown, uncertainty and reasons.
 
 Each filing publishes one revision per changed page (the head is the only revision;
 history is the log), appends one `knowledge_lens_log` row per op (refused and skipped
 included, with the op JSON, outcome, key, before and after digests and the section
-before the op), rebuilds links and mention anchors, reindexes search and writes one
+or summary that op found, folding ops one at a time), rebuilds links and mention anchors, reindexes search and writes one
 growth event per changed page (`lens_created` or `lens_revised`). The log origin is
 `turn`, `user`, `learning` or `import`. `undo_op` appends the inverse op with
 `undoes_op_id` and refuses when a later op changed that section, summary or status,

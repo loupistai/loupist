@@ -56,8 +56,14 @@ this turn (refused in unattended runs) and `{lens: recordId, key?}` a page read 
 turn. Rust refuses an unknown or foreign handle by its field with a repair hint, a
 `put` or `retire` with `expected` needs that page's acknowledged exact read, a
 create with `expected` is refused, and credential-like text returns
-`sensitive_memory`. The reply's commit writes every staged delta through
-`KnowledgeWrite::file` with `FilingOrigin::Turn`; the answer's `memory_update` lists
+`sensitive_memory`. Staging also runs the writer's text policy and create
+resolution (`KnowledgeWrite::screen_delta`): a refused text is refused by its field;
+a create landing on a page this turn exact-read revises it, and one landing on an
+unread page may only add sections ("read and revise" otherwise). Each call reserves
+its pages and ops under one lock, so parallel calls share the budget and an
+undelivered call frees its share. The reply's commit writes every staged delta through
+`KnowledgeWrite::file` with `FilingOrigin::Turn`; an op the policy refuses by then
+(say, a node the World dropped) is logged `refused_text` and the reply still commits; the answer's `memory_update` lists
 each filed page once (kind `Lens`, operation `create` or `revise`, `outcomes` with
 `opId`, `outcome` and `key`), and a stopped reply files nothing.
 

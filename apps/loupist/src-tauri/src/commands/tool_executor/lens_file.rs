@@ -11,7 +11,7 @@ use rusqlite::Transaction;
 use super::*;
 use crate::knowledge::lens_page::{
     AnchorInput, Basis, BasisRef, FiledPage, FilingOrigin, IdeaStatus, LensOp, PageDelta, PageKind,
-    PageTarget, SectionKey,
+    PageTarget, SectionKey, TextField, TextRefusal,
 };
 
 /// Pages one turn may file across its `lens_file` calls.
@@ -195,9 +195,6 @@ pub(super) struct TurnHandles {
     /// The user message a `said` basis names; None without one or unattended.
     said: Option<String>,
     unattended: bool,
-    /// Pages and ops already staged by earlier calls this turn.
-    staged_pages: usize,
-    staged_ops: usize,
 }
 
 impl AppToolExecutor {
@@ -217,11 +214,87 @@ impl AppToolExecutor {
             )
         })?;
         let handles = self.turn_handles().await;
-        let (filing, pages) = resolve(request, &handles)?;
+        let (mut filing, pages) = resolve(request, &handles)?;
+        self.screen(&policy.loupist_id, &mut filing, &handles)?;
+        self.reserve_budget(delivery_id, &filing).await?;
         self.capture
             .stage(delivery_id, |pending| pending.filings.push(filing))
             .await;
         Ok(json!({"status": "staged", "durable": false, "pages": pages}))
+    }
+
+    /// Runs the writer's text policy and create resolution now, so what the
+    /// commit would refuse is refused here by its field. A create landing on
+    /// a page this turn exact-read files as a revision of that page; one
+    /// landing on a page it did not read may only add sections.
+    fn screen(
+        &self,
+        loupist_id: &str,
+        filing: &mut StagedFiling,
+        handles: &TurnHandles,
+    ) -> Result<(), BrokerError> {
+        let screens =
+            crate::commands::knowledge::screen_filing(&self.state, loupist_id, &filing.deltas)
+                .map_err(|error| BrokerError::Execution(error.to_string()))?;
+        for (index, (delta, screen)) in filing.deltas.iter_mut().zip(screens).enumerate() {
+            if let Some((field, reason)) = screen.refusals.first() {
+                let field = match field {
+                    TextField::Title => format!("pages[{index}].page.create.title"),
+                    TextField::About(about) => {
+                        format!("pages[{index}].page.create.about[{about}].nodeId")
+                    }
+                    TextField::Op(op, name) => format!("pages[{index}].ops[{op}].{name}"),
+                };
+                return Err(BrokerError::invalid(field, refusal_hint(*reason)));
+            }
+            let Some(record_id) = screen.existing else {
+                continue;
+            };
+            if handles.lens_reads.contains_key(&record_id) {
+                delta.target = PageTarget::Existing { record_id };
+            } else if let Some(op) = delta
+                .ops
+                .iter()
+                .position(|op| !matches!(op, LensOp::Put { expected: None, .. }))
+            {
+                return Err(BrokerError::invalid(
+                    format!("pages[{index}].ops[{op}].op"),
+                    "this create lands on an existing page this turn has not read; read it with lens_read and revise it by page.recordId, or file only new sections",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Reserves this call's pages and ops against the turn's budget under one
+    /// lock, so calls Pi runs in parallel share it. An undelivered call frees
+    /// its share.
+    async fn reserve_budget(
+        &self,
+        delivery_id: &str,
+        filing: &StagedFiling,
+    ) -> Result<(), BrokerError> {
+        let pages = filing.deltas.len();
+        let ops = filing
+            .deltas
+            .iter()
+            .map(|delta| delta.ops.len())
+            .sum::<usize>();
+        let mut reserved = self.capture.lens_file_budget.lock().await;
+        let (reserved_pages, reserved_ops) = reserved
+            .iter()
+            .filter(|(delivery, _)| delivery.as_str() != delivery_id)
+            .fold((0, 0), |(pages, ops), (_, used)| {
+                (pages + used.0, ops + used.1)
+            });
+        if reserved_pages + pages > MAX_TURN_PAGES || reserved_ops + ops > MAX_TURN_OPS {
+            return Err(BrokerError::invalid(
+                "pages",
+                format!("at most {MAX_TURN_PAGES} pages and {MAX_TURN_OPS} ops per reply, counting earlier lens_file calls"),
+            ));
+        }
+        reserved.insert(delivery_id.to_owned(), (pages, ops));
+        Ok(())
     }
 
     async fn turn_handles(&self) -> TurnHandles {
@@ -273,15 +346,15 @@ impl AppToolExecutor {
         if !handles.unattended {
             handles.said = self.capture.principle_user_message_id.clone();
         }
-        for filing in self.capture.staged_filings.lock().await.iter() {
-            handles.staged_pages += filing.deltas.len();
-            handles.staged_ops += filing
-                .deltas
-                .iter()
-                .map(|delta| delta.ops.len())
-                .sum::<usize>();
-        }
         handles
+    }
+}
+
+fn refusal_hint(reason: TextRefusal) -> &'static str {
+    match reason {
+        TextRefusal::Private => "remove the private reference: Journal links, world:// forms, snapshot or journal ids, and record or revision ids that are not a Source or a Lens page never enter a page",
+        TextRefusal::PortableWorldLink => "principle, perspective and method pages are shared and never link world: nodes; write the name as plain text",
+        TextRefusal::UnknownNode => "a node id this Loupist's World holds, as world_read delivered it; otherwise write the name as plain text (or about {name} for a page's subject)",
     }
 }
 
@@ -312,23 +385,16 @@ fn resolve(
     if request.pages.is_empty() {
         return Err(BrokerError::invalid("pages", "at least one page"));
     }
-    if request.rationale.trim().is_empty() || request.rationale.chars().count() > 2_000 {
+    if request.rationale.trim().is_empty()
+        || request.rationale.chars().count() > 2_000
+        || request
+            .rationale
+            .chars()
+            .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
+    {
         return Err(BrokerError::invalid(
             "rationale",
-            "one to 2,000 characters saying what this turn established",
-        ));
-    }
-    let pages_total = handles.staged_pages + request.pages.len();
-    let ops_total = handles.staged_ops
-        + request
-            .pages
-            .iter()
-            .map(|page| page.ops.len())
-            .sum::<usize>();
-    if pages_total > MAX_TURN_PAGES || ops_total > MAX_TURN_OPS {
-        return Err(BrokerError::invalid(
-            "pages",
-            format!("at most {MAX_TURN_PAGES} pages and {MAX_TURN_OPS} ops per reply, counting earlier lens_file calls"),
+            "one to 2,000 characters saying what this turn established, without control characters",
         ));
     }
     let mut deltas = Vec::with_capacity(request.pages.len());
