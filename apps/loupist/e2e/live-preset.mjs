@@ -4,8 +4,8 @@
 import { thinkingLabel } from "../src/thinking-labels.mjs";
 import { readFileSync } from "node:fs";
 
-const DEFAULT_MODEL_LABEL = "GPT-6-Luna";
-const DEFAULT_EFFORT = "max";
+const DEFAULT_MODEL_LABEL = "GPT-6.1-Sol";
+const DEFAULT_EFFORT = "medium";
 const koreanThinking = JSON.parse(readFileSync(new URL("../src/i18n/locales/ko/settings.json", import.meta.url), "utf8")).modelSelection.thinking;
 
 export { thinkingLabel };

@@ -112,12 +112,12 @@ in either UI language. New WebDriver windows start at 1280×820 logical pixels;
 before a temporary resize and restore it afterward.
 
 Before an authorized real-model Chat action, visibly verify the requested model.
-If none was requested, select the preset (`live-preset.mjs`, `GPT-6-Luna · Max`,
-shown as `GPT-6-Luna · 최대` in Korean)
+If none was requested, select the preset (`live-preset.mjs`, `GPT-6.1-Sol · Medium`,
+shown as `GPT-6.1-Sol · 보통` in Korean)
 rather than trusting a saved selection:
 
 ```bash
-node apps/loupist/e2e/agent-driver.mjs luna-max
+node apps/loupist/e2e/agent-driver.mjs live-preset
 ```
 
 ## Manual testing

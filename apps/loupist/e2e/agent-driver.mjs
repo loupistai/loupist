@@ -32,7 +32,7 @@ const usage = `Usage:
   node apps/loupist/e2e/agent-driver.mjs wait-chat-idle [--strict]
   node apps/loupist/e2e/agent-driver.mjs progress
   node apps/loupist/e2e/agent-driver.mjs chat-model <model> <effort>
-  node apps/loupist/e2e/agent-driver.mjs luna-max`;
+  node apps/loupist/e2e/agent-driver.mjs live-preset`;
 
 function required(value, label) {
   if (!value) throw new Error(`${label} is required\n${usage}`);
@@ -353,7 +353,7 @@ async function configurePresetModel(browser, selector, context, outsideSelector)
   return label;
 }
 
-async function configureLunaMax(browser) {
+async function configureLivePreset(browser) {
   const chatPanel = await browser.$("#main-panel-chat");
   if (await chatPanel.isExisting() && await chatPanel.getAttribute("aria-hidden") === "true") {
     await openMainTab(browser, "chat");
@@ -533,8 +533,8 @@ try {
       required(args[0], "model"),
       required(args[1], "effort"),
     );
-  } else if (command === "luna-max") {
-    await configureLunaMax(browser);
+  } else if (command === "live-preset") {
+    await configureLivePreset(browser);
   } else {
     throw new Error(`Unknown command: ${command}\n${usage}`);
   }
