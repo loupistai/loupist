@@ -159,7 +159,7 @@ export function WatchingReader({ bridge, loupist, settings, onBack }: {
           return <li key={event.eventId} className="watching-alert">
             <span className="asset-change-day gg-num">{shortDay(event.factDate)}</span>
             <p>{watchSentence(event, name, { dated: true })} <SourceChips evidence={event.evidence} numbers={numbers} onOpen={openEvidence(event)} /></p>
-            {openAsset ? <Button variant="ghost" size="sm" aria-label={`${i18n.t("chat:assetCard.openPage")} · ${name}`} onClick={() => openPage(event)}>{i18n.t("chat:assetCard.openPage")}</Button> : null}
+            {openAsset ? <Button variant="ghost" size="sm" aria-label={`${i18n.t("assets:page.open")} · ${name}`} onClick={() => openPage(event)}>{i18n.t("assets:page.open")}</Button> : null}
           </li>;
         })}</ol>
           : <p className="briefings-meta" data-watching-empty="">{t("watch.empty")}</p>}

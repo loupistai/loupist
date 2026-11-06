@@ -6,7 +6,7 @@ import { MockCustomConnections } from "./mock/customConnections";
 import { MockAssets } from "./mock/assets";
 import { MockEarnings } from "./mock/earnings";
 import { MockWatch } from "./mock/watch";
-import type { AssetPageGetRequest, AssetDeltaRequest, AssetRefreshRequest, AssetClassSetRequest, AssetVerdictUndoRequest, AssetPageSeenRequest, UpcomingEventsRequest, AssetQuoteRequest } from "../contracts/assets";
+import type { AssetPageGetRequest, AssetDeltaRequest, AssetRefreshRequest, AssetClassSetRequest, AssetVerdictUndoRequest, AssetPageSeenRequest, UpcomingEventsRequest } from "../contracts/assets";
 import type { CustomConnectionsBridge } from "../contracts/customConnections";
 import { MockSharing } from "./mock/sharing";
 import type { SharingBridge } from "../contracts/sharing";
@@ -200,7 +200,6 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   assetVerdictUndo(request: AssetVerdictUndoRequest) { return this.assets.assetVerdictUndo(request); }
   assetPageSeen(request: AssetPageSeenRequest) { return this.assets.assetPageSeen(request); }
   upcomingEvents(request: UpcomingEventsRequest) { return this.assets.upcomingEvents(request); }
-  assetQuote(request: AssetQuoteRequest) { return this.assets.assetQuote(request); }
 
   /** Results snapshots; previews and tests install them here. */
   readonly earnings = new MockEarnings();

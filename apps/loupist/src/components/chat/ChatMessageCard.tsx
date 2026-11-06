@@ -1,7 +1,6 @@
 import type { OpenLinkOptions } from "../../chat/links";
 import { Disclosure } from "../ui/disclosure";
 import { ApprovalCards } from "./ApprovalCard";
-import { AssetCard, type AssetRef } from "./AssetCard";
 import type { LoupistBridge } from "../../types";
 import { formatDate, formatNumber, formatTime } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
@@ -26,8 +25,7 @@ import { deliveredFiles } from "../../chat/deliveredFiles";
 import { DeliveredFiles } from "./DeliveredFiles";
 import { thinkingLabel } from "../../lib/modelSelection";
 import { knownComposerMentions, splitComposerMentions } from "../../chat/composerMentions";
-import { mentionLabel, splitAssetTokens } from "../../chat/composerChips";
-import { tickerMark } from "../../chat/assetTickers";
+import { mentionLabel } from "../../chat/composerChips";
 import { fileSize } from "../../chat/fileSize";
 import { citationSources, evidencePresentation, evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
 import { quoteEvidence } from "../../chat/quoteEvidence";
@@ -186,8 +184,6 @@ function MessageAttachment({
 
 type Props = {
   bridge?: LoupistBridge;
-  /** The asset the question named with `$`; the answer opens with its card (composer D2). */
-  asset?: AssetRef;
   onSaveFeedback?: SaveAnswerFeedback;
   onTeachFeedback?: (text: string) => void;
   feedbackBusy?: boolean;
@@ -263,16 +259,11 @@ function UserMessageText({
   const body = tools.length ? (split < 0 ? "" : text.slice(split + 2)) : text;
   return <>
     {body && <p className="message-user-text">
-      {splitAssetTokens(body).map((sent, outer) => sent.type === "asset" ? (
-        <span key={outer} className="message-mention message-asset" title={sent.market ? `${sent.symbol}:${sent.market}` : sent.symbol}>
-          <i className="composer-chip-marker" aria-hidden="true" data-kind={tickerMark(sent.market)} />
-          {sent.name && sent.name !== sent.symbol ? `${sent.name} · ${sent.symbol}` : sent.symbol}
-        </span>
-      ) : splitComposerMentions(sent.value, known).map((part, index) => part.type === "mention" ? (
-        <span key={`${outer}:${index}`} className="message-mention" data-kind={part.kind}>{mentionLabel(part.value, skills, plugins) ?? part.value}</span>
+      {splitComposerMentions(body, known).map((part, index) => part.type === "mention" ? (
+        <span key={index} className="message-mention" data-kind={part.kind}>{mentionLabel(part.value, skills, plugins) ?? part.value}</span>
       ) : (
-        <span key={`${outer}:${index}`}>{part.value}</span>
-      )))}
+        <span key={index}>{part.value}</span>
+      ))}
     </p>}
     {(tools.length > 0 || asOf) && <div className="message-user-context">
       {tools.map((token, index) => <span className="message-tool-label" key={index} title={token}>
@@ -285,7 +276,6 @@ function UserMessageText({
 
 function ChatMessageCardComponent({
   bridge,
-  asset,
   active = true,
   message,
   loupistId,
@@ -451,7 +441,6 @@ function ChatMessageCardComponent({
         </MessageContent>
       </Message>);
     };
-    if (asset) transcript.push(<AssetCard key="asset" asset={asset} loupistId={loupistId} asOf={message.as_of} onOpenMapNode={location => onOpenMemory(location, asset.symbol)} />);
     for (const part of parts) {
       if (part.kind === "commentary") {
         appendProse(withoutIdentifiers(part.text), false);

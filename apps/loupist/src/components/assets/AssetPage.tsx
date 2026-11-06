@@ -346,9 +346,10 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onA
   const crypto = page ? marketFor(page.market) === "CRYPTO" : false;
   // The class menu names the kind once: a market that only restates it (Crypto, PRIVATE, REAL) is left out.
   const restatesClass = page ? (crypto && page.class === "crypto") || (page.market.toUpperCase() === "PRIVATE" && page.class === "private") || (page.market.toUpperCase() === "REAL" && page.class === "real_asset") : false;
-  const market = crypto ? i18n.t("chat:assetCard.crypto") : page?.market;
+  const market = crypto ? t("class.crypto") : page?.market;
   const savedAt = page?.refreshedAtMs ?? page?.createdAtMs;
   const name = page ? names({ name: page.name, assetId: page.assetId, symbol: page.symbol, market: page.market, entityId: page.entityId }) : target.name ?? target.symbol ?? "";
+  const questionSubject = page ? `${name} (${page.symbol} · ${page.market})` : "";
   // Nothing to check automatically: sources only (private, real, prediction) or offline.
   const checkBlocked = !online ? t("offlineTooltip") : page?.checks.sourcesOnly ? t("page.nothingToCheck") : undefined;
 
@@ -379,8 +380,8 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onA
       </p> : null}
     </div>
     <div className="asset-page-actions">
-      <Button type="button" variant="outline" className="asset-action-wide" onClick={() => page && onAsk(`$${page.symbol} `)} disabled={!page}>{t("page.askAbout")}</Button>
-      <Button type="button" variant="outline" size="icon" className="asset-action-icon" aria-label={t("page.askAbout")} title={t("page.askAbout")} onClick={() => page && onAsk(`$${page.symbol} `)} disabled={!page}><MessageCircleIcon aria-hidden="true" /></Button>
+      <Button type="button" variant="outline" className="asset-action-wide" onClick={() => page && onAsk(`${questionSubject} `)} disabled={!page}>{t("page.askAbout")}</Button>
+      <Button type="button" variant="outline" size="icon" className="asset-action-icon" aria-label={t("page.askAbout")} title={t("page.askAbout")} onClick={() => page && onAsk(`${questionSubject} `)} disabled={!page}><MessageCircleIcon aria-hidden="true" /></Button>
       {/* A disabled button takes no pointer: its wrapper carries the reason as a tooltip. */}
       <span className="asset-action-wide" title={checkBlocked}>
         <Button type="button" variant="ghost" className="asset-check" onClick={() => void checkNow()} disabled={!page || !!checkBlocked || checking} aria-description={checkBlocked} aria-busy={checking || undefined}>
@@ -453,7 +454,7 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onA
       <div className="asset-page-main">
         <AssetThesis bridge={bridge} loupistId={loupistId} loupistName={loupist.name} page={page} name={name} threads={threads} numbers={numbers}
           onChanged={changed} onUndo={moveId => void undo(moveId)} onOpenEvidence={openEvidence} onOpenChat={onOpenChat}
-          onWorkItOut={() => onAsk(t("noThesis.prompt", { symbol: page.symbol }))} />
+          onWorkItOut={() => onAsk(t("noThesis.prompt", { name, symbol: page.symbol, market: page.market }))} />
 
         {snapshot ? <div ref={resultsRef} className="asset-results">
           <EarningsCard bridge={bridge} loupistId={loupistId} loupistName={loupist.name} snapshot={snapshot} name={name} numbers={numbers}

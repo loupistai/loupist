@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import i18n from "@/i18n";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { EarningsSnapshot } from "../../contracts/earnings";
 import { morrowSnapshot, solsupSnapshot } from "../../preview/finance";
@@ -16,7 +17,7 @@ async function card(snapshot: EarningsSnapshot, options: { onAsk?: (text: string
   bridge.earnings.install(loupist!.id, snapshot);
   const onOpenEvidence = vi.fn();
   const view = render(<TooltipProvider><EarningsCard bridge={bridge} loupistId={loupist!.id} loupistName="Quality" snapshot={snapshot} name={snapshot.name} onOpenEvidence={onOpenEvidence} onAsk={options.onAsk ?? vi.fn()} onOpenConnections={options.onOpenConnections} /></TooltipProvider>);
-  const region = within(view.container).getByRole("region", { name: `Results · ${snapshot.period}` });
+  const region = within(view.container).getByRole("region", { name: i18n.t("assets:earnings.title", { period: snapshot.period }) });
   return { bridge, loupist: loupist!, region, onOpenEvidence, user: userEvent.setup() };
 }
 
@@ -153,8 +154,20 @@ it("Ask about these results fills a composer with the asset and never sends", as
   const { bridge, region, user } = await card(morrowSnapshot("after"), { onAsk });
   const send = vi.spyOn(bridge, "chatSend");
   await user.click(within(region).getByRole("button", { name: "Ask about these results" }));
-  expect(onAsk).toHaveBeenCalledWith("$MORR:NASDAQ Walk me through Morrow Components's Q3 2026 results against what was expected.");
+  expect(onAsk).toHaveBeenCalledWith("Walk me through the Q3 2026 results for Morrow Components against what was expected. I'm referring to MORR on NASDAQ.");
   expect(send).not.toHaveBeenCalled();
+});
+
+it("keeps the Korean name beside its possessive particle and retains symbol and market", async () => {
+  await i18n.changeLanguage("ko");
+  try {
+    const onAsk = vi.fn();
+    const { region, user } = await card({ ...solsupSnapshot(), name: "솔숲식품" }, { onAsk });
+    await user.click(within(region).getByRole("button", { name: "이 실적 질문하기" }));
+    expect(onAsk).toHaveBeenCalledWith("솔숲식품의 Q3 2026 실적을 예상과 비교해서 설명해 줘. KRX의 990221 종목이야.");
+  } finally {
+    await i18n.changeLanguage("en");
+  }
 });
 
 it("Open the grid shows the whole reverse-DCF grid in a dialog; Change the rates fills a composer and never sends", async () => {
@@ -181,7 +194,7 @@ it("Open the grid shows the whole reverse-DCF grid in a dialog; Change the rates
   // No reference: nothing shaded and no legend.
   expect(table.querySelectorAll("[data-above]")).toHaveLength(0);
   await user.click(within(dialog).getByRole("button", { name: "Change the rates · Morrow Components" }));
-  expect(onAsk).toHaveBeenCalledWith("$MORR:NASDAQ Recalculate with discount rates 9%, 10%, 11% and long-run growth 2.0%, 2.5%, 3.0%.");
+  expect(onAsk).toHaveBeenCalledWith("Morrow Components (MORR · NASDAQ): Recalculate with discount rates 9%, 10%, 11% and long-run growth 2.0%, 2.5%, 3.0%.");
   expect(send).not.toHaveBeenCalled();
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });
@@ -210,5 +223,5 @@ it("the asset page places the card before What changed and folds other events in
   expect(row).toHaveAttribute("aria-expanded", "true");
   // "Ask about these results" goes to a new topic Chat.
   await user.click(within(card).getByRole("button", { name: "Ask about these results" }));
-  expect(onAskInNewChat).toHaveBeenCalledWith(expect.stringMatching(/^\$MORR:NASDAQ /));
+  expect(onAskInNewChat).toHaveBeenCalledWith("Walk me through the Q3 2026 results for Morrow Components against what was expected. I'm referring to MORR on NASDAQ.");
 });

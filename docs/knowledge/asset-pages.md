@@ -37,12 +37,10 @@ revision), `knowledge_asset_observations` (kind, fact date, typed facts of at mo
 4 KiB, evidence, origin `refresh`, `chat` or `briefing`, baseline flag; unique per
 dedupe key), `knowledge_asset_moves` and `knowledge_asset_section_deltas`.
 
-`asset_quote` (read-only, `knowledge/assets/quote.rs`) gives the Chat asset card its
-price: the newest price close the page recorded (an unadjusted close wins on the same
-session) or, when the page was not checked in the last 30 minutes, one read now through
-the class's `price` read with the Loupist's grants (an identical read from the last 30
-minutes is reused). It never creates a page or records the read, and returns the close,
-session date, currency, read time and the row's evidence, or nothing.
+"Ask about it" fills the Chat composer with the asset's name, symbol and market
+as ordinary prose. Results questions and requests to change sensitivity rates use
+the same readable identity. These actions never send the question. Chat does not
+infer an asset card or request a quote from ticker text.
 
 The user's reasons and lines are [Thesis and the read](thesis.md).
 

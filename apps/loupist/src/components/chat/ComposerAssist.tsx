@@ -18,18 +18,16 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { knownComposerMentions, splitComposerMentions } from "../../chat/composerMentions";
 import type { ContextOption } from "../../chat/composerChips";
 import { validInlineReferences, type ComposerInlineReference } from "../../chat/composerInlineReferences";
-import { tickerMark, type TickerOption } from "../../chat/assetTickers";
 
 const t = i18n.getFixedT(null, "chat");
 
-/** A Skill or connection the composer can name with `$` or `@`. */
 export type ComposerOption = {
   id: string;
   name: string;
   description: string;
 };
 
-export type TriggerSymbol = "@" | "$" | "/";
+export type TriggerSymbol = "@" | "/";
 
 export type ActiveTrigger = {
   symbol: TriggerSymbol;
@@ -42,7 +40,7 @@ type AssistKind = "skill" | "connection";
 
 export type AssistOption = {
   id: string;
-  kind: AssistKind | "context" | "command" | "ticker";
+  kind: AssistKind | "context" | "command";
   label: string;
   name: string;
   detail: string;
@@ -50,24 +48,20 @@ export type AssistOption = {
   group?: string;
   context?: ContextOption;
   command?: "new-chat" | "model" | "memory" | "attach" | "brief" | "compare" | "check" | "asof";
-  ticker?: TickerOption;
 };
 
 const assistHeading = (symbol: TriggerSymbol) => {
   if (symbol === "@") return t("chatComposer.context");
-  if (symbol === "$") return t("chatComposer.assets");
   return t("chatComposer.commands");
 };
 
 const assistHint = (symbol: TriggerSymbol) => {
   if (symbol === "@") return t("chatComposer.filesMemoryAndConnections");
-  if (symbol === "$") return t("chatComposer.assetsHint");
   return t("chatComposer.commandsAndSkills");
 };
 
 const assistEmpty = (symbol: TriggerSymbol, skillCount: number) => {
   if (symbol === "@") return t("chatComposer.noMatchingContext");
-  if (symbol === "$") return t("chatComposer.noMatchingAsset", { us: "NVDA", kr: "005930:KRX" });
   if (skillCount === 0 && symbol === "/") return t("chatComposer.noMatchingItem");
   return t("chatComposer.noMatchingItem");
 };
@@ -116,7 +110,6 @@ function assistIcon(option: AssistOption) {
 }
 
 function assistRowKind(option: AssistOption) {
-  if (option.ticker) return "ticker";
   if (option.command) return "command";
   if (option.kind === "skill") return "skill";
   if (option.context?.connectionId || option.kind === "connection") return "connection";
@@ -211,7 +204,7 @@ export function ComposerAssistMenu({
                   type="button"
                   role="option"
                   data-kind={assistRowKind(option)}
-                  data-row={option.ticker ? "ticker" : trigger.symbol === "/" ? "plain" : undefined}
+                  data-row={trigger.symbol === "/" ? "plain" : undefined}
                   aria-label={option.name}
                   aria-describedby={option.detail && option.detail !== option.name ? `${id}-${index}-detail` : undefined}
                   aria-selected={index === activeOption}
@@ -220,9 +213,7 @@ export function ComposerAssistMenu({
                   onClick={() => onSelect(option)}
                   onMouseEnter={() => onHover(index)}
                 >
-                  {/* `$` rows carry only the asset marker and `/` rows no glyph; `@` rows keep their kind glyph. */}
-                  {option.ticker ? <i className="composer-chip-marker composer-assist-marker" aria-hidden="true" data-kind={option.ticker.pin ? "world_node" : tickerMark(option.ticker.market)} />
-                    : trigger.symbol === "/" ? null : <span className="composer-assist-icon" aria-hidden="true"><Icon /></span>}
+                  {trigger.symbol === "/" ? null : <span className="composer-assist-icon" aria-hidden="true"><Icon /></span>}
                   <span className="composer-assist-copy">
                     <strong>{highlightMatch(option.name, trigger.query)}</strong>
                     {option.detail && option.detail !== option.name ? <small id={`${id}-${index}-detail`} aria-hidden="true">{option.detail}</small> : null}
@@ -297,9 +288,10 @@ export const activeTriggerAt = (
   cursor: number,
 ): ActiveTrigger | null => {
   const prefix = value.slice(0, cursor);
-  const match = prefix.match(/(?:^|\s)([@$/])([\p{L}\p{N}._:@/-]*)$/u);
+  const match = prefix.match(/(?:^|\s)([@/])([\p{L}\p{N}._:@/-]*)$/u);
   if (!match) return null;
-  const symbol = match[1] as TriggerSymbol;
+  const symbol = match[1];
+  if (symbol !== "@" && symbol !== "/") return null;
   const query = match[2] ?? "";
   return {
     symbol,

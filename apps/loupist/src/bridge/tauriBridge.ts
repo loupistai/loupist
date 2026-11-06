@@ -239,7 +239,6 @@ export const createLoupistBridge = (): LoupistBridge => ({
   assetVerdictUndo: request("asset_verdict_undo"),
   assetPageSeen: request("asset_page_seen"),
   upcomingEvents: request("upcoming_events"),
-  assetQuote: request("asset_quote"),
   // Rust recomputes allowed licenses from the current sections and exclusions.
   shareSummary: request("share_summary"),
   shareExport: request("share_export"),

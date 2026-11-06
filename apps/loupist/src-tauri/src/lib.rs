@@ -302,7 +302,6 @@ pub fn run() {
             commands::assets::asset_delta,
             commands::assets::upcoming_events,
             commands::assets::asset_refresh,
-            commands::assets::asset_quote,
             commands::earnings::earnings_snapshot_get,
             commands::earnings::earnings_events_list,
             commands::earnings::earnings_prepare,

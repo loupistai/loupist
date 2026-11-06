@@ -269,7 +269,7 @@ function FollowedLine({ bullet, loupistId, loupistName, nameOf, onOpenAsset, onO
         const name = nameOf({ assetId: event.assetId, symbol: event.symbol, market: event.market, name: event.name, class: "equity", rows: [], moved: false, crossed: false });
         return <li key={event.eventId} className="morning-alert" data-kind={event.kind}>
           <span>{datedWatchSentence(event, name)} <SourceChips evidence={event.evidence} numbers={numbers} onOpen={openEvidence(event.assetId)} /></span>
-          {onOpenAsset ? <button type="button" className="morning-link" aria-label={`${t("assetCard.openPage")} · ${name}`} onClick={() => open(event.assetId, name)}>{t("assetCard.openPage")}</button> : null}
+          {onOpenAsset ? <button type="button" className="morning-link" aria-label={`${i18n.t("assets:page.open")} · ${name}`} onClick={() => open(event.assetId, name)}>{i18n.t("assets:page.open")}</button> : null}
         </li>;
       })}
     </ul>

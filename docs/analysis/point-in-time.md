@@ -50,8 +50,7 @@ their own date and editing a sent message reopens it with its date. The request
 shows an "As of {date}" tag above its bubble and the answer a "Known as of {date}"
 tag in its meta line. In the answer, a step refused for the date reads "Can't look
 back to {date} · {tool}" with a neutral mark and explains why when expanded; number
-popovers add "Known as of {date}"; an asset card drops the read and last briefing
-and says "as of {date}"; chart cards add the date after their title; and a note
+popovers add "Known as of {date}"; chart cards add the date after their title; and a note
 between the answer and its receipt lists the reads that could not show the date, the
 reads with nothing dated by then and what the Loupist learned later, from
 `as_of_report` (four names per list, then "+n more"; no note when nothing is left to

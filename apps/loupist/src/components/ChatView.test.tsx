@@ -39,6 +39,26 @@ function viewProps(messages: ChatMessage[], extra: Partial<ComponentProps<typeof
 }
 const composer = () => screen.getByRole("textbox", { name: "Message Loupist" }) as HTMLTextAreaElement;
 
+it("keeps historical ticker messages and new dollar text ordinary without fetching assets or the watchlist", async () => {
+  const text = "$AAPL:NASDAQ (Apple) What changed? It cost $5.";
+  const props = viewProps([
+    { id: "ticker-question", role: "user", status: "complete", content: text, created_at: "2026-10-03T00:00:00Z" },
+    { id: "ticker-answer", role: "assistant", status: "complete", content: "Operating margin increased.", created_at: "2026-10-03T00:00:01Z" },
+  ]);
+  const watchlist = vi.spyOn(props.bridge, "watchlistList");
+  const asset = vi.spyOn(props.bridge, "assetPageGet");
+  render(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
+  expect(await screen.findByText(text)).toBeVisible();
+  expect(await screen.findByText("Operating margin increased.")).toBeVisible();
+  expect(screen.queryByRole("region", { name: "About Apple" })).not.toBeInTheDocument();
+  expect(screen.queryByTitle("AAPL:NASDAQ")).not.toBeInTheDocument();
+  await userEvent.setup().type(composer(), "Compare $NVDA and $5");
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 150)); });
+  expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  expect(watchlist).not.toHaveBeenCalled();
+  expect(asset).not.toHaveBeenCalled();
+});
+
 it("keeps a saved Chat readable without a model and opens settings instead of sending", async () => {
   const user = userEvent.setup();
   const onOpenModelSettings = vi.fn();

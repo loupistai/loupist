@@ -24,23 +24,23 @@ function Composer({ draft, onSend = vi.fn() }: { draft: ChatDraft; onSend?: (tex
       chips={chips} onChipsChange={next => { draft.chips = next; setChips(next); }} knowledgePins={pins}
       onAddKnowledgePin={restored => { const next = [...draft.pins.filter(item => item.objectId !== restored.objectId), restored]; draft.pins = next; setPins(next); }}
       onRemoveKnowledgePin={removed => { const next = draft.pins.filter(item => item.objectId !== removed.objectId); draft.pins = next; setPins(next); }}
-      onSearchTickers={async () => [{ key: "apple", source: "watchlist", label: "Apple", symbol: "AAPL", market: "NASDAQ" }]}
+      onSearchContext={async () => [{ id: "file:report", group: "Files", label: "report.md", detail: "Quarterly report", path: "reports/report.md" }]}
       onPrivateChatChange={vi.fn()} onModelSelectionChange={vi.fn()} onSend={text => { onSend(text, pins); return false; }} onFollowUp={vi.fn()} onAbort={vi.fn()}
     />
   </TooltipProvider>;
 }
 
-it("inserts a selected asset at the cursor, preserves trailing prose and sends its canonical reference in place", async () => {
+it("inserts a selected file at the cursor, preserves trailing prose and sends its path in place", async () => {
   const user = userEvent.setup(), send = vi.fn();
   const draft = makeDraft("Compare  with last year");
   render(<Composer draft={draft} onSend={send} />);
   const input = screen.getByRole("textbox", { name: "Message Loupist" }) as HTMLTextAreaElement;
   input.focus(); input.setSelectionRange(8, 8); fireEvent.select(input);
-  await user.type(input, "$app", { skipClick: true });
-  await user.click(await screen.findByRole("option", { name: "Apple" }));
-  expect(input).toHaveValue("Compare $Apple · AAPL with last year");
+  await user.type(input, "@report", { skipClick: true });
+  await user.click(await screen.findByRole("option", { name: "report.md" }));
+  expect(input).toHaveValue("Compare @report.md with last year");
   await user.click(screen.getByRole("button", { name: "Send" }));
-  expect(send).toHaveBeenCalledWith("Compare $AAPL:NASDAQ (Apple) with last year", []);
+  expect(send).toHaveBeenCalledWith("Compare reports/report.md with last year", []);
   const status = screen.getByText("Private — not saved to memory");
   expect(input.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
@@ -87,28 +87,28 @@ it("serializes repeated references in place, deletes one occurrence at the caret
   const input = screen.getByRole("textbox", { name: "Message Loupist" }) as HTMLTextAreaElement;
   const pick = async (text: string) => {
     await user.type(input, text, { skipClick: true });
-    await user.click(await screen.findByRole("option", { name: "Apple" }));
+    await user.click(await screen.findByRole("option", { name: "report.md" }));
   };
   input.focus(); input.setSelectionRange(input.value.length, input.value.length);
-  await pick("$app");
-  await pick("and $app");
+  await pick("@report");
+  await pick("and @report");
   expect(draft.inlineReferences).toHaveLength(2);
-  expect(document.querySelectorAll('[data-inline-reference="company"]')).toHaveLength(2);
+  expect(document.querySelectorAll('[data-inline-reference="file"]')).toHaveLength(2);
   await user.click(screen.getByRole("button", { name: "Send" }));
-  expect(send).toHaveBeenLastCalledWith("Compare $AAPL:NASDAQ (Apple) and $AAPL:NASDAQ (Apple)", []);
+  expect(send).toHaveBeenLastCalledWith("Compare reports/report.md and reports/report.md", []);
 
   const first = draft.inlineReferences![0]!;
   input.focus(); input.setSelectionRange(first.end, first.end);
   await user.keyboard("{Backspace}");
   expect(draft.inlineReferences).toHaveLength(1);
   expect(draft.chips).toHaveLength(1);
-  expect(input.value.match(/\$Apple/gu)).toHaveLength(1);
-  await pick("$app");
+  expect(input.value.match(/@report/gu)).toHaveLength(1);
+  await pick("@report");
   expect(draft.inlineReferences).toHaveLength(2);
-  await user.click(screen.getByRole("button", { name: "Remove Apple · AAPL" }));
+  await user.click(screen.getByRole("button", { name: "Remove report.md" }));
   expect(draft.inlineReferences).toEqual([]);
   expect(draft.chips).toEqual([]);
-  expect(input.value).not.toContain("Apple");
+  expect(input.value).not.toContain("report.md");
   expect(input.value).toContain("Compare");
   expect(input.value).toContain("and");
 });

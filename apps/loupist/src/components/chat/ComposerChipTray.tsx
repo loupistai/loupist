@@ -6,7 +6,6 @@ import type { ChatArtifactRef, KnowledgePin } from "../../types";
 import type { ComposerChip } from "../../chat/composerChips";
 import { AsOfChip } from "./ComposerAsOf";
 import { knowledgePinKey } from "../../knowledge/location";
-import { tickerMark } from "../../chat/assetTickers";
 import type { InlineComposerItem } from "./useComposerInlineReferences";
 
 const t = i18n.getFixedT(null, "chat");
@@ -14,7 +13,7 @@ const t = i18n.getFixedT(null, "chat");
 const COLLAPSE_AT = 5;
 const SHOWN_WHEN_COLLAPSED = 3;
 
-type TrayItem = { key: string; kind: string; label: string; detail?: string; removeLabel: string; onRemove: () => void; /** A ticker chip's marker: the company or the asset color (`tickerMark`). */ mark?: string };
+type TrayItem = { key: string; kind: string; label: string; detail?: string; removeLabel: string; onRemove: () => void };
 
 const pinKindLabel = (kind: KnowledgePin["kind"]) => ({
   source: t("chatComposer.source"), world_node: t("chatComposer.world_node"), world_claim: t("chatComposer.world_claim"),
@@ -28,7 +27,7 @@ const pinKindLabel = (kind: KnowledgePin["kind"]) => ({
  * wherever a chip was added from.
  */
 function Marker({ kind }: { kind: string }) {
-  if (kind === "world_node" || kind === "world_claim" || kind === "lens" || kind === "company" || kind === "asset") return <i className="composer-chip-marker" data-kind={kind} aria-hidden="true" />;
+  if (kind === "world_node" || kind === "world_claim" || kind === "lens") return <i className="composer-chip-marker" data-kind={kind} aria-hidden="true" />;
   const Glyph = kind === "quote" ? QuoteIcon : kind === "artifact" ? ChartLineIcon : kind === "connection" ? AtSignIcon : kind === "skill" ? WorkflowIcon
     : kind === "file" ? FileIcon : FileTextIcon;
   return <Glyph aria-hidden="true" />;
@@ -54,7 +53,7 @@ export function ComposerChipTray({ chips, pins, artifact, asOf, onRemoveChip, on
       removeLabel: t("chatComposer.removeSelectedWork"), onRemove: () => onClearArtifact?.() }] : []),
     ...pins.map((pin) => ({ key: `pin:${knowledgePinKey(pin)}`, kind: pin.kind === "source" && pin.spanId ? "source_span" : pin.kind, label: pin.label, detail: pinKindLabel(pin.kind),
       removeLabel: t("chatComposer.removeKnowledgePin", { label: pin.label }), onRemove: () => onRemovePin?.(pin) })),
-    ...chips.map((chip) => ({ key: chip.key, kind: chip.kind, mark: chip.kind === "company" ? tickerMark(chip.id.split(":")[1]) : undefined, label: chip.label, removeLabel: t("chatComposer.removeContextChip", { label: chip.label }), onRemove: () => onRemoveChip(chip) })),
+    ...chips.map((chip) => ({ key: chip.key, kind: chip.kind, label: chip.label, removeLabel: t("chatComposer.removeContextChip", { label: chip.label }), onRemove: () => onRemoveChip(chip) })),
   ];
   if (!items.length && !asOf) return null;
   const collapsed = !expanded && items.length >= COLLAPSE_AT;
@@ -62,7 +61,7 @@ export function ComposerChipTray({ chips, pins, artifact, asOf, onRemoveChip, on
   return <ul className="composer-chip-tray" aria-label={t("chatComposer.messageModes")}>
     {asOf ? <AsOfChip asOf={asOf} onEdit={onEditAsOf} onRemove={onRemoveAsOf} /> : null}
     {shown.map((item) => <li key={item.key} className="composer-chip" data-kind={item.kind} title={item.detail ? `${item.label} · ${item.detail}` : item.label}>
-      <Marker kind={item.mark ?? item.kind} />
+      <Marker kind={item.kind} />
       <span>{item.label}</span>
       {item.detail ? <small>{item.detail}</small> : null}
       <button type="button" aria-label={item.removeLabel} onClick={item.onRemove}><XIcon aria-hidden="true" /></button>

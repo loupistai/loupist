@@ -56,7 +56,6 @@ import { ChatModelMenu } from "./ChatModelMenu";
 import { ComposerChipTray, ComposerInlineReferenceControls } from "./ComposerChipTray";
 import { useComposerInlineReferences, type InlineComposerItem } from "./useComposerInlineReferences";
 import { knowledgePinKey } from "../../knowledge/location";
-import { companyChip, tickerMark, type TickerOption } from "../../chat/assetTickers";
 import { activeTriggerAt, ComposerAssistMenu, ComposerPromptHighlight, type ActiveTrigger, type AssistOption, type ComposerOption } from "./ComposerAssist";
 import { AsOfDatePanel } from "./ComposerAsOf";
 import { shortcutFor } from "../../app/shortcuts";
@@ -100,8 +99,6 @@ type Props = {
   onRemoveKnowledgePin?: (pin: KnowledgePin) => void;
   onChipsChange?: (chips: ComposerChip[]) => void;
   onSearchContext?: (query: string) => Promise<ContextOption[]>;
-  /** The `$` menu: followed assets, the Map's companies and assets, then a typed symbol. */
-  onSearchTickers?: (query: string) => Promise<TickerOption[]>;
   onAddKnowledgePin?: (pin: KnowledgePin) => void;
   /** "Screenshot of the map" in the + menu; absent where no map is in reach. */
   mapScreenshot?: MapScreenshot;
@@ -372,7 +369,7 @@ function ComposerPromptTools({
   // The + menu shows its focus ring for keys only (WebKit would ring it after a click from the composer).
   const modality = useInputModality();
   // Radix places a menu against its trigger. The + menu opens from the whole composer instead, like the
-  // `@`, `$` and `/` menus: left edges aligned, just above the composer's top edge.
+  // `@` and `/` menus: left edges aligned, just above the composer's top edge.
   const anchorAddMenu = (open: boolean) => {
     const trigger = addTrigger.current;
     const composer = trigger?.closest<HTMLElement>('[data-slot="input-group"]');
@@ -547,7 +544,6 @@ export function ChatComposer({
   onRemoveKnowledgePin,
   onChipsChange,
   onSearchContext,
-  onSearchTickers,
   onAddKnowledgePin,
   mapScreenshot,
   evidenceSources,
@@ -581,7 +577,6 @@ export function ChatComposer({
   );
   const [activeOption, setActiveOption] = useState(0);
   const [contextOptions, setContextOptions] = useState<ContextOption[]>([]);
-  const [tickerOptions, setTickerOptions] = useState<TickerOption[]>([]);
   const [modelMenuSignal, setModelMenuSignal] = useState(0);
   const [localChips, setOwnedChips] = useState<ComposerChip[]>(() => [...(chips ?? [])]);
   // Controlled draft chips are read in the same render as pins/ranges on native restoration.
@@ -601,7 +596,7 @@ export function ChatComposer({
   const assistRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
-  const chipItem = (chip: ComposerChip): InlineComposerItem => ({ key: `chip:${chip.key}`, kind: chip.kind === "company" ? tickerMark(chip.id.split(":")[1]) : chip.kind, text: composerChipInlineText(chip), label: chip.label,
+  const chipItem = (chip: ComposerChip): InlineComposerItem => ({ key: `chip:${chip.key}`, kind: chip.kind, text: composerChipInlineText(chip), label: chip.label,
     onRemove: () => updateChips(ownedChipsRef.current.filter(existing => existing.key !== chip.key)),
     onRestore: () => updateChips([...ownedChipsRef.current.filter(existing => existing.key !== chip.key), chip]) });
   const pinItem = (pin: KnowledgePin): InlineComposerItem => ({ key: `pin:${knowledgePinKey(pin)}`, kind: pin.kind === "source" && pin.spanId ? "source_span" : pin.kind, text: pin.selection?.text ? `“${pin.selection.text}”` : `⟦${pin.label}⟧`, label: pin.label,
@@ -649,19 +644,6 @@ export function ChatComposer({
         context: option,
       }));
     }
-    if (activeTrigger.symbol === "$") {
-      const group = (option: TickerOption) => option.source === "watchlist" ? t("chatComposer.followedGroup") : option.source === "map" ? t("chatComposer.mapGroup") : t("chatComposer.symbolGroup");
-      return tickerOptions.map((option) => ({
-        id: option.key,
-        kind: "ticker" as const,
-        label: option.label,
-        name: option.source === "free" ? t("chatComposer.useSymbol", { symbol: option.market ? `${option.symbol}:${option.market}` : option.symbol }) : option.label,
-        detail: option.symbol ? [option.symbol, option.market].filter(Boolean).join(" · ") : t("chatComposer.mapName"),
-        insert: "",
-        group: group(option),
-        ticker: option,
-      }));
-    }
     // `/`: the finance commands, then Skills by name, then the composer's own actions.
     // Command names are typed literals, the same in every language.
     const finance = ([
@@ -683,27 +665,7 @@ export function ChatComposer({
     });
     const actions = commands.map((option) => ({ ...option, group: t("chatComposer.actions") }));
     return [...finance, ...skillOptions.slice(0, 8), ...actions];
-  }, [activeTrigger, contextOptions, tickerOptions, skills, i18n.language]);
-
-  useEffect(() => {
-    if (activeTrigger?.symbol !== "$" || !onSearchTickers) {
-      setTickerOptions([]);
-      return;
-    }
-    let cancelled = false;
-    const query = activeTrigger.query;
-    const handle = window.setTimeout(() => {
-      void onSearchTickers(query).then((options) => {
-        if (!cancelled) setTickerOptions(options);
-      }).catch(() => {
-        if (!cancelled) setTickerOptions([]);
-      });
-    }, 80);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(handle);
-    };
-  }, [activeTrigger?.query, activeTrigger?.symbol, onSearchTickers]);
+  }, [activeTrigger, contextOptions, skills, i18n.language]);
 
   useEffect(() => {
     if (activeTrigger?.symbol !== "@" || !onSearchContext) {
@@ -766,7 +728,6 @@ export function ChatComposer({
     updateChips([...ownedChips.filter((existing) => existing.key !== chip.key), chip]);
   };
 
-  /** Replaces the trigger with a command's starter text and reopens `$` when the starter ends with it. */
   const startCommand = (starter: string) => {
     if (!activeTrigger) return;
     const before = prompt.slice(0, activeTrigger.start);
@@ -789,11 +750,6 @@ export function ChatComposer({
       inline.insert(item, activeTrigger.start, activeTrigger.end);
       setActiveTrigger(null);
     };
-    if (option.ticker) {
-      if (option.ticker.pin) { onAddKnowledgePin?.(option.ticker.pin); insertReference(pinItem(option.ticker.pin)); }
-      else { const chip = companyChip(option.ticker); addChip(chip); insertReference(chipItem(chip)); }
-      return;
-    }
     if (option.command === "brief") return startCommand(t("chatComposer.briefPrompt"));
     if (option.command === "compare") return startCommand(t("chatComposer.comparePrompt"));
     if (option.command === "check") return startCommand(t("chatComposer.checkPrompt"));

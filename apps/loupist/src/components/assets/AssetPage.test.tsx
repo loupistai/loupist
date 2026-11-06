@@ -16,11 +16,17 @@ async function fixture(asset: AssetFixture, visitedDaysAgo?: number) {
   const threads: ChatThread[] = [{ id: "preview-chat", loupist_id: loupist!.id, title: "Hanul margin review", updated_at: "2026-10-28T00:00:00Z", use_memory: true, update_memory: true, messages: [] }];
   const handlers = { onBack: vi.fn(), onAsk: vi.fn(), onOpenChat: vi.fn(), onOpenMap: vi.fn(), onOpenLink: vi.fn(), onOpenSource: vi.fn(), onOpenConnections: vi.fn(), onAddSource: vi.fn() };
   render(<TooltipProvider><AssetPage bridge={bridge} loupist={loupist!} target={{ loupistId: loupist!.id, symbol: asset.page.symbol, market: asset.page.market }} threads={threads} {...handlers} /></TooltipProvider>);
-  const page = await screen.findByRole("region", { name: `${asset.page.name} asset page` });
+  const page = await screen.findByRole("region", { name: i18n.t("assets:page.label", { name: asset.page.name }) });
   return { bridge, loupist: loupist!, handlers, page, user: userEvent.setup() };
 }
 
 afterEach(() => localStorage.clear());
+
+it("starts a question with the asset's readable name, symbol and market", async () => {
+  const { handlers, page, user } = await fixture(hanulFixture());
+  await user.click(within(page).getAllByRole("button", { name: "Ask about it" })[0]!);
+  expect(handlers.onAsk).toHaveBeenCalledWith("Hanul Precision (HANUL · KRX) ");
+});
 
 it("shows the read, the user's reasons and lines, and changes that each carry a date and a source", async () => {
   const { loupist, page } = await fixture(hanulFixture(), 3);
@@ -109,7 +115,7 @@ it("asks for a first reason and writes it as a Journal entry tagged with the ass
   expect(within(page).queryByRole("img", { name: /read:/ })).toBeNull();
   expect(within(page).getByText("First look · showing the last 30 days")).toBeVisible();
   await user.click(within(page).getByRole("button", { name: "Work it out in Chat" }));
-  expect(handlers.onAsk).toHaveBeenCalledWith("Help me write down why I follow $MORR and what would change my mind.");
+  expect(handlers.onAsk).toHaveBeenCalledWith("Help me write down why I follow Morrow Components and what would change my mind. I'm referring to MORR on NASDAQ.");
   const create = vi.spyOn(bridge, "journalCreate");
   await user.click(within(page).getAllByRole("button", { name: "Add a reason" })[0]!);
   await user.type(within(page).getByRole("textbox", { name: "Your reason" }), "Morrow keeps winning HBM substrate qualifications.");
@@ -117,6 +123,22 @@ it("asks for a first reason and writes it as a Journal entry tagged with the ass
   await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({ loupistId: loupist.id, judgment: "Morrow keeps winning HBM substrate qualifications.", thesis: { assetId: noThesisFixture().page.assetId, role: "reason" } })));
   expect(await within(page).findByText("Morrow keeps winning HBM substrate qualifications.")).toBeVisible();
   expect(within(page).getByRole("img", { name: `${loupist.name}'s read: Holding up, step 1 of 4` })).toBeVisible();
+});
+
+it.each([
+  ["모로", "모로를"],
+  ["한울정밀", "한울정밀을"],
+])("uses the Korean name %s for its particle and retains symbol and market", async (name, subject) => {
+  await i18n.changeLanguage("ko");
+  try {
+    const asset = noThesisFixture();
+    asset.page.name = name;
+    const { handlers, page, user } = await fixture(asset);
+    await user.click(within(page).getByRole("button", { name: "대화로 정리하기" }));
+    expect(handlers.onAsk).toHaveBeenCalledWith(`${subject} 왜 지켜보는지, 무엇이 생각을 바꿀지 정리하도록 도와줘. NASDAQ의 MORR 종목이야.`);
+  } finally {
+    await i18n.changeLanguage("en");
+  }
 });
 
 it("says what the last check read, what failed, what needs a connection and what it cannot check yet", async () => {

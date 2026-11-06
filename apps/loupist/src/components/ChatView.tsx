@@ -39,7 +39,6 @@ import type {
 import { visibleCatalogModels } from "../lib/modelSelection";
 import { quoteChip, type ComposerChip } from "../chat/composerChips";
 import { retainedEvidenceFor, type OpenLinkOptions } from "../chat/links";
-import { searchTickers } from "../chat/assetTickers";
 
 const NO_CHIPS: ComposerChip[] = [];
 import { searchComposerContext } from "../chat/searchComposerContext";
@@ -1052,7 +1051,6 @@ export function ChatView({
             query,
             composerPlugins,
           )}
-          onSearchTickers={(query) => searchTickers(bridge, loupist.id, query, i18n.language)}
           onAddKnowledgePin={onAddKnowledgePin}
           mapScreenshot={mapScreenshot}
           evidenceSources={evidenceSources}
