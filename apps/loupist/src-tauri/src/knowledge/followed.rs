@@ -80,7 +80,7 @@ impl FollowedAsset {
     }
 }
 
-const UNKNOWN_MARKET: &str = "UNKNOWN";
+pub(crate) const UNKNOWN_MARKET: &str = "UNKNOWN";
 
 /// One asset per symbol and market; a missing market is `UNKNOWN`.
 fn key(symbol: &str, market: &str) -> (String, String) {

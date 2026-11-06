@@ -77,6 +77,7 @@ pub use error::{KnowledgeError, KnowledgeResult};
 pub(crate) use followed::{anchor_followed, followed_text, FOLLOWED_PER_SOURCE};
 pub(crate) use followed::{
     followed_assets, title_key, FollowedAsset, FollowedState, FollowedStatus, FOLLOWED_PROVIDER,
+    UNKNOWN_MARKET,
 };
 pub(crate) use graph_jobs::recover_interrupted as recover_interrupted_jobs;
 #[cfg(any(test, feature = "eval-harness"))]

@@ -716,7 +716,7 @@ fn parse_csv(bytes: &[u8]) -> StoreResult<HoldingsCsvPreview> {
         let candidate = HoldingsPosition {
             symbol: get("symbol").into(),
             market: if get("market").is_empty() {
-                "UNKNOWN".into()
+                crate::knowledge::UNKNOWN_MARKET.into()
             } else {
                 get("market").into()
             },

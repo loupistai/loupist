@@ -75,7 +75,7 @@ fn market_agreement(stated: &str, followed: &str) -> MarketAgreement {
 
 fn followed_market(item: &MapContextItem) -> &str {
     let market = item.market.trim();
-    if market.eq_ignore_ascii_case("UNKNOWN") {
+    if market.eq_ignore_ascii_case(super::UNKNOWN_MARKET) {
         ""
     } else {
         market
