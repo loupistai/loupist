@@ -261,9 +261,11 @@ export function morningMessage(input: MorningInputs, sinceLabel = ""): MorningMe
   return { upcoming, lead, changed, followed, briefing, checks, questions };
 }
 
-/** "Tuesday" within the last six days, else "Oct 21". */
+/** "2:07 AM" earlier today, "Tuesday" within the last six days, else "Oct 21". */
 export function sinceDayOptions(sinceMs: number, nowMs: number): Intl.DateTimeFormatOptions {
-  return startOfDay(nowMs) - startOfDay(sinceMs) <= 6 * DAY_MS
+  const days = startOfDay(nowMs) - startOfDay(sinceMs);
+  if (days <= 0) return { year: undefined, month: undefined, day: undefined, hour: "numeric", minute: "2-digit" };
+  return days <= 6 * DAY_MS
     ? { weekday: "long", year: undefined, month: undefined, day: undefined }
     : { year: undefined, month: "short", day: "numeric" };
 }
