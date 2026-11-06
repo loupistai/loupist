@@ -36,6 +36,9 @@ mod research;
 mod returning;
 pub(super) mod schedules;
 pub(in crate::commands) mod sensitivity;
+mod setup;
+pub(super) use setup::StagedSetup;
+pub(crate) use setup::{apply_watchlist as apply_setup_watchlist, commit_turn as commit_setup};
 mod workspace;
 mod world_schema;
 #[cfg(test)]
@@ -156,6 +159,8 @@ pub(super) struct ToolCapture {
     pub(in crate::commands) staged_earnings: Mutex<Vec<earnings::EarningsSave>>,
     pub(in crate::commands) staged_vocabulary: Mutex<Vec<StagedVocabulary>>,
     pub(in crate::commands) staged_filings: Mutex<Vec<StagedFiling>>,
+    /// The reply's one `loupist_setup` call.
+    pub(in crate::commands) staged_setup: Mutex<Option<StagedSetup>>,
     /// Pages and ops each `lens_file` delivery reserved from the turn's
     /// budget; an undelivered call frees its share.
     lens_file_budget: Mutex<BTreeMap<String, (usize, usize)>>,
@@ -203,6 +208,7 @@ struct PendingToolCapture {
     earnings: Vec<earnings::EarningsSave>,
     vocabulary: Vec<StagedVocabulary>,
     filings: Vec<StagedFiling>,
+    setup: Option<StagedSetup>,
     artifacts: Vec<ArtifactCommit>,
     artifact_reads: BTreeSet<(String, u32)>,
     handoff: Option<crate::chat::handoff::StagedHandoff>,
@@ -669,6 +675,9 @@ impl ToolCapture {
                 .await
                 .extend(std::mem::take(&mut pending.filings));
         }
+        if let Some(setup) = pending.setup.take() {
+            *self.staged_setup.lock().await = Some(setup);
+        }
         for principle in pending.principles {
             let mut staged = self.staged_principles.lock().await;
             staged.retain(|p| p.record_id != principle.record_id);
@@ -1099,6 +1108,7 @@ impl AppToolExecutor {
                 self.stage_world_schema_update(policy, params, delivery_id)
                     .await
             }
+            ToolMethod::LoupistSetup => self.stage_loupist_setup(policy, params, delivery_id).await,
             ToolMethod::LensFile => self.stage_lens_file(policy, params, delivery_id).await,
             ToolMethod::ArtifactList => self.artifact_list(policy, params),
             ToolMethod::ArtifactRead => self.artifact_read(policy, params, delivery_id).await,
@@ -1521,6 +1531,7 @@ fn refuse_sensitive_memory(
             | ToolMethod::PrincipleSave
             | ToolMethod::LensFile
             | ToolMethod::WorldSchemaUpdate
+            | ToolMethod::LoupistSetup
             | ToolMethod::JournalSave
             | ToolMethod::JournalReview
             | ToolMethod::ThesisUpdate

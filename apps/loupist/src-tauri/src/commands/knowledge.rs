@@ -37,7 +37,7 @@ pub(super) use working_notes::{
 use crate::app::{AppState, CommandError};
 use crate::knowledge::{
     present_world, BindingRole, BlobStore, ClaimStatus, Coverage, KnowledgeError, OwnedRecord,
-    RecordKind, SourceRecordPayload, WorldGraphQuery, WorldGraphView,
+    ReadinessNote, RecordKind, SourceRecordPayload, WorldGraphQuery, WorldGraphView,
 };
 use crate::runs::maintenance::{ActivityLease, MaintenanceActivityKind};
 use crate::store::LoupistStore;
@@ -781,20 +781,21 @@ fn graph_settings_view(
         settings: settings.public_settings(),
         readiness: crate::knowledge::GraphReadiness {
             status: status.into(),
-            message: match status {
-                "reconciliation_required" => Some("World processing was interrupted. Recover the last confirmed World to continue. The interrupted source will not be processed again automatically.".into()),
-                "recovering" => Some("Restoring the last confirmed World. This does not use a model or retry interrupted processing.".into()),
-                "runtime_unavailable" => {
-                    Some("World processing is unavailable. Update or reinstall the app to restore it.".into())
+            note: match status {
+                "reconciliation_required" => Some(ReadinessNote::RecoveryRequired),
+                "recovering" => Some(ReadinessNote::Recovering),
+                "runtime_unavailable" => Some(ReadinessNote::RuntimeUnavailable),
+                "model_required" if settings.awaiting_default_model => {
+                    Some(ReadinessNote::AwaitingProvider)
                 }
-                "model_required" => Some(if settings.awaiting_default_model { "Waiting for a supported model provider. A recommended World model will be selected when one is connected." } else { "Choose a World processing model." }.into()),
-                "model_unavailable" => {
-                    Some("The selected model is unavailable for World processing.".into())
-                }
-                "provider_disconnected" => ready
-                    .as_ref()
-                    .and_then(|ready| ready.reason.clone())
-                    .or_else(|| Some("Connect the selected provider in Settings.".into())),
+                "model_required" => Some(ReadinessNote::ChooseModel),
+                "model_unavailable" => Some(ReadinessNote::ModelUnavailable),
+                "provider_disconnected" => Some(
+                    ready
+                        .as_ref()
+                        .and_then(|ready| ready.reason)
+                        .map_or(ReadinessNote::ConnectProvider, ReadinessNote::Provider),
+                ),
                 _ => None,
             },
             provider_name: ready

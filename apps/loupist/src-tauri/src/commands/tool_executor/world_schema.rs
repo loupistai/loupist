@@ -169,7 +169,7 @@ pub(crate) fn commit_turn(
     chat_id: &str,
     at_ms: i64,
     staged: &[StagedVocabulary],
-) -> Result<Vec<crate::domain::SkippedKind>, crate::knowledge::KnowledgeError> {
+) -> Result<Vec<crate::domain::MapKind>, crate::knowledge::KnowledgeError> {
     let mut skipped = Vec::new();
     for record in staged {
         let message = record.user_message_id.as_deref().unwrap_or_default();
@@ -197,7 +197,7 @@ pub(crate) fn commit_turn(
                     .iter()
                     .map(|item| (&item.name, &item.labels));
                 skipped.extend(types.chain(relations).map(|(name, labels)| {
-                    crate::domain::SkippedKind {
+                    crate::domain::MapKind {
                         name: name.clone(),
                         label: labels.en.clone(),
                         label_ko: labels.ko.clone(),

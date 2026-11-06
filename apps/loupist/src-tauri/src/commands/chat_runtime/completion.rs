@@ -92,6 +92,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
         && (!capture.staged_principles.lock().await.is_empty()
             || !capture.staged_sources.lock().await.is_empty()
             || !capture.staged_filings.lock().await.is_empty()
+            || capture.staged_setup.lock().await.is_some()
             || capture.staged_research.lock().await.is_some());
     if host_composed && !has_staged_memory {
         *failure = Some("Pi settled without an assistant message".into());
@@ -206,6 +207,21 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
         } else {
             Vec::new()
         };
+        let saved_setup = if task_update_memory {
+            capture.staged_setup.lock().await.clone()
+        } else {
+            None
+        };
+        let watchlist_changes = saved_setup
+            .as_ref()
+            .map(|setup| {
+                crate::commands::tool_executor::apply_setup_watchlist(
+                    app_state,
+                    task_loupist_id,
+                    setup,
+                )
+            })
+            .unwrap_or_default();
         let unattended = capture.unattended_run_id.is_some();
         let turn_observations = match asset_work
             .then(|| crate::commands::assets::view_context(app_state).ok())
@@ -397,7 +413,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         unattended,
                     )
                     .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
-                    let skipped_kinds = crate::commands::tool_executor::commit_vocabulary(
+                    let mut skipped_kinds = crate::commands::tool_executor::commit_vocabulary(
                         transaction,
                         task_loupist_id,
                         thread_id,
@@ -405,6 +421,18 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         &saved_vocabulary,
                     )
                     .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
+                    let mut setup = watchlist_changes.clone();
+                    if let Some(staged) = &saved_setup {
+                        let (changed, skipped) = crate::commands::tool_executor::commit_setup(
+                            transaction,
+                            task_loupist_id,
+                            thread_id,
+                            created_at_ms,
+                            staged,
+                        )?;
+                        setup.extend(changed);
+                        skipped_kinds.extend(skipped);
+                    }
                     if let Some(staged) = &staged_handoff {
                         crate::chat::handoff::commit(
                             transaction,
@@ -413,7 +441,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                             created_at_ms,
                         )?;
                     }
-                    if host_composed && changes.is_empty() {
+                    if host_composed && changes.is_empty() && setup.is_empty() {
                         on_event.set_failure_kind(ChatFailureKind::EmptyReply);
                         return Err(crate::store::StoreError::Invalid(
                             "No committed receipts for an empty answer".into(),
@@ -448,6 +476,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         task_update_memory,
                         changes,
                         skipped_kinds,
+                        setup,
                         Some(performance),
                         turn_assets.trace_notes(elapsed_millis(chat_started_at)),
                     )?;
@@ -471,6 +500,14 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                 Ok((title_applied, completed_message, performance))
             },
         );
+        if saved_setup.is_some()
+            && app_state
+                .store
+                .resync_folder_registration(task_loupist_id)
+                .is_err()
+        {
+            eprintln!("The Loupist list could not pick up the new focus yet");
+        }
         match finalized {
             Ok((title_applied, completed_message, performance)) => {
                 app_state.graph.wake();

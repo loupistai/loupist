@@ -43,14 +43,22 @@ export type MemoryUpdateChange = {
   | { kind: Exclude<MemoryKind, "Research">; knowledge: KnowledgeReference }
 );
 
-/** A kind the answer asked the map to track that its commit skipped: the map gained that name first. */
-export type SkippedKind = { name: string; label: string; labelKo?: string };
+export type MapKind = { name: string; label: string; labelKo?: string };
+
+/** One applied `loupist_setup` change. A market the user did not give is absent. */
+export type SetupChange =
+  | { change: "followed"; symbol: string; market?: string; name?: string }
+  | { change: "unfollowed"; symbol: string; market?: string }
+  | { change: "focus"; focus: string }
+  | { change: "tracks"; kinds: MapKind[] };
 
 export type MemoryUpdateResult = {
   status: "applied" | "no_change";
   commitId: string | null;
   changes: MemoryUpdateChange[];
-  skippedKinds?: SkippedKind[];
+  /** Kinds the answer asked the map to track that its commit could not add. */
+  skippedKinds?: MapKind[];
+  setup?: SetupChange[];
 };
 
 /** Kind and delivery recorded by Rust when the item reached this turn. */

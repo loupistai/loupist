@@ -431,11 +431,16 @@ export type FollowedStatus = {
   queuedAtMs?: number;
 };
 
+/** Why World processing is not ready, by code; the interface words it. */
+export type GraphReadinessNote =
+  | "recovery_required" | "recovering" | "runtime_unavailable" | "awaiting_provider" | "choose_model" | "model_unavailable" | "connect_provider"
+  | "isolation_unsupported" | "runtime_missing" | "choose_connected_model" | "not_connected" | "account_waiting";
+
 export type GraphProcessingView = {
   settings: GraphProcessingSettings;
   readiness: {
     status: "ready" | "disabled" | "paused" | "model_required" | "provider_disconnected" | "runtime_unavailable" | "model_unavailable" | "reconciliation_required" | "recovering";
-    message?: string | null;
+    note?: GraphReadinessNote | null;
     providerName?: string | null;
     modelName?: string | null;
     authKind?: string | null;

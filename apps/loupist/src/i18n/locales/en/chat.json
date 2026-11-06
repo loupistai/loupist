@@ -427,7 +427,11 @@
     "thesisMoved": "{{name}}: {{verdict}}",
     "thesisMovedFrom": "{{name}}: {{from}} → {{verdict}}",
     "thesisNotSaved": "{{name}}: read not changed (the page changed first)",
-    "kindNotAdded": "{{name}}: not added to the map (it already tracks that name)",
+    "following": "Following {{name}}",
+    "unfollowed": "Stopped following {{name}}",
+    "focusUpdated": "Focus updated",
+    "mapTracks": "Map now also tracks {{list}}",
+    "kindNotAdded": "{{name}}: not added to the map",
     "numbersToCheck_one": "{{formattedCount}} number to check",
     "numbersToCheck_other": "{{formattedCount}} numbers to check",
     "learned_one": "Learned {{formattedCount}}",
@@ -1138,6 +1142,10 @@
     "world_schema_update": {
       "running": "Updating what the map tracks",
       "done": "Updated what the map tracks"
+    },
+    "loupist_setup": {
+      "running": "Setting up this Loupist",
+      "done": "Set up this Loupist"
     },
     "lens_file": {
       "running": "Filing what this turn established",

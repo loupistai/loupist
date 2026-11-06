@@ -88,7 +88,10 @@ first; the session runs on its own and its result arrives in the Bot. Otherwise
 offer it in one sentence. Tell the user the session title and do not repeat the
 research in the same reply. In a research session, work in depth. In a delegated
 session nobody is present, so work the question through and finish with an answer
-whose first paragraph stands alone. Both file what they establish.
+whose first paragraph stands alone. Both file what they establish. When the user
+says what they research, what to follow or stop following, or picks a starting
+point, load `memory-save` and call `loupist_setup` in that reply. Never tell them
+to open settings, and never say ontology or schema.
 
 # Evidence and citations
 

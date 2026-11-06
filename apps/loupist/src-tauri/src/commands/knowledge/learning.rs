@@ -632,6 +632,25 @@ pub(in crate::commands) fn retain_staged_sources(
     Ok(retained)
 }
 
+fn setup_line(change: &crate::domain::SetupChange) -> String {
+    use crate::domain::SetupChange;
+    match change {
+        SetupChange::Followed { symbol, name, .. } => {
+            format!("Following {}.", name.as_deref().unwrap_or(symbol))
+        }
+        SetupChange::Unfollowed { symbol, .. } => format!("Stopped following {symbol}."),
+        SetupChange::Focus { focus } => format!("Focus: {focus}."),
+        SetupChange::Tracks { kinds } => format!(
+            "Your map now also tracks {}.",
+            kinds
+                .iter()
+                .map(|kind| kind.label.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
 /// Replace the just-written provisional Chat with finalized, canonical targets
 /// before the surrounding Chat/Knowledge transaction commits.
 #[allow(clippy::too_many_arguments)]
@@ -641,7 +660,8 @@ pub(in crate::commands) fn write_chat_learning_report(
     turn_id: &str,
     save_learning: bool,
     changes: Vec<MemoryUpdateChange>,
-    skipped_kinds: Vec<crate::domain::SkippedKind>,
+    skipped_kinds: Vec<crate::domain::MapKind>,
+    setup: Vec<crate::domain::SetupChange>,
     performance: Option<crate::domain::ChatPerformance>,
     // Run-log entries the commit itself produced (an asset read it could not save).
     trace_notes: Vec<crate::domain::ChatToolTraceEntry>,
@@ -660,24 +680,26 @@ pub(in crate::commands) fn write_chat_learning_report(
             trace.push(note);
         }
     }
+    let changed = !changes.is_empty() || !setup.is_empty();
     message.memory_update = save_learning.then(|| crate::domain::MemoryUpdateResult {
-        status: if changes.is_empty() {
-            crate::domain::MemoryUpdateStatus::NoChange
-        } else {
+        status: if changed {
             crate::domain::MemoryUpdateStatus::Applied
+        } else {
+            crate::domain::MemoryUpdateStatus::NoChange
         },
-        commit_id: (!changes.is_empty()).then(|| turn_id.to_string()),
+        commit_id: changed.then(|| turn_id.to_string()),
         changes,
         skipped_kinds,
+        setup,
     });
     if message.host_composed {
         // Only receipts in this same atomic transaction can supply this answer.
-        let changes = message
+        let (changes, setup) = message
             .memory_update
             .as_ref()
-            .map(|update| update.changes.as_slice())
-            .unwrap_or(&[]);
-        if changes.is_empty() {
+            .map(|update| (update.changes.as_slice(), update.setup.as_slice()))
+            .unwrap_or((&[], &[]));
+        if changes.is_empty() && setup.is_empty() {
             return Err(crate::store::StoreError::Invalid(
                 "No committed receipts for an empty answer".into(),
             ));
@@ -696,6 +718,7 @@ pub(in crate::commands) fn write_chat_learning_report(
                     change.title,
                 )
             })
+            .chain(setup.iter().map(setup_line))
             .collect::<Vec<_>>()
             .join("\n");
     }

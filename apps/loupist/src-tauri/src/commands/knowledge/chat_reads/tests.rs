@@ -485,3 +485,36 @@ fn note_pointers_keep_a_working_note_when_journals_and_legacy_rows_match() {
     assert!(note_ids.contains(&note_id.as_str()), "{note_ids:?}");
     assert!(!note_ids.contains(&legacy_id.as_str()), "{note_ids:?}");
 }
+
+#[test]
+fn the_seeded_perspective_holds_the_focus_in_a_focus_section() {
+    let (_dir, state) = fixture();
+    let record_id = ensure_perspective(&state, "loupist-a", "  Semiconductor supply chain ")
+        .unwrap()
+        .unwrap();
+    let page = with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
+        KnowledgeWrite::bind(tx, blobs).read_page("loupist-a", &record_id)
+    })
+    .unwrap();
+    assert_eq!(page.title, "Outlook");
+    let sections: Vec<_> = page
+        .body
+        .sections()
+        .iter()
+        .map(|section| {
+            (
+                section.key.as_str().to_owned(),
+                section.heading.clone(),
+                section.markdown.clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        sections,
+        [(
+            "focus".to_owned(),
+            "Focus".to_owned(),
+            "Semiconductor supply chain".to_owned()
+        )]
+    );
+}

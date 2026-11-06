@@ -76,6 +76,26 @@ impl LoupistTemplate {
             .find(|template| template.as_str() == value.trim())
     }
 
+    /// The focus the New Loupist dialog fills in for this template (its English
+    /// onboarding copy); Custom has none.
+    pub fn default_focus(self) -> Option<&'static str> {
+        match self {
+            Self::Portfolio => Some("Companies I hold and watch"),
+            Self::Semiconductors => Some("Chips, memory, foundries and equipment"),
+            Self::Dividends => Some("Dividend payers and payout safety"),
+            Self::Technology => Some("Large US technology companies"),
+            Self::Crypto => Some("Crypto networks, tokens and the companies around them"),
+            Self::Macro => Some("Interest rates, inflation, currencies and central banks"),
+            Self::Commodities => {
+                Some("Energy, metals and farm goods: supply, demand and positioning")
+            }
+            Self::RealAssets => {
+                Some("Property, infrastructure and land: owners, tenants and financing")
+            }
+            Self::Custom => None,
+        }
+    }
+
     /// The asset class an asset-class template is made for.
     pub fn asset_class(self) -> Option<crate::knowledge::assets::AssetClass> {
         use crate::knowledge::assets::AssetClass;

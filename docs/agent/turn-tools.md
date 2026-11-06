@@ -91,6 +91,28 @@ change, and applies it with the reply together with the asking message; a stoppe
 reply applies nothing, and a change whose name the map gained since staging is
 skipped and listed in the answer's `memory_update.skippedKinds`. [Worlds](../knowledge/worlds.md#presets-changes-and-undo) owns the rules.
 
+`loupist_setup` (Memory save in `memory-save`, Bot and research sessions only, one call
+per reply, refused in scheduled and delegated runs by the unattended allowlist and by
+the chat surface) sets a Loupist up from what the user says. It takes `follow` (at most
+ten `{symbol, market?, name?}`), `unfollow` (at most ten `{symbol, market?}`), `focus`
+(1–280 characters, replacing the research focus) and `preset` (a `LoupistTemplate`
+id). Rust checks each field when the call arrives and refuses by field
+(`follow[1].symbol`, `focus`, `preset`); nothing applies until the reply commits, and a
+stopped reply changes nothing. The watchlist lives in the app database, outside the
+reply's transaction, so its changes apply just before that transaction through the
+watchlist commands' own functions (`commands/user_context.rs`) and stay if the commit
+then fails; a market the user did not give stays unknown, and an asset already
+followed under any market is not added again. In the reply's
+transaction the focus is written to the Loupist profile and to the World settings'
+`research_focus` together, and the preset adds its curated kinds the map lacks as one
+`preset` change carrying the asking message. A preset's default focus (the New
+Loupist dialog's copy) fills only an empty focus, so a repeated preset changes
+nothing. The answer's `memory_update.setup` lists each applied change (`followed`,
+`unfollowed`, `focus`, `tracks`) for the receipt; preset kinds the map has no room for
+are listed in `skippedKinds`. `SYSTEM.md` tells the agent to call it in the reply where
+the user says what they research, what to follow or picks a starting point, and never
+to send them to settings.
+
 `thesis_update` (Memory save, staged until the reply commits) takes `assetId`, 1–3
 `evidence` citation URLs from the turn and either `to` with a `reason` (≤ 280
 characters, optional `reasonId`) or `lineReading {journalId, observed}`; its result

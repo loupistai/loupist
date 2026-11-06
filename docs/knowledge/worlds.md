@@ -66,7 +66,9 @@ stored. Every change validates, applies at once and writes a `schema_extended` o
 
 - **Preset.** A semiconductors, dividends or macro & rates Loupist starts with its
   template's curated extension (`curated_seed(template)` in
-  `knowledge/world_schema.rs`), whatever its focus text says. Other templates start
+  `knowledge/world_schema.rs`), whatever its focus text says. `loupist_setup` applies
+  a preset later from chat: only the curated kinds the map lacks, as one preset change
+  that keeps the asking message, so repeating it adds nothing. Other templates start
   empty; a new curated seed ships only after the
   [template seed check](../../apps/loupist/evals/world/README.md#template-seed-check)
   (`template-seed-grade.mjs`, no model) shows no fewer typed core relations and no
@@ -92,7 +94,7 @@ stored. Every change validates, applies at once and writes a `schema_extended` o
   stays as that change left it, even under the same name; a change with nothing
   else left to reverse offers no Undo. A preset or review change also posts one
   Bot message, "Your map now also tracks ...", in the labels the user sees, with
-  Undo. A chat change is already in the reply. Settings shows these under
+  Undo. A chat change, a preset applied from chat included, is already in the reply. Settings shows these under
   [What the map tracks](../ui/map-lens.md#what-the-map-tracks).
 
 The Map draws an extension type in that type's

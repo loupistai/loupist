@@ -1,7 +1,7 @@
 import { formatNumber } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
 import type { ReactNode } from "react";
-import type { ChatEvidenceRef } from "../../types";
+import type { ChatEvidenceRef, MapKind, SetupChange } from "../../types";
 import type { ChatReceiptData, SavedReceiptGroup, ThesisMove } from "../../chat/receipt";
 import { verdictLabel } from "../assets/assetText";
 import { evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
@@ -17,6 +17,19 @@ type CountKey =
   | "chatReceipt.savedWorld" | "chatReceipt.numbersToCheck";
 
 const count = (key: CountKey, value: number): string => t(key, { count: value, formattedCount: formatNumber(value) });
+
+const kindLabel = (kind: MapKind) => (i18n.language.toLowerCase().startsWith("ko") && kind.labelKo) || kind.label;
+
+function setupLabel(change: SetupChange): string {
+  switch (change.change) {
+    case "followed": return t("chatReceipt.following", { name: change.name ?? change.symbol });
+    case "unfollowed": return t("chatReceipt.unfollowed", { name: change.symbol });
+    case "focus": return t("chatReceipt.focusUpdated");
+    case "tracks": return t("chatReceipt.mapTracks", { list: change.kinds.map(kindLabel).join(", ") });
+  }
+}
+
+const setupKey = (change: SetupChange) => change.change === "followed" || change.change === "unfollowed" ? `${change.change}:${change.symbol}:${change.market ?? ""}` : change.change;
 
 const savedKeys: Record<SavedReceiptGroup["kind"], CountKey> = {
   Source: "chatReceipt.savedSources",
@@ -117,10 +130,11 @@ export function ChatReceipt({ receipt, showNothingNew, listId, listExpanded, onO
   for (const unsaved of receipt.unsavedTheses) {
     segments.push({ key: `thesis-unsaved:${unsaved.assetId}`, node: <span className="chat-receipt-text" data-unsaved="true">{t("chatReceipt.thesisNotSaved", { name: unsaved.name })}</span> });
   }
-  const korean = i18n.language.toLowerCase().startsWith("ko");
+  for (const change of receipt.setup) {
+    segments.push({ key: `setup:${setupKey(change)}`, node: <span className="chat-receipt-text" data-learned="true">{setupLabel(change)}</span> });
+  }
   for (const kind of receipt.skippedKinds) {
-    const name = korean && kind.labelKo ? kind.labelKo : kind.label;
-    segments.push({ key: `kind-skipped:${kind.name}`, node: <span className="chat-receipt-text" data-unsaved="true">{t("chatReceipt.kindNotAdded", { name })}</span> });
+    segments.push({ key: `kind-skipped:${kind.name}`, node: <span className="chat-receipt-text" data-unsaved="true">{t("chatReceipt.kindNotAdded", { name: kindLabel(kind) })}</span> });
   }
   if (receipt.usedPages.length) segments.push({ key: "used", node: <button type="button" className="chat-receipt-segment" data-receipt-used="pages"
     aria-expanded={usedExpanded} aria-controls={usedExpanded ? usedListId : undefined} onClick={onToggleUsed}>{count("chatReceipt.usedPages", receipt.usedPages.length)}</button> });

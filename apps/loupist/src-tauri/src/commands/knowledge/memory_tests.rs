@@ -529,7 +529,7 @@ fn journals_keep_the_acknowledged_snapshot_and_refuse_unacknowledged_or_foreign_
         write.put_section(
             "loupist-a",
             &lens,
-            "beliefs",
+            "focus",
             "Use the edited method.",
             &crate::knowledge::test_support::user_origin(),
             12,

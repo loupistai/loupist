@@ -195,6 +195,44 @@ fn map_loupist_profile_write(result: rusqlite::Result<usize>) -> StoreResult<usi
     }
 }
 
+/// The profile row in the Loupist's own database.
+pub(crate) fn loupist_profile_in(connection: &Connection, id: &str) -> StoreResult<LoupistProfile> {
+    load_json_by_id::<LoupistProfile>(connection, "loupist_profiles", id)?
+        .ok_or(StoreError::Conflict("Loupist is missing"))
+}
+
+/// Edits the profile row in the Loupist's own database inside the caller's
+/// transaction. After commit the caller refreshes the folder registration.
+pub(crate) fn update_loupist_fields_in(
+    transaction: &rusqlite::Transaction<'_>,
+    id: &str,
+    updated_at_ms: i64,
+    update: impl FnOnce(&mut LoupistProfile),
+) -> StoreResult<LoupistProfile> {
+    let mut profile = loupist_profile_in(transaction, id)?;
+    update(&mut profile);
+    profile.updated_at_ms = updated_at_ms.max(profile.updated_at_ms.saturating_add(1));
+    profile
+        .validate()
+        .map_err(|error| StoreError::Invalid(error.to_string()))?;
+    let (root_device, root_inode) = root_identity_columns(&profile);
+    let changed = map_loupist_profile_write(transaction.execute(
+        "UPDATE loupist_profiles SET updated_at_ms = ?2, root_device = ?3, root_inode = ?4, data_json = ?5, workspace_root = ?6 WHERE id = ?1",
+        params![
+            profile.id,
+            profile.updated_at_ms,
+            root_device,
+            root_inode,
+            to_json(&profile)?,
+            profile.workspace_root,
+        ],
+    ))?;
+    if changed != 1 {
+        return Err(StoreError::Conflict("Loupist field update"));
+    }
+    Ok(profile)
+}
+
 impl SqliteStore {
     fn update_loupist_fields(
         &self,
@@ -204,32 +242,22 @@ impl SqliteStore {
     ) -> StoreResult<LoupistProfile> {
         let mut connection = self.lock_loupist(id)?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let mut profile = load_json_by_id::<LoupistProfile>(&transaction, "loupist_profiles", id)?
-            .ok_or(StoreError::Conflict("Loupist is missing"))?;
-        update(&mut profile);
-        profile.updated_at_ms = updated_at_ms.max(profile.updated_at_ms.saturating_add(1));
-        profile
-            .validate()
-            .map_err(|error| StoreError::Invalid(error.to_string()))?;
-        let (root_device, root_inode) = root_identity_columns(&profile);
-        let changed = map_loupist_profile_write(transaction.execute(
-            "UPDATE loupist_profiles SET updated_at_ms = ?2, root_device = ?3, root_inode = ?4, data_json = ?5, workspace_root = ?6 WHERE id = ?1",
-            params![
-                profile.id,
-                profile.updated_at_ms,
-                root_device,
-                root_inode,
-                to_json(&profile)?,
-                profile.workspace_root,
-            ],
-        ))?;
-        if changed != 1 {
-            return Err(StoreError::Conflict("Loupist field update"));
-        }
+        let profile = update_loupist_fields_in(&transaction, id, updated_at_ms, update)?;
         transaction.commit()?;
         drop(connection);
         self.refresh_folder_registration(&profile)?;
         Ok(profile)
+    }
+
+    /// Copies the profile the Loupist's own database holds into the folder catalog.
+    pub(crate) fn resync_folder_registration(&self, id: &str) -> StoreResult<()> {
+        if !self.is_folder_catalog() {
+            return Ok(());
+        }
+        let connection = self.lock_loupist(id)?;
+        let profile = loupist_profile_in(&connection, id)?;
+        drop(connection);
+        self.refresh_folder_registration(&profile)
     }
 
     pub(crate) fn lock(&self) -> StoreResult<StoreConnection<'_>> {

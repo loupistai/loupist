@@ -23,6 +23,7 @@ fn journal_hook_is_empty_and_unattended_native_tools_are_denied() {
         "browser_open",
         "schedule_create",
         "principle_save",
+        "loupist_setup",
     ] {
         assert!(!policy::allowed_name(name), "{name}");
     }

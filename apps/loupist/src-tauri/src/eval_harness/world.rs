@@ -638,11 +638,7 @@ async fn setup(
         .readiness(provider, model)
         .map_err(|e| e.message)?;
     if scenario.world_enabled && !readiness.available {
-        return Err(format!(
-            "World provider unavailable: {}",
-            readiness.reason.unwrap_or_default()
-        )
-        .into());
+        return Err(format!("World provider unavailable: {:?}", readiness.reason).into());
     }
     // Replace the test constructor's service, which captured empty artifacts
     // and a temporary auth directory, after the live Pi profile is installed.
@@ -682,7 +678,8 @@ async fn setup(
         crate::knowledge::apply_preset(
             &tx,
             &loupist.id,
-            Some(scenario.template.as_str()),
+            scenario.template.as_str(),
+            None,
             crate::commands::now_ms(),
         )?;
         tx.commit()?;

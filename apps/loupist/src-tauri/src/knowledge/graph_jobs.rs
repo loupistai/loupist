@@ -1532,11 +1532,27 @@ pub struct GraphPublicSettings {
     pub fast_model: Option<String>,
 }
 
+/// The sentence under the World processing status, by code: the interface
+/// renders it in its own language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReadinessNote {
+    RecoveryRequired,
+    Recovering,
+    RuntimeUnavailable,
+    AwaitingProvider,
+    ChooseModel,
+    ModelUnavailable,
+    ConnectProvider,
+    #[serde(untagged)]
+    Provider(crate::providers::inference::UnreadyReason),
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GraphReadiness {
     pub status: String,
-    pub message: Option<String>,
+    pub note: Option<ReadinessNote>,
     pub provider_name: Option<String>,
     pub model_name: Option<String>,
     pub auth_kind: Option<String>,
