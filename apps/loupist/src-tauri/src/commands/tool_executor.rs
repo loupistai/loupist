@@ -34,6 +34,11 @@ mod returning;
 pub(super) mod schedules;
 pub(in crate::commands) mod sensitivity;
 mod workspace;
+mod world_schema;
+#[cfg(test)]
+mod world_schema_tests;
+pub(crate) use world_schema::commit_turn as commit_vocabulary;
+pub(super) use world_schema::StagedVocabulary;
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -145,6 +150,8 @@ pub(super) struct ToolCapture {
     pub(in crate::commands) staged_theses: Mutex<Vec<crate::knowledge::assets::ThesisUpdate>>,
     /// Checked results saves, committed with the reply.
     pub(in crate::commands) staged_earnings: Mutex<Vec<earnings::EarningsSave>>,
+    /// Kinds the user asked the map to track, committed with the reply.
+    pub(in crate::commands) staged_vocabulary: Mutex<Vec<StagedVocabulary>>,
     /// Assets with a thesis update in this turn (staged or in flight), by
     /// delivery: parallel calls cannot both move one asset's read.
     pub(super) thesis_assets: Mutex<BTreeMap<String, String>>,
@@ -188,6 +195,7 @@ struct PendingToolCapture {
     principles: Vec<StagedPrinciple>,
     theses: Vec<crate::knowledge::assets::ThesisUpdate>,
     earnings: Vec<earnings::EarningsSave>,
+    vocabulary: Vec<StagedVocabulary>,
     artifacts: Vec<ArtifactCommit>,
     artifact_reads: BTreeSet<(String, u32)>,
     call_id: Option<String>,
@@ -655,6 +663,12 @@ impl ToolCapture {
                 .await
                 .extend(std::mem::take(&mut pending.earnings));
         }
+        if !pending.vocabulary.is_empty() {
+            self.staged_vocabulary
+                .lock()
+                .await
+                .extend(std::mem::take(&mut pending.vocabulary));
+        }
         for principle in pending.principles {
             let mut staged = self.staged_principles.lock().await;
             staged.retain(|p| p.record_id != principle.record_id);
@@ -1021,6 +1035,10 @@ impl AppToolExecutor {
                 self.stage_principle_save(policy, params, delivery_id).await
             }
             ToolMethod::LensUpdate => self.stage_lens_update(policy, params, delivery_id).await,
+            ToolMethod::WorldSchemaUpdate => {
+                self.stage_world_schema_update(policy, params, delivery_id)
+                    .await
+            }
             ToolMethod::ArtifactList => self.artifact_list(policy, params),
             ToolMethod::ArtifactRead => self.artifact_read(policy, params, delivery_id).await,
             ToolMethod::ArtifactPublish => self.artifact_publish(policy, params, delivery_id).await,
@@ -1432,6 +1450,7 @@ fn refuse_sensitive_memory(
         ToolMethod::NoteSave
             | ToolMethod::PrincipleSave
             | ToolMethod::LensUpdate
+            | ToolMethod::WorldSchemaUpdate
             | ToolMethod::JournalSave
             | ToolMethod::JournalReview
             | ToolMethod::ThesisUpdate

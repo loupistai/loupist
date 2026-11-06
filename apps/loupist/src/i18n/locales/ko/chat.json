@@ -1099,6 +1099,10 @@
       "running": "원칙 저장 중",
       "done": "원칙 저장함"
     },
+    "world_schema_update": {
+      "running": "지도가 추적하는 것 고치는 중",
+      "done": "지도가 추적하는 것 고침"
+    },
     "lens_update": {
       "running": "Lens 고치는 중",
       "done": "Lens 고침"
@@ -1468,6 +1472,12 @@
     "change": "바꾸기",
     "removed": "{{model}}은(는) 더 이상 제공되지 않아요. 이제 대화는 자동으로 골라요.",
     "dismiss": "닫기"
+  },
+  "vocabulary": {
+    "message": "이제 지도가 {{list}}도 추적해요.",
+    "undo": "되돌리기",
+    "undone": "되돌렸어요. 이 항목은 다시 기본 항목으로만 추적해요.",
+    "error": "되돌리지 못했어요. 다시 시도해 주세요."
   },
   "redLine": {
     "message": "{{name}}이(가) {{date}}에 정한 조건을 넘었어요: {{claim}} — {{value}} ({{factDate}}). 투자 논리를 ‘깨짐’⁠으로 표시했어요.",

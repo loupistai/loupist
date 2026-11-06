@@ -31,22 +31,14 @@ pub(crate) fn initialize_new_world(
     state: &AppState,
     loupist_id: &str,
     settings: Option<&crate::knowledge::GraphProcessingSettings>,
+    template: Option<&str>,
 ) -> Result<(), CommandError> {
     if let Some(settings) = settings {
-        let queued = with_loupist_knowledge(state, loupist_id, |tx, _| {
+        with_loupist_knowledge(state, loupist_id, |tx, _| {
             crate::knowledge::store_settings(tx, loupist_id, settings)?;
-            crate::knowledge::record_applied_seed(tx, loupist_id, &settings.extension)?;
-            crate::knowledge::enqueue_seed(
-                tx,
-                loupist_id,
-                &settings.research_focus,
-                settings,
-                crate::commands::now_ms(),
-            )
+            crate::knowledge::apply_preset(tx, loupist_id, template, crate::commands::now_ms())?;
+            Ok(())
         })?;
-        if queued {
-            state.graph.wake();
-        }
     }
     Ok(())
 }

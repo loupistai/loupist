@@ -153,8 +153,6 @@ impl GraphSupervisor {
                         .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
                     super::learning::recover(&tx)
                         .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
-                    super::schema_writer::recover(&tx, now_ms())
-                        .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
                     tx.commit()?;
                     Ok(())
                 })
@@ -629,22 +627,23 @@ impl Inner {
     }
 
     async fn pump_schema(&self) -> KnowledgeResult<Option<String>> {
+        let at = now_ms();
         let candidates = self
             .store
             .for_each_database(|_, connection| {
                 let mut query = connection.prepare(
-                    "SELECT loupist_id, proposal_id FROM knowledge_schema_proposals
-                     WHERE status = 'preparing' ORDER BY created_at_ms, proposal_id",
+                    "SELECT DISTINCT owner_loupist_id FROM knowledge_records WHERE kind = 'world' ORDER BY owner_loupist_id",
                 )?;
-                let rows = query
-                    .query_map([], |row| {
-                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                    })?
+                let loupists = query
+                    .query_map([], |row| row.get::<_, String>(0))?
                     .collect::<Result<Vec<_>, _>>()?;
-                Ok(rows)
+                Ok(loupists
+                    .into_iter()
+                    .filter(|loupist| super::schema_writer::due(connection, loupist, at).unwrap_or(false))
+                    .collect::<Vec<_>>())
             })
-            .map_err(|_| KnowledgeError::Invalid("could not read schema proposals"))?;
-        for (loupist, proposal_id) in candidates.into_iter().flatten() {
+            .map_err(|_| KnowledgeError::Invalid("could not read schema reviews"))?;
+        for loupist in candidates.into_iter().flatten() {
             let knowledge = loupist_knowledge(self.store.clone(), &loupist, &self.app_data)?;
             let settings = load_settings(
                 &*self
@@ -673,7 +672,7 @@ impl Inner {
                 .admit_activity_when_available(MaintenanceBlocker {
                     id: format!("schema-{loupist}"),
                     kind: "graph".into(),
-                    label: "Extending the World schema".into(),
+                    label: "Reviewing what the World tracks".into(),
                 })
                 .await
                 .map_err(|_| KnowledgeError::Invalid("schema activity gate is unavailable"))?;
@@ -681,49 +680,38 @@ impl Inner {
             let claimed = knowledge.transact(|write| {
                 super::schema_writer::claim(write.tx, &loupist, &profile.focus, now_ms())
             })?;
-            match claimed {
-                super::schema_writer::Claimed::Wait => continue,
-                super::schema_writer::Claimed::Settled(finish) => {
-                    self.note_schema(&loupist, &proposal_id, &settings, started, &finish, None);
-                    return Ok(Some(proposal_id));
-                }
-                super::schema_writer::Claimed::Ready(attempt) => {
-                    let attempt = *attempt;
-                    let reply = current_inference(
-                        &self.store,
-                        &loupist,
-                        &attempt.settings,
-                        self.inference.as_ref(),
-                        &embed_assets(self.resource_dir.as_deref()),
-                        &attempt.request,
-                    )
-                    .await;
-                    let finished = knowledge.transact(|write| {
-                        super::schema_writer::finish(write, &attempt, &reply, now_ms())
-                    });
-                    if let Ok(finish) = &finished {
-                        self.note_schema(
-                            &loupist,
-                            &attempt.proposal_id,
-                            &attempt.settings,
-                            started,
-                            finish,
-                            Some(&reply),
-                        );
-                    } else {
-                        let mut run_log = crate::runs::log::RunLog::new(
-                            "schema",
-                            &loupist,
-                            &attempt.proposal_id,
-                            started,
-                        );
-                        run_log.finish("failed", Some("schema_proposal_failed"));
-                        run_log.record(self.store.as_ref());
-                    }
-                    finished?;
-                    return Ok(Some(attempt.proposal_id));
-                }
+            let super::schema_writer::Claimed::Ready(attempt) = claimed else {
+                continue;
+            };
+            let attempt = *attempt;
+            let reply = current_inference(
+                &self.store,
+                &loupist,
+                &attempt.settings,
+                self.inference.as_ref(),
+                &embed_assets(self.resource_dir.as_deref()),
+                &attempt.request,
+            )
+            .await;
+            let finished = knowledge
+                .transact(|write| super::schema_writer::finish(write, &attempt, &reply, now_ms()));
+            if let Ok(finish) = &finished {
+                self.note_schema(
+                    &loupist,
+                    &attempt.review_id,
+                    &attempt.settings,
+                    started,
+                    finish,
+                    Some(&reply),
+                );
+            } else {
+                let mut run_log =
+                    crate::runs::log::RunLog::new("schema", &loupist, &attempt.review_id, started);
+                run_log.finish("failed", Some("schema_review_failed"));
+                run_log.record(self.store.as_ref());
             }
+            finished?;
+            return Ok(Some(attempt.review_id));
         }
         Ok(None)
     }
@@ -731,13 +719,13 @@ impl Inner {
     fn note_schema(
         &self,
         loupist: &str,
-        proposal_id: &str,
+        review_id: &str,
         settings: &GraphProcessingSettings,
         started: i64,
         finish: &super::schema_writer::Finish,
         reply: Option<&super::graph_inference::InferenceReply>,
     ) {
-        let mut run_log = crate::runs::log::RunLog::new("schema", loupist, proposal_id, started);
+        let mut run_log = crate::runs::log::RunLog::new("schema", loupist, review_id, started);
         run_log.model = settings.helper_model.as_ref().map(|model| {
             format!(
                 "{}/{}",

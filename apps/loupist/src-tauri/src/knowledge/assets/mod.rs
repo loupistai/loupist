@@ -1559,8 +1559,9 @@ pub fn match_entity(
         market: page.market.clone(),
         display_name: Some(page.name.clone()),
     };
-    let (matched, _) = super::match_items(&[item], &body.nodes);
-    let id = matched.into_iter().next()?;
+    let super::IdentityMatch::Exact(id) = super::resolve_followed(&item, &body.nodes) else {
+        return None;
+    };
     let class = body
         .nodes
         .iter()

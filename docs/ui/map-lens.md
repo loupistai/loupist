@@ -24,9 +24,11 @@ interface language as the default perspective. A title someone chose is kept and
 still marked as that base perspective. The seeded placeholder sentence is not
 presented as something the Loupist learned.
 
-Entities draw in six categories, in legend and filter order: Company (World kind
-Organization), Person, Product (Product), Market & asset (Asset), Event & metric
-(Event, Metric) and Other (Place, Policy, Entity and any other kind). A Metric
+Entities draw in eight categories, in legend and filter order: Company (World kind
+Organization), Person, Product (Product), Technology (Technology), Industry
+(Segment), Market & asset (Asset), Event & metric (Event, Metric) and Other (Place,
+Policy, Entity and any other kind). Korean labels are 기업, 인물, 제품, 기술, 산업, 시장·자산,
+사건·지표 and 기타. A Metric
 stays in Event & metric, draws as a small faded dot, takes a canvas label only
 when selected or hovered, and does not hide a neighbour's name; name chips outside the Map (the morning message, the chat rail, the palette) use the same faded color; the number itself
 stays in the subject's Key facts. Rust adds up to four non-Latin aliases to each
@@ -36,6 +38,17 @@ inspector, with the English canonical name under the inspector heading. Search
 matches the canonical name and every local name; "Ask about this" pins the canonical
 name. Core relation names have curated labels; other relation names stay readable
 English.
+
+### What the map tracks
+
+Loupist settings list, in plain words, the kinds of things and links the map tracks
+beyond the basics, with Stop tracking on each kind, and the twenty most recent
+changes. Each change says who made it (starting setup, you, a background review),
+what it added or removed, and offers Undo while it still changes something. There
+is no Apply or Dismiss: changes already apply
+([how](../knowledge/worlds.md#presets-changes-and-undo)). The same words appear in
+the Bot's "Your map now also tracks ..." message. Copy never says ontology, schema or
+entity type.
 
 Company and market entities offer a Relationships view in the inspector beside Facts:
 claims grouped by relation, one row per counterpart ranked by weight, then degree,

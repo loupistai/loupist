@@ -49,6 +49,7 @@ are listed in their serialized order inside that block.
 | 6f | Selected Memory references | ≤8 references and ≤8 KiB serialized | Memory on and valid user pins |
 | 6g | Current Chat working note | One note; title ≤160 bytes, body ≤16,000 bytes, change summary ≤500 bytes, ≤16 prior-note IDs and ≤3 later-note pointers | Memory on; excludes frozen `inputs`; context, not evidence |
 | 6h | World catalog counts/hint | Fixed metadata and integer counts | Memory on |
+| 6h′ | `worldKinds` in `memory_protocol` | Core type names with one-line meanings, the core relation names, the added types and relations with one-line meanings, and the extension version; ≤1.5 KiB (meanings shrink first). Under an as-of date it shows the vocabulary as of that day, so kinds added later are left out | Memory on |
 | 7 | Mentioned connections | Subset of admitted bundled/≤32 custom connections | User mentioned an enabled connection; preloading grants no new authority |
 | 8 | As-of date | `loupist-as-of/1`: the cutoff, its end of day, the rule (answer only from what was known by then; tools and Memory already keep to it; say what could not be shown; principles apply as today) and `not_evidence` | The turn has an [as-of date](../analysis/point-in-time.md#point-in-time-answers); independent of Memory |
 | 9 | Selected artifact pointer | One validated artifact identity ≤256 bytes, revision, kind and fixed hint | User selected a current artifact in this Chat; independent of Memory |

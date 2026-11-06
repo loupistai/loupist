@@ -485,6 +485,7 @@ pub(super) fn admit_chat_turn(
         alert: None,
         watch: None,
         earnings: None,
+        vocabulary: None,
         id: user_message_id.clone(),
         role: ChatRole::User,
         status: ChatMessageStatus::Complete,

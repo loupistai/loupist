@@ -147,6 +147,7 @@ pub(crate) fn delivery_message(state: &AppState, run: &Run) -> Result<ChatMessag
         alert: None,
         watch: None,
         earnings: None,
+        vocabulary: None,
     })
 }
 
@@ -225,6 +226,7 @@ pub(crate) fn alert_message(
         }),
         watch: None,
         earnings: None,
+        vocabulary: None,
     })
 }
 
@@ -271,6 +273,7 @@ fn host_message(
         alert: None,
         watch: None,
         earnings: None,
+        vocabulary: None,
     })
 }
 
@@ -498,6 +501,61 @@ fn pending_host_news(
     (events, notices)
 }
 
+/// The Thread message for kinds a preset or a background review added.
+pub(crate) fn vocabulary_message(
+    change: &crate::knowledge::SchemaChange,
+) -> Result<ChatMessage, CommandError> {
+    let kinds = crate::knowledge::added_labels(change);
+    let labels: Vec<String> = kinds.iter().map(|kind| kind.labels.en.clone()).collect();
+    let korean: Vec<String> = kinds
+        .iter()
+        .filter_map(|kind| kind.labels.ko.clone())
+        .collect();
+    let mut message = host_message(
+        "vocabulary",
+        format!("Your map now also tracks {}.", labels.join(", ")),
+        change.created_at_ms,
+    )?;
+    message.vocabulary = Some(crate::domain::HomeVocabulary {
+        change_id: change.change_id.clone(),
+        producer: change.producer.as_str().into(),
+        labels_ko: if korean.len() == labels.len() {
+            korean
+        } else {
+            Vec::new()
+        },
+        labels,
+    });
+    Ok(message)
+}
+
+/// Preset and review changes the Thread has not announced yet, oldest first.
+fn pending_vocabulary(
+    state: &AppState,
+    loupist_id: &str,
+    home: &ChatSession,
+) -> Vec<crate::knowledge::SchemaChange> {
+    let posted: HashSet<&str> = home
+        .messages
+        .iter()
+        .filter_map(|message| message.vocabulary.as_ref())
+        .map(|record| record.change_id.as_str())
+        .collect();
+    let mut changes = crate::commands::assets::with_assets(state, loupist_id, false, |tx| {
+        crate::knowledge::recent_changes(tx, loupist_id, 20)
+    })
+    .unwrap_or_default();
+    changes.retain(|change| {
+        matches!(
+            change.producer,
+            crate::knowledge::Producer::Preset | crate::knowledge::Producer::Review
+        ) && !posted.contains(change.change_id.as_str())
+            && !crate::knowledge::added_labels(change).is_empty()
+    });
+    changes.reverse();
+    changes
+}
+
 /// Crossed lines since the Thread began that it has not announced yet.
 fn pending_alerts(
     state: &AppState,
@@ -555,6 +613,7 @@ pub(crate) fn deliver_finished_runs(
             .iter()
             .all(|q| home.messages.iter().any(|m| m.id == q.receipt.task_id))
         && pending_alerts(state, loupist_id, &home).is_empty()
+        && pending_vocabulary(state, loupist_id, &home).is_empty()
         && watch_events.is_empty()
         && notices.is_empty()
     {
@@ -614,6 +673,9 @@ pub(crate) fn deliver_finished_runs(
     }
     for alert in pending_alerts(state, loupist_id, &expected) {
         posted.push(alert_message(&alert)?);
+    }
+    for change in pending_vocabulary(state, loupist_id, &expected) {
+        posted.push(vocabulary_message(&change)?);
     }
     let (watch_events, notices) = pending_host_news(state, loupist_id);
     let watch_ids: Vec<String> = watch_events

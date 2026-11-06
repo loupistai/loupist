@@ -194,7 +194,7 @@ async fn create_bound_loupist(
     identity: Option<(String, String, crate::domain::LoupistTone)>,
 ) -> Result<LoupistSummary, CommandError> {
     let imported = state.store.folder_profile(&workspace).map_err(map_store)?;
-    let mut world_settings = if imported.is_none() {
+    let world_settings = if imported.is_none() {
         Some(crate::providers::world_defaults::new_settings(
             state,
             world_processing.as_ref(),
@@ -217,15 +217,6 @@ async fn create_bound_loupist(
         return Err(CommandError::invalid(
             "research focus must be 280 characters or fewer",
         ));
-    }
-    if let Some(settings) = world_settings.as_mut() {
-        if let Some(extension) = crate::knowledge::curated_seed(
-            template.map(|template| template.as_str()),
-            &focus,
-            timestamp,
-        ) {
-            settings.extension = extension;
-        }
     }
     let mut profile = LoupistProfile {
         id: loupist_id.clone(),
@@ -296,6 +287,7 @@ async fn create_bound_loupist(
                 state,
                 &loupist_id,
                 world_settings.as_ref(),
+                template.map(|template| template.as_str()),
             )
         })
     {
@@ -695,7 +687,6 @@ pub(crate) async fn delete_loupist_inner(
 #[cfg(test)]
 mod loupist_profile_tests {
     use super::*;
-    use rusqlite::OptionalExtension;
 
     #[test]
     fn loupist_requests_carry_a_tone_and_no_suitability_fields() {
@@ -954,75 +945,38 @@ mod loupist_profile_tests {
     }
 
     #[tokio::test]
-    async fn world_seed_follows_the_template_focus_and_queues_one_custom_suggestion() {
+    async fn a_template_writes_one_preset_change_whatever_the_focus_says() {
         let temp = tempfile::tempdir().unwrap();
         let state = AppState::for_folder_test(temp.path().join("app"));
-        let curated = create(
-            &state,
-            "Chip desk",
-            Some("Chips, memory, foundries and equipment"),
-            Some("semiconductors"),
-        )
-        .await;
-        let (extension, events, proposal) = world_seed(&state, &curated);
-        assert_eq!(extension.version, 1);
-        assert!(!extension.types.is_empty() && !events.is_empty());
-        assert_eq!(proposal, Some(("seed".into(), "applied".into())));
-        // An edited focus or a non-curated template leaves the core schema alone.
         for (name, template, focus) in [
-            ("Portfolio", "portfolio", "Companies I hold and watch"),
-            ("Edited", "semiconductors", "Only foundries"),
-            ("Custom", "custom", "My own desk"),
+            (
+                "Chip desk",
+                "semiconductors",
+                "Chips, memory, foundries and equipment",
+            ),
+            ("Edited chips", "semiconductors", "Only foundries"),
+            ("Typed chips", "semiconductors", ""),
         ] {
             let id = create(&state, name, Some(focus), Some(template)).await;
-            let (extension, events, proposal) = world_seed(&state, &id);
-            assert_eq!(extension.version, 0, "{name}");
-            assert!(extension.types.is_empty() && events.is_empty(), "{name}");
-            assert!(proposal.is_none(), "{name}");
+            let (extension, events, changes) = world_seed(&state, &id);
+            assert_eq!(extension.version, 1, "{name}");
+            assert!(!extension.types.is_empty() && !events.is_empty(), "{name}");
+            assert_eq!(changes, vec!["preset".to_owned()], "{name}");
         }
-
-        // With a helper model, a custom focus only queues a suggestion, once.
-        let path = state.pi_agent_data_dir().unwrap().join("auth.json");
-        crate::fs::artifact_trust::ensure_private_regular_file(&path).unwrap();
-        std::fs::write(
-            &path,
-            r#"{"openai":{"type":"api_key","key":"fixture-not-a-real-key"}}"#,
-        )
-        .unwrap();
-        state
-            .set_model_catalog(crate::providers::catalog::ModelCatalog {
-                models: vec![crate::providers::catalog::ConfiguredModel {
-                    id: "openai/gpt-6-luna".into(),
-                    name: "gpt-6-luna".into(),
-                    provider: "openai".into(),
-                    model: "gpt-6-luna".into(),
-                    input: vec!["text".into()],
-                    reasoning: true,
-                    context_window: 128_000,
-                    max_tokens: 16_000,
-                    thinking_levels: vec!["off".into(), "low".into(), "high".into()],
-                    thinking_level_map: std::collections::BTreeMap::new(),
-                    run_controls: vec![],
-                }],
-            })
-            .unwrap();
-        let custom = create(&state, "Battery desk", Some("Battery suppliers"), None).await;
-        update_profile_inner(
-            &state,
-            LoupistProfileUpdateRequest {
-                loupist_id: custom.clone(),
-                focus: Some("Only cathode makers".into()),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let (extension, events, proposal) = world_seed(&state, &custom);
-        assert_eq!(extension.version, 0);
-        assert!(events.is_empty());
-        assert_eq!(proposal, Some(("seed".into(), "preparing".into())));
-        let blank = create(&state, "Blank desk", None, None).await;
-        assert!(world_seed(&state, &blank).2.is_none());
+        // A template without a curated seed, and a blank desk, leave the core alone.
+        for (name, template) in [
+            ("Portfolio", Some("portfolio")),
+            ("Custom", Some("custom")),
+            ("Blank", None),
+        ] {
+            let id = create(&state, name, Some("My own desk"), template).await;
+            let (extension, events, changes) = world_seed(&state, &id);
+            assert_eq!(extension.version, 0, "{name}");
+            assert!(
+                extension.types.is_empty() && events.is_empty() && changes.is_empty(),
+                "{name}"
+            );
+        }
     }
 
     #[allow(clippy::type_complexity)]
@@ -1032,7 +986,7 @@ mod loupist_profile_tests {
     ) -> (
         crate::knowledge::WorldExtension,
         Vec<(String, String)>,
-        Option<(String, String)>,
+        Vec<String>,
     ) {
         let connection = state.store.lock_loupist(loupist_id).unwrap();
         let extension = crate::knowledge::load_settings(&connection, loupist_id)
@@ -1048,14 +1002,14 @@ mod loupist_profile_tests {
             .unwrap()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
-        let proposal = connection
-            .query_row(
-                "SELECT kind, status FROM knowledge_schema_proposals WHERE loupist_id = ?1",
-                [loupist_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()
+        let mut changes = connection
+            .prepare("SELECT producer FROM knowledge_schema_changes WHERE loupist_id = ?1 ORDER BY rowid")
             .unwrap();
-        (extension, events, proposal)
+        let changes = changes
+            .query_map([loupist_id], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        (extension, events, changes)
     }
 }

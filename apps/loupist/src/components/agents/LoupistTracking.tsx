@@ -1,5 +1,7 @@
 import type { LoupistBridge } from "../../contracts/bridge";
-import type { ExtensionType, SchemaLabels, WorldSchemaView } from "../../contracts/knowledge";
+import type { TFunction } from "i18next";
+import type { ExtensionType, SchemaChange, SchemaLabels, WorldSchemaView } from "../../contracts/knowledge";
+import { formatDate } from "../../i18n/format";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "../../i18n";
 import { XIcon } from "lucide-react";
@@ -92,27 +94,19 @@ export function LoupistTracking({ bridge, loupistId }: { bridge: LoupistBridge; 
   }
 
   const extension = view?.extension;
-  const proposal = view?.proposal ?? null;
   const types = extension?.types ?? [];
   const relations = extension?.relations ?? [];
+  const changes = view?.changes ?? [];
   const hasExtension = types.length > 0 || relations.length > 0;
-  const preparing = proposal?.status === "preparing";
-  const pending = proposal?.status === "pending" ? proposal : null;
-  const showEmpty = Boolean(view) && !loadError && !hasExtension && !preparing && !pending;
+  const showEmpty = Boolean(view) && !loadError && !hasExtension && changes.length === 0;
 
   const removeType = (name: string) => {
     const index = types.findIndex(type => type.name === name);
     const nextFocus = types[index + 1]?.name ?? "heading";
     void commit(() => bridge.worldSchemaRemove({ loupistId, kind: "type", name }), nextFocus, t("tracking.removed"));
   };
-  const accept = () => {
-    if (!pending) return;
-    const list = [...pending.types, ...pending.relations].map(item => schemaLabel(item.labels, language)).join(", ");
-    void commit(() => bridge.worldSchemaApply({ loupistId, proposalId: pending.proposalId }), "heading", t("tracking.added", { list }));
-  };
-  const dismiss = () => {
-    if (!pending) return;
-    void commit(() => bridge.worldSchemaDismiss({ loupistId, proposalId: pending.proposalId }), "heading", null);
+  const undo = (change: SchemaChange) => {
+    void commit(() => bridge.worldSchemaUndo({ loupistId, changeId: change.changeId }), "heading", t("tracking.undone"));
   };
 
   return <section className="loupist-tracking" aria-labelledby="loupist-tracking-heading">
@@ -127,20 +121,32 @@ export function LoupistTracking({ bridge, loupistId }: { bridge: LoupistBridge; 
         {types.length ? <ul className="loupist-tracking-list">{types.map(type => <TrackingTypeRow key={type.name} type={type} language={language} busy={busy} onRemove={removeType} />)}</ul> : null}
         {relations.length ? <p className="learning-meta">{t("tracking.relations", { list: relationLine(relations, language) })}</p> : null}
       </> : null}
-      {preparing ? <p className="learning-meta" role="status">{t("tracking.preparing")}</p> : null}
-      {pending ? <div className="loupist-tracking-suggestion">
-        <strong>{t(pending.kind === "seed" ? "tracking.suggestionFromFocus" : "tracking.suggestion")}</strong>
-        {pending.types.length ? <ul className="loupist-tracking-list">{pending.types.map(type => <TrackingTypeRow key={type.name} type={type} language={language} busy={busy} />)}</ul> : null}
-        {pending.relations.length ? <p className="learning-meta">{t("tracking.relations", { list: relationLine(pending.relations, language) })}</p> : null}
-        <p className="learning-meta">{t("tracking.appliesNext")}</p>
-        <div className="loupist-tracking-actions">
-          <Button type="button" size="sm" disabled={busy} onClick={accept}>{t("tracking.add")}</Button>
-          <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={dismiss}>{t("tracking.dismiss")}</Button>
-        </div>
-      </div> : null}
+      {changes.length ? <>
+        <h4 className="loupist-tracking-recent">{t("tracking.recent")}</h4>
+        <ul className="loupist-tracking-list loupist-tracking-changes">{changes.map(change => {
+          const line = changeLine(change, language, t);
+          return <li key={change.changeId}>
+            <div className="loupist-tracking-copy">
+              <strong>{line}</strong>
+              <span className="loupist-tracking-desc">{t(`tracking.by.${change.producer}`)} · {formatDate(change.createdAtMs, { year: undefined, month: "short", day: "numeric" })}</span>
+            </div>
+            {change.undoable ? <Button type="button" variant="ghost" size="sm" aria-label={t("tracking.undoLabel", { change: line })} disabled={busy} onClick={() => undo(change)}>{t("tracking.undo")}</Button> : null}
+          </li>;
+        })}</ul>
+      </> : null}
       {showEmpty ? <p className="learning-meta">{t("tracking.empty")}</p> : null}
     </> : null}
   </section>;
+}
+
+function changeLine(change: SchemaChange, language: string, t: TFunction<"app">) {
+  const names = (kinds: string[]) => kinds
+    .map(name => change.kindLabels.find(kind => kind.name === name))
+    .map((kind, index) => kind ? schemaLabel(kind.labels, language) : kinds[index])
+    .join(", ");
+  const added = names([...change.addedTypes, ...change.addedRelations]);
+  const removed = names([...change.removedTypes, ...change.removedRelations]);
+  return [added ? t("tracking.changeAdded", { list: added }) : "", removed ? t("tracking.changeRemoved", { list: removed }) : ""].filter(Boolean).join(" · ");
 }
 
 function TrackingTypeRow({ type, language, busy, onRemove }: { type: ExtensionType; language: string; busy: boolean; onRemove?: (name: string) => void }) {

@@ -176,6 +176,8 @@ the user has explicitly stated. A user's rule that names an action (for example
 recommendations or rules you inferred.<!-- /safety:locked --> A principle already in User
 principles context is acknowledged; replace via `principle_save` and its supplied id.
 
+When the user asks to track a kind of thing or a link the map lacks (compare `worldKinds`), load `memory-save` and call `world_schema_update` when saving is on; say what the map now tracks in plain words and never say ontology, schema or entity type to the user.
+
 When at least one principle is relevant, end the answer with a short section
 titled in the user's language (en 'Checked against your principles', ko '내 원칙 점검').
 Write one line per relevant principle: link its statement to the supplied `lens:<recordId>` target (the `lens_url` from `lens_read`). This opens the principle itself. Use evidence citation URLs for the facts you checked. Include the dated

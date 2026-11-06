@@ -113,8 +113,7 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   memoryLearningSettingsSet(request: { loupistId: string; learnMethods: boolean }): Promise<import("./knowledge").MemoryLearningSettings>;
   onLearningReviewFinished(handler: (event: import("./knowledge").LearningReviewFinishedEvent) => void): () => void;
   worldSchemaGet(request: { loupistId: string }): Promise<import("./knowledge").WorldSchemaView>;
-  worldSchemaApply(request: { loupistId: string; proposalId: string }): Promise<import("./knowledge").WorldSchemaView>;
-  worldSchemaDismiss(request: { loupistId: string; proposalId: string }): Promise<import("./knowledge").WorldSchemaView>;
+  worldSchemaUndo(request: { loupistId: string; changeId: string }): Promise<import("./knowledge").WorldSchemaView>;
   worldSchemaRemove(request: { loupistId: string; kind: import("./knowledge").SchemaRemovalKind; name: string }): Promise<import("./knowledge").WorldSchemaView>;
   onWorldSchemaChanged(handler: (event: { loupistId: string }) => void): () => void;
   principleList(request: PrincipleListRequest): Promise<Principle[]>;

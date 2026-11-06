@@ -858,6 +858,180 @@
       }
     },
     {
+      "name": "world_schema_update",
+      "method": "world_schema.update",
+      "permission": "memory_write",
+      "component": "memory-save",
+      "label": "Track a new kind of thing",
+      "description": "Add kinds of things or links to what this Loupist's map tracks, when the user asks to track a kind of thing or a link between things that the map lacks (worldKinds in the Memory context lists what it already tracks). Their sentence is the approval. At most 2 types and 3 relations per call and one call per reply; the map holds at most 4 added types and 6 added relations. A type needs a PascalCase name, a description of what it includes with one example and what it is not (naming the core type to use instead), and labels in en and ko. A relation needs a SCREAMING_SNAKE_CASE name, a description stating the direction from source to target, signatures as [source type, target type] pairs using core or added types or Entity, and labels. Never reuse a name in worldKinds. Applies to Sources added from now on, when the reply finishes; existing names are not reclassified. Say what the map now tracks in plain words; never say ontology, schema or entity type to the user. Saving must be enabled.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "types": {
+            "type": "array",
+            "maxItems": 2,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "description",
+                "labels"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Za-z0-9]{1,31}$"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 20,
+                  "maxLength": 500
+                },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "company",
+                    "person",
+                    "product",
+                    "market",
+                    "event",
+                    "other"
+                  ]
+                },
+                "labels": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "en"
+                  ],
+                  "properties": {
+                    "en": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    },
+                    "ko": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    }
+                  }
+                },
+                "blurbs": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "en"
+                  ],
+                  "properties": {
+                    "en": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "ko": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    }
+                  }
+                },
+                "fields": {
+                  "type": "array",
+                  "maxItems": 3,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "name",
+                      "description"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_]{1,31}$"
+                      },
+                      "description": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "relations": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "description",
+                "signatures",
+                "labels"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Z0-9_]{1,31}$"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 20,
+                  "maxLength": 500
+                },
+                "signatures": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 6,
+                  "items": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "labels": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "en"
+                  ],
+                  "properties": {
+                    "en": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    },
+                    "ko": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "progress": {
+        "category": "memory",
+        "operation": "edit",
+        "running": "Updating what the map tracks",
+        "done": "Updated what the map tracks",
+        "source": "memory"
+      }
+    },
+    {
       "name": "lens_update",
       "method": "lens.update",
       "permission": "memory_write",
@@ -4990,7 +5164,7 @@
     {
       "id": "memory-save",
       "name": "Source retention and journals",
-      "description": "Keep user-supplied facts and progress for later with note_save, retain delivered originals with source_save, or save the user's explicitly stated judgment as a Journal."
+      "description": "Keep user-supplied facts and progress for later with note_save, retain delivered originals with source_save, save the user's explicitly stated judgment as a Journal, or add a kind of thing or link to what the map tracks with world_schema_update."
     },
     {
       "id": "lens-learning",

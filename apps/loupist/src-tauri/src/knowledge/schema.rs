@@ -11,7 +11,7 @@ use crate::fs::artifact_trust::ensure_private_directory;
 
 /// Version 2 added asset pages. A folder made by an earlier build is refused,
 /// never migrated (pre-1.0): see `made_by_earlier_build`.
-pub const KNOWLEDGE_SCHEMA_VERSION: i64 = 5;
+pub const KNOWLEDGE_SCHEMA_VERSION: i64 = 6;
 pub const KNOWLEDGE_FORMAT_VERSION: u32 = 1;
 
 const EXPECTED_TABLES: &[&str] = &[
@@ -45,7 +45,8 @@ const EXPECTED_TABLES: &[&str] = &[
     "knowledge_records",
     "knowledge_research_records",
     "knowledge_schema",
-    "knowledge_schema_proposals",
+    "knowledge_schema_changes",
+    "knowledge_schema_reviews",
     "knowledge_search_documents",
     "knowledge_source_captures",
     "knowledge_source_representations",
@@ -204,17 +205,22 @@ fn schema_sql() -> String {
         ) STRICT;
         CREATE UNIQUE INDEX knowledge_learning_active ON knowledge_learning_reviews(loupist_id) WHERE status IN ('pending','queued','running');
         CREATE INDEX knowledge_learning_history ON knowledge_learning_reviews(loupist_id,created_at_ms);
-        CREATE TABLE knowledge_schema_proposals (
-            proposal_id TEXT PRIMARY KEY NOT NULL,
+        CREATE TABLE knowledge_schema_changes (
+            change_id TEXT PRIMARY KEY NOT NULL,
             loupist_id TEXT NOT NULL,
-            kind TEXT NOT NULL CHECK (kind IN ('seed', 'review')),
-            status TEXT NOT NULL CHECK (status IN ('preparing', 'pending', 'applied', 'dismissed', 'failed')),
-            body_json TEXT NOT NULL,
-            created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0),
-            decided_at_ms INTEGER CHECK (decided_at_ms IS NULL OR decided_at_ms >= 0)
+            before_json TEXT NOT NULL,
+            after_json TEXT NOT NULL,
+            producer TEXT NOT NULL CHECK (producer IN ('preset', 'chat', 'review', 'undo')),
+            evidence_json TEXT NOT NULL,
+            origin_chat_id TEXT,
+            origin_message_id TEXT,
+            created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0)
         ) STRICT;
-        CREATE INDEX knowledge_schema_proposals_loupist ON knowledge_schema_proposals (loupist_id, created_at_ms, proposal_id);
-        CREATE UNIQUE INDEX knowledge_schema_proposals_open ON knowledge_schema_proposals (loupist_id) WHERE status IN ('preparing', 'pending');
+        CREATE INDEX knowledge_schema_changes_loupist ON knowledge_schema_changes (loupist_id, created_at_ms, change_id);
+        CREATE TABLE knowledge_schema_reviews (
+            loupist_id TEXT PRIMARY KEY NOT NULL,
+            reviewed_at_ms INTEGER NOT NULL CHECK (reviewed_at_ms >= 0)
+        ) STRICT;
         CREATE TABLE knowledge_records (
             record_id TEXT PRIMARY KEY NOT NULL,
             kind TEXT NOT NULL CHECK (kind IN ('source', 'world', 'lens')),

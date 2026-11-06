@@ -14,7 +14,6 @@ review of the lifecycle and acquisition grader.
 | `implicit-memory-*.json` | `memory-grade.mjs` | Uncued saving, recall and restraint |
 | `ontology-corpus-v1.json` + `ontology-oracle-v2.json` | `ontology-grade.mjs` | World entity/relation typing in English, Korean and mixed input |
 | `temporal-corpus-v2.json` + `temporal-oracle-v2.json` | `temporal-grade.mjs` | [Temporal invalidation](#temporal-invalidation): a later Source with an explicit effective instant ends an earlier claim; a denied allegation does not |
-| `seed-corpus-v2.json` + `seed-oracle-v2.json` | `seed-grade.mjs` | The custom-focus World seed |
 | `template-seed-corpus-v2.json` | `template-seed-grade.mjs` | The asset-class template seeds (Crypto, Commodities, Macro & rates, Real assets) |
 | `growth-scenario-v1/` | Rust test + `report.py` | [Five-session product growth](growth-scenario-v1/README.md) |
 | List in `src-tauri/src/eval_harness/followed.rs` | Rust test | [Followed assets on the Map](#followed-assets-on-the-map), at creation and followed later |
@@ -39,7 +38,7 @@ cargo build --manifest-path apps/loupist/src-tauri/Cargo.toml \
   --resources <staged-resources> --trials 3 --keep
 ```
 
-`world_eval` runs lifecycle, acquisition, Memory, ontology, temporal and seed suites;
+`world_eval` runs lifecycle, acquisition, Memory, ontology and temporal suites;
 `world_scale_eval` runs the scale corpus. World jobs and World search run in-process
 (`knowledge/world_extract/`);
 `LOUPIST_WORLD_STAGE_LOG=<file>` appends one record per in-process model or embedding
@@ -250,32 +249,6 @@ node apps/loupist/evals/world/temporal-grade.mjs \
   --oracle apps/loupist/evals/world/temporal-oracle-v2.json \
   --arm baseline=<NEW-baseline.jsonl>[,<more.jsonl>] --arm candidate=<NEW-candidate.jsonl> \
   --out <NEW-temporal-report.json>
-```
-
-## Custom-focus seed
-
-`seed-corpus-v2.json` has two fictional World-only scenarios, `S-BIOTECH` and
-`S-LITHIUM`, checked in with `seed: "none"`. The other arm sets `seed: "model"`: the
-harness runs the product seed writer before the first Source and accepts its pending
-suggestion as the user would (`accepted_by: "harness"`). `seed-oracle-v2.json` pins
-the corpus bytes. `seed-grade.mjs` reuses the ontology name normalization.
-
-A domain concept matches a node when a name or alias fully matches `name_patterns`;
-when the kind's head noun (last PascalCase word, never a core type) matches
-`kind_patterns` and the name contains an `anchor_patterns` hit; or when the name
-contains an anchor hit and its leading noun phrase's head matches `cue_patterns`.
-`domain_typed_rate` counts concepts with an instance of a matching kind;
-`domain_present_rate` counts any instance. A relation counts when one active claim
-joins its endpoints (including `also_targets`) or a distinct `via` instance has
-active claims to both sides. World usage includes the seed call. `seedCriteria`
-applies the pre-registered gates and returns `auto_apply`, `keep_suggestion` or `remove`.
-
-```sh
-node apps/loupist/evals/world/seed-grade.mjs \
-  --suite apps/loupist/evals/world/seed-corpus-v2.json \
-  --oracle apps/loupist/evals/world/seed-oracle-v2.json \
-  --arm A=<NEW-none.jsonl> --arm B=<NEW-model.jsonl> \
-  --out <NEW-seed-report.json>
 ```
 
 ## Template seed check

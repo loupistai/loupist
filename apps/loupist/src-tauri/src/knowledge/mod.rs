@@ -34,9 +34,10 @@ pub mod memory_controls;
 pub mod memory_reset;
 pub mod principles;
 pub use principles::{Principle, PrincipleInput};
+mod identity;
 mod map;
 pub use growth::{GrowthEventsPage, GrowthEventsQuery};
-pub(crate) use map::match_items;
+pub(crate) use identity::{match_items, resolve_followed, IdentityMatch};
 pub use map::{KnowledgeMap, KnowledgeMapQuery};
 mod model;
 pub mod numbers;
@@ -80,21 +81,20 @@ pub use model::*;
 pub use present::present_world;
 pub use schema::embedded_ddl;
 pub(crate) use schema::made_by_earlier_build;
-pub(crate) use schema_writer::enqueue_seed;
-#[cfg(all(test, feature = "eval-harness"))]
-pub(crate) use world_schema::ExtensionType;
-#[cfg(any(test, feature = "eval-harness"))]
+#[cfg(feature = "eval-harness")]
+pub use world_schema::curated_seed;
 pub(crate) use world_schema::WorldExtension;
 pub(crate) use world_schema::{
-    apply_proposal, dismiss_proposal, record_applied_seed, remove_schema_item, schema_view,
+    add_kinds, added_labels, apply_preset, live_extension, recent_changes, relation_already_known,
+    remove_schema_item, schema_view, type_already_known, undo_change, validate_extension,
+    visible_extension, world_kinds_block, Producer, Provenance, SchemaChange,
 };
-pub use world_schema::{curated_seed, WorldSchemaView};
+pub use world_schema::{
+    ExtensionCategory, ExtensionField, ExtensionLabels, ExtensionRelation, ExtensionType,
+    WorldSchemaView,
+};
 #[cfg(test)]
-pub(crate) use {
-    graph_jobs::AddToWorld,
-    growth::GrowthEvent,
-    world_schema::{ExtensionCategory, ExtensionLabels},
-};
+pub(crate) use {graph_jobs::AddToWorld, growth::GrowthEvent};
 
 pub fn mint_lens_record_id() -> String {
     model::mint_id("rec")
@@ -1011,7 +1011,8 @@ fn erase_guarded_rows(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult
     for table in [
         "knowledge_learning_reviews",
         "knowledge_learning_settings",
-        "knowledge_schema_proposals",
+        "knowledge_schema_changes",
+        "knowledge_schema_reviews",
         "knowledge_lens_applications",
         "knowledge_lens_links",
         "knowledge_lens_drafts",

@@ -478,16 +478,22 @@ export type WorldExtension = {
   relations: ExtensionRelation[];
   updatedAtMs: number;
 };
-export type SchemaProposal = {
-  proposalId: string;
-  kind: "seed" | "review";
-  status: "preparing" | "pending" | "applied" | "dismissed" | "failed";
-  types: ExtensionType[];
-  relations: ExtensionRelation[];
+export type SchemaChangeProducer = "preset" | "chat" | "review" | "undo";
+export type SchemaChange = {
+  changeId: string;
+  producer: SchemaChangeProducer;
+  summary: string;
+  addedTypes: string[];
+  addedRelations: string[];
+  removedTypes: string[];
+  removedRelations: string[];
+  /** Display labels for every name above, so a removed kind still reads in plain words. */
+  kindLabels: Array<{ name: string; labels: SchemaLabels }>;
   createdAtMs: number;
-  decidedAtMs?: number;
+  undoable: boolean;
 };
-export type WorldSchemaView = { extension: WorldExtension; proposal: SchemaProposal | null };
+/** What the map tracks beyond the basics, newest change first (at most 20). */
+export type WorldSchemaView = { extension: WorldExtension; changes: SchemaChange[] };
 export type SchemaRemovalKind = "type" | "relation";
 
 /**

@@ -485,6 +485,14 @@ export type HomeWatch = {
  * {period} results." with the two most material measures, or a failed
  * before-capture with Try again. Successful before-captures post nothing.
  */
+/** New kinds of things the map tracks after a preset or a background review. Labels are display words. */
+export type HomeVocabulary = {
+  changeId: string;
+  producer: "preset" | "chat" | "review";
+  labels: string[];
+  /** The same kinds in Korean, in the same order, when each has one. */
+  labelsKo?: string[];
+};
 export type HomeEarnings = {
   asset_id: string;
   event_id: string;
@@ -600,6 +608,8 @@ export type ChatMessage = {
   watch?: HomeWatch;
   /** Present on a host-posted results message. */
   earnings?: HomeEarnings;
+  /** Present on a host-posted "your map now also tracks" message. */
+  vocabulary?: HomeVocabulary;
   tool_refusals?: ChatToolRefusal[];
   feedback?: ChatFeedback | null;
   failure_kind?: ChatFailureKind;

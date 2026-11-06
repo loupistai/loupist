@@ -151,8 +151,7 @@ export class PreviewBridge extends MockLoupistBridge {
   private readonly worldSchema = new MockWorldSchema();
   installWorldSchema(loupistId: string, view: import("../types").WorldSchemaView) { this.worldSchema.install(loupistId, view); }
   worldSchemaGet(request: { loupistId: string }) { return Promise.resolve(this.worldSchema.get(request.loupistId)); }
-  worldSchemaApply(request: { loupistId: string; proposalId: string }) { return Promise.resolve(this.worldSchema.apply(request.loupistId, request.proposalId)); }
-  worldSchemaDismiss(request: { loupistId: string; proposalId: string }) { return Promise.resolve(this.worldSchema.dismiss(request.loupistId, request.proposalId)); }
+  worldSchemaUndo(request: { loupistId: string; changeId: string }) { return Promise.resolve(this.worldSchema.undo(request.loupistId, request.changeId)); }
   worldSchemaRemove(request: { loupistId: string; kind: "type" | "relation"; name: string }) { return Promise.resolve(this.worldSchema.remove(request.loupistId, request.kind, request.name)); }
   onWorldSchemaChanged(handler: (event: { loupistId: string }) => void) { return this.worldSchema.subscribe(handler); }
 

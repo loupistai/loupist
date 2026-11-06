@@ -152,6 +152,8 @@ pub struct ChatMessageDto {
     pub watch: Option<crate::domain::HomeWatch>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub earnings: Option<crate::domain::HomeEarnings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vocabulary: Option<crate::domain::HomeVocabulary>,
     /// The as-of date set for this request and its answer (`YYYY-MM-DD`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub as_of: Option<String>,
@@ -628,6 +630,7 @@ pub(crate) fn chat_dto(chat: &ChatSession) -> Result<ChatThreadDto, CommandError
                 alert: message.alert.clone(),
                 watch: message.watch.clone(),
                 earnings: message.earnings.clone(),
+                vocabulary: message.vocabulary.clone(),
                 as_of: message.as_of.clone(),
                 number_checks: message.number_checks.clone(),
                 sensitivity_cards: message.sensitivity_cards.clone(),

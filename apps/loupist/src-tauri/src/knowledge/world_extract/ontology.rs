@@ -8,6 +8,7 @@
 
 use serde_json::Value;
 
+use super::super::assets::AssetClass;
 use super::super::world_schema::WorldExtension;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,9 +42,11 @@ impl Schema {
 
 const ORGANIZATION: &str = "A named company, fund manager, bank, exchange, regulator, government body, central bank,\nindustry body or other institution.\n\nA listed company is an Organization even when the source refers to it by its shares or\nticker; record the ticker as an attribute instead of creating a separate share entity.\nNot an Organization: a product or brand (Product); an index, fund share, bond, commodity or\ncurrency (Asset); a country or city (Place); a law or program (Policy).";
 const PERSON: &str = "A named individual: an executive, director, founder, investor, official, analyst or\nother person.\n\nNot a Person: a job title without a name, or a group of people (Organization).";
-const ASSET: &str = "A tradable or benchmark instrument other than one company's ordinary shares: a market\nindex, ETF or fund share, bond, commodity, currency or currency pair, cryptocurrency or\ninterest-rate benchmark.\n\nNot an Asset: the issuing or managing company (Organization), or a company's ordinary\nshares (record the ticker on the Organization).";
-const PRODUCT: &str = "A named product, service, technology, material, component, manufacturing process or\nbusiness segment.\n\nA specific technical term can identify a Product without a brand or model number. Use the\nsource's domain and qualifiers to distinguish its meaning. Retain only products explicitly\ninvolved in a source claim; do not invent a taxonomy or extract vague marketing qualities.\nNot a Product: the company that makes it (Organization).";
-const PLACE: &str = "A country, region, state, city or named facility such as a plant, data center, mine or\nport, when the source ties something to that location.\n\nNot a Place: a market index named after a region (Asset), or a government (Organization).";
+const ASSET: &str = "A tradable, benchmark or held instrument other than one company's ordinary shares: a market\nindex, ETF or fund share, bond, commodity, currency or currency pair, cryptocurrency,\ninterest-rate benchmark, prediction-market contract, property or other real asset, or a\nprivate deal or stake.\n\nNot an Asset: the issuing or managing company (Organization), or a company's ordinary\nshares (record the ticker on the Organization).";
+const PRODUCT: &str = "A named product, service, component or material that an organization makes or sells.\n\nA specific technical term can identify a Product without a brand or model number. Use the\nsource's domain and qualifiers to distinguish its meaning. Retain only products explicitly\ninvolved in a source claim; do not invent a taxonomy or extract vague marketing qualities.\nNot a Product: the company that makes it (Organization); a science, technique, process or\nstandard that more than one organization can use (Technology); an industry or value-chain\nstage (Segment).";
+const PLACE: &str = "A country, region, state, city or named facility such as a plant, data center, mine or\nport, when the source ties something to that location.\n\nNot a Place: a market index named after a region (Asset), a government (Organization), or\nan industry or market segment that only mentions a place (Segment).";
+const TECHNOLOGY: &str = "A science, technique, process, material or standard that more than one organization can\nuse, such as EUV lithography, hybrid bonding, GLP-1 agonism or proof-of-stake.\n\nNot a Technology: a specific product built with it (Product), or the company that\ndevelops it (Organization).";
+const SEGMENT: &str = "An industry, market segment or value-chain stage, such as advanced packaging, Seoul office\nleasing or L2 sequencing.\n\nNot a Segment: a single company (Organization), or a specific product (Product).";
 const POLICY: &str = "A standing law, regulation, tariff, sanction, export control, subsidy or tax program, or\na central bank's policy setting.\n\nThe enactment, change, ruling or announcement of a policy on a date is an Event; the rule\nitself is the Policy.";
 const EVENT: &str = "A dated or datable occurrence: an acquisition or other deal, earnings release, guidance\nchange, product launch, lawsuit or ruling, accident or outage, rating action, executive\nchange, or policy announcement.\n\nName it with the actor, the action and the date or period the source gives. Preserve\nwhether it is completed, announced, expected, rumored, alleged or denied. Not an Event: a\nreported number (Metric).";
 const METRIC: &str = "A source-reported quantitative observation about one subject: a financial result,\noperating figure, market share, price, forecast, estimate, guidance or target.\n\nA reported amount is a Metric even when it describes only one organization. Name it with\nthe subject, the metric, the value with its unit or currency, the period and the reporting\nbasis the source gives, such as \"Aster Harbor Systems Q2 2026 operating profit GBP 12.4m\n(corrected)\". Preserve forecast, correction, hypothetical or disputed status. Do not\ncalculate missing values.";
@@ -51,7 +54,11 @@ const METRIC: &str = "A source-reported quantitative observation about one subje
 /// Field description for an extension type's `original_name`.
 pub(crate) const ORIGINAL_NAME: &str = "The name exactly as written in a non-English source. Null when the source writes the name in English.";
 
-fn core_entity_types() -> Vec<EntityType> {
+pub(crate) fn core_entity_types() -> Vec<EntityType> {
+    let asset_class_field = format!(
+        "One of {}, when the source makes the class clear. Otherwise null.",
+        AssetClass::ALL.map(AssetClass::as_str).join(", ")
+    );
     let entity = |name: &str, doc: &str, fields: &[(&str, &str)]| EntityType {
         name: name.into(),
         doc: doc.into(),
@@ -82,7 +89,8 @@ fn core_entity_types() -> Vec<EntityType> {
             &[
                 ("symbol", "Trading symbol or code exactly as the source writes it, such as SPY or USD/KRW. Null unless the source states it."),
                 ("identifier", "ISIN, CUSIP or another code the source states. Null unless the source states it."),
-                ("asset_class", "One of index, fund, bond, commodity, currency, crypto, rate or other, when the source makes the class clear. Otherwise null."),
+                ("asset_class", &asset_class_field),
+                ("instrument", "One of index, bond, etf, token, pair, property, deal or other, when the source makes the form clear. Otherwise null."),
                 ("original_name", "The instrument's name exactly as written in a non-English source, such as 코스피. Null when the source writes the name in English."),
             ],
         ),
@@ -103,10 +111,20 @@ fn core_entity_types() -> Vec<EntityType> {
         ),
         entity("Event", EVENT, &[]),
         entity("Metric", METRIC, &[]),
+        entity(
+            "Technology",
+            TECHNOLOGY,
+            &[("original_name", "The technology's name exactly as written in a non-English source, such as 극자외선 노광. Null when the source writes the name in English.")],
+        ),
+        entity(
+            "Segment",
+            SEGMENT,
+            &[("original_name", "The segment's name exactly as written in a non-English source, such as 첨단 패키징. Null when the source writes the name in English.")],
+        ),
     ]
 }
 
-fn core_edge_types() -> Vec<EdgeType> {
+pub(crate) fn core_edge_types() -> Vec<EdgeType> {
     [
         ("SUPPLIES", "The source organization supplies goods, components, materials or services to the target organization. State a customer relationship in this direction: the supplier SUPPLIES the customer."),
         ("COMPETES_WITH", "The two entities compete for the same customers or market."),
@@ -119,6 +137,11 @@ fn core_edge_types() -> Vec<EdgeType> {
         ("USES", "The source relies on the target product, technology, material or process as an input."),
         ("REPORTS", "The source entity is the subject of the target measurement: it reported, guided or was estimated at that value. Keep who stated the value in the fact."),
         ("LOCATED_IN", "The source is headquartered in, operates in or takes place in the target place. State which in the fact."),
+        ("PART_OF", "The source is a component, stage or member of the target: a part of a product, a step of a process, a technology inside a larger one, a segment inside an industry."),
+        ("REQUIRES", "The source product, technology or segment needs the target as an input or prerequisite. State what kind of dependency in the fact."),
+        ("OPERATES_IN", "The source organization does business in the target segment."),
+        ("ISSUES", "The source organization issues the target asset: a share class, token, bond or fund unit."),
+        ("OWNS", "The source organization or person owns the target asset or real asset. Keep the stated size and date in the fact."),
         ("AFFECTS", "The source policy or event changes conditions for the target: it restricts, subsidizes, taxes, delays or otherwise affects it. State how in the fact."),
     ]
     .iter()
@@ -149,16 +172,50 @@ fn core_edge_map() -> Vec<((String, String), Vec<String>)> {
                 "INVESTED_IN",
             ],
         ),
-        pair("Product", "Product", &["COMPETES_WITH", "USES"]),
+        pair(
+            "Product",
+            "Product",
+            &["COMPETES_WITH", "USES", "PART_OF", "REQUIRES"],
+        ),
         pair("Organization", "Product", &["ACQUIRED", "OFFERS", "USES"]),
+        pair("Organization", "Technology", &["OFFERS", "USES"]),
+        pair("Product", "Technology", &["USES", "REQUIRES"]),
+        pair("Technology", "Technology", &["PART_OF", "REQUIRES"]),
+        pair("Technology", "Segment", &["PART_OF"]),
+        pair("Product", "Segment", &["PART_OF"]),
+        pair("Segment", "Segment", &["PART_OF", "REQUIRES"]),
+        pair("Segment", "Technology", &["REQUIRES"]),
+        pair("Organization", "Segment", &["OPERATES_IN"]),
         pair("Person", "Organization", &["INVESTED_IN", "LEADS"]),
-        pair("Organization", "Asset", &["INVESTED_IN"]),
-        pair("Person", "Asset", &["INVESTED_IN"]),
+        pair("Organization", "Asset", &["INVESTED_IN", "ISSUES", "OWNS"]),
+        pair("Person", "Asset", &["INVESTED_IN", "OWNS"]),
         pair("Entity", "Metric", &["REPORTS"]),
         pair("Entity", "Place", &["LOCATED_IN"]),
         pair("Policy", "Entity", &["AFFECTS"]),
         pair("Event", "Entity", &["AFFECTS"]),
     ]
+}
+
+static CORE_NAMES: std::sync::LazyLock<(Vec<String>, Vec<String>)> =
+    std::sync::LazyLock::new(|| {
+        (
+            core_entity_types()
+                .into_iter()
+                .map(|item| item.name)
+                .collect(),
+            core_edge_types()
+                .into_iter()
+                .map(|item| item.name)
+                .collect(),
+        )
+    });
+
+pub(crate) fn is_core_type(name: &str) -> bool {
+    CORE_NAMES.0.iter().any(|item| item == name)
+}
+
+pub(crate) fn is_core_relation(name: &str) -> bool {
+    CORE_NAMES.1.iter().any(|item| item == name)
 }
 
 /// The core schema plus the Loupist's extension (ontology.merged_schema).

@@ -1149,6 +1149,10 @@
       "running": "Saving your principle",
       "done": "Saved your principle"
     },
+    "world_schema_update": {
+      "running": "Updating what the map tracks",
+      "done": "Updated what the map tracks"
+    },
     "lens_update": {
       "running": "Updating Lens",
       "done": "Updated Lens"
@@ -1532,6 +1536,12 @@
     "change": "Change",
     "removed": "{{model}} is no longer offered. Chat uses Auto now.",
     "dismiss": "Dismiss"
+  },
+  "vocabulary": {
+    "message": "Your map now also tracks {{list}}.",
+    "undo": "Undo",
+    "undone": "Undone. The map tracks the basics again for these.",
+    "error": "Couldn't undo this. Try again."
   },
   "redLine": {
     "message": "{{name}} crossed the line you set on {{date}}: {{claim}} — {{value}} ({{factDate}}). Thesis marked Broken.",

@@ -341,6 +341,9 @@ pub struct ChatMessage {
     /// A results snapshot (or a failed capture) the host posted in the home Thread.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub earnings: Option<HomeEarnings>,
+    /// New kinds of things the Loupist's map now tracks, posted by the host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vocabulary: Option<HomeVocabulary>,
     /// The as-of date the user set for this request (`YYYY-MM-DD`), kept on
     /// the request and on its answer (finance-point-in-time.md).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -389,6 +392,19 @@ pub struct HomeWatch {
     pub event_ids: Vec<String>,
     pub events: Vec<serde_json::Value>,
     pub more: usize,
+}
+
+/// "Your map now also tracks ..." after a preset or a background review changed
+/// the World's vocabulary. Labels are display words, never type names.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HomeVocabulary {
+    pub change_id: String,
+    pub producer: String,
+    pub labels: Vec<String>,
+    /// The same kinds in Korean, in the same order, when every label has one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels_ko: Vec<String>,
 }
 
 /// A results message: "{name} reported {period} results." with the two most

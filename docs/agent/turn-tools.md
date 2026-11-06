@@ -48,6 +48,13 @@ away, each staged as its own saved-context result (`earnings_snapshot`) with a
 revisions. An answer paragraph that is only a link to that URL renders the compact
 results card.
 
+`world_schema_update` (Memory save in `memory-save`, interactive turns only, one call
+per reply, not on the scheduled-run allowlist) takes up to two `types` and three
+`relations` for a kind of thing or link the user asked the map to track. Rust checks
+names against the live vocabulary and its limits when the call arrives, stages the
+change, and applies it with the reply together with the asking message; a stopped
+reply applies nothing. [Worlds](../knowledge/worlds.md#presets-changes-and-undo) owns the rules.
+
 `thesis_update` (Memory save, staged until the reply commits) takes `assetId`, 1–3
 `evidence` citation URLs from the turn and either `to` with a `reason` (≤ 280
 characters, optional `reasonId`) or `lineReading {journalId, observed}`; its result

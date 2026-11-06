@@ -146,8 +146,9 @@ pub struct GraphProcessingSettings {
     /// Optional cheaper model for Graphiti's small calls. Empty uses the main model.
     #[serde(default)]
     pub fast_model: Option<String>,
-    /// Extra entity and relation kinds for this Loupist. Empty at version 0.
-    #[serde(default)]
+    /// Extra entity and relation kinds for this Loupist, read from the latest
+    /// `knowledge_schema_changes` row on load and never stored with the settings.
+    #[serde(skip)]
     pub extension: super::world_schema::WorldExtension,
     /// Item delivery and removal controls share the existing per-Loupist JSON row.
     #[serde(default)]
@@ -225,10 +226,11 @@ pub fn load_settings(
             |row| row.get(0),
         )
         .optional()?;
-    let settings: GraphProcessingSettings = data
+    let mut settings: GraphProcessingSettings = data
         .map(|value| serde_json::from_str(&value))
         .transpose()?
         .unwrap_or_default();
+    settings.extension = super::world_schema::live_extension(connection, loupist_id)?;
     settings.validate()?;
     Ok(settings)
 }
@@ -2060,7 +2062,6 @@ pub fn publish_and_complete(
         ));
     }
     super::learning::enqueue(write.tx, &job.loupist_id, job_id, at_ms)?;
-    super::schema_writer::enqueue_review(write.tx, &job, at_ms)?;
     load_job(write.tx, job_id)
 }
 
@@ -2155,7 +2156,6 @@ pub(super) fn complete_reindex(
     // Recovery can backfill more work after completing its own job. Recheck
     // learning admission against that final transaction state.
     super::learning::enqueue(write.tx, &job.loupist_id, &job.job_id, at_ms)?;
-    super::schema_writer::enqueue_review(write.tx, &job, at_ms)?;
     Ok(completed)
 }
 
@@ -2176,7 +2176,6 @@ fn finish_indexed_head(
         ));
     }
     super::learning::enqueue(write.tx, &job.loupist_id, &job.job_id, at_ms)?;
-    super::schema_writer::enqueue_review(write.tx, job, at_ms)?;
     load_job(write.tx, &job.job_id)
 }
 

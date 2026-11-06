@@ -49,6 +49,8 @@
   --gg-color-map-bg: #f4f2ec;
   --gg-color-map-company: #2f6fb3;
   --gg-color-map-product: #7550bd;
+  --gg-color-map-technology: #b8641f;
+  --gg-color-map-industry: #0f7d9c;
   --gg-color-map-person: #b2477a;
   --gg-color-map-event: #23806f;
   --gg-color-map-metric: rgb(35 128 111 / 55%);
@@ -199,6 +201,8 @@
   --gg-color-map-bg: #131312;
   --gg-color-map-company: #6ea6ea;
   --gg-color-map-product: #a98ae8;
+  --gg-color-map-technology: #e8a35f;
+  --gg-color-map-industry: #5cc0dc;
   --gg-color-map-person: #e889b4;
   --gg-color-map-event: #5cc5b0;
   --gg-color-map-metric: rgb(92 197 176 / 55%);

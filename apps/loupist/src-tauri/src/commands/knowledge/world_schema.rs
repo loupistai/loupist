@@ -2,10 +2,7 @@ use serde::Deserialize;
 use tauri::{Emitter, State};
 
 use crate::app::{AppState, CommandError};
-use crate::knowledge::{
-    apply_proposal, dismiss_proposal, load_settings, remove_schema_item, schema_view,
-    store_settings, WorldSchemaView,
-};
+use crate::knowledge::{remove_schema_item, schema_view, undo_change, WorldSchemaView};
 
 use super::{admit, admit_mutation, with_loupist_knowledge};
 
@@ -17,9 +14,9 @@ pub struct LoupistRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ProposalRequest {
+pub struct UndoRequest {
     loupist_id: String,
-    proposal_id: String,
+    change_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -44,50 +41,25 @@ pub fn world_schema_get(
 ) -> Result<WorldSchemaView, CommandError> {
     admit(state.inner(), &request.loupist_id)?;
     with_loupist_knowledge(state.inner(), &request.loupist_id, |tx, _| {
-        let settings = load_settings(tx, &request.loupist_id)?;
-        schema_view(tx, &request.loupist_id, &settings.extension)
+        schema_view(tx, &request.loupist_id)
     })
 }
 
 #[tauri::command(async)]
-pub fn world_schema_apply(
+pub fn world_schema_undo(
     app: tauri::AppHandle,
-    request: ProposalRequest,
+    request: UndoRequest,
     state: State<'_, AppState>,
 ) -> Result<WorldSchemaView, CommandError> {
     let _activity = admit_mutation(state.inner(), &request.loupist_id)?;
     let view = with_loupist_knowledge(state.inner(), &request.loupist_id, |tx, _| {
-        let mut settings = load_settings(tx, &request.loupist_id)?;
-        apply_proposal(
+        undo_change(
             tx,
             &request.loupist_id,
-            &mut settings.extension,
-            &request.proposal_id,
+            &request.change_id,
             crate::commands::now_ms(),
         )?;
-        store_settings(tx, &request.loupist_id, &settings)?;
-        schema_view(tx, &request.loupist_id, &settings.extension)
-    })?;
-    changed(&app, &request.loupist_id);
-    Ok(view)
-}
-
-#[tauri::command(async)]
-pub fn world_schema_dismiss(
-    app: tauri::AppHandle,
-    request: ProposalRequest,
-    state: State<'_, AppState>,
-) -> Result<WorldSchemaView, CommandError> {
-    let _activity = admit_mutation(state.inner(), &request.loupist_id)?;
-    let view = with_loupist_knowledge(state.inner(), &request.loupist_id, |tx, _| {
-        dismiss_proposal(
-            tx,
-            &request.loupist_id,
-            &request.proposal_id,
-            crate::commands::now_ms(),
-        )?;
-        let settings = load_settings(tx, &request.loupist_id)?;
-        schema_view(tx, &request.loupist_id, &settings.extension)
+        schema_view(tx, &request.loupist_id)
     })?;
     changed(&app, &request.loupist_id);
     Ok(view)
@@ -101,17 +73,14 @@ pub fn world_schema_remove(
 ) -> Result<WorldSchemaView, CommandError> {
     let _activity = admit_mutation(state.inner(), &request.loupist_id)?;
     let view = with_loupist_knowledge(state.inner(), &request.loupist_id, |tx, _| {
-        let mut settings = load_settings(tx, &request.loupist_id)?;
         remove_schema_item(
             tx,
             &request.loupist_id,
-            &mut settings.extension,
             &request.kind,
             &request.name,
             crate::commands::now_ms(),
         )?;
-        store_settings(tx, &request.loupist_id, &settings)?;
-        schema_view(tx, &request.loupist_id, &settings.extension)
+        schema_view(tx, &request.loupist_id)
     })?;
     changed(&app, &request.loupist_id);
     Ok(view)

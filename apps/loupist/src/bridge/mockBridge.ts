@@ -101,11 +101,6 @@ const MOCK_PERFORMANCE_CONTROL: Contract.ModelRunControl = {
   ],
 };
 
-function visibleSchema(view: Contract.WorldSchemaView): Contract.WorldSchemaView {
-  const status = view.proposal?.status;
-  return status === "pending" || status === "preparing" ? view : { ...view, proposal: null };
-}
-
 export class MockLoupistBridge implements Contract.LoupistBridge {
   private noticeVersion = CURRENT_NOTICE_VERSION;
   async noticeSettingsGet() { return { notice_acknowledged_version: this.noticeVersion }; }
@@ -1123,7 +1118,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     const loupist = await loupistChat.loupistCreate(this.state, request);
     const settings = await knowledge.knowledgeGraphSettingsGet(this.state, { loupistId: loupist.id });
     await knowledge.knowledgeGraphSettingsSet(this.state, { loupistId: loupist.id, settings: { ...settings, enrichmentEnabled: true, helperModelProfileId: selection?.model_profile_id ?? null, thinkingLevel: selection?.thinking_level ?? "off", runOptions: selection?.run_options ?? {}, researchFocus: request.focus ?? "" } });
-    const seeded = curatedSeedView(request.template, request.focus ?? "");
+    const seeded = curatedSeedView(request.template);
     if (seeded) this.loupistWorldSchema.install(loupist.id, seeded);
     loupist.enabled_skill_ids = (await this.agentSkillCatalog(loupist.id)).filter((skill) => !skill.fixed && skill.enabled).map((skill) => skill.id);
     this.state.loupists.find((item) => item.id === loupist.id)!.enabled_skill_ids = [...loupist.enabled_skill_ids];
@@ -1358,10 +1353,9 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   memoryLearningSettingsGet(request: { loupistId: string }) { return knowledge.memoryLearningSettingsGet(this.state, request); }
   memoryLearningSettingsSet(request: { loupistId: string; learnMethods: boolean }) { return knowledge.memoryLearningSettingsSet(this.state, request); }
   onLearningReviewFinished(_handler: (event: import("../contracts/knowledge").LearningReviewFinishedEvent) => void): () => void { return () => {}; }
-  async worldSchemaGet(request: { loupistId: string }) { return visibleSchema(this.loupistWorldSchema.get(request.loupistId)); }
-  async worldSchemaApply(request: { loupistId: string; proposalId: string }) { return visibleSchema(this.loupistWorldSchema.apply(request.loupistId, request.proposalId)); }
-  async worldSchemaDismiss(request: { loupistId: string; proposalId: string }) { return visibleSchema(this.loupistWorldSchema.dismiss(request.loupistId, request.proposalId)); }
-  async worldSchemaRemove(request: { loupistId: string; kind: "type" | "relation"; name: string }) { return visibleSchema(this.loupistWorldSchema.remove(request.loupistId, request.kind, request.name)); }
+  async worldSchemaGet(request: { loupistId: string }) { return this.loupistWorldSchema.get(request.loupistId); }
+  async worldSchemaUndo(request: { loupistId: string; changeId: string }) { return this.loupistWorldSchema.undo(request.loupistId, request.changeId); }
+  async worldSchemaRemove(request: { loupistId: string; kind: "type" | "relation"; name: string }) { return this.loupistWorldSchema.remove(request.loupistId, request.kind, request.name); }
   onWorldSchemaChanged(handler: (event: { loupistId: string }) => void) { return this.loupistWorldSchema.subscribe(handler); }
   principleList(request: PrincipleListRequest) {
     return knowledge.principleList(this.state, request);

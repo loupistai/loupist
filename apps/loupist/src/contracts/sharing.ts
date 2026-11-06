@@ -203,7 +203,7 @@ export interface PackPreview {
     /** Entity kinds and relation names the map tracks, most used first. */
     kinds: string[];
     relations: string[];
-    /** World extension types/relations the pack adds; a merge turns them into a schema proposal. */
+    /** World extension types/relations the pack adds; the preview counts them; a merge does not change what the map tracks. */
     extension: { types: number; relations: number };
     /** Flagged map records, at most 50 listed. */
     findings: PackMapFinding[];

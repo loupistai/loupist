@@ -555,6 +555,28 @@ async fn build_turn_envelope(
             .map(|memory| memory.relevant.as_slice())
             .unwrap_or_default(),
     );
+    let turn_envelope = if use_memory {
+        let cutoff = capture.cutoff();
+        let extension = state
+            .store
+            .lock_loupist(&profile.id)
+            .ok()
+            .and_then(|connection| {
+                crate::knowledge::visible_extension(&connection, &profile.id, &|at| {
+                    cutoff.is_none_or(|cutoff| cutoff.recorded(at))
+                })
+                .ok()
+            });
+        match extension {
+            Some(extension) => agent_harness::attach_world_kinds(
+                &turn_envelope,
+                &crate::knowledge::world_kinds_block(&extension),
+            ),
+            None => turn_envelope,
+        }
+    } else {
+        turn_envelope
+    };
     let turn_envelope = crate::commands::knowledge::attach_selected_references(
         &turn_envelope,
         selected_references.as_ref(),

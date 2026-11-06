@@ -200,6 +200,11 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
         } else {
             Vec::new()
         };
+        let saved_vocabulary = if task_update_memory {
+            capture.staged_vocabulary.lock().await.clone()
+        } else {
+            Vec::new()
+        };
         let unattended = capture.unattended_run_id.is_some();
         let turn_observations = match asset_work
             .then(|| crate::commands::assets::view_context(app_state).ok())
@@ -246,6 +251,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                     alert: None,
                     watch: None,
                     earnings: None,
+                    vocabulary: None,
                     id: message_id.clone(),
                     role: ChatRole::Assistant,
                     status: ChatMessageStatus::Complete,
@@ -359,6 +365,14 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         created_at_ms,
                         &saved_earnings,
                         unattended,
+                    )
+                    .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
+                    crate::commands::tool_executor::commit_vocabulary(
+                        transaction,
+                        task_loupist_id,
+                        thread_id,
+                        created_at_ms,
+                        &saved_vocabulary,
                     )
                     .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
                     if host_composed && changes.is_empty() {

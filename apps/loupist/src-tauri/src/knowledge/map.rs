@@ -4,9 +4,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use rusqlite::{OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 
+use super::identity::match_items;
 use super::{
-    model::validate_loupist_id, ClaimStatus, GraphNode, KnowledgeError, KnowledgeResult,
-    WorldSnapshotBody,
+    model::validate_loupist_id, ClaimStatus, KnowledgeError, KnowledgeResult, WorldSnapshotBody,
 };
 use crate::store::user_context::{MapContext, MapContextItem};
 
@@ -119,89 +119,6 @@ fn local_names(aliases: &[String]) -> Vec<String> {
         })
         .take(4)
         .collect()
-}
-
-fn normalized(value: &str) -> String {
-    value
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase()
-}
-
-fn identifier_values(value: &serde_json::Value, output: &mut BTreeSet<String>) {
-    match value {
-        serde_json::Value::String(value) => {
-            output.insert(normalized(value));
-        }
-        serde_json::Value::Array(values) => {
-            for value in values {
-                identifier_values(value, output);
-            }
-        }
-        serde_json::Value::Object(values) => {
-            for value in values.values() {
-                identifier_values(value, output);
-            }
-        }
-        _ => {}
-    }
-}
-
-pub(crate) fn match_items(
-    items: &[MapContextItem],
-    nodes: &[GraphNode],
-) -> (BTreeSet<String>, Vec<MapContextItem>) {
-    let mut symbols: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    let mut names: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for node in nodes {
-        names
-            .entry(normalized(&node.name))
-            .or_default()
-            .insert(node.id.clone());
-        let mut ids = node
-            .aliases
-            .iter()
-            .map(|value| normalized(value))
-            .collect::<BTreeSet<_>>();
-        for (key, value) in &node.properties {
-            if matches!(
-                key.to_lowercase().as_str(),
-                "ticker"
-                    | "tickers"
-                    | "symbol"
-                    | "symbols"
-                    | "identifier"
-                    | "identifiers"
-                    | "aliases"
-                    | "ticker_symbol"
-                    | "tickersymbol"
-            ) {
-                identifier_values(value, &mut ids);
-            }
-        }
-        for id in ids {
-            symbols.entry(id).or_default().insert(node.id.clone());
-        }
-    }
-    let mut matched = BTreeSet::new();
-    let mut unmatched = Vec::new();
-    for item in items {
-        let hits = symbols.get(&normalized(&item.symbol)).or_else(|| {
-            item.display_name
-                .as_ref()
-                .and_then(|name| names.get(&normalized(name)))
-        });
-        if let Some(hits) = hits {
-            matched.extend(hits.iter().cloned());
-        } else {
-            unmatched.push(item.clone());
-        }
-    }
-    unmatched.sort_by(|a, b| {
-        (&a.symbol, &a.market, &a.display_name).cmp(&(&b.symbol, &b.market, &b.display_name))
-    });
-    (matched, unmatched)
 }
 
 fn extension_marks(

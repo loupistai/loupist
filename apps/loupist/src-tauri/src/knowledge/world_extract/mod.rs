@@ -9,7 +9,7 @@ mod bridge;
 pub(crate) mod hints;
 mod index;
 mod job;
-mod ontology;
+pub(super) mod ontology;
 mod pipeline;
 mod projection;
 mod prompts;

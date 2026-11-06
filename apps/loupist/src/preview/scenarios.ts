@@ -1977,7 +1977,7 @@ export const scenarios: readonly PreviewScenario[] = [
   }) },
   base("loupists", "Loupists in Settings", () => select(".settings-loupists"), (root) => settings(root, "loupists")),
   base("loupist-settings", "Editable Loupist profile", () => select(".loupist-settings-page #loupist-profile-focus"), async () => { await openLoupistSettings(); await until(() => select("#loupist-profile-name"), "Profile editor did not open"); }),
-  { ...base("loupist-settings-tracking", "What this Loupist tracks", () => select(".loupist-tracking-suggestion"), async () => {
+  { ...base("loupist-settings-tracking", "What the map tracks", () => select(".loupist-tracking-changes"), async () => {
     await openLoupistSettings();
     await click('[data-loupist-section="learning"] > summary');
     await until(() => select(".loupist-tracking-list"), "Tracking list did not load");

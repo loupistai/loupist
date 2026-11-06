@@ -1,12 +1,14 @@
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
 
-export const entityCategories = ["company", "person", "product", "market", "event", "other"] as const;
+export const entityCategories = ["company", "person", "product", "technology", "industry", "market", "event", "other"] as const;
 export type EntityCategory = typeof entityCategories[number];
 /** Core World kinds. Anything else, including place, policy and entity, stays visible as other. */
 const categories: Record<string, EntityCategory> = {
   organization: "company",
   person: "person",
   product: "product",
+  technology: "technology",
+  segment: "industry",
   asset: "market",
   event: "event",
   metric: "event",

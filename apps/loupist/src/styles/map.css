@@ -45,7 +45,7 @@
 .map-legend .map-swatch { justify-self:center; }
 .map-swatch { display:inline-block; flex:none; width:16px; height:16px; border-radius:50%; background:var(--gg-color-map-other); }
 .map-swatch.is-conflict-line { height:0; border-radius:0; background:transparent; border-top:1.5px dashed var(--gg-color-map-edge-disputed); }
-.map-swatch.is-company { background:var(--gg-color-map-company); }.map-swatch.is-product { background:var(--gg-color-map-product); }.map-swatch.is-person { background:var(--gg-color-map-person); }.map-swatch.is-event { background:var(--gg-color-map-event); }.map-swatch.is-market { background:var(--gg-color-map-market); }
+.map-swatch.is-company { background:var(--gg-color-map-company); }.map-swatch.is-product { background:var(--gg-color-map-product); }.map-swatch.is-technology { background:var(--gg-color-map-technology); }.map-swatch.is-industry { background:var(--gg-color-map-industry); }.map-swatch.is-person { background:var(--gg-color-map-person); }.map-swatch.is-event { background:var(--gg-color-map-event); }.map-swatch.is-market { background:var(--gg-color-map-market); }
 /* A metric recedes on the canvas; a chip or row naming one keeps the same mark. */
 .map-swatch.is-metric { background:var(--gg-color-map-metric); }
 .map-swatch.is-method { background:transparent; border:2px solid var(--gg-color-map-method); border-radius:3px; }

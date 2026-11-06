@@ -1132,6 +1132,22 @@ pub fn attach_relevant_memory(envelope: &str, relevant: &[RelevantMemoryPointer]
     value.to_string()
 }
 
+/// Adds the `worldKinds` block to an active Memory protocol.
+pub fn attach_world_kinds(envelope: &str, kinds: &Value) -> String {
+    let Ok(mut value) = serde_json::from_str::<Value>(envelope) else {
+        return envelope.to_owned();
+    };
+    if let Some(protocol) = value
+        .get_mut("memory_protocol")
+        .and_then(Value::as_object_mut)
+    {
+        if protocol.get("active").and_then(Value::as_bool) == Some(true) {
+            protocol.insert("worldKinds".into(), kinds.clone());
+        }
+    }
+    value.to_string()
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn turn_envelope_block(
     current_utc: DateTime<Utc>,
@@ -1627,6 +1643,20 @@ mod tests {
     }
 
     #[test]
+    fn the_memory_envelope_carries_world_kinds_only_while_memory_is_active() {
+        let kinds = json!({"core": {"types": {"Technology": "a science"}}, "version": 0});
+        for memory in [false, true] {
+            let base =
+                turn_envelope_block(Utc::now(), memory, &[], None, None, None, None, &[]).unwrap();
+            let value: Value = serde_json::from_str(&attach_world_kinds(&base, &kinds)).unwrap();
+            assert_eq!(value.get("memory_protocol").is_some(), memory);
+            if memory {
+                assert_eq!(value["memory_protocol"]["worldKinds"], kinds);
+            }
+        }
+    }
+
+    #[test]
     fn turn_envelope_gates_memory_and_bounds_loupist_context() {
         let now = Utc.with_ymd_and_hms(2026, 8, 10, 1, 2, 3).unwrap();
         let followed = followed_companies(Default::default());
@@ -1957,13 +1987,14 @@ mod tests {
 
     #[test]
     fn memory_write_tools_exist_only_when_learning_is_enabled() {
-        const MEMORY_WRITES: [&str; 6] = [
+        const MEMORY_WRITES: [&str; 7] = [
             "source_save",
             "note_save",
             "journal_save",
             "journal_review",
             "lens_update",
             "principle_save",
+            "world_schema_update",
         ];
         let tools = |profile: &AgentRuntimeProfile| {
             profile

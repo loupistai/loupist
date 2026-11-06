@@ -9,7 +9,7 @@ const times = (count: number, make: () => KnowledgeMapNode) => Array.from({ leng
 it("lists only the marks in the drawn view, most drawn colour first, then Lens, watchlist, holdings and disagreeing sources", () => {
   const view = render(<MapLegend open nodes={[node("entity", "Product"), node("entity", "Product"), node("entity", "Organization"), node("lens_method")]} onOpenChange={() => {}} />);
   const items = within(screen.getByRole("group")).getAllByRole("listitem").map((item) => item.textContent);
-  expect(items).toEqual(["Product & technology", "Company"]);
+  expect(items).toEqual(["Product", "Company"]);
   // The legend names only the rings that are drawn: the dashed watchlist ring, the solid holdings ring, or both.
   view.rerender(<MapLegend open nodes={[node("entity", "Organization", { watched: true })]} onOpenChange={() => {}} />);
   expect(screen.getByText("On your watchlist")).toBeVisible();

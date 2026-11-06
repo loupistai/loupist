@@ -16,7 +16,7 @@ const endpoint = (value: Link["source"]) => typeof value === "string" ? value : 
 function readColors() {
   const style = getComputedStyle(document.documentElement);
   const colors: Record<string, string> = {};
-  for (const name of ["bg", "company", "product", "person", "market", "event", "metric", "other", "method", "perspective", "principle", "holding-ring", "edge", "edge-active", "edge-disputed", "label", "label-halo", "new-glow"]) colors[name] = style.getPropertyValue(`--gg-color-map-${name}`).trim() || "transparent";
+  for (const name of ["bg", "company", "product", "technology", "industry", "person", "market", "event", "metric", "other", "method", "perspective", "principle", "holding-ring", "edge", "edge-active", "edge-disputed", "label", "label-halo", "new-glow"]) colors[name] = style.getPropertyValue(`--gg-color-map-${name}`).trim() || "transparent";
   for (const [key, token] of [["focus", "focus"], ["principle-mark", "bg-raised"], ["dim-label", "text-tertiary"]]) colors[key] = style.getPropertyValue(`--gg-color-${token}`).trim() || "transparent";
   colors.journal = style.getPropertyValue("--gg-color-text-primary").trim() || "transparent";
   colors.warning = style.getPropertyValue("--gg-color-warning").trim() || "transparent";
