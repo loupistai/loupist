@@ -84,6 +84,7 @@ import type { ConnectSheetTarget } from "./components/settings/ConnectSheet";
 import type { AssetPageTarget } from "./contracts/assets";
 import { AssetPageOpenerProvider } from "./components/assets/assetOpener";
 import { LookBackProvider, lookBackDraft, type LookBackEntry } from "./components/knowledge/lookBack";
+import { FixMemoryProvider } from "./components/memory/fixMemory";
 import { SHARED_SECTION_ITEM } from "./components/sharing/SharedPacks";
 import { PackLinkDialog } from "./components/sharing/PackLinkDialog";
 import { DeepLinkConfirm, useDeepLinks } from "./components/sharing/DeepLinkConfirm";
@@ -549,7 +550,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     memory.back();
     setTab("map");
   }, [memory.back, memory.navigation, noteTrail]);
-  const useKnowledgeInChat = useCallback((pin: KnowledgePin, threadId?: string) => {
+  const useKnowledgeInChat = useCallback((pin: KnowledgePin, threadId?: string, options?: { correct?: boolean }) => {
     if (!selectedLoupistId) return;
     setNoteTrail([]);
     setNoteReaderOpen(false);
@@ -561,7 +562,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     const draft = drafts.get(chatSessionKey(selectedLoupistId, targetThreadId));
     drafts.addPin(draft, pin);
     if (pin.kind === "lens") {
-      const question = i18n.t("app:app.discussThisLensWhatShouldWeRevise", { label: pin.label });
+      const question = options?.correct ? i18n.t("app:app.correctThis") : i18n.t("app:app.discussThisLensWhatShouldWeRevise", { label: pin.label });
       if (!draft.prompt.includes(question)) draft.prompt = [draft.prompt.trimEnd(), question].filter(Boolean).join("\n\n");
     }
     if (isEmptyChatThreadId(targetThreadId)) void threadActions.openDraftChatForLoupist(selectedLoupistId);
@@ -572,6 +573,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
    * Look back (finance-point-in-time.md §2.5): a new topic Chat whose composer
    * holds the entry's as-of date, its journal pin and the question. Never sends.
    */
+  const fixMemory = useCallback((pin: KnowledgePin) => useKnowledgeInChat(pin, undefined, { correct: true }), [useKnowledgeInChat]);
   const lookBack = useCallback((entry: LookBackEntry) => {
     const loupistId = entry.loupistId;
     const draft = lookBackDraft(entry);
@@ -865,7 +867,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
 
   return (
     <TooltipProvider>
-      <AssetPageOpenerProvider value={openAssetPage}><LookBackProvider value={lookBack}>
+      <AssetPageOpenerProvider value={openAssetPage}><LookBackProvider value={lookBack}><FixMemoryProvider value={fixMemory}>
       <SourceFaviconProvider bridge={bridge}>
       <SidebarProvider
         className="app-shell"
@@ -1340,7 +1342,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
         />
       </SidebarProvider>
       </SourceFaviconProvider>
-      </LookBackProvider></AssetPageOpenerProvider>
+      </FixMemoryProvider></LookBackProvider></AssetPageOpenerProvider>
     </TooltipProvider>
   );
 }

@@ -4,6 +4,7 @@ import type { MemoryRef, MemoryUpdateResult } from "./memory";
 import type { AgentHarnessSnapshot, ExecutionModelLock } from "./model";
 import type { EarningsMeasure } from "./earnings";
 import type { WatchEvent } from "./watch";
+import type { LearnedDigest } from "./lens";
 
 export type ChatProgressStatus =
   | "running"
@@ -437,15 +438,6 @@ export type ChatFeedbackRequest = { loupist_id: string; thread_id: string; messa
 export type ChatFailureKind = "empty_reply" | "provider_error" | "rate_limited" | "needs_reconnect" | "plan_limit" | "plan_not_eligible" | "extra_usage_off" | "out_of_credit" | "model_gone" | "offline" | "provider_unavailable" | "context_too_long" | "provider_timeout" | "pi_exited" | "protocol_error" | "output_limit" | "memory_commit_failed" | "store_failed" | "cancelled_by_conflict" | "other";
 
 export type ChatToolRefusal = { connection_id: string; connection_name: string; tool_name: string; reason: "needs_approval" | "blocked_unattended" | "taint" | "sensitive_memory" | "declined" };
-
-/**
- * What a reply filed into Memory. The Lens unit's `contracts/lens.ts` owns this
- * shape; it moves there when that file lands.
- */
-export type LearnedDigest = {
-  messageId: string;
-  pages: Array<{ recordId: string; title: string; kind: string; created: boolean; outcomes: Array<{ opId: string; outcome: string; key?: string }> }>;
-};
 
 /** A research session the Bot handed off (Rust `HomeHandoff`): one card per hand-off, its status changing in place. */
 export type HomeHandoff = {

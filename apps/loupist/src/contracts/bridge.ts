@@ -70,7 +70,6 @@ import type {
   KnowledgeCatalogRequest,
   KnowledgeJournalReadRequest,
   KnowledgeJournalSourceReadRequest,
-  KnowledgeLensChangesRequest,
   KnowledgeLensReadRequest,
   KnowledgeResearchPage,
   KnowledgeResearchSearchRequest,
@@ -78,8 +77,6 @@ import type {
   KnowledgeSourceReadRequest,
   KnowledgeSourceSelectionRequest,
   KnowledgeSourceRetainRequest,
-  LensChangeRecord,
-  LensView,
   RetainedSource,
   SourceDetail,
   WorldGraphQuery,
@@ -317,15 +314,15 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   knowledgeMemoryResetPreview(request: { loupistId: string }): Promise<import("./knowledge").MemoryResetCounts>;
   knowledgeMemoryReset(request: { loupistId: string; confirm: boolean; expected: import("./knowledge").MemoryResetCounts }): Promise<import("./knowledge").MemoryResetCounts>;
   knowledgeMemoryUsage(request: { loupistId: string }): Promise<import("./knowledge").MemoryUsage[]>;
-  knowledgeLensRead(request: KnowledgeLensReadRequest): Promise<LensView>;
+  knowledgeLensRead(request: KnowledgeLensReadRequest): Promise<import("./lens").PageView>;
+  knowledgeLensPagesForNode(request: { loupistId: string; nodeId: string }): Promise<import("./lens").PageSummary[]>;
+  /** Retires one section as the user; the newest history entry of the returned page is the op Undo reverses. */
+  memorySectionForget(request: { loupistId: string; recordId: string; key: string }): Promise<import("./lens").PageView>;
+  memoryOpUndo(request: { loupistId: string; opId: string }): Promise<import("./lens").PageView>;
+  memoryLearned(request: { loupistId: string; messageIds: string[] }): Promise<import("./lens").LearnedDigest[]>;
   knowledgeWorkingNoteRead(request: WorkingNoteReadRequest): Promise<WorkingNote>;
   knowledgeWorkingNotes(request: WorkingNotesRequest): Promise<WorkingNotesPage>;
-  knowledgeLensChanges(
-    request: KnowledgeLensChangesRequest,
-  ): Promise<LensChangeRecord[]>;
-  knowledgeLensSearch(request: { loupistId: string; query: string }): Promise<import("./knowledge").LensSearchHit[]>;
-  knowledgeLensProposals(request: { loupistId: string; recordId?: string }): Promise<import("./knowledge").LensProposal[]>;
-  knowledgeLensProposalDismiss(request: { loupistId: string; draftId: string }): Promise<void>;
+  knowledgeLensSearch(request: { loupistId: string; query: string; kinds?: import("./lens").LensKind[] }): Promise<import("./lens").LensSearchHit[]>;
   knowledgeResearchSearch(
     request: KnowledgeResearchSearchRequest,
   ): Promise<KnowledgeResearchPage>;

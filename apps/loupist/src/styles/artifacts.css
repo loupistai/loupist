@@ -1043,11 +1043,10 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 .workspace-kind-content, .workspace-lens-content, .workspace-world-content, .workspace-materials-content { display:flex; flex:1 1 auto; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }
 .workspace-kind-content[hidden], .workspace-lens-content[hidden], .workspace-world-content[hidden], .workspace-materials-content[hidden] { display:none; }
 .workspace-lens-content { overflow:hidden; container:memory-pane / inline-size; }
-/* The document scrolls in the reader, so Outline and links stays in the panel.
-   Scrolling the whole page carried that toolbar out of the pane. */
+/* The page scrolls in the reader, so the tabs and search stay in the panel. */
 .workspace-lens-content > .memory-page { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; width:100%; max-width:none; overflow:hidden; }
 .workspace-lens-content .memory-page-body { flex:1 1 auto; min-height:0; overflow:auto; scroll-padding-block: var(--gg-space-4); }
-.workspace-lens-content .memory-page-body:is([data-segment="principles"], [data-segment="methods"], [data-segment="history"]) { grid-template-rows:minmax(0, 1fr); align-items:stretch; overflow:hidden; }
+.workspace-lens-content .memory-page-body:is([data-segment="pages"], [data-segment="history"]) { grid-template-rows:minmax(0, 1fr); align-items:stretch; overflow:hidden; }
 .workspace-lens-content .memory-page-list { min-height:0; overflow:auto; scroll-padding-block:var(--gg-space-4); }
 .workspace-lens-content .memory-page-body > .memory-history { min-height:0; overflow:auto; }
 /* Only the compact pane replaces the list with a reader. A wide pane keeps two
@@ -1055,12 +1054,7 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 @container memory-pane (max-width: 971px) {
   .workspace-lens-content .memory-page[data-reader-open] .memory-page-body { overflow:hidden; display:flex; flex-direction:column; align-items:stretch; }
 }
-.workspace-lens-content .memory-reader.is-lens { flex:1 1 auto; align-self:stretch; width:100%; min-height:0; height:auto; overflow:hidden; display:flex; flex-direction:column; padding:0; border:0; border-radius:0; background:transparent; }
+.workspace-lens-content .memory-reader.is-lens { flex:1 1 auto; align-self:stretch; width:100%; min-height:0; height:auto; overflow:auto; scroll-padding-block: var(--gg-space-4); padding:var(--gg-space-2) var(--gg-space-5) var(--gg-space-8); border:0; border-radius:0; background:transparent; container:memory-reader / inline-size; }
 .workspace-lens-content .memory-page[data-reader-open] .memory-reader:not(.is-lens) { flex:1 1 auto; align-self:stretch; width:100%; min-height:0; overflow:auto; scroll-padding-block: var(--gg-space-4); }
-/* The document fills the card. A long method title was taller than the strip left under the back row and the pause row. */
-.workspace-lens-content .memory-reader.is-lens .lens-workspace { flex:1 1 0; min-height:0; height:auto; overflow:hidden; }
-.workspace-lens-content .memory-reader.is-lens .lens-reader { min-height:0; height:100%; }
-.workspace-lens-content .lens-workspace.is-compact .lens-reader-toolbar { margin-bottom: var(--gg-space-3); }
-.workspace-lens-content .lens-workspace.is-compact .lens-read-head h2 { margin-top: 0; }
 .workspace-world-content > .memory-workspace { flex:1; min-height:0; }
 .artifact-panel[data-expanded] > .workspace-kind-heading { display:none; }

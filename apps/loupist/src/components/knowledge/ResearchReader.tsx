@@ -176,7 +176,7 @@ function SavedInputs({ inputs, openReference, markdown, onReadReceipt, openingRe
     <ul>{inputs.lenses.map((lens, index) => <li key={`${lens.recordId}:${lens.revisionId}`}>
       <Button variant="link" onClick={() => openReference({ kind: "lens", recordId: lens.recordId, revisionId: lens.revisionId, objectId: lens.recordId })}>{t("researchReader.openLens", { index: formatNumber(index + 1) })}</Button>
       <p>{approachStatus(lens.status)}</p>
-      <Disclosure className="research-saved-lens" title={<>{t("researchReader.savedLensDocument")}</>}>{markdown(lens.document.markdown)}<dl>{Object.entries(lens.document).filter(([key, text]) => key !== "markdown" && text).map(([key, text]) => <div key={key}><dt>{lensFieldLabel(key)}</dt><dd>{markdown(text)}</dd></div>)}</dl></Disclosure>
+      <Disclosure className="research-saved-lens" title={<>{t("researchReader.savedLensDocument")}</>}>{markdown(lens.markdown)}</Disclosure>
     </li>)}</ul></Disclosure>}
     {Boolean(inputs.earlier?.length) && <section aria-label={t("researchReader.earlierResearchUsed")}><h3>{t("researchReader.earlierResearchUsed")}</h3><ul>{inputs.earlier?.map((earlier, index) => <li key={`${earlier.researchId}:${earlier.journalId ?? ""}`}>
       <Button variant="link" onClick={() => openReference({ kind: earlier.journalId ? "journal" : "research", recordId: "", revisionId: "", objectId: earlier.journalId ?? earlier.researchId })}>{t(earlier.journalId ? "researchReader.openEarlierJournal" : "researchReader.openEarlierNote", { index: formatNumber(index + 1) })}</Button>
@@ -190,4 +190,3 @@ const sourceReference = (source: JournalSourceRead["pinned"]): KnowledgeReferenc
 const coverageLabel = (): Record<string, string> => ({ included_full: i18n.t("knowledge:researchReader.fullDocument"), included_excerpt: i18n.t("knowledge:researchReader.excerpt"), upstream_truncated: i18n.t("knowledge:researchReader.incompleteSourceText"), metadata_only: i18n.t("knowledge:researchReader.sourceDetailsOnly"), omitted: i18n.t("knowledge:researchReader.contentNotSaved") });
 const approachStatus = (status: string) => ({ considered: i18n.t("knowledge:researchReader.considered"), applied: i18n.t("knowledge:researchReader.applied"), adapted: i18n.t("knowledge:researchReader.adapted"), rejected: i18n.t("knowledge:researchReader.setAside") }[status] ?? status.replaceAll("_", " "));
 
-const lensFieldLabel = (key: string) => ({ applicability: i18n.t("knowledge:researchReader.applicability"), assumptions: i18n.t("knowledge:researchReader.assumptions"), procedure: i18n.t("knowledge:researchReader.procedure"), principles: i18n.t("knowledge:researchReader.principles"), limitations: i18n.t("knowledge:researchReader.limitations") }[key] ?? key);

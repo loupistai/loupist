@@ -7,18 +7,33 @@ Memory reads and saves are Rust transactions. Delivery counts are not influence 
 About you is a centered 720px reading column and shares its edges with the header and tabs in the memory pane. Other tabs collapse from a list/reader split based on the pane's width, at 972px. The tabs and search stay whole above an open method, including in the side panel. A narrow tab row scrolls instead of painting past the pane. The page title wraps instead of being cut off. An open method fills the card: its title stays inside the reader, and pause and archive follow the document. Focusing a row or a reader action below the fold scrolls it into the pane. Model-provider cards fill their own 800px settings column.
 
 "What {Loupist} knows" opens from the Loupist's name in the header as a page over the
-current tab: About you (followed assets, each opening its [asset page](asset-pages.md#asset-pages),
-with remove and add, holdings as a count and date per kind (stocks and funds, crypto)
-from `holdings_summary` with Update opening [Your holdings](../runtime/storage-authority.md#where-data-lives)),
-Your principles (edit, pause/resume, archive, origin chat), Pages (topics, ideas,
-methods, principles and the outlook in the Lens reader with pause/resume, archive,
-Forget and Undo per section), and History (from the Lens log: what each chat filed,
-what the user forgot or undid; learning reviews and names added). Each item lists the chats that used it. Rust's
+current tab, with three tabs. **About you**: followed assets, each opening its
+[asset page](asset-pages.md#asset-pages), with remove and add, holdings as a count and
+date per kind (stocks and funds, crypto) from `holdings_summary` with Update opening
+[Your holdings](../runtime/storage-authority.md#where-data-lives), and shared Loupists.
+**Pages**: every active Lens page in one list grouped as Topics (`subject`), Ideas
+(`idea`), Methods (`method`), Your principles (`principle`) and Outlook (`perspective`);
+the groups are 주제, 아이디어, 분석 방법, 내 원칙 and 관점 in Korean. Search runs
+`knowledge_lens_search` for pages and matches a principle on its own words. Opening a
+row reads it in `PageReader`: Markdown sections under their headings, each with its
+basis chip (Claim and Source open the claim on the Map or the retained Source; "You
+said"; "Loupist's view" with its uncertainty line; a page chip opens that page), a
+"Sources disagree" marker on a contested section, and Forget. Forget calls
+`memory_section_forget` and offers Undo through `memory_op_undo`. `world:` links draw as
+Map chips, `lens:` links open the page, and the reader lists links, backlinks, the
+names the page is anchored to and its last changes. Pause and Archive stay on the page.
+A principle keeps its statement, why and example. **History**: from the growth events
+and the Lens log, newest first. "Filed after: {chat}" for a page a chat filed, sections
+you forgot or brought back, principles taught, names added to the Map and changes to what
+the map tracks. The home Thread always reads as the Bot label here and in each page's
+"Used in" list, never its stored title.
+
+Each item lists the chats that used it. Rust's
 `knowledge_memory_usage` counts distinct completed turns that received the item in
 bounded context or an acknowledged exact read, or recorded an application; repeated
 delivery in one turn counts once. This measures delivery, not influence or correctness.
-Saved principles and methods from a receipt open here. Back from a Source opened
-inside a method returns to that method. A paused banner appears when both learning
+Pages and principles from an answer's Learned line open here. Back from a Source opened
+inside a page returns to that page. A paused banner appears when both learning
 switches are off, and Resume enables them again. Tone, instructions and learning
 preferences live on the [Loupist settings page](../ui/sidebar.md#sidebar).
 

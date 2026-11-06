@@ -17,7 +17,7 @@ export function entityCategory(kind?: string): EntityCategory { return categorie
 export function nodeCategory(node: KnowledgeMapNode) {
   if (node.kind === "journal") return "journal";
   if (node.kind === "entity") return node.categoryOverride ?? entityCategory(node.entityKind);
-  return node.kind === "lens_method" ? "method" : node.kind === "lens_principle" ? "principle" : "perspective";
+  return node.kind === "lens_method" ? "method" : node.kind === "lens_principle" ? "principle" : node.kind === "lens_subject" ? "subject" : node.kind === "lens_idea" ? "idea" : "perspective";
 }
 /** A core World Metric. An extension type is never a metric, even when its category is event. */
 export function isMetricNode(node: Pick<KnowledgeMapNode, "kind" | "entityKind" | "categoryOverride" | "kindLabels">) {

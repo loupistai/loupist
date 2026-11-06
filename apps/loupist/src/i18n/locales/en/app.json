@@ -29,7 +29,8 @@
     "skillDraftLoupistEmpty": "{{skill}} Create a reusable skill in this Loupist's skill folder.\n\nThe workflow I want to create: ",
     "workspaceUnavailableDescription": "<0>Workspace folder unavailable.</0> Reconnect the original or copied Loupist folder to open its saved chats, World and Lens.",
     "couldNotExport": "Couldn’t export this chat.",
-    "couldNotPrint": "Couldn’t open printing. Try again."
+    "couldNotPrint": "Couldn’t open printing. Try again.",
+    "correctThis": "Correct this: "
   },
   "useConfiguration": {
     "couldNotReadConfiguration": "Could not read configuration.",

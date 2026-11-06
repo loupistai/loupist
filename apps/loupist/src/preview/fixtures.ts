@@ -2,8 +2,9 @@ import type { InboxItem, InboxRequest, InboxPage, ScheduledRun, ScheduledTask } 
 import { MockWorldSchema } from "../bridge/mock/worldSchema";
 import { MockLoupistBridge } from "../bridge/mockBridge";
 import { mockAssetId } from "../bridge/mock/assets";
+import { previewLearned, previewPages } from "./pages";
 import { MIN_VISIT_MS, recordVisit } from "../app/loupistVisit";
-import type { ChatMessage, ChatSendRequest, ChatStreamEvent, GraphEdge, GraphNode, KnowledgeCatalog, KnowledgeLensReadRequest, LensView, StreamObserver, WorldGraphQuery } from "../types";
+import type { ChatMessage, ChatSendRequest, ChatStreamEvent, GraphEdge, GraphNode, KnowledgeCatalog, KnowledgeLensReadRequest, LearnedDigest, LensKind, PageSummary, PageView, StreamObserver, WorldGraphQuery } from "../types";
 
 export const previewKo = () => typeof document !== "undefined" && document.documentElement.lang.startsWith("ko");
 
@@ -21,6 +22,8 @@ const previewCatalog: KnowledgeCatalog = {
   lenses: [
     { ...revision, recordId: "preview-perspective", kind: "lens", lensKind: "perspective", title: "Evidence before conviction", objects: [] },
     { ...revision, recordId: "preview-method", kind: "lens", lensKind: "method", title: METHOD_TITLE, summary: "Compare margins, utilization and cash conversion before interpreting a single quarter.", updatedAtMs: FIXTURE_TIME, objects: [] },
+    { ...revision, recordId: "preview-subject", kind: "lens", lensKind: "subject", title: "Hanul Precision", summary: "A precision-parts maker adding capacity while margins thin.", updatedAtMs: FIXTURE_TIME - 3_600_000, learned: true, objects: [] },
+    { ...revision, recordId: "preview-idea", kind: "lens", lensKind: "idea", title: "Margins recover once utilization passes 80%", summary: "An unverified link: fixed costs dilute as the new line fills.", updatedAtMs: FIXTURE_TIME - 3_000_000, learned: true, objects: [] },
   ],
   sources: [{ ...revision, recordId: "preview-sources", kind: "source", title: "Company filings and field notes", objects: sourceTitles.map((title, i) => ({ id: `preview-source-${i}`, title, summary: i === 0 ? "Revenue ₩184.2bn, operating margin 14.8%; new capacity enters qualification." : "Fictional research material for layout review.", originLabel: i % 2 ? "Hanul Research" : "Company investor relations", acquiredAt: { precision: "instant", value: `2026-10-${28 - i}T00:00:00Z` }, publicationTime: { precision: "date", value: `2026-10-${27 - i}` }, processing: { status: i === 1 ? "running" : "succeeded" } })) }],
 };
@@ -249,16 +252,53 @@ export class PreviewBridge extends MockLoupistBridge {
   override async knowledgeWorldQuery(request: WorldGraphQuery) {
     return structuredClone({ recordId: request.recordId, ...revision, nodes: previewNodes, edges: previewEdges, coverage: "sealed_snapshot" as const, truncated: false });
   }
-  override async knowledgeLensRead(request: KnowledgeLensReadRequest): Promise<LensView> {
-    if ((await this.principleList({ loupistId: request.loupistId, includeArchived: true })).some(p => p.recordId === request.recordId)) return super.knowledgeLensRead(request);
-    const method = request.recordId === "preview-method";
-    const document = previewKo()
-      ? { markdown: "", applicability: "제조사가 생산능력을 늘리는 동안 보고된 이익률이 낮아질 때 써요.", assumptions: "보고된 수치와 경영진 추정을 구분해요. 통화와 보고 기간을 같게 맞춰요.", procedure: "1. 매출, 가동률, 재고일수를 비교해요.\n2. 일회성 인증 비용을 맞춰 봐요.\n3. 현금 전환이 수요 이야기를 뒷받침하는지 확인해요.", principles: "보관한 1차 자료를 우선해요. 해석을 바꿀 내용을 기록해요.\n\n매출 성장과 현금흐름을 함께 확인합니다.", limitations: "한 분기의 수치만으로 정상 이익 창출력을 정할 수 없어요." }
-      : { markdown: "", applicability: "Use when a manufacturer adds capacity while reported margins decline.", assumptions: "Separate reported figures from management estimates. Keep currency and reporting periods consistent.", procedure: "1. Compare revenue, utilization and inventory days.\n2. Reconcile one-time qualification costs.\n3. Check whether cash conversion supports the demand narrative.", principles: "Prefer retained primary evidence. Record what would change the interpretation.", limitations: "A single quarter cannot establish normalized earnings power." };
-    return { ...revision, recordId: request.recordId, lensKind: method ? "method" : "perspective", isStanding: !method, title: method ? METHOD_TITLE : "Evidence before conviction", document, links: [], backlinks: [] };
+  private pageStore?: Map<string, PageView>;
+  private pageLog: Array<{ recordId: string; before?: import("../types").SectionView; entry: import("../types").LensLogEntryView }> = [];
+  private pages() {
+    this.pageStore ??= new Map(previewPages(previewKo(), METHOD_TITLE).map(page => [page.recordId, page]));
+    return this.pageStore;
   }
-  override async knowledgeLensChanges(): Promise<import("../types").LensChangeRecord[]> { return []; }
-  override async knowledgeLensProposals() { return []; }
+  private pageView(page: PageView): PageView {
+    const own = this.pageLog.filter(row => row.recordId === page.recordId).map(row => row.entry);
+    return structuredClone({ ...page, history: [...own, ...page.history].sort((a, b) => b.createdAtMs - a.createdAtMs) });
+  }
+  override async knowledgeLensRead(request: KnowledgeLensReadRequest): Promise<PageView> {
+    const page = this.pages().get(request.recordId);
+    if (page) return this.pageView(page);
+    if ((await this.principleList({ loupistId: request.loupistId, includeArchived: true })).some(p => p.recordId === request.recordId)) return super.knowledgeLensRead(request);
+    // Any other record reads as a way of working, as the Map and learning fixtures expect.
+    return this.pageView({ ...this.pages().get("preview-method")!, recordId: request.recordId });
+  }
+  override async knowledgeLensPagesForNode({ nodeId }: { loupistId: string; nodeId: string }): Promise<PageSummary[]> {
+    return [...this.pages().values()].filter(page => page.anchors.some(anchor => anchor.nodeId === nodeId))
+      .map(page => ({ recordId: page.recordId, title: page.title, kind: page.kind, summary: page.body.kind === "principle" ? page.body.statement : page.body.summary }));
+  }
+  override async knowledgeLensSearch({ query, kinds }: { loupistId: string; query: string; kinds?: LensKind[] }) {
+    const terms = query.toLocaleLowerCase().split(/\s+/u).filter(Boolean);
+    return [...this.pages().values()].filter(page => (!kinds?.length || kinds.includes(page.kind)) && terms.every(term => JSON.stringify(page.body).toLocaleLowerCase().includes(term) || page.title.toLocaleLowerCase().includes(term)))
+      .map(page => ({ recordId: page.recordId, revisionId: page.revisionId, kind: page.kind, title: page.title, summary: page.body.kind === "principle" ? page.body.statement : page.body.summary, snippet: "" }));
+  }
+  override async memoryLearned({ messageIds }: { loupistId: string; messageIds: string[] }): Promise<LearnedDigest[]> {
+    return messageIds.map(messageId => messageId === previewLearned([]).messageId ? previewLearned([...this.pages().values()]) : { messageId, pages: [] });
+  }
+  override async memorySectionForget({ recordId, key }: { loupistId: string; recordId: string; key: string }): Promise<PageView> {
+    const page = this.pages().get(recordId);
+    if (!page || page.body.kind === "principle") throw new Error("Page not found.");
+    const before = page.body.sections.find(section => section.key === key);
+    page.body.sections = page.body.sections.filter(section => section.key !== key);
+    this.pageLog.push({ recordId, before, entry: { opId: `preview-forget-${this.pageLog.length}`, op: "retire", outcome: "retired", key, origin: "user", createdAtMs: FIXTURE_TIME } });
+    return this.pageView(page);
+  }
+  override async memoryOpUndo({ opId }: { loupistId: string; opId: string }): Promise<PageView> {
+    const row = this.pageLog.find(item => item.entry.opId === opId);
+    const page = row && this.pages().get(row.recordId);
+    if (!row?.before || !page || page.body.kind === "principle") throw new Error("Nothing to undo.");
+    page.body.sections.push(row.before);
+    const order = ["overview", "value-chain", "goals", "views", "risks", "claim", "use-when", "steps", "beliefs"];
+    page.body.sections.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
+    this.pageLog.push({ recordId: row.recordId, entry: { opId: `preview-undo-${this.pageLog.length}`, op: "put", outcome: "added", key: row.entry.key, origin: "user", createdAtMs: FIXTURE_TIME + 1, undoesOpId: opId } });
+    return this.pageView(page);
+  }
   override async chatSend(request: ChatSendRequest, observer: StreamObserver<ChatStreamEvent>) {
     if (this.conversation !== "streaming") return super.chatSend(request, observer);
     const run_id = request.run_id;
@@ -383,12 +423,10 @@ export async function prepareLearningFixture(bridge: PreviewBridge, evidenceCoun
   evidenceNodes.forEach((node, i) => { node.label = companies[i]; });
   const statements = ["Operating margin fell during a new production line’s qualification.", "Utilization reached 68% as qualification costs began to decline.", "Inventory days fell as utilization recovered in the next quarter.", "Temporary ramp labor accounted for most of the margin decline.", "Cash conversion improved alongside higher utilization.", "Pricing remained stable while ramp costs and scrap declined."];
   const claims = statements.slice(0, evidenceCount).map((proposition, i) => ({ ...previewEdges[i], id: `learning-claim-${i}`, endpoints: [{ nodeId: evidenceNodes[i].id, role: "subject" }], claim: { ...previewEdges[i].claim, id: `learning-claim-${i}`, proposition, endpoints: [{ nodeId: evidenceNodes[i].id, role: "subject" }], publicationTime: { precision: "date" as const, value: `2026-10-${20 + i}` } } }));
-  const world = catalog.worlds[0];
   bridge.knowledgeWorldQuery = async request => structuredClone({ recordId: request.recordId, ...revision, revisionId: request.revisionId, nodes: evidenceNodes.map(node => ({ id: node.id, name: node.label, aliases: [], description: "", kind: "Organization", sourceRole: "organization", properties: {} })), edges: claims, coverage: "sealed_snapshot" as const, truncated: false });
   bridge.knowledgeMap = async () => structuredClone(baseMap);
   const originalRead = bridge.knowledgeLensRead.bind(bridge);
-  bridge.knowledgeLensRead = async request => ({ ...await originalRead(request), title: catalog.lenses.find(lens => lens.recordId === request.recordId)?.title ?? title, lensKind: request.recordId.startsWith("map-lens-") ? "method" : "perspective" });
-  bridge.knowledgeLensChanges = async () => [{ changeId: "learning-change", recordId: learned.recordId!, newRevisionId: revision.revisionId, createdAtMs: at, rationale: reviews[0].rationale!, origin: { kind: "learning_review", reviewId: reviews[0].reviewId, worldJobId: "preview-job" }, inputs: { references: claims.map(claim => ({ kind: "world_claim", recordId: world.recordId, revisionId: world.revisionId, objectId: claim.id })) } }];
+  bridge.knowledgeLensRead = async request => ({ ...await originalRead(request), title: catalog.lenses.find(lens => lens.recordId === request.recordId)?.title ?? title, kind: request.recordId.startsWith("map-lens-") ? "method" : "perspective" });
   const growth: import("../contracts/knowledge").GrowthEvent[] = [
     { eventId: "learning-revision", loupistId: catalog.loupistId, recordId: learned.recordId!, subjectId: learned.recordId!, kind: "lens_revised", atMs: at, actor: "loupist", originChatId: null, originMessageId: null, summary: "Added cash confirmation", beforeSummary: "Compare utilization and margin across the ramp. Separate qualification costs from recurring expenses.", afterSummary: "Compare utilization, margins and inventory days. Confirm recovery with operating cash flow, and test whether pricing or product mix explains the change.", rationale: "Margin recovery alone did not establish that demand had turned into cash.", origin: { kind: "learning_review", reviewId: reviews[0].reviewId, worldJobId: "preview-job" } },
     { eventId: "learning-prior", loupistId: catalog.loupistId, recordId: learned.recordId!, subjectId: learned.recordId!, kind: "lens_revised", atMs: at - 86400000, actor: "loupist", originChatId: null, originMessageId: null, summary: "Separated ramp costs", beforeSummary: "Track reported margins.", afterSummary: "Compare utilization and margin across the ramp.", rationale: "Three companies reported temporary qualification costs." },

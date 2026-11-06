@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { MemoryWorkspace } from "../../components/knowledge/MemoryWorkspace";
-import { LensWorkspace } from "../../components/knowledge/LensWorkspace";
+import { PageReader } from "../../components/memory/PageReader";
 import { ResearchReader } from "../../components/knowledge/ResearchReader";
 import { initialKnowledgeNavigation, openKnowledgeLocation, patchKnowledgeLocation } from "../../knowledge/location";
 import type { LoupistSummary, LoupistBridge, KnowledgeLocation, KnowledgePin } from "../../types";
@@ -19,21 +19,18 @@ function SourceHarness({ bridge, loupist, onAsk }: { bridge: LoupistBridge; loup
 }
 
 describe("Loupist · Memory reading", () => {
-  it("retries a failed Lens read at the same revision", async () => {
+  it("retries a failed page read", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const read = bridge.knowledgeLensRead.bind(bridge);
     const calls = vi.spyOn(bridge, "knowledgeLensRead").mockRejectedValueOnce(new Error("Approach is temporarily unavailable")).mockImplementation(read);
     const loupist = await firstLoupist(bridge);
     const onAsk = vi.fn();
-    render(<LensWorkspace bridge={bridge} catalog={await bridge.knowledgeCatalog({ loupistId: loupist.id })}
-      location={{ loupistId: loupist.id, surface: "lens", recordId: "lens-compare-accounts", revisionId: "rev-lens-1" }}
-      markdownFirst onPatch={vi.fn()} onOpen={vi.fn()} onAsk={onAsk} onOpenLink={vi.fn()} onChanged={vi.fn()} />);
+    render(<PageReader bridge={bridge} loupistId={loupist.id} recordId="lens-compare-accounts" onOpen={vi.fn()} onOpenPage={vi.fn()} onAsk={onAsk} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Approach is temporarily unavailable");
-    await user.click(screen.getByRole("button", { name: "Retry Lens" }));
+    await user.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("heading", { name: "Compare independent accounts" })).toHaveFocus();
-    const reads = calls.mock.calls.filter(([request]) => request.recordId === "lens-compare-accounts");
-    expect(reads[1][0]).toEqual(reads[0][0]);
+    expect(calls.mock.calls[1][0]).toEqual(calls.mock.calls[0][0]);
     await user.click(screen.getByRole("button", { name: "Ask Bot to revise" }));
     expect(onAsk).toHaveBeenCalledWith(expect.objectContaining({ kind: "lens", label: "Compare independent accounts" }));
   });

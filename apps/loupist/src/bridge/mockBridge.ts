@@ -1407,22 +1407,25 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     return knowledge.knowledgeGrowthEvents(this.state, request);
   }
 
-  knowledgeLensChanges(request: Contract.KnowledgeLensChangesRequest) {
-    return knowledge.knowledgeLensChanges(this.state, request);
-  }
-
-  knowledgeLensSearch(request: { loupistId: string; query: string }) {
+  knowledgeLensSearch(request: { loupistId: string; query: string; kinds?: import("../contracts/lens").LensKind[] }) {
     return knowledge.knowledgeLensSearch(this.state, request);
   }
 
-  knowledgeLensProposals(request: { loupistId: string; recordId?: string }) {
-    return knowledge.knowledgeLensProposals(this.state, request);
+  knowledgeLensPagesForNode(request: { loupistId: string; nodeId: string }) {
+    return knowledge.knowledgeLensPagesForNode(this.state, request);
   }
 
-  knowledgeLensProposalDismiss(request: { loupistId: string; draftId: string }) {
-    return knowledge.knowledgeLensProposalDismiss(this.state, request);
+  memorySectionForget(request: { loupistId: string; recordId: string; key: string }) {
+    return knowledge.memorySectionForget(this.state, request);
   }
 
+  memoryOpUndo(request: { loupistId: string; opId: string }) {
+    return knowledge.memoryOpUndo(this.state, request);
+  }
+
+  memoryLearned(request: { loupistId: string; messageIds: string[] }) {
+    return knowledge.memoryLearned(this.state, request);
+  }
 
   knowledgeResearchSearch(request: Contract.KnowledgeResearchSearchRequest) {
     return knowledge.knowledgeResearchSearch(this.state, request);

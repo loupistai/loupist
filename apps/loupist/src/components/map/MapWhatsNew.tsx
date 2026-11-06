@@ -82,7 +82,9 @@ function WhatsNewRowButton({ row, onOpen }: { row: WhatsNewRow; onOpen: (row: Wh
   const text = row.kind === "conflict" ? t("map.newConflict", { summary: linkText })
     : row.kind === "relationship" ? linkText
     : row.kind === "method" ? t("map.newMethod", { title: row.label })
-      : row.kind === "principle" ? t("map.newPrinciple", { title: row.label }) : row.label;
+      : row.kind === "principle" ? t("map.newPrinciple", { title: row.label })
+        : row.kind === "subject" ? t("map.newSubject", { title: row.label })
+          : row.kind === "idea" ? t("map.newIdea", { title: row.label }) : row.label;
   const kindLabel = row.kind === "name" ? t(`map.kind.${(row.category ?? "other") as "other"}`) : undefined;
   return <button type="button" className="map-whats-new-row" data-kind={row.kind} aria-disabled={row.gone || undefined} title={row.gone ? t("map.goneFromMap") : undefined}
     onClick={() => { if (!row.gone) onOpen(row); }}>

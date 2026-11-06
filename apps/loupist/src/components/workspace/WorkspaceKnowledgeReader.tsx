@@ -2,7 +2,7 @@ import i18n, { useTranslation } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import type { LoupistBridge, KnowledgeCatalog, KnowledgeLocation, KnowledgePin } from "../../types";
 import { errorMessage } from "../../lib/errors";
-import { LensWorkspace } from "../knowledge/LensWorkspace";
+import { PageReader } from "../memory/PageReader";
 import { SourceWorkspace } from "../knowledge/SourceWorkspace";
 import { ResearchReader } from "../knowledge/ResearchReader";
 import { Button } from "../ui/button";
@@ -43,5 +43,9 @@ export function WorkspaceKnowledgeReader({ bridge, location, onOpen, onPatch, on
   if (error) return <div className="artifact-panel-state" role="alert"><p>{error}</p><Button onClick={changed}>{t("workspaceKnowledgeReader.retryReference")}</Button></div>;
   if (!catalog || catalog.loupistId !== location.loupistId) return <p className="memory-loading-inline" role="status"><Spinner />{t("workspaceKnowledgeReader.openingSavedReference")}</p>;
   const props = { bridge, catalog, location, onOpen, onPatch, onAsk, onOpenLink, onChanged: changed, readerOnly: true };
-  return <div className="workspace-knowledge-reader">{location.surface === "lens" ? <LensWorkspace {...props} /> : location.surface === "source" ? <SourceWorkspace {...props} /> : <p>{t("workspaceKnowledgeReader.thisReferenceIsUnavailable")}</p>}</div>;
+  const lensId = location.recordId ?? catalog.lenses.find((item) => item.lensKind === "perspective")?.recordId ?? catalog.lenses[0]?.recordId;
+  const page = lensId ? <div className="workspace-page-reader"><PageReader bridge={bridge} loupistId={location.loupistId} recordId={lensId} catalog={catalog} onOpen={onOpen} onOpenLink={onOpenLink}
+    onOpenPage={(recordId) => onOpen({ loupistId: location.loupistId, surface: "lens", recordId, objectId: recordId, selection: { kind: "lens", recordId } })}
+    onAsk={onAsk} onChanged={changed} /></div> : <p>{t("workspaceKnowledgeReader.thisReferenceIsUnavailable")}</p>;
+  return <div className="workspace-knowledge-reader">{location.surface === "lens" ? page : location.surface === "source" ? <SourceWorkspace {...props} /> : <p>{t("workspaceKnowledgeReader.thisReferenceIsUnavailable")}</p>}</div>;
 }

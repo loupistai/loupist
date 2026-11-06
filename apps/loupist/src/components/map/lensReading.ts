@@ -5,7 +5,7 @@ export const HOST_STANDING_TITLE = "Standing philosophy";
 /** Empty philosophy body. It is a placeholder, not a learned insight. */
 export const HOST_STANDING_PLACEHOLDER = "This Loupist has not recorded a standing philosophy.";
 
-const LENS_KINDS = new Set(["lens_perspective", "lens_principle", "lens_method"]);
+const LENS_KINDS = new Set(["lens_perspective", "lens_principle", "lens_method", "lens_subject", "lens_idea"]);
 
 export function isLensNode(node: { kind: string }): boolean {
   return LENS_KINDS.has(node.kind);
@@ -29,7 +29,7 @@ export function isBasePerspective(node: KnowledgeMapNode, lenses: readonly Knowl
   const catalog = catalogLens(lenses, node);
   const standing = standingFlag(catalog);
   if (standing === false) return false;
-  if (catalog?.lensKind === "method" || catalog?.lensKind === "principle") return false;
+  if (catalog?.lensKind && catalog.lensKind !== "perspective") return false;
   if (standing === true || catalog?.lensKind === "perspective") return true;
   return (catalog?.title ?? node.label) === HOST_STANDING_TITLE;
 }

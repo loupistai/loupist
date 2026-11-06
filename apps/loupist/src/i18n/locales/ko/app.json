@@ -30,7 +30,8 @@
     "skillDraftLoupistEmpty": "{{skill}} 이 루피스트의 스킬 폴더에 다시 사용할 수 있는 스킬을 만들어 주세요.\n\n만들고 싶은 작업 흐름: ",
     "workspaceUnavailableDescription": "<0>작업 폴더를 사용할 수 없어요.</0> 원래 루피스트 폴더나 복사본을 다시 연결하면 저장된 대화, World, Lens를 열 수 있어요.",
     "couldNotExport": "대화를 내보내지 못했어요.",
-    "couldNotPrint": "인쇄를 열지 못했어요. 다시 시도해 주세요."
+    "couldNotPrint": "인쇄를 열지 못했어요. 다시 시도해 주세요.",
+    "correctThis": "바로잡을 내용: "
   },
   "useConfiguration": {
     "couldNotReadConfiguration": "설정을 읽지 못했어요. 다시 시도해 주세요.",

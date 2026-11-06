@@ -10,7 +10,7 @@ const DAY_MS = 86_400_000;
 const MAX_EVENT_PAGES = 4;
 
 /** What changed in the Loupist's knowledge, in the rows the What's new drawer lists. */
-export type WhatsNewKind = "name" | "relationship" | "conflict" | "method" | "principle";
+export type WhatsNewKind = "name" | "relationship" | "conflict" | "method" | "principle" | "subject" | "idea";
 export type WhatsNewRow = {
   id: string;
   kind: WhatsNewKind;
@@ -39,13 +39,17 @@ export function sinceMs(choice: WhatsNewSince, lastSeenAtMs: number | undefined,
   return choice.dayMs;
 }
 
-function lensKind(event: GrowthEvent, node: KnowledgeMapNode | undefined): "method" | "principle" | undefined {
+function lensKind(event: GrowthEvent, node: KnowledgeMapNode | undefined): "method" | "principle" | "subject" | "idea" | undefined {
   if (node?.kind === "lens_method") return "method";
   if (node?.kind === "lens_principle") return "principle";
+  if (node?.kind === "lens_subject") return "subject";
+  if (node?.kind === "lens_idea") return "idea";
   if (node) return undefined;
   // Unlinked Lens entries may be missing from a bounded Map; the event origin still tells them apart.
   if (typeof event.origin === "string") return "principle";
-  return event.origin && "kind" in event.origin && event.origin.kind === "learning_review" ? "method" : undefined;
+  if (event.origin && "kind" in event.origin && event.origin.kind === "learning_review") return "method";
+  // A page the Loupist filed after a chat: its Map node has not drawn yet, so the kind is not known.
+  return undefined;
 }
 
 /**

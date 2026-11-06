@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { MemoryResetDialog } from "./MemoryResetDialog";
 
-const counts = { principles: 2, methods: 3, names: 4, relationships: 5, sources: 6 };
+const counts = { principles: 2, pages: 3, sections: 1, names: 4, relationships: 5, sources: 6 };
 function fixture() {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   vi.spyOn(bridge, "knowledgeMemoryResetPreview").mockResolvedValue(counts);

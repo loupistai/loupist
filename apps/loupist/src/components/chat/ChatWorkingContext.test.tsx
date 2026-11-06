@@ -37,7 +37,7 @@ describe("Chat working context", () => {
     const note: WorkingNote = { ...first, inputs: {
       sources: [{ receiptId: "read-source", recordId: "source-record", revisionId: "source-at-research", spanId: "original-span", coverage: "included_full", attribution: "Original filing" }],
       worlds: [],
-      lenses: [{ recordId: "lens-record", revisionId: "lens-at-research", document: { markdown: "Original method", applicability: "", assumptions: "", procedure: "", principles: "", limitations: "" }, status: "applied" }],
+      lenses: [{ recordId: "lens-record", revisionId: "lens-at-research", markdown: "Original method", status: "applied" }],
     } };
     vi.spyOn(bridge, "knowledgeWorkingNotes").mockResolvedValue({ current: note });
     render(<ChatWorkingContext {...props} onOpenKnowledge={onOpenKnowledge}><p>Conversation content</p></ChatWorkingContext>);

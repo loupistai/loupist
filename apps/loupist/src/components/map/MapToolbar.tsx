@@ -111,7 +111,7 @@ export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect
   </div>;
 }
 
-const lensGroups = ["perspective", "principle", "method"] as const;
+const lensGroups = ["perspective", "principle", "method", "subject", "idea"] as const;
 function LensMenu({ lenses, overlayId, onOverlay, disabled, appliedCounts, lensTitles, baseLensIds, onClose }: {
   lenses: KnowledgeMapNode[]; overlayId?: string; onOverlay: (id: string | undefined) => void; disabled?: boolean; onClose: () => void;
   appliedCounts?: Record<string, number>; lensTitles?: Record<string, string>; baseLensIds?: ReadonlySet<string>;

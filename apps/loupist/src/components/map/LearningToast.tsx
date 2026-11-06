@@ -23,7 +23,7 @@ export function useLearningNotifications(bridge: LoupistBridge, activeMapLoupist
       if (current.current.activeMapLoupistId === loupistId) glowLearnedMethod(bridge, loupistId, review.lensRecordId);
       setToasts(items => [...items, { ...event, title: "" }]);
       const updateTitle = (title: string) => { if (mounted) setToasts(items => items.map(item => item.review.reviewId === review.reviewId ? { ...item, title } : item)); };
-      void bridge.knowledgeLensRead({ loupistId, recordId: review.lensRecordId, includeNavigation: false }).then(lens => {
+      void bridge.knowledgeLensRead({ loupistId, recordId: review.lensRecordId }).then(lens => {
         updateTitle(lens.title);
       }).catch(() => {
         // A catalog read can still resolve a title when the exact document is unavailable.

@@ -42,7 +42,7 @@ import {
   type MockBridgeState,
 } from "./state";
 
-import { knowledgeCatalog, knowledgeLensRead, knowledgeLensSave } from "./knowledge";
+import { knowledgeCatalog, mockFileSection } from "./knowledge";
 
 
 export const loupistList = async (
@@ -732,23 +732,13 @@ const streamChat = async (
       await wait(state.delay_ms, controller.signal);
       const commitId = makeId("memory-update");
       const catalog = await knowledgeCatalog(state, { loupistId: request.loupist_id });
-      const module = catalog.lenses[0];
-      const current = module
-        ? await knowledgeLensRead(state, { loupistId: request.loupist_id, recordId: module.recordId })
-        : undefined;
-      const saved = current
-        ? await knowledgeLensSave(state, {
-            loupistId: request.loupist_id,
-            recordId: current.recordId,
-            expectedRevisionId: current.revisionId,
-            rationale: "The completed research distinguishes recurring performance from one-time changes.",
-            document: {
-              ...current.document,
-              markdown: `${current.document.markdown}\n\n## Review lesson\n\nSeparate recurring changes from one-time movement.`,
-            },
+      const module = catalog.lenses.find((lens) => lens.lensKind === "method");
+      const learned = module
+        ? mockFileSection(state, request.loupist_id, module.recordId, {
+            key: "review-lesson", heading: "Review lesson", markdown: "Separate recurring changes from one-time movement.",
+            chatId: request.thread_id, messageId: message_id,
           })
         : undefined;
-      const learned = saved?.status === "saved" ? saved.view : undefined;
       const update: MemoryUpdateResult = {
         status: learned ? "applied" : "no_change",
         commitId: learned ? commitId : null,

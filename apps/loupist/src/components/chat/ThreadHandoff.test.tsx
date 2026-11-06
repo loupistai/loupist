@@ -28,8 +28,8 @@ it("shows a running session without an answer and counts what a finished one lea
   expect(screen.queryByRole("button", { name: "Open" })).toBeNull();
 
   const learned = { messageId: "answer-1", pages: [
-    { recordId: "rec_a", title: "HBM", kind: "subject", created: true, outcomes: [] },
-    { recordId: "rec_b", title: "Supply checks", kind: "method", created: false, outcomes: [] },
+    { recordId: "rec_a", title: "HBM", kind: "subject" as const, created: true, outcomes: [] },
+    { recordId: "rec_b", title: "Supply checks", kind: "method" as const, created: false, outcomes: [] },
   ] };
   rerender(<ThreadHandoff message={card({ learned })} loupistName="Quality" />);
   expect(screen.getByText("Learned 2")).toBeVisible();

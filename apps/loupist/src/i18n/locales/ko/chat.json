@@ -371,42 +371,33 @@
     "numberedLens": "Lens {{value1}} · {{value2}}"
   },
   "messageMemoryRow": {
-    "couldNotDismissThisProposal": "제안을 닫지 못했어요. 다시 시도해 주세요.",
     "savedInThisAnswer": "이 답변에서 저장됨",
     "basis": "근거: {{value}}",
     "nextUse": "다음 사용: {{value}}",
     "dismissed": "닫음",
-    "review": "검토",
-    "dismiss": "닫기",
-    "openIn": "{{value}}에서 열기",
-    "proposalLabel": "{{title}} 제안",
-    "reviewProposal": "{{title}} 검토",
-    "dismissProposal": "{{title}} 닫기"
+    "openIn": "{{value}}에서 열기"
   },
   "chatReceipt": {
     "label": "이 답변이 쓰고 저장한 것",
     "readSources_other": "자료 {{formattedCount}}개 읽음",
     "sourcesRead": "이 답변에서 읽은 자료",
-    "names_other": "지도에 +{{formattedCount}}",
+    "names_other": "지도 +이름 {{formattedCount}}개",
     "namesOnMap_other": "지도에서 새 항목 {{formattedCount}}개 보기",
     "relationships_other": "관계 {{formattedCount}}개 갱신",
     "relationshipsOnMap_other": "지도에서 관계 {{formattedCount}}개 갱신",
-    "usedPrinciples_other": "원칙 {{formattedCount}}개 사용",
-    "principlesUsed": "이 답변에서 사용한 원칙",
-    "usedMethods_other": "작업 방식 {{formattedCount}}개 사용",
-    "methodsUsed": "이 답변에서 사용한 작업 방식",
     "savedSources_other": "자료 {{formattedCount}}개 저장",
-    "savedMethods_other": "새 작업 방식 {{formattedCount}}개 익힘",
     "savedPrinciples_other": "원칙 {{formattedCount}}개 저장",
     "savedJournal_other": "저널 {{formattedCount}}개 저장",
     "savedNotes_other": "리서치 노트 {{formattedCount}}개 저장",
     "savedWorld_other": "World 항목 {{formattedCount}}개 저장",
-    "toReview_other": "검토할 제안 {{formattedCount}}개",
     "nothingNew": "새로 저장한 내용 없음",
     "thesisMoved": "{{name}}: {{verdict}}",
     "thesisMovedFrom": "{{name}}: {{from}} → {{verdict}}",
     "thesisNotSaved": "{{name}}: 판단은 바뀌지 않았어요 (먼저 페이지가 바뀜)",
-    "numbersToCheck_other": "확인할 숫자 {{formattedCount}}개"
+    "numbersToCheck_other": "확인할 숫자 {{formattedCount}}개",
+    "learned_other": "새로 배운 것 {{formattedCount}}개",
+    "ideas_other": "아이디어 {{formattedCount}}개",
+    "usedPages_other": "페이지 {{formattedCount}}개 사용"
   },
   "messageSchedules": {
     "draftFilesFailed": "첨부파일을 이 기기에 임시 저장하지 못했어요.",
@@ -759,9 +750,6 @@
     "filePrompt": "작업 폴더의 {{id}} 파일을 살펴봐 주세요.",
     "explainQuote": "이 부분을 설명해 줘."
   },
-  "dismissLensProposal": {
-    "couldNotIdentifyExactlyOneProposalForThisAnswer": "이 답변에 해당하는 제안 하나를 특정하지 못했어요. Lens에서 제안 목록을 확인해 주세요."
-  },
   "evidence": {
     "selectedPassageFromTheRetrievedDocument": "가져온 문서에서 선택한 구절",
     "retrievedSource": "가져온 자료",
@@ -798,8 +786,6 @@
     "reviseKind": "수정된 {{kind}}",
     "renameNote": "이름을 바꾼 노트",
     "renameKind": "이름을 바꾼 {{kind}}",
-    "proposedNote": "제안된 노트",
-    "proposedKind": "제안된 {{kind}}",
     "createNote": "만든 노트",
     "createKind": "만든 {{kind}}"
   },
@@ -1286,15 +1272,14 @@
     "conflict": "{{name}}에 대한 상충 근거 중 어느 쪽이 맞아?"
   },
   "usedMemory": {
-    "principleLabel": "내 원칙에서 사용함",
-    "methodLabel": "배운 작업 방식에서 사용함",
     "notThisTime": "이번엔 제외",
     "setAside": "이 대화에서는 제외했어요",
     "undo": "되돌리기",
     "edit": "편집",
     "archive": "보관",
     "error": "바꾸지 못했어요. 답변이 끝난 뒤 다시 시도해 주세요.",
-    "removed": "삭제됨"
+    "removed": "삭제됨",
+    "pageLabel": "사용함 · {{kind}}"
   },
   "saveProof": {
     "declined": "비밀번호나 키 같은 비밀 정보로 보이는 항목 하나는 저장하지 않았어요."
@@ -1747,5 +1732,21 @@
       "equity_fundamental_dividends": "배당",
       "equity_fundamental_filings": "공시"
     }
+  },
+  "learnedCard": {
+    "label": "이 답변에서 정리한 것",
+    "new": "새 페이지",
+    "outcome": {
+      "added": "추가",
+      "replaced": "갱신",
+      "retired": "정리"
+    },
+    "fix": "고치기",
+    "fixSection": "{{heading}} 고치기",
+    "forget": "잊기",
+    "forgetSection": "{{heading}} 잊기",
+    "forgotten": "잊었어요.",
+    "undo": "되돌리기",
+    "error": "이 페이지를 바꾸지 못했어요."
   }
 }

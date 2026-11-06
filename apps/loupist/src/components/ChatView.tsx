@@ -61,7 +61,6 @@ import {
   type QueuedChatMessage,
 } from "./chat/ChatPendingQueue";
 
-import { dismissLensProposal } from "../chat/dismissLensProposal";
 import { emptyChatThread, isEmptyChatThreadId } from "../app/emptyChat";
 import { useOnline } from "../app/useOnline";
 import { providerShortName } from "../chat/providerNames";
@@ -372,7 +371,7 @@ export function ChatView({
       const update = message.memory_update;
       if (update?.status !== "applied") continue;
       for (const change of update.changes) {
-        if (change.kind !== "Source" || change.operation === "proposed" || !change.knowledge || seen.has(change.knowledge.recordId)) continue;
+        if (change.kind !== "Source" || !change.knowledge || seen.has(change.knowledge.recordId)) continue;
         seen.add(change.knowledge.recordId);
         options.push({ key: change.knowledge.recordId, label: change.title, pin: { kind: "source", loupistId: loupist.id, recordId: change.knowledge.recordId, revisionId: change.knowledge.revisionId, objectId: change.knowledge.objectId, label: change.title } });
         if (options.length >= 8) return options;
@@ -826,15 +825,6 @@ export function ChatView({
   const executionScope = useMemo(() => activeThread ? ({
     bridge, loupistId: loupist.id, threadId: activeThread.id, surface: activeThread.home ? "bot" as const : "session" as const, theme, active,
   }) : null, [active, activeThread?.id, activeThread?.home, bridge, loupist.id, theme]);
-  const dismissProposal = useCallback((target: { recordId: string; messageId: string }) => {
-    const chatId = activeThread?.id;
-    return dismissLensProposal(bridge, {
-      loupistId: loupist.id,
-      recordId: target.recordId,
-      messageId: target.messageId,
-      chatId: chatId && !isEmptyChatThreadId(chatId) ? chatId : undefined,
-    });
-  }, [bridge, loupist.id, activeThread?.id]);
   /** A question from the morning message goes into the composer; it never sends. */
   const quoteToComposer = useCallback((messageId: string, text: string) => {
     const chip = quoteChip(messageId, text);
@@ -898,7 +888,6 @@ export function ChatView({
     mentionSkills={composerSkills}
     mentionPlugins={composerPlugins}
     bridge={bridge}
-    onDismissLensProposal={dismissProposal}
     onEditUser={(message, index) => {
       if (!activeThread?.id || isEmptyChatThreadId(activeThread.id)) return;
       setPrompt(message.content);

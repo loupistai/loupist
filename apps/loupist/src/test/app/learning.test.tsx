@@ -1,4 +1,4 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { mainTab } from "../renderApp";
 import { App } from "../../App";
@@ -26,12 +26,10 @@ it.each(["created", "refined"] as const)("announces a %s event, highlights its W
   expect(screen.getByTestId("learning-canvas")).toHaveAttribute("data-glow", appliedIds.join(","));
   await userEvent.click(screen.getByRole("button", { name: "View" }));
   expect(await screen.findByRole("heading", { name: node.label })).toBeVisible();
-  expect(await screen.findByRole("region", { name: "Research principles" })).toBeVisible();
+  expect(await screen.findByRole("region", { name: /What .* knows/ })).toBeVisible();
   expect(await screen.findByRole("complementary", { name: node.label })).toBeVisible();
   const provenance = await screen.findByRole("region", { name: "How your Loupist learned this" });
   expect(provenance).toHaveTextContent(review.rationale!);
-  await userEvent.click(await within(provenance).findByRole("button", { name: "Show all 6" }));
-  expect(within(provenance).getAllByRole("listitem")).toHaveLength(6);
   expect(await screen.findByRole("region", { name: "Then vs now" })).toBeVisible();
 });
 

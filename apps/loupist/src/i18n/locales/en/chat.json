@@ -394,41 +394,27 @@
     "numberedLens": "Lens {{value1}} · {{value2}}"
   },
   "messageMemoryRow": {
-    "couldNotDismissThisProposal": "Could not dismiss this proposal.",
     "savedInThisAnswer": "Saved in this answer",
     "basis": "Basis: {{value}}",
     "nextUse": "Next use: {{value}}",
     "dismissed": "Dismissed",
-    "review": "Review",
-    "dismiss": "Dismiss",
-    "openIn": "Open in {{value}}",
-    "proposalLabel": "Proposal for {{title}}",
-    "reviewProposal": "Review {{title}}",
-    "dismissProposal": "Dismiss {{title}}"
+    "openIn": "Open in {{value}}"
   },
   "chatReceipt": {
     "label": "What this answer used and saved",
     "readSources_one": "Read {{formattedCount}} source",
     "readSources_other": "Read {{formattedCount}} sources",
     "sourcesRead": "Sources read in this answer",
-    "names_one": "+{{formattedCount}} on the map",
-    "names_other": "+{{formattedCount}} on the map",
+    "names_one": "Map +{{formattedCount}} name",
+    "names_other": "Map +{{formattedCount}} names",
     "namesOnMap_one": "Show {{formattedCount}} new on the map",
     "namesOnMap_other": "Show {{formattedCount}} new on the map",
     "relationships_one": "{{formattedCount}} relationship updated",
     "relationships_other": "{{formattedCount}} relationships updated",
     "relationshipsOnMap_one": "{{formattedCount}} relationship updated on the map",
     "relationshipsOnMap_other": "{{formattedCount}} relationships updated on the map",
-    "usedPrinciples_one": "Used {{formattedCount}} of your rules",
-    "usedPrinciples_other": "Used {{formattedCount}} of your rules",
-    "principlesUsed": "Your rules used in this answer",
-    "usedMethods_one": "Used {{formattedCount}} way of working",
-    "usedMethods_other": "Used {{formattedCount}} ways of working",
-    "methodsUsed": "Ways of working used in this answer",
     "savedSources_one": "Saved {{formattedCount}} source",
     "savedSources_other": "Saved {{formattedCount}} sources",
-    "savedMethods_one": "Learned {{formattedCount}} new way of working",
-    "savedMethods_other": "Learned {{formattedCount}} new ways of working",
     "savedPrinciples_one": "Saved {{formattedCount}} new rule",
     "savedPrinciples_other": "Saved {{formattedCount}} new rules",
     "savedJournal_one": "Saved {{formattedCount}} journal entry",
@@ -437,14 +423,18 @@
     "savedNotes_other": "Saved {{formattedCount}} research notes",
     "savedWorld_one": "Saved {{formattedCount}} World item",
     "savedWorld_other": "Saved {{formattedCount}} World items",
-    "toReview_one": "{{formattedCount}} proposal to review",
-    "toReview_other": "{{formattedCount}} proposals to review",
     "nothingNew": "Nothing new saved",
     "thesisMoved": "{{name}}: {{verdict}}",
     "thesisMovedFrom": "{{name}}: {{from}} → {{verdict}}",
     "thesisNotSaved": "{{name}}: read not changed (the page changed first)",
     "numbersToCheck_one": "{{formattedCount}} number to check",
-    "numbersToCheck_other": "{{formattedCount}} numbers to check"
+    "numbersToCheck_other": "{{formattedCount}} numbers to check",
+    "learned_one": "Learned {{formattedCount}}",
+    "learned_other": "Learned {{formattedCount}}",
+    "ideas_one": "{{formattedCount}} idea",
+    "ideas_other": "{{formattedCount}} ideas",
+    "usedPages_one": "Used {{formattedCount}} page",
+    "usedPages_other": "Used {{formattedCount}} pages"
   },
   "messageSchedules": {
     "draftFilesFailed": "Could not save draft attachments on this device.",
@@ -807,9 +797,6 @@
     "filePrompt": "Look at workspace file {{id}}.",
     "explainQuote": "Explain this."
   },
-  "dismissLensProposal": {
-    "couldNotIdentifyExactlyOneProposalForThisAnswer": "Could not identify exactly one proposal for this answer. Open Lens to review the available proposals."
-  },
   "evidence": {
     "selectedPassageFromTheRetrievedDocument": "Selected passage from the retrieved document",
     "retrievedSource": "Retrieved source",
@@ -846,8 +833,6 @@
     "reviseKind": "Revised {{kind}}",
     "renameNote": "Renamed note",
     "renameKind": "Renamed {{kind}}",
-    "proposedNote": "Proposed note",
-    "proposedKind": "Proposed {{kind}}",
     "createNote": "Created note",
     "createKind": "Created {{kind}}"
   },
@@ -1336,15 +1321,14 @@
     "conflict": "Which side is right about {{name}}?"
   },
   "usedMemory": {
-    "principleLabel": "Used from your rules",
-    "methodLabel": "Used from ways of working it learned",
     "notThisTime": "Not this time",
     "setAside": "Set aside for this chat",
     "undo": "Undo",
     "edit": "Edit",
     "archive": "Archive",
     "error": "Couldn’t change this. Try again after the reply finishes.",
-    "removed": "Removed"
+    "removed": "Removed",
+    "pageLabel": "Used · {{kind}}"
   },
   "saveProof": {
     "declined": "Skipped saving one item: it looked like a password, key or other secret."
@@ -1815,5 +1799,21 @@
       "equity_fundamental_dividends": "dividends",
       "equity_fundamental_filings": "filings"
     }
+  },
+  "learnedCard": {
+    "label": "Filed in this answer",
+    "new": "new page",
+    "outcome": {
+      "added": "Added",
+      "replaced": "Updated",
+      "retired": "Retired"
+    },
+    "fix": "Fix",
+    "fixSection": "Fix {{heading}}",
+    "forget": "Forget",
+    "forgetSection": "Forget {{heading}}",
+    "forgotten": "Forgotten.",
+    "undo": "Undo",
+    "error": "Could not change this page."
   }
 }

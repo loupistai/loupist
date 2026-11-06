@@ -28,8 +28,8 @@ it("quotes a used principle and sets it aside for this chat until Undo", async (
   const user = userEvent.setup();
   const toggle = vi.fn(async () => {});
   render(<Harness messages={[answer()]} toggle={toggle} />);
-  await user.click(screen.getByRole("button", { name: "Used 1 of your rules" }));
-  const panel = screen.getByText("Used from your rules").closest("li")!;
+  await user.click(screen.getByRole("button", { name: "Used 1 page" }));
+  const panel = screen.getByText("Used · Principle").closest("li")!;
   expect(within(panel).getByText("Check cash flow before profit")).toBeVisible();
   await user.click(within(panel).getByRole("button", { name: "Not this time" }));
   expect(toggle).toHaveBeenCalledWith("principle-cash", true);
@@ -54,7 +54,7 @@ it("labels a deleted receipt target without offering edit or archive actions", a
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   vi.spyOn(bridge, "knowledgeCatalog").mockResolvedValue({ loupistId: "loupist-quality", lenses: [], sources: [], worlds: [] });
   render(<MessageMemoryRow bridge={bridge} loupistId="loupist-quality" message={answer({ lens_receipts: [{ recordId: "deleted-method", revisionId: "rev", kind: "method", title: "Deleted method", delivery: "exact_read" }] })} onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} />);
-  await userEvent.click(screen.getByRole("button", { name: "Used 1 way of working" }));
+  await userEvent.click(screen.getByRole("button", { name: "Used 1 page" }));
   expect(await screen.findByText(/Removed/)).toBeVisible();
   expect(screen.getByText("Deleted method").tagName).toBe("S");
   expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();

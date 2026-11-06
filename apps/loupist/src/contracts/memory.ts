@@ -32,7 +32,7 @@ export type MemoryUpdateChange = {
   worldJobId?: string | null;
   worldStatus?: string | null;
   recordId: string;
-  operation: "create" | "revise" | "rename" | "proposed";
+  operation: "create" | "revise" | "rename";
   title: string;
   lesson: string;
   basis: string;
@@ -50,4 +50,4 @@ export type MemoryUpdateResult = {
 };
 
 /** Kind and delivery recorded by Rust when the item reached this turn. */
-export type LensReceipt = { recordId: string; revisionId: string; revisionDigest?: string; kind: "principle" | "method" | "perspective"; title: string; delivery: "context" | "exact_read" };
+export type LensReceipt = { recordId: string; revisionId: string; revisionDigest?: string; kind: import("./lens").LensKind; title: string; delivery: "context" | "exact_read" };

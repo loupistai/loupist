@@ -93,17 +93,35 @@ describe("Loupist · Chat memory", () => {
     await openApp();
     fireEvent.change(screen.getByRole("textbox", { name: "Message Loupist" }), { target: { value: "Learn from this mistake" } });
     await user.click(screen.getByRole("button", { name: "Send" }));
-    const receipt = await screen.findByRole("button", { name: "Learned 1 new way of working" }, { timeout: 40_000 });
+    const receipt = await screen.findByRole("button", { name: "Learned 1" }, { timeout: 40_000 });
     await user.type(screen.getByRole("textbox", { name: "Message Loupist" }), "Check the next quarter too");
     await user.click(receipt);
+    const card = await screen.findByRole("group", { name: "Filed in this answer" });
+    expect(await within(card).findByText("Review lesson")).toBeVisible();
+    await user.click(within(card).getByRole("button", { name: "Compare independent accounts" }));
 
     expect(screen.queryByRole("button", { name: "Revert" })).toBeNull();
-    const page = await screen.findByRole("region", { name: "Research principles" });
+    const page = await screen.findByRole("region", { name: /What .* knows/ });
     expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveValue("Check the next quarter too");
     expect(await within(page).findByRole("complementary", { name: "Compare independent accounts" })).toBeVisible();
     await user.click(within(page).getByRole("button", { name: "Back" }));
     expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveValue("Check the next quarter too");
     // A streamed reply with a Memory update; a loaded suite needs room.
+  }, 60_000);
+
+  it("opens the Bot composer with the page pinned and Correct this when Fix is chosen, without sending", async () => {
+    const user = userEvent.setup();
+    const bridge = await openApp();
+    const send = vi.spyOn(bridge, "chatSend");
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Loupist" }), { target: { value: "Learn from this mistake" } });
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await user.click(await screen.findByRole("button", { name: "Learned 1" }, { timeout: 40_000 }));
+    const card = await screen.findByRole("group", { name: "Filed in this answer" });
+    send.mockClear();
+    await user.click(await within(card).findByRole("button", { name: "Fix Review lesson" }));
+    await waitFor(() => expect((screen.getByRole("textbox", { name: "Message Loupist" }) as HTMLTextAreaElement).value).toContain("Correct this:"));
+    expect(document.querySelector('.composer-prompt-highlight [data-inline-reference="lens"]')).toHaveTextContent("Compare independent accounts");
+    expect(send).not.toHaveBeenCalled();
   }, 60_000);
 
   it("opens a World citation at its saved revision", async () => {
@@ -170,36 +188,5 @@ describe("Loupist · Chat memory", () => {
     await userEvent.click(screen.getByRole("button", { name: "Source check" }));
     expect(await within(await screen.findByLabelText("Source reader")).findByText("Exact retained statement")).toBeVisible();
     expect(read).toHaveBeenCalledWith(expect.objectContaining({ recordId: "source-collection", revisionId: "source-revision", sourceId: "source-check", spanId: "retained-span", purpose: "renderer_inspection" }));
-  });
-
-  it("dismisses only the Lens proposal that belongs to this answer", async () => {
-    const user = userEvent.setup();
-    let chatId = "";
-    let messageId = "";
-    const bridge = await withFirstMessage((message, workspace) => {
-      chatId = workspace.threads[0].id;
-      messageId = message.id;
-      message.memory_update = { status: "applied", commitId: "proposal", changes: [{
-        recordId: "lens-compare-accounts", kind: "Lens", operation: "proposed", title: "Compare independent accounts",
-        knowledge: { kind: "lens", recordId: "lens-compare-accounts", revisionId: "rev-lens-1", objectId: "lens-compare-accounts" },
-        lesson: "A tighter check.", basis: "This answer", futureUse: "Later reviews.",
-      }] };
-    });
-    const document = { markdown: "Proposed check", applicability: "", assumptions: "", procedure: "", principles: "", limitations: "" };
-    const proposal = (draftId: string, originChatId: string, originMessageId: string) => ({
-      draftId, loupistId: "loupist-quality", author: "loupist" as const, recordId: "lens-compare-accounts", baseRevisionId: "rev-lens-1",
-      document, rationale: draftId, originChatId, originMessageId, updatedAtMs: 1,
-    });
-    vi.spyOn(bridge, "knowledgeLensProposals").mockResolvedValue([
-      proposal("draft-other", "other-chat", "other-message"),
-      proposal("draft-same-chat", chatId, "other-answer"),
-      proposal("draft-this", chatId, messageId),
-    ]);
-    const dismiss = vi.spyOn(bridge, "knowledgeLensProposalDismiss").mockResolvedValue(undefined);
-    await openApp(bridge);
-    await user.click(screen.getByRole("button", { name: "1 proposal to review" }));
-    await user.click(screen.getByRole("button", { name: "Dismiss Compare independent accounts" }));
-    expect(await screen.findByText("Dismissed")).toBeVisible();
-    expect(dismiss).toHaveBeenCalledExactlyOnceWith({ loupistId: "loupist-quality", draftId: "draft-this" });
   });
 });

@@ -93,8 +93,7 @@ export type KnowledgeObjectRef = {
 
 export type KnowledgeRecordSummary = {
   summary?: string;
-  applicability?: string;
-  lensKind?: "perspective" | "principle" | "method";
+  lensKind?: import("./lens").LensKind | null;
   recordId: string;
   kind: KnowledgeRecordKind;
   title: string;
@@ -107,7 +106,6 @@ export type KnowledgeRecordSummary = {
   objects: KnowledgeObjectRef[];
   updatedAtMs?: number;
   archived?: boolean;
-  proposalCount?: number;
 };
 
 export type KnowledgeCatalogRequest = {
@@ -258,40 +256,7 @@ export type SourceDetail = {
   acquiredAt?: TimePoint;
 };
 
-export type LensDocumentBody = {
-  markdown: string;
-  applicability: string;
-  assumptions: string;
-  procedure: string;
-  principles: string;
-  limitations: string;
-};
-
-export type LensNavigationLink = { recordId: string; title: string; revisionId: string; archived?: boolean };
-
-export type LensView = {
-  /** Discovery only; each linked document still needs its own exact read. */
-  links?: LensNavigationLink[];
-  /** Incoming links from the current library. */
-  backlinks?: LensNavigationLink[];
-  linksTruncated?: boolean;
-  backlinksTruncated?: boolean;
-  unresolvedLinks?: string[];
-  unresolvedLinksTruncated?: boolean;
-  lensKind?: "perspective" | "principle" | "method";
-  isStanding: boolean;
-  recordId: string;
-  revisionId: string;
-  revisionDigest: string;
-  title: string;
-  readOnly: boolean;
-  archived?: boolean;
-  document: LensDocumentBody;
-};
-
 export type KnowledgeLensReadRequest = {
-  /** Defaults to true; background document search can skip library adjacency. */
-  includeNavigation?: boolean;
   loupistId: string;
   recordId: string;
   revisionId?: string;
@@ -306,52 +271,6 @@ export type KnowledgePin = {
   objectId: string;
   spanId?: string;
   label: string;
-};
-
-export type LensChangeRecord = {
-  origin?: { kind: "learning_review"; reviewId: string; worldJobId: string };
-  changeId: string;
-  recordId: string;
-  newRevisionId?: string;
-  rationale: string;
-  createdAtMs?: number;
-  changeKind?: "revise" | "rename" | "archive" | "restore" | string;
-  actor?: "user" | "loupist" | "import" | string;
-  originChatId?: string;
-  originMessageId?: string;
-  newTitle?: string;
-  inputs: {
-    references: import("./memory").KnowledgeReference[];
-    feedback?: string;
-  };
-};
-
-export type LensSearchHit = {
-  recordId: string;
-  revisionId: string;
-  title: string;
-  snippet: string;
-};
-
-export type LensDraftRecord = {
-  draftId: string;
-  loupistId: string;
-  author: "user" | "loupist" | string;
-  recordId: string;
-  baseRevisionId: string;
-  document: LensDocumentBody;
-  rationale: string;
-  title?: string;
-  originChatId?: string;
-  originMessageId?: string;
-  updatedAtMs: number;
-};
-
-export type LensProposal = LensDraftRecord & { originChatTitle?: string };
-
-export type KnowledgeLensChangesRequest = {
-  loupistId: string;
-  recordId: string;
 };
 
 export type ResearchRecord = {
@@ -560,7 +479,8 @@ export type JournalInputs = {
   lenses: {
     recordId: string;
     revisionId: string;
-    document: LensDocumentBody;
+    /** The page as delivered, rendered to Markdown with section keys. */
+    markdown: string;
     status: string;
   }[];
   earlier?: {
@@ -646,8 +566,6 @@ export type KnowledgeViewState = {
   findInView?: string;
   claimId?: string;
   listMode?: boolean;
-  /** Open the Loupist proposal in the existing Lens review editor, then clear it. */
-  reviewProposal?: { chatId: string; messageId: string };
   /** Open the Map's What's new drawer since the last visit, then clear it. */
   whatsNew?: boolean;
 };
@@ -705,7 +623,7 @@ export type GrowthEventsPage = {
   nextCursor: string | null;
 };
 
-export type KnowledgeMapNodeKind = "entity" | "lens_perspective" | "lens_principle" | "lens_method" | "journal";
+export type KnowledgeMapNodeKind = "entity" | "lens_perspective" | "lens_principle" | "lens_method" | "lens_subject" | "lens_idea" | "journal";
 export type KnowledgeMapEdgeKind = "claim" | "lens_link" | "applies_to" | "about";
 export type KnowledgeMapQuery = { loupistId: string; maxNodes?: number };
 export type KnowledgeMapNode = {
@@ -779,4 +697,4 @@ export type MemoryUsage = { recordId: string; usedCount: number; lastUsedAtMs: n
 export type LearningReviewFinishedEvent = { loupistId: string; review: LearningReview };
 
 export type MemoryControls = { paused: string[]; removed: string[] };
-export type MemoryResetCounts = { principles: number; methods: number; names: number; relationships: number; sources: number };
+export type MemoryResetCounts = { principles: number; pages: number; sections: number; names: number; relationships: number; sources: number };

@@ -81,7 +81,6 @@ type Props = {
   /** An account action from the newest failed answer (Reconnect, Use an API key, Manage usage…). */
   onProviderAction?: (action: ProviderErrorAction, provider: string | undefined) => void;
   bridge?: LoupistBridge;
-  onDismissLensProposal?: (target: { recordId: string; messageId: string }) => Promise<void>;
   /** The active run, for the status pill shown while the reader is scrolled up. */
   run?: ChatRunStatus;
   /** The Loupist's focus, for the morning message's questions. */
@@ -135,7 +134,6 @@ export function ChatConversation({
   retryAttempt,
   onProviderAction,
   bridge,
-  onDismissLensProposal,
   onSaveFeedback,
   onTeachFeedback,
   feedbackBusy = false,
@@ -346,7 +344,6 @@ export function ChatConversation({
               note={message.role === "assistant" && message.replaced_model && message.execution_model?.name
                 ? t("chatError.modelGone", { old: message.replaced_model, new: message.execution_model.name })
                 : undefined}
-              onDismissLensProposal={onDismissLensProposal}
             />
           )}
           </Fragment>)}

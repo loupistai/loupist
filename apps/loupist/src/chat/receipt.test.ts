@@ -1,5 +1,5 @@
 import type { ChatEvidenceRef, ChatMessage, MemoryRef, MemoryUpdateChange } from "../types";
-import { chatReceipt, savesMemory, showsReceipt } from "./receipt";
+import { chatReceipt, learnedSummary, savesMemory, showsReceipt } from "./receipt";
 
 const evidence = (id: string, kind: ChatEvidenceRef["kind"], extra: Partial<ChatEvidenceRef> = {}): ChatEvidenceRef => ({
   id, title: `Title ${id}`, kind, tool_name: "web_fetch", url: `https://example.com/${id}`, retrieved_at: "2026-10-28T00:00:00Z",
@@ -39,13 +39,12 @@ it("uses host-recorded kinds for exact reads and context delivery, regardless of
     ],
     memory_refs: [lensRead("method-1"), lensRead("method-1", "again"), { ...lensRead("discovered"), access: "search_discovered" }],
     memory_update: { status: "applied", commitId: "c", changes: [
-      change("principle", "saved-rule"), change("Source", "source-1"), change("Lens", "lens-proposal", "proposed"), change("Source", "source-2"), change("Lens", "method-2", "revise"),
+      change("principle", "saved-rule"), change("Source", "source-1"), change("Source", "source-2"),
     ] },
   }));
   expect(receipt.usedMethods.map((ref) => ref.recordId)).toEqual(["method-1"]);
   expect(receipt.usedPrinciples).toEqual([{ recordId: "principle-1", title: "Cash before profit" }]);
-  expect(receipt.saved.map((group) => [group.kind, group.items.length])).toEqual([["Source", 2], ["Lens", 1], ["principle", 1]]);
-  expect(receipt.proposals.map((item) => item.recordId)).toEqual(["lens-proposal"]);
+  expect(receipt.saved.map((group) => [group.kind, group.items.length])).toEqual([["Source", 2], ["principle", 1]]);
 });
 
 it("reads map growth from this message's additions only", () => {
@@ -68,12 +67,13 @@ it("shows only for finished assistant answers", () => {
   expect(showsReceipt(answer({ role: "user" }))).toBe(false);
 });
 
-it("never lists saved items or proposals for a chat with saving off", () => {
-  const message = answer({ memory_update: { status: "applied", commitId: "c", changes: [change("Source", "src-1"), change("principle", "p-1", "proposed")] } });
-  expect(chatReceipt(message).saved).toHaveLength(1);
-  const off = chatReceipt(message, undefined, { saveOff: true });
+it("never lists saved items or what was learned for a chat with saving off", () => {
+  const message = answer({ memory_update: { status: "applied", commitId: "c", changes: [change("Source", "src-1")] } });
+  const digest = { messageId: "answer", pages: [{ recordId: "page", title: "Hanul", kind: "subject" as const, created: true, outcomes: [{ opId: "op", outcome: "added", key: "overview" }] }] };
+  expect(chatReceipt(message, undefined, { learned: digest })).toMatchObject({ saved: [expect.anything()], learned: { sections: 1, ideas: 0 } });
+  const off = chatReceipt(message, undefined, { saveOff: true, learned: digest });
   expect(off.saved).toEqual([]);
-  expect(off.proposals).toEqual([]);
+  expect(off.learned).toBeNull();
   expect(savesMemory(message, true)).toBe(false);
 });
 
@@ -81,4 +81,26 @@ it("does not infer a used kind from an answer link or an untyped old read", () =
   const receipt = chatReceipt(answer({ content: "[Rule](lens:fake)", memory_refs: [lensRead("unknown")] }));
   expect(receipt.usedPrinciples).toEqual([]);
   expect(receipt.usedMethods).toEqual([]);
+});
+
+it("counts a perspective, a topic and an idea the host delivered as used pages", () => {
+  const receipt = chatReceipt(answer({ lens_receipts: [
+    { recordId: "outlook", revisionId: "rev", kind: "perspective", title: "Evidence before conviction", delivery: "context" },
+    { recordId: "topic", revisionId: "rev", kind: "subject", title: "Hanul Precision", delivery: "exact_read" },
+    { recordId: "idea", revisionId: "rev", kind: "idea", title: "Margins recover", delivery: "exact_read" },
+    { recordId: "topic", revisionId: "rev", kind: "subject", title: "Hanul Precision", delivery: "context" },
+  ] }));
+  expect(receipt.usedPages.map(page => [page.recordId, page.kind])).toEqual([["outlook", "perspective"], ["topic", "subject"], ["idea", "idea"]]);
+  expect(receipt.empty).toBe(false);
+});
+
+it("summarizes what an answer filed: sections changed, and the pages that are ideas", () => {
+  const learned = learnedSummary({ messageId: "answer", pages: [
+    { recordId: "topic", title: "Hanul", kind: "subject", created: true, outcomes: [{ opId: "1", outcome: "added", key: "overview" }, { opId: "2", outcome: "replaced", key: "risks" }, { opId: "3", outcome: "already_known", key: "facts" }] },
+    { recordId: "idea", title: "Margins", kind: "idea", created: true, outcomes: [{ opId: "4", outcome: "added", key: "claim" }, { opId: "5", outcome: "summarized" }] },
+    { recordId: "noop", title: "Nothing", kind: "method", created: false, outcomes: [{ opId: "6", outcome: "skipped_stale", key: "steps" }] },
+  ] });
+  expect(learned).toMatchObject({ sections: 3, ideas: 1 });
+  expect(learned?.pages.map(page => page.recordId)).toEqual(["topic", "idea"]);
+  expect(learnedSummary(undefined)).toBeNull();
 });

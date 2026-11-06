@@ -39,6 +39,15 @@ matches the canonical name and every local name; "Ask about this" pins the canon
 name. Core relation names have curated labels; other relation names stay readable
 English.
 
+### Notes on a name
+
+An entity's inspector lists **Notes**: the active Lens pages anchored to it, from
+`knowledge_lens_pages_for_node`, each with its title, kind and summary. A note opens
+the page in the Lens reader. The Lens kinds draw as Lens nodes (`lens_perspective`,
+`lens_method`, `lens_principle`, `lens_subject`, `lens_idea`) with `applies_to` edges from
+their anchors. The legend still shows one Lens row. What's new names a new Topic or
+Idea beside new Methods and Rules.
+
 ### What the map tracks
 
 Loupist settings list, in plain words, the kinds of things and links the map tracks

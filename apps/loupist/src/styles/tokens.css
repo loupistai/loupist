@@ -59,6 +59,8 @@
   --gg-color-map-principle: var(--gg-p-amber-600);
   --gg-color-map-method: var(--gg-p-amber-600);
   --gg-color-map-perspective: var(--gg-p-amber-700);
+  --gg-color-map-subject: var(--gg-p-amber-600);
+  --gg-color-map-idea: var(--gg-p-amber-600);
   --gg-color-map-holding-ring: var(--gg-p-neutral-900);
   --gg-color-map-edge: rgb(38 38 36 / 22%);
   --gg-color-map-edge-active: rgb(38 38 36 / 55%);
@@ -211,6 +213,8 @@
   --gg-color-map-principle: var(--gg-p-amber-400);
   --gg-color-map-method: var(--gg-p-amber-400);
   --gg-color-map-perspective: var(--gg-p-amber-300);
+  --gg-color-map-subject: var(--gg-p-amber-400);
+  --gg-color-map-idea: var(--gg-p-amber-400);
   --gg-color-map-holding-ring: var(--gg-p-neutral-900);
   --gg-color-map-edge: rgb(236 236 231 / 16%);
   --gg-color-map-edge-active: rgb(236 236 231 / 55%);
