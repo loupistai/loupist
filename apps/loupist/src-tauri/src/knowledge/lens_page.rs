@@ -994,7 +994,6 @@ fn is_id_character(character: char) -> bool {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FilingOrigin {
     /// Filed by the `lens_file` tool at turn commit (the harness unit).
-    #[allow(dead_code)]
     Turn {
         chat_id: String,
         message_id: String,

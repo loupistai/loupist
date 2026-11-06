@@ -1011,12 +1011,10 @@ pub(crate) fn replace_perspective(
     tx: &Transaction<'_>,
     loupist_id: &str,
     title: &str,
-    pack_name: &str,
     document: &PackDoc,
     origin: Value,
     at_ms: i64,
 ) -> KnowledgeResult<String> {
-    let _ = pack_name;
     let current = super::lens::active_perspective(tx, loupist_id)?
         .map(|record_id| super::lens::read_page(tx, loupist_id, &record_id))
         .transpose()?;
@@ -1121,18 +1119,14 @@ pub(crate) fn shared_principle_text(
 
 /// The author's newer text for an accepted shared method or perspective, chosen
 /// in the update diff. The record keeps its title.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn revise_shared_lens(
     tx: &Transaction<'_>,
     loupist_id: &str,
     record_id: &str,
-    pack_name: &str,
-    version: u32,
     document: &PackDoc,
     origin: Value,
     at_ms: i64,
 ) -> KnowledgeResult<()> {
-    let _ = (pack_name, version);
     let current = super::lens::read_page(tx, loupist_id, record_id)?;
     file_pack_page(
         tx,

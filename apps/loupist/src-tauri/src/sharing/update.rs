@@ -481,8 +481,6 @@ pub(crate) fn take_theirs(
         tx,
         loupist_id,
         record,
-        &row.name,
-        row.version,
         document,
         import::lens_origin(row),
         at_ms,
