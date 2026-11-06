@@ -50,6 +50,45 @@ fn price_columns() -> Value {
 }
 
 #[tokio::test]
+async fn an_unattended_refusal_is_recorded_on_its_scheduled_run_and_a_delegated_run_has_no_row() {
+    use crate::chat::surface::ChatSurface;
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    for (surface, expected) in [
+        (
+            ChatSurface::Delegated {
+                handoff_id: "handoff-1".into(),
+            },
+            crate::briefings::policy::REFUSAL,
+        ),
+        (
+            ChatSurface::Scheduled,
+            "Could not record refused unattended tool",
+        ),
+    ] {
+        let executor = executor_for(
+            &state,
+            Arc::new(ToolCapture {
+                unattended_run_id: Some("run-without-row".into()),
+                surface: Some(surface.clone()),
+                ..ToolCapture::default()
+            }),
+        );
+        let refused = executor
+            .execute(
+                &policy(true, true),
+                ToolMethod::NativeAuthorize,
+                json!({"name": "bash"}),
+            )
+            .await;
+        assert!(
+            matches!(&refused, Err(BrokerError::Execution(message)) if message == expected),
+            "{surface:?}: {refused:?}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn foreign_scope_and_memory_off_are_refused_before_any_tool_runs() {
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);

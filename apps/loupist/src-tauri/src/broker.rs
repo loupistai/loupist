@@ -51,6 +51,7 @@ pub const MAX_MEMORY_PROPOSALS: u8 = 8;
 // A multi-company comparison can retain several primary sources per company.
 // Keep retention bounded without exhausting it after the first company.
 pub const MAX_CHAT_TURN_SOURCES: u8 = 16;
+pub const MAX_CHAT_TURN_FILINGS: u8 = 2;
 const MAX_CONCURRENT_CONNECTIONS: usize = 64;
 const RESPONSE_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 const DELIVERY_ACK_TIMEOUT: Duration = Duration::from_secs(10);
@@ -227,6 +228,7 @@ pub enum ToolMethod {
     ScheduleDelete,
     ScheduleRunNow,
     ScheduleStop,
+    ResearchOpen,
     ChatHistory,
     DatasetDescribe,
     DatasetQuery,
@@ -258,8 +260,10 @@ pub enum ToolMethod {
     NoteSave,
     JournalSave,
     JournalReview,
-    LensUpdate,
     PrincipleSave,
+    LensFile,
+    WorldSchemaUpdate,
+    LoupistSetup,
     LensSearch,
     LensRead,
     WorldJob,
@@ -581,7 +585,11 @@ struct TransactionCardinality {
     journals: u8,
     evidence_creations: u8,
     proposals: u8,
+    schema_updates: u8,
+    setups: u8,
+    filings: u8,
     artifact_publishes: u8,
+    research_opens: u8,
 }
 
 impl TransactionCardinality {
@@ -593,9 +601,16 @@ impl TransactionCardinality {
             ToolMethod::SourceSave if self.evidence_creations >= MAX_CHAT_TURN_SOURCES => {
                 return Err(BrokerError::BudgetExceeded);
             }
-            ToolMethod::LensUpdate | ToolMethod::PrincipleSave
-                if self.proposals >= policy.memory_proposal_budget =>
-            {
+            ToolMethod::PrincipleSave if self.proposals >= policy.memory_proposal_budget => {
+                return Err(BrokerError::BudgetExceeded);
+            }
+            ToolMethod::WorldSchemaUpdate if self.schema_updates >= 1 => {
+                return Err(BrokerError::BudgetExceeded);
+            }
+            ToolMethod::LoupistSetup if self.setups >= 1 => {
+                return Err(BrokerError::BudgetExceeded);
+            }
+            ToolMethod::LensFile if self.filings >= MAX_CHAT_TURN_FILINGS => {
                 return Err(BrokerError::BudgetExceeded);
             }
             ToolMethod::ArtifactPublish | ToolMethod::ChartPublish | ToolMethod::GridPublish
@@ -603,12 +618,19 @@ impl TransactionCardinality {
             {
                 return Err(BrokerError::BudgetExceeded);
             }
+            ToolMethod::ResearchOpen if self.research_opens >= 1 => {
+                return Err(BrokerError::BudgetExceeded);
+            }
             _ => {}
         }
         match method {
+            ToolMethod::WorldSchemaUpdate => self.schema_updates += 1,
+            ToolMethod::LoupistSetup => self.setups += 1,
+            ToolMethod::LensFile => self.filings += 1,
+            ToolMethod::ResearchOpen => self.research_opens += 1,
             ToolMethod::NoteSave => self.journals += 1,
             ToolMethod::SourceSave => self.evidence_creations += 1,
-            ToolMethod::LensUpdate | ToolMethod::PrincipleSave => self.proposals += 1,
+            ToolMethod::PrincipleSave => self.proposals += 1,
             ToolMethod::ArtifactPublish | ToolMethod::ChartPublish | ToolMethod::GridPublish => {
                 self.artifact_publishes += 1
             }
@@ -619,13 +641,17 @@ impl TransactionCardinality {
 
     fn rollback(&mut self, method: ToolMethod) {
         match method {
+            ToolMethod::ResearchOpen => self.research_opens = self.research_opens.saturating_sub(1),
             ToolMethod::NoteSave => self.journals = self.journals.saturating_sub(1),
             ToolMethod::SourceSave => {
                 self.evidence_creations = self.evidence_creations.saturating_sub(1)
             }
-            ToolMethod::LensUpdate | ToolMethod::PrincipleSave => {
-                self.proposals = self.proposals.saturating_sub(1)
+            ToolMethod::PrincipleSave => self.proposals = self.proposals.saturating_sub(1),
+            ToolMethod::WorldSchemaUpdate => {
+                self.schema_updates = self.schema_updates.saturating_sub(1)
             }
+            ToolMethod::LoupistSetup => self.setups = self.setups.saturating_sub(1),
+            ToolMethod::LensFile => self.filings = self.filings.saturating_sub(1),
             ToolMethod::ArtifactPublish | ToolMethod::ChartPublish | ToolMethod::GridPublish => {
                 self.artifact_publishes = self.artifact_publishes.saturating_sub(1)
             }

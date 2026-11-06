@@ -1,5 +1,6 @@
 use super::*;
 use crate::commands::map_internal;
+use crate::knowledge::CreateRecord;
 
 pub(crate) fn seed_e2e_knowledge_fixture(state: &AppState) -> Result<(), CommandError> {
     if std::env::var_os("LOUPIST_E2E_KNOWLEDGE_SEED").as_deref() != Some(std::ffi::OsStr::new("1"))
@@ -68,52 +69,56 @@ pub(crate) fn seed_e2e_knowledge_fixture(state: &AppState) -> Result<(), Command
                 bytes: text.to_vec(),
             }),
         })?;
-        let method = write.create_record(CreateRecord {
-            loupist_id: loupist_id.clone(),
-            kind: RecordKind::Lens,
-            title: "Desk method".into(),
-            at_ms: 1_700_000_000_011,
-        })?;
-        let mut prior = None;
-        for (index, (markdown, rationale)) in [
-            (
-                "Match scope and units before comparing.",
-                "Define a repeatable comparison method.",
-            ),
-            (
-                "Match scope and units before comparing. Separate observations from assumptions.",
-                "Separate observed evidence from the analyst's assumptions.",
-            ),
-        ]
-        .into_iter()
-        .enumerate()
         {
-            let view = write.revise_lens_with_origin(
-                crate::knowledge::ReviseLens {
-                    loupist_id: loupist_id.clone(),
-                    record_id: method.record_id.clone(),
-                    expected_revision_id: prior,
-                    at_ms: 1_700_000_000_012 + index as i64,
-                    document: crate::knowledge::LensDocument {
-                        markdown: markdown.into(),
-                        applicability: String::new(),
-                        assumptions: String::new(),
-                        procedure: String::new(),
-                        principles: String::new(),
-                        limitations: String::new(),
+            use crate::knowledge::lens_page::{
+                Basis, FilingOrigin, LensOp, PageDelta, PageKind, PageTarget, SectionKey,
+            };
+            let turn = |message: &str| FilingOrigin::Turn {
+                chat_id: "chat-authoring".into(),
+                message_id: message.into(),
+                user_message_id: None,
+                unattended: false,
+            };
+            let steps = |markdown: &str, expected: Option<String>| LensOp::Put {
+                key: SectionKey::new("steps").unwrap(),
+                heading: "Steps".into(),
+                markdown: markdown.into(),
+                basis: Basis::default(),
+                expected,
+            };
+            let filed = write.file(
+                &loupist_id,
+                &turn("assistant-authoring"),
+                vec![PageDelta {
+                    target: PageTarget::Create {
+                        kind: PageKind::Method,
+                        title: "Desk method".into(),
+                        anchors: Vec::new(),
                     },
-                    dependencies: Vec::new(),
-                    change: crate::knowledge::LensChangeInput {
-                        rationale: rationale.into(),
-                        references: Vec::new(),
-                        feedback: None,
-                    },
-                },
-                "loupist",
-                Some("chat-authoring"),
-                Some("assistant-authoring"),
+                    ops: vec![
+                        LensOp::Summary {
+                            text: "Define a repeatable comparison method.".into(),
+                        },
+                        steps("Match scope and units before comparing.", None),
+                    ],
+                }],
+                1_700_000_000_012,
             )?;
-            prior = Some(view.revision_id);
+            let page = write.read_page(&loupist_id, &filed[0].record_id)?;
+            write.file(
+                &loupist_id,
+                &turn("assistant-authoring-2"),
+                vec![PageDelta {
+                    target: PageTarget::Existing {
+                        record_id: page.record_id.clone(),
+                    },
+                    ops: vec![steps(
+                        "Match scope and units before comparing. Separate observations from assumptions.",
+                        Some(page.body.sections()[0].digest.clone()),
+                    )],
+                }],
+                1_700_000_000_013,
+            )?;
         }
         let world = write.create_record(CreateRecord {
             loupist_id: loupist_id.clone(),
@@ -163,6 +168,9 @@ pub(crate) fn seed_e2e_knowledge_fixture(state: &AppState) -> Result<(), Command
                 alert: None,
                 watch: None,
                 earnings: None,
+                vocabulary: None,
+                handoff: None,
+                link: None,
                 failure_kind: None,
                 host_composed: false,
                 steer: false,
@@ -283,7 +291,6 @@ pub(crate) fn seed_e2e_knowledge_fixture(state: &AppState) -> Result<(), Command
                 &[],
                 &reads,
                 Some(&research),
-                &[],
             )
             .map(|_| ())
             .map_err(|error| crate::store::StoreError::Invalid(error.to_string()))

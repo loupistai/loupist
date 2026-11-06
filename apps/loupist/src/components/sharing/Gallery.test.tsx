@@ -28,7 +28,7 @@ it("combines search and filters, sorts by use, and remembers the filters on this
   // Non-commercial licenses read by their names too.
   expect(within(screen.getByRole("article", { name: "Rate cycle watch" })).getByText("English · CC BY-NC-SA 4.0")).toBeVisible();
   expect(within(screen.getByRole("article", { name: "국내 지수 ETF 비교" })).getByText(/· CC BY-NC 4\.0$/)).toBeVisible();
-  expect(within(card).getByText("14 ways of working · 312 names")).toHaveClass("gg-num");
+  expect(within(card).getByText("14 methods · 312 names")).toHaveClass("gg-num");
   expect(within(card).getByText("Stocks")).toBeVisible();
   expect(within(card).getByRole("button", { name: "Preview Semiconductor supply chain" })).toBeVisible();
 

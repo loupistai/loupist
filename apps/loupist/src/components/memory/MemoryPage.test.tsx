@@ -15,7 +15,7 @@ async function fixture(setup?: (bridge: MockLoupistBridge, loupist: LoupistSumma
   return { bridge, loupist, handlers, view, user: userEvent.setup() };
 }
 
-it("opens on the principles the user taught, shows where one was used, and edits it through Rust", async () => {
+it("opens on Pages with your principles grouped in, shows where one was used, and asks Bot to revise it", async () => {
   let recordId = "";
   const { handlers, view, user } = await fixture(async (bridge, loupist) => {
     recordId = (await bridge.principleCreate({ loupistId: loupist.id, statement: "Prefer companies that publish segment margins.", origin: "settings" })).recordId;
@@ -23,10 +23,10 @@ it("opens on the principles the user taught, shows where one was used, and edits
   });
 
   render(view());
-  const page = await screen.findByRole("region", { name: "Research principles" });
+  const page = await screen.findByRole("region", { name: /What .* knows/ });
   const tabs = within(page).getByRole("tablist");
-  expect(within(tabs).getByRole("tab", { name: /Your rules/ })).toHaveAttribute("aria-selected", "true");
-  await user.click(await within(page).findByRole("button", { name: /Prefer companies that publish segment margins.*Rule, used 4 times/ }));
+  expect(within(tabs).getByRole("tab", { name: /Pages/ })).toHaveAttribute("aria-selected", "true");
+  await user.click(await within(page).findByRole("button", { name: /Prefer companies that publish segment margins.*Principle, used 4 times/ }));
   const reader = within(page).getByRole("complementary", { name: /Prefer companies that publish segment margins/ });
   await user.click(within(reader).getByRole("button", { name: "Hanul margin review" }));
   expect(handlers.onOpenChat).toHaveBeenCalledWith("chat-margin");
@@ -56,9 +56,6 @@ it("starts a new Loupist on About you with follows, holdings as a count only, an
   expect(remove).toHaveBeenCalledWith({ symbol: "AAPL", market: "NASDAQ" });
   await user.click(screen.getByRole("tab", { name: /History/ }));
   expect(await screen.findByText("No history yet.")).toBeVisible();
-  await user.click(screen.getByRole("tab", { name: /Your rules/ }));
-  expect(screen.getByText(/^Example: /)).toBeVisible();
-  expect(screen.queryByRole("button", { name: /^Example/ })).toBeNull();
 });
 
 it("says learning is paused when nothing new is saved, and Resume turns both switches back on", async () => {
@@ -85,7 +82,7 @@ it("shows the reset audit in History without treating it as an archived method",
   vi.spyOn(bridge, "knowledgeGrowthEvents").mockResolvedValue({ events: [{
     eventId: "reset-1", loupistId: loupist.id, atMs: Date.now(), kind: "lens_archived",
     actor: "user", recordId: null, subjectId: null, originChatId: null, originMessageId: null,
-    origin: { kind: "memory_reset", counts: { principles: 0, methods: 1, names: 2, relationships: 1, sources: 1 } },
+    origin: { kind: "memory_reset", counts: { principles: 0, pages: 1, sections: 0, names: 2, relationships: 1, sources: 1 } },
     summary: "Reset by you", beforeSummary: null, afterSummary: null,
   }], nextCursor: null });
   render(view());
@@ -116,7 +113,6 @@ it("pauses and resumes a principle and a method through the host", async () => {
   await waitFor(() => expect(pause).toHaveBeenLastCalledWith({ loupistId: loupist.id, recordId: principleId, paused: false }));
   const catalog = await bridge.knowledgeCatalog({ loupistId: loupist.id });
   const method = catalog.lenses.find(item => item.lensKind === "method")!;
-  await user.click(screen.getByRole("tab", { name: /Ways of working/ }));
   await user.click(await screen.findByRole("button", { name: new RegExp(method.title) }));
   const reader = await screen.findByRole("complementary", { name: method.title });
   await user.click(within(reader).getByRole("button", { name: "Pause" }));
@@ -125,22 +121,68 @@ it("pauses and resumes a principle and a method through the host", async () => {
   await waitFor(() => expect(pause).toHaveBeenLastCalledWith({ loupistId: loupist.id, recordId: method.recordId, paused: false }));
 });
 
-it("returns to the originating method after opening its Source", async () => {
-  const { bridge, loupist, handlers, view, user } = await fixture();
-  const catalog = await bridge.knowledgeCatalog({ loupistId: loupist.id });
-  const method = catalog.lenses.find(item => item.lensKind === "method")!;
-  const source = catalog.sources[0];
-  vi.spyOn(bridge, "knowledgeLensChanges").mockResolvedValue([{
-    changeId: "change-source", recordId: method.recordId, newRevisionId: method.revisionId!, rationale: "Supported by the original source.", createdAtMs: 1, changeKind: "create", actor: "loupist",
-    inputs: { references: [{ kind: "source", recordId: source.recordId, revisionId: source.revisionId!, objectId: source.recordId }] },
-  }]);
-  render(view(method.recordId));
-  await screen.findByRole("heading", { name: method.title });
-  await user.click(screen.getByText("Saved basis"));
-  await user.click(await screen.findByRole("button", { name: "Source 1" }));
-  expect(await screen.findByRole("button", { name: "Back to method" })).toBeVisible();
+it("groups pages by kind and narrows them with search", async () => {
+  const { view, user } = await fixture();
+  render(view());
+  await screen.findByRole("region", { name: /What .* knows/ });
+  const groups = await screen.findAllByRole("region", { name: /^(Topics|Ideas|Methods|Your principles|Outlook)$/ });
+  expect(groups.map(group => group.getAttribute("aria-label"))).toEqual(["Topics", "Ideas", "Methods", "Your principles", "Outlook"]);
+  const header = within(groups[0]!).getByRole("heading", { level: 3 });
+  expect(header.children).toHaveLength(3);
+  expect(header.children[0]).toHaveTextContent(/^Topics$/);
+  expect(header.children[1]).toHaveAttribute("aria-hidden", "true");
+  expect(header.children[2]).toHaveTextContent(/^1 page$/);
+  expect(within(groups[0]!).getByRole("button", { name: /^TCP, Topic/ })).toBeVisible();
+  expect(within(groups[1]!).getByRole("button", { name: /QUIC could displace TCP/ })).toBeVisible();
+  await user.type(screen.getByRole("searchbox", { name: "Search what it knows" }), "head-of-line");
+  expect(await screen.findByRole("button", { name: /^TCP, Topic/ })).toBeVisible();
+  expect(screen.queryByRole("button", { name: /Compare independent accounts/ })).toBeNull();
+  await user.clear(screen.getByRole("searchbox", { name: "Search what it knows" }));
+  await user.type(screen.getByRole("searchbox", { name: "Search what it knows" }), "zzzz");
+  expect(await screen.findByText("No matching pages")).toBeVisible();
+});
+
+it("shows the home Thread as Bot in Used in and in History, never its stored title", async () => {
+  let recordId = "";
+  const { bridge, loupist, handlers, user } = await fixture(async (bridge, loupist) => {
+    recordId = (await bridge.principleCreate({ loupistId: loupist.id, statement: "Check cash before profit.", origin: "settings" })).recordId;
+    (bridge as unknown as { state: { memoryUsage: Record<string, unknown> } }).state.memoryUsage = { [loupist.id]: [{ recordId, usedCount: 1, lastUsedAtMs: Date.UTC(2026, 9, 28), usedIn: [{ chatId: "home-chat", atMs: Date.UTC(2026, 9, 28) }] }] };
+  });
+  vi.spyOn(bridge, "knowledgeGrowthEvents").mockResolvedValue({ events: [{
+    eventId: "filed-1", loupistId: loupist.id, atMs: Date.UTC(2026, 9, 28), kind: "lens_revised", actor: "loupist", recordId: "lens-subject-tcp", subjectId: null,
+    originChatId: "home-chat", originMessageId: "answer-1", summary: "TCP", beforeSummary: null, afterSummary: null,
+  }], nextCursor: null });
+  const threads = [{ id: "home-chat", loupist_id: loupist.id, home: true, title: "Thread", updated_at: "2026-10-28T00:00:00Z", use_memory: true, update_memory: true, messages: [] }];
+  render(<TooltipProvider><MemoryPage bridge={bridge} loupist={loupist} threads={threads} initialItem={recordId} {...handlers} /></TooltipProvider>);
+  const reader = await screen.findByRole("complementary", { name: "Check cash before profit." });
+  await user.click(within(reader).getByRole("button", { name: "Bot" }));
+  expect(handlers.onOpenChat).toHaveBeenCalledWith("home-chat");
+  expect(within(reader).queryByText("Thread")).toBeNull();
+  await user.click(screen.getByRole("tab", { name: /History/ }));
+  expect(await screen.findByRole("button", { name: /Filed after: Bot/ })).toBeVisible();
+  expect(screen.queryByText(/Thread/)).toBeNull();
+});
+
+it("returns to the page after opening a Source from its basis chip", async () => {
+  const { handlers, view, user } = await fixture();
+  render(view("lens-subject-tcp"));
+  await screen.findByRole("heading", { name: "TCP" });
+  const overview = (await screen.findByRole("heading", { name: "Overview" })).closest("section")!;
+  await user.click(within(overview).getByRole("button", { name: "Source" }));
+  expect(await screen.findByRole("button", { name: "Back to page" })).toBeVisible();
   expect(handlers.onOpenKnowledge).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Back to method" }));
-  expect(await screen.findByRole("heading", { name: method.title })).toBeVisible();
-  expect(screen.getByRole("tab", { name: /Ways of working/, selected: true })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Back to page" }));
+  expect(await screen.findByRole("heading", { name: "TCP" })).toBeVisible();
+  expect(screen.getByRole("tab", { name: /Pages/, selected: true })).toBeVisible();
+});
+
+it("never takes focus for the page it opens by itself, and focuses the page you open", async () => {
+  const { view, user } = await fixture();
+  render(<><button type="button">Elsewhere</button>{view()}</>);
+  const elsewhere = screen.getByRole("button", { name: "Elsewhere" });
+  elsewhere.focus();
+  expect(await screen.findByRole("heading", { level: 2, name: "TCP" })).toBeVisible();
+  expect(elsewhere).toHaveFocus();
+  await user.click(screen.getByRole("button", { name: /^QUIC could displace TCP for mobile traffic, Idea/ }));
+  await waitFor(() => expect(screen.getByRole("heading", { level: 2, name: /QUIC could displace TCP/ })).toHaveFocus());
 });

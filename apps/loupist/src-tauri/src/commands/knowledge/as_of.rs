@@ -167,20 +167,25 @@ pub(in crate::commands) fn source_known(
     })
 }
 
-fn lens_current_known(
+/// The one Lens rule under a cutoff, for reads, search, backlinks and the
+/// automatic context: a page is known when its whole current head was written
+/// by then. A principle applies as it is today.
+pub(in crate::commands) fn lens_visible(
     write: &KnowledgeWrite<'_>,
     loupist_id: &str,
     record_id: &str,
     cutoff: Cutoff,
 ) -> crate::knowledge::KnowledgeResult<bool> {
-    let record = write.owned_record(loupist_id, record_id)?;
-    let Some(revision_id) = record.revision_id else {
+    if write.lens_kind(loupist_id, record_id)? == crate::knowledge::lens_page::LensKind::Principle {
+        return Ok(true);
+    }
+    let Some(revision_id) = write.owned_record(loupist_id, record_id)?.revision_id else {
         return Ok(false);
     };
     Ok(cutoff.recorded(write.get_revision(loupist_id, &revision_id)?.created_at_ms))
 }
 
-/// Whether the current version of a method or perspective was written by the cutoff.
+/// [`lens_visible`] in its own transaction.
 pub(in crate::commands) fn lens_known(
     state: &AppState,
     loupist_id: &str,
@@ -188,7 +193,7 @@ pub(in crate::commands) fn lens_known(
     cutoff: Cutoff,
 ) -> Result<bool, CommandError> {
     with_loupist_knowledge(state, loupist_id, |tx, blobs| {
-        lens_current_known(
+        lens_visible(
             &KnowledgeWrite::bind(tx, blobs),
             loupist_id,
             record_id,
@@ -514,7 +519,7 @@ fn graph_view_as_of(view: &mut Value, known: &WorldKnown, cutoff: Cutoff) -> (bo
 /// Source hits need a span known by then; World hits a relationship published
 /// by then (a name needs one such relationship, an annotation every Source it
 /// cites, a hit without an id is left out); a graph view keeps only such
-/// relationships; method hits a current version written by then; saved notes
+/// relationships; Lens hits a current version written by then; saved notes
 /// a recording date by then, and their pointers to later notes only those
 /// written by then.
 pub(in crate::commands) fn filter_hits(
@@ -567,7 +572,7 @@ pub(in crate::commands) fn filter_hits(
                     let known = match lenses.get(&record_id) {
                         Some(known) => *known,
                         None => {
-                            let known = lens_current_known(&write, loupist_id, &record_id, cutoff)?;
+                            let known = lens_visible(&write, loupist_id, &record_id, cutoff)?;
                             lenses.insert(record_id.clone(), known);
                             known
                         }

@@ -917,6 +917,7 @@ pub struct AgentHostContext {
     pub workspace: AgentWorkspaceSnapshot,
     pub preload_component_ids: Vec<String>,
     pub explicit_skill_names: Vec<String>,
+    pub surface: crate::chat::surface::ChatSurface,
 }
 
 impl AgentHostContext {
@@ -1067,6 +1068,17 @@ pub fn as_of_envelope(cutoff: &str) -> Value {
     })
 }
 
+pub fn attach_chat_surface(envelope: &str, surface: &crate::chat::surface::ChatSurface) -> String {
+    let Ok(mut value) = serde_json::from_str::<Value>(envelope) else {
+        return envelope.to_owned();
+    };
+    let Some(object) = value.as_object_mut() else {
+        return envelope.to_owned();
+    };
+    object.insert("chat_surface".into(), surface.envelope_block());
+    serde_json::to_string(&value).unwrap_or_else(|_| envelope.to_owned())
+}
+
 /// Adds the as-of envelope beside the live-time envelope.
 pub fn attach_as_of(envelope: &str, cutoff: &str) -> String {
     let Ok(mut value) = serde_json::from_str::<Value>(envelope) else {
@@ -1097,6 +1109,12 @@ pub struct LearnedMemoryIndexEntry {
     pub summary: String,
     pub as_of: String,
     pub kind: String,
+    #[serde(rename = "pageKind", skip_serializing_if = "Option::is_none")]
+    pub lens_kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sections: Option<usize>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub names: Vec<String>,
 }
 
 /// Discovery metadata only; never a read receipt or admitted context read.
@@ -1127,6 +1145,21 @@ pub fn attach_relevant_memory(envelope: &str, relevant: &[RelevantMemoryPointer]
         if protocol.get("active").and_then(Value::as_bool) == Some(true) {
             protocol.insert("relevant".into(), json!(relevant));
             protocol.insert("relevantHint".into(), json!("These are discovery pointers, not reads or receipts. Exact-read with the supplied tool and readArgs before relying on a match; say when a pointer does not apply. Pointers do not authorize Journals or citations."));
+        }
+    }
+    value.to_string()
+}
+
+pub fn attach_world_kinds(envelope: &str, kinds: &Value) -> String {
+    let Ok(mut value) = serde_json::from_str::<Value>(envelope) else {
+        return envelope.to_owned();
+    };
+    if let Some(protocol) = value
+        .get_mut("memory_protocol")
+        .and_then(Value::as_object_mut)
+    {
+        if protocol.get("active").and_then(Value::as_bool) == Some(true) {
+            protocol.insert("worldKinds".into(), kinds.clone());
         }
     }
     value.to_string()
@@ -1354,6 +1387,7 @@ pub(crate) fn render_turn_context(envelope: &str) -> String {
         "Instructions from the user for this Loupist",
         "What the user follows",
         "Loupist tone",
+        "chat_surface",
         "memory_protocol",
         "mentioned_connections",
     ] {
@@ -1624,6 +1658,20 @@ mod tests {
         )
         .unwrap();
         assert!(resolve_skill_paths(temporary.path(), &[skill.id.to_owned()]).is_err());
+    }
+
+    #[test]
+    fn the_memory_envelope_carries_world_kinds_only_while_memory_is_active() {
+        let kinds = json!({"core": {"types": {"Technology": "a science"}}, "version": 0});
+        for memory in [false, true] {
+            let base =
+                turn_envelope_block(Utc::now(), memory, &[], None, None, None, None, &[]).unwrap();
+            let value: Value = serde_json::from_str(&attach_world_kinds(&base, &kinds)).unwrap();
+            assert_eq!(value.get("memory_protocol").is_some(), memory);
+            if memory {
+                assert_eq!(value["memory_protocol"]["worldKinds"], kinds);
+            }
+        }
     }
 
     #[test]
@@ -1957,13 +2005,14 @@ mod tests {
 
     #[test]
     fn memory_write_tools_exist_only_when_learning_is_enabled() {
-        const MEMORY_WRITES: [&str; 6] = [
+        const MEMORY_WRITES: [&str; 7] = [
             "source_save",
             "note_save",
             "journal_save",
             "journal_review",
-            "lens_update",
             "principle_save",
+            "world_schema_update",
+            "loupist_setup",
         ];
         let tools = |profile: &AgentRuntimeProfile| {
             profile
@@ -2015,6 +2064,7 @@ mod tests {
                 .unwrap(),
                 preload_component_ids: Vec::new(),
                 explicit_skill_names: explicit_skill_names("$world $skill:lens"),
+                surface: crate::chat::surface::ChatSurface::Session,
             };
             let policy = context.tool_policy("loupist-a".into(), "chat-a".into(), None);
             assert_eq!(

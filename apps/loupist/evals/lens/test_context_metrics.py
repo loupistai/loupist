@@ -15,7 +15,7 @@ class ContextMeasurements(unittest.TestCase):
         old_result={'type':'function_call_output','call_id':'old','output':'old method'}
         new_call={'type':'function_call','call_id':'new','name':'read','arguments':'{"path":"/skills/lens/SKILL.md"}'}
         new_result={'type':'function_call_output','call_id':'new','output':'current skill'}
-        tool={'type':'function','name':'lens_update','parameters':{'type':'object'}}
+        tool={'type':'function','name':'lens_file','parameters':{'type':'object'}}
         base={'pid':123,'at':'now','model':'test','instructions':'<cwd>\n/tmp/example/workspace\n</cwd>','tools':[],'input':[user('old'),old_call,old_result,user('new')]}
         continued={**base,'input':base['input']+[new_call,new_result,{'type':'additional_tools','tools':[tool]}]}
         with tempfile.TemporaryDirectory() as d:

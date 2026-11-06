@@ -1,9 +1,11 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { ChatMessage } from "../../types";
 import { MessageMemoryRow } from "./MessageMemoryRow";
 import { libraryState } from "../map/libraryState";
+import { FixMemoryProvider } from "../memory/fixMemory";
+import { ChatSetAsideProvider, type ChatSetAside } from "../../chat/chatSetAside";
 it("shows the principle statement and supports View and Undo", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const loupistId = (await bridge.loupistList())[0].id;
@@ -36,21 +38,66 @@ it("opens a saved journal entry on the notes tab", async () => {
   expect(open).toHaveBeenCalledWith(expect.objectContaining({ loupistId, surface: "note" }), "Hold the quality call");
 });
 
-it("lists a proposal to review and says when nothing new was saved", async () => {
+it("says when nothing new was saved, and shows nothing for a private chat or a running answer", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const loupistId = (await bridge.loupistList())[0].id;
-  const proposal: ChatMessage = { id: "answer", role: "assistant", content: "Proposed.", status: "complete", created_at: new Date().toISOString(), memory_update: { status: "applied", commitId: "commit", changes: [{ kind: "Lens", title: "Margin method", recordId: "lens-1", operation: "proposed", lesson: "Check cash.", basis: "", futureUse: "", knowledge: { kind: "lens", recordId: "lens-1", revisionId: "rev", objectId: "lens-1" } }] } };
-  const view = render(<MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={proposal} onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} onDismissLensProposal={vi.fn()} />);
-  await userEvent.click(screen.getByRole("button", { name: "1 proposal to review" }));
-  expect(screen.getByRole("list", { name: "Saved in this answer" })).toBeVisible();
-  expect(screen.getByRole("button", { name: "Review Margin method" })).toBeVisible();
-  view.unmount();
-  const unchanged: ChatMessage = { ...proposal, memory_update: { status: "no_change", commitId: null, changes: [] } };
+  const unchanged: ChatMessage = { id: "answer", role: "assistant", content: "Done.", status: "complete", created_at: new Date().toISOString(), memory_update: { status: "no_change", commitId: null, changes: [] } };
   const { rerender } = render(<MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={unchanged} onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} />);
   expect(screen.getByRole("navigation", { name: "What this answer used and saved" })).toHaveTextContent("Nothing new saved");
-  // A private chat and a running answer show nothing.
   rerender(<MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={{ ...unchanged, memory_update: undefined }} onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} />);
   expect(screen.queryByRole("navigation")).toBeNull();
   rerender(<MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={{ ...unchanged, status: "streaming" }} onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} />);
   expect(screen.queryByRole("navigation")).toBeNull();
+});
+
+describe("what the answer learned", () => {
+  const filed: ChatMessage = { id: "mock-filed-answer", role: "assistant", content: "Noted.", status: "complete", created_at: new Date().toISOString(), memory_update: { status: "applied", commitId: "commit", changes: [] } };
+
+  it("says Learned 3 · 1 idea for two filed pages and lists each section with Fix and Forget", async () => {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const loupistId = (await bridge.loupistList())[0].id;
+    const fix = vi.fn(), openPage = vi.fn();
+    const user = userEvent.setup();
+    render(<FixMemoryProvider value={fix}><MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={filed} onOpenMemory={vi.fn()} onOpenMemoryPage={openPage} /></FixMemoryProvider>);
+    const receipt = await screen.findByRole("navigation", { name: "What this answer used and saved" });
+    await waitFor(() => expect(receipt).toHaveTextContent("Learned 3"));
+    expect(receipt).toHaveTextContent("Learned 3·1 idea");
+    await user.click(within(receipt).getByRole("button", { name: "Learned 3" }));
+    const card = await screen.findByRole("group", { name: "Filed in this answer" });
+    const pages = card.querySelectorAll("[data-learned-page]");
+    expect([...pages].map(page => page.getAttribute("data-learned-page"))).toEqual(["lens-subject-tcp", "lens-idea-quic"]);
+    const tcp = pages[0] as HTMLElement;
+    await waitFor(() => expect(within(tcp).getByText("Overview")).toBeVisible());
+    expect(within(tcp).getByText("Risks")).toBeVisible();
+    await user.click(within(tcp).getByRole("button", { name: "Fix Overview" }));
+    expect(fix).toHaveBeenCalledWith(expect.objectContaining({ kind: "lens", recordId: "lens-subject-tcp", label: "TCP · Overview" }));
+    await user.click(within(tcp).getByRole("button", { name: "Forget Risks" }));
+    expect(await within(tcp).findByText("Forgotten.")).toBeVisible();
+    await user.click(within(tcp).getByRole("button", { name: "Undo" }));
+    expect(await within(tcp).findByRole("button", { name: "Forget Risks" })).toBeVisible();
+    await user.click(within(tcp).getByRole("button", { name: "TCP" }));
+    expect(openPage).toHaveBeenCalledWith({ loupistId, surface: "lens", recordId: "lens-subject-tcp" });
+  });
+
+  it("counts a perspective the host delivered as a used page", async () => {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const loupistId = (await bridge.loupistList())[0].id;
+    const message: ChatMessage = { ...filed, id: "answer-2", lens_receipts: [{ recordId: "lens-perspective", revisionId: "rev", kind: "perspective", title: "Evidence-led perspective", delivery: "context" }] };
+    render(<MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={message} onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} />);
+    const receipt = await screen.findByRole("navigation", { name: "What this answer used and saved" });
+    expect(receipt).toHaveTextContent("Used 1 page");
+    await userEvent.click(within(receipt).getByRole("button", { name: "Used 1 page" }));
+    expect(await screen.findByText("Evidence-led perspective")).toBeVisible();
+  });
+
+  it("shows no Learned line in a private chat", async () => {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const loupistId = (await bridge.loupistList())[0].id;
+    const read = vi.spyOn(bridge, "memoryLearned");
+    const aside: ChatSetAside = { ids: new Set<string>(), saveOff: true, toggle: vi.fn() };
+    render(<ChatSetAsideProvider value={aside}><MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={filed} onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} /></ChatSetAsideProvider>);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(screen.queryByText(/Learned/)).toBeNull();
+    expect(read).not.toHaveBeenCalled();
+  });
 });

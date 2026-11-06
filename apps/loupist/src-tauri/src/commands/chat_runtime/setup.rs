@@ -31,7 +31,7 @@ impl PreparedChatTurn {
         profile: &LoupistProfile,
         mut execution: PiExecutionConfig,
         prompt: &str,
-        schedule_management_enabled: bool,
+        interactive: bool,
     ) -> Result<Self, CommandError> {
         let config = loupist_configuration(state, &profile.id)?;
         let skill_ids = config.enabled_skill_ids();
@@ -58,22 +58,13 @@ impl PreparedChatTurn {
             capabilities,
         )
         .map_err(map_internal)?;
-        let mut runtime = runtime.with_schedule_management(schedule_management_enabled);
-        let is_bot = request.thread_id == crate::chat::home::home_thread_id(&profile.id);
-        for component in &mut runtime.components {
-            component.tool_names.retain(|name| {
-                if !name.starts_with("schedule_") {
-                    return true;
-                }
-                if is_bot {
-                    return name != "schedule_handoff";
-                }
-                matches!(
-                    name.as_str(),
-                    "schedule_list" | "schedule_read" | "schedule_handoff"
-                )
-            });
-        }
+        let surface = crate::chat::surface::ChatSurface::resolve(
+            state,
+            &profile.id,
+            &request.thread_id,
+            interactive,
+        )?;
+        let runtime = surface.restrict(runtime);
         let preload_component_ids = agent_harness::preload_component_ids_for_mentions(
             &request.mentioned_connection_ids,
             capabilities,
@@ -95,8 +86,9 @@ impl PreparedChatTurn {
         )?;
         let runtime_surface_sha256 = crate::util::sha256(
             format!(
-                "{}:{schedule_management_enabled}:{is_bot}",
-                pi_session_cache_runtime_surface_sha256(capabilities)?
+                "{}:{}",
+                pi_session_cache_runtime_surface_sha256(capabilities)?,
+                surface.name()
             )
             .as_bytes(),
         );
@@ -116,6 +108,7 @@ impl PreparedChatTurn {
                 preload_component_ids,
                 // Parse only raw current user intent, before attachments/history.
                 explicit_skill_names: agent_harness::explicit_skill_names(prompt),
+                surface,
             },
         })
     }
@@ -145,7 +138,7 @@ pub(super) struct AdmittedChatTurn {
     pub pi_agent_data_dir: PathBuf,
     pub request: ChatSendRequest,
     pub on_event: ChatEventSink,
-    pub schedule_management_enabled: bool,
+    pub surface: crate::chat::surface::ChatSurface,
     pub untrusted_context: bool,
     pub chat_started_at: Instant,
     pub run_id: String,
@@ -218,14 +211,13 @@ pub(super) fn admit_chat_turn(
     // starting the broker.
     #[cfg(feature = "eval-harness")]
     let pi_agent_data_dir = state.pi_agent_data_dir()?;
-    let schedule_management_enabled = admission.is_none();
+    let interactive = admission.is_none();
     let chat_started_at = Instant::now();
     on_event.tool_trace = Arc::default();
     state.ensure_loupist_available(&request.loupist_id)?;
     let run_id = validated_chat_run_id(&request.run_id)?;
     require_text(&request.loupist_id, "Loupist", 512)?;
     require_text(&request.thread_id, "Chat thread", 512)?;
-    // Interactive turns admit here; schedules already own this exact binding.
     // Stop remains available while subsequent setup awaits external processes.
     let admission = match admission {
         Some(admission)
@@ -317,7 +309,7 @@ pub(super) fn admit_chat_turn(
         &profile,
         pi_execution,
         &prompt,
-        schedule_management_enabled,
+        interactive,
     )?;
     let policy = context.tool_policy(
         profile.id.clone(),
@@ -333,6 +325,7 @@ pub(super) fn admit_chat_turn(
         &request.mentioned_connection_ids,
         &context.agent_runtime,
     );
+    let surface = context.surface;
     let harness = context.agent_harness;
     let chat_attachments = state.loupist_files_root(&profile.id)?.absolute_path(
         &PathBuf::from("loupists")
@@ -485,6 +478,9 @@ pub(super) fn admit_chat_turn(
         alert: None,
         watch: None,
         earnings: None,
+        vocabulary: None,
+        handoff: None,
+        link: None,
         id: user_message_id.clone(),
         role: ChatRole::User,
         status: ChatMessageStatus::Complete,
@@ -572,7 +568,7 @@ pub(super) fn admit_chat_turn(
         pi_agent_data_dir,
         request,
         on_event,
-        schedule_management_enabled,
+        surface,
         untrusted_context,
         chat_started_at,
         run_id,

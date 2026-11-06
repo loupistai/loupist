@@ -4,9 +4,9 @@ use crate::commands::tool_executor::{
 };
 use crate::domain::{ChatMessage, ChatRole, ChatSession, MemoryPolicy};
 use crate::knowledge::{
-    Authorship, ClaimEndpoint, DependencyRole, EvidenceBinding, EvidenceRevision, GraphClaim,
-    GraphNode, KnowledgeWrite, LensChangeInput, RepresentationRole, RetainMaterial,
-    RetainNewSource, ReviseLens, SealWorld, Selector, SourceClass, TimePoint, TimePrecision,
+    Authorship, ClaimEndpoint, CreateRecord, DependencyRole, EvidenceBinding, EvidenceRevision,
+    GraphClaim, GraphNode, KnowledgeWrite, PageRead, RepresentationRole, RetainMaterial,
+    RetainNewSource, SealWorld, Selector, SourceClass, TimePoint, TimePrecision,
 };
 use crate::store::{SqliteStore, StoreError};
 use crate::test_fixtures::loupist_profile;
@@ -152,7 +152,6 @@ fn save_turn(
             sources,
             reads,
             research,
-            &[],
         )
         .map_err(|error| StoreError::Invalid(error.to_string()))?;
         Ok(())
@@ -186,17 +185,6 @@ fn empty_read(record_id: &str) -> HostReadRequest {
         edge_limit: None,
         byte_limit: None,
         lens_status: "considered".into(),
-    }
-}
-
-fn lens_document(markdown: &str) -> LensDocument {
-    LensDocument {
-        markdown: markdown.into(),
-        applicability: String::new(),
-        assumptions: String::new(),
-        procedure: String::new(),
-        principles: String::new(),
-        limitations: String::new(),
     }
 }
 
@@ -259,11 +247,20 @@ async fn world_catalog_exposes_only_current_content_with_loupist_isolation() {
             title: "Supply chain".into(),
             at_ms: 5,
         })?;
-        let initial = seed_initial_revision(&write, record, "Supply chain", 6)?;
-        let older = initial.revision_id.unwrap();
+        let initial = write.seal_world(SealWorld {
+            loupist_id: "loupist-a".into(),
+            record_id: record.record_id.clone(),
+            expected_revision_id: None,
+            at_ms: 6,
+            nodes: vec![],
+            claims: vec![],
+            annotations: vec![],
+            dependencies: vec![],
+        })?;
+        let older = initial.revision_id.clone();
         let current = write.seal_world(SealWorld {
             loupist_id: "loupist-a".into(),
-            record_id: initial.record_id.clone(),
+            record_id: record.record_id.clone(),
             expected_revision_id: Some(older.clone()),
             at_ms: 6,
             nodes: vec![node("supplier", "Supplier")],
@@ -271,7 +268,7 @@ async fn world_catalog_exposes_only_current_content_with_loupist_isolation() {
             annotations: vec![],
             dependencies: vec![],
         })?;
-        Ok((initial.record_id, older, current.revision_id))
+        Ok((record.record_id, older, current.revision_id))
     })
     .unwrap();
     let request = |loupist_id: &str| KnowledgeCatalogRequest {
@@ -347,7 +344,6 @@ fn saved_turn_memory_commits_with_the_chat_and_follows_its_policy() {
                 &[staged("must not remain")],
                 &[],
                 None,
-                &[],
             )
             .map_err(|error| StoreError::Invalid(error.to_string()))?;
             Err(StoreError::Conflict("stop"))
@@ -501,7 +497,9 @@ fn journals_keep_the_acknowledged_snapshot_and_refuse_unacknowledged_or_foreign_
         Ok(world.record_id)
     })
     .unwrap();
-    let lens = ensure_standing_lens(&state, "loupist-a", "Use the first method.").unwrap();
+    let lens = ensure_perspective(&state, "loupist-a", "Use the first method.")
+        .unwrap()
+        .unwrap();
     let charter = host_memory_context(&state, "loupist-a", "")
         .unwrap()
         .charter_delivery
@@ -528,19 +526,14 @@ fn journals_keep_the_acknowledged_snapshot_and_refuse_unacknowledged_or_foreign_
         ));
         // Later edits must not rewrite what this turn already received.
         let write = KnowledgeWrite::bind(tx, blobs);
-        write.revise_lens(ReviseLens {
-            loupist_id: "loupist-a".into(),
-            record_id: lens.record_id.clone(),
-            expected_revision_id: lens.revision_id.clone(),
-            at_ms: 12,
-            document: lens_document("Use the edited method."),
-            dependencies: Vec::new(),
-            change: LensChangeInput {
-                rationale: "Later edit.".into(),
-                references: Vec::new(),
-                feedback: None,
-            },
-        })?;
+        write.put_section(
+            "loupist-a",
+            &lens,
+            "focus",
+            "Use the edited method.",
+            &crate::knowledge::test_support::user_origin(),
+            12,
+        )?;
         write.seal_world(SealWorld {
             loupist_id: "loupist-a".into(),
             record_id: world_id.clone(),
@@ -558,8 +551,10 @@ fn journals_keep_the_acknowledged_snapshot_and_refuse_unacknowledged_or_foreign_
         .unwrap()
         .charter;
     assert_eq!(
-        serde_json::from_str::<LensDocument>(&next_charter.unwrap())
+        serde_json::from_str::<PageRead>(&next_charter.unwrap())
             .unwrap()
+            .body
+            .sections()[0]
             .markdown,
         "Use the edited method."
     );
@@ -600,10 +595,12 @@ fn journals_keep_the_acknowledged_snapshot_and_refuse_unacknowledged_or_foreign_
         },
     )
     .unwrap();
-    assert_eq!(
-        journal.inputs.lenses[0].document.markdown,
-        "Use the first method."
-    );
+    assert!(journal.inputs.lenses[0]
+        .markdown
+        .contains("Use the first method."));
+    assert!(!journal.inputs.lenses[0]
+        .markdown
+        .contains("Use the edited method."));
     assert_eq!(journal.inputs.worlds[0].delivered_view_json, world_text);
     assert!(journal.inputs.sources[0]
         .attribution
@@ -839,7 +836,6 @@ fn staged_source_refs_freeze_note_inputs_and_world_jobs_only_on_commit() {
             sources,
             &[],
             Some(&note),
-            &[],
         )
         .unwrap();
         let write = KnowledgeWrite::bind(&tx, &blobs);
@@ -890,59 +886,51 @@ fn lens_delivery_includes_every_section_and_large_base_requires_an_exact_read() 
         .store
         .create_loupist(&loupist_profile("loupist-a"))
         .unwrap();
-    let lens = ensure_standing_lens(&state, "loupist-a", "Base").unwrap();
-    let mut document = LensDocument {
-        markdown: "A complete perspective".into(),
-        applicability: "Cyclical businesses".into(),
-        assumptions: "Capacity is finite".into(),
-        procedure: "Check utilization".into(),
-        principles: "Disconfirm the thesis".into(),
-        limitations: format!("{}Important terminal limit.", "Context. ".repeat(700)),
-    };
-    let save = |document: LensDocument| {
+    let lens = ensure_perspective(&state, "loupist-a", "Base")
+        .unwrap()
+        .unwrap();
+    let put = |key: &str, text: &str, at_ms: i64| {
         with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
-            let write = KnowledgeWrite::bind(tx, blobs);
-            let current = write.owned_record("loupist-a", &lens.record_id)?;
-            write.revise_lens(ReviseLens {
-                loupist_id: "loupist-a".into(),
-                record_id: lens.record_id.clone(),
-                expected_revision_id: current.revision_id,
-                at_ms: 91,
-                document,
-                dependencies: Vec::new(),
-                change: LensChangeInput {
-                    rationale: "Test complete delivery".into(),
-                    references: Vec::new(),
-                    feedback: None,
-                },
-            })
+            KnowledgeWrite::bind(tx, blobs).put_section(
+                "loupist-a",
+                &lens,
+                key,
+                text,
+                &crate::knowledge::test_support::user_origin(),
+                at_ms,
+            )
         })
         .unwrap()
     };
-    save(document.clone());
+    put("priorities", "Cyclical businesses: check utilization.", 91);
+    put("avoid", "Disconfirm the thesis before sizing.", 92);
+    let read = |lens: &str| {
+        with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
+            KnowledgeWrite::bind(tx, blobs).read_page("loupist-a", lens)
+        })
+        .unwrap()
+    };
     let context = host_memory_context(&state, "loupist-a", "").unwrap();
-    let entry = context
-        .entries
-        .iter()
-        .find(|entry| entry.id == lens.record_id)
-        .unwrap();
-    assert!(entry.summary.contains("Cyclical businesses"));
-    assert!(entry.summary.chars().count() <= 380);
-    assert_eq!(
-        serde_json::from_str::<LensDocument>(context.charter.as_ref().unwrap()).unwrap(),
-        document
-    );
+    let delivered: PageRead = serde_json::from_str(context.charter.as_ref().unwrap()).unwrap();
+    assert_eq!(delivered, read(&lens));
+    assert_eq!(delivered.body.sections().len(), 3);
     assert!(context.charter_delivery.is_some());
+    assert!(context.entries.iter().all(|entry| entry.id != lens));
 
-    document.limitations = "All conditions must be read. ".repeat(2000);
-    save(document.clone());
+    for index in 0..13 {
+        put(
+            &format!("more-{index}"),
+            &"모든 조건을 다 읽어야 한다. ".repeat(110),
+            100 + index,
+        );
+    }
     let context = host_memory_context(&state, "loupist-a", "").unwrap();
     assert!(context.charter_delivery.is_none());
-    let (delivered, _) =
-        host_prepare_read(&state, "loupist-a", &empty_read(&lens.record_id)).unwrap();
+    assert!(context.charter.as_ref().unwrap().contains("readRequired"));
+    let (delivered, _) = host_prepare_read(&state, "loupist-a", &empty_read(&lens)).unwrap();
     assert_eq!(
-        serde_json::from_str::<LensDocument>(&delivered).unwrap(),
-        document
+        serde_json::from_str::<PageRead>(&delivered).unwrap(),
+        read(&lens)
     );
 }
 
@@ -1092,3 +1080,91 @@ fn custom_connection_origin_is_retained_in_source_readers_catalog_and_map() {
 }
 
 mod controls;
+
+#[test]
+fn lens_reads_links_search_and_filing_stay_within_the_loupist() {
+    use crate::knowledge::lens_page::{PageDelta, PageTarget};
+    let directory = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(directory.path().join("app"));
+    for id in ["loupist-a", "loupist-b"] {
+        state.store.create_loupist(&loupist_profile(id)).unwrap();
+    }
+    let private = with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
+        KnowledgeWrite::bind(tx, blobs).file_section(
+            "loupist-a",
+            crate::knowledge::lens_page::PageKind::Method,
+            "Private durable cash method",
+            "steps",
+            "PRIVATE_BODY_SHOULD_NOT_LEAK durable cash",
+            &crate::knowledge::test_support::user_origin(),
+            2,
+        )
+    })
+    .unwrap();
+    let request = |loupist: &str| KnowledgeLensReadRequest {
+        loupist_id: loupist.into(),
+        record_id: private.record_id.clone(),
+        revision_id: None,
+    };
+    assert!(lens_read(&state, request("loupist-b")).is_err());
+    assert!(lens_read(&state, request("loupist-a")).is_ok());
+    let hits = lens_search(
+        &state,
+        KnowledgeLensSearchRequest {
+            loupist_id: "loupist-b".into(),
+            query: "durable cash".into(),
+            kinds: vec![],
+        },
+    )
+    .unwrap();
+    assert!(hits.is_empty());
+    let mine = lens_search(
+        &state,
+        KnowledgeLensSearchRequest {
+            loupist_id: "loupist-a".into(),
+            query: "durable cash".into(),
+            kinds: vec![crate::knowledge::lens_page::LensKind::Method],
+        },
+    )
+    .unwrap();
+    assert_eq!(mine.len(), 1);
+    assert_eq!(mine[0].record_id, private.record_id);
+    let linked = with_loupist_knowledge(&state, "loupist-b", |tx, blobs| {
+        KnowledgeWrite::bind(tx, blobs).file_section(
+            "loupist-b",
+            crate::knowledge::lens_page::PageKind::Method,
+            "Borrowed",
+            "steps",
+            &format!("See [theirs](lens:{})", private.record_id),
+            &crate::knowledge::test_support::user_origin(),
+            3,
+        )
+    })
+    .unwrap();
+    assert!(linked.links.is_empty());
+    assert!(!serde_json::to_string(&linked)
+        .unwrap()
+        .contains("PRIVATE_BODY"));
+    let read_a = lens_read(&state, request("loupist-a")).unwrap();
+    assert!(read_a.backlinks.is_empty());
+    let refused = with_loupist_knowledge(&state, "loupist-b", |tx, blobs| {
+        KnowledgeWrite::bind(tx, blobs).file(
+            "loupist-b",
+            &crate::knowledge::test_support::user_origin(),
+            vec![PageDelta {
+                target: PageTarget::Existing {
+                    record_id: private.record_id.clone(),
+                },
+                ops: vec![crate::knowledge::lens_page::LensOp::Summary {
+                    text: "Taken over".into(),
+                }],
+            }],
+            4,
+        )
+    });
+    assert!(refused.is_err());
+    assert_eq!(
+        lens_read(&state, request("loupist-a")).unwrap().revision_id,
+        private.revision_id
+    );
+}

@@ -1,0 +1,10 @@
+.page-reader .loupist-lens-link { display: inline; padding: 0; border: 0; background: none; color: var(--gg-color-accent); font: inherit; text-align: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 3px; cursor: pointer; }
+.loupist-lens-link.is-unresolved { color: var(--gg-color-text-secondary); text-decoration-style: dashed; }
+.loupist-lens-link.is-archived { opacity: .72; }
+.lens-link-preview { z-index: var(--gg-z-popover); width: min(280px, 70vw); padding: 10px var(--gg-space-3); border: 1px solid var(--gg-color-border-strong); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-app); color: var(--gg-color-text-primary); box-shadow: var(--gg-shadow-md); }
+.lens-link-preview strong { display: block; font-size: var(--gg-text-control); }
+.lens-link-preview p { margin: 6px 0 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: 1.5; }
+.page-reader .loupist-lens-link:hover { text-decoration-color: currentColor; }
+.page-reader .loupist-lens-link:focus-visible {   border-radius: 2px; }
+.lens-markdown-source > summary { display: flex; align-items: center; min-height: var(--gg-size-control-sm); cursor: pointer; }
+.lens-markdown-source pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--gg-text-control); line-height: 1.6; user-select: text; }

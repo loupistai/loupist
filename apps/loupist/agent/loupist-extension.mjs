@@ -321,18 +321,27 @@ function prepareSiblingArguments(input, container, fields) {
   return input;
 }
 
-function prepareLensArguments(input, parameters) {
-  const references = ["sourceReads", "worldReads", "journalReads", "previousNoteIds"];
-  const prepared = prepareSiblingArguments(input, "document", references);
-  const document = prepared?.document;
-  if (!document || typeof document !== "object" || Array.isArray(document)) return prepared;
-  // An empty unsupported section contains no text or evidence to preserve.
-  // Keep substantive extras and misplaced/conflicting references for validation.
-  for (const [key, value] of Object.entries(document)) {
-    if (value === "" && !Object.hasOwn(parameters.properties.document.properties, key)
-      && !references.includes(key)) delete document[key];
+function prepareLensFileArguments(input) {
+  if (!input || typeof input !== "object" || !Array.isArray(input.pages)) return input;
+  for (const page of input.pages) {
+    if (!page || typeof page !== "object" || Array.isArray(page)) continue;
+    if (typeof page.page === "string") page.page = { recordId: page.page };
+    if (!Array.isArray(page.ops)) continue;
+    for (const op of page.ops) {
+      if (!op || typeof op !== "object" || Array.isArray(op) || op.op !== "put") continue;
+      if (Array.isArray(op.basis)) op.basis = { refs: op.basis };
+      if (!Object.hasOwn(op, "refs")) continue;
+      if (op.basis === undefined) {
+        op.basis = { refs: op.refs };
+        delete op.refs;
+      } else if (op.basis && typeof op.basis === "object" && !Array.isArray(op.basis)
+        && (!Object.hasOwn(op.basis, "refs") || isDeepStrictEqual(op.basis.refs, op.refs))) {
+        op.basis.refs = op.refs;
+        delete op.refs;
+      }
+    }
   }
-  return prepared;
+  return input;
 }
 
 function register(pi, name, label, description, parameters, method) {
@@ -343,8 +352,8 @@ function register(pi, name, label, description, parameters, method) {
     parameters,
     ...(name === "note_save" ? {
       prepareArguments: (input) => prepareSiblingArguments(input, "workingNote", ["sourceReads", "worldReads", "lensReads", "previousNoteIds"]),
-    } : name === "lens_update" ? {
-      prepareArguments: (input) => prepareLensArguments(input, parameters),
+    } : name === "lens_file" ? {
+      prepareArguments: prepareLensFileArguments,
     } : {}),
     async execute(toolCallId, input, signal) {
       return textResult(await requestBroker(method, input, signal, toolCallId));

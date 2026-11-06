@@ -597,9 +597,9 @@ export const scenarios: readonly PreviewScenario[] = [
         await until(() => select(".learning-toast"), "Learning toast did not appear");
         if (id !== "map-learned-toast") {
           await click(".learning-toast button");
-          await until(() => document.querySelectorAll(".learning-evidence li").length === Math.min(review.evidenceCount, 5) && select(".lens-then-now"), "Learning details did not load");
+          await until(() => select(".lens-then-now"), "Learning details did not load");
           if (id === "lens-then-now-stacked") {
-            const inspector = select(".workspace-lens-content .lens-reader")!;
+            const inspector = select(".workspace-lens-content .memory-reader")!;
             inspector.style.width = "340px";
             inspector.style.height = "100%";
             inspector.style.left = "auto";
@@ -681,6 +681,7 @@ export const scenarios: readonly PreviewScenario[] = [
   { ...base("onboarding-bot", "First launch opens Bot after the notice", () => document.getElementById("current-location")?.textContent === i18n.t("app:thread.title") ? select(".chat-layout") : null, async root => {
     await click("[data-notice-acknowledgment]", root);
     await click("[data-onboarding-start]", root);
+    await click("[data-onboarding-create]", root);
     await until(() => select("textarea[data-chat-composer]"), "Bot did not initialize");
   }), setup: async bridge => {
     await prepareFixture(bridge, "loupist");
@@ -1442,7 +1443,7 @@ export const scenarios: readonly PreviewScenario[] = [
         const catalog = bridge.knowledgeCatalog.bind(bridge);
         bridge.knowledgeCatalog = async (request) => ({ ...(await catalog(request)), lenses: [] });
       }
-      if (id === "memory-reset-dialog") bridge.knowledgeMemoryResetPreview = async () => ({ principles: 2, methods: 3, names: 12, relationships: 18, sources: 4 });
+      if (id === "memory-reset-dialog") bridge.knowledgeMemoryResetPreview = async () => ({ principles: 2, pages: 3, sections: 5, names: 12, relationships: 18, sources: 4 });
       if (id === "memory-paused") {
         const scope = { kind: "project" as const, loupistId: "loupist-quality" };
         const current = await bridge.configRead({ scope });
@@ -1451,6 +1452,20 @@ export const scenarios: readonly PreviewScenario[] = [
       }
     },
   })),
+  { ...base("memory-pages", "What the Loupist knows: a topic page open with every kind of basis", () => {
+    const reader = select(".memory-reader .page-reader");
+    return reader && reader.querySelector(".page-contested") && reader.querySelector('[data-chip="said"]') && reader.querySelector('[data-chip="view"]') ? reader : null;
+  }, async root => {
+    await until(() => root.querySelector("textarea[data-chat-composer]"), "Chat did not initialize");
+    await selectPanel("lens");
+    await until(() => select(".memory-page-list .memory-row"), "Pages did not load");
+    await click('.memory-page-list .memory-row[aria-label^="Hanul Precision"], .memory-page-list .memory-row[aria-label^="한울정밀"]');
+    await until(() => select(".page-reader .page-section"), "The page did not open");
+  }), setup: async bridge => {
+    await prepareFixture(bridge, "answer");
+    bridge.knowledgeGrowthEvents = async () => ({ events: [], nextCursor: null });
+    bridge.learningReviewList = async () => [];
+  } },
   ...(["chat-used-principle-correction", "chat-save-declined"] as const).map((id): PreviewScenario => ({
     ...base(id, id === "chat-save-declined" ? "A secret was not saved to memory" : "A principle that shaped the answer can be set aside",
       () => select(id === "chat-save-declined" ? ".memory-declined" : ".used-memory"), async () => {
@@ -1700,18 +1715,23 @@ export const scenarios: readonly PreviewScenario[] = [
       observer(event);
     });
   } },
-  ...["chat-receipt", "chat-receipt-empty"].map((id): PreviewScenario => ({
-    ...base(id, id === "chat-receipt" ? "Answer receipt with every segment" : "Answer that saved nothing", () => {
+  ...["chat-receipt", "chat-receipt-empty", "chat-learned"].map((id): PreviewScenario => ({
+    ...base(id, id === "chat-receipt" ? "Answer receipt with every segment" : id === "chat-learned" ? "Answer whose Learned line is open" : "Answer that saved nothing", () => {
       const receipt = select("article.message.assistant.complete .chat-receipt");
       if (!receipt) return null;
       if (id === "chat-receipt-empty") return receipt;
-      return receipt.querySelectorAll(".chat-receipt-item").length >= 8 ? receipt : null;
+      if (id === "chat-learned") return select(".learned-card .learned-section p") ? receipt : null;
+      return receipt.querySelectorAll(".chat-receipt-item").length >= 7 ? receipt : null;
     }, async root => {
       await until(() => root.querySelector("article.message.assistant.complete"), "Answer did not load");
+      if (id === "chat-learned") {
+        await click('.chat-receipt [data-receipt-learned="sections"]', root);
+        await until(() => select(".learned-card .learned-section p"), "Filed pages did not load");
+      }
       if (hasLayout()) {
         await until(() => id === "chat-receipt-empty" ? select(".chat-receipt") : root.querySelector("button.loupist-citation"), "Answer rendering did not finish");
         await until(() => id === "chat-receipt-empty" || select('.chat-receipt [data-receipt="names"]'), "Map growth did not reach the receipt");
-        select(".chat-receipt")?.scrollIntoView({ block: "center" });
+        select(id === "chat-learned" ? ".learned-card" : ".chat-receipt")?.scrollIntoView({ block: "center" });
       }
     }),
     setup: async bridge => {
@@ -1738,15 +1758,14 @@ export const scenarios: readonly PreviewScenario[] = [
           { recordId: principle.recordId, revisionId: principle.revisionId, kind: "principle", title: principle.statement, delivery: "context" },
           { recordId: "preview-method", revisionId: "preview-method-rev", kind: "method", title: "Separate durable margins from temporary capacity costs", delivery: "exact_read" },
         ];
-        const lens = (recordId: string, title: string, operation: "create" | "proposed") => ({ kind: "Lens" as const, recordId, operation, title, lesson: "Compare utilization with inventory days before reading margin changes.", basis: "Q3 operating review", futureUse: "Next capacity ramp", knowledge: { kind: "lens" as const, recordId, revisionId: `${recordId}-rev`, objectId: recordId } });
+        const lens = (recordId: string, title: string, operation: "create") => ({ kind: "Lens" as const, recordId, operation, title, lesson: "Compare utilization with inventory days before reading margin changes.", basis: "Q3 operating review", futureUse: "Next capacity ramp", knowledge: { kind: "lens" as const, recordId, revisionId: `${recordId}-rev`, objectId: recordId } });
         message.memory_update = { status: "applied", commitId: "preview-receipt", changes: [
           ...(message.memory_update?.status === "applied" ? message.memory_update.changes : []),
           lens("preview-method-saved", "Test whether capacity costs are temporary", "create"),
-          lens("preview-method-proposal", "Check cash conversion across a capacity ramp", "proposed"),
         ] };
         return workspace;
       };
-      if (id === "chat-receipt") {
+      if (id === "chat-receipt" || id === "chat-learned") {
         const readMap = bridge.knowledgeMap.bind(bridge);
         bridge.knowledgeMap = async request => {
           const map = await readMap(request);
@@ -1880,20 +1899,17 @@ export const scenarios: readonly PreviewScenario[] = [
     const list = select(".source-library > ul");
     return list && list.children.length >= 6 && mapCanvas() ? list : null;
   }, async (root) => { await navigate(root, "map"); await clickMapAction("[data-map-library]", root); }),
-  { ...base("lens-reader", "Lens documents and Markdown", () => select('.workspace-lens-content .lens-markdown-source pre'), async root => {
+  { ...base("lens-reader", "A Lens page read as sections", () => select('.workspace-lens-content .page-reader .page-section'), async root => {
     await navigate(root, "lens");
-    await click('.memory-page-tabs [role="tab"]:nth-child(3)');
     const method = await until(() => [...document.querySelectorAll<HTMLButtonElement>(".memory-row")].find(row => row.querySelector(".memory-marker.is-method")), "Method did not list");
     method.click();
-    await until(() => select(".workspace-lens-content .lens-document"), "Method did not open");
-    await click(".workspace-lens-content .lens-markdown-source summary");
+    await until(() => select(".workspace-lens-content .page-reader .page-section"), "Method did not open");
   }), setup: prepareFixture },
-  { ...base("lens-reader-many", "A long method list keeps its document readable when the Lens is expanded", () => select('.workspace-lens-content .lens-document'), async root => {
+  { ...base("lens-reader-many", "A long page list keeps its page readable when the Lens is expanded", () => select('.workspace-lens-content .page-reader'), async root => {
     await navigate(root, "lens");
-    await click('.memory-page-tabs [role="tab"]:nth-child(3)');
     const method = await until(() => [...document.querySelectorAll<HTMLButtonElement>(".memory-row")].find(row => row.querySelector(".memory-marker.is-method")), "Method did not list");
     method.click();
-    await until(() => select('.workspace-lens-content .lens-document'), "Method did not open");
+    await until(() => select('.workspace-lens-content .page-reader'), "Method did not open");
     if (!window.matchMedia(workspaceOverlayMedia).matches) await click('.workspace-kind-heading button:first-child');
   }), setup: async bridge => {
     await prepareFixture(bridge);
@@ -1977,9 +1993,9 @@ export const scenarios: readonly PreviewScenario[] = [
   }) },
   base("loupists", "Loupists in Settings", () => select(".settings-loupists"), (root) => settings(root, "loupists")),
   base("loupist-settings", "Editable Loupist profile", () => select(".loupist-settings-page #loupist-profile-focus"), async () => { await openLoupistSettings(); await until(() => select("#loupist-profile-name"), "Profile editor did not open"); }),
-  { ...base("loupist-settings-tracking", "What this Loupist tracks", () => select(".loupist-tracking-suggestion"), async () => {
+  { ...base("loupist-settings-tracking", "What the map tracks", () => select(".loupist-tracking-changes"), async () => {
     await openLoupistSettings();
-    await click('[data-loupist-section="learning"] > summary');
+    await click('[data-loupist-section="world"] > summary');
     await until(() => select(".loupist-tracking-list"), "Tracking list did not load");
     select(".loupist-tracking")?.scrollIntoView({ block: "start" });
   }), setup: async bridge => { await prepareFixture(bridge); bridge.installWorldSchema("loupist-quality", semiconductorTrackingView()); } },
@@ -2189,7 +2205,6 @@ function sharingScenarios(): PreviewScenario[] {
       bridge => { bridge.sharing.account = { clientConfigured: false, indexConfigured: false, galleryTermsUrl: null, login: null }; }),
     sharing("Share this method", "share-method", () => select('[data-share-sheet="item"] .share-item-row .share-section-note'), async root => {
       await openMemoryPage(root);
-      await click('.memory-page-tabs [role="tab"]:nth-child(3)');
       const row = await until(() => [...document.querySelectorAll<HTMLButtonElement>(".memory-page-list .memory-row")].find(button => button.querySelector(".memory-marker.is-method")), "No method row");
       row.click();
       await click(".memory-reader [data-share-item]");

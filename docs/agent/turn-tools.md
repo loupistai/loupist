@@ -19,6 +19,16 @@ supplied by the user, is enough for `artifact_read`. Call `artifact_list` only t
 discover an unknown target id.
 [Connections](../capabilities/connections.md) owns IDs and credential behavior.
 
+`research_open` (always permitted, no component, Bot only, one per reply) hands a
+question that needs depth or several steps to a research session: `title`, `question`,
+`brief`, `pins` of `{lens}` or `{world}` ids and a `requestKey`. It stages; the reply's
+commit inserts one `chat_handoffs` row and the session Chat in the same transaction, a
+repeated key creates nothing, and a reply that does not finish hands nothing off. After
+the commit the host runs the session once through ordinary Chat admission with the
+unattended allowlist and the Bot turn's model and Memory flags, and the Bot shows a
+`handoff` card ([Home Thread](../ui/home-thread.md#home-thread)). A session or an
+unattended run does not list the tool and the broker refuses it by surface.
+
 The `schedules` component is independent of Memory. Read current IDs/revisions
 before editing and keep a stable creation key within the turn. Agent modes are
 fresh history or the task's own dedicated Chat; scheduled runs cannot mutate
@@ -32,6 +42,31 @@ the folder database, and returns partial results when that branch fails (for
 example without the local embedding assets). Empty partial results do not prove absence.
 A Source read returns retained attribution/coverage alongside its bytes. A World
 read can supply `sourceTargets` for the original spans.
+
+`lens_file` (Memory save in `memory-save`, on the unattended allowlist, at most two
+calls, 8 pages and 40 ops per reply) files what the turn established into Lens
+pages: each entry of `pages` names a page read with `lens_read` this turn
+(`page.recordId`) or a create (`page.create` with `kind`, `title` and `about`), and
+its `ops` are `put`, `retire`, `summary` and `idea_status`
+([filing](../knowledge/lens.md#filing)). A section's basis cites the turn's handles:
+`{world: readRef, claimId}` must name a claim that `world_read` delivered,
+`{source: readRef | saveRef}` a Source read or a same-turn `source_save` (its span
+resolves at commit, once the Source exists), `{said: true}` the user's message of
+this turn (refused in unattended runs) and `{lens: recordId, key?}` a page read this
+turn. Rust refuses an unknown or foreign handle by its field with a repair hint, a
+`put` or `retire` with `expected` needs that page's acknowledged exact read, a
+create with `expected` is refused, and credential-like text returns
+`sensitive_memory`. Staging also runs the writer's text policy and create
+resolution (`KnowledgeWrite::screen_delta`): a refused text is refused by its field;
+a create landing on a page this turn exact-read revises it, and one landing on an
+unread page may only add sections ("read and revise" otherwise). Each call reserves
+its pages and ops under one lock, so parallel calls share the budget and an
+undelivered call frees its share. The reply's commit writes every staged delta through
+`KnowledgeWrite::file` with `FilingOrigin::Turn`; an op the policy refuses by then
+(say, a node the World dropped) is logged `refused_text`, and an op on a page archived
+or removed since is logged `refused_inactive`; the reply still commits. The answer's `memory_update` lists
+each filed page once (kind `Lens`, operation `create` or `revise`, `outcomes` with
+`opId`, `outcome` and `key`), and a stopped reply files nothing.
 
 [Asset pages](../knowledge/asset-pages.md#asset-pages) have three catalog tools, all on the
 unattended allowlist. `asset_page_read` (Memory read, by `assetId` or symbol and
@@ -47,6 +82,36 @@ away, each staged as its own saved-context result (`earnings_snapshot`) with a
 `citation_url` and Rust's differences (`differencesComputedByRust`), filed steps and
 revisions. An answer paragraph that is only a link to that URL renders the compact
 results card.
+
+`world_schema_update` (Memory save in `memory-save`, interactive turns only, one call
+per reply, not on the scheduled-run allowlist) takes up to two `types` and three
+`relations` for a kind of thing or link the user asked the map to track. Rust checks
+names against the live vocabulary and its limits when the call arrives, stages the
+change, and applies it with the reply together with the asking message; a stopped
+reply applies nothing, and a change whose name the map gained since staging is
+skipped and listed in the answer's `memory_update.skippedKinds`. [Worlds](../knowledge/worlds.md#presets-changes-and-undo) owns the rules.
+
+`loupist_setup` (Memory save in `memory-save`, Bot and research sessions only, one call
+per reply, refused in scheduled and delegated runs by the unattended allowlist and by
+the chat surface) sets a Loupist up from what the user says. It takes `follow` (at most
+ten `{symbol, market?, name?}`), `unfollow` (at most ten `{symbol, market?}`), `focus`
+(1–280 characters, replacing the research focus) and `preset` (a `LoupistTemplate`
+id). Rust checks each field when the call arrives and refuses by field
+(`follow[1].symbol`, `focus`, `preset`); nothing applies until the reply commits, and a
+stopped reply changes nothing. The watchlist lives in the app database, outside the
+reply's transaction, so its changes apply just before that transaction through the
+watchlist commands' own functions (`commands/user_context.rs`) and stay if the commit
+then fails; a market the user did not give stays unknown, and an asset already
+followed under any market is not added again. In the reply's
+transaction the focus is written to the Loupist profile, the World settings'
+`research_focus` and the perspective page's `focus` section together, and the preset adds its curated kinds the map lacks as one
+`preset` change carrying the asking message. A preset's default focus (the New
+Loupist dialog's copy) fills only an empty focus, so a repeated preset changes
+nothing. The answer's `memory_update.setup` lists each applied change (`followed`,
+`unfollowed`, `focus`, `tracks`) for the receipt; preset kinds the map has no room for
+are listed in `skippedKinds`. `SYSTEM.md` tells the agent to call it in the reply where
+the user says what they research, what to follow or picks a starting point, and never
+to send them to settings.
 
 `thesis_update` (Memory save, staged until the reply commits) takes `assetId`, 1–3
 `evidence` citation URLs from the turn and either `to` with a `reason` (≤ 280

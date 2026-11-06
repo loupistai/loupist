@@ -1,6 +1,84 @@
 use super::*;
 use crate::knowledge::{memory_controls, memory_reset};
 
+fn summarize(store: &KnowledgeStore, record_id: &str, text: &str, actor: &str, at_ms: i64) {
+    use crate::knowledge::lens_page::{LensOp, PageDelta, PageTarget};
+    store
+        .transact(|write| {
+            write.file(
+                "loupist-a",
+                &origin(actor),
+                vec![PageDelta {
+                    target: PageTarget::Existing {
+                        record_id: record_id.into(),
+                    },
+                    ops: vec![LensOp::Summary { text: text.into() }],
+                }],
+                at_ms,
+            )
+        })
+        .unwrap();
+}
+
+#[test]
+fn reset_clears_a_loupist_summary_on_a_kept_page_and_keeps_the_users() {
+    let (_temp, store) = open_store();
+    store
+        .transact(|write| {
+            settings_table(write);
+            Ok(())
+        })
+        .unwrap();
+    let learned = method(&store, "My research method", "user");
+    store
+        .transact(|write| {
+            write.put_section(
+                "loupist-a",
+                &learned.record_id,
+                "risks",
+                "Market collapse is certain.",
+                &origin("loupist"),
+                AT + 1,
+            )
+        })
+        .unwrap();
+    summarize(
+        &store,
+        &learned.record_id,
+        "Market collapse is certain.",
+        "loupist",
+        AT + 1,
+    );
+    let mine = method(&store, "My own summary", "user");
+    summarize(
+        &store,
+        &mine.record_id,
+        "My own conclusion.",
+        "user",
+        AT + 1,
+    );
+    let counts = store
+        .read(|write| memory_reset::preview(write.tx, "loupist-a"))
+        .unwrap();
+    assert_eq!(counts.sections, 2, "the Loupist's section and its summary");
+    store
+        .transact(|write| memory_reset::reset(write.tx, write.blobs, "loupist-a", &counts, AT + 2))
+        .unwrap();
+    let learned = store.read_page("loupist-a", &learned.record_id).unwrap();
+    assert!(
+        !learned.markdown(false).contains("Market collapse"),
+        "{}",
+        learned.markdown(false)
+    );
+    assert_eq!(learned.body.sections().len(), 1);
+    let mine = store.read_page("loupist-a", &mine.record_id).unwrap();
+    assert_eq!(mine.body.summary(), "My own conclusion.");
+    let remaining = store
+        .read(|write| memory_reset::preview(write.tx, "loupist-a"))
+        .unwrap();
+    assert_eq!(remaining, memory_reset::ResetCounts::default());
+}
+
 fn node(id: &str, name: &str, kind: &str, properties: BTreeMap<String, Value>) -> GraphNode {
     GraphNode {
         source_role: "source".into(),
@@ -17,17 +95,19 @@ fn settings_table(write: &KnowledgeWrite<'_>) {
         .unwrap();
 }
 
-fn method(store: &KnowledgeStore, title: &str, actor: &str) -> LensView {
-    let record = create(store, "loupist-a", RecordKind::Lens, title);
+fn origin(actor: &str) -> lens_page::FilingOrigin {
+    match actor {
+        "loupist" => test_support::turn_origin("chat-research", "message-research"),
+        "import" => lens_page::FilingOrigin::Import {
+            pack: json!({"kind": "shared_pack"}),
+        },
+        _ => test_support::user_origin(),
+    }
+}
+
+fn method(store: &KnowledgeStore, title: &str, actor: &str) -> PageRead {
     store
-        .transact(|write| {
-            write.revise_lens_with_origin(
-                lens_request("loupist-a", &record.record_id, None, title),
-                actor,
-                None,
-                None,
-            )
-        })
+        .file_method("loupist-a", title, title, &origin(actor), AT)
         .unwrap()
 }
 
@@ -41,17 +121,19 @@ fn reset_removes_only_loupist_authored_memory_and_queues_world_reload() {
         })
         .unwrap();
     let learned = method(&store, "Learned research method", "loupist");
-    let learned_principle = method(&store, "Learned principle", "loupist");
+    let user_method = method(&store, "My own method", "user");
     store
         .transact(|write| {
-            write.tx.execute(
-                "UPDATE knowledge_lens_metadata SET lens_kind='principle' WHERE record_id=?1",
-                [&learned_principle.record_id],
-            )?;
-            Ok(())
+            write.put_section(
+                "loupist-a",
+                &user_method.record_id,
+                "risks",
+                "A risk the Loupist added.",
+                &origin("loupist"),
+                AT,
+            )
         })
         .unwrap();
-    let user_method = method(&store, "My own method", "user");
     let shared_method = method(&store, "Shared method", "import");
     let principle = store
         .transact(|write| {
@@ -147,6 +229,7 @@ fn reset_removes_only_loupist_authored_memory_and_queues_world_reload() {
                     actor,
                     None,
                     None,
+                    &[],
                 )
             })
             .unwrap();
@@ -158,8 +241,9 @@ fn reset_removes_only_loupist_authored_memory_and_queues_world_reload() {
     assert_eq!(
         counts,
         memory_reset::ResetCounts {
-            principles: 1,
-            methods: 1,
+            principles: 0,
+            pages: 1,
+            sections: 1,
             names: 2,
             relationships: 1,
             sources: 1
@@ -170,7 +254,9 @@ fn reset_removes_only_loupist_authored_memory_and_queues_world_reload() {
         .unwrap();
     store.read(|write| {
         assert!(write.owned_record("loupist-a", &learned.record_id).is_err());
-        assert!(write.owned_record("loupist-a", &learned_principle.record_id).is_err());
+        let kept = write.read_page("loupist-a", &user_method.record_id)?;
+        assert_eq!(kept.body.sections().len(), 1);
+        assert_eq!(kept.body.sections()[0].key.as_str(), "steps");
         assert!(write.get_revision("loupist-a", &research.revision_id).is_err());
         for id in [&user_method.record_id, &shared_method.record_id, &principle.record_id, &manual.record_id, &user_source.record_id, &shared_source.record_id] { write.owned_record("loupist-a", id)?; }
         let head = write.owned_record("loupist-a", &world.record_id)?.revision_id.unwrap();
@@ -295,6 +381,7 @@ fn reset_keeps_user_claims_and_independent_support_and_removes_owned_unbacked_cl
                 "user",
                 None,
                 None,
+                &[],
             )
         })
         .unwrap();
@@ -333,6 +420,7 @@ fn reset_keeps_user_claims_and_independent_support_and_removes_owned_unbacked_cl
                 "loupist",
                 None,
                 None,
+                &[],
             )
         })
         .unwrap();

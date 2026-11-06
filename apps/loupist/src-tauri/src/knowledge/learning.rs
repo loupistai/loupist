@@ -1,6 +1,7 @@
 //! Durable, tool-free method reviews. No automatic retry after a paid attempt.
 use super::graph_jobs::{load_settings, GraphProcessingSettings};
-use super::{KnowledgeError, KnowledgeResult, KnowledgeWrite, LensDocument, WorldSnapshotBody};
+use super::lens_page::{Basis, FilingOrigin, LensOp, PageDelta, PageKind, PageTarget, SectionKey};
+use super::{KnowledgeError, KnowledgeResult, KnowledgeWrite, WorldSnapshotBody};
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -186,8 +187,8 @@ struct Method {
     record_id: String,
     title: String,
     applicability: String,
-    #[serde(skip_serializing)]
-    revision_id: String,
+    #[serde(skip_serializing, default)]
+    digests: BTreeMap<String, String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -238,7 +239,7 @@ fn build_input(
     if input.text()?.chars().count() > MAX_INPUT {
         return Err(KnowledgeError::Invalid("principles_exceed_input_limit"));
     }
-    let mut q=tx.prepare("SELECT m.record_id,m.title,h.revision_id,r.payload_json FROM knowledge_lens_metadata m JOIN knowledge_record_heads h ON h.record_id=m.record_id JOIN knowledge_record_revisions r ON r.revision_id=h.revision_id WHERE m.loupist_id=?1 AND m.archived_at_ms IS NULL AND m.lens_kind='method' AND NOT EXISTS(SELECT 1 FROM knowledge_standing_selection s WHERE s.record_id=m.record_id) ORDER BY m.updated_at_ms DESC,m.record_id LIMIT 40")?;
+    let mut q=tx.prepare("SELECT m.record_id,m.title,h.revision_id,r.payload_json FROM knowledge_lens_metadata m JOIN knowledge_record_heads h ON h.record_id=m.record_id JOIN knowledge_record_revisions r ON r.revision_id=h.revision_id WHERE m.loupist_id=?1 AND m.archived_at_ms IS NULL AND m.kind='method' ORDER BY m.updated_at_ms DESC,m.record_id LIMIT 40")?;
     for row in q.query_map([loupist], |r| {
         Ok((
             r.get::<_, String>(0)?,
@@ -247,16 +248,31 @@ fn build_input(
             r.get::<_, String>(3)?,
         ))
     })? {
-        let (record_id, title, revision_id, payload) = row?;
+        let (record_id, title, _revision_id, payload) = row?;
         if controls.paused.contains(&record_id) || controls.removed.contains(&record_id) {
             continue;
         }
-        let d: LensDocument = serde_json::from_str(&payload)?;
+        let page: super::lens_page::Page = serde_json::from_str(&payload)?;
+        let applicability = page
+            .sections
+            .iter()
+            .find(|section| section.key.as_str() == "use-when")
+            .map(|section| section.markdown.as_str())
+            .unwrap_or(&page.summary);
         input.methods.push(Method {
             record_id,
             title,
-            revision_id,
-            applicability: d.applicability.chars().take(300).collect(),
+            applicability: applicability.chars().take(300).collect(),
+            digests: page
+                .sections
+                .iter()
+                .map(|section| {
+                    (
+                        section.key.as_str().to_owned(),
+                        super::lens_page::section_digest(section),
+                    )
+                })
+                .collect(),
         });
         if input.text()?.chars().count() > 7000 {
             input.methods.pop();
@@ -331,15 +347,55 @@ struct Output {
     rationale: String,
 }
 impl Output {
-    fn document(&self) -> LensDocument {
-        LensDocument {
-            markdown: self.markdown.clone(),
-            applicability: self.applicability.clone(),
-            assumptions: self.assumptions.clone(),
-            procedure: self.procedure.clone(),
-            principles: self.principles.clone(),
-            limitations: self.limitations.clone(),
-        }
+    fn texts(&self) -> [&str; 6] {
+        [
+            &self.markdown,
+            &self.applicability,
+            &self.assumptions,
+            &self.procedure,
+            &self.principles,
+            &self.limitations,
+        ]
+    }
+
+    fn ops(&self, read: &BTreeMap<String, String>) -> KnowledgeResult<Vec<LensOp>> {
+        let section = |key: &str, heading: &str, text: String| -> KnowledgeResult<LensOp> {
+            let key = SectionKey::new(key)?;
+            let expected = read.get(key.as_str()).cloned();
+            Ok(LensOp::Put {
+                key,
+                heading: heading.into(),
+                markdown: text
+                    .chars()
+                    .take(super::lens_page::MAX_SECTION_CHARS)
+                    .collect(),
+                basis: Basis::default(),
+                expected,
+            })
+        };
+        let summary: String = self
+            .markdown
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
+            .take(super::lens_page::MAX_SUMMARY_CHARS)
+            .collect();
+        Ok(vec![
+            LensOp::Summary { text: summary },
+            section(
+                "use-when",
+                "Use when",
+                format!(
+                    "{}\n\nAssumptions: {}",
+                    self.applicability.trim(),
+                    self.assumptions.trim()
+                ),
+            )?,
+            section("steps", "Steps", self.procedure.trim().to_owned())?,
+            section("checks", "Checks", self.principles.trim().to_owned())?,
+            section("limits", "Limits", self.limitations.trim().to_owned())?,
+        ])
     }
 }
 #[derive(Clone)]
@@ -550,21 +606,9 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
     {
         return Err(invalid());
     }
-    let doc = o.document();
-    if [
-        &doc.markdown,
-        &doc.applicability,
-        &doc.assumptions,
-        &doc.procedure,
-        &doc.principles,
-        &doc.limitations,
-    ]
-    .iter()
-    .any(|s| s.trim().is_empty())
-    {
+    if o.texts().iter().any(|s| s.trim().is_empty()) {
         return Err(invalid());
     }
-    write.validate_lens_publication(&a.loupist_id, &o.title, &doc, &BTreeSet::new())?;
     // A newly added/edited principle invalidates this bounded review's authority.
     let controls = super::memory_controls::load(write.tx, &a.loupist_id)?;
     let current: Vec<_> = super::principles::principle_list(write.tx, &a.loupist_id, false)?
@@ -584,112 +628,70 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
             now,
         );
     }
-    let (record_id, expected) = if o.action == "refine" {
+    let (target, head) = if o.action == "refine" {
         let method = a
             .input
             .methods
             .iter()
             .find(|m| Some(&m.record_id) == o.target_record_id.as_ref())
             .ok_or_else(invalid)?;
-        let active:bool=write.tx.query_row("SELECT EXISTS(SELECT 1 FROM knowledge_lens_metadata m WHERE m.loupist_id=?1 AND m.record_id=?2 AND m.archived_at_ms IS NULL AND m.lens_kind='method' AND NOT EXISTS(SELECT 1 FROM knowledge_standing_selection s WHERE s.record_id=m.record_id))",params![a.loupist_id,method.record_id],|r|r.get(0))?;
-        if !active {
-            return Err(invalid());
+        match write.read_page(&a.loupist_id, &method.record_id) {
+            Ok(page) if !page.archived && page.kind == super::lens_page::LensKind::Method => {}
+            _ => return Err(invalid()),
         }
-        super::lens::require_unique_lens_title(
-            write.tx,
-            &a.loupist_id,
-            &o.title,
-            Some(&method.record_id),
-        )?;
-        let head = write.read_lens(&a.loupist_id, &method.record_id)?;
-        if head.revision_id != method.revision_id {
-            let draft = write.save_lens_proposal(
-                &a.loupist_id,
-                &method.record_id,
-                &method.revision_id,
-                &doc,
-                &o.rationale,
-                Some(&o.title),
-                "",
-                "",
-                now,
-            )?;
-            write.tx.execute("UPDATE knowledge_lens_drafts SET origin_chat_id=NULL,origin_message_id=NULL WHERE draft_id=?1",[draft.draft_id])?;
-            return settle(
-                write.tx,
-                &a.review_id,
-                "deferred",
-                Some("stale_head_proposal"),
-                Some(&method.record_id),
-                Some(&o.rationale),
-                ids.len(),
-                now,
-            );
-        }
-        if head.document == doc {
-            return settle(
-                write.tx,
-                &a.review_id,
-                "deferred",
-                Some("method_unchanged"),
-                None,
-                Some(&o.rationale),
-                ids.len(),
-                now,
-            );
-        }
-        (method.record_id.clone(), Some(method.revision_id.clone()))
+        (
+            PageTarget::Existing {
+                record_id: method.record_id.clone(),
+            },
+            method.digests.clone(),
+        )
     } else {
         if o.target_record_id.is_some() {
             return Err(invalid());
         }
         (
-            write
-                .create_record(super::CreateRecord {
-                    loupist_id: a.loupist_id.clone(),
-                    kind: super::RecordKind::Lens,
-                    title: o.title.clone(),
-                    at_ms: now,
-                })?
-                .record_id,
-            None,
+            PageTarget::Create {
+                kind: PageKind::Method,
+                title: o.title.clone(),
+                anchors: Vec::new(),
+            },
+            BTreeMap::new(),
         )
     };
-    let origin =
-        json!({"kind":"learning_review","reviewId":a.review_id,"worldJobId":a.world_job_id});
-    let view = super::lens::revise_lens_with_provenance(
+    let filed = super::lens::file(
         write.tx,
-        super::ReviseLens {
-            loupist_id: a.loupist_id.clone(),
-            record_id: record_id.clone(),
-            expected_revision_id: expected,
-            at_ms: now,
-            document: doc,
-            dependencies: vec![],
-            change: super::LensChangeInput {
-                rationale: o.rationale.clone(),
-                references: vec![],
-                feedback: None,
-            },
+        &a.loupist_id,
+        &FilingOrigin::Learning {
+            review_id: a.review_id.clone(),
+            world_job_id: a.world_job_id.clone(),
         },
-        "loupist",
-        None,
-        None,
-        Some(origin),
+        vec![PageDelta {
+            target,
+            ops: o.ops(&head)?,
+        }],
+        now,
     )?;
-    write.tx.execute(
-        "UPDATE knowledge_lens_metadata SET learned=1,title=?2,title_fold=?3 WHERE record_id=?1",
-        params![record_id, o.title, super::lens::fold_lens_title(&o.title)],
-    )?;
-    super::search_index::index_payload(
-        write.tx,
-        None,
-        &record_id,
-        &view.revision_id,
-        super::RecordKind::Lens,
-        &o.title,
-        &serde_json::to_value(&view.document)?,
-    )?;
+    let page = filed.into_iter().next().ok_or_else(invalid)?;
+    if page.refused_text() {
+        return Err(invalid());
+    }
+    let stale = page
+        .outcomes
+        .iter()
+        .any(|op| matches!(op.outcome, super::lens_page::OpOutcome::SkippedStale { .. }));
+    if !page.changed {
+        return settle(
+            write.tx,
+            &a.review_id,
+            "deferred",
+            Some("method_unchanged"),
+            None,
+            Some(&o.rationale),
+            ids.len(),
+            now,
+        );
+    }
+    let record_id = page.record_id;
     let mut entities = BTreeMap::<String, usize>::new();
     for c in a.input.claims.iter().filter(|c| ids.contains(&c.claim_id)) {
         for e in &c.entities {
@@ -698,18 +700,20 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
     }
     let mut entities: Vec<_> = entities.into_iter().collect();
     entities.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-    for (entity, _) in entities.into_iter().take(30) {
-        write.tx.execute("INSERT INTO knowledge_lens_applications(loupist_id,turn_id,record_id,revision_id,entity_id,at_ms) VALUES (?1,?2,?3,?4,?5,?6)",params![a.loupist_id,a.review_id,record_id,view.revision_id,entity,now])?;
-    }
+    let applied: BTreeSet<String> = entities.into_iter().take(30).map(|(e, _)| e).collect();
+    super::lens::record_applied(
+        write.tx,
+        &a.loupist_id,
+        &a.review_id,
+        &record_id,
+        &applied,
+        now,
+    )?;
     settle(
         write.tx,
         &a.review_id,
-        if o.action == "create" {
-            "created"
-        } else {
-            "refined"
-        },
-        None,
+        if page.created { "created" } else { "refined" },
+        stale.then_some("stale_head_folded"),
         Some(&record_id),
         Some(&o.rationale),
         ids.len(),

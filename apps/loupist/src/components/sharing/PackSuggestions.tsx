@@ -10,7 +10,7 @@ import { Spinner } from "../ui/spinner";
 import { PackMarkdown } from "./PackMarkdown";
 import "@/styles/sharing.css";
 
-const kindLabel = (kind: PackSuggestion["kind"]) => i18n.t(kind === "perspective" ? "knowledge:memoryPage.perspective" : kind === "principle" ? "knowledge:memoryPage.kind.principle" : "knowledge:memoryPage.kind.method");
+const kindLabel = (kind: PackSuggestion["kind"]) => i18n.t(kind === "perspective" ? "knowledge:pageReader.kind.perspective" : kind === "principle" ? "knowledge:pageReader.kind.principle" : "knowledge:pageReader.kind.method");
 
 /**
  * Suggestions from shared Loupists (W19.4, W19.5): nothing reaches Lens until the

@@ -3,8 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import userEvent from "@testing-library/user-event";
 import i18n from "@/i18n";
 // Citation links open a delayed HoverCard; skipping hover keeps its timer from firing after teardown.
-import type { ChatMessage, ChatPerformance, KnowledgeReference, LensProposal, MemoryRef, MemoryUpdateChange } from "../../types";
-import { dismissLensProposal } from "../../chat/dismissLensProposal";
+import type { ChatMessage, ChatPerformance, KnowledgeReference, MemoryRef } from "../../types";
 import { evidenceFixture } from "../../test/evidenceFixtures";
 import { TooltipProvider } from "../ui/tooltip";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
@@ -20,12 +19,6 @@ function renderAnswer(message: ChatMessage, extra: Partial<ComponentProps<typeof
   const view = render(<TooltipProvider><ChatMessageCard {...props} /></TooltipProvider>);
   return { ...props, view };
 }
-
-const savedLens = (operation: MemoryUpdateChange["operation"], title: string): MemoryUpdateChange => ({
-  recordId: `lens-${operation}`, kind: "Lens", operation, title,
-  knowledge: { kind: "lens", recordId: `lens-${operation}`, revisionId: "rev-1", objectId: `lens-${operation}` },
-  lesson: `${title} lesson`, basis: "Filing", futureUse: "Next review",
-});
 
 it.each([false, true])("keeps one stable research summary from first call to settlement (expanded: %s)", async (expanded) => {
   const first = { id: "a", kind: "tool" as const, category: "files" as const, operation: "read" as const, action: "Read file", running: "Reading file", target: "q1.csv", status: "running" as const, startedAtMs: 2 };
@@ -222,25 +215,19 @@ it("keeps documents as output cards and adds no file row when the answer deliver
   expect(screen.queryByRole("group", { name: "Files" })).toBeNull();
 });
 
-it("summarizes saved Memory changes and opens each target", async () => {
+it("summarizes a saved Source and opens it", async () => {
   const props = renderAnswer(answer({
     memory_refs: [read("selected-read")],
     memory_update: { status: "applied", commitId: "saved", changes: [
-      savedLens("revise", "Margin method"),
       { recordId: "source-1", kind: "Source", operation: "create", title: "Filing excerpt", knowledge: { kind: "source", recordId: "source-record", revisionId: "source-v1", objectId: "source-1" }, lesson: "Captured.", basis: "Filing", futureUse: "Later." },
     ] },
   }));
   const receipt = screen.getByRole("navigation", { name: "What this answer used and saved" });
-  expect(receipt).toHaveTextContent("Saved 1 source·Learned 1 new way of working");
+  expect(receipt).toHaveTextContent("Saved 1 source");
   // A single saved Source opens directly from its receipt segment; the list stays open for the rest.
   await user().click(within(receipt).getByRole("button", { name: "Saved 1 source" }));
-  const memory = screen.getByRole("list", { name: "Saved in this answer" });
-  await user().click(within(memory).getByRole("button", { name: "Margin method" }));
+  expect(screen.getByRole("list", { name: "Saved in this answer" })).toBeVisible();
   expect(props.onOpenMemory).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ surface: "source", recordId: "source-record" }), "Filing excerpt");
-  // A saved method opens on "What {Loupist} knows".
-  expect(props.onOpenMemoryPage).toHaveBeenCalledWith(expect.objectContaining({ surface: "lens", recordId: "lens-revise" }));
-  await user().click(within(memory).getByRole("button", { name: "Open in Lens" }));
-  expect(props.onOpenMemoryPage).toHaveBeenCalledWith(expect.objectContaining({ surface: "lens", recordId: "lens-revise" }));
 });
 
 it("says when nothing new was saved, and adds no receipt to a private chat or a running answer", () => {
@@ -253,44 +240,6 @@ it("says when nothing new was saved, and adds no receipt to a private chat or a 
   renderAnswer(answer({ id: "live", status: "streaming", memory_refs: [read("selected-read")], evidence_refs: [evidenceFixture()] }), { onOpenEvidence: vi.fn() });
   expect(screen.queryByRole("navigation", { name: "What this answer used and saved" })).toBeNull();
   expect(screen.getByLabelText("Research sources")).toBeInTheDocument();
-});
-
-describe("Lens proposals", () => {
-  const proposed = () => answer({ memory_update: { status: "applied", commitId: "proposal", changes: [savedLens("proposed", "Cash conversion")] } });
-
-  it("reviews and dismisses a proposed Lens from the answer", async () => {
-    let release: () => void = () => {};
-    const onDismissLensProposal = vi.fn(() => new Promise<void>((resolve) => { release = resolve; }));
-    const props = renderAnswer(proposed(), { onDismissLensProposal });
-    await user().click(screen.getByRole("button", { name: "1 proposal to review" }));
-    await user().click(screen.getByRole("button", { name: "Review Cash conversion" }));
-    expect(props.onOpenMemory).toHaveBeenCalledWith(expect.objectContaining({ surface: "lens", recordId: "lens-proposed", view: expect.objectContaining({ reviewProposal: { chatId: "chat-a", messageId: "answer" } }) }), "Cash conversion");
-    const dismiss = screen.getByRole("button", { name: "Dismiss Cash conversion" });
-    await user().click(dismiss);
-    expect(onDismissLensProposal).toHaveBeenCalledExactlyOnceWith({ recordId: "lens-proposed", messageId: "answer" });
-    expect(dismiss).toBeDisabled();
-    release();
-    expect(await screen.findByText("Dismissed")).toHaveAttribute("role", "status");
-  });
-
-  it.each(["failed", "ambiguous", "mismatched"])("keeps a %s dismissal recoverable without touching another draft", async (scenario) => {
-    const proposal: LensProposal = {
-      draftId: "draft-a", loupistId: "loupist-a", author: "loupist", recordId: "lens-proposed", baseRevisionId: "rev-1",
-      document: { markdown: "Proposed method", applicability: "", assumptions: "", procedure: "", principles: "", limitations: "" },
-      rationale: "Evidence", updatedAtMs: 1, originChatId: "chat-a", originMessageId: "answer",
-    };
-    const proposals = scenario === "ambiguous" ? [proposal, { ...proposal, draftId: "draft-b" }] : [{ ...proposal, originChatId: "another-chat" }];
-    const bridge = { knowledgeLensProposals: vi.fn().mockResolvedValue(proposals), knowledgeLensProposalDismiss: vi.fn() };
-    const onDismissLensProposal = scenario === "failed"
-      ? vi.fn().mockRejectedValue(new Error("Proposal not found."))
-      : (target: { recordId: string; messageId: string }) => dismissLensProposal(bridge, { ...target, loupistId: "loupist-a", chatId: "chat-a" });
-    renderAnswer(proposed(), { onDismissLensProposal });
-    await user().click(screen.getByRole("button", { name: "1 proposal to review" }));
-    await user().click(screen.getByRole("button", { name: "Dismiss Cash conversion" }));
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
-    expect(bridge.knowledgeLensProposalDismiss).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Dismiss Cash conversion" })).toBeEnabled();
-  });
 });
 
 it("cites external grounding once, opens it, and routes saved reads to Memory", async () => {

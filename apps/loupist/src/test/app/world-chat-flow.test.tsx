@@ -15,8 +15,7 @@ async function attachSource(user: User) {
 }
 async function discussLens(user: User) {
   await user.click(await mainTab(/Lens/));
-  const lens = await screen.findByRole("region", { name: "Research principles" });
-  await user.click(await within(lens).findByRole("tab", {name:/Ways of working/}));
+  const lens = await screen.findByRole("region", { name: /What .* knows/ });
   await user.click(await within(lens).findByRole("button", {name:/Compare independent accounts/}));
   await user.click(await within(lens).findByRole("button", { name: "Ask Bot to revise" }));
 }
@@ -99,28 +98,22 @@ describe("World and Lens in the single Chat flow", () => {
     await user.click(screen.getByRole("button", { name: "Stop response" }));
   });
 
-  it("opens Lens change evidence at its exact Source and returns to the Lens", async () => {
+  it("opens a page's Source chip at its exact Source and returns to the page", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const catalog = await bridge.knowledgeCatalog({ loupistId: "loupist-quality" });
-    const [lens, source] = [catalog.lenses[0], catalog.sources[0]];
-    vi.spyOn(bridge, "knowledgeLensChanges").mockResolvedValue([{
-      changeId: "change", recordId: lens.recordId, newRevisionId: lens.revisionId, rationale: "This source supports the method.",
-      inputs: { references: [{ kind: "source", recordId: source.recordId, revisionId: source.revisionId, objectId: source.objects[0].id }] },
-    }]);
+    const source = catalog.sources[0];
     const read = vi.spyOn(bridge, "knowledgeSourceRead");
     await openApp(bridge);
     await user.click(await mainTab(/Lens/));
-    await user.click(await screen.findByRole("tab", { name:/Ways of working/ }));
-    await user.click(await screen.findByRole("button", { name: new RegExp(lens.title) }));
-    await user.click(await screen.findByText("Saved basis"));
-    await user.click(await screen.findByRole("button", { name: "Source 1" }));
+    await user.click(await screen.findByRole("button", { name: /^TCP, Topic/ }));
+    const overview = (await screen.findByRole("heading", { name: "Overview" })).closest("section")!;
+    await user.click(within(overview).getByRole("button", { name: "Source" }));
     expect(await screen.findByRole("button", { name: "Add to question" })).toBeVisible();
-    expect(read).toHaveBeenCalledWith(expect.objectContaining({ recordId: source.recordId, revisionId: source.revisionId, sourceId: source.objects[0].id }));
-    // The Source stays in the Lens tab, and Back returns to the method.
-    const page = screen.getByRole("region", { name:"Research principles" });
+    expect(read).toHaveBeenCalledWith(expect.objectContaining({ recordId: source.recordId, revisionId: source.revisionId }));
+    const page = screen.getByRole("region", { name: /What .* knows/ });
     await user.click(within(page).getByRole("button", { name: /Back to/ }));
-    expect(await screen.findByText("Saved basis")).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Overview" })).toBeVisible();
   });
 
   it("appends a Lens revision question once without replacing or sending the draft", async () => {

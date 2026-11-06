@@ -34,23 +34,13 @@ it("Keep clears the recent ring and stays acknowledged across a Map remount", as
   expect(screen.getByTestId("learning-canvas").getAttribute("data-new")?.split(",")).not.toContain(node.id);
 });
 
-it("expands cited claims and selects an evidence entity", async () => {
-  const { bridge, map, node, location, catalog } = await fixture();
-  const select = vi.fn();
-  render(<MapInspector bridge={bridge} map={map} node={node} location={location} catalog={catalog} onSelect={select} onClose={vi.fn()} onOpen={vi.fn()} onAsk={vi.fn()} />);
-  const evidence = await screen.findByRole("button", { name: /Operating margin fell during a new production/ });
-  await userEvent.click(screen.getByRole("button", { name: "Show all 6" }));
-  await userEvent.click(evidence);
-  expect(select).toHaveBeenCalledWith(expect.objectContaining({ id: "map-entity-00", kind: "entity" }));
-});
-
 it("requires inline confirmation before calling the archive bridge", async () => {
   const { bridge, map, node, location, catalog } = await fixture();
   const archive = vi.spyOn(bridge, "knowledgeLensArchive").mockResolvedValue();
   const close = vi.fn(), changed = vi.fn();
   render(<MapInspector bridge={bridge} map={map} node={node} location={location} catalog={catalog} onSelect={vi.fn()} onClose={close} onChanged={changed} onOpen={vi.fn()} onAsk={vi.fn()} />);
   await userEvent.click(await screen.findByRole("button", { name: "Archive" }));
-  expect(screen.getByText("Archive this way of working? Your Loupist will stop using it.")).toBeVisible();
+  expect(screen.getByText("Archive this method? Your Loupist will stop using it.")).toBeVisible();
   expect(archive).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(archive).not.toHaveBeenCalled();

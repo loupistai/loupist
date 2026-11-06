@@ -39,7 +39,7 @@ const view: ChatArtifactView = {
 
 function withScope(children: ReactNode, read = vi.fn().mockResolvedValue(view), exportSave = vi.fn().mockResolvedValue("/Users/me/chart.png")) {
   const bridge = { chatArtifactRead: read, exportSave } as unknown as LoupistBridge;
-  return <ChatExecutionProvider value={{ bridge, loupistId: "loupist", threadId: "chat", theme: "light", active: true }}>{children}</ChatExecutionProvider>;
+  return <ChatExecutionProvider value={{ bridge, loupistId: "loupist", threadId: "chat", surface: "session", theme: "light", active: true }}>{children}</ChatExecutionProvider>;
 }
 
 it("reserves the card with its title while the chart is being built, without actions", () => {

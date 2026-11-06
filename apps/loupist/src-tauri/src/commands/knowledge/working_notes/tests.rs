@@ -56,7 +56,6 @@ fn persist(
         &[],
         &[],
         Some(item),
-        &[],
     )?;
     if commit {
         tx.commit().unwrap();
@@ -337,7 +336,6 @@ fn note_and_journal_preserve_distinct_evidence_at_their_combined_limit() {
             &sources,
             &[],
             Some(&research),
-            &[],
         )
         .unwrap();
         tx.commit().unwrap();

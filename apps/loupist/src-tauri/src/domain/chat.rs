@@ -69,6 +69,17 @@ pub struct MemoryUpdateChange {
     pub lesson: String,
     pub basis: String,
     pub future_use: String,
+    #[serde(default)]
+    pub outcomes: Vec<FiledOutcome>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FiledOutcome {
+    pub op_id: String,
+    pub outcome: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 impl Serialize for MemoryUpdateChange {
@@ -94,6 +105,9 @@ impl Serialize for MemoryUpdateChange {
         if self.kind == "principle" {
             map.serialize_entry("statement", &self.title)?;
         }
+        if !self.outcomes.is_empty() {
+            map.serialize_entry("outcomes", &self.outcomes)?;
+        }
         map.end()
     }
 }
@@ -105,6 +119,99 @@ pub struct MemoryUpdateResult {
     #[serde(deserialize_with = "required_option")]
     pub commit_id: Option<String>,
     pub changes: Vec<MemoryUpdateChange>,
+    /// Kinds the answer asked the map to track that its commit could not add:
+    /// the map gained a kind of that name first, or has no room left.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped_kinds: Vec<MapKind>,
+    /// How `loupist_setup` changed what this Loupist follows and researches.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub setup: Vec<SetupChange>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MapKind {
+    pub name: String,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_ko: Option<String>,
+}
+
+/// One applied `loupist_setup` change. A market the user did not give is `None`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "change",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum SetupChange {
+    Followed {
+        symbol: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        market: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    },
+    Unfollowed {
+        symbol: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        market: Option<String>,
+    },
+    Focus {
+        focus: String,
+    },
+    Tracks {
+        kinds: Vec<MapKind>,
+    },
+}
+
+impl MapKind {
+    fn validate(&self) -> Result<(), DomainError> {
+        require_bounded_text(&self.name, 64, "map kind is invalid")?;
+        require_bounded_text(&self.label, 512, "map kind is invalid")?;
+        if let Some(label) = &self.label_ko {
+            require_bounded_text(label, 512, "map kind is invalid")?;
+        }
+        Ok(())
+    }
+}
+
+impl SetupChange {
+    fn validate(&self) -> Result<(), DomainError> {
+        let invalid = "setup change is invalid";
+        match self {
+            Self::Followed {
+                symbol,
+                market,
+                name,
+            } => {
+                require_bounded_text(symbol, 64, invalid)?;
+                if let Some(market) = market {
+                    require_bounded_text(market, 64, invalid)?;
+                }
+                if let Some(name) = name {
+                    require_bounded_text(name, 256, invalid)?;
+                }
+            }
+            Self::Unfollowed { symbol, market } => {
+                require_bounded_text(symbol, 64, invalid)?;
+                if let Some(market) = market {
+                    require_bounded_text(market, 64, invalid)?;
+                }
+            }
+            Self::Focus { focus } => require_bounded_text(focus, 1_120, invalid)?,
+            Self::Tracks { kinds } => {
+                if kinds.is_empty() || kinds.len() > 18 {
+                    return Err(DomainError::Invalid(invalid));
+                }
+                for kind in kinds {
+                    kind.validate()?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl MemoryUpdateResult {
@@ -144,14 +251,29 @@ impl MemoryUpdateResult {
                 "memory update future use is invalid",
             )?;
         }
+        if self.skipped_kinds.len() > 18 {
+            return Err(DomainError::Invalid("memory update skipped too many kinds"));
+        }
+        for kind in &self.skipped_kinds {
+            kind.validate()?;
+        }
+        if self.setup.len() > 32 {
+            return Err(DomainError::Invalid(
+                "memory update has too many setup changes",
+            ));
+        }
+        for change in &self.setup {
+            change.validate()?;
+        }
+        let changed = !self.changes.is_empty() || !self.setup.is_empty();
         match self.status {
             MemoryUpdateStatus::Applied => {
-                if self.commit_id.as_deref().is_none_or(str::is_empty) || self.changes.is_empty() {
+                if self.commit_id.as_deref().is_none_or(str::is_empty) || !changed {
                     return Err(DomainError::Invalid("applied memory update is invalid"));
                 }
             }
             MemoryUpdateStatus::NoChange => {
-                if self.commit_id.is_some() || !self.changes.is_empty() {
+                if self.commit_id.is_some() || changed {
                     return Err(DomainError::Invalid("unchanged memory update is invalid"));
                 }
             }
@@ -338,9 +460,15 @@ pub struct ChatMessage {
     /// Watcher alerts the host posted in the home Thread.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub watch: Option<HomeWatch>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handoff: Option<HomeHandoff>,
     /// A results snapshot (or a failed capture) the host posted in the home Thread.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub earnings: Option<HomeEarnings>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vocabulary: Option<HomeVocabulary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<HomeLink>,
     /// The as-of date the user set for this request (`YYYY-MM-DD`), kept on
     /// the request and on its answer (finance-point-in-time.md).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -391,6 +519,57 @@ pub struct HomeWatch {
     pub more: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HomeVocabulary {
+    pub change_id: String,
+    pub producer: String,
+    pub labels: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels_ko: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HomeLinkHop {
+    pub name: String,
+    pub relation: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reversed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HomeLink {
+    pub connection_id: String,
+    pub seed_name: String,
+    pub far_name: String,
+    pub path: Vec<HomeLinkHop>,
+    pub node_ids: Vec<String>,
+}
+
+impl From<&crate::knowledge::ConnectionView> for HomeLink {
+    fn from(view: &crate::knowledge::ConnectionView) -> Self {
+        let mut node_ids = vec![view.seed_node_id.clone()];
+        node_ids.extend(view.path.iter().map(|hop| hop.node_id.clone()));
+        Self {
+            connection_id: view.connection_id.clone(),
+            seed_name: view.seed_name.clone(),
+            far_name: view.far_name.clone(),
+            path: view
+                .path
+                .iter()
+                .map(|hop| HomeLinkHop {
+                    name: hop.name.clone(),
+                    relation: hop.relation.clone(),
+                    reversed: hop.reversed,
+                })
+                .collect(),
+            node_ids,
+        }
+    }
+}
+
 /// A results message: "{name} reported {period} results." with the two most
 /// material measures, or a before-capture that failed (Try again).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -410,6 +589,17 @@ pub struct HomeEarnings {
     pub measures: Vec<serde_json::Value>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HomeHandoff {
+    pub handoff_id: String,
+    pub chat_id: String,
+    pub title: String,
+    pub status: crate::chat::handoff::HandoffStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub learned: Option<crate::knowledge::LearnedDigest>,
+}
+
 /// Where a host-posted Thread message came from: one finished scheduled run.
 /// The text is the run's first paragraph; the run's own Chat keeps the answer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -424,6 +614,8 @@ pub struct HomeDelivery {
     pub run_thread_id: Option<String>,
     pub status: crate::scheduled_tasks::types::RunStatus,
     pub finished_at_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub learned: Option<crate::knowledge::LearnedDigest>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1520,6 +1712,8 @@ mod tests {
             status: MemoryUpdateStatus::NoChange,
             commit_id: None,
             changes: vec![],
+            skipped_kinds: Vec::new(),
+            setup: Vec::new(),
         });
         assert!(prepare_chat_retry(&saved, 4).is_err());
     }

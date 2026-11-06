@@ -16,7 +16,7 @@ const endpoint = (value: Link["source"]) => typeof value === "string" ? value : 
 function readColors() {
   const style = getComputedStyle(document.documentElement);
   const colors: Record<string, string> = {};
-  for (const name of ["bg", "company", "product", "person", "market", "event", "metric", "other", "method", "perspective", "principle", "holding-ring", "edge", "edge-active", "edge-disputed", "label", "label-halo", "new-glow"]) colors[name] = style.getPropertyValue(`--gg-color-map-${name}`).trim() || "transparent";
+  for (const name of ["bg", "company", "product", "technology", "industry", "person", "market", "event", "metric", "other", "method", "perspective", "principle", "subject", "idea", "holding-ring", "edge", "edge-active", "edge-disputed", "label", "label-halo", "new-glow"]) colors[name] = style.getPropertyValue(`--gg-color-map-${name}`).trim() || "transparent";
   for (const [key, token] of [["focus", "focus"], ["principle-mark", "bg-raised"], ["dim-label", "text-tertiary"]]) colors[key] = style.getPropertyValue(`--gg-color-${token}`).trim() || "transparent";
   colors.journal = style.getPropertyValue("--gg-color-text-primary").trim() || "transparent";
   colors.warning = style.getPropertyValue("--gg-color-warning").trim() || "transparent";
@@ -554,11 +554,12 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
           ctx.restore();
         }
         ctx.beginPath();
-        if (node.kind === "lens_method" || node.kind === "lens_principle") ctx.roundRect(node.x - 7, node.y - 7, 14, 14, 3);
+        if (node.kind === "lens_method" || node.kind === "lens_principle" || node.kind === "lens_subject") ctx.roundRect(node.x - 7, node.y - 7, 14, 14, 3);
         else if (node.kind === "lens_perspective") { ctx.moveTo(node.x, node.y - 8); ctx.lineTo(node.x + 8, node.y); ctx.lineTo(node.x, node.y + 8); ctx.lineTo(node.x - 8, node.y); ctx.closePath(); }
         else ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
-        ctx.fillStyle = node.kind === "lens_method" ? palette.colors.bg : color; if (node.kind !== "journal") ctx.fill();
-        ctx.lineWidth = node.kind === "journal" || node.kind === "lens_method" ? 2 : 1.5; ctx.strokeStyle = node.kind === "journal" ? palette.colors.journal : node.kind === "lens_method" ? color : palette.colors.bg; ctx.stroke();
+        const hollow = node.kind === "lens_method" || node.kind === "lens_idea";
+        ctx.fillStyle = hollow ? palette.colors.bg : color; if (node.kind !== "journal") ctx.fill();
+        ctx.lineWidth = node.kind === "journal" || hollow ? 2 : 1.5; ctx.strokeStyle = node.kind === "journal" ? palette.colors.journal : hollow ? color : palette.colors.bg; ctx.stroke();
         if (node.kind === "lens_principle") { ctx.beginPath(); ctx.arc(node.x + 6, node.y - 6, 3, 0, Math.PI * 2); ctx.fillStyle = palette.colors["principle-mark"]; ctx.fill(); }
         for (const ring of nodeRings(node, scale, { selectedId, highlightIds: highlightIds ?? compact?.highlightIds, learnedIds, disputedIds })) {
           if (ring.clearance) continue;

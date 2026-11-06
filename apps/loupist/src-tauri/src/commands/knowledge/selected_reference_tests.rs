@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use super::{
-    attach_selected_references, seed_initial_revision, selected_reference_hints,
-    validate_selected_references, with_loupist_knowledge,
+    attach_selected_references, selected_reference_hints, validate_selected_references,
+    with_loupist_knowledge,
 };
 use crate::commands::ChatKnowledgePin;
 use crate::knowledge::{
@@ -111,15 +111,13 @@ fn owned_references() -> (tempfile::TempDir, crate::app::AppState, OwnedReferenc
             "Cedar saved source",
             b"EXACT_BODY_SHOULD_NOT_LEAK",
         );
-        let lens = seed_initial_revision(
-            &write,
-            write.create_record(CreateRecord {
-                loupist_id: "loupist-a".into(),
-                kind: RecordKind::Lens,
-                title: "LENS_TITLE_SHOULD_NOT_LEAK".into(),
-                at_ms: 6,
-            })?,
+        let lens = write.file_section(
+            "loupist-a",
+            crate::knowledge::lens_page::PageKind::Method,
+            "LENS_TITLE_SHOULD_NOT_LEAK",
+            "steps",
             "LENS_BODY_SHOULD_NOT_LEAK",
+            &crate::knowledge::test_support::user_origin(),
             6,
         )?;
         let world = write.create_record(CreateRecord {
@@ -177,7 +175,7 @@ fn owned_references() -> (tempfile::TempDir, crate::app::AppState, OwnedReferenc
             source_id: retained.source_id,
             span_id: retained.span_id.expect("span"),
             lens_module: lens.record_id,
-            lens_revision: lens.revision_id.expect("lens revision"),
+            lens_revision: lens.revision_id,
             world_module: world.record_id,
             world_revision: sealed.revision_id,
             foreign_module: foreign.record_id,

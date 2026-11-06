@@ -34,6 +34,6 @@ export function isInlineWorkEvidence(
 }
 
 export const memoryChangeVerb = (change: Pick<MemoryUpdateChange, "operation" | "kind">) => {
-  const operation = change.operation === "revise" || change.operation === "rename" || change.operation === "proposed" ? change.operation : "create";
+  const operation = change.operation === "revise" || change.operation === "rename" ? change.operation : "create";
   return change.kind === "Research" ? t(`memoryActivity.${operation}Note`) : t(`memoryActivity.${operation}Kind`, { kind: change.kind });
 };

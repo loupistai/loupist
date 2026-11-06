@@ -10,7 +10,7 @@
     "sessions": [
       {"id": "teach-1", "role": "train", "memory": "remember", "turns": [{
         "user": "This is a fictional research exercise. Learn and save a reusable method Lens titled 'Hanbit diluted-share rule': when valuing fictional Hanbit companies, divide equity value by fully diluted shares, including warrants, never basic shares alone. State the denominator and flag missing dilution data. Example: equity value 480, basic shares 10, warrant shares 2 gives fully diluted shares 12 and value per share 40. This is my explicit methodological feedback for future chats. Save the complete method now, then confirm what you saved. No web research is needed.",
-        "expect": {"trace": [{"assert": "tool_called", "tool": "lens_update", "metric": "save_recall"}], "memory": [{"assert": "committed", "kind": "lens", "min": 1, "title_contains": "Hanbit", "metric": "save_recall"}]}
+        "expect": {"trace": [{"assert": "tool_called", "tool": "lens_file", "metric": "save_recall"}], "memory": [{"assert": "committed", "kind": "lens", "min": 1, "title_contains": "Hanbit", "metric": "save_recall"}]}
       }]},
       {"id": "probe-1", "role": "probe", "memory": "read_only", "turns": [{
         "user": "Value fictional Hanbit Aurora: equity value 720, basic shares 15, warrants convertible into 3 additional shares. Use the relevant saved method, explain the denominator and end with a JSON object containing metrics.fair_value_per_share. No web research is needed.",

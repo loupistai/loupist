@@ -1,10 +1,8 @@
 mod journal_input;
-mod lens_discovery;
 mod receipts;
 
 use super::*;
 use journal_input::{journal_argument_error, parse_research_journal};
-use receipts::ReceiptPurpose;
 
 impl AppToolExecutor {
     pub(super) async fn lens_search(
@@ -48,10 +46,9 @@ impl AppToolExecutor {
             .as_str()
             .ok_or(BrokerError::Malformed)?
             .to_owned();
-        let view = crate::commands::knowledge::lens_read(
+        crate::commands::knowledge::lens_read(
             &self.state,
             crate::commands::knowledge::KnowledgeLensReadRequest {
-                include_navigation: None,
                 loupist_id: policy.loupist_id.clone(),
                 record_id: record_id.clone(),
                 revision_id: Some(
@@ -63,18 +60,6 @@ impl AppToolExecutor {
             },
         )
         .map_err(|error| BrokerError::Execution(error.to_string()))?;
-        // Discovery metadata must never enter the exact six-field document or its receipt.
-        let navigation = serde_json::to_value(view.navigation)
-            .map_err(|error| BrokerError::Execution(error.to_string()))?;
-        delivered
-            .as_object_mut()
-            .ok_or(BrokerError::Malformed)?
-            .extend(
-                navigation
-                    .as_object()
-                    .ok_or(BrokerError::Malformed)?
-                    .clone(),
-            );
         delivered["lens_url"] = json!(format!("lens:{record_id}"));
         Ok(delivered)
     }
@@ -140,7 +125,7 @@ impl AppToolExecutor {
         policy: &ToolPolicy,
         research: &StagedResearch,
     ) -> Result<(), BrokerError> {
-        let receipts = self.acknowledged_receipts(ReceiptPurpose::Research).await;
+        let receipts = self.acknowledged_receipts().await;
         for (scope, field, refs) in [
             ("source", "sourceReads", &research.source_reads),
             ("world", "worldReads", &research.world_reads),
@@ -1189,217 +1174,6 @@ impl AppToolExecutor {
         }))
     }
 
-    pub(super) async fn stage_lens_update(
-        &self,
-        policy: &crate::broker::ToolPolicy,
-        params: Value,
-        delivery_id: &str,
-    ) -> Result<Value, BrokerError> {
-        if !policy.propose_memory_updates {
-            return Err(BrokerError::Execution(
-                "Save learning is off, so this turn cannot revise a Lens".into(),
-            ));
-        }
-        let object = exact_object(
-            &params,
-            &["document", "rationale"],
-            &[
-                "recordId",
-                "expectedRevisionId",
-                "title",
-                "kind",
-                "sourceReads",
-                "worldReads",
-                "journalReads",
-                "previousNoteIds",
-                "feedback",
-            ],
-        )?;
-        let document = object
-            .get("document")
-            .cloned()
-            .ok_or(BrokerError::Malformed)
-            .and_then(|value| {
-                serde_json::from_value::<crate::knowledge::LensDocument>(value)
-                    .map_err(|_| BrokerError::Malformed)
-            })?;
-        if document.markdown.trim().is_empty() {
-            return Err(BrokerError::Malformed);
-        }
-        let record_id = optional_bounded_text(object.get("recordId"), 1, 128)?;
-        let expected = optional_bounded_text(object.get("expectedRevisionId"), 1, 128)?;
-        let title = optional_bounded_text(object.get("title"), 1, 180)?;
-        let kind = optional_bounded_text(object.get("kind"), 1, 16)?;
-        let creating = record_id.is_none();
-        if record_id.is_some() != expected.is_some() {
-            return Err(BrokerError::InvalidArguments {
-                field: "expectedRevisionId".into(),
-                expected: "An edit requires recordId and expectedRevisionId from lens_read. For a new Lens, omit both.".into(),
-            });
-        }
-        if creating && title.is_none() {
-            return Err(BrokerError::InvalidArguments {
-                field: "title".into(),
-                expected: "A new Lens requires its method or perspective title.".into(),
-            });
-        }
-        if !creating && kind.is_some() {
-            return Err(BrokerError::InvalidArguments {
-                field: "kind".into(),
-                expected: "Omit kind when editing an existing Lens; its kind is fixed. Keep recordId, expectedRevisionId, document and rationale, then retry.".into(),
-            });
-        }
-        if kind
-            .as_deref()
-            .is_some_and(|kind| !matches!(kind, "perspective" | "method"))
-        {
-            return Err(BrokerError::InvalidArguments {
-                field: "kind".into(),
-                expected: "A new Lens kind must be method or perspective.".into(),
-            });
-        }
-        let record_id = if creating {
-            crate::knowledge::mint_lens_record_id()
-        } else {
-            record_id.unwrap_or_default()
-        };
-        let mut pending_ids = std::collections::BTreeSet::new();
-        pending_ids.insert(record_id.clone());
-        for staged in self.capture.staged_lenses.lock().await.iter() {
-            if staged.expected_revision_id.is_empty() {
-                pending_ids.insert(staged.record_id.clone());
-            }
-        }
-        crate::commands::knowledge::validate_staged_lens(
-            &self.state,
-            &policy.loupist_id,
-            if creating {
-                None
-            } else {
-                Some(record_id.as_str())
-            },
-            title.as_deref(),
-            &document,
-            &pending_ids,
-        )
-        .map_err(|error| BrokerError::Execution(error.to_string()))?;
-        let revision = StagedLensRevision {
-            title,
-            kind,
-            record_id: record_id.clone(),
-            expected_revision_id: expected.unwrap_or_default(),
-            document,
-            rationale: bounded_text(object.get("rationale"), 1, 16_000)?,
-            source_reads: optional_unique_strings(object.get("sourceReads"), 32, 128)?,
-            world_reads: optional_unique_strings(object.get("worldReads"), 8, 128)?,
-            journal_reads: optional_unique_strings(object.get("journalReads"), 8, 128)?,
-            previous_note_ids: optional_unique_strings(object.get("previousNoteIds"), 8, 128)?,
-            feedback: optional_bounded_text(object.get("feedback"), 1, 16_000)?,
-        };
-        validate_memory_text(&revision.rationale, 16_000, false)?;
-        if let Some(feedback) = &revision.feedback {
-            validate_memory_text(feedback, 16_000, true)?;
-        }
-        if creating && revision.kind.as_deref() == Some("perspective") {
-            let staged_perspective = self
-                .capture
-                .staged_lenses
-                .lock()
-                .await
-                .iter()
-                .any(|lens| lens.kind.as_deref() == Some("perspective"));
-            if staged_perspective
-                || crate::commands::knowledge::has_standing_lens(&self.state, &policy.loupist_id)
-                    .map_err(|_| {
-                        BrokerError::Execution(
-                            "Could not check the standing perspective. Try again.".into(),
-                        )
-                    })?
-            {
-                return Err(BrokerError::Execution("Read and revise the existing basic perspective, or create kind method instead of another perspective".into()));
-            }
-        }
-        let reads = self.capture.staged_reads.lock().await;
-        if !revision.expected_revision_id.is_empty()
-            && !reads.iter().any(|read| {
-                read.scope == "lens"
-                    && read.record_id == revision.record_id
-                    && read.revision_id == revision.expected_revision_id
-            })
-        {
-            return Err(BrokerError::Execution(
-                "Read and acknowledge the exact Lens revision before editing it".into(),
-            ));
-        }
-        drop(reads);
-        // Lens changes require tool acknowledgements, including for an edit's
-        // exact revision. Automatic perspective context cannot authorize edits.
-        let receipts = self.acknowledged_receipts(ReceiptPurpose::LensChange).await;
-        for (scope, field, refs) in [
-            ("source", "sourceReads", &revision.source_reads),
-            ("world", "worldReads", &revision.world_reads),
-            ("research", "journalReads", &revision.journal_reads),
-        ] {
-            receipts.validate(scope, field, refs)?;
-        }
-        let notes = self.capture.note_reads.lock().await;
-        if revision
-            .previous_note_ids
-            .iter()
-            .any(|id| !notes.contains(id))
-        {
-            return Err(BrokerError::Execution(
-                "Lens change notes must be read and acknowledged in this turn".into(),
-            ));
-        }
-        drop(notes);
-        let folded_title = revision
-            .title
-            .as_deref()
-            .map(crate::knowledge::fold_lens_title);
-        if let Some(folded_title) = folded_title.as_deref() {
-            let staged = self.capture.staged_lenses.lock().await;
-            if staged.iter().any(|existing| {
-                existing.record_id != record_id
-                    && existing.title.as_deref().is_some_and(|pending| {
-                        crate::knowledge::fold_lens_title(pending) == folded_title
-                    })
-            }) {
-                return Err(BrokerError::Execution(
-                    "an active Lens already uses this title".into(),
-                ));
-            }
-        }
-        let warnings = self.lens_overlap_warnings(policy, &revision);
-        let mut replaced = self
-            .capture
-            .staged_lenses
-            .lock()
-            .await
-            .iter()
-            .any(|existing| existing.record_id == record_id);
-        self.capture
-            .stage(delivery_id, |pending| {
-                replaced |= pending
-                    .lenses
-                    .iter()
-                    .any(|existing| existing.record_id == record_id);
-                pending
-                    .lenses
-                    .retain(|existing| existing.record_id != record_id);
-                pending.lenses.push(revision);
-            })
-            .await;
-        Ok(json!({
-            "status": "staged",
-            "durable": false,
-            "recordId": record_id,
-            "creating": creating,
-            "replaced": replaced,
-            "warnings": warnings
-        }))
-    }
-
     pub(super) fn capability_enabled(&self, entry_id: &str) -> bool {
         self.capability_ids.contains(entry_id)
     }
@@ -1866,13 +1640,4 @@ fn discovery_page(hits: Value, offset: usize, capped: bool) -> Result<Value, Bro
         "hasMore": next < available || capped,"capped":capped,"windowLimit":200,"notEvidence":true,
         "notice":if capped {"Only the first 200 ranked discoveries are available; narrow the query or filter records for more."} else {"Search hits are discovery only. Read exact records before relying on them."}}),
     )
-}
-
-fn validate_memory_text(
-    text: &str,
-    max_bytes: usize,
-    empty_allowed: bool,
-) -> Result<(), BrokerError> {
-    crate::knowledge::validate_text(text, max_bytes, empty_allowed, "invalid Memory text")
-        .map_err(|_| BrokerError::Execution(format!("Memory text must fit {max_bytes} UTF-8 bytes and contain no unsupported control characters")))
 }

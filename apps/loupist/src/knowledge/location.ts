@@ -7,7 +7,6 @@ import type {
   KnowledgeLocation,
   KnowledgePin,
   KnowledgeSelection,
-  LensView,
   SourceDetail,
 } from "../contracts/knowledge";
 
@@ -267,7 +266,7 @@ export const pinForSource = (detail: SourceDetail, loupistId: string): Knowledge
   label: sourceTitle(detail),
 });
 
-export const pinForLens = (loupistId: string, view: LensView): KnowledgePin => ({
+export const pinForLens = (loupistId: string, view: { recordId: string; revisionId: string; title: string }): KnowledgePin => ({
   kind: "lens",
   loupistId,
   recordId: view.recordId,

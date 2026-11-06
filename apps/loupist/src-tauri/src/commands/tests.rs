@@ -19,8 +19,12 @@ use crate::{
 
 mod chat_behavior;
 mod contracts;
+mod home_links;
 mod home_thread;
+mod home_vocabulary;
 mod loupist;
+mod loupist_setup;
+mod research_handoff;
 mod support;
 
 pub(super) use support::{chat, initialized_workspace, profile, seed_profile};

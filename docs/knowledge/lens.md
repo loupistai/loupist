@@ -1,45 +1,105 @@
 # Lens learning
 
-Lens holds perspectives, principles and methods. Learning proposes them; nothing becomes Memory until the host commits it. The Map control is [Map and Lens](../ui/map-lens.md).
+Lens is the Loupist's wiki: Markdown pages with keyed sections, written only through `KnowledgeWrite::file`. The Map control is [Map and Lens](../ui/map-lens.md).
 
 ## Lens
 
-A Loupist has [user principles](#user-principles), a standing perspective and method
-Lenses. Memory-enabled turns can receive a bounded standing perspective
-automatically; oversized content requires an exact `lens_read`. Methods have six
-fields: Markdown, applicability, assumptions, procedure, principles and
-limitations. Discovery is not a read of those fields.
+A Lens record has one of five kinds, stored once in `knowledge_lens_metadata.kind`:
+`principle` (the user's rule: statement, why, example, origin), `perspective` (the
+Loupist's standing view, one active page per Loupist), `method` (a reusable way of
+checking something), `subject` (what the Loupist knows about one company, asset,
+sector, technology or theme) and `idea` (an unverified connection or thesis with a
+falsifier and an `IdeaState`: open, supported, weakened, refuted or retired). Every
+kind but principle is a page: a summary of at most 400 characters and at most 16
+sections in display order. A section has a slug key (`[a-z0-9-]{1,48}`, its identity
+inside the page), a free heading, Markdown of at most 2,000 characters, a basis, an
+origin (`user`, `loupist`, `learning` or `shared`), a state (`current` or
+`contested` with claim ids) and an update time. `src-tauri/src/knowledge/lens_page.rs`
+holds this model, the write language and the fold, with no SQL.
 
-The **Lens** panel opens Research principles for the current Loupist alongside
-the Chat. It lists user principles, the standing perspective and learned methods;
-the World Library contains Sources and Notes only. Opening a method renders its
-saved document, links and headings. In the side panel the document fills the card and scrolls on its
-own. Back, the learned date and Outline and links share one row at the top of that document, and each truncates instead of wrapping onto the title. Pause and archive follow the document. View Markdown reveals the saved body,
-including `lens:` links, followed by its populated fields under section headings.
-For a user principle these are the statement, why and example. Rust
-versions these records in local Memory. `LensWorkspace` is a document reader, with applicability,
-limitations, outline, links and backlinks. Learned methods on the Research principles
-page retain their provenance panel alongside the saved document. The learned-method inspector shows the
-learning rationale, cited World facts and a Then vs now comparison built from bounded
-growth-event before/after summaries. Keep acknowledges the publication for the current
-app session and Loupist. Archive confirms inline and asks Rust to archive the Lens;
-the default perspective cannot be archived. `lens:recordId` links resolve within the
-same Loupist and follow current heads. Discuss in Chat attaches the saved Lens;
-proposals can route back to their originating Chat or be dismissed. Saved basis shows
-the current change rationale and evidence. There is no historical Lens browser.
+A basis is at most eight references: a World claim read this turn, a retained
+Source span, the user's message of the filing turn (`said`), or another page
+(synthesis). Subject and idea sections need at least one reference; a section whose
+references include a page, or carry no claim, span or `said`, is synthesis and must
+state its uncertainty. Method and perspective sections may have an empty basis. The
+reader derives a chip from the basis (source, said, view or none); agent prose never
+becomes World data. Suggested keys per kind (`suggested_sections`) are an ordering
+hint, not a closed set: subject `overview, facts, value-chain, drivers, risks, views,
+open-questions`; method `use-when, steps, checks, limits`; idea `claim, mechanism,
+evidence-for, evidence-against, would-break, checks`; perspective `beliefs,
+priorities, avoid`.
 
-A principle or method can be paused independently of learning. Rust stores paused
-ids in the existing per-Loupist JSON settings, excludes them from automatic context,
-search and selected references, and refuses exact model reads until resumed. The user
-can still inspect a paused item and resume it. Paused principles also leave autonomous
-method-review input. The standing perspective cannot be paused.
+A new Loupist with a focus gets its perspective page at creation
+(`ensure_perspective` in `commands/knowledge/chat_reads.rs`): the title "Outlook" and
+one `focus` section headed "Focus" holding the focus text. The focus is what the
+Loupist researches, not a belief, so it is not seeded under `beliefs`. The interface
+shows the host-default title and heading in its own language. An empty focus seeds
+no page; the first filed perspective becomes it. A later focus change, from Loupist
+settings or `loupist_setup`, rewrites only that `focus` section
+(`sync_perspective_focus`); clearing the focus leaves the page as it was.
 
-Method and perspective creation and revision are requested through Chat, or come
-from accepting a [shared Loupist's](sharing.md#sharing) suggestion. Those
-document readers do not expose create, save, rename or archive controls.
-`lens_update` can warn about related current methods without granting read
-authority or blocking a save. A stale-revision update becomes a read-only
-proposal rather than replacing newer content.
+Bodies link `lens:rec_…` (navigation, resolved by record id, with backlinks from the
+link index) and, on subject and idea pages, `world:<node id>` of this Loupist's
+World. Principle, perspective and method pages keep the World-reference ban; no
+page may reference a Journal, a snapshot or a World record id. Links are what the
+Markdown parser reads (inline, reference-style and autolinks, any scheme case),
+for the index and the policy alike. A `world:` link
+becomes a `mention` anchor; a page created with anchors gets `subject` anchors (a
+name anchor without a node stays pending until a World publication names it); a
+final-answer `lens:` link records `applied` anchors to the World nodes delivered
+in that turn. Anchors drive the Map's applies-to edges and the Lens index order.
+
+### Filing
+
+`KnowledgeWrite::file(loupist, origin, deltas, at_ms)` is the only page writer. A
+delta names a target, either an existing record or a create (kind, title, anchors),
+and at most 12 ops: `put` (add or replace a section; `expected` is the digest from
+the exact read, absent means add only), `retire` (needs the digest), `summary` and
+`idea_status`. A create is idempotent: it resolves to the active page with the same
+kind and folded title, or for a subject the same primary anchor, or the active
+perspective, before minting a record. A create that lands on an existing page only
+adds absent sections: its summary, status, retire and replacing puts are skipped as
+stale. The fold never fails on one bad op; each op gets an outcome: added, replaced, retired,
+summarized, status_set, already_known (identical content), skipped_stale (digest
+mismatch, missing key, or an edit through a create), refused_forgotten (the user
+retired that key), refused_basis, refused_full (16 sections), refused_kind or
+refused_text (the text policy: a private reference, a `world:` link on a portable
+page, or a node this World lacks; a refused title or new page's `about` node refuses
+every op of its delta) or refused_inactive (every op of a delta whose existing page was
+archived or removed; the user restores a page before editing it). Disjoint edits from the same read both
+land; an edit of a section that changed since is skipped, never a proposal. A create
+whose ops all refuse leaves no record. An empty summary clears it. A written
+section is contested when its basis cites a claim the live World withdrew, disputed
+or does not hold, whoever writes it, undo included; text may hold no control
+character but line breaks and tabs in Markdown, uncertainty and reasons.
+
+Each filing publishes one revision per changed page (the head is the only revision;
+history is the log), appends one `knowledge_lens_log` row per op (refused and skipped
+included, with the op JSON, outcome, key, before and after digests and the section
+or summary that op found, folding ops one at a time), rebuilds links and mention anchors, reindexes search and writes one
+growth event per changed page (`lens_created` or `lens_revised`). The log origin is
+`turn`, `user`, `learning` or `import`. `undo_op` appends the inverse op with
+`undoes_op_id` and refuses when a later op changed that section, summary or status,
+or the op was undone already. `forget_section` is a user retire: a later non-user
+`put` of that key is refused until the user puts it back. `learned_digest` lists,
+per message id, the pages and outcomes that message filed. The agent reaches this
+writer through `lens_file` ([turn tools](../agent/turn-tools.md#turn-tools)) with
+`FilingOrigin::Turn`. Principles are saved by `principle_save` through the same
+metadata row and log.
+
+The bridge reads a page as `PageView` (`knowledge_lens_read`): kind, title, archived,
+paused, learned, the body with section keys, digests, basis and chip, suggested
+sections, anchors, links, backlinks and the newest 20 log entries. `knowledge_lens_search`
+accepts a `kinds` filter; `knowledge_lens_pages_for_node` lists the active pages
+anchored to a World node; `memory_section_forget`, `memory_op_undo` and
+`memory_learned` are the user's correction and receipt commands.
+
+Sharing exports only portable kinds (principle, perspective, method), as summary and
+keyed sections without their basis; an accepted section starts with an empty basis and
+`shared` origin. Subject and idea pages stay local. Memory reset removes Loupist-origin
+pages and retires Loupist-origin sections from pages the user keeps. A principle or
+page can be paused independently of learning; the perspective cannot be paused.
+Archiving releases the title; restoring refuses a taken one.
 
 ### Method learning
 
@@ -56,7 +116,13 @@ at startup is marked a failed uncertain attempt.
 
 Publication requires at least two cited claims from that review's input. The
 input includes every active principle statement. If those statements do not fit,
-or they change before publication, the review defers and publishes no method.
+or they change before publication, the review defers and publishes no method. A
+publication files a method page through `KnowledgeWrite::file` with origin
+`learning`: the model's six fields become the summary and the sections `use-when`
+(with assumptions), `steps`, `checks` and `limits`. A refine puts those sections
+with the digests the review read; a section the user changed since is skipped and
+the review's reason reads `stale_head_folded`. A publication that changes nothing
+defers with `method_unchanged`.
 Deferral and failure write a review record and no growth event. Learned means a
 retained method, not model-weight training or a measured quality gain. A saved
 method alone does not demonstrate improved later work; use
@@ -69,7 +135,7 @@ unacknowledged learned publication stays marked New for seven days.
 
 ### User principles
 
-User principles are Lens records with `lensKind: principle`, a statement, optional
+User principles are Lens records of kind `principle` with a statement, optional
 why and example, and user origin (`settings`, `feedback` or `chat`), or `shared` for one
 accepted from a [shared Loupist](sharing.md#sharing). The Lens panel shows the statement, its origin and application history. Asking the Bot for a change uses the admitted Memory tools. A principle linked from a World entity opens in Lens. An origin Chat
 link opens that conversation without changing its draft. Saved answer corrections

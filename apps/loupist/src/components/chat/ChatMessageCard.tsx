@@ -234,7 +234,6 @@ type Props = {
   onProviderAction?: (action: ProviderErrorAction, provider: string | undefined) => void;
   /** A meta note under the answer, such as "… isn't offered anymore, so this answer used …". */
   note?: string;
-  onDismissLensProposal?: (target: { recordId: string; messageId: string }) => Promise<void>;
 };
 
 function UserMessageText({
@@ -310,7 +309,6 @@ function ChatMessageCardComponent({
   retryAttempt = 1,
   onProviderAction,
   note,
-  onDismissLensProposal,
   onSaveFeedback,
   onTeachFeedback,
   feedbackBusy = false,
@@ -560,7 +558,6 @@ function ChatMessageCardComponent({
           onOpenMemory={onOpenMemory}
           onOpenMemoryPage={onOpenMemoryPage}
           onOpenEvidence={onOpenEvidence ? (evidence, anchor) => openEvidence(evidence, undefined, anchor) : undefined}
-          onDismissLensProposal={onDismissLensProposal}
           onReadWorldJob={onReadWorldJob}
           onWorldChanged={onWorldChanged}
         />

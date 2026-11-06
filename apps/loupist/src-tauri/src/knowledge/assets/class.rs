@@ -15,6 +15,17 @@ pub enum AssetClass {
 }
 
 impl AssetClass {
+    pub const ALL: [AssetClass; 8] = [
+        Self::Equity,
+        Self::Crypto,
+        Self::Fund,
+        Self::Commodity,
+        Self::RatesFx,
+        Self::RealAsset,
+        Self::Prediction,
+        Self::Private,
+    ];
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Equity => "equity",

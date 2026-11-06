@@ -17,7 +17,7 @@ address with one `code` and `state`; for Claude and the debug Codex client their
 `http://localhost` or `http://127.0.0.1` callback address, or `code#state`.
 SuperGrok shows a device code to copy. Failures are typed (declined plan
 permission, an ineligible plan with Use an API key, a busy port, a timeout,
-offline) and offer Retry. An existing connection skips the step. After connecting, onboarding opens the existing Bot or creates one using the portfolio template. A profile with a connected provider skips sign-in. Assets and tone can be configured later. The welcome screen also offers the existing trusted folder import. Onboarding creates no schedule.
+offline) and offer Retry. An existing connection skips the step. After connecting, onboarding shows the New Loupist preset picker (`LoupistTemplateFields`) with My portfolio preselected and one Create Loupist button, so the first Loupist starts from the preset the user chose. With a Loupist already present, onboarding skips the picker and opens it. A profile with a connected provider skips sign-in. Assets and tone can be configured later. The welcome screen also offers the existing trusted folder import. Onboarding creates no schedule.
 
 ## Code
 

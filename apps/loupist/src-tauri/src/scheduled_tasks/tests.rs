@@ -1068,7 +1068,7 @@ fn recovered_inbox_retains_tool_refusals_and_is_unread_once() {
         assert!(crate::briefings::policy::enforce(
             &store,
             "loupist-a",
-            &run.run_id,
+            Some(&run.run_id),
             crate::broker::ToolMethod::NativeAuthorize,
             &serde_json::json!({"name":name})
         )

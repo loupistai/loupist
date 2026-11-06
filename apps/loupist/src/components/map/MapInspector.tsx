@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeftIcon, XIcon } from "lucide-react";
 import { LensLearningPanel } from "../knowledge/LensLearningPanel";
 import type { KnowledgeMap, KnowledgeMapNode } from "../../contracts/knowledge";
-import type { LoupistBridge, KnowledgeCatalog, KnowledgeLocation, KnowledgePin, WorldGraphView } from "../../types";
+import type { LoupistBridge, KnowledgeCatalog, KnowledgeLocation, KnowledgePin, PageSummary, WorldGraphView } from "../../types";
 import { useTranslation } from "../../i18n";
 import { formatDate } from "../../i18n/format";
 import { PrincipleForm } from "./PrincipleForm";
@@ -43,8 +43,17 @@ export function MapInspector({ node, map, bridge, location, onClose, onSelect, o
   const catalogLenses = catalog?.lenses ?? [];
   const lens = catalogLenses.find(l => l.recordId === node.recordId);
   const basePerspective = isBasePerspective(node, catalogLenses);
-  const headingText = isLensNode(node) ? lensDisplayTitle(node, catalogLenses, t("lensWorkspace.defaultPerspective")) : name;
+  const headingText = isLensNode(node) ? lensDisplayTitle(node, catalogLenses) : name;
   const entity = graph?.nodes.find((n) => n.id === node.id);
+  const [notes, setNotes] = useState<PageSummary[]>([]);
+  const noteScope = node.kind === "entity" ? node.id : undefined;
+  useEffect(() => {
+    setNotes([]);
+    if (!noteScope) return;
+    let live = true;
+    void bridge.knowledgeLensPagesForNode({ loupistId: location.loupistId, nodeId: noteScope }).then(found => { if (live) setNotes(found); }).catch(() => {});
+    return () => { live = false; };
+  }, [bridge, location.loupistId, noteScope, catalog]);
   // Facts or Relationships; the choice stays while the user walks from name to name.
   const [view, setView] = useState<"facts" | "relationships">("facts");
   const relationshipsAvailable = hasRelationshipsView(node);
@@ -97,8 +106,8 @@ export function MapInspector({ node, map, bridge, location, onClose, onSelect, o
     {basePerspective ? <p className="map-base-perspective">{t("principles.perspectiveCaption")}</p> : null}
     <ConnectionOrigin origin={node.origin} />
     <SharedOrigin bridge={bridge} loupistId={location.loupistId} subjectId={node.recordId ?? node.id} onAbout={() => onOpen({ loupistId: location.loupistId, surface: "lens", recordId: SHARED_SECTION_ITEM })} />
-    {node.kind !== "entity" && node.recordId ? <LensLearningPanel key={`${location.loupistId}:${node.recordId}:${lens?.revisionId ?? ""}`} bridge={bridge} loupistId={location.loupistId} node={node} map={map} onSelect={onSelect} onArchived={() => { onChanged?.(); onClose(); }} /> : null}
-    {node.kind !== "entity" && lens?.applicability && !isStandingPlaceholder(lens.applicability) ? <p className="map-lens-applicability">{lens.applicability}</p> : null}
+    {node.kind !== "entity" && node.recordId ? <LensLearningPanel key={`${location.loupistId}:${node.recordId}:${lens?.revisionId ?? ""}`} bridge={bridge} loupistId={location.loupistId} node={node} onArchived={() => { onChanged?.(); onClose(); }} /> : null}
+    {node.kind !== "entity" && lens?.summary && !isStandingPlaceholder(lens.summary) ? <p className="map-lens-applicability">{lens.summary}</p> : null}
     {entity?.aliases.length ? <p className="map-aliases" title={entity.aliases.join(", ")}>{entity.aliases.join(", ")}</p> : null}
     {entity?.description ? <><p className={more ? "" : "map-summary"}>{entity.description}</p><Button variant="link" onClick={() => setMore(!more)}>{t(more ? "map.less" : "map.more")}</Button></> : null}
     {error ? <p role="alert">{t("map.detailError")} <Button variant="link" onClick={retry}>{t("map.retry")}</Button></p> : null}
@@ -122,7 +131,10 @@ export function MapInspector({ node, map, bridge, location, onClose, onSelect, o
     {showRelationships ? null : node.kind === "entity" ? <><InspectorThesis bridge={bridge} loupistId={location.loupistId} entityId={node.id} /><h3>{t("map.keyFacts")}</h3>{!graph && !error ? <p role="status">{t("map.loadingFacts")}</p> : null}
       <ul className="map-facts">{claims.map(({ claim }) => <li key={claim.id}><p>{claim.proposition}</p><small>{claim.publicationTime?.value ? dateValue(claim.publicationTime.value) : claim.recordedAtMs ? dateValue(new Date(claim.recordedAtMs).toISOString()) : null}{[...new Set(claim.evidence.map((e) => e.spanId).filter((id): id is string => !!id && !!graph?.sourceTargets?.[id]))].map((spanId) => <Button variant="link" key={spanId} onClick={() => openSource(spanId)}>{t("map.openSource")}</Button>)}</small></li>)}</ul>
       {graph && !claims.length ? <p className="map-muted">{t("map.noFacts")}</p> : null}
-      <h3>{t("map.seenThrough")}</h3>{lenses.map((item) => <Button variant="ghost" className="map-connection" key={item.id} onClick={() => onSelect(item)}><i className={`map-swatch is-${nodeCategory(item)}`} />{lensDisplayTitle(item, catalogLenses, t("lensWorkspace.defaultPerspective"))}</Button>)}{!lenses.length ? <p className="map-muted">{t("map.noLens")}</p> : null}
+      {notes.length ? <section className="map-notes" aria-label={t("map.notes")}><h3>{t("map.notes")}</h3>
+        <ul>{notes.map((note) => <li key={note.recordId}><button type="button" onClick={() => onOpen({ loupistId: location.loupistId, surface: "lens", recordId: note.recordId, objectId: note.recordId, selection: { kind: "lens", recordId: note.recordId } })}>
+          <strong>{note.title}</strong><small>{t(`pageReader.kind.${note.kind}`)}</small>{note.summary ? <span>{note.summary}</span> : null}</button></li>)}</ul></section> : null}
+      <h3>{t("map.seenThrough")}</h3>{lenses.map((item) => <Button variant="ghost" className="map-connection" key={item.id} onClick={() => onSelect(item)}><i className={`map-swatch is-${nodeCategory(item)}`} />{lensDisplayTitle(item, catalogLenses)}</Button>)}{!lenses.length ? <p className="map-muted">{t("map.noLens")}</p> : null}
     </> : <><h3>{connected.filter((e) => e.kind === "applies_to").length ? t("map.appliedTo", { count: connected.filter((e) => e.kind === "applies_to").length }) : t("map.notApplied")}</h3>{connected.filter((e) => e.kind === "applies_to").map((e) => { const target = map.nodes.find((n) => n.id === e.target); return target ? <Button className="map-connection" variant="ghost" key={e.id} onClick={() => onSelect(target)}>{entityLabel(target, i18n.language)}</Button> : null; })}{node.recordId ? <Button variant="outline" onClick={() => onOpen({ loupistId: location.loupistId, surface: "lens", recordId: node.recordId })}>{t("map.openDocument")}</Button> : null}</>}
     {/* The Relationships view already shows every connection with its direction; the flat list belongs to Facts. */}
     {showRelationships ? null : <><h3>{t("map.connections", { count: connections.length })}</h3>{(allConnections ? connections : connections.slice(0, 8)).map((edge, index, rows) => { const neighbor = map.nodes.find((n) => n.id === (edge.source === node.id ? edge.target : edge.source)); return neighbor ? <div key={edge.id}>{index === 0 || rows[index - 1].relation !== edge.relation ? <small className="map-relation">{(edge.relation ? relationName(edge.relation, t) : undefined)}</small> : null}<Button variant="ghost" className="map-connection" onClick={() => onSelect(neighbor)}><i className={`map-swatch is-${nodeCategory(neighbor)}`} />{entityLabel(neighbor, i18n.language)}</Button></div> : null; })}
@@ -167,7 +179,7 @@ function PrincipleInspector({ bridge, loupistId, refreshKey, node, map, onClose,
     <h2 id="principle-inspector-title" tabIndex={-1} ref={title}>{principle?.statement ?? node.label}</h2>
     {error ? <div role="alert">{t(principle ? "principles.error" : "principles.unavailable")}<Button variant="ghost" onClick={() => setReload(value => value + 1)}>{t("principles.retry")}</Button></div> : null}
     {!principle && !error ? <p role="status">{t("principles.loading")}</p> : null}
-    <LensLearningPanel key={`${loupistId}:${node.recordId}:${principle?.revisionId ?? refreshKey ?? ""}`} bridge={bridge} loupistId={loupistId} node={node} map={map} onSelect={onSelect} onArchived={() => { onChanged?.(); onClose(); }} />
+    <LensLearningPanel key={`${loupistId}:${node.recordId}:${principle?.revisionId ?? refreshKey ?? ""}`} bridge={bridge} loupistId={loupistId} node={node} onArchived={() => { onChanged?.(); onClose(); }} />
     {principle ? <>
       {editing ? <PrincipleForm bridge={bridge} loupistId={loupistId} principle={principle} onCancel={() => setEditing(false)} onSaved={saved => { setPrinciple(saved); setEditing(false); onChanged?.(); }} /> : <>
         {principle.why ? <section><h3>{t("principles.why")}</h3><p>{principle.why}</p></section> : null}

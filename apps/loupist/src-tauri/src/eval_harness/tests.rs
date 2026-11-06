@@ -245,13 +245,13 @@ async fn eval_two_sessions_commit_and_retrieve_lens_through_broker() {
         .unwrap()
         .iter()
         .find(|c| c["kind"] == "lens" && c["title"] == "Hanbit diluted-share rule")
-        .expect("first turn must commit learned Lens");
+        .expect("first turn must commit the filed page");
     assert_eq!(commit["operation"], "create");
     assert!(first["tool_calls"]
         .as_array()
         .unwrap()
         .iter()
-        .any(|call| call["name"] == "lens_update" && call["outcome"] == "ok"));
+        .any(|call| call["name"] == "lens_file" && call["outcome"] == "ok"));
     let probe = new_chat(&state, &loupist.id, "probe").unwrap();
     assert_ne!(teach.id, probe.id);
     assert_ne!(teach.pi_session_id, probe.pi_session_id);
@@ -363,7 +363,7 @@ async fn eval_seeds_use_canonical_folder_memory_and_factual_context() {
         .await
         .unwrap();
     let input: Seed = serde_json::from_value(json!({
-        "lens":[{"title":"Seeded dilution method","markdown":"Use diluted shares","applicability":"Fictional valuations","assumptions":"All shares known","procedure":"Divide by total shares","principles":"Consistent denominator","limitations":"No missing warrants"}],
+        "lens":[{"title":"Seeded dilution method","summary":"Use diluted shares","sections":[{"key":"use-when","heading":"Use when","markdown":"Fictional valuations"},{"key":"steps","heading":"Steps","markdown":"Divide by total shares"}]}],
         "sources":[{"title":"Fictional source","text":"Fictional shares outstanding: 18","origin":"https://fictional.example/filing"}],
         "watchlist":[{"symbol":"ZQLM","market":"NYSE","display_name":"Zircon Loom"}],
         "holdings_csv":"symbol,market,display_name,quantity,cost_basis,market_value,currency\nZQLM,NYSE,Zircon Loom,73,41,3285,USD\nQZ731,KRX,Quartz Loom,31,8200,279000,KRW\n",
@@ -379,9 +379,10 @@ async fn eval_seeds_use_canonical_folder_memory_and_factual_context() {
                 .iter()
                 .find(|record| record.title == "Seeded dilution method")
                 .unwrap();
-            let revision = read.get_revision(&loupist.id, lens.revision_id.as_deref().unwrap())?;
-            let document: LensDocument = serde_json::from_value(revision.payload)?;
-            assert_eq!(document, input.lens[0].document);
+            let page = read.read_page(&loupist.id, &lens.record_id)?;
+            assert_eq!(page.body.summary(), input.lens[0].summary);
+            assert_eq!(page.body.sections().len(), 2);
+            assert_eq!(page.body.sections()[1].markdown, "Divide by total shares");
             assert!(records
                 .iter()
                 .any(|record| record.kind == RecordKind::Source
@@ -515,7 +516,7 @@ async fn eval_memory_write_without_reply_commits_receipts_but_provider_failure_d
             .unwrap();
         if mode.contains("COMMIT_FAILURE_EVAL") {
             state.store.lock_loupist(&loupist.id).unwrap().execute_batch(
-                "CREATE TRIGGER reject_fixture_commit BEFORE INSERT ON knowledge_lens_changes BEGIN SELECT RAISE(ABORT, 'private fixture commit detail'); END;"
+                "CREATE TRIGGER reject_fixture_commit BEFORE INSERT ON knowledge_lens_log BEGIN SELECT RAISE(ABORT, 'private fixture commit detail'); END;"
             ).unwrap();
         }
         let chat = new_chat(&state, &loupist.id, "teach").unwrap();
@@ -553,7 +554,7 @@ async fn eval_memory_write_without_reply_commits_receipts_but_provider_failure_d
                     .as_array()
                     .unwrap()
                     .iter()
-                    .any(|call| call["name"] == "lens_update" && call["outcome"] == "ok"),
+                    .any(|call| call["name"] == "lens_file" && call["outcome"] == "ok"),
                 "{result}"
             );
         }
@@ -661,6 +662,7 @@ async fn eval_journal_commits_include_optional_check_and_factual_outcome() {
     let changes = [&prior, &review]
         .iter()
         .map(|d| MemoryUpdateChange {
+            outcomes: Vec::new(),
             world_job_id: None,
             world_status: None,
             knowledge: None,
@@ -678,6 +680,8 @@ async fn eval_journal_commits_include_optional_check_and_factual_outcome() {
             status: MemoryUpdateStatus::Applied,
             commit_id: None,
             changes,
+            skipped_kinds: Vec::new(),
+            setup: Vec::new(),
         }),
         ..crate::test_fixtures::chat_message("review-message", ChatRole::Assistant, "Reviewed")
     };
@@ -843,7 +847,7 @@ async fn chat_runtime_stalled_provider_after_tool_fails_and_drains_before_long_t
                 .unwrap()
                 .entries
                 .iter()
-                .any(|call| call.name == "lens_update"),
+                .any(|call| call.name == "lens_file"),
             "tool must have executed before the provider wait"
         );
         let records = KnowledgeStore::for_loupist(state.store.clone(), &loupist.id)
@@ -901,4 +905,54 @@ fn product_eval_budget_counts_cached_input_and_unknown_usage() {
     assert_eq!(record["error"], "provider_error");
     assert_eq!(record["budget_stop"]["error"], "budget_usage_unknown");
     assert_eq!(record["status"], "failed");
+}
+
+/// A `lens_file` call whose text the commit would refuse is refused when it
+/// is staged, so the answer completes and Memory never fails the reply.
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+#[tokio::test]
+async fn a_filing_the_text_policy_refuses_never_fails_the_answer() {
+    let root = tempfile::Builder::new()
+        .prefix("eval-test-")
+        .tempdir_in("/tmp")
+        .unwrap();
+    let workspace = root.path().join("workspace");
+    fs::create_dir(&workspace).unwrap();
+    let mut state = AppState::for_eval(root.path().join("app"));
+    scripted(&mut state, root.path());
+    let loupist = crate::commands::loupist::create_folder_loupist(&state, &workspace)
+        .await
+        .unwrap();
+    let chat = new_chat(&state, &loupist.id, "badlink").unwrap();
+    let session = Session {
+        id: "badlink".into(),
+        role: "train".into(),
+        memory: "remember".into(),
+        turns: vec![],
+    };
+    let result = run_turn(
+        &state,
+        &chat,
+        &session,
+        &Turn {
+            user: "BADLINK_EVAL: Hanbit supplies Northgate; remember it".into(),
+            as_of: None,
+            ..Default::default()
+        },
+        "fixture",
+        "medium",
+        600000,
+    )
+    .await
+    .unwrap();
+    assert_eq!(result["status"], "completed", "{result}");
+    assert!(
+        result["memory_commits"].as_array().unwrap().is_empty(),
+        "{result}"
+    );
+    let stored = state.store.get_chat(&chat.id).unwrap().unwrap();
+    let answer = stored.messages.last().unwrap();
+    assert_eq!(answer.status, crate::domain::ChatMessageStatus::Complete);
+    assert!(answer.failure_kind.is_none());
+    assert_eq!(answer.content, "Noted, without saving the link.");
 }

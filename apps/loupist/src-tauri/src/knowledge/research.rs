@@ -9,8 +9,8 @@ use super::model::{
     mint_id, validate_external_id, validate_knowledge_id, validate_loupist_id, validate_text,
     validate_time, validate_time_point, validate_token, EarlierResearch, JournalDraft,
     JournalInputs, JournalLensInput, JournalRecord, JournalSourceInput, JournalWorldInput,
-    LaterNote, LensDocument, OpenTurn, ReadPurpose, RecordKind, ResearchClaimPin, ResearchHit,
-    ResearchSearch, SaveResearch, SavedResearch, WorkingNote, WorkingNoteDraft, WorldGraphView,
+    LaterNote, OpenTurn, ReadPurpose, ResearchClaimPin, ResearchHit, ResearchSearch, SaveResearch,
+    SavedResearch, WorkingNote, WorkingNoteDraft, WorldGraphView,
 };
 use super::source::load_receipt;
 
@@ -60,57 +60,6 @@ pub(super) fn open_turn(tx: &Transaction<'_>, request: OpenTurn) -> KnowledgeRes
         ],
     )?;
     Ok(())
-}
-
-pub(super) fn select_standing_lens(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-    record_id: &str,
-    revision_id: &str,
-    at_ms: i64,
-) -> KnowledgeResult<()> {
-    validate_time(at_ms)?;
-    validate_knowledge_id(revision_id, "rev")?;
-    let module = super::authority::require_record(tx, loupist_id, record_id)?;
-    if module.kind != RecordKind::Lens {
-        return Err(KnowledgeError::Invalid("record is not a Lens"));
-    }
-    let visible = module
-        .head_revision_id
-        .clone()
-        .ok_or(KnowledgeError::NotFound)?;
-    if visible != revision_id {
-        return Err(KnowledgeError::RevisionConflict {
-            expected: Some(visible),
-            actual: Some(revision_id.to_string()),
-        });
-    }
-    tx.execute(
-        "INSERT INTO knowledge_standing_selection (
-            loupist_id, record_id, revision_id, role, selected_at_ms
-         ) VALUES (?1, ?2, ?3, 'standing_philosophy', ?4)
-         ON CONFLICT(loupist_id) DO UPDATE SET
-            record_id = excluded.record_id,
-            revision_id = excluded.revision_id,
-            role = excluded.role,
-            selected_at_ms = excluded.selected_at_ms",
-        params![loupist_id, record_id, revision_id, at_ms],
-    )?;
-    Ok(())
-}
-
-pub(super) fn load_standing_selection(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-) -> KnowledgeResult<Option<(String, String)>> {
-    validate_loupist_id(loupist_id)?;
-    Ok(tx
-        .query_row(
-            "SELECT record_id, revision_id FROM knowledge_standing_selection WHERE loupist_id = ?1",
-            [loupist_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()?)
 }
 
 // An acknowledged source receipt binds exact bytes and their complete provenance atomically.
@@ -225,8 +174,8 @@ pub(super) fn record_acked_lens(
     document_json: &str,
     body_digest: &str,
 ) -> KnowledgeResult<String> {
-    let document: super::model::LensDocument = from_json(document_json)?;
-    if digest_bytes(document.delivery_text()?.as_bytes()) != body_digest {
+    let page: super::lens::PageRead = from_json(document_json)?;
+    if digest_bytes(page.delivery_text()?.as_bytes()) != body_digest {
         return Err(KnowledgeError::DigestMismatch);
     }
     let delivery_id = mint_id("dlv");
@@ -956,7 +905,7 @@ fn journal_hit(
             .inputs
             .lenses
             .iter()
-            .any(|lens| folded_contains(&lens.document.markdown, needle));
+            .any(|lens| folded_contains(&lens.markdown, needle));
     }
     if !claim_match || !text_match {
         return None;
@@ -1393,8 +1342,8 @@ fn copy_lens_delivery(
             "lens delivery belongs to another turn",
         ));
     }
-    let document: LensDocument = from_json(&document_json)?;
-    if digest_bytes(document.delivery_text()?.as_bytes()) != body_digest {
+    let page: super::lens::PageRead = from_json(&document_json)?;
+    if digest_bytes(page.delivery_text()?.as_bytes()) != body_digest {
         return Err(KnowledgeError::DigestMismatch);
     }
     Ok(JournalLensInput {
@@ -1403,7 +1352,7 @@ fn copy_lens_delivery(
         revision_id,
         revision_digest,
         body_digest,
-        document,
+        markdown: page.markdown(true),
         status: lens.status,
     })
 }

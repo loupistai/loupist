@@ -232,19 +232,44 @@ pub(crate) fn default_schedule(timezone: String) -> Schedule {
     }
 }
 
+/// A paragraph this short and wholly bold is a label ("**As of Nov 6**"), not prose.
+const LABEL_CHARS: usize = 60;
+
 /// Paragraph boundaries are parsed before stripping Markdown; Unicode scalars,
-/// rather than UTF-8 bytes, define the product's 280-character limit.
+/// rather than UTF-8 bytes, define the product's 280-character limit. A leading
+/// bold label paragraph is skipped when prose follows it.
 pub(crate) fn summary(markdown: &str) -> String {
     let mut result = String::new();
+    let mut label = None;
     let mut paragraph = false;
+    let mut strong = 0usize;
+    let mut plain = false;
     for event in Parser::new(markdown) {
         match event {
-            Event::Start(Tag::Paragraph) => paragraph = true,
-            Event::End(TagEnd::Paragraph) if paragraph => break,
-            Event::Text(text) | Event::Code(text) if paragraph => result.push_str(&text),
+            Event::Start(Tag::Paragraph) => {
+                paragraph = true;
+                plain = false;
+                result.clear();
+            }
+            Event::End(TagEnd::Paragraph) if paragraph => {
+                paragraph = false;
+                if plain || label.is_some() || result.trim().chars().count() > LABEL_CHARS {
+                    break;
+                }
+                label = Some(std::mem::take(&mut result));
+            }
+            Event::Start(Tag::Strong) => strong += 1,
+            Event::End(TagEnd::Strong) => strong = strong.saturating_sub(1),
+            Event::Text(text) | Event::Code(text) if paragraph => {
+                plain |= strong == 0 && !text.trim().is_empty();
+                result.push_str(&text);
+            }
             Event::SoftBreak | Event::HardBreak if paragraph => result.push(' '),
             _ => {}
         }
+    }
+    if result.trim().is_empty() {
+        result = label.unwrap_or_default();
     }
     result
         .split_whitespace()

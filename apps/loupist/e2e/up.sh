@@ -76,7 +76,7 @@ describe_window() {
     elif [ "$MODE" = live ]; then
         echo "Loupist live WebDriver profile: $LIVE_PROFILE (separate from the development library)."
         echo "OpenAI sign-in uses the selected existing Pi directory in place."
-        echo "Before a paid message: node apps/loupist/e2e/agent-driver.mjs luna-max"
+        echo "Before a paid message: node apps/loupist/e2e/agent-driver.mjs live-preset"
     else
         echo "Inspect it with: node apps/loupist/e2e/agent-driver.mjs inspect"
     fi

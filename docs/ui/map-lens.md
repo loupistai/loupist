@@ -19,14 +19,17 @@ The projection also carries watchlist and holding markers. `applies_to`
 weights count turns, not correctness or causal influence. Per-kind
 total/shown/truncated counts make the bounded projection explicit. The standing
 perspective is the base view a Loupist starts from. In the application filter and the
-Lens detail, the host's untouched title "Standing philosophy" is shown in the
-interface language as the default perspective. A title someone chose is kept and
-still marked as that base perspective. The seeded placeholder sentence is not
+Lens detail, the Pages list and the page reader, the host's untouched title "Outlook"
+and the English default heading of a suggested section key (Beliefs, Focus, ...) show
+in the interface language (`knowledge/hostDefaults.ts`). A title or heading someone
+chose is kept, and the title stays marked as the base perspective. The seeded placeholder sentence is not
 presented as something the Loupist learned.
 
-Entities draw in six categories, in legend and filter order: Company (World kind
-Organization), Person, Product (Product), Market & asset (Asset), Event & metric
-(Event, Metric) and Other (Place, Policy, Entity and any other kind). A Metric
+Entities draw in eight categories, in legend and filter order: Company (World kind
+Organization), Person, Product (Product), Technology (Technology), Industry
+(Segment), Market & asset (Asset), Event & metric (Event, Metric) and Other (Place,
+Policy, Entity and any other kind). Korean labels are 기업, 인물, 제품, 기술, 산업, 시장·자산,
+사건·지표 and 기타. A Metric
 stays in Event & metric, draws as a small faded dot, takes a canvas label only
 when selected or hovered, and does not hide a neighbour's name; name chips outside the Map (the morning message, the chat rail, the palette) use the same faded color; the number itself
 stays in the subject's Key facts. Rust adds up to four non-Latin aliases to each
@@ -36,6 +39,26 @@ inspector, with the English canonical name under the inspector heading. Search
 matches the canonical name and every local name; "Ask about this" pins the canonical
 name. Core relation names have curated labels; other relation names stay readable
 English.
+
+### Notes on a name
+
+An entity's inspector lists **Notes**: the active Lens pages anchored to it, from
+`knowledge_lens_pages_for_node`, each with its title, kind and summary. A note opens
+the page in the Lens reader. The Lens kinds draw as Lens nodes (`lens_perspective`,
+`lens_method`, `lens_principle`, `lens_subject`, `lens_idea`) with `applies_to` edges from
+their anchors. The legend still shows one Lens row. What's new names a new Topic or
+Idea beside new Methods and Rules.
+
+### What the map tracks
+
+Loupist settings list, under World processing and in plain words, the kinds of things and links the map tracks
+beyond the basics, with Stop tracking on each kind, and the twenty most recent
+changes. Each change says who made it (starting setup, you, a background review),
+what it added or removed, and offers Undo while it still changes something. There
+is no Apply or Dismiss: changes already apply
+([how](../knowledge/worlds.md#presets-changes-and-undo)). The same words appear in
+the Bot's "Your map now also tracks ..." message. Copy never says ontology, schema or
+entity type.
 
 Company and market entities offer a Relationships view in the inspector beside Facts:
 claims grouped by relation, one row per counterpart ranked by weight, then degree,
@@ -103,6 +126,9 @@ highlight is on, one row for the highlighted names; the
 least-drawn rows fold under More.
 Below 900×600 the legend floats over the map without shrinking the fit. It starts open on a person's first Map
 visit at any window size, and a collapse is remembered app-wide. The stats chip carries the conflicting count.
+A link card in the Bot opens the Map with `view.highlightEntityIds` set to the
+path's nodes, seed first, so the same highlight that marks disputed names marks the
+seed, each middle name and the far end; nothing else on the canvas changes.
 
 ## Code
 

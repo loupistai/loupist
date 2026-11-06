@@ -1457,3 +1457,21 @@ fn the_event_strip_lists_what_is_ahead_for_followed_assets_soonest_first() {
         .unwrap()
         .is_empty());
 }
+
+#[test]
+fn match_entity_returns_none_when_two_nodes_share_the_symbol() {
+    let (_root, store) = store();
+    let page = page(&store);
+    let node = |id: &str, name: &str| {
+        json!({"id": id, "name": name, "aliases": [], "description": "", "kind": "Organization",
+               "sourceRole": "entity", "properties": {"ticker": "990308"}})
+    };
+    let body = |nodes: Vec<Value>| -> WorldSnapshotBody {
+        serde_json::from_value(json!({"nodes": nodes, "claims": [], "annotations": []})).unwrap()
+    };
+    assert!(match_entity(&body(vec![node("n1", "One"), node("n2", "Two")]), &page).is_none());
+    assert_eq!(
+        match_entity(&body(vec![node("n1", "One")]), &page).map(|(id, _)| id),
+        Some("n1".to_owned())
+    );
+}

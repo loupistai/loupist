@@ -1,26 +1,19 @@
 ---
 key: m-2222222222222222
 title: Opal capex read
+sections:
+- key: use-when
+  heading: Use when
+- key: steps
+  heading: Steps
 ---
 
 Read​ capex‮ cycles before margins.
 
-## Applicability
+## Use when
 
 Fictional ferry operators.
 
-## Assumptions
-
-
-
-## Procedure
+## Steps
 
 Compare the two operators year by year.
-
-## Principles
-
-
-
-## Limitations
-
-

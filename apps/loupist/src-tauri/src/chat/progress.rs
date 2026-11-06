@@ -1430,11 +1430,25 @@ fn capability_load_presentation(args: &Value) -> ToolPresentation {
             .and_then(|tool| tool.progress.as_ref())
             .map(|spec| parse_category(&spec.category))
             .unwrap_or(ChatProgressCategory::Capability);
-        let label = component
-            .connection
-            .as_deref()
-            .and_then(plugin_label)
-            .unwrap_or_else(|| component.name.clone());
+        let Some(connection) = component.connection.as_deref() else {
+            // A built-in group's name is internal; the catalog wording is what
+            // the interface translates.
+            let wording = catalog
+                .tools
+                .iter()
+                .find(|tool| tool.name == "capability_load")
+                .and_then(|tool| tool.progress.as_ref());
+            return presentation(
+                category,
+                ChatProgressOperation::Read,
+                wording.map_or("Prepared a research tool", |spec| spec.done.as_str()),
+                wording.map(|spec| spec.running.clone()),
+                None,
+                None,
+                None,
+            );
+        };
+        let label = plugin_label(connection).unwrap_or_else(|| component.name.clone());
         (label, category)
     } else if let Some(label) = plugin_label(id) {
         (label, ChatProgressCategory::Finance)
@@ -2145,8 +2159,8 @@ mod tests {
             ),
             ("note_save", json!({"journal":{"thesis":"private thesis"}})),
             (
-                "lens_update",
-                json!({"recordId":"private-id", "document":{"markdown":"private method"}}),
+                "principle_save",
+                json!({"statement":"private rule", "why":"private reason"}),
             ),
             (
                 "capability_load",
@@ -2165,6 +2179,20 @@ mod tests {
             None,
         );
         assert!(!query.target.unwrap_or_default().contains("credential"));
+        // A built-in tool group shows the catalog's wording the interface
+        // translates, never its internal name; a connection keeps its name.
+        let built_in = summarize_tool("capability_load", &json!({"id": "memory-save"}), None);
+        assert_eq!(
+            (built_in.action.as_str(), built_in.running.as_deref()),
+            (
+                "Prepared a research tool",
+                Some("Preparing a research tool")
+            )
+        );
+        assert_eq!(
+            summarize_tool("capability_load", &json!({"id": "opendart"}), None).action,
+            "Opened OpenDART"
+        );
         let openbb = summarize_tool(
             "mcp__openbb__equity_price_historical",
             &json!({"symbol":"AAPL","provider":"yfinance"}),

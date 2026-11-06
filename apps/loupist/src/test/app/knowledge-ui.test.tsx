@@ -31,7 +31,7 @@ describe("Loupist · Map", () => {
     expect(await screen.findByRole("img", { name: "37 on the map · 36 relationships" })).toBeVisible();
   });
 
-  it("opens the Lens wiki independently of the map and shows the saved body and method fields as Markdown", async () => {
+  it("opens the Lens wiki independently of the map and shows the saved page as sections", async () => {
     const { user, bridge } = await openMap();
     const loupistId = "loupist-quality";
     const catalog = await bridge.knowledgeCatalog({ loupistId });
@@ -39,23 +39,16 @@ describe("Loupist · Map", () => {
     const saved = await bridge.knowledgeLensRead({ loupistId, recordId: method.recordId });
     expect(screen.queryByRole("button", { name: "Lens wiki" })).toBeNull();
     await user.click(await mainTab(/Lens/));
-    const page = await screen.findByRole("region", {name:"Research principles"});
-    await user.click(await within(page).findByRole("tab", { name:/Ways of working/ }));
+    const page = await screen.findByRole("region", { name: /What .* knows/ });
     await user.click(await within(page).findByRole("button", { name: new RegExp(method.title) }));
-    const article = await within(page).findByRole("article", { name: "Lens reader" });
+    const article = await within(page).findByRole("article", { name: "Page" });
     await within(article).findByRole("heading", { name: method.title });
-    await user.click(within(article).getByText("View Markdown"));
-    const markdown = await waitFor(() => {
-      const source = article.querySelector("pre");
-      expect(source).toBeVisible();
-      return source!.textContent!;
-    });
-    expect(markdown.startsWith(saved.document.markdown)).toBe(true);
-    expect(markdown).toContain(`## Procedure\n\n${saved.document.procedure}`);
+    if (saved.body.kind === "principle") throw new Error("A method is a page");
+    expect(within(article).getAllByRole("heading", { level: 3 }).slice(0, saved.body.sections.length).map(heading => heading.textContent)).toEqual(saved.body.sections.map(section => section.heading));
     await user.click(await mainTab(/Map/));
     expect(screen.getByRole("combobox", { name: "Search the map" })).toBeVisible();
     await user.click(await mainTab(/Lens/));
-    expect(await screen.findByRole("region", {name:"Research principles"})).toBeVisible();
+    expect(await screen.findByRole("region", { name: /What .* knows/ })).toBeVisible();
   });
 
   it("ignores a late remote alias search when the query changes", async () => {

@@ -22,14 +22,6 @@ export function readerScenarios({ base, select, navigate, selectPanel, click, cl
       const dialog = await until(() => select(".source-add-dialog"), "Add source did not open");
       if (kind !== "text") await click(`[role="tab"][id$="-trigger-${kind}"]`, dialog);
     })),
-    base("lens-outline-dialog", "A method's outline, links and evidence", () => select(".lens-context-dialog"), async root => {
-      await navigate(root, "lens");
-      await click('.memory-page-tabs [role="tab"]:nth-child(3)');
-      const method = await until(() => [...document.querySelectorAll<HTMLButtonElement>(".memory-row")].find(row => row.querySelector(".memory-marker.is-method")), "Method did not list");
-      method.click();
-      await until(() => select(".lens-outline:not([disabled])"), "Method reader did not load");
-      await click(".lens-outline");
-    }),
     ...(["list", "csv", "markdown", "empty", "error"] as const).map((kind): PreviewScenario => ({
       ...base(`workspace-files-${kind}`, `Workspace files: ${kind}`, () => select(kind === "csv" ? ".reader-csv-preview" : kind === "markdown" ? ".workspace-file-content [data-streamdown]" : kind === "error" ? '.workspace-files [role="alert"]' : kind === "empty" ? ".workspace-file-list .reader-empty" : ".workspace-file-entry"), async () => {
         await until(() => select(".header-panel-toggle"), "Chat did not load");

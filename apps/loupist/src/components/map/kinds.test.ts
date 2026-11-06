@@ -2,7 +2,7 @@ import { entityCategory, extensionKindLabel, isMetricNode, nodeCategory, nodeRad
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
 const node: KnowledgeMapNode = { id: "one", label: "One", kind: "entity", degree: 0, watched: false, held: false };
 it("maps core entity kinds to legend categories and everything else to Other", () => {
-  const cases = [["ORGANIZATION", "company"], ["  Person ", "person"], ["product", "product"], ["Asset", "market"], ["metric", "event"], ["company", "other"], ["new-kind", "other"], [undefined, "other"]] as const;
+  const cases = [["ORGANIZATION", "company"], ["  Person ", "person"], ["product", "product"], ["Technology", "technology"], [" Segment ", "industry"], ["Asset", "market"], ["metric", "event"], ["company", "other"], ["new-kind", "other"], [undefined, "other"]] as const;
   for (const [kind, expected] of cases) expect(entityCategory(kind)).toBe(expected);
 });
 it("uses an extension category and its language label", () => {

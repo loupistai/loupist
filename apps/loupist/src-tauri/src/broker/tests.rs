@@ -111,7 +111,6 @@ fn memory_reads_and_writes_need_their_own_permission() {
         (ToolMethod::ConversationMemory, false),
         (ToolMethod::SourceSave, true),
         (ToolMethod::NoteSave, true),
-        (ToolMethod::LensUpdate, true),
     ] {
         let mut authority = policy();
         assert!(enforce_policy(&authority, method).is_err(), "{method:?}");
@@ -618,6 +617,28 @@ fn turn_budgets_bound_saves_and_publications_but_rollbacks_are_free() {
         cardinality.consume(ToolMethod::ArtifactPublish, &policy),
         Err(BrokerError::BudgetExceeded)
     ));
+
+    cardinality
+        .consume(ToolMethod::ResearchOpen, &policy)
+        .unwrap();
+    assert!(matches!(
+        cardinality.consume(ToolMethod::ResearchOpen, &policy),
+        Err(BrokerError::BudgetExceeded)
+    ));
+    cardinality.rollback(ToolMethod::ResearchOpen);
+    cardinality
+        .consume(ToolMethod::ResearchOpen, &policy)
+        .unwrap();
+
+    for _ in 0..MAX_CHAT_TURN_FILINGS {
+        cardinality.consume(ToolMethod::LensFile, &policy).unwrap();
+    }
+    assert!(matches!(
+        cardinality.consume(ToolMethod::LensFile, &policy),
+        Err(BrokerError::BudgetExceeded)
+    ));
+    cardinality.rollback(ToolMethod::LensFile);
+    cardinality.consume(ToolMethod::LensFile, &policy).unwrap();
 }
 
 #[tokio::test]

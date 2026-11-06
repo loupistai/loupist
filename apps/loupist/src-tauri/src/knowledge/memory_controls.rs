@@ -47,11 +47,8 @@ pub fn pause(
             "only a principle or method can be paused",
         ));
     }
-    let standing = super::research::load_standing_selection(tx, loupist)?;
-    if standing.is_some_and(|(id, _)| id == record) {
-        return Err(KnowledgeError::Invalid(
-            "the standing perspective cannot be paused",
-        ));
+    if super::lens::lens_kind(tx, loupist, record)? == super::lens_page::LensKind::Perspective {
+        return Err(KnowledgeError::Invalid("the perspective cannot be paused"));
     }
     let mut controls = load(tx, loupist)?;
     if paused {

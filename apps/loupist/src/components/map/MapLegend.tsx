@@ -5,7 +5,7 @@ import { entityCategories, nodeCategory } from "./kinds";
 
 /** Rows the legend card shows at most; the rest fold into "More…". */
 export const LEGEND_MAX_ROWS = 6;
-const categoryOrder = ["company", "product", "person", "event", "market", "other"] as const satisfies readonly (typeof entityCategories)[number][];
+const categoryOrder = ["company", "product", "technology", "industry", "person", "event", "market", "other"] as const satisfies readonly (typeof entityCategories)[number][];
 
 /** `personal` says which rings are drawn: the dashed watchlist ring, the solid holdings ring, or both. */
 export type LegendRow = { id: string; kind: "category" | "lens" | "lensLine" | "personal" | "conflict"; rings?: "watch" | "hold" | "both" };

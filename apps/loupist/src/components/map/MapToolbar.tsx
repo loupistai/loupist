@@ -1,3 +1,4 @@
+import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { PlayIcon, BookOpenIcon, ChevronDownIcon, HistoryIcon, ImageIcon, ListIcon, MoreHorizontalIcon, NetworkIcon, ScanIcon, SearchIcon, SlidersHorizontalIcon, VideoIcon, WaypointsIcon } from "lucide-react";
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
@@ -111,13 +112,14 @@ export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect
   </div>;
 }
 
-const lensGroups = ["perspective", "principle", "method"] as const;
+const lensGroups = ["perspective", "principle", "method", "subject", "idea"] as const;
 function LensMenu({ lenses, overlayId, onOverlay, disabled, appliedCounts, lensTitles, baseLensIds, onClose }: {
   lenses: KnowledgeMapNode[]; overlayId?: string; onOverlay: (id: string | undefined) => void; disabled?: boolean; onClose: () => void;
   appliedCounts?: Record<string, number>; lensTitles?: Record<string, string>; baseLensIds?: ReadonlySet<string>;
 }) {
   const { t } = useTranslation("knowledge");
   const defaultPerspective = t("lensWorkspace.defaultPerspective");
+  const hostTitle = displayPageTitle("perspective", HOST_PERSPECTIVE_TITLE);
   const titleOf = (node: KnowledgeMapNode) => lensTitles?.[node.id] ?? node.label;
   const groups = lensGroups.map(id => ({
     id,
@@ -133,7 +135,7 @@ function LensMenu({ lenses, overlayId, onOverlay, disabled, appliedCounts, lensT
         const applied = appliedCounts?.[lens.id] ?? 0;
         return <Button disabled={disabled} variant="ghost" key={lens.id} data-lens-id={lens.id} aria-pressed={overlayId === lens.id} onClick={() => { onOverlay(lens.id); onClose(); }}>
           <i className={`map-swatch is-${nodeCategory(lens)}`} aria-hidden="true" />
-          <span>{title}{baseLensIds?.has(lens.id) && title !== defaultPerspective ? <small>{defaultPerspective}</small> : null}<small>{applied ? t("map.appliedTo", { count: applied }) : t("map.notApplied")}</small></span>
+          <span>{title}{baseLensIds?.has(lens.id) && title !== hostTitle ? <small>{defaultPerspective}</small> : null}<small>{applied ? t("map.appliedTo", { count: applied }) : t("map.notApplied")}</small></span>
         </Button>;
       })}
     </section>)}

@@ -6,6 +6,7 @@ export type ChatExecutionScope = {
   bridge: LoupistBridge;
   loupistId: string;
   threadId: string;
+  surface: "bot" | "session";
   theme: "light" | "dark";
   active: boolean;
 };

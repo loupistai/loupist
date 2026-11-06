@@ -12,7 +12,7 @@ use super::pack::{
 };
 use super::scan::{scan_private, PrivateClass, PrivateContext};
 use crate::knowledge::shared_pack::{node_identifiers, ExportSnapshot, SpanSource};
-use crate::knowledge::{GraphClaim, GraphNode, LensDocument};
+use crate::knowledge::{GraphClaim, GraphNode};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Scope {
@@ -170,14 +170,18 @@ pub(crate) fn strip_record_ids(text: &str) -> String {
     out
 }
 
-fn clean_document(document: &LensDocument) -> LensDocument {
-    LensDocument {
-        markdown: strip_record_ids(&document.markdown),
-        applicability: strip_record_ids(&document.applicability),
-        assumptions: strip_record_ids(&document.assumptions),
-        procedure: strip_record_ids(&document.procedure),
-        principles: strip_record_ids(&document.principles),
-        limitations: strip_record_ids(&document.limitations),
+fn clean_document(document: &pack::PackDoc) -> pack::PackDoc {
+    pack::PackDoc {
+        summary: strip_record_ids(&document.summary),
+        sections: document
+            .sections
+            .iter()
+            .map(|section| pack::PackSection {
+                key: section.key.clone(),
+                heading: strip_record_ids(&section.heading),
+                markdown: strip_record_ids(&section.markdown),
+            })
+            .collect(),
     }
 }
 
@@ -673,15 +677,8 @@ fn scan_item(
     }
 }
 
-fn document_texts(document: &LensDocument) -> [&str; 6] {
-    [
-        &document.markdown,
-        &document.applicability,
-        &document.assumptions,
-        &document.procedure,
-        &document.principles,
-        &document.limitations,
-    ]
+fn document_texts(document: &pack::PackDoc) -> Vec<&str> {
+    document.texts()
 }
 
 /// The private-string scan over every string of every candidate.

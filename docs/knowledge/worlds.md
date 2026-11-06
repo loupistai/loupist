@@ -28,37 +28,81 @@ World history or restore feature. Recovery rebuilds the derived index from the
 current canonical World and retained Source evidence. An uncertain publication
 instead keeps its extraction JSON while quarantined for reconciliation.
 
+A Source extraction whose paid call was interrupted, timed out or failed without
+publishing runs once more (`retry_once` in `knowledge/graph_jobs.rs`), on the app's next
+pump or after a restart. Publication is one transaction, so a failed attempt left the
+World unchanged; the retry caps that Source at two charged attempts. A second such
+attempt quarantines its generation and is not retried. The graph worker then queues the recovery itself
+(`recover_world_unattended`): the rebuild calls no model, re-queues the jobs that
+never ran, and enqueues Sources saved during the quarantine. If that rebuild fails,
+the next one waits for World processing recovery in Loupist settings, so a broken
+rebuild cannot loop.
+
 Long Sources become bounded episodes retaining the original span as evidence.
-Every World extracts with one shared core schema: the entity types Organization,
-Person, Asset, Product, Place, Policy, Event and Metric, and twelve relation types
-(SUPPLIES, COMPETES_WITH, PARTNERS_WITH, SUBSIDIARY_OF, ACQUIRED, INVESTED_IN,
-LEADS, OFFERS, USES, REPORTS, LOCATED_IN, AFFECTS) with allowed endpoint types. An
-entity that fits no type stays `Entity`, and a relationship that fits no type keeps
-a specific open name, so the schema guides extraction without closing it.
-Each Loupist may store a small World extension on top of that core: at most four
-entity types and six relations. The extension applies to Sources processed from
-then on; extraction does not reclassify nodes already extracted. A semiconductors,
-dividends or macro & rates template whose focus is still the template default
-(English or Korean) starts with a curated extension (`curated_seed` in
-`knowledge/world_schema.rs`). The Macro & rates seed adds `EconomicIndicator`
-with English and Korean labels and the relations SETS_POLICY_FOR, PUBLISHES,
-MEASURES and MOVES_WITH. The [template seed check](../../apps/loupist/evals/world/README.md#template-seed-check)
-(`template-seed-grade.mjs`, no model) gates a class seed: on its six-Source fixture the
-seed must keep no fewer typed core relations and no lower typed share than the same
-Sources without it, or the grader reports `hold`. Its fixture covers all four asset
-classes. Other templates start empty, and later growth is a proposal
-the user applies or dismisses. A new Loupist whose focus is non-empty, who did not
-receive that curated seed, and whose World processing is enabled on a model gets
-one model-written seed. Editing the focus does not write another seed. A valid
-custom-focus seed is a suggestion the user accepts; it never applies itself.
-An empty one is dismissed;
-an invalid call is recorded only in the run log. Source jobs do not wait for
-that seed. A preparing seed that is still preparing after a restart is marked
-failed. After about ten later Source jobs, and no more than once a day, the
-same model may propose a review once the World queue is idle. A review adds
-at most two entity types and three relations, drops kinds the Loupist already
-has, and stays pending until the user applies or dismisses it. Open relation
-names are not merged. The Map draws an extension type in that type's
+Each episode runs after the one before it, whose text is its extraction context; once
+that episode completed or can no longer finish, the next one runs.
+Every World extracts with one shared core vocabulary, listed once in
+`knowledge/world_extract/ontology.rs`: the entity types Organization, Person, Asset,
+Product, Place, Policy, Event, Metric, Technology and Segment, and seventeen relation
+types (SUPPLIES, COMPETES_WITH, PARTNERS_WITH, SUBSIDIARY_OF, ACQUIRED, INVESTED_IN,
+LEADS, OFFERS, USES, REPORTS, LOCATED_IN, AFFECTS, PART_OF, REQUIRES, OPERATES_IN,
+ISSUES, OWNS) with allowed endpoint types. `world_schema.rs` reads its reserved
+names from that list. A Technology is a science, technique, process, material or
+standard more than one organization can use (EUV lithography, hybrid bonding,
+proof-of-stake); a Segment is an industry or value-chain stage (advanced
+packaging, Seoul office leasing). An Asset is any instrument or holding: its
+`asset_class` is exactly the `AssetClass` list (equity, crypto, fund, commodity,
+rates_fx, real_asset, prediction, private), rendered from the enum, and its
+`instrument` says the form (index, bond, etf, token, pair, property, deal). Real
+estate and private deals are Assets of class `real_asset` and `private`. An entity
+that fits no type stays `Entity`, and a relationship that fits no type keeps a
+specific open name, so the vocabulary guides extraction without closing it.
+
+### Presets, changes and undo
+
+Each Loupist may add a small extension on top of the core: at most four entity types
+and six relations. The extension applies to Sources processed from then on;
+extraction does not reclassify nodes already extracted. The live extension is the
+`after_json` of the newest row in the append-only `knowledge_schema_changes` table
+(change id, before and after JSON, producer, evidence, origin Chat and message,
+time). `GraphProcessingSettings.extension` is derived from it on load and never
+stored. Every change validates, applies at once and writes a `schema_extended` or
+`schema_reduced` growth event per kind. Four producers write changes:
+
+- **Preset.** A semiconductors, dividends or macro & rates Loupist starts with its
+  template's curated extension (`curated_seed(template)` in
+  `knowledge/world_schema.rs`), whatever its focus text says. `loupist_setup` applies
+  a preset later from chat: only the curated kinds the map lacks, as one preset change
+  that keeps the asking message, so repeating it adds nothing. Other templates start
+  empty; a new curated seed ships only after the
+  [template seed check](../../apps/loupist/evals/world/README.md#template-seed-check)
+  (`template-seed-grade.mjs`, no model) shows no fewer typed core relations and no
+  lower typed share than the same Sources without it, or it reports `hold`.
+- **Chat.** `world_schema_update` (`memory_write`, in `memory-save`, interactive
+  turns only, one per turn) is staged and commits with the reply, so a stopped
+  turn applies nothing. A change naming a kind the map gained after staging is
+  skipped, and the answer's `memory_update.skippedKinds` lists its kinds so the
+  receipt says they were not added; any other refusal at commit is an error. The
+  user's sentence is the approval, and the change keeps the asking message. The Memory envelope carries a `worldKinds` block so the agent can
+  tell what is already tracked.
+- **Review.** After about ten later Source jobs, once a day and when the World queue
+  is idle, the World model may promote what the World already shows. Nothing waits
+  for the user. The host counts from the snapshot and refuses an unsupported proposal:
+  a relationship must be an open relation name with at least six live claims from at
+  least three Sources, and a type must cover at least five names that are still
+  `Entity`. At most two types and three relations; kinds the Loupist already has are
+  dropped. The model-written seed for a custom focus no longer exists.
+- **Undo.** "Undo" on a change, or Remove on one kind, appends a change. Undoing a
+  change removes only the kinds it added (with links that depended on them) and
+  restores the kinds it removed, so an older change can be undone after a newer
+  one without touching the newer kinds. A kind a later change added or removed
+  stays as that change left it, even under the same name; a change with nothing
+  else left to reverse offers no Undo. A preset or review change also posts one
+  Bot message, "Your map now also tracks ...", in the labels the user sees, with
+  Undo. A chat change, a preset applied from chat included, is already in the reply. Settings shows these under
+  [What the map tracks](../ui/map-lens.md#what-the-map-tracks).
+
+The Map draws an extension type in that type's
 category and labels the inspector with the type's display name. Instruments the
 user follows are an extraction hint when the episode names them, and each is also an
 anchor ([What you follow](follow.md#what-you-follow)). A hint or anchor counts only when the
@@ -80,6 +124,31 @@ instants; date-only precision is retained in the fact text. Invalidation needs
 ordered start instants on both claims, so a date-only correction can be retained
 without structurally ending the earlier claim.
 
+### Discovery after publication
+
+Every World publication runs `world_followups::after_seal` in the transaction that
+writes its growth events, with no model call. Three things follow from the diff
+between the previous and the new snapshot. Lens sections whose `claim` basis names
+a claim the publication disputed, withdrew or dropped become contested (one page
+revision and one `lens_contested` growth event per page; the section's text is
+kept). Pending name anchors resolve by canonical name or alias. Then
+`connections::detect` walks two or three hops from each seed over claims that are
+not withdrawn, keeping each claim's direction and endpoint roles, to a name the seed
+could not reach within two hops before, with at least one hop on a claim this
+publication added. Seeds are the followed assets that `resolve_followed` matches
+exactly (an ambiguous symbol seeds nothing; the watchlist and holdings are read from
+the app database before the Loupist transaction opens) plus the nodes open idea
+pages are anchored to. A middle node with more than 40 neighbours is never walked
+through, and a Place or Metric node is neither a far name nor a middle: a shared
+country or a reported number is not a connection. The score prefers a far name in another Map category, short paths,
+low-degree middles, parallel support and recent claims. Work is bounded (claims per
+node, expansions per publication, 50 candidates), and a result says when it was
+cut short. `knowledge_connections` keeps one row per (seed, far) pair for ever, with
+`status` moving `new → shown → opened | dismissed | filed`; the Bot shows at most
+three a day ([link posts](../ui/home-thread.md#home-thread)). A link is new to this
+Loupist, never a claim that the market missed it.
+
 ## Code
 
+- Discovery: `src-tauri/src/knowledge/connections.rs` (pure detector), `src-tauri/src/knowledge/world_followups.rs` (post-seal steps and the `knowledge_connections` table)
 - World extraction and index: `src-tauri/src/knowledge/world_extract/` (`pipeline`, `bridge`, `index`, `search`, `job`)

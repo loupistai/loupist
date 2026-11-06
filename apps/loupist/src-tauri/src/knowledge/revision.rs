@@ -132,10 +132,6 @@ pub(super) fn publish_revision(
             [&module.record_id],
         )?;
         tx.execute(
-            "DELETE FROM knowledge_lens_changes WHERE record_id = ?1",
-            [&module.record_id],
-        )?;
-        tx.execute(
             "DELETE FROM knowledge_search_documents WHERE record_id = ?1",
             [&module.record_id],
         )?;

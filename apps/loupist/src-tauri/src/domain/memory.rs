@@ -158,7 +158,10 @@ impl LensReceipt {
         if !is_knowledge_id(&self.record_id, "rec_")
             || !is_knowledge_id(&self.revision_id, "rev_")
             || !is_sha256_digest(&self.revision_digest)
-            || !matches!(self.kind.as_str(), "principle" | "method" | "perspective")
+            || !matches!(
+                self.kind.as_str(),
+                "principle" | "perspective" | "method" | "subject" | "idea"
+            )
             || !matches!(self.delivery.as_str(), "context" | "exact_read")
         {
             return Err(DomainError::Invalid("Lens delivery is invalid"));

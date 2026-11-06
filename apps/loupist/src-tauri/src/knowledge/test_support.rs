@@ -43,21 +43,29 @@ impl KnowledgeStore {
         self.read(|write| write.list_sources(loupist_id, record_id))
     }
 
-    pub(crate) fn revise_lens(&self, request: ReviseLens) -> KnowledgeResult<LensView> {
-        self.transact(|write| write.revise_lens(request))
-    }
-
-    pub(crate) fn read_lens(&self, loupist_id: &str, record_id: &str) -> KnowledgeResult<LensView> {
-        self.read(|write| write.read_lens(loupist_id, record_id))
-    }
-
-    #[cfg(feature = "eval-harness")]
-    pub(crate) fn list_lens_changes(
+    pub(crate) fn file_method(
         &self,
         loupist_id: &str,
-        record_id: &str,
-    ) -> KnowledgeResult<Vec<LensChangeRecord>> {
-        self.read(|write| write.list_lens_changes(loupist_id, record_id))
+        title: &str,
+        markdown: &str,
+        origin: &lens_page::FilingOrigin,
+        at_ms: i64,
+    ) -> KnowledgeResult<PageRead> {
+        self.transact(|write| {
+            write.file_section(
+                loupist_id,
+                lens_page::PageKind::Method,
+                title,
+                "steps",
+                markdown,
+                origin,
+                at_ms,
+            )
+        })
+    }
+
+    pub(crate) fn read_page(&self, loupist_id: &str, record_id: &str) -> KnowledgeResult<PageRead> {
+        self.read(|write| write.read_page(loupist_id, record_id))
     }
 
     #[cfg(feature = "eval-harness")]
@@ -89,5 +97,118 @@ impl KnowledgeWrite<'_> {
         record_id: &str,
     ) -> KnowledgeResult<Vec<SourceSummary>> {
         source::list_sources(self.tx, loupist_id, record_id)
+    }
+}
+
+pub(crate) fn user_origin() -> lens_page::FilingOrigin {
+    lens_page::FilingOrigin::User {
+        chat_id: None,
+        message_id: None,
+    }
+}
+
+pub(crate) fn turn_origin(chat_id: &str, message_id: &str) -> lens_page::FilingOrigin {
+    lens_page::FilingOrigin::Turn {
+        chat_id: chat_id.into(),
+        message_id: message_id.into(),
+        user_message_id: None,
+        unattended: false,
+    }
+}
+
+impl KnowledgeWrite<'_> {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn file_section(
+        &self,
+        loupist_id: &str,
+        kind: lens_page::PageKind,
+        title: &str,
+        key: &str,
+        markdown: &str,
+        origin: &lens_page::FilingOrigin,
+        at_ms: i64,
+    ) -> KnowledgeResult<PageRead> {
+        use lens_page::{Basis, LensOp, OpOutcome, PageDelta, PageTarget, SectionKey};
+        let put = |expected: Option<String>| LensOp::Put {
+            key: SectionKey::new(key).expect("test key"),
+            heading: key.to_uppercase(),
+            markdown: markdown.into(),
+            basis: Basis::default(),
+            expected,
+        };
+        let filed = self.file(
+            loupist_id,
+            origin,
+            vec![PageDelta {
+                target: PageTarget::Create {
+                    kind,
+                    title: title.into(),
+                    anchors: Vec::new(),
+                },
+                ops: vec![put(None)],
+            }],
+            at_ms,
+        )?;
+        let page = filed.into_iter().next().ok_or(KnowledgeError::NotFound)?;
+        if page.record_id.is_empty() {
+            return Err(KnowledgeError::Invalid("nothing filed"));
+        }
+        if matches!(page.outcomes[0].outcome, OpOutcome::SkippedStale { .. }) {
+            let current = self.read_page(loupist_id, &page.record_id)?;
+            let digest = current
+                .body
+                .sections()
+                .iter()
+                .find(|section| section.key.as_str() == key)
+                .map(|section| section.digest.clone());
+            self.file(
+                loupist_id,
+                origin,
+                vec![PageDelta {
+                    target: PageTarget::Existing {
+                        record_id: page.record_id.clone(),
+                    },
+                    ops: vec![put(digest)],
+                }],
+                at_ms,
+            )?;
+        }
+        self.read_page(loupist_id, &page.record_id)
+    }
+
+    pub(crate) fn put_section(
+        &self,
+        loupist_id: &str,
+        record_id: &str,
+        key: &str,
+        markdown: &str,
+        origin: &lens_page::FilingOrigin,
+        at_ms: i64,
+    ) -> KnowledgeResult<Vec<lens_page::FiledPage>> {
+        use lens_page::{Basis, LensOp, PageDelta, PageTarget, SectionKey};
+        let current = self.read_page(loupist_id, record_id)?;
+        let expected = current
+            .body
+            .sections()
+            .iter()
+            .find(|section| section.key.as_str() == key)
+            .map(|section| section.digest.clone());
+        self.file(
+            loupist_id,
+            origin,
+            vec![PageDelta {
+                target: PageTarget::Existing {
+                    record_id: record_id.into(),
+                },
+                ops: vec![LensOp::Put {
+                    key: SectionKey::new(key).expect("test key"),
+                    heading: key.to_uppercase(),
+                    markdown: markdown.into(),
+                    basis: Basis::default(),
+                    expected,
+                }],
+            }],
+            at_ms,
+        )
     }
 }

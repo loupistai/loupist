@@ -124,3 +124,39 @@ it("edits and removes a custom endpoint from its card", async () => {
   await waitFor(() => expect(props.onRemoveCustomProvider).toHaveBeenCalledWith("custom-my-ollama"));
   expect(props.onDisconnect).not.toHaveBeenCalled();
 });
+
+it("lets a ChatGPT sign-in bring its own models instead of loading them alongside it", async () => {
+  const props = panelProps();
+  const signIn = deferred<ModelCatalog>();
+  props.bridge.providerConnect = vi.fn().mockReturnValue(signIn.promise);
+  const chatgpt = catalog.providers[0];
+  props.catalog = { ...catalog, providers: [{ ...chatgpt, credential_source: "missing", status: status({ state: "disconnected", credential_kind: "none" }) }], models: [] };
+  const { rerender } = render(<ModelSettingsPanel {...props} connectTarget={{ kind: "provider", provider: "openai", method: "sign_in" }} />);
+  await screen.findByRole("dialog");
+  await waitFor(() => expect(props.bridge.providerConnect).toHaveBeenCalledTimes(1));
+
+  // Back from the browser: the app's refreshed catalog has the new sign-in and no models yet.
+  rerender(<ModelSettingsPanel {...props} catalog={{ ...catalog, providers: [chatgpt], models: [] }} />);
+  await act(async () => signIn.resolve({ ...catalog, providers: [chatgpt] }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  rerender(<ModelSettingsPanel {...props} catalog={{ ...catalog, providers: [chatgpt] }} />);
+  expect(props.onLoadModels).not.toHaveBeenCalled();
+  expect(screen.getByText("ChatGPT is connected.")).toBeInTheDocument();
+  expect(screen.queryByText("Could not load ChatGPT models")).toBeNull();
+});
+
+it("words a busy model load in the reader's language and offers to try again", async () => {
+  const user = userEvent.setup();
+  const props = panelProps();
+  props.catalog = { ...catalog, providers: [catalog.providers[0]], models: [] };
+  props.onLoadModels = vi.fn()
+    .mockRejectedValueOnce({ code: "conflict", message: "another provider support operation is already active" })
+    .mockResolvedValueOnce(catalog);
+  render(<ModelSettingsPanel {...props} />);
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("Could not load ChatGPT models");
+  expect(alert).toHaveTextContent("Another account change is still finishing. Try again in a moment.");
+  expect(alert).not.toHaveTextContent("another provider support operation");
+  await user.click(within(alert).getByRole("button", { name: "Reload models for ChatGPT" }));
+  expect(props.onLoadModels).toHaveBeenCalledTimes(2);
+});

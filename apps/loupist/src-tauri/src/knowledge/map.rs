@@ -4,9 +4,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use rusqlite::{OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 
+use super::identity::match_items;
 use super::{
-    model::validate_loupist_id, ClaimStatus, GraphNode, KnowledgeError, KnowledgeResult,
-    WorldSnapshotBody,
+    model::validate_loupist_id, ClaimStatus, KnowledgeError, KnowledgeResult, WorldSnapshotBody,
 };
 use crate::store::user_context::{MapContext, MapContextItem};
 
@@ -119,89 +119,6 @@ fn local_names(aliases: &[String]) -> Vec<String> {
         })
         .take(4)
         .collect()
-}
-
-fn normalized(value: &str) -> String {
-    value
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase()
-}
-
-fn identifier_values(value: &serde_json::Value, output: &mut BTreeSet<String>) {
-    match value {
-        serde_json::Value::String(value) => {
-            output.insert(normalized(value));
-        }
-        serde_json::Value::Array(values) => {
-            for value in values {
-                identifier_values(value, output);
-            }
-        }
-        serde_json::Value::Object(values) => {
-            for value in values.values() {
-                identifier_values(value, output);
-            }
-        }
-        _ => {}
-    }
-}
-
-pub(crate) fn match_items(
-    items: &[MapContextItem],
-    nodes: &[GraphNode],
-) -> (BTreeSet<String>, Vec<MapContextItem>) {
-    let mut symbols: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    let mut names: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for node in nodes {
-        names
-            .entry(normalized(&node.name))
-            .or_default()
-            .insert(node.id.clone());
-        let mut ids = node
-            .aliases
-            .iter()
-            .map(|value| normalized(value))
-            .collect::<BTreeSet<_>>();
-        for (key, value) in &node.properties {
-            if matches!(
-                key.to_lowercase().as_str(),
-                "ticker"
-                    | "tickers"
-                    | "symbol"
-                    | "symbols"
-                    | "identifier"
-                    | "identifiers"
-                    | "aliases"
-                    | "ticker_symbol"
-                    | "tickersymbol"
-            ) {
-                identifier_values(value, &mut ids);
-            }
-        }
-        for id in ids {
-            symbols.entry(id).or_default().insert(node.id.clone());
-        }
-    }
-    let mut matched = BTreeSet::new();
-    let mut unmatched = Vec::new();
-    for item in items {
-        let hits = symbols.get(&normalized(&item.symbol)).or_else(|| {
-            item.display_name
-                .as_ref()
-                .and_then(|name| names.get(&normalized(name)))
-        });
-        if let Some(hits) = hits {
-            matched.extend(hits.iter().cloned());
-        } else {
-            unmatched.push(item.clone());
-        }
-    }
-    unmatched.sort_by(|a, b| {
-        (&a.symbol, &a.market, &a.display_name).cmp(&(&b.symbol, &b.market, &b.display_name))
-    });
-    (matched, unmatched)
 }
 
 fn extension_marks(
@@ -371,8 +288,7 @@ pub(super) fn query(
             );
         }
     }
-    let mut statement = tx.prepare("SELECT m.record_id,m.title,m.archived_at_ms,r.created_at_ms,m.updated_at_ms,s.record_id IS NOT NULL FROM knowledge_lens_metadata m JOIN knowledge_records r ON r.record_id=m.record_id LEFT JOIN knowledge_standing_selection s ON s.loupist_id=m.loupist_id AND s.record_id=m.record_id WHERE m.loupist_id=?1 AND r.owner_loupist_id=?1 ORDER BY m.record_id")?;
-    let mut standing = BTreeSet::new();
+    let mut statement = tx.prepare("SELECT m.record_id,m.title,m.archived_at_ms,r.created_at_ms,m.updated_at_ms,m.kind FROM knowledge_lens_metadata m JOIN knowledge_records r ON r.record_id=m.record_id WHERE m.loupist_id=?1 AND r.owner_loupist_id=?1 ORDER BY m.record_id")?;
     let removed = super::memory_controls::load(tx, loupist)?.removed;
     for row in statement.query_map([loupist], |r| {
         Ok((
@@ -381,31 +297,21 @@ pub(super) fn query(
             r.get::<_, Option<i64>>(2)?,
             r.get::<_, i64>(3)?,
             r.get::<_, i64>(4)?,
-            r.get::<_, bool>(5)?,
+            r.get::<_, String>(5)?,
         ))
     })? {
-        let (id, label, archived, created, updated, perspective) = row?;
+        let (id, label, archived, created, updated, kind) = row?;
         if removed.contains(&id) {
             continue;
         }
         generated = generated.max(updated).max(created);
-        if perspective {
-            standing.insert(id.clone());
-        }
         let learned: Option<(i64,String)>=tx.query_row("SELECT finished_at_ms,rationale FROM knowledge_learning_reviews WHERE loupist_id=?1 AND lens_record_id=?2 AND status IN ('created','refined') ORDER BY finished_at_ms DESC LIMIT 1",rusqlite::params![loupist,id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
         nodes.insert(
             id.clone(),
             KnowledgeMapNode {
                 origin: None,
                 id: id.clone(),
-                kind: if perspective {
-                    "lens_perspective"
-                } else if super::principles::principle_kind(tx, loupist, &id)? {
-                    "lens_principle"
-                } else {
-                    "lens_method"
-                }
-                .into(),
+                kind: format!("lens_{kind}"),
                 label,
                 local_names: Vec::new(),
                 entity_kind: None,
@@ -472,8 +378,7 @@ pub(super) fn query(
             },
         );
     }
-    let (applications, application_total) =
-        applications(tx, loupist, &standing, &nodes, &mut generated)?;
+    let (applications, application_total) = applications(tx, loupist, &nodes, &mut generated)?;
     edges.extend(applications);
     for e in &edges {
         if e.kind != "claim" {
@@ -490,6 +395,8 @@ pub(super) fn query(
         "lens_perspective",
         "lens_method",
         "lens_principle",
+        "lens_subject",
+        "lens_idea",
         "claim",
         "lens_link",
         "applies_to",
@@ -522,6 +429,8 @@ pub(super) fn query(
         "lens_perspective",
         "lens_principle",
         "lens_method",
+        "lens_subject",
+        "lens_idea",
         "journal",
     ] {
         for node in nodes.values().filter(|n| n.kind == kind) {
@@ -606,60 +515,11 @@ pub(super) fn query(
 fn applications(
     tx: &Transaction<'_>,
     loupist: &str,
-    standing: &BTreeSet<String>,
     nodes: &BTreeMap<String, KnowledgeMapNode>,
     generated: &mut i64,
 ) -> KnowledgeResult<(Vec<KnowledgeMapEdge>, u32)> {
-    let mut delivered = BTreeMap::<String, BTreeMap<String, i64>>::new();
-    let mut statement=tx.prepare("SELECT turn_id,record_id,MIN(issued_at_ms) FROM knowledge_lens_deliveries WHERE loupist_id=?1 AND COALESCE(json_extract(document_json,'$.delivery'),'exact_read') <> 'context' GROUP BY turn_id,record_id ORDER BY turn_id,record_id")?;
-    for row in statement.query_map([loupist], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, i64>(2)?,
-        ))
-    })? {
-        let (turn, id, at) = row?;
-        if !standing.contains(&id) && nodes.get(&id).is_some_and(|n| n.kind == "lens_method") {
-            delivered.entry(turn).or_default().insert(id, at);
-        }
-    }
     let mut pairs = BTreeMap::<(String, String), BTreeMap<String, i64>>::new();
-    let mut statement=tx.prepare("SELECT turn_id,view_json,issued_at_ms FROM knowledge_world_deliveries WHERE loupist_id=?1 ORDER BY turn_id,delivery_id")?;
-    for row in statement.query_map([loupist], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, i64>(2)?,
-        ))
-    })? {
-        let (turn, json, at) = row?;
-        let Some(lenses) = delivered.get(&turn) else {
-            continue;
-        };
-        let view: serde_json::Value = serde_json::from_str(&json)?;
-        let ids = view
-            .get("nodes")
-            .and_then(|n| n.as_array())
-            .into_iter()
-            .flatten()
-            .filter_map(|n| n.get("id").and_then(|id| id.as_str()))
-            .filter(|id| nodes.get(*id).is_some_and(|n| n.kind == "entity"))
-            .collect::<BTreeSet<_>>();
-        for (lens, lens_at) in lenses {
-            let at = at.max(*lens_at); // both deliveries have occurred at this instant
-            *generated = (*generated).max(at);
-            for id in &ids {
-                pairs
-                    .entry((lens.clone(), (*id).into()))
-                    .or_default()
-                    .entry(turn.clone())
-                    .and_modify(|old| *old = (*old).min(at))
-                    .or_insert(at);
-            }
-        }
-    }
-    let mut cited=tx.prepare("SELECT record_id,entity_id,turn_id,at_ms FROM knowledge_lens_applications WHERE loupist_id=?1 ORDER BY record_id,entity_id,turn_id")?;
+    let mut cited = tx.prepare("SELECT record_id,node_id,COALESCE(turn_id,''),created_at_ms FROM knowledge_lens_anchors WHERE loupist_id=?1 AND node_id IS NOT NULL AND role IN ('applied','subject') ORDER BY record_id,node_id,turn_id")?;
     for row in cited.query_map([loupist], |r| {
         Ok((
             r.get::<_, String>(0)?,
@@ -671,7 +531,7 @@ fn applications(
         let (lens, entity, turn, at) = row?;
         if nodes
             .get(&lens)
-            .is_some_and(|n| matches!(n.kind.as_str(), "lens_method" | "lens_principle"))
+            .is_some_and(|n| n.kind.starts_with("lens_") && n.kind != "lens_perspective")
             && nodes.get(&entity).is_some_and(|n| n.kind == "entity")
         {
             *generated = (*generated).max(at);
@@ -745,16 +605,13 @@ mod tests {
         .unwrap();
         tx.execute("INSERT INTO knowledge_world_snapshots VALUES ('snapshot','world','revision','digest',?1,1)",[serde_json::to_string(body).unwrap()]).unwrap();
     }
-    fn lens(tx: &Transaction<'_>, id: &str, standing: bool) {
+    fn lens(tx: &Transaction<'_>, id: &str, perspective: bool) {
         tx.execute(
             "INSERT INTO knowledge_records VALUES (?1,'lens','loupist-a',?1,50)",
             [id],
         )
         .unwrap();
-        tx.execute("INSERT INTO knowledge_lens_metadata(record_id,loupist_id,title,title_fold,updated_at_ms) VALUES (?1,'loupist-a',?1,?1,60)",[id]).unwrap();
-        if standing {
-            tx.execute("INSERT INTO knowledge_standing_selection VALUES ('loupist-a',?1,'lens-revision','standing_philosophy',60)",[id]).unwrap();
-        }
+        tx.execute("INSERT INTO knowledge_lens_metadata(record_id,loupist_id,title,title_fold,kind,updated_at_ms) VALUES (?1,'loupist-a',?1,?1,?2,60)",params![id, if perspective {"perspective"} else {"method"}]).unwrap();
     }
     fn event(tx: &Transaction<'_>, kind: &str, id: &str, at: i64) {
         tx.execute("INSERT INTO knowledge_growth_events(event_id,loupist_id,at_ms,kind,record_id,subject_id,actor,summary) VALUES (?1,'loupist-a',?2,?3,?4,?4,'import','added')",params![format!("{kind}-{id}-{at}"),at,kind,id]).unwrap();
@@ -772,14 +629,10 @@ mod tests {
             max_nodes: limit,
         }
     }
-    fn delivery(tx: &Transaction<'_>, turn: &str, id: &str, at: i64, ids: &[String]) {
-        tx.execute(
-            "INSERT OR IGNORE INTO knowledge_turns VALUES (?1,'loupist-a','chat',1)",
-            [turn],
-        )
-        .unwrap();
-        tx.execute("INSERT INTO knowledge_lens_deliveries VALUES (?1,?2,'loupist-a',?3,'rev','digest','{}','digest',?4)",params![format!("l-{turn}-{id}-{at}"),turn,id,at]).unwrap();
-        tx.execute("INSERT INTO knowledge_world_deliveries VALUES (?1,?2,'loupist-a','world','revision','digest',?3,'digest',?4)",params![format!("w-{turn}-{id}-{at}"),turn,serde_json::to_string(&json!({"nodes":ids.iter().map(|id|json!({"id":id})).collect::<Vec<_>>()})).unwrap(),at+1]).unwrap();
+    fn applied(tx: &Transaction<'_>, turn: &str, id: &str, at: i64, ids: &[String]) {
+        for node in ids {
+            tx.execute("INSERT OR IGNORE INTO knowledge_lens_anchors(loupist_id,record_id,role,node_id,name_fold,turn_id,created_at_ms) VALUES ('loupist-a',?1,'applied',?2,'',?3,?4)",params![id,node,turn,at]).unwrap();
+        }
     }
 
     #[test]
@@ -940,11 +793,11 @@ mod tests {
         lens(&tx, "method", false);
         lens(&tx, "perspective", true);
         let ids = (0..40).map(|i| format!("n{i:05}")).collect::<Vec<_>>();
-        delivery(&tx, "turn-1", "method", 100, &ids);
-        delivery(&tx, "turn-1", "method", 105, &ids);
-        delivery(&tx, "turn-1", "perspective", 90, &ids);
-        delivery(&tx, "turn-2", "method", 200, &["n00039".into()]);
-        delivery(&tx, "turn-3", "perspective", 300, &["n00041".into()]);
+        applied(&tx, "turn-1", "method", 100, &ids);
+        applied(&tx, "turn-1", "method", 105, &ids);
+        applied(&tx, "turn-1", "perspective", 90, &ids);
+        applied(&tx, "turn-2", "method", 200, &["n00039".into()]);
+        applied(&tx, "turn-3", "perspective", 300, &["n00041".into()]);
         let map = query(&tx, &request(None), &MapContext::default()).unwrap();
         let applications = map
             .edges

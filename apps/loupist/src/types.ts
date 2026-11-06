@@ -9,6 +9,7 @@ export type * from "./contracts/bridge";
 export type * from "./contracts/chat";
 export type * from "./contracts/loupist";
 export type * from "./contracts/knowledge";
+export type * from "./contracts/lens";
 export type * from "./contracts/memory";
 export type * from "./contracts/model";
 export type * from "./contracts/runtime";

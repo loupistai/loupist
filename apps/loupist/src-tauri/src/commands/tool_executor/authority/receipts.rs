@@ -1,24 +1,16 @@
-//! Shared validation for references carried by notes, Journals and Lens changes.
 use super::*;
-
-#[derive(Clone, Copy)]
-pub(super) enum ReceiptPurpose {
-    Research,
-    LensChange,
-}
 
 /// Only acknowledged identifiers are copied; discovery and pending deliveries
 /// never enter this ledger. Copying identifiers avoids holding capture locks
 /// during database reads or cloning retained document bodies.
 pub(super) struct ReceiptLedger {
-    purpose: ReceiptPurpose,
     reads: BTreeMap<String, String>,
     sources: BTreeSet<String>,
     results: BTreeSet<String>,
 }
 
 impl AppToolExecutor {
-    pub(super) async fn acknowledged_receipts(&self, purpose: ReceiptPurpose) -> ReceiptLedger {
+    pub(super) async fn acknowledged_receipts(&self) -> ReceiptLedger {
         let mut reads: BTreeMap<_, _> = self
             .capture
             .staged_reads
@@ -27,16 +19,14 @@ impl AppToolExecutor {
             .iter()
             .map(|read| (read.read_ref.clone(), read.scope.clone()))
             .collect();
-        if matches!(purpose, ReceiptPurpose::Research) {
-            reads.extend(
-                self.capture
-                    .context_reads
-                    .lock()
-                    .await
-                    .iter()
-                    .map(|read| (read.read_ref.clone(), read.scope.clone())),
-            );
-        }
+        reads.extend(
+            self.capture
+                .context_reads
+                .lock()
+                .await
+                .iter()
+                .map(|read| (read.read_ref.clone(), read.scope.clone())),
+        );
         let sources = self
             .capture
             .staged_sources
@@ -55,7 +45,6 @@ impl AppToolExecutor {
             .cloned()
             .collect();
         ReceiptLedger {
-            purpose,
             reads,
             sources,
             results,
@@ -89,14 +78,10 @@ impl ReceiptLedger {
                 } else {
                     found
                 };
-                if found == "lens" && matches!(self.purpose, ReceiptPurpose::LensChange) {
-                    format!("{known_reference} is a Lens read; change evidence accepts sourceReads, worldReads, or journalReads")
-                } else {
-                    format!(
-                        "{known_reference} is a {kind} read; cite it in {}",
-                        self.reference_field(found, field)
-                    )
-                }
+                format!(
+                    "{known_reference} is a {kind} read; cite it in {}",
+                    self.reference_field(found, field)
+                )
             } else if self.sources.contains(reference) {
                 format!("{known_reference} is a source saveRef; cite it in {source_field}")
             } else if self.results.contains(reference) {
@@ -114,7 +99,6 @@ impl ReceiptLedger {
             "source" => "sourceReads",
             "world" => "worldReads",
             "lens" => "lensReads",
-            "research" if matches!(self.purpose, ReceiptPurpose::LensChange) => "journalReads",
             "research" => "journal.earlier[].readRef",
             _ => "the matching reference field",
         };

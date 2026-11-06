@@ -46,7 +46,7 @@ pub(crate) fn usage(state: &AppState, loupist_id: &str) -> Result<Vec<MemoryUsag
             "SELECT u.record_id, t.chat_session_id, MAX(u.at_ms) FROM (
                 SELECT record_id, turn_id, issued_at_ms AS at_ms FROM knowledge_lens_deliveries WHERE loupist_id=?1
                 UNION ALL
-                SELECT record_id, turn_id, at_ms FROM knowledge_lens_applications WHERE loupist_id=?1
+                SELECT record_id, turn_id, created_at_ms AS at_ms FROM knowledge_lens_anchors WHERE loupist_id=?1 AND role='applied' AND turn_id IS NOT NULL
             ) u JOIN knowledge_turns t ON t.turn_id=u.turn_id AND t.loupist_id=?1
             JOIN knowledge_records r ON r.record_id=u.record_id AND r.owner_loupist_id=?1 AND r.kind='lens'
             GROUP BY u.record_id, u.turn_id",
@@ -135,7 +135,7 @@ mod tests {
             tx.execute_batch(
                 "INSERT INTO knowledge_records(record_id, owner_loupist_id, kind, title, created_at_ms) VALUES ('lens-a','loupist-a','lens','Cash conversion',1);
                  INSERT INTO knowledge_turns(turn_id, loupist_id, chat_session_id, opened_at_ms) VALUES ('turn-1','loupist-a','chat-1',10),('turn-2','loupist-a','chat-2',20);
-                 INSERT INTO knowledge_lens_applications(loupist_id, turn_id, record_id, revision_id, entity_id, at_ms) VALUES ('loupist-a','turn-1','lens-a','rev','entity-1',11),('loupist-a','turn-1','lens-a','rev','entity-2',12),('loupist-a','turn-2','lens-a','rev','entity-1',21);",
+                 INSERT INTO knowledge_lens_anchors(loupist_id, record_id, role, node_id, name_fold, turn_id, created_at_ms) VALUES ('loupist-a','lens-a','applied','entity-1','','turn-1',11),('loupist-a','lens-a','applied','entity-2','','turn-1',12),('loupist-a','lens-a','applied','entity-1','','turn-2',21);",
             )?;
             Ok(())
         })

@@ -1,7 +1,7 @@
 import { formatNumber } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
 import type { ReactNode } from "react";
-import type { ChatEvidenceRef } from "../../types";
+import type { ChatEvidenceRef, MapKind, SetupChange } from "../../types";
 import type { ChatReceiptData, SavedReceiptGroup, ThesisMove } from "../../chat/receipt";
 import { verdictLabel } from "../assets/assetText";
 import { evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
@@ -12,15 +12,27 @@ const t = i18n.getFixedT(null, "chat");
 
 type CountKey =
   | "chatReceipt.readSources" | "chatReceipt.names" | "chatReceipt.namesOnMap" | "chatReceipt.relationships"
-  | "chatReceipt.relationshipsOnMap" | "chatReceipt.usedPrinciples" | "chatReceipt.usedMethods" | "chatReceipt.savedSources"
-  | "chatReceipt.savedMethods" | "chatReceipt.savedPrinciples" | "chatReceipt.savedJournal" | "chatReceipt.savedNotes"
-  | "chatReceipt.savedWorld" | "chatReceipt.toReview" | "chatReceipt.numbersToCheck";
+  | "chatReceipt.relationshipsOnMap" | "chatReceipt.usedPages" | "chatReceipt.savedSources" | "chatReceipt.learned" | "chatReceipt.ideas"
+  | "chatReceipt.savedPrinciples" | "chatReceipt.savedJournal" | "chatReceipt.savedNotes"
+  | "chatReceipt.savedWorld" | "chatReceipt.numbersToCheck";
 
 const count = (key: CountKey, value: number): string => t(key, { count: value, formattedCount: formatNumber(value) });
 
+const kindLabel = (kind: MapKind) => (i18n.language.toLowerCase().startsWith("ko") && kind.labelKo) || kind.label;
+
+function setupLabel(change: SetupChange): string {
+  switch (change.change) {
+    case "followed": return t("chatReceipt.following", { name: change.name ?? change.symbol });
+    case "unfollowed": return t("chatReceipt.unfollowed", { name: change.symbol });
+    case "focus": return t("chatReceipt.focusUpdated");
+    case "tracks": return t("chatReceipt.mapTracks", { list: change.kinds.map(kindLabel).join(", ") });
+  }
+}
+
+const setupKey = (change: SetupChange) => change.change === "followed" || change.change === "unfollowed" ? `${change.change}:${change.symbol}:${change.market ?? ""}` : change.change;
+
 const savedKeys: Record<SavedReceiptGroup["kind"], CountKey> = {
   Source: "chatReceipt.savedSources",
-  Lens: "chatReceipt.savedMethods",
   principle: "chatReceipt.savedPrinciples",
   Journal: "chatReceipt.savedJournal",
   Research: "chatReceipt.savedNotes",
@@ -35,12 +47,13 @@ type Props = {
   listExpanded: boolean;
   onOpenSource?: (evidence: ChatEvidenceRef, anchor?: HTMLElement) => void;
   onShowOnMap?: (ids: ReadonlySet<string>) => void;
-  /** The panel under the answer that quotes the principles and methods used, with Not this time and Edit. */
   usedListId: string;
   usedExpanded: boolean;
   onToggleUsed: () => void;
+  learnedListId: string;
+  learnedExpanded: boolean;
+  onToggleLearned: () => void;
   onSaved: (group: SavedReceiptGroup) => void;
-  onToggleList: () => void;
   /** Opens the asset page at its thesis history. */
   onOpenThesis?: (move: ThesisMove) => void;
   /** Scrolls to the first number to check and pins its popover. */
@@ -75,7 +88,7 @@ function ListSegment<T>({ label, listLabel, items, itemKey, itemLabel, itemMeta,
 }
 
 /** What this answer used and saved: one line of links in a fixed order. */
-export function ChatReceipt({ receipt, showNothingNew, listId, listExpanded, onOpenSource, onShowOnMap, usedListId, usedExpanded, onToggleUsed, onSaved, onToggleList, onOpenThesis, onCheckNumbers }: Props) {
+export function ChatReceipt({ receipt, showNothingNew, listId, listExpanded, onOpenSource, onShowOnMap, usedListId, usedExpanded, onToggleUsed, learnedListId, learnedExpanded, onToggleLearned, onSaved, onOpenThesis, onCheckNumbers }: Props) {
   useTranslation("chat");
   const segments: Segment[] = [];
   if (receipt.readSources.length) segments.push({ key: "read", node: <ListSegment
@@ -87,6 +100,9 @@ export function ChatReceipt({ receipt, showNothingNew, listId, listExpanded, onO
     itemMeta={sourceIdentityLabel}
     onOpen={onOpenSource}
   /> });
+  const learnedToggle = (key: string, label: string) => <button type="button" className="chat-receipt-segment" data-learned="true" data-receipt-learned={key}
+    aria-expanded={learnedExpanded} aria-controls={learnedExpanded ? learnedListId : undefined} onClick={onToggleLearned}>{label}</button>;
+  if (receipt.learned) segments.push({ key: "learned", node: learnedToggle("sections", count("chatReceipt.learned", receipt.learned.sections)) });
   const showMap = onShowOnMap ? () => onShowOnMap(receipt.mapHighlightIds) : undefined;
   if (receipt.names) {
     const label = count("chatReceipt.names", receipt.names);
@@ -100,6 +116,7 @@ export function ChatReceipt({ receipt, showNothingNew, listId, listExpanded, onO
       ? <button type="button" className="chat-receipt-segment" data-learned="true" aria-label={count("chatReceipt.relationshipsOnMap", receipt.relationships)} onClick={showMap}>{label}</button>
       : <span className="chat-receipt-text" data-learned="true">{label}</span> });
   }
+  if (receipt.learned?.ideas) segments.push({ key: "ideas", node: learnedToggle("ideas", count("chatReceipt.ideas", receipt.learned.ideas)) });
   for (const move of receipt.thesisMoves) {
     // The move itself: "Hanul Precision: Holding up → Weakening".
     const label = move.from
@@ -113,10 +130,14 @@ export function ChatReceipt({ receipt, showNothingNew, listId, listExpanded, onO
   for (const unsaved of receipt.unsavedTheses) {
     segments.push({ key: `thesis-unsaved:${unsaved.assetId}`, node: <span className="chat-receipt-text" data-unsaved="true">{t("chatReceipt.thesisNotSaved", { name: unsaved.name })}</span> });
   }
-  const usedToggle =(key: string, label: string) => <button type="button" className="chat-receipt-segment" data-receipt-used={key}
-    aria-expanded={usedExpanded} aria-controls={usedExpanded ? usedListId : undefined} onClick={onToggleUsed}>{label}</button>;
-  if (receipt.usedPrinciples.length) segments.push({ key: "principles", node: usedToggle("principles", count("chatReceipt.usedPrinciples", receipt.usedPrinciples.length)) });
-  if (receipt.usedMethods.length) segments.push({ key: "methods", node: usedToggle("methods", count("chatReceipt.usedMethods", receipt.usedMethods.length)) });
+  for (const change of receipt.setup) {
+    segments.push({ key: `setup:${setupKey(change)}`, node: <span className="chat-receipt-text" data-learned="true">{setupLabel(change)}</span> });
+  }
+  for (const kind of receipt.skippedKinds) {
+    segments.push({ key: `kind-skipped:${kind.name}`, node: <span className="chat-receipt-text" data-unsaved="true">{t("chatReceipt.kindNotAdded", { name: kindLabel(kind) })}</span> });
+  }
+  if (receipt.usedPages.length) segments.push({ key: "used", node: <button type="button" className="chat-receipt-segment" data-receipt-used="pages"
+    aria-expanded={usedExpanded} aria-controls={usedExpanded ? usedListId : undefined} onClick={onToggleUsed}>{count("chatReceipt.usedPages", receipt.usedPages.length)}</button> });
   for (const group of receipt.saved) segments.push({ key: `saved:${group.kind}`, node: <button
     type="button"
     className="chat-receipt-segment"
@@ -125,13 +146,6 @@ export function ChatReceipt({ receipt, showNothingNew, listId, listExpanded, onO
     aria-controls={listExpanded ? listId : undefined}
     onClick={() => onSaved(group)}
   >{count(savedKeys[group.kind], group.items.length)}</button> });
-  if (receipt.proposals.length) segments.push({ key: "proposals", node: <button
-    type="button"
-    className="chat-receipt-segment"
-    aria-expanded={listExpanded}
-    aria-controls={listExpanded ? listId : undefined}
-    onClick={onToggleList}
-  >{count("chatReceipt.toReview", receipt.proposals.length)}</button> });
   // Shown only when a number did not match its source; always after the other segments.
   if (receipt.numbersToCheck) {
     const label = count("chatReceipt.numbersToCheck", receipt.numbersToCheck);

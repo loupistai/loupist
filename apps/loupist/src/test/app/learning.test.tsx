@@ -1,4 +1,4 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { mainTab } from "../renderApp";
 import { App } from "../../App";
@@ -21,17 +21,15 @@ it.each(["created", "refined"] as const)("announces a %s event, highlights its W
   await userEvent.click(await mainTab(/Map/));
   await screen.findByTestId("learning-canvas");
   act(() => bridge.emitLearningReview({ ...review, status }));
-  await screen.findByText(`${status === "created" ? "Your Loupist learned" : "Your Loupist refined"} a way of working: ${node.label}`);
+  await screen.findByText(`${status === "created" ? "Your Loupist learned" : "Your Loupist refined"} a method: ${node.label}`);
   expect(appliedIds.length).toBeGreaterThan(0);
   expect(screen.getByTestId("learning-canvas")).toHaveAttribute("data-glow", appliedIds.join(","));
   await userEvent.click(screen.getByRole("button", { name: "View" }));
   expect(await screen.findByRole("heading", { name: node.label })).toBeVisible();
-  expect(await screen.findByRole("region", { name: "Research principles" })).toBeVisible();
+  expect(await screen.findByRole("region", { name: /What .* knows/ })).toBeVisible();
   expect(await screen.findByRole("complementary", { name: node.label })).toBeVisible();
   const provenance = await screen.findByRole("region", { name: "How your Loupist learned this" });
   expect(provenance).toHaveTextContent(review.rationale!);
-  await userEvent.click(await within(provenance).findByRole("button", { name: "Show all 6" }));
-  expect(within(provenance).getAllByRole("listitem")).toHaveLength(6);
   expect(await screen.findByRole("region", { name: "Then vs now" })).toBeVisible();
 });
 
@@ -41,7 +39,7 @@ it("announces learning away from Map without starting a hidden glow", async () =
   render(<><App bridge={bridge} /><State /></>);
   await screen.findByRole("button", { name: /Panel kind/ });
   act(() => bridge.emitLearningReview(review));
-  await screen.findByText(`Your Loupist learned a way of working: ${node.label}`);
+  await screen.findByText(`Your Loupist learned a method: ${node.label}`);
   expect(screen.getByTestId("glow-state")).toHaveTextContent("none");
   await userEvent.click(screen.getByRole("button", { name: "View" }));
   expect(await screen.findByRole("heading", { name: node.label })).toBeVisible();

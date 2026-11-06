@@ -1,47 +1,99 @@
 use super::*;
 
-pub(in crate::commands) const STANDING_LENS_TITLE: &str = "Standing philosophy";
+pub(in crate::commands) const PERSPECTIVE_TITLE: &str = "Outlook";
 
-pub(in crate::commands) fn ensure_standing_lens(
+/// The Loupist's one perspective page, kept in step with its focus: creation
+/// seeds it, a later focus change from settings rewrites its `focus` section.
+pub(in crate::commands) fn ensure_perspective(
     state: &AppState,
     loupist_id: &str,
-    philosophy: &str,
-) -> Result<OwnedRecord, CommandError> {
-    let markdown = if philosophy.trim().is_empty() {
-        "This Loupist has not recorded a standing philosophy.".to_string()
-    } else {
-        philosophy.trim().to_string()
-    };
-    if let Some((record_id, _)) = with_loupist_knowledge(state, loupist_id, |tx, blobs| {
-        crate::knowledge::KnowledgeWrite::bind(tx, blobs).load_standing_selection(loupist_id)
-    })? {
-        let modules = with_loupist_knowledge(state, loupist_id, |tx, blobs| {
-            crate::knowledge::KnowledgeWrite::bind(tx, blobs).list_records(loupist_id)
-        })?;
-        if let Some(found) = modules
-            .into_iter()
-            .find(|module| module.record_id == record_id)
-        {
-            return Ok(found);
-        }
-    }
+    focus: &str,
+) -> Result<Option<String>, CommandError> {
     let at_ms = crate::commands::now_ms();
     with_loupist_knowledge(state, loupist_id, |tx, blobs| {
-        let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
-        let created = write.create_record(CreateRecord {
-            loupist_id: loupist_id.to_string(),
-            kind: RecordKind::Lens,
-            title: STANDING_LENS_TITLE.to_string(),
+        sync_perspective_focus(
+            &crate::knowledge::KnowledgeWrite::bind(tx, blobs),
+            loupist_id,
+            focus,
             at_ms,
-        })?;
-        let seeded = seed_initial_revision(&write, created, &markdown, at_ms)?;
-        let revision_id = seeded
-            .revision_id
-            .clone()
-            .ok_or(crate::knowledge::KnowledgeError::NotFound)?;
-        write.select_standing_lens(loupist_id, &seeded.record_id, &revision_id, at_ms)?;
-        Ok(seeded)
+        )
     })
+}
+
+/// Make the perspective page's `focus` section hold `focus`, creating the page
+/// when there is none. Other sections stay as written. An empty focus files
+/// nothing; the first filed perspective then becomes the page.
+pub(in crate::commands) fn sync_perspective_focus(
+    write: &crate::knowledge::KnowledgeWrite<'_>,
+    loupist_id: &str,
+    focus: &str,
+    at_ms: i64,
+) -> crate::knowledge::KnowledgeResult<Option<String>> {
+    use crate::knowledge::lens_page::{
+        Basis, FilingOrigin, LensOp, PageDelta, PageKind, PageTarget, SectionKey, MAX_SECTION_CHARS,
+    };
+    let page = write.active_perspective(loupist_id)?;
+    let focus: String = focus.trim().chars().take(MAX_SECTION_CHARS).collect();
+    if focus.is_empty() {
+        return Ok(page);
+    }
+    let key = SectionKey::new("focus")?;
+    let (target, heading, expected) = match &page {
+        Some(record_id) => {
+            let read = write.read_page(loupist_id, record_id)?;
+            let current = read
+                .body
+                .sections()
+                .iter()
+                .find(|section| section.key == key);
+            if current.is_some_and(|section| section.markdown == focus) {
+                return Ok(page);
+            }
+            (
+                PageTarget::Existing {
+                    record_id: record_id.clone(),
+                },
+                current.map_or_else(|| "Focus".to_owned(), |section| section.heading.clone()),
+                current.map(|section| section.digest.clone()),
+            )
+        }
+        None => (
+            PageTarget::Create {
+                kind: PageKind::Perspective,
+                title: PERSPECTIVE_TITLE.into(),
+                anchors: Vec::new(),
+            },
+            "Focus".to_owned(),
+            None,
+        ),
+    };
+    let filed = write.file(
+        loupist_id,
+        &FilingOrigin::User {
+            chat_id: None,
+            message_id: None,
+        },
+        vec![PageDelta {
+            target,
+            ops: vec![LensOp::Put {
+                key,
+                heading,
+                markdown: focus,
+                basis: Basis::default(),
+                expected,
+            }],
+        }],
+        at_ms,
+    )?;
+    if filed.iter().any(|page| page.refused_text()) {
+        return Err(crate::knowledge::KnowledgeError::LensBodyForbidden);
+    }
+    Ok(filed
+        .into_iter()
+        .next()
+        .filter(|page| !page.record_id.is_empty())
+        .map(|page| page.record_id)
+        .or(page))
 }
 
 #[derive(Clone)]
@@ -51,7 +103,16 @@ pub(in crate::commands) struct HostMemoryEntry {
     pub kind: String,
     pub summary: String,
     pub as_of: String,
+    /// Lens pages only: the page kind, section count and up to three map names.
+    pub lens_kind: Option<crate::knowledge::lens_page::LensKind>,
+    pub sections: usize,
+    pub map_names: Vec<String>,
 }
+
+/// The Lens index shows at most this many pages.
+pub(in crate::commands) const LENS_INDEX_LINES: usize = 60;
+/// Pointers to pages anchored to named World nodes, then lexical matches.
+const LENS_POINTERS: usize = 4;
 
 pub(in crate::commands) struct HostMemoryContext {
     pub revision: String,
@@ -90,20 +151,6 @@ pub(super) fn lens_catalog_preview(markdown: &str) -> String {
         .chars()
         .take(180)
         .collect()
-}
-
-pub(super) fn lens_catalog_summary(document: &LensDocument) -> String {
-    let applicability = lens_catalog_preview(if document.applicability.trim().is_empty() {
-        &document.markdown
-    } else {
-        &document.applicability
-    });
-    let limitations = lens_catalog_preview(&document.limitations);
-    if limitations.is_empty() {
-        applicability
-    } else {
-        format!("Use: {applicability} Limitations: {limitations}")
-    }
 }
 
 /// `set_aside` lists principle and method ids the user set aside for this
@@ -177,6 +224,11 @@ fn as_of_context(
         if later_lenses.contains(record_id) {
             continue;
         }
+        if !record_id.is_empty() && !super::as_of::lens_known(state, loupist_id, record_id, cutoff)?
+        {
+            later_lenses.insert(record_id.to_owned());
+            continue;
+        }
         if !note_id.is_empty() {
             let note = read_working_context(state, loupist_id, note_id)?;
             if !cutoff.recorded(note.recorded_at_ms) {
@@ -221,13 +273,17 @@ fn host_memory_context_excluding(
     let mut excluded = set_aside.to_vec();
     excluded.extend(controls.paused.iter().cloned());
     let set_aside = &excluded;
-    let (modules, selection, mut entries) =
+    let followed = state
+        .store
+        .map_context()
+        .map_err(crate::commands::map_store)?;
+    let (modules, perspective, mut entries, anchored) =
         with_loupist_knowledge(state, loupist_id, |tx, blobs| {
             let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
             let modules = write.list_records(loupist_id)?;
             let mut entries = Vec::new();
             for module in &modules {
-                if !matches!(module.kind, RecordKind::Lens | RecordKind::World) {
+                if module.kind != RecordKind::World {
                     continue;
                 }
                 let revision = module
@@ -235,32 +291,59 @@ fn host_memory_context_excluding(
                     .as_deref()
                     .map(|id| write.get_revision(loupist_id, id))
                     .transpose()?;
-                let summary = if module.kind == RecordKind::Lens {
-                    revision
-                        .as_ref()
-                        .map(|revision| {
-                            let document: LensDocument =
-                                serde_json::from_value(revision.payload.clone())?;
-                            Ok::<_, KnowledgeError>(lens_catalog_summary(&document))
-                        })
-                        .transpose()?
-                        .unwrap_or_default()
-                } else {
-                    module.title.clone()
-                };
                 entries.push(HostMemoryEntry {
                     id: module.record_id.clone(),
                     title: module.title.clone(),
                     kind: module.kind.as_str().to_string(),
-                    summary,
+                    summary: module.title.clone(),
                     as_of: revision
                         .map(|revision| recorded_at_rfc3339(revision.created_at_ms))
                         .unwrap_or_default(),
+                    lens_kind: None,
+                    sections: 0,
+                    map_names: Vec::new(),
                 });
             }
-            let archived = write.archived_lens_ids(loupist_id)?;
-            entries.retain(|entry| entry.kind != "lens" || !archived.contains(&entry.id));
-            Ok((modules, write.load_standing_selection(loupist_id)?, entries))
+            // Index order: pages anchored to a followed name, then most recently
+            // filed. The index excludes principles (their own block) and the
+            // perspective (delivered whole).
+            let followed_nodes = followed_node_ids(&write, loupist_id, &followed)?;
+            let mut pages = write.lens_index(loupist_id)?;
+            pages.retain(|page| {
+                !set_aside.contains(&page.record_id)
+                    && !matches!(
+                        page.kind,
+                        crate::knowledge::lens_page::LensKind::Principle
+                            | crate::knowledge::lens_page::LensKind::Perspective
+                    )
+            });
+            pages.sort_by(|a, b| {
+                let followed_a = a.node_ids.iter().any(|id| followed_nodes.contains(id));
+                let followed_b = b.node_ids.iter().any(|id| followed_nodes.contains(id));
+                followed_b
+                    .cmp(&followed_a)
+                    .then(b.updated_at_ms.cmp(&a.updated_at_ms))
+                    .then(a.record_id.cmp(&b.record_id))
+            });
+            let anchored = anchored_pages(&write, loupist_id, message, &pages)?;
+            for page in pages {
+                entries.push(HostMemoryEntry {
+                    id: page.record_id.clone(),
+                    title: page.title.clone(),
+                    kind: "lens".into(),
+                    summary: page.summary.chars().take(120).collect(),
+                    as_of: recorded_at_rfc3339(page.updated_at_ms),
+                    lens_kind: Some(page.kind),
+                    sections: page.section_count,
+                    map_names: page.map_names.clone(),
+                });
+            }
+            Ok((
+                modules,
+                write.active_perspective(loupist_id)?,
+                entries,
+                anchored,
+            ))
         })?;
     let mut lines = modules
         .iter()
@@ -277,28 +360,17 @@ fn host_memory_context_excluding(
     } else {
         crate::util::sha256(lines.join("\n").as_bytes())
     };
-    // Set-aside methods leave the catalog, so they cannot become relevant pointers either.
-    entries.retain(|entry| entry.kind != "lens" || !set_aside.contains(&entry.id));
-    let standing_id = selection.as_ref().map(|(record_id, _)| record_id.clone());
-    let relevant = relevant_memory(state, loupist_id, message, &entries, standing_id.as_deref())?;
+    let perspective = perspective.filter(|id| !set_aside.contains(id));
+    let relevant = relevant_memory(state, loupist_id, message, &entries, &anchored)?;
     let lens_total = entries.iter().filter(|entry| entry.kind == "lens").count();
-    let mut methods = entries
+    let mut kept = entries
         .iter()
-        .filter(|entry| entry.kind == "lens" && Some(&entry.id) != standing_id.as_ref())
+        .filter(|entry| entry.kind == "lens")
+        .take(LENS_INDEX_LINES)
         .cloned()
         .collect::<Vec<_>>();
-    methods.sort_by(|left, right| right.as_of.cmp(&left.as_of).then(left.id.cmp(&right.id)));
-    methods.truncate(40);
-    let mut kept = Vec::new();
-    if let Some(record_id) = &standing_id {
-        if let Some(entry) = entries.iter().find(|entry| &entry.id == record_id) {
-            kept.push(entry.clone());
-        }
-    }
-    kept.extend(methods);
-    kept.extend(entries.iter().filter(|entry| entry.kind != "lens").cloned());
-    let world_total = kept.iter().filter(|entry| entry.kind == "world").count();
-    let mut worlds = kept
+    let world_total = entries.iter().filter(|entry| entry.kind == "world").count();
+    let mut worlds = entries
         .iter()
         .filter(|entry| entry.kind == "world")
         .cloned()
@@ -306,12 +378,10 @@ fn host_memory_context_excluding(
     worlds.sort_by(|left, right| right.as_of.cmp(&left.as_of).then(left.id.cmp(&right.id)));
     worlds.truncate(24);
     let world_shown = worlds.len();
-    kept.retain(|entry| entry.kind != "world");
+    let lens_shown = kept.len();
     kept.extend(worlds);
-    let lens_shown = kept.iter().filter(|entry| entry.kind == "lens").count();
     entries = kept;
-    entries.sort_by(|left, right| left.title.cmp(&right.title).then(left.id.cmp(&right.id)));
-    let (charter, charter_read_ref, charter_delivery) = if let Some((record_id, _)) = selection {
+    let (charter, charter_read_ref, charter_delivery) = if let Some(record_id) = perspective {
         let prepared = host_prepare_read(
             state,
             loupist_id,
@@ -343,7 +413,7 @@ fn host_memory_context_excluding(
                 (Some(serde_json::json!({
                     "readRequired": true, "recordId": staged.record_id,
                     "revisionId": staged.revision_id, "title": staged.title,
-                    "notice": "The base perspective exceeds the automatic context budget. Call lens_read before applying or revising it; no read permission was issued."
+                    "notice": "The perspective exceeds the automatic context budget. Call lens_read before applying or revising it; no read permission was issued."
                 }).to_string()), None, None)
             }
             Err(error) => return Err(error),
@@ -429,6 +499,82 @@ fn host_memory_context_excluding(
         left_out: super::as_of::LeftOut::default(),
         shared_pauses,
     })
+}
+
+/// World node ids of what the user follows, through the World's names and symbols.
+fn followed_node_ids(
+    write: &crate::knowledge::KnowledgeWrite<'_>,
+    loupist_id: &str,
+    followed: &crate::store::user_context::MapContext,
+) -> Result<std::collections::BTreeSet<String>, KnowledgeError> {
+    let items: Vec<_> = followed
+        .holdings
+        .iter()
+        .chain(&followed.watchlist)
+        .cloned()
+        .collect();
+    if items.is_empty() {
+        return Ok(Default::default());
+    }
+    let Some(world) = write
+        .list_records(loupist_id)?
+        .into_iter()
+        .find(|module| module.kind == RecordKind::World)
+    else {
+        return Ok(Default::default());
+    };
+    let Some(revision_id) = world.revision_id else {
+        return Ok(Default::default());
+    };
+    let body: crate::knowledge::WorldSnapshotBody =
+        serde_json::from_value(write.get_revision(loupist_id, &revision_id)?.payload)
+            .map_err(|_| KnowledgeError::Invalid("world payload is invalid"))?;
+    Ok(crate::knowledge::match_items(&items, &body.nodes).0)
+}
+
+/// Pages anchored to World nodes whose name or alias the request names.
+fn anchored_pages(
+    write: &crate::knowledge::KnowledgeWrite<'_>,
+    loupist_id: &str,
+    message: &str,
+    pages: &[crate::knowledge::IndexEntry],
+) -> Result<Vec<String>, KnowledgeError> {
+    let folded = format!(" {} ", crate::knowledge::fold_lens_title(message));
+    if folded.trim().is_empty() || pages.iter().all(|page| page.node_ids.is_empty()) {
+        return Ok(Vec::new());
+    }
+    let Some(world) = write
+        .list_records(loupist_id)?
+        .into_iter()
+        .find(|module| module.kind == RecordKind::World)
+    else {
+        return Ok(Vec::new());
+    };
+    let Some(revision_id) = world.revision_id else {
+        return Ok(Vec::new());
+    };
+    let body: crate::knowledge::WorldSnapshotBody =
+        serde_json::from_value(write.get_revision(loupist_id, &revision_id)?.payload)
+            .map_err(|_| KnowledgeError::Invalid("world payload is invalid"))?;
+    let named: std::collections::BTreeSet<&str> = body
+        .nodes
+        .iter()
+        .filter(|node| {
+            std::iter::once(&node.name)
+                .chain(&node.aliases)
+                .any(|name| {
+                    let name = crate::knowledge::fold_lens_title(name);
+                    name.chars().count() >= 2 && folded.contains(&format!(" {name} "))
+                })
+        })
+        .map(|node| node.id.as_str())
+        .collect();
+    Ok(pages
+        .iter()
+        .filter(|page| page.node_ids.iter().any(|id| named.contains(id.as_str())))
+        .map(|page| page.record_id.clone())
+        .take(LENS_POINTERS)
+        .collect())
 }
 
 // The research search accepts at most 200 UTF-8 bytes (Lens accepts 200
@@ -654,24 +800,46 @@ fn relevant_memory(
     loupist_id: &str,
     message: &str,
     entries: &[HostMemoryEntry],
-    standing_id: Option<&str>,
+    anchored: &[String],
 ) -> Result<Vec<crate::agent_harness::RelevantMemoryPointer>, CommandError> {
     use crate::agent_harness::RelevantMemoryPointer;
     let terms = memory_query_terms(message);
-    if terms.is_empty() {
-        return Ok(Vec::new());
-    }
     let mut relevant = Vec::new();
+    let pointer = |entry: &HostMemoryEntry, snippet: String, revision: serde_json::Value| {
+        RelevantMemoryPointer {
+            later_notes: Vec::new(),
+            kind: "Lens".into(),
+            title: entry.title.clone(),
+            as_of: entry.as_of.clone(),
+            snippet,
+            tool: "lens_read".into(),
+            read_args: serde_json::json!({"recordId": entry.id, "revisionId": revision}),
+        }
+    };
+    for id in anchored {
+        if let Some(entry) = entries.iter().find(|entry| &entry.id == id) {
+            relevant.push(pointer(
+                entry,
+                lens_catalog_preview(&entry.summary),
+                serde_json::Value::Null,
+            ));
+        }
+    }
+    if terms.is_empty() {
+        return Ok(relevant);
+    }
     let hits = host_search(state, loupist_id, &terms.join(" "), "lens")?;
     for hit in hits.as_array().into_iter().flatten() {
+        if relevant.len() >= LENS_POINTERS {
+            break;
+        }
         let Some(id) = hit["recordId"].as_str() else {
             continue;
         };
-        // The untruncated catalog already excludes archived Lens. Do not use
-        // its recency-limited version: an older method can be the best match.
+        // The untruncated index already excludes archived and paused pages.
         let Some(entry) = entries
             .iter()
-            .find(|entry| entry.kind == "lens" && entry.id == id && Some(id) != standing_id)
+            .find(|entry| entry.kind == "lens" && entry.id == id)
         else {
             continue;
         };
@@ -686,18 +854,11 @@ fn relevant_memory(
         {
             continue;
         }
-        relevant.push(RelevantMemoryPointer {
-            later_notes: Vec::new(),
-            kind: "Lens".into(),
-            title: entry.title.clone(),
-            as_of: entry.as_of.clone(),
-            snippet: memory_snippet(hit["snippet"].as_str().unwrap_or(&entry.summary), &terms),
-            tool: "lens_read".into(),
-            read_args: serde_json::json!({"recordId": id, "revisionId": hit["revisionId"]}),
-        });
-        if relevant.len() == 3 {
-            break;
-        }
+        relevant.push(pointer(
+            entry,
+            memory_snippet(hit["snippet"].as_str().unwrap_or(&entry.summary), &terms),
+            hit["revisionId"].clone(),
+        ));
     }
     // Working notes only. Journals and legacy rows are not in this page, so
     // they cannot take one of the three note slots. Require overlap again
@@ -1089,10 +1250,8 @@ pub(in crate::commands) fn host_prepare_read(
 ) -> Result<(String, crate::commands::tool_executor::StagedKnowledgeRead), CommandError> {
     admit(state, loupist_id)?;
     let read_ref = format!("rdg_{}", uuid::Uuid::new_v4().simple());
-    let (text, revision_id, span_id, object_id, title, payload) = with_loupist_knowledge(
-        state,
-        loupist_id,
-        |tx, blobs| {
+    let (text, revision_id, span_id, object_id, title, payload) =
+        with_loupist_knowledge(state, loupist_id, |tx, blobs| {
             let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
             let module = write.owned_record(loupist_id, &request.record_id)?;
             let revision_id = match request
@@ -1139,8 +1298,7 @@ pub(in crate::commands) fn host_prepare_read(
                         &request.record_id,
                     )?;
                     let (text, revision_id, span_id, payload) =
-                        capture_lens_read(request, &revision, &tx.query_row(
-                            "SELECT CASE WHEN EXISTS(SELECT 1 FROM knowledge_standing_selection WHERE loupist_id=?1 AND record_id=?2) THEN 'perspective' ELSE lens_kind END FROM knowledge_lens_metadata WHERE loupist_id=?1 AND record_id=?2", rusqlite::params![loupist_id,request.record_id], |row| row.get::<_,String>(0))?)?;
+                        capture_lens_read(&write, loupist_id, request, &revision)?;
                     Ok((
                         text,
                         revision_id,
@@ -1154,8 +1312,7 @@ pub(in crate::commands) fn host_prepare_read(
                     "knowledge scope is invalid",
                 )),
             }
-        },
-    )?;
+        })?;
     Ok((
         text,
         crate::commands::tool_executor::StagedKnowledgeRead {
@@ -1541,9 +1698,10 @@ pub(in crate::commands) fn capture_world_read(
 }
 
 pub(in crate::commands) fn capture_lens_read(
+    write: &crate::knowledge::KnowledgeWrite<'_>,
+    loupist_id: &str,
     request: &HostReadRequest,
     revision: &crate::knowledge::RecordRevision,
-    lens_kind: &str,
 ) -> crate::knowledge::KnowledgeResult<(
     String,
     String,
@@ -1563,22 +1721,32 @@ pub(in crate::commands) fn capture_lens_read(
             "lens use status is invalid",
         ));
     }
-    let document: LensDocument = serde_json::from_value(revision.payload.clone())?;
-    let document_json = document.delivery_text()?;
+    let mut page = write.read_page(loupist_id, &request.record_id)?;
+    if page.revision_id != revision.revision_id {
+        // Only the head is readable: history lives in the log, not in revisions.
+        return Err(crate::knowledge::KnowledgeError::NotFound);
+    }
+    if let Some(cutoff) = request.as_of.map(super::as_of::Cutoff) {
+        // The page itself passed `as_of::lens_visible`; what surrounds it keeps to the cutoff too.
+        page.history
+            .retain(|entry| cutoff.recorded(entry.created_at_ms));
+        let mut backlinks = Vec::with_capacity(page.backlinks.len());
+        for link in std::mem::take(&mut page.backlinks) {
+            if super::as_of::lens_visible(write, loupist_id, &link.record_id, cutoff)? {
+                backlinks.push(link);
+            }
+        }
+        page.backlinks = backlinks;
+    }
+    let document_json = page.delivery_text()?;
     let body_digest = crate::util::sha256(document_json.as_bytes());
     let text = document_json.clone();
-    // Record host metadata beside the exact six-field body. Its body digest
+    // Record host metadata beside the exact delivered page. Its body digest
     // remains the digest of the model-facing document.
     let mut recorded: serde_json::Value = serde_json::from_str(&document_json)?;
-    recorded["lensKind"] = serde_json::json!(lens_kind);
-    if lens_kind == "principle" {
-        if let Some(statement) = revision
-            .payload
-            .get("statement")
-            .and_then(serde_json::Value::as_str)
-        {
-            recorded["receiptTitle"] = serde_json::json!(statement);
-        }
+    recorded["lensKind"] = serde_json::json!(page.kind);
+    if page.kind == crate::knowledge::lens_page::LensKind::Principle {
+        recorded["receiptTitle"] = serde_json::json!(page.body.summary());
     }
     let document_json = serde_json::to_string(&recorded)?;
     Ok((

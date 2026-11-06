@@ -8,6 +8,8 @@ pub(crate) mod chart;
 pub(crate) mod control;
 pub(crate) mod execution_session;
 pub(crate) mod grid;
+pub(crate) mod handoff;
 pub(crate) mod home;
 pub(crate) mod progress;
+pub(crate) mod surface;
 pub(crate) mod turn;

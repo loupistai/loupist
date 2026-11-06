@@ -42,6 +42,8 @@ import type {
   ChatStreamEvent,
   ChatThread,
   LoupistWorkspace,
+  ResearchHandoffReceipt,
+  ResearchHandoffRequest,
 } from "./chat";
 import type {
   AgentSkillSummary,
@@ -68,7 +70,6 @@ import type {
   KnowledgeCatalogRequest,
   KnowledgeJournalReadRequest,
   KnowledgeJournalSourceReadRequest,
-  KnowledgeLensChangesRequest,
   KnowledgeLensReadRequest,
   KnowledgeResearchPage,
   KnowledgeResearchSearchRequest,
@@ -76,8 +77,6 @@ import type {
   KnowledgeSourceReadRequest,
   KnowledgeSourceSelectionRequest,
   KnowledgeSourceRetainRequest,
-  LensChangeRecord,
-  LensView,
   RetainedSource,
   SourceDetail,
   WorldGraphQuery,
@@ -113,8 +112,7 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   memoryLearningSettingsSet(request: { loupistId: string; learnMethods: boolean }): Promise<import("./knowledge").MemoryLearningSettings>;
   onLearningReviewFinished(handler: (event: import("./knowledge").LearningReviewFinishedEvent) => void): () => void;
   worldSchemaGet(request: { loupistId: string }): Promise<import("./knowledge").WorldSchemaView>;
-  worldSchemaApply(request: { loupistId: string; proposalId: string }): Promise<import("./knowledge").WorldSchemaView>;
-  worldSchemaDismiss(request: { loupistId: string; proposalId: string }): Promise<import("./knowledge").WorldSchemaView>;
+  worldSchemaUndo(request: { loupistId: string; changeId: string }): Promise<import("./knowledge").WorldSchemaView>;
   worldSchemaRemove(request: { loupistId: string; kind: import("./knowledge").SchemaRemovalKind; name: string }): Promise<import("./knowledge").WorldSchemaView>;
   onWorldSchemaChanged(handler: (event: { loupistId: string }) => void): () => void;
   principleList(request: PrincipleListRequest): Promise<Principle[]>;
@@ -299,6 +297,14 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   chatSteer(request: ChatControlRequest): Promise<ChatControlReceipt>;
   /** `as_of` is the date the failed request was sent with; Retry repeats it. */
   chatRetryLast(request: ChatRetryRequest): Promise<{ prompt: string; as_of?: string }>;
+  /** Opens a research session that runs on its own and reports into the Bot; a repeated key returns the same one. */
+  researchHandoffStart(request: ResearchHandoffRequest): Promise<ResearchHandoffReceipt>;
+  /** Links discovery found after World publications, newest first. */
+  knowledgeConnections(request: { loupistId: string }): Promise<import("./knowledge").ConnectionView[]>;
+  /** Not useful: the link stays recorded so it is never found again. */
+  knowledgeConnectionDismiss(request: { loupistId: string; connectionId: string }): Promise<import("./knowledge").ConnectionView>;
+  /** Look into it: records that a research hand-off was started for the link. */
+  knowledgeConnectionOpen(request: { loupistId: string; connectionId: string }): Promise<import("./knowledge").ConnectionView>;
   chatAbort(run_id: string): Promise<void>;
   runActivityList(): Promise<RunActivity[]>;
   knowledgeGrowthEvents(request: import("./knowledge").GrowthEventsQuery): Promise<import("./knowledge").GrowthEventsPage>;
@@ -314,15 +320,15 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   knowledgeMemoryResetPreview(request: { loupistId: string }): Promise<import("./knowledge").MemoryResetCounts>;
   knowledgeMemoryReset(request: { loupistId: string; confirm: boolean; expected: import("./knowledge").MemoryResetCounts }): Promise<import("./knowledge").MemoryResetCounts>;
   knowledgeMemoryUsage(request: { loupistId: string }): Promise<import("./knowledge").MemoryUsage[]>;
-  knowledgeLensRead(request: KnowledgeLensReadRequest): Promise<LensView>;
+  knowledgeLensRead(request: KnowledgeLensReadRequest): Promise<import("./lens").PageView>;
+  knowledgeLensPagesForNode(request: { loupistId: string; nodeId: string }): Promise<import("./lens").PageSummary[]>;
+  /** Retires one section as the user; the newest history entry of the returned page is the op Undo reverses. */
+  memorySectionForget(request: { loupistId: string; recordId: string; key: string }): Promise<import("./lens").PageView>;
+  memoryOpUndo(request: { loupistId: string; opId: string }): Promise<import("./lens").PageView>;
+  memoryLearned(request: { loupistId: string; messageIds: string[] }): Promise<import("./lens").LearnedDigest[]>;
   knowledgeWorkingNoteRead(request: WorkingNoteReadRequest): Promise<WorkingNote>;
   knowledgeWorkingNotes(request: WorkingNotesRequest): Promise<WorkingNotesPage>;
-  knowledgeLensChanges(
-    request: KnowledgeLensChangesRequest,
-  ): Promise<LensChangeRecord[]>;
-  knowledgeLensSearch(request: { loupistId: string; query: string }): Promise<import("./knowledge").LensSearchHit[]>;
-  knowledgeLensProposals(request: { loupistId: string; recordId?: string }): Promise<import("./knowledge").LensProposal[]>;
-  knowledgeLensProposalDismiss(request: { loupistId: string; draftId: string }): Promise<void>;
+  knowledgeLensSearch(request: { loupistId: string; query: string; kinds?: import("./lens").LensKind[] }): Promise<import("./lens").LensSearchHit[]>;
   knowledgeResearchSearch(
     request: KnowledgeResearchSearchRequest,
   ): Promise<KnowledgeResearchPage>;

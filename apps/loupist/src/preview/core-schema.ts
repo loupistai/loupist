@@ -46,7 +46,7 @@ function coreSchemaMap(): KnowledgeMap {
   return {
     nodes, edges, unmatchedHoldings: [], unmatchedWatchlist: [],
     counts: {
-      entity: count(nodes.length), lens_perspective: { ...none }, lens_principle: { ...none }, lens_method: { ...none }, journal: { ...none },
+      entity: count(nodes.length), lens_perspective: { ...none }, lens_principle: { ...none }, lens_method: { ...none }, lens_subject: { ...none }, lens_idea: { ...none }, journal: { ...none },
       claim: count(edges.length), lens_link: { ...none }, applies_to: { ...none }, about: { ...none },
     },
     worldRevisionId: "core-schema-revision", generatedAtMs: seen,

@@ -2,7 +2,8 @@ import type { GrowthEvent, JournalRecord, KnowledgeMap, KnowledgeMapEdge, Knowle
 import type { InboxItem } from "../contracts/scheduled";
 import type { AssetChangeRow, AssetDelta } from "../contracts/assets";
 import { nodeColorKey } from "../components/map/kinds";
-import { daysUntil, firstSentence, followedBullet, morningMessage, type MorningInputs } from "./morningMessage";
+import { daysUntil, firstSentence, followedBullet, morningMessage, sinceDayOptions, type MorningInputs } from "./morningMessage";
+import { formatDate } from "../i18n/format";
 
 const assetRow = (kind: AssetChangeRow["kind"], factDate: string, material = true): AssetChangeRow =>
   ({ id: `${kind}:${factDate}`, kind, factDate, recordedAtMs: 0, facts: {}, evidence: [{ tool: "dart_filing_search", title: "OpenDART", url: "https://dart.fss.or.kr/" }], new: true, material });
@@ -176,4 +177,12 @@ describe("morning message helpers", () => {
     expect(firstSentence("이익률이 낮아졌어요. 다음 분기를 봐요.")).toBe("이익률이 낮아졌어요.");
     expect(firstSentence("No full stop")).toBe("No full stop");
   });
+});
+
+it("names a visit earlier today by its time, not today's weekday", () => {
+  const now = new Date(2026, 10, 7, 15, 30).getTime();
+  const since = (ms: number) => formatDate(ms, sinceDayOptions(ms, now));
+  expect(since(new Date(2026, 10, 7, 2, 7).getTime())).toBe("2:07 AM");
+  expect(since(new Date(2026, 10, 5, 9, 0).getTime())).toBe("Thursday");
+  expect(since(new Date(2026, 9, 21, 9, 0).getTime())).toBe("Oct 21");
 });

@@ -1,11 +1,10 @@
+import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
 import type { KnowledgeMapEdge, KnowledgeMapNode, KnowledgeRecordSummary } from "../../contracts/knowledge";
 
-/** Host seed in `ensure_standing_lens`. Display-only; stored titles stay as written. */
-export const HOST_STANDING_TITLE = "Standing philosophy";
 /** Empty philosophy body. It is a placeholder, not a learned insight. */
 export const HOST_STANDING_PLACEHOLDER = "This Loupist has not recorded a standing philosophy.";
 
-const LENS_KINDS = new Set(["lens_perspective", "lens_principle", "lens_method"]);
+const LENS_KINDS = new Set(["lens_perspective", "lens_principle", "lens_method", "lens_subject", "lens_idea"]);
 
 export function isLensNode(node: { kind: string }): boolean {
   return LENS_KINDS.has(node.kind);
@@ -29,17 +28,15 @@ export function isBasePerspective(node: KnowledgeMapNode, lenses: readonly Knowl
   const catalog = catalogLens(lenses, node);
   const standing = standingFlag(catalog);
   if (standing === false) return false;
-  if (catalog?.lensKind === "method" || catalog?.lensKind === "principle") return false;
+  if (catalog?.lensKind && catalog.lensKind !== "perspective") return false;
   if (standing === true || catalog?.lensKind === "perspective") return true;
-  return (catalog?.title ?? node.label) === HOST_STANDING_TITLE;
+  return (catalog?.title ?? node.label) === HOST_PERSPECTIVE_TITLE;
 }
 
 /** Localized default only for the untouched host title. A chosen title stays. */
-export function lensDisplayTitle(node: KnowledgeMapNode, lenses: readonly KnowledgeRecordSummary[], defaultTitle: string): string {
-  const catalog = catalogLens(lenses, node);
-  const stored = catalog?.title ?? node.label;
-  if (isBasePerspective(node, lenses) && stored === HOST_STANDING_TITLE && node.label === HOST_STANDING_TITLE) return defaultTitle;
-  return isBasePerspective(node, lenses) && stored !== HOST_STANDING_TITLE ? stored : node.label;
+export function lensDisplayTitle(node: KnowledgeMapNode, lenses: readonly KnowledgeRecordSummary[]): string {
+  const stored = catalogLens(lenses, node)?.title ?? node.label;
+  return isBasePerspective(node, lenses) ? displayPageTitle("perspective", stored) : node.label;
 }
 
 export function isStandingPlaceholder(text: string | undefined): boolean {

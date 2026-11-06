@@ -11,7 +11,7 @@ use crate::{
     commands::{map_internal, map_store, new_id, now_ms},
     domain::{
         memory_refs_digest, ChatMessage, ChatMessageStatus, ChatRole, ChatSession, HomeAlert,
-        HomeDelivery, MemoryPolicy,
+        HomeDelivery, HomeLink, MemoryPolicy,
     },
     runs::coordinator::{RunKind, RunTarget},
     scheduled_tasks::types::{Run, RunStatus},
@@ -139,6 +139,10 @@ pub(crate) fn delivery_message(state: &AppState, run: &Run) -> Result<ChatMessag
             run_thread_id: run.thread_id.clone(),
             status: run.status,
             finished_at_ms: finished,
+            learned: run
+                .message_id
+                .as_ref()
+                .and_then(|id| super::handoff::card_learned(state, &run.loupist_id, id)),
         }),
         as_of: None,
         number_checks: Vec::new(),
@@ -147,6 +151,9 @@ pub(crate) fn delivery_message(state: &AppState, run: &Run) -> Result<ChatMessag
         alert: None,
         watch: None,
         earnings: None,
+        vocabulary: None,
+        handoff: None,
+        link: None,
     })
 }
 
@@ -225,11 +232,14 @@ pub(crate) fn alert_message(
         }),
         watch: None,
         earnings: None,
+        vocabulary: None,
+        handoff: None,
+        link: None,
     })
 }
 
 /// A host message with nothing but its text; the caller sets its record.
-fn host_message(
+pub(crate) fn host_message(
     prefix: &str,
     content: String,
     created_at_ms: i64,
@@ -271,6 +281,9 @@ fn host_message(
         alert: None,
         watch: None,
         earnings: None,
+        vocabulary: None,
+        handoff: None,
+        link: None,
     })
 }
 
@@ -498,6 +511,93 @@ fn pending_host_news(
     (events, notices)
 }
 
+pub(crate) fn vocabulary_message(
+    change: &crate::knowledge::SchemaChange,
+) -> Result<ChatMessage, CommandError> {
+    let kinds = crate::knowledge::added_labels(change);
+    let labels: Vec<String> = kinds.iter().map(|kind| kind.labels.en.clone()).collect();
+    let korean: Vec<String> = kinds
+        .iter()
+        .filter_map(|kind| kind.labels.ko.clone())
+        .collect();
+    let mut message = host_message(
+        "vocabulary",
+        format!("Your map now also tracks {}.", labels.join(", ")),
+        change.created_at_ms,
+    )?;
+    message.vocabulary = Some(crate::domain::HomeVocabulary {
+        change_id: change.change_id.clone(),
+        producer: change.producer.as_str().into(),
+        labels_ko: if korean.len() == labels.len() {
+            korean
+        } else {
+            Vec::new()
+        },
+        labels,
+    });
+    Ok(message)
+}
+
+pub(crate) fn link_message(
+    view: &crate::knowledge::ConnectionView,
+    at_ms: i64,
+) -> Result<ChatMessage, CommandError> {
+    let through: Vec<&str> = view
+        .path
+        .iter()
+        .take(view.path.len().saturating_sub(1))
+        .map(|hop| hop.name.as_str())
+        .collect();
+    let mut message = host_message(
+        "link",
+        format!(
+            "New link: {} ↔ {} through {}.",
+            view.seed_name,
+            view.far_name,
+            through.join(", ")
+        ),
+        at_ms,
+    )?;
+    message.link = Some(HomeLink::from(view));
+    Ok(message)
+}
+
+fn pending_links(state: &AppState, loupist_id: &str) -> Vec<crate::knowledge::ConnectionView> {
+    let at = now_ms();
+    crate::commands::assets::with_assets(state, loupist_id, false, |tx| {
+        crate::knowledge::connections_to_show(tx, loupist_id, at)
+    })
+    .unwrap_or_default()
+}
+
+fn pending_vocabulary(
+    state: &AppState,
+    loupist_id: &str,
+    home: &ChatSession,
+) -> Vec<crate::knowledge::SchemaChange> {
+    let posted: HashSet<&str> = home
+        .messages
+        .iter()
+        .filter_map(|message| message.vocabulary.as_ref())
+        .map(|record| record.change_id.as_str())
+        .collect();
+    let mut changes = crate::commands::assets::with_assets(state, loupist_id, false, |tx| {
+        crate::knowledge::recent_changes(tx, loupist_id, 20)
+    })
+    .unwrap_or_default();
+    // A change a chat reply made is already on that reply's receipt.
+    changes.retain(|change| {
+        matches!(
+            change.producer,
+            crate::knowledge::Producer::Preset | crate::knowledge::Producer::Review
+        ) && change.origin.is_none()
+            && !posted.contains(change.change_id.as_str())
+            && !crate::knowledge::added_labels(change).is_empty()
+    });
+    changes.reverse();
+    changes
+}
+
 /// Crossed lines since the Thread began that it has not announced yet.
 fn pending_alerts(
     state: &AppState,
@@ -520,8 +620,9 @@ fn pending_alerts(
 
 /// Posts every finished, undelivered scheduled run into the home Thread, oldest
 /// first. A reply running in the Thread owns it, so delivery waits: the next
-/// completion or workspace load delivers what is still pending. Returns how
-/// many messages were posted.
+/// completion or workspace load delivers what is still pending. Every write
+/// tells the renderer, whichever caller ran the pass. Returns how many
+/// messages were posted or updated.
 pub(crate) fn deliver_finished_runs(
     state: &AppState,
     loupist_id: &str,
@@ -547,6 +648,32 @@ pub(crate) fn deliver_finished_runs(
         .collect::<Vec<_>>();
     let delivered = delivered_in(&home);
     let (watch_events, notices) = pending_host_news(state, loupist_id);
+    let research = super::handoff::for_delivery(state, loupist_id)?;
+    let research_changes = |chat: &ChatSession| -> Vec<(super::handoff::Handoff, Option<usize>)> {
+        research
+            .iter()
+            .filter_map(|handoff| {
+                let posted = chat.messages.iter().position(|message| {
+                    message
+                        .handoff
+                        .as_ref()
+                        .is_some_and(|record| record.handoff_id == handoff.id)
+                });
+                match posted {
+                    Some(index)
+                        if chat.messages[index]
+                            .handoff
+                            .as_ref()
+                            .map(|record| record.status)
+                            == Some(handoff.status) =>
+                    {
+                        None
+                    }
+                    posted => Some((handoff.clone(), posted)),
+                }
+            })
+            .collect()
+    };
     if !runs.iter().any(|run| deliverable(run, &home, &delivered))
         && handoffs
             .iter()
@@ -554,7 +681,10 @@ pub(crate) fn deliver_finished_runs(
         && questions
             .iter()
             .all(|q| home.messages.iter().any(|m| m.id == q.receipt.task_id))
+        && research_changes(&home).is_empty()
         && pending_alerts(state, loupist_id, &home).is_empty()
+        && pending_vocabulary(state, loupist_id, &home).is_empty()
+        && pending_links(state, loupist_id).is_empty()
         && watch_events.is_empty()
         && notices.is_empty()
     {
@@ -612,8 +742,32 @@ pub(crate) fn deliver_finished_runs(
     for run in &pending {
         posted.push(delivery_message(state, run)?);
     }
+    let mut chat = expected.clone();
+    let mut changed = 0;
+    for (handoff, index) in research_changes(&expected) {
+        let message =
+            super::handoff::message(state, &handoff, index.map(|i| &expected.messages[i]))?;
+        match index {
+            Some(index) => {
+                chat.messages[index] = message;
+                changed += 1;
+            }
+            None => posted.push(message),
+        }
+    }
     for alert in pending_alerts(state, loupist_id, &expected) {
         posted.push(alert_message(&alert)?);
+    }
+    for change in pending_vocabulary(state, loupist_id, &expected) {
+        posted.push(vocabulary_message(&change)?);
+    }
+    let links = pending_links(state, loupist_id);
+    let link_ids: Vec<String> = links
+        .iter()
+        .map(|link| link.connection_id.clone())
+        .collect();
+    for link in &links {
+        posted.push(link_message(link, now_ms())?);
     }
     let (watch_events, notices) = pending_host_news(state, loupist_id);
     let watch_ids: Vec<String> = watch_events
@@ -626,12 +780,11 @@ pub(crate) fn deliver_finished_runs(
     for (notice, snapshot) in &notices {
         posted.push(earnings_message(notice, snapshot)?);
     }
-    if posted.is_empty() {
+    if posted.is_empty() && changed == 0 {
         return Ok(0);
     }
     posted.sort_by_key(|message| message.created_at_ms);
-    let count = posted.len();
-    let mut chat = expected.clone();
+    let count = posted.len() + changed;
     chat.messages.extend(posted);
     // The Pi transcript no longer matches; the next turn starts cold and can
     // read these messages through Chat history.
@@ -641,16 +794,18 @@ pub(crate) fn deliver_finished_runs(
         .store
         .replace_chat(&expected, &chat)
         .map_err(map_store)?;
+    crate::briefings::desktop::changed(loupist_id);
     // Delivered once: the alerts and notices now live in the Thread.
     let notice_ids: Vec<String> = notices
         .iter()
         .map(|(notice, _)| notice.notice_id.clone())
         .collect();
-    if !watch_ids.is_empty() || !notice_ids.is_empty() {
+    if !watch_ids.is_empty() || !notice_ids.is_empty() || !link_ids.is_empty() {
         let at = now_ms();
         crate::commands::assets::with_assets(state, loupist_id, true, |tx| {
             crate::knowledge::watch::mark_delivered(tx, loupist_id, &watch_ids, "message", at)?;
-            crate::knowledge::earnings::mark_notices_posted(tx, loupist_id, &notice_ids, at)
+            crate::knowledge::earnings::mark_notices_posted(tx, loupist_id, &notice_ids, at)?;
+            crate::knowledge::connections_mark_shown(tx, loupist_id, &link_ids, at)
         })?;
         crate::commands::watch::changed(loupist_id);
     }

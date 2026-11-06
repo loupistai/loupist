@@ -107,42 +107,50 @@ fn knowledge_growth_world_diff_commit_rollback_and_identical_content() {
 #[test]
 fn knowledge_growth_lens_changes_keep_origin_and_skip_noops() {
     let (_directory, store) = open_store();
-    let record = create(&store, "loupist-a", RecordKind::Lens, "Method");
-    let mut request = ReviseLens {
-        loupist_id: "loupist-a".into(),
-        record_id: record.record_id.clone(),
-        expected_revision_id: None,
-        at_ms: 2,
-        document: lens_document("First body"),
-        dependencies: vec![],
-        change: empty_change("Created"),
-    };
-    request.document.applicability = "First use\nSecond line".into();
     let created = store
+        .file_method(
+            "loupist-a",
+            "Method",
+            "First body",
+            &test_support::turn_origin("chat-a", "message-a"),
+            2,
+        )
+        .unwrap();
+    let id = created.record_id.clone();
+    store
         .transact(|write| {
-            write.revise_lens_with_origin(
-                request.clone(),
-                "loupist",
-                Some("chat-a"),
-                Some("message-a"),
+            write.file(
+                "loupist-a",
+                &test_support::user_origin(),
+                vec![lens_page::PageDelta {
+                    target: lens_page::PageTarget::Existing {
+                        record_id: id.clone(),
+                    },
+                    ops: vec![lens_page::LensOp::Summary {
+                        text: "New use".into(),
+                    }],
+                }],
+                3,
             )
         })
         .unwrap();
-    request.expected_revision_id = Some(created.revision_id);
-    request.at_ms = 3;
-    request.document.applicability = "New use".into();
-    let revised = store.revise_lens(request.clone()).unwrap();
-    request.expected_revision_id = Some(revised.revision_id);
-    request.at_ms = 4;
-    store.revise_lens(request).unwrap();
     store
         .transact(|write| {
-            let id = &record.record_id;
-            write.rename_lens("loupist-a", id, "Renamed", "Clearer", 5, "user", None, None)?;
-            write.rename_lens("loupist-a", id, "Renamed", "Same", 6, "user", None, None)?;
-            write.set_lens_archived("loupist-a", id, true, "Retire", 7, "user")?;
-            write.set_lens_archived("loupist-a", id, true, "Same state", 8, "user")?;
-            write.set_lens_archived("loupist-a", id, false, "Restore", 9, "user")
+            write.put_section(
+                "loupist-a",
+                &id,
+                "steps",
+                "First body",
+                &test_support::user_origin(),
+                4,
+            )
+        })
+        .unwrap();
+    store
+        .transact(|write| {
+            write.set_lens_archived("loupist-a", &id, true, "Retire", 7, "user")?;
+            write.set_lens_archived("loupist-a", &id, true, "Same state", 8, "user")?;
+            write.set_lens_archived("loupist-a", &id, false, "Restore", 9, "user")
         })
         .unwrap();
     let events = events_since(&store, None);
@@ -152,7 +160,6 @@ fn knowledge_growth_lens_changes_keep_origin_and_skip_noops() {
         [
             "lens_created",
             "lens_revised",
-            "lens_renamed",
             "lens_archived",
             "lens_restored"
         ]
@@ -160,18 +167,16 @@ fn knowledge_growth_lens_changes_keep_origin_and_skip_noops() {
     assert_eq!(events[0].actor, "loupist");
     assert_eq!(events[0].origin_chat_id.as_deref(), Some("chat-a"));
     assert_eq!(events[0].origin_message_id.as_deref(), Some("message-a"));
+    assert_eq!(events[1].actor, "user");
     assert_eq!(events[1].after_summary.as_deref(), Some("New use"));
     let rollback = store.transact(|write| -> KnowledgeResult<()> {
-        let id = &record.record_id;
-        write.rename_lens(
+        write.put_section(
             "loupist-a",
-            id,
+            &id,
+            "steps",
             "Rolled back",
-            "Undo",
+            &test_support::user_origin(),
             10,
-            "user",
-            None,
-            None,
         )?;
         Err(KnowledgeError::Invalid("rollback test"))
     });

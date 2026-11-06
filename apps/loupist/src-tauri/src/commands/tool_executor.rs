@@ -12,6 +12,9 @@ mod authority;
 mod calculation;
 #[cfg(test)]
 mod calculation_tests;
+mod lens_file;
+pub(crate) use lens_file::commit_turn as commit_filings;
+pub(super) use lens_file::StagedFiling;
 mod principles;
 pub(super) use principles::StagedPrinciple;
 mod chat_history;
@@ -33,7 +36,15 @@ mod research;
 mod returning;
 pub(super) mod schedules;
 pub(in crate::commands) mod sensitivity;
+mod setup;
+pub(super) use setup::StagedSetup;
+pub(crate) use setup::{apply_watchlist as apply_setup_watchlist, commit_turn as commit_setup};
 mod workspace;
+mod world_schema;
+#[cfg(test)]
+mod world_schema_tests;
+pub(crate) use world_schema::commit_turn as commit_vocabulary;
+pub(super) use world_schema::StagedVocabulary;
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -120,7 +131,9 @@ pub(super) struct ToolCapture {
     pub(super) turn_taint: crate::custom_connections::taint::TurnTaint,
     pub(crate) unattended_run_id: Option<String>,
     pub(super) tool_trace: Arc<crate::broker::ToolTraceCapture>,
+    pub(crate) surface: Option<crate::chat::surface::ChatSurface>,
     pub(super) schedule_context: Option<schedules::ScheduleContext>,
+    pub(in crate::commands) staged_handoff: Mutex<Option<crate::chat::handoff::StagedHandoff>>,
     pub(super) schedule_sink:
         Option<Arc<dyn Fn(crate::scheduled_tasks::types::ScheduleReceipt) + Send + Sync>>,
     pub(super) memories: Mutex<HashMap<String, MemoryRefSnapshot>>,
@@ -139,12 +152,18 @@ pub(super) struct ToolCapture {
     /// Standing Lens body admitted with the turn envelope. This is not a tool ACK.
     pub(super) context_reads: Mutex<Vec<StagedKnowledgeRead>>,
     pub(super) staged_research: Mutex<Option<StagedResearch>>,
-    pub(super) staged_lenses: Mutex<Vec<StagedLensRevision>>,
     pub(super) staged_principles: Mutex<Vec<StagedPrinciple>>,
     /// Checked thesis updates, committed with the reply.
     pub(in crate::commands) staged_theses: Mutex<Vec<crate::knowledge::assets::ThesisUpdate>>,
     /// Checked results saves, committed with the reply.
     pub(in crate::commands) staged_earnings: Mutex<Vec<earnings::EarningsSave>>,
+    pub(in crate::commands) staged_vocabulary: Mutex<Vec<StagedVocabulary>>,
+    pub(in crate::commands) staged_filings: Mutex<Vec<StagedFiling>>,
+    /// The reply's one `loupist_setup` call.
+    pub(in crate::commands) staged_setup: Mutex<Option<StagedSetup>>,
+    /// Pages and ops each `lens_file` delivery reserved from the turn's
+    /// budget; an undelivered call frees its share.
+    lens_file_budget: Mutex<BTreeMap<String, (usize, usize)>>,
     /// Assets with a thesis update in this turn (staged or in flight), by
     /// delivery: parallel calls cannot both move one asset's read.
     pub(super) thesis_assets: Mutex<BTreeMap<String, String>>,
@@ -184,12 +203,15 @@ struct PendingToolCapture {
     staged_reads: Vec<StagedKnowledgeRead>,
     note_reads: BTreeSet<String>,
     research: Option<StagedResearch>,
-    lenses: Vec<StagedLensRevision>,
     principles: Vec<StagedPrinciple>,
     theses: Vec<crate::knowledge::assets::ThesisUpdate>,
     earnings: Vec<earnings::EarningsSave>,
+    vocabulary: Vec<StagedVocabulary>,
+    filings: Vec<StagedFiling>,
+    setup: Option<StagedSetup>,
     artifacts: Vec<ArtifactCommit>,
     artifact_reads: BTreeSet<(String, u32)>,
+    handoff: Option<crate::chat::handoff::StagedHandoff>,
     call_id: Option<String>,
 }
 
@@ -393,21 +415,6 @@ pub(super) struct StagedResearch {
     pub(super) previous_note_ids: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct StagedLensRevision {
-    pub(super) title: Option<String>,
-    pub(super) kind: Option<String>,
-    pub(super) record_id: String,
-    pub(super) expected_revision_id: String,
-    pub(super) document: crate::knowledge::LensDocument,
-    pub(super) rationale: String,
-    pub(super) source_reads: Vec<String>,
-    pub(super) world_reads: Vec<String>,
-    pub(super) journal_reads: Vec<String>,
-    pub(super) previous_note_ids: Vec<String>,
-    pub(super) feedback: Option<String>,
-}
-
 #[derive(Clone, Debug)]
 struct RunWebFetchSnapshot {
     fetched: crate::web::WebFetchSnapshot,
@@ -566,6 +573,7 @@ impl ToolCapture {
             .lock()
             .await
             .retain(|_, delivery| delivery != delivery_id);
+        self.lens_file_budget.lock().await.remove(delivery_id);
     }
 
     async fn commit_delivery(&self, delivery_id: &str) {
@@ -655,18 +663,25 @@ impl ToolCapture {
                 .await
                 .extend(std::mem::take(&mut pending.earnings));
         }
+        if !pending.vocabulary.is_empty() {
+            self.staged_vocabulary
+                .lock()
+                .await
+                .extend(std::mem::take(&mut pending.vocabulary));
+        }
+        if !pending.filings.is_empty() {
+            self.staged_filings
+                .lock()
+                .await
+                .extend(std::mem::take(&mut pending.filings));
+        }
+        if let Some(setup) = pending.setup.take() {
+            *self.staged_setup.lock().await = Some(setup);
+        }
         for principle in pending.principles {
             let mut staged = self.staged_principles.lock().await;
             staged.retain(|p| p.record_id != principle.record_id);
             staged.push(principle);
-        }
-        if !pending.lenses.is_empty() {
-            let mut staged = self.staged_lenses.lock().await;
-            for revision in pending.lenses {
-                let record_id = revision.record_id.clone();
-                staged.retain(|existing| existing.record_id != record_id);
-                staged.push(revision);
-            }
         }
         if !pending.artifacts.is_empty() {
             self.artifacts
@@ -678,6 +693,70 @@ impl ToolCapture {
             .lock()
             .await
             .extend(pending.artifact_reads);
+        if let Some(handoff) = pending.handoff {
+            *self.staged_handoff.lock().await = Some(handoff);
+        }
+    }
+
+    async fn stage_research_open(
+        &self,
+        policy: &ToolPolicy,
+        params: Value,
+        delivery_id: &str,
+    ) -> Result<Value, BrokerError> {
+        let refusal = |where_: &str| {
+            BrokerError::Execution(format!(
+                "research_open is unavailable in a {where_} turn: only the Bot opens a research session"
+            ))
+        };
+        match &self.surface {
+            Some(surface) if surface.is_bot() => {}
+            Some(surface) => return Err(refusal(surface.name())),
+            None => return Err(refusal("host")),
+        }
+        if policy.as_of.is_some() {
+            return Err(BrokerError::Execution(
+                "A research session needs a present-day request. Leave the historical cutoff before handing off.".into(),
+            ));
+        }
+        let request = crate::chat::handoff::HandoffRequest::parse(&params)
+            .map_err(|(field, expected)| BrokerError::InvalidArguments { field, expected })?;
+        if self.staged_handoff.lock().await.is_some()
+            || self
+                .pending_deliveries
+                .lock()
+                .await
+                .values()
+                .any(|pending| pending.handoff.is_some())
+        {
+            return Err(BrokerError::Execution(
+                "This reply already opens a research session: one research session per reply."
+                    .into(),
+            ));
+        }
+        let context = self
+            .schedule_context
+            .as_ref()
+            .ok_or(BrokerError::MethodDenied)?;
+        let staged = crate::chat::handoff::StagedHandoff {
+            request,
+            run: crate::chat::handoff::HandoffRun {
+                model_profile_id: context.model_profile_id.clone(),
+                thinking_level: context.thinking_level.clone(),
+                run_options: context.run_options.clone(),
+                use_memory: context.use_memory,
+                update_memory: context.update_memory,
+            },
+        };
+        let result = serde_json::json!({
+            "staged": true,
+            "title": staged.request.title,
+            "requestKey": staged.request.request_key,
+            "notice": "The session opens when this reply finishes and its result arrives here. Tell the user the session title; do not repeat the research in this reply."
+        });
+        self.stage(delivery_id, |pending| pending.handoff = Some(staged))
+            .await;
+        Ok(result)
     }
 }
 
@@ -903,11 +982,11 @@ impl AppToolExecutor {
             .map_err(|_| BrokerError::Execution("Loupist is unavailable".into()))?;
         self.ensure_scope(policy)?;
         self.enforce_turn_policy(method, &params)?;
-        if let Some(run_id) = &self.capture.unattended_run_id {
+        if self.capture.unattended_run_id.is_some() {
             crate::briefings::policy::enforce(
                 self.state.store.as_ref(),
                 &self.loupist_id,
-                run_id,
+                self.capture.scheduled_run_id(),
                 method,
                 &params,
             )?;
@@ -971,6 +1050,11 @@ impl AppToolExecutor {
             | ToolMethod::ScheduleDelete
             | ToolMethod::ScheduleRunNow
             | ToolMethod::ScheduleStop => self.schedule_tool(policy, method, params).await,
+            ToolMethod::ResearchOpen => {
+                self.capture
+                    .stage_research_open(policy, params, delivery_id)
+                    .await
+            }
             ToolMethod::ChatHistory => self.chat_history(policy, params),
             ToolMethod::DatasetExport => self.dataset_export(policy, params),
             ToolMethod::DatasetDescribe | ToolMethod::DatasetQuery => {
@@ -1020,7 +1104,12 @@ impl AppToolExecutor {
             ToolMethod::PrincipleSave => {
                 self.stage_principle_save(policy, params, delivery_id).await
             }
-            ToolMethod::LensUpdate => self.stage_lens_update(policy, params, delivery_id).await,
+            ToolMethod::WorldSchemaUpdate => {
+                self.stage_world_schema_update(policy, params, delivery_id)
+                    .await
+            }
+            ToolMethod::LoupistSetup => self.stage_loupist_setup(policy, params, delivery_id).await,
+            ToolMethod::LensFile => self.stage_lens_file(policy, params, delivery_id).await,
             ToolMethod::ArtifactList => self.artifact_list(policy, params),
             ToolMethod::ArtifactRead => self.artifact_read(policy, params, delivery_id).await,
             ToolMethod::ArtifactPublish => self.artifact_publish(policy, params, delivery_id).await,
@@ -1401,6 +1490,15 @@ fn delivered_world_node_ids(reads: &[StagedKnowledgeRead]) -> Vec<String> {
 mod tests;
 
 impl ToolCapture {
+    /// The scheduled run whose row records refused tools; a delegated hand-off
+    /// run is unattended too but has no such row.
+    fn scheduled_run_id(&self) -> Option<&str> {
+        match self.surface {
+            Some(crate::chat::surface::ChatSurface::Scheduled) => self.unattended_run_id.as_deref(),
+            _ => None,
+        }
+    }
+
     fn record_tool_refusal(&self, refusal: crate::domain::ChatToolRefusal) {
         let mut entries = self.tool_refusals.lock().unwrap_or_else(|e| e.into_inner());
         if entries.len() < 64 && !entries.contains(&refusal) {
@@ -1431,7 +1529,9 @@ fn refuse_sensitive_memory(
         method,
         ToolMethod::NoteSave
             | ToolMethod::PrincipleSave
-            | ToolMethod::LensUpdate
+            | ToolMethod::LensFile
+            | ToolMethod::WorldSchemaUpdate
+            | ToolMethod::LoupistSetup
             | ToolMethod::JournalSave
             | ToolMethod::JournalReview
             | ToolMethod::ThesisUpdate

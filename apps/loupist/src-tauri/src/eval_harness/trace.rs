@@ -301,8 +301,8 @@ fn tool_calls(stored: Option<&ChatToolTrace>, pi: &PiTrace) -> Vec<ToolCall> {
 }
 pub(crate) fn persisted(message: &ChatMessage, pi: &PiTrace) -> Value {
     let commits = message.memory_update.as_ref().map(|update| update.changes.iter().map(|change| {
-        let kind = if change.operation == "proposed" && change.kind == "Lens" { "lens_proposal".into() } else if change.kind == "Research" { "note".into() } else { change.kind.to_lowercase() };
-        json!({"kind":kind,"record_id":change.record_id,"title":change.title,"summary":null,"change_summary":bounded_text(&change.lesson),"operation":match change.operation.as_str() { "create"|"revise"|"proposed" => Some(change.operation.as_str()), _=>None }})
+        let kind = if change.kind == "Research" { "note".into() } else { change.kind.to_lowercase() };
+        json!({"kind":kind,"record_id":change.record_id,"title":change.title,"summary":null,"change_summary":bounded_text(&change.lesson),"operation":match change.operation.as_str() { "create"|"revise" => Some(change.operation.as_str()), _=>None }})
     }).collect::<Vec<_>>()).unwrap_or_default();
     let reads = message.memory_refs.iter().map(|read| json!({"kind":read.kind.to_lowercase(),"record_id":read.record_id,"title":read.title,"access":match read.access {MemoryAccess::ExactRead=>"exact_read",MemoryAccess::SearchDiscovered=>"search"}})).collect::<Vec<_>>();
     let performance = message.performance.as_ref();
@@ -348,12 +348,6 @@ pub(crate) fn enrich_commits(
                 "journal" => {
                     let d = read.get_journal(&chat.loupist_id, &change.record_id)?;
                     Ok(json!({"judgment":d.judgment,"reasoning":d.reasoning,"entities":d.entities,"check":d.check,"outcome":d.outcome}))
-                }
-                "lens_proposal" => {
-                    let draft = read.list_lens_drafts(&chat.loupist_id, Some(&change.record_id), None)?.into_iter()
-                        .filter(|d| d.origin_message_id.as_deref() == Some(&message.id))
-                        .max_by_key(|d| d.updated_at_ms).ok_or(KnowledgeError::NotFound)?;
-                    Ok(serde_json::to_value(draft.document)?)
                 }
                 "lens" | "principle" | "source" => {
                     // A Source change names its source id; spans belong to the knowledge record.

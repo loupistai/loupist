@@ -371,42 +371,38 @@
     "numberedLens": "Lens {{value1}} · {{value2}}"
   },
   "messageMemoryRow": {
-    "couldNotDismissThisProposal": "제안을 닫지 못했어요. 다시 시도해 주세요.",
     "savedInThisAnswer": "이 답변에서 저장됨",
     "basis": "근거: {{value}}",
     "nextUse": "다음 사용: {{value}}",
     "dismissed": "닫음",
-    "review": "검토",
-    "dismiss": "닫기",
-    "openIn": "{{value}}에서 열기",
-    "proposalLabel": "{{title}} 제안",
-    "reviewProposal": "{{title}} 검토",
-    "dismissProposal": "{{title}} 닫기"
+    "openIn": "{{value}}에서 열기"
   },
   "chatReceipt": {
     "label": "이 답변이 쓰고 저장한 것",
     "readSources_other": "자료 {{formattedCount}}개 읽음",
     "sourcesRead": "이 답변에서 읽은 자료",
-    "names_other": "지도에 +{{formattedCount}}",
+    "names_other": "지도 +이름 {{formattedCount}}개",
     "namesOnMap_other": "지도에서 새 항목 {{formattedCount}}개 보기",
     "relationships_other": "관계 {{formattedCount}}개 갱신",
     "relationshipsOnMap_other": "지도에서 관계 {{formattedCount}}개 갱신",
-    "usedPrinciples_other": "원칙 {{formattedCount}}개 사용",
-    "principlesUsed": "이 답변에서 사용한 원칙",
-    "usedMethods_other": "작업 방식 {{formattedCount}}개 사용",
-    "methodsUsed": "이 답변에서 사용한 작업 방식",
     "savedSources_other": "자료 {{formattedCount}}개 저장",
-    "savedMethods_other": "새 작업 방식 {{formattedCount}}개 익힘",
     "savedPrinciples_other": "원칙 {{formattedCount}}개 저장",
     "savedJournal_other": "저널 {{formattedCount}}개 저장",
     "savedNotes_other": "리서치 노트 {{formattedCount}}개 저장",
     "savedWorld_other": "World 항목 {{formattedCount}}개 저장",
-    "toReview_other": "검토할 제안 {{formattedCount}}개",
     "nothingNew": "새로 저장한 내용 없음",
     "thesisMoved": "{{name}}: {{verdict}}",
     "thesisMovedFrom": "{{name}}: {{from}} → {{verdict}}",
     "thesisNotSaved": "{{name}}: 판단은 바뀌지 않았어요 (먼저 페이지가 바뀜)",
-    "numbersToCheck_other": "확인할 숫자 {{formattedCount}}개"
+    "following": "{{name}} 관심 자산에 추가",
+    "unfollowed": "{{name}} 관심 자산에서 뺌",
+    "focusUpdated": "리서치 주제 바꿈",
+    "mapTracks": "이제 지도가 {{list}}도 추적해요",
+    "kindNotAdded": "{{name}}: 지도에 추가하지 않았어요",
+    "numbersToCheck_other": "확인할 숫자 {{formattedCount}}개",
+    "learned_other": "새로 배운 것 {{formattedCount}}개",
+    "ideas_other": "아이디어 {{formattedCount}}개",
+    "usedPages_other": "페이지 {{formattedCount}}개 사용"
   },
   "messageSchedules": {
     "draftFilesFailed": "첨부파일을 이 기기에 임시 저장하지 못했어요.",
@@ -759,9 +755,6 @@
     "filePrompt": "작업 폴더의 {{id}} 파일을 살펴봐 주세요.",
     "explainQuote": "이 부분을 설명해 줘."
   },
-  "dismissLensProposal": {
-    "couldNotIdentifyExactlyOneProposalForThisAnswer": "이 답변에 해당하는 제안 하나를 특정하지 못했어요. Lens에서 제안 목록을 확인해 주세요."
-  },
   "evidence": {
     "selectedPassageFromTheRetrievedDocument": "가져온 문서에서 선택한 구절",
     "retrievedSource": "가져온 자료",
@@ -798,8 +791,6 @@
     "reviseKind": "수정된 {{kind}}",
     "renameNote": "이름을 바꾼 노트",
     "renameKind": "이름을 바꾼 {{kind}}",
-    "proposedNote": "제안된 노트",
-    "proposedKind": "제안된 {{kind}}",
     "createNote": "만든 노트",
     "createKind": "만든 {{kind}}"
   },
@@ -1099,9 +1090,17 @@
       "running": "원칙 저장 중",
       "done": "원칙 저장함"
     },
-    "lens_update": {
-      "running": "Lens 고치는 중",
-      "done": "Lens 고침"
+    "world_schema_update": {
+      "running": "지도가 추적하는 것 고치는 중",
+      "done": "지도가 추적하는 것 고침"
+    },
+    "loupist_setup": {
+      "running": "이 루피스트 설정하는 중",
+      "done": "이 루피스트 설정함"
+    },
+    "lens_file": {
+      "running": "알게 된 것 Lens에 기록 중",
+      "done": "알게 된 것 Lens에 기록함"
     },
     "lens_search": {
       "running": "Lens 검색 중",
@@ -1126,6 +1125,10 @@
     "plan_update": {
       "running": "계획 정리 중",
       "done": "계획 정리함"
+    },
+    "research_open": {
+      "running": "조사 세션 여는 중",
+      "done": "조사 세션 열었음"
     },
     "worldbank_series": {
       "running": "거시 데이터 읽는 중",
@@ -1278,15 +1281,14 @@
     "conflict": "{{name}}에 대한 상충 근거 중 어느 쪽이 맞아?"
   },
   "usedMemory": {
-    "principleLabel": "내 원칙에서 사용함",
-    "methodLabel": "배운 작업 방식에서 사용함",
     "notThisTime": "이번엔 제외",
     "setAside": "이 대화에서는 제외했어요",
     "undo": "되돌리기",
     "edit": "편집",
     "archive": "보관",
     "error": "바꾸지 못했어요. 답변이 끝난 뒤 다시 시도해 주세요.",
-    "removed": "삭제됨"
+    "removed": "삭제됨",
+    "pageLabel": "사용함 · {{kind}}"
   },
   "saveProof": {
     "declined": "비밀번호나 키 같은 비밀 정보로 보이는 항목 하나는 저장하지 않았어요."
@@ -1296,7 +1298,14 @@
     "open": "열기",
     "couldNotFinish": "{{title}} 실행을 이번에는 끝내지 못했어요.",
     "deliveryLabel": "{{title}} 결과",
-    "earningsReported": "{{name}}이(가) {{period}} 실적을 발표했어요."
+    "earningsReported": "{{name}}이(가) {{period}} 실적을 발표했어요.",
+    "handoffLabel": "조사: {{title}}",
+    "researched": "조사 완료: {{title}}",
+    "researching": "조사 중: {{title}}",
+    "handoffRunning": "진행 중",
+    "handoffDone": "완료",
+    "handoffFailed": "끝내지 못했어요",
+    "handoffStopped": "중지됨"
   },
   "watchMessage": {
     "filing": "{{name}}이(가) {{title}}을(를) 제출했어요 ({{form}}, {{date}}).",
@@ -1370,13 +1379,13 @@
     "using": {
       "title": "사용 중",
       "principles_other": "원칙 {{formattedCount}}개",
-      "methods_other": "작업 방식 {{formattedCount}}개",
+      "methods_other": "분석 방법 {{formattedCount}}개",
       "connections_other": "연결 {{formattedCount}}개",
       "pins_other": "추가 {{formattedCount}}개",
       "kind": {
         "pin": "추가함",
         "principle": "원칙",
-        "method": "작업 방식",
+        "method": "분석 방법",
         "connection": "연결"
       }
     },
@@ -1385,7 +1394,7 @@
       "processing": "자료 정리 중…",
       "names_other": "지도에 +{{formattedCount}}",
       "relationships_other": "관계 {{formattedCount}}개",
-      "methods_other": "작업 방식 {{formattedCount}}개"
+      "methods_other": "분석 방법 {{formattedCount}}개"
     },
     "needsYou": {
       "title": "승인이 필요해요",
@@ -1468,6 +1477,24 @@
     "change": "바꾸기",
     "removed": "{{model}}은(는) 더 이상 제공되지 않아요. 이제 대화는 자동으로 골라요.",
     "dismiss": "닫기"
+  },
+  "vocabulary": {
+    "message": "이제 지도가 {{list}}도 추적해요.",
+    "undo": "되돌리기",
+    "undone": "되돌렸어요. 이 항목은 다시 기본 항목으로만 추적해요.",
+    "error": "되돌리지 못했어요. 다시 시도해 주세요."
+  },
+  "link": {
+    "label": "새 연결: {{seed}}과(와) {{far}}",
+    "message": "새 연결: {{seed}} ↔ {{far}}, {{through}}을(를) 거쳐요.",
+    "pathLabel": "이 경로를 지도에서 보기",
+    "lookInto": "살펴보기",
+    "notUseful": "도움 안 됨",
+    "opened": "조사 중이에요. 결과는 여기로 와요.",
+    "dismissed": "넘겼어요. 이 연결은 다시 나오지 않아요.",
+    "error": "처리하지 못했어요. 다시 시도해 주세요.",
+    "question": "{{seed}}과(와) {{far}}은(는) 어떻게 이어지나요? 지도가 {{through}}을(를) 거쳐 둘을 이었어요. 이 연결이 성립하는지, {{seed}}에 어떤 의미인지 확인해 주세요.",
+    "title": "연결: {{seed}}과(와) {{far}}"
   },
   "redLine": {
     "message": "{{name}}이(가) {{date}}에 정한 조건을 넘었어요: {{claim}} — {{value}} ({{factDate}}). 투자 논리를 ‘깨짐’⁠으로 표시했어요.",
@@ -1725,5 +1752,21 @@
       "equity_fundamental_dividends": "배당",
       "equity_fundamental_filings": "공시"
     }
+  },
+  "learnedCard": {
+    "label": "이 답변에서 정리한 것",
+    "new": "새 페이지",
+    "outcome": {
+      "added": "추가",
+      "replaced": "갱신",
+      "retired": "정리"
+    },
+    "fix": "고치기",
+    "fixSection": "{{heading}} 고치기",
+    "forget": "잊기",
+    "forgetSection": "{{heading}} 잊기",
+    "forgotten": "잊었어요.",
+    "undo": "되돌리기",
+    "error": "이 페이지를 바꾸지 못했어요."
   }
 }

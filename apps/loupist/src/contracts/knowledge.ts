@@ -93,8 +93,7 @@ export type KnowledgeObjectRef = {
 
 export type KnowledgeRecordSummary = {
   summary?: string;
-  applicability?: string;
-  lensKind?: "perspective" | "principle" | "method";
+  lensKind?: import("./lens").LensKind | null;
   recordId: string;
   kind: KnowledgeRecordKind;
   title: string;
@@ -107,7 +106,6 @@ export type KnowledgeRecordSummary = {
   objects: KnowledgeObjectRef[];
   updatedAtMs?: number;
   archived?: boolean;
-  proposalCount?: number;
 };
 
 export type KnowledgeCatalogRequest = {
@@ -258,40 +256,7 @@ export type SourceDetail = {
   acquiredAt?: TimePoint;
 };
 
-export type LensDocumentBody = {
-  markdown: string;
-  applicability: string;
-  assumptions: string;
-  procedure: string;
-  principles: string;
-  limitations: string;
-};
-
-export type LensNavigationLink = { recordId: string; title: string; revisionId: string; archived?: boolean };
-
-export type LensView = {
-  /** Discovery only; each linked document still needs its own exact read. */
-  links?: LensNavigationLink[];
-  /** Incoming links from the current library. */
-  backlinks?: LensNavigationLink[];
-  linksTruncated?: boolean;
-  backlinksTruncated?: boolean;
-  unresolvedLinks?: string[];
-  unresolvedLinksTruncated?: boolean;
-  lensKind?: "perspective" | "principle" | "method";
-  isStanding: boolean;
-  recordId: string;
-  revisionId: string;
-  revisionDigest: string;
-  title: string;
-  readOnly: boolean;
-  archived?: boolean;
-  document: LensDocumentBody;
-};
-
 export type KnowledgeLensReadRequest = {
-  /** Defaults to true; background document search can skip library adjacency. */
-  includeNavigation?: boolean;
   loupistId: string;
   recordId: string;
   revisionId?: string;
@@ -306,52 +271,6 @@ export type KnowledgePin = {
   objectId: string;
   spanId?: string;
   label: string;
-};
-
-export type LensChangeRecord = {
-  origin?: { kind: "learning_review"; reviewId: string; worldJobId: string };
-  changeId: string;
-  recordId: string;
-  newRevisionId?: string;
-  rationale: string;
-  createdAtMs?: number;
-  changeKind?: "revise" | "rename" | "archive" | "restore" | string;
-  actor?: "user" | "loupist" | "import" | string;
-  originChatId?: string;
-  originMessageId?: string;
-  newTitle?: string;
-  inputs: {
-    references: import("./memory").KnowledgeReference[];
-    feedback?: string;
-  };
-};
-
-export type LensSearchHit = {
-  recordId: string;
-  revisionId: string;
-  title: string;
-  snippet: string;
-};
-
-export type LensDraftRecord = {
-  draftId: string;
-  loupistId: string;
-  author: "user" | "loupist" | string;
-  recordId: string;
-  baseRevisionId: string;
-  document: LensDocumentBody;
-  rationale: string;
-  title?: string;
-  originChatId?: string;
-  originMessageId?: string;
-  updatedAtMs: number;
-};
-
-export type LensProposal = LensDraftRecord & { originChatTitle?: string };
-
-export type KnowledgeLensChangesRequest = {
-  loupistId: string;
-  recordId: string;
 };
 
 export type ResearchRecord = {
@@ -478,16 +397,22 @@ export type WorldExtension = {
   relations: ExtensionRelation[];
   updatedAtMs: number;
 };
-export type SchemaProposal = {
-  proposalId: string;
-  kind: "seed" | "review";
-  status: "preparing" | "pending" | "applied" | "dismissed" | "failed";
-  types: ExtensionType[];
-  relations: ExtensionRelation[];
+export type SchemaChangeProducer = "preset" | "chat" | "review" | "undo";
+export type SchemaChange = {
+  changeId: string;
+  producer: SchemaChangeProducer;
+  summary: string;
+  addedTypes: string[];
+  addedRelations: string[];
+  removedTypes: string[];
+  removedRelations: string[];
+  /** Display labels for every name above, so a removed kind still reads in plain words. */
+  kindLabels: Array<{ name: string; labels: SchemaLabels }>;
   createdAtMs: number;
-  decidedAtMs?: number;
+  undoable: boolean;
 };
-export type WorldSchemaView = { extension: WorldExtension; proposal: SchemaProposal | null };
+/** What the map tracks beyond the basics, newest change first (at most 20). */
+export type WorldSchemaView = { extension: WorldExtension; changes: SchemaChange[] };
 export type SchemaRemovalKind = "type" | "relation";
 
 /**
@@ -506,11 +431,16 @@ export type FollowedStatus = {
   queuedAtMs?: number;
 };
 
+/** Why World processing is not ready, by code; the interface words it. */
+export type GraphReadinessNote =
+  | "recovery_required" | "recovering" | "runtime_unavailable" | "awaiting_provider" | "choose_model" | "model_unavailable" | "connect_provider"
+  | "isolation_unsupported" | "runtime_missing" | "choose_connected_model" | "not_connected" | "account_waiting";
+
 export type GraphProcessingView = {
   settings: GraphProcessingSettings;
   readiness: {
     status: "ready" | "disabled" | "paused" | "model_required" | "provider_disconnected" | "runtime_unavailable" | "model_unavailable" | "reconciliation_required" | "recovering";
-    message?: string | null;
+    note?: GraphReadinessNote | null;
     providerName?: string | null;
     modelName?: string | null;
     authKind?: string | null;
@@ -554,7 +484,8 @@ export type JournalInputs = {
   lenses: {
     recordId: string;
     revisionId: string;
-    document: LensDocumentBody;
+    /** The page as delivered, rendered to Markdown with section keys. */
+    markdown: string;
     status: string;
   }[];
   earlier?: {
@@ -615,6 +546,20 @@ export type KnowledgeSelection =
   | { kind: "journal"; journalId: string }
   | { kind: "snapshot"; pin: KnowledgePin };
 
+export type ConnectionHop = { claimId: string; relation: string; fromRole: string; toRole: string; reversed: boolean; nodeId: string; name: string };
+export type ConnectionStatus = "new" | "shown" | "opened" | "dismissed" | "filed";
+export type ConnectionView = {
+  connectionId: string;
+  seedNodeId: string;
+  farNodeId: string;
+  seedName: string;
+  farName: string;
+  path: ConnectionHop[];
+  score: number;
+  status: ConnectionStatus;
+  createdAtMs: number;
+};
+
 export type KnowledgeViewState = {
   highlightEntityIds?: string[];
   onlyDisputed?: boolean;
@@ -640,8 +585,6 @@ export type KnowledgeViewState = {
   findInView?: string;
   claimId?: string;
   listMode?: boolean;
-  /** Open the Loupist proposal in the existing Lens review editor, then clear it. */
-  reviewProposal?: { chatId: string; messageId: string };
   /** Open the Map's What's new drawer since the last visit, then clear it. */
   whatsNew?: boolean;
 };
@@ -662,6 +605,8 @@ export type KnowledgeLocation = {
 export type GrowthEventKind =
   | "entity_added" | "claim_added" | "claim_disputed" | "claim_withdrawn"
   | "lens_created" | "lens_revised" | "lens_renamed" | "lens_archived" | "lens_restored"
+  /** A World publication disputed, withdrew or dropped a claim a page section cites. */
+  | "lens_contested"
   | "source_retained" | "schema_extended" | "schema_reduced" | "growth_truncated"
   /** An asset page's read moved: summary is the asset's name, before/after the steps. */
   | "thesis_moved";
@@ -699,7 +644,7 @@ export type GrowthEventsPage = {
   nextCursor: string | null;
 };
 
-export type KnowledgeMapNodeKind = "entity" | "lens_perspective" | "lens_principle" | "lens_method" | "journal";
+export type KnowledgeMapNodeKind = "entity" | "lens_perspective" | "lens_principle" | "lens_method" | "lens_subject" | "lens_idea" | "journal";
 export type KnowledgeMapEdgeKind = "claim" | "lens_link" | "applies_to" | "about";
 export type KnowledgeMapQuery = { loupistId: string; maxNodes?: number };
 export type KnowledgeMapNode = {
@@ -773,4 +718,4 @@ export type MemoryUsage = { recordId: string; usedCount: number; lastUsedAtMs: n
 export type LearningReviewFinishedEvent = { loupistId: string; review: LearningReview };
 
 export type MemoryControls = { paused: string[]; removed: string[] };
-export type MemoryResetCounts = { principles: number; methods: number; names: number; relationships: number; sources: number };
+export type MemoryResetCounts = { principles: number; pages: number; sections: number; names: number; relationships: number; sources: number };

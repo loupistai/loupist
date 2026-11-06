@@ -347,11 +347,20 @@ fn create_refine_and_stale_proposal_keeps_the_user_edit() {
     assert_eq!(first.status, "created");
     assert_eq!(first.evidence_count, 2);
     let id = first.lens_record_id.unwrap();
-    let changes = store.read(|w| w.list_lens_changes(LOUPIST, &id)).unwrap();
-    assert_eq!(
-        changes[0].origin.as_ref().unwrap()["worldJobId"],
-        "job-world"
-    );
+    let page = store.read_page(LOUPIST, &id).unwrap();
+    assert_eq!(page.history[0].origin, "learning");
+    assert!(page.learned);
+    let origin: Value = store
+        .read(|w| {
+            Ok(w.tx.query_row(
+                "SELECT origin FROM knowledge_growth_events WHERE record_id = ?1 AND kind = 'lens_created'",
+                [&id],
+                |r| r.get::<_, String>(0),
+            )?)
+        })
+        .map(|text| serde_json::from_str(&text).unwrap())
+        .unwrap();
+    assert_eq!(origin["worldJobId"], "job-world");
     add(&store, &mut world, 5, AT + SIX_HOURS + 5);
     queue(&store, AT + SIX_HOURS + 6);
     let b = begin(&store, AT + SIX_HOURS + 7);
@@ -365,24 +374,20 @@ fn create_refine_and_stale_proposal_keeps_the_user_edit() {
     add(&store, &mut world, 5, AT + 2 * SIX_HOURS + 9);
     queue(&store, AT + 2 * SIX_HOURS + 10);
     let c = begin(&store, AT + 2 * SIX_HOURS + 11);
-    let current = store.read(|w| w.read_lens(LOUPIST, &id)).unwrap();
-    let mut document = current.document;
-    document.limitations = "User edited this while learning ran.".into();
+    let current = store.read_page(LOUPIST, &id).unwrap();
     let winner = store
-        .revise_lens(ReviseLens {
-            loupist_id: LOUPIST.into(),
-            record_id: id.clone(),
-            expected_revision_id: Some(current.revision_id),
-            at_ms: AT + 2 * SIX_HOURS + 12,
-            document,
-            dependencies: vec![],
-            change: LensChangeInput {
-                rationale: "User edit".into(),
-                references: vec![],
-                feedback: None,
-            },
+        .transact(|w| {
+            w.put_section(
+                LOUPIST,
+                &id,
+                "limits",
+                "User edited this while learning ran.",
+                &super::super::test_support::user_origin(),
+                AT + 2 * SIX_HOURS + 12,
+            )
         })
         .unwrap();
+    assert!(winner[0].changed);
     refined["evidenceClaimIds"] = json!(c
         .input
         .claims
@@ -390,25 +395,27 @@ fn create_refine_and_stale_proposal_keeps_the_user_edit() {
         .take(2)
         .map(|c| &c.claim_id)
         .collect::<Vec<_>>());
+    refined["procedure"] = json!("Reconcile inventory aging, then compare cash conversion.");
+    refined["limitations"] = json!("Learning tried to overwrite the user's limit.");
     complete(&store, &c, refined, AT + 2 * SIX_HOURS + 13);
     assert_eq!(
         reviews(&store)[0].reason.as_deref(),
-        Some("stale_head_proposal")
+        Some("stale_head_folded")
     );
-    assert_eq!(
-        store
-            .read(|w| w.read_lens(LOUPIST, &id))
+    let after = store.read_page(LOUPIST, &id).unwrap();
+    assert_ne!(after.revision_id, current.revision_id);
+    let section = |key: &str| {
+        after
+            .body
+            .sections()
+            .iter()
+            .find(|s| s.key.as_str() == key)
             .unwrap()
-            .revision_id,
-        winner.revision_id
-    );
-    assert_eq!(
-        store
-            .read(|w| w.list_lens_drafts(LOUPIST, Some(&id), Some("loupist")))
-            .unwrap()
-            .len(),
-        1
-    );
+            .markdown
+            .clone()
+    };
+    assert_eq!(section("limits"), "User edited this while learning ran.");
+    assert!(section("steps").starts_with("Reconcile inventory aging"));
 }
 #[test]
 fn invalid_output_is_deferred_without_any_lens_write_or_retry() {
@@ -621,7 +628,7 @@ fn unchanged_method_defers_without_revision_or_growth_and_principle_races_defer(
     let a = begin(&store, AT + 3);
     complete(&store, &a, output(&a), AT + 4);
     let id = reviews(&store)[0].lens_record_id.clone().unwrap();
-    let original = store.read(|w| w.read_lens(LOUPIST, &id)).unwrap();
+    let original = store.read_page(LOUPIST, &id).unwrap();
     add(&store, &mut world, 5, AT + SIX_HOURS + 5);
     queue(&store, AT + SIX_HOURS + 6);
     let b = begin(&store, AT + SIX_HOURS + 7);
@@ -642,10 +649,7 @@ fn unchanged_method_defers_without_revision_or_growth_and_principle_races_defer(
         Some("method_unchanged")
     );
     assert_eq!(
-        store
-            .read(|w| w.read_lens(LOUPIST, &id))
-            .unwrap()
-            .revision_id,
+        store.read_page(LOUPIST, &id).unwrap().revision_id,
         original.revision_id
     );
     assert_eq!(

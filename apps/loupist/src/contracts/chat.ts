@@ -4,6 +4,7 @@ import type { MemoryRef, MemoryUpdateResult } from "./memory";
 import type { AgentHarnessSnapshot, ExecutionModelLock } from "./model";
 import type { EarningsMeasure } from "./earnings";
 import type { WatchEvent } from "./watch";
+import type { LearnedDigest } from "./lens";
 
 export type ChatProgressStatus =
   | "running"
@@ -438,6 +439,30 @@ export type ChatFailureKind = "empty_reply" | "provider_error" | "rate_limited" 
 
 export type ChatToolRefusal = { connection_id: string; connection_name: string; tool_name: string; reason: "needs_approval" | "blocked_unattended" | "taint" | "sensitive_memory" | "declined" };
 
+/** A research session the Bot handed off (Rust `HomeHandoff`): one card per hand-off, its status changing in place. */
+export type HomeHandoff = {
+  handoffId: string;
+  chatId: string;
+  title: string;
+  status: "running" | "done" | "failed" | "stopped";
+  learned?: LearnedDigest;
+};
+
+/** One hop of a discovered link's path: the name reached and the relation walked, against its claim when `reversed`. */
+export type HomeLinkHop = { name: string; relation: string; reversed?: boolean };
+
+/**
+ * A link discovery found new to this Loupist (Rust `HomeLink`): seed to far end
+ * through the path's names. `nodeIds` (seed first) highlight the path on the Map.
+ */
+export type HomeLink = {
+  connectionId: string;
+  seedName: string;
+  farName: string;
+  path: HomeLinkHop[];
+  nodeIds: string[];
+};
+
 /** A scheduled result the host posted into the Loupist's home Thread. */
 export type HomeDelivery = {
   run_id: string;
@@ -449,6 +474,7 @@ export type HomeDelivery = {
   run_thread_id: string | null;
   status: ScheduledRun["status"];
   finished_at_ms: number;
+  learned?: LearnedDigest;
 };
 
 /** A crossed red line the host announced in the home Thread (Rust `HomeAlert`). Names and the user's claim only. */
@@ -480,6 +506,14 @@ export type HomeWatch = {
   more: number;
 };
 
+/** New kinds of things the map tracks after a preset or a background review. Labels are display words. */
+export type HomeVocabulary = {
+  changeId: string;
+  producer: "preset" | "chat" | "review";
+  labels: string[];
+  /** The same kinds in Korean, in the same order, when each has one. */
+  labelsKo?: string[];
+};
 /**
  * A results snapshot the host posted (Rust `HomeEarnings`): "{name} reported
  * {period} results." with the two most material measures, or a failed
@@ -591,7 +625,8 @@ export type AsOfReport = {
   left_out: { facts: number; sources: number; notes: number; methods: number };
 };
 
-export type ChatMessage = {
+/** The record each kind of host-posted Thread message carries. */
+export type HostPostRecords = {
   /** Present on host-posted Thread messages. */
   delivery?: HomeDelivery;
   /** Present on a host-posted crossed-line message. */
@@ -600,6 +635,15 @@ export type ChatMessage = {
   watch?: HomeWatch;
   /** Present on a host-posted results message. */
   earnings?: HomeEarnings;
+  /** Present on a host-posted "your map now also tracks" message. */
+  vocabulary?: HomeVocabulary;
+  /** Present on a host-posted research hand-off card. */
+  handoff?: HomeHandoff;
+  /** Present on a host-posted "New link" card from discovery. */
+  link?: HomeLink;
+};
+
+export type ChatMessage = HostPostRecords & {
   tool_refusals?: ChatToolRefusal[];
   feedback?: ChatFeedback | null;
   failure_kind?: ChatFailureKind;
@@ -674,6 +718,16 @@ export type ChatAttachmentInput = {
 };
 
 export type ChatMemorySetAsideRequest = { loupist_id: string; thread_id: string; record_id: string; set_aside: boolean };
+
+export type ResearchHandoffRequest = {
+  loupistId: string;
+  title: string;
+  question: string;
+  brief?: string;
+  pins?: Array<{ lens: string } | { world: string }>;
+  requestKey: string;
+};
+export type ResearchHandoffReceipt = { chatId: string; handoffId: string };
 
 export type ChatThread = {
   id: string;

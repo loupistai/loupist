@@ -28,6 +28,33 @@ posts one message (`earnings` record) when reported figures first arrive ("{name
 a before-capture failed (Try again runs `earnings_prepare`); a successful before-capture
 posts nothing, and its runs, which target the Thread itself, get no `delivery` message.
 Neither carries holdings or sends an OS notification.
+A research hand-off (`src-tauri/src/chat/handoff.rs`) posts one message with a `handoff`
+record (`handoffId`, `chatId`, `title`, `status`, optional `learned`) when its session
+starts and rewrites that same message in place as the run ends, so the card reads
+"Researching: {title} · Running", then "Researched: {title} · Done · Learned n · Open"
+with the session answer's first body paragraph as plain text (headings and Markdown
+markers dropped, the same 280-character summary a scheduled result uses), or
+"Couldn't finish" / "Stopped". "Learned n" counts changed sections, not pages, in the
+answer receipt's own words ("새로 배운 것 n개" in Korean). The Bot's
+`research_open` tool and the bridge's `research_handoff_start` both commit through the
+same function; the Bot is never selected and its draft never changes. A finished
+`delivery` record may carry the same optional `learned` digest.
+Every delivery pass that writes the Thread, whichever caller runs it, emits
+`inbox-changed`, and so does the end of every unattended turn (scheduled or handed off),
+since nobody streamed its reply. The renderer answers with one workspace refresh that
+reconciles every idle chat it holds, so the open Bot and a session opened later show the
+stored messages without a reload; a refresh that cannot read the store is retried on the
+next two-second poll.
+A link [discovery](../knowledge/worlds.md#discovery-after-publication) found posts one
+message with a `link` record (`connectionId`, `seedName`, `farName`, `path` of
+`{name, relation, reversed}`, `nodeIds` seed first) through the same delivery pass, at
+most three per Loupist per UTC day, counted by when each was shown, so opening or
+dismissing an earlier link leaves the day's three; further links wait as `new` for a later day. It
+reads "New link: A ↔ C through B." over the path with its relations; clicking the path
+opens the Map with those names highlighted. Look into it submits the same hand-off as
+`research_handoff_start` (title "Link: A and C", a question built from the path, the
+path's nodes as pins, request key `link-{connectionId}`) and marks the link `opened`;
+Not useful marks it `dismissed`, and neither comes back. Never holdings.
 
 An empty home Thread opens on the Loupist's morning message; a Thread with history
 shows it at the end when there is news since a counted last visit and the user has
@@ -46,7 +73,8 @@ recommended connection it lacks (Tiingo, FRED or EIA; enabled and available for 
 Loupist counts as having it),
 and three locally generated questions that fill the composer without sending. A first
 visit counts what there is to look at instead of naming a day; general questions fill
-the list when the Loupist has little to point at. It is
+the list when the Loupist has little to point at. A Thread with no user-written message yet
+keeps this first-visit message below any host post, such as the preset's vocabulary card. It is
 computed in the renderer (no model call) and is not persisted. "Last seen" is a
 per-device value per Loupist in `localStorage` (`loupist.loupistVisit.v1`), written
 when the user leaves a Loupist after a visit of at least five minutes.

@@ -171,7 +171,7 @@ impl AppToolExecutor {
                             },
                         });
                 }
-                if let Some(run_id) = &self.capture.unattended_run_id {
+                if let Some(run_id) = self.capture.scheduled_run_id() {
                     self.state.store.scheduled_run_skip_tool(&self.loupist_id, run_id, &request.tool_name, "Custom MCP tool requires an existing Always approval and an unchanged read-only definition")
                         .map_err(|_| BrokerError::Execution("Could not record refused unattended tool".into()))?;
                 }

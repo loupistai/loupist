@@ -77,7 +77,7 @@ export function conflictMark(node: PositionedNode, scale: number) {
 function labelOffset(node: PositionedNode, scale: number, state: LabelPriority) {
   return Math.max(nodeRadius(node) + 1 / scale, ...nodeRings(node, scale, state).map(ring => ring.radius + ring.width)) + 3 / scale;
 }
-const lensKind = (node: PositionedNode) => node.kind === "lens_method" || node.kind === "lens_perspective" || node.kind === "lens_principle";
+const lensKind = (node: PositionedNode) => node.kind.startsWith("lens_");
 /** A metric is a label candidate only while the reader has selected or hovered it. */
 export function showMetricLabel(node: Pick<KnowledgeMapNode, "id" | "kind" | "entityKind" | "categoryOverride" | "kindLabels">, selectedId?: string, hoveredId?: string) {
   return !isMetricNode(node) || node.id === selectedId || node.id === hoveredId;

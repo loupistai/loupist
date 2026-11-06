@@ -12,6 +12,7 @@ import type {
   ChatProgressPatch,
   ChatStreamEvent,
   ChatThread,
+  HostPostRecords,
   LoupistBridge,
   MemoryRef,
   MemoryUpdateResult,
@@ -23,7 +24,16 @@ import type { ChatAdmission } from "./submission";
 
 const t = i18n.getFixedT(null, "chat");
 
-export type LoupistChatMetadata = {
+// Typed from the contract, so tsc fails when a host-post record is missing here.
+const HOST_POST_KEYS: Record<keyof HostPostRecords, true> = {
+  delivery: true, alert: true, watch: true, earnings: true, vocabulary: true, handoff: true, link: true,
+};
+const HOST_POST_FIELDS = Object.keys(HOST_POST_KEYS) as (keyof HostPostRecords)[];
+
+const hostPostRecords = (source: HostPostRecords | undefined): HostPostRecords =>
+  Object.fromEntries(HOST_POST_FIELDS.filter((field) => source?.[field]).map((field) => [field, source![field]]));
+
+export type LoupistChatMetadata = HostPostRecords & {
   tool_refusals?: ChatMessage["tool_refusals"];
   offline_reads?: boolean;
   replaced_model?: string;
@@ -47,14 +57,6 @@ export type LoupistChatMetadata = {
   retry_after_seconds?: number;
   steer?: boolean;
   host_composed?: boolean;
-  /** A scheduled result posted into the home Thread. */
-  delivery?: ChatMessage["delivery"];
-  /** A crossed line announced in the home Thread. */
-  alert?: ChatMessage["alert"];
-  /** Watcher alerts posted into the home Thread. */
-  watch?: ChatMessage["watch"];
-  /** A results snapshot posted into the home Thread. */
-  earnings?: ChatMessage["earnings"];
   final_text?: string;
   progress?: ChatProgress;
   phase?: ChatMessage["phase"];
@@ -204,10 +206,7 @@ export const toLoupistUIMessage = (message: ChatMessage): LoupistUIMessage => {
       retry_after_seconds: message.retry_after_seconds,
       steer: message.steer,
       host_composed: message.host_composed,
-      delivery: message.delivery,
-      alert: message.alert,
-      watch: message.watch,
-      earnings: message.earnings,
+      ...hostPostRecords(message),
       tool_refusals: message.tool_refusals,
       offline_reads: message.offline_reads,
       replaced_model: message.replaced_model,
@@ -315,10 +314,7 @@ export const fromLoupistUIMessage = (message: LoupistUIMessage): ChatMessage => 
     retry_after_seconds: message.metadata?.retry_after_seconds,
     steer: message.metadata?.steer,
     host_composed: message.metadata?.host_composed,
-    ...(message.metadata?.delivery ? { delivery: message.metadata.delivery } : {}),
-    ...(message.metadata?.alert ? { alert: message.metadata.alert } : {}),
-    ...(message.metadata?.watch ? { watch: message.metadata.watch } : {}),
-    ...(message.metadata?.earnings ? { earnings: message.metadata.earnings } : {}),
+    ...hostPostRecords(message.metadata),
     tool_refusals: message.metadata?.tool_refusals,
     offline_reads: message.metadata?.offline_reads,
     replaced_model: message.metadata?.replaced_model,

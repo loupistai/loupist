@@ -1,4 +1,5 @@
 use super::*;
+use crate::knowledge::CreateRecord;
 use crate::knowledge::RetainedSource;
 
 fn retain_capture(

@@ -482,7 +482,7 @@
       "permission": "memory_write",
       "component": "memory-save",
       "label": "Save a working note",
-      "description": "Save the Loupist’s research notes for this Chat. Send workingNote {title, markdown (complete), changeSummary, expectedResearchId}; expectedResearchId is the current note id from memory_protocol.workingNote.current or null. Cite acknowledged sourceReads, worldReads, lensReads and previousNoteIds from this turn. Earlier Chats’ notes belong in previousNoteIds, never expectedResearchId. A user judgment belongs in journal_save.",
+      "description": "Save this Chat's own progress and the facts the user stated in it: send workingNote {title, markdown (complete), changeSummary, expectedResearchId}; expectedResearchId is the current note id from memory_protocol.workingNote.current or null. Cite acknowledged sourceReads, worldReads, lensReads and previousNoteIds from this turn. Earlier Chats' notes belong in previousNoteIds, never expectedResearchId. A durable conclusion (a dated fact with its source, a mechanism, a reusable check) goes to lens_file; a user judgment belongs in journal_save.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -820,7 +820,7 @@
       "name": "principle_save",
       "method": "principle.save",
       "permission": "memory_write",
-      "component": "lens-learning",
+      "component": "memory-save",
       "label": "Save user principle",
       "description": "Save only rules the user has explicitly stated. A user's rule that names an action (for example \"sell if margin falls below 10%\") is saved in the user's words; check its condition against dated evidence. Never save your own recommendations or rules you inferred.",
       "parameters": {
@@ -858,132 +858,644 @@
       }
     },
     {
-      "name": "lens_update",
-      "method": "lens.update",
+      "name": "lens_file",
+      "method": "lens.file",
       "permission": "memory_write",
-      "component": "lens-learning",
-      "label": "Update Lens",
-      "description": "Create or revise one perspective or method when saving is on. Search before creating a duplicate. A new Lens omits recordId and expectedRevisionId and supplies title plus kind, perspective or method. An edit sends recordId and the expectedRevisionId from a prior lens_read and omits kind; an existing Lens kind cannot change. document has six sibling text fields: markdown, applicability, assumptions, procedure, principles, and limitations. Supply all six; use an empty string for a section with nothing to add. Do not nest fields inside applicability or serialize an object into a text field. The document must not contain World or Journal references. Link related methods as [title](lens:recordId) with a real id. Put acknowledged evidence in top-level sourceReads, worldReads, and journalReads, beside document; previousNoteIds is also top-level. For a newly acquired original, call source_save first and put its returned saveRef in sourceReads; a raw result_ref is not a Source reference. If the revision changed first, the reply still completes and the change is kept as a proposal. Related-method warnings include lens_read arguments for checking overlapping scope or conflicting assumptions; they do not establish a conflict, block the save, or grant a read receipt.",
+      "component": "memory-save",
+      "label": "File what this turn established",
+      "description": "File what this turn established into this Loupist's Lens pages when saving is on: a dated fact with its source, a mechanism, a value-chain link, a contradiction, a reusable check. Read the relevant pages first (the index and pointers in the turn envelope, lens_search, then lens_read). Revise the page you read by putting only the sections that change, each with the digest from that read, or create a page; a taken title merges into that page. Subject and idea sections cite this turn's reads as their basis: {world, claimId} for a claim a world_read delivered, {source} for a retained original read or saved this turn, {said: true} for the user's own words, {lens} for synthesis from another page. Synthesis, and any section without a read, states its uncertainty. Method and perspective sections may carry no basis. Suggested keys: subject overview, facts, value-chain, drivers, risks, views, open-questions; method use-when, steps, checks, limits; idea claim, mechanism, evidence-for, evidence-against, would-break, checks; perspective beliefs, priorities, avoid. Chatter, light questions and stated one-offs file nothing. At most two calls, 8 pages and 40 ops per reply. Pages land when the reply completes; say something was saved only after that commit.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "document",
+          "pages",
           "rationale"
         ],
         "properties": {
-          "recordId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "title": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 180,
-            "description": "Name the current method or perspective. On edits, include an updated title when its scope or meaning has changed."
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "perspective",
-              "method"
-            ],
-            "description": "Required only when creating a new Lens. Omit on edits with recordId."
-          },
-          "expectedRevisionId": {
-            "type": "string",
-            "minLength": 1
+          "pages": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "page",
+                "ops"
+              ],
+              "properties": {
+                "page": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "recordId"
+                      ],
+                      "properties": {
+                        "recordId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "description": "A page read with lens_read this turn."
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "create"
+                      ],
+                      "properties": {
+                        "create": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "kind",
+                            "title"
+                          ],
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "subject",
+                                "idea",
+                                "method",
+                                "perspective"
+                              ]
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "about": {
+                              "type": "array",
+                              "maxItems": 8,
+                              "items": {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                      "nodeId"
+                                    ],
+                                    "properties": {
+                                      "nodeId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 128
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                      "name"
+                                    ],
+                                    "properties": {
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 200
+                                      }
+                                    }
+                                  }
+                                ]
+                              },
+                              "description": "What a subject page is about: a World node id, or a name not yet on the map."
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "ops": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 12,
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "op",
+                          "key",
+                          "heading",
+                          "markdown"
+                        ],
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "enum": [
+                              "put"
+                            ]
+                          },
+                          "key": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9-]{1,48}$"
+                          },
+                          "heading": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          "markdown": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2000,
+                            "description": "Links only lens:recordId and world:nodeId."
+                          },
+                          "basis": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "refs": {
+                                "type": "array",
+                                "maxItems": 8,
+                                "items": {
+                                  "oneOf": [
+                                    {
+                                      "type": "object",
+                                      "additionalProperties": false,
+                                      "required": [
+                                        "world",
+                                        "claimId"
+                                      ],
+                                      "properties": {
+                                        "world": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 128,
+                                          "description": "readRef of a world_read (scope world) this turn."
+                                        },
+                                        "claimId": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 128,
+                                          "description": "A claim id (edges[].claim.id) that read delivered."
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "type": "object",
+                                      "additionalProperties": false,
+                                      "required": [
+                                        "source"
+                                      ],
+                                      "properties": {
+                                        "source": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 128,
+                                          "description": "readRef of a Source read (world_read scope source) or saveRef of a source_save this turn."
+                                        },
+                                        "spanId": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 128,
+                                          "description": "The span that read delivered; omit for a saveRef."
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "type": "object",
+                                      "additionalProperties": false,
+                                      "required": [
+                                        "said"
+                                      ],
+                                      "properties": {
+                                        "said": {
+                                          "type": "boolean",
+                                          "enum": [
+                                            true
+                                          ],
+                                          "description": "The user's message of this turn said it. Not available in unattended runs."
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "type": "object",
+                                      "additionalProperties": false,
+                                      "required": [
+                                        "lens"
+                                      ],
+                                      "properties": {
+                                        "lens": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 128,
+                                          "description": "recordId of a page read with lens_read this turn: synthesis, not evidence."
+                                        },
+                                        "key": {
+                                          "type": "string",
+                                          "pattern": "^[a-z0-9-]{1,48}$"
+                                        }
+                                      }
+                                    }
+                                  ]
+                                }
+                              },
+                              "uncertainty": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 300,
+                                "description": "Required when the refs include a lens page or no read: how sure this synthesis is and what would change it."
+                              }
+                            }
+                          },
+                          "expected": {
+                            "type": "string",
+                            "minLength": 64,
+                            "maxLength": 64,
+                            "description": "The section's digest from this turn's lens_read; omit to add a new key."
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "op",
+                          "key",
+                          "expected",
+                          "why"
+                        ],
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "enum": [
+                              "retire"
+                            ]
+                          },
+                          "key": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9-]{1,48}$"
+                          },
+                          "expected": {
+                            "type": "string",
+                            "minLength": 64,
+                            "maxLength": 64,
+                            "description": "The section's digest from this turn's lens_read."
+                          },
+                          "why": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 400
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "op",
+                          "text"
+                        ],
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "enum": [
+                              "summary"
+                            ]
+                          },
+                          "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 400,
+                            "description": "One paragraph; the index shows it."
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "op",
+                          "status",
+                          "why"
+                        ],
+                        "properties": {
+                          "op": {
+                            "type": "string",
+                            "enum": [
+                              "idea_status"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "open",
+                              "supported",
+                              "weakened",
+                              "refuted",
+                              "retired"
+                            ]
+                          },
+                          "why": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 400
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
           },
           "rationale": {
             "type": "string",
             "minLength": 1,
-            "description": "Why this creation or revision is justified, including what changed and why. Revision history belongs here rather than in the reusable document."
-          },
-          "document": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "markdown",
-              "applicability",
-              "assumptions",
-              "procedure",
-              "principles",
-              "limitations"
-            ],
-            "properties": {
-              "markdown": {
-                "type": "string",
-                "minLength": 1,
-                "description": "Purpose, explanation, and examples that complement the structured sections; do not repeat their full instructions."
-              },
-              "applicability": {
-                "type": "string",
-                "description": "When to use this method or perspective, as a short readable summary."
-              },
-              "assumptions": {
-                "type": "string",
-                "description": "Assumptions the method relies on; empty string when none are stated."
-              },
-              "procedure": {
-                "type": "string",
-                "description": "Operational steps with necessary formulas and checks; keep these here rather than repeating them in markdown. Empty string when no procedure applies."
-              },
-              "principles": {
-                "type": "string",
-                "description": "Rules or principles to follow; empty string when none are stated."
-              },
-              "limitations": {
-                "type": "string",
-                "description": "Limits, exceptions, or conditions that invalidate the method; empty string when none are stated."
+            "maxLength": 2000,
+            "description": "What this turn established and why it is worth keeping."
+          }
+        }
+      },
+      "progress": {
+        "category": "memory",
+        "operation": "write",
+        "running": "Filing what this turn established",
+        "done": "Filed what this turn established",
+        "source": "memory"
+      }
+    },
+    {
+      "name": "world_schema_update",
+      "method": "world_schema.update",
+      "permission": "memory_write",
+      "component": "memory-save",
+      "label": "Track a new kind of thing",
+      "description": "Add kinds of things or links to what this Loupist's map tracks, when the user asks to track a kind of thing or a link between things that the map lacks (worldKinds in the Memory context lists what it already tracks). Their sentence is the approval. At most 2 types and 3 relations per call and one call per reply; the map holds at most 4 added types and 6 added relations. A type needs a PascalCase name, a description of what it includes with one example and what it is not (naming the core type to use instead), and labels in en and ko. A relation needs a SCREAMING_SNAKE_CASE name, a description stating the direction from source to target, signatures as [source type, target type] pairs using core or added types or Entity, and labels. Never reuse a name in worldKinds. Applies to Sources added from now on, when the reply finishes; existing names are not reclassified. Say what the map now tracks in plain words; never say ontology, schema or entity type to the user. Saving must be enabled.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "types": {
+            "type": "array",
+            "maxItems": 2,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "description",
+                "labels"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Za-z0-9]{1,31}$"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 20,
+                  "maxLength": 500
+                },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "company",
+                    "person",
+                    "product",
+                    "market",
+                    "event",
+                    "other"
+                  ]
+                },
+                "labels": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "en"
+                  ],
+                  "properties": {
+                    "en": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    },
+                    "ko": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    }
+                  }
+                },
+                "blurbs": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "en"
+                  ],
+                  "properties": {
+                    "en": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "ko": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    }
+                  }
+                },
+                "fields": {
+                  "type": "array",
+                  "maxItems": 3,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "name",
+                      "description"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_]{1,31}$"
+                      },
+                      "description": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    }
+                  }
+                }
               }
-            },
-            "description": "The six fields together are the complete current method. Put each substantive instruction in one owning section and retain necessary detail. Replace superseded guidance in place; keep change history in rationale or feedback. Each property is readable text, not nested or JSON-encoded."
-          },
-          "sourceReads": {
-            "type": "array",
-            "maxItems": 32,
-            "uniqueItems": true,
-            "items": {
-              "type": "string"
-            },
-            "description": "Source readRef values from world_read with scope source, or acknowledged saveRef values returned by source_save in this turn. A workspace_capture or fetch result_ref must first be saved with source_save; do not pass the result_ref here."
-          },
-          "worldReads": {
-            "type": "array",
-            "maxItems": 8,
-            "uniqueItems": true,
-            "items": {
-              "type": "string"
             }
           },
-          "journalReads": {
+          "relations": {
             "type": "array",
-            "maxItems": 8,
-            "uniqueItems": true,
+            "maxItems": 3,
             "items": {
-              "type": "string"
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "description",
+                "signatures",
+                "labels"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Z0-9_]{1,31}$"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 20,
+                  "maxLength": 500
+                },
+                "signatures": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 6,
+                  "items": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "labels": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "en"
+                  ],
+                  "properties": {
+                    "en": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    },
+                    "ko": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 40
+                    }
+                  }
+                }
+              }
             }
-          },
-          "previousNoteIds": {
-            "type": "array",
-            "maxItems": 8,
-            "uniqueItems": true,
-            "items": {
-              "type": "string"
-            }
-          },
-          "feedback": {
-            "type": "string",
-            "description": "The teaching or correction that motivated this revision, separate from the current method."
           }
         }
       },
       "progress": {
         "category": "memory",
         "operation": "edit",
-        "running": "Updating Lens",
-        "done": "Updated Lens",
+        "running": "Updating what the map tracks",
+        "done": "Updated what the map tracks",
+        "source": "memory"
+      }
+    },
+    {
+      "name": "loupist_setup",
+      "method": "loupist.setup",
+      "permission": "memory_write",
+      "component": "memory-save",
+      "label": "Set up this Loupist",
+      "description": "Set up this Loupist from what the user says: when they say what they research, which assets to follow or stop following, or pick a starting point, call it in that reply instead of pointing them to settings. follow adds assets to what the user follows; unfollow removes them. focus replaces this Loupist's research focus, in the user's words and language; pass it whenever their research changes. preset applies a starting point: the map starts tracking that preset's kinds it lacks, and the preset's default focus fills only an empty focus. One call per reply, in the Bot or a research session only; it applies when the reply finishes. Say what changed in plain words; never say ontology or schema. Saving must be enabled.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 1,
+        "properties": {
+          "follow": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "symbol"
+              ],
+              "properties": {
+                "symbol": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "description": "Ticker or code as the market lists it, such as NVDA or 000660."
+                },
+                "market": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "description": "Exchange or market code such as NASDAQ or KRX. Omit it unless the user or a delivered read named it."
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "description": "The asset's name as the user knows it."
+                }
+              }
+            }
+          },
+          "unfollow": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "symbol"
+              ],
+              "properties": {
+                "symbol": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "description": "Ticker or code as the market lists it, such as NVDA or 000660."
+                },
+                "market": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "description": "Exchange or market code such as NASDAQ or KRX. Omit it unless the user or a delivered read named it."
+                }
+              }
+            }
+          },
+          "focus": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 280,
+            "description": "What this Loupist researches, replacing the current focus."
+          },
+          "preset": {
+            "type": "string",
+            "enum": [
+              "portfolio",
+              "semiconductors",
+              "dividends",
+              "technology",
+              "crypto",
+              "macro",
+              "commodities",
+              "realAssets",
+              "custom"
+            ]
+          }
+        }
+      },
+      "progress": {
+        "category": "memory",
+        "operation": "edit",
+        "running": "Setting up this Loupist",
+        "done": "Set up this Loupist",
         "source": "memory"
       }
     },
@@ -1575,6 +2087,88 @@
         "operation": "generic",
         "running": "Updating the plan",
         "done": "Updated the plan"
+      }
+    },
+    {
+      "name": "research_open",
+      "method": "research.open",
+      "permission": "always",
+      "component": null,
+      "label": "Open a research session",
+      "description": "Bot only. Hand a question that needs depth or several steps to a research session that runs on its own and reports back here. Give a short title the user will see, the question, a brief with what to check and what a good answer covers, and pins to the Memory it should read first. Use a distinct requestKey per hand-off, reused only on a retry. One per reply. Tell the user the session title; do not also research it here.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "question",
+          "requestKey"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "brief": {
+            "type": "string",
+            "maxLength": 8000,
+            "description": "What to check, which sources matter and what a complete answer covers."
+          },
+          "pins": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "lens"
+                  ],
+                  "properties": {
+                    "lens": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "description": "A Lens record id from the index or lens_search."
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "world"
+                  ],
+                  "properties": {
+                    "world": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "description": "A World node id."
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "requestKey": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          }
+        }
+      },
+      "progress": {
+        "category": "capability",
+        "operation": "generic",
+        "running": "Opening a research session",
+        "done": "Opened a research session"
       }
     },
     {
@@ -4990,12 +5584,7 @@
     {
       "id": "memory-save",
       "name": "Source retention and journals",
-      "description": "Keep user-supplied facts and progress for later with note_save, retain delivered originals with source_save, or save the user's explicitly stated judgment as a Journal."
-    },
-    {
-      "id": "lens-learning",
-      "name": "Memory learning",
-      "description": "Save a user-stated research rule with principle_save, or revise a perspective or method with lens_update when saving is enabled."
+      "description": "Keep this Chat's progress and user-stated facts with note_save, retain delivered originals with source_save, file what a turn established into Lens pages with lens_file, save the user's explicitly stated rule with principle_save or their stated judgment as a Journal, add a kind of thing or link to what the map tracks with world_schema_update, or set up what this Loupist follows and researches with loupist_setup."
     },
     {
       "id": "charts",

@@ -1,7 +1,13 @@
 use super::*;
 use crate::domain::{KnowledgeReference, MemoryUpdateChange};
 
-// This boundary keeps the host transaction and exact provenance inputs explicit.
+#[derive(Default)]
+pub(in crate::commands) struct SavedTurn {
+    pub changes: Vec<MemoryUpdateChange>,
+    pub retained: Vec<(String, crate::knowledge::RetainedSource)>,
+}
+
+#[cfg(any(test, feature = "e2e"))]
 #[allow(clippy::too_many_arguments)]
 pub(in crate::commands) fn persist_saved_turn(
     tx: &rusqlite::Transaction<'_>,
@@ -15,8 +21,37 @@ pub(in crate::commands) fn persist_saved_turn(
     sources: &[crate::commands::tool_executor::StagedSource],
     reads: &[crate::commands::tool_executor::StagedKnowledgeRead],
     research: Option<&crate::commands::tool_executor::StagedResearch>,
-    lens_revisions: &[crate::commands::tool_executor::StagedLensRevision],
 ) -> Result<Vec<MemoryUpdateChange>, CommandError> {
+    persist_saved_turn_sources(
+        tx,
+        blobs,
+        loupist_id,
+        chat_id,
+        turn_id,
+        at_ms,
+        pins,
+        save_learning,
+        sources,
+        reads,
+        research,
+    )
+    .map(|saved| saved.changes)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(in crate::commands) fn persist_saved_turn_sources(
+    tx: &rusqlite::Transaction<'_>,
+    blobs: &BlobStore,
+    loupist_id: &str,
+    chat_id: &str,
+    turn_id: &str,
+    at_ms: i64,
+    pins: &[crate::commands::ChatKnowledgePin],
+    save_learning: bool,
+    sources: &[crate::commands::tool_executor::StagedSource],
+    reads: &[crate::commands::tool_executor::StagedKnowledgeRead],
+    research: Option<&crate::commands::tool_executor::StagedResearch>,
+) -> Result<SavedTurn, CommandError> {
     for (index, pin) in pins.iter().enumerate() {
         let pin_json =
             serde_json::to_string(pin).map_err(|error| CommandError::invalid(error.to_string()))?;
@@ -28,7 +63,7 @@ pub(in crate::commands) fn persist_saved_turn(
         .map_err(|error| CommandError::internal(error.to_string()))?;
     }
     if !save_learning {
-        return Ok(Vec::new());
+        return Ok(SavedTurn::default());
     }
     let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
     let retained =
@@ -53,6 +88,7 @@ pub(in crate::commands) fn persist_saved_turn(
             .source_processing(loupist_id, &retained.record_id)
             .map_err(map_knowledge)?;
         changes.push(MemoryUpdateChange {
+            outcomes: Vec::new(),
             world_job_id: processing.job_id,
             world_status: Some(processing.status),
             record_id: retained.source_id.clone(),
@@ -72,218 +108,9 @@ pub(in crate::commands) fn persist_saved_turn(
             }),
         });
     }
-    let mut ordered = Vec::new();
-    {
-        let mut seen = std::collections::BTreeSet::new();
-        for revision in lens_revisions.iter().rev() {
-            if seen.insert(revision.record_id.clone()) {
-                ordered.push(revision);
-            }
-        }
-        ordered.reverse();
-    }
-    ordered.sort_by_key(|revision| u8::from(!revision.expected_revision_id.is_empty()));
-    for revision in ordered {
-        let creating = revision.expected_revision_id.is_empty();
-        if !creating
-            && !reads.iter().any(|read| {
-                read.scope == "lens"
-                    && read.record_id == revision.record_id
-                    && read.revision_id == revision.expected_revision_id
-            })
-        {
-            return Err(CommandError::invalid(
-                "Lens edit requires its acknowledged exact revision",
-            ));
-        }
-        let propose = |write: &crate::knowledge::KnowledgeWrite<'_>,
-                       title: &str|
-         -> Result<MemoryUpdateChange, CommandError> {
-            write
-                .save_lens_proposal(
-                    loupist_id,
-                    &revision.record_id,
-                    &revision.expected_revision_id,
-                    &revision.document,
-                    &revision.rationale,
-                    revision.title.as_deref(),
-                    chat_id,
-                    turn_id,
-                    at_ms,
-                )
-                .map_err(map_knowledge)?;
-            Ok(lens_memory_change(
-                &revision.record_id,
-                &revision.expected_revision_id,
-                title,
-                "proposed",
-                &revision.rationale,
-            ))
-        };
-        if creating {
-            let record_id = match write.create_record_with_id(
-                CreateRecord {
-                    loupist_id: loupist_id.to_string(),
-                    kind: RecordKind::Lens,
-                    title: revision.title.clone().unwrap_or_else(|| "Method".into()),
-                    at_ms,
-                },
-                Some(revision.record_id.clone()),
-            ) {
-                Ok(created) => created.record_id,
-                Err(error) if lens_title_taken(&error) => continue,
-                Err(error) => return Err(map_knowledge(error)),
-            };
-            let saved = write
-                .revise_lens_with_origin(
-                    crate::knowledge::ReviseLens {
-                        loupist_id: loupist_id.to_string(),
-                        record_id: record_id.clone(),
-                        expected_revision_id: None,
-                        at_ms,
-                        document: revision.document.clone(),
-                        dependencies: Vec::new(),
-                        change: crate::knowledge::LensChangeInput {
-                            rationale: revision.rationale.clone(),
-                            references: lens_change_references(tx, revision, reads, &retained)?,
-                            feedback: revision.feedback.clone(),
-                        },
-                    },
-                    "loupist",
-                    Some(chat_id),
-                    Some(turn_id),
-                )
-                .map_err(map_knowledge)?;
-            if revision.kind.as_deref() == Some("perspective") {
-                if write
-                    .load_standing_selection(loupist_id)
-                    .map_err(map_knowledge)?
-                    .is_some()
-                {
-                    return Err(CommandError::invalid("edit the existing basic perspective"));
-                }
-                write
-                    .select_standing_lens(loupist_id, &saved.record_id, &saved.revision_id, at_ms)
-                    .map_err(map_knowledge)?;
-            }
-            changes.push(lens_memory_change(
-                &saved.record_id,
-                &saved.revision_id,
-                &revision.title.clone().unwrap_or_else(|| "Method".into()),
-                "create",
-                &revision.rationale,
-            ));
-            continue;
-        }
-        let current = match write.read_lens(loupist_id, &revision.record_id) {
-            Ok(current) => current,
-            Err(crate::knowledge::KnowledgeError::NotFound) => {
-                return Err(CommandError::not_found("Lens"));
-            }
-            Err(error) => return Err(map_knowledge(error)),
-        };
-        let current_title = write
-            .owned_record(loupist_id, &revision.record_id)
-            .map_err(map_knowledge)?
-            .title;
-        if current.revision_id != revision.expected_revision_id {
-            changes.push(propose(&write, &current_title)?);
-            continue;
-        }
-        let document_changed = current.document != revision.document;
-        let next_title = revision
-            .title
-            .as_ref()
-            .filter(|title| title.as_str() != current_title);
-        if !document_changed && next_title.is_none() {
-            continue;
-        }
-        let mut revision_id = current.revision_id.clone();
-        if document_changed {
-            match write.revise_lens_with_origin(
-                crate::knowledge::ReviseLens {
-                    loupist_id: loupist_id.to_string(),
-                    record_id: revision.record_id.clone(),
-                    expected_revision_id: Some(revision.expected_revision_id.clone()),
-                    at_ms,
-                    document: revision.document.clone(),
-                    dependencies: Vec::new(),
-                    change: crate::knowledge::LensChangeInput {
-                        rationale: revision.rationale.clone(),
-                        references: lens_change_references(tx, revision, reads, &retained)?,
-                        feedback: revision.feedback.clone(),
-                    },
-                },
-                "loupist",
-                Some(chat_id),
-                Some(turn_id),
-            ) {
-                Ok(saved) => revision_id = saved.revision_id,
-                Err(crate::knowledge::KnowledgeError::RevisionConflict { .. }) => {
-                    changes.push(propose(&write, &current_title)?);
-                    continue;
-                }
-                Err(error) => return Err(map_knowledge(error)),
-            }
-        }
-        let mut title = current_title;
-        let mut operation = "revise";
-        if let Some(next_title) = next_title {
-            match write.rename_lens(
-                loupist_id,
-                &revision.record_id,
-                next_title,
-                &revision.rationale,
-                at_ms,
-                "loupist",
-                Some(chat_id),
-                Some(turn_id),
-            ) {
-                Ok(renamed) => {
-                    title = renamed;
-                    if !document_changed {
-                        operation = "rename";
-                    }
-                }
-                Err(error) if lens_title_taken(&error) => {
-                    write
-                        .save_lens_proposal(
-                            loupist_id,
-                            &revision.record_id,
-                            &revision_id,
-                            &revision.document,
-                            &revision.rationale,
-                            Some(next_title),
-                            chat_id,
-                            turn_id,
-                            at_ms,
-                        )
-                        .map_err(map_knowledge)?;
-                    if !document_changed {
-                        changes.push(lens_memory_change(
-                            &revision.record_id,
-                            &revision_id,
-                            &title,
-                            "proposed",
-                            &revision.rationale,
-                        ));
-                        continue;
-                    }
-                }
-                Err(error) => return Err(map_knowledge(error)),
-            }
-        }
-        changes.push(lens_memory_change(
-            &revision.record_id,
-            &revision_id,
-            &title,
-            operation,
-            &revision.rationale,
-        ));
-    }
     let staged_journal = research.and_then(|item| item.journal.as_ref());
     if staged_journal.is_none() && research.is_none() {
-        return Ok(changes);
+        return Ok(SavedTurn { changes, retained });
     }
     let (
         conclusion,
@@ -552,7 +379,7 @@ pub(in crate::commands) fn persist_saved_turn(
         });
     }
     let Some(research) = research else {
-        return Ok(changes);
+        return Ok(SavedTurn { changes, retained });
     };
     let earlier = match staged_journal {
         Some(staged) => staged
@@ -619,6 +446,7 @@ pub(in crate::commands) fn persist_saved_turn(
         .map_err(map_knowledge)?;
     if let Some(journal) = saved.journal {
         changes.push(MemoryUpdateChange {
+            outcomes: Vec::new(),
             world_job_id: None,
             world_status: None,
             record_id: journal.journal_id.clone(),
@@ -649,6 +477,7 @@ pub(in crate::commands) fn persist_saved_turn(
         });
     } else {
         changes.push(MemoryUpdateChange {
+            outcomes: Vec::new(),
             world_job_id: None,
             world_status: None,
             record_id: saved.research_id,
@@ -669,7 +498,7 @@ pub(in crate::commands) fn persist_saved_turn(
             knowledge: None,
         });
     }
-    Ok(changes)
+    Ok(SavedTurn { changes, retained })
 }
 
 pub(in crate::commands) fn earlier_research<'a>(
@@ -803,14 +632,36 @@ pub(in crate::commands) fn retain_staged_sources(
     Ok(retained)
 }
 
+fn setup_line(change: &crate::domain::SetupChange) -> String {
+    use crate::domain::SetupChange;
+    match change {
+        SetupChange::Followed { symbol, name, .. } => {
+            format!("Following {}.", name.as_deref().unwrap_or(symbol))
+        }
+        SetupChange::Unfollowed { symbol, .. } => format!("Stopped following {symbol}."),
+        SetupChange::Focus { focus } => format!("Focus: {focus}."),
+        SetupChange::Tracks { kinds } => format!(
+            "Your map now also tracks {}.",
+            kinds
+                .iter()
+                .map(|kind| kind.label.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
 /// Replace the just-written provisional Chat with finalized, canonical targets
 /// before the surrounding Chat/Knowledge transaction commits.
+#[allow(clippy::too_many_arguments)]
 pub(in crate::commands) fn write_chat_learning_report(
     tx: &rusqlite::Transaction<'_>,
     provisional: &crate::domain::ChatSession,
     turn_id: &str,
     save_learning: bool,
     changes: Vec<MemoryUpdateChange>,
+    skipped_kinds: Vec<crate::domain::MapKind>,
+    setup: Vec<crate::domain::SetupChange>,
     performance: Option<crate::domain::ChatPerformance>,
     // Run-log entries the commit itself produced (an asset read it could not save).
     trace_notes: Vec<crate::domain::ChatToolTraceEntry>,
@@ -829,23 +680,26 @@ pub(in crate::commands) fn write_chat_learning_report(
             trace.push(note);
         }
     }
+    let changed = !changes.is_empty() || !setup.is_empty();
     message.memory_update = save_learning.then(|| crate::domain::MemoryUpdateResult {
-        status: if changes.is_empty() {
-            crate::domain::MemoryUpdateStatus::NoChange
-        } else {
+        status: if changed {
             crate::domain::MemoryUpdateStatus::Applied
+        } else {
+            crate::domain::MemoryUpdateStatus::NoChange
         },
-        commit_id: (!changes.is_empty()).then(|| turn_id.to_string()),
+        commit_id: changed.then(|| turn_id.to_string()),
         changes,
+        skipped_kinds,
+        setup,
     });
     if message.host_composed {
         // Only receipts in this same atomic transaction can supply this answer.
-        let changes = message
+        let (changes, setup) = message
             .memory_update
             .as_ref()
-            .map(|update| update.changes.as_slice())
-            .unwrap_or(&[]);
-        if changes.is_empty() {
+            .map(|update| (update.changes.as_slice(), update.setup.as_slice()))
+            .unwrap_or((&[], &[]));
+        if changes.is_empty() && setup.is_empty() {
             return Err(crate::store::StoreError::Invalid(
                 "No committed receipts for an empty answer".into(),
             ));
@@ -864,6 +718,7 @@ pub(in crate::commands) fn write_chat_learning_report(
                     change.title,
                 )
             })
+            .chain(setup.iter().map(setup_line))
             .collect::<Vec<_>>()
             .join("\n");
     }
@@ -886,117 +741,4 @@ pub(in crate::commands) fn write_chat_learning_report(
         ));
     }
     Ok(completed)
-}
-
-fn lens_title_taken(error: &crate::knowledge::KnowledgeError) -> bool {
-    matches!(error, crate::knowledge::KnowledgeError::Invalid(message) if message.contains("already uses this title"))
-}
-
-fn lens_memory_change(
-    record_id: &str,
-    revision_id: &str,
-    title: &str,
-    operation: &str,
-    rationale: &str,
-) -> MemoryUpdateChange {
-    MemoryUpdateChange {
-        world_job_id: None,
-        world_status: None,
-        record_id: record_id.to_string(),
-        kind: "Lens".into(),
-        operation: operation.into(),
-        title: title.to_string(),
-        lesson: if operation == "proposed" {
-            "A newer version was saved, so this change is waiting for review.".into()
-        } else if operation == "rename" {
-            "Renamed the reusable methodology.".into()
-        } else {
-            "Revised the reusable methodology.".into()
-        },
-        basis: rationale.chars().take(500).collect(),
-        future_use: if operation == "proposed" {
-            "Review the proposal in Lens before it changes later work.".into()
-        } else {
-            "Later turns can read this exact Lens revision.".into()
-        },
-        knowledge: Some(KnowledgeReference {
-            kind: "lens".into(),
-            record_id: record_id.to_string(),
-            revision_id: revision_id.to_string(),
-            object_id: record_id.to_string(),
-            span_id: None,
-            receipt_id: None,
-        }),
-    }
-}
-
-fn lens_change_references(
-    tx: &rusqlite::Transaction<'_>,
-    change: &crate::commands::tool_executor::StagedLensRevision,
-    reads: &[crate::commands::tool_executor::StagedKnowledgeRead],
-    retained: &[(String, crate::knowledge::RetainedSource)],
-) -> Result<Vec<KnowledgeReference>, CommandError> {
-    let mut references = Vec::new();
-    for (scope, citations) in [
-        ("source", &change.source_reads),
-        ("world", &change.world_reads),
-        ("research", &change.journal_reads),
-    ] {
-        for citation in citations {
-            if scope == "source" {
-                if let Some((_, saved)) = retained.iter().find(|(save_ref, _)| save_ref == citation)
-                {
-                    references.push(KnowledgeReference {
-                        kind: "source".into(),
-                        record_id: saved.record_id.clone(),
-                        revision_id: saved.revision_id.clone(),
-                        object_id: saved.source_id.clone(),
-                        span_id: saved.span_id.clone(),
-                        receipt_id: None,
-                    });
-                    continue;
-                }
-            }
-            let read = reads
-                .iter()
-                .find(|read| read.scope == scope && read.read_ref == *citation)
-                .ok_or_else(|| {
-                    CommandError::invalid("Lens change cited material not delivered in this turn")
-                })?;
-            let object_id = if scope == "world" {
-                tx.query_row("SELECT snapshot_id FROM knowledge_world_snapshots WHERE record_id = ?1 AND revision_id = ?2",
-                    rusqlite::params![read.record_id, read.revision_id], |row| row.get(0))
-                    .map_err(|error| CommandError::internal(error.to_string()))?
-            } else {
-                read.object_id.clone()
-            };
-            references.push(KnowledgeReference {
-                kind: if scope == "research" {
-                    "journal"
-                } else {
-                    scope
-                }
-                .into(),
-                record_id: read.record_id.clone(),
-                revision_id: read.revision_id.clone(),
-                object_id,
-                span_id: read.span_id.clone(),
-                receipt_id: None,
-            });
-        }
-    }
-    references.extend(
-        change
-            .previous_note_ids
-            .iter()
-            .map(|id| KnowledgeReference {
-                kind: "research".into(),
-                record_id: String::new(),
-                revision_id: String::new(),
-                object_id: id.clone(),
-                span_id: None,
-                receipt_id: None,
-            }),
-    );
-    Ok(references)
 }

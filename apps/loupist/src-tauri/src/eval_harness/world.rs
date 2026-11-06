@@ -86,11 +86,6 @@ struct Scenario {
     /// Custom research focus, the same text the product stores on a new Loupist.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     research_focus: String,
-    /// `model` runs the product seed writer before the first Source and accepts
-    /// its pending suggestion, standing in for the user's apply. `template`
-    /// applies the curated seed a new Loupist gets from `template` while it keeps
-    /// that template's default focus. `none` leaves the World extension empty.
-    /// Absent matches `none`.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     seed: String,
     /// The template whose curated seed `seed: "template"` applies.
@@ -339,24 +334,16 @@ fn custom_focus(scenario: &Scenario) -> Result<()> {
     }
     match scenario.seed.as_str() {
         "" | "none" => Ok(()),
-        "model" if focus.is_empty() => Err("model seed requires a research focus".into()),
-        "model" if !scenario.world_enabled => Err("model seed requires World processing".into()),
-        "model" => Ok(()),
         "template" if template_seed(scenario, 0).is_none() => {
-            Err("template seed requires a curated template and its default focus".into())
+            Err("template seed requires a curated template".into())
         }
         "template" => Ok(()),
-        _ => Err("World seed must be model, template or none".into()),
+        _ => Err("World seed must be template or none".into()),
     }
 }
 
-/// The product's curated seed for this scenario's template and focus.
 fn template_seed(scenario: &Scenario, now_ms: i64) -> Option<crate::knowledge::WorldExtension> {
-    crate::knowledge::curated_seed(
-        Some(scenario.template.as_str()),
-        scenario.research_focus.trim(),
-        now_ms,
-    )
+    crate::knowledge::curated_seed(Some(scenario.template.as_str()), now_ms)
 }
 
 fn remember_focus(state: &AppState, loupist_id: &str, focus: &str) -> Result<()> {
@@ -379,159 +366,10 @@ fn remember_focus(state: &AppState, loupist_id: &str, focus: &str) -> Result<()>
     Ok(())
 }
 
-fn queue_model_seed(
-    state: &AppState,
-    loupist_id: &str,
-    focus: &str,
-    settings: &GraphProcessingSettings,
-) -> Result<()> {
-    let mut connection = state.store.lock_loupist(loupist_id)?;
-    let tx = connection.transaction()?;
-    let queued = enqueue_seed(&tx, loupist_id, focus, settings, crate::commands::now_ms())?;
-    tx.commit()?;
-    if !queued {
-        return Err("model seed was not queued".into());
-    }
-    Ok(())
-}
-
 fn schema_trace(state: &AppState, loupist_id: &str, mode: &str) -> Result<Value> {
-    use rusqlite::OptionalExtension;
     let connection = state.store.lock_loupist(loupist_id)?;
-    let extension = load_settings(&connection, loupist_id)?.extension;
-    let row = connection
-        .query_row(
-            "SELECT proposal_id, kind, status, body_json, created_at_ms, decided_at_ms
-             FROM knowledge_schema_proposals
-             WHERE loupist_id = ?1 AND kind = 'seed'
-             ORDER BY created_at_ms DESC LIMIT 1",
-            [loupist_id],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, i64>(4)?,
-                    row.get::<_, Option<i64>>(5)?,
-                ))
-            },
-        )
-        .optional()?;
-    let proposal = match row {
-        None => Value::Null,
-        Some((id, kind, status, body, created, decided)) => {
-            let parsed: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
-            json!({
-                "proposalId": id,
-                "kind": kind,
-                "status": status,
-                "types": parsed.get("types").cloned().unwrap_or(json!([])),
-                "relations": parsed.get("relations").cloned().unwrap_or(json!([])),
-                "createdAtMs": created,
-                "decidedAtMs": decided,
-            })
-        }
-    };
-    Ok(json!({"mode": mode, "extension": extension, "proposal": proposal}))
-}
-
-/// Accept a pending custom-focus seed the way `world_schema_apply` does.
-/// A valid model result stays pending until that apply; the harness is the
-/// stand-in for the user's tap during an evaluation.
-fn accept_pending_seed(state: &AppState, loupist_id: &str, proposal_id: &str) -> Result<()> {
-    let mut connection = state.store.lock_loupist(loupist_id)?;
-    let tx = connection.transaction()?;
-    let mut settings = load_settings(&tx, loupist_id)?;
-    apply_proposal(
-        &tx,
-        loupist_id,
-        &mut settings.extension,
-        proposal_id,
-        crate::commands::now_ms(),
-    )?;
-    store_settings(&tx, loupist_id, &settings)?;
-    tx.commit()?;
-    Ok(())
-}
-
-fn seed_call_block(call: &Value) -> Option<&'static str> {
-    let http = call["diagnostic"]["helper"]["http_status"].as_u64();
-    if matches!(http, Some(429 | 402)) {
-        return Some("rate_limit");
-    }
-    let kind = call["diagnostic"]["helper"]["failure_kind"]
-        .as_str()
-        .unwrap_or("");
-    if kind.contains("quota") || kind.contains("rate_limit") {
-        return Some("rate_limit");
-    }
-    if call["disposition"]
-        .as_str()
-        .is_some_and(|value| value != "completed")
-    {
-        return Some("unconfirmed");
-    }
-    None
-}
-
-async fn settle_model_seed(
-    state: &AppState,
-    loupist_id: &str,
-    focus: &str,
-    settings: &GraphProcessingSettings,
-    inference: &crate::providers::inference::ProviderInferenceService,
-    timeout_ms: u64,
-) -> Result<Value> {
-    let before = inference.eval_observations().len();
-    queue_model_seed(state, loupist_id, focus, settings)?;
-    state.graph.wake();
-    let started = Instant::now();
-    let limit = Duration::from_millis(timeout_ms);
-    loop {
-        let trace = schema_trace(state, loupist_id, "model")?;
-        let status = trace["proposal"]["status"].as_str().unwrap_or("");
-        if matches!(status, "applied" | "dismissed" | "failed" | "pending") {
-            let calls = inference.eval_observations();
-            let seed_calls = calls
-                .get(before..)
-                .map(|slice| slice.to_vec())
-                .unwrap_or_default();
-            if seed_calls.is_empty() {
-                return Err("seed inference unconfirmed".into());
-            }
-            if let Some(block) = seed_calls.iter().find_map(seed_call_block) {
-                return Err(match block {
-                    "rate_limit" => "rate_limit: seed inference".into(),
-                    _ => "seed inference unconfirmed".into(),
-                });
-            }
-            let mut trace = if status == "pending" {
-                let proposal_id = trace["proposal"]["proposalId"]
-                    .as_str()
-                    .ok_or("seed proposal id missing")?
-                    .to_owned();
-                accept_pending_seed(state, loupist_id, &proposal_id)?;
-                let mut accepted = schema_trace(state, loupist_id, "model")?;
-                accepted["accepted_by"] = json!("harness");
-                accepted
-            } else {
-                trace
-            };
-            trace["seed_inference"] = json!(seed_calls);
-            return Ok(trace);
-        }
-        if started.elapsed() >= limit {
-            return Err("model seed did not settle".into());
-        }
-        let remaining = limit.saturating_sub(started.elapsed());
-        match tokio::time::timeout(remaining, state.graph.pump_once()).await {
-            Ok(Ok(Some(_))) => {}
-            Ok(Ok(None)) => tokio::time::sleep(Duration::from_millis(100)).await,
-            Ok(Err(error)) => return Err(error.to_string().into()),
-            Err(_) => return Err("model seed did not settle".into()),
-        }
-    }
+    let view = crate::knowledge::schema_view(&connection, loupist_id)?;
+    Ok(json!({"mode": mode, "extension": view.extension, "changes": view.changes}))
 }
 
 fn save_settings(
@@ -800,11 +638,7 @@ async fn setup(
         .readiness(provider, model)
         .map_err(|e| e.message)?;
     if scenario.world_enabled && !readiness.available {
-        return Err(format!(
-            "World provider unavailable: {}",
-            readiness.reason.unwrap_or_default()
-        )
-        .into());
+        return Err(format!("World provider unavailable: {:?}", readiness.reason).into());
     }
     // Replace the test constructor's service, which captured empty artifacts
     // and a temporary auth directory, after the live Pi profile is installed.
@@ -838,10 +672,16 @@ async fn setup(
     if scenario.seed == "template" {
         // As `loupist_create` does for a template Loupist that keeps its default focus.
         config.extension = template_seed(scenario, crate::commands::now_ms())
-            .ok_or("template seed requires its default focus")?;
+            .ok_or("template seed requires a curated template")?;
         let mut connection = state.store.lock_loupist(&loupist.id)?;
         let tx = connection.transaction()?;
-        crate::knowledge::record_applied_seed(&tx, &loupist.id, &config.extension)?;
+        crate::knowledge::apply_preset(
+            &tx,
+            &loupist.id,
+            scenario.template.as_str(),
+            None,
+            crate::commands::now_ms(),
+        )?;
         tx.commit()?;
     }
     save_settings(state, &loupist.id, &config)?;
@@ -972,7 +812,6 @@ pub async fn run(options: Options) -> Result<()> {
             append_atomic(&options.out, &mut output_bytes, &setup_record)?;
             if blocked.is_none() {
                 let mode = match scenario.seed.as_str() {
-                    "model" => "model",
                     "template" => "template",
                     _ => "none",
                 };
@@ -986,22 +825,10 @@ pub async fn run(options: Options) -> Result<()> {
                 let service = inference
                     .as_ref()
                     .expect("inference follows a completed setup");
-                let settled = if scenario.seed == "model" {
-                    settle_model_seed(
-                        &state,
-                        &loupist_id,
-                        scenario.research_focus.trim(),
-                        &config,
-                        service,
-                        options.stage_timeout_ms,
-                    )
-                    .await
-                } else {
-                    schema_trace(&state, &loupist_id, mode).map(|mut trace| {
-                        trace["seed_inference"] = json!([]);
-                        trace
-                    })
-                };
+                let settled = schema_trace(&state, &loupist_id, mode).map(|mut trace| {
+                    trace["seed_inference"] = json!([]);
+                    trace
+                });
                 match settled {
                     Ok(trace) => {
                         seed_record["world_inference"] = trace["seed_inference"].clone();
@@ -1353,16 +1180,17 @@ mod tests {
                 value["scenarios"][0]["research_focus"] = json!("Clinical-stage biotech pipelines");
                 value["scenarios"][0]["seed"] = json!("none");
             }),
-            ("seed model", |value| {
-                value["scenarios"][0]["research_focus"] = json!("Clinical-stage biotech pipelines");
-                value["scenarios"][0]["seed"] = json!("model");
-            }),
             ("seed-only first step", |value| {
                 value["scenarios"][0]["steps"] = json!([{"id":"ingest_sources"}]);
             }),
             ("seed template", |value| {
                 value["scenarios"][0]["research_focus"] =
                     json!("Chips, memory, foundries and equipment");
+                value["scenarios"][0]["seed"] = json!("template");
+                value["scenarios"][0]["template"] = json!("semiconductors");
+            }),
+            ("template seed with an edited focus", |value| {
+                value["scenarios"][0]["research_focus"] = json!("Only memory manufacturers");
                 value["scenarios"][0]["seed"] = json!("template");
                 value["scenarios"][0]["template"] = json!("semiconductors");
             }),
@@ -1375,28 +1203,18 @@ mod tests {
                 value["scenarios"][0]["research_focus"] = json!("Pipelines");
                 value["scenarios"][0]["seed"] = json!("later");
             }),
-            ("template seed with an edited focus", |value| {
-                value["scenarios"][0]["research_focus"] = json!("Only memory manufacturers");
-                value["scenarios"][0]["seed"] = json!("template");
-                value["scenarios"][0]["template"] = json!("semiconductors");
+            ("retired model seed", |value| {
+                value["scenarios"][0]["research_focus"] = json!("Clinical-stage biotech pipelines");
+                value["scenarios"][0]["seed"] = json!("model");
             }),
             ("template seed without a curated template", |value| {
                 value["scenarios"][0]["research_focus"] = json!("Companies I hold and watch");
                 value["scenarios"][0]["seed"] = json!("template");
                 value["scenarios"][0]["template"] = json!("portfolio");
             }),
-            ("model seed without focus", |value| {
-                value["scenarios"][0]["research_focus"] = json!("  ");
-                value["scenarios"][0]["seed"] = json!("model");
-            }),
             ("oversized focus", |value| {
                 value["scenarios"][0]["research_focus"] = json!("x".repeat(281));
                 value["scenarios"][0]["seed"] = json!("none");
-            }),
-            ("model seed without World processing", |value| {
-                value["scenarios"][0]["research_focus"] = json!("Pipelines");
-                value["scenarios"][0]["seed"] = json!("model");
-                value["scenarios"][0]["world_enabled"] = json!(false);
             }),
             ("empty first step", |value| {
                 value["scenarios"][0]["seed_sources"] = json!([]);
@@ -1435,7 +1253,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn world_eval_model_seed_queues_and_none_leaves_the_extension_empty() {
+    async fn world_eval_none_leaves_the_extension_empty() {
         let temp = tempfile::tempdir().unwrap();
         let state = AppState::for_eval(temp.path().join("app"));
         let workspace = temp.path().join("workspace");
@@ -1460,76 +1278,9 @@ mod tests {
             focus
         );
         let empty = schema_trace(&state, &loupist.id, "none").unwrap();
-        assert!(empty["proposal"].is_null());
+        assert!(empty["changes"].as_array().unwrap().is_empty());
         assert_eq!(empty["extension"]["types"].as_array().unwrap().len(), 0);
         assert_eq!(empty["extension"]["version"], 0);
-        queue_model_seed(&state, &loupist.id, focus, &config).unwrap();
-        let queued = schema_trace(&state, &loupist.id, "model").unwrap();
-        assert_eq!(queued["proposal"]["kind"], "seed");
-        assert_eq!(queued["proposal"]["status"], "preparing");
-        assert!(queue_model_seed(&state, &loupist.id, focus, &config).is_err());
-        state.shutdown().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn world_eval_accepts_a_pending_seed_into_the_extension() {
-        let temp = tempfile::tempdir().unwrap();
-        let state = AppState::for_eval(temp.path().join("app"));
-        let workspace = temp.path().join("workspace");
-        fs::create_dir(&workspace).unwrap();
-        let loupist = crate::commands::loupist::create_folder_loupist(&state, &workspace)
-            .await
-            .unwrap();
-        let focus = "Clinical-stage biotech pipelines";
-        let config = GraphProcessingSettings {
-            enrichment_enabled: true,
-            helper_provider: Some("openai".into()),
-            helper_model: Some("fixture-model".into()),
-            helper_model_profile_id: Some("openai/fixture-model".into()),
-            research_focus: focus.into(),
-            max_llm_calls: 16,
-            ..Default::default()
-        };
-        save_settings(&state, &loupist.id, &config).unwrap();
-        let kind = ExtensionType {
-            name: "ClinicalTrial".into(),
-            description: "A Loupist-specific kind kept distinct from the shared core types.".into(),
-            category: ExtensionCategory::Other,
-            labels: ExtensionLabels {
-                en: "Clinical trial".into(),
-                ko: Some("임상시험".into()),
-            },
-            blurbs: ExtensionLabels {
-                en: "A named study of a drug in people.".into(),
-                ko: None,
-            },
-            fields: vec![],
-        };
-        let body = serde_json::to_string(&json!({ "types": [kind], "relations": [] })).unwrap();
-        let proposal_id = "wsp-pending-seed";
-        {
-            let connection = state.store.lock_loupist(&loupist.id).unwrap();
-            connection
-                .execute(
-                    "INSERT INTO knowledge_schema_proposals
-                     (proposal_id, loupist_id, kind, status, body_json, created_at_ms, decided_at_ms)
-                     VALUES (?1, ?2, 'seed', 'pending', ?3, ?4, NULL)",
-                    rusqlite::params![proposal_id, loupist.id, body, 1_700_000_000_000_i64],
-                )
-                .unwrap();
-        }
-        let before = schema_trace(&state, &loupist.id, "model").unwrap();
-        assert_eq!(before["proposal"]["status"], "pending");
-        assert!(before["extension"]["types"].as_array().unwrap().is_empty());
-        accept_pending_seed(&state, &loupist.id, proposal_id).unwrap();
-        let after = schema_trace(&state, &loupist.id, "model").unwrap();
-        assert_eq!(after["proposal"]["status"], "applied");
-        let stored = {
-            let connection = state.store.lock_loupist(&loupist.id).unwrap();
-            load_settings(&connection, &loupist.id).unwrap()
-        };
-        assert_eq!(stored.extension.types[0].name, "ClinicalTrial");
-        assert_eq!(stored.extension.version, 1);
         state.shutdown().await.unwrap();
     }
 

@@ -25,6 +25,9 @@ export function useScheduledRuns(bridge: LoupistBridge, loupistId: string | null
     if (!loupistId) return;
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
+    // A host write the last refresh could not read; the next poll reads it again.
+    let unread = false;
+    const refreshAfterHostWrite = () => refreshThreads(loupistId).then(() => { unread = false; }, () => { unread = true; });
     const poll = async () => {
       try {
         const runs = await bridge.scheduledTasksActivity({ loupist_id: loupistId });
@@ -38,8 +41,9 @@ export function useScheduledRuns(bridge: LoupistBridge, loupistId: string | null
           if (run.status === "running") chatRegistry.resumeScheduled(run);
         }
         if (runs.some((run) => run.status === "running")) void runRegistry.hydrateLoupist(loupistId);
-        if (changed) {
+        if (changed || unread) {
           await refreshThreads(loupistId);
+          unread = false;
           if (!active) return;
           // A failed refresh must leave the previous receipt set intact so the
           // next poll retries even when no run was ever observed live.
@@ -52,7 +56,7 @@ export function useScheduledRuns(bridge: LoupistBridge, loupistId: string | null
       if (active) timer = setTimeout(() => void poll(), 2000);
     };
     void poll();
-    const unsubscribe = bridge.onInboxChanged(event => { if (event.loupistId === loupistId) void refreshThreads(loupistId).catch(() => {}); });
+    const unsubscribe = bridge.onInboxChanged(event => { if (event.loupistId === loupistId) void refreshAfterHostWrite(); });
     return () => { active = false; clearTimeout(timer); unsubscribe(); };
   }, [bridge, chatRegistry, loupistId, refreshThreads, runRegistry]);
 

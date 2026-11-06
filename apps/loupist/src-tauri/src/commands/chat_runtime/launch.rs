@@ -77,7 +77,7 @@ pub(super) async fn launch_chat_turn(
         pi_agent_data_dir,
         request,
         on_event,
-        schedule_management_enabled,
+        surface,
         untrusted_context,
         chat_started_at,
         run_id,
@@ -135,7 +135,8 @@ pub(super) async fn launch_chat_turn(
     )>();
     let capture = {
         let mut capture = ToolCapture::for_chat(assistant_message_id.clone());
-        capture.unattended_run_id = (!schedule_management_enabled).then(|| run_id.clone());
+        capture.unattended_run_id = (!surface.interactive()).then(|| run_id.clone());
+        capture.surface = Some(surface.clone());
         capture.tool_trace = on_event.tool_trace.clone();
         capture.admit_untrusted_context(untrusted_context);
         capture.turn_taint.protect_instructions(instruction_roots);
@@ -151,7 +152,6 @@ pub(super) async fn launch_chat_turn(
         capture.principle_user_message_id = Some(user_message_id.clone());
         capture.schedule_context =
             Some(crate::commands::tool_executor::schedules::ScheduleContext {
-                management_enabled: schedule_management_enabled,
                 model_profile_id: request.model_profile_id.clone(),
                 thinking_level: request.thinking_level.clone(),
                 run_options: request.run_options.clone(),
@@ -214,18 +214,25 @@ pub(super) async fn launch_chat_turn(
             reply.failed_with_stop_precedence(pi_execution.model_lock(), None),
         ));
     }
-    let turn_envelope =
-        match build_turn_envelope(envelope, state, &profile, request.use_memory, &capture).await {
-            Ok(envelope) => envelope,
-            Err(error) => {
-                on_event
-                    .set_failure_kind(classify_turn_failure(&error, ChatFailureKind::StoreFailed));
-                let _ = broker.shutdown().await;
-                return Ok(ControlFlow::Break(
-                    reply.failed_with_stop_precedence(pi_execution.model_lock(), None),
-                ));
-            }
-        };
+    let turn_envelope = match build_turn_envelope(
+        envelope,
+        state,
+        &profile,
+        request.use_memory,
+        &surface,
+        &capture,
+    )
+    .await
+    {
+        Ok(envelope) => envelope,
+        Err(error) => {
+            on_event.set_failure_kind(classify_turn_failure(&error, ChatFailureKind::StoreFailed));
+            let _ = broker.shutdown().await;
+            return Ok(ControlFlow::Break(
+                reply.failed_with_stop_precedence(pi_execution.model_lock(), None),
+            ));
+        }
+    };
     let mut pi_config = chat_pi_launch_config(
         &pi_artifacts,
         &state.artifacts.app_data_dir,
@@ -458,6 +465,7 @@ async fn build_turn_envelope(
     state: &AppState,
     profile: &LoupistProfile,
     use_memory: bool,
+    surface: &crate::chat::surface::ChatSurface,
     capture: &ToolCapture,
 ) -> Result<String, CommandError> {
     let TurnEnvelopeInputs {
@@ -484,6 +492,9 @@ async fn build_turn_envelope(
                     "world" => "World".to_string(),
                     other => other.to_string(),
                 },
+                lens_kind: entry.lens_kind.map(|kind| kind.as_str().to_string()),
+                sections: entry.lens_kind.map(|_| entry.sections),
+                names: entry.map_names.clone(),
             })
             .collect::<Vec<_>>();
         let charter = memory
@@ -544,6 +555,7 @@ async fn build_turn_envelope(
         }))
         .unwrap_or_else(|_| r#"{"live_time":{"not_evidence":true}}"#.into())
     });
+    let turn_envelope = agent_harness::attach_chat_surface(&turn_envelope, surface);
     let turn_envelope = match capture.turn_as_of.as_deref() {
         Some(cutoff) => agent_harness::attach_as_of(&turn_envelope, cutoff),
         None => turn_envelope,
@@ -555,6 +567,28 @@ async fn build_turn_envelope(
             .map(|memory| memory.relevant.as_slice())
             .unwrap_or_default(),
     );
+    let turn_envelope = if use_memory {
+        let cutoff = capture.cutoff();
+        let extension = state
+            .store
+            .lock_loupist(&profile.id)
+            .ok()
+            .and_then(|connection| {
+                crate::knowledge::visible_extension(&connection, &profile.id, &|at| {
+                    cutoff.is_none_or(|cutoff| cutoff.recorded(at))
+                })
+                .ok()
+            });
+        match extension {
+            Some(extension) => agent_harness::attach_world_kinds(
+                &turn_envelope,
+                &crate::knowledge::world_kinds_block(&extension),
+            ),
+            None => turn_envelope,
+        }
+    } else {
+        turn_envelope
+    };
     let turn_envelope = crate::commands::knowledge::attach_selected_references(
         &turn_envelope,
         selected_references.as_ref(),

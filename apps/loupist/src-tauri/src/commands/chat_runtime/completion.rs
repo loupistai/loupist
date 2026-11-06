@@ -90,8 +90,9 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
     let host_composed = content.trim().is_empty();
     let has_staged_memory = task_update_memory
         && (!capture.staged_principles.lock().await.is_empty()
-            || !capture.staged_lenses.lock().await.is_empty()
             || !capture.staged_sources.lock().await.is_empty()
+            || !capture.staged_filings.lock().await.is_empty()
+            || capture.staged_setup.lock().await.is_some()
             || capture.staged_research.lock().await.is_some());
     if host_composed && !has_staged_memory {
         *failure = Some("Pi settled without an assistant message".into());
@@ -181,12 +182,8 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
         } else {
             None
         };
-        let saved_lenses = if task_update_memory {
-            capture.staged_lenses.lock().await.clone()
-        } else {
-            Vec::new()
-        };
         let saved_principles = capture.staged_principles.lock().await.clone();
+        let staged_handoff = capture.staged_handoff.lock().await.clone();
         let citation_reads = capture.staged_reads.lock().await.clone();
         // Asset pages change only with Memory saving on and never under an as-of date.
         let asset_work = task_update_memory && !capture.as_of_turn();
@@ -200,6 +197,31 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
         } else {
             Vec::new()
         };
+        let saved_vocabulary = if task_update_memory {
+            capture.staged_vocabulary.lock().await.clone()
+        } else {
+            Vec::new()
+        };
+        let saved_filings = if task_update_memory {
+            capture.staged_filings.lock().await.clone()
+        } else {
+            Vec::new()
+        };
+        let saved_setup = if task_update_memory {
+            capture.staged_setup.lock().await.clone()
+        } else {
+            None
+        };
+        let watchlist_changes = saved_setup
+            .as_ref()
+            .map(|setup| {
+                crate::commands::tool_executor::apply_setup_watchlist(
+                    app_state,
+                    task_loupist_id,
+                    setup,
+                )
+            })
+            .unwrap_or_default();
         let unattended = capture.unattended_run_id.is_some();
         let turn_observations = match asset_work
             .then(|| crate::commands::assets::view_context(app_state).ok())
@@ -246,6 +268,9 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                     alert: None,
                     watch: None,
                     earnings: None,
+                    vocabulary: None,
+                    handoff: None,
+                    link: None,
                     id: message_id.clone(),
                     role: ChatRole::Assistant,
                     status: ChatMessageStatus::Complete,
@@ -291,7 +316,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                     task_loupist_id,
                 )?;
                 let persist = |transaction: &rusqlite::Transaction<'_>| {
-                    let mut changes = crate::commands::knowledge::persist_saved_turn(
+                    let saved = crate::commands::knowledge::persist_saved_turn_sources(
                         transaction,
                         &blobs,
                         task_loupist_id,
@@ -303,7 +328,6 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         &saved_sources,
                         &saved_reads,
                         saved_research.as_ref(),
-                        &saved_lenses,
                     )
                     .map_err(|error| {
                         on_event.set_failure_kind(classify_turn_failure(
@@ -312,6 +336,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         ));
                         crate::store::StoreError::Invalid(error.to_string())
                     })?;
+                    let mut changes = saved.changes;
                     if task_update_memory {
                         changes.extend(
                             crate::commands::knowledge::principles::persist_principles(
@@ -320,7 +345,33 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                                 &saved_principles,
                                 created_at_ms,
                             )
-                            .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?,
+                            .map_err(|error| {
+                                on_event.set_failure_kind(classify_turn_failure(
+                                    &error,
+                                    ChatFailureKind::MemoryCommitFailed,
+                                ));
+                                crate::store::StoreError::Invalid(error.to_string())
+                            })?,
+                        );
+                        changes.extend(
+                            crate::commands::tool_executor::commit_filings(
+                                transaction,
+                                &blobs,
+                                task_loupist_id,
+                                &crate::knowledge::lens_page::FilingOrigin::Turn {
+                                    chat_id: thread_id.to_owned(),
+                                    message_id: message_id.clone(),
+                                    user_message_id: capture.principle_user_message_id.clone(),
+                                    unattended,
+                                },
+                                created_at_ms,
+                                &saved_filings,
+                                &saved.retained,
+                            )
+                            .map_err(|error| {
+                                on_event.set_failure_kind(ChatFailureKind::MemoryCommitFailed);
+                                crate::store::StoreError::Invalid(error.to_string())
+                            })?,
                         );
                     }
                     crate::commands::knowledge::memory_usage::persist_deliveries(
@@ -335,6 +386,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                     .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
                     crate::commands::knowledge::principles::persist_citations(
                         transaction,
+                        &blobs,
                         task_loupist_id,
                         &message_id,
                         &content,
@@ -361,7 +413,36 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         unattended,
                     )
                     .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
-                    if host_composed && changes.is_empty() {
+                    let mut skipped_kinds = crate::commands::tool_executor::commit_vocabulary(
+                        transaction,
+                        task_loupist_id,
+                        thread_id,
+                        created_at_ms,
+                        &saved_vocabulary,
+                    )
+                    .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
+                    let mut setup = watchlist_changes.clone();
+                    if let Some(staged) = &saved_setup {
+                        let (changed, skipped) = crate::commands::tool_executor::commit_setup(
+                            transaction,
+                            &blobs,
+                            task_loupist_id,
+                            thread_id,
+                            created_at_ms,
+                            staged,
+                        )?;
+                        setup.extend(changed);
+                        skipped_kinds.extend(skipped);
+                    }
+                    if let Some(staged) = &staged_handoff {
+                        crate::chat::handoff::commit(
+                            transaction,
+                            task_loupist_id,
+                            staged,
+                            created_at_ms,
+                        )?;
+                    }
+                    if host_composed && changes.is_empty() && setup.is_empty() {
                         on_event.set_failure_kind(ChatFailureKind::EmptyReply);
                         return Err(crate::store::StoreError::Invalid(
                             "No committed receipts for an empty answer".into(),
@@ -395,6 +476,8 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         &message_id,
                         task_update_memory,
                         changes,
+                        skipped_kinds,
+                        setup,
                         Some(performance),
                         turn_assets.trace_notes(elapsed_millis(chat_started_at)),
                     )?;
@@ -418,6 +501,14 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                 Ok((title_applied, completed_message, performance))
             },
         );
+        if saved_setup.is_some()
+            && app_state
+                .store
+                .resync_folder_registration(task_loupist_id)
+                .is_err()
+        {
+            eprintln!("The Loupist list could not pick up the new focus yet");
+        }
         match finalized {
             Ok((title_applied, completed_message, performance)) => {
                 app_state.graph.wake();

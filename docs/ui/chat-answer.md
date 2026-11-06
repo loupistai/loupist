@@ -29,3 +29,20 @@ shows and sent messages wait in the ordinary queue, sending on reconnect. Otherw
 the latest answer failed with the tool error `offline` (the completed message's
 `offline_reads`), the banner says some data couldn't be fetched because a source
 or the network couldn't be reached.
+
+## Learned line
+
+Under every finished answer one line says what it used and learned, in this order:
+"Read n sources · Learned n · Map +n names · n relationships · n ideas · Used n pages".
+Only the parts that are not zero appear. Learned counts the sections the answer added,
+replaced or retired, read by message id from `memory_learned`; ideas counts filed pages
+that are ideas. Used counts every Lens page the host delivered, so an Outlook (perspective)
+counts as well as principles, methods, topics and ideas. A private chat, where saving is
+off, shows no Learned part and does not ask Rust for one, and a running or failed answer
+shows no line.
+
+Choosing Learned or ideas opens the card under the answer: each filed page, with every
+added, replaced or retired section. Fix opens the Bot composer with the page pinned
+and "Correct this:" ahead of the cursor (the Lens pin path; it never sends). Forget
+retires that section through `memory_section_forget` and the row offers Undo. Nothing waits
+for approval. Used pages open a quoted list with Not this time and Edit.

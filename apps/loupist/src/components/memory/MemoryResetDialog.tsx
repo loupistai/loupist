@@ -39,7 +39,7 @@ export function MemoryResetDialog({ bridge, loupistId, name, open, onOpenChange,
       <DialogHeader><DialogTitle>{t("memoryPage.reset.title", { loupistSubject: subjectName(name, i18n.language) })}</DialogTitle>
         <DialogDescription id={bodyId}>{t("memoryPage.reset.body")}</DialogDescription></DialogHeader>
       <DialogBody>
-        {counts ? <dl className="memory-reset-counts">{(["principles", "methods", "names", "relationships", "sources"] as const).map(kind => <div key={kind}><dt>{t(`memoryPage.reset.counts.${kind}`)}</dt><dd>{formatNumber(counts[kind])}</dd></div>)}</dl> : !error ? <p role="status">{t("memoryPage.loading")}</p> : null}
+        {counts ? <dl className="memory-reset-counts">{(["principles", "pages", "sections", "names", "relationships", "sources"] as const).map(kind => <div key={kind}><dt>{t(`memoryPage.reset.counts.${kind}`)}</dt><dd>{formatNumber(counts[kind])}</dd></div>)}</dl> : !error ? <p role="status">{t("memoryPage.loading")}</p> : null}
         <p className="memory-meta">{t("memoryPage.reset.keeps")}</p>
         <label className="memory-reset-confirm" htmlFor={inputId}>{t("memoryPage.reset.confirmLabel")}
           <Input id={inputId} value={confirmation} disabled={busy || !counts} onChange={event => setConfirmation(event.target.value)} aria-describedby={bodyId} autoComplete="off" />

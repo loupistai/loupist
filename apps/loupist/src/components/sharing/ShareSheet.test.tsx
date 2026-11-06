@@ -8,8 +8,8 @@ async function fixture(configure?: (bridge: MockLoupistBridge) => void) {
   configure?.(bridge);
   render(<ShareSheet bridge={bridge} loupistId="loupist-quality" loupistName="Quality Compounder" scope={{ kind: "loupist" }} open onOpenChange={() => {}} />);
   const dialog = await screen.findByRole("dialog", { name: "Share Quality Compounder" });
-  await within(dialog).findByRole("switch", { name: "Ways of working" });
-  await waitFor(() => expect(within(dialog).getByRole("switch", { name: "Ways of working" })).toBeEnabled());
+  await within(dialog).findByRole("switch", { name: "Methods" });
+  await waitFor(() => expect(within(dialog).getByRole("switch", { name: "Methods" })).toBeEnabled());
   return { bridge, dialog, user: userEvent.setup() };
 }
 
@@ -21,7 +21,7 @@ it("keeps every output disabled until a blocking finding is left out, and offers
   const personal = within(findings).getByText(/contains an email, phone number or your name/).closest("li")!;
   // The finding names the record's kind and title, never the matched value.
   expect(account).toHaveTextContent("Rule “Trim when a position passes 12% of the account” contains what looks like an account or card number.");
-  expect(personal).toHaveTextContent("Way of working “Owner earnings” contains");
+  expect(personal).toHaveTextContent("Method “Owner earnings” contains");
   expect(within(account).queryByRole("button", { name: "It's fine" })).toBeNull();
   expect(within(personal).getByRole("button", { name: "It's fine" })).toBeVisible();
   // Disabled outputs say why, under them.

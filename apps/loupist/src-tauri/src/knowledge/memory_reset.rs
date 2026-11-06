@@ -8,7 +8,11 @@ use std::collections::{BTreeMap, BTreeSet};
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ResetCounts {
     pub principles: usize,
-    pub methods: usize,
+    /// Whole Loupist-origin pages that disappear.
+    pub pages: usize,
+    /// Loupist-origin sections retired, and Loupist-written summaries
+    /// cleared, on pages the user keeps.
+    pub sections: usize,
     pub names: usize,
     pub relationships: usize,
     pub sources: usize,
@@ -16,6 +20,10 @@ pub struct ResetCounts {
 
 struct ResetPlan {
     lenses: BTreeSet<String>,
+    /// (record id, section key, section digest) of Loupist-origin sections on kept pages.
+    sections: Vec<(String, String, String)>,
+    /// Kept pages whose summary the Loupist wrote last.
+    summaries: Vec<String>,
     refs: shared_pack::ImportRefs,
     counts: ResetCounts,
 }
@@ -27,30 +35,69 @@ fn plan(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<ResetPlan> {
     let mut counts = ResetCounts::default();
     // The creation event owns authorship. Editing a shared or user-created item
     // never turns it into something Reset may remove.
-    let mut q = tx.prepare("SELECT r.record_id, r.kind, COALESCE(m.lens_kind,'') FROM knowledge_records r LEFT JOIN knowledge_lens_metadata m ON m.record_id=r.record_id WHERE r.owner_loupist_id=?1 AND EXISTS(SELECT 1 FROM knowledge_growth_events e WHERE e.loupist_id=?1 AND e.record_id=r.record_id AND e.kind=CASE r.kind WHEN 'lens' THEN 'lens_created' ELSE 'source_retained' END AND e.actor='loupist') AND NOT EXISTS(SELECT 1 FROM knowledge_growth_events e WHERE e.loupist_id=?1 AND e.record_id=r.record_id AND e.actor IN ('user','import') AND e.kind IN ('lens_created','lens_revised','source_retained')) AND NOT EXISTS(SELECT 1 FROM knowledge_standing_selection s WHERE s.loupist_id=?1 AND s.record_id=r.record_id)")?;
+    let mut sections = Vec::new();
+    let mut summaries = Vec::new();
+    let mut q = tx.prepare("SELECT r.record_id, r.kind, COALESCE(m.kind,''), m.archived_at_ms IS NOT NULL FROM knowledge_records r LEFT JOIN knowledge_lens_metadata m ON m.record_id=r.record_id WHERE r.owner_loupist_id=?1 AND (r.kind='source' OR m.record_id IS NOT NULL)")?;
     let rows = q
         .query_map([loupist], |r| {
             Ok((
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
                 r.get::<_, String>(2)?,
+                r.get::<_, bool>(3)?,
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    for (id, kind, lens_kind) in rows {
+    for (id, kind, lens_kind, archived) in rows {
         if controls.removed.contains(&id) {
             continue;
         }
-        if kind == "lens" && matches!(lens_kind.as_str(), "method" | "principle") {
-            lenses.insert(id);
-            if lens_kind == "principle" {
-                counts.principles += 1;
-            } else {
-                counts.methods += 1;
+        if kind == "lens" {
+            if archived {
+                continue;
             }
-        } else if kind == "source" {
+            // The creation event owns page authorship; sections carry their own.
+            let created_by_loupist: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM knowledge_growth_events e WHERE e.loupist_id=?1 AND e.record_id=?2 AND e.kind='lens_created' AND e.actor='loupist')", params![loupist, id], |r| r.get(0))?;
+            if lens_kind == "principle" {
+                if created_by_loupist {
+                    lenses.insert(id);
+                    counts.principles += 1;
+                }
+                continue;
+            }
+            let page = super::lens::read_page(tx, loupist, &id)?;
+            let (kept, loupist_sections): (Vec<_>, Vec<_>) =
+                page.body.sections().iter().partition(|section| {
+                    matches!(
+                        section.origin,
+                        super::lens_page::Origin::User | super::lens_page::Origin::Shared
+                    )
+                });
+            if created_by_loupist && kept.is_empty() {
+                lenses.insert(id);
+                counts.pages += 1;
+            } else {
+                for section in loupist_sections {
+                    sections.push((
+                        id.clone(),
+                        section.key.as_str().to_owned(),
+                        section.digest.clone(),
+                    ));
+                    counts.sections += 1;
+                }
+                // The log knows who wrote the summary the page shows now.
+                let summarized_by: Option<String> = tx.query_row("SELECT origin FROM knowledge_lens_log WHERE record_id=?1 AND outcome='summarized' ORDER BY created_at_ms DESC, rowid DESC LIMIT 1", [&id], |r| r.get(0)).optional()?;
+                if !page.body.summary().is_empty()
+                    && matches!(summarized_by.as_deref(), Some("turn" | "learning"))
+                {
+                    summaries.push(id.clone());
+                    counts.sections += 1;
+                }
+            }
+        } else {
+            let created_by_loupist: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM knowledge_growth_events e WHERE e.loupist_id=?1 AND e.record_id=?2 AND e.kind='source_retained' AND e.actor='loupist') AND NOT EXISTS(SELECT 1 FROM knowledge_growth_events e WHERE e.loupist_id=?1 AND e.record_id=?2 AND e.actor IN ('user','import') AND e.kind='source_retained')", params![loupist, id], |r| r.get(0))?;
             let protected: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM knowledge_source_captures WHERE record_id=?1 AND authorship IN ('user','imported_contributor'))", [&id], |r| r.get(0))?;
-            if !protected {
+            if created_by_loupist && !protected {
                 refs.sources.insert(id);
             }
         }
@@ -139,6 +186,8 @@ fn plan(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<ResetPlan> {
     counts.sources = refs.sources.len();
     Ok(ResetPlan {
         lenses,
+        sections,
+        summaries,
         refs,
         counts,
     })
@@ -175,6 +224,44 @@ pub fn reset(
         Some(serde_json::json!({"kind":"memory_reset"})),
     )?;
     let mut controls = memory_controls::load(tx, loupist)?;
+    let mut by_page: BTreeMap<String, Vec<super::lens_page::LensOp>> = BTreeMap::new();
+    for (record_id, key, digest) in plan.sections {
+        by_page
+            .entry(record_id)
+            .or_default()
+            .push(super::lens_page::LensOp::Retire {
+                key: super::lens_page::SectionKey::new(&key)?,
+                expected: digest,
+                why: "Reset by you".into(),
+            });
+    }
+    for record_id in plan.summaries {
+        by_page
+            .entry(record_id)
+            .or_default()
+            .push(super::lens_page::LensOp::Summary {
+                text: String::new(),
+            });
+    }
+    for (record_id, ops) in by_page {
+        for chunk in ops.chunks(super::lens_page::MAX_OPS_PER_DELTA) {
+            super::lens::file(
+                tx,
+                loupist,
+                &super::lens_page::FilingOrigin::User {
+                    chat_id: None,
+                    message_id: None,
+                },
+                vec![super::lens_page::PageDelta {
+                    target: super::lens_page::PageTarget::Existing {
+                        record_id: record_id.clone(),
+                    },
+                    ops: chunk.to_vec(),
+                }],
+                at_ms,
+            )?;
+        }
+    }
     for id in &plan.lenses {
         // Release the active-title/statement uniqueness reservation as well.
         tx.execute("UPDATE knowledge_lens_metadata SET archived_at_ms=?1 WHERE loupist_id=?2 AND record_id=?3", params![at_ms,loupist,id])?;

@@ -102,6 +102,7 @@
     "loadingModels": "Loading models…",
     "modelsNotLoadedYet": "Models not loaded yet",
     "couldNotRefreshModels": "Could not refresh models.",
+    "modelsBusy": "Another account change is still finishing. Try again in a moment.",
     "couldNotConfigureThisProvider": "Could not configure this provider.",
     "couldNotUpdateModelVisibility": "Could not update model visibility.",
     "removingLabel": "Removing {{label}}…",
@@ -269,7 +270,21 @@
     "noAvailableLoupists": "No available Loupists",
     "worldProcessingPreferences": "World processing preferences",
     "reconnectLoupistFolder": "Reconnect a Loupist folder in Loupist settings to configure World processing.",
-    "openALoupistFolderToConfigureWorldProcessing": "Open a Loupist folder to configure World processing."
+    "openALoupistFolderToConfigureWorldProcessing": "Open a Loupist folder to configure World processing.",
+    "readiness": {
+      "recoveryRequired": "World processing was interrupted. Recover the last confirmed World to continue. The interrupted source will not be processed again automatically.",
+      "recovering": "Restoring the last confirmed World. This does not use a model or retry interrupted processing.",
+      "runtimeUnavailable": "World processing is unavailable. Update or reinstall the app to restore it.",
+      "awaitingProvider": "Waiting for a supported model provider. A recommended World model will be selected when one is connected.",
+      "chooseModel": "Choose a World processing model.",
+      "modelUnavailable": "The selected model is unavailable for World processing.",
+      "connectProvider": "Connect the selected provider in Settings.",
+      "isolationUnsupported": "This provider does not support isolated, non-retrying World processing.",
+      "runtimeMissing": "The model runtime is unavailable.",
+      "chooseConnectedModel": "Choose an available connected model.",
+      "notConnected": "Connect the model provider in Settings.",
+      "accountWaiting": "This account is waiting until a request goes through. See Settings › Models & providers."
+    }
   },
   "useAppUpdate": {
     "couldNotReadUpdateStatus": "Could not read update status.",

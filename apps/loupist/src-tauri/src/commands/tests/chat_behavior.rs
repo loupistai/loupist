@@ -4,7 +4,12 @@ use tauri::Manager;
 
 const TURN_ENVELOPE: &str = r#"{"live_time":{"current_date_utc":"2026-08-10"}}"#;
 
-fn send_request(run_id: &str, loupist_id: &str, thread_id: &str, prompt: &str) -> ChatSendRequest {
+pub(super) fn send_request(
+    run_id: &str,
+    loupist_id: &str,
+    thread_id: &str,
+    prompt: &str,
+) -> ChatSendRequest {
     ChatSendRequest {
         run_id: run_id.into(),
         loupist_id: loupist_id.into(),
@@ -478,6 +483,8 @@ fn completed_chat_performance_survives_reload_and_matches_live_completion() {
                 "assistant-recovered",
                 false,
                 Vec::new(),
+                Vec::new(),
+                Vec::new(),
                 Some(performance.clone()),
                 Vec::new(),
             )?);
@@ -650,7 +657,7 @@ async fn chat_activity_storage_failure_does_not_persist_a_user_turn() {
 }
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
-fn install_chat_rpc_fixture(state: &mut AppState, directory: &Path, source: &str) {
+pub(super) fn install_chat_rpc_fixture(state: &mut AppState, directory: &Path, source: &str) {
     use crate::pi::{PI_DARWIN_ARM64_ARCHIVE_SHA256, PI_VERSION};
 
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -705,7 +712,7 @@ fn install_chat_rpc_fixture(state: &mut AppState, directory: &Path, source: &str
 }
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
-async fn drain(state: &AppState) {
+pub(super) async fn drain(state: &AppState) {
     tokio::time::timeout(std::time::Duration::from_secs(15), async {
         while state.run_coordinator.active_count() != 0 {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -1203,7 +1210,7 @@ async fn chat_launch_failure_persists_a_sanitized_terminal_error() {
     let profile = profile("loupist-chat-launch-failure", &workspace, 1);
     seed_profile(state.store.as_ref(), &profile);
     // Exercise the real default Memory path inside a Tokio runtime.
-    crate::commands::knowledge::ensure_standing_lens(
+    crate::commands::knowledge::ensure_perspective(
         &state,
         &profile.id,
         "Distinguish reported facts from assumptions.",
@@ -1502,7 +1509,7 @@ fn native_chat_prompt_expands_current_skills_and_preserves_memory_authority() {
         assert_eq!(result["source_component_loadable"], *save_memory);
         let tools = result["registered_tools"].as_array().unwrap();
         assert!(tools.iter().any(|name| name == "chat_history"));
-        for writer in ["source_save", "note_save", "lens_update"] {
+        for writer in ["source_save", "note_save", "principle_save"] {
             assert_eq!(tools.iter().any(|name| name == writer), *save_memory);
         }
         assert_eq!(user_text.contains(&history[0].content), *cold);

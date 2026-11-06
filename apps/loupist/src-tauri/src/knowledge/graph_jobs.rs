@@ -1,8 +1,9 @@
 //! Durable graph outbox. Job inputs live in SQLite, not in process memory.
 //!
-//! An inference attempt is not an exactly-once key, so no job is retried
-//! automatically. An expired lease after a mutation or an inference attempt
-//! becomes `reconcile_required` and is not dispatched again.
+//! An inference attempt is not an exactly-once key, so a retry may be charged.
+//! A Source extraction whose paid attempt published nothing runs once more;
+//! after a second such attempt, or a mutation, the job becomes
+//! `reconcile_required` and is not dispatched again.
 
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
@@ -96,6 +97,10 @@ pub struct JobDocument {
     pub sealed_revision_id: Option<String>,
     #[serde(default)]
     pub attempt_id: Option<String>,
+    /// Paid attempts that ended without publishing anything. The first runs
+    /// again; the second quarantines the generation.
+    #[serde(default)]
+    pub interrupted_attempts: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -146,8 +151,7 @@ pub struct GraphProcessingSettings {
     /// Optional cheaper model for Graphiti's small calls. Empty uses the main model.
     #[serde(default)]
     pub fast_model: Option<String>,
-    /// Extra entity and relation kinds for this Loupist. Empty at version 0.
-    #[serde(default)]
+    #[serde(skip)]
     pub extension: super::world_schema::WorldExtension,
     /// Item delivery and removal controls share the existing per-Loupist JSON row.
     #[serde(default)]
@@ -225,10 +229,11 @@ pub fn load_settings(
             |row| row.get(0),
         )
         .optional()?;
-    let settings: GraphProcessingSettings = data
+    let mut settings: GraphProcessingSettings = data
         .map(|value| serde_json::from_str(&value))
         .transpose()?
         .unwrap_or_default();
+    settings.extension = super::world_schema::live_extension(connection, loupist_id)?;
     settings.validate()?;
     Ok(settings)
 }
@@ -742,6 +747,7 @@ pub fn accept_episode(
             lease_expires_at_ms: None,
             sealed_revision_id: Some(request.world_revision_id.clone()),
             attempt_id: None,
+            interrupted_attempts: 0,
         };
         let job = insert_job(
             tx,
@@ -841,6 +847,7 @@ pub fn accept_sealed_world(
         lease_expires_at_ms: None,
         sealed_revision_id: Some(request.world_revision_id.clone()),
         attempt_id: None,
+        interrupted_attempts: 0,
     };
     insert_job(
         tx,
@@ -910,6 +917,43 @@ pub fn recover_world(
         "Recover World processing",
         at_ms,
     )
+}
+
+/// Queue the rebuild a quarantined World needs without waiting for the user.
+/// The rebuild calls no model and never retries the interrupted call. A
+/// rebuild that failed waits for the explicit action, so it cannot loop.
+pub(crate) fn recover_world_unattended(
+    tx: &Transaction<'_>,
+    blobs: &BlobStore,
+    loupist_id: &str,
+    at_ms: i64,
+) -> KnowledgeResult<Option<GraphJobView>> {
+    if recovery_status(tx, loupist_id)? != Some("reconciliation_required") {
+        return Ok(None);
+    }
+    let last_rebuild: Option<String> = tx
+        .query_row(
+            "SELECT status FROM knowledge_graph_outbox
+             WHERE loupist_id = ?1 AND json_extract(payload_json, '$.episodeKind') = ?2
+             ORDER BY created_at_ms DESC, job_id DESC LIMIT 1",
+            params![loupist_id, EPISODE_RECOVERY],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if matches!(
+        last_rebuild.as_deref(),
+        Some(JOB_FAILED_BEFORE | JOB_RECONCILE)
+    ) {
+        return Ok(None);
+    }
+    match recover_world(tx, blobs, loupist_id, at_ms) {
+        Ok(job) => Ok(Some(job)),
+        // Running work, an inactive Loupist or no World yet: a later pump looks again.
+        Err(
+            KnowledgeError::Invalid(_) | KnowledgeError::Unauthorized(_) | KnowledgeError::NotFound,
+        ) => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 /// Rebuild the derived index after a shared pack's Add or Remove, ahead of
@@ -1008,6 +1052,7 @@ fn insert_world_load(
         lease_expires_at_ms: None,
         sealed_revision_id: Some(revision.to_owned()),
         attempt_id: None,
+        interrupted_attempts: 0,
     };
     insert_job(
         tx,
@@ -1087,10 +1132,16 @@ pub fn get_job(
 pub(super) fn queued_loupist_heads(tx: &Transaction<'_>) -> KnowledgeResult<Vec<GraphJobView>> {
     // Read predecessor keys once. A correlated scan of full job JSON for each
     // queued chunk makes a large backfill quadratic and blocks other folder reads.
+    // A chunk waits for the chunk before it, which is only extraction context:
+    // once that chunk can no longer finish, the rest of the Source still runs.
     let mut statement = tx.prepare(
         "WITH completed AS MATERIALIZED (
            SELECT loupist_id, json_extract(payload_json, '$.episodeKey') AS episode_key
            FROM knowledge_graph_outbox WHERE status = 'completed'
+         ), pending AS MATERIALIZED (
+           SELECT loupist_id, json_extract(payload_json, '$.episodeKey') AS episode_key
+           FROM knowledge_graph_outbox
+           WHERE status IN ('queued', 'running', 'paused_budget', 'reconcile_required')
          )
          SELECT job_id, loupist_id, world_record_id, world_revision_id, status, payload_json,
                 payload_digest, created_at_ms
@@ -1112,6 +1163,11 @@ pub(super) fn queued_loupist_heads(tx: &Transaction<'_>) -> KnowledgeResult<Vec<
                AND (json_extract(payload_json, '$.previousEpisodeKey') IS NULL
                  OR EXISTS (
                    SELECT 1 FROM completed previous
+                   WHERE previous.loupist_id = candidate.loupist_id
+                     AND previous.episode_key = json_extract(candidate.payload_json, '$.previousEpisodeKey')
+                 )
+                 OR NOT EXISTS (
+                   SELECT 1 FROM pending previous
                    WHERE previous.loupist_id = candidate.loupist_id
                      AND previous.episode_key = json_extract(candidate.payload_json, '$.previousEpisodeKey')
                  ))
@@ -1194,7 +1250,8 @@ pub fn resume_processing(
 
 /// Called once after acquiring the app-data lock and reclaiming orphaned processes.
 /// No prior process can still own these running attempts; wall-clock lease expiry
-/// is irrelevant on startup. A dispatched/uncertain call is never replayed.
+/// is irrelevant on startup. A Source's interrupted paid call runs once more
+/// (`retry_once`); any other dispatched or uncertain call is never replayed.
 pub(crate) fn recover_interrupted(tx: &Transaction<'_>) -> KnowledgeResult<u32> {
     let mut changed = 0;
     for job in list_all(tx)?
@@ -1203,15 +1260,14 @@ pub(crate) fn recover_interrupted(tx: &Transaction<'_>) -> KnowledgeResult<u32> 
     {
         let mut settings = load_settings(tx, &job.loupist_id)?;
         let mut document = job.document.clone();
-        let uncertain =
-            document.mutation_sent || document.inference_attempted || document.usage_uncertain;
+        let retried = retry_once(&mut document);
+        let uncertain = !retried
+            && (document.mutation_sent || document.inference_attempted || document.usage_uncertain);
         let next = if uncertain {
             quarantine(&mut settings, &document.generation_id);
             JOB_RECONCILE
-        } else if settings.paused && document.episode_kind != EPISODE_RECOVERY {
-            JOB_PAUSED
         } else {
-            JOB_QUEUED
+            requeued(&settings, &document)
         };
         clear_lease(&mut document);
         if write_status(tx, &job.job_id, JOB_RUNNING, next, &document)? {
@@ -1388,6 +1444,8 @@ pub fn finish_job(
             JOB_FAILED_BEFORE
         } else if outcome == JOB_COMPLETED && validated && !usage_uncertain {
             JOB_COMPLETED
+        } else if retry_once(&mut document) {
+            requeued(settings, &document)
         } else if document.mutation_sent || document.inference_attempted || usage_uncertain {
             quarantine(settings, &document.generation_id);
             JOB_RECONCILE
@@ -1495,11 +1553,27 @@ pub struct GraphPublicSettings {
     pub fast_model: Option<String>,
 }
 
+/// The sentence under the World processing status, by code: the interface
+/// renders it in its own language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReadinessNote {
+    RecoveryRequired,
+    Recovering,
+    RuntimeUnavailable,
+    AwaitingProvider,
+    ChooseModel,
+    ModelUnavailable,
+    ConnectProvider,
+    #[serde(untagged)]
+    Provider(crate::providers::inference::UnreadyReason),
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GraphReadiness {
     pub status: String,
-    pub message: Option<String>,
+    pub note: Option<ReadinessNote>,
     pub provider_name: Option<String>,
     pub model_name: Option<String>,
     pub auth_kind: Option<String>,
@@ -1634,6 +1708,32 @@ fn ensure_active(settings: &GraphProcessingSettings, loupist_id: &str) -> Knowle
         Err(KnowledgeError::Unauthorized("loupist is not active"))
     } else {
         Ok(())
+    }
+}
+
+/// A Source's paid attempt that published nothing runs once more: the World is
+/// unchanged, and the Source's cost stays at two calls at most. Returns false,
+/// leaving the document as it was, for any other attempt.
+fn retry_once(document: &mut JobDocument) -> bool {
+    let paid = document.inference_attempted || document.usage_uncertain;
+    if document.episode_kind != EPISODE_SPAN
+        || document.mutation_sent
+        || !paid
+        || document.interrupted_attempts > 0
+    {
+        return false;
+    }
+    document.interrupted_attempts += 1;
+    document.inference_attempted = false;
+    document.usage_uncertain = false;
+    true
+}
+
+fn requeued(settings: &GraphProcessingSettings, document: &JobDocument) -> &'static str {
+    if settings.paused && document.episode_kind != EPISODE_RECOVERY {
+        JOB_PAUSED
+    } else {
+        JOB_QUEUED
     }
 }
 
@@ -1979,6 +2079,7 @@ pub fn publish_and_complete(
     logical_digest: &str,
     at_ms: i64,
     usage_uncertain: bool,
+    followed: &[crate::store::user_context::MapContextItem],
 ) -> KnowledgeResult<GraphJobView> {
     use super::model::{SealWorld, WorldSnapshotBody};
     if sha256(artifact_utf8.as_bytes()) != logical_digest {
@@ -2048,6 +2149,7 @@ pub fn publish_and_complete(
         "processing",
         job.document.origin_chat_id.as_deref(),
         job.document.origin_message_id.as_deref(),
+        followed,
     )?;
     let mut document = job.document.clone();
     finish_artifact(&mut document, logical_digest);
@@ -2060,7 +2162,6 @@ pub fn publish_and_complete(
         ));
     }
     super::learning::enqueue(write.tx, &job.loupist_id, job_id, at_ms)?;
-    super::schema_writer::enqueue_review(write.tx, &job, at_ms)?;
     load_job(write.tx, job_id)
 }
 
@@ -2155,7 +2256,6 @@ pub(super) fn complete_reindex(
     // Recovery can backfill more work after completing its own job. Recheck
     // learning admission against that final transaction state.
     super::learning::enqueue(write.tx, &job.loupist_id, &job.job_id, at_ms)?;
-    super::schema_writer::enqueue_review(write.tx, &job, at_ms)?;
     Ok(completed)
 }
 
@@ -2176,7 +2276,6 @@ fn finish_indexed_head(
         ));
     }
     super::learning::enqueue(write.tx, &job.loupist_id, &job.job_id, at_ms)?;
-    super::schema_writer::enqueue_review(write.tx, job, at_ms)?;
     load_job(write.tx, &job.job_id)
 }
 

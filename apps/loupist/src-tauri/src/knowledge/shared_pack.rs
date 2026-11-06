@@ -7,22 +7,115 @@ use std::collections::{BTreeMap, BTreeSet};
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde_json::{json, Value};
 
+use super::lens_page::{
+    Basis, FilingOrigin, LensKind, LensOp, PageDelta, PageKind, PageTarget, SectionKey,
+};
 use super::model::{
     mint_id, Authorship, BindingRole, ClaimEndpoint, ClaimStatus, Coverage, CreateRecord,
-    DependencyRole, EvidenceBinding, EvidenceRevision, GraphClaim, GraphNode, LensChangeInput,
-    LensDocument, Qualifier, RecordKind, RepresentationRole, RetainMaterial, RetainNewSource,
-    ReviseLens, SealWorld, Selector, SourceClass, TimePoint, WorldSnapshotBody,
+    DependencyRole, EvidenceBinding, EvidenceRevision, GraphClaim, GraphNode, Qualifier,
+    RecordKind, RepresentationRole, RetainMaterial, RetainNewSource, SealWorld, Selector,
+    SourceClass, TimePoint, WorldSnapshotBody,
 };
 use super::{BlobStore, KnowledgeError, KnowledgeResult, Principle};
-use crate::sharing::pack::{ClaimRecord, EntityRecord, Identifiers, SourceRecord};
-
-const DEFAULT_PERSPECTIVE: &str = "This Loupist has not recorded a standing philosophy.";
+use crate::sharing::pack::{
+    ClaimRecord, EntityRecord, Identifiers, PackDoc, PackSection, SourceRecord,
+};
 
 #[derive(Debug, Clone)]
 pub(crate) struct LensRecord {
     pub record_id: String,
     pub title: String,
-    pub document: LensDocument,
+    pub document: PackDoc,
+}
+
+/// A page as a pack carries it: text only, keys and headings kept.
+fn pack_doc(page: &super::lens::PageRead) -> PackDoc {
+    PackDoc {
+        summary: page.body.summary().to_owned(),
+        sections: page
+            .body
+            .sections()
+            .iter()
+            .map(|section| PackSection {
+                key: section.key.as_str().to_owned(),
+                heading: section.heading.clone(),
+                markdown: section.markdown.clone(),
+            })
+            .collect(),
+    }
+}
+
+/// Ops that make a page read as `document`: retire every current section,
+/// then put the pack's sections and summary (an empty one clears the old).
+/// Accepted sections start with an empty basis (method and perspective allow
+/// one) and shared origin.
+fn replace_ops(
+    current: Option<&super::lens::PageRead>,
+    document: &PackDoc,
+) -> KnowledgeResult<Vec<LensOp>> {
+    let mut ops = Vec::new();
+    for section in current.map(|page| page.body.sections()).unwrap_or(&[]) {
+        ops.push(LensOp::Retire {
+            key: section.key.clone(),
+            expected: section.digest.clone(),
+            why: "Replaced by the shared Loupist's text".into(),
+        });
+    }
+    for section in &document.sections {
+        ops.push(LensOp::Put {
+            key: SectionKey::new(&section.key)?,
+            heading: section.heading.clone(),
+            markdown: section.markdown.clone(),
+            basis: Basis::default(),
+            expected: None,
+        });
+    }
+    if current.is_some() || !document.summary.trim().is_empty() {
+        ops.push(LensOp::Summary {
+            text: document.summary.clone(),
+        });
+    }
+    Ok(ops)
+}
+
+fn file_pack_page(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    target: PageTarget,
+    ops: Vec<LensOp>,
+    origin: Value,
+    at_ms: i64,
+) -> KnowledgeResult<String> {
+    let mut filed = Vec::new();
+    // A page delta carries at most 12 ops; a replaced page may need more.
+    let mut target = Some(target);
+    for chunk in ops.chunks(super::lens_page::MAX_OPS_PER_DELTA) {
+        let pages = super::lens::file(
+            tx,
+            loupist_id,
+            &FilingOrigin::Import {
+                pack: origin.clone(),
+            },
+            vec![PageDelta {
+                target: target.take().unwrap_or_else(|| PageTarget::Existing {
+                    record_id: filed.last().cloned().unwrap_or_default(),
+                }),
+                ops: chunk.to_vec(),
+            }],
+            at_ms,
+        )?;
+        let page = pages.into_iter().next().ok_or(KnowledgeError::NotFound)?;
+        if page.refused_text() {
+            return Err(KnowledgeError::LensBodyForbidden);
+        }
+        if page.record_id.is_empty() {
+            return Err(KnowledgeError::Invalid(
+                "the shared page has no text to keep",
+            ));
+        }
+        filed.push(page.record_id);
+    }
+    filed.pop().ok_or(KnowledgeError::NotFound)
 }
 
 /// The Source behind one evidence span, as an export needs it to decide privacy.
@@ -81,39 +174,33 @@ pub(crate) fn export_snapshot(
     loupist_id: &str,
 ) -> KnowledgeResult<ExportSnapshot> {
     let mut snapshot = ExportSnapshot::default();
-    let standing = super::research::load_standing_selection(tx, loupist_id)?;
-    if let Some((record_id, _)) = &standing {
-        let module = super::authority::require_record(tx, loupist_id, record_id)?;
-        let view = super::lens::read_lens(tx, loupist_id, record_id)?;
-        if view.document.markdown.trim() != DEFAULT_PERSPECTIVE {
-            snapshot.perspective = Some(LensRecord {
-                record_id: record_id.clone(),
-                title: module.title,
-                document: view.document,
-            });
-        }
-    }
     let mut statement = tx.prepare(
-        "SELECT record_id, title FROM knowledge_lens_metadata
-         WHERE loupist_id = ?1 AND lens_kind = 'method' AND archived_at_ms IS NULL
+        "SELECT record_id, title, kind FROM knowledge_lens_metadata
+         WHERE loupist_id = ?1 AND kind IN ('perspective', 'method') AND archived_at_ms IS NULL
          ORDER BY title_fold, record_id",
     )?;
-    let methods = statement
+    let pages = statement
         .query_map([loupist_id], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
     drop(statement);
-    for (record_id, title) in methods {
-        if standing.as_ref().is_some_and(|(id, _)| id == &record_id) {
-            continue;
-        }
-        let view = super::lens::read_lens(tx, loupist_id, &record_id)?;
-        snapshot.methods.push(LensRecord {
+    for (record_id, title, kind) in pages {
+        let page = super::lens::read_page(tx, loupist_id, &record_id)?;
+        let record = LensRecord {
             record_id,
             title,
-            document: view.document,
-        });
+            document: pack_doc(&page),
+        };
+        if kind == "perspective" {
+            snapshot.perspective = Some(record);
+        } else {
+            snapshot.methods.push(record);
+        }
     }
     snapshot.principles = super::principles::principle_list(tx, loupist_id, false)?;
     let Some((_, Some(revision))) = world_head(tx, loupist_id)? else {
@@ -888,7 +975,7 @@ fn unique_title(tx: &Transaction<'_>, loupist_id: &str, title: &str, pack: &str)
         .chain((2..50).map(|n| format!("{title} · {pack} ({n})")));
     for candidate in candidates {
         let candidate: String = candidate.chars().take(200).collect();
-        if super::lens::require_unique_lens_title(tx, loupist_id, &candidate, None).is_ok() {
+        if !super::lens::title_taken(tx, loupist_id, LensKind::Method, &candidate).unwrap_or(true) {
             return candidate;
         }
     }
@@ -898,132 +985,55 @@ fn unique_title(tx: &Transaction<'_>, loupist_id: &str, title: &str, pack: &str)
         .collect()
 }
 
-/// An accepted shared method becomes an ordinary Lens method with shared origin.
+/// An accepted shared method becomes an ordinary method page with shared origin.
 pub(crate) fn create_shared_method(
     tx: &Transaction<'_>,
     loupist_id: &str,
     title: &str,
     pack_name: &str,
-    document: &LensDocument,
+    document: &PackDoc,
     origin: Value,
     at_ms: i64,
 ) -> KnowledgeResult<String> {
     let title = unique_title(tx, loupist_id, title, pack_name);
-    let record = super::catalog::create_record(
+    file_pack_page(
         tx,
-        CreateRecord {
-            loupist_id: loupist_id.into(),
-            kind: RecordKind::Lens,
+        loupist_id,
+        PageTarget::Create {
+            kind: PageKind::Method,
             title,
-            at_ms,
+            anchors: Vec::new(),
         },
-    )?;
-    super::lens::revise_lens_with_provenance(
-        tx,
-        ReviseLens {
-            loupist_id: loupist_id.into(),
-            record_id: record.record_id.clone(),
-            expected_revision_id: None,
-            at_ms,
-            document: document.clone(),
-            dependencies: Vec::new(),
-            change: LensChangeInput {
-                references: Vec::new(),
-                rationale: format!("Accepted from the shared Loupist {pack_name}")
-                    .chars()
-                    .take(400)
-                    .collect(),
-                feedback: None,
-            },
-        },
-        "import",
-        None,
-        None,
-        Some(origin),
-    )?;
-    Ok(record.record_id)
+        replace_ops(None, document)?,
+        origin,
+        at_ms,
+    )
 }
 
-/// A create-new pack's accepted perspective replaces the default perspective.
+/// A create-new pack's accepted perspective replaces the current one.
 pub(crate) fn replace_perspective(
     tx: &Transaction<'_>,
     loupist_id: &str,
     title: &str,
-    pack_name: &str,
-    document: &LensDocument,
+    document: &PackDoc,
     origin: Value,
     at_ms: i64,
 ) -> KnowledgeResult<String> {
-    let change = LensChangeInput {
-        references: Vec::new(),
-        rationale: format!("Perspective accepted from the shared Loupist {pack_name}")
-            .chars()
-            .take(400)
-            .collect(),
-        feedback: None,
+    let current = super::lens::active_perspective(tx, loupist_id)?
+        .map(|record_id| super::lens::read_page(tx, loupist_id, &record_id))
+        .transpose()?;
+    let ops = replace_ops(current.as_ref(), document)?;
+    let target = match &current {
+        Some(page) => PageTarget::Existing {
+            record_id: page.record_id.clone(),
+        },
+        None => PageTarget::Create {
+            kind: PageKind::Perspective,
+            title: title.chars().take(200).collect(),
+            anchors: Vec::new(),
+        },
     };
-    if let Some((record_id, revision_id)) =
-        super::research::load_standing_selection(tx, loupist_id)?
-    {
-        let view = super::lens::revise_lens_with_provenance(
-            tx,
-            ReviseLens {
-                loupist_id: loupist_id.into(),
-                record_id: record_id.clone(),
-                expected_revision_id: Some(revision_id),
-                at_ms,
-                document: document.clone(),
-                dependencies: Vec::new(),
-                change,
-            },
-            "import",
-            None,
-            None,
-            Some(origin),
-        )?;
-        super::research::select_standing_lens(
-            tx,
-            loupist_id,
-            &record_id,
-            &view.revision_id,
-            at_ms,
-        )?;
-        return Ok(record_id);
-    }
-    let title = unique_title(tx, loupist_id, title, pack_name);
-    let record = super::catalog::create_record(
-        tx,
-        CreateRecord {
-            loupist_id: loupist_id.into(),
-            kind: RecordKind::Lens,
-            title,
-            at_ms,
-        },
-    )?;
-    let view = super::lens::revise_lens_with_provenance(
-        tx,
-        ReviseLens {
-            loupist_id: loupist_id.into(),
-            record_id: record.record_id.clone(),
-            expected_revision_id: None,
-            at_ms,
-            document: document.clone(),
-            dependencies: Vec::new(),
-            change,
-        },
-        "import",
-        None,
-        None,
-        Some(origin),
-    )?;
-    super::research::select_standing_lens(
-        tx,
-        loupist_id,
-        &record.record_id,
-        &view.revision_id,
-        at_ms,
-    )?;
-    Ok(record.record_id)
+    file_pack_page(tx, loupist_id, target, ops, origin, at_ms)
 }
 
 /// An accepted shared principle keeps the `shared` origin. A statement the
@@ -1071,10 +1081,7 @@ pub(crate) fn archive_lens(
         )
         .optional()?
         .unwrap_or(true);
-    if archived
-        || super::research::load_standing_selection(tx, loupist_id)?
-            .is_some_and(|(id, _)| id == record_id)
-    {
+    if archived {
         return Ok(());
     }
     super::lens::set_lens_archived(
@@ -1093,20 +1100,10 @@ pub(crate) fn shared_lens_document(
     tx: &Transaction<'_>,
     loupist_id: &str,
     record_id: &str,
-) -> KnowledgeResult<Option<LensDocument>> {
-    let archived: Option<bool> = tx
-        .query_row(
-            "SELECT archived_at_ms IS NOT NULL FROM knowledge_lens_metadata WHERE loupist_id = ?1 AND record_id = ?2",
-            params![loupist_id, record_id],
-            |row| row.get(0),
-        )
-        .optional()?;
-    if archived != Some(false) {
-        return Ok(None);
-    }
-    match super::lens::read_lens(tx, loupist_id, record_id) {
-        Ok(view) => Ok(Some(view.document)),
-        Err(KnowledgeError::NotFound) => Ok(None),
+) -> KnowledgeResult<Option<PackDoc>> {
+    match super::lens::read_page(tx, loupist_id, record_id) {
+        Ok(page) if !page.archived => Ok(Some(pack_doc(&page))),
+        Ok(_) | Err(KnowledgeError::NotFound) => Ok(None),
         Err(error) => Err(error),
     }
 }
@@ -1125,49 +1122,26 @@ pub(crate) fn shared_principle_text(
 }
 
 /// The author's newer text for an accepted shared method or perspective, chosen
-/// in the update diff. The record keeps its title; a standing perspective stays selected.
-#[allow(clippy::too_many_arguments)]
+/// in the update diff. The record keeps its title.
 pub(crate) fn revise_shared_lens(
     tx: &Transaction<'_>,
     loupist_id: &str,
     record_id: &str,
-    pack_name: &str,
-    version: u32,
-    document: &LensDocument,
+    document: &PackDoc,
     origin: Value,
     at_ms: i64,
 ) -> KnowledgeResult<()> {
-    let head = super::authority::require_record(tx, loupist_id, record_id)?.head_revision_id;
-    let view = super::lens::revise_lens_with_provenance(
+    let current = super::lens::read_page(tx, loupist_id, record_id)?;
+    file_pack_page(
         tx,
-        ReviseLens {
-            loupist_id: loupist_id.into(),
-            record_id: record_id.into(),
-            expected_revision_id: head,
-            at_ms,
-            document: document.clone(),
-            dependencies: Vec::new(),
-            change: LensChangeInput {
-                references: Vec::new(),
-                rationale: format!(
-                    "Updated from the shared Loupist {pack_name} (version {version})"
-                )
-                .chars()
-                .take(400)
-                .collect(),
-                feedback: None,
-            },
+        loupist_id,
+        PageTarget::Existing {
+            record_id: record_id.to_owned(),
         },
-        "import",
-        None,
-        None,
-        Some(origin),
+        replace_ops(Some(&current), document)?,
+        origin,
+        at_ms,
     )?;
-    if super::research::load_standing_selection(tx, loupist_id)?
-        .is_some_and(|(id, _)| id == record_id)
-    {
-        super::research::select_standing_lens(tx, loupist_id, record_id, &view.revision_id, at_ms)?;
-    }
     Ok(())
 }
 

@@ -1,70 +1,8 @@
 {
-  "lensContextPane": {
-    "links": "Links",
-    "noLinksToOtherLensesYet": "No links to other Lenses yet.",
-    "backlinks": "Backlinks",
-    "noOtherLensLinksHereYet": "No other Lens links here yet.",
-    "lensOutline": "Lens outline",
-    "outline": "Outline",
-    "noHeadingsInThisLens": "No headings in this Lens.",
-    "backlinksShowTheCurrentCollection": "Backlinks show the current collection.",
-    "lensLinks": "Lens links",
-    "lensBacklinks": "Lens backlinks",
-    "unavailableLinks_one": "{{countText}} link is unavailable in this Loupist.",
-    "unavailableLinks_other": "{{countText}} links are unavailable in this Loupist.",
-    "truncatedCount": "{{countText}}+"
-  },
   "lensWorkspace": {
-    "emptyPerspective": "No default perspective has been written yet.",
-    "formatted": "Reading view",
     "markdownSource": "View Markdown",
-    "whenToApply": "When to apply",
-    "theQuestionsOrSituationsWhereThisLensHelps": "The questions or situations where this Lens helps.",
-    "assumptions": "Assumptions",
-    "whatThisPerspectiveTakesAsGiven": "What this perspective takes as given.",
-    "procedure": "Procedure",
-    "howToExamineTheEvidence": "How to examine the evidence.",
-    "principles": "Rules",
-    "whatMattersWhenInterpretingTheEvidence": "What matters when interpreting the evidence.",
-    "limitsAndCounterevidence": "Limits and counterevidence",
-    "whereItStopsHelpingAndWhatWouldChangeYourMind": "Where it stops helping and what would change your mind.",
-    "lensAtAGlance": "Lens at a glance",
-    "whenToUseIt": "When to use it",
-    "whatToQuestion": "What to question",
-    "couldNotLoadThisLens": "Could not load this Lens.",
-    "couldNotLoadLensProposals": "Could not load Lens proposals.",
-    "couldNotOpenTheSavedBasis": "Could not open the saved basis.",
-    "perspective": "Perspective",
-    "method": "Way of working",
-    "couldNotDismissThisProposal": "Could not dismiss this proposal.",
     "discussInChat": "Ask Bot to revise",
-    "showOutlineAndLinks": "Show outline and links",
-    "outlineLinks": "Outline & links",
-    "retryLens": "Retry Lens",
-    "lensReader": "Lens reader",
-    "defaultPerspective": "Default perspective",
-    "researchMethod": "Way of working",
-    "askYourLoupistInChatToReviseOrApplyThis": "Ask your Loupist in Chat to revise or apply this proposal.",
-    "discussProposalInChat": "Discuss proposal in Chat",
-    "dismissing": "Dismissing…",
-    "dismiss": "Dismiss",
-    "savedBasis": "Saved basis",
-    "openingSavedBasis": "Opening saved basis…",
-    "retrySavedBasis": "Retry saved basis",
-    "noSavedBasis": "No saved basis.",
-    "savedEvidence": "Saved evidence",
-    "openingLens": "Opening Lens…",
-    "noLensSelected": "No Lens selected",
-    "chooseAPerspectiveOrMethodAskYourLoupistInChat": "Choose a perspective or way of working. Ask your Loupist in Chat to create one.",
-    "lensContext": "Lens context",
-    "sourceEvidence": "Source {{index}}",
-    "worldEvidence": "World {{index}}",
-    "judgmentEvidence": "Judgment {{index}}",
-    "noteEvidence": "Working note {{index}}",
-    "lensEvidence": "Lens {{index}}",
-    "proposalFromChat": "Proposed changes from {{title}}",
-    "proposalNumber": "Proposed changes {{index}}",
-    "proposalPosition": "Proposal {{index}} of {{total}}"
+    "defaultPerspective": "Default perspective"
   },
   "researchLibrary": {
     "theRequestedLoupistSResearchWasNotReturned": "The requested Loupist's research was not returned.",
@@ -377,19 +315,23 @@
     "noFiltered": "No names match these filters.",
     "kind": {
       "company": "Company",
-      "product": "Product & technology",
+      "product": "Product",
+      "technology": "Technology",
+      "industry": "Industry",
       "person": "Person",
       "event": "Event & metric",
       "market": "Market & asset",
       "other": "Other",
-      "method": "Way of working",
+      "method": "Method",
       "perspective": "Perspective",
       "principle": "Rule",
       "watching": "Watching",
       "holding": "Holding",
       "disputed": "Sources disagree",
       "lens": "Lens",
-      "journal": "Journal"
+      "journal": "Journal",
+      "subject": "Topic",
+      "idea": "Idea"
     },
     "relationshipsList": "Relationships in this map",
     "evidence": "Evidence",
@@ -469,12 +411,12 @@
     "newConflict": "Two sources disagree: {{summary}}",
     "newLink": "{{a}} → {{b}} ({{relation}})",
     "newLinkPlain": "{{a}} → {{b}}",
-    "newMethod": "Learned a way of working: {{title}}",
+    "newMethod": "Learned a method: {{title}}",
     "newPrinciple": "Rule added: {{title}}",
     "goneFromMap": "No longer on the map",
     "today": "Today",
     "yesterday": "Yesterday",
-    "legendLens": "Lens: perspective · ways of working · rules",
+    "legendLens": "Lens: perspective · methods · rules",
     "legendWatch": "On your watchlist",
     "legendHold": "In your holdings",
     "legendWatchHold": "Dashed ring: watchlist · solid ring: holdings",
@@ -504,17 +446,21 @@
     },
     "moreActions": "More actions",
     "thesis": "Your thesis",
-    "openAssetPage": "Open asset page"
+    "openAssetPage": "Open asset page",
+    "newSubject": "Noted a topic: {{title}}",
+    "newIdea": "New idea: {{title}}",
+    "notes": "Notes",
+    "notesLoading": "Loading notes…"
   },
   "principles": {
     "yours": "YOUR RULES",
     "intro": "How your Loupist thinks. Your rules come first.",
-    "search": "Search rules and ways of working",
+    "search": "Search rules and methods",
     "yoursCaption": "Rules you taught. Your Loupist checks facts against them.",
     "perspectiveCaption": "The overall view your Loupist starts from.",
     "methodsCaption": "Checks your Loupist learned or saved from Chat.",
     "perspective": "PERSPECTIVE",
-    "methods": "WAYS OF WORKING",
+    "methods": "METHODS",
     "add": "+ Add rule",
     "statement": "Statement",
     "why": "Why",
@@ -552,7 +498,7 @@
     "keep": "Keep",
     "kept": "Kept",
     "archive": "Archive",
-    "archiveConfirm": "Archive this way of working? Your Loupist will stop using it.",
+    "archiveConfirm": "Archive this method? Your Loupist will stop using it.",
     "cancel": "Cancel",
     "thenNow": "Then vs now",
     "then": "Then · {{date}}",
@@ -563,18 +509,18 @@
     "inUse": "In use. Keep it to stop seeing 'New', or archive it.",
     "learnedOrigin": "Learned by your Loupist · {{date}}",
     "chatOrigin": "Saved from Chat · {{date}}",
-    "createdToast": "Your Loupist learned a way of working: {{title}}",
-    "refinedToast": "Your Loupist refined a way of working: {{title}}",
+    "createdToast": "Your Loupist learned a method: {{title}}",
+    "refinedToast": "Your Loupist refined a method: {{title}}",
     "view": "View",
     "dismiss": "Dismiss",
-    "method": "Way of working",
+    "method": "Method",
     "loadError": "Could not load the learning details. Try again.",
-    "archiveError": "Could not archive this way of working. Try again.",
+    "archiveError": "Could not archive this method. Try again.",
     "evidenceMissing": "Some saved evidence is unavailable.",
     "unknownDate": "Date unavailable",
     "showMore": "Show more",
     "showLess": "Show less",
-    "openError": "Could not open this way of working. Try View again."
+    "openError": "Could not open this method. Try View again."
   },
   "journal": {
     "notes": "Journal & notes",
@@ -658,6 +604,10 @@
     "DEPENDS_ON": "depends on",
     "EXPOSED_TO": "exposed to",
     "OWNS": "owns",
+    "PART_OF": "part of",
+    "REQUIRES": "requires",
+    "OPERATES_IN": "operates in",
+    "ISSUES": "issues",
     "SUBSIDIARY_OF": "subsidiary of",
     "PARTNERS_WITH": "partners with",
     "ACQUIRED": "acquired",
@@ -686,7 +636,7 @@
     "AFFECTS": "affects"
   },
   "memoryPage": {
-    "title": "What {{loupistSubject}} knows",
+    "title": "What {{name}} knows",
     "back": "Back",
     "loupistSettings": "Loupist settings",
     "sections": "What it knows",
@@ -701,15 +651,13 @@
     "cancel": "Cancel",
     "tabs": {
       "about": "About you",
-      "principles": "Your rules",
-      "methods": "Ways of working",
-      "history": "History"
+      "history": "History",
+      "pages": "Pages"
     },
     "tabsShort": {
       "about": "About",
-      "principles": "Rules",
-      "methods": "Ways of working",
-      "history": "History"
+      "history": "History",
+      "pages": "Pages"
     },
     "row": {
       "used_one": "used {{formattedCount}} time · last {{date}}",
@@ -720,22 +668,12 @@
       "learnedOnly": "learned {{date}}",
       "neverUsed": "not used yet"
     },
-    "kind": {
-      "principle": "Rule",
-      "method": "Way of working"
-    },
     "perspective": "Perspective",
     "perspectiveDescription": "The overall view your Loupist starts from.",
     "principles": {
-      "description": "Rules you taught. Your Loupist checks facts against them before anything else.",
       "add": "+ Add rule",
-      "example": "Example: Check operating cash flow before trusting reported profit.",
       "newLabel": "New rule",
       "save": "Add rule"
-    },
-    "methods": {
-      "description": "Ways of working your Loupist learned by itself or you saved from Chat.",
-      "empty": "Nothing learned yet. Ways of working appear after your Loupist reads a few sources or you save a check from Chat."
     },
     "reader": {
       "usedIn": "Used in",
@@ -775,7 +713,7 @@
       "answersHint": "Your Loupist follows this in every chat.",
       "learning": "Learning",
       "rememberChats": "Remember new chats",
-      "learnMethods": "Learn ways of working from new information",
+      "learnMethods": "Learn methods from new information",
       "learnMethodsHint": "Uses your AI account when new information arrives.",
       "holdingsByKind": "Stocks and funds: {{stocks}} · Crypto: {{crypto}}",
       "kindCount_one": "{{formattedCount}} asset · {{date}}",
@@ -786,7 +724,7 @@
     },
     "history": {
       "empty": "No history yet.",
-      "learnedMethod": "Learned a way of working: {{title}}",
+      "learnedMethod": "Learned a method: {{title}}",
       "nothing": "Nothing worth keeping",
       "failed": "Couldn’t learn from new information this time",
       "taught": "You taught a rule: {{statement}}",
@@ -794,29 +732,50 @@
       "mapAdded_other": "+{{formattedCount}} names on the map from {{source}}",
       "mapAddedPlain_one": "+{{formattedCount}} name on the map",
       "mapAddedPlain_other": "+{{formattedCount}} names on the map",
-      "learnedUntitled": "Learned a way of working",
+      "learnedUntitled": "Learned a method",
       "failedDetail": "Your Loupist could not finish learning from that conversation. Nothing was changed.",
       "openMap": "Show on the Map",
-      "reset": "Reset by you"
+      "reset": "Reset by you",
+      "filedAfter": "Filed after: {{chat}}",
+      "filed": "Filed after a chat",
+      "forgot": "You forgot “{{section}}” on {{page}}",
+      "undone": "You brought back “{{section}}” on {{page}}",
+      "vocabularyAdded": "The map now also tracks {{labels}}",
+      "vocabularyRemoved": "The map no longer tracks {{labels}}"
     },
     "reset": {
       "title": "Reset what {{loupistSubject}} learned?",
-      "body": "Remove the rules, ways of working, map names, relationships and sources this Loupist added through its own research. This cannot be undone.",
+      "body": "Remove the rules, methods, map names, relationships and sources this Loupist added through its own research. This cannot be undone.",
       "keeps": "Your writing, shared items, sources you saved, Journal, watchlist and holdings stay.",
       "confirmLabel": "Type RESET to confirm",
       "confirmWord": "RESET",
       "action": "Reset",
       "counts": {
         "principles": "Rules",
-        "methods": "Ways of working",
         "names": "Names",
         "relationships": "Relationships",
-        "sources": "Sources"
+        "sources": "Sources",
+        "pages": "Pages",
+        "sections": "Sections kept on your pages"
       }
     },
     "itemPaused": "Paused",
     "itemPausedHint": "Paused items stay here but are left out of future answers.",
-    "backToMethod": "Back to method"
+    "backToMethod": "Back to page",
+    "pages": {
+      "description": "What your Loupist wrote down while it worked, and the rules you taught it. Open one to read it.",
+      "empty": "Nothing here yet. Ask your Loupist about a company or an idea and its notes will appear.",
+      "noMatch": "No matching pages"
+    },
+    "groups": {
+      "subject": "Topics",
+      "idea": "Ideas",
+      "method": "Methods",
+      "principle": "Your principles",
+      "perspective": "Outlook"
+    },
+    "groupCount_one": "{{formattedCount}} page",
+    "groupCount_other": "{{formattedCount}} pages"
   },
   "holdings": {
     "title": "Your holdings",
@@ -901,6 +860,86 @@
     "followed": {
       "title": "What you follow",
       "origin": "Your watchlist and holdings"
+    }
+  },
+  "pageReader": {
+    "label": "Page",
+    "loadError": "Could not open this page.",
+    "retry": "Try again",
+    "opening": "Opening page…",
+    "actionError": "Could not change this page.",
+    "kind": {
+      "principle": "Principle",
+      "perspective": "Outlook",
+      "method": "Method",
+      "subject": "Topic",
+      "idea": "Idea"
+    },
+    "updated": "Updated {{date}}",
+    "ideaStatus": {
+      "open": "Not checked yet",
+      "supported": "Holding up",
+      "weakened": "Weakening",
+      "refuted": "Refuted",
+      "retired": "Set aside"
+    },
+    "chip": {
+      "claim": "Claim",
+      "source": "Source",
+      "said": "You said",
+      "view": "Loupist’s view",
+      "page": "From {{title}}",
+      "pageUnknown": "another page"
+    },
+    "contested": "Sources disagree",
+    "forget": "Forget",
+    "forgetSection": "Forget {{heading}}",
+    "forgot": "Forgot “{{heading}}”.",
+    "undo": "Undo",
+    "uncertainty": "Not sure: {{text}}",
+    "why": "Why",
+    "example": "Example",
+    "emptyPerspective": "No outlook has been written yet.",
+    "emptyPage": "This page has no sections yet.",
+    "onTheMap": "On the map",
+    "relatedPages": "Related pages",
+    "links": "Links to",
+    "backlinks": "Linked from",
+    "history": {
+      "label": "History",
+      "added": "Added “{{section}}”",
+      "replaced": "Updated “{{section}}”",
+      "forgot": "You forgot “{{section}}”",
+      "retired": "Retired “{{section}}”",
+      "undone": "Brought back “{{section}}”",
+      "summary": "Rewrote the summary",
+      "status": "Changed the status",
+      "after": "{{what}} · after {{chat}}",
+      "more_one": "Show {{formattedCount}} more",
+      "more_other": "Show {{formattedCount}} more",
+      "less": "Show less"
+    },
+    "sectionHeading": {
+      "beliefs": "Beliefs",
+      "focus": "Focus",
+      "priorities": "Priorities",
+      "avoid": "Avoid",
+      "use-when": "Use when",
+      "steps": "Steps",
+      "checks": "Checks",
+      "limits": "Limits",
+      "overview": "Overview",
+      "facts": "Facts",
+      "value-chain": "Value chain",
+      "drivers": "Drivers",
+      "risks": "Risks",
+      "views": "Views",
+      "open-questions": "Open questions",
+      "claim": "Claim",
+      "mechanism": "Mechanism",
+      "evidence-for": "Evidence for",
+      "evidence-against": "Evidence against",
+      "would-break": "Would break"
     }
   }
 }

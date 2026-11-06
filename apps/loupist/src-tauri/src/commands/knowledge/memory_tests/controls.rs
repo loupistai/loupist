@@ -25,32 +25,15 @@ fn paused_principles_and_methods_leave_context_search_and_exact_reads_until_resu
             1,
         )?;
         let write = KnowledgeWrite::bind(tx, blobs);
-        let record = write.create_record(CreateRecord {
-            loupist_id: "loupist-a".into(),
-            kind: RecordKind::Lens,
-            title: "Durable cash method".into(),
-            at_ms: 2,
-        })?;
-        let method = write.revise_lens(ReviseLens {
-            loupist_id: "loupist-a".into(),
-            record_id: record.record_id,
-            expected_revision_id: None,
-            at_ms: 2,
-            dependencies: vec![],
-            document: LensDocument {
-                markdown: "Compare durable cash flow".into(),
-                applicability: "Durable cash research".into(),
-                assumptions: String::new(),
-                procedure: String::new(),
-                principles: String::new(),
-                limitations: String::new(),
-            },
-            change: LensChangeInput {
-                rationale: "Reusable check".into(),
-                references: vec![],
-                feedback: None,
-            },
-        })?;
+        let method = write.file_section(
+            "loupist-a",
+            crate::knowledge::lens_page::PageKind::Method,
+            "Durable cash method",
+            "use-when",
+            "Compare durable cash flow in durable cash research",
+            &crate::knowledge::test_support::user_origin(),
+            2,
+        )?;
         Ok((principle, method))
     })
     .unwrap();
@@ -95,7 +78,6 @@ fn paused_principles_and_methods_leave_context_search_and_exact_reads_until_resu
         lens_read(
             &state,
             KnowledgeLensReadRequest {
-                include_navigation: None,
                 loupist_id: "loupist-a".into(),
                 record_id: id.clone(),
                 revision_id: None,
@@ -108,11 +90,11 @@ fn paused_principles_and_methods_leave_context_search_and_exact_reads_until_resu
         .unwrap();
         let (_, resumed) = host_prepare_read(&state, "loupist-a", &empty_read(id)).unwrap();
         assert_eq!(resumed.lens_receipt("exact_read").unwrap().kind, kind);
-        assert!(host_memory_context(&state, "loupist-a", "durable cash")
-            .unwrap()
-            .entries
-            .iter()
-            .any(|entry| &entry.id == id));
+        let context = host_memory_context(&state, "loupist-a", "durable cash").unwrap();
+        assert!(
+            context.principles.iter().any(|p| &p.record_id == id)
+                || context.entries.iter().any(|entry| &entry.id == id)
+        );
     }
 }
 

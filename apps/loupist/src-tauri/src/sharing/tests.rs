@@ -8,15 +8,15 @@ use super::commands::{self, AddSections, Decision};
 use super::export::{self, Choice, Scope, Sections};
 use super::import::{self, Fetched, OpenResult};
 use super::pack::{self, Files, Rejection};
+use super::pack::{PackDoc, PackSection};
 use super::scan::{Flag, PrivateClass};
 use super::store::{self, ImportMode};
 use crate::app::{AppState, CommandError};
 use crate::knowledge::{
     Authorship, BindingRole, ClaimEndpoint, ClaimStatus, Coverage, CreateRecord, DependencyRole,
     EvidenceBinding, EvidenceRevision, GraphClaim, GraphNode, GraphProcessingSettings,
-    KnowledgeResult, KnowledgeStore, KnowledgeWrite, LensChangeInput, LensDocument, Qualifier,
-    RecordKind, RepresentationRole, RetainMaterial, RetainNewSource, RetainedSource, ReviseLens,
-    SealWorld, Selector, SourceClass,
+    KnowledgeResult, KnowledgeStore, KnowledgeWrite, Qualifier, RecordKind, RepresentationRole,
+    RetainMaterial, RetainNewSource, RetainedSource, SealWorld, Selector, SourceClass,
 };
 
 const AT: i64 = 1_790_000_000_000;
@@ -202,38 +202,78 @@ fn claim(
     }
 }
 
+fn section(key: &str, heading: &str, markdown: &str) -> PackSection {
+    PackSection {
+        key: key.into(),
+        heading: heading.into(),
+        markdown: markdown.into(),
+    }
+}
+
+fn method_page(markdown: &str) -> PackDoc {
+    PackDoc {
+        summary: markdown.into(),
+        sections: vec![
+            section("use-when", "Use when", "Companies with stable capex."),
+            section(
+                "steps",
+                "Steps",
+                "1. Read the cash flow statement.\n## Applicability\n2. Compare.",
+            ),
+            section("limits", "Limits", "Cyclical firms."),
+        ],
+    }
+}
+
+fn set_section(document: &mut PackDoc, key: &str, text: &str) {
+    match document.sections.iter_mut().find(|s| s.key == key) {
+        Some(existing) => existing.markdown = text.into(),
+        None => document.sections.push(section(key, key, text)),
+    }
+}
+
+fn section_text(document: &PackDoc, key: &str) -> String {
+    document
+        .sections
+        .iter()
+        .find(|s| s.key == key)
+        .map(|s| s.markdown.clone())
+        .unwrap_or_default()
+}
+
+fn page_ops(document: &PackDoc) -> Vec<crate::knowledge::lens_page::LensOp> {
+    use crate::knowledge::lens_page::{Basis, LensOp, SectionKey};
+    let mut ops = vec![LensOp::Summary {
+        text: document.summary.clone(),
+    }];
+    ops.extend(document.sections.iter().map(|section| LensOp::Put {
+        key: SectionKey::new(&section.key).unwrap(),
+        heading: section.heading.clone(),
+        markdown: section.markdown.clone(),
+        basis: Basis::default(),
+        expected: None,
+    }));
+    ops
+}
+
 fn method(write: &KnowledgeWrite<'_>, loupist_id: &str, title: &str, markdown: &str) -> String {
-    let record = write
-        .create_record(CreateRecord {
-            loupist_id: loupist_id.into(),
-            kind: RecordKind::Lens,
-            title: title.into(),
-            at_ms: AT,
-        })
+    use crate::knowledge::lens_page::{PageDelta, PageKind, PageTarget};
+    let filed = write
+        .file(
+            loupist_id,
+            &crate::knowledge::test_support::user_origin(),
+            vec![PageDelta {
+                target: PageTarget::Create {
+                    kind: PageKind::Method,
+                    title: title.into(),
+                    anchors: Vec::new(),
+                },
+                ops: page_ops(&method_page(markdown)),
+            }],
+            AT,
+        )
         .unwrap();
-    write
-        .revise_lens(ReviseLens {
-            loupist_id: loupist_id.into(),
-            record_id: record.record_id.clone(),
-            expected_revision_id: None,
-            at_ms: AT,
-            document: LensDocument {
-                markdown: markdown.into(),
-                applicability: "Companies with stable capex.".into(),
-                assumptions: String::new(),
-                procedure: "1. Read the cash flow statement.\n## Applicability\n2. Compare.".into(),
-                principles: String::new(),
-                limitations: "Cyclical firms.".into(),
-            },
-            dependencies: vec![],
-            change: LensChangeInput {
-                references: vec![],
-                rationale: "Fixture".into(),
-                feedback: None,
-            },
-        })
-        .unwrap();
-    record.record_id
+    filed[0].record_id.clone()
 }
 
 fn principle(state: &AppState, loupist_id: &str, statement: &str) -> String {
@@ -932,13 +972,9 @@ fn minimal_pack() -> Files {
         key: "m-0123456789abcdef".into(),
         title: "Cash conversion".into(),
         origin: None,
-        document: LensDocument {
-            markdown: "Compare cash from operations with net income.".into(),
-            applicability: String::new(),
-            assumptions: String::new(),
-            procedure: "Divide one by the other.".into(),
-            principles: String::new(),
-            limitations: String::new(),
+        document: PackDoc {
+            summary: "Compare cash from operations with net income.".into(),
+            sections: vec![section("steps", "Steps", "Divide one by the other.")],
         },
     };
     let files = Files::from([
@@ -1362,13 +1398,19 @@ fn map_text_is_cleaned_and_scanned_and_a_profile_focus_fits_creation() {
 
 #[test]
 fn methods_round_trip_exactly_through_markdown() {
-    let document = LensDocument {
-        markdown: "Line one\n\n## Applicability\n\\## Applicability\nend\n".into(),
-        applicability: String::new(),
-        assumptions: "a".into(),
-        procedure: "\n\nleading blank lines".into(),
-        principles: "## Why".into(),
-        limitations: "trailing\n".into(),
+    let document = PackDoc {
+        summary: "Line one".into(),
+        sections: vec![
+            section(
+                "use-when",
+                "Applicability",
+                "## Applicability\n\\## Applicability\nend\n",
+            ),
+            section("assumptions", "Assumptions", "a"),
+            section("steps", "Procedure", "\n\nleading blank lines"),
+            section("checks", "Why", "## Why"),
+            section("limits", "Limitations", "trailing\n"),
+        ],
     };
     let method = pack::MethodDoc {
         key: "m-0123456789abcdef".into(),
@@ -1524,7 +1566,7 @@ async fn a_folder_round_trip_adds_suggestions_and_the_map_then_removes_them() {
     })
     .unwrap();
     let after = commands::gather(&state, &b).unwrap();
-    let theirs: BTreeMap<String, LensDocument> = after
+    let theirs: BTreeMap<String, PackDoc> = after
         .input
         .snapshot
         .methods
@@ -1535,8 +1577,9 @@ async fn a_folder_round_trip_adds_suggestions_and_the_map_then_removes_them() {
         assert_eq!(theirs[&doc.title], doc.document, "{}", doc.title);
     }
     assert!(theirs["Owner earnings"]
-        .procedure
-        .contains("\n## Applicability\n"));
+        .sections
+        .iter()
+        .any(|section| section.markdown.contains("\n## Applicability\n")));
     assert!(after
         .input
         .snapshot
@@ -2120,13 +2163,12 @@ fn method_doc(key: &str, title: &str, markdown: &str) -> pack::MethodDoc {
         key: key.into(),
         title: title.into(),
         origin: None,
-        document: LensDocument {
-            markdown: markdown.into(),
-            applicability: "Fictional ferry operators.".into(),
-            assumptions: String::new(),
-            procedure: "Compare the two operators year by year.".into(),
-            principles: String::new(),
-            limitations: String::new(),
+        document: PackDoc {
+            summary: markdown.into(),
+            sections: vec![
+                section("use-when", "Use when", "Fictional ferry operators."),
+                section("steps", "Steps", "Compare the two operators year by year."),
+            ],
         },
     }
 }
@@ -2554,7 +2596,7 @@ async fn shared_pack_cannot_change_authority() {
     assert!(snapshot
         .methods
         .iter()
-        .all(|m| !m.document.markdown.contains("system prompt")));
+        .all(|m| !m.document.summary.contains("system prompt")));
 }
 
 // ---------------------------------------------------------------- updates (W19.5)
@@ -2584,7 +2626,7 @@ fn whole(state: &AppState, loupist_id: &str, left_out_claims: &[&str]) -> comman
     .unwrap()
 }
 
-fn lens_by_title(state: &AppState, loupist_id: &str) -> BTreeMap<String, (String, LensDocument)> {
+fn lens_by_title(state: &AppState, loupist_id: &str) -> BTreeMap<String, (String, PackDoc)> {
     commands::gather(state, loupist_id)
         .unwrap()
         .input
@@ -2595,30 +2637,46 @@ fn lens_by_title(state: &AppState, loupist_id: &str) -> BTreeMap<String, (String
         .collect()
 }
 
-fn revise(
-    state: &AppState,
-    loupist_id: &str,
-    record_id: &str,
-    change: impl FnOnce(&mut LensDocument),
-) {
+fn revise(state: &AppState, loupist_id: &str, record_id: &str, change: impl FnOnce(&mut PackDoc)) {
+    use crate::knowledge::lens_page::{LensOp, PageDelta, PageTarget};
     knowledge(state, loupist_id, |write| {
-        let view = write.read_lens(loupist_id, record_id)?;
-        let mut document = view.document.clone();
+        let page = write.read_page(loupist_id, record_id)?;
+        let mut document = PackDoc {
+            summary: page.body.summary().to_owned(),
+            sections: page
+                .body
+                .sections()
+                .iter()
+                .map(|s| section(s.key.as_str(), &s.heading, &s.markdown))
+                .collect(),
+        };
         change(&mut document);
-        write.revise_lens(ReviseLens {
-            loupist_id: loupist_id.into(),
-            record_id: record_id.into(),
-            expected_revision_id: Some(view.revision_id),
-            at_ms: AT + 10,
-            document,
-            dependencies: vec![],
-            change: LensChangeInput {
-                references: vec![],
-                rationale: "Fixture edit".into(),
-                feedback: None,
-            },
-        })
-    });
+        let mut ops: Vec<LensOp> = page
+            .body
+            .sections()
+            .iter()
+            .map(|s| LensOp::Retire {
+                key: s.key.clone(),
+                expected: s.digest.clone(),
+                why: "Fixture edit".into(),
+            })
+            .collect();
+        ops.extend(page_ops(&document));
+        for chunk in ops.chunks(crate::knowledge::lens_page::MAX_OPS_PER_DELTA) {
+            write.file(
+                loupist_id,
+                &crate::knowledge::test_support::user_origin(),
+                vec![PageDelta {
+                    target: PageTarget::Existing {
+                        record_id: record_id.into(),
+                    },
+                    ops: chunk.to_vec(),
+                }],
+                AT + 10,
+            )?;
+        }
+        Ok(())
+    })
 }
 
 fn claim_status(state: &AppState, loupist_id: &str, claim_id: &str) -> Option<ClaimStatus> {
@@ -2726,7 +2784,7 @@ async fn a_fork_checks_for_updates_shows_a_diff_and_applies_only_what_is_chosen(
     // B makes "Owner earnings" its own.
     let mine = lens_by_title(&state, &b);
     revise(&state, &b, &mine["Owner earnings"].0, |document| {
-        document.limitations = "Not for banks.".into();
+        set_section(document, "limits", "Not for banks.");
     });
 
     // A changes two methods, drops one, adds one, rewords a rule with an
@@ -2737,11 +2795,11 @@ async fn a_fork_checks_for_updates_shows_a_diff_and_applies_only_what_is_chosen(
         &a,
         &theirs["Reverse DCF sanity check"].0,
         |document| {
-            document.limitations = "Ignores buybacks.".into();
+            set_section(document, "limits", "Ignores buybacks.");
         },
     );
     revise(&state, &a, &theirs["Owner earnings"].0, |document| {
-        document.assumptions = "Maintenance capex is steady.".into();
+        set_section(document, "assumptions", "Maintenance capex is steady.");
     });
     knowledge(&state, &a, |write| {
         write.set_lens_archived(
@@ -2873,11 +2931,12 @@ async fn a_fork_checks_for_updates_shows_a_diff_and_applies_only_what_is_chosen(
     assert_eq!(serde_json::to_value(&applied).unwrap()[0]["version"], 2);
     let after = lens_by_title(&state, &b);
     assert_eq!(
-        after["Reverse DCF sanity check"].1.limitations,
+        section_text(&after["Reverse DCF sanity check"].1, "limits"),
         "Ignores buybacks."
     );
     assert_eq!(
-        after["Owner earnings"].1.limitations, "Not for banks.",
+        section_text(&after["Owner earnings"].1, "limits"),
+        "Not for banks.",
         "yours stays"
     );
     assert!(after.contains_key("Capex cycle reading"), "kept here");

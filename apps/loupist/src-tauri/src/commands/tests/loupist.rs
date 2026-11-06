@@ -7,7 +7,14 @@ async fn folder_loupist_creation_preserves_files_and_seeds_memory_and_tools() {
     fs::create_dir(&workspace).unwrap();
     fs::write(workspace.join("analysis.py"), "print(42)\n").unwrap();
     let state = AppState::for_test(temporary.path().join("app"));
-    let summary = create_folder_loupist(&state, &workspace).await.unwrap();
+    let summary = crate::commands::loupist::create_folder_loupist_with_setup(
+        &state,
+        &workspace,
+        Some("Durable cash compounders".into()),
+        None,
+    )
+    .await
+    .unwrap();
     let saved = state.store.get_loupist(&summary.id).unwrap().unwrap();
     assert_eq!(summary.name, "research");
     assert_eq!(
@@ -42,7 +49,7 @@ async fn folder_loupist_creation_preserves_files_and_seeds_memory_and_tools() {
     );
     assert!(
         summary.record_count > 0,
-        "the standing Lens is retained outside the user folder"
+        "the perspective filed from the focus is retained outside the user folder"
     );
 }
 
@@ -133,7 +140,7 @@ fn local_skill_preferences_are_used_without_database_bindings() {
 
 #[test]
 fn a_principle_set_aside_in_one_chat_stays_out_of_that_chat_until_undone() {
-    use crate::knowledge::{CreateRecord, KnowledgeStore, RecordKind};
+    use crate::knowledge::KnowledgeStore;
     let temporary = tempfile::tempdir().unwrap();
     let state = AppState::for_test(temporary.path().join("app"));
     let workspace = temporary.path().join("loupist");
@@ -145,14 +152,13 @@ fn a_principle_set_aside_in_one_chat_stays_out_of_that_chat_until_undone() {
         .unwrap();
     let record = KnowledgeStore::for_loupist(state.store.clone(), "loupist-a")
         .unwrap()
-        .transact(|write| {
-            write.create_record(CreateRecord {
-                loupist_id: "loupist-a".into(),
-                kind: RecordKind::Lens,
-                title: "Check cash flow".into(),
-                at_ms: 1,
-            })
-        })
+        .file_method(
+            "loupist-a",
+            "Check cash flow",
+            "Compare cash from operations with profit.",
+            &crate::knowledge::test_support::user_origin(),
+            1,
+        )
         .unwrap();
     let request = |record_id: &str, set_aside: bool| super::types::ChatMemorySetAsideRequest {
         loupist_id: "loupist-a".into(),

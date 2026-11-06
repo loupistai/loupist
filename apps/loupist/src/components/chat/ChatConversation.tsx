@@ -22,9 +22,12 @@ import type { ProviderErrorAction } from "./ChatErrorState";
 import { QuoteAsk } from "./QuoteAsk";
 import { MorningMessage } from "./MorningMessage";
 import { ThreadDelivery } from "./ThreadDelivery";
+import { ThreadHandoff } from "./ThreadHandoff";
 import { ThreadAlert } from "./ThreadAlert";
 import { ThreadWatch } from "./ThreadWatch";
 import { ThreadEarnings } from "./ThreadEarnings";
+import { ThreadLink } from "./ThreadLink";
+import { ThreadVocabulary } from "./ThreadVocabulary";
 import { ChatDivider } from "./ChatDivider";
 import { chatSeenAt, dividersBefore, firstNewSince, markChatSeen } from "../../chat/dividers";
 
@@ -79,7 +82,6 @@ type Props = {
   /** An account action from the newest failed answer (Reconnect, Use an API key, Manage usage…). */
   onProviderAction?: (action: ProviderErrorAction, provider: string | undefined) => void;
   bridge?: LoupistBridge;
-  onDismissLensProposal?: (target: { recordId: string; messageId: string }) => Promise<void>;
   /** The active run, for the status pill shown while the reader is scrolled up. */
   run?: ChatRunStatus;
   /** The Loupist's focus, for the morning message's questions. */
@@ -133,7 +135,6 @@ export function ChatConversation({
   retryAttempt,
   onProviderAction,
   bridge,
-  onDismissLensProposal,
   onSaveFeedback,
   onTeachFeedback,
   feedbackBusy = false,
@@ -215,6 +216,7 @@ export function ChatConversation({
   }, [clearNewSince, lastUserIndex, newSinceId, newSinceIndex]);
   // Once the user writes in the Thread this visit, the morning news has been answered.
   const [visitStartMs] = useState(() => Date.now());
+  const hasUserMessage = lastUserIndex >= 0;
   const repliedThisVisit = messages.some((message) => message.role === "user" && Date.parse(message.created_at) > visitStartMs);
   // Results posted into the Thread count as read once the Thread shows them.
   const deliveredRunIds = useMemo(() => messages.flatMap((message) => message.delivery ? [message.delivery.run_id] : []).slice(-20), [messages]);
@@ -295,10 +297,16 @@ export function ChatConversation({
             <ThreadWatch message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} active={active} onOpenLink={url => void onOpenLink(url)} onOpenSchedule={onOpenSchedule} />
           ) : message.earnings ? (
             <ThreadEarnings message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} onOpenLink={url => void onOpenLink(url)} />
+          ) : message.vocabulary ? (
+            <ThreadVocabulary message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} />
+          ) : message.link ? (
+            <ThreadLink message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} onOpenMap={(nodeIds) => onOpenMemoryPage({ loupistId, surface: "world", view: { highlightEntityIds: nodeIds } })} />
           ) : message.alert ? (
             <ThreadAlert message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} onOpenLink={url => void onOpenLink(url)} />
           ) : message.delivery ? (
             <ThreadDelivery message={message} loupistName={loupistName} onOpenRunChat={onOpenRunChat} />
+          ) : message.handoff ? (
+            <ThreadHandoff message={message} loupistName={loupistName} onOpenRunChat={onOpenRunChat} />
           ) : (
             <ChatMessageCard
               bridge={bridge}
@@ -340,11 +348,10 @@ export function ChatConversation({
               note={message.role === "assistant" && message.replaced_model && message.execution_model?.name
                 ? t("chatError.modelGone", { old: message.replaced_model, new: message.execution_model.name })
                 : undefined}
-              onDismissLensProposal={onDismissLensProposal}
             />
           )}
           </Fragment>)}
-          {home && !repliedThisVisit ? morning("news") : null}
+          {home && !hasUserMessage ? morning("full") : home && !repliedThisVisit ? morning("news") : null}
         </>)}
       </ConversationContent>
     </Conversation>

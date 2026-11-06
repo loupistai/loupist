@@ -9,7 +9,7 @@ export function chatSourceWork(messages: readonly ChatMessage[]) {
   for (const message of messages) {
     if (message.role !== "assistant" || message.status === "streaming" || message.memory_update?.status !== "applied") continue;
     for (const change of message.memory_update.changes) {
-      if (change.kind !== "Source" || change.operation === "proposed") continue;
+      if (change.kind !== "Source") continue;
       if (change.worldStatus === "completed") continue;
       if (change.worldJobId) jobIds.add(change.worldJobId);
       else if (!change.worldStatus) legacyMessages.add(message.id);
@@ -51,7 +51,7 @@ export function chatMapData(map: KnowledgeMap, messages: readonly ChatMessage[],
     // World names a step read, attributed by the host; they stay on this chat's map after the run.
     for (const id of stepEntityIds(message)) if (map.nodes.some(node => node.kind === "entity" && node.id === id)) seeds.add(id);
     if (message.memory_update?.status === "applied") for (const change of message.memory_update.changes) {
-      if (change.operation !== "proposed") includeReference(change.knowledge);
+      includeReference(change.knowledge);
     }
   }
   for (const id of liveIds) if (map.nodes.some(node => node.kind === "entity" && node.id === id)) seeds.add(id);

@@ -36,8 +36,8 @@ pub(super) use working_notes::{
 
 use crate::app::{AppState, CommandError};
 use crate::knowledge::{
-    present_world, BindingRole, BlobStore, ClaimStatus, Coverage, CreateRecord, KnowledgeError,
-    LensDocument, OwnedRecord, RecordKind, SourceRecordPayload, WorldGraphQuery, WorldGraphView,
+    present_world, BindingRole, BlobStore, ClaimStatus, Coverage, KnowledgeError, OwnedRecord,
+    ReadinessNote, RecordKind, SourceRecordPayload, WorldGraphQuery, WorldGraphView,
 };
 use crate::runs::maintenance::{ActivityLease, MaintenanceActivityKind};
 use crate::store::LoupistStore;
@@ -72,9 +72,7 @@ pub struct KnowledgeRecordSummaryDto {
     pub title_key: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub applicability: Option<String>,
-    pub lens_kind: Option<String>,
+    pub lens_kind: Option<crate::knowledge::lens_page::LensKind>,
     pub record_id: String,
     pub kind: RecordKind,
     pub title: String,
@@ -88,16 +86,10 @@ pub struct KnowledgeRecordSummaryDto {
     pub updated_at_ms: Option<i64>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub archived: bool,
-    #[serde(default, skip_serializing_if = "is_zero")]
-    pub proposal_count: u32,
 }
 
 fn is_false(value: &bool) -> bool {
     !value
-}
-
-fn is_zero(value: &u32) -> bool {
-    *value == 0
 }
 
 #[derive(Debug, Serialize)]
@@ -162,35 +154,52 @@ pub struct SourceDetailDto {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeLensReadRequest {
-    #[serde(default)]
-    pub include_navigation: Option<bool>,
     pub loupist_id: String,
     pub record_id: String,
+    #[serde(default)]
     pub revision_id: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LensViewDto {
-    pub lens_kind: String,
-    pub is_standing: bool,
-    pub record_id: String,
-    pub revision_id: String,
-    pub revision_digest: String,
-    pub title: String,
-    pub read_only: bool,
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub archived: bool,
-    pub document: LensDocument,
-    #[serde(flatten)]
-    pub navigation: crate::knowledge::LensNavigation,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct KnowledgeLensChangesRequest {
+pub struct KnowledgeLensPagesForNodeRequest {
+    pub loupist_id: String,
+    pub node_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct KnowledgeConnectionsRequest {
+    pub loupist_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct KnowledgeConnectionRequest {
+    pub loupist_id: String,
+    pub connection_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MemorySectionForgetRequest {
     pub loupist_id: String,
     pub record_id: String,
+    pub key: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MemoryOpUndoRequest {
+    pub loupist_id: String,
+    pub op_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MemoryLearnedRequest {
+    pub loupist_id: String,
+    pub message_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -327,16 +336,120 @@ pub fn knowledge_source_read(
 pub fn knowledge_lens_read(
     request: KnowledgeLensReadRequest,
     state: State<'_, AppState>,
-) -> Result<LensViewDto, CommandError> {
+) -> Result<crate::knowledge::PageRead, CommandError> {
     lens_read(state.inner(), request)
 }
 
 #[tauri::command]
-pub fn knowledge_lens_changes(
-    request: KnowledgeLensChangesRequest,
+pub fn knowledge_lens_pages_for_node(
+    request: KnowledgeLensPagesForNodeRequest,
     state: State<'_, AppState>,
-) -> Result<Vec<crate::knowledge::LensChangeRecord>, CommandError> {
-    lens_changes(state.inner(), request)
+) -> Result<Vec<crate::knowledge::PageSummary>, CommandError> {
+    admit(&state, &request.loupist_id)?;
+    with_loupist_knowledge(&state, &request.loupist_id.clone(), |tx, blobs| {
+        crate::knowledge::KnowledgeWrite::bind(tx, blobs)
+            .pages_for_node(&request.loupist_id, &request.node_id)
+    })
+}
+
+#[tauri::command]
+pub fn knowledge_connections(
+    request: KnowledgeConnectionsRequest,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::knowledge::ConnectionView>, CommandError> {
+    admit(&state, &request.loupist_id)?;
+    with_loupist_knowledge(&state, &request.loupist_id.clone(), |tx, blobs| {
+        crate::knowledge::KnowledgeWrite::bind(tx, blobs).connections(&request.loupist_id)
+    })
+}
+
+fn connection_set_status(
+    state: &AppState,
+    request: &KnowledgeConnectionRequest,
+    status: crate::knowledge::ConnectionStatus,
+) -> Result<crate::knowledge::ConnectionView, CommandError> {
+    let _activity = admit_mutation(state, &request.loupist_id)?;
+    with_loupist_knowledge(state, &request.loupist_id, |tx, blobs| {
+        crate::knowledge::KnowledgeWrite::bind(tx, blobs).connection_set_status(
+            &request.loupist_id,
+            &request.connection_id,
+            status,
+            crate::commands::now_ms(),
+        )
+    })
+}
+
+#[tauri::command]
+pub fn knowledge_connection_dismiss(
+    request: KnowledgeConnectionRequest,
+    state: State<'_, AppState>,
+) -> Result<crate::knowledge::ConnectionView, CommandError> {
+    connection_set_status(
+        &state,
+        &request,
+        crate::knowledge::ConnectionStatus::Dismissed,
+    )
+}
+
+#[tauri::command]
+pub fn knowledge_connection_open(
+    request: KnowledgeConnectionRequest,
+    state: State<'_, AppState>,
+) -> Result<crate::knowledge::ConnectionView, CommandError> {
+    connection_set_status(&state, &request, crate::knowledge::ConnectionStatus::Opened)
+}
+
+#[tauri::command]
+pub fn memory_section_forget(
+    request: MemorySectionForgetRequest,
+    state: State<'_, AppState>,
+) -> Result<crate::knowledge::PageRead, CommandError> {
+    let _activity = admit_mutation(&state, &request.loupist_id)?;
+    with_loupist_knowledge(&state, &request.loupist_id.clone(), |tx, blobs| {
+        crate::knowledge::KnowledgeWrite::bind(tx, blobs).forget_section(
+            &request.loupist_id,
+            &request.record_id,
+            &request.key,
+            crate::commands::now_ms(),
+        )
+    })
+}
+
+#[tauri::command]
+pub fn memory_op_undo(
+    request: MemoryOpUndoRequest,
+    state: State<'_, AppState>,
+) -> Result<crate::knowledge::PageRead, CommandError> {
+    let _activity = admit_mutation(&state, &request.loupist_id)?;
+    with_loupist_knowledge(&state, &request.loupist_id.clone(), |tx, blobs| {
+        crate::knowledge::KnowledgeWrite::bind(tx, blobs).undo_op(
+            &request.loupist_id,
+            &request.op_id,
+            crate::commands::now_ms(),
+        )
+    })
+}
+
+#[tauri::command]
+pub fn memory_learned(
+    request: MemoryLearnedRequest,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::knowledge::LearnedDigest>, CommandError> {
+    if request.message_ids.len() > 64 {
+        return Err(CommandError::invalid("at most 64 messages per request"));
+    }
+    learned_digests(&state, &request.loupist_id, &request.message_ids)
+}
+
+pub(crate) fn learned_digests(
+    state: &AppState,
+    loupist_id: &str,
+    message_ids: &[String],
+) -> Result<Vec<crate::knowledge::LearnedDigest>, CommandError> {
+    admit(state, loupist_id)?;
+    with_loupist_knowledge(state, loupist_id, |tx, blobs| {
+        crate::knowledge::KnowledgeWrite::bind(tx, blobs).learned_digest(loupist_id, message_ids)
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -344,6 +457,8 @@ pub fn knowledge_lens_changes(
 pub struct KnowledgeLensSearchRequest {
     pub loupist_id: String,
     pub query: String,
+    #[serde(default)]
+    pub kinds: Vec<crate::knowledge::lens_page::LensKind>,
 }
 
 #[derive(Debug, Serialize)]
@@ -351,7 +466,9 @@ pub struct KnowledgeLensSearchRequest {
 pub struct LensSearchHitDto {
     pub record_id: String,
     pub revision_id: String,
+    pub kind: crate::knowledge::lens_page::LensKind,
     pub title: String,
+    pub summary: String,
     pub snippet: String,
 }
 
@@ -361,44 +478,6 @@ pub fn knowledge_lens_search(
     state: State<'_, AppState>,
 ) -> Result<Vec<LensSearchHitDto>, CommandError> {
     lens_search(state.inner(), request)
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LensProposalDto {
-    #[serde(flatten)]
-    pub draft: crate::knowledge::LensDraftRecord,
-    pub origin_chat_title: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct KnowledgeLensProposalsRequest {
-    pub loupist_id: String,
-    pub record_id: Option<String>,
-}
-
-#[tauri::command]
-pub fn knowledge_lens_proposals(
-    request: KnowledgeLensProposalsRequest,
-    state: State<'_, AppState>,
-) -> Result<Vec<LensProposalDto>, CommandError> {
-    lens_proposals(state.inner(), request)
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct KnowledgeLensProposalDismissRequest {
-    pub loupist_id: String,
-    pub draft_id: String,
-}
-
-#[tauri::command]
-pub fn knowledge_lens_proposal_dismiss(
-    request: KnowledgeLensProposalDismissRequest,
-    state: State<'_, AppState>,
-) -> Result<(), CommandError> {
-    lens_proposal_dismiss(state.inner(), request)
 }
 
 #[derive(Debug, Deserialize)]
@@ -484,59 +563,6 @@ pub fn knowledge_research_search(
     state: State<'_, AppState>,
 ) -> Result<KnowledgeResearchPageDto, CommandError> {
     research_search(state.inner(), request)
-}
-
-fn seed_initial_revision(
-    write: &crate::knowledge::KnowledgeWrite<'_>,
-    created: OwnedRecord,
-    title: &str,
-    at_ms: i64,
-) -> crate::knowledge::KnowledgeResult<OwnedRecord> {
-    match created.kind {
-        RecordKind::Source => Ok(created),
-        RecordKind::World => {
-            let sealed = write.seal_world(crate::knowledge::SealWorld {
-                loupist_id: created.owner_loupist_id.clone(),
-                record_id: created.record_id.clone(),
-                expected_revision_id: None,
-                at_ms,
-                nodes: Vec::new(),
-                claims: Vec::new(),
-                annotations: Vec::new(),
-                dependencies: Vec::new(),
-            })?;
-            Ok(OwnedRecord {
-                revision_id: Some(sealed.revision_id),
-                ..created
-            })
-        }
-        RecordKind::Lens => {
-            let view = write.revise_lens(crate::knowledge::ReviseLens {
-                loupist_id: created.owner_loupist_id.clone(),
-                record_id: created.record_id.clone(),
-                expected_revision_id: None,
-                at_ms,
-                document: crate::knowledge::LensDocument {
-                    markdown: title.to_string(),
-                    applicability: String::new(),
-                    assumptions: String::new(),
-                    procedure: String::new(),
-                    principles: String::new(),
-                    limitations: String::new(),
-                },
-                dependencies: Vec::new(),
-                change: crate::knowledge::LensChangeInput {
-                    rationale: "Initial revision.".to_string(),
-                    references: Vec::new(),
-                    feedback: None,
-                },
-            })?;
-            Ok(OwnedRecord {
-                revision_id: Some(view.revision_id),
-                ..created
-            })
-        }
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -755,20 +781,21 @@ fn graph_settings_view(
         settings: settings.public_settings(),
         readiness: crate::knowledge::GraphReadiness {
             status: status.into(),
-            message: match status {
-                "reconciliation_required" => Some("World processing was interrupted. Recover the last confirmed World to continue. The interrupted source will not be processed again automatically.".into()),
-                "recovering" => Some("Restoring the last confirmed World. This does not use a model or retry interrupted processing.".into()),
-                "runtime_unavailable" => {
-                    Some("World processing is unavailable. Update or reinstall the app to restore it.".into())
+            note: match status {
+                "reconciliation_required" => Some(ReadinessNote::RecoveryRequired),
+                "recovering" => Some(ReadinessNote::Recovering),
+                "runtime_unavailable" => Some(ReadinessNote::RuntimeUnavailable),
+                "model_required" if settings.awaiting_default_model => {
+                    Some(ReadinessNote::AwaitingProvider)
                 }
-                "model_required" => Some(if settings.awaiting_default_model { "Waiting for a supported model provider. A recommended World model will be selected when one is connected." } else { "Choose a World processing model." }.into()),
-                "model_unavailable" => {
-                    Some("The selected model is unavailable for World processing.".into())
-                }
-                "provider_disconnected" => ready
-                    .as_ref()
-                    .and_then(|ready| ready.reason.clone())
-                    .or_else(|| Some("Connect the selected provider in Settings.".into())),
+                "model_required" => Some(ReadinessNote::ChooseModel),
+                "model_unavailable" => Some(ReadinessNote::ModelUnavailable),
+                "provider_disconnected" => Some(
+                    ready
+                        .as_ref()
+                        .and_then(|ready| ready.reason)
+                        .map_or(ReadinessNote::ConnectProvider, ReadinessNote::Provider),
+                ),
                 _ => None,
             },
             provider_name: ready
@@ -1215,98 +1242,34 @@ pub(crate) fn source_read(
 pub(crate) fn lens_read(
     state: &AppState,
     request: KnowledgeLensReadRequest,
-) -> Result<LensViewDto, CommandError> {
+) -> Result<crate::knowledge::PageRead, CommandError> {
     admit(state, &request.loupist_id)?;
     with_loupist_knowledge(state, &request.loupist_id.clone(), |tx, blobs| {
         let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
-        let view = write.read_lens(&request.loupist_id, &request.record_id)?;
+        let page = write.read_page(&request.loupist_id, &request.record_id)?;
         if request
             .revision_id
             .as_ref()
-            .is_some_and(|id| id != &view.revision_id)
+            .is_some_and(|id| id != &page.revision_id)
         {
             return Err(KnowledgeError::NotFound);
         }
-        let module = write.owned_record(&request.loupist_id, &request.record_id)?;
-        let (editable, _) = write.record_permissions(&request.loupist_id, &request.record_id)?;
-        let is_standing = write
-            .load_standing_selection(&request.loupist_id)?
-            .is_some_and(|(record_id, _)| record_id == view.record_id);
-        let navigation = if request.include_navigation.unwrap_or(true) {
-            write.lens_navigation(&request.loupist_id, &view.record_id, &view.document)?
-        } else {
-            crate::knowledge::LensNavigation::default()
-        };
-        let (_, archived, _, _) = write.lens_listing(&request.loupist_id, &view.record_id)?;
-        let principle = crate::knowledge::principles::principle_kind(
-            tx,
-            &request.loupist_id,
-            &request.record_id,
-        )?;
-        let mut result = lens_dto(
-            view,
-            module.title,
-            !editable,
-            is_standing,
-            archived,
-            navigation,
-        );
-        if principle {
-            result.lens_kind = "principle".into();
-        }
-        Ok(result)
+        Ok(page)
     })
 }
 
-pub(crate) fn has_standing_lens(state: &AppState, loupist_id: &str) -> Result<bool, CommandError> {
-    with_loupist_knowledge(state, loupist_id, |tx, blobs| {
-        Ok(crate::knowledge::KnowledgeWrite::bind(tx, blobs)
-            .load_standing_selection(loupist_id)?
-            .is_some())
-    })
-}
-
-pub(crate) fn validate_staged_lens(
+/// What the Lens writer would make of each delta now, for `lens_file` staging.
+pub(in crate::commands) fn screen_filing(
     state: &AppState,
     loupist_id: &str,
-    record_id: Option<&str>,
-    title: Option<&str>,
-    document: &LensDocument,
-    pending: &std::collections::BTreeSet<String>,
-) -> Result<(), CommandError> {
-    admit(state, loupist_id)?;
+    deltas: &[crate::knowledge::lens_page::PageDelta],
+) -> Result<Vec<crate::knowledge::Screen>, CommandError> {
     with_loupist_knowledge(state, loupist_id, |tx, blobs| {
         let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
-        if let Some(record_id) = record_id {
-            if crate::knowledge::principles::principle_kind(tx, loupist_id, record_id)? {
-                return Err(KnowledgeError::Invalid(
-                    "Use principle_save to revise a user principle",
-                ));
-            }
-            let module = write.owned_record(loupist_id, record_id)?;
-            if module.kind != RecordKind::Lens {
-                return Err(KnowledgeError::Invalid("record is not a Lens"));
-            }
-        }
-        let effective = if let Some(title) = title {
-            write.ensure_lens_title(loupist_id, title, record_id)?;
-            title.to_string()
-        } else {
-            let record_id = record_id.ok_or(KnowledgeError::Invalid("a new Lens needs a title"))?;
-            write.owned_record(loupist_id, record_id)?.title
-        };
-        write.validate_lens_publication(loupist_id, &effective, document, pending)
-    })
-}
-
-pub(crate) fn lens_changes(
-    state: &AppState,
-    request: KnowledgeLensChangesRequest,
-) -> Result<Vec<crate::knowledge::LensChangeRecord>, CommandError> {
-    admit(state, &request.loupist_id)?;
-    with_loupist_knowledge(state, &request.loupist_id.clone(), |tx, blobs| {
-        crate::knowledge::KnowledgeWrite::bind(tx, blobs)
-            .list_lens_changes(&request.loupist_id, &request.record_id)
+        deltas
+            .iter()
+            .map(|delta| write.screen_delta(loupist_id, delta))
+            .collect()
     })
 }
 
@@ -1316,13 +1279,40 @@ pub(crate) fn lens_search(
 ) -> Result<Vec<LensSearchHitDto>, CommandError> {
     let hits = host_search(state, &request.loupist_id, &request.query, "lens")?;
     let rows = hits.as_array().cloned().unwrap_or_default();
-    Ok(rows
-        .into_iter()
-        .filter_map(|hit| {
-            Some(LensSearchHitDto {
-                record_id: hit.get("recordId")?.as_str()?.to_string(),
-                revision_id: hit.get("revisionId")?.as_str()?.to_string(),
-                title: hit.get("title")?.as_str().unwrap_or("Lens").to_string(),
+    with_loupist_knowledge(state, &request.loupist_id.clone(), |tx, blobs| {
+        let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
+        let mut found: Vec<LensSearchHitDto> = Vec::new();
+        for hit in rows {
+            let Some(record_id) = hit.get("recordId").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            if found.iter().any(|seen| seen.record_id == record_id) {
+                continue;
+            }
+            let Ok(kind) = write.lens_kind(&request.loupist_id, record_id) else {
+                continue;
+            };
+            if !request.kinds.is_empty() && !request.kinds.contains(&kind) {
+                continue;
+            }
+            let summary = write
+                .read_page(&request.loupist_id, record_id)
+                .map(|page| page.body.summary().chars().take(240).collect())
+                .unwrap_or_default();
+            found.push(LensSearchHitDto {
+                record_id: record_id.to_string(),
+                revision_id: hit
+                    .get("revisionId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                kind,
+                title: hit
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Lens")
+                    .to_string(),
+                summary,
                 snippet: hit
                     .get("snippet")
                     .and_then(|value| value.as_str())
@@ -1330,54 +1320,9 @@ pub(crate) fn lens_search(
                     .chars()
                     .take(240)
                     .collect(),
-            })
-        })
-        .collect())
-}
-
-pub(crate) fn lens_proposals(
-    state: &AppState,
-    request: KnowledgeLensProposalsRequest,
-) -> Result<Vec<LensProposalDto>, CommandError> {
-    admit(state, &request.loupist_id)?;
-    with_loupist_knowledge(state, &request.loupist_id.clone(), |tx, blobs| {
-        let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
-        let drafts = write.list_lens_drafts(
-            &request.loupist_id,
-            request.record_id.as_deref(),
-            Some("loupist"),
-        )?;
-        let mut proposals = Vec::new();
-        for draft in drafts {
-            let title = draft
-                .origin_chat_id
-                .as_deref()
-                .and_then(|chat_id| {
-                    tx.query_row(
-                        "SELECT json_extract(data_json, '$.title') FROM chat_sessions WHERE id = ?1 AND loupist_id = ?2",
-                        rusqlite::params![chat_id, request.loupist_id],
-                        |row| row.get::<_, Option<String>>(0),
-                    )
-                    .ok()
-                    .flatten()
-                });
-            proposals.push(LensProposalDto {
-                draft,
-                origin_chat_title: title,
             });
         }
-        Ok(proposals)
-    })
-}
-
-pub(crate) fn lens_proposal_dismiss(
-    state: &AppState,
-    request: KnowledgeLensProposalDismissRequest,
-) -> Result<(), CommandError> {
-    let _activity = admit_mutation(state, &request.loupist_id)?;
-    with_loupist_knowledge(state, &request.loupist_id.clone(), |tx, blobs| {
-        crate::knowledge::KnowledgeWrite::bind(tx, blobs)
-            .dismiss_lens_proposal(&request.loupist_id, &request.draft_id)
+        Ok(found)
     })
 }
 
@@ -1533,52 +1478,33 @@ fn summarize(
     } else {
         Vec::new()
     };
-    let lens_kind = if module.kind == RecordKind::Lens {
-        Some(
-            if write
-                .load_standing_selection(loupist_id)?
-                .is_some_and(|(id, _)| id == module.record_id)
-            {
-                "perspective"
-            } else if !revision_id.is_empty()
-                && write.get_revision(loupist_id, &revision_id)?.payload["lensKind"] == "principle"
-            {
-                "principle"
-            } else {
-                "method"
-            }
-            .to_string(),
-        )
-    } else {
-        None
-    };
-    let (summary, applicability) = if module.kind == RecordKind::Lens && !revision_id.is_empty() {
-        let revision = write.get_revision(loupist_id, &revision_id)?;
-        let document: LensDocument = serde_json::from_value(revision.payload)?;
-        (
-            Some(lens_catalog_summary(&document)),
-            Some(lens_catalog_preview(&document.applicability)),
-        )
-    } else {
-        (None, None)
-    };
-    let (updated_at_ms, archived, proposal_count, learned) = if module.kind == RecordKind::Lens {
-        let (updated_at_ms, archived, proposal_count, learned) =
+    let (lens_kind, summary, updated_at_ms, archived, learned) = if module.kind == RecordKind::Lens
+    {
+        let kind = write.lens_kind(loupist_id, &module.record_id)?;
+        let summary = write
+            .read_page(loupist_id, &module.record_id)
+            .map(|page| lens_catalog_preview(page.body.summary()))
+            .unwrap_or_default();
+        let (updated_at_ms, archived, learned) =
             write.lens_listing(loupist_id, &module.record_id)?;
-        (Some(updated_at_ms), archived, proposal_count, learned)
+        (
+            Some(kind),
+            Some(summary),
+            Some(updated_at_ms),
+            archived,
+            learned,
+        )
     } else {
-        (None, false, 0, false)
+        (None, None, None, false, false)
     };
     Ok(KnowledgeRecordSummaryDto {
         title_key: objects.first().and_then(|object| object.title_key),
         summary,
-        applicability,
         lens_kind,
         read_only,
         indexing_state: "snapshot_only".to_string(),
         updated_at_ms,
         archived,
-        proposal_count,
         learned,
         record_id: module.record_id,
         kind: module.kind,
@@ -1589,29 +1515,6 @@ fn summarize(
     })
 }
 
-fn lens_dto(
-    view: crate::knowledge::LensView,
-    title: String,
-    read_only: bool,
-    is_standing: bool,
-    archived: bool,
-    navigation: crate::knowledge::LensNavigation,
-) -> LensViewDto {
-    LensViewDto {
-        lens_kind: if is_standing { "perspective" } else { "method" }.into(),
-        is_standing,
-        record_id: view.record_id,
-        revision_id: view.revision_id,
-        revision_digest: view.revision_digest,
-        title,
-        read_only,
-        archived,
-        document: view.document,
-        navigation,
-    }
-}
-
-/// True when `record_id` is one of this Loupist's Lens records (a principle, method or perspective).
 pub(crate) fn is_loupist_lens_record(
     state: &AppState,
     loupist_id: &str,

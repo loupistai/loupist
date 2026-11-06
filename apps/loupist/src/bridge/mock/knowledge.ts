@@ -1,6 +1,5 @@
 import type { JournalListRequest, JournalCreateRequest, JournalUpdateRequest, JournalArchiveRequest, JournalInput } from "../../contracts/knowledge";
 import type { Principle, PrincipleListRequest, PrincipleCreateRequest, PrincipleUpdateRequest, PrincipleArchiveRequest } from "../../contracts/knowledge";
-import { fromMarkdown } from "mdast-util-from-markdown";
 import type {
   GrowthEvent,
   GrowthEventsQuery,
@@ -19,17 +18,10 @@ import type {
   KnowledgeCatalogRequest,
   KnowledgeJournalReadRequest,
   KnowledgeJournalSourceReadRequest,
-  KnowledgeLensChangesRequest,
   KnowledgeLensReadRequest,
   KnowledgeResearchSearchRequest,
   KnowledgeSourceReadRequest,
   KnowledgeSourceRetainRequest,
-  LensChangeRecord,
-  LensDocumentBody,
-  LensDraftRecord,
-  LensProposal,
-  LensSearchHit,
-  LensView,
   ResearchRecord,
   RetainedSource,
   SourceDetail,
@@ -38,6 +30,7 @@ import type {
   WorldGraphView,
 } from "../../contracts/knowledge";
 import type { ModelCatalog } from "../../contracts/model";
+import type { LearnedDigest, LensKind, LensLogEntryView, LensSearchHit, PageSummary, PageView, SectionView } from "../../contracts/lens";
 import { clone, makeId, shortPause, type MockBridgeState } from "./state";
 
 const WORLD_GRAPH_BYTE_LIMIT = 262_144;
@@ -94,6 +87,8 @@ type GraphBody = {
   revisionDigest: string;
 };
 
+type LogRow = { recordId: string; entry: LensLogEntryView; before?: SectionView; after?: SectionView };
+
 type Store = {
   memoryControls?: import("../../contracts/knowledge").MemoryControls;
   learnMethods?: boolean;
@@ -102,12 +97,11 @@ type Store = {
   owned: GraphBody;
   sources: SourceDetail[];
   acquisitions: Record<string, RetainedSource>;
-  lenses: LensView[];
+  lenses: PageView[];
+  log: LogRow[];
   settings: GraphProcessingSettings;
   jobs: GraphJobView[];
-  changes: LensChangeRecord[];
   growth: GrowthEvent[];
-  drafts: LensDraftRecord[];
   research: ResearchRecord[];
   journals: JournalRecord[];
 };
@@ -280,29 +274,61 @@ const sources = (): SourceDetail[] => [
   },
 ];
 
-const lensView = (): LensView => ({
-  recordId: LENS,
-  revisionId: LENS_REVISION,
-  revisionDigest: "digest-lens-1",
-  title: "Compare independent accounts",
-  readOnly: false,
-  isStanding: false,
-  lensKind: "method",
-  document: {
-    markdown:
-      "# Compare independent accounts\n\nRead several accounts before preferring one explanation.\n",
-    applicability: "Questions with more than one published account.",
-    assumptions: "Accounts can be read without a private research record.",
-    procedure: "List agreements, disagreements, and missing dates.",
-    principles: "Prefer the account that states its scope.",
-    limitations: "This method does not decide which account is true.",
-  },
+const AT = Date.parse("2026-10-17T15:00:00.000Z");
+const MOCK_FILED_MESSAGE = "mock-filed-answer";
+
+const section = (key: string, heading: string, markdown: string, extra: Partial<SectionView> = {}): SectionView => ({
+  key, heading, markdown, digest: `digest-${key}`, basis: { refs: [] }, chip: "none", origin: "loupist",
+  contested: false, contestedClaimIds: [], updatedAtMs: AT, ...extra,
 });
 
-const perspectiveView = (): LensView => ({
-  ...lensView(), recordId: "lens-perspective", title: "Evidence-led perspective", lensKind: "perspective", isStanding: true,
-  document: { markdown: "Treat explanations as claims to examine, with clear sources and conditions.", applicability: "Every research question.", assumptions: "Evidence is incomplete and can change.", procedure: "", principles: "Separate observation, inference, and uncertainty.", limitations: "Update the view when stronger counterevidence appears." },
+const pageOf = (recordId: string, kind: LensKind, title: string, summary: string, sections: SectionView[], extra: Partial<PageView> = {}): PageView => ({
+  recordId, revisionId: `rev-${recordId}-1`, revisionDigest: `digest-${recordId}-1`, kind, title,
+  archived: false, paused: false, learned: false, createdAtMs: AT, updatedAtMs: AT,
+  body: kind === "idea"
+    ? { kind, summary, sections, idea: { status: "open", registeredAtMs: AT, statusAtMs: AT } }
+    : { kind: kind as "perspective" | "method" | "subject", summary, sections },
+  suggestedSections: [], anchors: [], links: [], backlinks: [], history: [], ...extra,
 });
+
+const lensView = (): PageView => pageOf(LENS, "method", "Compare independent accounts", "Read several accounts before preferring one explanation.", [
+  section("use-when", "When to use it", "Questions with more than one published account."),
+  section("steps", "Steps", "List agreements, disagreements, and missing dates."),
+  section("checks", "Checks", "Prefer the account that states its scope."),
+  section("limits", "Limits", "This method does not decide which account is true."),
+], { revisionId: LENS_REVISION, revisionDigest: "digest-lens-1", suggestedSections: ["use-when", "steps", "checks", "limits"] });
+
+const perspectiveView = (): PageView => pageOf("lens-perspective", "perspective", "Evidence-led perspective", "Treat explanations as claims to examine, with clear sources and conditions.", [
+  section("beliefs", "Beliefs", "Separate observation, inference, and uncertainty."),
+  section("priorities", "Priorities", "Update the view when stronger counterevidence appears."),
+], { suggestedSections: ["beliefs", "priorities", "avoid"] });
+
+const subjectView = (): PageView => pageOf("lens-subject-tcp", "subject", "TCP", "What the Loupist knows about TCP: where it sits in the web stack and where it is being replaced.", [
+  section("overview", "Overview", "TCP carries most web traffic. HTTP/1.1 and HTTP/2 depend on it; HTTP/3 does not.", {
+    chip: "source", basis: { refs: [{ kind: "claim", claimId: "claim-http-tcp" }, { kind: "span", recordId: SOURCE, revisionDigest: "digest-source-rfc-9110", spanId: "span-status-codes" }] },
+  }),
+  section("facts", "Facts you told me", "You run TCP-heavy services and care about head-of-line blocking.", {
+    chip: "said", origin: "user", basis: { refs: [{ kind: "said", messageId: "mock-user-message" }] },
+  }),
+  section("views", "Where it is heading", "UDP-based transports will likely take over latency-sensitive traffic first.", {
+    chip: "view", basis: { refs: [{ kind: "page", recordId: "lens-idea-quic" }], uncertainty: "Based on one analyst report and adoption trends; no measurement of your own traffic." },
+  }),
+  section("risks", "Risks", "Middleboxes still drop unfamiliar transports, so migration is uneven.", {
+    chip: "source", contested: true, contestedClaimIds: ["claim-quic-blocked"], basis: { refs: [{ kind: "claim", claimId: "claim-quic-blocked" }] },
+  }),
+], { anchors: [{ role: "subject", nodeId: "node-tcp", name: "TCP" }, { role: "mention", nodeId: "node-quic", name: "QUIC" }], suggestedSections: ["overview", "facts", "value-chain", "drivers", "risks", "views", "open-questions"], learned: true });
+
+const ideaView = (): PageView => pageOf("lens-idea-quic", "idea", "QUIC could displace TCP for mobile traffic", "A connection the Loupist has not verified: handshake savings matter most on lossy mobile links.", [
+  section("claim", "Claim", "QUIC saves a round trip, so mobile pages load faster where loss is high.", {
+    chip: "source", basis: { refs: [{ kind: "claim", claimId: "claim-http-tcp" }] },
+  }),
+], { anchors: [{ role: "subject", nodeId: "node-quic", name: "QUIC" }], suggestedSections: ["claim", "mechanism", "evidence-for", "evidence-against", "would-break", "checks"], learned: true });
+
+const seedLog = (): LogRow[] => [
+  { recordId: "lens-subject-tcp", entry: { opId: "op-seed-1", op: "put", outcome: "added", key: "overview", origin: "turn", chatId: "mock-chat-1", messageId: MOCK_FILED_MESSAGE, createdAtMs: AT } },
+  { recordId: "lens-subject-tcp", entry: { opId: "op-seed-2", op: "put", outcome: "added", key: "risks", origin: "turn", chatId: "mock-chat-1", messageId: MOCK_FILED_MESSAGE, createdAtMs: AT + 1 } },
+  { recordId: "lens-idea-quic", entry: { opId: "op-seed-3", op: "put", outcome: "added", key: "claim", origin: "turn", chatId: "mock-chat-1", messageId: MOCK_FILED_MESSAGE, createdAtMs: AT + 2 } },
+];
 
 const buildStore = (loupistId: string): Store => ({
   seeded: true,
@@ -311,22 +337,10 @@ const buildStore = (loupistId: string): Store => ({
   sources: sources(),
   acquisitions: {},
   growth: [],
-  lenses: [lensView(), perspectiveView()],
+  lenses: [lensView(), perspectiveView(), subjectView(), ideaView()],
+  log: seedLog(),
   settings: defaultSettings(),
   jobs: [],
-  drafts: [],
-  changes: [
-    {
-      changeId: "lens-change-1",
-      recordId: LENS,
-      newRevisionId: LENS_REVISION,
-      rationale: "Stated the procedure without pointing at a private case.",
-      createdAtMs: Date.parse("2026-10-17T15:00:00.000Z"),
-      inputs: {
-        references: [{ kind: "journal", recordId: "", revisionId: "", objectId: "journal-http" }],
-      },
-    },
-  ],
   journals: [seedJournal(loupistId)],
   research: [
     {
@@ -369,10 +383,9 @@ const emptyStore = (): Store => ({
   acquisitions: {},
   growth: [],
   lenses: [perspectiveView()],
+  log: [],
   settings: defaultSettings(),
   jobs: [],
-  changes: [],
-  drafts: [],
   research: [],
   journals: [],
 });
@@ -385,7 +398,7 @@ const ensure = (state: MockBridgeState, loupistId: string) => {
     const atMs = Date.parse("2026-10-17T15:00:00.000Z");
     for (const node of created.owned.nodes) created.growth.push(growthEvent(loupistId, WORLD, "entity_added", node.name, { atMs, subjectId: node.id, actor: "processing" }));
     for (const edge of created.owned.edges) created.growth.push(growthEvent(loupistId, WORLD, "claim_added", edge.claim.proposition, { atMs, subjectId: edge.claim.id, actor: "processing" }));
-    for (const lens of created.lenses) created.growth.push(growthEvent(loupistId, lens.recordId, "lens_created", lens.title, { atMs, afterSummary: growthLine(lens.document.applicability || lens.title) }));
+    for (const lens of created.lenses) created.growth.push(growthEvent(loupistId, lens.recordId, "lens_created", lens.title, { atMs, afterSummary: growthLine(lens.body.kind === "principle" ? lens.body.statement : lens.body.summary || lens.title) }));
     for (const source of created.sources) created.growth.push(growthEvent(loupistId, source.recordId, "source_retained", source.title, { atMs }));
   }
   if (loupistId === "loupist-quality") {
@@ -512,10 +525,8 @@ export const knowledgeCatalog = async (
     loupistId: request.loupistId,
     worlds: [{ recordId: WORLD, kind: "world", title: "World", revisionId: OWNED, revisionDigest: store.owned.revisionDigest,
       readOnly: false, indexingState: store.owned.indexingState, objects: [] }],
-    lenses: store.lenses.map((lens) => ({ recordId: lens.recordId, kind: "lens" as const, title: lens.title, lensKind: lens.lensKind, archived: lens.archived, proposalCount: store.drafts.filter((draft) => draft.author === "loupist" && draft.recordId === lens.recordId).length, updatedAtMs: store.changes.find((change) => change.recordId === lens.recordId)?.createdAtMs,
-      summary: `Use: ${lens.document.applicability.slice(0, 180)} Limitations: ${lens.document.limitations.slice(0, 180)}`,
-      applicability: lens.document.applicability.slice(0, 180),
-      learned: store.changes.some((change) => change.recordId === lens.recordId),
+    lenses: store.lenses.map((lens) => ({ recordId: lens.recordId, kind: "lens" as const, title: lens.title, lensKind: lens.kind, archived: lens.archived,
+      updatedAtMs: lens.updatedAtMs, summary: pageSummary(lens), learned: lens.learned || store.log.some((row) => row.recordId === lens.recordId),
       revisionId: lens.revisionId, revisionDigest: lens.revisionDigest, readOnly: false, indexingState: "ready",
       objects: [{ id: lens.recordId, title: lens.title }] })),
     sources: store.sources.map((source) => ({ recordId: source.recordId, kind: "source", title: source.title,
@@ -608,100 +619,119 @@ export const knowledgeSourceRead = async (
   });
 };
 
-function lensLinkIds(view: LensView): Set<string> {
+const pageSummary = (page: PageView) => page.body.kind === "principle" ? page.body.statement : page.body.summary;
+const pageSections = (page: PageView): SectionView[] => page.body.kind === "principle" ? [] : page.body.sections;
+const pageText = (page: PageView) => `${page.title} ${pageSummary(page)} ${pageSections(page).map((item) => `${item.heading} ${item.markdown}`).join(" ")}`;
+
+function lensLinkIds(page: PageView): Set<string> {
   const ids = new Set<string>();
-  type MarkdownNode = { type: string; url?: string; identifier?: string; children?: MarkdownNode[] };
-  for (const markdown of Object.values(view.document)) {
-    const root = fromMarkdown(markdown);
-    const definitions = new Map<string, string>();
-    const visit = (node: MarkdownNode, action: (node: MarkdownNode) => void) => {
-      action(node);
-      for (const child of node.children ?? []) visit(child, action);
-    };
-    visit(root, (node) => {
-      if (node.type === "definition" && node.identifier && node.url) definitions.set(node.identifier, node.url);
-    });
-    visit(root, (node) => {
-      const destination = node.type === "link" ? node.url
-        : node.type === "linkReference" && node.identifier ? definitions.get(node.identifier) : undefined;
-      if (!destination?.startsWith("lens:")) return;
-      const id = destination.slice(5);
-      if (id && id.length <= 128 && !/[\s\u0000-\u001f\u007f/?#]/u.test(id)) ids.add(id);
-    });
-  }
+  for (const item of pageSections(page)) for (const match of item.markdown.matchAll(/\]\(lens:([^)\s]+)\)/gu)) ids.add(match[1]!);
+  for (const item of pageSections(page)) for (const ref of item.basis.refs) if (ref.kind === "page") ids.add(ref.recordId);
   return ids;
 }
 
-function withLensNavigation(store: Store, view: LensView, includeNavigation = true): LensView {
-  if (!includeNavigation) return {
-    ...view, links: [], backlinks: [], unresolvedLinks: [],
-    linksTruncated: false, backlinksTruncated: false, unresolvedLinksTruncated: false,
-  };
-  const outgoing = lensLinkIds(view);
-  const current = [...store.lenses].sort((a, b) => a.title.localeCompare(b.title) || a.recordId.localeCompare(b.recordId));
-  const links = current.filter((lens) => outgoing.has(lens.recordId));
-  for (const lens of links) outgoing.delete(lens.recordId);
-  const backlinks = current.filter((lens) => !lens.archived && lensLinkIds(lens).has(view.recordId));
-  const describe = ({ recordId, title, revisionId }: LensView) => ({ recordId, title, revisionId });
-  return {
-    ...view,
-    links: links.slice(0, 64).map(describe), backlinks: backlinks.slice(0, 64).map(describe),
-    linksTruncated: links.length > 64, backlinksTruncated: backlinks.length > 64,
-    unresolvedLinks: [...outgoing].sort().slice(0, 64), unresolvedLinksTruncated: outgoing.size > 64,
-  };
+const linkView = (page: PageView) => ({ recordId: page.recordId, title: page.title, kind: page.kind });
+
+function readPage(store: Store, page: PageView): PageView {
+  const outgoing = lensLinkIds(page);
+  const current = [...store.lenses].filter((lens) => !lens.archived).sort((a, b) => a.title.localeCompare(b.title));
+  const history = store.log.filter((row) => row.recordId === page.recordId).map((row) => row.entry).sort((a, b) => b.createdAtMs - a.createdAtMs).slice(0, 20);
+  return clone({
+    ...page,
+    links: current.filter((lens) => outgoing.has(lens.recordId)).map(linkView),
+    backlinks: current.filter((lens) => lensLinkIds(lens).has(page.recordId)).map(linkView),
+    history,
+  });
 }
 
-export const knowledgeLensRead = async (state: MockBridgeState, request: KnowledgeLensReadRequest): Promise<LensView> => {
+export const knowledgeLensRead = async (state: MockBridgeState, request: KnowledgeLensReadRequest): Promise<PageView> => {
   await shortPause(state);
   const store = ensure(state, request.loupistId);
-  const lens = store.lenses.find((item) => item.recordId === request.recordId && (!request.revisionId || item.revisionId === request.revisionId));
-  if (!lens) throw new Error("Lens revision not found.");
-  return clone(withLensNavigation(store, { ...lens, readOnly: store.lenses.find((item) => item.recordId === lens.recordId)?.revisionId !== lens.revisionId }, request.includeNavigation !== false));
+  const lens = store.lenses.find((item) => item.recordId === request.recordId);
+  if (!lens) throw new Error("Lens page not found.");
+  return readPage(store, lens);
 };
 
-export const knowledgeLensSave = async (state: MockBridgeState, request: { loupistId: string; recordId: string; expectedRevisionId: string; document: LensDocumentBody; rationale: string }): Promise<{ status: "saved" | "conflict"; view: LensView; currentRevisionId?: string }> => {
+export const knowledgeLensPagesForNode = async (state: MockBridgeState, request: { loupistId: string; nodeId: string }): Promise<PageSummary[]> => {
   await shortPause(state);
-  const store = ensure(state, request.loupistId);
-  if (!request.rationale?.trim()) throw new Error("A change reason is required.");
-  const index = store.lenses.findIndex((item) => item.recordId === request.recordId);
-  const lens = store.lenses[index];
-  if (!lens) throw new Error("Lens not found.");
-  if (request.expectedRevisionId !== lens.revisionId) return { status: "conflict", currentRevisionId: lens.revisionId, view: clone(withLensNavigation(store, lens)) };
-  const next = { ...lens, revisionId: makeId("lens-revision"), revisionDigest: makeId("digest"), document: clone(request.document) };
-  if (Object.entries(lens.document).some(([key, value]) => request.document[key as keyof LensDocumentBody] !== value)) {
-    store.growth.push(growthEvent(request.loupistId, lens.recordId, "lens_revised", request.rationale, {
-      actor: "loupist", beforeSummary: growthLine(lens.document.applicability || lens.title),
-      afterSummary: growthLine(request.document.applicability || lens.title),
-    }));
-  }
-  store.lenses[index] = next;
-  store.changes = store.changes.filter((item) => item.recordId !== request.recordId);
-  store.changes.unshift({ changeId: makeId("lens-change"), recordId: request.recordId, newRevisionId: next.revisionId, rationale: request.rationale.trim(), createdAtMs: Date.now(), changeKind: "revise", actor: "loupist", inputs: { references: [] } });
-  return { status: "saved", view: clone(withLensNavigation(store, next)) };
+  return ensure(state, request.loupistId).lenses
+    .filter((lens) => !lens.archived && lens.anchors.some((anchor) => anchor.nodeId === request.nodeId))
+    .map((lens) => ({ recordId: lens.recordId, title: lens.title, kind: lens.kind, summary: pageSummary(lens) }));
 };
 
-export const knowledgeLensChanges = async (state: MockBridgeState, request: KnowledgeLensChangesRequest): Promise<LensChangeRecord[]> => {
-  await shortPause(state);
-  return clone(ensure(state, request.loupistId).changes.filter((item) => item.recordId === request.recordId));
-};
-
-
-export const knowledgeLensSearch = async (state: MockBridgeState, request: { loupistId: string; query: string }): Promise<LensSearchHit[]> => {
+export const knowledgeLensSearch = async (state: MockBridgeState, request: { loupistId: string; query: string; kinds?: LensKind[] }): Promise<LensSearchHit[]> => {
   await shortPause(state);
   const terms = request.query.normalize("NFKC").toLocaleLowerCase("en-US").match(/[\p{L}\p{N}]+/gu) ?? [];
-  return ensure(state, request.loupistId).lenses.filter((lens) => !lens.archived).filter((lens) => {
-    const text = `${lens.title} ${Object.values(lens.document).join(" ")}`.normalize("NFKC").toLocaleLowerCase("en-US");
-    return terms.every((term) => text.includes(term));
-  }).map((lens) => ({ recordId: lens.recordId, revisionId: lens.revisionId, title: lens.title, snippet: lens.document.applicability || lens.document.markdown.slice(0, 180) }));
+  return ensure(state, request.loupistId).lenses
+    .filter((lens) => !lens.archived && (!request.kinds?.length || request.kinds.includes(lens.kind)))
+    .filter((lens) => {
+      const text = pageText(lens).normalize("NFKC").toLocaleLowerCase("en-US");
+      return terms.every((term) => text.includes(term));
+    })
+    .map((lens) => ({ recordId: lens.recordId, revisionId: lens.revisionId, kind: lens.kind, title: lens.title, summary: pageSummary(lens), snippet: pageSummary(lens).slice(0, 180) }));
 };
 
-export const knowledgeLensProposals = async (state: MockBridgeState, request: { loupistId: string; recordId?: string }): Promise<LensProposal[]> => clone(ensure(state, request.loupistId).drafts.filter((draft) => draft.author === "loupist" && (!request.recordId || draft.recordId === request.recordId)));
+export function mockFileSection(state: MockBridgeState, loupistId: string, recordId: string, next: { key: string; heading: string; markdown: string; chatId?: string; messageId?: string }): PageView {
+  const store = ensure(state, loupistId);
+  const page = store.lenses.find((item) => item.recordId === recordId);
+  if (!page || page.body.kind === "principle") throw new Error("Lens page not found.");
+  const now = Date.now();
+  const before = page.body.sections.find((item) => item.key === next.key);
+  const filed: SectionView = section(next.key, next.heading, next.markdown, { digest: makeId("digest"), updatedAtMs: now, basis: { refs: [] } });
+  page.body.sections = before ? page.body.sections.map((item) => item.key === next.key ? filed : item) : [...page.body.sections, filed];
+  page.updatedAtMs = now;
+  page.revisionId = makeId("rev");
+  store.log.push({ recordId, before, after: filed, entry: { opId: makeId("op"), op: "put", outcome: before ? "replaced" : "added", key: next.key, origin: "turn", chatId: next.chatId, messageId: next.messageId, createdAtMs: now } });
+  return readPage(store, page);
+}
 
-export const knowledgeLensProposalDismiss = async (state: MockBridgeState, request: { loupistId: string; draftId: string }): Promise<void> => {
+export const memorySectionForget = async (state: MockBridgeState, request: { loupistId: string; recordId: string; key: string }): Promise<PageView> => {
+  await shortPause(state);
   const store = ensure(state, request.loupistId);
-  const before = store.drafts.length;
-  store.drafts = store.drafts.filter((draft) => !(draft.author === "loupist" && draft.draftId === request.draftId));
-  if (store.drafts.length === before) throw new Error("Proposal not found.");
+  const page = store.lenses.find((item) => item.recordId === request.recordId);
+  if (!page || page.body.kind === "principle") throw new Error("Lens page not found.");
+  const before = page.body.sections.find((item) => item.key === request.key);
+  if (!before) throw new Error("Section not found.");
+  const now = Date.now();
+  page.body.sections = page.body.sections.filter((item) => item.key !== request.key);
+  page.updatedAtMs = now;
+  store.log.push({ recordId: request.recordId, before, entry: { opId: makeId("op"), op: "retire", outcome: "retired", key: request.key, origin: "user", createdAtMs: now } });
+  return readPage(store, page);
+};
+
+export const memoryOpUndo = async (state: MockBridgeState, request: { loupistId: string; opId: string }): Promise<PageView> => {
+  await shortPause(state);
+  const store = ensure(state, request.loupistId);
+  const row = store.log.find((item) => item.entry.opId === request.opId);
+  const page = row && store.lenses.find((item) => item.recordId === row.recordId);
+  if (!row || !page || page.body.kind === "principle") throw new Error("Nothing to undo.");
+  const key = row.entry.key!;
+  const later = store.log.some((item) => item.recordId === row.recordId && item.entry.key === key && item.entry.createdAtMs > row.entry.createdAtMs);
+  if (later || store.log.some((item) => item.entry.undoesOpId === request.opId)) throw new Error("A later change touched this section; undo it first.");
+  const now = Date.now();
+  const restored = row.entry.outcome === "added" ? undefined : row.before;
+  page.body.sections = restored
+    ? page.body.sections.some((item) => item.key === key) ? page.body.sections.map((item) => item.key === key ? restored : item) : [...page.body.sections, restored]
+    : page.body.sections.filter((item) => item.key !== key);
+  page.updatedAtMs = now;
+  store.log.push({ recordId: row.recordId, entry: { opId: makeId("op"), op: row.entry.outcome === "retired" ? "put" : "retire", outcome: row.entry.outcome === "retired" ? "added" : "retired", key, origin: "user", createdAtMs: now, undoesOpId: request.opId } });
+  return readPage(store, page);
+};
+
+export const memoryLearned = async (state: MockBridgeState, request: { loupistId: string; messageIds: string[] }): Promise<LearnedDigest[]> => {
+  await shortPause(state);
+  const store = ensure(state, request.loupistId);
+  return request.messageIds.map((messageId) => {
+    const rows = store.log.filter((row) => row.entry.messageId === messageId);
+    const pages = [...new Set(rows.map((row) => row.recordId))].flatMap((recordId) => {
+      const page = store.lenses.find((item) => item.recordId === recordId);
+      if (!page) return [];
+      const own = rows.filter((row) => row.recordId === recordId);
+      return [{ recordId, title: page.title, kind: page.kind, created: own.some((row) => row.entry.outcome === "added") && !store.log.some((row) => row.recordId === recordId && row.entry.createdAtMs < own[0]!.entry.createdAtMs),
+        outcomes: own.map((row) => ({ opId: row.entry.opId, outcome: row.entry.outcome, key: row.entry.key })) }];
+    });
+    return { messageId, pages };
+  });
 };
 
 export const knowledgeResearchSearch = async (
@@ -844,7 +874,7 @@ export const graphProcessingView = (settings: GraphProcessingSettings, catalog: 
   const model = catalog.models.find((item) => item.id === settings.helperModelProfileId);
   const provider = catalog.providers.find((item) => item.id === model?.provider);
   const status = jobs.some((job) => job.status === "reconcile_required") ? "reconciliation_required" : !settings.enrichmentEnabled ? "disabled" : settings.paused ? "paused" : !settings.helperModelProfileId ? "model_required" : !model ? "model_unavailable" : model.credential_source === "missing" || provider?.credential_source === "missing" ? "provider_disconnected" : "ready";
-  return { settings, readiness: { status, providerName: provider?.label ?? null, modelName: model?.name ?? null, authKind: provider?.api_key === false && provider?.oauth ? "oauth" : model ? "api_key" : null, message: null } };
+  return { settings, readiness: { status, providerName: provider?.label ?? null, modelName: model?.name ?? null, authKind: provider?.api_key === false && provider?.oauth ? "oauth" : model ? "api_key" : null, note: null } };
 };
 
 export const knowledgeGraphRecover = async (state: MockBridgeState, request: { loupistId: string }) => {
@@ -921,7 +951,7 @@ function seedJournal(loupistId: string): JournalRecord {
         {
           recordId: LENS,
           revisionId: LENS_REVISION,
-          document: lensView().document,
+          markdown: "# Compare independent accounts\n\n## use-when\nQuestions with more than one published account.",
           status: "considered",
         },
       ],
@@ -1008,6 +1038,7 @@ export async function knowledgeMap(state: MockBridgeState, request: import("../.
   if (nodes.length) for (const [i, label] of ["Evidence before conviction", "Compare competitive advantages", "Trace the capital cycle"].entries()) {
     nodes.push({ id: `map-lens-${i}`, recordId: `map-lens-${i}`, kind: i === 0 ? "lens_perspective" : "lens_method", label, degree: 0, archived: false, watched: false, held: false, firstSeenAtMs: start + (i === 0 ? 0 : 27 + i) * day });
   }
+  if (nodes.length) nodes.push({ id: "map-lens-3", recordId: "lens-subject-tcp", kind: "lens_subject", label: "TCP", degree: 0, archived: false, watched: false, held: false, firstSeenAtMs: start + 28 * day }, { id: "map-lens-4", recordId: "lens-idea-quic", kind: "lens_idea", label: "QUIC could displace TCP for mobile traffic", degree: 0, archived: false, watched: false, held: false, firstSeenAtMs: start + 29 * day });
   for (const p of ensure(state,request.loupistId).principles) nodes.push({id:p.recordId,recordId:p.recordId,kind:"lens_principle",label:p.statement,degree:0,archived:p.archived,watched:false,held:false,firstSeenAtMs:p.createdAtMs});
   const edges: import("../../contracts/knowledge").KnowledgeMapEdge[] = SEEDED.has(request.loupistId) ? labels.slice(1).map((_, i) => ({
     id: `map-claim-${String(i).padStart(2, "0")}`, kind: "claim", source: nodes[Math.floor(i / 4)]!.id, target: nodes[i + 1]!.id,
@@ -1015,6 +1046,7 @@ export async function knowledgeMap(state: MockBridgeState, request: import("../.
   })) : [];
   if (nodes.length) {
     edges.push({ id: "map-lens-link-1", kind: "lens_link", source: "map-lens-0", target: "map-lens-1" }, { id: "map-lens-link-2", kind: "lens_link", source: "map-lens-1", target: "map-lens-2" });
+    edges.push({ id: "map-application-subject", kind: "applies_to", source: "map-lens-3", target: "map-entity-00", weight: 10, firstSeenAtMs: start + 28 * day }, { id: "map-application-idea", kind: "applies_to", source: "map-lens-4", target: "map-entity-01", weight: 8, firstSeenAtMs: start + 29 * day });
     for (let i = 0; i < 10; i++) edges.push({ id: `map-application-${i}`, kind: "applies_to", source: `map-lens-${i % 2 + 1}`, target: nodes[i]!.id, weight: 12 - i, firstSeenAtMs: start + (28 + i % 2) * day });
   }
   for (const edge of edges) for (const id of new Set([edge.source, edge.target])) { const node = nodes.find((n) => n.id === id); if (node) node.degree++; }
@@ -1023,7 +1055,7 @@ export async function knowledgeMap(state: MockBridgeState, request: import("../.
   const shownNodes = nodes.filter((node) => chosen.has(node.id)).sort((a, b) => a.id.localeCompare(b.id));
   const shownEdges = edges.filter((edge) => chosen.has(edge.source) && chosen.has(edge.target)).sort((a, b) => a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id));
   const counts = {} as import("../../contracts/knowledge").KnowledgeMap["counts"];
-  for (const kind of ["entity", "lens_perspective", "lens_method", "lens_principle", "claim", "lens_link", "applies_to"] as const) {
+  for (const kind of ["entity", "lens_perspective", "lens_method", "lens_principle", "lens_subject", "lens_idea", "claim", "lens_link", "applies_to"] as const) {
     const total = nodes.filter((node) => node.kind === kind).length + edges.filter((edge) => edge.kind === kind).length;
     const shown = shownNodes.filter((node) => node.kind === kind).length + shownEdges.filter((edge) => edge.kind === kind).length;
     counts[kind] = { total, shown, truncated: shown < total };
@@ -1031,9 +1063,11 @@ export async function knowledgeMap(state: MockBridgeState, request: import("../.
   return { nodes: shownNodes, edges: shownEdges, counts, unmatchedHoldings: [], unmatchedWatchlist: [], worldRevisionId: nodes.length ? "map-world-revision-1" : null, generatedAtMs: Math.max(nodes.length ? start + 29 * day : 0, ...ensure(state,request.loupistId).principles.map(p => p.updatedAtMs)) };
 }
 
-function principleLens(p: Principle): LensView {
-  return { recordId: p.recordId, revisionId: p.revisionId, revisionDigest: p.revisionId, title: [...p.statement.replace(/\s+/g, " ")].slice(0, 80).join(""), lensKind: "principle", isStanding: false, readOnly: false, archived: p.archived,
-    document: { markdown: p.statement, applicability: p.why ?? "", assumptions: "", procedure: p.example ?? "", principles: p.statement, limitations: "" } };
+function principleLens(p: Principle): PageView {
+  return pageOf(p.recordId, "principle", [...p.statement.replace(/\s+/g, " ")].slice(0, 80).join(""), p.statement, [], {
+    revisionId: p.revisionId, revisionDigest: p.revisionId, archived: p.archived, createdAtMs: p.createdAtMs, updatedAtMs: p.updatedAtMs,
+    body: { kind: "principle", statement: p.statement, why: p.why ?? "", example: p.example ?? "", origin: p.origin },
+  });
 }
 function checkPrinciple(p: Pick<Principle, "statement" | "why" | "example">) {
   p.statement = p.statement.trim();
@@ -1100,7 +1134,7 @@ export async function knowledgeLensArchive(state: MockBridgeState, request: { lo
   const store = ensure(state, request.loupistId);
   const lens = store.lenses.find(item => item.recordId === request.recordId);
   if (!lens) throw new Error("Lens not found");
-  if (lens.readOnly || (request.archived && lens.isStanding)) throw new Error("This Lens cannot be archived");
+  if (request.archived && lens.kind === "perspective") throw new Error("This Lens cannot be archived");
   if (Boolean(lens.archived) === request.archived) return;
   lens.archived = request.archived;
   store.growth.push(growthEvent(request.loupistId, lens.recordId, request.archived ? "lens_archived" : "lens_restored", lens.title, { actor: "user", beforeSummary: request.archived ? "active" : "archived", afterSummary: request.archived ? "archived" : "active" }));
@@ -1143,7 +1177,7 @@ export async function knowledgeMemoryControls(state: MockBridgeState, request: {
 export async function knowledgeLensPause(state: MockBridgeState, request: { loupistId: string; recordId: string; paused: boolean }) {
   const store = ensure(state, request.loupistId);
   const lens = store.lenses.find(item => item.recordId === request.recordId);
-  if (!lens || lens.isStanding) throw new Error("Only a principle or method can be paused");
+  if (!lens || lens.kind === "perspective") throw new Error("Only a principle or page can be paused");
   const controls = await knowledgeMemoryControls(state, request);
   controls.paused = [...new Set(controls.paused.filter(id => id !== request.recordId).concat(request.paused ? [request.recordId] : []))];
   store.memoryControls = controls;
@@ -1152,7 +1186,7 @@ export async function knowledgeLensPause(state: MockBridgeState, request: { loup
 export async function knowledgeMemoryResetPreview(state: MockBridgeState, request: { loupistId: string }): Promise<import("../../contracts/knowledge").MemoryResetCounts> {
   const store = ensure(state, request.loupistId);
   const owned = store.growth.filter(event => event.kind === "lens_created" && event.actor === "loupist").map(event => event.recordId);
-  return { principles: 0, methods: store.lenses.filter(lens => !lens.isStanding && owned.includes(lens.recordId)).length, names: 0, relationships: 0, sources: 0 };
+  return { principles: 0, pages: store.lenses.filter(lens => lens.kind !== "perspective" && owned.includes(lens.recordId)).length, sections: 0, names: 0, relationships: 0, sources: 0 };
 }
 export async function knowledgeMemoryReset(state: MockBridgeState, request: { loupistId: string; confirm: boolean; expected: import("../../contracts/knowledge").MemoryResetCounts }) {
   const counts = await knowledgeMemoryResetPreview(state, request);
@@ -1160,7 +1194,7 @@ export async function knowledgeMemoryReset(state: MockBridgeState, request: { lo
   const store = ensure(state, request.loupistId);
   const owned = store.growth.filter(event => event.kind === "lens_created" && event.actor === "loupist").map(event => event.recordId);
   const controls = await knowledgeMemoryControls(state, request);
-  store.lenses = store.lenses.filter(lens => { if (lens.isStanding || !owned.includes(lens.recordId)) return true; controls.removed.push(lens.recordId); return false; });
+  store.lenses = store.lenses.filter(lens => { if (lens.kind === "perspective" || !owned.includes(lens.recordId)) return true; controls.removed.push(lens.recordId); return false; });
   controls.paused = controls.paused.filter(id => !controls.removed.includes(id));
   store.memoryControls = controls;
   return counts;

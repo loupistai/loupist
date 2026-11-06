@@ -167,6 +167,7 @@ fn rolled_back_world_publication_preserves_current_content_and_head() {
             &sha256(publications.second_artifact.as_bytes()),
             AT + 400,
             false,
+            &[],
         )?;
         Err(KnowledgeError::Invalid("fixture transaction rollback"))
     });

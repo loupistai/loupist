@@ -255,7 +255,14 @@ async fn folder_copy_reopens_chat_source_lens_and_paused_tasks_without_app_data(
     fs::create_dir(&other).unwrap();
     let state = AppState::for_folder_test(temp.path().join("app-a"));
     let a = create_folder_loupist(&state, &original).await.unwrap();
-    let b = create_folder_loupist(&state, &other).await.unwrap();
+    let b = super::loupist::create_folder_loupist_with_setup(
+        &state,
+        &other,
+        Some("Ferry operators".into()),
+        None,
+    )
+    .await
+    .unwrap();
     let mut chat = super::tests::chat("chat-copy", &a.id, 1_700_000_000_000);
     chat.title = "Saved conversation".into();
     state.store.create_chat(&chat).unwrap();

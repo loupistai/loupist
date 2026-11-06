@@ -32,7 +32,7 @@ export type MemoryUpdateChange = {
   worldJobId?: string | null;
   worldStatus?: string | null;
   recordId: string;
-  operation: "create" | "revise" | "rename" | "proposed";
+  operation: "create" | "revise" | "rename";
   title: string;
   lesson: string;
   basis: string;
@@ -43,11 +43,23 @@ export type MemoryUpdateChange = {
   | { kind: Exclude<MemoryKind, "Research">; knowledge: KnowledgeReference }
 );
 
+export type MapKind = { name: string; label: string; labelKo?: string };
+
+/** One applied `loupist_setup` change. A market the user did not give is absent. */
+export type SetupChange =
+  | { change: "followed"; symbol: string; market?: string; name?: string }
+  | { change: "unfollowed"; symbol: string; market?: string }
+  | { change: "focus"; focus: string }
+  | { change: "tracks"; kinds: MapKind[] };
+
 export type MemoryUpdateResult = {
   status: "applied" | "no_change";
   commitId: string | null;
   changes: MemoryUpdateChange[];
+  /** Kinds the answer asked the map to track that its commit could not add. */
+  skippedKinds?: MapKind[];
+  setup?: SetupChange[];
 };
 
 /** Kind and delivery recorded by Rust when the item reached this turn. */
-export type LensReceipt = { recordId: string; revisionId: string; revisionDigest?: string; kind: "principle" | "method" | "perspective"; title: string; delivery: "context" | "exact_read" };
+export type LensReceipt = { recordId: string; revisionId: string; revisionDigest?: string; kind: import("./lens").LensKind; title: string; delivery: "context" | "exact_read" };

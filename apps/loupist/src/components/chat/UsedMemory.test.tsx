@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import type { ChatMessage } from "../../types";
 import { ChatSetAsideProvider } from "../../chat/chatSetAside";
 import { MessageMemoryRow } from "./MessageMemoryRow";
+import i18n from "@/i18n";
 
 const answer = (overrides: Partial<ChatMessage> = {}): ChatMessage => ({
   id: "answer-1", role: "assistant", status: "complete", created_at: "2026-10-28T00:00:00Z",
@@ -28,8 +29,8 @@ it("quotes a used principle and sets it aside for this chat until Undo", async (
   const user = userEvent.setup();
   const toggle = vi.fn(async () => {});
   render(<Harness messages={[answer()]} toggle={toggle} />);
-  await user.click(screen.getByRole("button", { name: "Used 1 of your rules" }));
-  const panel = screen.getByText("Used from your rules").closest("li")!;
+  await user.click(screen.getByRole("button", { name: "Used 1 page" }));
+  const panel = screen.getByText("Used · Principle").closest("li")!;
   expect(within(panel).getByText("Check cash flow before profit")).toBeVisible();
   await user.click(within(panel).getByRole("button", { name: "Not this time" }));
   expect(toggle).toHaveBeenCalledWith("principle-cash", true);
@@ -54,9 +55,21 @@ it("labels a deleted receipt target without offering edit or archive actions", a
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   vi.spyOn(bridge, "knowledgeCatalog").mockResolvedValue({ loupistId: "loupist-quality", lenses: [], sources: [], worlds: [] });
   render(<MessageMemoryRow bridge={bridge} loupistId="loupist-quality" message={answer({ lens_receipts: [{ recordId: "deleted-method", revisionId: "rev", kind: "method", title: "Deleted method", delivery: "exact_read" }] })} onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} />);
-  await userEvent.click(screen.getByRole("button", { name: "Used 1 way of working" }));
+  await userEvent.click(screen.getByRole("button", { name: "Used 1 page" }));
   expect(await screen.findByText(/Removed/)).toBeVisible();
   expect(screen.getByText("Deleted method").tagName).toBe("S");
   expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Archive" })).toBeNull();
+});
+
+it("shows the default perspective under its interface-language name", async () => {
+  await i18n.changeLanguage("ko");
+  try {
+    render(<Harness toggle={vi.fn()} messages={[answer({ lens_receipts: [{ recordId: "perspective-default", revisionId: "rev", kind: "perspective", title: "Outlook", delivery: "context" }] })]} />);
+    await userEvent.click(screen.getByRole("button", { name: "페이지 1개 사용" }));
+    const panel = screen.getByText("사용함 · 관점").closest("li")!;
+    expect(within(panel).getByRole("blockquote")).toHaveTextContent(/^관점$/);
+  } finally {
+    await i18n.changeLanguage("en");
+  }
 });

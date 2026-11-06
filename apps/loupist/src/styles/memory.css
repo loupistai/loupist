@@ -32,21 +32,10 @@
 .source-origin { min-width: 0; overflow-wrap: anywhere; }
 .source-origin button { height: auto; min-height: var(--gg-size-control-sm); padding: 0; white-space: normal; text-align: left; justify-content: flex-start; }
 .source-evidence-summary { display: flex; flex-wrap: wrap; gap: 6px var(--gg-space-4); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); padding-bottom: 14px; border-bottom: 1px solid var(--gg-color-border-subtle); }
-.lens-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: var(--gg-space-5); }
 .source-library [role="tablist"] { justify-content: flex-start; width: fit-content; max-width: 100%; height: auto; flex-wrap: wrap; flex-shrink: 0; padding: 3px; background: var(--gg-color-bg-hover); border-radius: var(--gg-radius-sm); }
 .source-library [role="tab"] { width: auto; flex: 0 1 auto; min-height: var(--gg-size-control-sm); padding: 5px var(--gg-space-2); justify-content: center; white-space: nowrap; font-size: var(--gg-text-meta); border-radius: var(--gg-radius-xs); }
 .source-library [role="tab"][data-state="active"] { background: var(--gg-color-bg-selected); color: var(--gg-color-text-primary); box-shadow: var(--gg-shadow-xs); }
-.lens-reader { padding: var(--gg-space-6); background: var(--gg-color-bg-raised); border: 1px solid var(--gg-color-border-subtle); border-radius: 14px; scroll-padding-block: var(--gg-space-3) 80px; }
 .source-reader > article, .knowledge-research-reader > article { width: 100%; max-width: 800px; margin-inline: 0; font-size: var(--gg-text-reading); line-height: 1.75; }
-.lens-reader > article { width: 100%; max-width: 800px; margin-inline: auto; }
-.lens-read-head { flex-direction: column; gap: var(--gg-space-4); padding-bottom: var(--gg-space-5); border-bottom: 1px solid var(--gg-color-border-subtle); }
-.lens-read-head > div { width: 100%; }
-.lens-eyebrow { font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); color: var(--gg-color-text-secondary); }
-.lens-read-head h2 { font-size: var(--gg-text-heading); line-height: 1.5; margin: 6px 0 var(--gg-space-2); }
-.lens-read-head p { font-size: var(--gg-text-meta); line-height: 1.6; }
-.lens-document-sections { display: grid; gap: var(--gg-space-5); }
-.lens-document-sections > section { padding-top: var(--gg-space-4); border-top: 1px solid var(--gg-color-border-subtle); }
-.lens-document-sections > section > h3 { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); }
 .world-add-source label { display: grid; gap: var(--gg-space-2); font-size: var(--gg-text-control); }
 .world-add-source > button { justify-self: start; }
 .lens-basis { border: 1px solid var(--gg-color-border-subtle); border-radius: 10px; padding: 14px var(--gg-space-4); font-size: var(--gg-text-control); background: var(--gg-color-bg-hover); }
@@ -59,15 +48,11 @@
 @container world-workspace (max-width: 760px) {
   .world-sources.has-reader { grid-template-columns: minmax(0, 1fr); }
   .world-sources.has-reader .source-library { display: none; }
-  .lens-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
-  .lens-workspace:not(.is-reader-only) { grid-template-rows: 200px minmax(300px, 1fr); min-height: 520px; }
-  .lens-reader { padding: 18px; }
-  .knowledge-processing-fields, .memory-meta-grid { grid-template-columns: minmax(0, 1fr); }
+    .knowledge-processing-fields, .memory-meta-grid { grid-template-columns: minmax(0, 1fr); }
   .memory-search { min-width: 0; width: 100%; }
 }
 
 .workspace-knowledge-reader { height: 100%; min-width: 0; min-height: 0; overflow: hidden; container: world-workspace / inline-size; }
-.workspace-knowledge-reader .lens-workspace.is-reader-only { grid-template-columns: minmax(0, 1fr); height: 100%; }
 .workspace-knowledge-reader .source-reader-only { height: 100%; }
 .knowledge-note-dialog { max-height: min(85vh, 900px); overflow-y: auto; }
 .workspace-tabpanel > .knowledge-research-reader { height: 100%; overflow-y: auto; padding: var(--gg-space-5); }

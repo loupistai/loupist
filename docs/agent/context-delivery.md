@@ -4,9 +4,10 @@ Under an as-of date, automatic context keeps to the cutoff. Shared text keeps it
 
 ## Memory and context
 
-With saving enabled, taught methods and accepted reusable corrections use
-`lens_update`; user-stated facts and progress use `note_save`; handed-over originals
-use acknowledged capture followed by `source_save`. Chatter, light questions and
+With saving enabled, what a turn establishes (a dated fact with its source, a
+mechanism, a value-chain link, a contradiction, a reusable check) is filed into Lens
+pages with `lens_file`; this Chat's progress and user-stated facts use `note_save`;
+handed-over originals use acknowledged capture followed by `source_save`. Chatter, light questions and
 explicit one-offs are not saved. A reply promising to remember is not a Memory write.
 World processing extracts relationships from retained Sources and can queue a
 [method-learning review](../knowledge/lens.md#method-learning) that waits until
@@ -22,12 +23,11 @@ questions without refetching unchanged files. Fresh retrieval is for missing
 coverage, newer evidence or an explicit request to inspect the current original.
 Native file reads and Bash output alone do not retain Sources.
 
-Lens fields have distinct jobs: Markdown explains the method; applicability sets
-scope; assumptions state prerequisites; procedure contains operational steps;
-principles and limitations preserve governing rules and exceptions. Avoid repeating
-the entire method across fields. Rationale/evidence describe the current change;
-there is no complete historical revision library. Current document semantics are
-owned by [Lens](../knowledge/lens.md#lens).
+A Lens page is keyed Markdown sections, each with a basis. `lens_file` revises the
+sections a `lens_read` delivered by their digests or creates a page; the envelope's
+index and pointers are discovery, not read receipts, so a revise needs that exact
+read. The call's `rationale` describes the current filing; history is the op log.
+Current page semantics are owned by [Lens](../knowledge/lens.md#lens).
 
 Keep stable role/authority rules in the prompt, methods in selected Skills, and live
 time, user intent, selected references and Memory pointers in turn input. Due

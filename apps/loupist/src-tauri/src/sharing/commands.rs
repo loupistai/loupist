@@ -2151,7 +2151,6 @@ pub(crate) fn decide(
                     tx,
                     loupist_id,
                     &body.title,
-                    &row.name,
                     body.document
                         .as_ref()
                         .ok_or_else(|| CommandError::internal("perspective body"))?,

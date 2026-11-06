@@ -169,7 +169,7 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
   const focalId = map && localAvailable ? defaultFocal(worldNodes, focalChoice) : undefined;
   const focal = focalId ? map?.nodes.find((node) => node.id === focalId) : undefined;
   const scope: MapScope = focal ? scopeOverride ?? scopeChoice ?? "1" : "all";
-  const local = useMemo(() => map && focalId && scope !== "all" ? localSet(worldNodes, worldEdges, focalId, scope === "2" ? 2 : 1) : undefined, [map, worldNodes, worldEdges, focalId, scope]);
+  const local = useMemo(() => map && focalId && scope !== "all" ? localSet(worldNodes, worldEdges, focalId, scope === "2" ? 2 : 1, undefined, highlightIds ?? []) : undefined, [map, worldNodes, worldEdges, focalId, scope, highlightIds]);
   const visible = useMemo(() => {
     const disputed = new Set(worldEdges.filter((e) => e.status === "disputed").flatMap((e) => [e.source, e.target]));
     return filterMapNodes(worldNodes.filter((node) => !local || local.ids.has(node.id)), disputed, filters);
@@ -297,7 +297,7 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
   const conflicts = replayed.edges.filter((edge) => edge.status === "disputed").length;
   const appliedInView = appliedEntities.filter(node => shownIds.has(node.id));
   const overlayHighlight = appliedInView.length ? new Set(appliedInView.map(node => node.id)) : undefined;
-  const lensTitles = useMemo(() => Object.fromEntries((map?.nodes ?? []).filter(isLensNode).map(node => [node.id, lensDisplayTitle(node, catalog.lenses, t("lensWorkspace.defaultPerspective"))])), [map, catalog.lenses, t]);
+  const lensTitles = useMemo(() => Object.fromEntries((map?.nodes ?? []).filter(isLensNode).map(node => [node.id, lensDisplayTitle(node, catalog.lenses)])), [map, catalog.lenses, t]);
   const baseLensIds = useMemo(() => new Set((map?.nodes ?? []).filter(node => isBasePerspective(node, catalog.lenses)).map(node => node.id)), [map, catalog.lenses]);
   const appliedCounts = useMemo(() => Object.fromEntries((map?.nodes ?? []).filter(isLensNode).map(node => [node.id, map ? lensAppliedEntities(map.nodes, map.edges, node.id).length : 0])), [map]);
   const overlayTitle = overlay ? lensTitles[overlay.id] ?? overlay.label : "";
