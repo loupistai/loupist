@@ -259,7 +259,7 @@ async fn lens_file_requires_an_acknowledged_exact_read_and_saved_sources() {
         json!({
             "pages": [{
                 "page": {"recordId": lens},
-                "ops": [{"op": "put", "key": "beliefs", "heading": "Beliefs", "markdown": "Base, with liquidity first.",
+                "ops": [{"op": "put", "key": "focus", "heading": "Focus", "markdown": "Base, with liquidity first.",
                     "basis": basis, "expected": expected}]
             }],
             "rationale": "Refined the standing view."

@@ -29,6 +29,13 @@ open-questions`; method `use-when, steps, checks, limits`; idea `claim, mechanis
 evidence-for, evidence-against, would-break, checks`; perspective `beliefs,
 priorities, avoid`.
 
+A new Loupist with a focus gets its perspective page at creation
+(`ensure_perspective` in `commands/knowledge/chat_reads.rs`): the title "Outlook" and
+one `focus` section headed "Focus" holding the focus text. The focus is what the
+Loupist researches, not a belief, so it is not seeded under `beliefs`. The interface
+shows the host-default title and heading in its own language. An empty focus seeds
+no page; the first filed perspective becomes it.
+
 Bodies link `lens:rec_…` (navigation, resolved by record id, with backlinks from the
 link index) and, on subject and idea pages, `world:<node id>` of this Loupist's
 World. Principle, perspective and method pages keep the World-reference ban; no

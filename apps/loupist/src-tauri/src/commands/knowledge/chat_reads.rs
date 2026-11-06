@@ -35,8 +35,8 @@ pub(in crate::commands) fn ensure_perspective(
                     anchors: Vec::new(),
                 },
                 ops: vec![LensOp::Put {
-                    key: SectionKey::new("beliefs")?,
-                    heading: "Beliefs".into(),
+                    key: SectionKey::new("focus")?,
+                    heading: "Focus".into(),
                     markdown: focus
                         .chars()
                         .take(crate::knowledge::lens_page::MAX_SECTION_CHARS)
