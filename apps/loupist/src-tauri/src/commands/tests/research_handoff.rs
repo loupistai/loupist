@@ -5,11 +5,7 @@ use serde_json::json;
 use super::*;
 use crate::{
     broker::{ToolExecutor as _, ToolMethod, ToolPolicy},
-    chat::{
-        handoff::{self, HandoffStatus},
-        home::{ensure_home_thread, home_thread_id},
-        surface::ChatSurface,
-    },
+    chat::surface::ChatSurface,
     commands::tool_executor::{schedules::ScheduleContext, AppToolExecutor, ToolCapture},
 };
 
@@ -135,6 +131,10 @@ async fn a_second_research_open_in_one_turn_is_refused_and_the_first_stays_stage
 #[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
 mod turns {
     use super::*;
+    use crate::chat::{
+        handoff::{self, HandoffStatus},
+        home::{ensure_home_thread, home_thread_id},
+    };
     use crate::commands::{
         chat_runtime::{send_chat, ChatEventSink},
         tests::chat_behavior::{drain, install_chat_rpc_fixture, send_request},
