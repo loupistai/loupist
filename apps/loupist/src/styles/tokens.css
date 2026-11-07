@@ -319,6 +319,8 @@ button, input, textarea, select {
   outline-offset: 2px !important;
   --tw-ring-shadow: 0 0 transparent !important;
 }
+/* A heading is not interactive: when a script moves focus there to announce a new page, it draws no ring. */
+:is(h1, h2, h3, h4, h5, h6)[tabindex="-1"]:focus-visible { outline: none !important; }
 /* Inset the field outline over its resting border so focus paints one contour. */
 :is([data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"]):focus-visible {
   outline-offset: -2px !important;

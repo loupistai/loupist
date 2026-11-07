@@ -1280,7 +1280,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                   <div className="workspace-lens-content" hidden={workspace.kind !== "lens"} inert={workspace.kind !== "lens" || undefined}>
                     {lens.visited && <Suspense fallback={<Spinner />}><MemoryPage key={`${selectedLoupist.id}:${memoryPage?.loupistId === selectedLoupist.id ? memoryPage.key : lens.navigation?.current.recordId ?? ""}`} bridge={bridge} loupist={selectedLoupist}
                       threads={threads} initialItem={memoryPage?.loupistId === selectedLoupist.id ? memoryPage.item : lens.navigation?.current.recordId}
-                      onBack={() => workspace.dismiss(effectiveChatKey ?? undefined)} onOpenChat={id => { chat.setActiveThreadForLoupist(selectedLoupist.id, id); setTab("chat"); }}
+                      onOpenChat={id => { chat.setActiveThreadForLoupist(selectedLoupist.id, id); setTab("chat"); }}
                       onOpenMap={() => setTab("map")} onChanged={refreshKnowledge} onOpenLink={chatWorkspaceActions.openLink}
                       onOpenKnowledge={openKnowledgePage} onAsk={useKnowledgeInChat} /></Suspense>}
                   </div>

@@ -10,7 +10,7 @@ async function fixture(setup?: (bridge: MockLoupistBridge, loupist: LoupistSumma
   const [loupist] = await bridge.loupistList();
   await setup?.(bridge, loupist);
   const threads: ChatThread[] = [{ id: "chat-margin", loupist_id: loupist.id, title: "Hanul margin review", updated_at: "2026-10-28T00:00:00Z", use_memory: true, update_memory: true, messages: [] }];
-  const handlers = { onBack: vi.fn(), onOpenLoupistSettings: vi.fn(), onOpenChat: vi.fn(), onOpenMap: vi.fn(), onLoupistUpdated: vi.fn(), onOpenLink: vi.fn(), onOpenKnowledge: vi.fn(), onAsk: vi.fn() };
+  const handlers = { onOpenLoupistSettings: vi.fn(), onOpenChat: vi.fn(), onOpenMap: vi.fn(), onLoupistUpdated: vi.fn(), onOpenLink: vi.fn(), onOpenKnowledge: vi.fn(), onAsk: vi.fn() };
   const view = (initialItem?: string) => <TooltipProvider><MemoryPage bridge={bridge} loupist={loupist} threads={threads} initialItem={initialItem} {...handlers} /></TooltipProvider>;
   return { bridge, loupist, handlers, view, user: userEvent.setup() };
 }
