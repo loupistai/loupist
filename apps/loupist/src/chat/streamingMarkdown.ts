@@ -36,7 +36,7 @@ function withoutOpenMath(text: string): string {
 /** A marker run that just opened (`**`, `` ` ``, `#`) with nothing after it yet. */
 const withoutOpeningMarkers = (text: string) => text.replace(/(?<=^|\s)[*_`#~]+$/u, "");
 
-/** A list or quote marker alone on the last line renders as text until its content starts. */
+/** A list or quote marker alone on the last line renders an empty item or quote until its content starts. */
 const withoutEmptyListItem = (text: string) => text.replace(/(?<=^|\n)[ \t]*(?:[-*+>]|\d+[.)])[ \t]*$/u, "");
 
 const fenceLine = /^\s*(?:`{3,}|~{3,})/u;
@@ -53,7 +53,7 @@ function caretAllowed(text: string): boolean {
  * and whether a caret may follow it. Returns the input unchanged when not
  * streaming. For a growing input the rendered text is monotonic: never
  * shorter than the previous frame. Unclosed bold and code fences are left to
- * Streamdown, which closes the one and draws a skeleton for the other.
+ * Streamdown, which closes the one and marks the other's block incomplete.
  */
 export function stableMarkdown(text: string, streaming: boolean): { text: string; caret: boolean } {
   if (!streaming) return { text, caret: false };

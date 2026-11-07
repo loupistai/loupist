@@ -4,7 +4,7 @@ import { citationLabel, citationNumber, evidencePresentation, evidenceTitle, sou
 import { memoryReadForEvidence } from "../../chat/memoryActivity";
 import { checkFor, looksLikeNumber } from "../../chat/numberChecks";
 import { keepNumberParticles } from "../../chat/keepParticles";
-import { CitationChip } from "../chat/CitationChip";
+import { CitationChip, UnavailableCitation } from "../chat/CitationChip";
 import { NumberChip, PendingNumber } from "../chat/NumberChip";
 import { useTurn } from "../chat/TurnProvider";
 import { useOpen, useOpenProps } from "../navigation/Open";
@@ -41,16 +41,13 @@ function nodeText(node: ReactNode): string {
 
 type MarkdownLinkProps = ComponentProps<"a"> & { node?: unknown };
 
-const unavailableCitation = (children: ReactNode) =>
-  <span className="loupist-unavailable-citation" title={t("messageResponse.sourceUnavailableInThisReply")}>{children}</span>;
-
 function EvidenceLink({ href, children }: { href: string; children?: ReactNode }) {
   useTranslation("chat");
   const turn = useTurn();
   const { numberChecks, streaming } = useContext(TextBlockContext);
   const evidenceRefs = turn?.evidenceRefs ?? [];
   const evidence = evidenceRefs.find((ref) => href === `#evidence-${ref.id}`);
-  if (!evidence) return unavailableCitation(children);
+  if (!evidence) return <UnavailableCitation>{children}</UnavailableCitation>;
   // A number link is the control for its own evidence: Rust checked it when the answer finished.
   const linkText = nodeText(children).trim();
   const check = checkFor(numberChecks, evidence.id, linkText);

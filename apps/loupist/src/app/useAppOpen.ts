@@ -6,6 +6,7 @@ import { evidenceTitle } from "../chat/evidence";
 import { evidenceTarget, externalUrl, type ChatDestination, type Open, type OpenHow } from "../chat/navigation";
 import type { EvidenceStepLink } from "../chat/workspace";
 import { lensMemoryLocation } from "../knowledge/location";
+import { displayHost } from "../lib/displayHost";
 import { EMPTY_CHAT_THREAD_ID } from "./emptyChat";
 import type { SettingsSection } from "./navigation";
 
@@ -64,7 +65,7 @@ async function route(shell: AppOpenShell, threadId: string | null, to: ChatDesti
       // A browser tab opens before the first chat exists too.
       const chat = beside() ?? { loupistId, threadId: EMPTY_CHAT_THREAD_ID };
       shell.panel.openBrowser(chat.loupistId, chat.threadId, url);
-      announce(new URL(url).hostname.replace(/^www\./u, ""));
+      announce(displayHost(url));
       return;
     }
     case "lens": {

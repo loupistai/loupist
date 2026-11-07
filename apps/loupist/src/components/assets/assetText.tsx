@@ -10,6 +10,7 @@ import type { AssetCapitalFacts, AssetChangeRow, AssetDilution, AssetEvidence, A
 import { useCallback } from "react";
 import { CitationChip } from "../chat/CitationChip";
 import { OpenProvider, useOpenLayer } from "../navigation/Open";
+import { displayHost } from "../../lib/displayHost";
 import english from "@/i18n/locales/en/assets.json";
 
 const t = i18n.getFixedT(null, "assets");
@@ -282,7 +283,6 @@ export function glanceValue(row: AssetGlanceRow) {
 /** The kind label for a check or a not-yet kind from Rust. */
 export const checkKind = (kind: string) => tDynamic(`checks.kind.${kind}`);
 
-/** Evidence as the citation card expects it; the chip opens the original when there is one. */
 /** An asset row's source as a chat citation, so it opens the way answer citations do. */
 export function assetCitation(evidence: AssetEvidence, index: number): ChatEvidenceRef {
   return {
@@ -300,10 +300,6 @@ export function assetCitation(evidence: AssetEvidence, index: number): ChatEvide
     warnings: [],
   };
 }
-
-const host = (url?: string) => {
-  try { return url ? new URL(url).hostname.replace(/^www\./, "") : ""; } catch { return ""; }
-};
 
 /** Opens one source of an asset row; `citation` is the same source as a chat citation. */
 export type EvidenceOpener = (evidence: AssetEvidence, citation: ChatEvidenceRef) => void;
@@ -346,7 +342,7 @@ function SourceChip({ item, number, onOpen }: { item: AssetEvidence; number: num
   const evidence = assetCitation(item, number);
   const open = useOpenLayer(useCallback(() => () => onOpen(item, evidence), [evidence, item, onOpen]));
   return <OpenProvider open={open}>
-    <CitationChip evidence={evidence} label={i18n.t("chat:evidence.numberedSource", { number, title: item.title })} title={item.title} source={host(item.url) || item.provider || item.title}
+    <CitationChip evidence={evidence} label={i18n.t("chat:evidence.numberedSource", { number, title: item.title })} title={item.title} source={displayHost(item.url) || item.provider || item.title}
       to={{ kind: "evidence", evidence }}>{number}</CitationChip>
   </OpenProvider>;
 }

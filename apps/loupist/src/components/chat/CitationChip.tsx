@@ -23,6 +23,12 @@ const sourceDate = (evidence: ChatEvidenceRef) => {
   return Number.isFinite(time) ? formatDate(time, /^\d{4}-\d{2}-\d{2}$/.test(value ?? "") ? { timeZone: "UTC" } : {}) : "";
 };
 
+/** A citation nothing can open: the number stays in the text, with the reason on hover. */
+export function UnavailableCitation({ children }: { children: ReactNode }) {
+  const { t } = useTranslation("chat");
+  return <span className="loupist-unavailable-citation" title={t("messageResponse.sourceUnavailableInThisReply")}>{children}</span>;
+}
+
 /**
  * A numbered citation in an answer (chat spec X2). Hovering for a moment, or
  * focusing it from the keyboard, shows a card with the source's title, its
@@ -75,7 +81,7 @@ export function CitationChip({ evidence, label, title, source, to, children }: {
     if (holdTimer.current !== null) window.clearTimeout(holdTimer.current);
   }, []);
 
-  if (!link.available) return <span className="loupist-unavailable-citation" title={t("messageResponse.sourceUnavailableInThisReply")}>{children}</span>;
+  if (!link.available) return <UnavailableCitation>{children}</UnavailableCitation>;
 
   return <Popover.Root open={open} onOpenChange={(next) => { if (next) setOpen(true); else close(); }}>
     <Popover.Anchor asChild>

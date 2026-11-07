@@ -16,7 +16,7 @@ import { citationSources, evidenceTitle } from "./evidence";
 import { exactMemoryReads, isInlineWorkEvidence } from "./memoryActivity";
 import { readNoun } from "./progressLabels";
 import { actionLabel, isActionItem, scrubIdentifiers, withoutIdentifiers } from "./runStatus";
-import { parseCredentialFreeHttpUrl } from "../lib/credentialFreeUrl";
+import { displayHost } from "../lib/displayHost";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -117,10 +117,10 @@ const isFailurePlaceholder = (message: ChatMessage) =>
 const startedAt = (message: ChatMessage) => message.progress?.startedAtMs ?? Date.parse(message.created_at);
 
 const phaseLabel = (phase: ChatMessage["phase"]) => {
-  if (phase === "writing") return t("chatProgressTimeline.writing");
-  if (phase === "thinking") return t("chatProgressTimeline.thinkingItThrough");
-  if (phase === "tool") return t("chatProgressTimeline.waitingForNextStep");
-  return t("chatProgressTimeline.waitingForModel");
+  if (phase === "writing") return t("turn.writing");
+  if (phase === "thinking") return t("turn.thinkingItThrough");
+  if (phase === "tool") return t("turn.waitingForNextStep");
+  return t("turn.waitingForModel");
 };
 
 const lastRunning = (items: readonly ChatProgressItem[]) =>
@@ -186,28 +186,28 @@ function researchSubject(actions: ActionItem[], results: ChatEvidenceRef[], memo
   const labels = new Set<string>();
   for (const item of actions) {
     if (item.kind !== "tool") continue;
-    if (item.operation === "calculate") labels.add(t("chatProgressTimeline.research.calculations"));
+    if (item.operation === "calculate") labels.add(t("turn.research.calculations"));
     else if (item.category === "finance") {
       const leaf = item.toolName?.split("__").at(-1);
       if (leaf && i18n.exists(`chat:asOf.reads.${leaf}`)) {
         const noun = readNoun(leaf);
         labels.add(noun.charAt(0).toLocaleUpperCase(i18n.language) + noun.slice(1));
-      } else labels.add(t("chatProgressTimeline.research.finance"));
-    } else if (item.category === "web") labels.add(t("chatProgressTimeline.research.sources"));
-    else if (item.category === "memory") labels.add(t("chatProgressTimeline.research.memory"));
-    else if (item.category === "artifact") labels.add(t("chatProgressTimeline.research.outputs"));
+      } else labels.add(t("turn.research.finance"));
+    } else if (item.category === "web") labels.add(t("turn.research.sources"));
+    else if (item.category === "memory") labels.add(t("turn.research.memory"));
+    else if (item.category === "artifact") labels.add(t("turn.research.outputs"));
     if (labels.size === 2) break;
   }
-  if (!labels.size && memoryReads.length) labels.add(t("chatProgressTimeline.research.memory"));
-  if (!labels.size && results.some((result) => result.tool_name === "calculate")) labels.add(t("chatProgressTimeline.research.calculations"));
-  return [...labels].join(" · ") || t("chatProgressTimeline.research.activity");
+  if (!labels.size && memoryReads.length) labels.add(t("turn.research.memory"));
+  if (!labels.size && results.some((result) => result.tool_name === "calculate")) labels.add(t("turn.research.calculations"));
+  return [...labels].join(" · ") || t("turn.research.activity");
 }
 
 /** Keep a common verified domain beside the count. Mixed or unknown origins have no shared label. */
 function sourcePreview(sources: ChatEvidenceRef[]) {
   const first = sources[0];
   if (!first) return "";
-  const domains = new Set(sources.map((source) => source.url && parseCredentialFreeHttpUrl(source.url)?.hostname.replace(/^www\./, "")));
+  const domains = new Set(sources.map((source) => displayHost(source.url)));
   const [domain] = domains;
   if (domains.size === 1 && domain) return domain;
   if (sources.length !== 1 || first.kind !== "original" || /[:/\\]/u.test(first.title)) return "";
@@ -222,14 +222,14 @@ function issueLabel(actions: ActionItem[], progress: ChatProgress, asOf: string 
   const skipped = actions.filter((item) => item.status === "skipped").length;
   const approvals = progress.approvals ?? [];
   return [
-    failed > 0 ? t("chatProgressTimeline.research.failedAttempt", { count: failed }) : "",
-    stopped > 0 ? t("chatProgressTimeline.stoppedCount", { stoppedCount: stopped }) : "",
-    paused > 0 ? t("chatProgressTimeline.pausedCount", { pausedCount: paused }) : "",
+    failed > 0 ? t("turn.research.failedAttempt", { count: failed }) : "",
+    stopped > 0 ? t("turn.stoppedCount", { stoppedCount: stopped }) : "",
+    paused > 0 ? t("turn.pausedCount", { pausedCount: paused }) : "",
     skipped > 0 ? asOf
-      ? t("chatProgressTimeline.research.unavailableAsOf", { count: skipped, date: formatAsOf(asOf) })
-      : t("chatProgressTimeline.research.unavailable", { count: skipped }) : "",
-    approvals.some((item) => item.state === "declined") ? t("chatProgressTimeline.research.declined") : "",
-    approvals.some((item) => item.state === "expired") ? t("chatProgressTimeline.research.expired") : "",
+      ? t("turn.research.unavailableAsOf", { count: skipped, date: formatAsOf(asOf) })
+      : t("turn.research.unavailable", { count: skipped }) : "",
+    approvals.some((item) => item.state === "declined") ? t("turn.research.declined") : "",
+    approvals.some((item) => item.state === "expired") ? t("turn.research.expired") : "",
   ].filter(Boolean).join(" · ") || null;
 }
 
@@ -246,7 +246,7 @@ function summaryLabel(group: Group, running: boolean) {
       ? progress.plan?.items.find((item) => sections.nested.has(item.id))?.label
       : undefined;
   const planSubject = stage && scrubIdentifiers(stage);
-  const sourceCount = sources.length ? t("chatReceipt.readSources", { count: sources.length, formattedCount: formatNumber(sources.length) }) : "";
+  const sourceCount = sources.length ? t("turn.readSources", { count: sources.length, formattedCount: formatNumber(sources.length) }) : "";
   const subject = (running ? planSubject || sourceCount : sourceCount || planSubject) || researchSubject(actions, evidence, memoryReads);
   return [subject, subject !== sourceCount && sourceCount, sourcePreview(sources)].filter(Boolean).join(" · ");
 }
@@ -298,10 +298,10 @@ function deriveState({ message, now, lastActivityAt, stopping, retry }: TurnInpu
 
 const footerLabel = (state: TurnState): string => {
   switch (state.kind) {
-    case "starting": return t("chatProgressTimeline.waitingForModel");
-    case "working": return state.stalled ? t("turnFooter.stillWorking") : state.stepRunning ? t("turnFooter.working") : state.step;
-    case "awaiting_approval": return t("turnFooter.waitingForYou");
-    case "writing": return t("chatProgressTimeline.writing");
+    case "starting": return t("turn.waitingForModel");
+    case "working": return state.stalled ? t("turn.stillWorking") : state.stepRunning ? t("turn.working") : state.step;
+    case "awaiting_approval": return t("turn.waitingForYou");
+    case "writing": return t("turn.writing");
     case "stopping": return t("chatView.stopping");
     default: return "";
   }

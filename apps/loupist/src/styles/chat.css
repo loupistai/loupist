@@ -504,7 +504,6 @@ svg foreignObject .katex:has(> math) {
 
 /* Actual reasoning and the stalled-run heartbeat have motion; elapsed time alone is not reasoning. */
 @media (prefers-reduced-motion: no-preference) {
-  .chat-progress[data-phase="thinking"] .chat-progress-live,
   .chat-progress-live[data-heartbeat],
   .chat-status-pill-dot[data-heartbeat] {
     animation: chat-run-heartbeat calc(var(--gg-motion-slow) * 3.5) var(--gg-ease-in-out) infinite;
@@ -563,16 +562,8 @@ svg foreignObject .katex:has(> math) {
   color: var(--gg-color-text-secondary);
 }
 
-.chat-progress-children,
 .chat-tool-result {
   grid-column: 1 / -1;
-}
-
-.chat-progress-children {
-  display: grid;
-  gap: 2px;
-  margin-top: 2px;
-  padding-left: 18px;
 }
 
 /* Plan (S1): the agent's checklist for multi-step work; steps run under an item nest beneath it. */
@@ -1051,12 +1042,6 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .chat-receipt .chat-receipt-segment[data-learned="true"], .chat-receipt-text[data-learned="true"] { color: var(--gg-color-accent-ink); }
 /* The one segment that asks the user to act reads as an action, not a fact. */
 .chat-receipt [data-receipt="proposals"] .chat-receipt-segment { color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); }
-.chat-receipt-popover { width: min(var(--gg-size-inspector), calc(100vw - var(--gg-space-8))); padding: var(--gg-space-1); }
-.chat-receipt-popover ul { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
-.chat-receipt-popover button { display: grid; width: 100%; gap: 2px; padding: var(--gg-space-2); border: 0; border-radius: var(--gg-radius-xs); background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-meta); text-align: start; cursor: pointer; }
-.chat-receipt-popover button:hover { background: var(--gg-color-bg-hover); }
-.chat-receipt-popover button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-receipt-popover button small { color: var(--gg-color-text-secondary); }
 
 .memory-chip-verb { color: var(--gg-color-text-secondary); }
 .memory-change-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
@@ -1517,7 +1502,6 @@ button.chat-progress-names:hover { text-decoration: underline; }
   .chat-progress-toggle { flex-wrap: wrap; }
   .chat-progress-heading { flex: 1; }
   .chat-execution-detail { padding: 10px; }
-  .chat-progress-children { padding-left: 15px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .chat-progress-chevron { transition: none; }

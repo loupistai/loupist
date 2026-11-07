@@ -7,7 +7,7 @@ import {
   ConversationContent,
 } from "@/components/ai-elements/conversation";
 import { ChatStatusPill, type ChatRunStatus } from "./ChatStatusPill";
-import type { ChatMessage, GraphJobView } from "../../types";
+import type { ChatArtifactRef, ChatMessage, GraphJobView } from "../../types";
 import type { LoupistBridge, LoupistTemplateId } from "../../types";
 import { revealFocused } from "../../lib/revealFocused";
 import { ChatMessageCard } from "./ChatMessageCard";
@@ -48,7 +48,7 @@ type Props = {
   onWorldChanged?: () => void;
   onSuggestion: (suggestion: string) => void;
   /** Puts an inline chart in the next question. */
-  onAskArtifact?: (artifact: import("../../types").ChatArtifactRef) => void;
+  onAskArtifact?: (artifact: ChatArtifactRef) => void;
   onReadAttachment: (
     messageId: string,
     attachmentId: string,

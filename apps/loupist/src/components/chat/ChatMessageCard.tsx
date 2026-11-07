@@ -454,7 +454,7 @@ function ChatMessageCardComponent({
       {message.role === "assistant" ? <TurnFooter footer={view.footer} now={now} announce={view.announce} guiding={guiding}>
         {settled ? <>
           {settled.sources.length > 0 ? (
-            <Disclosure className="message-sources" aria-label={t("chatMessageCard.researchSources")} title={<>{t("chatMessageCard.sourceCount", { count: settled.sources.length })}</>}>
+            <Disclosure className="message-sources" aria-label={t("chatMessageCard.researchSources")} title={<>{t("chatMessageCard.sourceCount", { formattedCount: formatNumber(settled.sources.length) })}</>}>
               <ol>{settled.sources.map((evidence, index) => <SourceRow key={evidence.id} evidence={evidence} number={index + 1} />)}</ol>
             </Disclosure>
           ) : null}
