@@ -380,7 +380,7 @@
     "label": "이 답변이 쓰고 저장한 것",
     "readSources_other": "자료 {{formattedCount}}개 읽음",
     "sourcesRead": "이 답변에서 읽은 자료",
-    "names_other": "지도 +이름 {{formattedCount}}개",
+    "names_other": "지도에 이름 {{formattedCount}}개 추가",
     "namesOnMap_other": "지도에서 새 항목 {{formattedCount}}개 보기",
     "relationships_other": "관계 {{formattedCount}}개 갱신",
     "relationshipsOnMap_other": "지도에서 관계 {{formattedCount}}개 갱신",

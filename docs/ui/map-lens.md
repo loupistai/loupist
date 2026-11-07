@@ -96,7 +96,7 @@ The native frame probe targets p95 at or below 33 ms without dropping those labe
 
 What's new, replay and export are in [What changed](../knowledge/what-changed.md#on-the-map).
 
-Chat's workspace includes a mini map with a route to the World panel. The answer's
+Chat's workspace includes a mini map, with its counts labelled ("4 names · 3 relationships"), and a route to the World panel. The answer's
 receipt line counts names and relationships added by that message (growth events
 with its `originMessageId`); clicking either segment selects and highlights them
 on the mini map. World growth events carry a chat id only when the published

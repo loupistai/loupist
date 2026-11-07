@@ -295,6 +295,8 @@
     "measuring": "Measuring frame times…",
     "worldName": "World",
     "stats": "{{names}} · {{links}}",
+    "chatStatsNames_one": "{{formattedCount}} name",
+    "chatStatsNames_other": "{{formattedCount}} names",
     "statsNames_one": "{{formattedCount}} on the map",
     "statsNames_other": "{{formattedCount}} on the map",
     "statsLinks_one": "{{formattedCount}} relationship",

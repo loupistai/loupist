@@ -295,6 +295,7 @@
     "measuring": "프레임 시간 측정 중…",
     "worldName": "World",
     "stats": "{{names}} · {{links}}",
+    "chatStatsNames_other": "이름 {{formattedCount}}개",
     "statsNames_other": "지도에 {{formattedCount}}개",
     "statsLinks_other": "관계 {{formattedCount}}개",
     "weekly": "이번 주 새로 {{n}}개",
