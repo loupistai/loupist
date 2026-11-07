@@ -417,7 +417,7 @@
     "legendLensLine": "강조된 이름: 이 Lens가 적용된 곳",
     "legendConflict": "출처가 엇갈림",
     "legendMore": "더 보기…",
-    "conflictCount": "· 출처 엇갈림 {{n}}건",
+    "conflictCount": "출처 엇갈림 {{n}}건",
     "conflictTip": "빨간 점선: 출처가 엇갈림",
     "weeklyTip": "빛나는 점은 이번 주에 추가된 이름이에요",
     "overlayLines": "강조된 이름이 이 Lens가 적용된 곳이에요.",

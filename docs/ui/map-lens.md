@@ -5,7 +5,7 @@ The Map draws the observed World. Lens highlights names the host already recorde
 ## Map and Library
 
 Map's primary surface is the observed World: entities, claims and the evidence
-behind them, from the `knowledge_map` projection. The status line names World. On a narrow map it wraps inside the visible canvas, so the weekly count and the disagreement count stay whole.
+behind them, from the `knowledge_map` projection. The status line names World and joins its parts (scope count, weekly count, disagreements, updating) with one " · " separator. On a narrow map it wraps inside the visible canvas, so each part stays whole.
 World search, layout and replay use the drawable map items. The header's Panel kind selector opens Lens (research principles and methods) or World beside the current chat. The Bot's sidebar contextual menu opens scheduled-task history. Linked principles and methods open the shared reader. Corrections go to the Bot with the item attached. A newly added relationship can open directly from an answer in the World panel. Share exports the image or growth replay.
 
 Under **Filter**, **Highlight Lens applications** highlights the entities the host already recorded with

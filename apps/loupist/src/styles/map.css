@@ -31,7 +31,7 @@
 .map-status-stack .map-stats { display:flex; flex-wrap:wrap; align-items:baseline; white-space:normal; overflow:visible; text-overflow:clip; }
 .map-status-stack .map-stats > * { min-width:0; overflow-wrap:anywhere; }
 .map-stats .map-world-kicker { font-weight:var(--gg-weight-medium); }
-.map-stats .map-world-kicker::after { content:" · "; font-weight:var(--gg-weight-regular); color:var(--gg-color-text-secondary); }
+.map-status-stack .map-stats > :is(strong, span):has(~ span)::after { content:"·"; margin-inline:var(--gg-space-2); font-weight:var(--gg-weight-regular); color:var(--gg-color-text-secondary); }
 .map-view[data-hide-map-stats] .map-stats, .map-body[data-hide-map-stats] .map-stats { visibility:hidden; }
 .map-stats small { display:block; color:var(--gg-color-text-secondary); }
 .map-stats button { height:auto; min-height:var(--gg-size-control-sm); padding:0 0 0 var(--gg-space-2); font-size:inherit; }

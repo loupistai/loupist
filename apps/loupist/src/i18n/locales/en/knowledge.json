@@ -423,7 +423,7 @@
     "legendLensLine": "Highlighted names: where this Lens was applied",
     "legendConflict": "Sources disagree",
     "legendMore": "More…",
-    "conflictCount": "· {{n}} where sources disagree",
+    "conflictCount": "{{n}} where sources disagree",
     "conflictTip": "Red dashed line: sources disagree",
     "weeklyTip": "Nodes with a glow were added this week",
     "overlayLines": "Highlighted names are where this Lens was applied.",
