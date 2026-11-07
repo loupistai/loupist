@@ -1,5 +1,6 @@
-//! Paid live proof that a method is learned only from research filed in two
-//! Chats on two Sources, and that read-only Chats later find it without writing.
+//! Paid live check that method learning reviews only research filed in two Chats
+//! on two Sources, and that read-only Chats write nothing. Whether a useful
+//! method was learned and reused is recorded in `measures`, not asserted.
 use super::*;
 use crate::knowledge::lens_page::{BasisRef, LensKind, LensOp};
 use std::collections::BTreeSet;

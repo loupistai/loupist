@@ -206,7 +206,7 @@
                     "title_matches": "동진",
                     "metric": "lens_update",
                     "count": 1,
-                    "section_matches": "14"
+                    "section_matches": "(?<![\\d.,])14(?![\\d])"
                   }
                 ],
                 "rubric": [

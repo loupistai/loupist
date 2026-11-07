@@ -629,7 +629,10 @@ two-chats arm has exactly one settled review. Probes commit no Memory, file no L
 op and start no review. Every learned section cites spans from at least two Sources.
 `measures` records the model's outcomes: review status, whether a method was made,
 whether each probe exact-read it, `lens_read` status `applied`, and the method's
-`limits` text. `filed_evidence` shows what each arm filed when no review starts.
+`limits` text. `filed_evidence` shows what each arm filed when no review starts. A clean exit says the gate held,
+not that learning helped: a deferred review passes, so read `review_status`,
+`method_created`, the probe reads and `method_limits` before claiming a learned
+method was reused.
 
 ```sh
 LOUPIST_RESEARCH_PI_AGENT_DIR=/absolute/pi-agent-dir \

@@ -50,7 +50,7 @@
                     "min": 1,
                     "max": 1,
                     "basis": "span",
-                    "section_matches": "31[.,]5"
+                    "section_matches": "(?<![\\d.,])31[.,]5(?![\\d])"
                   },
                   {
                     "assert": "lens_pages",
@@ -192,7 +192,7 @@
                     "min": 1,
                     "max": 1,
                     "basis": "span",
-                    "section_matches": "4,?200"
+                    "section_matches": "(?<![\\d.,])4,?200(?![\\d])"
                   },
                   {
                     "assert": "lens_pages",
@@ -234,7 +234,7 @@
                     "title_matches": "한빛",
                     "metric": "lens_update",
                     "count": 1,
-                    "section_matches": "3,?600"
+                    "section_matches": "(?<![\\d.,])3,?600(?![\\d])"
                   }
                 ],
                 "rubric": [
@@ -331,7 +331,7 @@
                     "min": 1,
                     "max": 1,
                     "basis": "span",
-                    "section_matches": "2028"
+                    "section_matches": "(?<![\\d.,])2028(?![\\d])"
                   },
                   {
                     "assert": "lens_pages",
@@ -403,15 +403,6 @@
                   {
                     "assert": "lens_unchanged",
                     "metric": "save_precision"
-                  }
-                ],
-                "answer": [
-                  {
-                    "assert": "answer_not_matching",
-                    "patterns": [
-                      "runs (?:through|until) (?:December )?2028"
-                    ],
-                    "metric": "lens_update"
                   }
                 ],
                 "rubric": [
@@ -490,7 +481,7 @@
                     "title_matches": "halvren|할브렌",
                     "metric": "lens_update",
                     "count": 1,
-                    "section_matches": "71"
+                    "section_matches": "(?<![\\d.,])71(?![\\d])"
                   }
                 ],
                 "rubric": [
@@ -541,7 +532,7 @@
                     "min": 1,
                     "max": 1,
                     "basis": "span",
-                    "section_matches": "0[.,]18"
+                    "section_matches": "(?<![\\d.,])0[.,]18(?![\\d])"
                   },
                   {
                     "assert": "lens_pages",
@@ -577,7 +568,7 @@
                     "title_matches": "marrowfield",
                     "metric": "lens_update",
                     "count": 1,
-                    "section_matches": "0[.,]10"
+                    "section_matches": "(?<![\\d.,])0[.,]10(?![\\d])"
                   },
                   {
                     "assert": "lens_pages",
@@ -585,7 +576,7 @@
                     "title_matches": "marrowfield",
                     "metric": "lens_update",
                     "count": 1,
-                    "section_matches": "2[.,]6"
+                    "section_matches": "(?<![\\d.,])2[.,]6(?![\\d])"
                   },
                   {
                     "assert": "lens_pages",

@@ -327,7 +327,7 @@ async fn cited_inputs_are_checked_against_this_turns_evidence_and_join_the_linea
             .unwrap_err()
             .to_string();
         assert!(
-            error.starts_with("input_sources.revenue: not a citation_url from this turn; copy one this turn returned: "),
+            error.starts_with("input_sources.revenue: not a citation_url from this turn; use the citation_url of the result that holds this value, or leave it unsourced. This turn returned: "),
             "{error}"
         );
         assert!(error.contains(&format!("{url} (")), "{error}");

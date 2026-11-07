@@ -44,7 +44,7 @@ pub(super) fn cited_result<'a>(
         "not a citation_url from this turn; this turn has returned none, so read the source first or leave the input unsourced".into()
     } else {
         format!(
-            "not a citation_url from this turn; copy one this turn returned: {}",
+            "not a citation_url from this turn; use the citation_url of the result that holds this value, or leave it unsourced. This turn returned: {}",
             returned.join(", ")
         )
     })
