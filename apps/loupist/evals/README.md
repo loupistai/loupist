@@ -324,6 +324,7 @@ for hill-climbing; **heldout** is for final adoption only (see
 | `heldout/learning-heldout-v1.json` | Adoption check for learning and transfer | | | 6 |
 | `heldout/tool-use-heldout-v1.json` | Adoption check for tools and connection honesty | | | 6 |
 | `heldout/lens-lifecycle-heldout-v1.json` | Lens lifecycle adoption check in sectors the development suite does not use | | | 4 |
+| `heldout/lens-behavior-heldout-v1.json` | Lens behaviors the lifecycle suites never exercise: a user's correction, an explicit forget, a method's safeguard, conflicting same-day Sources, a stale value, adopting a worked-out check | | | 6 |
 
 `run`, `grade`, `judge`, `report` and `calibrate` accept
 `--split capability|regression|heldout`. Loading a held-out suite or split requires
@@ -392,7 +393,10 @@ not leave a method, and a check the user asks to keep must become one. Reading a
 method to rule it out counts only toward `retrieval`. Its held-out twin is a sector
 holdout (biotech, shipping, REITs, packaged food) with the same turn shapes, run
 once per adoption decision; it guards against tuning to the development companies,
-not against a policy fitted to these scenario shapes. Run both with the
+not against a policy fitted to these scenario shapes. `heldout/lens-behavior-heldout-v1.json` is the
+behavioral holdout: different turn shapes and behaviors, frozen before its first
+run. The lifecycle holdout's LH-004 asks for REIT figures its probe never gives;
+it stays as run, and that check is reported, not counted. Run both with the
 development profile's agent model and a judge from another family, and read the
 pages themselves before adopting a change:
 
