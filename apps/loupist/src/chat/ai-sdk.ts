@@ -9,6 +9,7 @@ import type {
   ChatKnowledgePin,
   ChatPerformance,
   ChatProgress,
+  ChatProgressItem,
   ChatProgressPatch,
   ChatStreamEvent,
   ChatThread,
@@ -60,7 +61,7 @@ export type LoupistChatMetadata = HostPostRecords & {
   final_text?: string;
   progress?: ChatProgress;
   phase?: ChatMessage["phase"];
-  answer_key?: string;
+  draft?: ChatMessage["draft"];
   performance?: ChatPerformance;
 };
 
@@ -337,7 +338,7 @@ export const fromLoupistUIMessage = (message: LoupistUIMessage): ChatMessage => 
     feedback: message.metadata?.feedback,
     progress,
     phase: message.metadata?.phase,
-    answer_key: message.metadata?.answer_key,
+    draft: message.metadata?.draft,
     attachments:
       attachmentParts.length > 0
         ? attachmentParts
@@ -420,14 +421,29 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
         let abortAttempts = 0;
         let abortRetry: number | undefined;
         let progressState: ChatProgressStreamState | undefined;
-        let answerKey: string | undefined;
+        let answerLength = 0;
+        const publishedCommentary = new Set<string>();
 
         const enqueue = (chunk: UIMessageChunk) => {
           if (!finished && !abortSignal?.aborted) controller.enqueue(chunk);
         };
+        const appendAnswer = (delta: string) => {
+          hasText = true;
+          startText();
+          answerLength += delta.length;
+          enqueue({ type: "text-delta", id: textId, delta });
+        };
         const publishProgress = () => {
           if (!progressState) return;
           enqueue({ type: "data-progress", id: `progress-${responseId}`, data: progressState.progress });
+        };
+        // The first publish of a commentary carries the whole item, so the newest
+        // one in a patch or snapshot is the draft the host is writing now.
+        const noteDraft = (items: readonly ChatProgressItem[]) => {
+          const fresh = items.filter((item) => item.kind === "commentary" && !publishedCommentary.has(item.id));
+          for (const item of fresh) publishedCommentary.add(item.id);
+          const draft = fresh.at(-1);
+          if (draft) enqueue({ type: "message-metadata", messageMetadata: { draft: { id: draft.id, answerLength } } });
         };
         const startResponse = (createdAt = new Date().toISOString()) => {
           if (started) return;
@@ -456,11 +472,7 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
         ) => {
           startResponse(terminal?.created_at);
           const finalText = terminal?.final_text ?? message;
-          if (!hasText) {
-            hasText = true;
-            startText();
-            enqueue({ type: "text-delta", id: textId, delta: finalText });
-          }
+          if (!hasText) appendAnswer(finalText);
           if (terminal?.progress) {
             enqueue({
               type: "data-progress",
@@ -567,20 +579,16 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
             return;
           }
           if (event.type === "delta") {
-            hasText = true;
-            startText();
-            enqueue({ type: "text-delta", id: textId, delta: event.text });
+            appendAnswer(event.text);
             if (event.settles) {
-              // The settled text and its live copy never share a render: the
-              // copy leaves here, and Rust's later removal then finds nothing.
+              // The view stops drawing the draft once the answer grew past it, so
+              // the copy may share a projection with the text. It still leaves
+              // here: a stop before Rust's removal patch would otherwise keep it
+              // as a draft beside the text it already settled into.
               const settled = event.settles;
               if (progressState?.progress.items.some((item) => item.id === settled)) {
                 progressState = { ...progressState, progress: { ...progressState.progress, items: progressState.progress.items.filter((item) => item.id !== settled) } };
                 publishProgress();
-              }
-              if (answerKey === undefined) {
-                answerKey = settled;
-                enqueue({ type: "message-metadata", messageMetadata: { answer_key: settled } });
               }
             }
             return;
@@ -595,6 +603,7 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
               : applyChatProgressPatch(progressState, event.patch);
             if (!next || next === progressState) return;
             progressState = next;
+            noteDraft(event.type === "progress" ? event.progress.items : event.patch.upsertItems ?? []);
             publishProgress();
             return;
           }
@@ -618,15 +627,7 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
             return;
           }
           if (event.type === "completed") {
-            if (!hasText && event.final_text) {
-              hasText = true;
-              startText();
-              enqueue({
-                type: "text-delta",
-                id: textId,
-                delta: event.final_text,
-              });
-            }
+            if (!hasText && event.final_text) appendAnswer(event.final_text);
             enqueue({
               type: "message-metadata",
               messageMetadata: {

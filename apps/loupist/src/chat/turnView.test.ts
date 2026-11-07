@@ -77,20 +77,45 @@ describe("state × slot", () => {
 });
 
 describe("segments", () => {
-  it("keys the live answer by its commentary and keeps that key once it settles", () => {
+  const keys = (turn: TurnView) => turn.segments.map((segment) => `${segment.kind}:${segment.key}`);
+  const writing = (id: string, answerLength = 0) => ({ id, answerLength });
+
+  it("draws the draft as the answer under one key, which the settled text keeps with no draft recorded", () => {
     const preamble: ChatProgressItem = { id: "commentary-0", kind: "commentary", text: "I’ll start with the notes." };
-    const live = view(message({ phase: "writing", progress: { startedAtMs: start, items: [preamble, search, read, draft] } }));
-    expect(live.segments.map((segment) => `${segment.kind}:${segment.key}`)).toEqual(["prose:commentary-0", "activity:activity", "prose:commentary-9"]);
+    const live = view(message({ phase: "writing", draft: writing("commentary-9"), progress: { startedAtMs: start, items: [preamble, search, read, draft] } }));
+    expect(keys(live)).toEqual(["prose:commentary-0", "activity:activity", "prose:answer"]);
     expect(prose(live)).toMatchObject([{ tone: "narration", streaming: false }, { tone: "answer", streaming: true, text: "Margin fell while" }]);
-    const settled = view(message({ status: "complete", content: "Margin fell while revenue grew.", answer_key: "commentary-9", progress: { startedAtMs: start, finishedAtMs: start + 9_000, items: [preamble, search, read] } }));
-    expect(settled.segments.map((segment) => `${segment.kind}:${segment.key}`)).toEqual(["prose:commentary-0", "activity:activity", "prose:commentary-9"]);
+    // The message a reconcile reads back from the store carries no draft.
+    const settled = view(message({ status: "complete", content: "Margin fell while revenue grew.", progress: { startedAtMs: start, finishedAtMs: start + 9_000, items: [preamble, search, read] } }));
+    expect(keys(settled)).toEqual(keys(live));
     expect(prose(settled).at(-1)).toMatchObject({ text: "Margin fell while revenue grew.", streaming: false });
   });
 
   it("joins a second answer turn to the settled text under the answer's key", () => {
     const second: ChatProgressItem = { id: "commentary-4", kind: "commentary", text: "Then the inventory." };
-    const turn = view(message({ phase: "writing", content: "First answer.", answer_key: "commentary-1", progress: { startedAtMs: start, items: [search, second] } }));
-    expect(prose(turn)).toEqual([{ kind: "prose", key: "commentary-1", text: "First answer.\n\nThen the inventory.", tone: "answer", streaming: true }]);
+    const turn = view(message({ phase: "writing", content: "First answer.", draft: writing("commentary-4", "First answer.".length), progress: { startedAtMs: start, items: [search, second] } }));
+    expect(prose(turn)).toEqual([{ kind: "prose", key: "answer", text: "First answer.\n\nThen the inventory.", tone: "answer", streaming: true }]);
+  });
+
+  it("shows the settled text once while the draft it replaces is still listed", () => {
+    const turn = view(message({ phase: "writing", content: "Margin fell while revenue grew.", draft: writing("commentary-9"), progress: { startedAtMs: start, items: [search, draft] } }));
+    expect(prose(turn)).toEqual([{ kind: "prose", key: "answer", text: "Margin fell while revenue grew.", tone: "answer", streaming: true, checks: undefined }]);
+  });
+
+  it("keeps older narration above the answer after the draft settled and left", () => {
+    const narration: ChatProgressItem = { id: "commentary-2", kind: "commentary", text: "Checking the filing." };
+    const turn = view(message({ phase: "writing", content: "Revenue rose 8%.", draft: writing("commentary-3"), progress: { startedAtMs: start, items: [search, narration] } }));
+    expect(prose(turn)).toMatchObject([{ key: "commentary-2", tone: "narration", text: "Checking the filing." }, { key: "answer", tone: "answer", text: "Revenue rose 8%." }]);
+  });
+
+  it("places a plan-only row before the live answer, where it stays once the answer settles", () => {
+    const narration: ChatProgressItem = { id: "commentary-2", kind: "commentary", text: "Checking the filing." };
+    const live: ChatProgressItem = { id: "commentary-5", kind: "commentary", text: "Revenue rose" };
+    const plan = { items: [{ id: "read", label: "Read the report", status: "active" as const, activatedAtMs: start + 1 }] };
+    const running = view(message({ phase: "writing", draft: writing("commentary-5"), progress: { startedAtMs: start, plan, items: [narration, live] } }));
+    expect(keys(running)).toEqual(["prose:commentary-2", "activity:activity", "prose:answer"]);
+    const settled = view(message({ status: "complete", content: "Revenue rose 8%.", progress: { startedAtMs: start, finishedAtMs: start + 100, plan: { items: [{ ...plan.items[0]!, status: "done" }] }, items: [narration] } }));
+    expect(keys(settled)).toEqual(keys(running));
   });
 
   it("renders answer text sent as deltas while streaming, under the answer key", () => {

@@ -295,23 +295,33 @@ export function deriveTurnView(input: TurnInput): TurnView {
   const streaming = message.status === "streaming";
   const evidenceRefs = message.evidence_refs ?? [];
   const lastItem = items.at(-1);
-  const liveTail = streaming && message.phase === "writing" && lastItem?.kind === "commentary" ? lastItem : undefined;
+  // The draft is the answer while the host writes it. Once the answer grew past
+  // where the draft began, its settled text is in `content` and the live copy,
+  // which may still be listed for one update, is not drawn again. Older
+  // commentary stays narration whatever position the removal leaves it in.
+  const { draft } = message;
+  const liveDraft = streaming && message.phase === "writing" && lastItem?.kind === "commentary" && lastItem.id === draft?.id && content.length <= draft.answerLength
+    ? lastItem : undefined;
   const stalled = state.kind === "working" && state.stalled;
 
   const segments: TurnSegment[] = [];
   const groups: Group[] = [];
   const owners = new Map<string, Group>();
   const resultOwners = new Map<string, Group>();
-  const group = (): Group => {
+  // A row created after the steps were read (a plan or Memory reads with no
+  // step of their own) goes before the live answer, where it stays once the
+  // answer settles.
+  const group = (key: string): Group => {
     const next: Group = {
       kind: "activity",
-      key: groups.length ? "" : "activity",
+      key,
       row: { kind: "summary", label: "", issues: null },
       progress: { startedAtMs, finishedAtMs: progress?.finishedAtMs, items: [] },
       evidence: [], sources: [], memoryReads: [], autoExpand: false,
     };
     groups.push(next);
-    segments.push(next);
+    const answerAt = segments.findIndex((segment) => segment.kind === "prose" && segment.tone === "answer");
+    segments.splice(answerAt < 0 ? segments.length : answerAt, 0, next);
     return next;
   };
   let open: Group | undefined;
@@ -319,22 +329,21 @@ export function deriveTurnView(input: TurnInput): TurnView {
     if (item.kind === "commentary") {
       open = undefined;
       const text = withoutIdentifiers(item.text);
-      if (item === liveTail) {
-        segments.push({ kind: "prose", key: message.answer_key ?? item.id, text: content ? `${content}\n\n${text}` : text, tone: "answer", streaming: true });
+      if (item.id === draft?.id) {
+        if (item === liveDraft) segments.push({ kind: "prose", key: "answer", text: content ? `${content}\n\n${text}` : text, tone: "answer", streaming: true });
       } else if (text.trim()) {
         segments.push({ kind: "prose", key: item.id, text, tone: "narration", streaming: false });
       }
       continue;
     }
     if (!open) {
-      open = group();
-      if (!open.key) open.key = `step-${item.id}`;
+      open = group(groups.length ? `step-${item.id}` : "activity");
     }
     open.progress.items.push(item);
     owners.set(item.id, open);
     if (item.kind === "tool") for (const id of item.resultIds ?? []) resultOwners.set(id, open);
   }
-  const first = () => groups[0] ?? group();
+  const first = () => groups[0] ?? group("activity");
   const memoryReads = exactMemoryReads(message.memory_refs).map(({ ref }) => ref);
   if (progress?.plan || memoryReads.length) {
     const head = first();
@@ -363,8 +372,8 @@ export function deriveTurnView(input: TurnInput): TurnView {
         };
     entry.autoExpand = actions.some((item) => (item.status === "failed" && !pausedByRule(item)) || item.status === "stopped");
   }
-  if (!liveTail && content && !isFailurePlaceholder(message)) {
-    segments.push({ kind: "prose", key: message.answer_key ?? "answer", text: content, tone: "answer", streaming, checks: message.number_checks });
+  if (!liveDraft && content && !isFailurePlaceholder(message)) {
+    segments.push({ kind: "prose", key: "answer", text: content, tone: "answer", streaming, checks: message.number_checks });
   }
 
   const settled = state.kind === "complete" || state.kind === "stopped" || state.kind === "failed";

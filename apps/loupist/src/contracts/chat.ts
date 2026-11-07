@@ -688,10 +688,11 @@ export type ChatMessage = HostPostRecords & {
   /** Live run phase. Not stored with the Chat message. */
   phase?: ChatRunPhase;
   /**
-   * The id of the live commentary the answer first settled from, so its Markdown
-   * node keeps one key from draft to answer. Not stored with the Chat message.
+   * The commentary the host is writing now and how long the answer was when it
+   * began. The draft stands in for the answer until the answer grows past that
+   * length with the settled text. Not stored with the Chat message.
    */
-  answer_key?: string;
+  draft?: { id: string; answerLength: number };
   attachments?: ChatAttachment[];
   artifact_refs?: ChatArtifactRef[];
   performance?: ChatPerformance;

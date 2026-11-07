@@ -3,6 +3,7 @@ import { applyChatProgressPatch, applyChatProgressSnapshot, fromLoupistUIMessage
 import type { LoupistUIMessage } from "./ai-sdk";
 import type { ChatMessage, ChatSendRequest, ChatStreamEvent, LoupistBridge } from "../types";
 import { evidenceFixture } from "../test/evidenceFixtures";
+import { deriveTurnView } from "./turnView";
 
 describe("incremental chat progress", () => {
   const tool = { id: "tool-1", kind: "tool" as const, toolName: "web_search", category: "web" as const, operation: "search" as const, action: "Searched the web", status: "running" as const };
@@ -121,25 +122,33 @@ describe("native stream transport", () => {
     expect(sent[1]).toEqual({ ...sent[0], run_id: expect.any(String) });
   });
 
-  it("drops the live copy of a settling answer in the same update that adds its text, and keys the answer by it", async () => {
+  it("shows one answer under one key in every projection while a draft settles, then a second turn joins it", async () => {
     const preamble = { kind: "commentary" as const, id: "note", text: "Checking." };
     const draft = { kind: "commentary" as const, id: "draft", text: "Finished." };
+    const second = { kind: "commentary" as const, id: "second", text: "Then" };
     const stream = await transport(async ({ run_id }, emit) => {
       emit({ type: "started", run_id });
       emit({ type: "phase", phase: "writing", run_id });
       emit({ type: "progress", sequence: 1, progress: { startedAtMs: 1, items: [preamble, draft] }, run_id });
       emit({ type: "delta", text: draft.text, settles: draft.id, run_id });
       emit({ type: "progress_patch", patch: { sequence: 2, removeItemIds: [draft.id] }, run_id });
-      emit({ type: "delta", text: " More.", settles: "later", run_id });
+      emit({ type: "progress_patch", patch: { sequence: 3, upsertItems: [second] }, run_id });
+      emit({ type: "progress_patch", patch: { sequence: 4, appendText: [{ id: second.id, text: " more." }] }, run_id });
+      emit({ type: "delta", text: "\n\nThen more.", settles: second.id, run_id });
       emit({ type: "aborted", run_id });
       return { run_id };
     }).sendMessages({ ...request, body });
     const projections = await project(stream as ReadableStream<never>);
-    const settled = projections.findIndex(message => message.content.startsWith(draft.text));
-    // The next chunk after the text is the drop: no other event can come between them.
-    const afterSettle = projections.slice(settled + 1);
-    expect(afterSettle.every(message => message.progress?.items.every(item => item.id !== draft.id))).toBe(true);
-    expect(afterSettle.filter(message => message.content.includes("More.")).every(message => message.answer_key === draft.id)).toBe(true);
+    const answers = projections.map((message) => {
+      const turn = deriveTurnView({ message, now: 2, lastActivityAt: 2, stopping: false, retryPending: false });
+      const prose = turn.segments.filter((segment) => segment.kind === "prose");
+      // Narration stays narration: only the draft and its settled text read as the answer.
+      if (message.progress) expect(prose.filter((segment) => segment.tone === "narration").map((segment) => segment.text)).toEqual(["Checking."]);
+      return prose.filter((segment) => segment.tone === "answer");
+    });
+    expect(answers.every((segments) => segments.length <= 1 && segments.every((segment) => segment.key === "answer"))).toBe(true);
+    const texts = answers.flatMap((segments) => segments.map((segment) => segment.text)).filter((text, index, all) => text !== all[index - 1]);
+    expect(texts).toEqual(["Finished.", "Finished.\n\nThen", "Finished.\n\nThen more."]);
     expect(projections.at(-1)?.progress?.items).toEqual([preamble]);
   });
 

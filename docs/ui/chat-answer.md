@@ -9,11 +9,15 @@ open policy either: `TurnProvider` wraps it, and a step's page, a source row or 
 citation opens through the one `ChatDestination` path
 ([opening from chat](evidence-browser.md#opening-from-chat)).
 
-Segments are prose and activity rows. A commentary item is prose keyed by its id:
-narration (the answer's own metrics in the secondary color) once it closed, the live
-answer while the phase is writing and it is the last item. The settled answer keeps
-the key of the commentary it first settled from (`answer_key`), so the Markdown node
-survives the hand-off and nothing remounts or moves. A run of steps is one activity
+Segments are prose and activity rows. A closed commentary item is narration (the
+answer's own metrics in the secondary color), keyed by its id. The commentary the host
+is writing now (`ChatMessage.draft`, recorded by the transport when the item is first
+published, with the answer's length at that moment) is the answer while the phase is
+writing, under the one key `answer` that the settled text keeps, so the Markdown node
+survives the hand-off, a reconcile from the store, and nothing remounts or moves. Once
+the answer has grown past where the draft began, the draft is not drawn again, and an
+older commentary that the removal leaves last stays narration. A plan or Memory row with
+no step of its own goes before the live answer, where it stays. A run of steps is one activity
 row with a fixed height: the running step's own words while one runs, then a summary
 ("Read 2 sources · hanul.example · 1 failed attempt · 0:14") that never changes height.
 The details hold the sources, consulted notes, plan and every step; a failed or stopped
@@ -40,8 +44,9 @@ only the text appended since the last patch (`ChatProgressPatch.append_text`), a
 every 32 ms. A commentary id is in `upsert_items` or in `append_text`, never both. When
 Pi ends the message with a final answer, the `delta` that carries the authoritative text
 names the commentary it replaces (`settles`); the renderer drops its live copy in the
-same update and records the id as `answer_key`, and the removal patch that follows then
-finds nothing. The durable progress format is unchanged.
+same update, so a stop before the removal patch keeps no draft beside its settled text,
+and the removal patch that follows then finds nothing. The durable progress format is
+unchanged.
 
 Prose runs through `usePacedText` (word reveal over a 160 ms window) and then
 `stableMarkdown`, which holds back a table block until its separator row has a newline
