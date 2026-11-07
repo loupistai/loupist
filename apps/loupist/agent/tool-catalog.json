@@ -257,6 +257,38 @@
       "description": "Activate one enabled connection or built-in pack by exact id. Reuse tools already loaded in this Chat. Load the same id again when the host says those tools are unavailable or tells you to reconnect. Loading cannot grant permissions."
     },
     {
+      "name": "connection_setup",
+      "method": "connection.setup",
+      "permission": "always",
+      "component": null,
+      "label": "Set up a connection",
+      "description": "Show the user a card that sets up one bundled data connection: call it when the user wants a data source that is not loaded, or pastes or offers an API key for one. Pass the connection's id or name (fred.macro, FRED, SEC EDGAR, OpenDART, KRX). The user enters any key in the card; never ask for a key in chat and never repeat one. The connection works from the user's next message, not in this reply. Interactive chats only.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96,
+            "description": "A catalog entry id such as fred.macro, or the connection's name."
+          }
+        }
+      },
+      "progress": {
+        "category": "capability",
+        "operation": "generic",
+        "running": "Preparing a connection",
+        "done": "Prepared a connection",
+        "target_args": [
+          "id"
+        ]
+      }
+    },
+    {
       "name": "world_search",
       "method": "world.search",
       "permission": "memory_read",
@@ -5574,7 +5606,7 @@
     {
       "id": "calculations",
       "name": "Calculations",
-      "description": "Exact growth, CAGR, return and drawdown, margin and ratio, free cash flow, sums, fund overlap, savings-goal and regular-investing math, and DCF or reverse-DCF grids, computed on the host without Python."
+      "description": "Exact growth, CAGR, return and drawdown, margin and ratio, free cash flow, sums, fund overlap, savings goals and DCF or reverse-DCF grids, without Python."
     },
     {
       "id": "documents",
@@ -5584,7 +5616,7 @@
     {
       "id": "memory-save",
       "name": "Source retention and journals",
-      "description": "Keep this Chat's progress and user-stated facts with note_save, retain delivered originals with source_save, file what a turn established into Lens pages with lens_file, save the user's explicitly stated rule with principle_save or their stated judgment as a Journal, add a kind of thing or link to what the map tracks with world_schema_update, or set up what this Loupist follows and researches with loupist_setup."
+      "description": "Keep this Chat's progress and facts, retain originals, file what a turn established into Lens pages, save a rule or judgment, grow the map, set up this Loupist."
     },
     {
       "id": "charts",

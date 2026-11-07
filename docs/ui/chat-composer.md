@@ -104,7 +104,20 @@ data; it does not promise the request stays on the device. A card still waiting
 when the run ends reads "No longer needed". Tools that are not read-only, and
 unattended runs, keep the plain refusal. After third-party text, a `web_fetch` of a
 new site waits on the same kind of card (`kind: web_site`) with only Allow once and
-Not now ([Trust](../runtime/untrusted-text.md)). A chat with both Memory flags off shows a
+Not now ([Trust](../runtime/untrusted-text.md)).
+
+A completed `connection_setup` step leaves a setup card under the answer
+(`ConnectionSetupCard`, derived by `chat/connectionSetupBlocks.ts` from the step's
+target, one card per entry). The card reads the connection's live state through
+`marketplace_snapshot` and `loupist_capability_list`, never from the stored step, as
+one union: loading, needs setup, off for this Loupist, ready, or unavailable (the entry
+left the catalog or its runtime is missing). Needs setup opens the same
+`MarketplaceSetupDialog` as Settings › Connections and refreshes when it closes; off
+for this Loupist calls `loupist_capability_enable`; ready offers Ask again, which puts
+the user's previous question back in the composer through the same path as Change the
+rates. No key passes through Chat, and the connection works from the next message.
+Preview scenarios `chat-connection-setup-needs-setup` and `chat-connection-setup-ready`
+show it. A chat with both Memory flags off shows a
 private mark; the chat title in the sub-header renames in place; a Loupist row shows a
 draft dot while unsent text exists.
 

@@ -1,7 +1,7 @@
 {
   "id": "tradier.market-data",
   "name": "Tradier",
-  "summary": "Read-only equity and options market data; trading endpoints are excluded.",
+  "summary": "Equity and options market data. Read-only: it cannot place trades.",
   "publisher": "Loupist",
   "data_authority": "Tradier",
   "kind": "data_source",

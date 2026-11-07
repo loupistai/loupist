@@ -8,7 +8,9 @@ The official catalog is `apps/loupist/marketplace/marketplace.json` plus its
 `plugins/<name>/` folders. Settings → Connections configures those bundled services
 and the user's own [custom connections](#custom-connections). The Loupist settings
 sheet controls each Loupist's enabled bindings. Open it from the Loupist header or
-Settings → Loupists.
+Settings → Loupists. "Choose which Loupists can use them" on the Connections page
+opens the current Loupist's settings at Skills & connections. See
+[the Connections page](#the-connections-page).
 
 Connection details separate shared setup, credentials and provider context,
 including for keyless services. Readiness/access/search filters help locate entries.
@@ -34,6 +36,12 @@ later rechecks preserve individually disabled bindings. Rust rechecks readiness 
 captured authority at admission. Save, verification and visible snapshot refresh
 are separate outcomes; UI errors must distinguish them. MCP errors use bounded
 recovery categories, not raw credential-bearing provider payloads.
+
+Setup can start from Chat. When the user asks for a data source that is not loaded, or
+offers a key, the agent calls [`connection_setup`](../agent/turn-tools.md#turn-tools) and
+the answer shows a [setup card](../ui/chat-composer.md#chat-composer) that opens this same
+setup dialog or turns the connection on for the Loupist; the key is entered in the
+dialog, never in the conversation, and the connection works from the next message.
 
 ## Custom connections
 
@@ -61,6 +69,42 @@ Users can add their own MCP data sources under Settings → Connections → Your
   taints a turn, that turn writes no Memory; otherwise Sources and Map nodes carry their connection origin.
 - **Unattended runs:** briefings and scheduled runs may call only Always-approved read-only custom tools.
   Custom-enabled turns start a cold Pi session.
+
+## The Connections page
+
+Available connections come first, then Your connections. With no custom connection,
+Your connections is a heading, one line and "+ Add a connection"; its Loupist picker
+appears once a connection exists. The search box matches only what a card shows (name,
+summary, access label and markets), never plugin or provider ids, so the runtime that
+serves an entry stays invisible.
+
+`src/marketplace/readiness.ts` maps each connector's host status to one visible state.
+The host reports `needs_configuration` both for an entry nobody set up and for one whose
+key failed, so the renderer separates them:
+
+| State | Label | Tone | Counts as Needs attention |
+| --- | --- | --- | --- |
+| Ready | Ready | positive | no |
+| Not set up | Not connected | neutral | no |
+| Stored key or setting failing | Needs attention | warning | yes |
+| Runtime missing | Connection unavailable | negative | no |
+
+Needs attention means a stored credential that is rejected, unverified or unavailable,
+a saved setting that no longer validates, or a candidate key not yet verified. An optional
+entry the user never set up is Not connected. The Needs attention filter and its count
+use that flag only. A keyless entry that still asks for a contact email (SEC EDGAR) is
+labelled "Contact email only" instead of "No API key required".
+
+Within each group, ready entries come first, then entries that need no setup (the keyless
+Market data platform leads Market data), then localized display name. Loupist settings
+uses the same comparator, translates names, summaries and group labels with the same
+catalog, and the two pages agree. Group headings are h3 and card titles h4. English
+connector copy is looked up by exact string in the `catalog` namespace, so
+`connectionCopy.test.ts` fails when a bundled summary or name has no catalog entry.
+
+The setup dialog hides KRX service ids and shows a localized sentence for a rejected or
+unavailable key instead of the raw host error. Done, Close, Escape and the dialog's
+other exits ask before discarding a key that is typed but not saved.
 
 ## Code
 

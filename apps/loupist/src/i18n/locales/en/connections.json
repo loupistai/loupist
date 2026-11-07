@@ -13,7 +13,8 @@
     "settingsEntry": "Settings {{name}}",
     "manageEntry": "Manage {{name}}",
     "continueEntry": "Continue setup {{name}}",
-    "setupEntry": "Set up {{name}}"
+    "setupEntry": "Set up {{name}}",
+    "contactEmailOnly": "Contact email only"
   },
   "marketplaceSetupDialog": {
     "couldNotDeleteTheSavedCredentialsTryAgain": "Could not delete the saved credentials. Try again.",
@@ -69,7 +70,6 @@
     "credentialsDeleted": "Credentials deleted",
     "couldNotDeleteCredentials": "Could not delete credentials",
     "couldNotOpenSetupGuide": "Could not open setup guide",
-    "needsSetup": "Needs setup",
     "searchRouting": "Search routing",
     "connectionSettings": "Connection settings",
     "automaticChoosesAnAvailableSearchServiceForYour": "Automatic chooses an available search service for your model.",
@@ -105,14 +105,22 @@
     "settingsTitle": "{{name}} settings",
     "krxCoverage": "Coverage of the saved key",
     "krxMarket": {
-      "kospi": "KOSPI daily trading ({{service}})",
-      "kosdaq": "KOSDAQ daily trading ({{service}})"
+      "kospi": "KOSPI daily trading",
+      "kosdaq": "KOSDAQ daily trading"
     },
     "krxAccess": {
       "verified": "Verified",
       "needs_approval": "Needs KRX approval",
       "unavailable": "Could not check. Verify again."
-    }
+    },
+    "credentialProblem": {
+      "rejected": "The provider rejected these credentials. Check the key and try again.",
+      "temporarily_unavailable": "The provider could not verify these credentials right now. Try again later."
+    },
+    "discardKeyTitle": "Discard the key you typed?",
+    "discardKeyDescription": "{{name}} has a key that is not saved yet. Closing now discards it.",
+    "keepEditing": "Keep editing",
+    "discardKey": "Discard"
   },
   "marketplaceView": {
     "couldNotLoadConnections": "Could not load connections.",
@@ -132,7 +140,7 @@
     "tryAnotherSearchOrChooseAllAccess": "Try another search or choose Any access type.",
     "clearFilters": "Clear filters",
     "allAccess": "Any access type",
-    "noKey": "No key",
+    "noKey": "No key needed",
     "freeAccount": "Free account",
     "paid": "Paid",
     "couldNotRefreshConnections": "Could not refresh connections",
@@ -140,7 +148,7 @@
     "resultCount": "{{visible}} of {{total}} connections"
   },
   "catalog": {
-    "koreainvestment_market_dataSummary": "All 146 read endpoints for Korean and overseas markets and accounts. Order placement is not included.",
+    "koreainvestment_market_dataSummary": "Prices and market data for Korean and overseas markets, plus lookups on your own account. Read-only: it cannot place orders.",
     "Korea_Investment": "Korea Investment",
     "South_Korea": "South Korea",
     "Global": "Global",
@@ -197,7 +205,7 @@
     "intrinio_market_data_api_key": "Intrinio API key",
     "nasdaq_data_linkSummary": "Nasdaq datasets; a key unlocks authenticated datasets and higher limits.",
     "nasdaq_data_link_api_key": "Nasdaq Data Link API key",
-    "openbb_platformSummary": "Keyless market, company, fund, options, macroeconomic, and analysis data through the bundled read-only market-data runtime.",
+    "openbb_platformSummary": "Market, company, fund, options and economic data from public sources. Read-only, and no account or key needed.",
     "Latest_only": "Latest only",
     "openbb_platform_name": "Market data platform",
     "openbb_platform_data_authority": "The provider selected for each request",
@@ -209,7 +217,7 @@
     "sec_edgar_contact_email": "SEC contact email",
     "tiingo_market_dataSummary": "Equity, fund, crypto, and news data.",
     "tiingo_market_data_token": "Tiingo token",
-    "tradier_market_dataSummary": "Read-only equity and options market data; trading endpoints are excluded.",
+    "tradier_market_dataSummary": "Equity and options market data. Read-only: it cannot place trades.",
     "tradier_market_data_account_type": "Tradier account type",
     "tradier_market_data_api_key": "Tradier API key",
     "tradingeconomics_macroSummary": "Global economic calendars, indicators, forecasts, and markets.",
@@ -224,9 +232,6 @@
     "community_web_research_attribution": "Selected search provider and original source publishers",
     "community_web_research_search_policy": "Search provider",
     "world_bank_indicatorsSummary": "Global development and macroeconomic series, straight from the World Bank. No account needed.",
-    "ready": "Ready",
-    "needsSetup": "Needs setup",
-    "unavailable": "Connection unavailable",
     "sandbox": "Sandbox",
     "live": "Live",
     "Korea": "Korea",
@@ -240,13 +245,17 @@
     "onchain_wallets_name": "Public blockchains",
     "defillama_tvlSummary": "Daily value locked for on-chain protocols and networks, and stablecoin supply. No account needed.",
     "Latest": "Latest",
-    "Daily": "Daily"
+    "Daily": "Daily",
+    "OnchainData": "On-chain data"
   },
   "readiness": {
-    "ready": "Ready",
-    "needs_configuration": "Needs setup",
-    "runtime_unavailable": "Connection unavailable",
     "unavailableNote": "This connection is unavailable. Update or reinstall the app to restore it.",
     "setupNote": "Set up in Connections"
+  },
+  "state": {
+    "ready": "Ready",
+    "notConnected": "Not connected",
+    "needsAttention": "Needs attention",
+    "unavailable": "Connection unavailable"
   }
 }

@@ -1324,6 +1324,9 @@ fn summarize_tool(
     if tool_name == "capability_load" {
         return capability_load_presentation(args);
     }
+    if tool_name == "connection_setup" {
+        return connection_setup_presentation(args);
+    }
     let spec = crate::broker::tools::TOOL_CATALOG
         .tools
         .iter()
@@ -1413,6 +1416,40 @@ fn connection_label(tool_name: &str) -> Option<String> {
         .connection
         .as_deref()?;
     plugin_label(connection)
+}
+
+/// The step's target is the resolved catalog entry id, which the renderer
+/// reads back to draw the setup card; the connector's name labels the step.
+fn connection_setup_presentation(args: &Value) -> ToolPresentation {
+    let wording = crate::broker::tools::TOOL_CATALOG
+        .tools
+        .iter()
+        .find(|tool| tool.name == "connection_setup")
+        .and_then(|tool| tool.progress.as_ref());
+    let entry = args
+        .get("id")
+        .and_then(Value::as_str)
+        .and_then(|id| crate::marketplace::entry_lookup::resolve_setup_entry(id).ok());
+    let (target, source) = match entry {
+        Some(entry) => (
+            Some(entry.id.clone()),
+            Some(ChatProgressSource {
+                kind: ChatProgressSourceKind::Connector,
+                name: entry.name.clone(),
+            }),
+        ),
+        // An unresolved id may be a pasted key, so it never becomes a visible target.
+        None => (None, None),
+    };
+    presentation(
+        ChatProgressCategory::Capability,
+        ChatProgressOperation::Generic,
+        wording.map_or("Prepared a connection", |spec| spec.done.as_str()),
+        wording.map(|spec| spec.running.clone()),
+        target,
+        None,
+        source,
+    )
 }
 
 fn capability_load_presentation(args: &Value) -> ToolPresentation {
@@ -2199,6 +2236,18 @@ mod tests {
             None,
         );
         assert_eq!(openbb.target.as_deref(), Some("AAPL"));
+        // A setup step's target is the resolved entry id the card is drawn
+        // from, and the connection's name labels the step.
+        let setup = summarize_tool("connection_setup", &json!({"id": "FRED"}), None);
+        assert_eq!(setup.target.as_deref(), Some("fred.macro"));
+        assert_eq!(
+            setup.source.map(|source| source.name).as_deref(),
+            Some("FRED")
+        );
+        assert_eq!(setup.action, "Prepared a connection");
+        let unresolved = summarize_tool("connection_setup", &json!({"id": "Bloomberg"}), None);
+        assert!(unresolved.target.is_none());
+        assert!(unresolved.source.is_none());
 
         let source = |title: &str, url: &str| crate::web::WebSource {
             source_id: "web:f6495eccf2c0cca04e4c6a03".into(),

@@ -34,8 +34,8 @@ describe("Loupist · Connections", () => {
     await openApp(bridge);
     const user = userEvent.setup();
     await user.click(await mainTab(/Connections/));
-    const korea = within((await screen.findByRole("heading", { name: /^Korea/, level: 2 })).closest("section")!);
-    for (const name of ["Korea Investment Open Trading API", "KRX Open API", "OpenDART"]) expect(korea.getByRole("heading", { name, level: 3 })).toBeVisible();
+    const korea = within((await screen.findByRole("heading", { name: /^Korea/, level: 3 })).closest("section")!);
+    for (const name of ["Korea Investment Open Trading API", "KRX Open API", "OpenDART"]) expect(korea.getByRole("heading", { name, level: 4 })).toBeVisible();
     expect(within(card("Market data platform")).getByText("Ready")).toBeVisible();
   });
 
@@ -49,7 +49,7 @@ describe("Loupist · Connections", () => {
     expect(screen.queryByRole("heading", { name: "SEC EDGAR" })).toBeNull();
     await user.clear(search);
     await user.click(screen.getByRole("combobox", { name: "Filter connections by access" }));
-    await user.click(screen.getByRole("option", { name: "No key" }));
+    await user.click(screen.getByRole("option", { name: "No key needed" }));
     expect(screen.getByRole("heading", { name: "World Bank Indicators" })).toBeVisible();
     expect(screen.queryByRole("heading", { name: "OpenDART" })).toBeNull();
   });
@@ -122,7 +122,8 @@ describe("Loupist · Connections", () => {
     let dialog = await openSetup(user, "OpenDART");
     await user.type(within(dialog).getByLabelText("OpenDART API key"), "discard-this-secret");
     await user.click(within(dialog).getByRole("button", { name: "Close" }));
-    await user.click(screen.getByRole("button", { name: "Set up OpenDART" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Discard the key you typed?" })).getByRole("button", { name: "Discard" }));
+    await user.click(await screen.findByRole("button", { name: "Set up OpenDART" }));
     dialog = screen.getByRole("dialog", { name: "Set up OpenDART" });
     const apiKey = within(dialog).getByLabelText("OpenDART API key");
     expect(apiKey).toHaveAttribute("type", "password");
