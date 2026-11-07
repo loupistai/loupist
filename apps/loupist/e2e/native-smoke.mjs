@@ -182,9 +182,11 @@ try {
     await capture("onboarding-welcome");
   });
 
-  await step("a connected account enters its Bot after the notice", async () => {
+  await step("a connected account picks a preset and enters its Bot", async () => {
     await (await displayed("[data-notice-acknowledgment]")).click();
     await clickButton("Get started");
+    await waitForOnboardingStep(browser, 3, 20_000);
+    await (await displayed("[data-onboarding-create]")).click();
     await waitForShell(browser, 30_000);
     assert.equal(await selectedLoupistTitle(browser), "Portfolio Loupist");
     await displayed(".loupist-chat-row[data-home] [aria-current=page]");

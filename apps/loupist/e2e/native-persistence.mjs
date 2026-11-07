@@ -272,7 +272,7 @@ async function openLibrary(tabLabel) {
 async function openMemorySegment(segment) {
   await openMainTab(browser, "lens");
   const page = await displayed('section.memory-page');
-  const tabIndex = { about: 1, principles: 2, methods: 3 }[segment];
+  const tabIndex = { about: 1, pages: 2, history: 3 }[segment];
   assert.ok(tabIndex, `Unknown What it knows segment: ${segment}`);
   await (await displayed(`section.memory-page [role="tablist"] [role="tab"]:nth-child(${tabIndex})`)).click();
   await browser.waitUntil(async () => (await page.getAttribute('data-segment')) === segment, {
@@ -322,12 +322,11 @@ async function addPrinciple() {
 }
 
 async function verifyPrinciple() {
-  const page = await openMemorySegment("principles");
+  const page = await openMemorySegment("pages");
+  await waitForText(page, FIXTURE.method);
   const row = await visibleWithText("section.memory-page button.memory-row", PRINCIPLE.statement);
   await row.click();
   await waitForText(await displayed("section.memory-page aside.memory-reader"), PRINCIPLE.statement);
-  await openMemorySegment("methods");
-  await waitForText(page, FIXTURE.method);
 }
 
 async function addJournalEntry() {
