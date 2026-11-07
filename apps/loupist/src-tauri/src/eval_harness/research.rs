@@ -497,9 +497,7 @@ async fn live_lens_research_v1() -> Result<()> {
     } else {
         std::env::temp_dir()
     };
-    let temp = tempfile::Builder::new()
-        .prefix("lr-")
-        .tempdir_in(base)?;
+    let temp = tempfile::Builder::new().prefix("lr-").tempdir_in(base)?;
     let frozen = artifacts::FrozenArtifacts::new(artifacts()?)?;
     let mut report = Report {
         out,

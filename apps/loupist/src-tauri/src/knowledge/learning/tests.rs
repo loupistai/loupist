@@ -101,12 +101,21 @@ fn record_of(span: &BasisRef) -> String {
         other => panic!("not a span: {other:?}"),
     }
 }
-/// What `commit_turn` does: file the turn's puts, then enqueue, in one transaction.
-fn turn_with(
+fn company(company: usize) -> PageTarget {
+    PageTarget::Create {
+        kind: PageKind::Subject,
+        title: format!("Manufacturer {company}"),
+        anchors: vec![AnchorInput::Node {
+            node_id: format!("entity-{company}"),
+        }],
+    }
+}
+/// What `commit_turn` does: file the turn's put, then enqueue, in one transaction.
+fn put_in(
     store: &KnowledgeStore,
     chat: &str,
     message: &str,
-    company: usize,
+    target: PageTarget,
     markdown: &str,
     refs: &[BasisRef],
     now: i64,
@@ -117,13 +126,7 @@ fn turn_with(
                 LOUPIST,
                 &turn_origin(chat, message),
                 vec![PageDelta {
-                    target: PageTarget::Create {
-                        kind: PageKind::Subject,
-                        title: format!("Manufacturer {company}"),
-                        anchors: vec![AnchorInput::Node {
-                            node_id: format!("entity-{company}"),
-                        }],
-                    },
+                    target,
                     ops: vec![LensOp::Put {
                         key: SectionKey::new(&format!("ramp-{message}"))?,
                         heading: "Capacity ramp".into(),
@@ -140,6 +143,17 @@ fn turn_with(
             enqueue(w.tx, LOUPIST, now)
         })
         .unwrap()
+}
+fn turn_with(
+    store: &KnowledgeStore,
+    chat: &str,
+    message: &str,
+    n: usize,
+    markdown: &str,
+    refs: &[BasisRef],
+    now: i64,
+) -> Option<String> {
+    put_in(store, chat, message, company(n), markdown, refs, now)
 }
 fn turn(
     store: &KnowledgeStore,
@@ -411,7 +425,7 @@ fn rate_limits_hold_a_pending_review_across_restart_and_settle_requeues_leftover
     assert_eq!(wake, AT + 4 + SIX_HOURS);
     drop(store);
     let store = KnowledgeStore::open(dir.path().join("knowledge.sqlite")).unwrap();
-    store.transact(|w| recover(w.tx)).unwrap();
+    store.transact(|w| recover(w.tx, AT + 21)).unwrap();
     assert_eq!(review_states(&store), ["deferred", "pending"]);
     assert!(try_claim(&store, AT + 30).is_none());
     // Filed while pending: admission includes it.
@@ -444,7 +458,7 @@ fn frozen_budget_wait_and_startup_quarantine() {
         })
         .unwrap();
     assert!(try_claim(&store, AT + 3).is_none());
-    store.transact(|w| recover(w.tx)).unwrap();
+    store.transact(|w| recover(w.tx, AT + 3)).unwrap();
     assert!(reviews(&store).is_empty());
     store
         .transact(|w| {
@@ -453,7 +467,7 @@ fn frozen_budget_wait_and_startup_quarantine() {
         })
         .unwrap();
     let a = begin(&store, AT + 5);
-    store.transact(|w| recover(w.tx)).unwrap();
+    store.transact(|w| recover(w.tx, AT + 5)).unwrap();
     let review = &reviews(&store)[0];
     assert_eq!(review.status, "failed");
     assert_eq!(review.reason.as_deref(), Some("uncertain_paid_attempt"));
@@ -503,7 +517,7 @@ fn input_is_bounded_newest_first_and_principles_are_complete() {
             &format!("m{i:02}"),
             i % 4,
             &long,
-            &[sources[i % 4].clone()],
+            &[sources[i % 3].clone()],
             AT + 10 + i as i64,
         );
     }
@@ -644,10 +658,14 @@ fn invalid_output_is_deferred_without_any_lens_write_or_retry() {
         "principle_target",
     ] {
         let (_dir, store) = setup();
-        let (x, y) = (source(&store, "Filing X"), source(&store, "Filing Y"));
+        let (x, y, z) = (
+            source(&store, "Filing X"),
+            source(&store, "Filing Y"),
+            source(&store, "Filing Z"),
+        );
         turn(&store, "chat-1", "m1", 0, &[x], AT + 2);
-        turn(&store, "chat-1", "m2", 1, std::slice::from_ref(&y), AT + 3);
-        turn(&store, "chat-2", "m3", 2, &[y], AT + 4).expect("queued");
+        turn(&store, "chat-1", "m2", 1, &[y], AT + 3);
+        turn(&store, "chat-2", "m3", 2, &[z], AT + 4).expect("queued");
         let a = begin(&store, AT + 5);
         let mut body = output(&a);
         match invalid {
@@ -833,4 +851,344 @@ fn unchanged_method_defers_without_revision_or_growth_and_principle_races_defer(
         reviews(&store)[0].reason.as_deref(),
         Some("principles_changed")
     );
+}
+
+fn remove_source(store: &KnowledgeStore, title: &str) {
+    store
+        .transact(|w| {
+            let record: String = w.tx.query_row(
+                "SELECT record_id FROM knowledge_sources WHERE title=?1",
+                [title],
+                |r| r.get(0),
+            )?;
+            let mut controls = super::super::memory_controls::load(w.tx, LOUPIST)?;
+            controls.removed.insert(record);
+            super::super::memory_controls::save(w.tx, LOUPIST, &controls)
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_forgotten_section_is_not_evidence() {
+    let (_dir, store) = setup();
+    let (a, b) = (source(&store, "Filing A"), source(&store, "Filing B"));
+    turn(&store, "chat-1", "m1", 0, &[a], AT + 2);
+    let page = store
+        .read(|w| {
+            Ok(w.tx.query_row(
+                "SELECT record_id FROM knowledge_lens_log WHERE message_id='m1'",
+                [],
+                |r| r.get::<_, String>(0),
+            )?)
+        })
+        .unwrap();
+    store
+        .transact(|w| w.forget_section(LOUPIST, &page, "ramp-m1", AT + 3))
+        .unwrap();
+    assert!(turn(&store, "chat-2", "m2", 1, &[b], AT + 4).is_none());
+    assert!(review_states(&store).is_empty());
+}
+
+#[test]
+fn evidence_withdrawn_after_claim_never_publishes() {
+    for change in ["undo", "forget", "source_removed"] {
+        let (_dir, store) = setup();
+        two_chats(&store, AT + 2).expect("queued");
+        let a = begin(&store, AT + 4);
+        let withdrawn = a
+            .input
+            .observations
+            .iter()
+            .find(|o| o.chat_id.starts_with("chat-a"))
+            .unwrap()
+            .clone();
+        match change {
+            "undo" => {
+                store
+                    .transact(|w| w.undo_op(LOUPIST, &withdrawn.id, AT + 5))
+                    .unwrap();
+            }
+            "forget" => {
+                let key = format!("ramp-{}", withdrawn.message_id);
+                store
+                    .transact(|w| w.forget_section(LOUPIST, &withdrawn.page_id, &key, AT + 5))
+                    .unwrap();
+            }
+            _ => remove_source(&store, &format!("Filing A {}", AT + 2)),
+        }
+        complete(&store, &a, output(&a), AT + 6);
+        assert_eq!(
+            reviews(&store)[0].reason.as_deref(),
+            Some("invalid_output"),
+            "{change}"
+        );
+        assert_eq!(methods(&store), 0, "{change}");
+    }
+}
+
+#[test]
+fn legacy_claim_count_reviews_neither_block_nor_set_the_watermark() {
+    let (_dir, store) = setup();
+    // Before lens-log watermarks, `through_event` held a growth-event rowid
+    // far past this folder's lens-log head.
+    store
+        .transact(|w| {
+            for (id, job, status, through) in [
+                ("lrn_legacy_done", "job-1", "created", 10_000),
+                ("lrn_legacy_wait", "job-2", "pending", 9_000),
+            ] {
+                w.tx.execute("INSERT INTO knowledge_learning_reviews(review_id,loupist_id,world_job_id,status,created_at_ms,through_event,settings_json,call_budget) VALUES (?1,?2,?3,?4,?5,?6,'{}',1)", params![id, LOUPIST, job, status, AT - 2 * DAY, through])?;
+            }
+            Ok(())
+        })
+        .unwrap();
+    store.transact(|w| recover(w.tx, AT + 1)).unwrap();
+    let legacy = reviews(&store);
+    let waiting = legacy
+        .iter()
+        .find(|r| r.review_id == "lrn_legacy_wait")
+        .unwrap();
+    assert_eq!(waiting.status, "deferred");
+    assert_eq!(waiting.reason.as_deref(), Some("trigger_changed"));
+    let id = two_chats(&store, AT + 2).expect("queued past the legacy rows");
+    assert!(!id.starts_with("lrn_legacy"));
+    assert_eq!(begin(&store, AT + 3).input.observations.len(), 2);
+}
+
+#[test]
+fn a_long_newer_chat_cannot_crowd_the_older_chat_out_of_the_input() {
+    let (_dir, store) = setup();
+    store
+        .transact(|w| save_settings(w.tx, LOUPIST, false))
+        .unwrap();
+    let long = "Utilization, ramp cost and margin moved together. ".repeat(20);
+    let older = source(&store, "Filing A");
+    turn_with(&store, "chat-a", "m-a", 0, &long, &[older], AT + 2);
+    let sources: Vec<_> = (0..3)
+        .map(|i| source(&store, &format!("Filing B{i}")))
+        .collect();
+    for i in 0..25 {
+        turn_with(
+            &store,
+            "chat-b",
+            &format!("m-b{i:02}"),
+            1 + i % 3,
+            &long,
+            &[sources[i % 3].clone()],
+            AT + 10 + i as i64,
+        );
+    }
+    store
+        .transact(|w| save_settings(w.tx, LOUPIST, true))
+        .unwrap();
+    store
+        .transact(|w| enqueue(w.tx, LOUPIST, AT + 100))
+        .unwrap()
+        .expect("queued");
+    let a = begin(&store, AT + 101);
+    assert!(a.input.text().unwrap().chars().count() <= MAX_INPUT);
+    assert!(a.input.observations.len() < 26);
+    assert_eq!(a.input.observations[0].message_id, "m-b24");
+    assert_eq!(a.input.observations.last().unwrap().message_id, "m-a");
+}
+
+#[test]
+fn restart_requeues_evidence_filed_during_a_lost_attempt() {
+    let (dir, store) = setup();
+    two_chats(&store, AT + 2).expect("queued");
+    let lost = begin(&store, AT + 4);
+    assert!(two_chats(&store, AT + 10).is_none());
+    drop(store);
+    let store = KnowledgeStore::open(dir.path().join("knowledge.sqlite")).unwrap();
+    store.transact(|w| recover(w.tx, AT + 20)).unwrap();
+    assert_eq!(review_states(&store), ["failed", "pending"]);
+    // The uncertain attempt itself is not retried: the new review reads only
+    // what was filed past its watermark.
+    let next = begin(&store, AT + 4 + SIX_HOURS);
+    assert_ne!(next.review_id, lost.review_id);
+    let messages: Vec<_> = next
+        .input
+        .observations
+        .iter()
+        .map(|o| o.message_id.clone())
+        .collect();
+    assert_eq!(
+        messages,
+        [format!("m-b-{}", AT + 10), format!("m-a-{}", AT + 10)]
+    );
+}
+
+#[test]
+fn one_company_or_method_pages_are_not_independent_cases() {
+    for second in ["same_company", "method_page"] {
+        let (_dir, store) = setup();
+        let (a, b, c) = (
+            source(&store, "Filing A"),
+            source(&store, "Filing B"),
+            source(&store, "Filing C"),
+        );
+        assert!(turn(&store, "chat-1", "m1", 0, &[a], AT + 2).is_none());
+        let target = match second {
+            "same_company" => company(0),
+            _ => PageTarget::Create {
+                kind: PageKind::Method,
+                title: "Ramp checks".into(),
+                anchors: vec![],
+            },
+        };
+        let queued = put_in(
+            &store,
+            "chat-2",
+            "m2",
+            target,
+            "Compare utilization with margins.",
+            &[b],
+            AT + 3,
+        );
+        assert!(queued.is_none(), "{second}");
+        assert!(review_states(&store).is_empty(), "{second}");
+        // A second company's page is the independent case the gate wants.
+        assert!(
+            turn(&store, "chat-3", "m3", 1, &[c], AT + 4).is_some(),
+            "{second}"
+        );
+    }
+}
+
+fn principle(statement: String) -> PrincipleInput {
+    PrincipleInput {
+        statement,
+        why: None,
+        example: None,
+        origin: "settings".into(),
+        origin_chat_id: None,
+        origin_message_id: None,
+    }
+}
+
+#[test]
+fn a_review_deferred_before_inference_keeps_its_evidence_and_rate_slot() {
+    let (_dir, store) = setup();
+    let long = "Check cash conversion before trusting reported profit. ".repeat(6);
+    let saved = store
+        .transact(|w| {
+            (0..45)
+                .map(|i| {
+                    let statement = format!("{i:02} {long}").chars().take(280).collect();
+                    super::super::principles::principle_save(
+                        w.tx,
+                        LOUPIST,
+                        None,
+                        None,
+                        principle(statement),
+                        AT + i,
+                    )
+                })
+                .collect::<KnowledgeResult<Vec<_>>>()
+        })
+        .unwrap();
+    two_chats(&store, AT + 100).expect("queued");
+    assert!(try_claim(&store, AT + 101).is_none());
+    assert_eq!(
+        reviews(&store)[0].reason.as_deref(),
+        Some("principles_exceed_input_limit")
+    );
+    // Settling did not requeue the same evidence.
+    assert_eq!(review_states(&store), ["deferred"]);
+    store
+        .transact(|w| {
+            for (i, p) in saved.iter().enumerate() {
+                super::super::principles::principle_save(
+                    w.tx,
+                    LOUPIST,
+                    Some(&p.record_id),
+                    Some(&p.revision_id),
+                    principle(format!("Rule {i}")),
+                    AT + 102,
+                )?;
+            }
+            Ok(())
+        })
+        .unwrap();
+    let c = source(&store, "Filing C");
+    turn(&store, "chat-c", "m-c", 2, &[c], AT + 103).expect("queued without a cooldown");
+    assert_eq!(begin(&store, AT + 104).input.observations.len(), 3);
+}
+
+#[test]
+fn a_chat_that_repeats_another_chats_sources_is_not_a_second_case() {
+    let (_dir, store) = setup();
+    let (a, b, c) = (
+        source(&store, "Filing A"),
+        source(&store, "Filing B"),
+        source(&store, "Filing C"),
+    );
+    assert!(turn(&store, "chat-1", "m1", 0, &[a.clone(), b], AT + 2).is_none());
+    assert!(turn(&store, "chat-2", "m2", 1, &[a], AT + 3).is_none());
+    assert!(review_states(&store).is_empty());
+    assert!(turn(&store, "chat-3", "m3", 2, &[c], AT + 4).is_some());
+}
+
+#[test]
+fn a_refine_keeps_the_sections_the_user_wrote() {
+    let (_dir, store) = setup();
+    two_chats(&store, AT + 2).expect("queued");
+    let a = begin(&store, AT + 4);
+    complete(&store, &a, output(&a), AT + 5);
+    let id = reviews(&store)[0].lens_record_id.clone().unwrap();
+    let write = |key: &str, text: &str, now: i64| {
+        store
+            .transact(|w| {
+                w.put_section(
+                    LOUPIST,
+                    &id,
+                    key,
+                    text,
+                    &super::super::test_support::user_origin(),
+                    now,
+                )
+            })
+            .unwrap();
+    };
+    write("limits", "Only two Korean manufacturers so far.", AT + 6);
+    let section = |key: &str| {
+        store
+            .read_page(LOUPIST, &id)
+            .unwrap()
+            .body
+            .sections()
+            .iter()
+            .find(|s| s.key.as_str() == key)
+            .unwrap()
+            .markdown
+            .clone()
+    };
+    two_chats(&store, AT + SIX_HOURS + 5);
+    let b = begin(&store, AT + SIX_HOURS + 6);
+    let mut refined = output(&b);
+    refined["action"] = json!("refine");
+    refined["targetRecordId"] = json!(id);
+    refined["procedure"] = json!("Reconcile inventory aging against ramp milestones.");
+    refined["limitations"] = json!("Learning's own limit.");
+    complete(&store, &b, refined.clone(), AT + SIX_HOURS + 7);
+    let review = reviews(&store).remove(0);
+    assert_eq!(review.status, "refined");
+    assert_eq!(review.reason, None);
+    assert_eq!(section("limits"), "Only two Korean manufacturers so far.");
+    assert!(section("steps").starts_with("Reconcile inventory aging"));
+    // Once the user wrote every section, a refine has nothing left to write.
+    for key in ["use-when", "steps", "checks"] {
+        write(key, "Written by the user.", AT + SIX_HOURS + 8);
+    }
+    let before = store.read_page(LOUPIST, &id).unwrap().revision_id;
+    two_chats(&store, AT + 2 * SIX_HOURS + 9);
+    let c = begin(&store, AT + 2 * SIX_HOURS + 10);
+    refined["evidenceIds"] = json!(ids(&c));
+    refined["markdown"] = json!("# Capacity ramp review\nA new summary learning would write.");
+    complete(&store, &c, refined, AT + 2 * SIX_HOURS + 11);
+    assert_eq!(
+        reviews(&store)[0].reason.as_deref(),
+        Some("method_unchanged")
+    );
+    assert_eq!(store.read_page(LOUPIST, &id).unwrap().revision_id, before);
 }

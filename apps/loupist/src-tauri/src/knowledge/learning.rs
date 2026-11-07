@@ -1,7 +1,8 @@
 //! Durable, tool-free method reviews. No automatic retry after a paid attempt.
 use super::graph_jobs::{load_settings, GraphProcessingSettings};
 use super::lens_page::{
-    Basis, BasisRef, FilingOrigin, LensOp, PageDelta, PageKind, PageTarget, SectionKey,
+    Basis, BasisRef, FilingOrigin, LensBody, LensKind, LensOp, PageDelta, PageKind, PageTarget,
+    SectionKey,
 };
 use super::{KnowledgeError, KnowledgeResult, KnowledgeWrite};
 use rusqlite::{params, OptionalExtension, Transaction};
@@ -114,19 +115,29 @@ pub(crate) fn enqueue(
     if active.is_some() {
         return admit_pending(tx, loupist, now);
     }
-    let through: i64 = tx.query_row(
-        "SELECT COALESCE(MAX(through_event),0) FROM knowledge_learning_reviews WHERE loupist_id=?1",
-        [loupist],
-        |r| r.get(0),
-    )?;
+    let (through, seen) = watermarks(tx, loupist, "")?;
     let end = log_head(tx, loupist)?;
-    if !recurs(&evidence(tx, loupist, through, end)?) {
+    // A review settled before inference read up to `seen` without consuming it:
+    // recheck only once more is filed, so a defer never requeues itself.
+    if end <= seen || core(&evidence(tx, loupist, through, end)?).is_none() {
         return Ok(None);
     }
     let id = super::model::mint_id("lrn");
     // world_job_id is kept, written empty, so existing folders open without a schema bump.
     tx.execute("INSERT INTO knowledge_learning_reviews(review_id,loupist_id,world_job_id,status,created_at_ms,through_event,settings_json,call_budget) VALUES (?1,?2,'','pending',?3,?4,?5,?6)",params![id,loupist,now,end,serde_json::to_string(&s)?,s.max_llm_calls.min(1)])?;
     admit_pending(tx, loupist, now)
+}
+
+/// The evidence watermark (the head an inference attempt consumed) and the
+/// head any review last read. Rows with a `world_job_id` held growth-event
+/// rowids under the claim-count trigger and never count.
+fn watermarks(tx: &Transaction<'_>, loupist: &str, except: &str) -> KnowledgeResult<(i64, i64)> {
+    Ok(tx.query_row(
+        "SELECT COALESCE(MAX(CASE WHEN started_at_ms IS NOT NULL THEN through_event END),0),COALESCE(MAX(through_event),0)
+         FROM knowledge_learning_reviews WHERE loupist_id=?1 AND world_job_id='' AND review_id<>?2",
+        params![loupist, except],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?)
 }
 
 fn log_head(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<i64> {
@@ -137,7 +148,8 @@ fn log_head(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<i64> {
     )?)
 }
 
-/// Pending work does not consume the evidence watermark or a rate-limit slot.
+/// Pending work, and work settled before inference, consumes neither the
+/// evidence watermark nor a rate-limit slot.
 fn admit_pending(tx: &Transaction<'_>, loupist: &str, now: i64) -> KnowledgeResult<Option<String>> {
     let id: Option<String> = tx.query_row(
         "SELECT review_id FROM knowledge_learning_reviews WHERE loupist_id=?1 AND status='pending'",
@@ -152,7 +164,7 @@ fn admit_pending(tx: &Transaction<'_>, loupist: &str, now: i64) -> KnowledgeResu
     Ok(Some(id))
 }
 fn rate_limit_until(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<i64> {
-    let mut q = tx.prepare("SELECT COALESCE(started_at_ms,created_at_ms) FROM knowledge_learning_reviews WHERE loupist_id=?1 AND status<>'pending' ORDER BY COALESCE(started_at_ms,created_at_ms) DESC LIMIT 4")?;
+    let mut q = tx.prepare("SELECT started_at_ms FROM knowledge_learning_reviews WHERE loupist_id=?1 AND started_at_ms IS NOT NULL ORDER BY started_at_ms DESC LIMIT 4")?;
     let times = q
         .query_map([loupist], |r| r.get::<_, i64>(0))?
         .collect::<Result<Vec<_>, _>>()?;
@@ -187,6 +199,9 @@ struct Method {
     applicability: String,
     #[serde(skip)]
     digests: BTreeMap<String, String>,
+    /// Sections the user wrote; a refine never replaces them.
+    #[serde(skip)]
+    user_written: BTreeSet<String>,
 }
 /// A retained Source span a turn filed as a section's basis.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -216,19 +231,66 @@ struct Observation {
     #[serde(skip)]
     spans: Vec<SpanRef>,
 }
-/// The method-learning gate: distinct turns from at least two Chats citing at
-/// least two Sources. One Chat, or many citing one Source, is too narrow to generalize.
-fn recurs<'a>(observations: impl IntoIterator<Item = &'a Observation>) -> bool {
-    let (mut turns, mut chats, mut sources) = (BTreeSet::new(), BTreeSet::new(), BTreeSet::new());
-    for o in observations {
-        turns.insert(&o.message_id);
-        chats.insert(&o.chat_id);
-        sources.extend(o.spans.iter().map(|s| &s.record_id));
+/// Each Chat's cited Sources across all the evidence.
+fn cited_by(all: &[Observation]) -> BTreeMap<&str, BTreeSet<&str>> {
+    let mut chats: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    for o in all {
+        let sources = chats.entry(&o.chat_id).or_default();
+        sources.extend(o.spans.iter().map(|s| s.record_id.as_str()));
     }
-    turns.len() >= 2 && chats.len() >= 2 && sources.len() >= 2
+    chats
 }
-/// Turn puts in (after, through], newest first, on active subject, idea and
-/// method pages, keeping only spans whose Source preserves an original.
+/// Two Chats are independent cases when each cites a Source the other never
+/// cited. A Chat that only repeats another's Sources adds no new case.
+fn independent(a: &Observation, b: &Observation, by: &BTreeMap<&str, BTreeSet<&str>>) -> bool {
+    let new_to = |o: &Observation, other: &Observation| {
+        let seen = by.get(other.chat_id.as_str());
+        o.spans
+            .iter()
+            .any(|s| seen.is_none_or(|seen| !seen.contains(s.record_id.as_str())))
+    };
+    a.chat_id != b.chat_id && new_to(a, b) && new_to(b, a)
+}
+/// The method-learning gate on `cited`, judged against what each Chat cited in
+/// `all`: two independent Chats and two pages. One Chat, one Source, one
+/// company's page, or a Chat nested in another's Sources is too narrow to
+/// generalize.
+fn recurs(cited: &[&Observation], all: &[Observation]) -> bool {
+    let by = cited_by(all);
+    let pages: BTreeSet<_> = cited.iter().map(|o| &o.page_id).collect();
+    pages.len() >= 2
+        && cited
+            .iter()
+            .enumerate()
+            .any(|(j, b)| cited[..j].iter().any(|a| independent(a, b, &by)))
+}
+/// The newest observations that pass the gate on their own: an independent
+/// pair, plus another page when the pair shares one. None when `all` fails it.
+fn core(all: &[Observation]) -> Option<BTreeSet<usize>> {
+    let by = cited_by(all);
+    // Independence depends only on a Chat and its Sources: try the newest of each.
+    let mut kinds = BTreeSet::new();
+    let firsts: Vec<usize> = (0..all.len())
+        .filter(|&i| {
+            let sources: BTreeSet<_> = all[i].spans.iter().map(|s| &s.record_id).collect();
+            kinds.insert((&all[i].chat_id, sources))
+        })
+        .collect();
+    let (i, j) = (0..firsts.len())
+        .flat_map(|j| (0..j).map(move |i| (i, j)))
+        .map(|(i, j)| (firsts[i], firsts[j]))
+        .find(|&(i, j)| independent(&all[i], &all[j], &by))?;
+    let mut picked = BTreeSet::from([i, j]);
+    if all[i].page_id == all[j].page_id {
+        picked.insert(all.iter().position(|o| o.page_id != all[i].page_id)?);
+    }
+    Some(picked)
+}
+/// Turn puts in (after, through], newest first, that are still the current
+/// section of an active subject or idea page, keeping only spans whose Source
+/// preserves an original. An undone, forgotten, retired or replaced put no
+/// longer counts, and method pages never do: a turn's own method edits are not
+/// research evidence.
 fn evidence(
     tx: &Transaction<'_>,
     loupist: &str,
@@ -247,12 +309,16 @@ fn evidence(
            AND c.coverage LIKE 'included_%' AND c.authorship IN ('publisher','user','tool')
            AND s.provider_identity NOT LIKE 'shared_pack:%'",
     )?;
+    let mut head = tx.prepare(
+        "SELECT r.payload_json FROM knowledge_record_heads h
+         JOIN knowledge_record_revisions r ON r.revision_id=h.revision_id WHERE h.record_id=?1",
+    )?;
     let mut q = tx.prepare(
-        "SELECT l.op_id,l.op_json,l.chat_id,l.message_id,l.record_id,m.title,m.kind
+        "SELECT l.op_id,l.op_json,l.chat_id,l.message_id,l.record_id,l.after_digest,m.title,m.kind
          FROM knowledge_lens_log l JOIN knowledge_lens_metadata m ON m.record_id=l.record_id
          WHERE l.loupist_id=?1 AND l.rowid>?2 AND l.rowid<=?3 AND l.origin='turn'
            AND l.outcome IN ('added','replaced') AND l.chat_id IS NOT NULL AND l.message_id IS NOT NULL
-           AND m.kind IN ('subject','idea','method') AND m.archived_at_ms IS NULL
+           AND m.kind IN ('subject','idea') AND m.archived_at_ms IS NULL
          ORDER BY l.rowid DESC",
     )?;
     let rows = q
@@ -263,18 +329,21 @@ fn evidence(
                 r.get::<_, String>(2)?,
                 r.get::<_, String>(3)?,
                 r.get::<_, String>(4)?,
-                r.get::<_, String>(5)?,
+                r.get::<_, Option<String>>(5)?,
                 r.get::<_, String>(6)?,
+                r.get::<_, String>(7)?,
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
     let (mut turns, mut chats) = (BTreeMap::new(), BTreeMap::new());
+    let mut bodies: BTreeMap<String, Option<LensBody>> = BTreeMap::new();
     let mut out = Vec::new();
-    for (id, op, chat_id, message_id, page_id, page, kind) in rows {
+    for (id, op, chat_id, message_id, page_id, after_digest, page, kind) in rows {
         if hidden(&page_id) {
             continue;
         }
         let LensOp::Put {
+            key,
             heading,
             markdown,
             basis,
@@ -283,6 +352,25 @@ fn evidence(
         else {
             continue;
         };
+        if !bodies.contains_key(&page_id) {
+            let payload: Option<String> = head.query_row([&page_id], |r| r.get(0)).optional()?;
+            let body = match (payload, LensKind::parse(&kind)) {
+                (Some(payload), Some(kind)) => Some(LensBody::from_payload(
+                    kind,
+                    serde_json::from_str(&payload)?,
+                )?),
+                _ => None,
+            };
+            bodies.insert(page_id.clone(), body);
+        }
+        let current = bodies[&page_id]
+            .as_ref()
+            .and_then(LensBody::page)
+            .and_then(|p| p.section(&key))
+            .map(super::lens_page::section_digest);
+        if after_digest.is_none() || current != after_digest {
+            continue;
+        }
         let (mut spans, mut sources) = (Vec::new(), Vec::new());
         for r in basis.refs {
             let BasisRef::Span {
@@ -412,19 +500,38 @@ fn build_input(
                     )
                 })
                 .collect(),
+            user_written: page
+                .sections
+                .iter()
+                .filter(|section| section.origin == super::lens_page::Origin::User)
+                .map(|section| section.key.as_str().to_owned())
+                .collect(),
         });
         if input.text()?.chars().count() > 7000 {
             input.methods.pop();
             break;
         }
     }
-    for o in evidence(tx, loupist, start, end)? {
-        input.observations.push(o);
+    // A core that passes the gate goes in first, so truncation never shows the
+    // model less breadth than the evidence has. The rest fills newest first.
+    let all = evidence(tx, loupist, start, end)?;
+    let mut picked = core(&all).ok_or(KnowledgeError::Invalid("insufficient_turns"))?;
+    input.observations = picked.iter().map(|&i| all[i].clone()).collect();
+    while input.text()?.chars().count() > MAX_INPUT && input.methods.pop().is_some() {}
+    if input.text()?.chars().count() > MAX_INPUT {
+        return Err(KnowledgeError::Invalid("evidence_exceeds_input_limit"));
+    }
+    for (i, o) in all.iter().enumerate() {
+        if picked.contains(&i) {
+            continue;
+        }
+        input.observations.push(o.clone());
         if input.text()?.chars().count() > MAX_INPUT {
-            input.observations.pop();
             break;
         }
+        picked.insert(i);
     }
+    input.observations = picked.into_iter().map(|i| all[i].clone()).collect();
     Ok(input)
 }
 #[derive(Debug, Deserialize)]
@@ -462,7 +569,13 @@ impl Output {
         ]
     }
 
-    fn ops(&self, read: &BTreeMap<String, String>, basis: &Basis) -> KnowledgeResult<Vec<LensOp>> {
+    /// The summary and every section not in `keep`, each expecting the digest the review read.
+    fn ops(
+        &self,
+        read: &BTreeMap<String, String>,
+        keep: &BTreeSet<String>,
+        basis: &Basis,
+    ) -> KnowledgeResult<Vec<LensOp>> {
         let section = |key: &str, heading: &str, text: String| -> KnowledgeResult<LensOp> {
             let key = SectionKey::new(key)?;
             let expected = read.get(key.as_str()).cloned();
@@ -485,8 +598,7 @@ impl Output {
             .chars()
             .take(super::lens_page::MAX_SUMMARY_CHARS)
             .collect();
-        Ok(vec![
-            LensOp::Summary { text: summary },
+        let sections = [
             section(
                 "use-when",
                 "Use when",
@@ -499,7 +611,14 @@ impl Output {
             section("steps", "Steps", self.procedure.trim().to_owned())?,
             section("checks", "Checks", self.principles.trim().to_owned())?,
             section("limits", "Limits", self.limitations.trim().to_owned())?,
-        ])
+        ];
+        Ok(std::iter::once(LensOp::Summary { text: summary })
+            .chain(
+                sections
+                    .into_iter()
+                    .filter(|op| op.key().is_some_and(|key| !keep.contains(key.as_str()))),
+            )
+            .collect())
     }
 }
 #[derive(Clone)]
@@ -508,6 +627,9 @@ pub(super) struct Attempt {
     pub loupist_id: String,
     pub input: Input,
     pub settings: GraphProcessingSettings,
+    /// The lens-log rows (after, through] this review read.
+    after: i64,
+    through: i64,
 }
 pub(super) fn claim(
     tx: &Transaction<'_>,
@@ -541,7 +663,7 @@ pub(super) fn claim(
     if previous.is_some_and(|t| now - t < SIX_HOURS) {
         return Ok(None);
     }
-    let start:i64=tx.query_row("SELECT COALESCE(MAX(through_event),0) FROM knowledge_learning_reviews WHERE loupist_id=?1 AND review_id<>?2",params![loupist,id],|r|r.get(0))?;
+    let (start, _) = watermarks(tx, loupist, &id)?;
     let input = match build_input(tx, loupist, start, end, name, focus) {
         Ok(i) => i,
         Err(KnowledgeError::Invalid(reason)) => {
@@ -550,25 +672,14 @@ pub(super) fn claim(
         }
         Err(e) => return Err(e),
     };
-    if !recurs(&input.observations) {
-        settle(
-            tx,
-            &id,
-            "deferred",
-            Some("insufficient_turns"),
-            None,
-            None,
-            0,
-            now,
-        )?;
-        return Ok(None);
-    }
     tx.execute("UPDATE knowledge_learning_reviews SET status='running',started_at_ms=?2,input_json=?3,settings_json=?4 WHERE review_id=?1 AND status='queued'",params![id,now,input.text()?,serde_json::to_string(&s)?])?;
     Ok(Some(Attempt {
         review_id: id,
         loupist_id: loupist.into(),
         input,
         settings: s,
+        after: start,
+        through: end,
     }))
 }
 #[allow(clippy::too_many_arguments)]
@@ -587,8 +698,24 @@ fn settle(
     enqueue(tx, &loupist, now)?;
     Ok(())
 }
-pub(super) fn recover(tx: &Transaction<'_>) -> KnowledgeResult<()> {
-    tx.execute("UPDATE knowledge_learning_reviews SET status='failed',reason='uncertain_paid_attempt',finished_at_ms=started_at_ms WHERE status='running'",[])?;
+/// Startup. An attempt left running is failed and never retried. A review
+/// queued by the claim-count trigger (non-empty `world_job_id`, a growth-event
+/// watermark) is settled. Each affected Loupist then rechecks evidence filed
+/// past its watermark, so nothing filed during the lost attempt is stranded.
+pub(super) fn recover(tx: &Transaction<'_>, now: i64) -> KnowledgeResult<()> {
+    let mut affected = BTreeSet::new();
+    let mut settle_all = |sql: &str, args: &[&dyn rusqlite::ToSql]| -> KnowledgeResult<()> {
+        let mut q = tx.prepare(sql)?;
+        for loupist in q.query_map(args, |r| r.get::<_, String>(0))? {
+            affected.insert(loupist?);
+        }
+        Ok(())
+    };
+    settle_all("UPDATE knowledge_learning_reviews SET status='failed',reason='uncertain_paid_attempt',finished_at_ms=started_at_ms WHERE status='running' RETURNING loupist_id", &[])?;
+    settle_all("UPDATE knowledge_learning_reviews SET status='deferred',reason='trigger_changed',finished_at_ms=?1 WHERE status IN ('pending','queued') AND world_job_id<>'' RETURNING loupist_id", &[&now])?;
+    for loupist in affected {
+        enqueue(tx, &loupist, now)?;
+    }
     Ok(())
 }
 pub(super) fn request(attempt: &Attempt) -> KnowledgeResult<Value> {
@@ -700,13 +827,17 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
         return Err(invalid());
     }
     let ids: BTreeSet<_> = o.evidence_ids.iter().collect();
-    let cited: Vec<_> = a
+    let shown = a
         .input
         .observations
         .iter()
         .filter(|c| ids.contains(&c.id))
-        .collect();
-    if cited.len() != ids.len() || !recurs(cited.iter().copied()) {
+        .count();
+    // Re-resolve against current evidence: an observation undone, forgotten or
+    // replaced since claim, or whose Sources were removed, drops out.
+    let current = evidence(write.tx, &a.loupist_id, a.after, a.through)?;
+    let cited: Vec<_> = current.iter().filter(|c| ids.contains(&c.id)).collect();
+    if shown != ids.len() || !recurs(&cited, &current) {
         return Err(invalid());
     }
     let turns = cited
@@ -736,7 +867,7 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
             now,
         );
     }
-    let (target, head) = if o.action == "refine" {
+    let (target, head, keep) = if o.action == "refine" {
         let method = a
             .input
             .methods
@@ -752,6 +883,7 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
                 record_id: method.record_id.clone(),
             },
             method.digests.clone(),
+            method.user_written.clone(),
         )
     } else {
         if o.target_record_id.is_some() {
@@ -764,18 +896,29 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
                 anchors: Vec::new(),
             },
             BTreeMap::new(),
+            BTreeSet::new(),
         )
     };
+    let ops = o.ops(&head, &keep, &span_basis(&cited))?;
+    if !ops.iter().any(|op| matches!(op, LensOp::Put { .. })) {
+        return settle(
+            write.tx,
+            &a.review_id,
+            "deferred",
+            Some("method_unchanged"),
+            None,
+            Some(&o.rationale),
+            turns,
+            now,
+        );
+    }
     let filed = super::lens::file(
         write.tx,
         &a.loupist_id,
         &FilingOrigin::Learning {
             review_id: a.review_id.clone(),
         },
-        vec![PageDelta {
-            target,
-            ops: o.ops(&head, &span_basis(&cited))?,
-        }],
+        vec![PageDelta { target, ops }],
         now,
     )?;
     let page = filed.into_iter().next().ok_or_else(invalid)?;
