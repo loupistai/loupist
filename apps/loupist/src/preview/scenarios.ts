@@ -2,7 +2,7 @@ import i18n from "../i18n";
 import { growthReplayPending, prepareGrowthReplay } from "./growth-replay";
 import { prepareCoreSchema } from "./core-schema";
 import { semiconductorTrackingView } from "../bridge/mock/worldSchema";
-import { advancePreviewClock, previewDelivery, previewKo, prepareConflictsFixture, prepareJournalFixture, prepareLearningFixture, prepareCustomConnectionFixture, prepareFixture, prepareMorningFixture, prepareUpcomingFixture, PreviewBridge } from "./fixtures";
+import { advancePreviewClock, previewDelivery, previewKo, prepareConflictsFixture, prepareConnectionSetupFixture, prepareJournalFixture, prepareLearningFixture, prepareCustomConnectionFixture, prepareFixture, prepareMorningFixture, prepareUpcomingFixture, PreviewBridge } from "./fixtures";
 import type { ChatApproval, ChatProgressItem, ChatRunPhase } from "../contracts/chat";
 import type { GrowthEvent, KnowledgeMapEdge, KnowledgeMapNode } from "../contracts/knowledge";
 import { MIN_VISIT_MS, recordVisit } from "../app/loupistVisit";
@@ -646,6 +646,13 @@ export const scenarios: readonly PreviewScenario[] = [
     },
   })),
 
+  ...(["needs_setup", "ready"] as const).map((state): PreviewScenario => ({
+    ...base(`chat-connection-setup-${state.replace("_", "-")}`, "A connection set up from Chat", () => select(`.connection-setup-card[data-state="${state}"]`), async () => {
+      await until(() => select(`.connection-setup-card[data-state="${state}"]`), "Setup card did not load");
+      select(".connection-setup-card")?.scrollIntoView({ block: "center" });
+    }),
+    setup: bridge => prepareConnectionSetupFixture(bridge, state),
+  })),
   ...["chat-feedback-principle", "chat-memory-principle"].map((id): PreviewScenario => ({
     ...base(id, "A principle saved from Chat", () => select(id === "chat-feedback-principle" ? ".principle-saved" : ".memory-principle"), async root => {
       await until(() => root.querySelector("article.message.assistant.complete"), "Answer did not load");

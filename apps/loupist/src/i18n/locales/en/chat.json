@@ -959,6 +959,20 @@
   "customConnection": {
     "origin": "From {{connection}}"
   },
+  "connectionSetupCard": {
+    "label": "Set up {{name}}",
+    "title": "Connect {{name}}",
+    "loading": "Checking {{name}}…",
+    "needsSetup": "{{name}} needs its setup before this Loupist can use it.",
+    "keyNote": "Any key goes in the setup dialog and stays on this device; the Loupist never sees it.",
+    "setUp": "Set up",
+    "offHere": "{{name}} is set up but off for this Loupist.",
+    "useHere": "Use in this Loupist",
+    "ready": "{{name}} is ready. It works from your next message.",
+    "askAgain": "Ask again",
+    "unavailable": "{{name}} is not available in this app.",
+    "error": "Could not change this connection. Try again."
+  },
   "approvalCard": {
     "label": "Approval for {{tool}}",
     "title": "Needs your approval",
