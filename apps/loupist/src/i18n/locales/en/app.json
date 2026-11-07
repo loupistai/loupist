@@ -146,6 +146,9 @@
   },
   "shell": {
     "chatMaterials": "Chat materials",
+    "chatMaterialsHint": "This chat's map, evidence and outputs",
+    "lensHint": "Your research principles and methods",
+    "worldHint": "Map of companies, people and links",
     "panelKind": "Panel kind",
     "workspaceControls": "Workspace panels",
     "splitTopBottom": "Split top and bottom",

@@ -1662,6 +1662,10 @@ export const scenarios: readonly PreviewScenario[] = [
     if (window.matchMedia(workspaceOverlayMedia).matches) return;
     pressMenu(await until(() => select(".workspace-dock-options"), "The Dock control's menu did not render"));
   }), setup: workListFixture },
+  { ...base("panel-kind-menu", "The panel kind menu names what Lens, World and Chat materials hold", () => select("[data-workspace-kind]") ? select("[data-workspace-kind=\"lens\"]") : null, async (root) => {
+    await until(() => root.querySelector("textarea[data-chat-composer]"), "Chat did not initialize");
+    pressMenu(await until(() => select(".header-panel-toggle"), "Panel control did not initialize"));
+  }) },
   // The docked chart is the subject: a capture waits for its canvas, not just the Work tab's status row.
   // jsdom cannot draw a canvas, so there the status row stays the landmark.
   { ...base("panel-dock-chart", "A chart opened from Work docks below the chat", () => {
