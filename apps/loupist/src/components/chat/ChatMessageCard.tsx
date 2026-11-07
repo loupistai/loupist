@@ -72,7 +72,6 @@ const failureMessages = (): Record<NonNullable<ChatMessage["failure_kind"]>, str
   needs_reconnect: t("chatMessageCard.needs_reconnect"),
   plan_limit: t("chatMessageCard.plan_limit"),
   plan_not_eligible: t("chatMessageCard.plan_not_eligible"),
-  extra_usage_off: t("chatMessageCard.extra_usage_off"),
   out_of_credit: t("chatMessageCard.out_of_credit"),
   model_gone: t("chatMessageCard.model_gone"),
   offline: t("chatMessageCard.offline"),

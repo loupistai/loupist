@@ -240,7 +240,6 @@
     "needs_reconnect": "The sign-in to your AI account stopped working.",
     "plan_limit": "Your ChatGPT plan is at its limit.",
     "plan_not_eligible": "This ChatGPT plan can't be used in other apps.",
-    "extra_usage_off": "Claude extra usage is off or used up.",
     "out_of_credit": "Your AI account is out of credit.",
     "model_gone": "This model isn't offered anymore."
   },
@@ -1405,11 +1404,9 @@
     "planLimit": "Your ChatGPT plan is at its limit. Loupist won't retry on its own.",
     "planLimitHint": "Your plan's limit is shared by every app you connect. You can check it in ChatGPT.",
     "notEligible": "This ChatGPT plan can't be used in other apps. An OpenAI API key works instead.",
-    "extraUsageOff": "Claude needs extra usage turned on for Loupist. Turn it on in Claude settings, or use an API key.",
     "outOfCredit": "Your {{provider}} account is out of credit. Add credit with {{provider}}, then try again.",
     "manageUsage": "Manage usage",
     "useAnother": "Use another account",
-    "openClaude": "Open Claude settings",
     "useApiKey": "Use an API key",
     "modelGone": "{{old}} isn't offered anymore, so this answer used {{new}}."
   },

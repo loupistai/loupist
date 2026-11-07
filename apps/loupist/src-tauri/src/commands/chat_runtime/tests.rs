@@ -442,12 +442,6 @@ fn classify_turn_failure_keeps_host_categories_and_precedence() {
         ),
         (
             "internal",
-            crate::pi::provider_failure::EXTRA_USAGE_OFF,
-            ChatFailureKind::PiExited,
-            ChatFailureKind::ExtraUsageOff,
-        ),
-        (
-            "internal",
             crate::pi::provider_failure::OUT_OF_CREDIT,
             ChatFailureKind::PiExited,
             ChatFailureKind::OutOfCredit,

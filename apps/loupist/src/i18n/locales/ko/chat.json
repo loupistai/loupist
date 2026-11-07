@@ -233,7 +233,6 @@
     "needs_reconnect": "AI 계정 로그인이 더 이상 작동하지 않아요.",
     "plan_limit": "ChatGPT 요금제 한도에 도달했어요.",
     "plan_not_eligible": "이 ChatGPT 요금제는 다른 앱에서 쓸 수 없어요.",
-    "extra_usage_off": "Claude 추가 사용량이 꺼졌거나 다 썼어요.",
     "out_of_credit": "AI 계정의 크레딧이 떨어졌어요.",
     "model_gone": "이 모델은 더 이상 제공되지 않아요."
   },
@@ -1356,11 +1355,9 @@
     "planLimit": "ChatGPT 요금제 한도에 도달했어요. 루피스트가 저절로 다시 시도하지 않아요.",
     "planLimitHint": "요금제 한도는 연결한 모든 앱이 함께 써요. ChatGPT에서 확인할 수 있어요.",
     "notEligible": "이 ChatGPT 요금제는 다른 앱에서 쓸 수 없어요. 대신 OpenAI API 키를 쓸 수 있어요.",
-    "extraUsageOff": "루피스트에서 Claude를 쓰려면 추가 사용량을 켜야 해요. Claude 설정에서 켜거나 API 키를 쓰세요.",
     "outOfCredit": "{{provider}} 계정의 크레딧이 떨어졌어요. {{provider}}에서 충전한 뒤 다시 시도해 주세요.",
     "manageUsage": "사용량 관리",
     "useAnother": "다른 계정 사용",
-    "openClaude": "Claude 설정 열기",
     "useApiKey": "API 키 사용",
     "modelGone": "{{old}}은(는) 더 이상 제공되지 않아 이 답변은 {{new}}(으)로 만들었어요."
   },

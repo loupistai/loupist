@@ -10,7 +10,7 @@ const t = i18n.getFixedT(null, "chat");
 export const BUSY_RETRY_SECONDS = [20, 40] as const;
 
 /** What an answer's error can ask the app to do about its account (providers spec §2.4). */
-export type ProviderErrorAction = "reconnect" | "use_api_key" | "use_another" | "manage_usage" | "open_claude";
+export type ProviderErrorAction = "reconnect" | "use_api_key" | "use_another" | "manage_usage";
 
 type Props = {
   kind: ChatFailureKind;
@@ -52,8 +52,6 @@ export function ChatErrorState({ kind, provider, attempt, retryAfterSeconds, fal
       return <><p>{t("chatError.notEligible")}</p>{action("use_api_key", t("chatError.useApiKey"), true)}</>;
     case "needs_reconnect":
       return <><p>{t("chatError.signInExpired", { provider })}</p>{action("reconnect", t("chatError.reconnect"), true)}</>;
-    case "extra_usage_off":
-      return <><p>{t("chatError.extraUsageOff")}</p>{action("open_claude", t("chatError.openClaude"), true, true)}{action("use_api_key", t("chatError.useApiKey"))}{retry}</>;
     case "out_of_credit":
       return <><p>{t("chatError.outOfCredit", { provider })}</p>{retry}</>;
     default:

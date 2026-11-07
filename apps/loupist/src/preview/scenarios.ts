@@ -852,14 +852,11 @@ export const scenarios: readonly PreviewScenario[] = [
     ["chat-error-signin", "needs_reconnect", "A sign-in that stopped working asks to reconnect", "openai", '[data-error-action="reconnect"]'],
     ["chat-error-plan-limit", "plan_limit", "A ChatGPT plan at its limit never retries on its own", "openai", '[data-error-action="manage_usage"]'],
     ["chat-error-not-eligible", "plan_not_eligible", "A plan other apps can't use offers an API key", "openai", '[data-error-action="use_api_key"]'],
-    ["chat-error-extra-usage", "extra_usage_off", "Claude extra usage is off", "anthropic", '[data-error-action="open_claude"]'],
     ["chat-error-no-credit", "out_of_credit", "A key account out of credit", "anthropic", "button"],
   ] as const).map(([id, kind, title, provider, action]): PreviewScenario => ({
     ...base(id, title, () => select(`.message-run-state ${action}`)),
     setup: async (bridge) => {
       await prepareFixture(bridge, "answer");
-      // Claude answers come from a sign-in, except the out-of-credit key account.
-      if (kind === "extra_usage_off") await bridge.providerConnect("anthropic", () => {});
       if (kind === "out_of_credit") await bridge.providerConfigure({ provider: "anthropic", api_key: "preview-key" });
       const original = bridge.loupistSelect.bind(bridge);
       bridge.loupistSelect = async loupistId => {

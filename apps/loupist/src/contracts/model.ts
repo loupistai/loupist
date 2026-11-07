@@ -42,7 +42,7 @@ export type ProviderOauthOption = {
 export type ProviderGroup = "sign_in" | "api_key" | "local" | "advanced" | "more";
 export type ProviderState = "connected" | "needs_reconnect" | "disconnected";
 export type ProviderCredentialKind = "plan" | "api_key" | "local" | "custom" | "environment" | "none";
-export type ProviderNoticeKind = "plan_limit" | "plan_not_eligible" | "extra_usage_off" | "out_of_credit";
+export type ProviderNoticeKind = "plan_limit" | "plan_not_eligible" | "out_of_credit";
 
 /** Rust-owned provider state (spec providers §3.1); arrives in the catalog and by the `provider-status` event. */
 export type ProviderStatusView = {
