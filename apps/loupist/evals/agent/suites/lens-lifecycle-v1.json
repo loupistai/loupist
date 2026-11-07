@@ -897,6 +897,87 @@
           ]
         }
       ]
+    },
+    {
+      "id": "LL-010",
+      "title": "A remembered plan is reported with its date, not as confirmed current",
+      "tags": [
+        "stale",
+        "dated"
+      ],
+      "split": "capability",
+      "connections": [],
+      "workspace_files": {},
+      "sessions": [
+        {
+          "id": "research",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Here is Ardent Pharma's 2026 outlook. Is the capex plan aggressive?",
+              "attachments": [
+                {
+                  "filename": "ardent-2026-02.md",
+                  "media_type": "text/markdown",
+                  "text": "This is a fictional company created for Loupist's evaluation. It does not trade, and this note is not a recommendation.\n\nArdent Pharma 2026 outlook (published 12 February 2026)\n\n- 2026 capital expenditure plan: 450 million USD, mostly for the Leiden biologics plant.\n- 2026 revenue guidance: 2.9 to 3.1 billion USD.\n- The plan assumes the plant's second line is approved by regulators in the third quarter.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "ardent",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span",
+                    "section_matches": "(?<![\\d.,])450(?![\\d])"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "method",
+                    "title_matches": ".",
+                    "max": 0,
+                    "metric": "save_precision"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "What is Ardent Pharma spending on capex this year?",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_read",
+                    "title_matches": "ardent",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "lens_unchanged",
+                    "metric": "save_precision"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "dated",
+                    "criterion": "The answer gives the 450 million USD capex plan, says it comes from Ardent's 12 February 2026 outlook, and does not claim the plan is unchanged or still current today.",
+                    "metric": "lens_update"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }
