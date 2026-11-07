@@ -431,21 +431,48 @@ pub struct AgentRuntimeComponent {
     pub name: String,
     pub description: String,
     pub tool_names: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub provider_ids: Vec<String>,
     /// Plugin name when this component is a connection. Built-in packs omit it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub connection: Option<String>,
+    /// The host's bundled MCP runtime, which activates a default tool set on
+    /// load and discovers the rest; a custom server exposes all its approved
+    /// tools on connect. Only Rust sets it, and only for that runtime.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub bundled: bool,
 }
 
+const MAX_PURPOSE_CHARS: usize = 160;
+
+/// A component's purpose, cut at the last sentence end that fits, else the
+/// last word, so the index never ends mid-word.
 fn connection_purpose(description: &str) -> String {
-    description
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .chars()
-        .take(160)
-        .collect()
+    let text = description.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.chars().count() <= MAX_PURPOSE_CHARS {
+        return text;
+    }
+    let limit = text
+        .char_indices()
+        .nth(MAX_PURPOSE_CHARS)
+        .map_or(text.len(), |(index, _)| index);
+    let head = &text[..limit];
+    let sentence_end = head
+        .char_indices()
+        .filter(|(_, character)| matches!(character, '.' | '!' | '?'))
+        .map(|(index, character)| index + character.len_utf8())
+        .filter(|end| {
+            head[*end..]
+                .chars()
+                .next()
+                .is_none_or(char::is_whitespace)
+        })
+        .last();
+    match sentence_end {
+        Some(end) => head[..end].to_owned(),
+        None => match head.rfind(char::is_whitespace) {
+            Some(space) => head[..space].trim_end_matches([',', ';']).to_owned(),
+            None => head.to_owned(),
+        },
+    }
 }
 
 impl AgentRuntimeProfile {
@@ -504,15 +531,15 @@ impl AgentRuntimeProfile {
                 name: component.name.clone(),
                 description: connection_purpose(&component.description),
                 tool_names,
-                provider_ids: Vec::new(),
                 connection: component.connection.clone(),
+                bundled: false,
             });
         }
         components.extend(mcp_runtime_components(&capabilities, &market)?);
         components.extend(capabilities.iter().filter(|id| crate::custom_connections::service::valid_id(id)).map(|id| AgentRuntimeComponent {
             id: id.clone(), kind: "mcp".into(), server_id: Some(id.clone()), name: "Custom data source".into(),
             description: "User-configured read-only data source. Load to discover approved tools and their connection name.".into(),
-            tool_names: Vec::new(), provider_ids: Vec::new(), connection: Some(id.clone()),
+            tool_names: Vec::new(), connection: Some(id.clone()), bundled: false,
         }));
         let unavailable_connections = market
             .plugins
@@ -572,7 +599,7 @@ fn mcp_runtime_components(
         .iter()
         .map(|plugin| (plugin.name.as_str(), plugin))
         .collect::<std::collections::BTreeMap<_, _>>();
-    let mut servers = std::collections::BTreeMap::<String, (String, Vec<String>)>::new();
+    let mut servers = std::collections::BTreeMap::<String, String>::new();
     for entry in &market.entries {
         if !enabled.contains(&entry.id)
             || entry.runtime.kind != crate::marketplace::MarketplaceRuntimeKind::BundledMcp
@@ -584,31 +611,25 @@ fn mcp_runtime_components(
         };
         let server = servers
             .entry(entry.plugin.clone())
-            .or_insert_with(|| (server_id, Vec::new()));
-        if server.0 != entry.runtime.server_id.as_deref().unwrap_or_default() {
+            .or_insert_with(|| server_id);
+        if *server != entry.runtime.server_id.as_deref().unwrap_or_default() {
             return Err(AgentHarnessError::Context);
         }
-        server.1.extend(entry.runtime.provider_ids.iter().cloned());
     }
     let mut namespaces = std::collections::BTreeSet::new();
     if servers
         .values()
-        .map(|(server_id, _)| server_id.replace(['.', '-'], "_"))
+        .map(|server_id| server_id.replace(['.', '-'], "_"))
         .any(|namespace| !namespaces.insert(namespace))
     {
         return Err(AgentHarnessError::Context);
     }
     servers
         .into_iter()
-        .map(|(plugin, (server_id, provider_ids))| {
+        .map(|(plugin, server_id)| {
             let summary = plugins
                 .get(plugin.as_str())
                 .ok_or(AgentHarnessError::Context)?;
-            let provider_ids = provider_ids
-                .into_iter()
-                .collect::<std::collections::BTreeSet<_>>()
-                .into_iter()
-                .collect::<Vec<_>>();
             Ok(AgentRuntimeComponent {
                 id: plugin.clone(),
                 kind: "mcp".into(),
@@ -616,8 +637,8 @@ fn mcp_runtime_components(
                 name: summary.display_name.clone(),
                 description: connection_purpose(&summary.short_description),
                 tool_names: Vec::new(),
-                provider_ids,
                 connection: Some(plugin),
+                bundled: true,
             })
         })
         .collect()
@@ -1540,6 +1561,20 @@ fn all_skills() -> impl Iterator<Item = &'static BundledSkill> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_purpose_cut_ends_at_a_sentence_or_word() {
+        let sentences = "Keep this Chat's progress. Retain delivered originals for later reading. File what a turn established into Lens pages and save the user's stated rules as principles today.";
+        assert!(sentences.len() > 160);
+        assert_eq!(
+            super::connection_purpose(sentences),
+            "Keep this Chat's progress. Retain delivered originals for later reading."
+        );
+        let words = "word ".repeat(40);
+        let cut = super::connection_purpose(&words);
+        assert!(cut.len() < 160 && cut.ends_with("word"), "{cut}");
+        assert_eq!(super::connection_purpose("  short   text "), "short text");
+    }
+
     use super::*;
     use chrono::TimeZone;
 

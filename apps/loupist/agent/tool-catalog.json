@@ -5606,7 +5606,7 @@
     {
       "id": "calculations",
       "name": "Calculations",
-      "description": "Exact growth, CAGR, return and drawdown, margin and ratio, free cash flow, sums, fund overlap, savings-goal and regular-investing math, and DCF or reverse-DCF grids, computed on the host without Python."
+      "description": "Exact growth, CAGR, return and drawdown, margin and ratio, free cash flow, sums, fund overlap, savings goals and DCF or reverse-DCF grids, without Python."
     },
     {
       "id": "documents",
@@ -5616,7 +5616,7 @@
     {
       "id": "memory-save",
       "name": "Source retention and journals",
-      "description": "Keep this Chat's progress and user-stated facts with note_save, retain delivered originals with source_save, file what a turn established into Lens pages with lens_file, save the user's explicitly stated rule with principle_save or their stated judgment as a Journal, add a kind of thing or link to what the map tracks with world_schema_update, or set up what this Loupist follows and researches with loupist_setup."
+      "description": "Keep this Chat's progress and facts, retain originals, file what a turn established into Lens pages, save a rule or judgment, grow the map, set up this Loupist."
     },
     {
       "id": "charts",

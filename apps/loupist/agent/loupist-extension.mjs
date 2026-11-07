@@ -50,15 +50,17 @@ export function orderedToolNames(names) {
   });
 }
 
+/** Only the host's bundled runtime activates a default tool set on load; a custom server exposes all its approved tools. */
+const BUNDLED_RUNTIME_NOTE = " Loading activates common price, fundamentals, dividend and filing tools; use available_tools then activate_tools for others.";
+/** One fixed sentence, so the index stays cache-stable however many connections are off. */
+const OTHER_SOURCES_NOTE = "Other data sources (for example FRED, SEC EDGAR, OpenDART, KRX) can be added: call connection_setup and the user finishes setup in a card.";
+
 function formatCapabilityLine(component) {
   const description = String(component.description ?? "").replace(/\s+/gu, " ").trim();
   const tools = (component.tool_names ?? []).filter(Boolean);
-  const providers = (component.provider_ids ?? []).filter(Boolean);
   const toolNote = tools.length > 0 ? ` Tools: ${tools.join(", ")}.` : "";
-  const providerNote = component.kind === "mcp"
-    ? `${providers.length > 0 ? ` Providers: ${providers.join(", ")}.` : ""} Loading activates common price, fundamentals, dividend and filing tools; use available_tools then activate_tools for others.`
-    : "";
-  return `- \`${component.id}\` — ${component.name}: ${description}${toolNote}${providerNote}`;
+  const runtimeNote = component.bundled === true ? BUNDLED_RUNTIME_NOTE : "";
+  return `- \`${component.id}\` — ${component.name}: ${description}${toolNote}${runtimeNote}`;
 }
 
 /** Model-facing capability index. Volatile turn data stays in the user envelope. */
@@ -80,10 +82,7 @@ export function formatRuntimeIndex(runtime) {
   } else {
     for (const component of connections) lines.push(formatCapabilityLine(component));
   }
-  const unavailable = (runtime.unavailable_connections ?? []).filter(Boolean);
-  if (unavailable.length > 0) {
-    lines.push(`Not available in this Loupist: ${unavailable.map((connection) => `${connection.name}: ${connection.description}`).join("; ")}. If needed, tell the user to enable it in Connections.`);
-  }
+  if ((runtime.core_tool_names ?? []).includes("connection_setup")) lines.push(OTHER_SOURCES_NOTE);
   if (builtin.length > 0) {
     lines.push("Built-in:");
     for (const component of builtin) lines.push(formatCapabilityLine(component));
@@ -110,7 +109,7 @@ export function resolveCapability(id, components, unavailable = [], skillNames =
   // Display-name aliases are diagnostic only; they never resolve a load.
   if (requested && unavailable.some((item) => normalize(item.id) === requested ||
       normalize(item.name).replace(/\s+/g, "-") === requested)) {
-    throw new Error(prefix + "This bundled connection is not enabled for this Loupist. The user can enable it in Connections.");
+    throw new Error(prefix + "This bundled connection is not enabled for this Loupist. Call connection_setup with its name so the user can finish setup in a card; it works from their next message.");
   }
   throw new Error(prefix + "Pass {id: capability_id}. Available capability ids: " + (available || "none") + ".");
 }
@@ -167,7 +166,7 @@ function loadHostContext() {
         typeof component.description !== "string" ||
         !component.description ||
         !validRuntimeComponent(component) ||
-        (component.provider_ids !== undefined && !validProviderIds(component.provider_ids))
+        (component.bundled !== undefined && (typeof component.bundled !== "boolean" || component.kind !== "mcp"))
       ) {
         throw new Error("Loupist agent runtime profile is invalid");
       }
@@ -272,14 +271,6 @@ function validMcpNotices(notices) {
     throw new Error("MCP connection notices are invalid");
   }
   return notices;
-}
-
-function validProviderIds(ids) {
-  return (
-    Array.isArray(ids) &&
-    new Set(ids).size === ids.length &&
-    ids.every((id) => typeof id === "string" && id.length > 0 && id.length <= 96)
-  );
 }
 
 function validPreloadComponentIds(ids, components) {
