@@ -386,6 +386,7 @@ impl AppToolExecutor {
             server_id,
             tools.values(),
             &control_tool_names,
+            &enabled_provider_ids,
             &providerless_tool_policy,
         )?;
         let mut server = TurnMcpServer {
@@ -564,14 +565,22 @@ impl AppToolExecutor {
                     }
                     return mcp_call_error_with_inventory(
                         preflight_tools,
-                        provider_failure(mapped, requested_provider.as_deref()),
+                        provider_failure(
+                            mapped,
+                            requested_provider.as_deref(),
+                            &server.enabled_provider_ids,
+                        ),
                     );
                 }
             };
             if result.is_error {
                 return mcp_call_error_with_inventory(
                     preflight_tools,
-                    provider_failure(rejected_mcp_result(&result), requested_provider.as_deref()),
+                    provider_failure(
+                        rejected_mcp_result(&result),
+                        requested_provider.as_deref(),
+                        &server.enabled_provider_ids,
+                    ),
                 );
             }
             if validate_result_provider(
@@ -983,7 +992,11 @@ async fn activate_default_tools(
 
 /// Scraped providers get a passive health signal: the first failure in a
 /// turn tells the model to switch to an official provider instead of retrying.
-fn provider_failure(error: BrokerError, provider: Option<&str>) -> BrokerError {
+fn provider_failure(
+    error: BrokerError,
+    provider: Option<&str>,
+    enabled_provider_ids: &BTreeSet<String>,
+) -> BrokerError {
     if !provider.is_some_and(openbb::is_best_effort) {
         return error;
     }
@@ -991,7 +1004,7 @@ fn provider_failure(error: BrokerError, provider: Option<&str>) -> BrokerError {
         BrokerError::WithNext { source, .. } => *source,
         other => other,
     };
-    source.with_next(openbb::BEST_EFFORT_FAILURE_NEXT)
+    source.with_next(openbb::best_effort_failure_next(enabled_provider_ids))
 }
 
 fn metadata_fetched_at(metadata: &Value) -> Option<String> {
@@ -1088,6 +1101,7 @@ async fn refresh_inventory(
         server_id,
         filtered.values(),
         &server.control_tool_names,
+        &server.enabled_provider_ids,
         &server.providerless_tool_policy,
     )?;
     server.tools = filtered;
@@ -1163,6 +1177,7 @@ fn agent_tool_cards<'a>(
     server_id: &str,
     tools: impl Iterator<Item = &'a McpTool>,
     control_tool_names: &BTreeSet<String>,
+    enabled_provider_ids: &BTreeSet<String>,
     providerless_tool_policy: &ProviderlessToolPolicy,
 ) -> Result<Vec<Value>, BrokerError> {
     tools
@@ -1174,6 +1189,7 @@ fn agent_tool_cards<'a>(
                     tool,
                     control_tool_names.contains(&tool.name),
                     providerless_tool_policy.local_tools.contains(&tool.name),
+                    enabled_provider_ids,
                 );
             }
             Ok(card)
@@ -1186,6 +1202,7 @@ fn server_cards(server_id: &str, server: &TurnMcpServer) -> Result<Vec<Value>, B
         server_id,
         server.tools.values(),
         &server.control_tool_names,
+        &server.enabled_provider_ids,
         &server.providerless_tool_policy,
     )
 }
@@ -2149,14 +2166,18 @@ done
     }
 
     #[test]
-    fn a_failed_scraped_provider_points_to_an_official_one() {
+    fn a_failed_scraped_provider_points_to_an_enabled_official_one() {
         let generic = || BrokerError::Execution("provider failed".into()).with_next("generic");
-        let BrokerError::WithNext { next, .. } = provider_failure(generic(), Some("yfinance"))
+        let enabled = BTreeSet::from(["yfinance".to_owned(), "tmx".to_owned()]);
+        let BrokerError::WithNext { next, .. } =
+            provider_failure(generic(), Some("yfinance"), &enabled)
         else {
             panic!("expected recovery guidance");
         };
-        assert_eq!(next, openbb::BEST_EFFORT_FAILURE_NEXT);
-        let BrokerError::WithNext { next, .. } = provider_failure(generic(), Some("sec")) else {
+        assert!(next.contains("for example tmx"), "{next}");
+        assert!(!next.contains("sec"), "{next}");
+        let BrokerError::WithNext { next, .. } = provider_failure(generic(), Some("sec"), &enabled)
+        else {
             panic!("expected recovery guidance");
         };
         assert_eq!(next, "generic");

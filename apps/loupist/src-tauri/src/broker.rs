@@ -345,7 +345,7 @@ pub enum BrokerError {
     #[error("{source}")]
     WithNext {
         source: Box<BrokerError>,
-        next: &'static str,
+        next: std::borrow::Cow<'static, str>,
     },
     #[error("tool broker authentication failed")]
     Authentication,
@@ -369,10 +369,10 @@ impl BrokerError {
         }
     }
 
-    pub(crate) fn with_next(self, next: &'static str) -> Self {
+    pub(crate) fn with_next(self, next: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         Self::WithNext {
             source: Box::new(self),
-            next,
+            next: next.into(),
         }
     }
 }

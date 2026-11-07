@@ -97,7 +97,7 @@ pub(super) fn dated_route(tool_name: &str) -> Option<&'static DatedRoute> {
     DATED_ROUTES.iter().find(|route| route.tool == tool_name)
 }
 
-pub(super) const AS_OF_REFUSAL_NEXT: &str = "Under this cutoff use a dated OpenBB route (price history, dividends or filings), a native tool that accepts as_of, or evidence retained before the cutoff. Say that this data cannot be shown as it was known then; do not answer from later data or model memory.";
+pub(super) const AS_OF_REFUSAL_NEXT: &str = "Under this cutoff use a dated market data route (price history, dividends or filings), a native tool that accepts as_of, or evidence retained before the cutoff. Say that this data cannot be shown as it was known then; do not answer from later data or model memory.";
 const AS_OF_EMPTY_NEXT: &str = "Nothing in this result was known by the cutoff. Widen the date range before the cutoff or report that no data was available then.";
 
 /// Refusal for a data route that cannot prove availability at the cutoff.

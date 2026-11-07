@@ -43,9 +43,9 @@ fn safe_mcp_error_summary(error: &BrokerError) -> String {
         .collect()
 }
 
-fn mcp_error_next(error: &BrokerError) -> Option<&'static str> {
+fn mcp_error_next(error: &BrokerError) -> Option<&str> {
     match error {
-        BrokerError::WithNext { next, .. } => Some(next),
+        BrokerError::WithNext { next, .. } => Some(next.as_ref()),
         _ => None,
     }
 }
@@ -103,7 +103,7 @@ pub(super) fn rejected_mcp_result(result: &crate::mcp::McpCallResult) -> BrokerE
         .and_then(|value| value.pointer("/loupist_error/kind"))
         == Some(&json!("offline"))
     {
-        return BrokerError::Offline("OpenBB data provider".into());
+        return BrokerError::Offline("market data provider".into());
     }
     // MCP tools commonly put a JSON error inside a text content block.
     // Decode one layer only; never return this provider-controlled body.
