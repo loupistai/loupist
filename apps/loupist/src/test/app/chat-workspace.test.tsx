@@ -52,7 +52,13 @@ describe("Loupist · Chat workspace", () => {
     expect(screen.queryByLabelText("Chat workspace panel")).not.toBeInTheDocument();
     const kind = screen.getByRole("button", { name: /Panel kind/ });
     await user.click(kind);
-    expect(screen.getAllByRole("menuitemradio").map(item => item.textContent)).toEqual(["Lens", "World", "Chat materials"]);
+    const kinds = screen.getAllByRole("menuitemradio");
+    expect(kinds).toHaveLength(3);
+    expect(kinds[0]).toHaveAccessibleName("Lens");
+    expect(kinds[1]).toHaveAccessibleName("World");
+    expect(kinds[2]).toHaveAccessibleName("Chat materials");
+    expect(kinds[0]).toHaveAccessibleDescription("Your research principles and methods");
+    expect(kinds[2]).toHaveAccessibleDescription("This chat's map, evidence and outputs");
     await user.click(screen.getByRole("menuitemradio", { name: "Lens" }));
     const workspace = await screen.findByLabelText("Chat workspace panel");
     expect(workspace).toHaveAttribute("data-panel-kind", "lens");

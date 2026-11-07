@@ -133,7 +133,7 @@ export function WorkspaceTabBar({
     const right = left + selected.offsetWidth;
     if (left < list.scrollLeft) list.scrollLeft = left;
     else if (right > list.scrollLeft + list.clientWidth) list.scrollLeft = right - list.clientWidth;
-  }, [activeTab?.id, mapSelected, evidenceSelected, workSelected]);
+  }, [activeTab?.id, activeTab && workspaceTabTitle(activeTab), mapSelected, evidenceSelected, workSelected]);
   const evidenceTitle = t("workspaceTabBar.evidence");
   const workTitle = t("workspaceTabBar.work");
 

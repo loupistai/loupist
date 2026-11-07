@@ -69,7 +69,6 @@ type Props = {
   threads: readonly ChatThread[];
   /** A record to open in the reader, e.g. from a receipt segment. */
   initialItem?: string;
-  onBack: () => void;
   onOpenChat: (threadId: string) => void;
   onOpenMap: () => void;
   onChanged?: () => void;
@@ -84,7 +83,7 @@ type Props = {
  * user taught, the methods it learned, and when. Every write is a typed intent
  * that Rust validates; nothing here shows holdings quantities or values.
  */
-export function MemoryPage({ bridge, loupist, threads, initialItem, onBack, onOpenChat, onOpenMap, onChanged, onOpenLink, onOpenKnowledge, onAsk }: Props) {
+export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, onOpenMap, onChanged, onOpenLink, onOpenKnowledge, onAsk }: Props) {
   useTranslation(["knowledge", "onboarding"]);
   const loupistId = loupist.id;
   const [refresh, setRefresh] = useState(0);
@@ -196,7 +195,6 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onBack, onOp
   </section>;
   return <section className="memory-page" aria-label={title} data-segment={current} data-reader-open={compactReader && (current === "history" || Boolean(selected) && current === "pages") || undefined}>
     <header className="memory-page-header">
-      <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeftIcon aria-hidden="true" />{t("memoryPage.back")}</Button>
       <h1>{title}</h1>
       <Button variant="outline" size="sm" data-share-loupist onClick={() => setShare({})}>{i18n.t("sharing:share")}</Button>
     </header>

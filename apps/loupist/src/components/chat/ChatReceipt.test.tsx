@@ -25,7 +25,7 @@ it("lists what the answer learned, put on the map and used in a fixed order, eac
     saved: [{ kind: "Source", items: [saved("Source", "s")] }],
   });
   const receipt = screen.getByRole("navigation", { name: "What this answer used and saved" });
-  expect(receipt).toHaveTextContent("Read 1 source·Learned 3·Map +3 names·1 relationship updated·1 idea·Used 2 pages·Saved 1 source");
+  expect(receipt).toHaveTextContent("Read 1 source·Learned 3·3 names added to the map·1 relationship updated·1 idea·Used 2 pages·Saved 1 source");
   const user = userEvent.setup();
   await user.click(within(receipt).getByRole("button", { name: "Read 1 source" }));
   expect(handlers.onOpenSource).toHaveBeenCalledWith(expect.objectContaining({ id: "q3" }), expect.any(HTMLElement));
@@ -60,7 +60,7 @@ it("says nothing new was saved only when the turn could save", () => {
 it("keeps sources and map growth as plain text where no reader is available", () => {
   render(<ChatReceipt receipt={{ ...empty, readSources: [source("a")], names: 2, empty: false }} showNothingNew={false} listId="list" listExpanded={false} usedListId="used" usedExpanded={false} onToggleUsed={vi.fn()} onSaved={vi.fn()} {...panels} />);
   expect(screen.queryByRole("button")).toBeNull();
-  expect(screen.getByRole("navigation")).toHaveTextContent("·Read 1 source·Map +2 names");
+  expect(screen.getByRole("navigation")).toHaveTextContent("·Read 1 source·2 names added to the map");
 });
 
 it("says a read the answer changed was not saved when Rust could not keep it", () => {

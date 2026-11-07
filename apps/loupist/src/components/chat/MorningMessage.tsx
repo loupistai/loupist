@@ -1,6 +1,7 @@
 import { formatDate, formatNumber, formatTime } from "@/i18n/format";
 import i18n, { useTranslation, Trans } from "@/i18n";
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { ArrowRightIcon } from "lucide-react";
 import type { LoupistBridge, LoupistCapabilityBinding, LoupistTemplateId } from "../../types";
 import type { GrowthEvent, JournalRecord, KnowledgeMap } from "../../contracts/knowledge";
 import type { InboxItem } from "../../contracts/scheduled";
@@ -211,7 +212,7 @@ export function MorningMessage({ bridge, loupistId, loupistName, focus, onAsk, o
   }
 
   const ask = allSettled && message.questions.length ? <section className="morning-ask" aria-label={t("today.youCouldAsk")}>
-    <p className="morning-ask-label">{t("today.youCouldAsk")}</p>
+    <p className={mode === "questions" ? "sr-only" : "morning-ask-label"}>{t("today.youCouldAsk")}</p>
     <ul>{message.questions.map((question, index) => {
       const text = questionText(question);
       const reason = reasonText(question);
@@ -221,11 +222,12 @@ export function MorningMessage({ bridge, loupistId, loupistName, focus, onAsk, o
         <button type="button" className="morning-question" aria-describedby={reason ? reasonId : undefined} onClick={() => onAsk(text)}>
           <span>{text}</span>
           {reason ? <small id={reasonId} aria-hidden="true">{reason}</small> : null}
+          <ArrowRightIcon className="morning-question-go" aria-hidden="true" />
         </button>
       </li>;
     })}</ul>
   </section> : null;
-  if (mode === "questions") return ask ? <div className="morning-ask-only">{ask}</div> : null;
+  if (mode === "questions") return ask ? <div className="morning-ask-only"><h2 className="morning-greeting">{t("today.askGreeting")}</h2>{ask}</div> : null;
   // In a Thread with history, the message appears only when there is news.
   if (mode === "news" && (!allSettled || message.lead.kind !== "count")) return null;
   return (

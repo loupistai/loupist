@@ -32,7 +32,7 @@ or the network couldn't be reached.
 ## Learned line
 
 Under every finished answer one line says what it used and learned, in this order:
-"Read n sources · Learned n · Map +n names · n relationships · n ideas · Used n pages".
+"Read n sources · Learned n · n names added to the map · n relationships · n ideas · Used n pages".
 Only the parts that are not zero appear. Learned counts the sections the answer added,
 replaced or retired, read by message id from `memory_learned`; ideas counts filed pages
 that are ideas. Used counts every Lens page the host delivered, so an Outlook (perspective)

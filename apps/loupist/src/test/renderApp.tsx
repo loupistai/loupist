@@ -68,7 +68,7 @@ export const mainTab = async (name: RegExp) => {
   return screen.findByRole("menuitem", { name: "Scheduled tasks" });
 };
 
-export const newChatButton = () => screen.getByRole("button", { name: /^New chat with / });
+export const newChatButton = () => screen.getByRole("button", { name: "New research" });
 
 export const savedSurface = (name: string) => screen.getByRole("tab", { name });
 

@@ -437,6 +437,10 @@ html[data-desktop-platform="macos"] .app-shell {
 .header-workspace-controls { display:flex; flex:none; align-items:center; gap:var(--gg-space-1); }
 .header-workspace-controls .header-panel-toggle { max-width:180px; gap:var(--gg-space-2); }
 .header-workspace-controls .header-panel-toggle > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.header-panel-menu { min-width:260px; }
+.header-panel-kind { display:grid; gap:2px; min-width:0; padding-block:var(--gg-space-1); }
+.header-panel-kind > strong { font-size:var(--gg-text-control); font-weight:var(--gg-weight-medium); }
+.header-panel-kind > small { color:var(--gg-color-text-secondary); font-size:var(--gg-text-meta); line-height:var(--gg-leading-meta); }
 .header-workspace-divider { width:1px; height:18px; margin-inline:var(--gg-space-1); background:var(--gg-color-border-subtle); }
 .header-workspace-split[aria-pressed="true"] { color:var(--gg-color-text-primary); background:var(--gg-color-bg-selected); box-shadow:inset 0 0 0 1px var(--gg-color-border-subtle); }
 @media (max-width:600px) { .header-workspace-controls .header-panel-toggle { max-width:110px; padding-inline:var(--gg-space-2); } }

@@ -3,9 +3,7 @@
 .navigation-command { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: flex-start; gap: var(--gg-space-2); height: var(--gg-size-control-md); padding-inline: var(--gg-space-2); border-radius: var(--gg-radius-md); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); font-weight: var(--gg-weight-regular); }
 .navigation-command span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .navigation-command kbd { margin-left: auto; flex: none; font: inherit; font-size: var(--gg-text-meta); color: var(--gg-color-text-tertiary); }
-.navigation-new-chat { border-color: var(--gg-color-border-default); background: transparent; color: var(--gg-color-text-primary); }
-.navigation-new-chat:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
-.navigation-search:hover { background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); }
+.navigation-search:hover, .navigation-new:hover:not(:disabled) { background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); }
 .app-navigation [data-slot="sidebar-header"] { gap: var(--gg-space-1); padding: var(--gg-space-2); }
 .loupist-navigation { padding: 0 var(--gg-space-2); }
 .loupist-list-heading { display: flex; align-items: center; justify-content: space-between; min-height: var(--gg-size-control-sm); margin-inline: var(--gg-space-2) 0; }
@@ -90,7 +88,7 @@ button.needs-attention-more:hover { color: var(--gg-color-text-primary); }
   padding-inline: 0;
   align-items: center;
 }
-[data-collapsible="icon"] :is(.loupist-chat-button, #main-tab-settings, .loupist-list-heading button, .navigation-search) {
+[data-collapsible="icon"] :is(.loupist-chat-button, #main-tab-settings, .navigation-new, .navigation-search) {
   width: var(--gg-size-control-md);
   height: var(--gg-size-control-md);
   min-height: var(--gg-size-control-md);

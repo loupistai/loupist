@@ -113,11 +113,14 @@
 .morning-ask { margin-top: var(--gg-space-5); }
 .morning-ask-label { margin: 0 0 var(--gg-space-2); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
 .morning-ask ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--gg-space-2); }
-.morning-question { display: flex; width: 100%; align-items: baseline; gap: var(--gg-space-3); min-height: 44px; padding: var(--gg-space-2) var(--gg-space-3); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-sm); color: var(--gg-color-text-primary); background: transparent; font: inherit; text-align: left; cursor: pointer; }
-.morning-question:hover { border-color: var(--gg-color-border-strong); background: var(--gg-color-bg-hover); }
+.morning-question { display: flex; width: 100%; align-items: center; gap: var(--gg-space-3); min-height: 44px; padding: var(--gg-space-2) var(--gg-space-3); border: 0; border-radius: var(--gg-radius-md); color: var(--gg-color-text-primary); background: var(--gg-color-bg-hover); font: inherit; text-align: left; cursor: pointer; }
+.morning-question:hover, .morning-question:focus-visible { background: var(--gg-color-bg-selected); }
 .morning-question span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .morning-question small { flex: 0 1 auto; min-width: 0; max-width: 45%; overflow: hidden; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); text-overflow: ellipsis; white-space: nowrap; }
 .morning-question:hover small { color: var(--gg-color-text-secondary); }
+.morning-question-go { flex: none; align-self: center; width: 16px; height: 16px; color: var(--gg-color-text-secondary); opacity: 0; }
+.morning-question:is(:hover, :focus-visible) .morning-question-go { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) { .morning-question-go { transition: opacity var(--gg-motion-fast) var(--gg-ease-out); } }
 /* The event strip above the lead: one line per event (date · asset · event), the columns aligned across rows. */
 .morning-upcoming { margin: 0 0 var(--gg-space-3); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
 .morning-upcoming-label { margin: 0 0 var(--gg-space-1); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
@@ -827,11 +830,11 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .composer-shell { position: relative; flex: 0 0 auto; width: min(calc(100% - 2 * var(--chat-gutter, var(--gg-space-5))), var(--gg-size-chat-column)); margin: 0 auto var(--gg-space-2); container: composer / inline-size; }
 .composer { width: 100%; margin: 0; padding: 0; border: 0; border-radius: var(--gg-radius-md); background: transparent; box-shadow: none; }
 .composer [data-slot="input-group"] { height: auto; border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); box-shadow: var(--gg-shadow-xs); }
-/* One stroke on the composer edge. The textarea outline, a focus-colored border and the resting shadow would each draw another contour. */
+/* Calm focus: the edge takes the focus color and a soft halo, without a second contour from the textarea. */
 .composer .composer-prompt textarea:focus-visible { outline: none !important; }
-.composer [data-slot="input-group"]:has(.composer-prompt textarea:focus-visible) { outline: 2px solid var(--gg-color-focus); outline-offset: -2px; border-color: transparent; box-shadow: none; }
+.composer [data-slot="input-group"]:has(.composer-prompt textarea:focus-visible) { border-color: var(--gg-color-focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gg-color-focus) 22%, transparent); }
 @media (forced-colors: active) {
-  .composer [data-slot="input-group"]:has(.composer-prompt textarea:focus-visible) { outline-color: CanvasText; }
+  .composer [data-slot="input-group"]:has(.composer-prompt textarea:focus-visible) { outline: 2px solid CanvasText; outline-offset: -2px; }
 }
 .composer textarea { width: 100%; min-height: 60px; max-height: min(180px, 24dvh); resize: none; padding: 14px var(--gg-space-4) var(--gg-space-2); border: 0; outline: 0; background: transparent; color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: 1.55; }
 .composer-error { margin-bottom: var(--gg-space-2); max-height: 120px; overflow: auto; }
@@ -1787,8 +1790,9 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 .working-note-dialog > .working-note-actions { flex: none; margin: 0; padding: var(--gg-space-3) 18px; background: var(--gg-color-bg-hover); border-top: 1px solid var(--gg-color-border-subtle); }
 /* token-exception: breakpoint; vars unsupported in query conditions */
 @container chat-reading (max-width: 560px) {
-  .morning-question { flex-direction: column; gap: 2px; }
+  .morning-question { flex-direction: column; align-items: stretch; gap: 2px; }
   .morning-question small { max-width: 100%; }
+  .morning-question-go { display: none; }
   .composer-tools { flex: 1 1 auto; }
   .composer-footer { align-items: center; }
   .composer-model-menu { max-width: 190px; }
@@ -1943,8 +1947,10 @@ div.message-action-bar > .answer-correction { order: 1; }
 .thread-link-hop { display: inline-flex; gap: var(--gg-space-1); align-items: baseline; }
 .thread-link-name { font-weight: 600; }
 .thread-link-relation { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
-/* An empty topic Chat offers only the questions. */
+/* An empty topic Chat greets and offers questions, centered in the space above the composer. */
+.morning-ask-only { display: flex; flex: 1 1 auto; flex-direction: column; justify-content: center; width: min(100%, 560px); margin-inline: auto; padding-bottom: var(--gg-space-8); }
 .morning-ask-only .morning-ask { margin-top: 0; }
+.morning-greeting { margin: 0 0 var(--gg-space-5); font-size: var(--gg-text-heading); font-weight: var(--gg-weight-semibold); line-height: 1.3; text-align: center; text-wrap: balance; }
 
 /* Offline (X11): a quiet note at the top of the thread; the composer keeps working and queues. */
 .chat-offline-banner { margin: var(--gg-space-2) auto 0; width: min(calc(100% - 2 * var(--chat-gutter, var(--gg-space-5))), var(--gg-size-chat-column)); padding: var(--gg-space-2) var(--gg-space-3); border-radius: var(--gg-radius-sm); background: var(--gg-color-info-soft); color: var(--gg-color-text-primary); font-size: var(--gg-text-meta); }
