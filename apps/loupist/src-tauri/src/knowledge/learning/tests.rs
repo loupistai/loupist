@@ -890,6 +890,21 @@ fn a_forgotten_section_is_not_evidence() {
 }
 
 #[test]
+fn contested_research_is_not_evidence() {
+    let (_dir, store) = setup();
+    let (a, b) = (source(&store, "Filing A"), source(&store, "Filing B"));
+    // This World holds no such claim, so the section is contested from its first write.
+    let fallen = BasisRef::Claim {
+        claim_id: "claim-fallen".into(),
+    };
+    turn(&store, "chat-1", "m1", 0, &[a.clone(), fallen], AT + 2);
+    assert!(turn(&store, "chat-2", "m2", 1, &[b], AT + 3).is_none());
+    assert!(review_states(&store).is_empty());
+    let c = source(&store, "Filing C");
+    turn(&store, "chat-3", "m3", 2, &[c], AT + 4).expect("an uncontested pair queues");
+}
+
+#[test]
 fn evidence_withdrawn_after_claim_never_publishes() {
     for change in ["undo", "forget", "source_removed"] {
         let (_dir, store) = setup();

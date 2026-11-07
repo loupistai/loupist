@@ -109,14 +109,15 @@ replaced section on an active subject or idea page whose basis cites a span of a
 preserved original: an included publisher, user or tool capture that is not from
 a shared pack, removed or paused. Method pages are never evidence, so a turn's own
 method edits cannot feed learning. A put counts only while it is still that
-section's current state: undoing, forgetting, retiring or replacing it withdraws
-it. Each turn commit checks the Lens log past the evidence watermark
+section's current, uncontested state: undoing, forgetting, retiring or replacing
+it, or the World withdrawing a claim it cites, withdraws it. Each turn commit checks the Lens log past the evidence watermark
 (`through_event` of the last review that reached inference, a log rowid), once
 something was filed after the head the last review read. When that evidence spans
 two pages and two independent Chats, Rust records one pending review. Chats are
 independent when each cites a Source the other never cited, so one Chat, one
 Source, one company's page, or a Chat repeating another's Sources never starts
-one. Rows with a non-empty `world_job_id` come from the earlier claim-count
+one. Two pages about the same company (a subject and an idea page) still count as
+two. Rows with a non-empty `world_job_id` come from the earlier claim-count
 trigger and hold growth-event rowids: they never set the watermark, and startup
 defers any still pending or queued with `trigger_changed`.
 
@@ -133,8 +134,9 @@ attempt, and its Loupist rechecks evidence filed past that attempt's watermark.
 The input lists that evidence newest first as observations: the page, heading,
 up to 600 characters of text and the cited Source titles, with turns and Chats
 as ordinals rather than ids. It first takes the newest observations that pass the
-gate on their own, then fills newest first, so truncation never shows the model
-less breadth than the evidence has. It includes every active principle statement.
+gate on their own, then fills newest first. A review that reaches inference
+consumes its whole window, so observations that did not fit are not offered
+again; the core guarantees only a gate-passing pair, not every case in the window. It includes every active principle statement.
 If those statements do not fit, or they change before publication, the review
 defers and publishes no method. When the evidence no longer passes at claim, the
 review defers with `insufficient_turns`. Publication re-resolves the cited

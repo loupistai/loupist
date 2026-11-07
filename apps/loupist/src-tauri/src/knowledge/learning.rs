@@ -363,10 +363,13 @@ fn evidence(
             };
             bodies.insert(page_id.clone(), body);
         }
+        // The digest leaves out section state, so a section whose World claim
+        // fell keeps its digest; contested research is not evidence.
         let current = bodies[&page_id]
             .as_ref()
             .and_then(LensBody::page)
             .and_then(|p| p.section(&key))
+            .filter(|section| matches!(section.state, super::lens_page::SectionState::Current))
             .map(super::lens_page::section_digest);
         if after_digest.is_none() || current != after_digest {
             continue;
