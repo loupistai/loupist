@@ -9,9 +9,19 @@ export function measureReaderLayout() {
   };
   const shown = element => element && !element.closest('[hidden], [inert], [aria-hidden="true"]') && element.getBoundingClientRect().width > 0;
   const closeButtons = new Map([...document.querySelectorAll('[data-tab-close]')].map(button => [button.dataset.tabClose, button]));
+  const receivesClick = button => {
+    if (!button) return null;
+    const rect = button.getBoundingClientRect();
+    const x = rect.x + rect.width / 2, y = rect.y + rect.height / 2;
+    const strip = button.closest('.workspace-tabs')?.getBoundingClientRect();
+    if (strip && (x < strip.x || x > strip.right)) return null;
+    const hit = document.elementFromPoint(x, y);
+    return hit === button || button.contains(hit);
+  };
   return {
     tabs: [...document.querySelectorAll('.workspace-tab:not(.workspace-tab-fixed)')].filter(shown).map(tab => ({
       tab: box(tab), label: box(tab.querySelector('[role="tab"] > span')), close: box(closeButtons.get(tab.dataset.tabId)),
+      closeReceivesClick: receivesClick(closeButtons.get(tab.dataset.tabId)),
     })),
     readers: [...document.querySelectorAll('.workspace-lens-content .memory-page[data-reader-open]')].filter(shown).map(page => ({
       page: box(page), paneWidth: page.parentElement.clientWidth,
@@ -26,6 +36,7 @@ export function assertReaderLayout(layout, { label = "reader", tolerance = 1.5 }
     if (!tab.label || !tab.close) continue;
     assert.ok(tab.label.right <= tab.close.x + tolerance && tab.label.x >= tab.tab.x - tolerance,
       `${label}: tab title covers its close button ${JSON.stringify(tab)}`);
+    assert.notEqual(tab.closeReceivesClick, false, `${label}: a click on a tab's close button lands on another element ${JSON.stringify(tab)}`);
   }
   for (const item of layout.readers) {
     if (!item.reader) continue;

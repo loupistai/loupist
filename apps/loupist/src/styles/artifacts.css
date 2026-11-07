@@ -311,7 +311,6 @@
   flex: 0 0 auto;
   width: max-content;
   align-items: center;
-  padding-block: var(--gg-space-2) calc(var(--gg-space-2) - 1px);
   color: var(--gg-color-text-secondary);
 }
 
@@ -384,6 +383,8 @@
 }
 
 .workspace-tab-close {
+  /* Positioned like its tab, which shares the grid cell, so it paints above it and takes the click. */
+  position: relative;
   pointer-events: auto;
   justify-self: end;
   align-self: center;
