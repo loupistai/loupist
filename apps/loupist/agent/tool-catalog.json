@@ -4086,7 +4086,7 @@
                       "citation_url": {
                         "type": "string",
                         "maxLength": 256,
-                        "pattern": "^#evidence-"
+                        "pattern": "^#evidence-ev_[0-9a-f]{32}$"
                       }
                     }
                   },
@@ -4157,7 +4157,7 @@
                 "citation_url": {
                   "type": "string",
                   "maxLength": 256,
-                  "pattern": "^#evidence-"
+                  "pattern": "^#evidence-ev_[0-9a-f]{32}$"
                 },
                 "says": {
                   "type": "string",
@@ -4658,7 +4658,7 @@
             "additionalProperties": {
               "type": "string",
               "maxLength": 256,
-              "pattern": "^#evidence-"
+              "pattern": "^#evidence-ev_[0-9a-f]{32}$"
             },
             "description": "For each input you read from a source this turn, its exact citation_url ({\"revenue\": \"#evidence-…\"}). The app checks the number against that source and links the input to it."
           },
