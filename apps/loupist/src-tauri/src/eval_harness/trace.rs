@@ -345,8 +345,12 @@ pub(crate) fn lens_state(
             json!({"key":s["key"],"heading":s["heading"],"markdown":s["markdown"],"chip":s["chip"],"origin":s["origin"],
                 "contested":s["contested"],"basis":ref_kinds,"uncertainty":s["basis"]["uncertainty"]})
         }).collect::<Vec<_>>();
-        let ops = page.history.iter().filter(|e| message_id.is_some() && e.message_id.as_deref() == message_id)
-            .map(|e| json!({"op":e.op,"outcome":e.outcome,"key":e.key,"origin":e.origin})).collect::<Vec<_>>();
+        let ops = page
+            .history
+            .iter()
+            .filter(|e| message_id.is_some() && e.message_id.as_deref() == message_id)
+            .map(|e| json!({"op":e.op,"outcome":e.outcome,"key":e.key,"origin":e.origin}))
+            .collect::<Vec<_>>();
         pages.push(json!({"record_id":page.record_id,"revision_digest":page.revision_digest,"kind":page.kind,
             "title":page.title,"archived":page.archived,"learned":page.learned,"summary":body["summary"],
             "sections":sections,"ops_this_turn":ops}));

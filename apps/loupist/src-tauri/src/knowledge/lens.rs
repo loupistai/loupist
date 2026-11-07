@@ -840,12 +840,9 @@ fn summary_or_title(body: &LensBody, title: &str) -> String {
 
 fn growth_origin(origin: &FilingOrigin) -> Option<Value> {
     match origin {
-        FilingOrigin::Learning {
-            review_id,
-            world_job_id,
-        } => Some(
-            json!({"kind": "learning_review", "reviewId": review_id, "worldJobId": world_job_id}),
-        ),
+        FilingOrigin::Learning { review_id } => {
+            Some(json!({"kind": "learning_review", "reviewId": review_id}))
+        }
         FilingOrigin::Import { pack } => Some(pack.clone()),
         FilingOrigin::Turn { unattended, .. } => {
             unattended.then(|| json!({"kind": "unattended_turn"}))
@@ -2250,7 +2247,6 @@ mod tests {
             &store,
             &FilingOrigin::Learning {
                 review_id: "rev-1".into(),
-                world_job_id: "job-1".into(),
             },
             vec![existing(
                 &id,
@@ -2556,7 +2552,6 @@ mod tests {
             &store,
             &FilingOrigin::Learning {
                 review_id: "r".into(),
-                world_job_id: "j".into(),
             },
             vec![existing(&id, vec![put("facts", "A again", None)])],
             300,
@@ -2586,7 +2581,6 @@ mod tests {
             &store,
             &FilingOrigin::Learning {
                 review_id: "r2".into(),
-                world_job_id: "j".into(),
             },
             vec![existing(
                 &id,

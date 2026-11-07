@@ -494,7 +494,7 @@
   },
   "learning": {
     "heading": "How your Loupist learned this",
-    "learnedOn": "Learned on {{date}} from {{count}} new facts",
+    "learnedOn": "Learned on {{date}} from {{count}} research turns",
     "evidence": "Evidence",
     "showAll": "Show all {{count}}",
     "keep": "Keep",

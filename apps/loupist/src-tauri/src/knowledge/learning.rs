@@ -1,7 +1,9 @@
 //! Durable, tool-free method reviews. No automatic retry after a paid attempt.
 use super::graph_jobs::{load_settings, GraphProcessingSettings};
-use super::lens_page::{Basis, FilingOrigin, LensOp, PageDelta, PageKind, PageTarget, SectionKey};
-use super::{KnowledgeError, KnowledgeResult, KnowledgeWrite, WorldSnapshotBody};
+use super::lens_page::{
+    Basis, BasisRef, FilingOrigin, LensOp, PageDelta, PageKind, PageTarget, SectionKey,
+};
+use super::{KnowledgeError, KnowledgeResult, KnowledgeWrite};
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -94,11 +96,11 @@ fn enabled(
         && !s.paused
         && !s.inactive_loupists.iter().any(|g| g == loupist))
 }
-/// Called within World publication; growth rowids form a durable, same-timestamp-safe watermark.
-pub(super) fn enqueue(
+/// Called at every turn commit and after every settle; lens-log rowids form a
+/// durable, same-timestamp-safe watermark (`through_event`).
+pub(crate) fn enqueue(
     tx: &Transaction<'_>,
     loupist: &str,
-    world_job: &str,
     now: i64,
 ) -> KnowledgeResult<Option<String>> {
     let s = load_settings(tx, loupist)?;
@@ -117,30 +119,26 @@ pub(super) fn enqueue(
         [loupist],
         |r| r.get(0),
     )?;
-    let (count,end):(i64,i64)=tx.query_row("SELECT COUNT(*),COALESCE(MAX(rowid),0) FROM knowledge_growth_events WHERE loupist_id=?1 AND rowid>?2 AND kind IN ('claim_added','claim_disputed')",params![loupist,through],|r|Ok((r.get(0)?,r.get(1)?)))?;
-    if count < 5 {
+    let end = log_head(tx, loupist)?;
+    if !recurs(&evidence(tx, loupist, through, end)?) {
         return Ok(None);
     }
     let id = super::model::mint_id("lrn");
-    tx.execute("INSERT INTO knowledge_learning_reviews(review_id,loupist_id,world_job_id,status,created_at_ms,through_event,settings_json,call_budget) VALUES (?1,?2,?3,'pending',?4,?5,?6,?7)",params![id,loupist,world_job,now,end,serde_json::to_string(&s)?,s.max_llm_calls.min(1)])?;
+    // world_job_id is kept, written empty, so existing folders open without a schema bump.
+    tx.execute("INSERT INTO knowledge_learning_reviews(review_id,loupist_id,world_job_id,status,created_at_ms,through_event,settings_json,call_budget) VALUES (?1,?2,'','pending',?3,?4,?5,?6)",params![id,loupist,now,end,serde_json::to_string(&s)?,s.max_llm_calls.min(1)])?;
     admit_pending(tx, loupist, now)
 }
 
-fn world_busy(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<bool> {
+fn log_head(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<i64> {
     Ok(tx.query_row(
-        "SELECT EXISTS(SELECT 1 FROM knowledge_graph_outbox WHERE loupist_id=?1 AND status IN ('queued','running'))",
-        [loupist], |r| r.get(0),
+        "SELECT COALESCE(MAX(rowid),0) FROM knowledge_lens_log WHERE loupist_id=?1",
+        [loupist],
+        |r| r.get(0),
     )?)
 }
 
 /// Pending work does not consume the evidence watermark or a rate-limit slot.
-/// Admission and the final World commit share the same SQLite transaction.
 fn admit_pending(tx: &Transaction<'_>, loupist: &str, now: i64) -> KnowledgeResult<Option<String>> {
-    if world_busy(tx, loupist)? {
-        // A new batch may arrive after admission but before the inference claim.
-        tx.execute("UPDATE knowledge_learning_reviews SET status='pending' WHERE loupist_id=?1 AND status='queued'", [loupist])?;
-        return Ok(None);
-    }
     let id: Option<String> = tx.query_row(
         "SELECT review_id FROM knowledge_learning_reviews WHERE loupist_id=?1 AND status='pending'",
         [loupist], |r| r.get(0),
@@ -149,8 +147,8 @@ fn admit_pending(tx: &Transaction<'_>, loupist: &str, now: i64) -> KnowledgeResu
     if rate_limit_until(tx, loupist)? > now {
         return Ok(None);
     }
-    // Include every claim committed while the review waited for the batch.
-    tx.execute("UPDATE knowledge_learning_reviews SET status='queued',created_at_ms=?2,through_event=COALESCE((SELECT MAX(rowid) FROM knowledge_growth_events WHERE loupist_id=?3 AND kind IN ('claim_added','claim_disputed')),through_event) WHERE review_id=?1 AND status='pending'", params![id,now,loupist])?;
+    // Include every filing committed while the review waited.
+    tx.execute("UPDATE knowledge_learning_reviews SET status='queued',created_at_ms=?2,through_event=?3 WHERE review_id=?1 AND status='pending'", params![id,now,log_head(tx, loupist)?])?;
     Ok(Some(id))
 }
 fn rate_limit_until(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<i64> {
@@ -163,8 +161,8 @@ fn rate_limit_until(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<i64>
     Ok(cooldown.max(daily))
 }
 
-/// Wake at a pending review's next rate-limit boundary even if no new World
-/// publication arrives. Startup reconstructs the same deadline from SQLite.
+/// Wake at a pending review's next rate-limit boundary even if no later turn
+/// is filed. Startup reconstructs the same deadline from SQLite.
 pub(super) fn next_wake_at(tx: &Transaction<'_>, now: i64) -> KnowledgeResult<Option<i64>> {
     let mut q =
         tx.prepare("SELECT loupist_id FROM knowledge_learning_reviews WHERE status='pending'")?;
@@ -181,33 +179,174 @@ pub(super) fn next_wake_at(tx: &Transaction<'_>, now: i64) -> KnowledgeResult<Op
     Ok(next)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Method {
     record_id: String,
     title: String,
     applicability: String,
-    #[serde(skip_serializing, default)]
+    #[serde(skip)]
     digests: BTreeMap<String, String>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Claim {
-    claim_id: String,
-    entity_names: Vec<String>,
-    claim_text: String,
-    source_date: Option<String>,
-    #[serde(skip_serializing)]
-    entities: Vec<String>,
+/// A retained Source span a turn filed as a section's basis.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct SpanRef {
+    record_id: String,
+    revision_digest: String,
+    span_id: String,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// One research section a turn filed, citing at least one preserved original.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Observation {
+    id: String,
+    turn: String,
+    chat: String,
+    page: String,
+    kind: String,
+    heading: String,
+    text: String,
+    sources: Vec<String>,
+    #[serde(skip)]
+    chat_id: String,
+    #[serde(skip)]
+    message_id: String,
+    #[serde(skip)]
+    page_id: String,
+    #[serde(skip)]
+    spans: Vec<SpanRef>,
+}
+/// The method-learning gate: distinct turns from at least two Chats citing at
+/// least two Sources. One Chat, or many citing one Source, is too narrow to generalize.
+fn recurs<'a>(observations: impl IntoIterator<Item = &'a Observation>) -> bool {
+    let (mut turns, mut chats, mut sources) = (BTreeSet::new(), BTreeSet::new(), BTreeSet::new());
+    for o in observations {
+        turns.insert(&o.message_id);
+        chats.insert(&o.chat_id);
+        sources.extend(o.spans.iter().map(|s| &s.record_id));
+    }
+    turns.len() >= 2 && chats.len() >= 2 && sources.len() >= 2
+}
+/// Turn puts in (after, through], newest first, on active subject, idea and
+/// method pages, keeping only spans whose Source preserves an original.
+fn evidence(
+    tx: &Transaction<'_>,
+    loupist: &str,
+    after: i64,
+    through: i64,
+) -> KnowledgeResult<Vec<Observation>> {
+    let controls = super::memory_controls::load(tx, loupist)?;
+    let hidden = |id: &str| controls.paused.contains(id) || controls.removed.contains(id);
+    let mut original = tx.prepare(
+        "SELECT s.title FROM knowledge_source_spans sp
+         JOIN knowledge_source_representations r ON r.record_id=sp.record_id AND r.representation_id=sp.representation_id
+         JOIN knowledge_source_captures c ON c.record_id=sp.record_id AND c.capture_id=sp.capture_id
+         JOIN knowledge_sources s ON s.record_id=c.record_id AND s.source_id=c.source_id
+         WHERE sp.record_id=?1 AND sp.span_id=?2
+           AND r.role IN ('original','provider_payload','extracted_text','structured','excerpt')
+           AND c.coverage LIKE 'included_%' AND c.authorship IN ('publisher','user','tool')
+           AND s.provider_identity NOT LIKE 'shared_pack:%'",
+    )?;
+    let mut q = tx.prepare(
+        "SELECT l.op_id,l.op_json,l.chat_id,l.message_id,l.record_id,m.title,m.kind
+         FROM knowledge_lens_log l JOIN knowledge_lens_metadata m ON m.record_id=l.record_id
+         WHERE l.loupist_id=?1 AND l.rowid>?2 AND l.rowid<=?3 AND l.origin='turn'
+           AND l.outcome IN ('added','replaced') AND l.chat_id IS NOT NULL AND l.message_id IS NOT NULL
+           AND m.kind IN ('subject','idea','method') AND m.archived_at_ms IS NULL
+         ORDER BY l.rowid DESC",
+    )?;
+    let rows = q
+        .query_map(params![loupist, after, through], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, String>(5)?,
+                r.get::<_, String>(6)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let (mut turns, mut chats) = (BTreeMap::new(), BTreeMap::new());
+    let mut out = Vec::new();
+    for (id, op, chat_id, message_id, page_id, page, kind) in rows {
+        if hidden(&page_id) {
+            continue;
+        }
+        let LensOp::Put {
+            heading,
+            markdown,
+            basis,
+            ..
+        } = serde_json::from_str(&op)?
+        else {
+            continue;
+        };
+        let (mut spans, mut sources) = (Vec::new(), Vec::new());
+        for r in basis.refs {
+            let BasisRef::Span {
+                record_id,
+                revision_digest,
+                span_id,
+            } = r
+            else {
+                continue;
+            };
+            if hidden(&record_id) {
+                continue;
+            }
+            let Some(title) = original
+                .query_row(params![record_id, span_id], |r| r.get::<_, String>(0))
+                .optional()?
+            else {
+                continue;
+            };
+            if !sources.contains(&title) {
+                sources.push(title);
+            }
+            spans.push(SpanRef {
+                record_id,
+                revision_digest,
+                span_id,
+            });
+        }
+        if spans.is_empty() {
+            continue;
+        }
+        let n = turns.len() + 1;
+        let turn = turns
+            .entry(message_id.clone())
+            .or_insert_with(|| format!("t{n}"));
+        let n = chats.len() + 1;
+        let chat = chats
+            .entry(chat_id.clone())
+            .or_insert_with(|| format!("c{n}"));
+        out.push(Observation {
+            id,
+            turn: turn.clone(),
+            chat: chat.clone(),
+            page,
+            kind,
+            heading,
+            text: markdown.trim().chars().take(600).collect(),
+            sources,
+            chat_id,
+            message_id,
+            page_id,
+            spans,
+        });
+    }
+    Ok(out)
+}
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct Input {
     loupist_name: String,
     focus: String,
     principles: Vec<String>,
     methods: Vec<Method>,
-    claims: Vec<Claim>,
+    observations: Vec<Observation>,
 }
 impl Input {
     fn text(&self) -> KnowledgeResult<String> {
@@ -233,7 +372,7 @@ fn build_input(
         focus: focus.chars().take(1200).collect(),
         principles,
         methods: vec![],
-        claims: vec![],
+        observations: vec![],
     };
     // Never silently omit a principle. If all cannot fit, defer without inference.
     if input.text()?.chars().count() > MAX_INPUT {
@@ -279,46 +418,11 @@ fn build_input(
             break;
         }
     }
-    let body:Option<String>=tx.query_row("SELECT s.snapshot_json FROM knowledge_world_snapshots s JOIN knowledge_record_heads h ON h.revision_id=s.revision_id JOIN knowledge_records r ON r.record_id=h.record_id WHERE r.owner_loupist_id=?1 AND r.kind='world'",[loupist],|r|r.get(0)).optional()?;
-    if let Some(body) = body {
-        let body: WorldSnapshotBody = serde_json::from_str(&body)?;
-        let claims: BTreeMap<_, _> = body.claims.iter().map(|c| (c.id.as_str(), c)).collect();
-        let names: BTreeMap<_, _> = body
-            .nodes
-            .iter()
-            .map(|n| (n.id.as_str(), n.name.as_str()))
-            .collect();
-        let mut q=tx.prepare("SELECT subject_id FROM knowledge_growth_events WHERE loupist_id=?1 AND rowid>?2 AND rowid<=?3 AND kind IN ('claim_added','claim_disputed') GROUP BY subject_id ORDER BY MAX(at_ms) DESC,MAX(rowid) DESC LIMIT 60")?;
-        for id in q.query_map(params![loupist, start, end], |r| r.get::<_, String>(0))? {
-            let id = id?;
-            let Some(c) = claims.get(id.as_str()) else {
-                continue;
-            };
-            if c.status == super::ClaimStatus::Withdrawn {
-                continue;
-            }
-            let entities: Vec<_> = c
-                .endpoints
-                .iter()
-                .map(|e| e.node_id.clone())
-                .collect::<BTreeSet<_>>()
-                .into_iter()
-                .collect();
-            let entity_names = entities
-                .iter()
-                .filter_map(|id| names.get(id.as_str()).map(|n| (*n).to_owned()))
-                .collect();
-            input.claims.push(Claim {
-                claim_id: id,
-                entity_names,
-                claim_text: c.proposition.clone(),
-                source_date: c.publication_time.as_ref().and_then(|t| t.value.clone()),
-                entities,
-            });
-            if input.text()?.chars().count() > MAX_INPUT {
-                input.claims.pop();
-                break;
-            }
+    for o in evidence(tx, loupist, start, end)? {
+        input.observations.push(o);
+        if input.text()?.chars().count() > MAX_INPUT {
+            input.observations.pop();
+            break;
         }
     }
     Ok(input)
@@ -343,7 +447,7 @@ struct Output {
     limitations: String,
     #[serde(default)]
     markdown: String,
-    evidence_claim_ids: Vec<String>,
+    evidence_ids: Vec<String>,
     rationale: String,
 }
 impl Output {
@@ -358,7 +462,7 @@ impl Output {
         ]
     }
 
-    fn ops(&self, read: &BTreeMap<String, String>) -> KnowledgeResult<Vec<LensOp>> {
+    fn ops(&self, read: &BTreeMap<String, String>, basis: &Basis) -> KnowledgeResult<Vec<LensOp>> {
         let section = |key: &str, heading: &str, text: String| -> KnowledgeResult<LensOp> {
             let key = SectionKey::new(key)?;
             let expected = read.get(key.as_str()).cloned();
@@ -369,7 +473,7 @@ impl Output {
                     .chars()
                     .take(super::lens_page::MAX_SECTION_CHARS)
                     .collect(),
-                basis: Basis::default(),
+                basis: basis.clone(),
                 expected,
             })
         };
@@ -402,7 +506,6 @@ impl Output {
 pub(super) struct Attempt {
     pub review_id: String,
     pub loupist_id: String,
-    pub world_job_id: String,
     pub input: Input,
     pub settings: GraphProcessingSettings,
 }
@@ -418,11 +521,8 @@ pub(super) fn claim(
         return Ok(None);
     }
     admit_pending(tx, loupist, now)?;
-    if world_busy(tx, loupist)? {
-        return Ok(None);
-    }
-    let row:Option<(String,String,i64,String,u32)>=tx.query_row("SELECT review_id,world_job_id,through_event,settings_json,call_budget FROM knowledge_learning_reviews WHERE loupist_id=?1 AND status='queued' ORDER BY created_at_ms LIMIT 1",[loupist],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).optional()?;
-    let Some((id, world_job_id, end, frozen, budget)) = row else {
+    let row:Option<(String,i64,String,u32)>=tx.query_row("SELECT review_id,through_event,settings_json,call_budget FROM knowledge_learning_reviews WHERE loupist_id=?1 AND status='queued' ORDER BY created_at_ms LIMIT 1",[loupist],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional()?;
+    let Some((id, end, frozen, budget)) = row else {
         return Ok(None);
     };
     // Frozen zero budgets wait just like World chunks; settings alone do not authorize a paid retry.
@@ -450,12 +550,12 @@ pub(super) fn claim(
         }
         Err(e) => return Err(e),
     };
-    if input.claims.len() < 2 {
+    if !recurs(&input.observations) {
         settle(
             tx,
             &id,
             "deferred",
-            Some("insufficient_claims"),
+            Some("insufficient_turns"),
             None,
             None,
             0,
@@ -467,7 +567,6 @@ pub(super) fn claim(
     Ok(Some(Attempt {
         review_id: id,
         loupist_id: loupist.into(),
-        world_job_id,
         input,
         settings: s,
     }))
@@ -483,7 +582,9 @@ fn settle(
     count: usize,
     now: i64,
 ) -> KnowledgeResult<()> {
-    tx.execute("UPDATE knowledge_learning_reviews SET status=?2,reason=?3,lens_record_id=?4,rationale=?5,evidence_count=?6,finished_at_ms=?7 WHERE review_id=?1",params![id,status,reason,lens,rationale,count as i64,now])?;
+    let loupist: String = tx.query_row("UPDATE knowledge_learning_reviews SET status=?2,reason=?3,lens_record_id=?4,rationale=?5,evidence_count=?6,finished_at_ms=?7 WHERE review_id=?1 RETURNING loupist_id",params![id,status,reason,lens,rationale,count as i64,now],|r|r.get(0))?;
+    // Filings committed after this review's watermark start the next one without another turn.
+    enqueue(tx, &loupist, now)?;
     Ok(())
 }
 pub(super) fn recover(tx: &Transaction<'_>) -> KnowledgeResult<()> {
@@ -598,14 +699,21 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
     {
         return Err(invalid());
     }
-    let ids: BTreeSet<_> = o.evidence_claim_ids.iter().collect();
-    if ids.len() < 2
-        || ids
-            .iter()
-            .any(|id| !a.input.claims.iter().any(|c| &c.claim_id == *id))
-    {
+    let ids: BTreeSet<_> = o.evidence_ids.iter().collect();
+    let cited: Vec<_> = a
+        .input
+        .observations
+        .iter()
+        .filter(|c| ids.contains(&c.id))
+        .collect();
+    if cited.len() != ids.len() || !recurs(cited.iter().copied()) {
         return Err(invalid());
     }
+    let turns = cited
+        .iter()
+        .map(|c| &c.message_id)
+        .collect::<BTreeSet<_>>()
+        .len();
     if o.texts().iter().any(|s| s.trim().is_empty()) {
         return Err(invalid());
     }
@@ -624,7 +732,7 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
             Some("principles_changed"),
             None,
             Some(&o.rationale),
-            ids.len(),
+            turns,
             now,
         );
     }
@@ -663,11 +771,10 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
         &a.loupist_id,
         &FilingOrigin::Learning {
             review_id: a.review_id.clone(),
-            world_job_id: a.world_job_id.clone(),
         },
         vec![PageDelta {
             target,
-            ops: o.ops(&head)?,
+            ops: o.ops(&head, &span_basis(&cited))?,
         }],
         now,
     )?;
@@ -687,15 +794,17 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
             Some("method_unchanged"),
             None,
             Some(&o.rationale),
-            ids.len(),
+            turns,
             now,
         );
     }
     let record_id = page.record_id;
     let mut entities = BTreeMap::<String, usize>::new();
-    for c in a.input.claims.iter().filter(|c| ids.contains(&c.claim_id)) {
-        for e in &c.entities {
-            *entities.entry(e.clone()).or_default() += 1;
+    let pages: BTreeSet<_> = cited.iter().map(|c| &c.page_id).collect();
+    let mut subjects = write.tx.prepare("SELECT node_id FROM knowledge_lens_anchors WHERE record_id=?1 AND role='subject' AND node_id IS NOT NULL")?;
+    for page in pages {
+        for node in subjects.query_map([page], |r| r.get::<_, String>(0))? {
+            *entities.entry(node?).or_default() += 1;
         }
     }
     let mut entities: Vec<_> = entities.into_iter().collect();
@@ -716,9 +825,30 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
         stale.then_some("stale_head_folded"),
         Some(&record_id),
         Some(&o.rationale),
-        ids.len(),
+        turns,
         now,
     )
+}
+
+/// The cited spans, one per Source first, so a capped basis still shows every Source it can.
+fn span_basis(cited: &[&Observation]) -> Basis {
+    let spans: BTreeSet<&SpanRef> = cited.iter().flat_map(|c| &c.spans).collect();
+    let mut seen = BTreeSet::new();
+    let (first, rest): (Vec<_>, Vec<_>) =
+        spans.into_iter().partition(|s| seen.insert(&s.record_id));
+    Basis {
+        refs: first
+            .into_iter()
+            .chain(rest)
+            .take(super::lens_page::MAX_BASIS_REFS)
+            .map(|s| BasisRef::Span {
+                record_id: s.record_id.clone(),
+                revision_digest: s.revision_digest.clone(),
+                span_id: s.span_id.clone(),
+            })
+            .collect(),
+        uncertainty: None,
+    }
 }
 
 #[cfg(test)]

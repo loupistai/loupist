@@ -104,22 +104,33 @@ Archiving releases the title; restoring refuses a taken one.
 ### Method learning
 
 Method learning defaults on. It also requires World processing and Memory saving
-to stay enabled, and the Loupist must not be paused. After at least five added or
-disputed claims since the previous review, Rust records one pending review. The
-review stays pending until that Loupist has no queued or running World jobs. It is
-admitted at most once every six hours and four times in a rolling day, using
-the selected World model on the same isolated inference path as World processing.
-Pending work survives restart, includes claims committed while the batch drains,
-and wakes at the next permitted time even if no later World publication arrives.
-A paid or uncertain attempt is not retried automatically. A review left running
-at startup is marked a failed uncertain attempt.
+to stay enabled, and the Loupist must not be paused. Evidence is a turn's added or
+replaced section on an active subject, idea or method page whose basis cites a
+span of a preserved original: an included publisher, user or tool capture that
+is not from a shared pack, removed or paused. Each turn commit checks the Lens
+log past the last review's watermark (`through_event`, a log rowid). When that
+evidence spans at least two turns in two Chats citing two Sources, Rust records
+one pending review; turns of one Chat, or Chats citing one Source, never start
+one. It is admitted at most once every six hours and four times in a rolling day,
+using the selected World model on the same isolated inference path as World
+processing. Pending work survives restart, includes turns filed while it waits,
+and wakes at the next permitted time even if no later turn arrives. A settled
+review rechecks evidence filed past its watermark. A paid or uncertain attempt is
+not retried automatically. A review left running at startup is marked a failed
+uncertain attempt.
 
-Publication requires at least two cited claims from that review's input. The
-input includes every active principle statement. If those statements do not fit,
-or they change before publication, the review defers and publishes no method. A
-publication files a method page through `KnowledgeWrite::file` with origin
-`learning`: the model's six fields become the summary and the sections `use-when`
-(with assumptions), `steps`, `checks` and `limits`. A refine puts those sections
+The input lists that evidence newest first as observations: the page, heading,
+up to 600 characters of text and the cited Source titles, with turns and Chats
+as ordinals rather than ids. It includes every active principle statement. If
+those statements do not fit, or they change before publication, the review
+defers and publishes no method. When the evidence no longer passes at claim, the
+review defers with `insufficient_turns`. Publication requires cited observations
+that pass the same two-Chat, two-Source check. A publication files a method page
+through `KnowledgeWrite::file` with origin `learning`: the model's six fields
+become the summary and the sections `use-when` (with assumptions), `steps`,
+`checks` and `limits`, each with a basis of the cited spans (at most eight, one
+per Source first). Its applied anchors are the subject anchors of the pages the
+cited observations were filed on. A refine puts those sections
 with the digests the review read; a section the user changed since is skipped and
 the review's reason reads `stale_head_folded`. A publication that changes nothing
 defers with `method_unchanged`.

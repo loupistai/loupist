@@ -1160,7 +1160,6 @@ pub enum FilingOrigin {
     },
     Learning {
         review_id: String,
-        world_job_id: String,
     },
     Import {
         pack: Value,
