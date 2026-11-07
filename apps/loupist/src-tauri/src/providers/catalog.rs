@@ -1104,6 +1104,34 @@ pub(crate) fn saved_credential_values(agent_data_dir: &Path) -> Vec<String> {
     values
 }
 
+/// Removes one provider's saved sign-in grant (`type: "oauth"`) from Pi's
+/// private `auth.json`. An API key for the same provider stays. Returns
+/// whether a grant was removed.
+pub(crate) fn delete_saved_oauth_credential(
+    agent_data_dir: &Path,
+    provider: &str,
+) -> Result<bool, CommandError> {
+    let path = agent_data_dir.join("auth.json");
+    let mut auth = read_auth_map(&path)?;
+    let is_grant = auth
+        .get(provider)
+        .and_then(|value| value.get("type"))
+        .and_then(Value::as_str)
+        == Some("oauth");
+    if !is_grant {
+        return Ok(false);
+    }
+    auth.remove(provider);
+    let io = || CommandError::internal("Pi auth file could not be saved");
+    let bytes = serde_json::to_vec_pretty(&auth).map_err(|_| io())?;
+    let mut temporary = tempfile::NamedTempFile::new_in(agent_data_dir).map_err(|_| io())?;
+    std::io::Write::write_all(&mut temporary, &bytes).map_err(|_| io())?;
+    temporary.as_file().sync_all().map_err(|_| io())?;
+    temporary.persist(&path).map_err(|_| io())?;
+    ensure_private_regular_file(&path).map_err(|_| io())?;
+    Ok(true)
+}
+
 fn read_auth_map(path: &Path) -> Result<Map<String, Value>, CommandError> {
     if !path.exists() {
         return Ok(Map::new());
