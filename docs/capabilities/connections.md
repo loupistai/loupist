@@ -35,6 +35,12 @@ captured authority at admission. Save, verification and visible snapshot refresh
 are separate outcomes; UI errors must distinguish them. MCP errors use bounded
 recovery categories, not raw credential-bearing provider payloads.
 
+Setup can start from Chat. When the user asks for a data source that is not loaded, or
+offers a key, the agent calls [`connection_setup`](../agent/turn-tools.md#turn-tools) and
+the answer shows a [setup card](../ui/chat-composer.md#chat-composer) that opens this same
+setup dialog or turns the connection on for the Loupist; the key is entered in the
+dialog, never in the conversation, and the connection works from the next message.
+
 ## Custom connections
 
 Users can add their own MCP data sources under Settings → Connections → Your connections.

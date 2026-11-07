@@ -14,7 +14,7 @@ are agent-facing capability IDs. Static contracts are in `agent/tool-catalog.jso
 | `datasets` | `dataset_describe`, `dataset_query`, `dataset_export`, `dataset_import` |
 | `calculations` | `calculate` |
 | `charts` | `chart_query`, `chart_publish`, `grid_publish` ([grid cells](../analysis/grids.md#grid-cells)) |
-| `openbb` | `mcp__openbb__*` reads; nine common price, fundamentals, dividend and filing tools are active on load, others after discovery/activation |
+| `openbb` | `mcp__openbb__*` reads; nine common price, fundamentals, dividend and filing tools are active on load, the curated rest by name through `activate_tools`, others after discovery; a warm Chat gets back exactly the set its last turn ended with |
 | `world-bank` | `worldbank_series` |
 | `onchain` | `defillama_read` (the wallet entry has no agent tool) |
 | `krx` | `krx_daily_quote` |
@@ -26,7 +26,8 @@ Market data bundles its runtime/provider packages: base `openbb` plus only the e
 keyless providers and is enabled for new Loupists; SEC additionally requires its
 configured contact email. Without it, runs leave the SEC provider out and the load
 result carries a model-visible notice that SEC is unavailable until the user adds
-the email in Connections. Credentialed providers have separate entries. New
+the email, naming `connection_setup` with the entry id so the model can offer the
+[setup card](connections.md#connections-and-credentials). Credentialed providers have separate entries. New
 Loupists enable only keyless entries without required setup: Market data platform, World
 Bank, DefiLlama and Web Research. Public blockchains is host-only: it starts disabled and
 turns on for every Loupist when the user adds the first wallet address, and a later
@@ -76,14 +77,22 @@ modified time. Anthropic native search uses the basic `web_search_20250305` tool
 on the cheapest available model (Haiku 5.5 first, at low effort) with
 `max_uses: 3`. Absolute `page_age` text becomes a date.
 
-The host writes each OpenBB tool description
-(`apps/loupist/src-tauri/src/commands/tool_executor/mcp_host/openbb.rs`):
-what the route returns, key arguments, granted providers with official sources
-first, the cutoff note for dated routes and the host-handled `max_age`. Scraped
-providers (yfinance, finviz, seeking_alpha, stockgrid, multpl, wsj) are labeled
-best effort. Their failures come from individual requests (layout changes,
-consent walls, blocking), so there is no active health probe: the first failure
-of one in a turn returns a hint to use an official provider instead of retrying.
+The host writes each OpenBB tool card
+(`apps/loupist/src-tauri/src/commands/tool_executor/mcp_host/openbb.rs`). The
+description says what the route returns, key arguments, granted providers with
+official sources first, the cutoff note for dated routes and the host-handled
+`max_age`. The parameter schema is pruned to the run's enabled providers: a
+property whose upstream title names only other providers is dropped (with its
+`required` entry), vendor keys (`x-widget_config`, provider-keyed `choices`) and
+titles are removed, description sentences marked for other providers go, and an
+enabled provider's single-value choices become the property's enum. The nine
+default cards fall from 21,860 to about 7,200 bytes for the keyless providers.
+No model-facing text names the runtime; the model and the user see "market
+data", and the capability index lists no provider ids. Scraped providers
+(yfinance, finviz, seeking_alpha, stockgrid, multpl, wsj) are labeled best
+effort. Their failures come from individual requests (layout changes, consent
+walls, blocking), so there is no active health probe: the first failure of one
+in a turn returns a hint naming only official providers enabled for the run.
 
 Sequential turns with matching Loupist/authority can reuse a warm OpenBB process.
 The host resets its tools to the control surface before reuse; concurrent turns

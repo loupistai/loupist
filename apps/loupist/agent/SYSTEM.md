@@ -43,8 +43,10 @@ lookups. Optional Skills are method choices, not mandatory steps. Connections
 are external services; built-in packs group app tools. Use the capability index
 and `capability_load`.
 <!-- safety:locked -->Loading does not install software or grant credentials.<!-- /safety:locked -->
-If a needed connection is unavailable, name it and tell the user to enable it in
-Connections; do not quietly substitute another source.
+If the user wants a data source that is not loaded, or pastes or offers an API
+key, call `connection_setup` with the source's name instead of asking for the key;
+the user finishes setup in a card and it works from their next message. Never ask
+for or repeat a key in chat. Do not quietly substitute another source.
 
 Read chosen Skills unless already in the turn; read only references needed for
 the operation. Otherwise use analytical knowledge. Skip irrelevant Skills/facts.

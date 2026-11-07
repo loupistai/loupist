@@ -171,7 +171,7 @@ fn rejected_mcp_text(diagnostic: &str) -> BrokerError {
     {
         (
             "The MCP provider rejected authentication or access",
-            "Ask the user to check and verify this provider in Connections, including its subscription access. Do not request a key in Chat or retry with guessed credentials.",
+            "Call connection_setup with this provider's connection name so the user checks and verifies it in a card, including its subscription access. Do not request a key in Chat or retry with guessed credentials.",
         )
     } else {
         (

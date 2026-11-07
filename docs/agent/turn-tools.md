@@ -113,6 +113,21 @@ are listed in `skippedKinds`. `SYSTEM.md` tells the agent to call it in the repl
 the user says what they research, what to follow or picks a starting point, and never
 to send them to settings.
 
+`connection_setup` (core, Bot and research sessions only, three calls per reply) takes
+one `id`: a catalog entry id (`fred.macro`), the entry's English or Korean display name
+(case-insensitive), or a plugin name that owns exactly one entry
+(`marketplace/entry_lookup.rs`). No field can carry a secret, and an `id` that looks
+like a key is refused. A miss lists up to twelve `id (name)` candidates. The result is
+`{status: "card_shown", id, name, state, notice}`, where `state` is `needs_setup`
+(connector not ready), `off_here` (ready, binding off for this Loupist) or `ready`,
+and the notice tells the model the user enters any key in the card, never to ask for
+or repeat one, and that the connection works from the next message because a turn's
+authority is sealed at start. The progress step's target is the resolved entry id,
+which the renderer reads to draw the [setup card](../ui/chat-composer.md#chat-composer);
+a failed step draws nothing. `SYSTEM.md`, the capability index, `resolveCapability`,
+the provider setup notices and the KRX approval text all name this tool instead of
+sending the user to Connections.
+
 `thesis_update` (Memory save, staged until the reply commits) takes `assetId`, 1–3
 `evidence` citation URLs from the turn and either `to` with a `reason` (≤ 280
 characters, optional `reasonId`) or `lineReading {journalId, observed}`; its result

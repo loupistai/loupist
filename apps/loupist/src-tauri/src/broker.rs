@@ -1369,7 +1369,7 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
 fn error_body(error: &BrokerError) -> Value {
     if let BrokerError::ProviderApprovalRequired { provider, services } = error {
         return json!({"code":"needs_approval", "message":error.to_string(), "retryable":false,
-            "next":"Check this key and request the missing service approvals in the provider's portal, then verify it in Connections. Use an approved market or another source meanwhile.",
+            "next":"The user requests the missing service approvals in the provider's portal, then verifies the key: call connection_setup with {id: \"krx.market-data\"} so they can do it from a card. Use an approved market or another source meanwhile.",
             "connection_id":provider, "services":services, "reason":"provider_service_approval"});
     }
     if let BrokerError::CustomApprovalRequired {
