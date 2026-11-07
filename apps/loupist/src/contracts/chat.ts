@@ -435,7 +435,7 @@ export type ChatEvidenceRef = {
 export type ChatFeedback = { rating: "up" | "down" | null; correction: string | null; updatedAt: number };
 export type ChatFeedbackRequest = { loupist_id: string; thread_id: string; message_id: string; rating: ChatFeedback["rating"]; correction: string | null };
 
-export type ChatFailureKind = "empty_reply" | "provider_error" | "rate_limited" | "needs_reconnect" | "plan_limit" | "plan_not_eligible" | "extra_usage_off" | "out_of_credit" | "model_gone" | "offline" | "provider_unavailable" | "context_too_long" | "provider_timeout" | "pi_exited" | "protocol_error" | "output_limit" | "memory_commit_failed" | "store_failed" | "cancelled_by_conflict" | "other";
+export type ChatFailureKind = "empty_reply" | "provider_error" | "rate_limited" | "needs_reconnect" | "plan_limit" | "plan_not_eligible" | "out_of_credit" | "model_gone" | "offline" | "provider_unavailable" | "context_too_long" | "provider_timeout" | "pi_exited" | "protocol_error" | "output_limit" | "memory_commit_failed" | "store_failed" | "cancelled_by_conflict" | "other";
 
 export type ChatToolRefusal = { connection_id: string; connection_name: string; tool_name: string; reason: "needs_approval" | "blocked_unattended" | "taint" | "sensitive_memory" | "declined" };
 

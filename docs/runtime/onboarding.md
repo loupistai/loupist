@@ -5,15 +5,16 @@ Creating or importing a Loupist finishes on that Loupist's Chat. A save failure 
 ### Onboarding
 
 A new user acknowledges the notice and connects an AI provider. The welcome title uses the display size. The connect step (`onboarding/ConnectStep.tsx`)
-has one primary Continue with ChatGPT button. On a short window the other ways scroll inside the step so that button stays above the fold, and focusing a way below that list scrolls it into the list. Other ways to connect lists Claude and
-SuperGrok sign-in; API keys for Anthropic, OpenAI, Gemini, xAI, Upstage Solar and
+shows Continue with ChatGPT as the primary button and Continue with SuperGrok as a
+secondary button under it. On a short window the other ways scroll inside the step so those buttons stay above the fold, and focusing a way below that list scrolls it into the list. Other ways to connect lists API keys
+for Anthropic (the only way to connect Claude), OpenAI, Gemini, xAI, Upstage Solar and
 OpenRouter; a model on this Mac; and a custom endpoint. A browser sign-in shows a
 waiting card with Open again and Cancel (Escape also cancels), plus Copy the
 sign-in link when the browser could not open. Once Pi waits for manual entry,
 "Browser didn't come back?" offers a paste field 20 s after the browser opened (at
 once if it did not). Rust validates the pasted value (`providers/support.rs`)
 before Pi sees it: for ChatGPT only the exact `http://127.0.0.1:1455/auth/callback`
-address with one `code` and `state`; for Claude and the debug Codex client their
+address with one `code` and `state`; for the debug Codex client its
 `http://localhost` or `http://127.0.0.1` callback address, or `code#state`.
 SuperGrok shows a device code to copy. Failures are typed (declined plan
 permission, an ineligible plan with Use an API key, a busy port, a timeout,

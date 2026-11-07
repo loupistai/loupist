@@ -347,12 +347,7 @@ pub async fn provider_connect(
     on_event: Channel<ProviderConnectionEvent>,
     state: State<'_, AppState>,
 ) -> Result<ModelCatalogView, CommandError> {
-    let provider = provider_option(&request.provider)?;
-    if provider.oauth.is_none() {
-        return Err(CommandError::invalid(
-            "provider does not support OAuth connection",
-        ));
-    }
+    let provider = sign_in_option(&request.provider)?;
     let admission = state.provider_support.acquire_oauth().await?;
 
     // OAuth may replace durable authority before the support command reports
@@ -467,11 +462,10 @@ pub(crate) fn console_url(provider: &str) -> Option<&'static str> {
         .and_then(|option| option.console_url)
 }
 
-/// Where a plan's usage is managed: the ChatGPT plan and Claude extra usage.
+/// Where a plan's usage is managed: the ChatGPT plan.
 pub(crate) fn usage_url(provider: &str) -> Option<&'static str> {
     match provider {
         "openai" | "openai-codex" => Some("https://chatgpt.com/settings/usage"),
-        "anthropic" => Some("https://claude.ai/settings/usage"),
         _ => None,
     }
 }
@@ -709,6 +703,17 @@ fn provider_option(provider: &str) -> Result<ModelProviderOption, CommandError> 
         .into_iter()
         .find(|option| option.id == provider)
         .ok_or_else(|| CommandError::invalid("unsupported Pi model provider"))
+}
+
+/// A provider the catalog offers a sign-in for; API-key providers have none.
+fn sign_in_option(provider: &str) -> Result<ModelProviderOption, CommandError> {
+    let option = provider_option(provider)?;
+    if option.oauth.is_none() {
+        return Err(CommandError::invalid(
+            "provider does not support OAuth connection",
+        ));
+    }
+    Ok(option)
 }
 
 async fn discover_provider_models(
@@ -1556,7 +1561,6 @@ mod tests {
     fn authorization_urls_are_locked_to_cataloged_oauth_hosts() {
         for allowed in [
             "https://auth.openai.com/api/accounts/authorize?client_id=dynamic_agent_client",
-            "https://claude.ai/oauth/authorize?client_id=test",
             "https://accounts.x.ai/oauth2/device?user_code=ABCD",
         ] {
             assert!(validate_authorization_url(allowed).is_ok(), "{allowed}");
@@ -1565,6 +1569,7 @@ mod tests {
             "https://example.com/oauth/authorize",
             "http://auth.openai.com/api/accounts/authorize",
             "https://openrouter.ai/auth?callback_url=http://127.0.0.1/cb",
+            "https://claude.ai/oauth/authorize?client_id=test",
             "https://auth.openai.com/other",
             "https://user@auth.openai.com/oauth/authorize",
             "https://auth.openai.com:444/oauth/authorize",
@@ -1572,6 +1577,25 @@ mod tests {
         ] {
             assert!(validate_authorization_url(denied).is_err(), "{denied}");
         }
+    }
+
+    #[test]
+    fn only_providers_with_a_cataloged_sign_in_can_start_one() {
+        for provider in ["openai", "xai"] {
+            assert!(sign_in_option(provider).is_ok(), "{provider}");
+        }
+        // Anthropic does not permit third-party apps to offer Claude.ai sign-in.
+        for provider in ["anthropic", "google", "openrouter"] {
+            assert_eq!(
+                sign_in_option(provider).unwrap_err().code,
+                "invalid_request",
+                "{provider}"
+            );
+        }
+        assert_eq!(
+            sign_in_option("unknown").unwrap_err().code,
+            "invalid_request"
+        );
     }
 
     #[tokio::test]
@@ -1631,7 +1655,7 @@ mod tests {
         let (channel, events) = capture_channel();
         let (answers, mut pasted) = tokio::sync::mpsc::unbounded_channel();
         let session = OAuthSession {
-            provider: "anthropic",
+            provider: "openai-codex",
             events: &channel,
             answers,
             failure: std::sync::Mutex::new(None),
@@ -1647,9 +1671,9 @@ mod tests {
         let mut other = prompt.clone();
         other["title"] = Value::String("Anything else".into());
         assert_eq!(manual_code_request(&other), None);
-        // Claude's browser shows its own callback address; Pi gets code#state.
+        // The Codex client's browser shows its own callback address; Pi gets code#state.
         coordinator
-            .submit_oauth_code("http://localhost:53692/callback?code=code&state=state")
+            .submit_oauth_code("http://localhost:1455/auth/callback?code=code&state=state")
             .unwrap();
         assert_eq!(
             pasted.recv().await,
@@ -1755,10 +1779,7 @@ mod tests {
             usage_url("openai"),
             Some("https://chatgpt.com/settings/usage")
         );
-        assert_eq!(
-            usage_url("anthropic"),
-            Some("https://claude.ai/settings/usage")
-        );
+        assert_eq!(usage_url("anthropic"), None);
         assert_eq!(usage_url("groq"), None);
         assert_eq!(
             console_url("openai"),

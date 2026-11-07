@@ -300,12 +300,9 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
         credential_kind: "plan",
       }),
       mockProvider("anthropic", "Anthropic", "Anthropic API key", {
-        description: "Sign in with Claude, or use an Anthropic API key.",
-        oauth: "Continue with Claude",
-        group: "sign_in",
+        description: "Connect with an API key stored by Pi in Loupist's private app data.",
+        group: "api_key",
         console_url: "https://console.anthropic.com/settings/keys",
-        sign_in_flow: "browser",
-        billing_note: "claude_extra_usage",
       }),
       mockProvider("google", "Google Gemini", "Gemini API key", {
         description: "Connect with an API key stored by Pi in Loupist's private app data.",
@@ -589,8 +586,8 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
 
   async providerConnectSubmitCode(request: { value: string }) {
     const value = request.value.trim();
-    // ChatGPT's loopback, or the address Claude's browser shows after signing in.
-    const callback = /^http:\/\/127\.0\.0\.1:1455\/auth\/callback\?/u.test(value) || /^http:\/\/(localhost|127\.0\.0\.1):53692\/callback\?/u.test(value);
+    // ChatGPT's loopback address.
+    const callback = /^http:\/\/127\.0\.0\.1:1455\/auth\/callback\?/u.test(value);
     const redirect = callback && /[?&]code=/u.test(value) && /[?&]state=/u.test(value);
     const code = /^[^\s#]+#[^\s#]+$/u.test(value) && value.length <= 2048;
     if (!redirect && !code) throw Object.assign(new Error("That isn't the sign-in address."), { code: "paste_invalid" });

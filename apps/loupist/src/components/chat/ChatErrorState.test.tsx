@@ -94,12 +94,6 @@ describe("error shapes", () => {
     fireEvent.click(screen.getByRole("button", { name: "Use an API key" }));
     expect(onProviderAction).toHaveBeenLastCalledWith("use_api_key");
 
-    rerender(<ChatErrorState {...base} provider="Claude" kind="extra_usage_off" onRetry={vi.fn()} onProviderAction={onProviderAction} />);
-    expect(screen.getByText(/Claude needs extra usage turned on/)).toBeInTheDocument();
-    expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual(["Open Claude settings", "Use an API key", "Try again"]);
-    fireEvent.click(screen.getByRole("button", { name: "Open Claude settings" }));
-    expect(onProviderAction).toHaveBeenLastCalledWith("open_claude");
-
     rerender(<ChatErrorState {...base} provider="Anthropic" kind="out_of_credit" onRetry={vi.fn()} onProviderAction={onProviderAction} />);
     expect(screen.getByText("Your Anthropic account is out of credit. Add credit with Anthropic, then try again.")).toBeInTheDocument();
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual(["Try again"]);

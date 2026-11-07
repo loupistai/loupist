@@ -409,7 +409,6 @@ pub enum SignInFlow {
 #[serde(rename_all = "snake_case")]
 pub enum BillingNote {
     ChatgptPlan,
-    ClaudeExtraUsage,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
@@ -540,21 +539,9 @@ pub fn provider_options() -> Vec<ModelProviderOption> {
             )
         },
         ModelProviderOption {
-            group: ProviderGroup::SignIn,
+            group: ProviderGroup::ApiKey,
             console_url: Some("https://console.anthropic.com/settings/keys"),
-            sign_in_flow: Some(SignInFlow::Browser),
-            billing_note: Some(BillingNote::ClaudeExtraUsage),
-            ..oauth_provider(
-                "anthropic",
-                "Anthropic",
-                "Anthropic API key",
-                "Sign in with Claude (billed as Claude extra usage), or use an Anthropic API key stored by Pi in Loupist's private app data.",
-                ProviderOauth {
-                    label: "Continue with Claude",
-                    authorization: OauthAuthorizationRule::exact("claude.ai", "/oauth/authorize"),
-                },
-                true,
-            )
+            ..provider("anthropic", "Anthropic", "Anthropic API key")
         },
         ModelProviderOption {
             group: ProviderGroup::ApiKey,
@@ -1117,6 +1104,34 @@ pub(crate) fn saved_credential_values(agent_data_dir: &Path) -> Vec<String> {
     values
 }
 
+/// Removes one provider's saved sign-in grant (`type: "oauth"`) from Pi's
+/// private `auth.json`. An API key for the same provider stays. Returns
+/// whether a grant was removed.
+pub(crate) fn delete_saved_oauth_credential(
+    agent_data_dir: &Path,
+    provider: &str,
+) -> Result<bool, CommandError> {
+    let path = agent_data_dir.join("auth.json");
+    let mut auth = read_auth_map(&path)?;
+    let is_grant = auth
+        .get(provider)
+        .and_then(|value| value.get("type"))
+        .and_then(Value::as_str)
+        == Some("oauth");
+    if !is_grant {
+        return Ok(false);
+    }
+    auth.remove(provider);
+    let io = || CommandError::internal("Pi auth file could not be saved");
+    let bytes = serde_json::to_vec_pretty(&auth).map_err(|_| io())?;
+    let mut temporary = tempfile::NamedTempFile::new_in(agent_data_dir).map_err(|_| io())?;
+    std::io::Write::write_all(&mut temporary, &bytes).map_err(|_| io())?;
+    temporary.as_file().sync_all().map_err(|_| io())?;
+    temporary.persist(&path).map_err(|_| io())?;
+    ensure_private_regular_file(&path).map_err(|_| io())?;
+    Ok(true)
+}
+
 fn read_auth_map(path: &Path) -> Result<Map<String, Value>, CommandError> {
     if !path.exists() {
         return Ok(Map::new());
@@ -1249,8 +1264,16 @@ mod tests {
             "auth.openai.com",
             "/api/accounts/authorize"
         ));
+        // Anthropic does not permit third-party apps to offer Claude.ai sign-in.
         let anthropic = providers.iter().find(|p| p.id == "anthropic").unwrap();
-        assert_eq!(anthropic.billing_note, Some(BillingNote::ClaudeExtraUsage));
+        assert_eq!(anthropic.group, ProviderGroup::ApiKey);
+        assert!(anthropic.api_key && anthropic.oauth.is_none());
+        assert_eq!(anthropic.sign_in_flow, None);
+        assert_eq!(anthropic.billing_note, None);
+        assert!(!catalog_allows_authorization(
+            "claude.ai",
+            "/oauth/authorize"
+        ));
         let xai = providers.iter().find(|p| p.id == "xai").unwrap();
         assert_eq!(xai.sign_in_flow, Some(SignInFlow::Device));
         // OpenRouter is a key provider; its browser sign-in is gone.
@@ -1280,10 +1303,6 @@ mod tests {
         assert!(xai.allows("accounts.x.ai", "/oauth2/device"));
         assert!(!xai.allows("auth.x.ai", "/oauth2/device"));
         assert!(!xai.allows("accounts.x.ai.evil.example", "/oauth2/device"));
-        assert!(catalog_allows_authorization(
-            "claude.ai",
-            "/oauth/authorize"
-        ));
         assert!(!catalog_allows_authorization(
             "example.com",
             "/oauth/authorize"

@@ -112,7 +112,7 @@ export function ConnectSheet({ target, catalog, bridge, onCatalogChange, onConne
         <DialogTitle>{title}</DialogTitle>
       </DialogHeader>
       <DialogBody className="connect-sheet-body">
-        {view?.kind === "picker" ? <ProviderWays catalog={catalog} includePrimary includeMore actions={{
+        {view?.kind === "picker" ? <ProviderWays catalog={catalog} includeMore actions={{
           onSignIn: provider => { setView({ kind: "provider", provider, method: "sign_in" }); if (provider !== "anthropic") void flow.start(provider); },
           onKey: provider => setView({ kind: "provider", provider, method: "api_key" }),
           onUpstage: () => setView({ kind: "upstage" }),
@@ -130,20 +130,13 @@ export function ConnectSheet({ target, catalog, bridge, onCatalogChange, onConne
   </Dialog>;
 }
 
-/** Shown before the browser opens: Claude sign-in bills Claude extra usage (owner decision, W17.2). */
-export function ClaudeExtraNote() {
-  const { t } = useTranslation("settings");
-  return <p className="connect-note" data-tone="info">{t("providers.claudeExtra")}</p>;
-}
-
 function SignInView({ provider, flow, autoStart, onUseApiKey }: { provider: string; flow: SignInController; autoStart: boolean; onUseApiKey: () => void }) {
   const { t } = useTranslation("onboarding");
-  // Reconnect from a card opens straight into the browser, except Claude, whose billing note comes first. Only on open.
-  useEffect(() => { if (autoStart && provider !== "anthropic") void flow.start(provider); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Reconnect from a card opens straight into the browser. Only on open.
+  useEffect(() => { if (autoStart) void flow.start(provider); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return <div className="connect-sheet-section">
-    {provider === "anthropic" ? <ClaudeExtraNote /> : null}
     {provider === "openai" ? <p className="connect-meta">{t("wizard.chatgptNote")}</p> : null}
-    {flow.state.phase === "idle" ? <Button type="button" className="connect-primary" data-signin-start onClick={() => void flow.start(provider)}>{provider === "anthropic" ? t("wizard.continue") : t(signInLabel(provider))}</Button> : null}
+    {flow.state.phase === "idle" ? <Button type="button" className="connect-primary" data-signin-start onClick={() => void flow.start(provider)}>{t(signInLabel(provider))}</Button> : null}
     <SignInFlow flow={flow} onUseApiKey={onUseApiKey} />
   </div>;
 }

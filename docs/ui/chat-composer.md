@@ -131,9 +131,8 @@ Loupist (Chat defaults apply), the chosen model's name as a chip otherwise, and
 "Connect an AI account" when no account is connected; the resolved model is in
 its tooltip. With nothing chosen and no Chat default, a send names no model and Rust
 resolves [Auto](../runtime/providers.md#shared-providers-and-world-processing) at admission. The menu
-starts with Auto (or Reset to Auto); for a ChatGPT or Claude sign-in its plan line
-("Using your ChatGPT plan · Manage usage", or "Billed as Claude extra usage")
-follows the account that answers. Reasoning options are inside the model menu's
+starts with Auto (or Reset to Auto); for a ChatGPT sign-in its plan line
+("Using your ChatGPT plan · Manage usage") follows the account that answers. Reasoning options are inside the model menu's
 Advanced section. The one-time Auto notice ("Now using …" with Change, or "… is no
 longer offered. Chat uses Auto now.") sits above the composer until a send or ×. A
 persistent information/not-advice disclosure appears below the composer.

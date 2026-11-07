@@ -728,9 +728,10 @@ export const scenarios: readonly PreviewScenario[] = [
           if (state === "connect-paste") await click("[data-paste-toggle]");
           return;
         }
+        if (state === "connect-device") { await click('[data-onboarding-connect="xai"]', root); return; }
         await openOtherWays();
         if (state === "connect") return;
-        const row = state === "connect-device" ? "sign-in-xai" : state === "connect-key" ? "key-google" : state === "connect-openai-replaces" ? "key-openai" : state.startsWith("connect-local") ? "local" : "custom";
+        const row = state === "connect-key" ? "key-google" : state === "connect-openai-replaces" ? "key-openai" : state.startsWith("connect-local") ? "local" : "custom";
         await click(`[data-connect-row="${row}"]`);
         if (state === "connect-custom-test" || state === "connect-custom-error") {
           const form = await until(() => select("[data-custom-sheet]"), "Custom endpoint sheet did not open");
@@ -851,14 +852,11 @@ export const scenarios: readonly PreviewScenario[] = [
     ["chat-error-signin", "needs_reconnect", "A sign-in that stopped working asks to reconnect", "openai", '[data-error-action="reconnect"]'],
     ["chat-error-plan-limit", "plan_limit", "A ChatGPT plan at its limit never retries on its own", "openai", '[data-error-action="manage_usage"]'],
     ["chat-error-not-eligible", "plan_not_eligible", "A plan other apps can't use offers an API key", "openai", '[data-error-action="use_api_key"]'],
-    ["chat-error-extra-usage", "extra_usage_off", "Claude extra usage is off", "anthropic", '[data-error-action="open_claude"]'],
     ["chat-error-no-credit", "out_of_credit", "A key account out of credit", "anthropic", "button"],
   ] as const).map(([id, kind, title, provider, action]): PreviewScenario => ({
     ...base(id, title, () => select(`.message-run-state ${action}`)),
     setup: async (bridge) => {
       await prepareFixture(bridge, "answer");
-      // Claude answers come from a sign-in, except the out-of-credit key account.
-      if (kind === "extra_usage_off") await bridge.providerConnect("anthropic", () => {});
       if (kind === "out_of_credit") await bridge.providerConfigure({ provider: "anthropic", api_key: "preview-key" });
       const original = bridge.loupistSelect.bind(bridge);
       bridge.loupistSelect = async loupistId => {
@@ -2044,9 +2042,9 @@ export const scenarios: readonly PreviewScenario[] = [
   ...settingsScenarios({ base, select, settings, until }),
   ...readerScenarios({ base, select, navigate, selectPanel, click, clickMapAction, until }),
   ...dataScenarios({ base, select, click, settings }),
-  // W17.3 (providers §2.3): one card per account; ChatGPT plan line, Claude extra usage, a key account.
+  // W17.3 (providers §2.3): one card per account; ChatGPT plan line, key accounts.
   ...([
-    ["settings-models", "Models & providers", '[data-provider-card="anthropic"] .provider-card-row[data-tone="info"]'],
+    ["settings-models", "Models & providers", '[data-provider-card="anthropic"]'],
     ["settings-models-plan-limit", "A ChatGPT plan at its limit", '[data-provider-card="openai"] [data-notice="plan_limit"]'],
     ["settings-models-needs-reconnect", "A sign-in that needs reconnecting", '[data-provider-card="openai"][data-state="needs_reconnect"]'],
     ["settings-models-disconnected", "A disconnected account schedules still use", '[data-provider-card="xai"][data-state="disconnected"]'],
@@ -2059,7 +2057,7 @@ export const scenarios: readonly PreviewScenario[] = [
     }),
     setup: async (bridge) => {
       await prepareFixture(bridge);
-      await bridge.providerConnect("anthropic", () => {});
+      await bridge.providerConfigure({ provider: "anthropic", api_key: "preview-key" });
       await bridge.providerConfigure({ provider: "google", api_key: "preview-key" });
       const hour = 60 * 60 * 1000;
       if (id === "settings-models-plan-limit") bridge.setProviderStatus("openai", { notice: { kind: "plan_limit", at_ms: Date.now() - hour }, last_limit_at_ms: Date.now() - hour });

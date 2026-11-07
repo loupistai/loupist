@@ -176,7 +176,7 @@ describe("Loupist · Chat composer", () => {
   it("sends the model and performance option selected for that message", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
-    await bridge.providerConnect("anthropic", () => undefined);
+    await bridge.providerConfigure({ provider: "anthropic", api_key: "test-key" });
     const chatSend = vi.spyOn(bridge, "chatSend");
     await openApp(bridge);
     await chooseModelOption(user, "Claude Sonnet 4.5");
@@ -210,7 +210,7 @@ describe("Loupist · Chat composer", () => {
   it("attaches uploaded files and pasted images to a Chat message", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
-    await bridge.providerConnect("anthropic", () => undefined);
+    await bridge.providerConfigure({ provider: "anthropic", api_key: "test-key" });
     const chatSend = vi.spyOn(bridge, "chatSend");
     await openApp(bridge);
     await chooseModelOption(user, "Claude Sonnet 4.5");

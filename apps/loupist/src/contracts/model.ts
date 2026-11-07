@@ -42,7 +42,7 @@ export type ProviderOauthOption = {
 export type ProviderGroup = "sign_in" | "api_key" | "local" | "advanced" | "more";
 export type ProviderState = "connected" | "needs_reconnect" | "disconnected";
 export type ProviderCredentialKind = "plan" | "api_key" | "local" | "custom" | "environment" | "none";
-export type ProviderNoticeKind = "plan_limit" | "plan_not_eligible" | "extra_usage_off" | "out_of_credit";
+export type ProviderNoticeKind = "plan_limit" | "plan_not_eligible" | "out_of_credit";
 
 /** Rust-owned provider state (spec providers §3.1); arrives in the catalog and by the `provider-status` event. */
 export type ProviderStatusView = {
@@ -71,7 +71,7 @@ export type ModelProviderOption = {
   /** Present when Rust can open the provider's key page (`providerOpenConsole`). */
   console_url: string | null;
   sign_in_flow: "browser" | "device" | null;
-  billing_note: "chatgpt_plan" | "claude_extra_usage" | null;
+  billing_note: "chatgpt_plan" | null;
   status: ProviderStatusView;
   /** Set by the renderer for a user-added provider; Rust sends these in `custom_providers`. */
   custom?: CustomModelProvider;
@@ -106,7 +106,6 @@ export type ProviderConnectionEvent =
   | { type: "connected"; message: string }
   /** Device sign-in (SuperGrok): the code to enter on the provider's page. */
   | { type: "device_code"; user_code: string; verification_uri: string; expires_in_s: number | null }
-  /** Pi is ready for a pasted redirect address (ChatGPT) or code (Claude). */
   /** Pi waits for the address the browser shows after signing in. */
   | { type: "manual_entry" }
   | { type: "failed"; reason: ProviderConnectFailure };

@@ -653,8 +653,6 @@ pub enum ChatFailureKind {
     PlanLimit,
     /// The plan cannot be used in other apps.
     PlanNotEligible,
-    /// Claude sign-in: extra usage is off or used up.
-    ExtraUsageOff,
     /// A key account is out of credit.
     OutOfCredit,
     /// The chosen model is no longer offered; Rust pruned it and Auto answers the retry.

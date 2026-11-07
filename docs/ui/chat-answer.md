@@ -4,7 +4,7 @@ Provider failures are typed in Rust. No provider text reaches the renderer. Acco
 
 Provider failures are classified in Rust (`pi/provider_failure.rs`; at most 8,192
 characters inspected, then dropped) into typed kinds: `plan_limit`,
-`plan_not_eligible`, `extra_usage_off`, `out_of_credit`, `model_gone`,
+`plan_not_eligible`, `out_of_credit`, `model_gone`,
 `needs_reconnect`, `rate_limited`, `offline`, `provider_unavailable` and
 `context_too_long`. Exact plan and account codes match before the generic 429 and
 403 patterns, so a plan limit never enters the busy retry and an ineligible plan
@@ -18,8 +18,7 @@ hint such as Gemini's `retryDelay` or "try again in 6.5s"), read in
 responses, bounded to 1–120 s and stored as the answer's `retry_after_seconds`;
 otherwise 20 s, then 40 s. A plan limit
 is never retried automatically; it offers Manage usage, Try again and Use another
-account. An ineligible plan offers an API key, extra usage off opens Claude
-settings, needs reconnect offers Reconnect, and a context that is too long has no
+account. An ineligible plan offers an API key, needs reconnect offers Reconnect, and a context that is too long has no
 retry. The account kinds also set the [provider status](../runtime/providers.md#shared-providers-and-world-processing).
 A `model_gone` failure (404 `model_not_found`) before any text, tool call or
 accepted steer prunes the model and asks once more on Auto, in the same turn on a

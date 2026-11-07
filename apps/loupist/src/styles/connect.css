@@ -66,7 +66,7 @@
   .signin-error-actions { align-self: flex-end; }
 }
 
-/* Notes inside the sheet and before Claude's browser opens. */
+/* Notes inside the sheet. */
 .onboarding-step .connect-note,
 .connect-note { margin: 0; padding: var(--gg-space-3); border-radius: var(--gg-radius-sm); background: var(--gg-color-info-soft); color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); animation: connect-rise var(--gg-motion-fast) var(--gg-ease-out); }
 .connect-note[data-tone="warning"] { background: var(--gg-color-warning-soft); }
