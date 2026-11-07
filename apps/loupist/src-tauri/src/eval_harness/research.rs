@@ -69,7 +69,8 @@ impl Report {
 }
 
 async fn open_arm(run: &Run, name: &str) -> Result<Arm> {
-    let dir = run.root.join(name);
+    // Short directory names keep the broker socket under the 103-byte Unix limit.
+    let dir = run.root.join(&name[..3]);
     let workspace = dir.join("Industrials");
     fs::create_dir_all(&workspace)?;
     let mut state = AppState::for_eval(dir.join("app"));
@@ -496,7 +497,7 @@ async fn live_lens_research_v1() -> Result<()> {
         std::env::temp_dir()
     };
     let temp = tempfile::Builder::new()
-        .prefix("loupist-research-")
+        .prefix("lr-")
         .tempdir_in(base)?;
     let frozen = artifacts::FrozenArtifacts::new(artifacts()?)?;
     let mut report = Report {
