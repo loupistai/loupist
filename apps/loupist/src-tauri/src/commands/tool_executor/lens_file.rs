@@ -247,6 +247,30 @@ impl AppToolExecutor {
                 };
                 return Err(BrokerError::invalid(field, refusal_hint(*reason)));
             }
+            let method = match (&delta.target, &screen.existing) {
+                (PageTarget::Create { kind, .. }, None) => *kind == PageKind::Method,
+                (_, Some(record_id)) | (PageTarget::Existing { record_id }, None) => {
+                    crate::knowledge::KnowledgeStore::for_loupist(
+                        self.state.store.clone(),
+                        loupist_id,
+                    )
+                    .and_then(|store| store.read(|read| read.lens_kind(loupist_id, record_id)))
+                    .is_ok_and(|kind| kind == crate::knowledge::lens_page::LensKind::Method)
+                }
+            };
+            // A turn writes a method only from what the user said in it; its own
+            // checks stay on subject and idea pages until method learning sees them recur.
+            if method {
+                if let Some(op) = delta.ops.iter().position(|op| {
+                    matches!(op, LensOp::Put { basis, .. }
+                        if !basis.refs.iter().any(|r| matches!(r, BasisRef::UserSaid { .. })))
+                }) {
+                    return Err(BrokerError::invalid(
+                        format!("pages[{index}].ops[{op}].basis"),
+                        "a method is written only from the user's teaching, correction or request to keep it this turn: cite {\"said\": true}, or keep the check on the subject or idea page",
+                    ));
+                }
+            }
             let Some(record_id) = screen.existing else {
                 continue;
             };

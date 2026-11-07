@@ -39,8 +39,8 @@ read again and refile. A create with a taken title merges into that page.
 Replace superseded instructions in their owning section; keep the reason for
 the filing in `rationale`. Preserve useful detail, conditions and exceptions
 without copying the same instructions across sections. Keep World, Source and
-Journal dependencies out of a method's body; a method or perspective section
-needs no basis. A kind is fixed, so do not write a new method into the standing
+Journal dependencies out of a method's body. A method section cites the user's
+words this turn, `{"said": true}`; a perspective section needs no basis. A kind is fixed, so do not write a new method into the standing
 perspective. For a method grounded in a newly acquired file or page, save the
 original with `source_save` first and cite its `saveRef` as `{source}` in the
 section's basis; a capture or fetch `result_ref` alone is not a Source

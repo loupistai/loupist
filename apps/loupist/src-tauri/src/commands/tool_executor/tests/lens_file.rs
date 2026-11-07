@@ -409,7 +409,7 @@ async fn a_create_whose_title_exists_merges_into_that_page() {
             json!({
                 "pages": [{
                     "page": {"create": {"kind": "method", "title": "hanbit diluted-share RULE"}},
-                    "ops": [{"op": "put", "key": "use-when", "heading": "Use when", "markdown": "Valuing fictional Hanbit companies."}]
+                    "ops": [{"op": "put", "basis": {"refs": [{"said": true}]}, "key": "use-when", "heading": "Use when", "markdown": "Valuing fictional Hanbit companies."}]
                 }],
                 "rationale": "The user named when the rule applies."
             }),
@@ -519,7 +519,7 @@ async fn a_handoff_card_and_a_scheduled_delivery_carry_what_the_run_learned() {
             json!({
                 "pages": [{
                     "page": {"create": {"kind": "method", "title": "Covenant headroom check"}},
-                    "ops": [{"op": "put", "key": "steps", "heading": "Steps", "markdown": "Compare cash to the covenant floor."}]
+                    "ops": [{"op": "put", "basis": {"refs": [{"said": true}]}, "key": "steps", "heading": "Steps", "markdown": "Compare cash to the covenant floor."}]
                 }],
                 "rationale": "A reusable check from this session."
             }),
@@ -807,7 +807,7 @@ async fn a_page_archived_or_removed_before_the_reply_commits_is_logged_refused_a
             &policy,
             json!({"pages": [revise(&pages[0]), revise(&pages[1]),
                 {"page": {"create": {"kind": "method", "title": "Fresh check"}},
-                    "ops": [{"op": "put", "key": "steps", "heading": "Steps", "markdown": "Start here."}]}],
+                    "ops": [{"op": "put", "basis": {"refs": [{"said": true}]}, "key": "steps", "heading": "Steps", "markdown": "Start here."}]}],
                 "rationale": "Revised two checks and wrote a third."}),
             "file",
         )
@@ -863,7 +863,7 @@ fn method_pages(prefix: &str, pages: usize, ops: usize) -> Value {
             json!({
                 "page": {"create": {"kind": "method", "title": format!("{prefix} method {page}")}},
                 "ops": (0..ops).map(|op| json!({
-                    "op": "put", "key": format!("s{op}"), "heading": format!("Step {op}"),
+                    "op": "put", "basis": {"refs": [{"said": true}]}, "key": format!("s{op}"), "heading": format!("Step {op}"),
                     "markdown": format!("Check {op}.")
                 })).collect::<Vec<_>>()
             })
@@ -1084,4 +1084,34 @@ async fn research_filed_in_two_chats_from_two_saved_sources_queues_one_method_re
         commit_turn_in(&state, &capture, chat, &format!("assistant-{chat}")).await;
     }
     assert_eq!(reviews(), ["queued"]);
+}
+
+#[tokio::test]
+async fn a_turn_writes_a_method_only_from_the_users_words() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let executor = executor_for(&state, turn_capture());
+    let method = |basis: Value| {
+        json!({"pages": [{"page": {"create": {"kind": "method", "title": "Margin ramp check"}},
+            "ops": [{"op": "put", "key": "steps", "heading": "Steps", "markdown": "Compare utilization with ramp cost.", "basis": basis}]}],
+            "rationale": "A check from this research."})
+    };
+    let unasked = executor
+        .stage_lens_file(&policy(true, true), method(json!({"refs": []})), "unasked")
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        unasked.starts_with("pages[0].ops[0].basis: a method is written only from the user's"),
+        "{unasked}"
+    );
+    assert!(executor.capture.staged_filings.lock().await.is_empty());
+    executor
+        .stage_lens_file(
+            &policy(true, true),
+            method(json!({"refs": [{"said": true}]})),
+            "asked",
+        )
+        .await
+        .expect("the user's words admit a method");
 }
