@@ -1207,3 +1207,184 @@ fn a_refine_keeps_the_sections_the_user_wrote() {
     );
     assert_eq!(store.read_page(LOUPIST, &id).unwrap().revision_id, before);
 }
+
+#[test]
+fn two_pages_about_one_company_are_one_case() {
+    let name = |name: &str| AnchorInput::Name { name: name.into() };
+    let node = |n: usize| AnchorInput::Node {
+        node_id: format!("entity-{n}"),
+    };
+    let page = |kind, title: &str, anchors| PageTarget::Create {
+        kind,
+        title: title.into(),
+        anchors,
+    };
+    for (variant, first, second) in [
+        (
+            "idea_about_the_subject",
+            company(0),
+            page(PageKind::Idea, "Ramp thesis", vec![node(0)]),
+        ),
+        (
+            "subject_sharing_an_anchor",
+            company(0),
+            page(PageKind::Subject, "Manufacturer 2", vec![node(2), node(0)]),
+        ),
+        (
+            "pending_name",
+            page(
+                PageKind::Subject,
+                "Kestrel Foundry",
+                vec![name("Kestrel Foundry")],
+            ),
+            page(
+                PageKind::Idea,
+                "Kestrel ramp",
+                vec![name("kestrel foundry")],
+            ),
+        ),
+    ] {
+        let (_dir, store) = setup();
+        let (a, b, c) = (
+            source(&store, "Filing A"),
+            source(&store, "Filing B"),
+            source(&store, "Filing C"),
+        );
+        let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+        assert!(put_in(&store, "chat-1", "m1", first, text, &[a], AT + 2).is_none());
+        let queued = put_in(&store, "chat-2", "m2", second, text, &[b], AT + 3);
+        assert!(queued.is_none(), "{variant}");
+        assert!(review_states(&store).is_empty(), "{variant}");
+        // A page with no subject anchor is a case of its own.
+        let other = page(PageKind::Idea, "Utilization thesis", vec![]);
+        assert!(
+            put_in(&store, "chat-3", "m3", other, text, &[c], AT + 4).is_some(),
+            "{variant}"
+        );
+    }
+}
+
+#[test]
+fn evidence_a_started_review_left_out_goes_to_the_next_review() {
+    let (_dir, store) = setup();
+    store
+        .transact(|w| save_settings(w.tx, LOUPIST, false))
+        .unwrap();
+    let long = "Utilization, ramp cost and margin moved together. ".repeat(20);
+    let sources: Vec<_> = (0..3)
+        .map(|i| source(&store, &format!("Filing {i}")))
+        .collect();
+    for i in 0..20 {
+        turn_with(
+            &store,
+            &format!("chat-{}", i % 3),
+            &format!("m{i:02}"),
+            i % 4,
+            &long,
+            &[sources[i % 3].clone()],
+            AT + 10 + i as i64,
+        );
+    }
+    store
+        .transact(|w| save_settings(w.tx, LOUPIST, true))
+        .unwrap();
+    store
+        .transact(|w| enqueue(w.tx, LOUPIST, AT + 100))
+        .unwrap()
+        .expect("queued");
+    let first = begin(&store, AT + 101);
+    assert!(first.input.observations.len() < 20);
+    defer(&store, &first, AT + 102);
+    // What did not fit waits for the rate limit, then gets its own review.
+    assert_eq!(review_states(&store), ["deferred", "pending"]);
+    assert!(try_claim(&store, AT + 103).is_none());
+    let second = begin(&store, AT + 101 + SIX_HOURS);
+    let shown: BTreeSet<_> = ids(&first).into_iter().collect();
+    let next: BTreeSet<_> = ids(&second).into_iter().collect();
+    let again: Vec<_> = shown.intersection(&next).collect();
+    assert!(again.is_empty(), "shown twice: {again:?}");
+    let filed: BTreeSet<String> = store
+        .read(|w| {
+            let mut q =
+                w.tx.prepare("SELECT op_id FROM knowledge_lens_log WHERE origin='turn'")?;
+            let rows = q.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
+            Ok(rows)
+        })
+        .unwrap();
+    assert_eq!(&shown | &next, filed);
+    // Once every observation was shown, nothing requeues.
+    defer(&store, &second, AT + 102 + SIX_HOURS);
+    assert_eq!(review_states(&store), ["deferred", "deferred"]);
+}
+
+#[test]
+fn a_refine_sees_the_whole_method_and_never_replaces_text_it_was_not_shown() {
+    let (_dir, store) = setup();
+    two_chats(&store, AT + 2).expect("queued");
+    let a = begin(&store, AT + 4);
+    complete(&store, &a, output(&a), AT + 5);
+    let id = reviews(&store)[0].lens_record_id.clone().unwrap();
+    // The Loupist adds a safeguard in a Chat, not the user by hand.
+    let write = |key: &str, text: &str, now: i64| {
+        store
+            .transact(|w| {
+                w.put_section(
+                    LOUPIST,
+                    &id,
+                    key,
+                    text,
+                    &turn_origin("chat-method", &format!("m-{key}-{now}")),
+                    now,
+                )
+            })
+            .unwrap();
+    };
+    let limits = || {
+        store
+            .read_page(LOUPIST, &id)
+            .unwrap()
+            .body
+            .sections()
+            .iter()
+            .find(|s| s.key.as_str() == "limits")
+            .unwrap()
+            .markdown
+            .clone()
+    };
+    write(
+        "limits",
+        "Never apply to lessors: leases hide ramp cost.",
+        AT + 6,
+    );
+    two_chats(&store, AT + SIX_HOURS + 5);
+    let b = begin(&store, AT + SIX_HOURS + 6);
+    let sent = request(&b).unwrap().to_string();
+    assert!(sent.contains("Never apply to lessors"), "{sent}");
+    let mut refined = output(&b);
+    refined["action"] = json!("refine");
+    refined["targetRecordId"] = json!(id);
+    refined["limitations"] =
+        json!("Never apply to lessors: leases hide ramp cost. Two manufacturers only.");
+    complete(&store, &b, refined.clone(), AT + SIX_HOURS + 7);
+    assert_eq!(reviews(&store)[0].status, "refined");
+    // A method too long to show in full is listed, but cannot be refined.
+    for key in ["use-when", "steps", "checks", "limits"] {
+        let long = format!("{key} ").repeat(1900 / (key.len() + 1));
+        write(key, &long, AT + SIX_HOURS + 8);
+    }
+    let before = limits();
+    assert!(before.starts_with("limits limits"), "{before}");
+    two_chats(&store, AT + 2 * SIX_HOURS + 9);
+    let c = begin(&store, AT + 2 * SIX_HOURS + 10);
+    let sent = request(&c).unwrap().to_string();
+    assert!(
+        sent.contains("Check capacity ramp margin pressure"),
+        "{sent}"
+    );
+    assert!(!sent.contains("limits limits"), "{sent}");
+    refined["evidenceIds"] = json!(ids(&c));
+    refined["limitations"] = json!("Learning's narrower limit.");
+    complete(&store, &c, refined, AT + 2 * SIX_HOURS + 11);
+    assert_eq!(reviews(&store)[0].reason.as_deref(), Some("invalid_output"));
+    assert_eq!(limits(), before);
+}

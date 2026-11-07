@@ -110,14 +110,18 @@ preserved original: an included publisher, user or tool capture that is not from
 a shared pack, removed or paused. Method pages are never evidence, so a turn's own
 method edits cannot feed learning. A put counts only while it is still that
 section's current, uncontested state: undoing, forgetting, retiring or replacing
-it, or the World withdrawing a claim it cites, withdraws it. Each turn commit checks the Lens log past the evidence watermark
-(`through_event` of the last review that reached inference, a log rowid), once
-something was filed after the head the last review read. When that evidence spans
-two pages and two independent Chats, Rust records one pending review. Chats are
-independent when each cites a Source the other never cited, so one Chat, one
-Source, one company's page, or a Chat repeating another's Sources never starts
-one. Two pages about the same company (a subject and an idea page) still count as
-two. Rows with a non-empty `world_job_id` come from the earlier claim-count
+it, or the World withdrawing a claim it cites, withdraws it. Each turn commit
+checks the Lens log rows no review that reached inference has shown, once
+something was filed after the head the last review read. When two independent
+Chats filed that evidence about two different cases, Rust records one pending
+review. Chats are independent when each cites a Source the other never cited. A
+page's case is its subject anchors (a World node, or the folded name while the
+anchor is pending; `about` gives an idea page the same anchors), or the page
+itself when it has none, and two cases differ when they share no anchor. So one
+Chat, one Source, one company however many subject and idea pages it has, or a
+Chat repeating another's Sources never starts one. An idea page filed without
+`about` is its own case even when its text concerns a company that has a subject
+page. Rows with a non-empty `world_job_id` come from the earlier claim-count
 trigger and hold growth-event rowids: they never set the watermark, and startup
 defers any still pending or queued with `trigger_changed`.
 
@@ -133,10 +137,13 @@ attempt, and its Loupist rechecks evidence filed past that attempt's watermark.
 
 The input lists that evidence newest first as observations: the page, heading,
 up to 600 characters of text and the cited Source titles, with turns and Chats
-as ordinals rather than ids. It first takes the newest observations that pass the
-gate on their own, then fills newest first. A review that reaches inference
-consumes its whole window, so observations that did not fit are not offered
-again; the core guarantees only a gate-passing pair, not every case in the window. It includes every active principle statement.
+as ordinals rather than ids. It first takes the newest pair that passes the gate
+on its own, then existing methods, then the remaining observations oldest first
+until the 12,000-character input is full. A review that reaches inference
+consumes only what it showed: its `through_event` becomes the row before the
+oldest observation left out, and it stores the shown rows above that in
+`input_json`. What did not fit starts the next review once it passes the gate
+and the rate limit allows. It includes every active principle statement.
 If those statements do not fit, or they change before publication, the review
 defers and publishes no method. When the evidence no longer passes at claim, the
 review defers with `insufficient_turns`. Publication re-resolves the cited
@@ -146,8 +153,13 @@ through `KnowledgeWrite::file` with origin `learning`: the model's six fields
 become the summary and the sections `use-when` (with assumptions), `steps`,
 `checks` and `limits`, each with a basis of the cited spans (at most eight, one
 per Source first). Its applied anchors are the subject anchors of the pages the
-cited observations were filed on. A refine puts those sections with the digests
-the review read and never replaces a section the user wrote; a section the user
+cited observations were filed on. Methods fill the input up to 8,000 characters,
+most recently updated first, each with its summary and those four sections in
+full when they fit and by title and use-when otherwise. A refine may target only
+a method shown in full; any other target is `invalid_output`. The prompt tells it
+to keep every condition, check and limit the new evidence does not address. A
+refine puts those sections with the digests the review read and never replaces
+a section the user wrote; a section the user
 changed since is skipped and the review's reason reads `stale_head_folded`. A
 publication that changes nothing, or a refine left with no section to write,
 defers with `method_unchanged`.
