@@ -459,8 +459,7 @@ fn connection_purpose(description: &str) -> String {
         .char_indices()
         .filter(|(_, character)| matches!(character, '.' | '!' | '?'))
         .map(|(index, character)| index + character.len_utf8())
-        .filter(|end| head[*end..].chars().next().is_none_or(char::is_whitespace))
-        .last();
+        .rfind(|end| head[*end..].chars().next().is_none_or(char::is_whitespace));
     match sentence_end {
         Some(end) => head[..end].to_owned(),
         None => match head.rfind(char::is_whitespace) {
