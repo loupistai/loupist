@@ -1,7 +1,8 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
-import type { InboxChangedEvent, InboxItem, InboxOpenEvent, ScheduledRun } from "../../types";
+import type { ChatEvidenceRef, ConflictGrid, InboxChangedEvent, InboxItem, InboxOpenEvent, ScheduledRun } from "../../types";
+import { GRID_SCHEMA } from "../../contracts/chat";
 import { scheduledRunFixture } from "../scheduledFixtures";
 import { mainTab, openApp, selectedLoupistButton } from "../renderApp";
 
@@ -150,4 +151,33 @@ it("shows a task on an account at its plan limit or needing reconnect as waiting
   expect(briefing).toHaveTextContent("Waiting: ChatGPT plan at its limit");
   act(() => bridge.setProviderStatus("openai", { notice: null, state: "needs_reconnect" }));
   await waitFor(() => expect(briefing).toHaveTextContent("Waiting: sign-in needs reconnect"));
+});
+
+it("offers See on the Map from a conflict card in the briefing reader", async () => {
+  const { bridge, user } = await fixture({ thread_id: "briefing-chat", message_id: "briefing-answer" });
+  const evidence: ChatEvidenceRef = { id: "ev_dart", title: "Solsup Foods FY2025 statements", kind: "original", provider: "OpenDART", tool_name: "dart_financials", retrieved_at: "2026-03-20T06:00:00Z", published_at: "2026-03-18", excerpt: "", excerpt_truncated: false, content_sha256: "c".repeat(64), warnings: [] };
+  const conflict: ConflictGrid = {
+    layout: "conflict", measure: { label: "revenue", entity_label: "Solsup Foods", period: "FY2025" },
+    reports: [{ evidence_id: evidence.id, says: "₩452.3bn", basis: "Consolidated, final", dated: "2026-03-18", check: { link_index: 0, text: "₩452.3bn", evidence_id: evidence.id, kind: "data", status: "rounded" } }],
+    reason: "preliminary_vs_final", explanation: "The news report carried the preliminary figure.", used: 0, used_reason: "The filed figure is final.",
+    world_entity_id: "ent:solsup", map_link: true,
+  };
+  const select = bridge.loupistSelect.bind(bridge);
+  vi.spyOn(bridge, "loupistSelect").mockImplementation(async id => {
+    const workspace = await select(id);
+    workspace.threads.push({ id: "briefing-chat", loupist_id: id, title: "Briefings Chat", use_memory: true, update_memory: true, updated_at: new Date().toISOString(), messages: [
+      { id: "briefing-answer", role: "assistant", content: "Sources disagree on FY2025 revenue.", status: "complete", created_at: new Date().toISOString(), artifact_refs: [{ artifact_id: "conflict", revision: 1, kind: "grid", title: "Solsup revenue", digest: "b".repeat(64) }] },
+    ] });
+    return workspace;
+  });
+  vi.spyOn(bridge, "chatArtifactRead").mockResolvedValue({
+    artifact: { id: "conflict", chat_session_id: "briefing-chat", kind: "grid", title: "Solsup revenue", current_revision: 1, created_at_ms: 1, updated_at_ms: 1 },
+    revision: { artifact_id: "conflict", revision: 1, payload: { kind: "grid", schema: GRID_SCHEMA, grid: conflict }, digest: "b".repeat(64), source_message_id: "briefing-answer", created_at_ms: 1 },
+    evidence_refs: [evidence],
+  });
+  await openApp(bridge); await openFirstRun(user);
+  expect(await screen.findByText("Sources disagree on FY2025 revenue.")).toBeVisible();
+  await user.click(await screen.findByRole("button", { name: "See on the Map" }));
+  await user.click(await screen.findByRole("button", { name: "Filter" }));
+  expect(screen.getByRole("checkbox", { name: "Only where sources disagree" })).toBeChecked();
 });

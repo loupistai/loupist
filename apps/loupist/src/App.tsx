@@ -1195,7 +1195,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                     ) : null}
                   </div>
                   {tab === "schedule" ? <div className="app-panel" id="main-panel-schedule" aria-labelledby="current-location">
-                    <ScheduleView onOpenModelSettings={() => openSettings("model")} modelCatalog={model.catalog} initialRunId={inboxFocus?.loupistId === selectedLoupist.id ? inboxFocus.runId ?? undefined : undefined} initialTaskId={scheduledFocus?.loupistId === selectedLoupist.id ? scheduledFocus.taskId : undefined} onInitialConsumed={() => { setInboxFocus(null); setScheduledFocus(null); }} key={`${selectedLoupist.id}:${selectedLoupist.workspace_path}`} bridge={bridge} loupist={selectedLoupist}
+                    <ScheduleView onOpenModelSettings={() => openSettings("model")} modelCatalog={model.catalog} initialRunId={inboxFocus?.loupistId === selectedLoupist.id ? inboxFocus.runId ?? undefined : undefined} initialTaskId={scheduledFocus?.loupistId === selectedLoupist.id ? scheduledFocus.taskId : undefined} onInitialConsumed={() => { setInboxFocus(null); setScheduledFocus(null); }} key={`${selectedLoupist.id}:${selectedLoupist.workspace_path}`} bridge={bridge} loupist={selectedLoupist} theme={resolvedTheme}
                       onOpenEvidence={(item, evidence, step) => {
                         if (!item.threadId) return;
                         chat.setActiveThreadForLoupist(selectedLoupist.id, item.threadId);
