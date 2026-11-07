@@ -429,7 +429,7 @@ function whatsNewFixture(bridge: PreviewBridge, withChanges: boolean) {
   recordVisit("loupist-quality", lastSeenAtMs - MIN_VISIT_MS, lastSeenAtMs);
   const event = (index: number, kind: GrowthEvent["kind"], subjectId: string | null, atMs: number, summary: string, extra: Partial<GrowthEvent> = {}): GrowthEvent => ({ eventId: `whats-new-${index}`, loupistId: "loupist-quality", atMs, kind, subjectId, recordId: "map-world", originChatId: null, originMessageId: null, actor: "loupist", summary, beforeSummary: null, afterSummary: null, ...extra });
   const events = withChanges ? [
-    event(0, "lens_created", null, now - 27 * hour, "Compare competitive advantages", { recordId: "map-lens-1", origin: { kind: "learning_review", reviewId: "preview-review", worldJobId: "preview-job" } }),
+    event(0, "lens_created", null, now - 27 * hour, "Compare competitive advantages", { recordId: "map-lens-1", origin: { kind: "learning_review", reviewId: "preview-review" } }),
     event(1, "entity_added", "map-entity-09", now - 26 * hour, "SK hynix"),
     event(2, "source_retained", null, now - hour, "Q3 operating review", { originMessageId: "preview-answer" }),
     event(3, "entity_added", "map-entity-03", now - hour, "NVIDIA", { originMessageId: "preview-answer" }),

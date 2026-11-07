@@ -30,7 +30,7 @@ principles, methods, Journal entries, inbox items, answers and usage) before the
 | --- | --- |
 | 1 | Retain two Q1 reviews, process World, ask what explains margin pressure. |
 | 2 | Teach the capacity-cost principle through Chat and request its checklist. |
-| 3 | Enable method learning, retain three Q3 reviews, process World and drain learning review work. |
+| 3 | Enable method learning, retain three Q3 reviews, process World and drain queued work. |
 | 4 | Dispatch the actual briefing task and inspect its persisted inbox result. |
 | 5 | Open a new Chat with saved-context reads only; compare all three companies. |
 
@@ -38,9 +38,12 @@ Method learning is off for sessions 1–2 so an early review does not consume th
 six-hour cooldown; no timestamps, thresholds or outcomes are rewritten. Each Q3
 review shares one pattern (rising utilization and margins with worsening inventory
 days and operating cash flow), and Aster's continued capacity costs contradict its
-earlier expectation. Zero Journal entries is the expected restraint. A learning
-claim needs both the saved review and the method's use in the new Chat; report an
-absent `lens_revised` event honestly.
+earlier expectation. Zero Journal entries is the expected restraint. Method
+reviews start only from research filed in two Chats on two Sources
+([method learning](../../../../../docs/knowledge/lens.md#method-learning)); session 3
+retains its reviews without a Chat turn, so this scenario reports learning state
+but does not expect a review. The learning proof is
+[method learning from research](../../README.md#method-learning-from-research).
 
 To render session tables and a sanitized renderer-only preview fixture:
 

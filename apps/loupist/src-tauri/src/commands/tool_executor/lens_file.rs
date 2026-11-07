@@ -715,6 +715,7 @@ pub(crate) fn commit_turn(
     }
     let filed = crate::knowledge::KnowledgeWrite::bind(tx, blobs)
         .file(loupist_id, origin, deltas, at_ms)?;
+    crate::knowledge::learning::enqueue(tx, loupist_id, at_ms)?;
     Ok(changes(filed, &rationales.join(" ")))
 }
 

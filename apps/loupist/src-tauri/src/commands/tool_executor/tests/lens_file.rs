@@ -48,6 +48,15 @@ async fn commit_turn(
     capture: &ToolCapture,
     message_id: &str,
 ) -> Vec<crate::domain::MemoryUpdateChange> {
+    commit_turn_in(state, capture, "chat-a", message_id).await
+}
+
+async fn commit_turn_in(
+    state: &AppState,
+    capture: &ToolCapture,
+    chat_id: &str,
+    message_id: &str,
+) -> Vec<crate::domain::MemoryUpdateChange> {
     let filings = capture.staged_filings.lock().await.clone();
     let sources = capture.staged_sources.lock().await.clone();
     let reads = capture.staged_reads.lock().await.clone();
@@ -58,7 +67,7 @@ async fn commit_turn(
         &tx,
         &blobs,
         "loupist-a",
-        "chat-a",
+        chat_id,
         message_id,
         now_ms(),
         &[],
@@ -75,7 +84,7 @@ async fn commit_turn(
             &blobs,
             "loupist-a",
             &FilingOrigin::Turn {
-                chat_id: "chat-a".into(),
+                chat_id: chat_id.into(),
                 message_id: message_id.into(),
                 user_message_id: Some("user-1".into()),
                 unattended: false,
@@ -1007,4 +1016,72 @@ async fn control_characters_are_refused_before_staging() {
         assert!(refused.is_err(), "{field}");
         assert!(capture.staged_filings.lock().await.is_empty());
     }
+}
+
+#[tokio::test]
+async fn research_filed_in_two_chats_from_two_saved_sources_queues_one_method_review() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let settings = crate::knowledge::GraphProcessingSettings {
+        enrichment_enabled: true,
+        helper_provider: Some("fixture".into()),
+        helper_model: Some("fixture".into()),
+        ..Default::default()
+    };
+    crate::knowledge::store_settings(&state.store.lock().unwrap(), "loupist-a", &settings).unwrap();
+    let reviews = || -> Vec<String> {
+        let connection = state.store.lock().unwrap();
+        let mut query = connection
+            .prepare("SELECT status FROM knowledge_learning_reviews")
+            .unwrap();
+        query
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+    };
+    for (chat, company) in [("chat-a", "Hanbit Motors"), ("chat-b", "Daeil Steel")] {
+        let capture = Arc::new(ToolCapture {
+            principle_user_message_id: Some(format!("user-{chat}")),
+            bound_chat_id: Some(chat.into()),
+            ..ToolCapture::default()
+        });
+        let executor = executor_for(&state, capture.clone());
+        let policy = policy(true, true);
+        let result_ref = captured_file(
+            &executor,
+            &format!("{chat}.txt"),
+            &format!("{company} margins fell during its capacity ramp."),
+        )
+        .await;
+        let saved = executor
+            .stage_source_save(
+                &policy,
+                json!({"result_ref": result_ref, "title": format!("{company} filing"), "coverage": "included_full"}),
+                "source-save",
+            )
+            .await
+            .unwrap();
+        executor.capture.commit_delivery("source-save").await;
+        executor
+            .stage_lens_file(
+                &policy,
+                json!({
+                    "pages": [{
+                        "page": {"create": {"kind": "subject", "title": company, "about": [{"name": company}]}},
+                        "ops": [{"op": "put", "key": "ramp", "heading": "Capacity ramp",
+                            "markdown": "Margins fell while the new line ramped.",
+                            "basis": {"refs": [{"source": saved["saveRef"]}]}}]
+                    }],
+                    "rationale": "The filing reports margin pressure during the ramp."
+                }),
+                "file",
+            )
+            .await
+            .unwrap();
+        executor.capture.commit_delivery("file").await;
+        assert!(reviews().is_empty(), "one Chat alone starts no review");
+        commit_turn_in(&state, &capture, chat, &format!("assistant-{chat}")).await;
+    }
+    assert_eq!(reviews(), ["queued"]);
 }

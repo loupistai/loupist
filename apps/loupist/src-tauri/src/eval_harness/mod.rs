@@ -19,6 +19,8 @@ pub(crate) mod replay;
 #[cfg(all(test, target_os = "macos", target_arch = "aarch64", debug_assertions))]
 mod replay_scenarios;
 #[cfg(test)]
+mod research;
+#[cfg(test)]
 mod tests;
 mod trace;
 pub mod world;
@@ -302,24 +304,31 @@ pub struct Options {
     pub turn_timeout_ms: u64,
 }
 
+/// The `resources` directory holding a staged `name`: this checkout's, or in a
+/// linked worktree the shared checkout's, since staging is untracked.
+fn staged_resources(name: &str) -> Result<PathBuf> {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let local = manifest.join("resources");
+    if local.join(name).exists() {
+        return Ok(local);
+    }
+    let output = std::process::Command::new("git")
+        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .current_dir(manifest)
+        .output()?;
+    let git = PathBuf::from(String::from_utf8(output.stdout)?.trim());
+    Ok(git
+        .parent()
+        .ok_or("cannot find shared checkout")?
+        .join("apps/loupist/src-tauri/resources"))
+}
+
 fn artifacts() -> Result<PiArtifacts> {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let runtime = if let Some(path) = std::env::var_os("LOUPIST_EVAL_PI_RUNTIME") {
         PathBuf::from(path)
     } else {
-        let local = manifest.join("resources/pi-runtime");
-        if local.is_dir() {
-            local
-        } else {
-            let output = std::process::Command::new("git")
-                .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
-                .current_dir(manifest)
-                .output()?;
-            let git = PathBuf::from(String::from_utf8(output.stdout)?.trim());
-            git.parent()
-                .ok_or("cannot find shared checkout")?
-                .join("apps/loupist/src-tauri/resources/pi-runtime")
-        }
+        staged_resources("pi-runtime")?.join("pi-runtime")
     };
     let agent = manifest.parent().unwrap().join("agent");
     let executable = runtime.join(if cfg!(windows) {
@@ -994,6 +1003,7 @@ async fn run_turn(
         result["error"] = trace::bounded_json(&json!(error));
     }
     // Observe canonical state independently of tool output or the assistant’s claim.
+    result["lens"] = trace::lens_state(state, chat, message.map(|m| m.id.as_str()))?;
     result["scheduled_tasks"] = json!(state.store.scheduled_tasks_list(&chat.loupist_id)?.iter().map(|task| {
         trace::bounded_json(&json!({"task_id":task.id,"title":task.title,"status":task.status,"revision":task.revision,
             "schedule":task.schedule,"target":task.target,"session_thread_id":task.session_thread_id,

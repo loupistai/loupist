@@ -1,0 +1,49 @@
+{
+  "schema": "loupist-lens-research/1",
+  "loupist": {
+    "name": "Industrial manufacturers",
+    "focus": "Fictional industrial manufacturers: capacity, margins, costs and cash conversion",
+    "instructions": "Use only the attached fictional reports and do not fetch external data. Provide information, not investment advice."
+  },
+  "training": [
+    {
+      "id": "halvorsen-cellworks",
+      "user": "Halvorsen Cellworks' half-year report is attached. Why did gross margin fall, and how much of the decline looks temporary rather than lasting? What should I check before believing management's recovery target?",
+      "attachments": [
+        {
+          "filename": "halvorsen-cellworks-h1-2026.md",
+          "media_type": "text/markdown",
+          "text": "# Halvorsen Cellworks ASA: half-year report, January to June 2026\n\nHalvorsen Cellworks is a fictional Norwegian battery cell manufacturer created for a Loupist evaluation. This report is not a market observation, a price or a recommendation.\n\n## Results\n\nRevenue rose to NOK 2,140 million from NOK 1,880 million a year earlier. Gross margin fell to 19.5% from 27.0%.\n\n## Capacity\n\nLine 4 at the Mo i Rana plant began commercial production in February 2026, adding 6 GWh to the existing 10 GWh of capacity. Line 4 ran at 41% utilization during the half. The mature lines ran at 88% utilization, unchanged from a year earlier. First-pass yield on Line 4 was 79%, against 94% on the mature lines.\n\n## Costs\n\nStart-up costs of NOK 96 million (operator training, trial runs and scrapped cells) were expensed in cost of sales. Depreciation rose by NOK 74 million because Line 4 began depreciating on its commissioning date, before customer volumes arrived. Excluding Line 4, gross margin on the mature lines was 26.6%.\n\n## Prices and inputs\n\nThe average selling price per kWh was flat year on year. Lithium carbonate costs fell 6% and are passed through to customers under index clauses.\n\n## Customers\n\nTwo automotive customers representing 55% of Line 4's planned volume have not completed qualification of Line 4 cells. Management expects qualification in the fourth quarter of 2026. Customer advances were NOK 210 million, down from NOK 260 million.\n\n## Outlook\n\nManagement attributes the whole margin decline to the Line 4 ramp. It expects gross margin to return above 25% once Line 4 utilization exceeds 80%, which it targets for mid-2027.\n"
+        }
+      ]
+    },
+    {
+      "id": "ferroluz-componentes",
+      "user": "Here is Ferroluz Componentes' nine-month report. Management blames the drop in operating margin on the new Saltillo plant. Is that the whole story, and what would tell us whether margins recover in 2027?",
+      "attachments": [
+        {
+          "filename": "ferroluz-componentes-9m-2026.md",
+          "media_type": "text/markdown",
+          "text": "# Ferroluz Componentes S.A. de C.V.: results for the nine months to 30 September 2026\n\nFerroluz Componentes is a fictional Mexican maker of aluminium die-cast housings created for a Loupist evaluation. This report is not a market observation, a price or a recommendation.\n\n## Results\n\nRevenue was MXN 6,420 million, against MXN 6,050 million a year earlier. EBIT margin fell to 7.8% from 13.1%.\n\n## Capacity\n\nThe new Saltillo plant started serial production in April 2026 with four die-casting cells. Saltillo ran at 38% utilization in the period. The established Queretaro plant ran at 91%. The scrap rate at Saltillo was 11%, against 3.5% at Queretaro.\n\n## Costs\n\nPre-production and launch costs of MXN 140 million were expensed. Saltillo's fixed costs (staff, depreciation and lease) were MXN 210 million, of which MXN 95 million is depreciation that began at the start of serial production.\n\n## Inputs and mix\n\nAluminium alloy prices rose 14% during the period. Customer contracts pass aluminium through with a one-quarter lag; management estimates the lag cost MXN 60 million in the nine months. Selling prices on existing parts were unchanged. Saltillo's first programmes are lower-margin pump housings. The Queretaro plant's EBIT margin was 12.6%.\n\n## Customers\n\nOne electric-vehicle programme representing 40% of Saltillo's planned volume has been postponed by the customer to 2027.\n\n## Outlook\n\nManagement attributes the margin decline entirely to the Saltillo launch and guides EBIT margin back to 12% in 2027 as Saltillo reaches 75% utilization.\n"
+        }
+      ]
+    }
+  ],
+  "probes": {
+    "applicable": {
+      "id": "brannoch-membranes",
+      "user": "Brannoch Membranes' full-year results are attached. Operating margin dropped from 15.2% to 9.4%. How much of that is the new Line C ramp, and what would show whether it reverses?",
+      "attachments": [
+        {
+          "filename": "brannoch-membranes-fy-2026.md",
+          "media_type": "text/markdown",
+          "text": "# Brannoch Membranes plc: full-year results to 31 August 2026\n\nBrannoch Membranes is a fictional Scottish maker of filtration membranes created for a Loupist evaluation. This report is not a market observation, a price or a recommendation.\n\n## Results\n\nRevenue was GBP 412 million, against GBP 389 million a year earlier. Operating margin fell to 9.4% from 15.2%.\n\n## Capacity\n\nLine C at Grangemouth began production in November 2025. It ran at 35% utilization for the year, with a first-pass yield of 72% against 93% on the mature lines. The mature lines ran at 86% utilization.\n\n## Costs\n\nCommissioning costs of GBP 11 million were expensed. Depreciation rose by GBP 8 million as Line C was depreciated from its commissioning date. Energy costs rose by GBP 6 million across all sites under a gas contract signed in 2025 that runs to 2028.\n\n## Prices\n\nAverage selling prices on legacy water-treatment membranes fell 3% after a competitor added capacity. Excluding Line C, operating margin on the mature lines was 13.1%.\n\n## Customers\n\nThe largest pharmaceutical customer completed qualification of Line C membranes in July 2026. A second customer, representing 30% of Line C's planned volume, has not started qualification.\n\n## Outlook\n\nManagement attributes the margin decline to the Line C ramp and expects operating margin to return to 15% in the next financial year.\n"
+        }
+      ]
+    },
+    "unrelated": {
+      "id": "larkspur-mutual",
+      "user": "Larkspur Mutual, a property insurer, reported a 2026 loss ratio of 71% and an expense ratio of 33%. What is its combined ratio, and does that mean it made an underwriting profit?"
+    }
+  }
+}

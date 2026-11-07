@@ -340,3 +340,16 @@ test('calibrate accepts explicitly authorized heldout fixtures', async (t) => {
   const allowed = cli([...args, '--allow-heldout']);
   assert.equal(allowed.status, 0, allowed.stderr);
 });
+
+test('lens-pages writes the review file through the CLI without a suite', async (t) => {
+  const root = await directory(t);
+  const tracePath = join(root, 'traces.jsonl');
+  const page = { kind: 'subject', title: 'Corvane Logistics', summary: '', archived: false,
+    sections: [{ key: 'facts', heading: 'Facts', markdown: 'Pelham terminated effective 31 December 2026.', basis: ['span'], origin: 'loupist' }],
+    ops_this_turn: [{ op: 'put', key: 'facts', outcome: 'replaced' }] };
+  await writeFile(tracePath, `${JSON.stringify({ scenario_id: 'LL-003', trial: 0, session_id: 'second', turn_index: 0, lens: { pages: [page] } })}\n`);
+  const out = join(root, 'pages.md');
+  const result = await main(['lens-pages', '--traces', tracePath, '--out', out]);
+  assert.equal(result.output, out);
+  assert.match(await readFile(out, 'utf8'), /second#0 put facts on "Corvane Logistics": replaced[\s\S]*terminated effective 31 December 2026/u);
+});

@@ -151,7 +151,7 @@ impl GraphSupervisor {
                         .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
                     super::graph_jobs::recover_interrupted(&tx)
                         .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
-                    super::learning::recover(&tx)
+                    super::learning::recover(&tx, now_ms())
                         .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
                     tx.commit()?;
                     Ok(())
