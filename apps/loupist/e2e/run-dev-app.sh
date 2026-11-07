@@ -109,6 +109,10 @@ if [ "$MODE" = manual ]; then
         HOME="$HOME" \
         TMPDIR="${TMPDIR:-/tmp}" \
         LANG="${LANG:-C}" \
+        ${DISPLAY:+"DISPLAY=$DISPLAY"} \
+        ${XAUTHORITY:+"XAUTHORITY=$XAUTHORITY"} \
+        ${WAYLAND_DISPLAY:+"WAYLAND_DISPLAY=$WAYLAND_DISPLAY"} \
+        ${XDG_RUNTIME_DIR:+"XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"} \
         "$NODE_BINARY" "$TAURI_CLI" dev \
         --config "{\"identifier\":\"$MANUAL_IDENTIFIER\"}" "$@" &
     APP_PID=$!
@@ -131,6 +135,10 @@ echo "Loupist development WebDriver: http://127.0.0.1:$WEBDRIVER_PORT"
     HOME="$HOME" \
     TMPDIR="${TMPDIR:-/tmp}" \
     LANG="${LANG:-C}" \
+    ${DISPLAY:+"DISPLAY=$DISPLAY"} \
+    ${XAUTHORITY:+"XAUTHORITY=$XAUTHORITY"} \
+    ${WAYLAND_DISPLAY:+"WAYLAND_DISPLAY=$WAYLAND_DISPLAY"} \
+    ${XDG_RUNTIME_DIR:+"XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"} \
     TAURI_WEBDRIVER_PORT="$WEBDRIVER_PORT" \
     "$NODE_BINARY" "$TAURI_CLI" dev \
     --features webdriver "$@" &

@@ -71,11 +71,15 @@ async function attach() {
     );
   }
   const { remote } = await import("webdriverio");
-  return remote({
+  const browser = await remote({
     ...session.webdriverConfig,
     capabilities: session.capabilities,
     logLevel: "error",
   });
+  // A Linux session has no current window until one is selected; window
+  // commands would read a 0x0 rect.
+  await browser.switchToWindow("main");
+  return browser;
 }
 
 async function visible(element) {

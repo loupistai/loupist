@@ -14,7 +14,7 @@ visible window; WebDriver and computer use must not both click it.
 | Renderer logic and bridge call shape | Vitest with `MockLoupistBridge`. `src/test/setup.ts` only fills jsdom gaps such as `matchMedia` and canvas. |
 | Prompt, Skill, Memory, and tool-contract behavior | Headless eval harness, no window. See [Agent evals](../evals/README.md#agent-evals). |
 | Read a macOS development window, including a manual window already in use | `node apps/loupist/e2e/agent-driver.mjs native-snapshot`. Captures the owned window without activating it. |
-| DOM, settings, chat progress, and layout inside the Tauri webview | `agent-driver.mjs` on the shared or isolated window. |
+| DOM, settings, chat progress, and layout inside the Tauri webview | `agent-driver.mjs` on the shared or isolated window. On Linux the window is WebKitGTK under Xvfb ([Run native suites on Linux](#run-native-suites-on-linux)). |
 | Native file chooser, OS dialog, OS drag or wheel, or proof that pixels are on screen | The owning session's computer-use tool on a visible window; use a [manual](#manual-testing) window when WebDriver cannot attach. |
 | Fixed-state visual design review of the real React app | `npm --prefix apps/loupist run preview:capture` (isolated headless Chrome, no native window). |
 
@@ -241,6 +241,7 @@ boundary as skipped;
 it is not a pass. Fixture rendering uses the mock bridge; the browser-policy
 step in `test:native` exercises the real child WebView and Rust commands.
 
+Linux runs the same commands; see [Run native suites on Linux](#run-native-suites-on-linux).
 Windows equivalents (`test:native:windows`, `test:persistence:windows`) run from
 the manual Windows workflow.
 
@@ -265,6 +266,34 @@ from a file needs the OS chooser (see the troubleshooting table) and is not part
 of persistence. Window checks compare the native size with
 `innerWidth`/`innerHeight`. Evidence stays under `artifacts/` (persistence:
 `artifacts/persistence/<run>/`).
+
+## Run native suites on Linux
+
+The same launchers, suites and `agent-driver.mjs` commands run on Linux against
+the Tauri app in WebKitGTK. Use them in a cloud session for any change that the
+real bridge, Rust commands or persistence can break. Install the host packages
+from the [Linux procedure](../../../docs/dev/checks.md#linux-cloud-development),
+including `xvfb`, then run from `apps/loupist/e2e/`:
+
+```sh
+npm ci
+npm run test:native          # add :full for the full smoke
+npm run test:persistence     # storage, restart and folder-copy changes
+```
+
+When neither `DISPLAY` nor `WAYLAND_DISPLAY` is set, the GUI lease
+(`native_ui_lease.py`) starts a private 2560x1600 Xvfb before it runs the
+launcher, and Xvfb exits with that launcher. `up.sh` and `down.sh` work the same
+way, so an agent can open the shared development window and drive it with
+`agent-driver.mjs`. The first `e2e` build takes several minutes; each later app
+start takes about 25 seconds.
+
+A Linux pass proves renderer behavior against the real bridge, Rust commands
+and app data. It does not prove WKWebView layout or rendering, Keychain, OS
+dialogs, OS input or macOS window chrome, and deep links, single instance and
+the updater are off on Linux. Qualify those on macOS. Xvfb renders in software,
+so the smoke's cold-start and map-frame budgets are reported but are not
+comparable with macOS. `native-snapshot` and computer use need a macOS window.
 
 ## Explicit live suites
 

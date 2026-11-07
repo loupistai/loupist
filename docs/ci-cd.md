@@ -75,8 +75,9 @@ rather than adding a broader long-lived credential to every release job.
 
 ## CI
 
-Pull requests run only Linux jobs: web, Python, and Rust lint and tests, selected
-by changed paths. They never wait for a macOS runner. The `main` push run, manual
+Pull requests run only Linux jobs: web, Python, Rust lint and tests, and native
+interaction in WebKitGTK, selected by changed paths. They never wait for a macOS
+runner. The `main` push run, manual
 `workflow_dispatch` and the release call also run the macOS Rust contracts, native
 interaction and package smoke for the selected scopes. To run the macOS jobs on a
 branch before merging, use `gh workflow run ci.yml --ref <branch>`; a dispatch runs
@@ -101,7 +102,8 @@ also select Rust, and agent eval fixtures select Web and Rust. Inline Rust tests
 in production files retain native/package checks. PRs use a merge-base diff;
 `main` pushes diff from the last successful `main` push run. Deleted and renamed source paths
 remain in scope. Missing history or classification errors select all checks.
-Native interaction and packaging in the table run only outside pull requests.
+Native interaction runs on Linux for every selected run and on macOS only outside
+pull requests. Packaging runs only outside pull requests.
 
 Rust, uv and Ubuntu package caches are saved only by `main` runs; pull requests restore
 them without uploading branch copies. The signed build shares the package-smoke
@@ -141,6 +143,12 @@ the whole plan. Ubuntu also installs Tauri's GTK/WebKitGTK development libraries
 the [Linux development procedure](dev/checks.md#linux-cloud-development) uses the
 same source gate. These gates make no paid model calls. See
 [broader checks](dev/checks.md#broader-checks).
+
+`Native Linux interaction (WebKitGTK)` runs `test:native:full` and
+`test:persistence` on Ubuntu with no `DISPLAY`, so the GUI lease starts a
+private Xvfb for each suite ([Run native suites on Linux](../apps/loupist/e2e/README.md#run-native-suites-on-linux)).
+It stages no sidecars, and it catches bridge, persistence and renderer flow
+regressions before merge. It does not replace the macOS job.
 
 The macOS native job stages the same pinned sidecars used by the package smoke
 and first selects a supported CI display mode of at least 1920x1080. The helper

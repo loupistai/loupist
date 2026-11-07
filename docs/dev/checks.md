@@ -110,6 +110,7 @@ validation separately from the host used to edit the code:
 | --- | --- | --- |
 | Shared renderer, Node/Python and Rust source behavior | Normal source gate | Same source gate with native build libraries |
 | Fixed-state React appearance and layout | Browser preview | Browser preview |
+| Real app through the Tauri bridge: DOM, Rust commands, persistence | Native suites in WKWebView | Same native suites in WebKitGTK under Xvfb |
 | WKWebView, Keychain, OS dialogs/input and release acceptance | Native macOS suites | Qualify these changes on macOS |
 
 Use [Which tool](../../apps/loupist/e2e/README.md#which-tool) to choose the
@@ -125,7 +126,7 @@ the repository root:
 sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
   build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
-  libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev procps lsof
+  libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev procps lsof xvfb
 sh apps/loupist/scripts/setup.sh
 scripts/verify.sh
 ```
@@ -160,9 +161,13 @@ mock bridge data. For screenshot/layout checks, install Chrome or Chromium and
 set `CHROME_PATH` to its executable before running `preview:capture` or the web
 gate. See [UI review](ui-qa.md#desktop-design-system).
 
-Pull-request CI runs Rust on Ubuntu; the `main` run adds macOS Rust, WKWebView/native
-interaction and packaging, and releases add signing. Linux development
-does not add a Linux release target. The Linux GTK dependency advisory remains
+To drive the real app on Linux, run the native suites or `up.sh` from
+[Run native suites on Linux](../../apps/loupist/e2e/README.md#run-native-suites-on-linux).
+They need only the `xvfb` package above; the launchers start a private display.
+
+Pull-request CI runs Rust and the Linux native suites on Ubuntu; the `main` run adds
+macOS Rust, WKWebView/native interaction and packaging, and releases add signing.
+Linux is a development and test host, not a release target. The Linux GTK dependency advisory remains
 documented in [Dependency security review](dependencies.md#dependency-security-review).
 
 ### Generated storage
