@@ -3,7 +3,7 @@ import { setPreviewLanguage } from "../i18n/useLanguage";
 import { createRoot } from "react-dom/client";
 import { App } from "../App";
 import { configureTheme, freezePreviewClock, PreviewBridge } from "./fixtures";
-import { scenarios, until, visible } from "./scenarios";
+import { liveScenarios, scenarios, until, visible } from "./scenarios";
 import "../styles.css";
 
 const status = document.documentElement.dataset;
@@ -19,10 +19,11 @@ async function start() {
   const locale = query.get("locale") ?? "en";
   if (locale !== "en" && locale !== "ko" && locale !== "en-XA") throw new Error(`Unknown locale: ${locale}`);
   setPreviewLanguage(locale);
-  const scenario = scenarios.find((candidate) => candidate.id === id);
+  const live = liveScenarios.find((candidate) => candidate.id === id);
+  const scenario = live ?? scenarios.find((candidate) => candidate.id === id);
   if (!scenario) throw new Error(`Unknown scenario: ${id}`);
   if (theme !== "light" && theme !== "dark") throw new Error(`Unknown theme: ${theme}`);
-  freezePreviewClock();
+  if (!live) freezePreviewClock();
   const bridge = new PreviewBridge({ delay_ms: 0 });
   await scenario.setup(bridge);
   await configureTheme(bridge, theme);

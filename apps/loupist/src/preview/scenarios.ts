@@ -23,6 +23,7 @@ import { browserScenarios } from "./browserScenarios";
 import { quoteEvidenceScenarios } from "./quoteEvidenceScenarios";
 import { settingsScenarios } from "./settingsScenarios";
 import { readerScenarios } from "./readerScenarios";
+import { liveResearchRun } from "./liveScenario";
 
 export type PreviewScenario = {
   id: string;
@@ -2268,3 +2269,18 @@ function sharingScenarios(): PreviewScenario[] {
       bridge => { withIndex(bridge); bridge.sharing.updateCheck = { kind: "upToDate" }; bridge.sharing.seedImport("loupist-quality", { blockedReason: "reported" }); }),
   ];
 }
+
+/**
+ * Scenarios on a real clock, outside the capture matrix: their frames depend on
+ * timing, so they are driven by `scripts/probe-streaming.mjs`, not screenshotted.
+ */
+export const liveScenarios: readonly PreviewScenario[] = [
+  {
+    id: "chat-live-research",
+    title: "A research reply streams on a real clock",
+    setup: async (bridge) => { await prepareFixture(bridge, "answer"); longThread(bridge); liveResearchRun(bridge); },
+    enter: async (root) => { await until(messagesRendered, "Message Markdown did not finish rendering"); await submitPrompt(root, "Why did Hanul Precision’s margin fall while revenue grew?"); },
+    landmark: () => select(".message.user:last-of-type") ?? select(".message.user"),
+  },
+];
+
