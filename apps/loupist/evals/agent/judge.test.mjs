@@ -289,3 +289,12 @@ test('codex judge runs tool-free with the verdict schema and reads the last mess
   assert.deepEqual(seen.schema.required, ['pass', 'reason']);
   assert.equal(modelFamily(backend.model), 'openai');
 });
+
+test('a judged Lens commit carries the stored page kind and basis', () => {
+  const suite = { schema: 'loupist-agent-suite/1', suite: 'lens', version: 1, scenarios: [{ id: 'LC', sessions: [{ id: 'train', role: 'train', memory: 'remember', turns: [{ user: 'Research.' }] }] }] };
+  const trace = { schema: 'loupist-agent-trace/1', run_id: 'r', suite: 'lens', scenario_id: 'LC', session_id: 'train', session_role: 'train', memory_mode: 'remember', turn_index: 0, trial: 0, user: 'Research.', status: 'completed', answer: 'Filed.', tool_calls: [],
+    memory_commits: [{ kind: 'lens', record_id: 'rec_a', title: 'Halvren Optics', operation: 'create' }, { kind: 'source', record_id: 'src_b', title: 'Release' }],
+    lens: { pages: [{ record_id: 'rec_a', kind: 'subject', title: 'Halvren Optics', sections: [{ key: 'facts', basis: ['span'] }, { key: 'views', basis: ['span', 'page'] }], ops_this_turn: [] }] } };
+  const items = judgeItems(suite, [trace]).filter((item) => item.kind === 'save_precision');
+  assert.deepEqual(items.map((item) => [item.memory_item.page_kind ?? null, item.memory_item.page_basis ?? null]), [['subject', ['page', 'span']], [null, null]]);
+});
