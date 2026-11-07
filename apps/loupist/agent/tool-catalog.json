@@ -997,7 +997,7 @@
                                   }
                                 ]
                               },
-                              "description": "What a subject page is about: a World node id, or a name not yet on the map."
+                              "description": "The company or entity a subject or idea page is about: a World node id, or a name not yet on the map. Give it whenever the page concerns one; a page without it never counts toward method learning."
                             }
                           }
                         }

@@ -116,13 +116,16 @@ checks the Lens log rows no review that reached inference has shown, once
 something was filed after the head the last review read. When two independent
 Chats filed that evidence about two different cases, Rust records one pending
 review. Chats are independent when each cites a Source the other never cited. A
-page's case is its subject anchors (a World node, or the folded name while the
-anchor is pending; `about` gives an idea page the same anchors), or the page
-itself when it has none, and two cases differ when they share no anchor. So one
-Chat, one Source, one company however many subject and idea pages it has, or a
-Chat repeating another's Sources never starts one. An idea page filed without
-`about` is its own case even when its text concerns a company that has a subject
-page. Rows with a non-empty `world_job_id` come from the earlier claim-count
+page's case is its subject anchors, which `about` sets on a subject or idea page,
+and two cases differ when they share no anchor. A resolved anchor is its World
+node alone, so two companies that held one name at different times stay two
+cases. A pending anchor is its folded name until a World publication resolves it
+to a node. A page with no subject anchor could concern any company, so its
+sections are not evidence and are not shown to a review. So one Chat, one Source, one company
+however many subject and idea pages it has, an unanchored page, or a Chat
+repeating another's Sources never starts one. Two pending spellings of one
+company that the World has not named, such as `Acme` and `Acme Inc.`, still
+count as two cases. Rows with a non-empty `world_job_id` come from the earlier claim-count
 trigger and hold growth-event rowids: they never set the watermark, and startup
 defers any still pending or queued with `trigger_changed`.
 
@@ -160,7 +163,8 @@ full when they fit and by title and use-when otherwise. A refine may target only
 a method shown in full; any other target is `invalid_output`. The prompt tells it
 to keep every condition, check and limit the new evidence does not address. A
 refine puts those sections with the digests the review read and never replaces
-a section the user wrote; a section the user
+a section the user wrote, by hand or in a Chat turn whose basis cites the user's
+message (`said`); a section the user
 changed since is skipped and the review's reason reads `stale_head_folded`. A
 publication that changes nothing, or a refine left with no section to write,
 defers with `method_unchanged`.

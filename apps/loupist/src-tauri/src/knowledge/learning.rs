@@ -238,7 +238,7 @@ struct Method {
     current: Option<MethodText>,
     #[serde(skip)]
     digests: BTreeMap<String, String>,
-    /// Sections the user wrote; a refine never replaces them.
+    /// Sections the user wrote by hand or taught in a Chat; a refine never replaces them.
     #[serde(skip)]
     user_written: BTreeSet<String>,
 }
@@ -286,8 +286,8 @@ struct Observation {
     /// The lens-log row that filed it.
     #[serde(skip)]
     row: i64,
-    /// Who the page is about: its subject anchors, or the page itself when it
-    /// has none. Observations sharing one are the same case.
+    /// Who the page is about: its subject anchors, never empty. Observations
+    /// sharing one are the same case.
     #[serde(skip)]
     cases: BTreeSet<String>,
 }
@@ -369,10 +369,12 @@ fn evidence(
         "SELECT r.payload_json FROM knowledge_record_heads h
          JOIN knowledge_record_revisions r ON r.revision_id=h.revision_id WHERE h.record_id=?1",
     )?;
-    // A pending name anchor is identified by its folded name; a resolved one by
-    // its node too, so either spelling of one subject matches.
+    // A resolved anchor is its node alone: the name it was created under may
+    // since belong to another node. A pending one is its folded name until a
+    // World publication resolves it to the node the other pages share.
     let mut subjects = tx.prepare(
-        "SELECT node_id,name_fold FROM knowledge_lens_anchors WHERE record_id=?1 AND role='subject'",
+        "SELECT COALESCE('node:'||node_id,'name:'||name_fold) FROM knowledge_lens_anchors
+         WHERE record_id=?1 AND role='subject' AND (node_id IS NOT NULL OR name_fold<>'')",
     )?;
     let mut q = tx.prepare(
         "SELECT l.op_id,l.op_json,l.chat_id,l.message_id,l.record_id,l.after_digest,m.title,m.kind,l.rowid
@@ -469,20 +471,15 @@ fn evidence(
             continue;
         }
         if !cases.contains_key(&page_id) {
-            let mut about = BTreeSet::new();
-            for anchor in subjects.query_map([&page_id], |r| {
-                Ok((r.get::<_, Option<String>>(0)?, r.get::<_, String>(1)?))
-            })? {
-                let (node, name) = anchor?;
-                about.extend(node.map(|node| format!("node:{node}")));
-                if !name.is_empty() {
-                    about.insert(format!("name:{name}"));
-                }
-            }
-            if about.is_empty() {
-                about.insert(format!("page:{page_id}"));
-            }
+            let about = subjects
+                .query_map([&page_id], |r| r.get(0))?
+                .collect::<Result<_, _>>()?;
             cases.insert(page_id.clone(), about);
+        }
+        // A page with no subject could be about any company, including the one
+        // the other case is about, so it is not evidence.
+        if cases[&page_id].is_empty() {
+            continue;
         }
         let n = turns.len() + 1;
         let turn = turns
@@ -614,7 +611,14 @@ fn build_input(
             user_written: page
                 .sections
                 .iter()
-                .filter(|section| section.origin == super::lens_page::Origin::User)
+                .filter(|section| {
+                    section.origin == super::lens_page::Origin::User
+                        || section
+                            .basis
+                            .refs
+                            .iter()
+                            .any(|r| matches!(r, BasisRef::UserSaid { .. }))
+                })
                 .map(|section| section.key.as_str().to_owned())
                 .collect(),
         });
