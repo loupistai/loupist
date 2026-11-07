@@ -14,6 +14,15 @@ describe("incremental chat progress", () => {
     expect(finished).toEqual({ sequence: 2, progress: { startedAtMs: 10, finishedAtMs: 20, items: [{ ...tool, status: "succeeded" }] } });
   });
 
+  it("appends published commentary in place and waits for a snapshot when the id is unknown", () => {
+    const note = { id: "commentary-2", kind: "commentary" as const, text: "Checked " };
+    const published = applyChatProgressPatch(initial, { sequence: 1, upsertItems: [note] });
+    const appended = applyChatProgressPatch(published, { sequence: 2, appendText: [{ id: note.id, text: "the " }, { id: note.id, text: "filing." }] });
+    expect(appended?.progress.items).toEqual([tool, { ...note, text: "Checked the filing." }]);
+    expect(appended?.progress.items[0]).toBe(tool);
+    expect(applyChatProgressPatch(appended, { sequence: 3, appendText: [{ id: "commentary-9", text: "lost" }] })).toBe(appended);
+  });
+
   it("replaces the plan only when a patch carries one", () => {
     const plan = { items: [{ id: "read", label: "Read the report", status: "active" as const, activatedAtMs: 11 }, { id: "compare", label: "Compare", status: "pending" as const }] };
     const planned = applyChatProgressPatch(initial, { sequence: 1, plan });
@@ -112,23 +121,26 @@ describe("native stream transport", () => {
     expect(sent[1]).toEqual({ ...sent[0], run_id: expect.any(String) });
   });
 
-  it("keeps a settled draft's original offset across resync and leaves older commentary in the transcript", async () => {
+  it("drops the live copy of a settling answer in the same update that adds its text, and keys the answer by it", async () => {
     const preamble = { kind: "commentary" as const, id: "note", text: "Checking." };
     const draft = { kind: "commentary" as const, id: "draft", text: "Finished." };
     const stream = await transport(async ({ run_id }, emit) => {
       emit({ type: "started", run_id });
       emit({ type: "phase", phase: "writing", run_id });
       emit({ type: "progress", sequence: 1, progress: { startedAtMs: 1, items: [preamble, draft] }, run_id });
-      emit({ type: "delta", text: draft.text, run_id });
-      emit({ type: "progress", sequence: 3, progress: { startedAtMs: 1, items: [preamble, { ...draft }] }, run_id });
-      emit({ type: "progress", sequence: 5, progress: { startedAtMs: 1, items: [{ ...preamble }] }, run_id });
+      emit({ type: "delta", text: draft.text, settles: draft.id, run_id });
+      emit({ type: "progress_patch", patch: { sequence: 2, removeItemIds: [draft.id] }, run_id });
+      emit({ type: "delta", text: " More.", settles: "later", run_id });
       emit({ type: "aborted", run_id });
       return { run_id };
     }).sendMessages({ ...request, body });
-    const settled = (await project(stream as ReadableStream<never>)).filter(message => message.status === "streaming" && message.content === draft.text);
-    expect(settled.filter(message => message.progress?.items.at(-1)?.id === "draft").map(message => message.progress?.answerOffset)).toEqual([0, 0]);
-    expect(settled.at(-1)?.progress?.items).toEqual([preamble]);
-    expect(settled.at(-1)?.progress?.answerOffset).toBeUndefined();
+    const projections = await project(stream as ReadableStream<never>);
+    const settled = projections.findIndex(message => message.content.startsWith(draft.text));
+    // The next chunk after the text is the drop: no other event can come between them.
+    const afterSettle = projections.slice(settled + 1);
+    expect(afterSettle.every(message => message.progress?.items.every(item => item.id !== draft.id))).toBe(true);
+    expect(afterSettle.filter(message => message.content.includes("More.")).every(message => message.answer_key === draft.id)).toBe(true);
+    expect(projections.at(-1)?.progress?.items).toEqual([preamble]);
   });
 
   it("keeps narration on the progress channel and publishes a timestamped streaming assistant first", async () => {

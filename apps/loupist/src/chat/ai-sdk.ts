@@ -60,6 +60,7 @@ export type LoupistChatMetadata = HostPostRecords & {
   final_text?: string;
   progress?: ChatProgress;
   phase?: ChatMessage["phase"];
+  answer_key?: string;
   performance?: ChatPerformance;
 };
 
@@ -139,20 +140,29 @@ export const applyChatProgressPatch = (
   const removeIds = new Set(patch.removeItemIds ?? []);
   const upserts = patch.upsertItems ?? [];
   const upsertById = new Map(upserts.map((item) => [item.id, item]));
+  const appends = new Map<string, string>();
+  for (const append of patch.appendText ?? []) appends.set(append.id, (appends.get(append.id) ?? "") + append.text);
   const seen = new Set<string>();
   let itemsChanged = removeIds.size > 0;
   const items: ChatProgress["items"] = [];
   for (const item of state.progress.items) {
     if (removeIds.has(item.id)) continue;
     const replacement = upsertById.get(item.id);
+    const appended = appends.get(item.id);
     if (replacement) {
       seen.add(item.id);
       if (replacement !== item) itemsChanged = true;
       items.push(replacement);
+    } else if (appended !== undefined && item.kind === "commentary") {
+      appends.delete(item.id);
+      itemsChanged = true;
+      items.push({ ...item, text: item.text + appended });
     } else {
       items.push(item);
     }
   }
+  // An append for commentary this stream never saw is a gap: wait for the next snapshot.
+  if (appends.size) return state;
   for (const item of upserts) {
     if (seen.has(item.id)) continue;
     items.push(item);
@@ -327,6 +337,7 @@ export const fromLoupistUIMessage = (message: LoupistUIMessage): ChatMessage => 
     feedback: message.metadata?.feedback,
     progress,
     phase: message.metadata?.phase,
+    answer_key: message.metadata?.answer_key,
     attachments:
       attachmentParts.length > 0
         ? attachmentParts
@@ -402,7 +413,6 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
         let started = false;
         let finished = false;
         let hasText = false;
-        let answerLength = 0;
         let textStarted = false;
         let abortRequested = false;
         let abortInFlight = false;
@@ -410,20 +420,14 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
         let abortAttempts = 0;
         let abortRetry: number | undefined;
         let progressState: ChatProgressStreamState | undefined;
-        let phase: ChatMessage["phase"];
-        let draftOffset: number | undefined;
+        let answerKey: string | undefined;
 
         const enqueue = (chunk: UIMessageChunk) => {
           if (!finished && !abortSignal?.aborted) controller.enqueue(chunk);
         };
         const publishProgress = () => {
           if (!progressState) return;
-          const { progress } = progressState;
-          enqueue({
-            type: "data-progress",
-            id: `progress-${responseId}`,
-            data: draftOffset === undefined ? progress : { ...progress, answerOffset: draftOffset },
-          });
+          enqueue({ type: "data-progress", id: `progress-${responseId}`, data: progressState.progress });
         };
         const startResponse = (createdAt = new Date().toISOString()) => {
           if (started) return;
@@ -564,18 +568,25 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
           }
           if (event.type === "delta") {
             hasText = true;
-            answerLength += event.text.length;
             startText();
             enqueue({ type: "text-delta", id: textId, delta: event.text });
+            if (event.settles) {
+              // The settled text and its live copy never share a render: the
+              // copy leaves here, and Rust's later removal then finds nothing.
+              const settled = event.settles;
+              if (progressState?.progress.items.some((item) => item.id === settled)) {
+                progressState = { ...progressState, progress: { ...progressState.progress, items: progressState.progress.items.filter((item) => item.id !== settled) } };
+                publishProgress();
+              }
+              if (answerKey === undefined) {
+                answerKey = settled;
+                enqueue({ type: "message-metadata", messageMetadata: { answer_key: settled } });
+              }
+            }
             return;
           }
           if (event.type === "phase") {
-            phase = event.phase;
-            enqueue({ type: "message-metadata", messageMetadata: { phase } });
-            if (phase !== "writing" && draftOffset !== undefined) {
-              draftOffset = undefined;
-              publishProgress();
-            }
+            enqueue({ type: "message-metadata", messageMetadata: { phase: event.phase } });
             return;
           }
           if (event.type === "progress" || event.type === "progress_patch") {
@@ -583,17 +594,6 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
               ? applyChatProgressSnapshot(progressState, event.progress, event.sequence)
               : applyChatProgressPatch(progressState, event.patch);
             if (!next || next === progressState) return;
-            const tail = next.progress.items.at(-1);
-            const previous = progressState?.progress.items;
-            if (tail?.id !== previous?.at(-1)?.id) draftOffset = undefined;
-            if (phase === "writing" && tail?.kind === "commentary" && draftOffset === undefined) {
-              // A snapshot repeats old items, including commentary uncovered
-              // by a removed draft. Only new or revised prose starts a draft.
-              const written = event.type === "progress_patch"
-                ? event.patch.upsertItems?.includes(tail)
-                : !previous?.some(item => item.kind === "commentary" && item.id === tail.id && item.text === tail.text);
-              if (written) draftOffset = answerLength;
-            }
             progressState = next;
             publishProgress();
             return;

@@ -102,7 +102,7 @@ it("follows a writing preamble into a tool step before WebKit delivers its layou
   };
   const reply: ChatMessage = {
     id: "reply", role: "assistant", status: "streaming", created_at: new Date().toISOString(), content: "",
-    progress: { startedAtMs: Date.now(), answerOffset: 0, items: [{ id: "pre", kind: "commentary", text: "Calculating." }] },
+    progress: { startedAtMs: Date.now(), items: [{ id: "pre", kind: "commentary", text: "Calculating." }] },
   };
   const chat = (phase: ChatMessage["phase"]) => <ChatConversation {...props} messages={[{ ...reply, phase }]} messageKeys={["reply"]} />;
   const view = render(chat("thinking"));

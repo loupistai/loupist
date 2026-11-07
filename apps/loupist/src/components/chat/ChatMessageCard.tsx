@@ -372,8 +372,7 @@ function ChatMessageCardComponent({
   // Pi streams its current text through progress until it knows whether the
   // message ends with a tool call or an answer. Only project it into the UI.
   const lastItem = message.progress?.items.at(-1);
-  const draft = isLiveAssistantResponse && message.phase === "writing" && message.progress?.answerOffset !== undefined && lastItem?.kind === "commentary"
-    ? lastItem : undefined;
+  const draft = isLiveAssistantResponse && message.phase === "writing" && lastItem?.kind === "commentary" ? lastItem : undefined;
   const trace = draft && message.progress
     ? { ...message.progress, items: message.progress.items.slice(0, -1) }
     : message.progress;
@@ -397,10 +396,7 @@ function ChatMessageCardComponent({
   // paragraph stood, and one that only links to a results snapshot as the compact results card.
   // Rust counted the links of the answer as written, so the grid paragraphs come out first.
   const visibleContent = visibleMessageContent(message);
-  // The settled delta precedes removal of its draft. Use the offset from the
-  // progress event so even a second assistant turn after guidance appears once.
-  const liveText = draft && visibleContent.length === message.progress?.answerOffset
-    ? withoutIdentifiers(draft.text) : "";
+  const liveText = draft ? withoutIdentifiers(draft.text) : "";
   const bodyText = visibleContent && liveText ? `${visibleContent}\n\n${liveText}` : visibleContent || liveText;
   const results = useMemo(() => {
     if (message.role !== "assistant" || message.status !== "complete") return { segments: [{ text: bodyText, numberChecks: message.number_checks }] as SensitivitySegment[], cards: [] };

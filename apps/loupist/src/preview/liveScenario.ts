@@ -45,23 +45,25 @@ function deltas(text: string, start: number) {
 }
 
 /**
- * Rust streams the answer as a progress commentary item whose whole text is
- * re-sent at most every 32 ms, then settles it with one authoritative delta
- * and a patch that removes the live copy (`chat/progress.rs`, `pi_dispatch.rs`).
+ * Rust streams the answer as a progress commentary item: the whole item once,
+ * then the text appended since, at most every 32 ms. A final answer settles
+ * with one authoritative delta that names the commentary it replaces, followed
+ * by the patch that removes the live copy (`chat/progress.rs`, `pi_dispatch.rs`).
  */
 function commentaryBeats(id: string, text: string, start: number, final: boolean): { beats: Beat[]; end: number } {
   const beats: Beat[] = [];
-  let shown = "";
+  let pending = "";
   let flushAt = start;
   for (const delta of deltas(text, start)) {
-    shown += delta.text;
+    pending += delta.text;
     if (delta.at - flushAt >= 32) {
       flushAt = delta.at;
-      beats.push({ at: delta.at, commentary: { id, text: shown } });
+      beats.push({ at: delta.at, commentary: { id, text: pending } });
+      pending = "";
     }
   }
   const end = flushAt + 40;
-  beats.push({ at: end, commentary: { id, text } });
+  if (pending) beats.push({ at: end, commentary: { id, text: pending } });
   if (final) beats.push({ at: end + 20, settle: { id, text } });
   return { beats, end: end + 20 };
 }
@@ -117,14 +119,20 @@ export function liveResearchRun(bridge: PreviewBridge) {
           sequence += 1;
           emit({ type: "progress_patch", run_id, patch: { sequence, upsertItems: [structuredClone(item)] } });
         } else if ("commentary" in beat) {
-          const item = { id: beat.commentary.id, kind: "commentary" as const, text: beat.commentary.text };
-          const index = progress.items.findIndex((entry) => entry.id === item.id);
-          if (index >= 0) progress.items[index] = item; else progress.items.push(item);
+          const { id, text } = beat.commentary;
+          const existing = progress.items.find((entry) => entry.id === id);
           sequence += 1;
-          emit({ type: "progress_patch", run_id, patch: { sequence, upsertItems: [item] } });
+          if (existing?.kind === "commentary") {
+            existing.text += text;
+            emit({ type: "progress_patch", run_id, patch: { sequence, appendText: [{ id, text }] } });
+          } else {
+            const item = { id, kind: "commentary" as const, text };
+            progress.items.push(item);
+            emit({ type: "progress_patch", run_id, patch: { sequence, upsertItems: [structuredClone(item)] } });
+          }
         } else {
           content += beat.settle.text;
-          emit({ type: "delta", run_id, text: beat.settle.text });
+          emit({ type: "delta", run_id, text: beat.settle.text, settles: beat.settle.id });
           progress.items = progress.items.filter((entry) => entry.id !== beat.settle.id);
           sequence += 1;
           emit({ type: "progress_patch", run_id, patch: { sequence, removeItemIds: [beat.settle.id] } });
