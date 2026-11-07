@@ -244,6 +244,83 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  native-e2e-linux:
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
+    timeout-minutes: 60
+    name: Native Linux interaction (WebKitGTK)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Restore Linux package downloads
+        id: apt-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: apt-e2e-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: apt-e2e-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install Linux native development libraries and Xvfb
+        timeout-minutes: 15
+        run: |
+          mkdir -p "$HOME/apt-archives/partial"
+          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Dir::Cache::Archives=$HOME/apt-archives"
+          sudo apt-get $APT update
+          sudo apt-get $APT install -y --no-install-recommends \
+            build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev procps lsof xvfb
+          sudo chown -R "$(id -u):$(id -g)" "$HOME/apt-archives"
+
+      - name: Save Linux package downloads
+        if: github.ref == 'refs/heads/main' && steps.apt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: ${{ steps.apt-cache.outputs.cache-primary-key }}
+
+      - name: Install CI toolchains
+        uses: ./.github/actions/setup-toolchains
+        with:
+          node: "true"
+          node-cache: |
+            apps/loupist/package-lock.json
+            apps/loupist/e2e/package-lock.json
+          rust: "true"
+          rust-cache-key: e2e-linux
+
+      - name: Install renderer dependencies
+        working-directory: apps/loupist
+        run: npm ci
+
+      - name: Install native E2E dependencies
+        working-directory: apps/loupist/e2e
+        run: npm ci
+
+      # No DISPLAY is set, so the GUI lease starts a private Xvfb per suite.
+      - name: Run native interaction regression suite
+        working-directory: apps/loupist/e2e
+        env:
+          LOUPIST_E2E_STARTUP_TIMEOUT_MS: "900000"
+        run: |
+          npm run test:native:full
+          npm run test:persistence
+
+      - name: Retain native interaction evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: native-linux-evidence
+          path: |
+            apps/loupist/e2e/artifacts/native-*.png
+            apps/loupist/e2e/artifacts/native-smoke-performance.json
+            apps/loupist/e2e/artifacts/persistence/
+          retention-days: 7
+          if-no-files-found: ignore
+
   verify-rust-macos:
     needs: changes
     if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.macos == 'true'
@@ -431,6 +508,7 @@ jobs:
       - verify-python
       - verify-rust
       - verify-rust-macos
+      - native-e2e-linux
       - native-e2e
       - package-smoke
     if: ${{ !cancelled() }}
@@ -446,6 +524,8 @@ jobs:
           RUST_RESULT: ${{ needs.verify-rust.result }}
           RUST_MACOS_REQUIRED: ${{ needs.changes.outputs.rust == 'true' && needs.changes.outputs.macos == 'true' }}
           RUST_MACOS_RESULT: ${{ needs.verify-rust-macos.result }}
+          NATIVE_LINUX_REQUIRED: ${{ needs.changes.outputs.native }}
+          NATIVE_LINUX_RESULT: ${{ needs.native-e2e-linux.result }}
           NATIVE_REQUIRED: ${{ needs.changes.outputs.native == 'true' && needs.changes.outputs.macos == 'true' }}
           NATIVE_RESULT: ${{ needs.native-e2e.result }}
           PACKAGE_REQUIRED: ${{ needs.changes.outputs.packaging == 'true' && needs.changes.outputs.macos == 'true' }}
@@ -463,5 +543,6 @@ jobs:
           require_scope "$PYTHON_REQUIRED" "$PYTHON_RESULT"
           require_scope "$RUST_REQUIRED" "$RUST_RESULT"
           require_scope "$RUST_MACOS_REQUIRED" "$RUST_MACOS_RESULT"
+          require_scope "$NATIVE_LINUX_REQUIRED" "$NATIVE_LINUX_RESULT"
           require_scope "$NATIVE_REQUIRED" "$NATIVE_RESULT"
           require_scope "$PACKAGE_REQUIRED" "$PACKAGE_RESULT"

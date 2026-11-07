@@ -203,6 +203,9 @@ async function verifyChats() {
 async function mapStats() {
   let text = "";
   await browser.waitUntil(async () => {
+    // The reader and the Library can mount after the Map and cover its status line.
+    await closeMapReader();
+    await closeLibrary();
     text = await readVisibleMapStats(browser);
     return /^[\d,]+ on the map · [\d,]+ relationships$/.test(text);
   }, { timeout: 30_000, interval: 200, timeoutMsg: `The Map did not report its size (${text})` });
@@ -212,8 +215,6 @@ async function mapStats() {
 /** Journal entries are Map nodes, so the size is read once the Library writes have settled. */
 async function settledMapStats() {
   await openMainTab(browser, "map");
-  await closeMapReader();
-  await closeLibrary();
   let previous = await mapStats();
   for (let read = 0; read < 10; read += 1) {
     await browser.pause(1_000);
@@ -245,8 +246,6 @@ async function closeLibrary() {
 
 async function openLibrary(tabLabel) {
   await openMainTab(browser, "map");
-  await closeMapReader();
-  await closeLibrary();
   await mapStats();
   const direct = await browser.$(".map-view button[data-map-library]");
   if (await direct.isDisplayed().catch(() => false)) await direct.click();
@@ -272,7 +271,7 @@ async function openLibrary(tabLabel) {
 async function openMemorySegment(segment) {
   await openMainTab(browser, "lens");
   const page = await displayed('section.memory-page');
-  const tabIndex = { about: 1, principles: 2, methods: 3 }[segment];
+  const tabIndex = { about: 1, pages: 2, history: 3 }[segment];
   assert.ok(tabIndex, `Unknown What it knows segment: ${segment}`);
   await (await displayed(`section.memory-page [role="tablist"] [role="tab"]:nth-child(${tabIndex})`)).click();
   await browser.waitUntil(async () => (await page.getAttribute('data-segment')) === segment, {
@@ -322,12 +321,11 @@ async function addPrinciple() {
 }
 
 async function verifyPrinciple() {
-  const page = await openMemorySegment("principles");
+  const page = await openMemorySegment("pages");
+  await waitForText(page, FIXTURE.method);
   const row = await visibleWithText("section.memory-page button.memory-row", PRINCIPLE.statement);
   await row.click();
   await waitForText(await displayed("section.memory-page aside.memory-reader"), PRINCIPLE.statement);
-  await openMemorySegment("methods");
-  await waitForText(page, FIXTURE.method);
 }
 
 async function addJournalEntry() {

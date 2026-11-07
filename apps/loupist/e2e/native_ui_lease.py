@@ -8,12 +8,89 @@ file is not itself the lock, so crashed runs never need stale-file deletion.
 
 from __future__ import annotations
 
+import ctypes
 import fcntl
 import json
 import os
 from pathlib import Path
+import secrets
+import select
+import shutil
+import signal
 import stat
+import subprocess
 import sys
+
+# Wide enough for the layout suite's 2560px window.
+HEADLESS_SCREEN = ("-screen", "0", "2560x1600x24")
+PR_SET_PDEATHSIG = 1
+
+
+def needs_headless_display() -> bool:
+    return sys.platform.startswith("linux") and not (
+        os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
+    )
+
+
+def _exit_with_parent() -> None:
+    ctypes.CDLL(None, use_errno=True).prctl(PR_SET_PDEATHSIG, signal.SIGTERM)
+
+
+def start_headless_display(state_dir: Path) -> None:
+    """Start a private Xvfb that exits with the launcher and export its DISPLAY.
+
+    Xvfb is a child, not a wrapper, so the launcher keeps this pid across exec
+    and session receipts and process-tree stops still name the real launcher.
+    """
+    xvfb, xauth = shutil.which("Xvfb"), shutil.which("xauth")
+    if not xvfb or not xauth:
+        raise RuntimeError(
+            "No display is set and Xvfb or xauth is missing. Install the xvfb "
+            "package (docs/dev/checks.md#linux-cloud-development) or set DISPLAY."
+        )
+    cookie = secrets.token_hex(16)
+    for number in range(99, 199):
+        if Path(f"/tmp/.X{number}-lock").exists():
+            continue
+        display = f":{number}"
+        authority = state_dir / f"xvfb-{number}.auth"
+        authority.unlink(missing_ok=True)
+        subprocess.run(
+            [xauth, "-q", "-f", str(authority), "add", display, ".", cookie],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        ready_read, ready_write = os.pipe()
+        server = subprocess.Popen(
+            [
+                xvfb,
+                display,
+                *HEADLESS_SCREEN,
+                "-nolisten",
+                "tcp",
+                "-auth",
+                str(authority),
+                "-displayfd",
+                str(ready_write),
+            ],
+            pass_fds=(ready_write,),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            preexec_fn=_exit_with_parent,
+        )
+        os.close(ready_write)
+        readable, _, _ = select.select([ready_read], [], [], 15)
+        announced = os.read(ready_read, 16).strip() if readable else b""
+        os.close(ready_read)
+        if announced == str(number).encode():
+            os.environ["DISPLAY"] = display
+            os.environ["XAUTHORITY"] = str(authority)
+            return
+        server.kill()
+        server.wait()
+    raise RuntimeError("Xvfb did not start on displays :99 to :198")
 
 
 def run(command: list[str], lock_path: Path | None = None) -> None:
@@ -64,12 +141,14 @@ def run(command: list[str], lock_path: Path | None = None) -> None:
     os.set_inheritable(fd, True)
     os.environ["LOUPIST_GUI_LEASE_FD"] = str(fd)
     os.environ["LOUPIST_GUI_LEASE_ENTRY"] = f"{os.getpid()}:{command[0]}"
+    if needs_headless_display():
+        start_headless_display(lock_path.parent)
     os.execvpe(command[0], command, os.environ)
 
 
 if __name__ == "__main__":
     try:
         run(sys.argv[1:])
-    except (OSError, ValueError, RuntimeError) as error:
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print(error, file=sys.stderr)
         sys.exit(1)

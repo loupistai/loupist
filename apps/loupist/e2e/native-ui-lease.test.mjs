@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,10 +17,17 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 module.run(sys.argv[3:], pathlib.Path(sys.argv[2]))
 `;
-const launch = (command, path = lockPath, environment = {}) => spawn("python3", ["-B", "-c", bootstrap, modulePath, path, ...command], {
+const python = execFileSync("/bin/sh", ["-c", "command -v python3"], { encoding: "utf8" }).trim();
+// A set display keeps these cases off Xvfb; the headless cases below unset it.
+const launch = (command, path = lockPath, environment = {}) => spawn(python, ["-B", "-c", bootstrap, modulePath, path, ...command], {
   stdio: ["ignore", "pipe", "pipe"],
-  env: { ...process.env, ...environment },
+  env: { ...process.env, DISPLAY: process.env.DISPLAY || ":lease-test", ...environment },
 });
+const captured = async (child) => {
+  let stdout = "";
+  child.stdout.on("data", chunk => { stdout += chunk; });
+  return { ...(await result(child)), stdout };
+};
 async function result(child) {
   let stderr = "";
   child.stderr.on("data", chunk => { stderr += chunk; });
@@ -94,9 +101,43 @@ setInterval(() => {}, 1000);
   assert.equal(processIdentity(orphan), null);
   orphan = null;
   assert.equal((await result(launch(["/usr/bin/true"]))).code, 0);
+
+  if (process.platform === "linux") {
+    const bin = join(directory, "bin");
+    await mkdir(bin);
+    const xvfbPid = join(directory, "xvfb.pid");
+    const headless = { DISPLAY: "", WAYLAND_DISPLAY: "", PATH: bin };
+    const printDisplay = ["/bin/sh", "-c", 'echo "$DISPLAY $XAUTHORITY"'];
+    const missing = await result(launch(printDisplay, lockPath, headless));
+    assert.equal(missing.code, 1);
+    assert.match(missing.stderr, /Xvfb or xauth is missing/);
+
+    await writeFile(join(bin, "xauth"), "#!/bin/sh\nexit 0\n");
+    // Announce the display on -displayfd like Xvfb, then stay up until signalled.
+    await writeFile(join(bin, "Xvfb"), `#!/bin/sh
+echo $$ > ${JSON.stringify(xvfbPid)}
+display=\${1#:}
+while [ $# -gt 0 ]; do [ "$1" = -displayfd ] && fd=$2; shift; done
+eval "echo $display >&$fd"
+exec /bin/sleep 30
+`);
+    await chmod(join(bin, "xauth"), 0o755);
+    await chmod(join(bin, "Xvfb"), 0o755);
+    const wrapped = await captured(launch(printDisplay, lockPath, headless));
+    assert.equal(wrapped.code, 0, wrapped.stderr);
+    assert.match(wrapped.stdout.trim(), /^:\d+ \S+\/xvfb-\d+\.auth$/, "a headless Linux launch gets a private display");
+    const server = Number((await readFile(xvfbPid, "utf8")).trim());
+    const stopBy = Date.now() + 3000;
+    while (processIdentity(server) !== null && Date.now() < stopBy) {
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    assert.equal(processIdentity(server), null, "Xvfb exits with its launcher");
+    const shown = await captured(launch(["/bin/sh", "-c", 'echo "$DISPLAY"'], lockPath, { ...headless, DISPLAY: ":5" }));
+    assert.equal(shown.stdout.trim(), ":5", "an existing display is used as is");
+  }
 } finally {
   owner?.kill("SIGKILL");
   if (orphan) { try { process.kill(orphan, "SIGTERM"); } catch { /* exited */ } }
   await rm(directory, { recursive: true, force: true });
 }
-console.log("native GUI contention, cancellation, inheritance and symlink rejection passed");
+console.log("native GUI contention, cancellation, inheritance, symlink rejection and headless display passed");

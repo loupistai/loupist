@@ -213,7 +213,15 @@ class ChangeScopeTests(unittest.TestCase):
         workflow = (SCRIPTS.parents[2] / ".github/workflows/ci.yml").read_text()
         gate = workflow.split("      - name: Require every selected check\n", 1)[1]
         script = textwrap.dedent(gate.split("        run: |\n", 1)[1])
-        scopes = ("WEB", "PYTHON", "RUST", "RUST_MACOS", "NATIVE", "PACKAGE")
+        scopes = (
+            "WEB",
+            "PYTHON",
+            "RUST",
+            "RUST_MACOS",
+            "NATIVE_LINUX",
+            "NATIVE",
+            "PACKAGE",
+        )
         for required, result, success in (
             ("false", "skipped", True),
             ("true", "success", True),
@@ -251,6 +259,7 @@ class ChangeScopeTests(unittest.TestCase):
             "verify-python",
             "verify-rust",
             "verify-rust-macos",
+            "native-e2e-linux",
             "native-e2e",
             "package-smoke",
         ):
@@ -274,6 +283,10 @@ class ChangeScopeTests(unittest.TestCase):
                 .split("\n", 1)[0]
             )
             self.assertIn("needs.changes.outputs.macos == 'true'", condition, job)
+        # Pull requests still drive the real app: WebKitGTK under Xvfb.
+        linux_native = self.job_block(workflow, "native-e2e-linux")
+        self.assertIn("runs-on: ubuntu", linux_native)
+        self.assertIn("if: needs.changes.outputs.native == 'true'\n", linux_native)
 
     def test_a_cancelled_main_run_leaves_its_changes_in_scope(self) -> None:
         # Main pushes cancel older runs, so each must classify from the last green
