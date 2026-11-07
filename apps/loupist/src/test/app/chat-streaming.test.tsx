@@ -49,14 +49,16 @@ describe("Loupist · Chat streaming and concurrency", () => {
     await send(user, "Return only the settled final answer");
     const progress = await screen.findByLabelText("Work progress");
     expect(await screen.findByText("Tool preamble that must not become the final answer.")).toBeVisible();
+    // The steps stay inside the row, before and after the answer; the row keeps its height.
     expect(within(progress).getByRole("button")).toHaveAttribute("aria-expanded", "false");
-    expect(within(progress).getByRole("listitem")).toHaveTextContent("Retrying model request");
+    expect(progress).not.toHaveTextContent("Retrying model request");
     expect(screen.queryByText("Authoritative final answer.")).not.toBeInTheDocument();
     finishRun();
     const answer = await screen.findByText("Authoritative final answer.");
     const message = answer.closest("article")!;
     await waitFor(() => expect(within(progress).getByRole("button")).toHaveAttribute("aria-expanded", "false"));
-    expect(within(progress).queryByRole("listitem")).toBeNull();
+    await user.click(within(progress).getByRole("button"));
+    expect(within(progress).getByText("Retrying model request")).toBeVisible();
     expect(within(message).getByText("Tool preamble that must not become the final answer.")).toBeVisible();
   });
 
@@ -89,7 +91,7 @@ describe("Loupist · Chat streaming and concurrency", () => {
     const history = await screen.findByLabelText("Work progress");
     expect(screen.getByText(preamble.text)).toBe(originalNote);
     expect(history).not.toContainElement(originalNote);
-    expect(within(history).getByRole("listitem")).toHaveTextContent("Read filing");
+    expect(within(history).getByRole("button")).toHaveAttribute("aria-expanded", "false");
     await emit({ type: "phase", run_id, phase: "writing" });
     const heading = "## 영업이익";
     const write = (sequence: number, text: string, id = "draft") => emit({
@@ -100,10 +102,10 @@ describe("Loupist · Chat streaming and concurrency", () => {
     const body = title.closest<HTMLElement>(".message-content")!;
     expect(body).not.toBeNull();
     expect(history).not.toContainElement(title);
-    expect(within(history).queryByRole("listitem")).toBeNull();
     const toggle = within(history).getByRole("button");
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     await user.click(toggle);
+    expect(within(history).getByText("Read filing")).toBeVisible();
     expect(originalNote).toBeVisible();
     const first = `${heading}\n\n전년보다 **늘었습니다**.`;
     await write(4, first);
@@ -111,16 +113,16 @@ describe("Loupist · Chat streaming and concurrency", () => {
     expect(newWord.closest('[data-streamdown="strong"]')).not.toBeNull();
     expect(originalNote.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(history.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // The settled delta can include text from the last, unflushed progress window.
+    // The settled delta can include text from the last, unflushed progress window; it names the draft it replaces.
     const settled = `${first}\n\n보고서 기준입니다.`;
-    await emit({ type: "delta", run_id, text: settled });
+    await emit({ type: "delta", run_id, text: settled, settles: "draft" });
     await waitFor(() => expect(body).toHaveTextContent("보고서 기준입니다."));
     expect(screen.getAllByRole("heading", { name: "영업이익" })).toEqual([title]);
     await emit({ type: "progress_patch", run_id, patch: { sequence: 5, removeItemIds: ["draft"] } });
     const more = "추가 질문도 확인했어요.";
     await write(6, more, "continued");
     await waitFor(() => expect(body).toHaveTextContent(more));
-    await emit({ type: "delta", run_id, text: `\n\n${more}` });
+    await emit({ type: "delta", run_id, text: `\n\n${more}`, settles: "continued" });
     await emit({ type: "progress_patch", run_id, patch: { sequence: 7, removeItemIds: ["continued"] } });
     await emit({ type: "completed", run_id, message_id: "final", final_text: `${settled}\n\n${more}`, ...terminal });
     expect(await within(body.closest("article")!).findByRole("button", { name: "Copy answer" })).toBeVisible();

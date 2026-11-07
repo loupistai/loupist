@@ -77,7 +77,7 @@ describe("Loupist · Chat evidence", () => {
     render(<App bridge={bridge} />);
     await openChat();
     const sources = await screen.findByLabelText("Research sources");
-    expect(sources).toHaveTextContent("1 citation");
+    expect(sources).toHaveTextContent("Sources (1)");
     for (const result of [search, derived]) {
       await user.click(screen.getByRole("button", { name: `Result: ${result.title}` }));
       expect(within(screen.getByLabelText("Work progress")).getByText(result.excerpt)).toBeVisible();
@@ -113,10 +113,12 @@ describe("Loupist · Chat evidence", () => {
     const read = within(digest).getByRole("button");
     const article = read.closest("article")!;
     expect(within(article).getAllByLabelText("Work progress")).toHaveLength(1);
-    expect(within(digest).getAllByRole("listitem")).toHaveLength(3);
+    expect(read).toHaveAttribute("aria-expanded", "false");
     expect(within(digest).queryByRole("button", { name: "Rate outlook · example.com" })).toBeNull();
     for (const internal of ["web:f6495eccf2c0cca04e4c6a03", "private-tool-id", "web_search"]) expect(article).not.toHaveTextContent(internal);
     await user.click(read);
+    expect(digest.querySelectorAll(".chat-progress-row")).toHaveLength(3);
+    for (const internal of ["web:f6495eccf2c0cca04e4c6a03", "private-tool-id", "web_search"]) expect(article).not.toHaveTextContent(internal);
     await user.click(within(article).getByRole("button", { name: "Rate outlook · example.com" }));
     await waitFor(() => expect(browser).toHaveBeenCalledWith(expect.objectContaining({ url: "https://example.com/rates" }), expect.any(Function)));
     expect(external).not.toHaveBeenCalled();
@@ -151,7 +153,6 @@ describe("Loupist · Chat evidence", () => {
     const emit = async (event: ChatStreamEvent) => { await act(async () => observer(event)); };
 
     await emit({ type: "evidence", run_id: request.run_id, evidence });
-    expect(await screen.findByLabelText("Research sources")).toHaveTextContent("1 citation");
     await emit({ type: "delta", run_id: request.run_id, text: answer });
     const citation = await screen.findByRole("button", { name: `Source 1: ${evidence.title}` });
     await user.click(citation);
@@ -166,13 +167,16 @@ describe("Loupist · Chat evidence", () => {
     expect(within(panel).getByRole("button", { name: "Back" })).toBeDisabled();
     expect(screen.getByText("Unknown source", { exact: true }).closest("a, button")).toBeNull();
     await emit({ type: "evidence", run_id: request.run_id, evidence });
-    expect(within(screen.getByLabelText("Research sources")).getAllByRole("button", { name: new RegExp(evidence.title) })).toHaveLength(1);
 
     const persisted: ChatMessage = { id: "assistant-evidence", role: "assistant", status: "complete", content: answer, created_at: "2026-10-11T03:01:00Z", evidence_refs: [structuredClone(evidence)] };
     savedWorkspace.threads.find((thread) => thread.id === request.thread_id)!.messages.push(
       { id: "user-evidence", role: "user", status: "complete", content: request.prompt, created_at: "2026-10-11T03:00:00Z" }, persisted);
     saved = true;
     await emit(completed(request.run_id, answer));
+    // The sources list arrives with the settled answer and names a source once, however often it was issued.
+    const sources = await screen.findByLabelText("Research sources");
+    expect(sources).toHaveTextContent("Sources (1)");
+    expect(within(sources).getAllByRole("button", { name: new RegExp(evidence.title) })).toHaveLength(1);
     first.unmount();
 
     render(<App bridge={bridge} />);

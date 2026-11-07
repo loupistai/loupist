@@ -18,7 +18,7 @@ import type { DiagramPlugin } from "@streamdown/mermaid";
 import { ExternalLinkIcon, FileIcon } from "lucide-react";
 import { HoverCard } from "radix-ui";
 import type { ComponentProps, ReactNode } from "react";
-import { createContext, isValidElement, memo, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, isValidElement, memo, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Streamdown, defaultRehypePlugins, defaultUrlTransform, type StreamdownTranslations } from "streamdown";
 
 const t = i18n.getFixedT(null, "chat");
@@ -227,47 +227,49 @@ export type MessageResponseProps = Omit<
   mermaidPlugin?: DiagramPlugin;
 };
 
-let codePluginPromise: Promise<CodeHighlighterPlugin> | undefined;
-let mathPluginPromise: Promise<MathPlugin> | undefined;
+type LoadedPlugins = { code?: CodeHighlighterPlugin; math?: MathPlugin };
+
+// One store for every answer: a plugin loads once, and an instance that mounts
+// after it renders highlighted on its first paint instead of after a swap.
+const pluginStore = {
+  loaded: {} as LoadedPlugins,
+  listeners: new Set<() => void>(),
+  loading: { code: undefined as Promise<void> | undefined, math: undefined as Promise<void> | undefined },
+  subscribe(listener: () => void) {
+    pluginStore.listeners.add(listener);
+    return () => { pluginStore.listeners.delete(listener); };
+  },
+  snapshot: () => pluginStore.loaded,
+  set(next: LoadedPlugins) {
+    pluginStore.loaded = { ...pluginStore.loaded, ...next };
+    for (const listener of pluginStore.listeners) listener();
+  },
+  load(kind: keyof LoadedPlugins) {
+    if (pluginStore.loaded[kind] || pluginStore.loading[kind]) return;
+    const request = kind === "code"
+      ? import("@streamdown/code").then(({ code }) => pluginStore.set({ code }))
+      : Promise.all([import("@streamdown/math"), import("katex/dist/katex.min.css")]).then(([{ math }]) => pluginStore.set({ math }));
+    pluginStore.loading[kind] = request.catch(() => { pluginStore.loading[kind] = undefined; });
+  },
+};
 
 function useContentPlugins(text: string) {
   useTranslation("chat");
   const requiresCode = /^[\t ]*(?:`{3,}|~{3,})/mu.test(text);
   // Streamdown's current default uses $$; ordinary currency stays ordinary text.
   const requiresMath = /(?<!\\)\$\$[\s\S]+?(?<!\\)\$\$/u.test(text);
-  const [codePlugin, setCodePlugin] = useState<CodeHighlighterPlugin>();
-  const [mathPlugin, setMathPlugin] = useState<MathPlugin>();
+  const loaded = useSyncExternalStore(pluginStore.subscribe, pluginStore.snapshot, pluginStore.snapshot);
 
-  useEffect(() => {
-    if (!requiresCode) return;
-    let disposed = false;
-    codePluginPromise ??= import("@streamdown/code").then(({ code }) => code).catch((error: unknown) => {
-      codePluginPromise = undefined;
-      throw error;
-    });
-    void codePluginPromise.then((plugin) => { if (!disposed) setCodePlugin(plugin); }, () => undefined);
-    return () => { disposed = true; };
-  }, [requiresCode]);
+  useEffect(() => { if (requiresCode) pluginStore.load("code"); }, [requiresCode]);
+  useEffect(() => { if (requiresMath) pluginStore.load("math"); }, [requiresMath]);
 
-  useEffect(() => {
-    if (!requiresMath) return;
-    let disposed = false;
-    mathPluginPromise ??= Promise.all([
-      import("@streamdown/math"),
-      import("katex/dist/katex.min.css"),
-    ]).then(([{ math }]) => math).catch((error: unknown) => {
-      mathPluginPromise = undefined;
-      throw error;
-    });
-    void mathPluginPromise.then((plugin) => { if (!disposed) setMathPlugin(plugin); }, () => undefined);
-    return () => { disposed = true; };
-  }, [requiresMath]);
-
+  const codePlugin = requiresCode ? loaded.code : undefined;
+  const mathPlugin = requiresMath ? loaded.math : undefined;
   return useMemo(() => ({
     cjk,
-    ...(requiresCode && codePlugin ? { code: codePlugin } : {}),
-    ...(requiresMath && mathPlugin ? { math: mathPlugin } : {}),
-  }), [requiresCode, codePlugin, requiresMath, mathPlugin]);
+    ...(codePlugin ? { code: codePlugin } : {}),
+    ...(mathPlugin ? { math: mathPlugin } : {}),
+  }), [codePlugin, mathPlugin]);
 }
 const disabledLinkSafety = { enabled: false } as const;
 
@@ -389,7 +391,7 @@ export const MessageResponse = memo(
       <ResearchEvidenceContext.Provider value={evidenceContext}>
       <LensLinkContext.Provider value={lensLinkContext}>
       <Streamdown
-        key={`${Boolean(contentPlugins.code)}:${Boolean(contentPlugins.math)}:${Boolean(mermaidPlugin)}:${Boolean(onLensLink)}:${workspacePath ?? ""}:${workspaceBasePath ?? ""}`}
+        key={`${Boolean(onLensLink)}:${workspacePath ?? ""}:${workspaceBasePath ?? ""}`}
         className={cn(
           "w-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
           className,

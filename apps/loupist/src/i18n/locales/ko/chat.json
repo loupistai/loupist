@@ -220,7 +220,7 @@
     "downloadAttachment": "{{filename}} 다운로드",
     "reasoningLevel": "추론: {{value1}}",
     "responseTime": "응답 시간: {{value1}}",
-    "sourceCount_other": "근거 {{count}}개",
+    "sourceCount_other": "출처 ({{count}})",
     "stoppedKept_other": "중지됨 · {{formattedCount}}단계와 지금까지의 글을 남겼어요",
     "stoppedKeptSteps_other": "중지됨 · {{formattedCount}}단계를 남겼어요",
     "stoppedKeptText": "중지됨 · 지금까지의 글을 남겼어요",
@@ -443,9 +443,12 @@
     "saved": "자료를 저장했어요"
   },
   "chatStatusPill": {
-    "working": "작업 중 · <0/> · {{step}}",
-    "stillWorking": "계속 작업 중 · <0/> · {{step}}",
     "jumpToLatest": "최신으로 이동"
+  },
+  "turnFooter": {
+    "working": "작업 중",
+    "stillWorking": "계속 작업 중",
+    "waitingForYou": "확인을 기다리는 중"
   },
   "browserWorkspaceView": {
     "goBack": "뒤로",

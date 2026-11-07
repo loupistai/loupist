@@ -223,8 +223,8 @@
     "downloadAttachment": "Download {{filename}}",
     "reasoningLevel": "Reasoning: {{value1}}",
     "responseTime": "Response time: {{value1}}",
-    "sourceCount_one": "{{count}} citation",
-    "sourceCount_other": "{{count}} citations",
+    "sourceCount_one": "Sources ({{count}})",
+    "sourceCount_other": "Sources ({{count}})",
     "stoppedKept_one": "Stopped · kept {{formattedCount}} step and the text so far",
     "stoppedKept_other": "Stopped · kept {{formattedCount}} steps and the text so far",
     "stoppedKeptSteps_one": "Stopped · kept {{formattedCount}} step",
@@ -480,9 +480,12 @@
     "saved": "Source saved"
   },
   "chatStatusPill": {
-    "working": "Working · <0/> · {{step}}",
-    "stillWorking": "Still working · <0/> · {{step}}",
     "jumpToLatest": "Jump to latest"
+  },
+  "turnFooter": {
+    "working": "Working",
+    "stillWorking": "Still working",
+    "waitingForYou": "Waiting for you"
   },
   "browserWorkspaceView": {
     "goBack": "Go back",

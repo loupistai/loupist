@@ -5,7 +5,7 @@ import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { lookBackDraft, LookBackProvider } from "../../components/knowledge/lookBack";
 import { JournalThenNow } from "../../components/knowledge/ResearchJournal";
 import { AsOfNote } from "../../components/chat/AsOfNote";
-import { ChatProgressTimeline } from "../../components/chat/ChatProgressTimeline";
+import { ChatMessageCard } from "../../components/chat/ChatMessageCard";
 import { configureTheme, PreviewBridge } from "../../preview/fixtures";
 import { scenarios } from "../../preview/scenarios";
 import type { JournalRecord } from "../../types";
@@ -79,10 +79,11 @@ describe("as-of answers", () => {
   });
 
   it("renders a refused step as neutral and the note from the answer's report", () => {
-    render(<ChatProgressTimeline status="complete" asOf="2026-03-03" onOpenLink={async () => {}} progress={{ startedAtMs: 1, finishedAtMs: 50_000, items: [
-      { id: "quote", kind: "tool", toolName: "kis_read", category: "finance", operation: "read", action: "Read market data", target: "990221", status: "skipped", startedAtMs: 1, finishedAtMs: 2 },
-    ] }} />);
-    fireEvent.click(screen.getByRole("button", { name: /1 step/ }));
+    render(<ChatMessageCard loupistId="loupist-a" loupistName="Quality" onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} onOpenArtifact={vi.fn()} onOpenLink={vi.fn()} onReadAttachment={vi.fn()}
+      message={{ id: "answer", role: "assistant", status: "complete", content: "Done.", created_at: "2026-03-03T00:00:00Z", as_of: "2026-03-03", progress: { startedAtMs: 1, finishedAtMs: 50_000, items: [
+        { id: "quote", kind: "tool", toolName: "kis_read", category: "finance", operation: "read", action: "Read market data", target: "990221", status: "skipped", startedAtMs: 1, finishedAtMs: 2 },
+      ] } }} />);
+    fireEvent.click(screen.getByRole("button", { name: /1 lookup skipped for Mar 3, 2026/ }));
     const row = document.querySelector(".chat-progress-row.skipped")!;
     // The row names the source as a noun and leaves the date to the answer's tag; it leads with the skipped glyph.
     expect(row).toHaveTextContent("Can't look back to that day · Market data");

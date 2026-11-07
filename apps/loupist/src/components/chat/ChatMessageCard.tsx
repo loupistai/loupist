@@ -4,7 +4,7 @@ import { ApprovalCards } from "./ApprovalCard";
 import type { LoupistBridge } from "../../types";
 import { formatDate, formatNumber, formatTime } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
-import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { AnswerFeedback, type SaveAnswerFeedback } from "./AnswerFeedback";
 import {
   ArrowUpRightIcon,
@@ -19,8 +19,8 @@ import {
 } from "lucide-react";
 import { Message, MessageContent } from "@/components/ai-elements/message";
 import { useConversationScroll } from "../ai-elements/conversation";
-import { turnTranscript } from "../../chat/turnTranscript";
-import { withoutIdentifiers } from "../../chat/runStatus";
+import { useNow } from "../../chat/runStatus";
+import { deriveTurnView, useLastActivity, visibleMessageContent, type TurnState } from "../../chat/turnView";
 import { deliveredFiles } from "../../chat/deliveredFiles";
 import { DeliveredFiles } from "./DeliveredFiles";
 import { thinkingLabel } from "../../lib/modelSelection";
@@ -39,9 +39,11 @@ import type {
   KnowledgeLocation,
   GraphJobView,
 } from "../../types";
-import { exactMemoryReads, isInlineWorkEvidence, memoryReadForEvidence } from "../../chat/memoryActivity";
+import { isInlineWorkEvidence, memoryReadForEvidence } from "../../chat/memoryActivity";
 import { knowledgeLocationFromMemoryRef } from "../../knowledge/location";
-import { ChatProgressTimeline } from "./ChatProgressTimeline";
+import { ActivityRow } from "./ActivityRow";
+import { ProseSegment, type ProseLinks } from "./ProseSegment";
+import { TurnFooter } from "./TurnFooter";
 import { MessageSchedules } from "./MessageSchedules";
 import { EarningsChatCard } from "./EarningsChatCard";
 import { earningsCards } from "../../chat/earningsLinks";
@@ -56,7 +58,6 @@ import { MessageMemoryRow } from "./MessageMemoryRow";
 import { NextStepChips, nextStepQuestions } from "./NextStepChips";
 import { useChatMap } from "../workspace/ChatMapContext";
 import { SourceFavicon } from "./SourceFavicon";
-import { SafeMessageResponse } from "./SafeMessageResponse";
 import { AnswerOutline } from "./AnswerOutline";
 import { SentImages } from "./SentImages";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
@@ -221,6 +222,8 @@ type Props = {
   mentionSkills?: ReadonlyArray<{ id: string; name: string }>;
   mentionPlugins?: ReadonlyArray<{ id: string; name: string }>;
   onEditUser?: (text: string) => void;
+  /** Editing waits for the running reply; the control stays in place so the thread does not jump when it ends. */
+  editDisabled?: boolean;
   /** Edit forks (X18): show the version of the chat before or after this message's version. */
   onEarlierVersion?: () => void;
   onLaterVersion?: () => void;
@@ -229,6 +232,8 @@ type Props = {
   onRetry?: () => void;
   /** The newest answer keeps its action row visible; earlier ones show it on hover or focus (X1). */
   latest?: boolean;
+  /** A stop was requested for this reply and the host has not confirmed it yet. */
+  stopping?: boolean;
   /** The failed answer's provider by display name (X11 copy). */
   providerName?: string;
   /** Busy answers in a row in this Chat, counting this one (X11 countdown). */
@@ -304,11 +309,13 @@ function ChatMessageCardComponent({
   mentionSkills = [],
   mentionPlugins = [],
   onEditUser,
+  editDisabled = false,
   onEarlierVersion,
   onLaterVersion,
   outlineOpen = false,
   onRetry,
   latest = false,
+  stopping = false,
   providerName,
   retryAttempt = 1,
   onProviderAction,
@@ -326,7 +333,6 @@ function ChatMessageCardComponent({
   const conversation = useConversationScroll();
   const evidenceRefs = message.evidence_refs ?? [];
   const citationList = citationSources(evidenceRefs).map((evidence, index) => ({ evidence, number: index + 1 }));
-  const workResults = evidenceRefs.filter((evidence) => isInlineWorkEvidence(evidence, message.memory_refs));
   // Memory declines are told once per chat by the memory row, not as connection activity.
   const connectionRefusals = (message.tool_refusals ?? []).filter(refusal => refusal.reason !== "sensitive_memory");
   const openLens = (recordId: string) => onOpenMemory({
@@ -364,18 +370,16 @@ function ChatMessageCardComponent({
     // A data number opens its reader at the matched cell.
     onOpenEvidence?.(evidence, cell ? { label: link?.label ?? "", itemId: link?.itemId, cell } : link);
   };
-  const recordedStart = Date.parse(message.created_at);
-  const usedKnowledge = exactMemoryReads(message.memory_refs);
-  const showMemory = message.role === "assistant" && message.status !== "streaming"
-    && message.memory_update !== undefined;
-  const isLiveAssistantResponse = message.role === "assistant" && message.status === "streaming";
-  // Pi streams its current text through progress until it knows whether the
-  // message ends with a tool call or an answer. Only project it into the UI.
-  const lastItem = message.progress?.items.at(-1);
-  const draft = isLiveAssistantResponse && message.phase === "writing" && lastItem?.kind === "commentary" ? lastItem : undefined;
-  const trace = draft && message.progress
-    ? { ...message.progress, items: message.progress.items.slice(0, -1) }
-    : message.progress;
+  const now = useNow(message.status === "streaming");
+  const lastActivityAt = useLastActivity(message);
+  const view = useMemo(() => deriveTurnView({ message, now, lastActivityAt, stopping, retryPending }), [message, now, lastActivityAt, stopping, retryPending]);
+  // A new row, a settled footer or a card below it grows the turn in this commit; follow it now.
+  const segmentCount = view.segments.length;
+  useLayoutEffect(() => { conversation?.followGrowth(); }, [conversation, segmentCount, view.state.kind]);
+  const links: ProseLinks = {
+    onOpenLink, onOpenFile, onLensLink: openLens, onShowStep: showStep, onOpenEvidenceCell: openEvidence,
+    onOpenEvidence: (evidence, anchor) => openEvidence(evidence, undefined, anchor),
+  };
   // Delivered files (X13): written by this answer and linked from it; a write the answer never links stays a step.
   const deliveredPaths = useMemo(() => {
     if (message.role !== "assistant") return [];
@@ -392,23 +396,17 @@ function ChatMessageCardComponent({
   // Grid answers and conflict cards render in the answer too, after its charts.
   const grids = useMemo(() => gridBlocks(message), [message]);
   const connectionSetups = useMemo(() => connectionSetupBlocks(message), [message]);
+  const visibleContent = visibleMessageContent(message);
   // A paragraph that only links to a grid result renders as the sensitivity card where the
   // paragraph stood, and one that only links to a results snapshot as the compact results card.
   // Rust counted the links of the answer as written, so the grid paragraphs come out first.
-  const visibleContent = visibleMessageContent(message);
-  const liveText = draft ? withoutIdentifiers(draft.text) : "";
-  const bodyText = visibleContent && liveText ? `${visibleContent}\n\n${liveText}` : visibleContent || liveText;
-  const results = useMemo(() => {
-    if (message.role !== "assistant" || message.status !== "complete") return { segments: [{ text: bodyText, numberChecks: message.number_checks }] as SensitivitySegment[], cards: [] };
-    const grids = sensitivityParagraphs(bodyText, message.sensitivity_cards, message.number_checks);
+  const settledAnswer = useMemo(() => {
+    if (message.role !== "assistant" || message.status !== "complete") return null;
+    const grids = sensitivityParagraphs(visibleContent, message.sensitivity_cards, message.number_checks);
     const segments = grids.segments.map((segment) => ({ ...earningsCards(segment.text, message.evidence_refs, segment.numberChecks), card: segment.card }));
     return { segments: segments as SensitivitySegment[], cards: segments.flatMap((segment) => segment.cards) };
-  }, [message.role, message.status, bodyText, message.evidence_refs, message.number_checks, message.sensitivity_cards]);
+  }, [message.role, message.status, visibleContent, message.evidence_refs, message.number_checks, message.sensitivity_cards]);
   const documents = (message.artifact_refs ?? []).filter((artifact) => artifact.kind === "markdown");
-  // The host's terminal placeholder is explained by the localized run state below.
-  const isFailurePlaceholder = message.role === "assistant" && message.status === "error"
-    && message.content.trim() === "Response could not be completed.";
-  const showMessageBody = message.role === "user" || (!!bodyText && !isFailurePlaceholder);
   const executionModelTitle = message.execution_model
     ? [
         message.execution_model.name,
@@ -420,61 +418,36 @@ function ChatMessageCardComponent({
     : undefined;
   const tokenLines = responseTokenLines(message.performance);
   const failureLabel = message.failure_kind ? failureMessages()[message.failure_kind] : undefined;
+  const prose = (key: string, text: string, streaming: boolean, tone: "answer" | "narration", checks?: ChatMessage["number_checks"]) =>
+    <ProseSegment key={key} text={text} streaming={streaming} tone={tone} checks={checks} evidenceRefs={message.evidence_refs}
+      memoryRefs={message.memory_refs} asOf={message.as_of} workspacePath={workspacePath} links={links} />;
 
   const transcript: ReactNode[] = [];
   if (message.role === "assistant") {
-    const parts = turnTranscript(trace ?? { startedAtMs: recordedStart, items: [] }, workResults, usedKnowledge.length > 0, evidenceRefs);
-    const firstWork = parts.find(part => part.kind === "work");
-    let proseIndex = 0;
-    // The same keyed Markdown body stays mounted when Pi identifies its
-    // live text as a preamble, or when the settled answer replaces its draft.
-    const appendProse = (text: string, streaming: boolean, checks?: ChatMessage["number_checks"]) => {
-      if (!text) return;
-      transcript.push(<Message key={`prose-${proseIndex++}`} from="assistant" className="max-w-full">
-        <MessageContent className="message-content overflow-visible">
-          <SafeMessageResponse text={text} isAnimating={streaming} evidenceRefs={message.evidence_refs}
-            memoryRefs={message.memory_refs} numberChecks={checks} asOf={message.as_of}
-            onOpenEvidence={(evidence, anchor) => openEvidence(evidence, undefined, anchor)}
-            onOpenEvidenceCell={openEvidence} onShowStep={showStep} onOpenLink={onOpenLink}
-            onOpenFile={onOpenFile} onLensLink={openLens} workspacePath={workspacePath} />
-        </MessageContent>
-      </Message>);
-    };
-    for (const part of parts) {
-      if (part.kind === "commentary") {
-        appendProse(withoutIdentifiers(part.text), false);
+    for (const segment of view.segments) {
+      if (segment.kind === "activity") {
+        transcript.push(<ActivityRow key={segment.key} segment={segment} status={message.status} focusItemId={progressFocus} asOf={message.as_of}
+          onOpenSource={onOpenEvidence ? (source, anchor) => openEvidence(source, undefined, anchor) : undefined} onOpenLink={onOpenLink}
+          revealedResult={segment.evidence.some(e => e.id === revealedResult?.id) ? revealedResult : undefined}
+          renderApprovals={bridge ? approvals => <ApprovalCards approvals={approvals} refusals={[]} bridge={bridge} loupistId={loupistId} /> : undefined} />);
         continue;
       }
-      const activeStep = part.progress.items.some(item => item.kind !== "commentary" && item.status === "running");
-      const lastGroup = part === parts.at(-1);
-      const liveGroup = isLiveAssistantResponse && (activeStep || (lastGroup && !part.progress.items.length && !!part.progress.plan) || !!part.progress.approvals?.some(a => a.state === "waiting"));
-      transcript.push(<ChatProgressTimeline key={part.key} compactTools
-        showLiveSteps={isLiveAssistantResponse && (!bodyText.trim() || message.phase === "tool" || message.phase === "thinking")}
-        planItemLabel={liveGroup && lastGroup ? trace?.plan?.items.find(item => item.status === "active")?.label : undefined}
-        sources={part.sources} onOpenSource={onOpenEvidence ? (source, anchor) => openEvidence(source, undefined, anchor) : undefined}
-        progress={part.progress} executionResults={part.evidence} memoryReads={part === firstWork ? usedKnowledge.map(({ ref }) => ref) : undefined}
-        revealedResult={part.evidence.some(e => e.id === revealedResult?.id) ? revealedResult : undefined}
-        status={isLiveAssistantResponse && !liveGroup ? "complete" : message.status}
-        phase={liveGroup ? message.phase : undefined} focusItemId={progressFocus}
-        onOpenLink={onOpenLink} onLensLink={openLens} asOf={message.as_of}
-        renderApprovals={bridge ? approvals => <ApprovalCards approvals={approvals} refusals={[]} bridge={bridge} loupistId={loupistId} /> : undefined} />);
+      // The settled answer alone splits around its cards; the first piece keeps the answer's key.
+      if (settledAnswer && segment.tone === "answer" && !segment.streaming) {
+        settledAnswer.segments.forEach((piece, index) => {
+          if (piece.text) transcript.push(prose(index ? `${segment.key}:${index}` : segment.key, piece.text, false, "answer", piece.numberChecks));
+          if (piece.card) {
+            const card = piece.card;
+            transcript.push(<SensitivityCard key={`grid-${card.evidence_id}-${index}`} grid={card} subject={card.subject}
+              evidence={evidenceRefs.find(item => item.id === card.evidence_id)} evidenceRefs={evidenceRefs} asOf={message.as_of}
+              actions={{ onOpenEvidence: openEvidence, onShowStep: showStep }} onChangeRates={onFillComposer} />);
+          }
+        });
+        continue;
+      }
+      transcript.push(prose(segment.key, segment.text, segment.streaming, segment.tone, segment.checks));
     }
     if (bridge && connectionRefusals.length) transcript.push(<ApprovalCards key="refusals" approvals={[]} refusals={connectionRefusals} bridge={bridge} loupistId={loupistId} />);
-    if (message.status === "complete" && message.content) transcript.push(<AnswerOutline key="outline" messageId={message.id} markdown={message.content} defaultOpen={outlineOpen} />);
-    if (showMessageBody) for (const segment of results.segments) {
-      appendProse(segment.text, isLiveAssistantResponse, segment.numberChecks);
-      if (segment.card) {
-        const card = segment.card;
-        transcript.push(<SensitivityCard key={`grid-${card.evidence_id}-${transcript.length}`} grid={card} subject={card.subject}
-          evidence={evidenceRefs.find(item => item.id === card.evidence_id)} evidenceRefs={evidenceRefs} asOf={message.as_of}
-          actions={{ onOpenEvidence: openEvidence, onShowStep: showStep }} onChangeRates={onFillComposer} />);
-      }
-    }
-    const runningTool = trace?.items.some(item => item.kind !== "commentary" && item.status === "running");
-    if (isLiveAssistantResponse && ((!runningTool && message.phase !== "writing" && !(bodyText && !message.phase)) || guiding?.length)) {
-      transcript.push(<ChatProgressTimeline key="live-status" progress={{ startedAtMs: trace?.startedAtMs ?? recordedStart, items: [] }}
-        status="streaming" phase={message.phase} guiding={guiding} onOpenLink={onOpenLink} />);
-    }
   }
 
   // Guidance the reply accepted reads as the row it was while the reply ran, not a new question.
@@ -485,7 +458,7 @@ function ChatMessageCardComponent({
   );
 
   return (
-    <article data-message-id={message.id} data-latest={latest || undefined} className={`message ${message.role} ${message.status ?? ""}`}>
+    <article data-message-id={message.id} data-latest={latest || undefined} className={`message ${message.role} ${message.status ?? ""}`} data-turn={message.role === "assistant" ? view.state.kind : undefined}>
       <div className="message-meta">
         <span>{message.role === "user" ? t("chatMessageCard.you") : loupistName}</span>
         <time>{formatTime(new Date(message.created_at))}</time>
@@ -504,7 +477,7 @@ function ChatMessageCardComponent({
         </Popover> : null}
       </div>
       {message.role === "user" ? <SentImages message={message} /> : null}
-      {showMessageBody && message.role === "user" ? (
+      {message.role === "user" ? (
         <Message from={message.role} className="max-w-full">
           <MessageContent className="message-content overflow-visible">
             {(message.content || message.as_of) && <UserMessageText text={message.content} asOf={message.as_of} skills={mentionSkills} plugins={mentionPlugins} />}
@@ -512,7 +485,7 @@ function ChatMessageCardComponent({
         </Message>
       ) : null}
       {transcript}
-      {bridge ? results.cards.map((card) => <EarningsChatCard key={card.evidenceId} bridge={bridge} loupistId={loupistId} loupistName={loupistName} assetId={card.assetId} eventId={card.eventId} onOpenLink={(url) => void onOpenLink(url)} />) : null}
+      {bridge && settledAnswer ? settledAnswer.cards.map((card) => <EarningsChatCard key={card.evidenceId} bridge={bridge} loupistId={loupistId} loupistName={loupistName} assetId={card.assetId} eventId={card.eventId} onOpenLink={(url) => void onOpenLink(url)} />) : null}
 
       {charts.map((block) => <ChatArtifactBlock key={block.key} block={block} onOpen={onOpenArtifact} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} asOf={message.as_of} />)}
       {bridge ? connectionSetups.map((block) => <ConnectionSetupCard key={block.key} bridge={bridge} loupistId={loupistId} entryId={block.entryId}
@@ -549,58 +522,59 @@ function ChatMessageCardComponent({
         </div>
       )}
 
+      {message.role === "assistant" ? <TurnFooter footer={view.footer} now={now} announce={view.announce} guiding={guiding}>
+        {view.footer.kind === "settled" ? <>
+          {citationList.length > 0 && onOpenEvidence ? (
+            <Disclosure className="message-sources" aria-label={t("chatMessageCard.researchSources")} title={<>{t("chatMessageCard.sourceCount", { count: citationList.length })}</>}>
+              <ol>{citationList.map(({ evidence, number }) => (
+                <li key={evidence.id}><button type="button" onClick={(event) => openEvidence(evidence, undefined, event.currentTarget)}>
+                  <span className="source-number">{number}</span><span><strong>{evidenceTitle(evidence)}</strong>
+                    <small className="source-site"><SourceFavicon evidence={evidence} /><span>{sourceIdentityLabel(evidence)} · {evidencePresentation(evidence).label}{evidence.retrieved_at ? ` · ${formatDate(new Date(evidence.retrieved_at), { dateStyle: "medium" })}` : ""}{evidence.excerpt_match ? t("chatMessageCard.citedPassage") : ""}</span></small>
+                  </span><ArrowUpRightIcon aria-hidden="true" />
+                </button></li>
+              ))}</ol>
+            </Disclosure>
+          ) : null}
+          <MessageMemoryRow
+            bridge={bridge}
+            active={active}
+            loupistId={loupistId}
+            chatId={chatId}
+            message={message}
+            onOpenMemory={onOpenMemory}
+            onOpenMemoryPage={onOpenMemoryPage}
+            onOpenEvidence={onOpenEvidence ? (evidence, anchor) => openEvidence(evidence, undefined, anchor) : undefined}
+            onReadWorldJob={onReadWorldJob}
+            onWorldChanged={onWorldChanged}
+          />
+          {view.footer.copyText !== null ? <div className="message-actions">
+            <button type="button" aria-label={copyState === "copied" ? t("chatMessageCard.answerCopied") : t("chatMessageCard.copyAnswer")} title={copyState === "copied" ? t("chatMessageCard.copied") : t("chatMessageCard.copyAnswer")} onClick={() => {
+              void navigator.clipboard.writeText(visibleContent).then(() => setCopyState("copied"), () => setCopyState("failed"));
+            }}>{copyState === "copied" ? <CheckIcon /> : <CopyIcon />}</button>
+            {copyState === "failed" ? <span role="alert">{t("chatMessageCard.couldNotCopySelectTheAnswerToCopyIt")}</span> : null}
+          </div> : null}
+          {view.footer.feedback && onSaveFeedback && onTeachFeedback ? <AnswerFeedback bridge={bridge} loupistId={loupistId} chatId={chatId} onOpenPrinciple={onOpenMemoryPage} message={message} onSave={onSaveFeedback} onTeach={onTeachFeedback} feedbackBusy={feedbackBusy} /> : null}
+          {note ? <p className="message-model-note">{note}</p> : null}
+          {view.footer.runState ? (
+            <div className="message-run-state" role={view.footer.runState.kind === "failed" ? "alert" : "status"}>
+              {view.footer.runState.kind === "failed" ? <ChatErrorState retryAfterSeconds={message.retry_after_seconds} kind={message.failure_kind ?? "other"} provider={providerName ?? t("chatError.yourProvider")}
+                attempt={retryAttempt} fallback={failureLabel ?? failureMessages().other} onRetry={onRetry}
+                onProviderAction={onProviderAction ? (action) => onProviderAction(action, message.execution_model?.provider) : undefined} /> : <>
+                <p>{stoppedLabel(view.state, message)}</p>
+                {onRetry ? <button type="button" onClick={onRetry}>{t("chatMessageCard.tryAgain")}</button> : null}
+              </>}
+            </div>
+          ) : null}
+        </> : null}
+      </TurnFooter> : null}
       {message.role === "assistant" && message.status === "complete" && message.as_of_report ? <AsOfNote report={message.as_of_report} loupistName={loupistName} /> : null}
+      {message.role === "assistant" && message.status === "complete" && message.content ? <AnswerOutline messageId={message.id} markdown={message.content} defaultOpen={outlineOpen} /> : null}
       {message.role === "assistant" && message.status === "complete" && onNextStep ? <NextSteps loupistId={loupistId} chatId={chatId} messageId={message.id} onAsk={onNextStep} /> : null}
-      {message.role === "assistant" ? (
-        <MessageMemoryRow
-          bridge={bridge}
-          active={active}
-          loupistId={loupistId}
-          chatId={chatId}
-          message={message}
-          onOpenMemory={onOpenMemory}
-          onOpenMemoryPage={onOpenMemoryPage}
-          onOpenEvidence={onOpenEvidence ? (evidence, anchor) => openEvidence(evidence, undefined, anchor) : undefined}
-          onReadWorldJob={onReadWorldJob}
-          onWorldChanged={onWorldChanged}
-        />
-      ) : null}
-
-      <div className="message-action-bar">
-      {citationList.length > 0 && onOpenEvidence ? (
-        <Disclosure className="message-sources" aria-label={t("chatMessageCard.researchSources")} title={<>{t("chatMessageCard.sourceCount", { count: citationList.length })}</>}>
-          <ol>{citationList.map(({ evidence, number }) => (
-            <li key={evidence.id}><button type="button" onClick={(event) => openEvidence(evidence, undefined, event.currentTarget)}>
-              <span className="source-number">{number}</span><span><strong>{evidenceTitle(evidence)}</strong>
-                <small className="source-site"><SourceFavicon evidence={evidence} /><span>{sourceIdentityLabel(evidence)} · {evidencePresentation(evidence).label}{evidence.retrieved_at ? ` · ${formatDate(new Date(evidence.retrieved_at), { dateStyle: "medium" })}` : ""}{evidence.excerpt_match ? t("chatMessageCard.citedPassage") : ""}</span></small>
-              </span><ArrowUpRightIcon aria-hidden="true" />
-            </button></li>
-          ))}</ol>
-        </Disclosure>
-      ) : null}
-
-      {note && message.role === "assistant" ? <p className="message-model-note">{note}</p> : null}
-      {(message.status === "aborted" || message.status === "error") && message.role === "assistant" ? (
-        <div className="message-run-state" role={message.status === "error" ? "alert" : "status"}>
-          {message.status === "error" ? <ChatErrorState retryAfterSeconds={message.retry_after_seconds} kind={message.failure_kind ?? "other"} provider={providerName ?? t("chatError.yourProvider")}
-            attempt={retryAttempt} fallback={failureLabel ?? failureMessages().other} onRetry={onRetry}
-            onProviderAction={onProviderAction ? (action) => onProviderAction(action, message.execution_model?.provider) : undefined} /> : <>
-            <p>{stoppedResult(message, visibleContent)}</p>
-            {onRetry ? <button type="button" onClick={onRetry}>{t("chatMessageCard.tryAgain")}</button> : null}
-          </>}
-        </div>
-      ) : null}
-      {(message.role === "user" && (onEditUser || onEarlierVersion || onLaterVersion)) || (message.role === "assistant" && !isLiveAssistantResponse && !isFailurePlaceholder && (visibleContent || citationList.length > 0 || showMemory)) ? <div className="message-actions message-action-bar">
-        {message.role === "assistant" ? <button type="button" aria-label={copyState === "copied" ? t("chatMessageCard.answerCopied") : t("chatMessageCard.copyAnswer")} title={copyState === "copied" ? t("chatMessageCard.copied") : t("chatMessageCard.copyAnswer")} onClick={() => {
-          void navigator.clipboard.writeText(visibleContent).then(() => setCopyState("copied"), () => setCopyState("failed"));
-        }}>{copyState === "copied" ? <CheckIcon /> : <CopyIcon />}</button> : null}
-        {onEditUser ? <button type="button" aria-label={t("chatMessageCard.editMessage")} title={t("chatMessageCard.edit")} onClick={() => onEditUser(message.content)}>{t("chatMessageCard.edit")}</button> : null}
+      {message.role === "user" && (onEditUser || onEarlierVersion || onLaterVersion) ? <div className="message-actions message-action-bar">
+        {onEditUser ? <button type="button" aria-label={t("chatMessageCard.editMessage")} title={t("chatMessageCard.edit")} disabled={editDisabled} onClick={() => onEditUser(message.content)}>{t("chatMessageCard.edit")}</button> : null}
         {onEarlierVersion ? <button type="button" className="message-version-link" onClick={onEarlierVersion}>{t("chatBranch.earlierVersion")}</button> : null}
         {onLaterVersion ? <button type="button" className="message-version-link" onClick={onLaterVersion}>{t("chatBranch.laterVersion")}</button> : null}
-        {copyState === "failed" ? <span role="alert">{t("chatMessageCard.couldNotCopySelectTheAnswerToCopyIt")}</span> : null}
       </div> : null}
-      {message.role === "assistant" && message.status === "complete" && onSaveFeedback && onTeachFeedback ? <AnswerFeedback bridge={bridge} loupistId={loupistId} chatId={chatId} onOpenPrinciple={onOpenMemoryPage} message={message} onSave={onSaveFeedback} onTeach={onTeachFeedback} feedbackBusy={feedbackBusy} /> : null}
-      </div>
       {quoteOpen ? <QuoteEvidencePopover evidence={quoteOpen.evidence} anchor={quoteOpen.anchor} pointer={quoteOpen.pointer} onClose={() => setQuoteOpen(null)} /> : null}
     </article>
   );
@@ -615,24 +589,16 @@ function NextSteps({ loupistId, chatId, messageId, onAsk }: { loupistId: string;
   return <NextStepChips questions={nextStepQuestions(chatMap.map, events, instance.language)} onAsk={onAsk} />;
 }
 
-/** What a stopped reply kept (S4): finished steps and any text so far. */
-function visibleMessageContent(message: ChatMessage): string {
-  if (message.role !== "assistant" || message.status !== "aborted") return message.content;
-  const content = message.content.trimEnd();
-  if (content === "Response stopped.") return "";
-  return content.replace(/\r?\n(?:\r?\n)*Response stopped\.$/u, "").trimEnd();
-}
-
-function stoppedResult(message: ChatMessage, visibleContent: string) {
+/** What a stopped reply kept (S4), in the reader's words. */
+function stoppedLabel(state: TurnState, message: ChatMessage) {
   const steps = (message.progress?.items ?? []).filter((item) => (item.kind === "tool" || item.kind === "system") && item.status === "succeeded").length;
-  const text = visibleContent.trim().length > 0;
-  const draft = (message.progress?.items ?? []).some((item) => item.kind === "commentary" && item.text.trim().length > 0);
   const values = { count: steps, formattedCount: formatNumber(steps) };
-  if (steps && text) return t("chatMessageCard.stoppedKept", values);
-  if (steps && draft) return t("chatMessageCard.stoppedKeptStepsAndDraft", values);
-  if (steps) return t("chatMessageCard.stoppedKeptSteps", values);
-  if (text) return t("chatMessageCard.stoppedKeptText");
-  return draft ? t("chatMessageCard.stoppedKeptDraft") : t("chatMessageCard.stoppedBeforeTheAnswerFinished");
+  const kept = state.kind === "stopped" ? state.kept : "nothing";
+  if (kept === "steps_and_text") return t("chatMessageCard.stoppedKept", values);
+  if (kept === "steps_and_draft") return t("chatMessageCard.stoppedKeptStepsAndDraft", values);
+  if (kept === "steps") return t("chatMessageCard.stoppedKeptSteps", values);
+  if (kept === "text") return t("chatMessageCard.stoppedKeptText");
+  return kept === "draft" ? t("chatMessageCard.stoppedKeptDraft") : t("chatMessageCard.stoppedBeforeTheAnswerFinished");
 }
 
 export const ChatMessageCard = memo(ChatMessageCardComponent);

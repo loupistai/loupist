@@ -246,26 +246,14 @@ export function ChatConversation({
     template={loupistTemplate}
     onOpenConnections={onOpenConnections}
   /> : null;
-  const progressScrollKey = (progress: ChatMessage["progress"]) => {
-    const item = progress?.items.at(-1);
-    if (!item) return "0";
-    const status = "status" in item ? item.status : "";
-    const revision = item.kind === "commentary" ? item.text.length : item.outputRevision ?? 0;
-    return `${progress!.items.length}:${item.id}:${status}:${revision}`;
-  };
-  const scrollRevision = useMemo(() => {
-    const last = messages.at(-1);
-    return [
-      messages.length,
-      messageKeys.at(-1) ?? "",
-      last?.status ?? "",
-      // A phase change moves the preamble between the answer and the tool trace.
-      last?.phase ?? "",
-      last?.content.length ?? 0,
-      progressScrollKey(last?.progress),
-      morningSettled ? "morning" : "",
-    ].join(":");
-  }, [messageKeys, messages, morningSettled]);
+  // Growth inside a reply is followed by the scroll owner's ResizeObserver; only
+  // a new message, a settled reply or the morning message needs a layout pass.
+  const scrollRevision = useMemo(() => [
+    messages.length,
+    messageKeys.at(-1) ?? "",
+    messages.at(-1)?.status ?? "",
+    morningSettled ? "morning" : "",
+  ].join(":"), [messageKeys, messages, morningSettled]);
   const latestPromptIndex = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       if (messages[index]!.role === "user") return index;
@@ -331,6 +319,7 @@ export function ChatConversation({
               onOpenEvidence={onOpenEvidence}
               progressFocus={progressFocus}
               guiding={index === messages.length - 1 && message.status === "streaming" ? guiding : undefined}
+              stopping={index === messages.length - 1 && Boolean(run?.stopping)}
               onNextStep={index === messages.length - 1 && message.role === "assistant" && message.status === "complete" ? onSuggestion : undefined}
               onFillComposer={message.role === "assistant" ? onSuggestion : undefined}
               previousQuestion={message.role === "assistant" ? previousQuestions[index] : undefined}
@@ -346,7 +335,8 @@ export function ChatConversation({
               onReadAttachment={onReadAttachment}
               mentionSkills={mentionSkills}
               mentionPlugins={mentionPlugins}
-              onEditUser={message.role === "user" && onEditUser && !run?.running ? () => onEditUser(message, index) : undefined}
+              onEditUser={message.role === "user" && onEditUser ? () => onEditUser(message, index) : undefined}
+              editDisabled={Boolean(run?.running)}
               onEarlierVersion={message.role === "user" && onSwitchVersion ? versionAt(index, "earlier", onSwitchVersion) : undefined}
               onLaterVersion={message.role === "user" && onSwitchVersion ? versionAt(index, "later", onSwitchVersion) : undefined}
               onRetry={message.role === "assistant" && index === messages.length - 1 && (message.status === "error" || message.status === "aborted") ? onRetry : undefined}

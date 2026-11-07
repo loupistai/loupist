@@ -877,7 +877,7 @@ export function ChatView({
     onSaveFeedback={saveFeedback}
     onTeachFeedback={teachFeedback}
     feedbackBusy={isRunning}
-    run={{ running: isRunning }}
+    run={{ running: isRunning, stopping: localIsStopping }}
     onOpenMemory={workspaceActions.openMemory}
     onOpenMemoryPage={workspaceActions.openMemoryPage}
     onOpenArtifact={openChatArtifact}
@@ -914,27 +914,18 @@ export function ChatView({
     <section className="chat-layout" aria-label={t("chatView.chatWithLoupist")}>
       <div className="chat-workspace" ref={chatWorkspaceRef} data-rail={chatRailMode}>
         <ChatLightboxProvider messages={visibleConversation.messages} onRead={readAttachment} onAddToQuestion={addToQuestion}>
-        {localIsStopping || activeRecoveredRun ? <header className="workspace-heading is-status">
+        {activeRecoveredRun ? <header className="workspace-heading is-status">
           <div className="workspace-chat-title">
-            {localIsStopping || activeRecoveredRun ? (
-              <div className="thread-statuses">
-                {localIsStopping ? (
-                  <div className="memory-state" role="status">
-                    <span className="status-dot on" />
-                    {t("chatView.stopping")}</div>
-                ) : null}
-                {activeRecoveredRun ? (
-                  <div className="memory-state" role="status">
-                    <span className="status-dot on" />
-                    {activeRecoveredRun.abort_requested
-                      ? t("chatView.stopping")
-                      : activeRecoveredRun.status === "reconciling"
-                        ? t("chatView.updatingTheAnswer")
-                        : t("chatView.stillWorking")}
-                  </div>
-                ) : null}
+            <div className="thread-statuses">
+              <div className="memory-state" role="status">
+                <span className="status-dot on" />
+                {activeRecoveredRun.abort_requested
+                  ? t("chatView.stopping")
+                  : activeRecoveredRun.status === "reconciling"
+                    ? t("chatView.updatingTheAnswer")
+                    : t("chatView.stillWorking")}
               </div>
-            ) : null}
+            </div>
           </div>
         </header> : null}
         <div className="chat-body">

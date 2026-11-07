@@ -42,15 +42,16 @@ it.each([false, true])("keeps one stable research summary from first call to set
   const message = (status: "streaming" | "complete", items: NonNullable<ChatMessage["progress"]>["items"]) =>
     answer({ content: status === "complete" ? "Done." : "", status, phase: "tool", progress: { startedAtMs: 1, plan, items } });
   const { view, ...props } = renderAnswer(message("streaming", [first]));
-  const digest = screen.getByRole("button", { name: /Compare quarters/ });
+  // One row: the running step while it runs, the plan's stage once the run settles.
+  const digest = screen.getByRole("button", { name: /^Reading file/ });
   expect(digest).toHaveAttribute("aria-expanded", "false");
   expect(screen.queryByText("q1.csv")).toBeNull();
-  expect(screen.getByRole("listitem")).toHaveTextContent("Reading file");
   if (expanded) await user().click(digest);
   const both = [{ ...first, status: "succeeded" as const }, second];
   view.rerender(<TooltipProvider><ChatMessageCard {...props} message={message("streaming", both)} /></TooltipProvider>);
-  expect(screen.getByRole("button", { name: /Compare quarters/ })).toBe(digest);
+  expect(screen.getByRole("button", { name: /^Reading file/ })).toBe(digest);
   view.rerender(<TooltipProvider><ChatMessageCard {...props} message={message("complete", both.map(item => ({ ...item, status: "succeeded" })))} /></TooltipProvider>);
+  expect(screen.getByRole("button", { name: /Compare quarters/ })).toBe(digest);
   expect(digest).toHaveAttribute("aria-expanded", String(expanded));
   if (!expanded) {
     expect(screen.queryByText("q2.csv")).toBeNull();
@@ -254,7 +255,8 @@ it("says when nothing new was saved, and adds no receipt to a private chat or a 
   privateAnswer.view.unmount();
   renderAnswer(answer({ id: "live", status: "streaming", memory_refs: [read("selected-read")], evidence_refs: [evidenceFixture()] }), { onOpenEvidence: vi.fn() });
   expect(screen.queryByRole("navigation", { name: "What this answer used and saved" })).toBeNull();
-  expect(screen.getByLabelText("Research sources")).toBeInTheDocument();
+  // Sources arrive with the settled answer, in the row where its actions appear.
+  expect(screen.queryByLabelText("Research sources")).toBeNull();
 });
 
 it("cites external grounding once, opens it, and routes saved reads to Memory", async () => {
@@ -270,7 +272,7 @@ it("cites external grounding once, opens it, and routes saved reads to Memory", 
   }), { onOpenEvidence: vi.fn() });
 
   const sources = screen.getByLabelText("Research sources");
-  await user().click(within(sources).getByText("2 citations"));
+  await user().click(within(sources).getByText("Sources (2)"));
   expect(within(sources).getAllByRole("listitem")).toHaveLength(2);
   expect(screen.queryByRole("button", { name: /^Source 3:/ })).toBeNull();
   await user().click(screen.getByRole("button", { name: "Source 2: Market quote" }));
@@ -282,7 +284,7 @@ it("cites external grounding once, opens it, and routes saved reads to Memory", 
   expect(within(screen.getByLabelText("Work progress")).getByLabelText("Tool result")).toHaveTextContent(search.excerpt);
 });
 
-it("opens a quote basket from the source list, receipt and citation without the raw reader", async () => {
+it("opens a quote basket from the source list and the citation without the raw reader", async () => {
   const excerpt = JSON.stringify({ content: [{ type: "text", text: JSON.stringify({ results: [
     { symbol: "AAPL", name: "Apple", currency: "USD", last_price: 271.4 },
     { symbol: "MSFT", name: "Microsoft", currency: "USD", last_price: 415.2 },
@@ -302,7 +304,7 @@ it("opens a quote basket from the source list, receipt and citation without the 
   }), { onOpenEvidence: vi.fn() });
 
   const sources = screen.getByLabelText("Research sources");
-  await user().click(within(sources).getByText("2 citations"));
+  await user().click(within(sources).getByText("Sources (2)"));
   await user().click(within(sources).getByRole("button", { name: /Equity price quote/ }));
   let receipt = await screen.findByRole("dialog", { name: "Price quotes" });
   expect(receipt).toHaveTextContent("AAPL");
@@ -320,9 +322,7 @@ it("opens a quote basket from the source list, receipt and citation without the 
   expect(props.onOpenEvidence).not.toHaveBeenCalled();
   await user().keyboard("{Escape}");
 
-  await user().click(screen.getByRole("button", { name: "Read 2 sources" }));
-  const read = await screen.findByLabelText("Sources read in this answer");
-  await user().click(within(read).getByRole("button", { name: /Cut quote/ }));
+  await user().click(within(sources).getByRole("button", { name: /Cut quote/ }));
   const cutReceipt = await screen.findByRole("dialog", { name: "Price quotes" });
   expect(cutReceipt).toHaveTextContent("No complete quote was in the saved result.");
   expect(within(cutReceipt).queryByRole("term", { name: "Last price" })).toBeNull();

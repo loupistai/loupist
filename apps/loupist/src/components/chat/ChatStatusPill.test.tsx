@@ -35,6 +35,8 @@ it("shows the live run and Jump to latest once the reader scrolls up; Stop stays
   expect(screen.getByRole("button", { name: "Jump to latest" })).toBeVisible();
   act(() => { vi.advanceTimersByTime(15_000); });
   expect(container.querySelector(".chat-status-pill-label")).toHaveTextContent("Still working · 0:57 · Comparing utilization");
+  // The turn's footer is the one live region; the pill is quiet.
+  expect(screen.queryByRole("status")).toBeNull();
 });
 
 it("offers only Jump to latest when nothing runs", () => {

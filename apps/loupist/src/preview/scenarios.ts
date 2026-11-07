@@ -1727,7 +1727,7 @@ export const scenarios: readonly PreviewScenario[] = [
       if (!receipt) return null;
       if (id === "chat-receipt-empty") return receipt;
       if (id === "chat-learned") return select(".learned-card .learned-section p") ? receipt : null;
-      return receipt.querySelectorAll(".chat-receipt-item").length >= 7 ? receipt : null;
+      return receipt.querySelectorAll(".chat-receipt-item").length >= 6 ? receipt : null;
     }, async root => {
       await until(() => root.querySelector("article.message.assistant.complete"), "Answer did not load");
       if (id === "chat-learned") {

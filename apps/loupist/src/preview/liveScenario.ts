@@ -1,7 +1,7 @@
 import type { ChatProgress, ChatStreamEvent } from "../contracts/chat";
 import type { PreviewBridge } from "./fixtures";
 
-type ProgressItem = Extract<ChatProgress["items"][number], { kind: "tool" }>;
+type ProgressItem = Extract<ChatProgress["items"][number], { kind: "tool" | "system" }> & { kind: "tool" };
 type Beat =
   | { at: number; step: ProgressItem }
   | { at: number; commentary: { id: string; text: string } }
@@ -90,7 +90,7 @@ export function liveResearchRun(bridge: PreviewBridge) {
     const toolsAt = preamble.end + 100;
     steps.forEach((step, index) => {
       beats.push({ at: toolsAt + index * 900, step });
-      beats.push({ at: toolsAt + index * 900 + 760, step: { ...step, status: "succeeded" } });
+      beats.push({ at: toolsAt + index * 900 + 760, step: { ...step, status: "succeeded", ...(step.id === "live-page" ? { resultIds: [evidenceId] } : {}) } });
       if (step.id === "live-page") beats.push({ at: toolsAt + index * 900 + 770, evidence: true });
     });
     const answerAt = toolsAt + steps.length * 900 + 300;

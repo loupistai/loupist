@@ -4,14 +4,12 @@ import type { ReactNode } from "react";
 import type { ChatEvidenceRef, MapKind, SetupChange } from "../../types";
 import type { ChatReceiptData, SavedReceiptGroup, ThesisMove } from "../../chat/receipt";
 import { verdictLabel } from "../assets/assetText";
-import { evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
-import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { TriangleAlertIcon } from "lucide-react";
 
 const t = i18n.getFixedT(null, "chat");
 
 type CountKey =
-  | "chatReceipt.readSources" | "chatReceipt.names" | "chatReceipt.namesOnMap" | "chatReceipt.relationships"
+  | "chatReceipt.names" | "chatReceipt.namesOnMap" | "chatReceipt.relationships"
   | "chatReceipt.relationshipsOnMap" | "chatReceipt.usedPages" | "chatReceipt.savedSources" | "chatReceipt.learned" | "chatReceipt.ideas"
   | "chatReceipt.savedPrinciples" | "chatReceipt.savedJournal" | "chatReceipt.savedNotes"
   | "chatReceipt.savedWorld" | "chatReceipt.numbersToCheck";
@@ -45,6 +43,7 @@ type Props = {
   showNothingNew: boolean;
   listId: string;
   listExpanded: boolean;
+  /** Sources are counted once, in the activity row and the Sources toggle; the memory row still offers this. */
   onOpenSource?: (evidence: ChatEvidenceRef, anchor?: HTMLElement) => void;
   onShowOnMap?: (ids: ReadonlySet<string>) => void;
   usedListId: string;
@@ -62,44 +61,10 @@ type Props = {
 
 type Segment = { key: string; node: ReactNode };
 
-/** One link that opens a short list when it stands for more than one item. */
-function ListSegment<T>({ label, listLabel, items, itemKey, itemLabel, itemMeta, onOpen }: {
-  label: string;
-  listLabel: string;
-  items: readonly T[];
-  itemKey: (item: T) => string;
-  itemLabel: (item: T) => string;
-  itemMeta?: (item: T) => string;
-  onOpen?: (item: T, anchor?: HTMLElement) => void;
-}) {
-  if (!onOpen) return <span className="chat-receipt-text">{label}</span>;
-  if (items.length === 1) return <button type="button" className="chat-receipt-segment" onClick={(event) => onOpen(items[0], event.currentTarget)}>{label}</button>;
-  return <Popover>
-    <PopoverTrigger asChild><button type="button" className="chat-receipt-segment">{label}</button></PopoverTrigger>
-    <PopoverContent className="chat-receipt-popover" align="start" aria-label={listLabel}>
-      <ul>{items.map((item) => <li key={itemKey(item)}>
-        <button type="button" onClick={(event) => onOpen(item, event.currentTarget)}>
-          <span>{itemLabel(item)}</span>
-          {itemMeta ? <small>{itemMeta(item)}</small> : null}
-        </button>
-      </li>)}</ul>
-    </PopoverContent>
-  </Popover>;
-}
-
 /** What this answer used and saved: one line of links in a fixed order. */
-export function ChatReceipt({ receipt, showNothingNew, listId, listExpanded, onOpenSource, onShowOnMap, usedListId, usedExpanded, onToggleUsed, learnedListId, learnedExpanded, onToggleLearned, onSaved, onOpenThesis, onCheckNumbers }: Props) {
+export function ChatReceipt({ receipt, showNothingNew, listId, listExpanded, onShowOnMap, usedListId, usedExpanded, onToggleUsed, learnedListId, learnedExpanded, onToggleLearned, onSaved, onOpenThesis, onCheckNumbers }: Props) {
   useTranslation("chat");
   const segments: Segment[] = [];
-  if (receipt.readSources.length) segments.push({ key: "read", node: <ListSegment
-    label={count("chatReceipt.readSources", receipt.readSources.length)}
-    listLabel={t("chatReceipt.sourcesRead")}
-    items={receipt.readSources}
-    itemKey={(evidence) => evidence.id}
-    itemLabel={evidenceTitle}
-    itemMeta={sourceIdentityLabel}
-    onOpen={onOpenSource}
-  /> });
   const learnedToggle = (key: string, label: string) => <button type="button" className="chat-receipt-segment" data-learned="true" data-receipt-learned={key}
     aria-expanded={learnedExpanded} aria-controls={learnedExpanded ? learnedListId : undefined} onClick={onToggleLearned}>{label}</button>;
   if (receipt.learned) segments.push({ key: "learned", node: learnedToggle("sections", count("chatReceipt.learned", receipt.learned.sections)) });

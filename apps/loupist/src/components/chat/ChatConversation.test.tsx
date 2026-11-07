@@ -1,5 +1,5 @@
 import { Chat } from "@ai-sdk/react";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { TauriChatTransport, toLoupistUIMessage, type LoupistUIMessage } from "../../chat/ai-sdk";
@@ -93,35 +93,6 @@ it("marks answers that finished while the window was in the background, though t
   } finally {
     vi.useRealTimers();
   }
-});
-
-it("follows a writing preamble into a tool step before WebKit delivers its layout scroll", () => {
-  const props = {
-    loupistId: "loupist-a", loupistName: "Loupist", onSuggestion: vi.fn(), onOpenMemory: vi.fn(),
-    onOpenMemoryPage: vi.fn(), onOpenArtifact: vi.fn(), onOpenLink: vi.fn(), onReadAttachment: vi.fn(),
-  };
-  const reply: ChatMessage = {
-    id: "reply", role: "assistant", status: "streaming", created_at: new Date().toISOString(), content: "",
-    progress: { startedAtMs: Date.now(), items: [{ id: "pre", kind: "commentary", text: "Calculating." }] },
-  };
-  const chat = (phase: ChatMessage["phase"]) => <ChatConversation {...props} messages={[{ ...reply, phase }]} messageKeys={["reply"]} />;
-  const view = render(chat("thinking"));
-  const viewport = screen.getByRole("log");
-  let height = 1487;
-  let top = 0;
-  Object.defineProperties(viewport, {
-    scrollHeight: { get: () => height }, clientHeight: { get: () => 567 },
-    scrollTop: { get: () => top, set: value => { top = Math.min(value, height - 567); } },
-  });
-  view.rerender(chat("writing"));
-  expect(top).toBe(920);
-  // The old paragraph shrinks before the trace grows. WKWebView clamps the offset.
-  top = 886;
-  height = 1521;
-  view.rerender(chat("tool"));
-  fireEvent.scroll(viewport);
-  expect(top).toBe(954);
-  expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
 });
 
 describe("home Thread guidance", () => {
