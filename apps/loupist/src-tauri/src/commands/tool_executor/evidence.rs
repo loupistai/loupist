@@ -16,7 +16,7 @@ pub(super) fn citation_url(result_ref: &str) -> String {
 }
 
 /// The result a citation_url names, or a refusal that lists the URLs this turn
-/// did return, so a model that guessed one can copy a real one instead of retrying.
+/// did return, so a model that guessed one can cite the right one instead of retrying.
 pub(super) fn cited_result<'a>(
     registry: &'a RunResultRegistry,
     url: &str,

@@ -315,7 +315,7 @@ async fn cited_inputs_are_checked_against_this_turns_evidence_and_join_the_linea
     assert_eq!(output["inputs"][1]["provenance"]["kind"], "provided");
 
     // Only this turn's citation_url values, for inputs the operation takes. A
-    // guessed URL is refused with the ones this turn returned, so it can be copied.
+    // guessed URL is refused with the ones this turn returned.
     for guess in ["#evidence-ev_unknown", "#evidence-"] {
         let error = executor
             .execute(

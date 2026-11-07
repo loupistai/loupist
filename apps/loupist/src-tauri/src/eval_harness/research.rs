@@ -174,7 +174,6 @@ async fn ask(run: &Run, arm: &Arm, chat: &ChatSession, memory: &str, step: &Step
     Ok(turn)
 }
 
-/// Every review row, including any still pending, queued or running.
 fn reviews(arm: &Arm) -> Result<Vec<Value>> {
     let conn = arm.state.store.lock_loupist(&arm.loupist)?;
     let mut q = conn.prepare(
@@ -245,7 +244,6 @@ fn filed(arm: &Arm) -> Result<Value> {
     Ok(json!({"turns":turns.len(),"chats":chats.len(),"sources":sources.len(),"sections":sections}))
 }
 
-/// Learned method pages with each section's span Sources resolved from the stored basis.
 fn methods(arm: &Arm) -> Result<Vec<Value>> {
     let store = KnowledgeStore::for_loupist(arm.state.store.clone(), &arm.loupist)?;
     let records = store.list_records(&arm.loupist)?;

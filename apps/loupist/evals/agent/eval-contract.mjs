@@ -281,7 +281,6 @@ function lensPattern(value, field) {
   return new RegExp(value, 'iu');
 }
 
-/** Parses a Lens-state assertion; patterns match case-insensitively. */
 export function lensAssertion(assertion) {
   const { kind, basis } = assertion;
   if (kind !== undefined && !LENS_KINDS.has(kind)) throw new Error(`Unknown Lens kind ${kind}`);
