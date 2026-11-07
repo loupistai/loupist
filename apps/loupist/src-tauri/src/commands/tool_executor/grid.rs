@@ -303,10 +303,8 @@ fn cited<'a>(
         .and_then(Value::as_str)
         .filter(|url| url.starts_with("#evidence-") && url.len() <= 256)
         .ok_or_else(not_cited)?;
-    let result = registry
-        .values()
-        .find(|result| evidence::citation_url(&result.result_ref) == url)
-        .ok_or_else(not_cited)?;
+    let result =
+        evidence::cited_result(registry, url).map_err(|why| BrokerError::invalid(path, why))?;
     let id = evidence::evidence_id(&result.result_ref);
     let evidence = evidence_refs.iter().find(|item| item.id == id);
     Ok(Cited { result, evidence })

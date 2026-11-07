@@ -314,23 +314,36 @@ async fn cited_inputs_are_checked_against_this_turns_evidence_and_join_the_linea
     assert_eq!(output["inputs"][0]["provenance"]["status"], "not_found");
     assert_eq!(output["inputs"][1]["provenance"]["kind"], "provided");
 
-    // Only this turn's citation_url values, for inputs the operation takes.
-    for (sources, message) in [
-        (
-            json!({"revenue": "#evidence-ev_unknown"}),
-            "input_sources.revenue: not a citation_url from this turn",
-        ),
-        (
-            json!({"price": url}),
-            "input_sources.price: not an input of this calculation",
-        ),
-    ] {
+    // Only this turn's citation_url values, for inputs the operation takes. A
+    // guessed URL is refused with the ones this turn returned, so it can be copied.
+    for guess in ["#evidence-ev_unknown", "#evidence-"] {
         let error = executor
-            .execute(&policy(), ToolMethod::Calculate, margin(sources))
+            .execute(
+                &policy(),
+                ToolMethod::Calculate,
+                margin(json!({"revenue": guess})),
+            )
             .await
-            .unwrap_err();
-        assert_eq!(error.to_string(), message);
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.starts_with("input_sources.revenue: not a citation_url from this turn; copy one this turn returned: "),
+            "{error}"
+        );
+        assert!(error.contains(&format!("{url} (")), "{error}");
     }
+    let error = executor
+        .execute(
+            &policy(),
+            ToolMethod::Calculate,
+            margin(json!({"price": url})),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "input_sources.price: not an input of this calculation"
+    );
 }
 
 #[tokio::test]

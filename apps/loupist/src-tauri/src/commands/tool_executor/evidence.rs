@@ -15,6 +15,41 @@ pub(super) fn citation_url(result_ref: &str) -> String {
     format!("#evidence-{}", evidence_id(result_ref))
 }
 
+/// The result a citation_url names, or a refusal that lists the URLs this turn
+/// did return, so a model that guessed one can copy a real one instead of retrying.
+pub(super) fn cited_result<'a>(
+    registry: &'a RunResultRegistry,
+    url: &str,
+) -> Result<&'a RunResult, String> {
+    if let Some(result) = registry
+        .values()
+        .find(|result| citation_url(&result.result_ref) == url)
+    {
+        return Ok(result);
+    }
+    let mut recent: Vec<&RunResult> = registry.values().collect();
+    recent.sort_by(|a, b| b.retrieved_at.cmp(&a.retrieved_at));
+    let returned: Vec<String> = recent
+        .iter()
+        .take(6)
+        .map(|result| {
+            format!(
+                "{} ({})",
+                citation_url(&result.result_ref),
+                result.producer.tool_name
+            )
+        })
+        .collect();
+    Err(if returned.is_empty() {
+        "not a citation_url from this turn; this turn has returned none, so read the source first or leave the input unsourced".into()
+    } else {
+        format!(
+            "not a citation_url from this turn; copy one this turn returned: {}",
+            returned.join(", ")
+        )
+    })
+}
+
 fn bounded(value: &str, maximum: usize) -> String {
     let mut end = value.len().min(maximum);
     while !value.is_char_boundary(end) {
