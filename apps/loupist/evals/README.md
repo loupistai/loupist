@@ -374,10 +374,12 @@ read that state, never the reply's save claim:
   `section_matches`, `section_not_matching`, `basis`: `span`, `claim`, `said` or
   `page`) counts unarchived pages whose title matches; every match must satisfy the
   section and basis conditions. `max: 0` with `kind: method` checks that one case
-  did not become a method.
+  did not become a method. `unchanged: true` also fails a matching page the turn
+  changed, so a seeded method can be checked for edits while other pages file.
 - `lens_unchanged` passes when the turn logged no Lens op.
-- `lens_read` / `lens_not_read` (`title_matches`) look for an exact Lens read in
-  `memory_reads`; search discovery is not a read.
+- `lens_read` / `lens_not_read` (`title_matches`, optional `kind`) look for an exact
+  Lens read in `memory_reads`; search discovery is not a read, and `kind` requires
+  the read record to be a page of that kind in `lens.pages`.
 
 Patterns match case-insensitively and only smoke-test content: "18 ships; the
 14-ship report was wrong" still matches `14`. So every update turn also has a

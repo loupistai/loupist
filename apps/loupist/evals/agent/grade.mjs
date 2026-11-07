@@ -348,8 +348,9 @@ function evaluateLensAssertion(assertion, trace) {
   if (assertion.assert === 'lens_read' || assertion.assert === 'lens_not_read') {
     const reads = memoryReads(trace);
     if (reads === null) return resultOf(trace, assertion, null, 'memory read evidence unavailable');
+    const kinds = new Map((lensPages(trace) ?? []).map((page) => [page.record_id, page.kind]));
     const hits = reads.filter((read) => read.access === 'exact_read' && !NON_LENS_READS.has(read.kind)
-      && spec.title.test(String(read.title ?? '')));
+      && spec.title.test(String(read.title ?? '')) && (spec.kind === undefined || kinds.get(read.record_id) === spec.kind));
     const pass = assertion.assert === 'lens_read' ? countPasses(spec, hits.length) : hits.length === 0;
     return resultOf(trace, assertion, pass, hits.length ? `read ${hits.map((read) => read.title).join(' | ')}` : 'no matching Lens read');
   }
@@ -368,6 +369,7 @@ function evaluateLensAssertion(assertion, trace) {
     if (spec.sectionMatches && !text(page).some((part) => spec.sectionMatches.test(part))) why.push(`${page.title} lacks ${spec.sectionMatches}`);
     if (spec.sectionNotMatching && text(page).some((part) => spec.sectionNotMatching.test(part))) why.push(`${page.title} still has ${spec.sectionNotMatching}`);
     if (spec.basis && !page.sections.some((section) => (section.basis ?? []).includes(spec.basis))) why.push(`${page.title} has no ${spec.basis} basis`);
+    if (spec.unchanged && page.ops_this_turn.length > 0) why.push(`${page.title} was changed this turn`);
     return why;
   });
   const counted = countPasses(spec, matching.length);

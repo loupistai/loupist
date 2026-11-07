@@ -180,8 +180,14 @@
                     "title_matches": "서진|seojin",
                     "metric": "lens_update",
                     "count": 1,
-                    "section_not_matching": "4분기|Q4|fourth quarter",
-                    "section_matches": "312"
+                    "section_matches": "(?<![\\d.,])312(?![\\d])"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "page-forgot",
+                    "criterion": "In lens_pages_after_turn, the 서진바이오 page no longer presents a fourth-quarter 2026 phase 2 result date as an expected event; the date is removed or appears only as a withdrawn misreport, and the 2025 revenue of 312억 원 is still recorded.",
+                    "metric": "lens_update"
                   }
                 ]
               }
@@ -205,7 +211,7 @@
                 "rubric": [
                   {
                     "id": "no-forgotten",
-                    "criterion": "The answer does not state from memory that SJ-7 phase 2 results are due in the fourth quarter of 2026; it says the earlier schedule was withdrawn as a misreport or that no confirmed date is known.",
+                    "criterion": "The answer does not present a fourth-quarter 2026 release of SJ-7 phase 2 results as expected; it mentions that date, if at all, only as a withdrawn misreport, and says no confirmed date is known.",
                     "metric": "lens_update"
                   }
                 ]
@@ -248,7 +254,7 @@
                     "title_matches": "dividend cover",
                     "metric": "save_precision",
                     "count": 1,
-                    "section_matches": "REIT|master limited"
+                    "unchanged": true
                   },
                   {
                     "assert": "lens_pages",
@@ -263,6 +269,11 @@
                     "id": "respects-limit",
                     "criterion": "The answer does not judge Pellmont's payout by earnings cover alone; it notes that a master limited partnership's distribution is judged by distributable cash flow and finds 3.05 USD of distributable cash flow covering the 2.40 USD distribution.",
                     "metric": "negative_transfer"
+                  },
+                  {
+                    "id": "safeguard-kept",
+                    "criterion": "In lens_pages_after_turn, the Dividend cover check method still says not to apply earnings cover to REITs or master limited partnerships and to use distributable cash flow coverage for them.",
+                    "metric": "save_precision"
                   }
                 ]
               }
@@ -426,7 +437,8 @@
                     "metric": "save_recall",
                     "min": 1,
                     "max": 1,
-                    "basis": "span"
+                    "basis": "span",
+                    "section_matches": "(?<![\\d.,])1,?300(?![\\d])"
                   },
                   {
                     "assert": "lens_pages",
@@ -550,7 +562,8 @@
                 "memory": [
                   {
                     "assert": "lens_read",
-                    "title_matches": "working capital|distributor|cash conversion|payable|days",
+                    "kind": "method",
+                    "title_matches": ".",
                     "metric": "carry_forward"
                   },
                   {
@@ -561,7 +574,7 @@
                 "rubric": [
                   {
                     "id": "applies",
-                    "criterion": "The answer applies the saved comparison: it weighs the rise in inventory days against the fall in payable days and explains that suppliers are funding less of Halden's working capital.",
+                    "criterion": "The answer follows the steps of the method shown in lens_pages_after_turn: it weighs the rise in inventory days against the fall in payable days and explains that suppliers are funding less of Halden's working capital.",
                     "metric": "carry_forward"
                   }
                 ]
