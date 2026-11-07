@@ -632,9 +632,10 @@ pub struct ChatProgressProjection {
     dirty_item_ids: Vec<String>,
     dirty_item_set: HashSet<String>,
     published_item_ids: HashSet<String>,
-    /// Bytes of each published commentary the stream has seen, so a patch
-    /// carries only what was appended since.
-    published_text_len: HashMap<String, usize>,
+    /// The text of each published commentary as the stream has seen it, so a
+    /// patch carries only what was appended since, and the whole item again
+    /// should the text ever change under that prefix.
+    published_text: HashMap<String, String>,
     pending_remove_item_ids: Vec<String>,
     pending_finished_at_ms: Option<i64>,
     plan_dirty: bool,
@@ -787,7 +788,7 @@ impl ChatProgressProjection {
             dirty_item_ids: Vec::new(),
             dirty_item_set: HashSet::new(),
             published_item_ids: HashSet::new(),
-            published_text_len: HashMap::new(),
+            published_text: HashMap::new(),
             pending_remove_item_ids: Vec::new(),
             pending_finished_at_ms: None,
             plan_dirty: false,
@@ -1221,17 +1222,24 @@ impl ChatProgressProjection {
                 continue;
             };
             if let ChatProgressItem::Commentary { text, .. } = item {
-                if let Some(published) = self.published_text_len.get(&id).copied() {
-                    if published < text.len() {
-                        append_text.push(CommentaryAppend {
-                            id: id.clone(),
-                            text: text[published..].to_owned(),
-                        });
+                match self.published_text.get_mut(&id) {
+                    Some(published) if text.starts_with(published.as_str()) => {
+                        if text.len() > published.len() {
+                            let appended = &text[published.len()..];
+                            append_text.push(CommentaryAppend {
+                                id: id.clone(),
+                                text: appended.to_owned(),
+                            });
+                            published.push_str(appended);
+                        }
+                        continue;
                     }
-                    self.published_text_len.insert(id, text.len());
-                    continue;
+                    // First publish, or text that changed under the published prefix:
+                    // the renderer needs the whole item.
+                    _ => {
+                        self.published_text.insert(id.clone(), text.clone());
+                    }
                 }
-                self.published_text_len.insert(id.clone(), text.len());
             }
             self.published_item_ids.insert(id);
             upsert_items.push(item.clone());
@@ -1337,7 +1345,7 @@ impl ChatProgressProjection {
         }
         self.dirty_item_set.remove(id);
         self.dirty_item_ids.retain(|dirty_id| dirty_id != id);
-        self.published_text_len.remove(id);
+        self.published_text.remove(id);
         if self.published_item_ids.remove(id) {
             self.pending_remove_item_ids.push(id.to_owned());
         }
@@ -2271,6 +2279,42 @@ mod tests {
         assert_eq!(appended, ["commentary-1"]);
         assert!(upserted.iter().all(|id| !appended.contains(id)));
         assert_eq!(patch.append_text[0].text, " and second");
+    }
+
+    #[test]
+    fn a_commentary_rewritten_under_its_published_prefix_is_published_whole_again() {
+        let mut projection = ChatProgressProjection::new(10);
+        projection.start_assistant_turn();
+        projection.append_commentary("Revenue rose 8%");
+        let first = projection.take_patch().unwrap();
+        let id = first.upsert_items[0].id().to_owned();
+
+        // The same length under a different prefix: an append could carry nothing.
+        let index = projection.item_indices[&id];
+        if let ChatProgressItem::Commentary { text, .. } = &mut projection.progress.items[index] {
+            *text = "Revenue fell 8%".to_owned();
+        }
+        projection.mark_dirty(&id);
+        let rewritten = projection
+            .take_patch()
+            .expect("a rewritten commentary is republished");
+        assert!(rewritten.append_text.is_empty());
+        assert!(matches!(
+            &rewritten.upsert_items[0],
+            ChatProgressItem::Commentary { text, .. } if text == "Revenue fell 8%"
+        ));
+
+        // Growth after the rewrite travels as an append again.
+        projection.append_commentary(" in Q3.");
+        let grown = projection.take_patch().unwrap();
+        assert!(grown.upsert_items.is_empty());
+        assert_eq!(
+            grown.append_text,
+            vec![CommentaryAppend {
+                id,
+                text: " in Q3.".into()
+            }]
+        );
     }
 
     #[test]
