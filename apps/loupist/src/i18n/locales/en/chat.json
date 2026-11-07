@@ -1110,6 +1110,10 @@
       "running": "Preparing a research tool",
       "done": "Prepared a research tool"
     },
+    "connection_setup": {
+      "running": "Preparing a connection",
+      "done": "Prepared a connection"
+    },
     "world_search": {
       "running": "Searching saved notes",
       "done": "Searched saved notes"

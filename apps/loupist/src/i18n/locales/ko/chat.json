@@ -1061,6 +1061,10 @@
       "running": "리서치 도구 준비 중",
       "done": "리서치 도구 준비함"
     },
+    "connection_setup": {
+      "running": "연결 준비 중",
+      "done": "연결 준비함"
+    },
     "world_search": {
       "running": "저장된 기록 검색 중",
       "done": "저장된 기록을 검색함"
