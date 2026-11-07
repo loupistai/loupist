@@ -1178,6 +1178,13 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 400
+                          },
+                          "said": {
+                            "type": "boolean",
+                            "enum": [
+                              true
+                            ],
+                            "description": "Cites the user's message this turn; required on a method page."
                           }
                         }
                       },
@@ -1200,6 +1207,13 @@
                             "minLength": 1,
                             "maxLength": 400,
                             "description": "One paragraph; the index shows it."
+                          },
+                          "said": {
+                            "type": "boolean",
+                            "enum": [
+                              true
+                            ],
+                            "description": "Cites the user's message this turn; required on a method page."
                           }
                         }
                       },

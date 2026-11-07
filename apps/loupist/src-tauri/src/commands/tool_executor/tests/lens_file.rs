@@ -801,7 +801,7 @@ async fn a_page_archived_or_removed_before_the_reply_commits_is_logged_refused_a
             .unwrap();
         executor.capture.commit_delivery(&delivery).await;
     }
-    let revise = |record_id: &str| json!({"page": {"recordId": record_id}, "ops": [{"op": "summary", "text": "Checked again."}]});
+    let revise = |record_id: &str| json!({"page": {"recordId": record_id}, "ops": [{"op": "summary", "text": "Checked again.", "said": true}]});
     executor
         .stage_lens_file(
             &policy,
@@ -1114,4 +1114,79 @@ async fn a_turn_writes_a_method_only_from_the_users_words() {
         )
         .await
         .expect("the user's words admit a method");
+    executor.capture.commit_delivery("asked").await;
+}
+
+#[tokio::test]
+async fn retiring_or_resummarizing_a_method_needs_the_users_words() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let executor = executor_for(&state, turn_capture());
+    use crate::knowledge::lens_page::{Basis, LensOp, PageDelta, PageKind, PageTarget, SectionKey};
+    let record_id = knowledge(&state)
+        .transact(|write| {
+            write.file(
+                "loupist-a",
+                &crate::knowledge::test_support::turn_origin("chat-a", "assistant-0"),
+                vec![PageDelta {
+                    target: PageTarget::Create {
+                        kind: PageKind::Method,
+                        title: "Dividend cover check".into(),
+                        anchors: Vec::new(),
+                    },
+                    ops: vec![LensOp::Put {
+                        key: SectionKey::new("steps").unwrap(),
+                        heading: "Steps".into(),
+                        markdown: "Divide earnings by dividends.".into(),
+                        basis: Basis::default(),
+                        expected: None,
+                    }],
+                }],
+                1_000,
+            )
+        })
+        .unwrap()[0]
+        .record_id
+        .clone();
+    let read = executor
+        .lens_read(&policy(true, true), json!({"recordId": record_id}), "read")
+        .await
+        .unwrap();
+    executor.capture.commit_delivery("read").await;
+    let delivered: Value = serde_json::from_str(read["text"].as_str().unwrap()).unwrap();
+    let digest = delivered["body"]["sections"][0]["digest"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let change = |op: Value| json!({"pages": [{"page": {"recordId": record_id}, "ops": [op]}], "rationale": "Edit the method."});
+    for (op, field) in [
+        (
+            json!({"op": "retire", "key": "steps", "expected": digest, "why": "Not needed."}),
+            "said",
+        ),
+        (
+            json!({"op": "summary", "text": "Applies to every payer."}),
+            "said",
+        ),
+    ] {
+        let error = executor
+            .stage_lens_file(&policy(true, true), change(op), "unasked")
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.starts_with(&format!(
+                "pages[0].ops[0].{field}: a method is written only"
+            )),
+            "{error}"
+        );
+    }
+    executor
+        .stage_lens_file(
+            &policy(true, true),
+            change(json!({"op": "summary", "text": "The user's narrower scope.", "said": true})),
+            "asked",
+        )
+        .await
+        .expect("the user's words admit a summary change");
 }

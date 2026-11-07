@@ -22,7 +22,7 @@ Source span, the user's message of the filing turn (`said`), or another page
 (synthesis). Subject and idea sections need at least one reference; a section whose
 references include a page, or carry no claim, span or `said`, is synthesis and must
 state its uncertainty. Method and perspective sections may have an empty basis, except
-that a turn's `lens_file` put on a method page must cite `said`. The
+that every turn `lens_file` op on a method page must cite the user's message. The
 reader derives a chip from the basis (source, said, view or none); agent prose never
 becomes World data. Suggested keys per kind (`suggested_sections`) are an ordering
 hint, not a closed set: subject `overview, facts, value-chain, drivers, risks, views,

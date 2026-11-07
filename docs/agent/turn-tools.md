@@ -55,9 +55,9 @@ resolves at commit, once the Source exists), `{said: true}` the user's message o
 this turn (refused in unattended runs) and `{lens: recordId, key?}` a page read this
 turn. Rust refuses an unknown or foreign handle by its field with a repair hint, a
 `put` or `retire` with `expected` needs that page's acknowledged exact read, a
-create with `expected` is refused, a `put` on a method page without `said` is
-refused (a turn writes a method only from the user's words, so unattended runs
-write none), and credential-like text returns `sensitive_memory`. Staging also runs the writer's text policy and create
+create with `expected` is refused, any op on a method page that does not cite
+the user's message is refused (a `put` cites `said` in its basis, a `retire` or
+`summary` carries `"said": true`; unattended runs therefore change no method), and credential-like text returns `sensitive_memory`. Staging also runs the writer's text policy and create
 resolution (`KnowledgeWrite::screen_delta`): a refused text is refused by its field;
 a create landing on a page this turn exact-read revises it, and one landing on an
 unread page may only add sections ("read and revise" otherwise). Each call reserves
