@@ -8,9 +8,9 @@ import type { ModelCatalog, ModelProviderOption, ProviderStatusView } from "@/ty
 import "@/styles/connect.css";
 
 /** Sign-in rows, in the order the spec lists them (providers §2.1). */
-const SIGN_IN = ["openai", "anthropic", "xai"] as const;
-export const SIGN_IN_LABEL = { openai: "wizard.chatgpt", anthropic: "wizard.claude", xai: "wizard.xai" } as const;
-const SIGN_IN_NOTE = { openai: "wizard.chatgptNote", anthropic: "wizard.claudeNote", xai: null } as const;
+const SIGN_IN = ["openai", "xai"] as const;
+export const SIGN_IN_LABEL = { openai: "wizard.chatgpt", xai: "wizard.xai" } as const;
+const SIGN_IN_NOTE = { openai: "wizard.chatgptNote", xai: null } as const;
 /** One API-key row each; Upstage Solar is a preset endpoint Rust saves, not a Pi provider. */
 export const KEY_ROWS = ["anthropic", "openai", "google", "xai", "upstage", "openrouter"] as const;
 const KEY_NOTE = { anthropic: null, openai: null, google: null, xai: null, upstage: "wizard.upstageNote", openrouter: "wizard.openrouterNote" } as const;
@@ -51,10 +51,10 @@ function GroupLabel({ children }: { children: ReactNode }) {
  * and Settings › Add a provider: sign-in, API key, this Mac and a custom
  * endpoint, then (Settings only) the rest of Pi's key providers collapsed.
  */
-export function ProviderWays({ catalog, includePrimary, includeMore, disabled, actions }: {
+export function ProviderWays({ catalog, omitSignIn = [], includeMore, disabled, actions }: {
   catalog: ModelCatalog | null;
-  /** The ChatGPT row; onboarding shows it as its primary button instead. */
-  includePrimary: boolean;
+  /** Sign-in rows to leave out; onboarding shows them as its own buttons. */
+  omitSignIn?: readonly string[];
   includeMore: boolean;
   disabled?: boolean;
   actions: ProviderWaysActions;
@@ -69,7 +69,7 @@ export function ProviderWays({ catalog, includePrimary, includeMore, disabled, a
     if (status && (status.credential_kind === "plan") === signInRow) return <ProviderStateLabel status={status} />;
     return !status && signInRow && option?.recommended ? <span className="connect-recommended">{ts("providers.connectedRecommended")}</span> : null;
   };
-  const signIn = SIGN_IN.filter(id => (includePrimary || id !== "openai") && find(id)?.sign_in_flow);
+  const signIn = SIGN_IN.filter(id => !omitSignIn.includes(id) && find(id)?.sign_in_flow);
   const keys = KEY_ROWS.filter(id => id === "upstage" || find(id)?.api_key);
   const upstage = (catalog?.custom_providers ?? []).find(item => item.base_url.startsWith(UPSTAGE_BASE_URL));
   const more = includeMore ? providers.filter(option => option.group === "more" && option.api_key && !(KEY_ROWS as readonly string[]).includes(option.id)) : [];

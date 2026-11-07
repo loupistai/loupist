@@ -99,20 +99,11 @@ export function ProviderCard({ option, models, hiddenModels, chatModel, loading,
           {t("providers.usingPlan")}<span aria-hidden="true"> · </span>
           <button type="button" className="connect-link" onClick={() => onOpenUsage(option.id)}>{t("providers.manageUsage")}<ExternalLinkIcon aria-hidden="true" /></button>
         </p> : null}
-        {plan && option.billing_note === "claude_extra_usage" ? <div className="provider-card-row" data-tone="info">
-          <p>{t("providers.claudeExtra")}</p>
-          <span className="provider-card-row-actions">
-            <button type="button" className="connect-link" onClick={() => onOpenUsage(option.id)}>{t("providers.manageExtra")}<ExternalLinkIcon aria-hidden="true" /></button>
-            <Button type="button" size="sm" variant="ghost" disabled={locked} onClick={() => onConnect({ kind: "provider", provider: option.id, method: "api_key" })}>{t("providers.useApiKey")}</Button>
-          </span>
-        </div> : null}
         {notice ? <div className="provider-card-row" data-tone="warning" role="status" data-notice={notice.kind}>
           <p>{notice.kind === "plan_limit" ? t("providers.noticePlanLimit", { dateTime: formatDateTime(notice.at_ms) })
-            : notice.kind === "plan_not_eligible" ? t("providers.noticeNotEligible")
-              : notice.kind === "extra_usage_off" ? t("providers.noticeExtraOff") : t("providers.noticeNoCredit")}</p>
+            : notice.kind === "plan_not_eligible" ? t("providers.noticeNotEligible") : t("providers.noticeNoCredit")}</p>
           {notice.kind === "plan_limit" ? <Button type="button" size="sm" variant="ghost" onClick={() => onOpenUsage(option.id)}>{t("providers.manageUsage")}<ExternalLinkIcon aria-hidden="true" /></Button>
-            : notice.kind === "plan_not_eligible" ? <Button type="button" size="sm" variant="ghost" disabled={locked} onClick={() => onConnect({ kind: "provider", provider: "openai", method: "api_key" })}>{t("providers.useApiKey")}</Button>
-              : notice.kind === "extra_usage_off" ? <Button type="button" size="sm" variant="ghost" onClick={() => onOpenUsage("anthropic")}>{t("providers.openClaude")}<ExternalLinkIcon aria-hidden="true" /></Button> : null}
+            : notice.kind === "plan_not_eligible" ? <Button type="button" size="sm" variant="ghost" disabled={locked} onClick={() => onConnect({ kind: "provider", provider: "openai", method: "api_key" })}>{t("providers.useApiKey")}</Button> : null}
         </div> : lastLimit !== null ? <p className="provider-card-meta">{t("providers.lastLimit", { date: formatDate(lastLimit) })}</p> : null}
         {loadError ? <Alert variant="destructive"><AlertTitle>{t("modelSettingsPanel.loadModelsErrorTitle", { provider: title })}</AlertTitle><AlertDescription>{loadError}
           {!expanded ? <Button type="button" size="sm" variant="ghost" aria-label={t("modelSettingsPanel.reloadModelsForLabel", { label: title })} disabled={reloadDisabled} onClick={onReload}>

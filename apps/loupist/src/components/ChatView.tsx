@@ -415,13 +415,13 @@ export function ChatView({
   }, [modelCatalog]);
   /** A failed answer's account action: Rust opens usage pages; the rest open the connect sheet in Settings. */
   const providerAction = useCallback((action: ProviderErrorAction, providerId?: string) => {
-    if (action === "manage_usage" || action === "open_claude") {
-      void bridge.providerOpenUsage({ provider: action === "open_claude" ? "anthropic" : providerId ?? "openai" }).catch((cause) => setConfigurationReadError(errorMessage(cause, t("chatError.manageUsage"))));
+    if (action === "manage_usage") {
+      void bridge.providerOpenUsage({ provider: providerId ?? "openai" }).catch((cause) => setConfigurationReadError(errorMessage(cause, t("chatError.manageUsage"))));
       return;
     }
     if (!onOpenModelSettings) return;
     if (action === "use_another") return onOpenModelSettings({ kind: "picker" });
-    if (action === "use_api_key") return onOpenModelSettings({ kind: "provider", provider: providerId === "anthropic" ? "anthropic" : "openai", method: "api_key" });
+    if (action === "use_api_key") return onOpenModelSettings({ kind: "provider", provider: "openai", method: "api_key" });
     const option = modelCatalog?.providers.find((provider) => provider.id === providerId);
     const custom = modelCatalog?.custom_providers?.find((provider) => provider.id === providerId);
     onOpenModelSettings(option ? reconnectTarget(option) : custom ? { kind: "custom", edit: custom } : undefined);

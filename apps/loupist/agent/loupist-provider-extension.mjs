@@ -209,9 +209,9 @@ function formParams(body) {
 
 /**
  * Pi's xAI device login posts `referrer=pi`. Replace that one field with
- * Loupist. Token exchange and every other provider are left alone: Claude's
- * sign-in name belongs to Anthropic's published client, and API-key providers
- * send no sign-in name.
+ * Loupist. Token exchange and every other provider are left alone: ChatGPT
+ * takes its name from Pi's `agentName`, and API-key providers send no sign-in
+ * name.
  */
 export function withLoupistSignInIdentity(fetchImpl, providerId) {
   if (providerId !== "xai" || typeof fetchImpl !== "function") return fetchImpl;
@@ -348,8 +348,8 @@ function writeCredentialUpdated(providerId) {
 
 /**
  * Pi's paste prompt: the host answers it with a value Rust validated (the
- * ChatGPT loopback address or a Claude code), or the browser callback wins and
- * Pi aborts the prompt. Never reject before that abort: Pi's callback helper
+ * ChatGPT loopback address), or the browser callback wins and Pi aborts the
+ * prompt. Never reject before that abort: Pi's callback helper
  * cancels the callback when the manual prompt fails.
  */
 async function manualCode(ctx, prompt) {

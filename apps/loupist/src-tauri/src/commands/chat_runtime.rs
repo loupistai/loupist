@@ -609,7 +609,6 @@ fn classify_turn_failure(error: &CommandError, fallback: ChatFailureKind) -> Cha
         crate::pi::provider_failure::NEEDS_RECONNECT => ChatFailureKind::NeedsReconnect,
         crate::pi::provider_failure::PLAN_LIMIT => ChatFailureKind::PlanLimit,
         crate::pi::provider_failure::PLAN_NOT_ELIGIBLE => ChatFailureKind::PlanNotEligible,
-        crate::pi::provider_failure::EXTRA_USAGE_OFF => ChatFailureKind::ExtraUsageOff,
         crate::pi::provider_failure::OUT_OF_CREDIT => ChatFailureKind::OutOfCredit,
         crate::pi::provider_failure::MODEL_GONE => ChatFailureKind::ModelGone,
         crate::pi::provider_failure::NETWORK => ChatFailureKind::Offline,

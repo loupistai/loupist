@@ -9,7 +9,6 @@ import type { ProviderCredentialKind } from "../types";
 const SIGN_IN_NAMES: Record<string, string> = {
   openai: "ChatGPT",
   "openai-codex": "ChatGPT",
-  anthropic: "Claude",
   xai: "SuperGrok",
 };
 

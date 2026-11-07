@@ -182,8 +182,8 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   /**
    * Answers the active sign-in's paste prompt with the address the browser
    * shows after signing in. Rust accepts only that provider's exact loopback
-   * callback (or a Claude `code#state` value); anything else rejects with code
-   * `paste_invalid` and nothing is forwarded.
+   * callback; anything else rejects with code `paste_invalid` and nothing is
+   * forwarded.
    */
   providerConnectSubmitCode(request: { value: string }): Promise<void>;
   /** Loopback-only probes for Ollama, LM Studio and llama.cpp (600 ms each). */
@@ -192,7 +192,7 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   providerCustomTest(request: ProviderCustomTestRequest): Promise<ProviderCustomTestResult>;
   /** Rust opens the provider's fixed key page; the renderer never sends a URL. */
   providerOpenConsole(request: { provider: string }): Promise<void>;
-  /** Rust opens the provider's fixed usage page (ChatGPT plan, Claude extra usage). */
+  /** Rust opens the provider's fixed usage page (ChatGPT plan). */
   providerOpenUsage(request: { provider: string }): Promise<void>;
   /** Saves a preset endpoint (Upstage Solar); rejects with code `key_rejected` when the key is refused. */
   providerPresetSave(request: ProviderPresetRequest): Promise<ModelCatalog>;

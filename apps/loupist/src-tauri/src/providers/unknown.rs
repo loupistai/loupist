@@ -4,6 +4,10 @@
 //! catalog write: its catalog rows and status, the Chat default, scheduled
 //! model choices (they use Auto) and World models (they wait for the World
 //! default). This is a deletion, not a migration.
+//!
+//! The same startup pass deletes a Claude.ai sign-in grant an earlier build
+//! saved: Anthropic does not permit third-party apps to offer that sign-in, so
+//! `anthropic` connects only by API key (providers spec).
 use crate::{
     app::{AppState, CommandError},
     providers::catalog::known_provider,
@@ -24,6 +28,29 @@ pub(crate) fn delete_unknown_provider_state(state: &AppState) {
     if delete_with(state, &known_provider).is_err() {
         eprintln!("Loupist could not remove settings for a provider this build does not offer");
     }
+    if delete_claude_sign_in(state).is_err() {
+        eprintln!("Loupist could not remove a retired Claude sign-in");
+    }
+}
+
+/// Deletes a saved `anthropic` OAuth grant and treats it as a disconnect: the
+/// card reads Disconnected while a schedule, the Chat default or a World model
+/// still uses the account. An Anthropic API key is left alone.
+fn delete_claude_sign_in(state: &AppState) -> Result<(), CommandError> {
+    let agent_dir = state.pi_agent_data_dir()?;
+    if !crate::providers::catalog::delete_saved_oauth_credential(&agent_dir, "anthropic")? {
+        return Ok(());
+    }
+    state.provider_model_cache.invalidate("anthropic");
+    crate::providers::status::record(
+        state,
+        "anthropic",
+        crate::providers::status::Trigger::Disconnected(crate::providers::status::used_by(
+            state,
+            "anthropic",
+        )),
+    )?;
+    state.replace_provider_models("anthropic", Vec::new())
 }
 
 fn delete_with(state: &AppState, known: &dyn Fn(&str) -> bool) -> Result<(), CommandError> {
@@ -252,5 +279,117 @@ mod tests {
         // Nothing is left to delete the second time.
         delete_with(&state, &release).unwrap();
         assert_eq!(state.model_catalog().unwrap(), catalog);
+    }
+
+    fn write_auth(state: &AppState, auth: &str) -> std::path::PathBuf {
+        let path = state.pi_agent_data_dir().unwrap().join("auth.json");
+        crate::fs::artifact_trust::ensure_private_regular_file(&path).unwrap();
+        std::fs::write(&path, auth).unwrap();
+        path
+    }
+
+    fn saved_auth(path: &std::path::Path) -> serde_json::Value {
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn a_saved_claude_sign_in_is_deleted_like_a_disconnect_and_only_once() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_folder_test(root.path().join("app"));
+        let auth = write_auth(
+            &state,
+            r#"{
+                "anthropic":{"type":"oauth","access":"fixture-access","refresh":"fixture-refresh","expires":1900000000000},
+                "openai":{"type":"api_key","key":"fixture-not-a-real-key"}
+            }"#,
+        );
+        state
+            .set_model_catalog(ModelCatalog {
+                models: vec![
+                    model("anthropic", "claude-haiku-4-5"),
+                    model("openai", "gpt-6-luna"),
+                ],
+            })
+            .unwrap();
+        crate::providers::status::record(
+            &state,
+            "anthropic",
+            crate::providers::status::Trigger::Connected(
+                crate::providers::status::CredentialKind::Plan,
+            ),
+        )
+        .unwrap();
+        let root_dir = &state.artifacts.app_data_dir;
+        let snapshot =
+            crate::scoped_config::read_scope(root_dir, None, ConfigScope::Global).unwrap();
+        crate::scoped_config::update_scope(
+            root_dir,
+            None,
+            &ConfigUpdateRequest {
+                scope: ConfigScope::Global,
+                expected_revision: snapshot.revision,
+                set: serde_json::from_value(serde_json::json!({
+                    "chat": {"model_profile_id": "anthropic/claude-haiku-4-5"}
+                }))
+                .unwrap(),
+                unset: vec![],
+            },
+        )
+        .unwrap();
+
+        delete_claude_sign_in(&state).unwrap();
+
+        let saved = saved_auth(&auth);
+        assert!(saved.get("anthropic").is_none());
+        assert_eq!(saved["openai"]["key"], "fixture-not-a-real-key");
+        let row = crate::providers::status::load(&state, "anthropic")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            row.state,
+            crate::providers::status::ProviderState::Disconnected
+        );
+        assert!(row.used_by.chat_default);
+        let catalog = state.model_catalog().unwrap();
+        assert_eq!(
+            catalog
+                .models
+                .iter()
+                .map(|model| model.id.as_str())
+                .collect::<Vec<_>>(),
+            ["openai/gpt-6-luna"]
+        );
+
+        delete_claude_sign_in(&state).unwrap();
+        assert_eq!(saved_auth(&auth), saved);
+        assert_eq!(state.model_catalog().unwrap(), catalog);
+        assert_eq!(
+            crate::providers::status::load(&state, "anthropic")
+                .unwrap()
+                .unwrap()
+                .state,
+            crate::providers::status::ProviderState::Disconnected
+        );
+    }
+
+    #[test]
+    fn an_anthropic_api_key_survives_the_claude_sign_in_cleanup() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_folder_test(root.path().join("app"));
+        let contents = r#"{"anthropic":{"type":"api_key","key":"fixture-not-a-real-key"}}"#;
+        let auth = write_auth(&state, contents);
+        state
+            .set_model_catalog(ModelCatalog {
+                models: vec![model("anthropic", "claude-haiku-4-5")],
+            })
+            .unwrap();
+
+        delete_claude_sign_in(&state).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&auth).unwrap(), contents);
+        assert_eq!(state.model_catalog().unwrap().models.len(), 1);
+        assert!(crate::providers::status::load(&state, "anthropic")
+            .unwrap()
+            .is_none());
     }
 }

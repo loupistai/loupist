@@ -444,7 +444,6 @@ impl ProviderInferenceService {
                 Some(Trigger::Failure(match failure {
                     ProviderFailure::PlanLimit => ChatFailureKind::PlanLimit,
                     ProviderFailure::PlanNotEligible => ChatFailureKind::PlanNotEligible,
-                    ProviderFailure::ExtraUsageOff => ChatFailureKind::ExtraUsageOff,
                     ProviderFailure::OutOfCredit => ChatFailureKind::OutOfCredit,
                     ProviderFailure::NeedsReconnect => ChatFailureKind::NeedsReconnect,
                     _ => return None,

@@ -161,13 +161,12 @@ it("groups the picker like onboarding and keeps the rest of Pi's providers colla
   expect(within(sheet).getByRole("heading", { name: "Add a provider" })).toBeVisible();
 });
 
-it("opens Claude's billing note before its sign-in starts", async () => {
+it("offers Claude only as an Anthropic API key, with no sign-in row", async () => {
   const { bridge, user, sheet } = await open({ kind: "picker" });
-  const connect = vi.spyOn(bridge, "providerConnect").mockImplementation(() => new Promise(() => {}));
-  await user.click(within(sheet).getByRole("button", { name: /Sign in with Claude/ }));
-  expect(within(sheet).getByText(/Claude sign-in draws on Claude extra usage/)).toBeVisible();
+  const connect = vi.spyOn(bridge, "providerConnect");
+  expect(within(sheet).queryByRole("button", { name: /Sign in with Claude/ })).toBeNull();
+  await user.click(within(sheet).getByRole("button", { name: "Anthropic" }));
+  expect(within(sheet).getByRole("heading", { name: "Anthropic" })).toBeVisible();
+  expect(within(sheet).getByLabelText(/API key/)).toBeVisible();
   expect(connect).not.toHaveBeenCalled();
-  await user.click(within(sheet).getByRole("button", { name: "Continue" }));
-  expect(connect).toHaveBeenCalledWith("anthropic", expect.any(Function));
-  expect(await within(sheet).findByRole("status")).toHaveTextContent("Finish signing in to Claude in your browser");
 });

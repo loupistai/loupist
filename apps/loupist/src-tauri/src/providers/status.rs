@@ -40,7 +40,6 @@ pub enum CredentialKind {
 pub enum NoticeKind {
     PlanLimit,
     PlanNotEligible,
-    ExtraUsageOff,
     OutOfCredit,
 }
 
@@ -204,9 +203,6 @@ pub fn transition(
         Trigger::Failure(ChatFailureKind::PlanLimit) => with_notice(row, NoticeKind::PlanLimit),
         Trigger::Failure(ChatFailureKind::PlanNotEligible) => {
             with_notice(row, NoticeKind::PlanNotEligible)
-        }
-        Trigger::Failure(ChatFailureKind::ExtraUsageOff) => {
-            with_notice(row, NoticeKind::ExtraUsageOff)
         }
         Trigger::Failure(ChatFailureKind::OutOfCredit) => with_notice(row, NoticeKind::OutOfCredit),
         Trigger::Failure(ChatFailureKind::NeedsReconnect) => {
@@ -551,15 +547,12 @@ pub enum BackgroundHold {
 }
 
 impl ProviderStatusRow {
-    /// Notices that can clear without the user: a plan limit resets, extra
-    /// usage is turned on, credit is added.
+    /// Notices that can clear without the user: a plan limit resets or credit
+    /// is added.
     fn probe_may_clear(&self) -> bool {
         self.state == ProviderState::Connected
             && self.notice.is_some_and(|notice| {
-                matches!(
-                    notice.kind,
-                    NoticeKind::PlanLimit | NoticeKind::ExtraUsageOff | NoticeKind::OutOfCredit
-                )
+                matches!(notice.kind, NoticeKind::PlanLimit | NoticeKind::OutOfCredit)
             })
     }
 }
@@ -734,11 +727,6 @@ mod tests {
                 ChatFailureKind::PlanNotEligible,
                 ProviderState::Connected,
                 Some(NoticeKind::PlanNotEligible),
-            ),
-            (
-                ChatFailureKind::ExtraUsageOff,
-                ProviderState::Connected,
-                Some(NoticeKind::ExtraUsageOff),
             ),
             (
                 ChatFailureKind::OutOfCredit,
@@ -951,13 +939,13 @@ mod tests {
         let mut row = transition(
             connected(1),
             "openai",
-            Trigger::Failure(ChatFailureKind::ExtraUsageOff),
+            Trigger::Failure(ChatFailureKind::OutOfCredit),
             4,
         )
         .unwrap();
         row.last_auto_model = Some("openai/gpt-6.1-sol".into());
         let record = ProviderStatusRecord::from(&row);
-        assert_eq!(record.notice_kind.as_deref(), Some("extra_usage_off"));
+        assert_eq!(record.notice_kind.as_deref(), Some("out_of_credit"));
         assert_eq!(ProviderStatusRow::from_record(record), Some(row));
         assert_eq!(
             custom_kind("http://localhost:11434/v1"),

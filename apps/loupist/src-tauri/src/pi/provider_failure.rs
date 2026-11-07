@@ -16,8 +16,6 @@ pub enum ProviderFailure {
     PlanLimit,
     /// The plan cannot be used in other apps (workspace turned it off).
     PlanNotEligible,
-    /// Claude sign-in: extra usage is off or used up.
-    ExtraUsageOff,
     /// A key account ran out of credit or quota.
     OutOfCredit,
     /// The selected model is no longer offered; nothing was processed.
@@ -39,7 +37,6 @@ pub enum ProviderFailure {
 /// The host message each kind travels as; `chat_runtime` turns these into `ChatFailureKind`.
 pub const PLAN_LIMIT: &str = "Pi provider turn failed: plan limit";
 pub const PLAN_NOT_ELIGIBLE: &str = "Pi provider turn failed: plan not eligible";
-pub const EXTRA_USAGE_OFF: &str = "Pi provider turn failed: extra usage off";
 pub const OUT_OF_CREDIT: &str = "Pi provider turn failed: out of credit";
 pub const MODEL_GONE: &str = "Pi provider turn failed: model gone";
 pub const RATE_LIMITED: &str = "Pi provider turn failed: rate limited";
@@ -82,14 +79,6 @@ impl ProviderFailure {
             "subscription_sharing_user_unavailable",
         ]) {
             Self::Unavailable
-        } else if any(&[
-            "out of extra usage",
-            "draw from your extra usage",
-            "extra usage is disabled",
-            "extra usage is not enabled",
-            "enable extra usage",
-        ]) {
-            Self::ExtraUsageOff
         } else if any(&["model_not_found"])
             || (message.contains("not_found_error") && message.contains("model"))
         {
@@ -182,7 +171,6 @@ impl ProviderFailure {
         match self {
             Self::PlanLimit => PLAN_LIMIT,
             Self::PlanNotEligible => PLAN_NOT_ELIGIBLE,
-            Self::ExtraUsageOff => EXTRA_USAGE_OFF,
             Self::OutOfCredit => OUT_OF_CREDIT,
             Self::ModelGone => MODEL_GONE,
             Self::RateLimited => RATE_LIMITED,
@@ -387,14 +375,6 @@ mod tests {
             ),
             // Anthropic.
             (
-                "400 {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"You're out of extra usage. Add more at claude.ai/settings/usage\"}}",
-                ProviderFailure::ExtraUsageOff,
-            ),
-            (
-                "400 Third-party apps now draw from your extra usage, not your plan limits.",
-                ProviderFailure::ExtraUsageOff,
-            ),
-            (
                 "401 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"OAuth token has been revoked.\"}}",
                 ProviderFailure::NeedsReconnect,
             ),
@@ -483,7 +463,6 @@ mod tests {
         let kinds = [
             ProviderFailure::PlanLimit,
             ProviderFailure::PlanNotEligible,
-            ProviderFailure::ExtraUsageOff,
             ProviderFailure::OutOfCredit,
             ProviderFailure::ModelGone,
             ProviderFailure::RateLimited,

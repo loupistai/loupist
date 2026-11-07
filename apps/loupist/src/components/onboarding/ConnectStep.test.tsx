@@ -99,8 +99,8 @@ it("shows SuperGrok's device code without a paste route", async () => {
   const openAgain = vi.spyOn(bridge, "providerConnectOpenBrowser");
   const writeText = vi.fn(async () => {});
   Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
-  await user.click(screen.getByText("Other ways to connect"));
-  await user.click(screen.getByRole("button", { name: "Sign in with SuperGrok" }));
+  expect(screen.getByText("Uses your SuperGrok or X Premium+ plan. Loupist doesn't charge you.")).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Continue with SuperGrok" }));
   const card = await waitingCard();
   expect(card).toHaveTextContent("Enter this code on the xAI page");
   // The code is announced as a status, spelled character by character.
@@ -163,28 +163,18 @@ it("cancels a waiting sign-in with Cancel or Escape and shows no error", async (
   expect(screen.queryByRole("status")).toBeNull();
 });
 
-it("states Claude's extra-usage billing before its browser opens", async () => {
-  const { bridge, user } = await setup();
-  const connect = pendingConnect(bridge, [{ type: "opening_browser", message: "", opened: false, url: "https://claude.ai/oauth/authorize?state=fixture" }, { type: "manual_entry" }]);
-  await user.click(screen.getByText("Other ways to connect"));
-  expect(screen.getByRole("button", { name: /Sign in with Claude/ })).toHaveTextContent("Billed per token as Claude extra usage");
-  await user.click(screen.getByRole("button", { name: /Sign in with Claude/ }));
-  expect(screen.getByText(/Claude sign-in draws on Claude extra usage/)).toBeVisible();
-  expect(connect).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Continue" }));
-  expect(connect).toHaveBeenCalledWith("anthropic", expect.any(Function));
-  expect(await screen.findByRole("status")).toHaveTextContent("Finish signing in to Claude in your browser");
-  // Claude's fallback is the address its browser shows, like ChatGPT's.
-  await user.click(screen.getByRole("button", { name: "Browser didn't come back?" }));
-  expect(screen.getByLabelText("Paste the address your browser shows after signing in")).toBeVisible();
-});
-
 it("lists every other way and opens key, local and custom rows in the connect sheet", async () => {
   const { user } = await setup();
   await user.click(screen.getByText("Other ways to connect"));
   for (const name of ["Anthropic", "OpenAI", "Google Gemini", "xAI", /Upstage Solar/, /OpenRouter/, /Use a model on this Mac/, "Custom endpoint"]) {
     expect(screen.getByRole("button", { name })).toBeVisible();
   }
+  // ChatGPT and SuperGrok sign-in are the buttons above the list, not rows in it.
+  const other = document.querySelector<HTMLElement>("details.onboarding-other")!;
+  expect(within(other).queryByRole("button", { name: /ChatGPT/ })).toBeNull();
+  expect(within(other).queryByRole("button", { name: /SuperGrok/ })).toBeNull();
+  // Anthropic does not permit third-party apps to offer Claude sign-in, so Claude is only a key row.
+  expect(screen.queryByRole("button", { name: /Sign in with Claude/ })).toBeNull();
   expect(screen.getByText("Your key stays on this device. Requests go straight to the provider.")).toBeVisible();
   await user.click(screen.getByRole("button", { name: "Google Gemini" }));
   const sheet = await screen.findByRole("dialog");
