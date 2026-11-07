@@ -131,6 +131,32 @@ test("native find works offline without system fd and preserves glob, ignore, li
   assert.equal(child.status, 0, child.stderr || child.error?.message);
 });
 
+test("native grep works offline without system rg", (t) => {
+  const { temporary, workspace, privateRuntime } = workspaceFixture(t);
+  const bundledTools = resolve(import.meta.dirname, "../src-tauri/resources/pi-runtime/workspace-tools");
+  if (!existsSync(join(bundledTools, process.platform === "win32" ? "rg.exe" : "rg"))) {
+    t.skip("stage the pinned workspace tools to run the packaged grep integration test");
+    return;
+  }
+  writeFileSync(join(workspace, "notes.txt"), "alpha\nneedle here\nomega\n");
+  const source = `
+    import assert from 'node:assert/strict';
+    import { registerWorkspaceTools } from ${JSON.stringify(pathToFileURL(join(import.meta.dirname, "workspace-tools.mjs")).href)};
+    globalThis.fetch = () => { throw new Error('offline grep must never download tools'); };
+    const tools = new Map();
+    registerWorkspaceTools({ registerTool: tool => tools.set(tool.name, tool) }, ${JSON.stringify(workspace)});
+    const found = await tools.get('grep').execute('grep', { pattern: 'needle', literal: true }, undefined, undefined, { cwd: ${JSON.stringify(privateRuntime)} });
+    assert.match(found.content[0].text, /notes\\.txt:2: needle here/);
+  `;
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", source], {
+    cwd: privateRuntime,
+    env: { ...allowedWorkspaceEnvironment(), PATH: bundledTools, PI_OFFLINE: "1", PI_CODING_AGENT_DIR: join(temporary, "private-agent") },
+    encoding: "utf8",
+    timeout: 15_000,
+  });
+  assert.equal(child.status, 0, child.stderr || child.error?.message);
+});
+
 test("native Bash uses the workspace and does not inherit app or startup-hook environment", async (t) => {
   const { workspace, run } = workspaceFixture(t);
   const injectedKeys = ["LOUPIST_BROKER_TOKEN", "LOUPIST_TEST_SECRET", "PI_SESSION_FILE", "BASH_ENV"];
