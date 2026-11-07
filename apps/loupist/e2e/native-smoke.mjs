@@ -325,7 +325,7 @@ try {
     const panel = await displayed("#main-panel-settings");
     await displayed('[aria-label="Details Market data platform"]');
     const openbbCard = await browser.execute(() => {
-      const heading = [...document.querySelectorAll(".marketplace-card h3")].find(
+      const heading = [...document.querySelectorAll(".marketplace-card [id^=\"connection-\"]")].find(
         (element) => element.textContent === "Market data platform",
       );
       return heading?.closest(".marketplace-card")?.innerText ?? "";
