@@ -181,3 +181,19 @@ it("offers See on the Map from a conflict card in the briefing reader", async ()
   await user.click(await screen.findByRole("button", { name: "Filter" }));
   expect(screen.getByRole("checkbox", { name: "Only where sources disagree" })).toBeChecked();
 });
+
+it("opens a file a briefing answer links beside the briefing's own Chat, not the Chat tab's", async () => {
+  const { bridge, user } = await fixture({ thread_id: "briefing-chat", message_id: "briefing-answer" });
+  const select = bridge.loupistSelect.bind(bridge);
+  vi.spyOn(bridge, "loupistSelect").mockImplementation(async id => {
+    const workspace = await select(id);
+    workspace.threads.push({ id: "briefing-chat", loupist_id: id, title: "Briefings Chat", use_memory: true, update_memory: true, updated_at: new Date().toISOString(), messages: [
+      { id: "briefing-answer", role: "assistant", content: "The table is in [the report](reports/summary.md).", status: "complete", created_at: new Date().toISOString() },
+    ] });
+    return workspace;
+  });
+  await openApp(bridge); await openFirstRun(user);
+  await user.click(await screen.findByRole("link", { name: "the report" }));
+  expect(await screen.findByRole("heading", { name: "Briefings Chat" })).toBeVisible();
+  expect(await screen.findByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
+});

@@ -21,8 +21,7 @@ import {
 import { createLoupistBridge } from "./bridge/tauriBridge";
 import { ChatView } from "./components/ChatView";
 import { DismissOnOpen, OpenProvider } from "./components/navigation/Open";
-import { evidenceTarget, externalUrl, type ChatDestination, type Open, type OpenHow } from "./chat/navigation";
-import { evidenceTitle } from "./chat/evidence";
+import { useAppOpen } from "./app/useAppOpen";
 import { AppHeader } from "./components/app/AppHeader";
 import { LoupistAvailabilityBoundary } from "./components/app/LoupistAvailabilityBoundary";
 import { AppNavigation } from "./components/app/AppNavigation";
@@ -523,8 +522,6 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     memory.open(next, camera);
     setTab("map");
   }, [memory.open, lens.open, setTab, selectedLoupistId, noteReaderOpen, noteLocation, tab, openWhatItKnows, memoryPage, workspace.kind, workspace.open]);
-  // Receipt and feedback actions open the item's management controls.
-  const openChatMemoryPage = openKnowledgePage;
   const learningNotifications = useLearningNotifications(bridge, workspace.open && workspace.kind === "world" ? selectedLoupistId ?? undefined : undefined, refreshKnowledge);
   const [pendingLearningLocation, setPendingLearningLocation] = useState<KnowledgeLocation>();
   useEffect(() => {
@@ -758,78 +755,18 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     threadId: effectiveThreadId,
     tab,
   };
-  const [panelAnnouncement, setPanelAnnouncement] = useState<{ text: string; key: number } | null>(null);
-  // Panel tabs open beside the chat without moving focus; one polite region says what opened.
-  const announcePanel = (title: string) => setPanelAnnouncement((current) => ({ text: i18n.t("chat:navigation.openedInPanel", { title }) as string, key: (current?.key ?? 0) + 1 }));
-  const routeOpen = async (to: ChatDestination, how?: OpenHow): Promise<void> => {
-    const external = how?.external ? externalUrl(to) : null;
-    if (external) { await bridge.openExternalUrl(external); return; }
-    const loupistId = selectedLoupistId;
-    switch (to.kind) {
-      case "evidence": {
-        // A step, a quote, Memory or an asset page resolves in the answer's TurnProvider; outside one the card's fallback stands in.
-        const target = evidenceTarget(to.evidence, undefined, loupistId ?? "").kind;
-        if (target !== "browser" && target !== "reader") { if (to.fallback) await routeOpen(to.fallback); return; }
-        if (!loupistId || !workspaceThreadId) return;
-        workspace.openEvidence(loupistId, workspaceThreadId, to.evidence, to.step);
-        announcePanel(evidenceTitle(to.evidence));
-        return;
-      }
-      case "link": {
-        const url = externalUrl(to);
-        if (!loupistId || !url) return;
-        workspace.openBrowser(loupistId, workspaceThreadId ?? EMPTY_CHAT_THREAD_ID, url);
-        announcePanel(new URL(url).hostname.replace(/^www\./u, ""));
-        return;
-      }
-      case "lens":
-        if (!loupistId) return;
-        await routeOpen({ kind: "memory", location: { loupistId, surface: "lens", recordId: to.recordId, objectId: to.recordId, selection: { kind: "lens", recordId: to.recordId } }, title: "Lens" });
-        return;
-      case "memory":
-        if (to.location.surface === "world") { openKnowledgePage(to.location); return; }
-        if (!loupistId || !workspaceThreadId) return;
-        workspace.openMemory(loupistId, workspaceThreadId, to.location, to.title);
-        announcePanel(to.title);
-        return;
-      case "page":
-        openKnowledgePage(to.location);
-        return;
-      case "artifact": {
-        const threadId = to.threadId ?? workspaceThreadId;
-        if (!loupistId || !threadId) return;
-        workspace.openArtifact(loupistId, threadId, to.artifact);
-        announcePanel(to.artifact.title);
-        return;
-      }
-      case "file":
-        if (!loupistId || !workspaceThreadId) return;
-        workspace.openFiles(loupistId, workspaceThreadId, to.path);
-        announcePanel(to.path?.split("/").at(-1) || i18n.t("chat:workspace.files"));
-        return;
-      case "asset":
-        openAssetPage(to.target);
-        return;
-      case "schedule":
-        openScheduledTask(to.taskId);
-        return;
-      case "chat":
-        setVisibleActiveThreadId(to.threadId);
-        return;
-      case "briefing":
-        if (!loupistId) return;
-        setInboxFocus({ loupistId, runId: to.runId });
-        setTab("schedule");
-        return;
-      case "settings":
-        openSettings(to.section);
-        return;
-    }
-  };
-  // One stable opener for the whole shell: what it routes to is read when a leaf is clicked.
-  const latestRoute = useRef(routeOpen);
-  latestRoute.current = routeOpen;
-  const appOpen = useCallback<Open>((to, how) => latestRoute.current(to, how), []);
+  const { open: appOpen, openIn: appOpenIn, announcement: panelAnnouncement } = useAppOpen({
+    openExternalUrl: (url) => bridge.openExternalUrl(url),
+    loupistId: selectedLoupistId,
+    threadId: workspaceThreadId,
+    panel: workspace,
+    showThread: (loupistId, threadId) => { chat.setActiveThreadForLoupist(loupistId, threadId); setTab("chat"); },
+    openKnowledgePage,
+    openAssetPage,
+    openScheduledTask,
+    showBriefing: (loupistId, runId) => { setInboxFocus({ loupistId, runId }); setTab("schedule"); },
+    openSettings,
+  });
   // Surfaces outside chat still take a plain link opener.
   const openLink = useCallback((url: string) => { void appOpen({ kind: "link", url }); }, [appOpen]);
   const selectLoupistFromNavigation = (loupistId: string, threadId?: string) => {
@@ -1191,26 +1128,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                   </div>
                   {tab === "schedule" ? <div className="app-panel" id="main-panel-schedule" aria-labelledby="current-location">
                     <ScheduleView onOpenModelSettings={() => openSettings("model")} modelCatalog={model.catalog} initialRunId={inboxFocus?.loupistId === selectedLoupist.id ? inboxFocus.runId ?? undefined : undefined} initialTaskId={scheduledFocus?.loupistId === selectedLoupist.id ? scheduledFocus.taskId : undefined} onInitialConsumed={() => { setInboxFocus(null); setScheduledFocus(null); }} key={`${selectedLoupist.id}:${selectedLoupist.workspace_path}`} bridge={bridge} loupist={selectedLoupist} theme={resolvedTheme}
-                      onOpenEvidence={(item, evidence, step) => {
-                        if (!item.threadId) return;
-                        chat.setActiveThreadForLoupist(selectedLoupist.id, item.threadId);
-                        setTab("chat");
-                        workspace.openEvidence(selectedLoupist.id, item.threadId, evidence, step);
-                      }}
-                      onOpenMemory={(item, location, title) => {
-                        if (location.surface === "world") { openKnowledgePage(location); return; }
-                        if (!item.threadId) return;
-                        chat.setActiveThreadForLoupist(selectedLoupist.id, item.threadId);
-                        setTab("chat");
-                        workspace.openMemory(selectedLoupist.id, item.threadId, location, title);
-                      }}
-                      onOpenMemoryPage={openChatMemoryPage}
-                      onOpenArtifact={(item, artifact) => {
-                        if (!item.threadId) return;
-                        chat.setActiveThreadForLoupist(selectedLoupist.id, item.threadId);
-                        setTab("chat");
-                        workspace.openArtifact(selectedLoupist.id, item.threadId, artifact);
-                      }}
+                      open={(item, to, how) => appOpenIn(item.threadId, to, how)}
                       onOpenMap={disputedEntityIds => {
                         if (disputedEntityIds?.length) {
                           openKnowledgePage({ loupistId: selectedLoupist.id, surface: "world", view: { onlyDisputed: true, highlightEntityIds: disputedEntityIds } });

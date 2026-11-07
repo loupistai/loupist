@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "@/i18n";
 import { formatDate, formatNumber, formatTime } from "@/i18n/format";
 import type { GrowthEvent, KnowledgeMap } from "../../contracts/knowledge";
-import type { BriefingContext, BriefingSettings, ChatArtifactRef, ChatEvidenceRef, KnowledgeLocation, ChatMessage, LoupistSummary, LoupistBridge, InboxItem, RunSummaryItem, ScheduledRun, ScheduledTask, ModelCatalog } from "@/types";
+import type { BriefingContext, BriefingSettings, ChatMessage, LoupistSummary, LoupistBridge, InboxItem, RunSummaryItem, ScheduledRun, ScheduledTask, ModelCatalog } from "@/types";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { Disclosure } from "../ui/disclosure";
@@ -22,17 +22,15 @@ import { runSummary } from "./runSummary";
 import { useAssetNames } from "../assets/assetName";
 import { printReader } from "../print/printDocuments";
 import { PrinterIcon } from "lucide-react";
-import { OpenProvider, useOpenLayer, type OpenLayer } from "../navigation/Open";
-import { externalUrl } from "../../chat/navigation";
+import { OpenProvider } from "../navigation/Open";
+import type { ChatDestination, Open, OpenHow } from "../../chat/navigation";
 import "@/styles/briefings.css";
 
 type Props = { onOpenModelSettings?: () => void; bridge: LoupistBridge; loupist: LoupistSummary; theme: "light" | "dark";
   /** Provider status for each task's model: an account at its plan limit or needing reconnect makes the task wait. */
   modelCatalog?: ModelCatalog | null; initialRunId?: string; initialTaskId?: string;
-  onOpenEvidence?: (item: InboxItem, evidence: ChatEvidenceRef, step?: { label: string; itemId?: string }) => void;
-  onOpenMemory?: (item: InboxItem, location: KnowledgeLocation, title: string) => void;
-  onOpenMemoryPage?: (location: KnowledgeLocation) => void;
-  onOpenArtifact?: (item: InboxItem, artifact: ChatArtifactRef) => void;
+  /** Opens what a run's answer cites beside that run's own Chat. */
+  open: (run: InboxItem, to: ChatDestination, how?: OpenHow) => Promise<void>;
   onOpenMap?: (disputedEntityIds?: string[]) => void;
   onInitialConsumed?: () => void; onOpenChat: (item: InboxItem) => Promise<void> };
 
@@ -58,32 +56,19 @@ function taskRank(task: ScheduledTask) {
   return 3;
 }
 
+/** A run's answer opens what it cites beside the Chat that made it. */
+function RunLinks({ run, open, children }: { run: InboxItem; open: Props["open"]; children: React.ReactNode }) {
+  const openInRun = useCallback<Open>((to, how) => open(run, to, how), [open, run]);
+  return <OpenProvider open={openInRun}>{children}</OpenProvider>;
+}
+
 /**
  * Scheduled tasks: one-time and recurring work, with an optional briefing among
  * them. Creating or changing a custom task seeds the Thread and waits for
  * confirmation. Results are read in the Thread; a run opened here shows its
  * structured briefing and full answer.
  */
-/** A briefing's answer opens what it cites in the chat that made it; its links open in the system browser. */
-function BriefingLinks({ run, loupistId, bridge, onOpenChat, onOpenEvidence, onOpenMemory, onOpenMemoryPage, onOpenArtifact, children }: Pick<Props, "bridge" | "onOpenChat" | "onOpenEvidence" | "onOpenMemory" | "onOpenMemoryPage" | "onOpenArtifact"> & {
-  run: InboxItem; loupistId: string; children: React.ReactNode;
-}) {
-  const open = useOpenLayer(useCallback<OpenLayer>((to) => {
-    const inChat = () => { void onOpenChat(run); };
-    switch (to.kind) {
-      case "link": { const url = externalUrl(to); return url ? () => { void bridge.openExternalUrl(url); } : undefined; }
-      case "evidence": return () => onOpenEvidence ? onOpenEvidence(run, to.evidence, to.step) : inChat();
-      case "lens": return () => onOpenMemory ? onOpenMemory(run, { loupistId, surface: "lens", recordId: to.recordId, objectId: to.recordId, selection: { kind: "lens", recordId: to.recordId } }, "Lens") : inChat();
-      case "memory": return () => onOpenMemory ? onOpenMemory(run, to.location, to.title) : inChat();
-      case "page": return () => onOpenMemoryPage ? onOpenMemoryPage(to.location) : inChat();
-      case "artifact": return () => onOpenArtifact ? onOpenArtifact(run, to.artifact) : inChat();
-      default: return undefined;
-    }
-  }, [bridge, loupistId, onOpenArtifact, onOpenChat, onOpenEvidence, onOpenMemory, onOpenMemoryPage, run]));
-  return <OpenProvider open={open}>{children}</OpenProvider>;
-}
-
-export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupist, theme, initialRunId, initialTaskId, onInitialConsumed, onOpenChat, onOpenEvidence, onOpenMemory, onOpenMemoryPage, onOpenArtifact, onOpenMap }: Props) {
+export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupist, theme, initialRunId, initialTaskId, onInitialConsumed, onOpenChat, open, onOpenMap }: Props) {
   const { t, i18n } = useTranslation("briefings");
   const [settings, setSettings] = useState<BriefingSettings | null>(null);
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
@@ -266,8 +251,8 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
       {readerOpen ? <div className="briefings-reader-scroll" onFocus={revealFocused}>{!selected && watchingFocus && watch ? <WatchingReader bridge={bridge} loupist={loupist} settings={watch} onSettings={setWatch} onBack={() => { setFocusExplicit(false); setFocusTaskId(null); }} />
         : selected ? <article className="briefings-reader" ref={readerRef}><Button variant="ghost" className="briefings-back" data-print="omit" onClick={() => setSelected(null)}>{t("schedule.backTo", { title: focusTask ? displayTitle({ kind: focusTask.kind, title: focusTask.title }) : t("schedule.title") })}</Button><header><h2>{displayTitle(selected)}</h2><p className="briefings-meta">{formatDate(selected.startedAtMs)} · {formatTime(selected.startedAtMs)} · {loupist.name}</p></header>
         {selected.briefingContext?.changed ? <BriefingSections bridge={bridge} loupistId={loupist.id} loupistName={loupist.name} context={selected.briefingContext} nextRun={briefingTask ? nextRun(briefingTask) : null} skipped={selected.skippedTools.map(tool => tool.name)}
-          onOpenMap={onOpenMap} onOpenCheck={(journalId, title) => onOpenMemory?.(selected, { loupistId: loupist.id, surface: "note", objectId: journalId, selection: { kind: "journal", journalId } }, title)} /> : null}
-        {readerLoading ? <p role="status">{t("loading")}</p> : readerError ? <div role="alert" className="briefings-failure"><h3>{t("failure.title")}</h3><p>{t(`failure.${failure}`)}</p>{failure === "auth" && onOpenModelSettings ? <Button variant="link" onClick={onOpenModelSettings}>{t("failure.models")}</Button> : null}<Disclosure className="briefings-failure-details" title={t("failure.details")}><pre>{readerError}</pre></Disclosure><Button onClick={() => setReaderRevision(value => value + 1)}>{t("retry")}</Button></div> : message ? <ChatMapProvider bridge={bridge} loupistId={loupist.id} chatId={selected.threadId ?? ""} messages={[message]} onOpen={() => onOpenMap ? onOpenMap() : void onOpenChat(selected)}><BriefingLinks run={selected} loupistId={loupist.id} bridge={bridge} onOpenChat={onOpenChat} onOpenEvidence={onOpenEvidence} onOpenMemory={onOpenMemory} onOpenMemoryPage={onOpenMemoryPage} onOpenArtifact={onOpenArtifact}><ChatExecutionProvider value={executionScope}><ChatMessageCard outlineOpen message={message} loupistId={loupist.id} chatId={selected.threadId ?? undefined} loupistName={loupist.name} onReadAttachment={async (messageId, attachmentId) => (await bridge.chatAttachmentRead(loupist.id, selected.threadId!, messageId, attachmentId)).data_url} /></ChatExecutionProvider></BriefingLinks></ChatMapProvider> : <p>{selected.status === "running" ? t("preparingBody") : summaryText(selected.summaryItems, selected.summary)}</p>}
+          onOpenMap={onOpenMap} onOpenCheck={(journalId, title) => void open(selected, { kind: "memory", location: { loupistId: loupist.id, surface: "note", objectId: journalId, selection: { kind: "journal", journalId } }, title })} /> : null}
+        {readerLoading ? <p role="status">{t("loading")}</p> : readerError ? <div role="alert" className="briefings-failure"><h3>{t("failure.title")}</h3><p>{t(`failure.${failure}`)}</p>{failure === "auth" && onOpenModelSettings ? <Button variant="link" onClick={onOpenModelSettings}>{t("failure.models")}</Button> : null}<Disclosure className="briefings-failure-details" title={t("failure.details")}><pre>{readerError}</pre></Disclosure><Button onClick={() => setReaderRevision(value => value + 1)}>{t("retry")}</Button></div> : message ? <ChatMapProvider bridge={bridge} loupistId={loupist.id} chatId={selected.threadId ?? ""} messages={[message]} onOpen={() => onOpenMap ? onOpenMap() : void onOpenChat(selected)}><RunLinks run={selected} open={open}><ChatExecutionProvider value={executionScope}><ChatMessageCard outlineOpen message={message} loupistId={loupist.id} chatId={selected.threadId ?? undefined} loupistName={loupist.name} workspacePath={loupist.workspace_path} onReadAttachment={async (messageId, attachmentId) => (await bridge.chatAttachmentRead(loupist.id, selected.threadId!, messageId, attachmentId)).data_url} /></ChatExecutionProvider></RunLinks></ChatMapProvider> : <p>{selected.status === "running" ? t("preparingBody") : summaryText(selected.summaryItems, selected.summary)}</p>}
         {(selected.briefingContext || selected.skippedTools.length > 0) && <Disclosure title={t("checked")}>
           {selected.briefingContext && <><p>{t("companies", { symbols: selected.briefingContext.symbols.join(", ") || t("noCompanies") })}</p><p>{t("principles", { count: selected.briefingContext.principlesChecked })}</p><p>{t("facts", { count: selected.briefingContext.newFacts })}</p></>}
           {!!selected.skippedTools.length && <p>{t("skipped", { names: selected.skippedTools.map(tool => tool.name).join(", ") })}</p>}

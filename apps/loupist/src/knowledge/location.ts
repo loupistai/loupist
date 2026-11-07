@@ -1,3 +1,4 @@
+import i18n from "@/i18n";
 import type { KnowledgeReference, MemoryRef, MemoryUpdateChange } from "../contracts/memory";
 import { sourceTitle } from "../components/knowledge/hostSource";
 import type {
@@ -207,6 +208,12 @@ export const knowledgeLocationFromMemoryRef = (
   if (!ref.knowledge) return null;
   return knowledgeLocationFromReference(loupistId, ref.knowledge);
 };
+
+/** A Lens record as the Evidence reader opens it, titled in the interface language. */
+export const lensMemoryLocation = (loupistId: string, recordId: string): { location: KnowledgeLocation; title: string } => ({
+  location: { loupistId, surface: "lens", recordId, objectId: recordId, selection: { kind: "lens", recordId } },
+  title: i18n.t("app:shell.tabs.lens"),
+});
 
 export const knowledgeLocationFromMemoryChange = (
   loupistId: string,
