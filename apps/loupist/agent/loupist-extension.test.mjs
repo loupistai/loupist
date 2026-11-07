@@ -765,6 +765,36 @@ test("calculate accepts numbers, dataset cells and columns, and routes them unch
   }
 });
 
+test("the host's citation_url satisfies every citation schema, also where a provider reads a pattern as the whole value", (t) => {
+  // xAI constrains tool arguments to each `pattern` as a whole-value match, so an
+  // open-ended `^#evidence-` let Grok emit only the bare "#evidence-".
+  const openEnded = [];
+  const visit = (node, path) => {
+    if (Array.isArray(node)) return node.forEach((item, index) => visit(item, `${path}/${index}`));
+    if (!node || typeof node !== "object") return;
+    if (typeof node.pattern === "string" && !/^\^.*(?<!\\)\$$/s.test(node.pattern)) openEnded.push(`${path}: ${node.pattern}`);
+    for (const [key, value] of Object.entries(node)) visit(value, `${path}/${key}`);
+  };
+  for (const { name, parameters } of CATALOG.tools) visit(parameters, name);
+  assert.deepEqual(openEnded, []);
+
+  useHostContext(t, runtimeContext("chat", ["capability_load"], BUNDLED_COMPONENTS));
+  const { registered } = loadExtension();
+  const citation = `#evidence-ev_${createHash("sha256").update("result:0053ed1bc59648f58c4068f15df9a052").digest("hex").slice(0, 32)}`;
+  const calculate = registered.get("calculate");
+  const validate = (input_sources) => validateToolArguments(calculate, {
+    id: "calc",
+    name: "calculate",
+    arguments: { operation: "ratio", inputs: { numerator: 4200, denominator: 100 }, input_sources },
+  });
+  assert.deepEqual(validate({ numerator: citation }).input_sources, { numerator: citation });
+  assert.throws(() => validate({ numerator: "#evidence-" }));
+  assert.throws(() => validate({ numerator: `${citation}0` }));
+  const wholeValue = new RegExp(`^(?:${calculate.parameters.properties.input_sources.additionalProperties.pattern})$`);
+  assert.ok(wholeValue.test(citation));
+  assert.ok(!wholeValue.test("#evidence-"));
+});
+
 test("warm resume restores allowed components in catalog order and drops revoked tools", async (t) => {
   const datasets = BUNDLED_COMPONENTS.find((component) => component.id === "datasets");
   useHostContext(t, runtimeContext("chat", ["capability_load", "read"], [datasets]));

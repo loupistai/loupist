@@ -14,6 +14,8 @@ pub const PROMPT: &str = include_str!("../../../agent/prompts/method-learning.md
 const SIX_HOURS: i64 = 6 * 60 * 60 * 1000;
 const DAY: i64 = 24 * 60 * 60 * 1000;
 const MAX_INPUT: usize = 12_000;
+/// Methods fill the input up to this size; the rest is left for evidence.
+const METHODS_UNTIL: usize = 8_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -115,11 +117,11 @@ pub(crate) fn enqueue(
     if active.is_some() {
         return admit_pending(tx, loupist, now);
     }
-    let (through, seen) = watermarks(tx, loupist, "")?;
+    let (consumed, seen) = watermarks(tx, loupist, "")?;
     let end = log_head(tx, loupist)?;
     // A review settled before inference read up to `seen` without consuming it:
     // recheck only once more is filed, so a defer never requeues itself.
-    if end <= seen || core(&evidence(tx, loupist, through, end)?).is_none() {
+    if end <= seen || core(&evidence(tx, loupist, &consumed, end)?).is_none() {
         return Ok(None);
     }
     let id = super::model::mint_id("lrn");
@@ -128,16 +130,50 @@ pub(crate) fn enqueue(
     admit_pending(tx, loupist, now)
 }
 
-/// The evidence watermark (the head an inference attempt consumed) and the
-/// head any review last read. Rows with a `world_job_id` held growth-event
-/// rowids under the claim-count trigger and never count.
-fn watermarks(tx: &Transaction<'_>, loupist: &str, except: &str) -> KnowledgeResult<(i64, i64)> {
-    Ok(tx.query_row(
-        "SELECT COALESCE(MAX(CASE WHEN started_at_ms IS NOT NULL THEN through_event END),0),COALESCE(MAX(through_event),0)
-         FROM knowledge_learning_reviews WHERE loupist_id=?1 AND world_job_id='' AND review_id<>?2",
+/// Lens-log rows an inference attempt already showed: every row through
+/// `through`, and the rows in `shown` above it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct Consumed {
+    #[serde(skip)]
+    through: i64,
+    #[serde(default)]
+    shown: BTreeSet<i64>,
+}
+/// What the reviews that reached inference consumed, and the head any review
+/// last read. Rows with a `world_job_id` held growth-event rowids under the
+/// claim-count trigger and never count.
+fn watermarks(
+    tx: &Transaction<'_>,
+    loupist: &str,
+    except: &str,
+) -> KnowledgeResult<(Consumed, i64)> {
+    let seen = tx.query_row(
+        "SELECT COALESCE(MAX(through_event),0) FROM knowledge_learning_reviews WHERE loupist_id=?1 AND world_job_id='' AND review_id<>?2",
         params![loupist, except],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )?)
+        |r| r.get(0),
+    )?;
+    // A started review stores every shown row above its watermark, carried
+    // forward, so the latest one holds the whole set. A review stored before
+    // shown rows were kept consumed its whole window and parses with none.
+    let latest: Option<(i64, Option<String>)> = tx
+        .query_row(
+            "SELECT through_event,input_json FROM knowledge_learning_reviews
+             WHERE loupist_id=?1 AND world_job_id='' AND review_id<>?2 AND started_at_ms IS NOT NULL
+             ORDER BY through_event DESC,started_at_ms DESC LIMIT 1",
+            params![loupist, except],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let Some((through, stored)) = latest else {
+        return Ok((Consumed::default(), seen));
+    };
+    let mut consumed: Consumed = match stored {
+        Some(text) => serde_json::from_str(&text)?,
+        None => Consumed::default(),
+    };
+    consumed.through = through;
+    consumed.shown.retain(|&row| row > through);
+    Ok((consumed, seen))
 }
 
 fn log_head(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<i64> {
@@ -197,11 +233,28 @@ struct Method {
     record_id: String,
     title: String,
     applicability: String,
+    /// The text a refine replaces, in full. Only a method shown with it may be refined.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    current: Option<MethodText>,
     #[serde(skip)]
     digests: BTreeMap<String, String>,
-    /// Sections the user wrote; a refine never replaces them.
+    /// Sections the user wrote by hand or taught in a Chat; a refine never replaces them.
     #[serde(skip)]
     user_written: BTreeSet<String>,
+}
+/// The sections a learned method writes, with the headings they are filed under.
+const METHOD_SECTIONS: [(&str, &str); 4] = [
+    ("use-when", "Use when"),
+    ("steps", "Steps"),
+    ("checks", "Checks"),
+    ("limits", "Limits"),
+];
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MethodText {
+    summary: String,
+    /// Each of [`METHOD_SECTIONS`] the page holds, by key.
+    sections: BTreeMap<String, String>,
 }
 /// A retained Source span a turn filed as a section's basis.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -230,6 +283,13 @@ struct Observation {
     page_id: String,
     #[serde(skip)]
     spans: Vec<SpanRef>,
+    /// The lens-log row that filed it.
+    #[serde(skip)]
+    row: i64,
+    /// Who the page is about: its subject anchors, never empty. Observations
+    /// sharing one are the same case.
+    #[serde(skip)]
+    cases: BTreeSet<String>,
 }
 /// Each Chat's cited Sources across all the evidence.
 fn cited_by(all: &[Observation]) -> BTreeMap<&str, BTreeSet<&str>> {
@@ -251,50 +311,46 @@ fn independent(a: &Observation, b: &Observation, by: &BTreeMap<&str, BTreeSet<&s
     };
     a.chat_id != b.chat_id && new_to(a, b) && new_to(b, a)
 }
+/// Two cases: independent Chats filing about disjoint subjects.
+fn two_cases(a: &Observation, b: &Observation, by: &BTreeMap<&str, BTreeSet<&str>>) -> bool {
+    independent(a, b, by) && a.cases.is_disjoint(&b.cases)
+}
 /// The method-learning gate on `cited`, judged against what each Chat cited in
-/// `all`: two independent Chats and two pages. One Chat, one Source, one
-/// company's page, or a Chat nested in another's Sources is too narrow to
-/// generalize.
+/// `all`: two independent Chats about two different subjects. One Chat, one
+/// Source, one company (however many pages it has), or a Chat nested in
+/// another's Sources is too narrow to generalize.
 fn recurs(cited: &[&Observation], all: &[Observation]) -> bool {
     let by = cited_by(all);
-    let pages: BTreeSet<_> = cited.iter().map(|o| &o.page_id).collect();
-    pages.len() >= 2
-        && cited
-            .iter()
-            .enumerate()
-            .any(|(j, b)| cited[..j].iter().any(|a| independent(a, b, &by)))
+    cited
+        .iter()
+        .enumerate()
+        .any(|(j, b)| cited[..j].iter().any(|a| two_cases(a, b, &by)))
 }
-/// The newest observations that pass the gate on their own: an independent
-/// pair, plus another page when the pair shares one. None when `all` fails it.
-fn core(all: &[Observation]) -> Option<BTreeSet<usize>> {
+/// The newest pair that passes the gate on its own. None when `all` fails it.
+fn core(all: &[Observation]) -> Option<(usize, usize)> {
     let by = cited_by(all);
-    // Independence depends only on a Chat and its Sources: try the newest of each.
+    // The gate depends only on a Chat, its Sources and its cases: try the newest of each.
     let mut kinds = BTreeSet::new();
     let firsts: Vec<usize> = (0..all.len())
         .filter(|&i| {
             let sources: BTreeSet<_> = all[i].spans.iter().map(|s| &s.record_id).collect();
-            kinds.insert((&all[i].chat_id, sources))
+            kinds.insert((&all[i].chat_id, sources, &all[i].cases))
         })
         .collect();
-    let (i, j) = (0..firsts.len())
+    (0..firsts.len())
         .flat_map(|j| (0..j).map(move |i| (i, j)))
         .map(|(i, j)| (firsts[i], firsts[j]))
-        .find(|&(i, j)| independent(&all[i], &all[j], &by))?;
-    let mut picked = BTreeSet::from([i, j]);
-    if all[i].page_id == all[j].page_id {
-        picked.insert(all.iter().position(|o| o.page_id != all[i].page_id)?);
-    }
-    Some(picked)
+        .find(|&(i, j)| two_cases(&all[i], &all[j], &by))
 }
-/// Turn puts in (after, through], newest first, that are still the current
-/// section of an active subject or idea page, keeping only spans whose Source
-/// preserves an original. An undone, forgotten, retired or replaced put no
-/// longer counts, and method pages never do: a turn's own method edits are not
-/// research evidence.
+/// Turn puts above `consumed`, through `through`, newest first, that are still
+/// the current section of an active subject or idea page, keeping only spans
+/// whose Source preserves an original. An undone, forgotten, retired or
+/// replaced put no longer counts, and method pages never do: a turn's own
+/// method edits are not research evidence.
 fn evidence(
     tx: &Transaction<'_>,
     loupist: &str,
-    after: i64,
+    consumed: &Consumed,
     through: i64,
 ) -> KnowledgeResult<Vec<Observation>> {
     let controls = super::memory_controls::load(tx, loupist)?;
@@ -313,8 +369,15 @@ fn evidence(
         "SELECT r.payload_json FROM knowledge_record_heads h
          JOIN knowledge_record_revisions r ON r.revision_id=h.revision_id WHERE h.record_id=?1",
     )?;
+    // A resolved anchor is its node alone: the name it was created under may
+    // since belong to another node. A pending one is its folded name until a
+    // World publication resolves it to the node the other pages share.
+    let mut subjects = tx.prepare(
+        "SELECT COALESCE('node:'||node_id,'name:'||name_fold) FROM knowledge_lens_anchors
+         WHERE record_id=?1 AND role='subject' AND (node_id IS NOT NULL OR name_fold<>'')",
+    )?;
     let mut q = tx.prepare(
-        "SELECT l.op_id,l.op_json,l.chat_id,l.message_id,l.record_id,l.after_digest,m.title,m.kind
+        "SELECT l.op_id,l.op_json,l.chat_id,l.message_id,l.record_id,l.after_digest,m.title,m.kind,l.rowid
          FROM knowledge_lens_log l JOIN knowledge_lens_metadata m ON m.record_id=l.record_id
          WHERE l.loupist_id=?1 AND l.rowid>?2 AND l.rowid<=?3 AND l.origin='turn'
            AND l.outcome IN ('added','replaced') AND l.chat_id IS NOT NULL AND l.message_id IS NOT NULL
@@ -322,7 +385,7 @@ fn evidence(
          ORDER BY l.rowid DESC",
     )?;
     let rows = q
-        .query_map(params![loupist, after, through], |r| {
+        .query_map(params![loupist, consumed.through, through], |r| {
             Ok((
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
@@ -332,14 +395,16 @@ fn evidence(
                 r.get::<_, Option<String>>(5)?,
                 r.get::<_, String>(6)?,
                 r.get::<_, String>(7)?,
+                r.get::<_, i64>(8)?,
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
     let (mut turns, mut chats) = (BTreeMap::new(), BTreeMap::new());
     let mut bodies: BTreeMap<String, Option<LensBody>> = BTreeMap::new();
+    let mut cases: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut out = Vec::new();
-    for (id, op, chat_id, message_id, page_id, after_digest, page, kind) in rows {
-        if hidden(&page_id) {
+    for (id, op, chat_id, message_id, page_id, after_digest, page, kind, row) in rows {
+        if hidden(&page_id) || consumed.shown.contains(&row) {
             continue;
         }
         let LensOp::Put {
@@ -405,6 +470,17 @@ fn evidence(
         if spans.is_empty() {
             continue;
         }
+        if !cases.contains_key(&page_id) {
+            let about = subjects
+                .query_map([&page_id], |r| r.get(0))?
+                .collect::<Result<_, _>>()?;
+            cases.insert(page_id.clone(), about);
+        }
+        // A page with no subject could be about any company, including the one
+        // the other case is about, so it is not evidence.
+        if cases[&page_id].is_empty() {
+            continue;
+        }
         let n = turns.len() + 1;
         let turn = turns
             .entry(message_id.clone())
@@ -424,8 +500,10 @@ fn evidence(
             sources,
             chat_id,
             message_id,
+            cases: cases[&page_id].clone(),
             page_id,
             spans,
+            row,
         });
     }
     Ok(out)
@@ -443,15 +521,20 @@ impl Input {
     fn text(&self) -> KnowledgeResult<String> {
         Ok(serde_json::to_string(self)?)
     }
+    fn fits(&self, limit: usize) -> KnowledgeResult<bool> {
+        Ok(self.text()?.chars().count() <= limit)
+    }
 }
+/// The input for evidence after `consumed` through `end`, and what showing it
+/// consumes: rows through the oldest one left out, plus every shown row above.
 fn build_input(
     tx: &Transaction<'_>,
     loupist: &str,
-    start: i64,
+    consumed: &Consumed,
     end: i64,
     name: &str,
     focus: &str,
-) -> KnowledgeResult<Input> {
+) -> KnowledgeResult<(Input, Consumed)> {
     let controls = super::memory_controls::load(tx, loupist)?;
     let principles = super::principles::principle_list(tx, loupist, false)?
         .into_iter()
@@ -466,8 +549,16 @@ fn build_input(
         observations: vec![],
     };
     // Never silently omit a principle. If all cannot fit, defer without inference.
-    if input.text()?.chars().count() > MAX_INPUT {
+    if !input.fits(MAX_INPUT)? {
         return Err(KnowledgeError::Invalid("principles_exceed_input_limit"));
+    }
+    // A pair that passes the gate goes in first.
+    let all = evidence(tx, loupist, consumed, end)?;
+    let (i, j) = core(&all).ok_or(KnowledgeError::Invalid("insufficient_turns"))?;
+    let mut picked = BTreeSet::from([i, j]);
+    input.observations = vec![all[i].clone(), all[j].clone()];
+    if !input.fits(MAX_INPUT)? {
+        return Err(KnowledgeError::Invalid("evidence_exceeds_input_limit"));
     }
     let mut q=tx.prepare("SELECT m.record_id,m.title,h.revision_id,r.payload_json FROM knowledge_lens_metadata m JOIN knowledge_record_heads h ON h.record_id=m.record_id JOIN knowledge_record_revisions r ON r.revision_id=h.revision_id WHERE m.loupist_id=?1 AND m.archived_at_ms IS NULL AND m.kind='method' ORDER BY m.updated_at_ms DESC,m.record_id LIMIT 40")?;
     for row in q.query_map([loupist], |r| {
@@ -489,10 +580,24 @@ fn build_input(
             .find(|section| section.key.as_str() == "use-when")
             .map(|section| section.markdown.as_str())
             .unwrap_or(&page.summary);
+        let sections = page
+            .sections
+            .iter()
+            .filter(|section| {
+                METHOD_SECTIONS
+                    .iter()
+                    .any(|(key, _)| *key == section.key.as_str())
+            })
+            .map(|section| (section.key.as_str().to_owned(), section.markdown.clone()))
+            .collect();
         input.methods.push(Method {
             record_id,
             title,
             applicability: applicability.chars().take(300).collect(),
+            current: Some(MethodText {
+                summary: page.summary.clone(),
+                sections,
+            }),
             digests: page
                 .sections
                 .iter()
@@ -506,36 +611,49 @@ fn build_input(
             user_written: page
                 .sections
                 .iter()
-                .filter(|section| section.origin == super::lens_page::Origin::User)
+                .filter(|section| {
+                    section.origin == super::lens_page::Origin::User
+                        || section
+                            .basis
+                            .refs
+                            .iter()
+                            .any(|r| matches!(r, BasisRef::UserSaid { .. }))
+                })
                 .map(|section| section.key.as_str().to_owned())
                 .collect(),
         });
-        if input.text()?.chars().count() > 7000 {
+        // A method whose text does not fit is listed without it, and cannot be refined.
+        if !input.fits(METHODS_UNTIL)? {
+            input.methods.last_mut().expect("just pushed").current = None;
+        }
+        if !input.fits(METHODS_UNTIL)? {
             input.methods.pop();
             break;
         }
     }
-    // A core that passes the gate goes in first, so truncation never shows the
-    // model less breadth than the evidence has. The rest fills newest first.
-    let all = evidence(tx, loupist, start, end)?;
-    let mut picked = core(&all).ok_or(KnowledgeError::Invalid("insufficient_turns"))?;
-    input.observations = picked.iter().map(|&i| all[i].clone()).collect();
-    while input.text()?.chars().count() > MAX_INPUT && input.methods.pop().is_some() {}
-    if input.text()?.chars().count() > MAX_INPUT {
-        return Err(KnowledgeError::Invalid("evidence_exceeds_input_limit"));
-    }
-    for (i, o) in all.iter().enumerate() {
+    // The rest fills oldest first, so what one review leaves out is newer
+    // evidence the next review reads.
+    let mut through = end;
+    for i in (0..all.len()).rev() {
         if picked.contains(&i) {
             continue;
         }
-        input.observations.push(o.clone());
-        if input.text()?.chars().count() > MAX_INPUT {
+        input.observations.push(all[i].clone());
+        if !input.fits(MAX_INPUT)? {
+            through = all[i].row - 1;
             break;
         }
         picked.insert(i);
     }
-    input.observations = picked.into_iter().map(|i| all[i].clone()).collect();
-    Ok(input)
+    input.observations = picked.iter().map(|&i| all[i].clone()).collect();
+    let shown = consumed
+        .shown
+        .iter()
+        .copied()
+        .chain(picked.iter().map(|&i| all[i].row))
+        .filter(|&row| row > through)
+        .collect();
+    Ok((input, Consumed { through, shown }))
 }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -579,20 +697,6 @@ impl Output {
         keep: &BTreeSet<String>,
         basis: &Basis,
     ) -> KnowledgeResult<Vec<LensOp>> {
-        let section = |key: &str, heading: &str, text: String| -> KnowledgeResult<LensOp> {
-            let key = SectionKey::new(key)?;
-            let expected = read.get(key.as_str()).cloned();
-            Ok(LensOp::Put {
-                key,
-                heading: heading.into(),
-                markdown: text
-                    .chars()
-                    .take(super::lens_page::MAX_SECTION_CHARS)
-                    .collect(),
-                basis: basis.clone(),
-                expected,
-            })
-        };
         let summary: String = self
             .markdown
             .split_whitespace()
@@ -601,27 +705,33 @@ impl Output {
             .chars()
             .take(super::lens_page::MAX_SUMMARY_CHARS)
             .collect();
-        let sections = [
-            section(
-                "use-when",
-                "Use when",
-                format!(
-                    "{}\n\nAssumptions: {}",
-                    self.applicability.trim(),
-                    self.assumptions.trim()
-                ),
-            )?,
-            section("steps", "Steps", self.procedure.trim().to_owned())?,
-            section("checks", "Checks", self.principles.trim().to_owned())?,
-            section("limits", "Limits", self.limitations.trim().to_owned())?,
+        let texts = [
+            format!(
+                "{}\n\nAssumptions: {}",
+                self.applicability.trim(),
+                self.assumptions.trim()
+            ),
+            self.procedure.trim().to_owned(),
+            self.principles.trim().to_owned(),
+            self.limitations.trim().to_owned(),
         ];
-        Ok(std::iter::once(LensOp::Summary { text: summary })
-            .chain(
-                sections
-                    .into_iter()
-                    .filter(|op| op.key().is_some_and(|key| !keep.contains(key.as_str()))),
-            )
-            .collect())
+        let mut ops = vec![LensOp::Summary { text: summary }];
+        for ((key, heading), text) in METHOD_SECTIONS.into_iter().zip(texts) {
+            if keep.contains(key) {
+                continue;
+            }
+            ops.push(LensOp::Put {
+                key: SectionKey::new(key)?,
+                heading: heading.into(),
+                markdown: text
+                    .chars()
+                    .take(super::lens_page::MAX_SECTION_CHARS)
+                    .collect(),
+                basis: basis.clone(),
+                expected: read.get(key).cloned(),
+            });
+        }
+        Ok(ops)
     }
 }
 #[derive(Clone)]
@@ -630,8 +740,8 @@ pub(super) struct Attempt {
     pub loupist_id: String,
     pub input: Input,
     pub settings: GraphProcessingSettings,
-    /// The lens-log rows (after, through] this review read.
-    after: i64,
+    /// The lens-log rows this review read: past `before`, through `through`.
+    before: Consumed,
     through: i64,
 }
 pub(super) fn claim(
@@ -666,22 +776,24 @@ pub(super) fn claim(
     if previous.is_some_and(|t| now - t < SIX_HOURS) {
         return Ok(None);
     }
-    let (start, _) = watermarks(tx, loupist, &id)?;
-    let input = match build_input(tx, loupist, start, end, name, focus) {
-        Ok(i) => i,
+    let (before, _) = watermarks(tx, loupist, &id)?;
+    let (input, after) = match build_input(tx, loupist, &before, end, name, focus) {
+        Ok(built) => built,
         Err(KnowledgeError::Invalid(reason)) => {
             settle(tx, &id, "deferred", Some(reason), None, None, 0, now)?;
             return Ok(None);
         }
         Err(e) => return Err(e),
     };
-    tx.execute("UPDATE knowledge_learning_reviews SET status='running',started_at_ms=?2,input_json=?3,settings_json=?4 WHERE review_id=?1 AND status='queued'",params![id,now,input.text()?,serde_json::to_string(&s)?])?;
+    // Reaching inference consumes only what the input shows.
+    let stored = json!({"input": &input, "shown": &after.shown});
+    tx.execute("UPDATE knowledge_learning_reviews SET status='running',started_at_ms=?2,through_event=?3,input_json=?4,settings_json=?5 WHERE review_id=?1 AND status='queued'",params![id,now,after.through,stored.to_string(),serde_json::to_string(&s)?])?;
     Ok(Some(Attempt {
         review_id: id,
         loupist_id: loupist.into(),
         input,
         settings: s,
-        after: start,
+        before,
         through: end,
     }))
 }
@@ -838,7 +950,7 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
         .count();
     // Re-resolve against current evidence: an observation undone, forgotten or
     // replaced since claim, or whose Sources were removed, drops out.
-    let current = evidence(write.tx, &a.loupist_id, a.after, a.through)?;
+    let current = evidence(write.tx, &a.loupist_id, &a.before, a.through)?;
     let cited: Vec<_> = current.iter().filter(|c| ids.contains(&c.id)).collect();
     if shown != ids.len() || !recurs(&cited, &current) {
         return Err(invalid());
@@ -876,6 +988,7 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
             .methods
             .iter()
             .find(|m| Some(&m.record_id) == o.target_record_id.as_ref())
+            .filter(|m| m.current.is_some())
             .ok_or_else(invalid)?;
         match write.read_page(&a.loupist_id, &method.record_id) {
             Ok(page) if !page.archived && page.kind == super::lens_page::LensKind::Method => {}

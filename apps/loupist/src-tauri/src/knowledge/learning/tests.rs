@@ -1144,27 +1144,68 @@ fn a_chat_that_repeats_another_chats_sources_is_not_a_second_case() {
     assert!(turn(&store, "chat-3", "m3", 2, &[c], AT + 4).is_some());
 }
 
+/// Files `text` on a method section as the user: by hand, or taught in a Chat,
+/// where the turn cites the user's message.
+fn user_writes(store: &KnowledgeStore, in_chat: bool, id: &str, key: &str, text: &str, now: i64) {
+    let message = format!("m-said-{key}-{now}");
+    let (origin, refs) = if in_chat {
+        (
+            turn_origin("chat-teach", &message),
+            vec![BasisRef::UserSaid {
+                message_id: message.clone(),
+            }],
+        )
+    } else {
+        (super::super::test_support::user_origin(), vec![])
+    };
+    let expected = store
+        .read_page(LOUPIST, id)
+        .unwrap()
+        .body
+        .sections()
+        .iter()
+        .find(|s| s.key.as_str() == key)
+        .map(|s| s.digest.clone());
+    store
+        .transact(|w| {
+            w.file(
+                LOUPIST,
+                &origin,
+                vec![PageDelta {
+                    target: PageTarget::Existing {
+                        record_id: id.into(),
+                    },
+                    ops: vec![LensOp::Put {
+                        key: SectionKey::new(key)?,
+                        heading: key.into(),
+                        markdown: text.into(),
+                        basis: Basis {
+                            refs: refs.clone(),
+                            uncertainty: None,
+                        },
+                        expected: expected.clone(),
+                    }],
+                }],
+                now,
+            )
+        })
+        .unwrap();
+}
+
 #[test]
-fn a_refine_keeps_the_sections_the_user_wrote() {
+fn a_refine_keeps_the_sections_the_user_wrote_or_taught() {
+    for in_chat in [false, true] {
+        a_refine_keeps_user_sections(in_chat);
+    }
+}
+
+fn a_refine_keeps_user_sections(in_chat: bool) {
     let (_dir, store) = setup();
     two_chats(&store, AT + 2).expect("queued");
     let a = begin(&store, AT + 4);
     complete(&store, &a, output(&a), AT + 5);
     let id = reviews(&store)[0].lens_record_id.clone().unwrap();
-    let write = |key: &str, text: &str, now: i64| {
-        store
-            .transact(|w| {
-                w.put_section(
-                    LOUPIST,
-                    &id,
-                    key,
-                    text,
-                    &super::super::test_support::user_origin(),
-                    now,
-                )
-            })
-            .unwrap();
-    };
+    let write = |key: &str, text: &str, now: i64| user_writes(&store, in_chat, &id, key, text, now);
     write("limits", "Only two Korean manufacturers so far.", AT + 6);
     let section = |key: &str| {
         store
@@ -1187,9 +1228,13 @@ fn a_refine_keeps_the_sections_the_user_wrote() {
     refined["limitations"] = json!("Learning's own limit.");
     complete(&store, &b, refined.clone(), AT + SIX_HOURS + 7);
     let review = reviews(&store).remove(0);
-    assert_eq!(review.status, "refined");
-    assert_eq!(review.reason, None);
-    assert_eq!(section("limits"), "Only two Korean manufacturers so far.");
+    assert_eq!(review.status, "refined", "in_chat={in_chat}");
+    assert_eq!(review.reason, None, "in_chat={in_chat}");
+    assert_eq!(
+        section("limits"),
+        "Only two Korean manufacturers so far.",
+        "in_chat={in_chat}"
+    );
     assert!(section("steps").starts_with("Reconcile inventory aging"));
     // Once the user wrote every section, a refine has nothing left to write.
     for key in ["use-when", "steps", "checks"] {
@@ -1203,7 +1248,326 @@ fn a_refine_keeps_the_sections_the_user_wrote() {
     complete(&store, &c, refined, AT + 2 * SIX_HOURS + 11);
     assert_eq!(
         reviews(&store)[0].reason.as_deref(),
-        Some("method_unchanged")
+        Some("method_unchanged"),
+        "in_chat={in_chat}"
     );
     assert_eq!(store.read_page(LOUPIST, &id).unwrap().revision_id, before);
+}
+
+#[test]
+fn two_pages_about_one_company_are_one_case() {
+    let name = |name: &str| AnchorInput::Name { name: name.into() };
+    let node = |n: usize| AnchorInput::Node {
+        node_id: format!("entity-{n}"),
+    };
+    let page = |kind, title: &str, anchors| PageTarget::Create {
+        kind,
+        title: title.into(),
+        anchors,
+    };
+    for (variant, first, second) in [
+        (
+            "idea_about_the_subject",
+            company(0),
+            page(PageKind::Idea, "Ramp thesis", vec![node(0)]),
+        ),
+        (
+            "subject_sharing_an_anchor",
+            company(0),
+            page(PageKind::Subject, "Manufacturer 2", vec![node(2), node(0)]),
+        ),
+        (
+            "pending_name",
+            page(
+                PageKind::Subject,
+                "Kestrel Foundry",
+                vec![name("Kestrel Foundry")],
+            ),
+            page(
+                PageKind::Idea,
+                "Kestrel ramp",
+                vec![name("kestrel foundry")],
+            ),
+        ),
+    ] {
+        let (_dir, store) = setup();
+        let (a, b, c, d) = (
+            source(&store, "Filing A"),
+            source(&store, "Filing B"),
+            source(&store, "Filing C"),
+            source(&store, "Filing D"),
+        );
+        let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+        assert!(put_in(&store, "chat-1", "m1", first, text, &[a], AT + 2).is_none());
+        let queued = put_in(&store, "chat-2", "m2", second, text, &[b], AT + 3);
+        assert!(queued.is_none(), "{variant}");
+        assert!(review_states(&store).is_empty(), "{variant}");
+        // A page with no subject anchor may be about the same company: no case.
+        let other = page(PageKind::Idea, "Utilization thesis", vec![]);
+        let queued = put_in(&store, "chat-3", "m3", other, text, &[c], AT + 4);
+        assert!(queued.is_none(), "{variant}");
+        assert!(
+            turn(&store, "chat-4", "m4", 1, &[d], AT + 5).is_some(),
+            "{variant}"
+        );
+    }
+}
+
+#[test]
+fn a_page_with_no_subject_is_never_one_of_the_two_cases() {
+    let idea = |title: &str| PageTarget::Create {
+        kind: PageKind::Idea,
+        title: title.into(),
+        anchors: vec![],
+    };
+    for (variant, first) in [
+        ("subject_and_unanchored_idea", company(0)),
+        ("two_unanchored_ideas", idea("Ramp thesis")),
+    ] {
+        let (_dir, store) = setup();
+        let (a, b, c) = (
+            source(&store, "Filing A"),
+            source(&store, "Filing B"),
+            source(&store, "Filing C"),
+        );
+        let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+        assert!(put_in(&store, "chat-1", "m1", first, text, &[a], AT + 2).is_none());
+        let unanchored = idea("Utilization recovery thesis");
+        let queued = put_in(&store, "chat-2", "m2", unanchored, text, &[b], AT + 3);
+        assert!(queued.is_none(), "{variant}");
+        assert!(review_states(&store).is_empty(), "{variant}");
+        // A second company is a case only beside a first one the gate knows.
+        let queued = turn(&store, "chat-3", "m3", 1, &[c], AT + 4);
+        assert_eq!(
+            queued.is_some(),
+            variant == "subject_and_unanchored_idea",
+            "{variant}"
+        );
+        if queued.is_some() {
+            let pages: Vec<_> = begin(&store, AT + 5)
+                .input
+                .observations
+                .iter()
+                .map(|o| o.page.clone())
+                .collect();
+            assert_eq!(pages, ["Manufacturer 1", "Manufacturer 0"]);
+        }
+    }
+}
+
+/// Publishes the World again with `nodes`, as World processing does.
+fn reseal(store: &KnowledgeStore, nodes: Vec<(&str, &str)>, at: i64) {
+    let (record_id, head): (String, String) = store
+        .read(|w| {
+            Ok(w.tx.query_row(
+                "SELECT r.record_id,h.revision_id FROM knowledge_records r
+                 JOIN knowledge_record_heads h ON h.record_id=r.record_id
+                 WHERE r.owner_loupist_id=?1 AND r.kind='world'",
+                [LOUPIST],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?)
+        })
+        .unwrap();
+    store
+        .seal_world(SealWorld {
+            loupist_id: LOUPIST.into(),
+            record_id,
+            expected_revision_id: Some(head),
+            at_ms: at,
+            nodes: nodes
+                .into_iter()
+                .map(|(id, name)| GraphNode {
+                    id: id.into(),
+                    name: name.into(),
+                    aliases: vec![],
+                    description: "Fictional manufacturer".into(),
+                    kind: "company".into(),
+                    source_role: "organization".into(),
+                    properties: BTreeMap::new(),
+                })
+                .collect(),
+            claims: vec![],
+            annotations: vec![],
+            dependencies: vec![],
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_resolved_anchor_is_its_node_not_the_name_it_was_filed_under() {
+    let named = |title: &str, name: &str| PageTarget::Create {
+        kind: PageKind::Idea,
+        title: title.into(),
+        anchors: vec![AnchorInput::Name { name: name.into() }],
+    };
+    let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+    // Two companies that held one name at different times are two cases.
+    let (_dir, store) = setup();
+    let (a, b) = (source(&store, "Filing A"), source(&store, "Filing B"));
+    let first = named("Ramp thesis", "Manufacturer 1");
+    assert!(put_in(&store, "chat-1", "m1", first, text, &[a], AT + 2).is_none());
+    reseal(
+        &store,
+        vec![
+            ("entity-0", "Manufacturer 0"),
+            ("entity-1", "Manufacturer One"),
+            ("entity-2", "Manufacturer 1"),
+        ],
+        AT + 3,
+    );
+    let second = named("Ramp thesis 2", "Manufacturer 1");
+    assert!(put_in(&store, "chat-2", "m2", second, text, &[b], AT + 4).is_some());
+
+    // A pending name and the node it later resolves to are one case.
+    let (_dir, store) = setup();
+    let (a, b, c) = (
+        source(&store, "Filing A"),
+        source(&store, "Filing B"),
+        source(&store, "Filing C"),
+    );
+    let pending = named("Kestrel ramp", "Kestrel Foundry");
+    assert!(put_in(&store, "chat-1", "m1", pending, text, &[a], AT + 2).is_none());
+    reseal(
+        &store,
+        vec![
+            ("entity-0", "Manufacturer 0"),
+            ("entity-k", "Kestrel Foundry"),
+        ],
+        AT + 3,
+    );
+    let resolved = PageTarget::Create {
+        kind: PageKind::Subject,
+        title: "Kestrel Foundry".into(),
+        anchors: vec![AnchorInput::Node {
+            node_id: "entity-k".into(),
+        }],
+    };
+    assert!(put_in(&store, "chat-2", "m2", resolved, text, &[b], AT + 4).is_none());
+    assert!(review_states(&store).is_empty());
+    assert!(turn(&store, "chat-3", "m3", 0, &[c], AT + 5).is_some());
+}
+
+#[test]
+fn evidence_a_started_review_left_out_goes_to_the_next_review() {
+    let (_dir, store) = setup();
+    store
+        .transact(|w| save_settings(w.tx, LOUPIST, false))
+        .unwrap();
+    let long = "Utilization, ramp cost and margin moved together. ".repeat(20);
+    let sources: Vec<_> = (0..3)
+        .map(|i| source(&store, &format!("Filing {i}")))
+        .collect();
+    for i in 0..20 {
+        turn_with(
+            &store,
+            &format!("chat-{}", i % 3),
+            &format!("m{i:02}"),
+            i % 4,
+            &long,
+            &[sources[i % 3].clone()],
+            AT + 10 + i as i64,
+        );
+    }
+    store
+        .transact(|w| save_settings(w.tx, LOUPIST, true))
+        .unwrap();
+    store
+        .transact(|w| enqueue(w.tx, LOUPIST, AT + 100))
+        .unwrap()
+        .expect("queued");
+    let first = begin(&store, AT + 101);
+    assert!(first.input.observations.len() < 20);
+    defer(&store, &first, AT + 102);
+    // What did not fit waits for the rate limit, then gets its own review.
+    assert_eq!(review_states(&store), ["deferred", "pending"]);
+    assert!(try_claim(&store, AT + 103).is_none());
+    let second = begin(&store, AT + 101 + SIX_HOURS);
+    let shown: BTreeSet<_> = ids(&first).into_iter().collect();
+    let next: BTreeSet<_> = ids(&second).into_iter().collect();
+    let again: Vec<_> = shown.intersection(&next).collect();
+    assert!(again.is_empty(), "shown twice: {again:?}");
+    let filed: BTreeSet<String> = store
+        .read(|w| {
+            let mut q =
+                w.tx.prepare("SELECT op_id FROM knowledge_lens_log WHERE origin='turn'")?;
+            let rows = q.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
+            Ok(rows)
+        })
+        .unwrap();
+    assert_eq!(&shown | &next, filed);
+    // Once every observation was shown, nothing requeues.
+    defer(&store, &second, AT + 102 + SIX_HOURS);
+    assert_eq!(review_states(&store), ["deferred", "deferred"]);
+}
+
+#[test]
+fn a_refine_sees_the_whole_method_and_never_replaces_text_it_was_not_shown() {
+    let (_dir, store) = setup();
+    two_chats(&store, AT + 2).expect("queued");
+    let a = begin(&store, AT + 4);
+    complete(&store, &a, output(&a), AT + 5);
+    let id = reviews(&store)[0].lens_record_id.clone().unwrap();
+    // The Loupist adds a safeguard of its own in a Chat, citing no user message.
+    let write = |key: &str, text: &str, now: i64| {
+        store
+            .transact(|w| {
+                w.put_section(
+                    LOUPIST,
+                    &id,
+                    key,
+                    text,
+                    &turn_origin("chat-method", &format!("m-{key}-{now}")),
+                    now,
+                )
+            })
+            .unwrap();
+    };
+    let limits = || {
+        store
+            .read_page(LOUPIST, &id)
+            .unwrap()
+            .body
+            .sections()
+            .iter()
+            .find(|s| s.key.as_str() == "limits")
+            .unwrap()
+            .markdown
+            .clone()
+    };
+    write(
+        "limits",
+        "Never apply to lessors: leases hide ramp cost.",
+        AT + 6,
+    );
+    two_chats(&store, AT + SIX_HOURS + 5);
+    let b = begin(&store, AT + SIX_HOURS + 6);
+    let sent = request(&b).unwrap().to_string();
+    assert!(sent.contains("Never apply to lessors"), "{sent}");
+    let mut refined = output(&b);
+    refined["action"] = json!("refine");
+    refined["targetRecordId"] = json!(id);
+    refined["limitations"] =
+        json!("Never apply to lessors: leases hide ramp cost. Two manufacturers only.");
+    complete(&store, &b, refined.clone(), AT + SIX_HOURS + 7);
+    assert_eq!(reviews(&store)[0].status, "refined");
+    // A method too long to show in full is listed, but cannot be refined.
+    for key in ["use-when", "steps", "checks", "limits"] {
+        let long = format!("{key} ").repeat(1900 / (key.len() + 1));
+        write(key, &long, AT + SIX_HOURS + 8);
+    }
+    let before = limits();
+    assert!(before.starts_with("limits limits"), "{before}");
+    two_chats(&store, AT + 2 * SIX_HOURS + 9);
+    let c = begin(&store, AT + 2 * SIX_HOURS + 10);
+    let sent = request(&c).unwrap().to_string();
+    assert!(
+        sent.contains("Check capacity ramp margin pressure"),
+        "{sent}"
+    );
+    assert!(!sent.contains("limits limits"), "{sent}");
+    refined["evidenceIds"] = json!(ids(&c));
+    refined["limitations"] = json!("Learning's narrower limit.");
+    complete(&store, &c, refined, AT + 2 * SIX_HOURS + 11);
+    assert_eq!(reviews(&store)[0].reason.as_deref(), Some("invalid_output"));
+    assert_eq!(limits(), before);
 }

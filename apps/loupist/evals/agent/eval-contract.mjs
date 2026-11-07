@@ -290,8 +290,9 @@ export function lensAssertion(assertion) {
     if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) throw new Error(`Lens ${field} must be a non-negative integer`);
   }
   if (assertion.assert !== 'lens_unchanged' && assertion.title_matches === undefined) throw new Error(`${assertion.assert} needs title_matches`);
+  if (assertion.unchanged !== undefined && assertion.unchanged !== true) throw new Error('Lens unchanged must be true when present');
   return {
-    kind, basis, count: assertion.count, min: assertion.min, max: assertion.max,
+    kind, basis, count: assertion.count, min: assertion.min, max: assertion.max, unchanged: assertion.unchanged === true,
     title: lensPattern(assertion.title_matches, 'title_matches'),
     sectionMatches: lensPattern(assertion.section_matches, 'section_matches'),
     sectionNotMatching: lensPattern(assertion.section_not_matching, 'section_not_matching'),

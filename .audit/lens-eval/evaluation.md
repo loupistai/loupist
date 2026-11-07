@@ -134,3 +134,77 @@ do not show that most users will see better pages, or that two reports make a
 broadly valid method. A frozen behavioral holdout covering contestation,
 same-company research, omitted evidence and mature-method refinement is the next
 evaluation step.
+
+# Follow-up round (branch `claude/lens-followups`, after #48)
+
+The open items above were worked on this branch. Same agent (`xai/grok-4.7`
+medium), same Codex judge, same graders on every arm.
+
+## What changed and why
+
+| Item | Root cause found | Change |
+| --- | --- | --- |
+| Pi `grep` failed | Pi resolves `rg` from the bundled `workspace-tools` PATH entry, which held only `fd` | ripgrep 15.2.0 staged and verified beside `fd` |
+| Grok citation refusals | xAI enforces a schema `pattern` as a whole-value match, so `^#evidence-` admitted only the bare prefix (raw stream and a direct probe) | citation patterns anchored to `^#evidence-ev_[0-9a-f]{32}$` |
+| One company counted as two cases | pages compared by id; unanchored pages and old names leaked | case = resolved World node, else pending name; unanchored pages do not count |
+| Unshown evidence consumed | a started review consumed its whole window | it consumes only the rows it showed |
+| Refine erased unseen or taught limits | the reviewer saw 300 characters of each method; only editor-written sections were kept | refine only methods shown in full; sections citing the user's words are kept |
+| Turn methods were prompt-only | `lens_file` checked nothing | every turn op on a method page must cite the user's message |
+| Lifecycle holdout reused development shapes | | behavioral holdout `lens-behavior-heldout-v1`, frozen before its first run |
+
+## Results
+
+Development suite (60 turns per arm; 54 for the first two columns plus LL-009):
+
+| Metric (checks) | Before #48 | #48 | This branch |
+| --- | ---: | ---: | ---: |
+| save_recall | 33/33 | 33/33 | 33/33 |
+| save_precision | 141/143 | 144/145 | 145/145 |
+| lens_update | 39/42 | 37/42 | 39/42 |
+| carry_forward / negative_transfer | 18/18, 6/6 | 18/18, 6/6 | 18/18, 6/6 |
+| invalid tool calls | 91/676 (13.5%) | 88/664 (13.3%) | 7/620 (1.1%) |
+
+Behavioral holdout (42 turns per arm; run once per arm after one aborted
+partial attempt on main; HV-003 on this branch rerun on the final binary because
+the method rule changes exactly that case; graders fixed after Codex and Grok
+reviews and both arms regraded from the same traces):
+
+| Metric (checks) | Main (43ac347) | This branch |
+| --- | ---: | ---: |
+| save_recall | 16/18 | 15/18 |
+| save_precision | 111/111 | 111/111 |
+| lens_update | 24/27 | 24/27 |
+| carry_forward | 5/6 | 5/6 |
+| negative_transfer / retrieval | 3/3, 9/9 | 3/3, 9/9 |
+| invalid tool calls | 166/726 | 25/534 |
+
+- HV-002 (explicit forget): the probe recalled the withdrawn date as expected in
+  3 of 3 main trials, 1 of 3 on this branch.
+- HV-005 (stale value): this branch answered a dated March assumption as
+  "unchanged since" in 2 of 3 trials (main 0 of 3). No change here touches it.
+  Following the holdout rule it became development case LL-010, which the
+  current prompt passes 3 of 3, so no prompt change was made; it stays open.
+- HV-006 (adopt a worked-out check): the method was created and read in every
+  trial; the `scoped` rubric failed because limits said "two distributor notes"
+  rather than "quarterly figures" (2 of 3 main, 3 of 3 here), a literal rubric.
+- The method rule caused 0 refusals in 102 real turns; Grok cited the user's
+  words whenever it legitimately created a method.
+- Context collapse: LL-005 on main lost no detail in 10 of 10 trials, so no
+  writer-side guard was added.
+
+Live learning eval on the final product code (3a72c3a, clean tree): the two-Chat
+arm created one method whose `limits` say it was "seen in only two fictional
+manufacturers and two sectors" and that its costs are "items to look for, not
+universal costs"; every section cites both reports; the third-company probe
+exact-read it with `lens_read` status applied; the insurer probe read nothing; no
+probe wrote anything; the one-Chat control (two turns, two Sources) started no
+review (`lens-research-v2-final-1.json`). One run per arm, descriptive.
+
+## Still open
+
+- Two unresolved spellings of one company (`Acme`, `Acme Inc.`) count as two
+  cases until the World names them.
+- A refine can still drop a learning-written limit it was shown; the prompt asks
+  it not to, nothing enforces it.
+- HV-005's stale-value answer, and HV-006's literal rubric.
+- Windows staging and signing for ripgrep were not run.

@@ -1106,7 +1106,7 @@ def openbb_smoke(executable: Path, runtime_dir: Path) -> None:
 
 
 def workspace_find_smoke(executable: Path, runtime_dir: Path, agent_dir: Path) -> None:
-    """Run native find in the shipped Pi without host fd, credentials, or network."""
+    """Run native find and grep in the shipped Pi without host fd or rg, credentials, or network."""
     with tempfile.TemporaryDirectory(prefix="loupist-find-smoke-") as name:
         root = Path(name)
         workspace = root / "research workspace"
@@ -1115,6 +1115,7 @@ def workspace_find_smoke(executable: Path, runtime_dir: Path, agent_dir: Path) -
         (workspace / "ignored.csv").write_text("value\n2\n")
         (workspace / ".gitignore").write_text("ignored.csv\n")
         result = root / "find-result.json"
+        grep_result = root / "grep-result.json"
         shutil.copyfile(agent_dir / "workspace-tools.mjs", root / "workspace-tools.mjs")
         extension = root / "find-smoke.mjs"
         extension.write_text(
@@ -1131,6 +1132,10 @@ def workspace_find_smoke(executable: Path, runtime_dir: Path, agent_dir: Path) -
             "    writeFileSync("
             + json.dumps(str(result))
             + ", JSON.stringify(result));\n"
+            '    const grep = await tools.get("grep").execute("grep", { pattern: "value", literal: true });\n'
+            "    writeFileSync("
+            + json.dumps(str(grep_result))
+            + ", JSON.stringify(grep));\n"
             "  }});\n"
             "}\n"
         )
@@ -1190,7 +1195,15 @@ def workspace_find_smoke(executable: Path, runtime_dir: Path, agent_dir: Path) -
             deadline = time.monotonic() + TIMEOUT_SECONDS
             acknowledged = False
             while time.monotonic() < deadline:
-                if acknowledged and result.is_file():
+                if acknowledged and result.is_file() and grep_result.is_file():
+                    grep = json.loads(grep_result.read_text())
+                    grep_text = "".join(
+                        part.get("text", "") for part in grep.get("content", [])
+                    )
+                    if "results.csv:1: value" not in grep_text:
+                        raise RuntimeError(
+                            "packaged offline grep returned incorrect workspace matches"
+                        )
                     output = json.loads(result.read_text())
                     if output.get("content") != [
                         {"type": "text", "text": "results.csv"}

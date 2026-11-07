@@ -324,6 +324,7 @@ for hill-climbing; **heldout** is for final adoption only (see
 | `heldout/learning-heldout-v1.json` | Adoption check for learning and transfer | | | 6 |
 | `heldout/tool-use-heldout-v1.json` | Adoption check for tools and connection honesty | | | 6 |
 | `heldout/lens-lifecycle-heldout-v1.json` | Lens lifecycle adoption check in sectors the development suite does not use | | | 4 |
+| `heldout/lens-behavior-heldout-v1.json` | Lens behaviors the lifecycle suites never exercise: a user's correction, an explicit forget, a method's safeguard, conflicting same-day Sources, a stale value, adopting a worked-out check | | | 6 |
 
 `run`, `grade`, `judge`, `report` and `calibrate` accept
 `--split capability|regression|heldout`. Loading a held-out suite or split requires
@@ -373,10 +374,12 @@ read that state, never the reply's save claim:
   `section_matches`, `section_not_matching`, `basis`: `span`, `claim`, `said` or
   `page`) counts unarchived pages whose title matches; every match must satisfy the
   section and basis conditions. `max: 0` with `kind: method` checks that one case
-  did not become a method.
+  did not become a method. `unchanged: true` also fails a matching page the turn
+  changed, so a seeded method can be checked for edits while other pages file.
 - `lens_unchanged` passes when the turn logged no Lens op.
-- `lens_read` / `lens_not_read` (`title_matches`) look for an exact Lens read in
-  `memory_reads`; search discovery is not a read.
+- `lens_read` / `lens_not_read` (`title_matches`, optional `kind`) look for an exact
+  Lens read in `memory_reads`; search discovery is not a read, and `kind` requires
+  the read record to be a page of that kind in `lens.pages`.
 
 Patterns match case-insensitively and only smoke-test content: "18 ships; the
 14-ship report was wrong" still matches `14`. So every update turn also has a
@@ -392,7 +395,10 @@ not leave a method, and a check the user asks to keep must become one. Reading a
 method to rule it out counts only toward `retrieval`. Its held-out twin is a sector
 holdout (biotech, shipping, REITs, packaged food) with the same turn shapes, run
 once per adoption decision; it guards against tuning to the development companies,
-not against a policy fitted to these scenario shapes. Run both with the
+not against a policy fitted to these scenario shapes. `heldout/lens-behavior-heldout-v1.json` is the
+behavioral holdout: different turn shapes and behaviors, frozen before its first
+run. The lifecycle holdout's LH-004 asks for REIT figures its probe never gives;
+it stays as run, and that check is reported, not counted. Run both with the
 development profile's agent model and a judge from another family, and read the
 pages themselves before adopting a change:
 

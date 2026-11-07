@@ -26,6 +26,9 @@ pub(in crate::commands) struct StagedFiling {
     /// only once the reply commits, so the ref is completed there.
     pub pending_spans: Vec<PendingSpan>,
     pub rationale: String,
+    /// (page, op) of the retire and summary ops that cite the user's message;
+    /// a method page accepts those ops only with it.
+    pub said_ops: BTreeSet<(usize, usize)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -117,9 +120,13 @@ enum OpInput {
         key: String,
         expected: String,
         why: String,
+        #[serde(default)]
+        said: bool,
     },
     Summary {
         text: String,
+        #[serde(default)]
+        said: bool,
     },
     IdeaStatus {
         status: IdeaStatus,
@@ -236,6 +243,7 @@ impl AppToolExecutor {
         let screens =
             crate::commands::knowledge::screen_filing(&self.state, loupist_id, &filing.deltas)
                 .map_err(|error| BrokerError::Execution(error.to_string()))?;
+        let said_ops = &filing.said_ops;
         for (index, (delta, screen)) in filing.deltas.iter_mut().zip(screens).enumerate() {
             if let Some((field, reason)) = screen.refusals.first() {
                 let field = match field {
@@ -246,6 +254,50 @@ impl AppToolExecutor {
                     TextField::Op(op, name) => format!("pages[{index}].ops[{op}].{name}"),
                 };
                 return Err(BrokerError::invalid(field, refusal_hint(*reason)));
+            }
+            let method = match (&delta.target, &screen.existing) {
+                (PageTarget::Create { kind, .. }, None) => *kind == PageKind::Method,
+                (_, Some(record_id)) | (PageTarget::Existing { record_id }, None) => {
+                    crate::knowledge::KnowledgeStore::for_loupist(
+                        self.state.store.clone(),
+                        loupist_id,
+                    )
+                    .and_then(|store| store.read(|read| read.lens_kind(loupist_id, record_id)))
+                    .map_or(true, |kind| {
+                        kind == crate::knowledge::lens_page::LensKind::Method
+                    })
+                }
+            };
+            // A turn writes a method only from what the user said in it; its own
+            // checks stay on subject and idea pages until method learning sees them recur.
+            if method {
+                if let Some((op, field)) =
+                    delta
+                        .ops
+                        .iter()
+                        .enumerate()
+                        .find_map(|(op, lens_op)| match lens_op {
+                            LensOp::Put { basis, .. }
+                                if !basis
+                                    .refs
+                                    .iter()
+                                    .any(|r| matches!(r, BasisRef::UserSaid { .. })) =>
+                            {
+                                Some((op, "basis"))
+                            }
+                            LensOp::Retire { .. } | LensOp::Summary { .. }
+                                if !said_ops.contains(&(index, op)) =>
+                            {
+                                Some((op, "said"))
+                            }
+                            _ => None,
+                        })
+                {
+                    return Err(BrokerError::invalid(
+                        format!("pages[{index}].ops[{op}].{field}"),
+                        "a method is written only from the user's teaching, correction or request to keep it this turn: cite {\"said\": true}, or keep the check on the subject or idea page",
+                    ));
+                }
             }
             let Some(record_id) = screen.existing else {
                 continue;
@@ -399,6 +451,7 @@ fn resolve(
     }
     let mut deltas = Vec::with_capacity(request.pages.len());
     let mut pending_spans = Vec::new();
+    let mut said_ops = BTreeSet::new();
     let mut summaries = Vec::with_capacity(request.pages.len());
     for (page_index, page) in request.pages.into_iter().enumerate() {
         let (target, title, kind) = match page.page {
@@ -503,7 +556,16 @@ fn resolve(
                         expected,
                     }
                 }
-                OpInput::Retire { key, expected, why } => {
+                OpInput::Retire {
+                    key,
+                    expected,
+                    why,
+                    said,
+                } => {
+                    if said {
+                        user_said(handles, field("said"))?;
+                        said_ops.insert((page_index, op_index));
+                    }
                     if creating {
                         return Err(BrokerError::invalid(
                             field("op"),
@@ -516,7 +578,13 @@ fn resolve(
                         why,
                     }
                 }
-                OpInput::Summary { text } => LensOp::Summary { text },
+                OpInput::Summary { text, said } => {
+                    if said {
+                        user_said(handles, field("said"))?;
+                        said_ops.insert((page_index, op_index));
+                    }
+                    LensOp::Summary { text }
+                }
                 OpInput::IdeaStatus { status, why } => LensOp::IdeaStatus { status, why },
             };
             ops.push(op);
@@ -537,9 +605,24 @@ fn resolve(
             deltas,
             pending_spans,
             rationale: request.rationale.trim().to_owned(),
+            said_ops,
         },
         summaries,
     ))
+}
+
+/// The user message of this turn that a `said` citation names.
+fn user_said(handles: &TurnHandles, field: String) -> Result<String, BrokerError> {
+    if handles.unattended {
+        return Err(BrokerError::invalid(
+            field,
+            "unavailable in an unattended run; cite a source or world read instead",
+        ));
+    }
+    handles
+        .said
+        .clone()
+        .ok_or_else(|| BrokerError::invalid(field, "this turn has no user message to cite"))
 }
 
 enum Resolved {
@@ -606,20 +689,8 @@ fn resolve_ref(
             if !said.said {
                 return Err(BrokerError::invalid(field("said"), "true"));
             }
-            if handles.unattended {
-                return Err(BrokerError::invalid(
-                    field("said"),
-                    "unavailable in an unattended run; cite a source or world read instead",
-                ));
-            }
-            let Some(message_id) = &handles.said else {
-                return Err(BrokerError::invalid(
-                    field("said"),
-                    "this turn has no user message to cite",
-                ));
-            };
             Resolved::Ready(BasisRef::UserSaid {
-                message_id: message_id.clone(),
+                message_id: user_said(handles, field("said"))?,
             })
         }
         RefInput::Lens(lens) => {

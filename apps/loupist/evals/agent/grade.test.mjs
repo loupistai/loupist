@@ -570,3 +570,19 @@ test('lens-pages renders each run\'s final pages and the ops each turn logged', 
   assert.doesNotMatch(text, /Guidance 4,200\n/u);
   assert.match(text, /## LL-007 trial 0[\s\S]*No Lens op was logged\.[\s\S]*No Lens pages\./u);
 });
+
+test('lens_pages unchanged fails an edited page, and lens_read kind needs a read of that kind', () => {
+  const memory = [
+    { assert: 'lens_pages', kind: 'method', title_matches: 'dividend', count: 1, unchanged: true, metric: 'save_precision' },
+    { assert: 'lens_read', kind: 'method', title_matches: '.', metric: 'carry_forward' },
+  ];
+  const mini = { schema: 'loupist-agent-suite/1', suite: 'lens', version: 1,
+    scenarios: [{ id: 'HV', sessions: [{ id: 'use', role: 'probe', memory: 'remember', turns: [{ user: 'Q.', expect: { memory } }] }] }] };
+  const page = (id, kind, title, ops) => ({ record_id: id, kind, title, archived: false, summary: '', sections: [], ops_this_turn: ops });
+  const row = (pages, reads) => ({ schema: 'loupist-agent-trace/1', run_id: 'r', suite: 'lens', scenario_id: 'HV', session_id: 'use', user: 'Q.', session_role: 'probe',
+    memory_mode: 'remember', turn_index: 0, trial: 0, status: 'completed', answer: 'A.', tool_calls: [], memory_commits: [], memory_reads: reads, lens: { pages } });
+  const read = (id, title) => ({ kind: 'lens', record_id: id, title, access: 'exact_read' });
+  const pass = (pages, reads) => grade(mini, [row(pages, reads)]).results.map((item) => item.pass);
+  assert.deepEqual(pass([page('m', 'method', 'Dividend cover check', []), page('s', 'subject', 'Pellmont', [{ op: 'put' }])], [read('m', 'Dividend cover check')]), [true, true]);
+  assert.deepEqual(pass([page('m', 'method', 'Dividend cover check', [{ op: 'put', key: 'limits' }])], [read('s', 'Halden working capital')]), [false, false]);
+});
