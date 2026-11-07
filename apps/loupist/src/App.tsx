@@ -90,6 +90,7 @@ import { PackLinkDialog } from "./components/sharing/PackLinkDialog";
 import { DeepLinkConfirm, useDeepLinks } from "./components/sharing/DeepLinkConfirm";
 import type { PackAddResult, PackOpenResult } from "./contracts/sharing";
 
+import type { LoupistSettingsSection } from "./components/agents/LoupistSettings";
 const LoupistSettings = lazy(() => import("./components/agents/LoupistSettings").then(module => ({ default: module.LoupistSettings })));
 const MemoryPage = lazy(() => import("./components/memory/MemoryPage").then(module => ({ default: module.MemoryPage })));
 const AssetPage = lazy(() => import("./components/assets/AssetPage").then(module => ({ default: module.AssetPage })));
@@ -142,7 +143,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
   const [settingsSection, setSettingsSection] =
     useState<SettingsSection>("loupists");
   const [loupistSettingsTargetId, setLoupistSettingsTargetId] = useState<string | null>(null);
-  const [loupistSettingsSection, setLoupistSettingsSection] = useState<"chat" | "world" | undefined>();
+  const [loupistSettingsSection, setLoupistSettingsSection] = useState<LoupistSettingsSection | undefined>();
   const loupistSettingsReturnFocus = useRef<HTMLElement | null>(null);
   /** "What {Loupist} knows" over the current tab, optionally opened on one principle or method. */
   const [memoryPage, setMemoryPage] = useState<{ loupistId: string; item?: string; key: number } | null>(null);
@@ -210,7 +211,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
   useEffect(() => {
     if (loupistSettingsOpen && loupistSettingsTargetId && !loupists.some(item => item.id === loupistSettingsTargetId)) setLoupistSettingsOpen(false);
   }, [loupists, loupistSettingsOpen, loupistSettingsTargetId]);
-  const openLoupistSettingsFor = async (id: string, remove = false, section?: "chat" | "world") => {
+  const openLoupistSettingsFor = async (id: string, remove = false, section?: LoupistSettingsSection) => {
     loupistSettingsReturnFocus.current = document.activeElement?.closest("[role=menu]") ? document.querySelector(".loupist-header-identity") : document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (id !== selectedLoupist?.id || loupist.loading) {
       const opened = await loupist.selectLoupist(id, loupists.find(item => item.id === id));
@@ -1022,6 +1023,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                       onImportLoupist={() => { loupist.setMutationError(null); dialogs.openImportLoupist(); }}
                       onRemoveLoupist={id => { void openLoupistSettingsFor(id, true); }}
                       onOpenLoupists={() => { setMarketplaceEntryId(null); setSettingsSection("loupists"); }}
+                      onOpenLoupistConnections={id => { setMarketplaceEntryId(null); setSettingsSection("loupists"); void openLoupistSettingsFor(id, false, "capabilities"); }}
                       currentLoupistId={selectedLoupistId}
                       onManageProviders={() => openSettings("model")}
                       onDraftSkill={draftSkill}
