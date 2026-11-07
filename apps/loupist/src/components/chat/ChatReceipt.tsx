@@ -1,7 +1,7 @@
 import { formatNumber } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
 import type { ReactNode } from "react";
-import type { ChatEvidenceRef, MapKind, SetupChange } from "../../types";
+import type { MapKind, SetupChange } from "../../types";
 import type { ChatReceiptData, SavedReceiptGroup, ThesisMove } from "../../chat/receipt";
 import { verdictLabel } from "../assets/assetText";
 import { TriangleAlertIcon } from "lucide-react";
@@ -43,8 +43,6 @@ type Props = {
   showNothingNew: boolean;
   listId: string;
   listExpanded: boolean;
-  /** Sources are counted once, in the activity row and the Sources toggle; the memory row still offers this. */
-  onOpenSource?: (evidence: ChatEvidenceRef, anchor?: HTMLElement) => void;
   onShowOnMap?: (ids: ReadonlySet<string>) => void;
   usedListId: string;
   usedExpanded: boolean;

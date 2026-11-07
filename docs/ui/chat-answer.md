@@ -4,7 +4,10 @@ An assistant turn is derived in one place, `src/chat/turnView.ts`, from the mess
 alone. `deriveTurnView` returns an exhaustive state (`starting`, `working`,
 `awaiting_approval`, `writing`, `stopping`, `complete`, `stopped`, `failed`), the
 segments in reading order, one footer slot and one string for the live region. The
-card renders what it is given and keeps no status conditionals of its own.
+card renders what it is given and keeps no status conditionals of its own. It keeps no
+open policy either: `TurnProvider` wraps it, and a step's page, a source row or a
+citation opens through the one `ChatDestination` path
+([opening from chat](evidence-browser.md#opening-from-chat)).
 
 Segments are prose and activity rows. A commentary item is prose keyed by its id:
 narration (the answer's own metrics in the secondary color) once it closed, the live
@@ -19,7 +22,9 @@ Sources toggle.
 
 The footer slot reserves the action row's height from the first frame. While the reply
 runs it shows a status line with a clock ("Writing · 0:14", "Working · 0:05",
-"Waiting for you", "Stopping") and the only live region for the turn. When the turn
+"Waiting for you", "Stopping") and the turn's only live region; a tab a citation opens
+is announced once by the app shell's region
+([workspace panel](workspace-panel.md)). When the turn
 settles the same slot holds Sources (n), the receipt line, Copy, feedback and any
 stopped or failed state with Try again. The outline, next steps and as-of note render
 below it. Nothing is inserted above the footer when a turn settles, and the Edit
