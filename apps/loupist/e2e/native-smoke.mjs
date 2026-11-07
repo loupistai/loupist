@@ -100,14 +100,19 @@ async function visibleLoupistTitles() {
 async function removeUntilOnboarding() {
   for (let guard = 0; guard < 6; guard += 1) {
     if ((await onboardingStep(browser)) === "1") return;
-    const titles = await visibleLoupistTitles();
-    if (!titles.length) break;
+    const [removed] = await visibleLoupistTitles();
+    if (!removed) break;
     await (await displayed("[data-header-loupist-settings]")).click();
     const sheet = await displayed(".loupist-settings-page");
     await clickButton("Remove Loupist", sheet);
     const dialog = await dialogByTitle(browser, "Remove Loupist?");
     await clickButton("Remove Loupist", dialog);
-    await browser.pause(400);
+    // Settings opened for a Loupist that is still in the header close when the
+    // refreshed list drops it.
+    await browser.waitUntil(async () => (await onboardingStep(browser)) === "1"
+      || !(await visibleLoupistTitles()).includes(removed), {
+      timeout: 15_000, timeoutMsg: `Removed Loupist stayed in the header: ${removed}`,
+    });
   }
   await waitForOnboardingStep(browser, 1, 20_000);
 }
