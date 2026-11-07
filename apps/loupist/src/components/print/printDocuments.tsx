@@ -3,9 +3,10 @@ import type { ChatThread } from "../../types";
 import { chatMarkdown } from "../../chat/exportChat";
 import { printView } from "./printView";
 import { OpenProvider } from "../navigation/Open";
+import type { Open } from "../../chat/navigation";
 
 /** Paper keeps every link's words; nothing on it opens. */
-const nothingOpens = async () => "unavailable" as const;
+const nothingOpens: Open = async () => undefined;
 
 /**
  * A Chat as paper: the same transcript as the Markdown export (title line,

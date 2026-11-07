@@ -2,7 +2,7 @@ import { fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { evidenceFixture } from "../../test/evidenceFixtures";
 import { WorkspaceEvidence } from "./WorkspaceEvidence";
-import { renderWithOpen } from "../../test/open";
+import { renderWithOpen, destinations } from "../../test/open";
 
 it("shows a saved source excerpt with its original URL and retrieval context", async () => {
   const evidence = evidenceFixture();
@@ -13,9 +13,9 @@ it("shows a saved source excerpt with its original URL and retrieval context", a
   // It opens in the panel's browser, so it carries the panel icon, not the system browser's.
   expect(live.querySelector("[data-open-icon]")).toHaveAttribute("data-open-icon", "panel");
   await userEvent.click(live);
-  expect(open).toHaveBeenCalledExactlyOnceWith({ kind: "link", url: evidence.url }, undefined);
+  expect(destinations(open)).toEqual([{ kind: "link", url: evidence.url }]);
   fireEvent.click(live, { ctrlKey: true });
-  expect(open).toHaveBeenLastCalledWith({ kind: "link", url: evidence.url }, { external: true });
+  expect(open).toHaveBeenLastCalledWith({ kind: "link", url: evidence.url }, expect.objectContaining({ external: true }));
 });
 
 it("says a retained source is gone and still offers the live page", () => {

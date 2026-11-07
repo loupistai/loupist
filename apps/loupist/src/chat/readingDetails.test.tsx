@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { renderWithOpen } from "../test/open";
+import { renderWithOpen, destinations } from "../test/open";
 import { MessageResponse } from "@/components/ai-elements/message-response";
 import type { ChatMessage } from "../types";
 import { retainedEvidenceFor } from "./links";
@@ -18,12 +18,12 @@ describe("links in answers (X4)", () => {
     expect(link.querySelector("svg")).toBeNull();
     const to = { kind: "link", url: "https://hanul.example/q3" };
     fireEvent.click(link);
-    expect(open).toHaveBeenLastCalledWith(to, undefined);
+    expect(destinations(open).at(-1)).toEqual(to);
     fireEvent.click(link, { ctrlKey: true });
-    expect(open).toHaveBeenLastCalledWith(to, { external: true });
+    expect(open).toHaveBeenLastCalledWith(to, expect.objectContaining({ external: true }));
     fireEvent(link, new MouseEvent("auxclick", { bubbles: true, button: 1 }));
     expect(open).toHaveBeenCalledTimes(3);
-    expect(open).toHaveBeenLastCalledWith(to, { external: true });
+    expect(open).toHaveBeenLastCalledWith(to, expect.objectContaining({ external: true }));
   });
 
 

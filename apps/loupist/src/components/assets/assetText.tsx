@@ -9,8 +9,7 @@ import type { ChatEvidenceRef } from "../../types";
 import type { AssetCapitalFacts, AssetChangeRow, AssetDilution, AssetEvidence, AssetFlowRow, AssetGlanceRow, LineCrossing, Verdict } from "../../contracts/assets";
 import { useCallback } from "react";
 import { CitationChip } from "../chat/CitationChip";
-import { OpenProvider, useOpener } from "../navigation/Open";
-import type { Open } from "../../chat/navigation";
+import { OpenProvider, useOpenLayer } from "../navigation/Open";
 import english from "@/i18n/locales/en/assets.json";
 
 const t = i18n.getFixedT(null, "assets");
@@ -344,13 +343,8 @@ export function citationNumbers(inOrder: Iterable<readonly AssetEvidence[]> = []
  * (Ctrl elsewhere) or a middle click opens the source page in the system browser.
  */
 function SourceChip({ item, number, onOpen }: { item: AssetEvidence; number: number; onOpen: EvidenceOpener }) {
-  const parent = useOpener();
   const evidence = assetCitation(item, number);
-  const open = useCallback<Open>(async (to, how) => {
-    if (how?.external) return parent ? parent.open(to, how) : "unavailable";
-    onOpen(item, evidence);
-    return "opened";
-  }, [evidence, item, onOpen, parent]);
+  const open = useOpenLayer(useCallback(() => () => onOpen(item, evidence), [evidence, item, onOpen]));
   return <OpenProvider open={open}>
     <CitationChip evidence={evidence} label={i18n.t("chat:evidence.numberedSource", { number, title: item.title })} title={item.title} source={host(item.url) || item.provider || item.title}
       to={{ kind: "evidence", evidence }}>{number}</CitationChip>

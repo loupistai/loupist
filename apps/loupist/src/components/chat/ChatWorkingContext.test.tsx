@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { WorkingNote } from "../../types";
 import { ChatWorkingContext } from "./ChatWorkingContext";
-import { renderWithOpen } from "../../test/open";
+import { renderWithOpen, destinations } from "../../test/open";
 
 const first: WorkingNote = { researchId: "first", chatId: "chat-a", title: "Monthly savings", markdown: "Contribution: **500**. Assumed return: 4%.", changeSummary: "Created the plan", recordedAtMs: 1_700_000_000_000 };
 const second: WorkingNote = { ...first, researchId: "second", markdown: "Contribution: **750**. Assumed return: 4%.", changeSummary: "Changed the contribution" };
@@ -43,11 +43,11 @@ describe("Chat working context", () => {
     const { open } = renderWithOpen(<ChatWorkingContext {...props}><p>Conversation content</p></ChatWorkingContext>);
     await user.click(await screen.findByRole("button", { name: "Working note" }));
     await user.click(screen.getByRole("button", { name: "Source: Original filing" }));
-    expect(open).toHaveBeenLastCalledWith({ kind: "memory", title: "Source: Original filing", location: expect.objectContaining({ loupistId: "loupist-a", surface: "source", recordId: "source-record", revisionId: "source-at-research", selection: { kind: "source", sourceId: undefined, spanId: "original-span" } }) }, undefined);
+    expect(destinations(open).at(-1)).toEqual({ kind: "memory", title: "Source: Original filing", location: expect.objectContaining({ loupistId: "loupist-a", surface: "source", recordId: "source-record", revisionId: "source-at-research", selection: { kind: "source", sourceId: undefined, spanId: "original-span" } }) });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Working note" }));
     await user.click(screen.getByRole("button", { name: "Lens 1 · Applied" }));
-    expect(open).toHaveBeenLastCalledWith({ kind: "memory", title: "Lens 1 · Applied", location: expect.objectContaining({ surface: "lens", recordId: "lens-record", revisionId: "lens-at-research" }) }, undefined);
+    expect(destinations(open).at(-1)).toEqual({ kind: "memory", title: "Lens 1 · Applied", location: expect.objectContaining({ surface: "lens", recordId: "lens-record", revisionId: "lens-at-research" }) });
     expect(screen.getByText("Conversation content")).toBeVisible();
   });
 

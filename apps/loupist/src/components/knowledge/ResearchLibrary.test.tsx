@@ -1,5 +1,5 @@
 import userEvent from "@testing-library/user-event";
-import { renderWithOpen } from "../../test/open";
+import { renderWithOpen, destinations } from "../../test/open";
 import { useState } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
@@ -68,7 +68,7 @@ it("reads a selected saved note and keeps its web links inside the supplied read
   const { open: onOpenLink } = renderWithOpen(<ResearchLibrary {...props} location={{ ...props.location, selection: { kind: "research", recordId: note.id } }} />);
   await userEvent.setup().click(await screen.findByRole("link", { name: "the filing" }));
   expect(read).toHaveBeenCalledWith({ loupistId: "loupist-quality", noteId: note.id });
-  expect(onOpenLink).toHaveBeenCalledWith({ kind: "link", url: "https://issuer.example/filing" }, undefined);
+  expect(destinations(onOpenLink)).toContainEqual({ kind: "link", url: "https://issuer.example/filing" });
   await userEvent.setup().click(screen.getByRole("button", { name: "Continue chat" }));
   expect(props.onAsk).toHaveBeenCalledWith(expect.objectContaining({ objectId: note.id }), "chat-original");
 });

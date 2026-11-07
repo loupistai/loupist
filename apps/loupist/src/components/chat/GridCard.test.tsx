@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import type { AssetsGrid, ChatEvidenceRef, ConflictGrid, NumberCheck } from "../../types";
 import { columnFit, ConflictCard, GridCard, headerLabel } from "./GridCard";
 import { ChatExecutionProvider } from "./ChatExecutionContext";
-import { renderWithOpen } from "../../test/open";
+import { renderWithOpen, destinations } from "../../test/open";
 import type { LoupistBridge } from "../../types";
 
 const DART: ChatEvidenceRef = {
@@ -188,7 +188,7 @@ describe("ConflictCard", () => {
     const rows = screen.getAllByRole("row");
     const chip = within(rows[1]!).getByRole("button", { name: /Source 1/u });
     await userEvent.setup().click(chip);
-    expect(open).toHaveBeenLastCalledWith({ kind: "evidence", evidence: DART, anchor: chip }, undefined);
+    expect(destinations(open).at(-1)).toEqual({ kind: "evidence", evidence: DART });
   });
 });
 

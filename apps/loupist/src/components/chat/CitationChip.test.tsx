@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ChatEvidenceRef } from "../../types";
 import { CitationChip, LONG_PRESS_MS } from "./CitationChip";
-import { renderWithOpen } from "../../test/open";
+import { renderWithOpen, destinations } from "../../test/open";
 
 const evidence = {
   id: "e1", title: "Hanul Precision Q3 operating review", kind: "original", url: "https://hanul.example/q3", provider: "Hanul IR",
@@ -86,12 +86,12 @@ describe("opening a citation", () => {
   it("opens the cited passage on a click and its page in the system browser on Ctrl-click or a middle click", () => {
     const { onOpen, chip } = renderChip();
     fireEvent.click(chip);
-    expect(onOpen).toHaveBeenLastCalledWith({ kind: "evidence", evidence, anchor: chip }, undefined);
+    expect(destinations(onOpen).at(-1)).toEqual({ kind: "evidence", evidence });
     fireEvent.click(chip, { ctrlKey: true });
-    expect(onOpen).toHaveBeenLastCalledWith({ kind: "evidence", evidence, anchor: chip }, { external: true });
+    expect(onOpen).toHaveBeenLastCalledWith({ kind: "evidence", evidence }, expect.objectContaining({ external: true }));
     fireEvent(chip, new MouseEvent("auxclick", { bubbles: true, button: 1 }));
     expect(onOpen).toHaveBeenCalledTimes(3);
-    expect(onOpen).toHaveBeenLastCalledWith({ kind: "evidence", evidence, anchor: chip }, { external: true });
+    expect(onOpen).toHaveBeenLastCalledWith({ kind: "evidence", evidence }, expect.objectContaining({ external: true }));
   });
 
   it("is plain text, not a dead button, where nothing can open it", () => {

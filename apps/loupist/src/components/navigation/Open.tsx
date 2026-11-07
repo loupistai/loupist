@@ -1,22 +1,42 @@
 import { ExternalLinkIcon, PanelRightOpenIcon } from "lucide-react";
-import { createContext, useContext, useMemo, useState, type MouseEvent, type ReactNode } from "react";
-import { destinationIcon, externalUrl, wantsExternal, type ChatDestination, type Open } from "../../chat/navigation";
+import { createContext, useCallback, useContext, useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import { destinationIcon, externalUrl, wantsExternal, type ChatDestination, type Open, type OpenHow } from "../../chat/navigation";
 
-type Opener = { open: Open; available: (to: ChatDestination) => boolean };
+const OpenContext = createContext<Open | null>(null);
 
-const OpenContext = createContext<Opener | null>(null);
-const always = () => true;
-
-/** One layer of open policy. A nested provider reads its parent with {@link useOpener} and adds to it. */
-export function OpenProvider({ open, available = always, children }: { open: Open; available?: (to: ChatDestination) => boolean; children: ReactNode }) {
-  const value = useMemo(() => ({ open, available }), [open, available]);
-  return <OpenContext.Provider value={value}>{children}</OpenContext.Provider>;
+/** One layer of open policy. {@link useOpenLayer} builds one over its parent. */
+export function OpenProvider({ open, children }: { open: Open; children: ReactNode }) {
+  return <OpenContext.Provider value={open}>{children}</OpenContext.Provider>;
 }
 
-export const useOpener = () => useContext(OpenContext);
+/** Null outside a provider (one component in a test or preview): entry points render as plain text. */
+export const useOpen = (): Open | null => useContext(OpenContext);
 
-/** Null outside a provider (one component in a test or preview): entry points hide. */
-export const useOpen = (): Open | null => useContext(OpenContext)?.open ?? null;
+/**
+ * What one layer does with a destination before its parent sees it: nothing
+ * (the parent opens it as is), a destination (the parent opens that instead),
+ * or a function (this layer opens it itself).
+ */
+export type OpenLayer = (to: ChatDestination, how: OpenHow) => ChatDestination | (() => void) | undefined;
+
+/** A layer of open policy over the parent opener. A system-browser open always passes through. */
+export function useOpenLayer(handle: OpenLayer): Open {
+  const parent = useOpen();
+  return useCallback<Open>(async (to, how = {}) => {
+    const result = how.external ? undefined : handle(to, how);
+    if (typeof result === "function") { result(); return; }
+    await parent?.(result ?? to, how);
+  }, [handle, parent]);
+}
+
+/** Opens from inside a dialog over the chat dismiss it first; a system-browser open leaves it up. */
+export function useOpenDismissing(dismiss: () => void): Open {
+  return useOpenLayer(useCallback(() => { dismiss(); return undefined; }, [dismiss]));
+}
+
+export function DismissOnOpen({ dismiss, children }: { dismiss: () => void; children: ReactNode }) {
+  return <OpenProvider open={useOpenDismissing(dismiss)}>{children}</OpenProvider>;
+}
 
 /** For a control with no failure state of its own (a page or view switch). Null outside a provider. */
 export function useGo(): ((to: ChatDestination) => void) | null {
@@ -27,7 +47,7 @@ export function useGo(): ((to: ChatDestination) => void) | null {
 const icons = { panel: <PanelRightOpenIcon aria-hidden="true" data-open-icon="panel" />, external: <ExternalLinkIcon aria-hidden="true" data-open-icon="external" /> };
 
 export type OpenProps = {
-  /** False outside a provider or when nothing can open the target: render plain text, not a dead control. */
+  /** False outside a provider: render plain text, not a dead control. */
   available: boolean;
   /** Spread on the control. Cmd/Ctrl-click and middle-click ask for the system browser. */
   props: {
@@ -44,24 +64,22 @@ export type OpenProps = {
 };
 
 export function useOpenProps(to: ChatDestination): OpenProps {
-  const opener = useOpener();
+  const open = useOpen();
   const [failed, setFailed] = useState(false);
   const external = externalUrl(to) !== null;
-  const available = opener !== null && opener.available(to);
   const activate = (event: MouseEvent<HTMLElement>) => {
-    if (!opener) return;
-    const target = to.kind === "evidence" ? { ...to, anchor: event.currentTarget } : to;
+    if (!open) return;
     setFailed(false);
-    opener.open(target, external && wantsExternal(event) ? { external: true } : undefined).catch(() => setFailed(true));
+    open(to, { anchor: event.currentTarget, ...(external && wantsExternal(event) ? { external: true } : {}) }).catch(() => setFailed(true));
   };
   const kind = destinationIcon(to);
   return {
-    available,
+    available: open !== null,
     external,
     failed,
     activate,
     icon: kind ? icons[kind] : null,
-    props: available ? {
+    props: open ? {
       onClick: activate,
       onAuxClick: (event) => {
         if (event.button !== 1) return;

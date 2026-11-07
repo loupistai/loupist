@@ -7,7 +7,8 @@ export function SavedPrinciple({ statement, undone = false, pending = false, sho
   pending?: boolean;
   showLabel?: boolean;
   onUndo?: () => void;
-  onView: () => void;
+  /** Absent where nothing can open the page: the quote stands without a View control. */
+  onView?: () => void;
   className?: string;
 }) {
   const { t } = useTranslation("chat");
@@ -19,7 +20,7 @@ export function SavedPrinciple({ statement, undone = false, pending = false, sho
       </blockquote>
       <div className="message-actions">
         {!undone && onUndo ? <button type="button" disabled={pending} onClick={onUndo}>{t("principles.undo")}</button> : null}
-        <button type="button" onClick={onView}>{t("principles.view")}</button>
+        {onView ? <button type="button" onClick={onView}>{t("principles.view")}</button> : null}
       </div>
     </div>
   );

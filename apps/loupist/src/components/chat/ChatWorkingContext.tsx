@@ -7,8 +7,7 @@ import { FileTextIcon, MessageSquareIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { SafeMessageResponse } from "./SafeMessageResponse";
-import { OpenProvider, useOpener } from "../navigation/Open";
-import type { Open } from "../../chat/navigation";
+import { OpenProvider, useOpen, useOpenDismissing } from "../navigation/Open";
 import { errorMessage } from "../../lib/errors";
 import { isEmptyChatThreadId } from "../../app/emptyChat";
 import type { LoupistBridge, WorkingNote, KnowledgeReference } from "../../types";
@@ -31,15 +30,11 @@ const savedAt = (value: number) => formatDateTime(value, { dateStyle: "medium", 
 export function ChatWorkingContext({ bridge, loupistId, chatId, isRunning, updateKey,
   onAskForChange, children }: Props) {
   useTranslation("chat");
-  const parent = useOpener();
-  // Whatever the note opens shows beside the chat, so the note steps out of the way first.
-  const open = useCallback<Open>(async (to, how) => {
-    if (!parent) return "unavailable";
-    if (!how?.external) setReaderOpen(false);
-    return parent.open(to, how);
-  }, [parent]);
+  const parent = useOpen();
   const [note, setNote] = useState<WorkingNote | null>(null);
   const [readerOpen, setReaderOpen] = useState(false);
+  // Whatever the note opens shows beside the chat, so the note steps out of the way first.
+  const open = useOpenDismissing(useCallback(() => setReaderOpen(false), []));
   const [error, setError] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
   const generation = useRef(0);

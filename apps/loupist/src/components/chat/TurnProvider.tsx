@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ChatEvidenceRef, ChatMessage, MemoryRef } from "../../types";
-import { evidenceTarget, type ChatDestination, type Open } from "../../chat/navigation";
+import { evidenceTarget } from "../../chat/navigation";
 import type { EvidenceStepLink } from "../../chat/workspace";
-import { OpenProvider, useOpener } from "../navigation/Open";
+import { OpenProvider, useOpenLayer, type OpenLayer } from "../navigation/Open";
 import { useConversationScroll } from "../ai-elements/conversation";
 import { QuoteEvidencePopover } from "./QuoteEvidence";
 
@@ -35,7 +35,6 @@ function stepFor(message: ChatMessage, evidence: ChatEvidenceRef, cell: Evidence
  * the thread, a quote basket opens its popover, and everything else goes up with its step.
  */
 export function TurnProvider({ message, loupistId, children }: { message: ChatMessage; loupistId: string; children: ReactNode }) {
-  const parent = useOpener();
   const conversation = useConversationScroll();
   const [revealedResult, setRevealedResult] = useState<RevealedResult | null>(null);
   const [quote, setQuote] = useState<{ evidence: ChatEvidenceRef; anchor: HTMLElement; pointer?: string } | null>(null);
@@ -43,43 +42,26 @@ export function TurnProvider({ message, loupistId, children }: { message: ChatMe
   const latest = useRef(message);
   latest.current = message;
 
-  const resolve = useCallback((to: ChatDestination): ChatDestination | "step" | "quote" => {
-    if (to.kind !== "evidence") return to;
+  const open = useOpenLayer(useCallback<OpenLayer>((to, how) => {
+    if (to.kind !== "evidence") return undefined;
     const current = latest.current;
     const target = evidenceTarget(to.evidence, current.memory_refs, loupistId);
     switch (target.kind) {
       case "memory": return { kind: "memory", location: target.location, title: target.title };
       case "asset": return { kind: "asset", target: target.target };
-      case "step":
-      case "quote": return target.kind;
+      case "step": return () => {
+        conversation?.holdScrollPosition();
+        setRevealedResult((previous) => ({ id: to.evidence.id, request: (previous?.request ?? 0) + 1 }));
+      };
+      case "quote": return () => {
+        // The clicked control, not document.activeElement: a mouse click in WKWebView
+        // can leave focus on the page, and a snapshot of that rectangle opens off screen.
+        if (how.anchor) setQuote({ evidence: to.evidence, anchor: how.anchor, pointer: to.cell?.pointer });
+      };
       case "browser":
       case "reader": return { ...to, step: to.step ?? stepFor(current, to.evidence, to.cell) };
     }
-  }, [loupistId]);
-
-  const open = useCallback<Open>(async (to, how) => {
-    if (how?.external) return parent ? parent.open(to, how) : "unavailable";
-    const next = resolve(to);
-    if (next === "step" && to.kind === "evidence") {
-      conversation?.holdScrollPosition();
-      setRevealedResult((previous) => ({ id: to.evidence.id, request: (previous?.request ?? 0) + 1 }));
-      return "opened";
-    }
-    if (next === "quote" && to.kind === "evidence") {
-      // The clicked control, not document.activeElement: a mouse click in WKWebView
-      // can leave focus on the page, and a snapshot of that rectangle opens off screen.
-      if (!to.anchor) return "unavailable";
-      setQuote({ evidence: to.evidence, anchor: to.anchor, pointer: to.cell?.pointer });
-      return "opened";
-    }
-    if (typeof next === "string") return "unavailable";
-    return parent ? parent.open(next, how) : "unavailable";
-  }, [conversation, parent, resolve]);
-
-  const available = useCallback((to: ChatDestination) => {
-    const next = resolve(to);
-    return typeof next === "string" || (parent?.available(next) ?? false);
-  }, [parent, resolve]);
+  }, [conversation, loupistId]));
 
   const turn = useMemo<Turn>(() => ({
     evidenceRefs: message.evidence_refs ?? EMPTY,
@@ -89,7 +71,7 @@ export function TurnProvider({ message, loupistId, children }: { message: ChatMe
   }), [message.evidence_refs, message.memory_refs, message.as_of, revealedResult]);
 
   return <TurnContext.Provider value={turn}>
-    <OpenProvider open={open} available={available}>
+    <OpenProvider open={open}>
       {children}
       {quote ? <QuoteEvidencePopover evidence={quote.evidence} anchor={quote.anchor} pointer={quote.pointer} onClose={() => setQuote(null)} /> : null}
     </OpenProvider>

@@ -45,7 +45,7 @@ it("opens an alert's source through the evidence path, and its page in the syste
     fallback: { kind: "asset", target: expect.objectContaining({ assetId: event.assetId }) },
   });
   fireEvent.click(chip, { ctrlKey: true });
-  expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "evidence", evidence: expect.objectContaining({ url: source.url }) }), { external: true });
+  expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "evidence", evidence: expect.objectContaining({ url: source.url }) }), expect.objectContaining({ external: true }));
 });
 
 it("Prepare before and after captures expectations for that results event", async () => {

@@ -9,7 +9,7 @@ import type { ChatMessage, ChatThread } from "../types";
 import { TooltipProvider } from "./ui/tooltip";
 import { ChatView } from "./ChatView";
 import * as messageRenderer from "./chat/SafeMessageResponse";
-import { renderWithOpen } from "../test/open";
+import { renderWithOpen, destinations } from "../test/open";
 import { evidenceFixture } from "../test/evidenceFixtures";
 
 const actions = vi.hoisted(() => ({
@@ -69,9 +69,9 @@ it("opens a linked page the Loupist already kept as its retained copy, and other
   ]);
   const { open } = renderWithOpen(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
   await userEvent.click(await screen.findByRole("link", { name: "the quarter" }));
-  expect(open).toHaveBeenLastCalledWith({ kind: "evidence", evidence: kept }, undefined);
+  expect(destinations(open).at(-1)).toEqual({ kind: "evidence", evidence: kept });
   await userEvent.click(screen.getByRole("link", { name: "the peer" }));
-  expect(open).toHaveBeenLastCalledWith({ kind: "link", url: "https://other.example/" }, undefined);
+  expect(destinations(open).at(-1)).toEqual({ kind: "link", url: "https://other.example/" });
 });
 
 it("keeps a saved Chat readable without a model and opens settings instead of sending", async () => {

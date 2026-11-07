@@ -38,8 +38,7 @@ import type {
 import { visibleCatalogModels } from "../lib/modelSelection";
 import { quoteChip, type ComposerChip } from "../chat/composerChips";
 import { retainedEvidenceFor } from "../chat/links";
-import type { Open } from "../chat/navigation";
-import { OpenProvider, useOpener } from "./navigation/Open";
+import { OpenProvider, useOpenLayer, type OpenLayer } from "./navigation/Open";
 
 const NO_CHIPS: ComposerChip[] = [];
 import { searchComposerContext } from "../chat/searchComposerContext";
@@ -328,13 +327,11 @@ export function ChatView({
   // Read through a ref so the opener stays stable while answers stream (earlier answers do not rerender).
   const linkMessages = useRef(activeThread?.messages ?? []);
   linkMessages.current = activeThread?.messages ?? [];
-  const parentOpener = useOpener();
-  const open = useCallback<Open>(async (to, how) => {
-    if (!parentOpener) return "unavailable";
+  const open = useOpenLayer(useCallback<OpenLayer>((to) => {
     // A page the Loupist already kept opens its retained copy in Evidence.
-    const retained = to.kind === "link" && !how?.external ? retainedEvidenceFor(linkMessages.current, to.url) : undefined;
-    return parentOpener.open(retained ? { kind: "evidence", evidence: retained } : to, how);
-  }, [parentOpener]);
+    const retained = to.kind === "link" ? retainedEvidenceFor(linkMessages.current, to.url) : undefined;
+    return retained ? { kind: "evidence", evidence: retained } : undefined;
+  }, []));
   const openRailUsing = useCallback((item: RailUsing) => {
     if (item.recordId) { void open({ kind: "memory", location: { loupistId: loupist.id, surface: "lens", recordId: item.recordId }, title: item.label }).catch(() => undefined); return; }
     const pin = item.pin;
@@ -385,7 +382,7 @@ export function ChatView({
   const takeIncomingFiles = useCallback(() => setIncomingFiles(null), []);
   const railActions: ChatRailActions = {
     bridge, loupistId: loupist.id,
-    onOpenFile: parentOpener ? (path) => void open({ kind: "file", path }).catch(() => undefined) : undefined,
+    onOpenFile: (path) => void open({ kind: "file", path }).catch(() => undefined),
     onOpenUsing: openRailUsing,
     onShowLearned: (ids) => { chatMap?.select(ids); },
   };

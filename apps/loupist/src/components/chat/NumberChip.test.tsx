@@ -7,7 +7,7 @@ import { chatMarkdown } from "../../chat/exportChat";
 import { chatReceipt } from "../../chat/receipt";
 import { TooltipProvider } from "../ui/tooltip";
 import { ChatMessageCard } from "./ChatMessageCard";
-import { renderWithOpen } from "../../test/open";
+import { renderWithOpen, destinations } from "../../test/open";
 
 const dart = evidenceFixture({ id: "ev_dart", title: "Solsup Foods FY2025 statements", tool_name: "dart_financials", provider: "OpenDART", url: undefined, published_at: "2026-03-18",
   excerpt: JSON.stringify({ facts: [{ corp_name: "Solsup Foods", canonical_concept: "revenue", value: "452312000000" }, { corp_name: "Solsup Foods", canonical_concept: "operating_income", value: "38104000000" }] }, null, 2), dataset_ref: { dataset_id: "ds", revision: 1, digest: "d".repeat(64) } });
@@ -153,18 +153,18 @@ it("shows the passage and data popovers and opens Evidence at the matched cell",
   expect(data).toHaveTextContent("Revenue");
   expect(data).toHaveTextContent("Rounded from ₩452,312,000,000");
   await user.click(within(data).getByRole("button", { name: "Open in Evidence" }));
-  expect(onOpenEvidence).toHaveBeenCalledWith(expect.objectContaining({ kind: "evidence", evidence: dart, step: expect.objectContaining({ cell: { pointer: "/facts/0/value", key: "value", value: "452312000000" } }) }), undefined);
+  expect(destinations(onOpenEvidence)).toContainEqual(expect.objectContaining({ kind: "evidence", evidence: dart, step: expect.objectContaining({ cell: { pointer: "/facts/0/value", key: "value", value: "452312000000" } }) }));
 });
 
 it("opens a number's source page in the system browser on Ctrl-click or a middle click, without pinning the popover", async () => {
   const { open } = renderAnswer(answer());
   const number = await chip("9.1 percent");
   fireEvent.click(number, { ctrlKey: true });
-  expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "evidence", evidence: guide }), { external: true });
+  expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "evidence", evidence: guide }), expect.objectContaining({ external: true }));
   expect(number).toHaveAttribute("aria-expanded", "false");
   fireEvent(number, new MouseEvent("auxclick", { bubbles: true, button: 1 }));
   expect(open).toHaveBeenCalledTimes(2);
-  expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "evidence", evidence: guide }), { external: true });
+  expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "evidence", evidence: guide }), expect.objectContaining({ external: true }));
 });
 
 it("shows a quote cell in the popover and does not open the raw reader", async () => {

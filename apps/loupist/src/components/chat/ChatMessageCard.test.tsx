@@ -8,7 +8,7 @@ import { evidenceFixture } from "../../test/evidenceFixtures";
 import { TooltipProvider } from "../ui/tooltip";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { ChatMessageCard } from "./ChatMessageCard";
-import { renderWithOpen } from "../../test/open";
+import { renderWithOpen, destinations } from "../../test/open";
 import type { ChatDestination, Open } from "../../chat/navigation";
 import type { Mock } from "vitest";
 
@@ -167,15 +167,15 @@ it.each([
 ])("opens workspace file links for %s and keeps external links separate", async (workspacePath, href) => {
   const { open } = renderAnswer(answer({ content: `[Report](${href}) and [Source](https://example.com/report).` }), { workspacePath });
   await user().click(await screen.findByRole("link", { name: "Report" }));
-  expect(open).toHaveBeenCalledExactlyOnceWith({ kind: "file", path: "reports/summary.md" }, undefined);
+  expect(destinations(open)).toEqual([{ kind: "file", path: "reports/summary.md" }]);
   await user().click(screen.getByRole("link", { name: "Source" }));
-  expect(open).toHaveBeenLastCalledWith({ kind: "link", url: "https://example.com/report" }, undefined);
+  expect(destinations(open).at(-1)).toEqual({ kind: "link", url: "https://example.com/report" });
 });
 
 it("opens a Lens link from the answer as a Lens record, the one way chat opens Lens", async () => {
   const { open } = renderAnswer(answer({ content: "Use [Cash conversion](lens:rec_0123456789abcdef0123456789abcdef)." }));
   await user().click(await screen.findByRole("link", { name: "Cash conversion" }));
-  expect(open).toHaveBeenCalledWith({ kind: "lens", recordId: "rec_0123456789abcdef0123456789abcdef" }, undefined);
+  expect(destinations(open)).toContainEqual({ kind: "lens", recordId: "rec_0123456789abcdef0123456789abcdef" });
 });
 
 describe("response details", () => {
@@ -218,7 +218,7 @@ it("shows only explicitly delivered, successfully written files as file chips, w
   expect(screen.queryByLabelText("Outputs")).toBeNull();
   await user().click(within(files).getByRole("button", { name: "summary.csv" }));
   expect(within(files).queryByRole("button", { name: /analysis.py|failed.csv/ })).toBeNull();
-  expect(open).toHaveBeenCalledExactlyOnceWith({ kind: "file", path: "reports/summary.csv" }, undefined);
+  expect(destinations(open)).toEqual([{ kind: "file", path: "reports/summary.csv" }]);
   // The ⋯ menu reveals the file through the workspace command, scoped to this Loupist.
   await user().click(within(files).getByRole("button", { name: "More for summary.csv" }));
   await user().click(await screen.findByRole("menuitem", { name: "Show in Finder" }));
@@ -248,7 +248,7 @@ it("summarizes a saved Source and opens it", async () => {
   // A single saved Source opens directly from its receipt segment; the list stays open for the rest.
   await user().click(within(receipt).getByRole("button", { name: "Saved 1 source" }));
   expect(screen.getByRole("list", { name: "Saved in this answer" })).toBeVisible();
-  expect(props.open).toHaveBeenCalledExactlyOnceWith({ kind: "memory", location: expect.objectContaining({ surface: "source", recordId: "source-record" }), title: "Filing excerpt" }, undefined);
+  expect(destinations(props.open)).toEqual([{ kind: "memory", location: expect.objectContaining({ surface: "source", recordId: "source-record" }), title: "Filing excerpt" }]);
 });
 
 it("says when nothing new was saved, and adds no receipt to a private chat or a running answer", () => {
@@ -285,7 +285,7 @@ it("cites external grounding once, opens it, and routes saved reads to Memory", 
   await user().click(screen.getByRole("button", { name: "Source 2: Market quote" }));
   expect(opened(props.open, "evidence")).toEqual([expect.objectContaining({ evidence: expect.objectContaining({ id: connection.id }) })]);
   await user().click(screen.getByRole("button", { name: "world read · Memory: Annual report" }));
-  expect(props.open).toHaveBeenLastCalledWith({ kind: "memory", location: expect.objectContaining({ surface: "source", recordId: "source-record" }), title: "Annual report" }, undefined);
+  expect(destinations(props.open).at(-1)).toEqual({ kind: "memory", location: expect.objectContaining({ surface: "source", recordId: "source-record" }), title: "Annual report" });
   await user().click(screen.getByRole("button", { name: "Result: World search" }));
   expect(opened(props.open, "evidence")).toHaveLength(1);
   expect(within(screen.getByLabelText("Work progress")).getByLabelText("Tool result")).toHaveTextContent(search.excerpt);
@@ -403,7 +403,7 @@ it("keeps saved schedule cards current, even after a stopped reply, and opens th
   expect(screen.getAllByRole("article", { name: /Scheduled task:/ })).toHaveLength(2);
   expect(screen.getByRole("article", { name: "Scheduled task: Morning review" })).toHaveTextContent("Paused");
   await user().click(screen.getByRole("button", { name: /Evening review/ }));
-  expect(open).toHaveBeenCalledExactlyOnceWith({ kind: "schedule", taskId: "task-b" }, undefined);
+  expect(destinations(open)).toEqual([{ kind: "schedule", taskId: "task-b" }]);
 });
 
 it("says what a stopped reply kept: finished steps and the text so far", () => {

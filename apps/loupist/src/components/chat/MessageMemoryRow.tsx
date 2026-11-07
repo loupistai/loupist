@@ -100,7 +100,7 @@ export function MessageMemoryRow({
   };
   return (
     <div className="memory-row" data-expanded={expanded}>
-      {edge && source && target && <button className="answer-map-preview" onClick={() => go?.({ kind: "page", location: {
+      {go && edge && source && target && <button className="answer-map-preview" onClick={() => go({ kind: "page", location: {
         loupistId, surface: "world", view: { followCurrent: true }, selection: { kind: "claim", id: claimIdForEdge(edge) },
       } })}>
         <span>{entityLabel(source, i18n.language)}</span><small>{edge.relation ? relationName(edge.relation, i18n.getFixedT(null, "knowledge")) : "→"}</small><span>{entityLabel(target, i18n.language)}</span>
@@ -124,20 +124,20 @@ export function MessageMemoryRow({
       {learnedExpanded && digest ? <LearnedCard id={learnedId} bridge={bridge} loupistId={loupistId} digest={digest}
         onChanged={onWorldChanged} /> : null}
       {usedExpanded ? <UsedMemory id={usedId} bridge={bridge} loupistId={loupistId} refreshKey={chatMap?.map} pages={receipt.usedPages}
-        onEdit={viewPrinciple} onChanged={onWorldChanged} /> : null}
+        onEdit={go ? viewPrinciple : undefined} onChanged={onWorldChanged} /> : null}
       {expanded ? <ul className="memory-update-changes" id={chipsId} aria-label={t("messageMemoryRow.savedInThisAnswer")}>
         {changes.filter((change) => change.kind !== "Lens").map((change) => {
           if (change.kind === "principle") return <li className="memory-update-change memory-principle" key={change.recordId} data-memory-change="create:principle">
-            <SavedPrinciple showLabel={false} statement={change.statement} undone={dismissed.has(change.recordId)} pending={pendingId !== null} onUndo={!dismissed.has(change.recordId) && bridge ? () => void undoPrinciple(change.recordId) : undefined} onView={() => viewPrinciple(change.recordId)} />
+            <SavedPrinciple showLabel={false} statement={change.statement} undone={dismissed.has(change.recordId)} pending={pendingId !== null} onUndo={!dismissed.has(change.recordId) && bridge ? () => void undoPrinciple(change.recordId) : undefined} onView={go ? () => viewPrinciple(change.recordId) : undefined} />
             {dismissError?.recordId === change.recordId ? <span role="alert">{dismissError.message}</span> : null}
           </li>;
-          if (change.kind === "Journal") return <li className="memory-update-change memory-journal" key={change.recordId} data-memory-change={`${change.operation}:journal`}><span>{t("journal.saved", { judgment: change.title })}</span><button type="button" onClick={() => openSaved(change)}>{t("journal.view")}</button></li>;
+          if (change.kind === "Journal") return <li className="memory-update-change memory-journal" key={change.recordId} data-memory-change={`${change.operation}:journal`}><span>{t("journal.saved", { judgment: change.title })}</span>{go ? <button type="button" onClick={() => openSaved(change)}>{t("journal.view")}</button> : null}</li>;
           const location = change.kind === "Research" ? null : knowledgeLocationFromMemoryChange(loupistId, change);
           const learned = change.kind === "World";
           return <li className="memory-update-change" key={change.recordId} data-memory-change={`${change.operation}:${change.kind}`}>
             <div className="memory-change-title">
               <span className="memory-chip-verb">{memoryChangeVerb(change)}</span>
-              {location ? <button type="button" onClick={() => openSaved(change)}>{change.title}</button> : <span>{change.title}</span>}
+              {location && go ? <button type="button" onClick={() => openSaved(change)}>{change.title}</button> : <span>{change.title}</span>}
             </div>
             {learned ? <>
               {change.lesson ? <span>{change.lesson}</span> : null}
@@ -145,7 +145,7 @@ export function MessageMemoryRow({
               {change.futureUse ? <small>{t("messageMemoryRow.nextUse", { value: change.futureUse })}</small> : null}
             </> : null}
             <WorldProcessingStatus active={active && expanded} jobId={change.worldJobId} initialStatus={change.worldStatus} readJob={onReadWorldJob} onChanged={onWorldChanged} />
-            {learned && location ? <button type="button" onClick={() => go?.({ kind: "page", location })}>{t("messageMemoryRow.openIn", { value: change.kind })}</button> : null}
+            {learned && location && go ? <button type="button" onClick={() => go({ kind: "page", location })}>{t("messageMemoryRow.openIn", { value: change.kind })}</button> : null}
           </li>;
         })}
       </ul> : null}
@@ -164,7 +164,7 @@ type UsedItem = { recordId: string; title: string; kind: LensKind };
  */
 function UsedMemory({ id, bridge, loupistId, refreshKey, pages, onEdit, onChanged }: {
   id: string; bridge?: LoupistBridge; loupistId: string; refreshKey?: unknown; pages: readonly UsedItem[];
-  onEdit: (recordId: string) => void; onChanged?: () => void;
+  onEdit?: (recordId: string) => void; onChanged?: () => void;
 }) {
   const setAside = useChatSetAside();
   const [pending, setPending] = useState<string | null>(null);
@@ -194,7 +194,7 @@ function UsedMemory({ id, bridge, loupistId, refreshKey, pages, onEdit, onChange
             <blockquote>{pageTitle(item)}</blockquote>
             <div className="used-memory-actions">
               {setAside ? <button type="button" disabled={pending !== null} onClick={() => void run(item.recordId, () => setAside.toggle(item.recordId, true))}>{t("usedMemory.notThisTime")}</button> : null}
-              <button type="button" onClick={() => onEdit(item.recordId)}>{t("usedMemory.edit")}</button>
+              {onEdit ? <button type="button" onClick={() => onEdit(item.recordId)}>{t("usedMemory.edit")}</button> : null}
               {item.kind !== "principle" && item.kind !== "perspective" && bridge ? <button type="button" disabled={pending !== null} onClick={() => void run(item.recordId, async () => { await bridge.knowledgeLensArchive({ loupistId, recordId: item.recordId, archived: true }); setArchived(current => new Set(current).add(item.recordId)); onChanged?.(); })}>{t("usedMemory.archive")}</button> : null}
             </div>
           </>}

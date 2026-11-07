@@ -4,8 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { ArrowLeftIcon, ChevronRightIcon, FileIcon, FileSpreadsheetIcon, FolderIcon, FolderOpenIcon, RefreshCwIcon, SearchIcon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { SafeMessageResponse } from "../chat/SafeMessageResponse";
-import { OpenProvider, useOpener } from "../navigation/Open";
-import type { Open } from "../../chat/navigation";
+import { OpenProvider, useOpenLayer, type OpenLayer } from "../navigation/Open";
 import { errorMessage } from "../../lib/errors";
 import type { LoupistBridge, WorkspaceDirectory, WorkspaceFile } from "../../types";
 import { delimitedPreview, PREVIEW_COLUMNS, PREVIEW_ROWS } from "./delimitedPreview";
@@ -27,12 +26,12 @@ type LoadedItem = { key: string; value: WorkspaceDirectory | WorkspaceFile };
 
 export function WorkspaceFiles({ bridge, loupistId, rootPath, path, filePath, onNavigate, onAsk }: Props) {
   useTranslation("chat");
-  const parent = useOpener();
   // A file link inside a file moves this browser; everything else opens as anywhere else.
-  const open = useCallback<Open>(async (to, how) => {
-    if (to.kind === "file" && to.path && !how?.external) { onNavigate(parentPath(to.path), to.path); return "opened"; }
-    return parent ? parent.open(to, how) : "unavailable";
-  }, [onNavigate, parent]);
+  const open = useOpenLayer(useCallback<OpenLayer>((to) => {
+    if (to.kind !== "file" || !to.path) return undefined;
+    const path = to.path;
+    return () => onNavigate(parentPath(path), path);
+  }, [onNavigate]));
   const selection = JSON.stringify([loupistId, filePath ? "file" : "directory", filePath ?? path]);
   const [loaded, setLoaded] = useState<LoadedItem | null>(null);
   const [failure, setFailure] = useState<{ key: string; message: string } | null>(null);

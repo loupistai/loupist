@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { renderWithOpen } from "../../test/open";
+import { renderWithOpen, destinations } from "../../test/open";
 import { ChatMapProvider } from "./ChatMapContext";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
@@ -83,7 +83,7 @@ describe("ChatWorkspacePanel Evidence reader", () => {
     await user.keyboard("{Alt>}{ArrowLeft}{/Alt}");
     expect(onMoveEvidence).toHaveBeenCalledTimes(2);
     await user.click(screen.getByRole("button", { name: "Open live page" }));
-    expect(onOpenLink).toHaveBeenCalledExactlyOnceWith({ kind: "link", url: "https://morrow.example/survey" }, undefined);
+    expect(destinations(onOpenLink)).toEqual([{ kind: "link", url: "https://morrow.example/survey" }]);
     expect(screen.queryByRole("button", { name: "View saved excerpt" })).toBeNull();
   });
 

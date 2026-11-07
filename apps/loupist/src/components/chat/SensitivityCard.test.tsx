@@ -6,7 +6,7 @@ import { previewSensitivityAnswer, previewSensitivityGrid, SENSITIVITY_EVIDENCE 
 import { TooltipProvider } from "../ui/tooltip";
 import { ChatMessageCard } from "./ChatMessageCard";
 import { SensitivityCard } from "./SensitivityCard";
-import { renderWithOpen } from "../../test/open";
+import { renderWithOpen, destinations } from "../../test/open";
 
 const evidenceRefs = Object.values(SENSITIVITY_EVIDENCE);
 const user = () => userEvent.setup({ skipHover: true });
@@ -75,7 +75,7 @@ it("Show step reveals the grid's own step, sources open evidence, and Change the
   expect(open).toHaveBeenLastCalledWith({ kind: "evidence", evidence: SENSITIVITY_EVIDENCE.grid });
   const source = within(card).getAllByRole("button", { name: /^Source 1:/u })[0]!;
   await user().click(source);
-  expect(open).toHaveBeenLastCalledWith({ kind: "evidence", evidence: SENSITIVITY_EVIDENCE.statements, anchor: source }, undefined);
+  expect(destinations(open).at(-1)).toEqual({ kind: "evidence", evidence: SENSITIVITY_EVIDENCE.statements });
   await user().click(within(card).getByRole("button", { name: "Change the rates · Solsup Foods" }));
   expect(onChangeRates).toHaveBeenCalledWith("Recalculate with discount rates 8%, 9%, 10%, 11%, 12% and long-run growth 1.5%, 2.0%, 2.5%, 3.0%, 3.5%.");
 });

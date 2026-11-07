@@ -25,10 +25,6 @@ const FORMULA_LINES = 4;
 /** One number popover or citation card at a time: opening one closes the others. */
 const openChips = new Set<() => void>();
 
-/** A data cell the Evidence reader marks when it opens (`pointer` from the check). */
-export type EvidenceCell = { pointer: string; key: string; value: string };
-
-
 /** The status line under a popover's content (finance-show-the-math.md §2.4). */
 function StatusLine({ check, exact, asOf, id }: { check: NumberCheck; exact: string; asOf?: string; id: string }) {
   useTranslation("chat");

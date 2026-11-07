@@ -20,8 +20,8 @@ import {
 } from "react";
 import { createLoupistBridge } from "./bridge/tauriBridge";
 import { ChatView } from "./components/ChatView";
-import { OpenProvider } from "./components/navigation/Open";
-import { evidenceTarget, externalUrl, type ChatDestination, type Open, type OpenHow, type OpenResult } from "./chat/navigation";
+import { DismissOnOpen, OpenProvider } from "./components/navigation/Open";
+import { evidenceTarget, externalUrl, type ChatDestination, type Open, type OpenHow } from "./chat/navigation";
 import { evidenceTitle } from "./chat/evidence";
 import { AppHeader } from "./components/app/AppHeader";
 import { LoupistAvailabilityBoundary } from "./components/app/LoupistAvailabilityBoundary";
@@ -761,69 +761,69 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
   const [panelAnnouncement, setPanelAnnouncement] = useState<{ text: string; key: number } | null>(null);
   // Panel tabs open beside the chat without moving focus; one polite region says what opened.
   const announcePanel = (title: string) => setPanelAnnouncement((current) => ({ text: i18n.t("chat:navigation.openedInPanel", { title }) as string, key: (current?.key ?? 0) + 1 }));
-  const routeOpen = async (to: ChatDestination, how?: OpenHow): Promise<OpenResult> => {
+  const routeOpen = async (to: ChatDestination, how?: OpenHow): Promise<void> => {
     const external = how?.external ? externalUrl(to) : null;
-    if (external) { await bridge.openExternalUrl(external); return "opened"; }
+    if (external) { await bridge.openExternalUrl(external); return; }
     const loupistId = selectedLoupistId;
     switch (to.kind) {
       case "evidence": {
-        const target = evidenceTarget(to.evidence, undefined, loupistId ?? "");
-        if (target.kind === "asset") return routeOpen({ kind: "asset", target: target.target });
-        // A step or a quote popover belongs to its answer; outside one the card's fallback takes over.
-        if (target.kind !== "browser" && target.kind !== "reader") return to.fallback ? routeOpen(to.fallback) : "unavailable";
-        if (!loupistId || !workspaceThreadId) return "unavailable";
-        workspace.openEvidence(loupistId, workspaceThreadId, to.evidence, to.step ?? (to.cell ? { label: "", cell: to.cell } : undefined));
+        // A step, a quote, Memory or an asset page resolves in the answer's TurnProvider; outside one the card's fallback stands in.
+        const target = evidenceTarget(to.evidence, undefined, loupistId ?? "").kind;
+        if (target !== "browser" && target !== "reader") { if (to.fallback) await routeOpen(to.fallback); return; }
+        if (!loupistId || !workspaceThreadId) return;
+        workspace.openEvidence(loupistId, workspaceThreadId, to.evidence, to.step);
         announcePanel(evidenceTitle(to.evidence));
-        return "opened";
+        return;
       }
       case "link": {
         const url = externalUrl(to);
-        if (!loupistId || !url) return "unavailable";
+        if (!loupistId || !url) return;
         workspace.openBrowser(loupistId, workspaceThreadId ?? EMPTY_CHAT_THREAD_ID, url);
         announcePanel(new URL(url).hostname.replace(/^www\./u, ""));
-        return "opened";
+        return;
       }
       case "lens":
-        if (!loupistId) return "unavailable";
-        return routeOpen({ kind: "memory", location: { loupistId, surface: "lens", recordId: to.recordId, objectId: to.recordId, selection: { kind: "lens", recordId: to.recordId } }, title: "Lens" });
+        if (!loupistId) return;
+        await routeOpen({ kind: "memory", location: { loupistId, surface: "lens", recordId: to.recordId, objectId: to.recordId, selection: { kind: "lens", recordId: to.recordId } }, title: "Lens" });
+        return;
       case "memory":
-        if (to.location.surface === "world") { openKnowledgePage(to.location); return "opened"; }
-        if (!loupistId || !workspaceThreadId) return "unavailable";
+        if (to.location.surface === "world") { openKnowledgePage(to.location); return; }
+        if (!loupistId || !workspaceThreadId) return;
         workspace.openMemory(loupistId, workspaceThreadId, to.location, to.title);
         announcePanel(to.title);
-        return "opened";
+        return;
       case "page":
         openKnowledgePage(to.location);
-        return "opened";
+        return;
       case "artifact": {
         const threadId = to.threadId ?? workspaceThreadId;
-        if (!loupistId || !threadId) return "unavailable";
+        if (!loupistId || !threadId) return;
         workspace.openArtifact(loupistId, threadId, to.artifact);
         announcePanel(to.artifact.title);
-        return "opened";
+        return;
       }
       case "file":
-        if (!loupistId || !workspaceThreadId) return "unavailable";
+        if (!loupistId || !workspaceThreadId) return;
         workspace.openFiles(loupistId, workspaceThreadId, to.path);
         announcePanel(to.path?.split("/").at(-1) || i18n.t("chat:workspace.files"));
-        return "opened";
+        return;
       case "asset":
         openAssetPage(to.target);
-        return "opened";
+        return;
       case "schedule":
         openScheduledTask(to.taskId);
-        return "opened";
+        return;
       case "chat":
         setVisibleActiveThreadId(to.threadId);
-        return "opened";
+        return;
       case "briefing":
-        if (!loupistId) return "unavailable";
+        if (!loupistId) return;
         setInboxFocus({ loupistId, runId: to.runId });
         setTab("schedule");
-        return "opened";
+        return;
       case "settings":
         openSettings(to.section);
-        return "opened";
+        return;
     }
   };
   // One stable opener for the whole shell: what it routes to is read when a leaf is clicked.
@@ -832,11 +832,6 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
   const appOpen = useCallback<Open>((to, how) => latestRoute.current(to, how), []);
   // Surfaces outside chat still take a plain link opener.
   const openLink = useCallback((url: string) => { void appOpen({ kind: "link", url }); }, [appOpen]);
-  // The saved-note dialog covers the chat, so anything it opens closes it first.
-  const openFromNoteDialog = useCallback<Open>((to, how) => {
-    if (!how?.external) setNoteReaderOpen(false);
-    return appOpen(to, how);
-  }, [appOpen]);
   const selectLoupistFromNavigation = (loupistId: string, threadId?: string) => {
     setLoupistSettingsOpen(false);
     if (loupistId === selectedLoupistId && !loupist.loading) {
@@ -1365,7 +1360,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
           <DialogContent className="knowledge-note-dialog sm:max-w-2xl">
             <DialogTitle className="sr-only">{i18n.t("app:app.savedNote")}</DialogTitle>
             {noteTrail.length > 1 ? <Button variant="ghost" onClick={() => setNoteTrail((current) => current.slice(0, -1))}>{i18n.t("app:app.backToNote")}</Button> : null}
-            {noteLocation ? <OpenProvider open={openFromNoteDialog}><ResearchReader bridge={bridge} location={noteLocation} onOpen={openKnowledgePage} onAsk={useKnowledgeInChat} refreshKey={knowledgeRefresh} /></OpenProvider> : null}
+            {noteLocation ? <DismissOnOpen dismiss={() => setNoteReaderOpen(false)}><ResearchReader bridge={bridge} location={noteLocation} onOpen={openKnowledgePage} onAsk={useKnowledgeInChat} refreshKey={knowledgeRefresh} /></DismissOnOpen> : null}
           </DialogContent>
         </Dialog>
 

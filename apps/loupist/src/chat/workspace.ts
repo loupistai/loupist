@@ -1,6 +1,7 @@
 import i18n from "@/i18n";
 import type { ChatArtifactRef, ChatEvidenceRef, KnowledgeLocation } from "../types";
 import { evidenceTitle } from "./evidence";
+import type { EvidenceCell } from "./numberChecks";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -35,7 +36,7 @@ export type FilesWorkspaceTab = { id: string; kind: "files"; title: string; path
 export const filesWorkspaceTab = (filePath?: string): FilesWorkspaceTab => ({ id: "files", kind: "files", title: t("workspace.files"), path: filePath?.split("/").slice(0, -1).join("/") ?? "", filePath });
 
 /** Where an Evidence entry came from: its step, and for a data number the matched cell to mark. */
-export type EvidenceStepLink = { label: string; itemId?: string; cell?: { pointer: string; key: string; value: string } };
+export type EvidenceStepLink = { label: string; itemId?: string; cell?: EvidenceCell };
 
 /** One thing a person reads in the Evidence tab: a retained citation or a saved Memory reader. */
 export type EvidenceEntry =

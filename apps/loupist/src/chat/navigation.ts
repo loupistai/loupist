@@ -1,10 +1,10 @@
 import type { AssetPageTarget } from "../contracts/assets";
 import type { ChatArtifactRef, ChatEvidenceRef, KnowledgeLocation, MemoryRef } from "../types";
-import type { EvidenceCell } from "../components/chat/NumberChip";
 import { parseCredentialFreeHttpUrl } from "../lib/credentialFreeUrl";
 import { knowledgeLocationFromMemoryRef } from "../knowledge/location";
 import { citationPageUrl } from "./evidence";
 import { isInlineWorkEvidence, memoryReadForEvidence } from "./memoryActivity";
+import type { EvidenceCell } from "./numberChecks";
 import { quoteEvidence } from "./quoteEvidence";
 import type { EvidenceStepLink } from "./workspace";
 
@@ -17,8 +17,6 @@ export type ChatDestination =
       cell?: EvidenceCell;
       /** The step that produced the evidence; the turn fills it in. */
       step?: EvidenceStepLink;
-      /** The clicked control; the quote popover anchors to it. */
-      anchor?: HTMLElement;
       /** Where a target this layer cannot open goes instead (a host post's asset page). */
       fallback?: ChatDestination;
     }
@@ -28,6 +26,7 @@ export type ChatDestination =
   | { kind: "lens"; recordId: string }
   | { kind: "page"; location: KnowledgeLocation }
   | { kind: "artifact"; artifact: ChatArtifactRef; threadId?: string }
+  /** A workspace file by its path, or the Files tab at the workspace root without one. */
   | { kind: "file"; path?: string }
   | { kind: "asset"; target: AssetPageTarget }
   | { kind: "schedule"; taskId: string }
@@ -35,10 +34,10 @@ export type ChatDestination =
   | { kind: "briefing"; runId: string }
   | { kind: "settings"; section: "connections" };
 
-export type OpenHow = { external?: boolean };
-/** Resolves `"unavailable"` when nothing can open the target; rejects only on a real failure. */
-export type OpenResult = "opened" | "unavailable";
-export type Open = (to: ChatDestination, how?: OpenHow) => Promise<OpenResult>;
+/** How a click asked to open: in the system browser, and from which control (a popover anchors to it). */
+export type OpenHow = { external?: boolean; anchor?: HTMLElement };
+/** Rejects only on a real failure. A target nothing can open resolves with nothing opened. */
+export type Open = (to: ChatDestination, how?: OpenHow) => Promise<void>;
 
 /** Where a citation goes. Every evidence ref has one, so a numbered citation is never a no-op. */
 export type EvidenceTarget =
@@ -109,8 +108,9 @@ export function destinationIcon(to: ChatDestination, how: OpenHow = {}): "panel"
     case "file":
       return "panel";
     case "evidence": {
+      // Without the answer's Memory reads a citation is never a Memory target here.
       const target = evidenceTarget(to.evidence, undefined, "").kind;
-      return target === "browser" || target === "reader" || target === "memory" ? "panel" : null;
+      return target === "browser" || target === "reader" ? "panel" : null;
     }
     default:
       return null;

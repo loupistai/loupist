@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { renderWithOpen } from "../../test/open";
+import { renderWithOpen, destinations } from "../../test/open";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import i18n from "@/i18n";
@@ -42,7 +42,7 @@ it("names the running step, then settles into a collapsed summary with the steps
   expect(follows(screen.getByText("Searched the web"), readTarget)).toBe(true);
   expect(screen.queryByText("web_search")).toBeNull();
   await user.click(readTarget);
-  expect(openLink).toHaveBeenCalledWith({ kind: "link", url: "https://example.com/rates" }, undefined);
+  expect(destinations(openLink)).toContainEqual({ kind: "link", url: "https://example.com/rates" });
 
   const settled = { ...progress, finishedAtMs: 10, items: progress.items.map((item) => ({ ...item, status: "succeeded" as const })) };
   view.rerender(row(settled, "complete"));

@@ -8,8 +8,7 @@ import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { SafeMessageResponse } from "../chat/SafeMessageResponse";
-import { OpenProvider, useOpener } from "../navigation/Open";
-import type { Open } from "../../chat/navigation";
+import { OpenProvider, useOpenLayer, type OpenLayer } from "../navigation/Open";
 import { displayPageTitle, displaySectionHeading } from "../../knowledge/hostDefaults";
 import { SharedOrigin } from "../sharing/SharedOrigin";
 import { SHARED_SECTION_ITEM } from "../sharing/SharedPacks";
@@ -50,11 +49,7 @@ export type PageReaderProps = {
 
 /** A Lens link in a page moves this reader (a Map anchor opens the Map); other links open as anywhere else. */
 function PageLinks({ onLens, children }: { onLens: (recordId: string) => void; children: React.ReactNode }) {
-  const parent = useOpener();
-  const open = useCallback<Open>(async (to, how) => {
-    if (to.kind === "lens" && !how?.external) { onLens(to.recordId); return "opened"; }
-    return parent ? parent.open(to, how) : "unavailable";
-  }, [onLens, parent]);
+  const open = useOpenLayer(useCallback<OpenLayer>((to) => to.kind === "lens" ? () => onLens(to.recordId) : undefined, [onLens]));
   return <OpenProvider open={open}>{children}</OpenProvider>;
 }
 

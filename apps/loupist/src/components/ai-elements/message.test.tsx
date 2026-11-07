@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MessageResponse } from "./message-response";
 import { OpenProvider } from "../navigation/Open";
 import { TurnProvider } from "../chat/TurnProvider";
-import { openSpy, renderWithOpen } from "../../test/open";
+import { openSpy, renderWithOpen, destinations } from "../../test/open";
 import { evidenceFixture } from "../../test/evidenceFixtures";
 import type { Open } from "../../chat/navigation";
 import type { ChatEvidenceRef, ChatMessage } from "../../types";
@@ -18,12 +18,12 @@ describe("MessageResponse links", () => {
     const first = openSpy();
     view.rerender(<OpenProvider open={first}><MessageResponse mode="static">{text}</MessageResponse></OpenProvider>);
     await user.click(screen.getByRole("link", { name: "Valuation" }));
-    expect(first).toHaveBeenCalledExactlyOnceWith({ kind: "lens", recordId: "rec_0123456789abcdef0123456789abcdef" }, undefined);
+    expect(destinations(first)).toEqual([{ kind: "lens", recordId: "rec_0123456789abcdef0123456789abcdef" }]);
 
     const nextLoupist = openSpy();
     view.rerender(<OpenProvider open={nextLoupist}><MessageResponse mode="static">{text}</MessageResponse></OpenProvider>);
     await user.click(screen.getByRole("link", { name: "Valuation" }));
-    expect(nextLoupist).toHaveBeenCalledExactlyOnceWith({ kind: "lens", recordId: "rec_0123456789abcdef0123456789abcdef" }, undefined);
+    expect(destinations(nextLoupist)).toEqual([{ kind: "lens", recordId: "rec_0123456789abcdef0123456789abcdef" }]);
   });
 
   it("does not navigate malformed Lens destinations, images or literal examples", () => {
@@ -44,7 +44,7 @@ describe("MessageResponse links", () => {
     const url = "https://dart.fss.or.kr/dsab001/search.ax?textCrpNm=005930";
     renderWithOpen(<MessageResponse mode="static">{`[DART company search](${url})`}</MessageResponse>, openLink);
     await user.click(screen.getByRole("link", { name: "DART company search" }));
-    expect(openLink).toHaveBeenCalledExactlyOnceWith({ kind: "link", url }, undefined);
+    expect(destinations(openLink)).toEqual([{ kind: "link", url }]);
     expect(windowOpen).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Could not open this link."));
     windowOpen.mockRestore();
@@ -81,9 +81,9 @@ describe("MessageResponse links", () => {
     // Prose links carry no icon; the underline is the affordance.
     expect(saved.querySelector("svg")).toBeNull();
     await user.click(saved);
-    expect(open).toHaveBeenLastCalledWith({ kind: "file", path: "reports/savings/월별 잔액.csv" }, undefined);
+    expect(destinations(open).at(-1)).toEqual({ kind: "file", path: "reports/savings/월별 잔액.csv" });
     await user.click(screen.getByRole("link", { name: "Report" }));
-    expect(open).toHaveBeenLastCalledWith({ kind: "file", path: "annual report.md" }, undefined);
+    expect(destinations(open).at(-1)).toEqual({ kind: "file", path: "annual report.md" });
   });
 
   it("does not recover unsafe paths, web URLs, images, or literal code as workspace links", () => {
@@ -126,7 +126,7 @@ it("opens only host-attached citations and refreshes the binding when evidence a
   rerender(inTurn(answer([evidence]), text, { isAnimating: true }));
   const citation = await screen.findByRole("button", { name: "Source 1: Apple FY2025 annual report" });
   await user.click(citation);
-  expect(open).toHaveBeenCalledExactlyOnceWith({ kind: "evidence", evidence, anchor: citation }, undefined);
+  expect(destinations(open)).toEqual([{ kind: "evidence", evidence }]);
   expect(screen.getAllByRole("button")).toHaveLength(1);
 });
 
@@ -135,7 +135,7 @@ it("keeps a citation's visible link text in its accessible name", async () => {
   const { open } = renderWithOpen(inTurn(answer([evidence]), `Read the [truncated quote](#evidence-${evidence.id}).`, { mode: "static" }));
   const citation = await screen.findByRole("button", { name: "truncated quote · Source 1: Retained market data" });
   await userEvent.setup().click(citation);
-  expect(open).toHaveBeenCalledWith(expect.objectContaining({ kind: "evidence", evidence, anchor: citation }), undefined);
+  expect(destinations(open)).toContainEqual(expect.objectContaining({ kind: "evidence", evidence }));
 });
 
 it("never leaves a numbered saved-context citation dead: an asset page read opens its page, other saved research its reader", async () => {
@@ -144,7 +144,7 @@ it("never leaves a numbered saved-context citation dead: an asset page read open
   const user = userEvent.setup();
   const { open } = renderWithOpen(inTurn(answer([asset, journal]), `Held [1](#evidence-${asset.id}) since [2](#evidence-${journal.id}).`, { mode: "static" }));
   await user.click(await screen.findByRole("button", { name: /^Source 1:/u }));
-  expect(open).toHaveBeenLastCalledWith({ kind: "asset", target: { loupistId: "loupist-a", assetId: "NASDAQ:AAPL" } }, undefined);
+  expect(destinations(open).at(-1)).toEqual({ kind: "asset", target: { loupistId: "loupist-a", assetId: "NASDAQ:AAPL" } });
   await user.click(screen.getByRole("button", { name: /^Source 2:/u }));
-  expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "evidence", evidence: journal }), undefined);
+  expect(destinations(open).at(-1)).toEqual(expect.objectContaining({ kind: "evidence", evidence: journal }));
 });
