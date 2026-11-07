@@ -21,39 +21,45 @@ import { parseCredentialFreeHttpUrl } from "../lib/credentialFreeUrl";
 const t = i18n.getFixedT(null, "chat");
 
 /** A run with no new progress for this long reads as "Still working" instead of a frozen label. */
-export const HEARTBEAT_AFTER_MS = 15_000;
+const HEARTBEAT_AFTER_MS = 15_000;
+
+/** Seconds before the automatic retry after the first and second busy answer when the provider gave no hint; the third asks to try later. */
+export const BUSY_RETRY_SECONDS = [20, 40] as const;
 
 type ActionItem = Extract<ChatProgressItem, { kind: "tool" | "system" }>;
 
 export type TurnInput = {
-  /** An assistant message. */
   message: ChatMessage;
   now: number;
-  /** When the host last reported a step, phase, plan or approval change; answer text does not count. */
+  /** When the host last reported a step, phase, plan or approval change; streamed text does not count. */
   lastActivityAt: number;
   /** A local stop was requested and the host has not confirmed it. */
   stopping: boolean;
-  /** A busy answer counting down to its own retry has not failed yet. */
-  retryPending: boolean;
+  /** Busy answers in a row in this Chat, counting this one, and whether this one can be retried. */
+  retry: { attempt: number; offered: boolean };
 };
 
 /** Exactly one state applies; every label derives from it. */
 export type TurnState =
-  | { kind: "starting"; startedAtMs: number }
+  | { kind: "starting" }
   /** `step` is the running step's own words, or the phase while no step runs. */
-  | { kind: "working"; startedAtMs: number; step: string; stepRunning: boolean; stalled: boolean }
-  | { kind: "awaiting_approval"; startedAtMs: number; count: number }
-  | { kind: "writing"; startedAtMs: number }
-  | { kind: "stopping"; startedAtMs: number }
-  | { kind: "complete"; durationMs: number | undefined }
+  | { kind: "working"; step: string; stepRunning: boolean; stalled: boolean }
+  | { kind: "awaiting_approval" }
+  | { kind: "writing" }
+  | { kind: "stopping" }
+  | { kind: "complete" }
   | { kind: "stopped"; kept: "steps_and_text" | "steps_and_draft" | "steps" | "text" | "draft" | "nothing" }
+  /** A busy answer counting down to its own retry (`retryPending`) has not failed yet. */
   | { kind: "failed"; failure: ChatFailureKind; retryPending: boolean };
 
 /** Narration is a preamble: the answer's metrics in the secondary color. */
 export type ProseTone = "answer" | "narration";
 
+/** What colors the row: the running step, a settled summary, or a run or step that went wrong. */
+export type ActivityTone = "live" | "settled" | "problem";
+
 /** One line with a fixed height; the step list lives inside its details. */
-export type ActivityRowView =
+type ActivityRowView =
   | { kind: "live"; label: string; stalled: boolean }
   | { kind: "summary"; label: string; issues: string | null; durationMs?: number };
 
@@ -63,6 +69,7 @@ export type TurnSegment =
       kind: "activity";
       key: string;
       row: ActivityRowView;
+      tone: ActivityTone;
       progress: ChatProgress;
       /** Calculations and queries whose result opens inline under the step. */
       evidence: ChatEvidenceRef[];
@@ -73,18 +80,25 @@ export type TurnSegment =
       autoExpand: boolean;
     };
 
+/** How a settled turn ended, when not well. A busy answer carries the seconds until it retries itself. */
+export type RunState =
+  | { kind: "stopped"; label: string }
+  | { kind: "failed"; failure: ChatFailureKind; retryInSeconds?: number };
+
 export type TurnFooter =
   | { kind: "status"; label: string; sinceMs: number; stalled: boolean }
   | {
       kind: "settled";
-      sourceCount: number;
+      /** Distinct citation subjects of the whole answer, numbered in this order. */
+      sources: ChatEvidenceRef[];
       /** The answer as written, or null when there is nothing worth copying. */
       copyText: string | null;
       feedback: boolean;
-      runState: { kind: "stopped" | "failed"; persistent: true } | null;
+      runState: RunState | null;
     };
 
-export type TurnView = { state: TurnState; segments: TurnSegment[]; footer: TurnFooter; announce: string };
+export type TurnStatus = { state: TurnState; footer: TurnFooter };
+export type TurnView = TurnStatus & { segments: TurnSegment[]; announce: string };
 
 type Group = Extract<TurnSegment, { kind: "activity" }>;
 
@@ -97,8 +111,10 @@ export function visibleMessageContent(message: ChatMessage): string {
 }
 
 /** The host's terminal placeholder, explained by the run state instead of shown as prose. */
-export const isFailurePlaceholder = (message: ChatMessage) =>
+const isFailurePlaceholder = (message: ChatMessage) =>
   message.role === "assistant" && message.status === "error" && message.content.trim() === "Response could not be completed.";
+
+const startedAt = (message: ChatMessage) => message.progress?.startedAtMs ?? Date.parse(message.created_at);
 
 const phaseLabel = (phase: ChatMessage["phase"]) => {
   if (phase === "writing") return t("chatProgressTimeline.writing");
@@ -110,12 +126,12 @@ const phaseLabel = (phase: ChatMessage["phase"]) => {
 const lastRunning = (items: readonly ChatProgressItem[]) =>
   [...items].reverse().find((item): item is ActionItem => isActionItem(item) && item.status === "running");
 
-/** Changes whenever the host reports anything new for this run. */
-export function activityKey(message: ChatMessage | undefined): string {
+/** Changes whenever the host reports a step, phase, plan or approval change. */
+function activityKey(message: ChatMessage | undefined): string {
   if (!message) return "";
   const progress = message.progress;
-  const items = (progress?.items ?? []).map((item) =>
-    isActionItem(item) ? `${item.id}:${item.status}:${item.outputRevision ?? 0}` : `${item.id}:${item.text.length}`);
+  const items = (progress?.items ?? []).flatMap((item) =>
+    isActionItem(item) ? [`${item.id}:${item.status}:${item.outputRevision ?? 0}`] : []);
   const plan = (progress?.plan?.items ?? []).map((item) => `${item.id}:${item.status}`);
   const approvals = (progress?.approvals ?? []).map((approval) => `${approval.requestId}:${approval.state}`);
   return `${message.phase ?? ""}|${items.join(",")}|${plan.join(",")}|${approvals.join(",")}`;
@@ -247,25 +263,37 @@ function keptByStop(message: ChatMessage, content: string): Extract<TurnState, {
   return draft ? "draft" : "nothing";
 }
 
-function deriveState({ message, now, lastActivityAt, stopping, retryPending }: TurnInput, content: string): TurnState {
-  const progress = message.progress;
-  const startedAtMs = progress?.startedAtMs ?? Date.parse(message.created_at);
-  const items = progress?.items ?? [];
-  if (message.status === "error") return { kind: "failed", failure: message.failure_kind ?? "other", retryPending };
-  if (message.status === "aborted") return { kind: "stopped", kept: keptByStop(message, content) };
-  if (message.status !== "streaming") {
-    const durationMs = progress?.finishedAtMs !== undefined ? progress.finishedAtMs - progress.startedAtMs : message.performance?.totalMs;
-    return { kind: "complete", durationMs };
+/** What a stopped reply kept (S4), in the reader's words. */
+function stoppedLabel(kept: Extract<TurnState, { kind: "stopped" }>["kept"], items: readonly ChatProgressItem[]) {
+  const steps = items.filter((item) => isActionItem(item) && item.status === "succeeded").length;
+  const values = { count: steps, formattedCount: formatNumber(steps) };
+  switch (kept) {
+    case "steps_and_text": return t("chatMessageCard.stoppedKept", values);
+    case "steps_and_draft": return t("chatMessageCard.stoppedKeptStepsAndDraft", values);
+    case "steps": return t("chatMessageCard.stoppedKeptSteps", values);
+    case "text": return t("chatMessageCard.stoppedKeptText");
+    case "draft": return t("chatMessageCard.stoppedKeptDraft");
+    case "nothing": return t("chatMessageCard.stoppedBeforeTheAnswerFinished");
   }
-  if (stopping) return { kind: "stopping", startedAtMs };
-  const waiting = (progress?.approvals ?? []).filter((approval) => approval.state === "waiting").length;
-  if (waiting) return { kind: "awaiting_approval", startedAtMs, count: waiting };
+}
+
+function deriveState({ message, now, lastActivityAt, stopping, retry }: TurnInput, content: string): TurnState {
+  const progress = message.progress;
+  const items = progress?.items ?? [];
+  if (message.status === "error") {
+    const retryPending = message.failure_kind === "rate_limited" && retry.offered && retry.attempt <= BUSY_RETRY_SECONDS.length;
+    return { kind: "failed", failure: message.failure_kind ?? "other", retryPending };
+  }
+  if (message.status === "aborted") return { kind: "stopped", kept: keptByStop(message, content) };
+  if (message.status !== "streaming") return { kind: "complete" };
+  if (stopping) return { kind: "stopping" };
+  if ((progress?.approvals ?? []).some((approval) => approval.state === "waiting")) return { kind: "awaiting_approval" };
   const running = lastRunning(items);
   if (running || message.phase === "tool" || message.phase === "thinking" || (message.phase !== "writing" && items.length)) {
-    return { kind: "working", startedAtMs, step: running ? actionLabel(running) : phaseLabel(message.phase), stepRunning: Boolean(running), stalled: now - lastActivityAt >= HEARTBEAT_AFTER_MS };
+    return { kind: "working", step: running ? actionLabel(running) : phaseLabel(message.phase), stepRunning: Boolean(running), stalled: now - lastActivityAt >= HEARTBEAT_AFTER_MS };
   }
-  if (message.phase === "writing") return { kind: "writing", startedAtMs };
-  return { kind: "starting", startedAtMs };
+  if (message.phase === "writing") return { kind: "writing" };
+  return { kind: "starting" };
 }
 
 const footerLabel = (state: TurnState): string => {
@@ -279,6 +307,36 @@ const footerLabel = (state: TurnState): string => {
   }
 };
 
+function runState(state: TurnState, { message, retry }: TurnInput): RunState | null {
+  if (state.kind === "stopped") return { kind: "stopped", label: stoppedLabel(state.kept, message.progress?.items ?? []) };
+  if (state.kind !== "failed") return null;
+  const retryInSeconds = state.retryPending ? message.retry_after_seconds ?? BUSY_RETRY_SECONDS[retry.attempt - 1] ?? BUSY_RETRY_SECONDS[0] : undefined;
+  return { kind: "failed", failure: state.failure, retryInSeconds };
+}
+
+function status(input: TurnInput) {
+  const { message } = input;
+  const content = visibleMessageContent(message);
+  const state = deriveState(input, content);
+  const stalled = state.kind === "working" && state.stalled;
+  const footer: TurnFooter = state.kind === "complete" || state.kind === "stopped" || state.kind === "failed"
+    ? {
+        kind: "settled",
+        sources: citationSources(message.evidence_refs ?? []),
+        copyText: content && !isFailurePlaceholder(message) ? content : null,
+        feedback: state.kind === "complete",
+        runState: runState(state, input),
+      }
+    : { kind: "status", label: footerLabel(state), sinceMs: startedAt(message), stalled };
+  return { state, footer, content, stalled };
+}
+
+/** The state and footer alone, for a reader that redraws every second (the status pill). */
+export function deriveTurnStatus(input: TurnInput): TurnStatus {
+  const { state, footer } = status(input);
+  return { state, footer };
+}
+
 /**
  * Everything an assistant turn shows, in reading order: narration and answer
  * prose keyed by the commentary that wrote them, one activity row per run of
@@ -287,22 +345,22 @@ const footerLabel = (state: TurnState): string => {
  */
 export function deriveTurnView(input: TurnInput): TurnView {
   const { message } = input;
-  const content = visibleMessageContent(message);
-  const state = deriveState(input, content);
+  const { state, footer, content, stalled } = status(input);
   const progress = message.progress;
-  const startedAtMs = progress?.startedAtMs ?? Date.parse(message.created_at);
+  const startedAtMs = startedAt(message);
   const items = progress?.items ?? [];
   const streaming = message.status === "streaming";
   const evidenceRefs = message.evidence_refs ?? [];
   const lastItem = items.at(-1);
-  // The draft is the answer while the host writes it. Once the answer grew past
-  // where the draft began, its settled text is in `content` and the live copy,
-  // which may still be listed for one update, is not drawn again. Older
-  // commentary stays narration whatever position the removal leaves it in.
-  const { draft } = message;
-  const liveDraft = streaming && message.phase === "writing" && lastItem?.kind === "commentary" && lastItem.id === draft?.id && content.length <= draft.answerLength
+  // The draft is the answer while the host writes it, under the key the answer
+  // keeps. Once its settled text has grown the answer, the live copy, which may
+  // still be listed for one update, is not drawn again. A draft that closed
+  // unsettled (a tool call followed, or the final text came another way) and
+  // any older commentary stay narration, wherever a removal leaves them.
+  const { draft, answer_key: answerKey } = message;
+  const settledCopy = (item: ChatProgressItem) => item.id === draft?.id && draft.settled && content.length > draft.answerLength;
+  const liveDraft = streaming && message.phase === "writing" && lastItem?.kind === "commentary" && lastItem.id === draft?.id && !settledCopy(lastItem)
     ? lastItem : undefined;
-  const stalled = state.kind === "working" && state.stalled;
 
   const segments: TurnSegment[] = [];
   const groups: Group[] = [];
@@ -316,6 +374,7 @@ export function deriveTurnView(input: TurnInput): TurnView {
       kind: "activity",
       key,
       row: { kind: "summary", label: "", issues: null },
+      tone: "settled",
       progress: { startedAtMs, finishedAtMs: progress?.finishedAtMs, items: [] },
       evidence: [], sources: [], memoryReads: [], autoExpand: false,
     };
@@ -329,9 +388,9 @@ export function deriveTurnView(input: TurnInput): TurnView {
     if (item.kind === "commentary") {
       open = undefined;
       const text = withoutIdentifiers(item.text);
-      if (item.id === draft?.id) {
-        if (item === liveDraft) segments.push({ kind: "prose", key: "answer", text: content ? `${content}\n\n${text}` : text, tone: "answer", streaming: true });
-      } else if (text.trim()) {
+      if (item === liveDraft) {
+        segments.push({ kind: "prose", key: answerKey ?? item.id, text: content ? `${content}\n\n${text}` : text, tone: "answer", streaming: true });
+      } else if (!settledCopy(item) && text.trim()) {
         segments.push({ kind: "prose", key: item.id, text, tone: "narration", streaming: false });
       }
       continue;
@@ -371,21 +430,12 @@ export function deriveTurnView(input: TurnInput): TurnView {
           durationMs: !streaming && progress?.finishedAtMs !== undefined ? progress.finishedAtMs - startedAtMs : undefined,
         };
     entry.autoExpand = actions.some((item) => (item.status === "failed" && !pausedByRule(item)) || item.status === "stopped");
+    entry.tone = state.kind === "failed" || entry.autoExpand ? "problem" : running ? "live" : "settled";
   }
   if (!liveDraft && content && !isFailurePlaceholder(message)) {
-    segments.push({ kind: "prose", key: "answer", text: content, tone: "answer", streaming, checks: message.number_checks });
+    segments.push({ kind: "prose", key: answerKey ?? "answer", text: content, tone: "answer", streaming, checks: message.number_checks });
   }
 
-  const settled = state.kind === "complete" || state.kind === "stopped" || state.kind === "failed";
-  const footer: TurnFooter = settled
-    ? {
-        kind: "settled",
-        sourceCount: citationSources(evidenceRefs).length,
-        copyText: content && !isFailurePlaceholder(message) ? content : null,
-        feedback: state.kind === "complete",
-        runState: state.kind === "complete" ? null : { kind: state.kind, persistent: true },
-      }
-    : { kind: "status", label: footerLabel(state), sinceMs: startedAtMs, stalled };
   const lastRow = [...groups].reverse().find((entry) => entry.row.kind === "summary")?.row;
   const announce = footer.kind === "status"
     ? state.kind === "working" && state.stepRunning ? `${footer.label} · ${state.step}` : footer.label

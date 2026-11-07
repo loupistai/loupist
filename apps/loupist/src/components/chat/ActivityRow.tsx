@@ -7,7 +7,6 @@ import { BookOpenIcon, CheckIcon, CirclePauseIcon, CircleSlashIcon, TriangleAler
 import type {
   ChatApproval,
   ChatEvidenceRef,
-  ChatMessage,
   ChatPlan,
   ChatProgressCategory,
   ChatProgressItem,
@@ -32,7 +31,6 @@ const RowAsOf = createContext<string | undefined>(undefined);
 
 type Props = {
   segment: Extract<TurnSegment, { kind: "activity" }>;
-  status: ChatMessage["status"];
   revealedResult?: { id: string; request: number } | null;
   focusItemId?: string | null;
   /** The answer's as-of date (`YYYY-MM-DD`). */
@@ -281,9 +279,9 @@ const refusedRead = (item: ActionItem) => {
  * what was read and worked afterwards, at the same height. The details hold
  * the sources, consulted notes, plan and every step.
  */
-export function ActivityRow({ segment, status, revealedResult, focusItemId, asOf, renderApprovals }: Props) {
+export function ActivityRow({ segment, revealedResult, focusItemId, asOf, renderApprovals }: Props) {
   useTranslation("chat");
-  const { row, progress, evidence, sources, memoryReads, autoExpand } = segment;
+  const { row, tone, progress, evidence, sources, memoryReads, autoExpand } = segment;
   const execution = useChatExecution();
   const conversation = useConversationScroll();
   const live = row.kind === "live";
@@ -336,14 +334,12 @@ export function ActivityRow({ segment, status, revealedResult, focusItemId, asOf
     <ActionRow key={entry.id} item={entry} evidence={evidenceFor(entry, evidenceById)} revealedResult={revealedResult} expandedResults={expandedResults}
       onToggleResult={onToggleResult} rowExpanded={expanded} focusItemId={focusItemId} approvals={approvalsFor(entry)} />
   );
-  const problem = actions.some((item) => (item.status === "failed" && !pausedByRule(item)) || item.status === "stopped");
 
   return (
-    <section className={`chat-progress${problem ? " has-failure" : ""}`} aria-label={t("chatProgressTimeline.workProgress")} aria-busy={live && !waiting} data-turn-item="tools" data-run-status={status ?? "complete"} data-expanded={expanded}>
+    <section className="chat-progress" aria-label={t("chatProgressTimeline.workProgress")} aria-busy={live && !waiting} data-turn-item="tools" data-tone={tone} data-expanded={expanded}>
       <button
         type="button"
         data-research-summary=""
-        data-tool-status={live ? "running" : undefined}
         className="chat-progress-toggle"
         aria-expanded={expanded}
         aria-controls={expanded ? detailsId : undefined}

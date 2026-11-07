@@ -252,7 +252,7 @@ const printLandmark = () => {
 };
 /** jsdom has no scroll geometry; those runs check the scenario reaches the thread. */
 // The live dot is aria-hidden, so landmarks use its visible run header.
-const runningHeader = () => select('.chat-progress[data-run-status="streaming"]') ?? select(".message.assistant.streaming");
+const runningHeader = () => select(".message.assistant.streaming .chat-progress") ?? select(".message.assistant.streaming");
 const stalledHeader = () => { const header = runningHeader(); return header?.querySelector("[data-heartbeat]") ? header : null; };
 async function scrollThreadUp() {
   const thread = await until(() => select(".message-scroll"), "Thread did not appear");
@@ -976,7 +976,7 @@ export const scenarios: readonly PreviewScenario[] = [
   } },
   { ...base("chat-plan-running", "A multi-step reply works through its plan", () => {
     const active = select('.chat-plan [aria-current="step"]');
-    return active && select('.chat-progress-toggle[data-tool-status="running"]') && select('.chat-artifact-block[data-state="building"]') ? select(".chat-plan") : null;
+    return active && select('.chat-progress[data-tone="live"] .chat-progress-toggle') && select('.chat-artifact-block[data-state="building"]') ? select(".chat-plan") : null;
   }, async (root) => {
     await submitPrompt(root, "Why did Hanul Precision’s margin fall while revenue grew?");
     await click("button[data-research-summary]", root);

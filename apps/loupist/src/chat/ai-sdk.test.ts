@@ -140,15 +140,16 @@ describe("native stream transport", () => {
     }).sendMessages({ ...request, body });
     const projections = await project(stream as ReadableStream<never>);
     const answers = projections.map((message) => {
-      const turn = deriveTurnView({ message, now: 2, lastActivityAt: 2, stopping: false, retryPending: false });
+      const turn = deriveTurnView({ message, now: 2, lastActivityAt: 2, stopping: false, retry: { attempt: 1, offered: false } });
       const prose = turn.segments.filter((segment) => segment.kind === "prose");
       // Narration stays narration: only the draft and its settled text read as the answer.
       if (message.progress) expect(prose.filter((segment) => segment.tone === "narration").map((segment) => segment.text)).toEqual(["Checking."]);
       return prose.filter((segment) => segment.tone === "answer");
     });
-    expect(answers.every((segments) => segments.length <= 1 && segments.every((segment) => segment.key === "answer"))).toBe(true);
+    expect(answers.every((segments) => segments.length <= 1 && segments.every((segment) => segment.key === draft.id))).toBe(true);
     const texts = answers.flatMap((segments) => segments.map((segment) => segment.text)).filter((text, index, all) => text !== all[index - 1]);
     expect(texts).toEqual(["Finished.", "Finished.\n\nThen", "Finished.\n\nThen more."]);
+    expect(projections.at(-1)).toMatchObject({ answer_key: draft.id, draft: { id: second.id, answerLength: draft.text.length, settled: true } });
     expect(projections.at(-1)?.progress?.items).toEqual([preamble]);
   });
 

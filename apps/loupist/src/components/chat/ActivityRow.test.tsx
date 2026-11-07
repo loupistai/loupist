@@ -22,9 +22,9 @@ function withActivity(detail: ChatActivityDetail) {
 /** The first activity row of a message with this progress, as the card derives it. */
 function row(progress: ChatProgress, status: ChatMessage["status"], extra: Partial<ChatMessage> = {}, props: Partial<Parameters<typeof ActivityRow>[0]> = {}) {
   const message: ChatMessage = { id: "answer", role: "assistant", status, content: status === "complete" ? "Done." : "", created_at: "2026-10-10T00:00:00Z", progress, phase: status === "streaming" ? "tool" : undefined, ...extra };
-  const view = deriveTurnView({ message, now: progress.startedAtMs + 12_000, lastActivityAt: progress.startedAtMs + 12_000, stopping: false, retryPending: false });
+  const view = deriveTurnView({ message, now: progress.startedAtMs + 12_000, lastActivityAt: progress.startedAtMs + 12_000, stopping: false, retry: { attempt: 1, offered: false } });
   const segment = view.segments.find((item) => item.kind === "activity")!;
-  return <ActivityRow segment={segment} status={status} {...props} />;
+  return <ActivityRow segment={segment} {...props} />;
 }
 
 it("names the running step, then settles into a collapsed summary with the steps in order inside", async () => {

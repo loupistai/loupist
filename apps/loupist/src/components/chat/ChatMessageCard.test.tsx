@@ -367,10 +367,11 @@ it.each([
 it("does not call a busy answer failed while it still counts down to its own retry", () => {
   const busy = answer({ id: "busy", content: "", status: "error", failure_kind: "rate_limited" });
   const { view, ...props } = renderAnswer(busy, { onRetry: vi.fn(), retryAttempt: 1 });
-  expect(screen.queryByText("Response failed")).toBeNull();
-  expect(screen.getByText(/Retrying in 20 s/)).toBeInTheDocument();
+  expect(screen.getByRole("alert")).toHaveTextContent(/Retrying in 20 s/);
+  expect(screen.queryByText(/Try again later/)).toBeNull();
   view.rerender(<TooltipProvider><ChatMessageCard {...props} message={busy} retryAttempt={3} /></TooltipProvider>);
-  expect(screen.getByText("Response failed")).toBeInTheDocument();
+  expect(screen.getByRole("alert")).toHaveTextContent(/Try again later/);
+  expect(screen.queryByText(/Retrying in/)).toBeNull();
 });
 
 it("counts a busy answer down from the wait its provider asked for", () => {

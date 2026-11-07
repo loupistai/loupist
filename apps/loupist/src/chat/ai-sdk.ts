@@ -62,6 +62,7 @@ export type LoupistChatMetadata = HostPostRecords & {
   progress?: ChatProgress;
   phase?: ChatMessage["phase"];
   draft?: ChatMessage["draft"];
+  answer_key?: string;
   performance?: ChatPerformance;
 };
 
@@ -339,6 +340,7 @@ export const fromLoupistUIMessage = (message: LoupistUIMessage): ChatMessage => 
     progress,
     phase: message.metadata?.phase,
     draft: message.metadata?.draft,
+    answer_key: message.metadata?.answer_key,
     attachments:
       attachmentParts.length > 0
         ? attachmentParts
@@ -422,6 +424,8 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
         let abortRetry: number | undefined;
         let progressState: ChatProgressStreamState | undefined;
         let answerLength = 0;
+        let draft: ChatMessage["draft"];
+        let answerKey: string | undefined;
         const publishedCommentary = new Set<string>();
 
         const enqueue = (chunk: UIMessageChunk) => {
@@ -442,8 +446,18 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
         const noteDraft = (items: readonly ChatProgressItem[]) => {
           const fresh = items.filter((item) => item.kind === "commentary" && !publishedCommentary.has(item.id));
           for (const item of fresh) publishedCommentary.add(item.id);
-          const draft = fresh.at(-1);
-          if (draft) enqueue({ type: "message-metadata", messageMetadata: { draft: { id: draft.id, answerLength } } });
+          const newest = fresh.at(-1);
+          if (!newest) return;
+          draft = { id: newest.id, answerLength, settled: false };
+          enqueue({ type: "message-metadata", messageMetadata: { draft } });
+        };
+        // Said before the settled text arrives, so the view keeps drawing the draft until
+        // the answer has grown, then its key, and never both copies at once.
+        const noteSettle = (settled: string) => {
+          const metadata: Partial<LoupistUIMessage["metadata"] & object> = {};
+          if (draft?.id === settled) metadata.draft = draft = { ...draft, settled: true };
+          if (answerKey === undefined) metadata.answer_key = answerKey = settled;
+          if (Object.keys(metadata).length) enqueue({ type: "message-metadata", messageMetadata: metadata });
         };
         const startResponse = (createdAt = new Date().toISOString()) => {
           if (started) return;
@@ -579,12 +593,13 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
             return;
           }
           if (event.type === "delta") {
+            if (event.settles) noteSettle(event.settles);
             appendAnswer(event.text);
             if (event.settles) {
-              // The view stops drawing the draft once the answer grew past it, so
-              // the copy may share a projection with the text. It still leaves
-              // here: a stop before Rust's removal patch would otherwise keep it
-              // as a draft beside the text it already settled into.
+              // The view stops drawing the settled draft once the answer grew past
+              // it, so the copy may share a projection with the text. It still
+              // leaves here: a stop before Rust's removal patch would otherwise
+              // keep it as a draft beside the text it already settled into.
               const settled = event.settles;
               if (progressState?.progress.items.some((item) => item.id === settled)) {
                 progressState = { ...progressState, progress: { ...progressState.progress, items: progressState.progress.items.filter((item) => item.id !== settled) } };

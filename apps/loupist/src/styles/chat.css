@@ -77,7 +77,6 @@
 .message-meta { display: flex; align-items: center; gap: var(--gg-space-2); min-height: var(--gg-space-6); margin-bottom: 10px; color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
 .message-meta > span:first-child { color: var(--gg-color-text-secondary); font-weight: var(--gg-weight-semibold); }
 .message-meta time { margin-left: 2px; }
-.message-status { padding: 2px 6px; border-radius: var(--gg-space-1); background: var(--gg-color-bg-hover); }
 .message-content { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); overflow-wrap: anywhere; white-space: pre-wrap; }
 .message.assistant .message-content { width: 100%; max-width: 100%; min-width: 0; white-space: normal; font-size: var(--gg-text-reading); line-height: var(--gg-leading-reading); }
 /* Reading measure: prose stops near 72 characters while tables, code and charts keep the full column. */
@@ -477,7 +476,7 @@ svg foreignObject .katex:has(> math) {
   white-space: nowrap;
 }
 
-.chat-progress[data-run-status="error"] .chat-progress-heading {
+.chat-progress[data-tone="problem"] .chat-progress-heading {
   color: var(--gg-color-negative);
 }
 
@@ -1755,7 +1754,6 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 .chat-pending-heading strong { color: inherit; font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); }
 .chat-pending-heading strong span { margin-left: 5px; }
 .chat-pending-context { color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); line-height: 1.5; overflow-wrap: anywhere; }
-.chat-progress[data-run-status="streaming"] .chat-progress-heading { color: var(--gg-color-text-secondary); }
 .chat-tool-result { border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-sm); overflow: hidden; }
 .chat-result-toggle { padding: 10px; }
 .chat-tool-result .chat-tool-output { margin: 0; padding: var(--gg-space-3); border: 0; border-top: 1px solid var(--gg-color-border-subtle); border-radius: 0; }

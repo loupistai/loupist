@@ -3,7 +3,7 @@ import { ArrowDownIcon } from "lucide-react";
 import type { ChatMessage } from "../../types";
 import { useConversationScroll } from "../ai-elements/conversation";
 import { clockLabel, useNow } from "../../chat/runStatus";
-import { deriveTurnView, useLastActivity } from "../../chat/turnView";
+import { deriveTurnStatus, useLastActivity } from "../../chat/turnView";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -31,12 +31,12 @@ export function ChatStatusPill({ message, run }: Props) {
   const running = Boolean(run?.running);
   const now = useNow(running);
   const lastActivityAt = useLastActivity(message);
-  const view = message && message.status === "streaming"
-    ? deriveTurnView({ message, now, lastActivityAt, stopping: Boolean(run?.stopping), retryPending: false }) : undefined;
+  const turn = message && message.status === "streaming"
+    ? deriveTurnStatus({ message, now, lastActivityAt, stopping: Boolean(run?.stopping), retry: { attempt: 1, offered: false } }) : undefined;
   if (!conversation || conversation.isAtBottom) return null;
   const jump = t("chatStatusPill.jumpToLatest");
-  const footer = view?.footer.kind === "status" ? view.footer : undefined;
-  const step = view?.state.kind === "working" && view.state.stepRunning ? view.state.step : undefined;
+  const footer = turn?.footer.kind === "status" ? turn.footer : undefined;
+  const step = turn?.state.kind === "working" && turn.state.stepRunning ? turn.state.step : undefined;
 
   return (
     <div className="chat-status-pill" data-running={running || undefined}>

@@ -11,13 +11,19 @@ citation opens through the one `ChatDestination` path
 
 Segments are prose and activity rows. A closed commentary item is narration (the
 answer's own metrics in the secondary color), keyed by its id. The commentary the host
-is writing now (`ChatMessage.draft`, recorded by the transport when the item is first
-published, with the answer's length at that moment) is the answer while the phase is
-writing, under the one key `answer` that the settled text keeps, so the Markdown node
-survives the hand-off, a reconcile from the store, and nothing remounts or moves. Once
-the answer has grown past where the draft began, the draft is not drawn again, and an
-older commentary that the removal leaves last stays narration. A plan or Memory row with
-no step of its own goes before the live answer, where it stays. A run of steps is one activity
+is writing now (`ChatMessage.draft`: the transport records it when the item is first
+published, with the answer's length at that moment, and marks it settled when the
+authoritative delta names it) is the answer while the phase is writing. The settled
+answer keeps the key of the draft it first settled from (`answer_key`, said before the
+text arrives), and `sessionRegistry.reconcile` carries that key over when the store
+refreshes the idle chat, so the Markdown node survives the hand-off and the refresh and
+nothing remounts or moves. Once a settled draft's text has grown the answer, the live
+copy is not drawn again; a draft that closed unsettled (a tool call followed, or the
+final text came another way) and any older commentary stay narration, wherever a
+removal leaves them. A plan or Memory row with no step of its own goes before the live
+answer, where it stays. The card, the status pill and the activity row read the view
+alone: the pill derives the cheaper `deriveTurnStatus` every second, and the row takes
+its tone (`live`, `settled`, `problem`) and its open state from its segment. A run of steps is one activity
 row with a fixed height: the running step's own words while one runs, then a summary
 ("Read 2 sources · hanul.example · 1 failed attempt · 0:14") that never changes height.
 The details hold the sources, consulted notes, plan and every step; a failed or stopped

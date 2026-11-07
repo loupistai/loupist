@@ -6,9 +6,6 @@ import type { ChatFailureKind } from "../../types";
 
 const t = i18n.getFixedT(null, "chat");
 
-/** Seconds before the automatic retry after the first and second busy answer when the provider gave no hint; the third asks to try later. */
-export const BUSY_RETRY_SECONDS = [20, 40] as const;
-
 /** What an answer's error can ask the app to do about its account (providers spec §2.4). */
 export type ProviderErrorAction = "reconnect" | "use_api_key" | "use_another" | "manage_usage";
 
@@ -16,10 +13,8 @@ type Props = {
   kind: ChatFailureKind;
   /** The provider's display name, or a generic "your AI account". */
   provider: string;
-  /** How many busy (rate-limited) answers in a row this Chat has had, including this one. */
-  attempt: number;
-  /** The provider's own wait, read and bounded by Rust; it replaces the fixed one. */
-  retryAfterSeconds?: number;
+  /** Set while a busy answer still counts down to its own retry: the turn view decides, from the provider's hint or the fixed waits. */
+  retryInSeconds?: number;
   /** The fallback sentence for kinds without a shape of their own. */
   fallback: string;
   onRetry?: () => void;
@@ -32,11 +27,9 @@ type Props = {
  * retry on their own; a plan at its limit never does, and each account problem
  * names one next step. The partial answer and its timeline stay above.
  */
-export function ChatErrorState({ kind, provider, attempt, retryAfterSeconds, fallback, onRetry, onProviderAction }: Props) {
+export function ChatErrorState({ kind, provider, retryInSeconds, fallback, onRetry, onProviderAction }: Props) {
   useTranslation("chat");
-  if (kind === "rate_limited" && onRetry && attempt <= BUSY_RETRY_SECONDS.length) {
-    return <BusyCountdown seconds={retryAfterSeconds ?? BUSY_RETRY_SECONDS[attempt - 1] ?? BUSY_RETRY_SECONDS[0]} onRetry={onRetry} />;
-  }
+  if (retryInSeconds !== undefined && onRetry) return <BusyCountdown seconds={retryInSeconds} onRetry={onRetry} />;
   const action = (name: ProviderErrorAction, label: string, primary = false, external = false) => onProviderAction
     ? <button type="button" data-primary={primary || undefined} data-error-action={name} onClick={() => onProviderAction(name)}>{label}{external ? <ExternalLinkIcon aria-hidden="true" /> : null}</button>
     : null;
