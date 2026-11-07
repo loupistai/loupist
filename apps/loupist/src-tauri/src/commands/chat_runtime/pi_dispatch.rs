@@ -311,7 +311,6 @@ pub(super) async fn apply_pi_rpc(turn: PiRpcTurn<'_>, payload: &Value) -> PiRpcS
             on_event.set_retry_after_seconds(assistant_capture.retry_after_seconds());
             match ended {
                 Ok(Some(AssistantTurnEnd::Stop(authoritative))) => {
-                    progress.finish_assistant_turn(true);
                     let streamed = if content.is_empty() {
                         authoritative.clone()
                     } else {

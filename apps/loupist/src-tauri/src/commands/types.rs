@@ -476,6 +476,10 @@ pub enum ChatStreamEvent {
     Delta {
         run_id: String,
         text: String,
+        /// The live commentary this settled text replaces, so the renderer
+        /// drops its copy in the same update that adds the text.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        settles: Option<String>,
     },
     GenerationFinished {
         run_id: String,
