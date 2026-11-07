@@ -18,19 +18,24 @@ sign-in page as `agent_name_hint`, and on the development Codex browser login as
 `originator`. The host opens and stores that page exactly as Pi wrote it. An account
 connected while Pi sent its own name keeps that name until the user signs in again. xAI's device login posts `referrer=pi` to
 `https://auth.x.ai/oauth2/device/code`; Loupist rewrites that field to `Loupist`
-(`withLoupistSignInIdentity`) and leaves the token request unchanged. Claude
-sign-in keeps Anthropic's published client id; replacing it would drop the
-sign-in. API-key providers send no sign-in name.
-Claude sign-in is billed as Claude extra usage and says
-so before its browser opens; xAI signs in with a SuperGrok device code. Gemini,
-OpenRouter and Pi's other providers connect by API key only. A sign-in times out
-after 10 minutes. The legacy Codex client (`openai-codex`) exists only in debug
+(`withLoupistSignInIdentity`) and leaves the token request unchanged. API-key providers send no sign-in name.
+xAI signs in with a SuperGrok device code. Claude, Gemini, OpenRouter and Pi's
+other providers connect by API key only. A sign-in times out after 10 minutes. The legacy Codex client (`openai-codex`) exists only in debug
 builds, for the e2e harness and evaluations.
+
+Claude connects only by Anthropic API key, because Anthropic does not permit
+third-party apps to offer Claude.ai sign-in
+([terms](https://code.claude.com/docs/en/legal-and-compliance)). The `anthropic`
+catalog entry has no sign-in flow, and `provider_connect` refuses it. At startup
+Rust deletes a Claude sign-in grant an earlier build saved in Pi's `auth.json`
+(`providers/unknown.rs`) and treats it as a disconnect: the card reads
+Disconnected while schedules, the Chat default or a World model still use the
+account, and an Anthropic API key is left alone.
 
 Rust owns each provider's status (`providers/status.rs`): one row per provider in
 global `catalog.sqlite3`, sent by the `provider-status` event and in the catalog
 view. A card reads Connected, Needs reconnect or Disconnected, with at most one
-notice: `plan_limit`, `plan_not_eligible`, `extra_usage_off` or `out_of_credit`.
+notice: `plan_limit`, `plan_not_eligible` or `out_of_credit`.
 Connecting clears the notice and dates the connection. A request that fails with
 one of those kinds sets its notice and `needs_reconnect` sets Needs reconnect;
 rate limits, outages and a gone model change nothing; any request that goes
@@ -46,8 +51,8 @@ never the backend's English error.
 While a provider needs reconnect or carries a notice, World processing and method
 learning wait on it. Background inference records its outcomes too: Pi passes the
 provider's error text (at most 8,192 characters) to Rust only for this
-classification, and a completed call clears the hold. For a plan limit, extra usage
-off or out of credit, one background attempt per 30-minute window
+classification, and a completed call clears the hold. For a plan limit or out of
+credit, one background attempt per 30-minute window
 (`PROBE_WINDOW_MS`, claimed once in `provider_probe`) lets an account that
 recovered on its own clear; a reconnect or an ineligible plan waits for the user.
 
