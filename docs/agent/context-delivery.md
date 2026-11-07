@@ -5,13 +5,15 @@ Under an as-of date, automatic context keeps to the cutoff. Shared text keeps it
 ## Memory and context
 
 With saving enabled, what a turn establishes (a dated fact with its source, a
-mechanism, a value-chain link, a contradiction, a reusable check) is filed into Lens
-pages with `lens_file`; this Chat's progress and user-stated facts use `note_save`;
+mechanism, a value-chain link, a contradiction, a check that mattered) is filed into Lens
+pages with `lens_file`. A turn creates a method only from the user's teaching or
+correction; its own checks stay on subject and idea pages until
+[method learning](../knowledge/lens.md#method-learning) sees them recur. This Chat's progress and user-stated facts use `note_save`;
 handed-over originals use acknowledged capture followed by `source_save`. Chatter, light questions and
 explicit one-offs are not saved. A reply promising to remember is not a Memory write.
-World processing extracts relationships from retained Sources and can queue a
-[method-learning review](../knowledge/lens.md#method-learning) that waits until
-that Loupist's World jobs drain. Methods also change through Chat tools;
+World processing extracts relationships from retained Sources. Research filed in
+two Chats from two retained originals queues a
+[method-learning review](../knowledge/lens.md#method-learning). Methods also change through Chat tools;
 [User principles](../knowledge/lens.md#user-principles) have a separate stored-rule
 contract and bounded turn context. The [profile contract](../runtime/storage-authority.md#where-data-lives)
 distinguishes editable Loupist fields from the

@@ -23,7 +23,9 @@ does not automatically become a Lens. Keep executable details in files and
 promote only a reusable, supported methodology.
 
 A newly taught method is its own Lens, kind `method`, with a title that names
-the method. Search first. Extend a method only when the new rule refines that
+the method. Only the user's teaching or correction creates a method in a turn:
+never file one from your own analysis, general knowledge or a single company's
+case. Search first. Extend a method only when the new rule refines that
 same method. Change the standing perspective only when the user changes their
 overall investing philosophy. A stated one-off is not a method. Do not
 rewrite a prior judgment. Preserve competing interpretations when their
