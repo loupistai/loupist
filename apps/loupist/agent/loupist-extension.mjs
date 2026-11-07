@@ -465,8 +465,9 @@ function registerLoupistExtension(originalPi) {
 
   // Pi's deferred tool_search was compared structurally and not adopted.
   // Activating a deferred tool still rewrites the declared tool prefix, and it
-  // adds a discovery round. Restoring the previous turn's allowed components
-  // keeps one tool prefix for the rest of a warm Chat.
+  // adds a discovery round. Restoring exactly the tools the previous turn ended
+  // with keeps one tool prefix for the rest of a warm Chat; the host filters
+  // the names to the run's granted inventory.
   async function restoreStickyComponents(ctx) {
     const restored = new Set(transcriptActiveToolNames(ctx));
     if (restored.size === 0) return;
@@ -474,9 +475,10 @@ function registerLoupistExtension(originalPi) {
       if (component.kind === "mcp") {
         const namespace = String(component.server_id).replace(/[.-]/gu, "_");
         const prefix = `mcp__${namespace}__`;
-        if ([...restored].some((name) => name.startsWith(prefix))) {
+        const names = [...restored].filter((name) => name.startsWith(prefix)).map((name) => name.slice(prefix.length)).sort();
+        if (names.length > 0) {
           try {
-            await loadCapabilityComponent(component);
+            await loadCapabilityComponent(component, undefined, names.slice(0, MAX_MCP_TOOLS));
           } catch {
             // Reconnect can fail without discarding the rest of the warm session.
           }
@@ -606,7 +608,7 @@ function registerLoupistExtension(originalPi) {
   registerWorkspaceTools(pi, hostContext.workspace.root,
     (name, path, signal, id) => requestBroker("native.authorize",
       path === undefined ? { name } : { name, path }, signal, id));
-  async function loadCapabilityComponent(component, signal) {
+  async function loadCapabilityComponent(component, signal, activateToolNames = []) {
     if ((component.kind === "mcp" && component.loaded === true) ||
         (component.kind !== "mcp" && component.tool_names.every((name) => activeTools.has(name)))) {
       return { id: component.id, loaded: true, already_loaded: true,
@@ -615,7 +617,9 @@ function registerLoupistExtension(originalPi) {
     if (component.kind === "mcp") {
       const connected = await requestBroker(
         "mcp.connect",
-        { server_id: component.server_id },
+        activateToolNames.length > 0
+          ? { server_id: component.server_id, activate_tool_names: activateToolNames }
+          : { server_id: component.server_id },
         signal,
       );
       if (connected.server_id !== component.server_id) {

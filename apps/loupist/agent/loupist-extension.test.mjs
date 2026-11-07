@@ -786,6 +786,28 @@ test("warm resume restores allowed components in catalog order and drops revoked
   assert.deepEqual(active(), orderedToolNames(active()));
 });
 
+test("warm resume asks the host for exactly the MCP tools the last turn ended with", async (t) => {
+  useHostContext(t, runtimeContext("chat", ["capability_load"], [OPENBB_COMPONENT]));
+  const holdingsCard = { ...ACTIVATE_CARD, name: "mcp__openbb__etf_holdings", mcp_name: "etf_holdings", label: "ETF holdings" };
+  const frames = await startToolBroker(t, () => ({ server_id: "openbb", tools: [ACTIVATE_CARD, holdingsCard] }));
+  const { handlers, active } = loadExtension();
+  await handlers.get("session_start")(undefined, {
+    sessionManager: {
+      buildSessionContext: () => ({
+        messages: [
+          { role: "system", toolsAdded: [{ name: "mcp__openbb__activate_tools" }, { name: "mcp__openbb__equity_price_quote" }, { name: "mcp__openbb__etf_holdings" }] },
+          { role: "system", toolsRemoved: [{ name: "mcp__openbb__equity_price_quote" }] },
+        ],
+      }),
+    },
+  });
+  // The default set is not requested back; the host activates the named tools and filters them to the grant.
+  assert.deepEqual(frames.map((frame) => [frame.method, frame.params]), [
+    ["mcp.connect", { server_id: "openbb", activate_tool_names: ["activate_tools", "etf_holdings"] }],
+  ]);
+  assert.deepEqual(active().filter((name) => name.startsWith("mcp__")), ["mcp__openbb__activate_tools", "mcp__openbb__etf_holdings"]);
+});
+
 test("catalog schemas survive provider adapters and never ask the model for credentials", () => {
   // Pi's Anthropic adapter copies only parameters.properties and .required, so a
   // top-level oneOf/anyOf would arrive as an empty object.
