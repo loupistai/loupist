@@ -56,9 +56,6 @@ export function AppNavigation({
   const { isMobile, setOpenMobile, state } = useSidebar();
   const searchShortcut = shortcutFor("palette");
   const newChatShortcut = shortcutFor("newChat");
-  const newChatLabel = selectedLoupist
-    ? i18n.t("app:loupistNavigationGroup.newChatWith", { label: selectedLoupist.name })
-    : i18n.t("app:shell.newChat");
   const canStartChat = selectedLoupist != null && !loading && selectedLoupist.availability.status === "available";
   const [settingsSearch, setSettingsSearch] = useState("");
   const recent = selectedLoupist ? recentLoupistChats(getLoupistChatList(selectedLoupist, threadsByLoupist[selectedLoupist.id], "").chats, activeThreadId, selectedLoupist.id) : [];
@@ -120,7 +117,7 @@ export function AppNavigation({
           <SearchIcon /><span>{i18n.t("app:shell.search")}</span><kbd aria-hidden="true">{searchShortcut}</kbd>
         </Button>
         <Button variant="ghost" className="navigation-command navigation-new" disabled={!canStartChat} aria-label={state === "collapsed" && !isMobile ? i18n.t("app:shell.newResearch") : undefined}
-          title={`${newChatLabel} ${newChatShortcut}`} onClick={() => { if (selectedLoupist) onCreateThread(selectedLoupist.id); closeMobile(); }}>
+          title={`${i18n.t("app:shell.newResearch")} ${newChatShortcut}`} onClick={() => { if (selectedLoupist) onCreateThread(selectedLoupist.id); closeMobile(); }}>
           <PlusIcon /><span>{i18n.t("app:shell.newResearch")}</span><kbd aria-hidden="true">{newChatShortcut}</kbd>
         </Button>
       </SidebarHeader>

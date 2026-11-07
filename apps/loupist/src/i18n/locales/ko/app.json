@@ -83,8 +83,7 @@
     "homeDescriptor": "대화, 브리핑, 알림"
   },
   "loupistNavigationGroup": {
-    "hasActiveSessions": "{{label}}에서 진행 중인 대화가 있어요",
-    "newChatWith": "{{label}}와 새 대화"
+    "hasActiveSessions": "{{label}}에서 진행 중인 대화가 있어요"
   },
   "macTitlebarControls": {
     "showOrHideSidebar": "사이드바 표시/숨기기",
