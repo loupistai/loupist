@@ -30,7 +30,10 @@ read; two cross-family code reviews (Codex, Grok) of the branch.
 ## Results
 
 Development suite (`lens-lifecycle-v1`, 9 scenarios, 3 trials, 60 turns per arm).
-Baseline is commit 929ef67's product; candidate is the final branch.
+Baseline traces record clean 929ef67; development candidate traces record clean
+b1e69f3 (the learning fixes, before the contested-evidence fix and the rebase);
+held-out candidate traces record clean 33992fb. Both candidate datasets share agent
+snapshot `4ed6a3ba…`.
 
 | Metric (checks) | Baseline | Candidate |
 | --- | ---: | ---: |
@@ -47,15 +50,20 @@ Baseline is commit 929ef67's product; candidate is the final branch.
   method in either arm.
 - `lens_update` misses: LL-003 declines to size 2027 revenue at risk in all six
   trials of both arms (answer helpfulness, not Lens); LL-005 lost the July segment
-  mix and mill list on a dividend update in 1 of 3 candidate trials (2 of 6 across
-  both candidate runs, 0 of 3 baseline; Fisher p≈0.5, and no change touched update
-  guidance). Context collapse stays an open risk.
+  mix and mill list on a dividend update in 1 of 3 final candidate trials (0 of 3
+  baseline). The earlier candidate run's LL-005 miss was a different failure: the
+  page kept its detail but still showed the old dividend after `skipped_stale` ops.
+  The sample cannot show whether the changes affected updates either way; context
+  collapse stays an open risk.
 - `retrieval` misses are LL-008 reading the seeded method to rule it out, which the
   Lens Skill asks for; applying it is judged separately and never happened.
 
 Held-out suite (`lens-lifecycle-heldout-v1`, 4 scenarios in biotech, shipping,
-REITs and food, 3 trials, run once per arm; one candidate unit was rerun after an
-xAI `provider_error`).
+REITs and food, 3 trials). One complete dataset per arm, after two abandoned partial
+attempts per arm that stopped on xAI `provider_error` (baseline 6 and 3 turns
+completed, candidate 5 and 11); the candidate's last attempt also reran one unit
+(LH-003 trial 1) after a provider error. Those partial attempts were seen before the
+final run, so the holdout was not run strictly once.
 
 | Metric (checks) | Baseline | Candidate |
 | --- | ---: | ---: |
@@ -67,7 +75,8 @@ xAI `provider_error`).
 | retrieval | 6/6 | 6/6 |
 | invalid tool calls | 50/322 | 39/299 |
 
-The `carry_forward` misses are a rubric defect found after the run: LH-004's probe
+Both `lens_update` misses are LH-002 trial 2 declining to call the remaining 14
+ships container ships, not a missed fleet update. The `carry_forward` misses are a rubric defect found after the run: LH-004's probe
 gives no FFO, maturity or occupancy figures, and both arms read the saved method and
 listed its three checks while saying the data was missing. Fix the rubric in v2.
 
@@ -77,33 +86,51 @@ pressure is temporary"; every section cites both reports; `limits` says it was s
 in "only two fictional manufacturers" and "does not establish … a sector rule". The
 third-company probe exact-read it and used its upper-bound reasoning; the insurer
 probe read nothing; neither wrote anything. The one-Chat control filed two turns on
-two Sources and started no review (`lens-research-v1-run2.json`, gate before the
-review fixes). On the final code (33992fb, clean tree) the result held: one review
+two Sources and started no review (`lens-research-v1-run2.json`, dirty 730fd42,
+gate before the review fixes; its `p1_applied` is false because the probe set no
+`lens_read` status, though the answer names and uses the method). On the final code (33992fb, clean tree) the result held: one review
 created "Judging if ramp margin pressure is temporary" citing both reports, whose
 `limits` names "only two fictional manufacturers" and incomplete ramps; the probe
 read it and marked it applied; the insurer probe read nothing; the one-Chat control
-started no review (`lens-research-v1-run4-final.json`). Two other attempts failed on
-xAI `provider_error` before any training turn finished and are kept as such.
+started no review (`lens-research-v1-run4-final.json`). Two other attempts failed
+before any training turn finished: run1 on the broker socket path
+(`protocol_error`), run3 on xAI `provider_error`. These are two samples of creation
+and use; neither is a matched comparison against having no learned method.
 
 ## Findings fixed on the way
 
 - Every sourced subject page failed `save_precision`: the judge criterion predated
   subject pages. Rewritten for the page model, with page kind and stored sections in
   the judge input.
-- 81 of 652 baseline calls were refused `calculate`/`grid_publish` citations that
-  Grok repeated identically; the refusal now lists this turn's citation URLs. The
+- 85 of 652 calls in the 54-turn baseline (78 `calculate`, 7 `grid_publish`) were
+  refused citations, many of them repeated; the refusal now lists this turn's
+  citation URLs. Invalid-call rates stay above the 5% goal in every arm (13.5% to
+  13.3% development, 15.5% to 13.0% held out). The
   root cause (Grok tool arguments lose the evidence id) is open.
 - The live research eval's broker socket path exceeded the Unix limit.
 - Codex and Grok reviews found ways learning could still use narrow or withdrawn
-  evidence; all eight were fixed with mutation-checked tests (commit "learn only
-  from current, independent research").
+  evidence. Fixed with mutation-checked tests: withdrawn and contested evidence,
+  legacy watermarks, pre-inference defers, crash recovery, nested Chats, method-page
+  evidence, user-written sections. Partly open: see below.
 
 ## Open
 
+- Observations that did not fit a started review's input are consumed with it.
+- Two pages about one company (subject and idea) count as two cases; turn-created
+  methods are bounded by the prompt, not by the writer.
+
 - Pi's native `grep` needs ripgrep, which the app does not ship.
 - Grok drops the evidence id from citation tool arguments.
-- A learning refine can drop Loupist-written limits the reviewer never saw.
+- A learning refine can drop Loupist- or learning-written limits the reviewer never
+  saw (user-written sections are kept).
 - LH-004's rubric asks for figures the probe never gives.
 - Context collapse on updates (LL-005) needs a larger sample or a writer-side check.
 - The held-out set is a sector holdout with the development turn shapes, not an
   independent behavioral test.
+
+These results support fixture-level improvements (no unasked methods, judged pages
+that match the page model) and a working example of evidence-gated learning. They
+do not show that most users will see better pages, or that two reports make a
+broadly valid method. A frozen behavioral holdout covering contestation,
+same-company research, omitted evidence and mature-method refinement is the next
+evaluation step.
