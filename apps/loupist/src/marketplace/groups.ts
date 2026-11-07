@@ -7,7 +7,7 @@ export type ConnectionGroup<T> = {
 };
 
 function connectionGroupLabel(name: string): string {
-  const keys: Record<string, "MarketData" | "News" | "Filings" | "Research" | "Korea" | "WebResearch" | "WorldBank"> = { "Market data": "MarketData", News: "News", Filings: "Filings", Research: "Research", Korea: "Korea", "Web Research": "WebResearch", "World Bank": "WorldBank" };
+  const keys: Record<string, "MarketData" | "News" | "Filings" | "Research" | "Korea" | "WebResearch" | "WorldBank" | "OnchainData"> = { "Market data": "MarketData", News: "News", Filings: "Filings", Research: "Research", Korea: "Korea", "Web Research": "WebResearch", "World Bank": "WorldBank", "On-chain data": "OnchainData" };
   return keys[name] ? i18n.t(`connections:catalog.${keys[name]}`) : name;
 }
 

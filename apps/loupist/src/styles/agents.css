@@ -43,6 +43,8 @@
 .agent-capability small { font-size: var(--gg-text-caption); color: var(--gg-color-text-secondary); line-height: 1.5; }
 .agent-capability .agent-capability-error { color: var(--gg-color-text-primary); background: var(--gg-color-bg-hover); border-left: 2px solid var(--gg-color-negative); padding: var(--gg-space-2) 10px; margin-top: 5px; }
 .agent-capability-action { display: flex; align-items: center; gap: var(--gg-space-2); flex: 0 0 auto; }
+/* The switch's enlarged hit area would otherwise reach past the row and widen the page's scroll width. */
+.agent-capability-action [data-slot="switch"]::after { inset-inline-end: 0; }
 .agent-capability[data-locked="true"] .agent-capability-action { flex-direction: column; align-items: flex-end; gap: 5px; }
 .agent-capability-action > .agents-loading-icon { width: 14px; height: 14px; }
 .agent-capability-empty { margin: 0; padding: 22px var(--gg-space-6); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); line-height: 1.6; }

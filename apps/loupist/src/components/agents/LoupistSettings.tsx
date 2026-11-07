@@ -39,7 +39,8 @@ import type {
   LoupistCapabilityBinding,
   MarketplaceSnapshot,
 } from "../../marketplace/types";
-import { unavailableCapabilityNote } from "../../marketplace/readiness";
+import { sortConnectionEntries, unavailableCapabilityNote } from "../../marketplace/readiness";
+import { connectionText } from "../marketplace/connectionCopy";
 import { connectionGroups } from "../../marketplace/groups";
 import { errorMessage } from "../../lib/errors";
 import type {
@@ -56,6 +57,9 @@ import {
 
 import { LoupistAvailabilityBoundary } from "../app/LoupistAvailabilityBoundary";
 
+/** A section of Loupist settings that a link elsewhere in the app can open. */
+export type LoupistSettingsSection = "chat" | "world" | "capabilities";
+
 type Props = {
   bridge: LoupistBridge;
   selectedAgent: LoupistSummary | null;
@@ -68,7 +72,7 @@ type Props = {
   catalog: ModelCatalog | null;
   onChanged: () => void;
   onBack: () => void;
-  initialSection?: "chat" | "world";
+  initialSection?: LoupistSettingsSection;
   initialRemove?: boolean;
   onOpenMarketplace: (entryId?: string) => void;
   onManageProviders: () => void;
@@ -229,22 +233,21 @@ export function LoupistSettings({
           entry,
           item: {
             id: entry.id,
-            name: entry.name,
-            description: entry.summary,
+            name: connectionText(entry.name),
+            description: connectionText(entry.summary),
             enabled: available && (binding?.enabled ?? false),
             locked: !available,
             note: available
               ? undefined
               : unavailableCapabilityNote(connectorById.get(entry.id)),
           },
-          ready: connectorById.get(entry.id)?.readiness === "ready",
         },
       ];
     });
-    return connectionGroups(marketplace.plugins, listed.map((row) => row.entry)).flatMap((group) => {
-      const rows = listed
-        .filter((row) => group.entries.some(entry => entry.id === row.entry.id))
-        .sort((left, right) => Number(right.ready) - Number(left.ready));
+    const rowById = new Map(listed.map((row) => [row.entry.id, row]));
+    const ordered = sortConnectionEntries(listed.map((row) => row.entry), connectorById, (entry) => connectionText(entry.name));
+    return connectionGroups(marketplace.plugins, ordered).flatMap((group) => {
+      const rows = group.entries.map((entry) => rowById.get(entry.id)!);
       const hideGroup = rows.length === 1 && rows[0]?.item.name === group.label;
       return rows.map((row) => ({ ...row.item, group: hideGroup ? undefined : group.label }));
     });

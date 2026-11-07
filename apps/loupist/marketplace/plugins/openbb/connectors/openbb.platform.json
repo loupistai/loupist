@@ -1,7 +1,7 @@
 {
   "id": "openbb.platform",
   "name": "Market data platform",
-  "summary": "Keyless market, company, fund, options, macroeconomic, and analysis data through the bundled read-only market-data runtime.",
+  "summary": "Market, company, fund, options and economic data from public sources. Read-only, and no account or key needed.",
   "publisher": "Loupist",
   "data_authority": "The provider selected for each request",
   "kind": "data_source",
