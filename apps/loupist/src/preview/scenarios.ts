@@ -1357,6 +1357,26 @@ export const scenarios: readonly PreviewScenario[] = [
       return workspace;
     };
   } },
+  { ...base("chat-table", "A wide answer table keeps its figures whole", () => select('.message-content [data-streamdown="table"]'), async () => {
+    await centerOn('.message-content [data-streamdown="table"]', "center")();
+  }), setup: async (bridge) => {
+    await prepareFixture(bridge, "answer");
+    const table = [
+      "Segment results, ₩ billions.", "",
+      "| Segment | Q3 2025 | Q3 2026 | Change | Operating margin | Inventory days | Note |",
+      "| :--- | ---: | ---: | ---: | ---: | ---: | :--- |",
+      "| Precision parts | 1,204.5 | 1,336.8 | +11.0% | 14.8% | 54 | New production line is still in qualification, so costs run ahead of volume. |",
+      "| Tooling | 312.0 | 298.4 | -4.4% | 9.1% | 71 | Two customers delayed orders into next year. |",
+      "| Services | 88.2 | 101.7 | +15.3% | 22.6% | 12 | Recurring contracts. |",
+    ].join("\n");
+    const original = bridge.loupistSelect.bind(bridge);
+    bridge.loupistSelect = async loupistId => {
+      const workspace = await original(loupistId);
+      const answer = workspace.threads.find(thread => thread.id === "preview-chat")?.messages.find(message => message.id === "preview-answer");
+      if (answer) answer.content = table;
+      return workspace;
+    };
+  } },
   { ...base("chat-chart-inline", "A finished chart sits in the answer", () => {
     const card = select('.chat-artifact-block[data-state="ready"]');
     const chart = card?.querySelector(".artifact-chart-shell");
