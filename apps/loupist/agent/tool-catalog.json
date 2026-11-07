@@ -262,7 +262,7 @@
       "permission": "always",
       "component": null,
       "label": "Set up a connection",
-      "description": "Show the user a card that sets up one bundled data connection: call it when the user wants a data source that is not loaded, or pastes or offers an API key for one. Pass the connection's id or name (fred.macro, FRED, SEC EDGAR, OpenDART, KRX). The user enters any key in the card; never ask for a key in chat and never repeat one. The connection works from the user's next message, not in this reply. Interactive chats only.",
+      "description": "Show the user a card that sets up one bundled data connection: call it when the user wants a data source that is not loaded, or pastes or offers an API key for one. Pass the connection's id or name (fred.macro, FRED, SEC EDGAR, OpenDART, KRX). The user enters any key in the card; never ask for a key in chat and never repeat one. The connection works from the user's next message unless the result says to load it now. Interactive chats only.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,

@@ -439,6 +439,11 @@ pub struct AgentRuntimeComponent {
     /// tools on connect. Only Rust sets it, and only for that runtime.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub bundled: bool,
+    /// Catalog entries enabled in this run that this component serves, so
+    /// `capability_load {id: "fred.macro"}` resolves to market data. The index
+    /// never prints them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub entry_ids: Vec<String>,
 }
 
 const MAX_PURPOSE_CHARS: usize = 160;
@@ -499,6 +504,17 @@ impl AgentRuntimeProfile {
             .filter(|entry| capabilities.iter().any(|id| id == &entry.id))
             .map(|entry| entry.plugin.clone())
             .collect::<std::collections::BTreeSet<_>>();
+        let served_entries = |component_id: &str| -> Vec<String> {
+            market
+                .entries
+                .iter()
+                .filter(|entry| {
+                    capabilities.contains(&entry.id)
+                        && serving_component_id(entry, &market).as_deref() == Some(component_id)
+                })
+                .map(|entry| entry.id.clone())
+                .collect()
+        };
         let mut components = Vec::new();
         for component in &TOOL_CATALOG.components {
             if component
@@ -527,13 +543,21 @@ impl AgentRuntimeProfile {
                 tool_names,
                 connection: component.connection.clone(),
                 bundled: false,
+                entry_ids: served_entries(&component.id),
             });
         }
-        components.extend(mcp_runtime_components(&capabilities, &market)?);
+        components.extend(
+            mcp_runtime_components(&capabilities, &market)?
+                .into_iter()
+                .map(|component| AgentRuntimeComponent {
+                    entry_ids: served_entries(&component.id),
+                    ..component
+                }),
+        );
         components.extend(capabilities.iter().filter(|id| crate::custom_connections::service::valid_id(id)).map(|id| AgentRuntimeComponent {
             id: id.clone(), kind: "mcp".into(), server_id: Some(id.clone()), name: "Custom data source".into(),
             description: "User-configured read-only data source. Load to discover approved tools and their connection name.".into(),
-            tool_names: Vec::new(), connection: Some(id.clone()), bundled: false,
+            tool_names: Vec::new(), connection: Some(id.clone()), bundled: false, entry_ids: Vec::new(),
         }));
         let unavailable_connections = market
             .plugins
@@ -579,6 +603,29 @@ impl AgentRuntimeProfile {
         }
         self
     }
+}
+
+/// The capability id that loads `entry`'s tools, when exactly one does: the
+/// bundled MCP runtime's plugin, or the native component of a plugin with
+/// this one entry. `onchain` holds wallets and DefiLlama, so neither maps.
+pub(crate) fn serving_component_id(
+    entry: &crate::marketplace::MarketplaceEntryDto,
+    market: &crate::marketplace::BundledPluginIndex,
+) -> Option<String> {
+    if entry.runtime.kind == crate::marketplace::MarketplaceRuntimeKind::BundledMcp {
+        return Some(entry.plugin.clone());
+    }
+    let sole = market
+        .entries
+        .iter()
+        .filter(|other| other.plugin == entry.plugin)
+        .count()
+        == 1;
+    crate::broker::tools::TOOL_CATALOG
+        .components
+        .iter()
+        .find(|component| sole && component.connection.as_deref() == Some(entry.plugin.as_str()))
+        .map(|component| component.id.clone())
 }
 
 fn mcp_runtime_components(
@@ -633,6 +680,7 @@ fn mcp_runtime_components(
                 tool_names: Vec::new(),
                 connection: Some(plugin),
                 bundled: true,
+                entry_ids: Vec::new(),
             })
         })
         .collect()

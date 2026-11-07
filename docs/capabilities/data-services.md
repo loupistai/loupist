@@ -6,7 +6,9 @@ Bundled data tools are read-only and Loupist-scoped. Blockchain reads and the Ko
 
 The model loads an enabled connection by exact ID with `capability_load`; `@`
 mentions preload it. Entry IDs remain credential/binding keys, while plugin names
-are agent-facing capability IDs. Static contracts are in `agent/tool-catalog.json`.
+are agent-facing capability IDs. Each component carries the enabled entry IDs it
+serves (`entry_ids`, never printed in the index), so loading `fred.macro` loads
+market data. Static contracts are in `agent/tool-catalog.json`.
 
 | Connection / pack | Agent surface |
 | --- | --- |
@@ -89,8 +91,11 @@ that redefined it (`symbol` is titled `intrinio`), so the title alone never drop
 one. Vendor keys (`x-widget_config`, provider-keyed `choices`) and titles are
 removed and description sentences marked for other providers go. Listed choices
 become the property's enum only when every enabled provider that accepts it lists
-them, so a provider without choices (TMX intervals) keeps the upstream union. The
-nine default cards fall from 21,860 to about 8,200 bytes for the keyless providers.
+them, so a provider without choices (TMX intervals) keeps the upstream union. When
+a provider rejects some of the union's values, the description says which
+(`yfinance rejects unadjusted`), up to twelve values in all; longer disjoint lists
+such as screener industries keep the bare union. The nine default cards fall from
+21,860 to about 8,250 bytes for the keyless providers.
 No model-facing text names the runtime; the model and the user see "market
 data", and the capability index lists no provider ids. Scraped providers
 (yfinance, finviz, seeking_alpha, stockgrid, multpl, wsj) are labeled best

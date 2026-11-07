@@ -97,10 +97,42 @@ async fn the_card_reports_each_state_from_readiness_and_this_loupists_binding() 
         .await
         .unwrap();
     assert_eq!(ready["state"], "ready");
-    assert!(ready["notice"]
-        .as_str()
-        .unwrap()
-        .contains("capability_load"));
+    // Turned on after this reply started: the sealed run cannot load it yet.
+    let notice = ready["notice"].as_str().unwrap();
+    assert!(
+        notice.contains("next message") && !notice.contains("capability_load"),
+        "{notice}"
+    );
+
+    // On when the reply started: the notice names the exact load call.
+    let mut executor = executor;
+    executor
+        .capability_ids
+        .insert("world-bank.indicators".into());
+    let loadable = setup(&executor, json!({"id": "world-bank.indicators"}))
+        .await
+        .unwrap();
+    assert!(
+        loadable["notice"]
+            .as_str()
+            .unwrap()
+            .contains(r#"capability_load {id: "world-bank.indicators"}"#),
+        "{loadable}"
+    );
+}
+
+#[tokio::test]
+async fn a_connection_whose_runtime_is_missing_is_reported_unavailable() {
+    let temporary = tempfile::tempdir().unwrap();
+    let executor = executor(&temporary, Some(ChatSurface::Bot));
+    // The test state bundles no market data runtime, so FRED cannot run here.
+    let shown = setup(&executor, json!({"id": "fred.macro"})).await.unwrap();
+    assert_eq!(shown["state"], "unavailable");
+    let notice = shown["notice"].as_str().unwrap();
+    assert!(
+        notice.contains("unavailable here") && notice.contains("do not ask for a key"),
+        "{notice}"
+    );
 }
 
 #[tokio::test]

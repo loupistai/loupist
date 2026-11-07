@@ -125,14 +125,22 @@ it("keeps what the map tracks in World processing, not Learning", async () => {
 
 it("opens the current Loupist's Skills & connections from the Connections page and leaves the sidebar on Loupists", async () => {
   const user = userEvent.setup();
-  await openApp();
-  await user.click(await mainTab(/Connections/));
-  expect(document.querySelector('.settings-navigation [aria-current="page"]')).toHaveTextContent("Connections");
-  await user.click(await screen.findByRole("button", { name: "Choose which Loupists can use them" }));
-  const page = await screen.findByRole("region", { name: "Loupist settings" });
-  await waitFor(() => expect(page.querySelector<HTMLDetailsElement>('[data-loupist-section="capabilities"]')!.open).toBe(true));
-  expect(within(page).getByRole("textbox", { name: "Name" })).toHaveValue("Quality Compounder");
-  expect(document.querySelector('.settings-navigation [aria-current="page"]')).toHaveTextContent("Loupists");
+  const scrolled: Element[] = [];
+  const scrollIntoView = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(function (this: HTMLElement) { scrolled.push(this); });
+  try {
+    await openApp();
+    await user.click(await mainTab(/Connections/));
+    expect(document.querySelector('.settings-navigation [aria-current="page"]')).toHaveTextContent("Connections");
+    await user.click(await screen.findByRole("button", { name: "Choose which Loupists can use them" }));
+    const page = await screen.findByRole("region", { name: "Loupist settings" });
+    await waitFor(() => expect(page.querySelector<HTMLDetailsElement>('[data-loupist-section="capabilities"]')!.open).toBe(true));
+    // It lands on the connections list, past the Skills above it.
+    await waitFor(() => expect(scrolled).toContain(page.querySelector('[data-loupist-section="connections"]')));
+    expect(within(page).getByRole("textbox", { name: "Name" })).toHaveValue("Quality Compounder");
+    expect(document.querySelector('.settings-navigation [aria-current="page"]')).toHaveTextContent("Loupists");
+  } finally {
+    scrollIntoView.mockRestore();
+  }
 });
 
 it("translates connection names, summaries and group labels in Loupist settings", async () => {

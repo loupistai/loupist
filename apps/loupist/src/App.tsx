@@ -1023,7 +1023,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                       onImportLoupist={() => { loupist.setMutationError(null); dialogs.openImportLoupist(); }}
                       onRemoveLoupist={id => { void openLoupistSettingsFor(id, true); }}
                       onOpenLoupists={() => { setMarketplaceEntryId(null); setSettingsSection("loupists"); }}
-                      onOpenLoupistConnections={id => { setMarketplaceEntryId(null); setSettingsSection("loupists"); void openLoupistSettingsFor(id, false, "capabilities"); }}
+                      onOpenLoupistConnections={id => { setMarketplaceEntryId(null); setSettingsSection("loupists"); void openLoupistSettingsFor(id, false, "connections"); }}
                       currentLoupistId={selectedLoupistId}
                       onManageProviders={() => openSettings("model")}
                       onDraftSkill={draftSkill}

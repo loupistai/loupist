@@ -344,6 +344,38 @@ fn fresh_loupist_enables_only_credential_free_capabilities() {
 }
 
 #[test]
+fn each_component_names_the_enabled_entries_it_serves() {
+    let enabled = [
+        "fred.macro".to_string(),
+        "world-bank.indicators".to_string(),
+    ];
+    let profile =
+        crate::agent_harness::AgentRuntimeProfile::new("chat", false, false, &enabled).unwrap();
+    let served = |id: &str| {
+        profile
+            .components
+            .iter()
+            .find(|component| component.id == id)
+            .map(|component| component.entry_ids.clone())
+            .unwrap_or_else(|| panic!("{id} missing"))
+    };
+    // FRED is a provider inside market data, so loading `fred.macro` loads it.
+    assert_eq!(served("openbb"), ["fred.macro"]);
+    assert_eq!(served("world-bank"), ["world-bank.indicators"]);
+
+    // DefiLlama's plugin also holds wallets, which its tools cannot read.
+    let onchain = ["onchain.wallets".to_string(), "defillama.tvl".to_string()];
+    let profile =
+        crate::agent_harness::AgentRuntimeProfile::new("chat", false, false, &onchain).unwrap();
+    let defillama = profile
+        .components
+        .iter()
+        .find(|component| component.id == "defillama")
+        .unwrap();
+    assert!(defillama.entry_ids.is_empty(), "{:?}", defillama.entry_ids);
+}
+
+#[test]
 fn wallet_reads_turn_on_for_every_loupist_with_the_first_wallet() {
     let temporary = tempfile::tempdir().unwrap();
     let state = AppState::for_test(temporary.path().join("app"));
