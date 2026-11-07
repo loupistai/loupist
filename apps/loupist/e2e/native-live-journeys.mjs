@@ -189,7 +189,7 @@ async function openMainTab(tabId) {
 
 async function newChat() {
   await openDestination(browser, "chat");
-  await clickControl(browser, `.loupist-list-heading button`);
+  await clickControl(browser, `.navigation-new`);
   await displayed('textarea[aria-label="Message Loupist"]');
 }
 

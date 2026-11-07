@@ -119,13 +119,14 @@ export function AppNavigation({
           title={i18n.t("app:shell.searchShortcut", { shortcut: searchShortcut })} onClick={() => { onSearch(); closeMobile(); }}>
           <SearchIcon /><span>{i18n.t("app:shell.search")}</span><kbd aria-hidden="true">{searchShortcut}</kbd>
         </Button>
-
+        <Button variant="ghost" className="navigation-command navigation-new" disabled={!canStartChat} aria-label={state === "collapsed" && !isMobile ? i18n.t("app:shell.newResearch") : undefined}
+          title={`${newChatLabel} ${newChatShortcut}`} onClick={() => { if (selectedLoupist) onCreateThread(selectedLoupist.id); closeMobile(); }}>
+          <PlusIcon /><span>{i18n.t("app:shell.newResearch")}</span><kbd aria-hidden="true">{newChatShortcut}</kbd>
+        </Button>
       </SidebarHeader>
       <SidebarContent>{onOpenAttention ? <NeedsAttention items={attention} onOpen={(item) => { onOpenAttention(item); closeMobile(); }} onMore={onMoreAttention ? () => { onMoreAttention(); closeMobile(); } : undefined} /> : null}<SidebarGroup className="loupist-navigation">
         <SidebarMenu>{recent.filter(thread => thread.home).map(row)}</SidebarMenu>
-        <div className="loupist-list-heading"><SidebarGroupLabel>{i18n.t("app:shell.sessions")}</SidebarGroupLabel>
-          <Button variant="ghost" size="icon-sm" disabled={!canStartChat} aria-label={newChatLabel} title={newChatShortcut}
-            onClick={() => { if (selectedLoupist) onCreateThread(selectedLoupist.id); closeMobile(); }}><PlusIcon /></Button></div>
+        <div className="loupist-list-heading"><SidebarGroupLabel>{i18n.t("app:shell.sessions")}</SidebarGroupLabel></div>
         <SidebarMenu>{(isMobile || state === "expanded") && recent.filter(thread => !thread.home).map(row)}</SidebarMenu>
       </SidebarGroup></SidebarContent>
       <SidebarFooter className="navigation-footer">

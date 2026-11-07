@@ -204,7 +204,7 @@ try {
     await openMainTab(browser, "chat");
     await waitForText(await displayed("#main-panel-chat"), "AI can be wrong. Not a licensed financial adviser.");
     const before = (await browser.$$(".loupist-chat-button")).length;
-    const newChatLabel = '.loupist-list-heading button';
+    const newChatLabel = '.navigation-new';
     await clickControl(browser, newChatLabel);
     const afterFirst = (await browser.$$(".loupist-chat-button")).length;
     await clickControl(browser, newChatLabel);
