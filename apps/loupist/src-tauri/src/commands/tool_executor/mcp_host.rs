@@ -997,7 +997,7 @@ fn setup_notices<'a>(
                 .map(|labels| labels.join(" and "))
                 .unwrap_or_else(|| "its setup".into());
             Some(format!(
-                "{name} (provider {provider}) is unavailable until the user adds the {fields}: call connection_setup with {{id: \"{id}\"}} and the user finishes it in a card. Until then do not present another provider's data as {name} data.",
+                "{name} (provider {provider}) is unavailable until the user adds the {fields}: if connection_setup is available, call it with {{id: \"{id}\"}} and the user finishes it in a card; otherwise point them to Connections. Until then do not present another provider's data as {name} data.",
                 name = entry.name,
                 id = entry.id,
             ))
@@ -1005,7 +1005,7 @@ fn setup_notices<'a>(
         .collect()
 }
 
-const PROVIDER_SETUP_NEXT: &str = "This provider needs setup before it can run (SEC EDGAR needs a contact email). Call connection_setup with the provider's connection id or name so the user finishes it in a card, or use another provider listed in the tool schema and name it when citing.";
+const PROVIDER_SETUP_NEXT: &str = "This provider needs setup before it can run (SEC EDGAR needs a contact email). If connection_setup is available, call it with the provider's connection id or name so the user finishes it in a card (otherwise point them to Connections), or use another provider listed in the tool schema and name it when citing.";
 
 fn connect_response(server_id: &str, tools: Vec<Value>, notices: &[String]) -> Value {
     let mut response = json!({ "server_id": server_id, "tools": tools });

@@ -81,12 +81,16 @@ The host writes each OpenBB tool card
 (`apps/loupist/src-tauri/src/commands/tool_executor/mcp_host/openbb.rs`). The
 description says what the route returns, key arguments, granted providers with
 official sources first, the cutoff note for dated routes and the host-handled
-`max_age`. The parameter schema is pruned to the run's enabled providers: a
-property whose upstream title names only other providers is dropped (with its
-`required` entry), vendor keys (`x-widget_config`, provider-keyed `choices`) and
-titles are removed, description sentences marked for other providers go, and an
-enabled provider's single-value choices become the property's enum. The nine
-default cards fall from 21,860 to about 7,200 bytes for the keyless providers.
+`max_age`. The parameter schema is pruned to the run's enabled providers. A
+property is dropped only when its title names providers, every description
+sentence carries a `(provider: …)` marker, none of those providers is enabled and
+upstream does not require it; upstream titles a standard field with the provider
+that redefined it (`symbol` is titled `intrinio`), so the title alone never drops
+one. Vendor keys (`x-widget_config`, provider-keyed `choices`) and titles are
+removed and description sentences marked for other providers go. Listed choices
+become the property's enum only when every enabled provider that accepts it lists
+them, so a provider without choices (TMX intervals) keeps the upstream union. The
+nine default cards fall from 21,860 to about 8,200 bytes for the keyless providers.
 No model-facing text names the runtime; the model and the user see "market
 data", and the capability index lists no provider ids. Scraped providers
 (yfinance, finviz, seeking_alpha, stockgrid, multpl, wsj) are labeled best

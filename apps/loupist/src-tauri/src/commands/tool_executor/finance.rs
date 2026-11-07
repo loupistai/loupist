@@ -276,7 +276,7 @@ impl AppToolExecutor {
                 "the enabled finance connection has no configured credential".into(),
             )
             .with_next(
-                "Call connection_setup with this connection's name so the user configures it in a card; it works from their next message.",
+                "If connection_setup is available, call it with this connection's name so the user configures it in a card; it works from their next message. Otherwise tell the user to set it up in Connections.",
             )
         })
     }

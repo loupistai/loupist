@@ -1438,7 +1438,8 @@ fn connection_setup_presentation(args: &Value) -> ToolPresentation {
                 name: entry.name.clone(),
             }),
         ),
-        None => (first_string(args, &["id"]), None),
+        // An unresolved id may be a pasted key, so it never becomes a visible target.
+        None => (None, None),
     };
     presentation(
         ChatProgressCategory::Capability,
@@ -2245,7 +2246,7 @@ mod tests {
         );
         assert_eq!(setup.action, "Prepared a connection");
         let unresolved = summarize_tool("connection_setup", &json!({"id": "Bloomberg"}), None);
-        assert_eq!(unresolved.target.as_deref(), Some("Bloomberg"));
+        assert!(unresolved.target.is_none());
         assert!(unresolved.source.is_none());
 
         let source = |title: &str, url: &str| crate::web::WebSource {

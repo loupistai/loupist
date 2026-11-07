@@ -109,7 +109,7 @@ export function resolveCapability(id, components, unavailable = [], skillNames =
   // Display-name aliases are diagnostic only; they never resolve a load.
   if (requested && unavailable.some((item) => normalize(item.id) === requested ||
       normalize(item.name).replace(/\s+/g, "-") === requested)) {
-    throw new Error(prefix + "This bundled connection is not enabled for this Loupist. Call connection_setup with its name so the user can finish setup in a card; it works from their next message.");
+    throw new Error(prefix + "This bundled connection is not enabled for this Loupist. If connection_setup is available, call it with its name so the user can finish setup in a card; it works from their next message. Otherwise tell the user to enable it in Connections.");
   }
   throw new Error(prefix + "Pass {id: capability_id}. Available capability ids: " + (available || "none") + ".");
 }

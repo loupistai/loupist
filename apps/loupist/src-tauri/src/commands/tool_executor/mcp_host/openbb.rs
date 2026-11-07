@@ -287,6 +287,25 @@ fn titled_providers(property: &Map<String, Value>) -> Option<Vec<&str>> {
         .then_some(tokens)
 }
 
+/// The providers of a property only some providers accept. Upstream titles a
+/// standard field with the provider that redefined it (`symbol` is titled
+/// `"intrinio"`), so a provider title alone is not enough: every sentence of a
+/// provider-only description ends in a `(provider: …)` marker, while a
+/// standard field keeps an unmarked first sentence.
+fn provider_only(property: &Map<String, Value>) -> Option<Vec<&str>> {
+    let titled = titled_providers(property)?;
+    let description = property
+        .get("description")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    description
+        .split(';')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .all(|part| part.contains("(provider:"))
+        .then_some(titled)
+}
+
 /// Keeps the sentences of an upstream description that apply to an enabled
 /// provider. Upstream joins one sentence per provider with `;` and ends each
 /// with `(provider: a, b)`; a sentence without that marker applies to all.
@@ -347,27 +366,70 @@ fn prune_parameters(parameters: &mut Value, enabled: &BTreeSet<String>) {
         return;
     };
     schema.remove("title");
+    let required = schema
+        .get("required")
+        .and_then(Value::as_array)
+        .map(|names| {
+            names
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect::<BTreeSet<_>>()
+        })
+        .unwrap_or_default();
+    let tool_providers = schema
+        .get("properties")
+        .and_then(|properties| properties.get("provider"))
+        .and_then(|provider| provider.get("enum"))
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|provider| enabled.contains(*provider))
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|| enabled.iter().cloned().collect());
     let mut dropped = Vec::new();
     if let Some(properties) = schema.get_mut("properties").and_then(Value::as_object_mut) {
         for (name, property) in properties.iter_mut() {
             let Some(property) = property.as_object_mut() else {
                 continue;
             };
-            if name != "provider" {
-                if let Some(titled) = titled_providers(property) {
-                    if !titled.iter().any(|provider| enabled.contains(*provider)) {
+            if name != "provider" && !required.contains(name) {
+                if let Some(only) = provider_only(property) {
+                    if !only.iter().any(|provider| enabled.contains(*provider)) {
                         dropped.push(name.clone());
                         continue;
                     }
                 }
             }
-            let choices = property
-                .iter()
-                .filter(|(key, _)| enabled.contains(*key))
-                .filter(|(_, vendor)| {
-                    vendor.get("multiple_items_allowed") != Some(&Value::Bool(true))
+            // An enum replaces the upstream union only when every enabled
+            // provider that accepts this property names its choices; a
+            // provider without choices (TMX intervals) accepts other values.
+            let accepting = titled_providers(property)
+                .filter(|_| provider_only(property).is_some())
+                .map(|titled| {
+                    titled
+                        .into_iter()
+                        .filter(|provider| enabled.contains(*provider))
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>()
                 })
-                .filter_map(|(_, vendor)| vendor.get("choices").and_then(Value::as_array))
+                .unwrap_or_else(|| tool_providers.clone());
+            let all_listed = !accepting.is_empty()
+                && accepting.iter().all(|provider| {
+                    property.get(provider).is_some_and(|vendor| {
+                        vendor.get("choices").is_some_and(Value::is_array)
+                            && vendor.get("multiple_items_allowed") != Some(&Value::Bool(true))
+                    })
+                });
+            let choices = accepting
+                .iter()
+                .filter(|_| all_listed)
+                .filter_map(|provider| property.get(provider))
+                .filter_map(|vendor| vendor.get("choices").and_then(Value::as_array))
                 .flatten()
                 .filter(|choice| choice.is_string())
                 .cloned()
@@ -565,6 +627,68 @@ mod tests {
     /// what the run's providers accept: other providers' properties, vendor
     /// keys, titles and per-provider sentences go.
     #[test]
+    fn a_standard_field_redefined_by_one_provider_survives_pruning() {
+        // Upstream shapes from equity_price_historical: `symbol` carries the
+        // redefining provider as its title, and TMX lists no interval choices.
+        let mut parameters = json!({
+            "type": "object",
+            "properties": {
+                "provider": {"type": "string", "enum": ["cboe", "tmx", "yfinance"]},
+                "symbol": {
+                    "type": "string",
+                    "title": "intrinio",
+                    "description": "Symbol to get data for. Multiple comma separated items allowed for provider(s): cboe, tmx, yfinance.;\n    A Security identifier (Ticker, FIGI, ISIN, CUSIP, Intrinio ID). (provider: intrinio)",
+                    "cboe": {"multiple_items_allowed": true}
+                },
+                "interval": {
+                    "anyOf": [{"type": "string"}, {"type": "integer"}],
+                    "title": "cboe,tmx,yfinance",
+                    "description": "Time interval of the data to return.",
+                    "cboe": {"choices": ["1m", "1d"]},
+                    "yfinance": {"choices": ["1m", "1d", "1W"]}
+                },
+                "thea_enabled": {
+                    "type": "boolean",
+                    "title": "intrinio",
+                    "description": "Return trades with the Thea model. (provider: intrinio)"
+                }
+            },
+            "required": ["provider", "symbol"]
+        });
+        prune_parameters(&mut parameters, &enabled(&["cboe", "tmx", "yfinance"]));
+        let properties = &parameters["properties"];
+        assert_eq!(properties["symbol"]["type"], "string");
+        assert!(!properties["symbol"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("Intrinio"));
+        assert_eq!(parameters["required"], json!(["provider", "symbol"]));
+        assert!(properties.get("thea_enabled").is_none());
+        // TMX accepts intervals outside the listed choices, so no enum narrows them.
+        assert!(properties["interval"].get("enum").is_none());
+        assert!(properties["interval"].get("anyOf").is_some());
+        assert!(properties["interval"].get("cboe").is_none());
+
+        let mut listed = json!({
+            "type": "object",
+            "properties": {
+                "provider": {"type": "string", "enum": ["cboe", "yfinance"]},
+                "interval": {
+                    "anyOf": [{"type": "string"}],
+                    "description": "Time interval of the data to return.",
+                    "cboe": {"choices": ["1m", "1d"]},
+                    "yfinance": {"choices": ["1d", "1W"]}
+                }
+            }
+        });
+        prune_parameters(&mut listed, &enabled(&["cboe", "yfinance"]));
+        assert_eq!(
+            listed["properties"]["interval"]["enum"],
+            json!(["1m", "1d", "1W"])
+        );
+    }
+
+    #[test]
     fn parameters_are_pruned_to_the_runs_providers() {
         let schema = json!({
             "type": "object",
@@ -593,7 +717,7 @@ mod tests {
                     "yfinance": {"choices": ["splits_only", "splits_and_dividends"]}
                 }
             },
-            "required": ["provider", "thea_enabled"]
+            "required": ["provider"]
         });
         let source = tool("equity_fundamental_filings", "Get filings.", schema.clone());
         let mut card = json!({"description": "", "parameters": schema});
