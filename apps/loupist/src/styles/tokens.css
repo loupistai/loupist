@@ -110,6 +110,7 @@
   --gg-size-field: 40px;
   --gg-size-sidebar: 248px;
   --gg-size-chat-column: 760px;
+  --gg-size-reading-measure: 72ch;
   /* The floating "In this chat" rail (context-rail.md R1). */
   --gg-size-rail: 280px;
   --gg-size-reading-column: 720px;
@@ -278,15 +279,6 @@
 
 /* Figures line up (X10): tables, receipts, the Map stats, briefing rows, attention counts and palette captions. */
 .gg-num, table, .chat-receipt, .map-stats, .briefing-sections, .needs-attention, .command-palette-row small, .market-status { font-variant-numeric: tabular-nums; }
-/* Reduced motion (X19): one guard for every CSS animation and transition; progress spinners keep turning because they carry status. */
-@media (prefers-reduced-motion: reduce) {
-  *:not(.animate-spin), *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
 :root:lang(ko) { word-break: keep-all; overflow-wrap: anywhere; }
 * { box-sizing: border-box; }
 html, body, #root { min-height: 100%; margin: 0; }
@@ -350,9 +342,12 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
   *, *::before, *::after {
     animation-duration: 0ms !important;
     animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: var(--gg-motion-instant) !important;
     transition-property: opacity !important;
     scroll-behavior: auto !important;
   }
+  /* Motion stops everywhere; a spinner stays on screen as a static glyph, and its role="status" label carries the state. */
+  .animate-spin { animation: none !important; }
 }
 @keyframes gg-map-enter-reduced { from { opacity: 0; } to { opacity: 1; } }
