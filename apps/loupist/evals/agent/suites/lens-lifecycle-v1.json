@@ -4,7 +4,7 @@
   "version": 1,
   "description": "Lens lifecycle: research turns file subject pages from retained originals, later Chats read and reuse them, newer originals revise the same page (including a stale premise, an alias and a small update that must keep earlier detail), one case never becomes a method, read-only and light turns file nothing, and a method applies only where it fits.",
   "budget": {
-    "maxInputTokensPerTurn": 600000,
+    "maxInputTokensPerTurn": 1000000,
     "maxTurns": 60
   },
   "scenarios": [
@@ -51,6 +51,13 @@
                     "max": 1,
                     "basis": "span",
                     "section_matches": "31[.,]5"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "method",
+                    "title_matches": ".",
+                    "max": 0,
+                    "metric": "save_precision"
                   }
                 ]
               }
@@ -120,6 +127,13 @@
                   {
                     "assert": "lens_unchanged",
                     "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "method",
+                    "title_matches": ".",
+                    "max": 0,
+                    "metric": "save_precision"
                   }
                 ],
                 "answer": [
@@ -179,6 +193,13 @@
                     "max": 1,
                     "basis": "span",
                     "section_matches": "4,?200"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "method",
+                    "title_matches": ".",
+                    "max": 0,
+                    "metric": "save_precision"
                   }
                 ]
               }
@@ -304,6 +325,13 @@
                     "max": 1,
                     "basis": "span",
                     "section_matches": "2028"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "method",
+                    "title_matches": ".",
+                    "max": 0,
+                    "metric": "save_precision"
                   }
                 ]
               }
@@ -495,6 +523,13 @@
                     "max": 1,
                     "basis": "span",
                     "section_matches": "0[.,]18"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "method",
+                    "title_matches": ".",
+                    "max": 0,
+                    "metric": "save_precision"
                   }
                 ]
               }
@@ -695,6 +730,13 @@
                     "assert": "lens_read",
                     "title_matches": "capacity",
                     "metric": "carry_forward"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "method",
+                    "title_matches": ".",
+                    "max": 1,
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -720,7 +762,14 @@
                   {
                     "assert": "lens_not_read",
                     "title_matches": "capacity",
-                    "metric": "negative_transfer"
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "method",
+                    "title_matches": ".",
+                    "max": 1,
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
