@@ -82,8 +82,7 @@
     "homeDescriptor": "Chat, briefings, and alerts"
   },
   "loupistNavigationGroup": {
-    "hasActiveSessions": "{{label}} has active sessions",
-    "newChatWith": "New chat with {{label}}"
+    "hasActiveSessions": "{{label}} has active sessions"
   },
   "macTitlebarControls": {
     "showOrHideSidebar": "Show or hide sidebar",
