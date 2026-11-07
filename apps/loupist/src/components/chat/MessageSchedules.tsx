@@ -1,4 +1,5 @@
 import i18n, { useTranslation } from "@/i18n";
+import { useGo } from "../navigation/Open";
 import { formatDateTime } from "@/i18n/format";
 import { useEffect, useState, type ReactNode } from "react";
 import { ChevronRightIcon } from "lucide-react";
@@ -14,11 +15,12 @@ const statuses = (): Record<TaskReceipt["status"], string> => ({
   active: t("messageSchedules.active"), paused: t("messageSchedules.paused"), completed: t("messageSchedules.completed"),
 });
 
-export function MessageSchedules({ receipts, onOpen }: {
+export function MessageSchedules({ receipts }: {
   receipts: ScheduleReceipt[];
-  onOpen?: (taskId: string) => void;
 }) {
   useTranslation("chat");
+  const go = useGo();
+  const onOpen = go ? (taskId: string) => go({ kind: "schedule", taskId }) : undefined;
   const scope = useChatExecution();
   const status = (receipt: TaskReceipt) => scope?.surface === "session" && receipt.action === "created" && receipt.task_id.startsWith("bot-handoff-")
     ? t("messageSchedules.handedToBot", { status: receiptStatus(receipt) }) : receiptStatus(receipt);

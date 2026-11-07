@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { renderWithOpen } from "../../test/open";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import i18n from "@/i18n";
@@ -23,17 +24,16 @@ function row(progress: ChatProgress, status: ChatMessage["status"], extra: Parti
   const message: ChatMessage = { id: "answer", role: "assistant", status, content: status === "complete" ? "Done." : "", created_at: "2026-10-10T00:00:00Z", progress, phase: status === "streaming" ? "tool" : undefined, ...extra };
   const view = deriveTurnView({ message, now: progress.startedAtMs + 12_000, lastActivityAt: progress.startedAtMs + 12_000, stopping: false, retryPending: false });
   const segment = view.segments.find((item) => item.kind === "activity")!;
-  return <ActivityRow segment={segment} status={status} onOpenLink={async () => undefined} {...props} />;
+  return <ActivityRow segment={segment} status={status} {...props} />;
 }
 
 it("names the running step, then settles into a collapsed summary with the steps in order inside", async () => {
   const user = userEvent.setup();
-  const openLink = vi.fn(async () => undefined);
   const progress: ChatProgress = { startedAtMs: 1, items: [
     { id: "web-1", kind: "tool", toolName: "web_search", category: "web", operation: "search", action: "Searched the web", target: "rate outlook", source: { kind: "web", name: "web_search" }, status: "succeeded" },
     { id: "web-2", kind: "tool", toolName: "web_fetch", category: "web", operation: "read", action: "Read a web source", running: "Reading example.com", target: "Rate outlook · example.com", href: "https://example.com/rates", status: "running" },
   ] };
-  const view = render(row(progress, "streaming", {}, { onOpenLink: openLink }));
+  const { open: openLink, ...view } = renderWithOpen(row(progress, "streaming"));
   const live = screen.getByRole("button", { name: "Reading example.com" });
   expect(live).toHaveAttribute("aria-expanded", "false");
   expect(screen.queryByText("Searched the web")).toBeNull();
@@ -42,10 +42,10 @@ it("names the running step, then settles into a collapsed summary with the steps
   expect(follows(screen.getByText("Searched the web"), readTarget)).toBe(true);
   expect(screen.queryByText("web_search")).toBeNull();
   await user.click(readTarget);
-  expect(openLink).toHaveBeenCalledWith("https://example.com/rates");
+  expect(openLink).toHaveBeenCalledWith({ kind: "link", url: "https://example.com/rates" }, undefined);
 
   const settled = { ...progress, finishedAtMs: 10, items: progress.items.map((item) => ({ ...item, status: "succeeded" as const })) };
-  view.rerender(row(settled, "complete", {}, { onOpenLink: openLink }));
+  view.rerender(row(settled, "complete"));
   // A run under a second shows its subject without a "0:00" clock; the reader's choice to open it stands.
   const summary = screen.getByRole("button", { name: /^Source review/ });
   expect(summary).toHaveAttribute("aria-expanded", "true");

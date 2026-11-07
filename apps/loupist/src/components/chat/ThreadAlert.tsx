@@ -2,8 +2,10 @@ import i18n, { useTranslation } from "@/i18n";
 import { formatDate, formatTime } from "@/i18n/format";
 import { useState } from "react";
 import type { ChatMessage, LoupistBridge } from "../../types";
+import type { AssetPageTarget } from "../../contracts/assets";
 import { Button } from "../ui/button";
-import { useAssetPageOpener } from "../assets/assetOpener";
+import { useGo } from "../navigation/Open";
+import { hostSourceDestination } from "../../chat/navigation";
 import { citationNumbers, shortDay, SourceChips, verdictLabel } from "../assets/assetText";
 import { useAssetNames } from "../assets/assetName";
 
@@ -14,16 +16,15 @@ const t = i18n.getFixedT(null, "chat");
  * user's own line and the observed value with its source. Review opens the
  * asset page; Undo restores the previous read while it is the latest change.
  */
-export function ThreadAlert({ message, bridge, loupistId, loupistName, onOpenLink }: {
+export function ThreadAlert({ message, bridge, loupistId, loupistName }: {
   message: ChatMessage;
   bridge?: LoupistBridge;
   loupistId: string;
   loupistName: string;
-  onOpenLink?: (url: string) => void;
 }) {
   useTranslation(["chat", "assets"]);
   const alert = message.alert!;
-  const openAsset = useAssetPageOpener();
+  const go = useGo();
   const name = useAssetNames(bridge, loupistId)({ name: alert.name, assetId: alert.asset_id, symbol: alert.symbol, market: alert.market });
   const [undone, setUndone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +46,7 @@ export function ThreadAlert({ message, bridge, loupistId, loupistName, onOpenLin
       setBusy(false);
     }
   };
+  const page: AssetPageTarget = { loupistId, assetId: alert.asset_id, name };
   const evidence = [{ tool: "source", title: alert.source_title || name, url: alert.source_url, date: alert.fact_date }];
   return <article className="message assistant thread-alert" aria-label={name}>
     <div className="message-meta">
@@ -53,12 +55,12 @@ export function ThreadAlert({ message, bridge, loupistId, loupistName, onOpenLin
     </div>
     <p>
       {t("redLine.message", { name, date: formatDate(alert.set_at_ms, { year: undefined, month: "short", day: "numeric" }), claim: alert.claim, value: alert.value, factDate: shortDay(alert.fact_date) })}{" "}
-      <SourceChips evidence={evidence} numbers={citationNumbers()} onOpen={item => { if (item.url && onOpenLink) onOpenLink(item.url); else openAsset?.({ loupistId, assetId: alert.asset_id, name }); }} />
+      <SourceChips evidence={evidence} numbers={citationNumbers()} onOpen={(_source, citation) => go?.(hostSourceDestination(citation, page))} />
     </p>
     {undone ? <p className="thread-delivery-source">{i18n.t("assets:verdict.undone", { verdict: undone, date: shortDay(alert.fact_date) })}</p> : null}
     {error ? <p className="inline-error" role="alert">{error}</p> : null}
     <div className="thread-alert-actions">
-      {openAsset ? <Button type="button" variant="outline" size="sm" onClick={() => openAsset({ loupistId, assetId: alert.asset_id, name })}>{t("redLine.review")}</Button> : null}
+      {go ? <Button type="button" variant="outline" size="sm" onClick={() => go({ kind: "asset", target: page })}>{t("redLine.review")}</Button> : null}
       {bridge && undone === null ? <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => void undo()}>{i18n.t("assets:verdict.undo")}</Button> : null}
     </div>
   </article>;

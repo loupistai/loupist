@@ -19,7 +19,10 @@ import {
   type SetStateAction,
 } from "react";
 import { createLoupistBridge } from "./bridge/tauriBridge";
-import { ChatView, type ChatWorkspaceActions } from "./components/ChatView";
+import { ChatView } from "./components/ChatView";
+import { OpenProvider } from "./components/navigation/Open";
+import { evidenceTarget, externalUrl, type ChatDestination, type Open, type OpenHow, type OpenResult } from "./chat/navigation";
+import { evidenceTitle } from "./chat/evidence";
 import { AppHeader } from "./components/app/AppHeader";
 import { LoupistAvailabilityBoundary } from "./components/app/LoupistAvailabilityBoundary";
 import { AppNavigation } from "./components/app/AppNavigation";
@@ -755,41 +758,85 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     threadId: effectiveThreadId,
     tab,
   };
-  const chatWorkspaceActions = useMemo<ChatWorkspaceActions>(
-    () => ({
-      openEvidence: (evidence, step) => { if (selectedLoupistId && workspaceThreadId) workspace.openEvidence(selectedLoupistId, workspaceThreadId, evidence, step); },
-      openFile: (path) => { if (selectedLoupistId && workspaceThreadId) workspace.openFiles(selectedLoupistId, workspaceThreadId, path); },
-      readWorldJob: (jobId) => bridge.knowledgeGraphJob({ loupistId: selectedLoupistId!, jobId }),
-      onWorldChanged: refreshKnowledge,
-      openMemory: (location, title) => {
-        if (location.surface === "world") { openKnowledgePage(location); return; }
-        if (selectedLoupistId && workspaceThreadId) {
-          workspace.openMemory(
-            selectedLoupistId,
-            workspaceThreadId,
-            location,
-            title,
-          );
-        }
-      },
-      openMemoryPage: openChatMemoryPage,
-      openArtifact: (threadId, artifact) => {
-        if (selectedLoupistId) {
-          workspace.openArtifact(selectedLoupistId, threadId, artifact);
-        }
-      },
-      openLink: (url) => {
-        if (selectedLoupistId) {
-          workspace.openBrowser(
-            selectedLoupistId,
-            workspaceThreadId ?? EMPTY_CHAT_THREAD_ID,
-            url,
-          );
-        }
-      },
-    }),
-    [selectedLoupistId, bridge, refreshKnowledge, workspaceThreadId, workspace.openArtifact, workspace.openEvidence, workspace.openFiles, openKnowledgePage, openChatMemoryPage, workspace.openBrowser, workspace.openMemory],
-  );
+  const [panelAnnouncement, setPanelAnnouncement] = useState<{ text: string; key: number } | null>(null);
+  // Panel tabs open beside the chat without moving focus; one polite region says what opened.
+  const announcePanel = (title: string) => setPanelAnnouncement((current) => ({ text: i18n.t("chat:navigation.openedInPanel", { title }) as string, key: (current?.key ?? 0) + 1 }));
+  const routeOpen = async (to: ChatDestination, how?: OpenHow): Promise<OpenResult> => {
+    const external = how?.external ? externalUrl(to) : null;
+    if (external) { await bridge.openExternalUrl(external); return "opened"; }
+    const loupistId = selectedLoupistId;
+    switch (to.kind) {
+      case "evidence": {
+        const target = evidenceTarget(to.evidence, undefined, loupistId ?? "");
+        if (target.kind === "asset") return routeOpen({ kind: "asset", target: target.target });
+        // A step or a quote popover belongs to its answer; outside one the card's fallback takes over.
+        if (target.kind !== "browser" && target.kind !== "reader") return to.fallback ? routeOpen(to.fallback) : "unavailable";
+        if (!loupistId || !workspaceThreadId) return "unavailable";
+        workspace.openEvidence(loupistId, workspaceThreadId, to.evidence, to.step ?? (to.cell ? { label: "", cell: to.cell } : undefined));
+        announcePanel(evidenceTitle(to.evidence));
+        return "opened";
+      }
+      case "link": {
+        const url = externalUrl(to);
+        if (!loupistId || !url) return "unavailable";
+        workspace.openBrowser(loupistId, workspaceThreadId ?? EMPTY_CHAT_THREAD_ID, url);
+        announcePanel(new URL(url).hostname.replace(/^www\./u, ""));
+        return "opened";
+      }
+      case "lens":
+        if (!loupistId) return "unavailable";
+        return routeOpen({ kind: "memory", location: { loupistId, surface: "lens", recordId: to.recordId, objectId: to.recordId, selection: { kind: "lens", recordId: to.recordId } }, title: "Lens" });
+      case "memory":
+        if (to.location.surface === "world") { openKnowledgePage(to.location); return "opened"; }
+        if (!loupistId || !workspaceThreadId) return "unavailable";
+        workspace.openMemory(loupistId, workspaceThreadId, to.location, to.title);
+        announcePanel(to.title);
+        return "opened";
+      case "page":
+        openKnowledgePage(to.location);
+        return "opened";
+      case "artifact": {
+        const threadId = to.threadId ?? workspaceThreadId;
+        if (!loupistId || !threadId) return "unavailable";
+        workspace.openArtifact(loupistId, threadId, to.artifact);
+        announcePanel(to.artifact.title);
+        return "opened";
+      }
+      case "file":
+        if (!loupistId || !workspaceThreadId) return "unavailable";
+        workspace.openFiles(loupistId, workspaceThreadId, to.path);
+        announcePanel(to.path?.split("/").at(-1) || i18n.t("chat:workspace.files"));
+        return "opened";
+      case "asset":
+        openAssetPage(to.target);
+        return "opened";
+      case "schedule":
+        openScheduledTask(to.taskId);
+        return "opened";
+      case "chat":
+        setVisibleActiveThreadId(to.threadId);
+        return "opened";
+      case "briefing":
+        if (!loupistId) return "unavailable";
+        setInboxFocus({ loupistId, runId: to.runId });
+        setTab("schedule");
+        return "opened";
+      case "settings":
+        openSettings(to.section);
+        return "opened";
+    }
+  };
+  // One stable opener for the whole shell: what it routes to is read when a leaf is clicked.
+  const latestRoute = useRef(routeOpen);
+  latestRoute.current = routeOpen;
+  const appOpen = useCallback<Open>((to, how) => latestRoute.current(to, how), []);
+  // Surfaces outside chat still take a plain link opener.
+  const openLink = useCallback((url: string) => { void appOpen({ kind: "link", url }); }, [appOpen]);
+  // The saved-note dialog covers the chat, so anything it opens closes it first.
+  const openFromNoteDialog = useCallback<Open>((to, how) => {
+    if (!how?.external) setNoteReaderOpen(false);
+    return appOpen(to, how);
+  }, [appOpen]);
   const selectLoupistFromNavigation = (loupistId: string, threadId?: string) => {
     setLoupistSettingsOpen(false);
     if (loupistId === selectedLoupistId && !loupist.loading) {
@@ -869,6 +916,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
   return (
     <TooltipProvider>
       <AssetPageOpenerProvider value={openAssetPage}><LookBackProvider value={lookBack}><FixMemoryProvider value={fixMemory}>
+      <OpenProvider open={appOpen}>
       <SourceFaviconProvider bridge={bridge}>
       <SidebarProvider
         className="app-shell"
@@ -992,7 +1040,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                   onAskInNewChat={text => { setAssetPage(null); askInNewChat(text); }}
                   onOpenChat={threadId => { setAssetPage(null); chat.setActiveThreadForLoupist(selectedLoupist.id, threadId); setTab("chat"); }}
                   onOpenMap={entityId => { setAssetPage(null); openKnowledgePage({ loupistId: selectedLoupist.id, surface: "world", ...(entityId ? { selection: { kind: "node", id: entityId } } : { view: { followCurrent: true } }) }); }}
-                  onOpenLink={chatWorkspaceActions.openLink}
+                  onOpenLink={openLink}
                   onOpenSource={recordId => { setAssetPage(null); openKnowledgePage({ loupistId: selectedLoupist.id, surface: "source", recordId }); }}
                   onOpenConnections={() => { setAssetPage(null); openSettings("connections"); }}
                   onAddSource={() => { setAssetPage(null); openKnowledgePage({ loupistId: selectedLoupist.id, surface: "source" }); }}
@@ -1079,8 +1127,6 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                   >
                     {activeChat ? (
                       <ChatView
-                        onOpenBriefing={(runId) => { setInboxFocus({ loupistId: selectedLoupist.id, runId }); setTab("schedule"); }}
-                        onOpenSchedule={openScheduledTask}
                         key={selectedLoupist.id}
                         active={tab === "chat" && !loupistSettingsOpen}
                         theme={resolvedTheme}
@@ -1120,7 +1166,8 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                         onAddKnowledgePin={(pin) => { if (activeDraft) drafts.addPin(activeDraft, pin); }}
                         onSelectArtifact={(artifact) => { if (effectiveChatKey) workspace.selectArtifactForChat(effectiveChatKey, artifact); }}
                         onConsumeKnowledgePins={(pins) => { if (activeDraft) pins.forEach((pin) => drafts.removePin(activeDraft, pin)); }}
-                        workspaceActions={chatWorkspaceActions}
+                        onReadWorldJob={(jobId) => bridge.knowledgeGraphJob({ loupistId: selectedLoupist.id, jobId })}
+                        onWorldChanged={refreshKnowledge}
                         progressFocus={progressFocus}
                         onAbortRecoveredRun={abortVisibleRecoveredChat}
                         draft={activeDraft ?? undefined}
@@ -1144,7 +1191,6 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                         onAcknowledgeModelNotice={model.acknowledgeModelNotice}
                         hostAuto={!model.selections[selectedLoupist.id] && !configuration.snapshot?.effective.chat.model_profile_id}
                         onOpenChatPreferences={() => { void openLoupistSettingsFor(selectedLoupist.id, false, "chat"); }}
-                        onOpenConnections={() => openSettings("connections")}
                       />
                     ) : null}
                   </div>
@@ -1281,7 +1327,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                     {lens.visited && <Suspense fallback={<Spinner />}><MemoryPage key={`${selectedLoupist.id}:${memoryPage?.loupistId === selectedLoupist.id ? memoryPage.key : lens.navigation?.current.recordId ?? ""}`} bridge={bridge} loupist={selectedLoupist}
                       threads={threads} initialItem={memoryPage?.loupistId === selectedLoupist.id ? memoryPage.item : lens.navigation?.current.recordId}
                       onBack={() => workspace.dismiss(effectiveChatKey ?? undefined)} onOpenChat={id => { chat.setActiveThreadForLoupist(selectedLoupist.id, id); setTab("chat"); }}
-                      onOpenMap={() => setTab("map")} onChanged={refreshKnowledge} onOpenLink={chatWorkspaceActions.openLink}
+                      onOpenMap={() => setTab("map")} onChanged={refreshKnowledge} onOpenLink={openLink}
                       onOpenKnowledge={openKnowledgePage} onAsk={useKnowledgeInChat} /></Suspense>}
                   </div>
                   <div className="workspace-world-content" hidden={workspace.kind !== "world"} inert={workspace.kind !== "world" || undefined}>
@@ -1301,7 +1347,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                           onAsk={useKnowledgeInChat}
                           onExplainDisagreement={explainDisagreement}
                           onAskInChat={() => { setTab("chat"); requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('textarea[data-chat-composer]')?.focus()); }}
-                          onOpenLink={chatWorkspaceActions.openLink}
+                          onOpenLink={openLink}
                           onManageProviders={() => openSettings("model")}
                           onManageProcessing={() => { void openLoupistSettingsFor(selectedLoupist.id, false, "world"); }}
                         />
@@ -1319,7 +1365,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
           <DialogContent className="knowledge-note-dialog sm:max-w-2xl">
             <DialogTitle className="sr-only">{i18n.t("app:app.savedNote")}</DialogTitle>
             {noteTrail.length > 1 ? <Button variant="ghost" onClick={() => setNoteTrail((current) => current.slice(0, -1))}>{i18n.t("app:app.backToNote")}</Button> : null}
-            {noteLocation ? <ResearchReader bridge={bridge} location={noteLocation} onOpen={openKnowledgePage} onAsk={useKnowledgeInChat} onOpenLink={(url) => { setNoteReaderOpen(false); chatWorkspaceActions.openLink(url); }} refreshKey={knowledgeRefresh} /> : null}
+            {noteLocation ? <OpenProvider open={openFromNoteDialog}><ResearchReader bridge={bridge} location={noteLocation} onOpen={openKnowledgePage} onAsk={useKnowledgeInChat} refreshKey={knowledgeRefresh} /></OpenProvider> : null}
           </DialogContent>
         </Dialog>
 
@@ -1344,6 +1390,8 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
         />
       </SidebarProvider>
       </SourceFaviconProvider>
+      <p className="sr-only" role="status" aria-live="polite" data-panel-announcement="">{panelAnnouncement ? <span key={panelAnnouncement.key}>{panelAnnouncement.text}</span> : null}</p>
+      </OpenProvider>
       </FixMemoryProvider></LookBackProvider></AssetPageOpenerProvider>
     </TooltipProvider>
   );

@@ -3,7 +3,6 @@ import { formatDateTime, formatNumber } from "@/i18n/format";
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { CheckIcon, CircleIcon, EllipsisIcon, TriangleAlertIcon } from "lucide-react";
 import type { LoupistBridge } from "../../types";
-import type { AssetEvidence } from "../../contracts/assets";
 import type { EarningsDifference, EarningsMeasure, EarningsSnapshot, EarningsValue } from "../../contracts/earnings";
 import { useOnline } from "../../app/useOnline";
 import { Button } from "../ui/button";
@@ -11,7 +10,7 @@ import { Spinner } from "../ui/spinner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { Dialog, DialogContent, focusDialogTitle } from "../ui/dialog";
 import { SensitivityCard } from "../chat/SensitivityCard";
-import { amount, citationNumbers, shortDay, SourceChips, type CitationNumbers } from "./assetText";
+import { amount, assetCitation, citationNumbers, shortDay, SourceChips, type CitationNumbers, type EvidenceOpener } from "./assetText";
 import { amountText, basisLabel, CalcChip, chainForm, differenceParts, measureTitle, snapshotEvidence, sourceLine } from "./earningsText";
 import "@/styles/earnings.css";
 
@@ -60,7 +59,7 @@ function captureLine(snapshot: EarningsSnapshot) {
   return parts.join("\u00a0· ");
 }
 
-type Open = (evidence: AssetEvidence) => void;
+type Open = EvidenceOpener;
 
 /** A date or name inside a source line never breaks; the line wraps between its parts instead. */
 const unbroken = (text: string) => text.replace(/ (?=[^·]*$)/gu, "\u00a0");
@@ -299,7 +298,7 @@ export function EarningsCard({ bridge, loupistId, loupistName, snapshot, name, n
           <Button type="button" variant="ghost" size="icon-sm" className="earnings-menu" aria-label={t("page.options")}><EllipsisIcon aria-hidden="true" /></Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          {releaseEvidence[0] ? <DropdownMenuItem onSelect={() => onOpenEvidence(releaseEvidence[0]!)}>{t("earnings.openRelease")}</DropdownMenuItem> : null}
+          {releaseEvidence[0] ? <DropdownMenuItem onSelect={() => onOpenEvidence(releaseEvidence[0]!, assetCitation(releaseEvidence[0]!, numbers(releaseEvidence[0]!)))}>{t("earnings.openRelease")}</DropdownMenuItem> : null}
           <DropdownMenuItem disabled={busy || !online} onSelect={() => void prepare()}>{t("earnings.prepareAgain")}</DropdownMenuItem>
           {onAsk ? <DropdownMenuItem onSelect={ask}>{t("earnings.ask")}</DropdownMenuItem> : null}
         </DropdownMenuContent>

@@ -1,4 +1,5 @@
 import { act, render, screen } from "@testing-library/react";
+import { renderWithOpen } from "../../test/open";
 import userEvent from "@testing-library/user-event";
 import i18n from "../../i18n";
 import type { ChatMessage, LoupistBridge } from "../../types";
@@ -24,13 +25,12 @@ function post(): ChatMessage {
 }
 
 it("renders the path with its relations and opens the Map on it", async () => {
-  const onOpenMap = vi.fn();
-  render(<ThreadLink message={post()} loupistId="loupist-a" loupistName="Chip desk" onOpenMap={onOpenMap} />);
+  const { open: onOpenMap } = renderWithOpen(<ThreadLink message={post()} loupistId="loupist-a" loupistName="Chip desk" />);
   expect(screen.getByText("New link: Alpha ↔ Gamma through Beta.")).toBeVisible();
   const path = screen.getByRole("button", { name: "Show this path on the map" });
   expect(path).toHaveTextContent("Alpha→supplies→Beta←uses←Gamma");
   await userEvent.setup().click(path);
-  expect(onOpenMap).toHaveBeenCalledWith(["a", "b", "c"]);
+  expect(onOpenMap).toHaveBeenCalledWith({ kind: "page", location: { loupistId: "loupist-a", surface: "world", view: { highlightEntityIds: ["a", "b", "c"] } } });
 });
 
 it("hands Look into it to the same research hand-off and marks the link opened", async () => {

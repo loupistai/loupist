@@ -11,7 +11,7 @@ it("opens a generated chart in the reader and offers recovery for corrupt images
   const image = { ...file, path: "returns.png", content: null, binary: true, media_type: "image/png", image_data_url: "data:image/png;base64,iVBORw0KGgo=" };
   vi.spyOn(bridge, "workspaceRead").mockResolvedValue(image);
   const reveal = vi.spyOn(bridge, "workspaceReveal").mockResolvedValue(undefined);
-  render(<WorkspaceFiles bridge={bridge} loupistId="loupist" path="" filePath="returns.png" onNavigate={vi.fn()} onAsk={vi.fn()} onOpenLink={vi.fn()} />);
+  render(<WorkspaceFiles bridge={bridge} loupistId="loupist" path="" filePath="returns.png" onNavigate={vi.fn()} onAsk={vi.fn()} />);
   const chart = await screen.findByRole("img", { name: "returns.png" });
   expect(chart).toHaveAttribute("src", image.image_data_url);
   fireEvent.error(chart);
@@ -23,7 +23,7 @@ it("opens a generated chart in the reader and offers recovery for corrupt images
 it.each(["https://example.com/chart.png", "data:image/svg+xml;base64,PHN2Zz4=", "data:text/html;base64,PHNjcmlwdD4="])("never loads a remote or active-content image payload %s", async (image_data_url) => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   vi.spyOn(bridge, "workspaceRead").mockResolvedValue({ ...file, path: "chart.png", content: null, binary: true, image_data_url });
-  render(<WorkspaceFiles bridge={bridge} loupistId="loupist" path="" filePath="chart.png" onNavigate={vi.fn()} onAsk={vi.fn()} onOpenLink={vi.fn()} />);
+  render(<WorkspaceFiles bridge={bridge} loupistId="loupist" path="" filePath="chart.png" onNavigate={vi.fn()} onAsk={vi.fn()} />);
   await screen.findByText(/No text preview/);
   expect(screen.queryByRole("img")).not.toBeInTheDocument();
 });
@@ -67,7 +67,7 @@ it("previews financial CSV as exact text with a header choice and an inspectable
   const csv = { ...file, path: "prices.csv", media_type: "text/csv", content: 'symbol,company,value,note\n005930,"Samsung, Inc.",000123.4500,"line one\nline ""two"""\nAAPL,Apple,=1+1,stable' };
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   vi.spyOn(bridge, "workspaceRead").mockResolvedValue(csv);
-  const view = render(<WorkspaceFiles bridge={bridge} loupistId="loupist" path="" filePath="prices.csv" onNavigate={vi.fn()} onAsk={vi.fn()} onOpenLink={vi.fn()} />);
+  const view = render(<WorkspaceFiles bridge={bridge} loupistId="loupist" path="" filePath="prices.csv" onNavigate={vi.fn()} onAsk={vi.fn()} />);
   const table = await screen.findByRole("table", { name: "Data preview for prices.csv" });
   for (const cell of ["005930", "Samsung, Inc.", "000123.4500", "=1+1"]) expect(within(table).getByRole("cell", { name: cell })).toBeVisible();
   expect(within(table).getByRole("cell", { name: /line one\s+line "two"/ }).textContent).toBe('line one\nline "two"');
@@ -81,7 +81,7 @@ it("keeps the loaded file after a failed refresh", async () => {
   const user = userEvent.setup();
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   vi.spyOn(bridge, "workspaceRead").mockResolvedValueOnce(file).mockRejectedValueOnce(new Error("File unavailable"));
-  render(<WorkspaceFiles bridge={bridge} loupistId="loupist" path="" filePath="analysis.py" onNavigate={vi.fn()} onAsk={vi.fn()} onOpenLink={vi.fn()} />);
+  render(<WorkspaceFiles bridge={bridge} loupistId="loupist" path="" filePath="analysis.py" onNavigate={vi.fn()} onAsk={vi.fn()} />);
   await screen.findByText("print(17 * 23)");
   await user.click(screen.getByRole("button", { name: "Refresh files" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("File unavailable");
@@ -92,7 +92,7 @@ it("omits an incomplete record from a truncated table and lets the source remain
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const content = 'symbol,value\nAAPL,123.40\nMSFT,"incomplete';
   vi.spyOn(bridge, "workspaceRead").mockResolvedValue({ ...file, path: "prices.csv", media_type: "text/csv", content, truncated: true });
-  const view = render(<WorkspaceFiles bridge={bridge} loupistId="loupist" path="" filePath="prices.csv" onNavigate={vi.fn()} onAsk={vi.fn()} onOpenLink={vi.fn()} />);
+  const view = render(<WorkspaceFiles bridge={bridge} loupistId="loupist" path="" filePath="prices.csv" onNavigate={vi.fn()} onAsk={vi.fn()} />);
   const table = await screen.findByRole("table");
   expect(within(table).getByRole("cell", { name: "AAPL" })).toBeVisible();
   expect(within(table).queryByText("MSFT")).not.toBeInTheDocument();

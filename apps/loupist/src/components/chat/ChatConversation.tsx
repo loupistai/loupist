@@ -1,5 +1,4 @@
 import type { ChatVersionSummary } from "../../contracts/chat";
-import type { OpenLinkOptions } from "../../chat/links";
 import i18n, { useTranslation } from "@/i18n";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type SaveAnswerFeedback } from "./AnswerFeedback";
@@ -8,13 +7,7 @@ import {
   ConversationContent,
 } from "@/components/ai-elements/conversation";
 import { ChatStatusPill, type ChatRunStatus } from "./ChatStatusPill";
-import type {
-  ChatArtifactRef,
-  ChatEvidenceRef,
-  ChatMessage,
-  KnowledgeLocation,
-  GraphJobView,
-} from "../../types";
+import type { ChatMessage, GraphJobView } from "../../types";
 import type { LoupistBridge, LoupistTemplateId } from "../../types";
 import { revealFocused } from "../../lib/revealFocused";
 import { ChatMessageCard } from "./ChatMessageCard";
@@ -48,21 +41,14 @@ type Props = {
   chatId?: string;
   loupistName: string;
   workspacePath?: string;
-  onOpenFile?: (path: string) => void;
-  onOpenEvidence?: (evidence: ChatEvidenceRef) => void;
   progressFocus?: string | null;
   /** Guidance sent while the latest reply runs; shown in its timeline. */
   guiding?: readonly string[];
   onReadWorldJob?: (jobId: string) => Promise<GraphJobView>;
   onWorldChanged?: () => void;
   onSuggestion: (suggestion: string) => void;
-  onOpenMemory: (location: KnowledgeLocation, title: string) => void;
-  onOpenMemoryPage: (location: KnowledgeLocation) => void;
-  onOpenArtifact: (artifact: ChatArtifactRef) => void;
   /** Puts an inline chart in the next question. */
-  onAskArtifact?: (artifact: ChatArtifactRef) => void;
-  onOpenSchedule?: (taskId: string) => void;
-  onOpenLink: (url: string, options?: OpenLinkOptions) => Promise<void>;
+  onAskArtifact?: (artifact: import("../../types").ChatArtifactRef) => void;
   onReadAttachment: (
     messageId: string,
     attachmentId: string,
@@ -86,20 +72,14 @@ type Props = {
   run?: ChatRunStatus;
   /** The Loupist's focus, for the morning message's questions. */
   loupistFocus?: string;
-  /** Opens a briefing run in the Briefings tab. */
-  onOpenBriefing?: (runId: string) => void;
   /** The Loupist's home Thread: results arrive here and the morning message closes it. */
   home?: boolean;
-  /** Opens the Chat a scheduled result came from. */
-  onOpenRunChat?: (threadId: string) => void;
   /** An empty topic Chat offers starter questions unless its composer already holds a question (Look back). */
   offerQuestions?: boolean;
   /** The composer's as-of date: the morning message leaves out its look-ahead event strip. */
   asOf?: string;
   /** The Loupist's template: a class Loupist's first morning message names the connections it works best with. */
   loupistTemplate?: LoupistTemplateId;
-  /** Opens Settings › Connections from the morning message. */
-  onOpenConnections?: () => void;
 };
 
 export function ChatConversation({
@@ -111,19 +91,12 @@ export function ChatConversation({
   chatId,
   loupistName,
   workspacePath,
-  onOpenFile,
-  onOpenEvidence,
   progressFocus,
   guiding,
   onReadWorldJob,
   onWorldChanged,
   onSuggestion,
-  onOpenMemory,
-  onOpenMemoryPage,
-  onOpenArtifact,
   onAskArtifact,
-  onOpenSchedule,
-  onOpenLink,
   onReadAttachment,
   mentionSkills,
   mentionPlugins,
@@ -140,13 +113,10 @@ export function ChatConversation({
   feedbackBusy = false,
   run,
   loupistFocus,
-  onOpenBriefing,
   home = false,
-  onOpenRunChat,
   offerQuestions = true,
   asOf,
   loupistTemplate,
-  onOpenConnections,
 }: Props) {
   useTranslation("chat");
   // Edit forks (X18): the versions that part from the chat at a sent message, nearest first.
@@ -235,16 +205,10 @@ export function ChatConversation({
     loupistName={loupistName}
     focus={loupistFocus}
     onAsk={onSuggestion}
-    onOpenMapNode={({ id, recordId }) => onOpenMemoryPage({ loupistId, surface: "world", recordId, objectId: id, selection: { kind: "node", id } })}
-    onOpenMap={() => onOpenMemoryPage({ loupistId, surface: "world", view: { followCurrent: true, whatsNew: true } })}
-    onOpenBriefing={onOpenBriefing}
-    onOpenJournal={(journalId, title) => onOpenMemory({ loupistId, surface: "note", objectId: journalId, selection: { kind: "journal", journalId } }, title)}
-    onOpenLink={url => void onOpenLink(url)}
     deliveredRunIds={home ? deliveredRunIds : undefined}
     onSettled={() => setMorningSettled(true)}
     asOf={asOf}
     template={loupistTemplate}
-    onOpenConnections={onOpenConnections}
   /> : null;
   // Growth inside a reply is followed by the scroll owner's ResizeObserver; only
   // a new message, a settled reply or the morning message needs a layout pass.
@@ -290,19 +254,19 @@ export function ChatConversation({
           {messages.map((message, index) => <Fragment key={messageKeys[index] ?? message.id}>
             {dividersBefore(messages, index, newSinceId).map((divider) => <ChatDivider key={divider.kind} divider={divider} onPassed={divider.kind === "new" ? clearNewSince : undefined} />)}
             {message.watch ? (
-            <ThreadWatch message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} active={active} onOpenLink={url => void onOpenLink(url)} onOpenSchedule={onOpenSchedule} />
+            <ThreadWatch message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} active={active} />
           ) : message.earnings ? (
-            <ThreadEarnings message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} onOpenLink={url => void onOpenLink(url)} />
+            <ThreadEarnings message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} />
           ) : message.vocabulary ? (
             <ThreadVocabulary message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} />
           ) : message.link ? (
-            <ThreadLink message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} onOpenMap={(nodeIds) => onOpenMemoryPage({ loupistId, surface: "world", view: { highlightEntityIds: nodeIds } })} />
+            <ThreadLink message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} />
           ) : message.alert ? (
-            <ThreadAlert message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} onOpenLink={url => void onOpenLink(url)} />
+            <ThreadAlert message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} />
           ) : message.delivery ? (
-            <ThreadDelivery message={message} loupistName={loupistName} onOpenRunChat={onOpenRunChat} />
+            <ThreadDelivery message={message} loupistName={loupistName} />
           ) : message.handoff ? (
-            <ThreadHandoff message={message} loupistName={loupistName} onOpenRunChat={onOpenRunChat} />
+            <ThreadHandoff message={message} loupistName={loupistName} />
           ) : (
             <ChatMessageCard
               bridge={bridge}
@@ -315,8 +279,6 @@ export function ChatConversation({
               chatId={chatId}
               loupistName={loupistName}
               workspacePath={workspacePath}
-              onOpenFile={onOpenFile}
-              onOpenEvidence={onOpenEvidence}
               progressFocus={progressFocus}
               guiding={index === messages.length - 1 && message.status === "streaming" ? guiding : undefined}
               stopping={index === messages.length - 1 && Boolean(run?.stopping)}
@@ -325,13 +287,8 @@ export function ChatConversation({
               previousQuestion={message.role === "assistant" ? previousQuestions[index] : undefined}
               onReadWorldJob={onReadWorldJob}
               onWorldChanged={onWorldChanged}
-              onOpenMemory={onOpenMemory}
-              onOpenMemoryPage={onOpenMemoryPage}
-              onOpenArtifact={onOpenArtifact}
               onAskArtifact={onAskArtifact}
               askArtifactDisabled={run?.running}
-              onOpenSchedule={onOpenSchedule}
-              onOpenLink={onOpenLink}
               onReadAttachment={onReadAttachment}
               mentionSkills={mentionSkills}
               mentionPlugins={mentionPlugins}

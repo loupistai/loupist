@@ -415,19 +415,6 @@ svg foreignObject .katex:has(> math) {
   cursor: pointer;
 }
 
-[data-streamdown="link"].loupist-external-link > svg {
-  width: 0.78em;
-  height: 0.78em;
-  display: inline;
-  margin-left: 0.22em;
-  vertical-align: 0.02em;
-}
-
-/* X4: the external-link glyph appears on hover or keyboard focus only; file links keep theirs. */
-button[data-streamdown="link"].loupist-external-link > svg { opacity: 0; transition: opacity var(--gg-motion-fast) var(--gg-ease-out); }
-button[data-streamdown="link"].loupist-external-link:hover > svg,
-button[data-streamdown="link"].loupist-external-link:focus-visible > svg { opacity: 1; }
-
 [data-streamdown="link"].loupist-external-link[data-open-failed="true"] {
   color: var(--gg-color-negative);
   text-decoration-style: wavy;

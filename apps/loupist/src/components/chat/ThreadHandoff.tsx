@@ -1,4 +1,5 @@
 import i18n, { useTranslation } from "@/i18n";
+import { useGo } from "../navigation/Open";
 import { formatNumber, formatTime } from "@/i18n/format";
 import { learnedSummary } from "../../chat/receipt";
 import type { ChatMessage, HomeHandoff } from "../../types";
@@ -12,12 +13,12 @@ const statusLabel = (status: HomeHandoff["status"]) => ({
   stopped: t("thread.handoffStopped"),
 })[status];
 
-export function ThreadHandoff({ message, loupistName, onOpenRunChat }: {
+export function ThreadHandoff({ message, loupistName }: {
   message: ChatMessage;
   loupistName: string;
-  onOpenRunChat?: (threadId: string) => void;
 }) {
   useTranslation("chat");
+  const go = useGo();
   const handoff = message.handoff!;
   const done = handoff.status === "done";
   const heading = done ? t("thread.researched", { title: handoff.title }) : t("thread.researching", { title: handoff.title });
@@ -34,7 +35,7 @@ export function ThreadHandoff({ message, loupistName, onOpenRunChat }: {
       <span aria-hidden="true">·</span>
       <span>{statusLabel(handoff.status)}</span>
       {learned ? <><span aria-hidden="true">·</span><span>{t("chatReceipt.learned", { count: learned, formattedCount: formatNumber(learned) })}</span></> : null}
-      {onOpenRunChat ? <><span aria-hidden="true">·</span><button type="button" className="morning-link" onClick={() => onOpenRunChat(handoff.chatId)}>{t("thread.open")}</button></> : null}
+      {go ? <><span aria-hidden="true">·</span><button type="button" className="morning-link" onClick={() => go({ kind: "chat", threadId: handoff.chatId })}>{t("thread.open")}</button></> : null}
     </p>
   </article>;
 }

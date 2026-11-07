@@ -1,12 +1,14 @@
-import type { OpenLinkOptions } from "@/chat/links";
 import i18n, { useTranslation } from "@/i18n";
-import type { ChatEvidenceRef, MemoryRef, NumberCheck } from "../../types";
+import type { NumberCheck } from "../../types";
 import { citationLabel, citationNumber, evidencePresentation, evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
 import { memoryReadForEvidence } from "../../chat/memoryActivity";
 import { checkFor, looksLikeNumber } from "../../chat/numberChecks";
 import { keepNumberParticles } from "../../chat/keepParticles";
 import { CitationChip } from "../chat/CitationChip";
-import { NumberChip, PendingNumber, type EvidenceCell } from "../chat/NumberChip";
+import { NumberChip, PendingNumber } from "../chat/NumberChip";
+import { useTurn } from "../chat/TurnProvider";
+import { useOpen, useOpenProps } from "../navigation/Open";
+import type { ChatDestination } from "../../chat/navigation";
 import { decodedWorkspaceLink, workspaceLinksPlugin, WORKSPACE_LINK_PROTOCOL } from "../../lib/workspaceFileLink";
 import { cn } from "@/lib/utils";
 import { parseCredentialFreeHttpUrl } from "@/lib/credentialFreeUrl";
@@ -15,37 +17,20 @@ import { cjk } from "@streamdown/cjk";
 import type { CodeHighlighterPlugin } from "@streamdown/code";
 import type { MathPlugin } from "@streamdown/math";
 import type { DiagramPlugin } from "@streamdown/mermaid";
-import { ExternalLinkIcon, FileIcon } from "lucide-react";
-import { HoverCard } from "radix-ui";
 import type { ComponentProps, ReactNode } from "react";
-import { createContext, isValidElement, memo, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createContext, isValidElement, memo, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
 import { Streamdown, defaultRehypePlugins, defaultUrlTransform, type StreamdownTranslations } from "streamdown";
 
 const t = i18n.getFixedT(null, "chat");
 
-type ResearchEvidence = {
-  references?: ChatEvidenceRef[];
-  memoryRefs?: MemoryRef[];
-  onOpen?: (evidence: ChatEvidenceRef, anchor?: HTMLElement) => void;
-  /** Rust's checks of this answer's number links (finance-show-the-math.md). */
+/** Per block of text, not per answer: a segment's own number checks and whether it still streams. */
+type TextBlock = {
+  /** Rust's checks of this text's number links (finance-show-the-math.md). */
   numberChecks?: NumberCheck[];
   /** While the answer streams, number links are pending: no popover yet. */
   streaming?: boolean;
-  /** The answer's as-of date; every number popover says "Known as of". */
-  asOf?: string;
-  onOpenCell?: (evidence: ChatEvidenceRef, cell?: EvidenceCell) => void;
-  onShowStep?: (evidence: ChatEvidenceRef) => void;
 };
-const ResearchEvidenceContext = createContext<ResearchEvidence>({});
-
-export type LensLinkState = "available" | "archived" | "unresolved";
-export type LensLinkPreview = { title: string; detail?: string };
-export type LensLinkActions = {
-  state?: (recordId: string) => LensLinkState;
-  preview?: (recordId: string) => LensLinkPreview | null;
-  onUnresolved?: (recordId: string, label: string) => void;
-};
-const LensLinkContext = createContext<LensLinkActions>({});
+const TextBlockContext = createContext<TextBlock>({});
 
 function nodeText(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
@@ -56,55 +41,54 @@ function nodeText(node: ReactNode): string {
 
 type MarkdownLinkProps = ComponentProps<"a"> & { node?: unknown };
 
+const unavailableCitation = (children: ReactNode) =>
+  <span className="loupist-unavailable-citation" title={t("messageResponse.sourceUnavailableInThisReply")}>{children}</span>;
+
+function EvidenceLink({ href, children }: { href: string; children?: ReactNode }) {
+  useTranslation("chat");
+  const turn = useTurn();
+  const { numberChecks, streaming } = useContext(TextBlockContext);
+  const evidenceRefs = turn?.evidenceRefs ?? [];
+  const evidence = evidenceRefs.find((ref) => href === `#evidence-${ref.id}`);
+  if (!evidence) return unavailableCitation(children);
+  // A number link is the control for its own evidence: Rust checked it when the answer finished.
+  const linkText = nodeText(children).trim();
+  const check = checkFor(numberChecks, evidence.id, linkText);
+  if (check) return <NumberChip check={check} checks={numberChecks} evidence={evidence} evidenceRefs={evidenceRefs} asOf={turn?.asOf}>{children}</NumberChip>;
+  if (streaming && looksLikeNumber(linkText)) return <PendingNumber>{children}</PendingNumber>;
+  const read = memoryReadForEvidence(evidence, turn?.memoryRefs);
+  const label = citationLabel(evidence, evidenceRefs, read?.title);
+  // Model-written reference numbers can disagree with the retained source list.
+  // Keep the visible number and spoken source number tied to the same evidence.
+  const number = /^\d+$/u.test(linkText) ? citationNumber(evidence, evidenceRefs) : null;
+  const accessibleLabel = number === null && linkText && !label.toLocaleLowerCase().includes(linkText.toLocaleLowerCase()) ? `${linkText} · ${label}` : label;
+  return <CitationChip evidence={evidence} label={accessibleLabel} title={evidenceTitle(evidence)} source={sourceIdentityLabel(evidence) || evidencePresentation(evidence).label}
+    to={{ kind: "evidence", evidence }}>{number ?? children}</CitationChip>;
+}
+
+/** A prose link: the underline is its affordance, so it carries no icon. */
+function ProseLink({ to, className, title, children }: { to: ChatDestination; className?: string; title: string; children?: ReactNode }) {
+  useTranslation("chat");
+  const link = useOpenProps(to);
+  if (!link.available) return <span className={className}>{children}</span>;
+  return <button type="button" role="link" className={cn(to.kind === "lens" ? "loupist-lens-link" : "loupist-external-link", className)} data-streamdown="link"
+    title={link.failed ? t("messageResponse.couldNotOpenThisLink") : title} {...link.props}>
+    {children}
+    {link.failed ? <span className="sr-only" role="alert">{t("messageResponse.couldNotOpenThisLink2")}</span> : null}
+  </button>;
+}
+
 function LoupistMarkdownLink({
   children,
   className,
   href,
   node: _node,
-  onOpenLink,
-  onOpenFile,
-  onLensLink,
   rel: _rel,
   target: _target,
   ...anchorProps
-}: MarkdownLinkProps & {
-  onOpenLink: (url: string, options?: OpenLinkOptions) => Promise<void> | void;
-  onOpenFile?: (path: string) => void;
-  onLensLink?: (recordId: string) => void;
-  evidenceRefs?: ChatEvidenceRef[];
-  memoryRefs?: MemoryRef[];
-  onOpenEvidence?: (evidence: ChatEvidenceRef, anchor?: HTMLElement) => void;
-}) {
+}: MarkdownLinkProps) {
   useTranslation("chat");
-  const { references: evidenceRefs, memoryRefs, onOpen: onOpenEvidence, numberChecks, streaming, asOf, onOpenCell, onShowStep } = useContext(ResearchEvidenceContext);
-  const [openFailed, setOpenFailed] = useState(false);
-  const externalUrl =
-    href && /^https?:\/\//i.test(href)
-      ? (parseCredentialFreeHttpUrl(href)?.href ?? null)
-      : null;
-
-  if (href?.startsWith("#evidence-")) {
-    const evidence = evidenceRefs?.find((ref) => href === `#evidence-${ref.id}`);
-    if (!evidence || !onOpenEvidence) return <span className="loupist-unavailable-citation" title={t("messageResponse.sourceUnavailableInThisReply")}>{children}</span>;
-    // A number link is the control for its own evidence: Rust checked it when the answer finished.
-    const linkText = nodeText(children).trim();
-    const check = checkFor(numberChecks, evidence.id, linkText);
-    if (check) {
-      return <NumberChip check={check} checks={numberChecks} evidence={evidence} evidenceRefs={evidenceRefs ?? []} asOf={asOf}
-        actions={{ onOpenEvidence: (target, cell) => (onOpenCell ? onOpenCell(target, cell) : onOpenEvidence(target)), onShowStep }}>{children}</NumberChip>;
-    }
-    if (streaming && looksLikeNumber(linkText)) return <PendingNumber>{children}</PendingNumber>;
-    const title = evidenceTitle(evidence);
-    const host = sourceIdentityLabel(evidence);
-    const preview = evidencePresentation(evidence);
-    const read = memoryReadForEvidence(evidence, memoryRefs);
-    const label = citationLabel(evidence, evidenceRefs ?? [], read?.title);
-    // Model-written reference numbers can disagree with the retained source list.
-    // Keep the visible number and spoken source number tied to the same evidence.
-    const number = /^\d+$/u.test(linkText) ? citationNumber(evidence, evidenceRefs ?? []) : null;
-    const accessibleLabel = number === null && linkText && !label.toLocaleLowerCase().includes(linkText.toLocaleLowerCase()) ? `${linkText} · ${label}` : label;
-    return <CitationChip evidence={evidence} label={accessibleLabel} title={title} source={host || preview.label} onOpen={(anchor) => onOpenEvidence(evidence, anchor)}>{number ?? children}</CitationChip>;
-  }
+  if (href?.startsWith("#evidence-")) return <EvidenceLink href={href}>{children}</EvidenceLink>;
 
   if (href?.startsWith("#")) {
     return (
@@ -119,18 +103,13 @@ function LoupistMarkdownLink({
     );
   }
 
-  const lensRecordId = href && onLensLink ? lensLinkRecordId(href) : null;
-  if (lensRecordId) {
-    return <LensLinkButton recordId={lensRecordId} className={className} onLensLink={onLensLink}>{children}</LensLinkButton>;
-  }
+  const lensRecordId = href ? lensLinkRecordId(href) : null;
+  if (lensRecordId) return <ProseLink to={{ kind: "lens", recordId: lensRecordId }} className={className} title={t("messageResponse.openLinkedLens")}>{children}</ProseLink>;
 
-  const localPath = href && onOpenFile ? decodedWorkspaceLink(href) : null;
-  if (localPath) {
-    return <a href={href} className={cn("loupist-external-link", className)} data-streamdown="link" title={t("messageResponse.openFile", { localPath: localPath })}
-      onClick={(event) => { event.preventDefault(); onOpenFile?.(localPath); }}
-      onAuxClick={(event) => event.preventDefault()}>{children}<FileIcon aria-hidden="true" /></a>;
-  }
+  const localPath = href ? decodedWorkspaceLink(href) : null;
+  if (localPath) return <ProseLink to={{ kind: "file", path: localPath }} className={className} title={t("messageResponse.openFile", { localPath })}>{children}</ProseLink>;
 
+  const externalUrl = href && /^https?:\/\//i.test(href) ? (parseCredentialFreeHttpUrl(href)?.href ?? null) : null;
   if (!externalUrl) {
     return (
       <span
@@ -143,85 +122,16 @@ function LoupistMarkdownLink({
       </span>
     );
   }
-
-  return (
-    <button
-      type="button"
-      role="link"
-      className={cn("loupist-external-link", className)}
-      data-streamdown="link"
-      title={openFailed ? t("messageResponse.couldNotOpenThisLink") : t("messageResponse.openExternalLink", { externalUrl: externalUrl })}
-      data-open-failed={openFailed || undefined}
-      onClick={(event) => {
-        setOpenFailed(false);
-        // Cmd-click (Ctrl on Windows) opens the system browser; a plain click opens the panel's browser.
-        const external = event.metaKey || event.ctrlKey;
-        void Promise.resolve()
-          .then(() => external ? onOpenLink(externalUrl, { external: true }) : onOpenLink(externalUrl))
-          .catch(() => {
-            setOpenFailed(true);
-          });
-      }}
-      onAuxClick={(event) => {
-        if (event.button !== 1) return;
-        event.preventDefault();
-        void Promise.resolve().then(() => onOpenLink(externalUrl, { external: true })).catch(() => setOpenFailed(true));
-      }}
-    >
-      {children}
-      <ExternalLinkIcon aria-hidden="true" />
-      {openFailed && (
-        <span className="sr-only" role="alert">
-          {t("messageResponse.couldNotOpenThisLink2")}</span>
-      )}
-    </button>
-  );
-}
-
-function LensLinkButton({ recordId, className, onLensLink, children }: { recordId: string; className?: string; onLensLink?: (recordId: string) => void; children?: ReactNode }) {
-  useTranslation("chat");
-  const actions = useContext(LensLinkContext);
-  const state = actions.state?.(recordId) ?? "available";
-  const preview = actions.preview?.(recordId) ?? null;
-  const label = nodeText(children).trim();
-  const title = state === "unresolved" ? t("messageResponse.thisLensIsNotInTheCollection") : state === "archived" ? t("messageResponse.archivedLens") : t("messageResponse.openLinkedLens");
-  const open = () => {
-    if (state === "unresolved" && actions.onUnresolved) actions.onUnresolved(recordId, label);
-    else onLensLink?.(recordId);
-  };
-  const button = <button type="button" role="link" className={cn("loupist-lens-link", state !== "available" && `is-${state}`, className)}
-    data-streamdown="link" title={title} onClick={open}>{children}</button>;
-  if (!preview) return button;
-  return <HoverCard.Root openDelay={300} closeDelay={80}>
-    <HoverCard.Trigger asChild>{button}</HoverCard.Trigger>
-    <HoverCard.Portal>
-      <HoverCard.Content className="lens-link-preview" sideOffset={6}>
-        <strong>{preview.title}</strong>
-        {preview.detail ? <p>{preview.detail}</p> : null}
-      </HoverCard.Content>
-    </HoverCard.Portal>
-  </HoverCard.Root>;
+  return <ProseLink to={{ kind: "link", url: externalUrl }} className={className} title={t("messageResponse.openExternalLink", { externalUrl })}>{children}</ProseLink>;
 }
 
 export type MessageResponseProps = Omit<
   ComponentProps<typeof Streamdown>,
   "plugins"
 > & {
-  onOpenLink?: (url: string, options?: OpenLinkOptions) => Promise<void> | void;
-  onOpenFile?: (path: string) => void;
-  onLensLink?: (recordId: string) => void;
-  lensLinks?: LensLinkActions;
-  evidenceRefs?: ChatEvidenceRef[];
-  memoryRefs?: MemoryRef[];
-  onOpenEvidence?: (evidence: ChatEvidenceRef, anchor?: HTMLElement) => void;
-  /** Rust's checks of this answer's number links; links without one stay numbered citations. */
+  /** Rust's checks of this text's number links; links without one stay numbered citations. */
   numberChecks?: NumberCheck[];
-  /** The answer's as-of date (`YYYY-MM-DD`). */
-  asOf?: string;
-  /** Opens Evidence at a matched data cell. */
-  onOpenEvidenceCell?: (evidence: ChatEvidenceRef, cell?: EvidenceCell) => void;
-  /** Reveals a calculation's or query's step inline. */
-  onShowStep?: (evidence: ChatEvidenceRef) => void;
+  /** Relative file links resolve inside this workspace; without it they are not links. */
   workspacePath?: string;
   workspaceBasePath?: string;
   mermaidPlugin?: DiagramPlugin;
@@ -280,69 +190,38 @@ export const MessageResponse = memo(
     children,
     linkSafety,
     translations,
-    onOpenLink,
-    onOpenFile,
-    onLensLink,
-    lensLinks,
-    evidenceRefs,
-    memoryRefs,
-    onOpenEvidence,
     numberChecks,
-    asOf,
-    onOpenEvidenceCell,
-    onShowStep,
     workspacePath,
     workspaceBasePath,
     mermaidPlugin,
     ...props
   }: MessageResponseProps) => {
     const { t: translate } = useTranslation("chat");
-    // Streamdown retains unchanged Markdown blocks, including their link nodes.
-    // Their event handlers must follow the current workspace actions.
-    const linkActions = useRef({ onOpenLink, onOpenFile, onLensLink, onOpenEvidence, evidenceRefs });
-    linkActions.current = { onOpenLink, onOpenFile, onLensLink, onOpenEvidence, evidenceRefs };
-    const hasLinkAction = Boolean(onOpenLink);
-    const hasFileAction = Boolean(onOpenFile);
-    const hasLensAction = Boolean(onLensLink);
+    const hasLinkAction = useOpen() !== null;
+    const hasFileAction = hasLinkAction && workspacePath !== undefined;
     const contentPlugins = useContentPlugins(typeof children === "string" ? children : "");
     const rehypePlugins = useMemo(() => {
       // A Korean particle stays on the line of the number it follows.
-      if (!hasFileAction && !hasLensAction) return [...Object.values(defaultRehypePlugins), keepNumberParticles];
+      if (!hasLinkAction) return [...Object.values(defaultRehypePlugins), keepNumberParticles];
       const sanitizer = defaultRehypePlugins.sanitize;
       // Normalize Windows drive links before the sanitizer treats the drive as
       // an unsupported protocol. Keep every default rule, extending only href;
       // the URL transform and link component validate the relative path again.
       const fileSanitizer: typeof sanitizer = Array.isArray(sanitizer) ? [sanitizer[0], {
         ...sanitizer[1],
-        protocols: { ...sanitizer[1]?.protocols, href: [...(sanitizer[1]?.protocols?.href ?? []), ...(hasFileAction ? [WORKSPACE_LINK_PROTOCOL] : []), ...(hasLensAction ? [LENS_LINK_PROTOCOL] : [])] },
+        protocols: { ...sanitizer[1]?.protocols, href: [...(sanitizer[1]?.protocols?.href ?? []), ...(hasFileAction ? [WORKSPACE_LINK_PROTOCOL] : []), ...(hasLinkAction ? [LENS_LINK_PROTOCOL] : [])] },
       }] : sanitizer;
       // Streamdown's processor cache keys plugins by their name and options.
       // Explicit options keep each Loupist and relative Markdown base separate.
       const fileLinks: typeof sanitizer = [workspaceLinksPlugin, { rootPath: workspacePath, basePath: workspaceBasePath }];
       return [defaultRehypePlugins.raw, ...(hasFileAction ? [fileLinks] : []), fileSanitizer, defaultRehypePlugins.harden, keepNumberParticles];
-    }, [hasFileAction, hasLensAction, workspacePath, workspaceBasePath]);
-    const fileUrlTransform = useMemo(() => hasFileAction || hasLensAction ? ((url: string, key: string, node: Parameters<typeof defaultUrlTransform>[2]) =>
-      key === "href" && ((hasFileAction && decodedWorkspaceLink(url)) || (hasLensAction && lensLinkRecordId(url)))
-        ? url : defaultUrlTransform(url, key, node)) : undefined, [hasFileAction, hasLensAction]);
-    const resolvedComponents = useMemo(
-      () =>
-        hasLinkAction || hasLensAction
-          ? {
-              ...components,
-              a: (linkProps: MarkdownLinkProps) => (
-                <LoupistMarkdownLink
-                  {...linkProps}
-                  onOpenLink={(url, options) => options ? linkActions.current.onOpenLink?.(url, options) : linkActions.current.onOpenLink?.(url)}
-                  onOpenFile={hasFileAction ? (path) => linkActions.current.onOpenFile?.(path) : undefined}
-                  onLensLink={hasLensAction ? (recordId) => linkActions.current.onLensLink?.(recordId) : undefined}
-                />
-              ),
-            }
-          : components,
-      // Evidence updates reach retained links through context. Keep this
-      // component stable so continued text does not replace a focused citation.
-      [components, hasLinkAction, hasFileAction, hasLensAction],
-    );
+    }, [hasFileAction, hasLinkAction, workspacePath, workspaceBasePath]);
+    const fileUrlTransform = useMemo(() => hasLinkAction ? ((url: string, key: string, node: Parameters<typeof defaultUrlTransform>[2]) =>
+      key === "href" && ((hasFileAction && decodedWorkspaceLink(url)) || lensLinkRecordId(url))
+        ? url : defaultUrlTransform(url, key, node)) : undefined, [hasFileAction, hasLinkAction]);
+    // Links read their actions and evidence from context, so retained blocks never
+    // see a new component and a focused citation is never replaced.
+    const resolvedComponents = useMemo(() => hasLinkAction ? { ...components, a: LoupistMarkdownLink } : components, [components, hasLinkAction]);
     const streamdownPlugins = useMemo(
       () =>
         mermaidPlugin
@@ -384,14 +263,11 @@ export const MessageResponse = memo(
     }), [translate, translations]);
 
     const streaming = Boolean(props.isAnimating);
-    const evidenceContext = useMemo(() => ({ references: evidenceRefs, memoryRefs, onOpen: onOpenEvidence, numberChecks, streaming, asOf, onOpenCell: onOpenEvidenceCell, onShowStep }),
-      [evidenceRefs, memoryRefs, onOpenEvidence, numberChecks, streaming, asOf, onOpenEvidenceCell, onShowStep]);
-    const lensLinkContext = useMemo(() => lensLinks ?? {}, [lensLinks]);
+    const textBlock = useMemo(() => ({ numberChecks, streaming }), [numberChecks, streaming]);
     return (
-      <ResearchEvidenceContext.Provider value={evidenceContext}>
-      <LensLinkContext.Provider value={lensLinkContext}>
+      <TextBlockContext.Provider value={textBlock}>
       <Streamdown
-        key={`${Boolean(onLensLink)}:${workspacePath ?? ""}:${workspaceBasePath ?? ""}`}
+        key={`${workspacePath ?? ""}:${workspaceBasePath ?? ""}`}
         className={cn(
           "w-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
           className,
@@ -400,14 +276,13 @@ export const MessageResponse = memo(
         translations={controlTranslations}
         rehypePlugins={rehypePlugins}
         urlTransform={fileUrlTransform}
-        linkSafety={onOpenLink ? disabledLinkSafety : linkSafety}
+        linkSafety={hasLinkAction ? disabledLinkSafety : linkSafety}
         plugins={streamdownPlugins}
         {...props}
       >
         {children}
       </Streamdown>
-      </LensLinkContext.Provider>
-      </ResearchEvidenceContext.Provider>
+      </TextBlockContext.Provider>
     );
   },
 );

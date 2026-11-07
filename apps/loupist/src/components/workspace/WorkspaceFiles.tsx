@@ -1,9 +1,11 @@
 import { formatNumber } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftIcon, ChevronRightIcon, FileIcon, FileSpreadsheetIcon, FolderIcon, FolderOpenIcon, RefreshCwIcon, SearchIcon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { SafeMessageResponse } from "../chat/SafeMessageResponse";
+import { OpenProvider, useOpener } from "../navigation/Open";
+import type { Open } from "../../chat/navigation";
 import { errorMessage } from "../../lib/errors";
 import type { LoupistBridge, WorkspaceDirectory, WorkspaceFile } from "../../types";
 import { delimitedPreview, PREVIEW_COLUMNS, PREVIEW_ROWS } from "./delimitedPreview";
@@ -14,7 +16,6 @@ type Props = {
   bridge: LoupistBridge; loupistId: string; rootPath?: string; path: string; filePath?: string;
   onNavigate: (path: string, filePath?: string) => void;
   onAsk: (file: WorkspaceFile) => void;
-  onOpenLink: (url: string) => void;
 };
 const parentPath = (path: string) => path.split("/").slice(0, -1).join("/");
 const bytes = (size: number) => size < 1024 ? t("workspaceFiles.bytes", { size: size }) : size < 1048576 ? t("workspaceFiles.kilobytes", { value1: formatNumber(size / 1024, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }) : t("workspaceFiles.megabytes", { value1: formatNumber(size / 1048576, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) });
@@ -24,8 +25,14 @@ const rasterPreview = (file: WorkspaceFile) => !file.truncated && file.image_dat
 
 type LoadedItem = { key: string; value: WorkspaceDirectory | WorkspaceFile };
 
-export function WorkspaceFiles({ bridge, loupistId, rootPath, path, filePath, onNavigate, onAsk, onOpenLink }: Props) {
+export function WorkspaceFiles({ bridge, loupistId, rootPath, path, filePath, onNavigate, onAsk }: Props) {
   useTranslation("chat");
+  const parent = useOpener();
+  // A file link inside a file moves this browser; everything else opens as anywhere else.
+  const open = useCallback<Open>(async (to, how) => {
+    if (to.kind === "file" && to.path && !how?.external) { onNavigate(parentPath(to.path), to.path); return "opened"; }
+    return parent ? parent.open(to, how) : "unavailable";
+  }, [onNavigate, parent]);
   const selection = JSON.stringify([loupistId, filePath ? "file" : "directory", filePath ?? path]);
   const [loaded, setLoaded] = useState<LoadedItem | null>(null);
   const [failure, setFailure] = useState<{ key: string; message: string } | null>(null);
@@ -123,7 +130,7 @@ export function WorkspaceFiles({ bridge, loupistId, rootPath, path, filePath, on
         {rasterPreview(file) ? <WorkspaceImage key={`${selection}:${file.content_sha256}`} file={file} src={rasterPreview(file)!} onReveal={() => void reveal()} />
           : file.binary || file.content === null ? <div className="reader-empty"><p>{t("workspaceFiles.noTextPreviewForThisFileUseShowIn")}</p><Button type="button" variant="outline" size="sm" onClick={() => void reveal()}>{t("workspaceFiles.openInFileManager")}</Button></div>
           : tabular && !source ? <DelimitedFilePreview file={file} header={headerViews[selection] ?? !/header=absent/i.test(file.media_type)} onHeaderChange={(header) => setHeaderViews((current) => ({ ...current, [selection]: header }))} />
-          : markdown && !source ? <SafeMessageResponse text={file.content} isAnimating={false} onOpenLink={onOpenLink} workspacePath={rootPath} workspaceBasePath={parentPath(file.path)} onOpenFile={(next) => onNavigate(parentPath(next), next)} />
+          : markdown && !source ? <OpenProvider open={open}><SafeMessageResponse text={file.content} isAnimating={false} workspacePath={rootPath} workspaceBasePath={parentPath(file.path)} /></OpenProvider>
           : <pre className="reader-source" data-quote-source={`file:${file.path}`}><code>{file.content}</code></pre>}
       </div>
     </> : null}

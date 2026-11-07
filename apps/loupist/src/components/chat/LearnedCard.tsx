@@ -6,6 +6,7 @@ import { errorMessage } from "../../lib/errors";
 import { Button } from "../ui/button";
 import { useFixMemory } from "../memory/fixMemory";
 import { pageTitle } from "../memory/PageReader";
+import { useGo } from "../navigation/Open";
 
 const t = i18n.getFixedT(null, "chat");
 const CHANGED = ["added", "replaced", "retired"] as const;
@@ -16,15 +17,15 @@ const excerpt = (section: SectionView | undefined) => {
   return text.length > 140 ? `${text.slice(0, 140).trimEnd()}…` : text;
 };
 
-export function LearnedCard({ id, bridge, loupistId, digest, onOpenPage, onChanged }: {
+export function LearnedCard({ id, bridge, loupistId, digest, onChanged }: {
   id: string;
   bridge?: LoupistBridge;
   loupistId: string;
   digest: LearnedDigest;
-  onOpenPage: (recordId: string) => void;
   onChanged?: () => void;
 }) {
   useTranslation("chat");
+  const go = useGo();
   const fix = useFixMemory();
   const [pages, setPages] = useState<ReadonlyMap<string, PageView>>(new Map());
   const [forgotten, setForgotten] = useState<ReadonlyMap<string, { opId: string; heading: string }>>(new Map());
@@ -73,7 +74,7 @@ export function LearnedCard({ id, bridge, loupistId, digest, onOpenPage, onChang
       const changes: Change[] = page.outcomes.flatMap(outcome => CHANGED.includes(outcome.outcome as Change["outcome"]) && outcome.key ? [{ opId: outcome.opId, key: outcome.key, outcome: outcome.outcome as Change["outcome"] }] : []);
       return <section key={page.recordId} className="learned-page" data-learned-page={page.recordId}>
         <header>
-          <button type="button" className="learned-page-title" onClick={() => onOpenPage(page.recordId)}>{pageTitle(view ?? page)}</button>
+          <button type="button" className="learned-page-title" onClick={() => go?.({ kind: "lens", recordId: page.recordId })}>{pageTitle(view ?? page)}</button>
           <span className="learned-page-kind">{i18n.t(`knowledge:pageReader.kind.${page.kind}`)}{page.created ? ` · ${t("learnedCard.new")}` : ""}</span>
         </header>
         <ul>

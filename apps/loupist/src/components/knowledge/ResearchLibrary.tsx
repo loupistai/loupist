@@ -16,12 +16,12 @@ type Props = {
   compact?: boolean; bridge: LoupistBridge; location: KnowledgeLocation; query: string;
   onQueryChange: (query: string) => void; refreshKey?: number;
   onOpen: (location: KnowledgeLocation) => void; onPatch: (location: KnowledgeLocation) => void;
-  onAsk: (pin: KnowledgePin, threadId?: string) => void; onOpenLink?: (url: string) => void | Promise<void>;
+  onAsk: (pin: KnowledgePin, threadId?: string) => void;
   onChanged?: () => void;
 };
 
 /** Journal entries and the Loupist's research notes share one Library tab. */
-export function ResearchLibrary({ bridge, location, query, onQueryChange, refreshKey = 0, compact = false, onOpen, onPatch, onAsk, onOpenLink, onChanged }: Props) {
+export function ResearchLibrary({ bridge, location, query, onQueryChange, refreshKey = 0, compact = false, onOpen, onPatch, onAsk, onChanged }: Props) {
   const { t } = useTranslation("knowledge");
   const [records, setRecords] = useState<ResearchRecord[]>([]);
   const [journals, setJournals] = useState<JournalRecord[]>([]);
@@ -76,6 +76,6 @@ export function ResearchLibrary({ bridge, location, query, onQueryChange, refres
         <ul aria-label={t("researchLibrary.savedResearch")}>{records.map(record => <li key={record.id}><Button variant="ghost" className="research-library-row" data-research-id={record.id} aria-current={record.id === selectedId ? "true" : undefined} onClick={() => onOpen({ loupistId: location.loupistId, surface: "note", objectId: record.id, selection: { kind: "research", recordId: record.id }, view: { ...location.view, readerScrollTop: 0, focusResearchId: record.id } })}><span className="memory-rail-copy"><strong>{record.title || t("journal.researchNotes")}</strong>{record.summary && record.summary !== record.title ? <span className="source-summary">{record.summary}</span> : null}<small><time dateTime={record.recordedAt}>{Number.isNaN(Date.parse(record.recordedAt)) ? record.recordedAt : formatDate(new Date(record.recordedAt))}</time></small></span></Button></li>)}</ul>
       </section>
     </div>
-    {selectedId && !compact ? <div ref={readerRef} className="research-reader-pane" onScroll={event => patchView({ readerScrollTop: event.currentTarget.scrollTop })}><div className="research-reader-toolbar"><Button variant="ghost" size="sm" aria-label={t("researchLibrary.closeRecord")} onClick={() => { restoreLibraryFocus.current = true; onPatch({ loupistId: location.loupistId, surface: "note", view: { ...location.view, readerScrollTop: 0 } }); }}><ArrowLeftIcon />{t("journal.backToNotes")}</Button></div><ResearchReader bridge={bridge} location={location} onOpen={onOpen} onAsk={onAsk} onOpenLink={onOpenLink} refreshKey={refreshKey} onChanged={changed} onReady={() => { if (readerRef.current) readerRef.current.scrollTop = location.view?.readerScrollTop ?? 0; }} /></div> : null}
+    {selectedId && !compact ? <div ref={readerRef} className="research-reader-pane" onScroll={event => patchView({ readerScrollTop: event.currentTarget.scrollTop })}><div className="research-reader-toolbar"><Button variant="ghost" size="sm" aria-label={t("researchLibrary.closeRecord")} onClick={() => { restoreLibraryFocus.current = true; onPatch({ loupistId: location.loupistId, surface: "note", view: { ...location.view, readerScrollTop: 0 } }); }}><ArrowLeftIcon />{t("journal.backToNotes")}</Button></div><ResearchReader bridge={bridge} location={location} onOpen={onOpen} onAsk={onAsk} refreshKey={refreshKey} onChanged={changed} onReady={() => { if (readerRef.current) readerRef.current.scrollTop = location.view?.readerScrollTop ?? 0; }} /></div> : null}
   </div>;
 }

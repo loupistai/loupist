@@ -50,10 +50,6 @@ export const EVIDENCE_HISTORY_LIMIT = 50;
 /** The chat mini map is a fixed tab outside the session tabs. */
 export const CHAT_MAP_TAB_ID = "chat-map";
 
-/** Panel content is what a person reads or keeps; computation output stays beside its step. */
-export const isPanelEvidence = (evidence: ChatEvidenceRef) =>
-  evidence.kind === "original" || evidence.kind === "discovery" || evidence.kind === "local_file";
-
 export const evidenceEntry = (evidence: ChatEvidenceRef, step?: EvidenceStepLink): EvidenceEntry => ({
   key: `evidence:${evidence.id}`,
   kind: "evidence",

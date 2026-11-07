@@ -2,12 +2,13 @@ import { formatNumber } from "@/i18n/format";
 import { formatDateTime } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
-import { ExternalLinkIcon, FileTextIcon } from "lucide-react";
+import { FileTextIcon } from "lucide-react";
 import type { ChatEvidenceRef } from "../../types";
 import { evidenceCoverage, evidenceExcerptParts, evidencePresentation, evidenceTitle } from "../../chat/evidence";
 import { useMemoryPreview } from "../../chat/memoryPreview";
 import { parseCredentialFreeHttpUrl } from "../../lib/credentialFreeUrl";
 import { Button } from "../ui/button";
+import { useOpenProps } from "../navigation/Open";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -34,13 +35,12 @@ const readableTime = (value: string) => {
 
 /**
  * The retained copy of a citation, opened at its host-selected passage. The live page is
- * one click further (`onOpenLink` opens or reuses a browser tab in the panel).
+ * one click further: it opens or reuses a browser tab in the panel, or the system browser on Cmd-click.
  */
-export function WorkspaceEvidence({ evidence, step, onRevealStep, onOpenLink }: {
+export function WorkspaceEvidence({ evidence, step, onRevealStep }: {
   evidence: ChatEvidenceRef;
   step?: { label: string; itemId?: string; cell?: { pointer: string; key: string; value: string } };
   onRevealStep?: (itemId: string) => void;
-  onOpenLink: (url: string) => void;
 }) {
   useTranslation("chat");
   const reader = useRef<HTMLElement>(null);
@@ -66,6 +66,7 @@ export function WorkspaceEvidence({ evidence, step, onRevealStep, onOpenLink }: 
   const view = evidencePresentation(evidence);
   const title = evidenceTitle(evidence);
   const sourceUrl = evidence.url ? parseCredentialFreeHttpUrl(evidence.url) : null;
+  const livePage = useOpenProps({ kind: "link", url: sourceUrl?.href ?? "" });
   const notRetained = !excerptParts && memoryText === null && !evidence.excerpt && (evidence.kind === "original" || evidence.kind === "local_file");
   return <article ref={reader} tabIndex={-1} className="workspace-evidence" aria-label={t("workspaceEvidence.sourceLabel", { title: title })} onScroll={excerptParts ? trackPassage : undefined}>
     <header>
@@ -77,7 +78,7 @@ export function WorkspaceEvidence({ evidence, step, onRevealStep, onOpenLink }: 
     <div className="evidence-actions">
       {excerptParts && awayFromPassage ? <Button type="button" variant="ghost" size="sm" onClick={() => match.current?.scrollIntoView({ block: "center" })}>{t("workspaceEvidence.jumpToCitedPassage")}</Button> : null}
       {/* The status row above names the host; the button keeps the full address in its tooltip. */}
-      {sourceUrl ? <Button type="button" variant="outline" size="sm" title={sourceUrl.href} onClick={() => onOpenLink(sourceUrl.href)}><ExternalLinkIcon />{t("workspaceEvidence.openLivePage")}</Button> : null}
+      {sourceUrl && livePage.available ? <Button type="button" variant="outline" size="sm" title={sourceUrl.href} {...livePage.props}>{livePage.icon}{t("workspaceEvidence.openLivePage")}</Button> : null}
     </div>
     {notRetained ? <div className="evidence-notices" role="alert"><p>{t("chatWorkspacePanel.sourceNotRetained")}</p></div> : null}
     <dl className="evidence-metadata">

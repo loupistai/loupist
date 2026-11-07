@@ -9,7 +9,7 @@ function renderMessage(deliveredRunIds?: string[]) {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   vi.spyOn(bridge, "inboxList").mockResolvedValue({ items: [briefing], nextCursor: null });
   const onSettled = vi.fn();
-  render(<MorningMessage bridge={bridge} loupistId="loupist-quality" loupistName="Quality Compounder" onAsk={vi.fn()} onOpenMapNode={vi.fn()} onOpenMap={vi.fn()} onOpenJournal={vi.fn()} deliveredRunIds={deliveredRunIds} onSettled={onSettled} />);
+  render(<MorningMessage bridge={bridge} loupistId="loupist-quality" loupistName="Quality Compounder" onAsk={vi.fn()} deliveredRunIds={deliveredRunIds} onSettled={onSettled} />);
   return onSettled;
 }
 

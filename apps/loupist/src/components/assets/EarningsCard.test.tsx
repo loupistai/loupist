@@ -183,7 +183,7 @@ it("Open the grid shows the whole reverse-DCF grid in a dialog; Change the rates
   const title = within(dialog).getByRole("heading", { name: /^What the price implies/u });
   const [close, statements] = snapshot.implied!.evidence;
   await user.click(within(title).getByRole("button", { name: new RegExp(`^Source \\d+: ${close!.title}`, "u") }));
-  expect(onOpenEvidence).toHaveBeenCalledWith(close);
+  expect(onOpenEvidence).toHaveBeenCalledWith(close, expect.objectContaining({ title: close!.title }));
   const inputs = dialog.querySelector<HTMLElement>(".sensitivity-inputs")!;
   expect(inputs).toHaveTextContent(/Free cash flow FY2025 \$402m/u);
   expect(within(inputs).getByRole("button", { name: new RegExp(`^Source \\d+: ${statements!.title}`, "u") })).toBeVisible();

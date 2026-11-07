@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import i18n from "@/i18n";
 // Citation links open a delayed HoverCard; skipping hover keeps its timer from firing after teardown.
@@ -8,6 +8,9 @@ import { evidenceFixture } from "../../test/evidenceFixtures";
 import { TooltipProvider } from "../ui/tooltip";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { ChatMessageCard } from "./ChatMessageCard";
+import { renderWithOpen } from "../../test/open";
+import type { ChatDestination, Open } from "../../chat/navigation";
+import type { Mock } from "vitest";
 
 const source: KnowledgeReference = { kind: "source", recordId: "source-record", revisionId: "source-v1", objectId: "source-original", spanId: "passage-1", receiptId: "selected-receipt" };
 const read = (read_ref: string, knowledge = source): MemoryRef => ({ read_ref, kind: "source", title: "Annual report", excerpt: "Original passage", access: "exact_read", knowledge });
@@ -15,10 +18,14 @@ const answer = (extra: Partial<ChatMessage> = {}): ChatMessage => ({ id: "answer
 const user = () => userEvent.setup({ skipHover: true });
 
 function renderAnswer(message: ChatMessage, extra: Partial<ComponentProps<typeof ChatMessageCard>> = {}) {
-  const props = { message, loupistId: "loupist-a", chatId: "chat-a", loupistName: "Loupist", onOpenMemory: vi.fn(), onOpenMemoryPage: vi.fn(), onOpenArtifact: vi.fn(), onOpenLink: vi.fn(), onReadAttachment: vi.fn(), ...extra };
-  const view = render(<TooltipProvider><ChatMessageCard {...props} /></TooltipProvider>);
-  return { ...props, view };
+  const props = { message, loupistId: "loupist-a", chatId: "chat-a", loupistName: "Loupist", onReadAttachment: vi.fn(), ...extra };
+  const { open, ...view } = renderWithOpen(<TooltipProvider><ChatMessageCard {...props} /></TooltipProvider>);
+  return { ...props, view, open };
 }
+
+/** What the answer handed up to the app, of one kind. */
+const opened = <K extends ChatDestination["kind"]>(open: Mock<Open>, kind: K) =>
+  open.mock.calls.map(([to]) => to).filter((to): to is Extract<ChatDestination, { kind: K }> => to.kind === kind);
 
 it("draws a setup card from a completed connection_setup step and asks the question again once ready", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
@@ -63,10 +70,9 @@ it.each([false, true])("keeps one stable research summary from first call to set
 
 it("foregrounds the source of a settled multi-stage answer and opens it without fetching tool output", async () => {
   const report = evidenceFixture();
-  const onOpenEvidence = vi.fn();
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const loadDetail = vi.spyOn(bridge, "chatActivityRead");
-  renderAnswer(answer({ content: "Operating cash flow increased.", evidence_refs: [report], progress: {
+  const { open } = renderAnswer(answer({ content: "Operating cash flow increased.", evidence_refs: [report], progress: {
     startedAtMs: 0, finishedAtMs: 5,
     plan: { items: [
       { id: "read", label: "Review the filing", status: "done", activatedAtMs: 1 },
@@ -76,7 +82,7 @@ it("foregrounds the source of a settled multi-stage answer and opens it without 
       { id: "filing", startedAtMs: 2, kind: "tool", operation: "read", category: "web", action: "Read report", status: "succeeded", resultIds: [report.id] },
       { id: "cmd", startedAtMs: 4, kind: "tool", operation: "execute", category: "compute", action: "Ran command", status: "succeeded", target: "private-analysis.sh", detailId: "raw-output" },
     ],
-  } }), { bridge, onOpenEvidence });
+  } }), { bridge });
   const digest = within(screen.getByLabelText("Work progress"));
   const toggle = digest.getByRole("button");
   expect(toggle).toHaveAccessibleName(/1 source.*investor.apple.com/i);
@@ -86,7 +92,7 @@ it("foregrounds the source of a settled multi-stage answer and opens it without 
   await user().click(toggle);
   expect(digest.getByText("Reconcile the change")).toBeVisible();
   await user().click(digest.getByRole("button", { name: report.title }));
-  expect(onOpenEvidence.mock.calls[0]?.[0]).toBe(report);
+  expect(opened(open, "evidence")[0]?.evidence).toBe(report);
   expect(loadDetail).not.toHaveBeenCalled();
 });
 
@@ -98,13 +104,13 @@ it("lists distinct exact Memory reads in progress without changing the saved rec
     read("other-version", { ...source, revisionId: "source-v2" }),
   ];
   const before = structuredClone(refs);
-  const { message, onOpenMemory } = renderAnswer(answer({ memory_refs: refs }));
+  const { message, open } = renderAnswer(answer({ memory_refs: refs }));
   await user().click(within(screen.getByLabelText("Work progress")).getByRole("button"));
   await user().click(screen.getByText("Consulted 2 saved notes"));
   const used = screen.getByLabelText("Used in this answer");
   expect(within(used).getAllByRole("listitem")).toHaveLength(2);
   expect(within(used).queryByText("Search hit")).toBeNull();
-  expect(onOpenMemory).not.toHaveBeenCalled();
+  expect(open).not.toHaveBeenCalled();
   expect(message.memory_refs).toEqual(before);
 });
 
@@ -159,18 +165,17 @@ it.each([
   [String.raw`\\?\C:\Research`, "c:/research/reports/summary.md"],
   [String.raw`\\?\UNC\Server\Share\Research`, "//server/share/research/reports/summary.md"],
 ])("opens workspace file links for %s and keeps external links separate", async (workspacePath, href) => {
-  const { onOpenLink, onOpenFile } = renderAnswer(answer({ content: `[Report](${href}) and [Source](https://example.com/report).` }), { workspacePath, onOpenFile: vi.fn() });
+  const { open } = renderAnswer(answer({ content: `[Report](${href}) and [Source](https://example.com/report).` }), { workspacePath });
   await user().click(await screen.findByRole("link", { name: "Report" }));
-  expect(onOpenFile).toHaveBeenCalledWith("reports/summary.md");
-  expect(onOpenLink).not.toHaveBeenCalled();
+  expect(open).toHaveBeenCalledExactlyOnceWith({ kind: "file", path: "reports/summary.md" }, undefined);
   await user().click(screen.getByRole("link", { name: "Source" }));
-  expect(onOpenLink).toHaveBeenCalledWith("https://example.com/report");
+  expect(open).toHaveBeenLastCalledWith({ kind: "link", url: "https://example.com/report" }, undefined);
 });
 
-it("opens a Lens link from the answer in this Loupist's Lens", async () => {
-  const { onOpenMemory } = renderAnswer(answer({ content: "Use [Cash conversion](lens:rec_0123456789abcdef0123456789abcdef)." }));
+it("opens a Lens link from the answer as a Lens record, the one way chat opens Lens", async () => {
+  const { open } = renderAnswer(answer({ content: "Use [Cash conversion](lens:rec_0123456789abcdef0123456789abcdef)." }));
   await user().click(await screen.findByRole("link", { name: "Cash conversion" }));
-  expect(onOpenMemory).toHaveBeenCalledWith(expect.objectContaining({ loupistId: "loupist-a", surface: "lens", recordId: "rec_0123456789abcdef0123456789abcdef" }), "Lens");
+  expect(open).toHaveBeenCalledWith({ kind: "lens", recordId: "rec_0123456789abcdef0123456789abcdef" }, undefined);
 });
 
 describe("response details", () => {
@@ -205,15 +210,15 @@ it("shows only explicitly delivered, successfully written files as file chips, w
   ] } as ChatMessage["progress"];
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const reveal = vi.spyOn(bridge, "workspaceReveal").mockResolvedValueOnce().mockRejectedValueOnce(new Error("File not found."));
-  const { onOpenFile } = renderAnswer(answer({
+  const { open } = renderAnswer(answer({
     content: "analysis.py\n\n`[Script](analysis.py)`\n\n![Preview](analysis.py)\n\n[Failed](reports/failed.csv)\n\n[Report][download]\n\n[download]: reports/summary.csv",
     progress,
-  }), { workspacePath: "/research", onOpenFile: vi.fn(), bridge });
+  }), { workspacePath: "/research", bridge });
   const files = screen.getByRole("group", { name: "Files" });
   expect(screen.queryByLabelText("Outputs")).toBeNull();
   await user().click(within(files).getByRole("button", { name: "summary.csv" }));
   expect(within(files).queryByRole("button", { name: /analysis.py|failed.csv/ })).toBeNull();
-  expect(onOpenFile).toHaveBeenCalledExactlyOnceWith("reports/summary.csv");
+  expect(open).toHaveBeenCalledExactlyOnceWith({ kind: "file", path: "reports/summary.csv" }, undefined);
   // The ⋯ menu reveals the file through the workspace command, scoped to this Loupist.
   await user().click(within(files).getByRole("button", { name: "More for summary.csv" }));
   await user().click(await screen.findByRole("menuitem", { name: "Show in Finder" }));
@@ -243,7 +248,7 @@ it("summarizes a saved Source and opens it", async () => {
   // A single saved Source opens directly from its receipt segment; the list stays open for the rest.
   await user().click(within(receipt).getByRole("button", { name: "Saved 1 source" }));
   expect(screen.getByRole("list", { name: "Saved in this answer" })).toBeVisible();
-  expect(props.onOpenMemory).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ surface: "source", recordId: "source-record" }), "Filing excerpt");
+  expect(props.open).toHaveBeenCalledExactlyOnceWith({ kind: "memory", location: expect.objectContaining({ surface: "source", recordId: "source-record" }), title: "Filing excerpt" }, undefined);
 });
 
 it("says when nothing new was saved, and adds no receipt to a private chat or a running answer", () => {
@@ -253,7 +258,7 @@ it("says when nothing new was saved, and adds no receipt to a private chat or a 
   const privateAnswer = renderAnswer(answer({ id: "private" }));
   expect(screen.queryByRole("navigation", { name: "What this answer used and saved" })).toBeNull();
   privateAnswer.view.unmount();
-  renderAnswer(answer({ id: "live", status: "streaming", memory_refs: [read("selected-read")], evidence_refs: [evidenceFixture()] }), { onOpenEvidence: vi.fn() });
+  renderAnswer(answer({ id: "live", status: "streaming", memory_refs: [read("selected-read")], evidence_refs: [evidenceFixture()] }));
   expect(screen.queryByRole("navigation", { name: "What this answer used and saved" })).toBeNull();
   // Sources arrive with the settled answer, in the row where its actions appear.
   expect(screen.queryByLabelText("Research sources")).toBeNull();
@@ -269,18 +274,20 @@ it("cites external grounding once, opens it, and routes saved reads to Memory", 
     content: evidence.map((item) => `[${item.title}](#evidence-${item.id})`).join(" "),
     evidence_refs: [...evidence, web],
     memory_refs: [read("source-read")],
-  }), { onOpenEvidence: vi.fn() });
+  }));
 
   const sources = screen.getByLabelText("Research sources");
   await user().click(within(sources).getByText("Sources (2)"));
   expect(within(sources).getAllByRole("listitem")).toHaveLength(2);
+  // Source rows open in the side panel, and say so with the panel icon.
+  for (const row of within(sources).getAllByRole("button")) expect(row.querySelector("[data-open-icon]")).toHaveAttribute("data-open-icon", "panel");
   expect(screen.queryByRole("button", { name: /^Source 3:/ })).toBeNull();
   await user().click(screen.getByRole("button", { name: "Source 2: Market quote" }));
-  expect(props.onOpenEvidence).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: connection.id }), undefined);
+  expect(opened(props.open, "evidence")).toEqual([expect.objectContaining({ evidence: expect.objectContaining({ id: connection.id }) })]);
   await user().click(screen.getByRole("button", { name: "world read · Memory: Annual report" }));
-  expect(props.onOpenMemory).toHaveBeenCalledWith(expect.objectContaining({ surface: "source", recordId: "source-record" }), "Annual report");
+  expect(props.open).toHaveBeenLastCalledWith({ kind: "memory", location: expect.objectContaining({ surface: "source", recordId: "source-record" }), title: "Annual report" }, undefined);
   await user().click(screen.getByRole("button", { name: "Result: World search" }));
-  expect(props.onOpenEvidence).toHaveBeenCalledTimes(1);
+  expect(opened(props.open, "evidence")).toHaveLength(1);
   expect(within(screen.getByLabelText("Work progress")).getByLabelText("Tool result")).toHaveTextContent(search.excerpt);
 });
 
@@ -301,7 +308,7 @@ it("opens a quote basket from the source list and the citation without the raw r
   const props = renderAnswer(answer({
     content: `Quotes [Equity price quote](#evidence-${quote.id}) and [Cut quote](#evidence-${truncated.id}).`,
     evidence_refs: [quote, truncated],
-  }), { onOpenEvidence: vi.fn() });
+  }));
 
   const sources = screen.getByLabelText("Research sources");
   await user().click(within(sources).getByText("Sources (2)"));
@@ -319,14 +326,14 @@ it("opens a quote basket from the source list and the citation without the raw r
   expect(receipt).toHaveTextContent("Retrieved");
   expect(receipt).toHaveTextContent("Yahoo Finance");
   expect(receipt).not.toHaveTextContent("Quote time");
-  expect(props.onOpenEvidence).not.toHaveBeenCalled();
+  expect(opened(props.open, "evidence")).toHaveLength(0);
   await user().keyboard("{Escape}");
 
   await user().click(within(sources).getByRole("button", { name: /Cut quote/ }));
   const cutReceipt = await screen.findByRole("dialog", { name: "Price quotes" });
   expect(cutReceipt).toHaveTextContent("No complete quote was in the saved result.");
   expect(within(cutReceipt).queryByRole("term", { name: "Last price" })).toBeNull();
-  expect(props.onOpenEvidence).not.toHaveBeenCalled();
+  expect(opened(props.open, "evidence")).toHaveLength(0);
   await user().keyboard("{Escape}");
 
   // A pointer click in WKWebView can leave focus on the page. The receipt still measures the button.
@@ -377,11 +384,11 @@ it("shows guidance a finished reply accepted as a Guided row, not a question bub
   expect(screen.getByText("Guided: “Focus on margins”")).toBeInTheDocument();
   expect(view.container.querySelector("article.message.user")).toBeNull();
   await i18n.changeLanguage("ko");
-  view.rerender(<TooltipProvider><ChatMessageCard message={steer} loupistId="loupist-a" chatId="chat-a" loupistName="Loupist" onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} onOpenArtifact={vi.fn()} onOpenLink={vi.fn()} onReadAttachment={vi.fn()} /></TooltipProvider>);
+  view.rerender(<TooltipProvider><ChatMessageCard message={steer} loupistId="loupist-a" chatId="chat-a" loupistName="Loupist" onReadAttachment={vi.fn()} /></TooltipProvider>);
   expect(screen.getByText("안내했어요: “Focus on margins”")).toBeInTheDocument();
   await i18n.changeLanguage("en");
   // The same words as a plain question still read as a bubble.
-  view.rerender(<TooltipProvider><ChatMessageCard message={{ ...steer, steer: undefined }} loupistId="loupist-a" chatId="chat-a" loupistName="Loupist" onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} onOpenArtifact={vi.fn()} onOpenLink={vi.fn()} onReadAttachment={vi.fn()} /></TooltipProvider>);
+  view.rerender(<TooltipProvider><ChatMessageCard message={{ ...steer, steer: undefined }} loupistId="loupist-a" chatId="chat-a" loupistName="Loupist" onReadAttachment={vi.fn()} /></TooltipProvider>);
   expect(view.container.querySelector("article.message.user")).not.toBeNull();
 });
 
@@ -390,15 +397,13 @@ it("keeps saved schedule cards current, even after a stopped reply, and opens th
     schedule: { kind: "daily" as const, hour: 9, minute: 0, timezone: "Asia/Seoul" }, target: { kind: "dedicated_chat" as const },
     next_run_at_ms: 1799973000000, use_memory: false, update_memory: false };
   const message = answer({ status: "aborted", content: "", schedule_receipts: [receipt, { ...receipt, task_id: "task-b", title: "Evening review", target: { kind: "new_chat" } }] });
-  const { view, ...props } = renderAnswer(message, { onOpenSchedule: vi.fn() });
+  const { view, open, ...props } = renderAnswer(message);
   const paused = { ...message, schedule_receipts: [{ ...receipt, revision: 2, action: "paused" as const, status: "paused" as const }, message.schedule_receipts![1]] };
-  const onOpenSchedule = vi.fn();
-  view.rerender(<TooltipProvider><ChatMessageCard {...props} message={paused} onOpenSchedule={onOpenSchedule} /></TooltipProvider>);
+  view.rerender(<TooltipProvider><ChatMessageCard {...props} message={paused} /></TooltipProvider>);
   expect(screen.getAllByRole("article", { name: /Scheduled task:/ })).toHaveLength(2);
   expect(screen.getByRole("article", { name: "Scheduled task: Morning review" })).toHaveTextContent("Paused");
   await user().click(screen.getByRole("button", { name: /Evening review/ }));
-  expect(onOpenSchedule).toHaveBeenCalledWith("task-b");
-  expect(props.onOpenSchedule).not.toHaveBeenCalled();
+  expect(open).toHaveBeenCalledExactlyOnceWith({ kind: "schedule", taskId: "task-b" }, undefined);
 });
 
 it("says what a stopped reply kept: finished steps and the text so far", () => {
@@ -432,8 +437,7 @@ it("keeps a waiting approval actionable while folded and leaves its settled rece
 
   // Decisions that need no further input move into the retained activity.
   const done = answer({ progress: { startedAtMs: 0, finishedAtMs: 5_000, items: items("succeeded"), approvals: [approval("allowed_once")] } });
-  view.rerender(<TooltipProvider><ChatMessageCard message={done} loupistId="loupist-a" chatId="chat-a" loupistName="Loupist" bridge={bridge}
-    onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} onOpenArtifact={vi.fn()} onOpenLink={vi.fn()} onReadAttachment={vi.fn()} /></TooltipProvider>);
+  view.rerender(<TooltipProvider><ChatMessageCard message={done} loupistId="loupist-a" chatId="chat-a" loupistName="Loupist" bridge={bridge} onReadAttachment={vi.fn()} /></TooltipProvider>);
   expect(screen.queryByText("Allowed once · Read company filings")).toBeNull();
   await user().click(within(screen.getByLabelText("Work progress")).getByRole("button"));
   expect(screen.getAllByText("Allowed once · Read company filings")).toHaveLength(1);

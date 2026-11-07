@@ -20,7 +20,6 @@ const ArtifactChart = lazy(() => import("./ArtifactChart"));
 type Props = {
   view: ChatArtifactView;
   theme: "light" | "dark";
-  onOpenLink: (url: string) => void;
   onAsk?: (artifact: ChatArtifactRef) => void;
   askDisabled?: boolean;
   onExport?: (request: { suggestedName: string; bytes: number[]; kind: "csv" | "md" | "png" }) => Promise<string | null>;
@@ -57,7 +56,6 @@ export function ArtifactStatus({ view, version }: { view: ChatArtifactView; vers
 export function ArtifactContent({
   view,
   theme,
-  onOpenLink,
   onAsk,
   askDisabled,
   onExport,
@@ -108,8 +106,8 @@ export function ArtifactContent({
     const evidenceRefs = view.evidence_refs ?? [];
     return <div className="workspace-artifact-view workspace-grid-view">
       {grid.layout === "conflict"
-        ? <ConflictCard title={view.artifact.title} conflict={grid} evidenceRefs={evidenceRefs} actions={{}} />
-        : <GridCard title={view.artifact.title} grid={grid} evidenceRefs={evidenceRefs} actions={{}} onExport={onExport}
+        ? <ConflictCard title={view.artifact.title} conflict={grid} evidenceRefs={evidenceRefs} />
+        : <GridCard title={view.artifact.title} grid={grid} evidenceRefs={evidenceRefs} onExport={onExport}
           onAsk={onAsk ? () => onAsk(chatArtifactRef(view)) : undefined} askDisabled={askDisabled} />}
     </div>;
   }
@@ -183,7 +181,6 @@ export function ArtifactContent({
             <SafeMessageResponse
               text={view.revision.payload.markdown}
               isAnimating={false}
-              onOpenLink={onOpenLink}
             />
           </article>
         ) : view.chart_dataset ? (

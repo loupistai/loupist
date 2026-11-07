@@ -1,11 +1,12 @@
 import i18n, { useTranslation } from "@/i18n";
 import { formatTime } from "@/i18n/format";
 import { useState } from "react";
-import type { ChatMessage, LoupistBridge } from "../../types";
+import type { ChatEvidenceRef, ChatMessage, LoupistBridge } from "../../types";
 import type { AssetEvidence } from "../../contracts/assets";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
-import { useAssetPageOpener } from "../assets/assetOpener";
+import { useGo } from "../navigation/Open";
+import { hostSourceDestination } from "../../chat/navigation";
 import { useAssetNames } from "../assets/assetName";
 import { EarningsMiniTable } from "../assets/EarningsCard";
 import "@/styles/watch.css";
@@ -19,22 +20,22 @@ const t = i18n.getFixedT(null, "assets");
  * before-capture that failed, with Try again. Successful before-captures post
  * nothing.
  */
-export function ThreadEarnings({ message, bridge, loupistId, loupistName, onOpenLink }: {
+export function ThreadEarnings({ message, bridge, loupistId, loupistName }: {
   message: ChatMessage;
   bridge?: LoupistBridge;
   loupistId: string;
   loupistName: string;
-  onOpenLink?: (url: string) => void;
 }) {
   useTranslation(["assets", "chat"]);
   const record = message.earnings!;
-  const openAsset = useAssetPageOpener();
+  const go = useGo();
   const name = useAssetNames(bridge, loupistId)({ name: record.name, assetId: record.asset_id, symbol: record.symbol, market: record.market });
   const [retrying, setRetrying] = useState(false);
   const [state, setState] = useState<"idle" | "captured" | "failed">("idle");
   const at = Date.parse(message.created_at);
-  const open = () => openAsset?.({ loupistId, assetId: record.asset_id, name, section: "results", eventId: record.event_id });
-  const openEvidence = (evidence: AssetEvidence) => { if (evidence.url && onOpenLink) onOpenLink(evidence.url); else open(); };
+  const page = { loupistId, assetId: record.asset_id, name, section: "results" as const, eventId: record.event_id };
+  const open = () => go?.({ kind: "asset", target: page });
+  const openEvidence = (_source: AssetEvidence, citation: ChatEvidenceRef) => go?.(hostSourceDestination(citation, page));
   const retry = async () => {
     if (!bridge || retrying) return;
     setRetrying(true);
@@ -50,12 +51,12 @@ export function ThreadEarnings({ message, bridge, loupistId, loupistName, onOpen
     {record.outcome === "reported" ? <>
       <p>{i18n.t("chat:thread.earningsReported", { name, period: record.period })}</p>
       {record.measures.length ? <EarningsMiniTable measures={record.measures} onOpenEvidence={openEvidence} /> : null}
-      {openAsset ? <div className="thread-earnings-actions"><Button type="button" variant="outline" size="sm" aria-label={`${t("earnings.seeBeforeAfter")} · ${name}`} onClick={open}>{t("earnings.seeBeforeAfter")}</Button></div> : null}
+      {go ? <div className="thread-earnings-actions"><Button type="button" variant="outline" size="sm" aria-label={`${t("earnings.seeBeforeAfter")} · ${name}`} onClick={open}>{t("earnings.seeBeforeAfter")}</Button></div> : null}
     </> : <>
       <p>{state === "captured" ? t("earnings.captured") : t("earnings.failed", { name })}</p>
       <div className="thread-earnings-actions">
         {state !== "captured" && bridge ? <Button type="button" variant="outline" size="sm" disabled={retrying} aria-label={`${t("earnings.retry")} · ${name}`} onClick={() => void retry()}>{retrying ? <Spinner /> : null}{t("earnings.retry")}</Button> : null}
-        {state === "captured" && openAsset ? <Button type="button" variant="outline" size="sm" onClick={open}>{t("earnings.seeBeforeAfter")}</Button> : null}
+        {state === "captured" && go ? <Button type="button" variant="outline" size="sm" onClick={open}>{t("earnings.seeBeforeAfter")}</Button> : null}
       </div>
       {state === "failed" ? <p className="inline-error" role="alert">{t("earnings.failed", { name })}</p> : null}
     </>}

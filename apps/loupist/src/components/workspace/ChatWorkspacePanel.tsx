@@ -519,7 +519,7 @@ function ScopedChatWorkspacePanel({
         <span className="workspace-status-text">{evidenceStatus(evidenceEntryShown, loupistName)}</span>
       </div> : null}
       {!evidenceEntryShown ? <div className="artifact-empty workspace-empty"><p>{t("chatWorkspacePanel.evidenceEmpty")}</p></div>
-      : evidenceEntryShown.kind === "evidence" ? <WorkspaceEvidence key={evidenceEntryShown.key} evidence={evidenceEntryShown.evidence} step={evidenceEntryShown.step} onRevealStep={onRevealProgress} onOpenLink={onOpenLink} />
+      : evidenceEntryShown.kind === "evidence" ? <WorkspaceEvidence key={evidenceEntryShown.key} evidence={evidenceEntryShown.evidence} step={evidenceEntryShown.step} onRevealStep={onRevealProgress} />
       : <WorkspaceKnowledgeReader key={`${loupistId}:${evidenceEntryShown.key}`} bridge={bridge} location={evidenceEntryShown.location} onOpen={onOpenKnowledge} onOpenPage={onOpenKnowledgePage} onAsk={onAskKnowledge} onOpenLink={onOpenLink}
         onPatch={(location) => onUpdateTab(EVIDENCE_TAB_ID, (tab) => tab.kind === "evidence" ? updateCurrentEvidenceEntry(tab, (entry) => entry.kind === "knowledge" && entry.key === evidenceEntryShown.key ? { ...entry, location } : entry) : tab)} />}
     </div>
@@ -566,7 +566,7 @@ function ScopedChatWorkspacePanel({
             {shownRevision !== null ? <Button type="button" variant="ghost" size="sm" onClick={() => showRevision(null)}>{t("workVersions.backToCurrent")}</Button> : null}
           </div>
         ) : view ? (
-          <ArtifactContent view={view} theme={theme} onOpenLink={onOpenLink} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} onExport={(request) => bridge.exportSave(request)} />
+          <ArtifactContent view={view} theme={theme} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} onExport={(request) => bridge.exportSave(request)} />
         ) : null}
       </> : <WorkspaceWorkList bridge={bridge} loupistId={loupistId} refreshKey={workRefreshKey} building={buildingWork}
         onOpen={async (item) => {
@@ -586,7 +586,7 @@ function ScopedChatWorkspacePanel({
     >
       {activeTab.kind === "files" ? <WorkspaceFiles bridge={bridge} loupistId={loupistId} rootPath={workspacePath} path={activeTab.path} filePath={activeTab.filePath}
         onNavigate={(path, filePath) => onUpdateTab(activeTab.id, (tab) => tab.kind === "files" ? { ...tab, path, filePath } : tab)}
-        onAsk={(file) => onAskFile?.(file)} onOpenLink={onOpenLink} />
+        onAsk={(file) => onAskFile?.(file)} />
       : activeBrowserTab ? (
         <BrowserWorkspaceView
           tab={activeBrowserTab}

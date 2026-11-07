@@ -600,6 +600,7 @@
     "couldNotOpenThisSavedReference": "저장된 참고 자료를 열지 못했어요. 다시 시도해 주세요.",
     "exploreThisSavedWorldAndItsEvidence": "저장된 World와 근거를 살펴보세요.",
     "openWorld": "World 열기",
+    "openInLens": "Lens에서 열기",
     "retryReference": "참고 자료 다시 불러오기",
     "openingSavedReference": "저장된 참고 자료 여는 중…",
     "thisReferenceIsUnavailable": "이 참고 자료를 사용할 수 없어요."
@@ -845,8 +846,6 @@
     "unsupportedLink": "지원하지 않는 링크예요.",
     "couldNotOpenThisLink": "링크를 열지 못했어요",
     "couldNotOpenThisLink2": "링크를 열지 못했어요. 주소를 확인해 주세요.",
-    "thisLensIsNotInTheCollection": "이 Lens가 모음에 없어요",
-    "archivedLens": "보관된 Lens",
     "openLinkedLens": "연결된 Lens 열기",
     "openFile": "{{localPath}} 열기",
     "openExternalLink": "{{externalUrl}} 열기",
@@ -1786,5 +1785,8 @@
     "forgotten": "잊었어요.",
     "undo": "되돌리기",
     "error": "이 페이지를 바꾸지 못했어요."
+  },
+  "navigation": {
+    "openedInPanel": "{{title}}을(를) 패널에서 열었어요"
   }
 }

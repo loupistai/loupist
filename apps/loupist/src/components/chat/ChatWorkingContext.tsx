@@ -2,14 +2,16 @@ import { formatDateTime } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
 import { knowledgeLocationFromReference } from "../../knowledge/location";
 import { bodyWithoutRepeatedTitle } from "../../knowledge/reading";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { FileTextIcon, MessageSquareIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { SafeMessageResponse } from "./SafeMessageResponse";
+import { OpenProvider, useOpener } from "../navigation/Open";
+import type { Open } from "../../chat/navigation";
 import { errorMessage } from "../../lib/errors";
 import { isEmptyChatThreadId } from "../../app/emptyChat";
-import type { LoupistBridge, WorkingNote, KnowledgeLocation, KnowledgeReference } from "../../types";
+import type { LoupistBridge, WorkingNote, KnowledgeReference } from "../../types";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -20,8 +22,6 @@ type Props = {
   isRunning: boolean;
   updateKey: string;
   onAskForChange: () => void;
-  onOpenLink: (url: string) => Promise<void>;
-  onOpenKnowledge?: (location: KnowledgeLocation, title: string) => void;
   children: ReactNode;
 };
 
@@ -29,8 +29,15 @@ const savedAt = (value: number) => formatDateTime(value, { dateStyle: "medium", 
 
 /** Mounted per conversation, so a delayed response cannot replace another chat's note. */
 export function ChatWorkingContext({ bridge, loupistId, chatId, isRunning, updateKey,
-  onAskForChange, onOpenLink, onOpenKnowledge, children }: Props) {
+  onAskForChange, children }: Props) {
   useTranslation("chat");
+  const parent = useOpener();
+  // Whatever the note opens shows beside the chat, so the note steps out of the way first.
+  const open = useCallback<Open>(async (to, how) => {
+    if (!parent) return "unavailable";
+    if (!how?.external) setReaderOpen(false);
+    return parent.open(to, how);
+  }, [parent]);
   const [note, setNote] = useState<WorkingNote | null>(null);
   const [readerOpen, setReaderOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,9 +88,9 @@ export function ChatWorkingContext({ bridge, loupistId, chatId, isRunning, updat
           {note ? <article className="working-note" aria-label={t("chatWorkingContext.workingNote")}>
             <span className="working-note-date">{t("chatWorkingContext.updatedDate", { date: savedAt(note.recordedAtMs) })}</span>
             {note.changeSummary.trim() ? <p className="note-change-summary">{note.changeSummary}</p> : null}
-            <SafeMessageResponse key={note.researchId} text={bodyWithoutRepeatedTitle(note.title, note.markdown)} isAnimating={false} onOpenLink={onOpenLink} />
+            <OpenProvider open={open}><SafeMessageResponse key={note.researchId} text={bodyWithoutRepeatedTitle(note.title, note.markdown)} isAnimating={false} /></OpenProvider>
             {evidence.length ? <section aria-label={t("chatWorkingContext.noteEvidence")}><h3>{t("chatWorkingContext.evidenceUsed")}</h3><ul>{evidence.map(({ reference, label }) => <li key={`${reference.kind}:${reference.recordId}:${reference.revisionId}:${reference.objectId}`}>
-              <Button variant="link" disabled={!onOpenKnowledge} onClick={() => { setReaderOpen(false); onOpenKnowledge?.(knowledgeLocationFromReference(loupistId, reference), label); }}>{label}</Button>
+              <Button variant="link" disabled={!parent} onClick={() => void open({ kind: "memory", location: knowledgeLocationFromReference(loupistId, reference), title: label }).catch(() => undefined)}>{label}</Button>
             </li>)}</ul></section> : null}
           </article> : null}
           {error ? <p className="working-context-error" role="alert">{error}</p> : null}

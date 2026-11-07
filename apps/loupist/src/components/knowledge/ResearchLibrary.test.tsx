@@ -1,4 +1,5 @@
 import userEvent from "@testing-library/user-event";
+import { renderWithOpen } from "../../test/open";
 import { useState } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
@@ -64,11 +65,10 @@ it("finds saved notes and opens notes and journals by their exact stored identif
 it("reads a selected saved note and keeps its web links inside the supplied reader", async () => {
   const { props } = setup();
   const read = vi.spyOn(props.bridge, "knowledgeWorkingNoteRead").mockResolvedValue({ researchId: note.id, chatId: "chat-original", title: note.title, markdown: "Read [the filing](https://issuer.example/filing).", changeSummary: "", recordedAtMs: 123 });
-  const onOpenLink = vi.fn();
-  render(<ResearchLibrary {...props} onOpenLink={onOpenLink} location={{ ...props.location, selection: { kind: "research", recordId: note.id } }} />);
+  const { open: onOpenLink } = renderWithOpen(<ResearchLibrary {...props} location={{ ...props.location, selection: { kind: "research", recordId: note.id } }} />);
   await userEvent.setup().click(await screen.findByRole("link", { name: "the filing" }));
   expect(read).toHaveBeenCalledWith({ loupistId: "loupist-quality", noteId: note.id });
-  expect(onOpenLink).toHaveBeenCalledWith("https://issuer.example/filing");
+  expect(onOpenLink).toHaveBeenCalledWith({ kind: "link", url: "https://issuer.example/filing" }, undefined);
   await userEvent.setup().click(screen.getByRole("button", { name: "Continue chat" }));
   expect(props.onAsk).toHaveBeenCalledWith(expect.objectContaining({ objectId: note.id }), "chat-original");
 });

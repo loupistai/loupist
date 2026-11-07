@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ChatErrorState } from "./ChatErrorState";
 import { CitationChip } from "./CitationChip";
+import { renderWithOpen } from "../../test/open";
 import type { ChatEvidenceRef } from "../../types";
 
 const base = { provider: "OpenAI", fallback: "The response could not be completed.", attempt: 1 };
@@ -109,8 +110,7 @@ describe("citation card", () => {
 
   it("shows title, domain, date and passage on hover or keyboard focus, and opens Evidence on click", async () => {
     const user = userEvent.setup();
-    const onOpen = vi.fn();
-    render(<CitationChip evidence={evidence} label="Source 1" title={evidence.title} source="hanul.example" onOpen={onOpen}>1</CitationChip>);
+    const { open: onOpen } = renderWithOpen(<CitationChip evidence={evidence} label="Source 1" title={evidence.title} source="hanul.example" to={{ kind: "evidence", evidence }}>1</CitationChip>);
     await user.tab();
     const card = await screen.findByRole("dialog", { name: evidence.title });
     expect(card).toHaveTextContent("hanul.example · Oct 27, 2026");

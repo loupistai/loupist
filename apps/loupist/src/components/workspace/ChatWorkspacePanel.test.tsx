@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { renderWithOpen } from "../../test/open";
 import { ChatMapProvider } from "./ChatMapContext";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
@@ -69,8 +70,7 @@ describe("ChatWorkspacePanel Evidence reader", () => {
     const second = evidenceFixture({ id: "second", url: "https://morrow.example/survey", title: "Supplier survey", excerpt: "Lead times fell" });
     const evidence = pushEvidenceEntry(pushEvidenceEntry(undefined, evidenceEntry(first)), evidenceEntry(second));
     const onMoveEvidence = vi.fn();
-    const onOpenLink = vi.fn();
-    render(<ChatWorkspacePanel {...panelProps(bridge)} loupistName="Quality Compounder" onMoveEvidence={onMoveEvidence} onOpenLink={onOpenLink}
+    const { open: onOpenLink } = renderWithOpen(<ChatWorkspacePanel {...panelProps(bridge)} loupistName="Quality Compounder" onMoveEvidence={onMoveEvidence}
       session={{ tabs: [evidence], active_tab_id: EVIDENCE_TAB_ID }} />);
     expect(screen.getAllByRole("tab", { name: /Evidence/ })).toHaveLength(1);
     expect(screen.getByText("Lead times fell")).toBeVisible();
@@ -83,7 +83,7 @@ describe("ChatWorkspacePanel Evidence reader", () => {
     await user.keyboard("{Alt>}{ArrowLeft}{/Alt}");
     expect(onMoveEvidence).toHaveBeenCalledTimes(2);
     await user.click(screen.getByRole("button", { name: "Open live page" }));
-    expect(onOpenLink).toHaveBeenCalledExactlyOnceWith("https://morrow.example/survey");
+    expect(onOpenLink).toHaveBeenCalledExactlyOnceWith({ kind: "link", url: "https://morrow.example/survey" }, undefined);
     expect(screen.queryByRole("button", { name: "View saved excerpt" })).toBeNull();
   });
 

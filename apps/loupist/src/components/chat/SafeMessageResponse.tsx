@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ChatEvidenceRef } from "../../types";
 import type { DiagramPlugin } from "@streamdown/mermaid";
 import { hasCompleteMermaidFence, loadMermaidPlugin } from "./mermaidPlugin";
 
@@ -72,17 +71,7 @@ type Props = {
   isAnimating: boolean;
   /** Draw a caret after the last block; only while animating. */
   caret?: boolean;
-  onOpenLink: (url: string) => Promise<void> | void;
-  onOpenFile?: (path: string) => void;
-  onLensLink?: (recordId: string) => void;
-  lensLinks?: import("../ai-elements/message-response").LensLinkActions;
-  evidenceRefs?: ChatEvidenceRef[];
-  memoryRefs?: import("../../types").MemoryRef[];
-  onOpenEvidence?: (evidence: ChatEvidenceRef, anchor?: HTMLElement) => void;
   numberChecks?: import("../../types").NumberCheck[];
-  asOf?: string;
-  onOpenEvidenceCell?: (evidence: ChatEvidenceRef, cell?: import("./NumberChip").EvidenceCell) => void;
-  onShowStep?: (evidence: ChatEvidenceRef) => void;
   workspacePath?: string;
   workspaceBasePath?: string;
 };
@@ -119,7 +108,7 @@ function useDeferredMermaidPlugin(
   return requiresMermaid ? plugin : undefined;
 }
 
-export function SafeMessageResponse({ text, isAnimating, caret = false, onOpenLink, onOpenFile, onLensLink, lensLinks, evidenceRefs, memoryRefs, onOpenEvidence, numberChecks, asOf, onOpenEvidenceCell, onShowStep, workspacePath, workspaceBasePath }: Props) {
+export function SafeMessageResponse({ text, isAnimating, caret = false, numberChecks, workspacePath, workspaceBasePath }: Props) {
   // A cold instance must keep its Lazy type after the module becomes warm.
   // Switching to the resolved function remounts citations, losing focus and a
   // press already in progress when unrelated chat state next renders.
@@ -134,17 +123,7 @@ export function SafeMessageResponse({ text, isAnimating, caret = false, onOpenLi
           isAnimating={isAnimating}
           caret={caret && isAnimating ? "block" : undefined}
           mermaidPlugin={mermaidPlugin}
-          onOpenLink={onOpenLink}
-          onOpenFile={onOpenFile}
-          onLensLink={onLensLink}
-          lensLinks={lensLinks}
-          evidenceRefs={evidenceRefs}
-          memoryRefs={memoryRefs}
-          onOpenEvidence={onOpenEvidence}
           numberChecks={numberChecks}
-          asOf={asOf}
-          onOpenEvidenceCell={onOpenEvidenceCell}
-          onShowStep={onShowStep}
           workspacePath={workspacePath}
           workspaceBasePath={workspaceBasePath}
         >

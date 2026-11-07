@@ -201,18 +201,6 @@ describe("panel opening rules", () => {
     } finally { width.mockRestore(); }
   });
 
-  it("never opens the panel for computation output or Memory receipts", async () => {
-    const { evidenceFixture } = await import("../test/evidenceFixtures");
-    const { result } = renderHook(() => useWorkspacePanel(new MockLoupistBridge({ delay_ms: 0 })));
-    await waitFor(() => expect(result.current.hydrated).toBe(true));
-    act(() => {
-      result.current.openEvidence("loupist", "chat", evidenceFixture({ id: "calc", kind: "derived", tool_name: "bash" }));
-      result.current.openEvidence("loupist", "chat", evidenceFixture({ id: "notes", kind: "saved_context", tool_name: "world_search" }));
-    });
-    expect(result.current.open).toBe(false);
-    expect(result.current.sessions[chatSessionKey("loupist", "chat")]).toBeUndefined();
-  });
-
   it("keeps one Evidence history per chat without duplicates, bounded at 50", async () => {
     const { evidenceFixture } = await import("../test/evidenceFixtures");
     const { result } = renderHook(() => useWorkspacePanel(new MockLoupistBridge({ delay_ms: 0 })));

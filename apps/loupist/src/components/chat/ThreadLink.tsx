@@ -1,4 +1,5 @@
 import i18n, { useTranslation } from "@/i18n";
+import { useGo } from "../navigation/Open";
 import { formatTime } from "@/i18n/format";
 import { useState } from "react";
 import type { ChatMessage, LoupistBridge } from "../../types";
@@ -7,14 +8,14 @@ import { Button } from "../ui/button";
 
 const t = i18n.getFixedT(null, "chat");
 
-export function ThreadLink({ message, bridge, loupistId, loupistName, onOpenMap }: {
+export function ThreadLink({ message, bridge, loupistId, loupistName }: {
   message: ChatMessage;
   bridge?: LoupistBridge;
   loupistId: string;
   loupistName: string;
-  onOpenMap?: (nodeIds: string[]) => void;
 }) {
   useTranslation("chat");
+  const go = useGo();
   const { t: tk } = useTranslation("knowledge");
   const link = message.link!;
   const [outcome, setOutcome] = useState<"opened" | "dismissed" | null>(null);
@@ -62,8 +63,8 @@ export function ThreadLink({ message, bridge, loupistId, loupistName, onOpenMap 
       {Number.isFinite(at) ? <time dateTime={new Date(at).toISOString()}>{formatTime(at)}</time> : null}
     </div>
     <p>{t("link.message", names)}</p>
-    {onOpenMap
-      ? <button type="button" className="thread-link-path morning-link" aria-label={t("link.pathLabel")} onClick={() => onOpenMap(link.nodeIds)}>{path}</button>
+    {go
+      ? <button type="button" className="thread-link-path morning-link" aria-label={t("link.pathLabel")} onClick={() => go({ kind: "page", location: { loupistId, surface: "world", view: { highlightEntityIds: link.nodeIds } } })}>{path}</button>
       : <p className="thread-link-path">{path}</p>}
     {outcome ? <p className="thread-delivery-source" role="status">{t(`link.${outcome}`)}</p> : null}
     {error ? <p className="inline-error" role="alert">{t("link.error")}</p> : null}

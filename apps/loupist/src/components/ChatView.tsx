@@ -29,7 +29,6 @@ import type {
   ChatThread,
   LoupistBridge,
   LoupistSummary,
-  KnowledgeLocation,
   KnowledgePin,
   ModelCatalog,
   ModelNotice,
@@ -38,7 +37,9 @@ import type {
 } from "../types";
 import { visibleCatalogModels } from "../lib/modelSelection";
 import { quoteChip, type ComposerChip } from "../chat/composerChips";
-import { retainedEvidenceFor, type OpenLinkOptions } from "../chat/links";
+import { retainedEvidenceFor } from "../chat/links";
+import type { Open } from "../chat/navigation";
+import { OpenProvider, useOpener } from "./navigation/Open";
 
 const NO_CHIPS: ComposerChip[] = [];
 import { searchComposerContext } from "../chat/searchComposerContext";
@@ -82,17 +83,6 @@ const chatPins = (pins: readonly KnowledgePin[]) =>
     ...(pin.selection ? { selection: pin.selection } : {}),
     label: pin.label,
   }));
-/** Workspace-launch callbacks already bound to the visible loupist and thread. */
-export type ChatWorkspaceActions = {
-  openEvidence?: (evidence: import("../types").ChatEvidenceRef, step?: { label: string; itemId?: string }) => void;
-  openFile?: (path?: string) => void;
-  readWorldJob?: (jobId: string) => Promise<GraphJobView>;
-  onWorldChanged?: () => void;
-  openMemory: (location: KnowledgeLocation, title: string) => void;
-  openMemoryPage: (location: KnowledgeLocation) => void;
-  openArtifact: (threadId: string, artifact: ChatArtifactRef) => void;
-  openLink: (url: string) => void;
-};
 
 type Props = {
   active?: boolean;
@@ -113,7 +103,8 @@ type Props = {
   onRemoveKnowledgePin: (pin: KnowledgePin) => void;
   onAddKnowledgePin?: (pin: KnowledgePin) => void;
   onSelectArtifact?: (artifact: ChatArtifactRef) => void;
-  workspaceActions: ChatWorkspaceActions;
+  onReadWorldJob?: (jobId: string) => Promise<GraphJobView>;
+  onWorldChanged?: () => void;
   modelCatalog: ModelCatalog | null;
   modelSelection: ModelRunSelection;
   modelSetupMessage?: string;
@@ -128,12 +119,7 @@ type Props = {
   onAcknowledgeModelNotice?: (id: string) => void;
   /** Nothing chosen and no Chat default: sends name no model, and Rust resolves Auto at admission. */
   hostAuto?: boolean;
-  onOpenSchedule?: (taskId: string) => void;
   onOpenChatPreferences?: () => void;
-  /** Opens Settings › Connections (the morning message's "Works best with" line). */
-  onOpenConnections?: () => void;
-  /** Opens a briefing run in the Briefings tab (morning message). */
-  onOpenBriefing?: (runId: string) => void;
   initialPrompt?: string;
   draft?: ChatDraft;
   sessionDrafts?: ChatSessionDrafts;
@@ -156,7 +142,6 @@ type Props = {
 };
 
 export function ChatView({
-  onOpenBriefing,
   active = true,
   theme = "dark",
   bridge,
@@ -175,7 +160,8 @@ export function ChatView({
   onRemoveKnowledgePin,
   onAddKnowledgePin,
   onSelectArtifact,
-  workspaceActions,
+  onReadWorldJob,
+  onWorldChanged,
   modelCatalog,
   modelSelection,
   modelSetupMessage,
@@ -187,9 +173,7 @@ export function ChatView({
   modelNotice = null,
   onAcknowledgeModelNotice,
   hostAuto = false,
-  onOpenSchedule,
   onOpenChatPreferences,
-  onOpenConnections,
   initialPrompt,
   draft,
   sessionDrafts,
@@ -341,13 +325,23 @@ export function ChatView({
     map: railMap?.map, events: railMap?.events, learningPending: railMap?.learningPending,
   }), [messages, draft?.pins, railChatId, loupist.workspace_path, railMap?.map, railMap?.events, railMap?.learningPending, i18n.language]);
   const chatRailMode = !railChatId || isEmptyChatThreadId(railChatId) ? "none" : railMode(chatWidth, rail.hasCards);
+  // Read through a ref so the opener stays stable while answers stream (earlier answers do not rerender).
+  const linkMessages = useRef(activeThread?.messages ?? []);
+  linkMessages.current = activeThread?.messages ?? [];
+  const parentOpener = useOpener();
+  const open = useCallback<Open>(async (to, how) => {
+    if (!parentOpener) return "unavailable";
+    // A page the Loupist already kept opens its retained copy in Evidence.
+    const retained = to.kind === "link" && !how?.external ? retainedEvidenceFor(linkMessages.current, to.url) : undefined;
+    return parentOpener.open(retained ? { kind: "evidence", evidence: retained } : to, how);
+  }, [parentOpener]);
   const openRailUsing = useCallback((item: RailUsing) => {
-    if (item.recordId) { workspaceActions.openMemory({ loupistId: loupist.id, surface: "lens", recordId: item.recordId }, item.label); return; }
+    if (item.recordId) { void open({ kind: "memory", location: { loupistId: loupist.id, surface: "lens", recordId: item.recordId }, title: item.label }).catch(() => undefined); return; }
     const pin = item.pin;
     if (pin?.recordId && pin.revisionId) {
-      workspaceActions.openMemory(knowledgeLocationFromReference(loupist.id, { kind: pin.kind, recordId: pin.recordId, revisionId: pin.revisionId, objectId: pin.objectId, spanId: pin.spanId }), pin.label);
+      void open({ kind: "memory", location: knowledgeLocationFromReference(loupist.id, { kind: pin.kind, recordId: pin.recordId, revisionId: pin.revisionId, objectId: pin.objectId, spanId: pin.spanId }), title: pin.label }).catch(() => undefined);
     }
-  }, [loupist.id, workspaceActions]);
+  }, [loupist.id, open]);
   // "+ › Screenshot of the map" captures the map the user can see: the full Map tab or the panel's mini map.
   const mapScreenshot = useMemo<MapScreenshot>(() => {
     const canvas = () => document.querySelector<HTMLCanvasElement>(".map-view .map-canvas canvas, .chat-mini-map canvas");
@@ -391,7 +385,7 @@ export function ChatView({
   const takeIncomingFiles = useCallback(() => setIncomingFiles(null), []);
   const railActions: ChatRailActions = {
     bridge, loupistId: loupist.id,
-    onOpenFile: workspaceActions.openFile ? (path) => workspaceActions.openFile?.(path) : undefined,
+    onOpenFile: parentOpener ? (path) => void open({ kind: "file", path }).catch(() => undefined) : undefined,
     onOpenUsing: openRailUsing,
     onShowLearned: (ids) => { chatMap?.select(ids); },
   };
@@ -441,27 +435,6 @@ export function ChatView({
     completedTurnRef.current = null;
     if (last.status === "complete") onTurnComplete?.(last, activeThread.id);
   }, [activeThread?.id, isRunning, messages, onTurnComplete]);
-  const openChatArtifact = useCallback(
-    (artifact: ChatArtifactRef) => {
-      if (activeThread?.id) {
-        workspaceActions.openArtifact(activeThread.id, artifact);
-      }
-    },
-    [activeThread?.id, workspaceActions],
-  );
-  // Read through a ref so the opener stays stable while answers stream (earlier answers do not rerender).
-  const linkMessages = useRef(activeThread?.messages ?? []);
-  linkMessages.current = activeThread?.messages ?? [];
-  const openChatLink = useCallback(
-    async (url: string, options?: OpenLinkOptions) => {
-      if (options?.external) { await bridge.openExternalUrl(url); return; }
-      // A page the Loupist already kept opens its retained copy in Evidence.
-      const retained = workspaceActions.openEvidence ? retainedEvidenceFor(linkMessages.current, url) : undefined;
-      if (retained && workspaceActions.openEvidence) { workspaceActions.openEvidence(retained); return; }
-      workspaceActions.openLink(url);
-    },
-    [bridge, workspaceActions],
-  );
   const streamAnnouncement = activeRecoveredRun
     ? activeRecoveredRun.abort_requested
       ? t("chatView.stoppingTheRecoveredResponse")
@@ -857,20 +830,15 @@ export function ChatView({
     workspacePath={loupist.workspace_path}
     loupistId={loupist.id}
     chatId={activeThread?.id}
-    onOpenFile={workspaceActions.openFile}
-    onOpenEvidence={workspaceActions.openEvidence}
     progressFocus={progressFocus}
-    onReadWorldJob={workspaceActions.readWorldJob}
-    onWorldChanged={workspaceActions.onWorldChanged}
+    onReadWorldJob={onReadWorldJob}
+    onWorldChanged={onWorldChanged}
     onSuggestion={askFromMorningMessage}
     onQuote={onChipsChange ? quoteToComposer : undefined}
     loupistFocus={loupist.philosophy}
     loupistTemplate={loupist.template}
-    onOpenConnections={onOpenConnections}
     guiding={guidingTexts}
-    onOpenBriefing={onOpenBriefing}
     home={activeThread?.home}
-    onOpenRunChat={setActiveThreadId}
     // A Look back draft already holds its question; generic starters would compete with it.
     offerQuestions={!(draft?.asOf && knowledgePins.some((pin) => pin.kind === "journal"))}
     asOf={draft?.asOf}
@@ -878,12 +846,7 @@ export function ChatView({
     onTeachFeedback={teachFeedback}
     feedbackBusy={isRunning}
     run={{ running: isRunning, stopping: localIsStopping }}
-    onOpenMemory={workspaceActions.openMemory}
-    onOpenMemoryPage={workspaceActions.openMemoryPage}
-    onOpenArtifact={openChatArtifact}
     onAskArtifact={onSelectArtifact}
-    onOpenSchedule={onOpenSchedule}
-    onOpenLink={openChatLink}
     onReadAttachment={readAttachment}
     mentionSkills={composerSkills}
     mentionPlugins={composerPlugins}
@@ -911,6 +874,7 @@ export function ChatView({
   /></ChatSetAsideProvider></ChatExecutionProvider>;
 
   return (
+    <OpenProvider open={open}>
     <section className="chat-layout" aria-label={t("chatView.chatWithLoupist")}>
       <div className="chat-workspace" ref={chatWorkspaceRef} data-rail={chatRailMode}>
         <ChatLightboxProvider messages={visibleConversation.messages} onRead={readAttachment} onAddToQuestion={addToQuestion}>
@@ -942,8 +906,6 @@ export function ChatView({
             setPrompt(prompt.trim() ? t("chatView.appendWorkingNoteRequest", { prompt: prompt }) : t("chatView.iDLikeToChangeTheWorkingNote"));
             document.querySelector<HTMLTextAreaElement>('[data-chat-composer]' )?.focus();
           }}
-          onOpenLink={openChatLink}
-          onOpenKnowledge={workspaceActions.openMemory}
         >
         {!online ? <p className="chat-offline-banner" role="status">{t("chatError.offline")}</p>
           : lastMessage?.role === "assistant" && lastMessage.offline_reads ? <p className="chat-offline-banner" role="status">{t("chatError.offlineReads")}</p> : null}
@@ -1058,5 +1020,6 @@ export function ChatView({
         </ChatLightboxProvider>
       </div>
     </section>
+    </OpenProvider>
   );
 }

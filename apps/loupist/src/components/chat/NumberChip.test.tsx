@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ChatEvidenceRef, ChatMessage, NumberCheck } from "../../types";
 import { evidenceFixture } from "../../test/evidenceFixtures";
@@ -7,6 +7,7 @@ import { chatMarkdown } from "../../chat/exportChat";
 import { chatReceipt } from "../../chat/receipt";
 import { TooltipProvider } from "../ui/tooltip";
 import { ChatMessageCard } from "./ChatMessageCard";
+import { renderWithOpen } from "../../test/open";
 
 const dart = evidenceFixture({ id: "ev_dart", title: "Solsup Foods FY2025 statements", tool_name: "dart_financials", provider: "OpenDART", url: undefined, published_at: "2026-03-18",
   excerpt: JSON.stringify({ facts: [{ corp_name: "Solsup Foods", canonical_concept: "revenue", value: "452312000000" }, { corp_name: "Solsup Foods", canonical_concept: "operating_income", value: "38104000000" }] }, null, 2), dataset_ref: { dataset_id: "ds", revision: 1, digest: "d".repeat(64) } });
@@ -40,9 +41,10 @@ const answer = (extra: Partial<ChatMessage> = {}): ChatMessage => ({
 });
 
 function renderAnswer(message: ChatMessage, extra: Partial<ComponentProps<typeof ChatMessageCard>> = {}) {
-  const props = { message, loupistId: "loupist-a", chatId: "chat-a", loupistName: "Quality", onOpenMemory: vi.fn(), onOpenMemoryPage: vi.fn(), onOpenArtifact: vi.fn(), onOpenLink: vi.fn(), onReadAttachment: vi.fn(), onOpenEvidence: vi.fn(), ...extra };
-  const view = render(<TooltipProvider><ChatMessageCard {...props} /></TooltipProvider>);
-  return { ...props, view };
+  const props = { message, loupistId: "loupist-a", chatId: "chat-a", loupistName: "Quality", onReadAttachment: vi.fn(), ...extra };
+  const { open, ...view } = renderWithOpen(<TooltipProvider><ChatMessageCard {...props} /></TooltipProvider>);
+  // What the answer handed up to the app: evidence its own turn could not show in place.
+  return { ...props, view, open, onOpenEvidence: open };
 }
 
 const chip = async (text: string) => {
@@ -68,7 +70,7 @@ it("keeps a bold attached-note token linked through the workspace-aware answer r
     content: `Northwind Loom recorded loom-yield token **[18420](#evidence-${note.id})** on 12 March 2026. The note identifies it as a fixture identifier, not a market value.`,
     evidence_refs: [note],
     number_checks: [{ link_index: 0, text: "18420", evidence_id: note.id, kind: "step", status: "matched", pointer: "/content" }],
-  }), { workspacePath: "/fixture/workspace", onOpenFile: vi.fn() });
+  }), { workspacePath: "/fixture/workspace" });
   const token = await chip("18420");
   expect(token).toBeVisible();
   expect(token).toHaveAttribute("data-status", "matched");
@@ -151,7 +153,18 @@ it("shows the passage and data popovers and opens Evidence at the matched cell",
   expect(data).toHaveTextContent("Revenue");
   expect(data).toHaveTextContent("Rounded from ₩452,312,000,000");
   await user.click(within(data).getByRole("button", { name: "Open in Evidence" }));
-  expect(onOpenEvidence).toHaveBeenCalledWith(dart, expect.objectContaining({ cell: { pointer: "/facts/0/value", key: "value", value: "452312000000" } }));
+  expect(onOpenEvidence).toHaveBeenCalledWith(expect.objectContaining({ kind: "evidence", evidence: dart, step: expect.objectContaining({ cell: { pointer: "/facts/0/value", key: "value", value: "452312000000" } }) }), undefined);
+});
+
+it("opens a number's source page in the system browser on Ctrl-click or a middle click, without pinning the popover", async () => {
+  const { open } = renderAnswer(answer());
+  const number = await chip("9.1 percent");
+  fireEvent.click(number, { ctrlKey: true });
+  expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "evidence", evidence: guide }), { external: true });
+  expect(number).toHaveAttribute("aria-expanded", "false");
+  fireEvent(number, new MouseEvent("auxclick", { bubbles: true, button: 1 }));
+  expect(open).toHaveBeenCalledTimes(2);
+  expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "evidence", evidence: guide }), { external: true });
 });
 
 it("shows a quote cell in the popover and does not open the raw reader", async () => {

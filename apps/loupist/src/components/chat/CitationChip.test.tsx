@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ChatEvidenceRef } from "../../types";
 import { CitationChip, LONG_PRESS_MS } from "./CitationChip";
+import { renderWithOpen } from "../../test/open";
 
 const evidence = {
   id: "e1", title: "Hanul Precision Q3 operating review", kind: "original", url: "https://hanul.example/q3", provider: "Hanul IR",
@@ -16,9 +17,10 @@ function windowWidth(width: number) {
   });
 }
 
+const chipFor = <p>Margins fell <CitationChip evidence={evidence} label="Source 1" title={evidence.title} source="hanul.example" to={{ kind: "evidence", evidence }}>1</CitationChip> after the line opened.</p>;
+
 function renderChip() {
-  const onOpen = vi.fn();
-  render(<p>Margins fell <CitationChip evidence={evidence} label="Source 1" title={evidence.title} source="hanul.example" onOpen={onOpen}>1</CitationChip> after the line opened.</p>);
+  const { open: onOpen } = renderWithOpen(chipFor);
   return { onOpen, chip: screen.getByRole("button", { name: "Source 1" }) };
 }
 
@@ -77,5 +79,24 @@ describe("citation card at 700 px (chat-run §2 breakpoints)", () => {
     expect(screen.getByRole("tooltip")).toHaveTextContent(evidence.title);
     press(chip, LONG_PRESS_MS);
     expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("opening a citation", () => {
+  it("opens the cited passage on a click and its page in the system browser on Ctrl-click or a middle click", () => {
+    const { onOpen, chip } = renderChip();
+    fireEvent.click(chip);
+    expect(onOpen).toHaveBeenLastCalledWith({ kind: "evidence", evidence, anchor: chip }, undefined);
+    fireEvent.click(chip, { ctrlKey: true });
+    expect(onOpen).toHaveBeenLastCalledWith({ kind: "evidence", evidence, anchor: chip }, { external: true });
+    fireEvent(chip, new MouseEvent("auxclick", { bubbles: true, button: 1 }));
+    expect(onOpen).toHaveBeenCalledTimes(3);
+    expect(onOpen).toHaveBeenLastCalledWith({ kind: "evidence", evidence, anchor: chip }, { external: true });
+  });
+
+  it("is plain text, not a dead button, where nothing can open it", () => {
+    render(chipFor);
+    expect(screen.queryByRole("button", { name: "Source 1" })).not.toBeInTheDocument();
+    expect(screen.getByText("1")).toHaveAttribute("title", "Source unavailable in this reply");
   });
 });

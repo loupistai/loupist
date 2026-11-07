@@ -1,4 +1,5 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
+import { openSpy, renderWithOpen } from "../../test/open";
 import userEvent from "@testing-library/user-event";
 import i18n from "../../i18n";
 import type { GrowthEvent, JournalRecord, KnowledgeMap } from "../../contracts/knowledge";
@@ -35,9 +36,9 @@ function bridge(overrides: Partial<LoupistBridge> = {}) {
 }
 
 function renderMessage(source = bridge()) {
-  const handlers = { onAsk: vi.fn(), onOpenMapNode: vi.fn(), onOpenMap: vi.fn(), onOpenBriefing: vi.fn(), onOpenJournal: vi.fn() };
-  render(<MorningMessage bridge={source} loupistId="loupist" loupistName="Quality Compounder" {...handlers} />);
-  return { handlers, source };
+  const handlers = { onAsk: vi.fn() };
+  const { open } = renderWithOpen(<MorningMessage bridge={source} loupistId="loupist" loupistName="Quality Compounder" {...handlers} />);
+  return { handlers, source, open };
 }
 
 beforeEach(() => {
@@ -54,7 +55,7 @@ afterEach(async () => {
 describe("Morning message", () => {
   it("tells what changed since the last visit and opens each item where it lives", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    const { handlers, source } = renderMessage();
+    const { source, open } = renderMessage();
     const message = await screen.findByRole("article", { name: "Message from Quality Compounder" });
     expect(await within(message).findByText("3 things since Thursday.")).toBeVisible();
     expect(source.knowledgeGrowthEvents).toHaveBeenCalledWith(expect.objectContaining({ loupistId: "loupist", sinceMs: LAST_SEEN + 1 }));
@@ -65,13 +66,13 @@ describe("Morning message", () => {
     expect(overdue.parentElement).toHaveTextContent("Overdue since Oct 29: Inventory days below 50");
 
     await user.click(within(message).getByRole("button", { name: "Hanul Precision" }));
-    expect(handlers.onOpenMapNode).toHaveBeenCalledWith({ id: "hanul", recordId: "world-1" });
+    expect(open).toHaveBeenLastCalledWith({ kind: "page", location: { loupistId: "loupist", surface: "world", recordId: "world-1", objectId: "hanul", selection: { kind: "node", id: "hanul" } } });
     await user.click(within(message).getByRole("button", { name: "See all in Map" }));
-    expect(handlers.onOpenMap).toHaveBeenCalled();
+    expect(open).toHaveBeenLastCalledWith({ kind: "page", location: { loupistId: "loupist", surface: "world", view: { followCurrent: true, whatsNew: true } } });
     await user.click(within(message).getByRole("button", { name: "Open" }));
-    expect(handlers.onOpenBriefing).toHaveBeenCalledWith("run-1");
+    expect(open).toHaveBeenLastCalledWith({ kind: "briefing", runId: "run-1" });
     await user.click(within(message).getByRole("button", { name: "Review this check" }));
-    expect(handlers.onOpenJournal).toHaveBeenCalledWith("j1", "Inventory days below 50");
+    expect(open).toHaveBeenLastCalledWith({ kind: "memory", location: { loupistId: "loupist", surface: "note", objectId: "j1", selection: { kind: "journal", journalId: "j1" } }, title: "Inventory days below 50" });
   });
 
   it("offers three questions that go into the composer", async () => {
@@ -124,7 +125,9 @@ describe("Morning message", () => {
   });
 
   it("names the connections a class template works best with on its first message only while they are missing", async () => {
-    const handlers = { onAsk: vi.fn(), onOpenMapNode: vi.fn(), onOpenMap: vi.fn(), onOpenBriefing: vi.fn(), onOpenJournal: vi.fn(), onOpenConnections: vi.fn() };
+    const handlers = { onAsk: vi.fn() };
+    const open = openSpy();
+    const render = (ui: React.ReactElement) => renderWithOpen(ui, open);
     const missing = bridge({ loupistCapabilityList: vi.fn(async () => [{ entry_id: "eia.energy", enabled: false, granted_permissions: [], available: false }]) });
     // A later visit says nothing and does not ask.
     const later = render(<MorningMessage bridge={missing} loupistId="loupist" loupistName="Commodity Loupist" template="commodities" {...handlers} />);
@@ -138,7 +141,7 @@ describe("Morning message", () => {
     const line = await screen.findByText(/^Works best with EIA/);
     expect(line).toHaveTextContent("Works best with EIA · Open Connections");
     await userEvent.click(within(line).getByRole("button", { name: "Open Connections" }));
-    expect(handlers.onOpenConnections).toHaveBeenCalledOnce();
+    expect(open).toHaveBeenCalledExactlyOnceWith({ kind: "settings", section: "connections" });
     await act(async () => { await i18n.changeLanguage("ko"); });
     expect(await screen.findByText(/EIA와 함께 쓰면 더 좋아요/)).toHaveTextContent("EIA와 함께 쓰면 더 좋아요 · 연결 열기");
     first.unmount();

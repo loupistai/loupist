@@ -1,10 +1,10 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import i18n from "../../i18n";
 import type { UpcomingEvent } from "../../contracts/assets";
 import type { JournalRecord, KnowledgeMap } from "../../contracts/knowledge";
 import type { LoupistBridge } from "../../types";
-import { AssetPageOpenerProvider } from "../assets/assetOpener";
+import { renderWithOpen } from "../../test/open";
 import { MorningMessage } from "./MorningMessage";
 
 const HOUR = 3_600_000;
@@ -41,12 +41,9 @@ function bridge(upcoming: UpcomingEvent[] = events) {
 }
 
 function renderMessage(source = bridge(), props: { asOf?: string; mode?: "full" | "questions" } = {}) {
-  const handlers = { onAsk: vi.fn(), onOpenMapNode: vi.fn(), onOpenMap: vi.fn(), onOpenJournal: vi.fn() };
-  const openAsset = vi.fn();
-  render(<AssetPageOpenerProvider value={openAsset}>
-    <MorningMessage bridge={source} loupistId="loupist" loupistName="Quality Compounder" {...handlers} {...props} />
-  </AssetPageOpenerProvider>);
-  return { handlers, openAsset, source };
+  const handlers = { onAsk: vi.fn() };
+  const { open } = renderWithOpen(<MorningMessage bridge={source} loupistId="loupist" loupistName="Quality Compounder" {...handlers} {...props} />);
+  return { handlers, open, source };
 }
 
 beforeEach(() => {
@@ -63,7 +60,7 @@ afterEach(async () => {
 describe("Morning message event strip", () => {
   it("lists what is coming up above the lead, one line each, and opens each where it lives", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    const { handlers, openAsset, source } = renderMessage();
+    const { open, source } = renderMessage();
     const message = await screen.findByRole("article", { name: "Message from Quality Compounder" });
     const strip = await within(message).findByRole("region", { name: "Coming up" });
     expect(source.upcomingEvents).toHaveBeenCalledWith({ loupistId: "loupist" });
@@ -81,11 +78,11 @@ describe("Morning message event strip", () => {
     expect(within(message).queryByText(/To check by Nov 3/)).toBeNull();
 
     await user.click(within(strip).getByRole("button", { name: /Morrow Components Results/ }));
-    expect(openAsset).toHaveBeenCalledWith({ loupistId: "loupist", assetId: morrow.assetId, name: "Morrow Components", section: "results", eventId: "ern_00000000000000b1" });
+    expect(open).toHaveBeenCalledWith({ kind: "asset", target: { loupistId: "loupist", assetId: morrow.assetId, name: "Morrow Components", section: "results", eventId: "ern_00000000000000b1" } });
     await user.click(within(strip).getByRole("button", { name: /Dividend record date/ }));
-    expect(openAsset).toHaveBeenLastCalledWith({ loupistId: "loupist", assetId: "ast_00000000000000a3", name: "Bluehaven Memory" });
+    expect(open).toHaveBeenLastCalledWith({ kind: "asset", target: { loupistId: "loupist", assetId: "ast_00000000000000a3", name: "Bluehaven Memory" } });
     await user.click(within(strip).getByRole("button", { name: /To check/ }));
-    expect(handlers.onOpenJournal).toHaveBeenCalledWith("j2", "Gross margin stays above 55%");
+    expect(open).toHaveBeenLastCalledWith({ kind: "memory", location: expect.objectContaining({ objectId: "j2", selection: { kind: "journal", journalId: "j2" } }), title: "Gross margin stays above 55%" });
   });
 
   it("names a Korean-listed asset by its Korean name and keeps the deadline wording", async () => {

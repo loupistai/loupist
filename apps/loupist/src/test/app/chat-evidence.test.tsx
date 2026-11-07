@@ -66,6 +66,47 @@ describe("Loupist · Chat evidence", () => {
     expect(browser).not.toHaveBeenCalled();
   });
 
+  it("opens a citation's page in the system browser on Ctrl-click and leaves the panel closed", async () => {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const evidence = evidenceFixture();
+    withEvidence(bridge, [evidence]);
+    const external = vi.spyOn(bridge, "openExternalUrl").mockResolvedValue(undefined);
+    const browser = vi.spyOn(bridge, "browserTabOpen");
+    render(<App bridge={bridge} />);
+    await openChat();
+    fireEvent.click(await screen.findByRole("button", { name: `Source 1: ${evidence.title}` }), { ctrlKey: true });
+    await waitFor(() => expect(external).toHaveBeenCalledExactlyOnceWith(evidence.url));
+    expect(browser).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("Chat workspace panel")).toBeNull();
+  });
+
+  it("announces a panel tab it opened in one polite live region, without moving focus", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const original = evidenceFixture({ tool_name: "finance_market_data", title: "Market source", url: "https://finance.example/filing", excerpt: "Retained market source" });
+    withEvidence(bridge, [original]);
+    render(<App bridge={bridge} />);
+    await openChat();
+    const citation = await screen.findByRole("button", { name: "Source 1: Market source" });
+    await user.click(citation);
+    const regions = document.querySelectorAll("[data-panel-announcement]");
+    expect(regions).toHaveLength(1);
+    expect(regions[0]).toHaveAttribute("aria-live", "polite");
+    await waitFor(() => expect(regions[0]).toHaveTextContent("Opened Market source in the panel"));
+  });
+
+  it("opens a numbered asset page read on its asset page, never a dead citation", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const read = evidenceFixture({ kind: "saved_context", tool_name: "asset_page_read", url: undefined, title: "Asset page: Apple", excerpt: '{\n  "assetId": "NASDAQ:AAPL"\n}' });
+    withEvidence(bridge, [read]);
+    const page = vi.spyOn(bridge, "assetPageGet");
+    render(<App bridge={bridge} />);
+    await openChat();
+    await user.click(await screen.findByRole("button", { name: "Source 1: Asset page: Apple" }));
+    await waitFor(() => expect(page).toHaveBeenCalledWith(expect.objectContaining({ assetId: "NASDAQ:AAPL" })));
+  });
+
   it("routes original sources to readers and tool results to work progress", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });

@@ -9,6 +9,8 @@ import type { ChatMessage, ChatThread } from "../types";
 import { TooltipProvider } from "./ui/tooltip";
 import { ChatView } from "./ChatView";
 import * as messageRenderer from "./chat/SafeMessageResponse";
+import { renderWithOpen } from "../test/open";
+import { evidenceFixture } from "../test/evidenceFixtures";
 
 const actions = vi.hoisted(() => ({
   saveFeedback: vi.fn(), submit: vi.fn(), steer: vi.fn(), commitSteers: vi.fn(), abort: vi.fn(),
@@ -31,7 +33,6 @@ function viewProps(messages: ChatMessage[], extra: Partial<ComponentProps<typeof
     bridge: new MockLoupistBridge({ delay_ms: 0 }), chat: { id: thread.id } as Chat<LoupistUIMessage>, loupist: MOCK_LOUPISTS[0]!,
     threads: [thread], setThreads: vi.fn(), activeThreadId: thread.id, setActiveThreadId: vi.fn(),
     onCreateThread: vi.fn(), knowledgePins: [], onRemoveKnowledgePin: vi.fn(),
-    workspaceActions: { openMemory: vi.fn(), openMemoryPage: vi.fn(), openArtifact: vi.fn(), openLink: vi.fn() },
     modelCatalog: null, modelSelection: { model_profile_id: "", thinking_level: "off", run_options: {} },
     onModelSelectionChange: vi.fn(), modelAuto: true, onModelResetToAuto: vi.fn(), onModelUsed: vi.fn(), onAbortRecoveredRun: vi.fn(),
     ...extra,
@@ -57,6 +58,20 @@ it("keeps historical ticker messages and new dollar text ordinary without fetchi
   expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   expect(watchlist).not.toHaveBeenCalled();
   expect(asset).not.toHaveBeenCalled();
+});
+
+it("opens a linked page the Loupist already kept as its retained copy, and other links as pages", async () => {
+  const kept = evidenceFixture({ id: "ev_kept", url: "https://hanul.example/q3" });
+  const props = viewProps([
+    { id: "question", role: "user", status: "complete", content: "What changed?", created_at: "2026-10-03T00:00:00Z" },
+    { id: "answer", role: "assistant", status: "complete", created_at: "2026-10-03T00:00:01Z", evidence_refs: [kept],
+      content: "See [the quarter](https://hanul.example/q3#margin) and [the peer](https://other.example/)." },
+  ]);
+  const { open } = renderWithOpen(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
+  await userEvent.click(await screen.findByRole("link", { name: "the quarter" }));
+  expect(open).toHaveBeenLastCalledWith({ kind: "evidence", evidence: kept }, undefined);
+  await userEvent.click(screen.getByRole("link", { name: "the peer" }));
+  expect(open).toHaveBeenLastCalledWith({ kind: "link", url: "https://other.example/" }, undefined);
 });
 
 it("keeps a saved Chat readable without a model and opens settings instead of sending", async () => {

@@ -11,14 +11,15 @@ import type { AssetsGrid, ChatArtifactRef, ChatArtifactView, ChatEvidenceRef, Co
 import type { GridBlock } from "../../chat/chartBlocks";
 import { GRID_SCHEMA } from "../../contracts/chat";
 import { citationNumber } from "../../chat/numberChecks";
-import { evidenceTitle } from "../../chat/evidence";
+import { citationLabel, evidencePresentation, evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
 import { emptyReason, gridCounts, gridCsv, gridMarkdown, gridTsv, isValueCell, nextSort, sortedRows, type GridSort } from "../../chat/grid";
 import { exportFileName, utf8Bytes } from "../../chat/exportChat";
-import { useAssetPageOpener } from "../assets/assetOpener";
 import { useAssetNames } from "../assets/assetName";
 import { formatAsOf } from "../../chat/asOf";
 import { useChatExecution } from "./ChatExecutionContext";
-import { NumberChip, type NumberChipActions } from "./NumberChip";
+import { NumberChip } from "./NumberChip";
+import { CitationChip } from "./CitationChip";
+import { useGo, useOpenProps } from "../navigation/Open";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -31,10 +32,10 @@ const asOfDate = (value: string) => formatAsOf(value);
 const shortDate = (value: string) => formatDate(Date.parse(`${value}T00:00:00Z`), { timeZone: "UTC", year: undefined, month: "short", day: "numeric" });
 
 /** A value: its number chip when the cited evidence is retained, the printed value otherwise. */
-function ValueCell({ cell, asset, evidenceRefs, asOf, actions }: { cell: GridValueCell; asset?: string; evidenceRefs: readonly ChatEvidenceRef[]; asOf?: string; actions: NumberChipActions }) {
+function ValueCell({ cell, asset, evidenceRefs, asOf }: { cell: GridValueCell; asset?: string; evidenceRefs: readonly ChatEvidenceRef[]; asOf?: string }) {
   const evidence = evidenceRefs.find((item) => item.id === cell.evidence_id);
   if (!evidence) return <span className="gg-num">{cell.value}</span>;
-  return <NumberChip check={cell.check} evidence={evidence} evidenceRefs={evidenceRefs} asOf={asOf} actions={actions} asset={asset}>{cell.value}</NumberChip>;
+  return <NumberChip check={cell.check} evidence={evidence} evidenceRefs={evidenceRefs} asOf={asOf} asset={asset}>{cell.value}</NumberChip>;
 }
 
 /** An empty cell says why; with the run's note, hover or focus opens it. */
@@ -157,7 +158,6 @@ export type GridCardProps = {
   title: string;
   grid: AssetsGrid;
   evidenceRefs: readonly ChatEvidenceRef[];
-  actions: NumberChipActions;
   onExport?: GridExport;
   onAsk?: () => void;
   askDisabled?: boolean;
@@ -168,9 +168,9 @@ export type GridCardProps = {
  * a number chip Rust checked, empty cells with their reason, sortable columns
  * and exports that keep each cell's source or formula.
  */
-export function GridCard({ title, grid, evidenceRefs, actions, onExport, onAsk, askDisabled }: GridCardProps) {
+export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabled }: GridCardProps) {
   useTranslation("chat");
-  const openAsset = useAssetPageOpener();
+  const go = useGo();
   const scope = useChatExecution();
   const [sort, setSort] = useState<GridSort>(null);
   const [copied, setCopied] = useState(false);
@@ -240,12 +240,12 @@ export function GridCard({ title, grid, evidenceRefs, actions, onExport, onAsk, 
         <tbody>
           {order.map((rowIndex) => {
             const row = grid.rows[rowIndex]!;
-            const linked = Boolean(row.asset_id && openAsset && scope);
+            const linked = Boolean(row.asset_id && go && scope);
             const label = names({ name: row.label, assetId: row.asset_id, symbol: row.symbol, market: row.market });
             return <tr key={`${row.symbol}:${row.market}`}>
               <th scope="row" className="grid-card-asset">
                 {linked
-                  ? <button type="button" className="grid-card-name" onClick={() => openAsset!({ loupistId: scope!.loupistId, symbol: row.symbol, market: row.market, name: label })}>{label}</button>
+                  ? <button type="button" className="grid-card-name" onClick={() => go!({ kind: "asset", target: { loupistId: scope!.loupistId, symbol: row.symbol, market: row.market, name: label } })}>{label}</button>
                   : <span className="grid-card-name">{label}</span>}
                 <span className="grid-card-symbol">{row.symbol} · {row.market}</span>
               </th>
@@ -253,7 +253,7 @@ export function GridCard({ title, grid, evidenceRefs, actions, onExport, onAsk, 
                 const cell = grid.cells[rowIndex]?.[columnIndex];
                 if (!cell) return <td key={column.id} />;
                 return isValueCell(cell)
-                  ? <td key={column.id} className="grid-card-value gg-num" data-status={cell.check.status}><ValueCell cell={cell} asset={row.symbol} evidenceRefs={evidenceRefs} asOf={grid.as_of} actions={actions} /></td>
+                  ? <td key={column.id} className="grid-card-value gg-num" data-status={cell.check.status}><ValueCell cell={cell} asset={row.symbol} evidenceRefs={evidenceRefs} asOf={grid.as_of} /></td>
                   : <td key={column.id} className="grid-card-empty-cell"><EmptyCell cell={cell} spoken={t("grid.emptySpoken", { asset: label, measure: column.label, reason: emptyReason(cell.empty) })} /></td>;
               })}
             </tr>;
@@ -281,18 +281,27 @@ export type ConflictCardProps = {
   title: string;
   conflict: ConflictGrid;
   evidenceRefs: readonly ChatEvidenceRef[];
-  actions: NumberChipActions;
-  /** Opens the Map on the disputed entity; shown only when Rust linked a disputed claim group. */
-  onOpenMap?: (entityId: string) => void;
 };
+
+function ConflictSource({ evidence, evidenceRefs }: { evidence: ChatEvidenceRef; evidenceRefs: readonly ChatEvidenceRef[] }) {
+  const to = { kind: "evidence", evidence } as const;
+  const link = useOpenProps(to);
+  const number = citationNumber(evidence, evidenceRefs);
+  if (number !== null) return <>{evidenceTitle(evidence)}{" "}<CitationChip evidence={evidence} label={citationLabel(evidence, evidenceRefs)} title={evidenceTitle(evidence)}
+    source={sourceIdentityLabel(evidence) || evidencePresentation(evidence).label} to={to}>{number}</CitationChip></>;
+  return link.available ? <button type="button" {...link.props}>{evidenceTitle(evidence)}</button> : <span>{evidenceTitle(evidence)}</span>;
+}
 
 /**
  * Where sources disagree (finance-korea-retail-disagreement.md §2.3): each
  * source's report with its date and basis, why they differ, and which one the
  * answer relies on. A disagreement is information, so no warning colors.
  */
-export function ConflictCard({ title, conflict, evidenceRefs, actions, onOpenMap }: ConflictCardProps) {
+export function ConflictCard({ title, conflict, evidenceRefs }: ConflictCardProps) {
   useTranslation("chat");
+  const goTo = useGo();
+  // The Map is the Loupist's, so the card offers it only inside that Loupist's chat.
+  const loupistId = useChatExecution()?.loupistId;
   const { measure } = conflict;
   const label = [t("conflict.title"), measure.entity_label, [measure.period, measure.label].filter(Boolean).join(" ")].join(" · ");
   const mapEntity = conflict.map_link ? conflict.world_entity_id : undefined;
@@ -302,8 +311,9 @@ export function ConflictCard({ title, conflict, evidenceRefs, actions, onOpenMap
         <p className="conflict-card-label">{label}</p>
         {conflict.as_of ? <p className="grid-card-subtitle">{t("grid.knownAsOf", { date: asOfDate(conflict.as_of) })}</p> : null}
       </div>
-      {mapEntity && onOpenMap ? <div className="grid-card-actions conflict-card-actions">
-        <Button type="button" variant="ghost" size="sm" data-conflict-map onClick={() => onOpenMap(mapEntity)}>{t("conflict.seeMap")}</Button>
+      {mapEntity && goTo && loupistId ? <div className="grid-card-actions conflict-card-actions">
+        <Button type="button" variant="ghost" size="sm" data-conflict-map
+          onClick={() => goTo({ kind: "page", location: { loupistId, surface: "world", view: { onlyDisputed: true, highlightEntityIds: [mapEntity] } } })}>{t("conflict.seeMap")}</Button>
       </div> : null}
     </header>
     <div className="grid-card-scroll" role="region" tabIndex={0} aria-label={t("grid.scroll")}>
@@ -321,15 +331,14 @@ export function ConflictCard({ title, conflict, evidenceRefs, actions, onOpenMap
         <tbody>
           {conflict.reports.map((report, index) => {
             const evidence = evidenceRefs.find((item) => item.id === report.evidence_id);
-            const number = evidence ? citationNumber(evidence, evidenceRefs) : null;
             const used = conflict.used === index;
             const says: ReactNode = report.check && evidence
-              ? <NumberChip check={report.check} evidence={evidence} evidenceRefs={evidenceRefs} asOf={conflict.as_of} actions={actions}>{report.says}</NumberChip>
+              ? <NumberChip check={report.check} evidence={evidence} evidenceRefs={evidenceRefs} asOf={conflict.as_of}>{report.says}</NumberChip>
               : report.says;
             return <tr key={report.evidence_id} data-used={used || undefined}>
               <th scope="row" className="conflict-card-source">
                 {evidence
-                  ? <button type="button" onClick={(event) => actions.onOpenEvidence?.(evidence, undefined, event.currentTarget)}>{evidenceTitle(evidence)}{number ? <span className="loupist-citation" aria-hidden="true">{number}</span> : null}</button>
+                  ? <ConflictSource evidence={evidence} evidenceRefs={evidenceRefs} />
                   : <span>{t("conflict.source")}</span>}
               </th>
               <td className={report.check ? "gg-num" : "conflict-card-claim"}>{says}</td>
@@ -360,12 +369,10 @@ const BUILDING_ROWS = 4;
  * A grid or conflict card in the answer itself. The block keeps its reserved
  * frame from the moment the Loupist starts building the table until it fills.
  */
-export function ChatGridBlock({ block, actions, onAsk, askDisabled, onOpenMap }: {
+export function ChatGridBlock({ block, onAsk, askDisabled }: {
   block: GridBlock;
-  actions: NumberChipActions;
   onAsk?: (artifact: ChatArtifactRef) => void;
   askDisabled?: boolean;
-  onOpenMap?: (entityId: string) => void;
 }) {
   useTranslation("chat");
   const scope = useChatExecution();
@@ -390,9 +397,9 @@ export function ChatGridBlock({ block, actions, onAsk, askDisabled, onOpenMap }:
   if (loaded && payload?.kind === "grid" && payload.schema === GRID_SCHEMA && scope) {
     const evidenceRefs = loaded.evidence_refs ?? [];
     if (payload.grid.layout === "conflict") {
-      return <ConflictCard title={title} conflict={payload.grid} evidenceRefs={evidenceRefs} actions={actions} onOpenMap={onOpenMap} />;
+      return <ConflictCard title={title} conflict={payload.grid} evidenceRefs={evidenceRefs} />;
     }
-    return <GridCard title={title} grid={payload.grid} evidenceRefs={evidenceRefs} actions={actions}
+    return <GridCard title={title} grid={payload.grid} evidenceRefs={evidenceRefs}
       onExport={(request) => scope.bridge.exportSave(request)}
       onAsk={onAsk ? () => onAsk(artifactRef(loaded)) : undefined} askDisabled={askDisabled} />;
   }

@@ -641,6 +641,7 @@
     "couldNotOpenThisSavedReference": "Could not open this saved reference.",
     "exploreThisSavedWorldAndItsEvidence": "Explore this saved World and its evidence.",
     "openWorld": "Open World",
+    "openInLens": "Open in Lens",
     "retryReference": "Retry reference",
     "openingSavedReference": "Opening saved reference…",
     "thisReferenceIsUnavailable": "This reference is unavailable."
@@ -892,8 +893,6 @@
     "unsupportedLink": "Unsupported link.",
     "couldNotOpenThisLink": "Could not open this link",
     "couldNotOpenThisLink2": "Could not open this link.",
-    "thisLensIsNotInTheCollection": "This Lens is not in the collection",
-    "archivedLens": "Archived Lens",
     "openLinkedLens": "Open linked Lens",
     "openFile": "Open {{localPath}}",
     "openExternalLink": "Open {{externalUrl}}",
@@ -1853,5 +1852,8 @@
     "forgotten": "Forgotten.",
     "undo": "Undo",
     "error": "Could not change this page."
+  },
+  "navigation": {
+    "openedInPanel": "Opened {{title}} in the panel"
   }
 }

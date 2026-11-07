@@ -26,9 +26,13 @@ export function webEvidenceUrl(evidence: ChatEvidenceRef): string | null {
   return parseCredentialFreeHttpUrl(evidence.url)?.href ?? null;
 }
 
-/** Page a citation opens first. Same host rule as {@link webEvidenceUrl}. */
+/**
+ * Page a citation opens first: a website the host read, or an original whose text was not
+ * retained (a host post's source), where the reader would only say so.
+ */
 export function citationPageUrl(evidence: ChatEvidenceRef): string | null {
-  return webEvidenceUrl(evidence);
+  const notRetained = evidence.kind === "original" && !evidence.excerpt && evidence.url;
+  return webEvidenceUrl(evidence) ?? (notRetained ? parseCredentialFreeHttpUrl(evidence.url!)?.href ?? null : null);
 }
 
 /** Execution output belongs to the work trace, even when an answer cites it. */

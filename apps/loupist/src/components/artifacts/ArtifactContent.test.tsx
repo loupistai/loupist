@@ -54,7 +54,7 @@ describe("ArtifactContent", () => {
       revision: { ...chartView.revision, payload: { kind: "markdown", schema: "loupist-markdown/1", markdown: "# Research note\n\nSaved findings." } },
     };
     const writeText = vi.spyOn(navigator.clipboard, "writeText").mockRejectedValueOnce(new Error("Clipboard blocked")).mockResolvedValue();
-    render(<ArtifactContent view={view} theme="light" onOpenLink={vi.fn()} />);
+    render(<ArtifactContent view={view} theme="light" />);
     await user.click(screen.getByRole("button", { name: "Copy" }));
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Copy" }));
@@ -66,7 +66,7 @@ describe("ArtifactContent", () => {
     const onAsk = vi.fn();
     const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
     const view = { ...chartView, chart_dataset: { ...chartDataset, rows: Array.from({ length: 60 }, (_, i) => [`2026-08-${i + 1}`, i]) } };
-    const { rerender } = render(<ArtifactContent view={view} theme="light" onOpenLink={vi.fn()} onAsk={onAsk} />);
+    const { rerender } = render(<ArtifactContent view={view} theme="light" onAsk={onAsk} />);
     await user.click(screen.getByRole("tab", { name: "Data" }));
     expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(26);
     await user.click(screen.getByRole("button", { name: "Next data rows" }));
@@ -77,7 +77,7 @@ describe("ArtifactContent", () => {
     expect(onAsk).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Ask about this" }));
     expect(onAsk).toHaveBeenCalledWith({ artifact_id: "artifact-1", revision: 1, kind: "chart", title: "KOSPI chart", digest: "b".repeat(64) });
-    rerender(<ArtifactContent view={{ ...view, revision: { ...view.revision, revision: 2 } }} theme="dark" onOpenLink={vi.fn()} onAsk={onAsk} askDisabled />);
+    rerender(<ArtifactContent view={{ ...view, revision: { ...view.revision, revision: 2 } }} theme="dark" onAsk={onAsk} askDisabled />);
     expect(await screen.findByText("financial-engine")).toBeVisible();
     expect(screen.getByRole("button", { name: "Ask about this" })).toBeDisabled();
     await user.click(screen.getByRole("tab", { name: "Data" }));
@@ -90,7 +90,7 @@ describe("ArtifactContent", () => {
 it("rejects an unsupported schema even when its view kind is still supported", () => {
   const view = structuredClone(chartView);
   (view.revision.payload as { schema: string }).schema = "loupist-chart/2";
-  render(<ArtifactContent view={view} theme="light" onOpenLink={vi.fn()} />);
+  render(<ArtifactContent view={view} theme="light" />);
   expect(screen.getByRole("alert")).toHaveTextContent(/unsupported/);
   expect(screen.queryByText("financial-engine")).not.toBeInTheDocument();
 });

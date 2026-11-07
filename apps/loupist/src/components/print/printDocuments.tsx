@@ -2,6 +2,10 @@ import i18n from "@/i18n";
 import type { ChatThread } from "../../types";
 import { chatMarkdown } from "../../chat/exportChat";
 import { printView } from "./printView";
+import { OpenProvider } from "../navigation/Open";
+
+/** Paper keeps every link's words; nothing on it opens. */
+const nothingOpens = async () => "unavailable" as const;
 
 /**
  * A Chat as paper: the same transcript as the Markdown export (title line,
@@ -12,7 +16,7 @@ export async function printChat(thread: ChatThread, loupistName: string) {
   const { MessageResponse } = await import("@/components/ai-elements/message-response");
   await printView(thread.title, <article className="print-document" lang={i18n.language}>
     <div className="message assistant"><div className="message-content">
-      <MessageResponse onOpenLink={() => undefined}>{chatMarkdown(thread, loupistName, Date.now(), { notice: false })}</MessageResponse>
+      <OpenProvider open={nothingOpens}><MessageResponse>{chatMarkdown(thread, loupistName, Date.now(), { notice: false })}</MessageResponse></OpenProvider>
     </div></div>
     {/* The renderer gathers footnotes at the end, so the notice follows them here. */}
     <p className="print-notice">{i18n.t("chat:chatExport.notice")}</p>

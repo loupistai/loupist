@@ -1,13 +1,11 @@
-import type { OpenLinkOptions } from "../../chat/links";
 import { Disclosure } from "../ui/disclosure";
 import { ApprovalCards } from "./ApprovalCard";
 import type { LoupistBridge } from "../../types";
-import { formatDate, formatNumber, formatTime } from "@/i18n/format";
+import { formatNumber, formatTime } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
 import { memo, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { AnswerFeedback, type SaveAnswerFeedback } from "./AnswerFeedback";
 import {
-  ArrowUpRightIcon,
   CheckIcon,
   CopyIcon,
   CornerDownRightIcon,
@@ -27,23 +25,20 @@ import { thinkingLabel } from "../../lib/modelSelection";
 import { knownComposerMentions, splitComposerMentions } from "../../chat/composerMentions";
 import { mentionLabel } from "../../chat/composerChips";
 import { fileSize } from "../../chat/fileSize";
-import { citationSources, evidencePresentation, evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
-import { quoteEvidence } from "../../chat/quoteEvidence";
-import { QuoteEvidencePopover } from "./QuoteEvidence";
+import { citationSources } from "../../chat/evidence";
 import type {
   ChatArtifactRef,
-  ChatEvidenceRef,
   ChatAttachment,
   ChatMessage,
   ChatPerformance,
-  KnowledgeLocation,
   GraphJobView,
 } from "../../types";
-import { isInlineWorkEvidence, memoryReadForEvidence } from "../../chat/memoryActivity";
-import { knowledgeLocationFromMemoryRef } from "../../knowledge/location";
 import { ActivityRow } from "./ActivityRow";
-import { ProseSegment, type ProseLinks } from "./ProseSegment";
+import { ProseSegment } from "./ProseSegment";
 import { TurnFooter } from "./TurnFooter";
+import { TurnProvider, useTurn } from "./TurnProvider";
+import { SourceRow } from "./SourceRow";
+import { useGo } from "../navigation/Open";
 import { MessageSchedules } from "./MessageSchedules";
 import { EarningsChatCard } from "./EarningsChatCard";
 import { earningsCards } from "../../chat/earningsLinks";
@@ -57,14 +52,12 @@ import { ChatGridBlock } from "./GridCard";
 import { MessageMemoryRow } from "./MessageMemoryRow";
 import { NextStepChips, nextStepQuestions } from "./NextStepChips";
 import { useChatMap } from "../workspace/ChatMapContext";
-import { SourceFavicon } from "./SourceFavicon";
 import { AnswerOutline } from "./AnswerOutline";
 import { SentImages } from "./SentImages";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { BUSY_RETRY_SECONDS, ChatErrorState, type ProviderErrorAction } from "./ChatErrorState";
 import { AsOfNote } from "./AsOfNote";
 import { AsOfTag } from "./ComposerAsOf";
-import type { EvidenceCell } from "./NumberChip";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -195,8 +188,6 @@ type Props = {
   chatId?: string;
   loupistName: string;
   workspacePath?: string;
-  onOpenFile?: (path: string) => void;
-  onOpenEvidence?: (evidence: ChatEvidenceRef, step?: { label: string; itemId?: string; cell?: EvidenceCell }) => void;
   progressFocus?: string | null;
   guiding?: readonly string[];
   /** Set on the latest finished answer: follow-up questions go into the composer. */
@@ -207,14 +198,9 @@ type Props = {
   previousQuestion?: string;
   onReadWorldJob?: (jobId: string) => Promise<GraphJobView>;
   onWorldChanged?: () => void;
-  onOpenMemory: (location: KnowledgeLocation, title: string) => void;
-  onOpenMemoryPage: (location: KnowledgeLocation) => void;
-  onOpenArtifact: (artifact: ChatArtifactRef) => void;
   /** Adds a chart to the next question (the composer's selected-artifact chip). */
   onAskArtifact?: (artifact: ChatArtifactRef) => void;
   askArtifactDisabled?: boolean;
-  onOpenSchedule?: (taskId: string) => void;
-  onOpenLink: (url: string, options?: OpenLinkOptions) => Promise<void>;
   onReadAttachment: (
     messageId: string,
     attachmentId: string,
@@ -289,8 +275,6 @@ function ChatMessageCardComponent({
   chatId,
   loupistName,
   workspacePath,
-  onOpenFile,
-  onOpenEvidence,
   progressFocus,
   guiding,
   onNextStep,
@@ -298,13 +282,8 @@ function ChatMessageCardComponent({
   previousQuestion,
   onReadWorldJob,
   onWorldChanged,
-  onOpenMemory,
-  onOpenMemoryPage,
-  onOpenArtifact,
   onAskArtifact,
   askArtifactDisabled,
-  onOpenSchedule,
-  onOpenLink,
   onReadAttachment,
   mentionSkills = [],
   mentionPlugins = [],
@@ -328,58 +307,19 @@ function ChatMessageCardComponent({
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   // While a busy answer counts down to its own retry, it has not failed yet.
   const retryPending = message.status === "error" && message.failure_kind === "rate_limited" && Boolean(onRetry) && retryAttempt <= BUSY_RETRY_SECONDS.length;
-  const [revealedResult, setRevealedResult] = useState<{ id: string; request: number } | null>(null);
-  const [quoteOpen, setQuoteOpen] = useState<{ evidence: ChatEvidenceRef; anchor: HTMLElement; pointer?: string } | null>(null);
-  const conversation = useConversationScroll();
+  const revealedResult = useTurn()?.revealedResult ?? null;
+  const go = useGo();
   const evidenceRefs = message.evidence_refs ?? [];
   const citationList = citationSources(evidenceRefs).map((evidence, index) => ({ evidence, number: index + 1 }));
   // Memory declines are told once per chat by the memory row, not as connection activity.
   const connectionRefusals = (message.tool_refusals ?? []).filter(refusal => refusal.reason !== "sensitive_memory");
-  const openLens = (recordId: string) => onOpenMemory({
-    loupistId,
-    surface: "lens",
-    recordId,
-    objectId: recordId,
-    selection: { kind: "lens", recordId },
-  }, "Lens");
-  /** A number's "Show step": the producing step opens inline in the thread; the panel never opens. */
-  const showStep = (evidence: ChatEvidenceRef) => {
-    conversation?.holdScrollPosition();
-    setRevealedResult((previous) => ({ id: evidence.id, request: (previous?.request ?? 0) + 1 }));
-  };
-  const openEvidence = (evidence: ChatEvidenceRef, cell?: EvidenceCell, anchor?: HTMLElement | null) => {
-    const read = memoryReadForEvidence(evidence, message.memory_refs);
-    const location = read ? knowledgeLocationFromMemoryRef(loupistId, read) : null;
-    if (read && location) {
-      onOpenMemory(location, read.title);
-      return;
-    }
-    if (isInlineWorkEvidence(evidence, message.memory_refs)) {
-      conversation?.holdScrollPosition();
-      setRevealedResult((previous) => ({ id: evidence.id, request: (previous?.request ?? 0) + 1 }));
-      return;
-    }
-    if (quoteEvidence(evidence)) {
-      // The clicked control, not document.activeElement: a mouse click in WKWebView
-      // can leave focus on the page, and a snapshot of that rectangle opens off screen.
-      if (anchor) setQuoteOpen({ evidence, anchor, pointer: cell?.pointer });
-      return;
-    }
-    const step = message.progress?.items.find((entry) => entry.kind === "tool" && entry.resultIds?.includes(evidence.id));
-    const link = step?.kind === "tool" ? { label: step.action, itemId: step.id } : undefined;
-    // A data number opens its reader at the matched cell.
-    onOpenEvidence?.(evidence, cell ? { label: link?.label ?? "", itemId: link?.itemId, cell } : link);
-  };
+  const conversation = useConversationScroll();
   const now = useNow(message.status === "streaming");
   const lastActivityAt = useLastActivity(message);
   const view = useMemo(() => deriveTurnView({ message, now, lastActivityAt, stopping, retryPending }), [message, now, lastActivityAt, stopping, retryPending]);
   // A new row, a settled footer or a card below it grows the turn in this commit; follow it now.
   const segmentCount = view.segments.length;
   useLayoutEffect(() => { conversation?.followGrowth(); }, [conversation, segmentCount, view.state.kind]);
-  const links: ProseLinks = {
-    onOpenLink, onOpenFile, onLensLink: openLens, onShowStep: showStep, onOpenEvidenceCell: openEvidence,
-    onOpenEvidence: (evidence, anchor) => openEvidence(evidence, undefined, anchor),
-  };
   // Delivered files (X13): written by this answer and linked from it; a write the answer never links stays a step.
   const deliveredPaths = useMemo(() => {
     if (message.role !== "assistant") return [];
@@ -419,15 +359,13 @@ function ChatMessageCardComponent({
   const tokenLines = responseTokenLines(message.performance);
   const failureLabel = message.failure_kind ? failureMessages()[message.failure_kind] : undefined;
   const prose = (key: string, text: string, streaming: boolean, tone: "answer" | "narration", checks?: ChatMessage["number_checks"]) =>
-    <ProseSegment key={key} text={text} streaming={streaming} tone={tone} checks={checks} evidenceRefs={message.evidence_refs}
-      memoryRefs={message.memory_refs} asOf={message.as_of} workspacePath={workspacePath} links={links} />;
+    <ProseSegment key={key} text={text} streaming={streaming} tone={tone} checks={checks} workspacePath={workspacePath} />;
 
   const transcript: ReactNode[] = [];
   if (message.role === "assistant") {
     for (const segment of view.segments) {
       if (segment.kind === "activity") {
         transcript.push(<ActivityRow key={segment.key} segment={segment} status={message.status} focusItemId={progressFocus} asOf={message.as_of}
-          onOpenSource={onOpenEvidence ? (source, anchor) => openEvidence(source, undefined, anchor) : undefined} onOpenLink={onOpenLink}
           revealedResult={segment.evidence.some(e => e.id === revealedResult?.id) ? revealedResult : undefined}
           renderApprovals={bridge ? approvals => <ApprovalCards approvals={approvals} refusals={[]} bridge={bridge} loupistId={loupistId} /> : undefined} />);
         continue;
@@ -440,7 +378,7 @@ function ChatMessageCardComponent({
             const card = piece.card;
             transcript.push(<SensitivityCard key={`grid-${card.evidence_id}-${index}`} grid={card} subject={card.subject}
               evidence={evidenceRefs.find(item => item.id === card.evidence_id)} evidenceRefs={evidenceRefs} asOf={message.as_of}
-              actions={{ onOpenEvidence: openEvidence, onShowStep: showStep }} onChangeRates={onFillComposer} />);
+              onChangeRates={onFillComposer} />);
           }
         });
         continue;
@@ -485,22 +423,21 @@ function ChatMessageCardComponent({
         </Message>
       ) : null}
       {transcript}
-      {bridge && settledAnswer ? settledAnswer.cards.map((card) => <EarningsChatCard key={card.evidenceId} bridge={bridge} loupistId={loupistId} loupistName={loupistName} assetId={card.assetId} eventId={card.eventId} onOpenLink={(url) => void onOpenLink(url)} />) : null}
+      {bridge && settledAnswer ? settledAnswer.cards.map((card) => <EarningsChatCard key={card.evidenceId} bridge={bridge} loupistId={loupistId} loupistName={loupistName} assetId={card.assetId} eventId={card.eventId} />) : null}
 
-      {charts.map((block) => <ChatArtifactBlock key={block.key} block={block} onOpen={onOpenArtifact} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} asOf={message.as_of} />)}
+      {charts.map((block) => <ChatArtifactBlock key={block.key} block={block} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} asOf={message.as_of} />)}
       {bridge ? connectionSetups.map((block) => <ConnectionSetupCard key={block.key} bridge={bridge} loupistId={loupistId} entryId={block.entryId}
         onAskAgain={onFillComposer && previousQuestion ? () => onFillComposer(previousQuestion) : undefined} />) : null}
-      {grids.map((block) => <ChatGridBlock key={block.key} block={block} actions={{ onOpenEvidence: openEvidence, onShowStep: showStep }} onAsk={onAskArtifact} askDisabled={askArtifactDisabled}
-        onOpenMap={(entityId) => onOpenMemoryPage({ loupistId, surface: "world", view: { onlyDisputed: true, highlightEntityIds: [entityId] } })} />)}
+      {grids.map((block) => <ChatGridBlock key={block.key} block={block} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} />)}
 
-      {message.role === "assistant" && <MessageSchedules receipts={message.schedule_receipts ?? []} onOpen={onOpenSchedule} />}
+      {message.role === "assistant" && <MessageSchedules receipts={message.schedule_receipts ?? []} />}
 
-      <DeliveredFiles paths={deliveredPaths} onOpen={onOpenFile}
+      <DeliveredFiles paths={deliveredPaths}
         onReveal={bridge ? (path) => bridge.workspaceReveal({ loupist_id: loupistId, path }) : undefined} />
       {documents.length > 0 ? (
         <div className="message-outputs" aria-label={t("chatMessageCard.outputs")}>
           {documents.map((artifact) => (
-            <button className="message-output-card" type="button" key={`${artifact.artifact_id}:${artifact.revision}`} aria-label={t("chatMessageCard.openDocument", { title: artifact.title })} onClick={() => onOpenArtifact(artifact)}>
+            <button className="message-output-card" type="button" key={`${artifact.artifact_id}:${artifact.revision}`} aria-label={t("chatMessageCard.openDocument", { title: artifact.title })} disabled={!go} onClick={() => go?.({ kind: "artifact", artifact })}>
               <FileTextIcon aria-hidden="true" />
               <span><strong>{artifact.title}</strong><small>{t("chatMessageCard.document")}</small></span>
             </button>
@@ -524,15 +461,9 @@ function ChatMessageCardComponent({
 
       {message.role === "assistant" ? <TurnFooter footer={view.footer} now={now} announce={view.announce} guiding={guiding}>
         {view.footer.kind === "settled" ? <>
-          {citationList.length > 0 && onOpenEvidence ? (
+          {citationList.length > 0 ? (
             <Disclosure className="message-sources" aria-label={t("chatMessageCard.researchSources")} title={<>{t("chatMessageCard.sourceCount", { count: citationList.length })}</>}>
-              <ol>{citationList.map(({ evidence, number }) => (
-                <li key={evidence.id}><button type="button" onClick={(event) => openEvidence(evidence, undefined, event.currentTarget)}>
-                  <span className="source-number">{number}</span><span><strong>{evidenceTitle(evidence)}</strong>
-                    <small className="source-site"><SourceFavicon evidence={evidence} /><span>{sourceIdentityLabel(evidence)} · {evidencePresentation(evidence).label}{evidence.retrieved_at ? ` · ${formatDate(new Date(evidence.retrieved_at), { dateStyle: "medium" })}` : ""}{evidence.excerpt_match ? t("chatMessageCard.citedPassage") : ""}</span></small>
-                  </span><ArrowUpRightIcon aria-hidden="true" />
-                </button></li>
-              ))}</ol>
+              <ol>{citationList.map(({ evidence, number }) => <SourceRow key={evidence.id} evidence={evidence} number={number} />)}</ol>
             </Disclosure>
           ) : null}
           <MessageMemoryRow
@@ -541,9 +472,6 @@ function ChatMessageCardComponent({
             loupistId={loupistId}
             chatId={chatId}
             message={message}
-            onOpenMemory={onOpenMemory}
-            onOpenMemoryPage={onOpenMemoryPage}
-            onOpenEvidence={onOpenEvidence ? (evidence, anchor) => openEvidence(evidence, undefined, anchor) : undefined}
             onReadWorldJob={onReadWorldJob}
             onWorldChanged={onWorldChanged}
           />
@@ -553,7 +481,7 @@ function ChatMessageCardComponent({
             }}>{copyState === "copied" ? <CheckIcon /> : <CopyIcon />}</button>
             {copyState === "failed" ? <span role="alert">{t("chatMessageCard.couldNotCopySelectTheAnswerToCopyIt")}</span> : null}
           </div> : null}
-          {view.footer.feedback && onSaveFeedback && onTeachFeedback ? <AnswerFeedback bridge={bridge} loupistId={loupistId} chatId={chatId} onOpenPrinciple={onOpenMemoryPage} message={message} onSave={onSaveFeedback} onTeach={onTeachFeedback} feedbackBusy={feedbackBusy} /> : null}
+          {view.footer.feedback && onSaveFeedback && onTeachFeedback ? <AnswerFeedback bridge={bridge} loupistId={loupistId} chatId={chatId} message={message} onSave={onSaveFeedback} onTeach={onTeachFeedback} feedbackBusy={feedbackBusy} /> : null}
           {note ? <p className="message-model-note">{note}</p> : null}
           {view.footer.runState ? (
             <div className="message-run-state" role={view.footer.runState.kind === "failed" ? "alert" : "status"}>
@@ -575,7 +503,6 @@ function ChatMessageCardComponent({
         {onEarlierVersion ? <button type="button" className="message-version-link" onClick={onEarlierVersion}>{t("chatBranch.earlierVersion")}</button> : null}
         {onLaterVersion ? <button type="button" className="message-version-link" onClick={onLaterVersion}>{t("chatBranch.laterVersion")}</button> : null}
       </div> : null}
-      {quoteOpen ? <QuoteEvidencePopover evidence={quoteOpen.evidence} anchor={quoteOpen.anchor} pointer={quoteOpen.pointer} onClose={() => setQuoteOpen(null)} /> : null}
     </article>
   );
 }
@@ -601,4 +528,8 @@ function stoppedLabel(state: TurnState, message: ChatMessage) {
   return kept === "draft" ? t("chatMessageCard.stoppedKeptDraft") : t("chatMessageCard.stoppedBeforeTheAnswerFinished");
 }
 
-export const ChatMessageCard = memo(ChatMessageCardComponent);
+function ChatMessageCardInTurn(props: Props) {
+  return <TurnProvider message={props.message} loupistId={props.loupistId}><ChatMessageCardComponent {...props} /></TurnProvider>;
+}
+
+export const ChatMessageCard = memo(ChatMessageCardInTurn);

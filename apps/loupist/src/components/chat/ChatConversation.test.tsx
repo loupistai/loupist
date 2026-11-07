@@ -102,8 +102,7 @@ describe("home Thread guidance", () => {
     const chat = new Chat<LoupistUIMessage>({ transport: new TauriChatTransport(bridge), messages: messages.map(toLoupistUIMessage) });
     function Conversation() {
       const { messages: list, messageKeys } = useLoupistChat({ bridge, chat, loupistId: "loupist-quality", activeThread: undefined, setThreads: vi.fn() });
-      return <ChatConversation loupistId="loupist-quality" loupistName="Loupist" bridge={bridge} home messages={list} messageKeys={messageKeys} onSuggestion={vi.fn()} onEditUser={vi.fn()}
-        onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} onOpenArtifact={vi.fn()} onOpenLink={vi.fn()} onReadAttachment={vi.fn()} />;
+      return <ChatConversation loupistId="loupist-quality" loupistName="Loupist" bridge={bridge} home messages={list} messageKeys={messageKeys} onSuggestion={vi.fn()} onEditUser={vi.fn()} onReadAttachment={vi.fn()} />;
     }
     return render(<Conversation />);
   };

@@ -79,7 +79,7 @@ describe("as-of answers", () => {
   });
 
   it("renders a refused step as neutral and the note from the answer's report", () => {
-    render(<ChatMessageCard loupistId="loupist-a" loupistName="Quality" onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} onOpenArtifact={vi.fn()} onOpenLink={vi.fn()} onReadAttachment={vi.fn()}
+    render(<ChatMessageCard loupistId="loupist-a" loupistName="Quality" onReadAttachment={vi.fn()}
       message={{ id: "answer", role: "assistant", status: "complete", content: "Done.", created_at: "2026-03-03T00:00:00Z", as_of: "2026-03-03", progress: { startedAtMs: 1, finishedAtMs: 50_000, items: [
         { id: "quote", kind: "tool", toolName: "kis_read", category: "finance", operation: "read", action: "Read market data", target: "990221", status: "skipped", startedAtMs: 1, finishedAtMs: 2 },
       ] } }} />);

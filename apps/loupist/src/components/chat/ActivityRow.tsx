@@ -1,4 +1,5 @@
 import { Disclosure } from "../ui/disclosure";
+import { useOpenProps } from "../navigation/Open";
 import { formatNumber } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
 import { createContext, memo, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
@@ -32,8 +33,6 @@ const RowAsOf = createContext<string | undefined>(undefined);
 type Props = {
   segment: Extract<TurnSegment, { kind: "activity" }>;
   status: ChatMessage["status"];
-  onOpenSource?: (source: ChatEvidenceRef, anchor: HTMLElement) => void;
-  onOpenLink: (href: string) => Promise<void>;
   revealedResult?: { id: string; request: number } | null;
   focusItemId?: string | null;
   /** The answer's as-of date (`YYYY-MM-DD`). */
@@ -84,13 +83,24 @@ const visibleTarget = (target?: string) => {
   return cleaned;
 };
 
+/** A step's page: it opens in the panel browser, or the system browser on Cmd-click. */
+function StepLink({ href, target }: { href: string; target: string }) {
+  const link = useOpenProps({ kind: "link", url: href });
+  if (!link.available) return <span className="chat-progress-target" title={target}>{target}</span>;
+  return <button type="button" className="chat-progress-target chat-progress-link" title={target} {...link.props}>{target}</button>;
+}
+
+function WorkSource({ source }: { source: ChatEvidenceRef }) {
+  const link = useOpenProps({ kind: "evidence", evidence: source });
+  return link.available ? <button type="button" {...link.props}>{evidenceTitle(source)}</button> : <>{evidenceTitle(source)}</>;
+}
+
 const ActionRow = memo(function ActionRow({
   item,
   evidence,
   revealedResult,
   expandedResults,
   onToggleResult,
-  onOpenLink,
   rowExpanded,
   focusItemId,
   approvals,
@@ -102,7 +112,6 @@ const ActionRow = memo(function ActionRow({
   revealedResult?: { id: string; request: number } | null;
   expandedResults: Set<string>;
   onToggleResult: (id: string) => void;
-  onOpenLink: (href: string) => Promise<void>;
   rowExpanded: boolean;
   focusItemId?: string | null;
 }) {
@@ -181,7 +190,7 @@ const ActionRow = memo(function ActionRow({
           <span className="chat-progress-action">{action}</span>
         )}
         {target && item.href ? (
-          <button type="button" className="chat-progress-target chat-progress-link" title={target} onClick={() => void onOpenLink(item.href!)}>{target}</button>
+          <StepLink href={item.href} target={target} />
         ) : target ? (
           <span className="chat-progress-target" title={target}>{target}</span>
         ) : null}
@@ -272,7 +281,7 @@ const refusedRead = (item: ActionItem) => {
  * what was read and worked afterwards, at the same height. The details hold
  * the sources, consulted notes, plan and every step.
  */
-export function ActivityRow({ segment, status, onOpenSource, onOpenLink, revealedResult, focusItemId, asOf, renderApprovals }: Props) {
+export function ActivityRow({ segment, status, revealedResult, focusItemId, asOf, renderApprovals }: Props) {
   useTranslation("chat");
   const { row, progress, evidence, sources, memoryReads, autoExpand } = segment;
   const execution = useChatExecution();
@@ -325,7 +334,7 @@ export function ActivityRow({ segment, status, onOpenSource, onOpenLink, reveale
   };
   const renderEntry = (entry: ChatProgressItem) => entry.kind === "commentary" ? null : (
     <ActionRow key={entry.id} item={entry} evidence={evidenceFor(entry, evidenceById)} revealedResult={revealedResult} expandedResults={expandedResults}
-      onToggleResult={onToggleResult} onOpenLink={onOpenLink} rowExpanded={expanded} focusItemId={focusItemId} approvals={approvalsFor(entry)} />
+      onToggleResult={onToggleResult} rowExpanded={expanded} focusItemId={focusItemId} approvals={approvalsFor(entry)} />
   );
   const problem = actions.some((item) => (item.status === "failed" && !pausedByRule(item)) || item.status === "stopped");
 
@@ -356,9 +365,7 @@ export function ActivityRow({ segment, status, onOpenSource, onOpenLink, reveale
         <ChatExecutionProvider value={detailScope}><RowAsOf.Provider value={asOf}>
           <div id={detailsId} className="chat-progress-items" data-waiting={waiting || undefined}>
             {sources.length ? <ul className="chat-work-sources" aria-label={t("chatReceipt.sourcesRead")}>
-              {sources.map((source) => <li key={source.id}>{onOpenSource
-                ? <button type="button" onClick={(event) => onOpenSource(source, event.currentTarget)}>{evidenceTitle(source)}</button>
-                : evidenceTitle(source)}</li>)}
+              {sources.map((source) => <li key={source.id}><WorkSource source={source} /></li>)}
             </ul> : null}
             {memoryReads.length ? <Disclosure className="chat-progress-memory" title={<>{t("chatProgressTimeline.consultedNotes", { count: memoryReads.length, formattedCount: formatNumber(memoryReads.length) })}</>}>
               <ul tabIndex={0} aria-label={t("chatProgressTimeline.usedInThisAnswer")}>{memoryReads.map((ref, index) => <li key={index}><strong>{ref.title}</strong>{ref.excerpt ? <p>{ref.excerpt}</p> : null}</li>)}</ul>

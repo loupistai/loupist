@@ -19,8 +19,7 @@ it("switches the morning message language without changing the Loupist name", as
     watchlistList: async () => [],
   } as unknown as LoupistBridge;
   render(<ChatConversation home bridge={bridge} messages={[]} messageKeys={[]} loupistId="loupist" loupistName="My research"
-    onSuggestion={suggest} onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()}
-    onOpenArtifact={vi.fn()} onOpenLink={vi.fn()} onReadAttachment={vi.fn()} />);
+    onSuggestion={suggest} onReadAttachment={vi.fn()} />);
   expect(await screen.findByRole("button", { name: "What should I know this week?" })).toBeVisible();
   await act(async () => { await i18n.changeLanguage("en-XA"); });
   expect(screen.getByText("My research")).toBeVisible();

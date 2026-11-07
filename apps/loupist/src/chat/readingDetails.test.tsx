@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { renderWithOpen } from "../test/open";
 import { MessageResponse } from "@/components/ai-elements/message-response";
 import type { ChatMessage } from "../types";
 import { retainedEvidenceFor } from "./links";
@@ -11,15 +12,20 @@ const message = (id: string, role: ChatMessage["role"], createdAt: string, extra
   ({ id, role, content: "", created_at: createdAt, status: "complete", ...extra });
 
 describe("links in answers (X4)", () => {
-  it("opens the panel's browser on click and the system browser on Cmd-click", async () => {
-    const onOpenLink = vi.fn();
-    render(<MessageResponse onOpenLink={onOpenLink}>{"Read [the report](https://hanul.example/q3)."}</MessageResponse>);
+  it("opens the panel's browser on click and the system browser on Ctrl-click or a middle click, with no icon in the prose", async () => {
+    const { open } = renderWithOpen(<MessageResponse>{"Read [the report](https://hanul.example/q3)."}</MessageResponse>);
     const link = await screen.findByRole("link", { name: /the report/ });
+    expect(link.querySelector("svg")).toBeNull();
+    const to = { kind: "link", url: "https://hanul.example/q3" };
     fireEvent.click(link);
-    await vi.waitFor(() => expect(onOpenLink).toHaveBeenLastCalledWith("https://hanul.example/q3"));
-    fireEvent.click(link, { metaKey: true });
-    await vi.waitFor(() => expect(onOpenLink).toHaveBeenLastCalledWith("https://hanul.example/q3", { external: true }));
+    expect(open).toHaveBeenLastCalledWith(to, undefined);
+    fireEvent.click(link, { ctrlKey: true });
+    expect(open).toHaveBeenLastCalledWith(to, { external: true });
+    fireEvent(link, new MouseEvent("auxclick", { bubbles: true, button: 1 }));
+    expect(open).toHaveBeenCalledTimes(3);
+    expect(open).toHaveBeenLastCalledWith(to, { external: true });
   });
+
 
   it("finds the retained copy of a linked page, ignoring the fragment and a trailing slash", () => {
     const evidence = { id: "e1", title: "Q3", kind: "original" as const, url: "https://hanul.example/q3/", tool_name: "web_fetch", retrieved_at: "", excerpt: "", excerpt_truncated: false, content_sha256: "a".repeat(64), warnings: [] };

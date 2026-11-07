@@ -12,17 +12,18 @@ import { citationLabel, evidencePresentation, evidenceTitle, sourceIdentityLabel
 import { citationNumber, needsChecking } from "../../chat/numberChecks";
 import { baseCell, cardDay, cellText, changePrompt, discountRate, growthRate, inputLabel, inputValue, outsideCount, priceText, sensitivityTsv, shaded } from "../../chat/sensitivity";
 import { CitationChip } from "./CitationChip";
-import { NumberChip, type NumberChipActions } from "./NumberChip";
+import { NumberChip } from "./NumberChip";
+import { useGo } from "../navigation/Open";
 
 const t = i18n.getFixedT(null, "chat");
 /** A private-use marker that finds the reference value inside its translated sentence. */
 const VALUE = "";
 
 /** The source of one number on the card: its numbered citation, opening the evidence. */
-function SourceChip({ evidence, evidenceRefs, onOpen }: { evidence: ChatEvidenceRef; evidenceRefs: readonly ChatEvidenceRef[]; onOpen?: NumberChipActions["onOpenEvidence"] }) {
+function SourceChip({ evidence, evidenceRefs }: { evidence: ChatEvidenceRef; evidenceRefs: readonly ChatEvidenceRef[] }) {
   const number = citationNumber(evidence, evidenceRefs);
-  if (number === null || !onOpen) return null;
-  return <CitationChip evidence={evidence} label={citationLabel(evidence, evidenceRefs)} title={evidenceTitle(evidence)} source={sourceIdentityLabel(evidence) || evidencePresentation(evidence).label} onOpen={(anchor) => onOpen(evidence, undefined, anchor)}>{number}</CitationChip>;
+  if (number === null) return null;
+  return <CitationChip evidence={evidence} label={citationLabel(evidence, evidenceRefs)} title={evidenceTitle(evidence)} source={sourceIdentityLabel(evidence) || evidencePresentation(evidence).label} to={{ kind: "evidence", evidence }}>{number}</CitationChip>;
 }
 
 /** A cell reverse_dcf could not solve: "—", with why on hover or focus. */
@@ -48,7 +49,6 @@ export type SensitivityCardProps = {
   evidence?: ChatEvidenceRef;
   /** In an answer: the answer's evidence, so inputs and the price show their sources. */
   evidenceRefs?: readonly ChatEvidenceRef[];
-  actions?: NumberChipActions;
   /** An as-of answer's date: the card says "Known as of". */
   asOf?: string;
   /** Fills the composer with the rates to change; never sends. */
@@ -68,8 +68,9 @@ export type SensitivityCardProps = {
  * base case is outlined, and reverse-DCF cells that need more growth than the
  * reference are shaded. Every value is Rust's own calculation.
  */
-export function SensitivityCard({ grid, subject, evidence, evidenceRefs = [], actions = {}, asOf, onChangeRates, variant = "answer", sources }: SensitivityCardProps) {
+export function SensitivityCard({ grid, subject, evidence, evidenceRefs = [], asOf, onChangeRates, variant = "answer", sources }: SensitivityCardProps) {
   useTranslation("chat");
+  const go = useGo();
   const titleId = useId();
   const formulasId = useId();
   const [copied, setCopied] = useState(false);
@@ -92,7 +93,7 @@ export function SensitivityCard({ grid, subject, evidence, evidenceRefs = [], ac
   const subtitle = reverse ? t("sensitivity.subtitle", { years: formatNumber(grid.forecast_years) }) : subject;
   const priceSource = reverse ? find(price?.evidence_id) : undefined;
   const priceChip = priceSource
-    ? <SourceChip evidence={priceSource} evidenceRefs={evidenceRefs} onOpen={actions.onOpenEvidence} />
+    ? <SourceChip evidence={priceSource} evidenceRefs={evidenceRefs} />
     : reverse ? sources?.price : undefined;
   // The price, its date and its source stay together on one line ("$41.20 on Oct 21 [1]" / "10월 21일 US$41.20").
   const titleParts = title.split(" · ");
@@ -104,7 +105,7 @@ export function SensitivityCard({ grid, subject, evidence, evidenceRefs = [], ac
   const needsMore = reference ? (reference.years ? t("sensitivity.needsMore", { years: formatNumber(reference.years) }) : t("sensitivity.needsMoreShort")) : "";
   const inputs = grid.inputs.filter((input) => input.name !== "price");
   // Show step reveals the producing step in the thread; without a thread (the results dialog) the formula opens here.
-  const showStep = evidence && actions.onShowStep ? () => actions.onShowStep!(evidence) : undefined;
+  const showStep = evidence && variant === "answer" && go ? () => go({ kind: "evidence", evidence }) : undefined;
   const Title = variant === "dialog" ? DialogTitle : "h3";
 
   const copy = () => { void navigator.clipboard?.writeText(sensitivityTsv(grid)).then(() => setCopied(true), () => undefined); };
@@ -121,7 +122,7 @@ export function SensitivityCard({ grid, subject, evidence, evidenceRefs = [], ac
     legend = <p className="sensitivity-legend">
       <span className="sensitivity-swatch" aria-hidden="true" />
       <span>{before}{check && source
-        ? <NumberChip check={check} evidence={source} evidenceRefs={evidenceRefs} asOf={asOf} actions={actions}>{value}</NumberChip>
+        ? <NumberChip check={check} evidence={source} evidenceRefs={evidenceRefs} asOf={asOf}>{value}</NumberChip>
         : <span className="gg-num">{value}</span>}{after}</span>
     </p>;
   }
@@ -179,7 +180,7 @@ export function SensitivityCard({ grid, subject, evidence, evidenceRefs = [], ac
           {/* A share count names itself ("34.6m shares"); a label the calculation was given still shows. */}
           {input.name === "shares" && !input.label ? null : <><span>{inputLabel(input)}</span> </>}<span className="gg-num">{inputValue(grid, input)}</span>
           {flagged ? <TriangleAlertIcon className="sensitivity-input-flag" role="img" aria-label={t("numberChip.notFound")} /> : null}
-          {source ? <> <SourceChip evidence={source} evidenceRefs={evidenceRefs} onOpen={actions.onOpenEvidence} /></>
+          {source ? <> <SourceChip evidence={source} evidenceRefs={evidenceRefs} /></>
             : sources?.inputs?.[input.name] ? <> {sources.inputs[input.name]}</> : null}
         </span>;
       })}
