@@ -14,8 +14,8 @@ describe("Marketplace setup feedback", () => {
       krx_coverage: { kospi: "verified" as const, kosdaq: "needs_approval" as const },
     })) };
     render(<MarketplaceSetupDialog bridge={bridge} entry={entry} connector={status} onClose={vi.fn()} onChanged={vi.fn()} />);
-    expect(screen.getByText("KOSPI daily trading (stk_bydd_trd): Verified")).toBeVisible();
-    expect(screen.getByText("KOSDAQ daily trading (ksq_bydd_trd): Needs KRX approval")).toBeVisible();
+    expect(screen.getByText("KOSPI daily trading: Verified")).toBeVisible();
+    expect(screen.getByText("KOSDAQ daily trading: Needs KRX approval")).toBeVisible();
   });
   it("retains entered credentials after client validation so missing fields can be corrected", async () => {
     const user = userEvent.setup();
@@ -83,4 +83,63 @@ it("explains an unavailable connection and blocks setup while retaining its deta
   expect(screen.getByLabelText("OpenDART API key")).toBeDisabled();
   expect(screen.queryByRole("button", { name: "Save & verify" })).toBeNull();
   expect(configure).not.toHaveBeenCalled();
+});
+
+async function openDart() {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const snapshot = await bridge.marketplaceSnapshot();
+  const entry = snapshot.catalog.entries.find((item) => item.id === "opendart.disclosures")!;
+  const connector = snapshot.connectors.find((item) => item.entry_id === entry.id)!;
+  return { bridge, entry, connector };
+}
+
+describe("leaving setup with a typed key", () => {
+  it("asks before Done discards a key that is typed but not saved", async () => {
+    const user = userEvent.setup();
+    const { bridge, entry, connector } = await openDart();
+    const onClose = vi.fn();
+    render(<MarketplaceSetupDialog bridge={bridge} entry={entry} connector={connector} onClose={onClose} onChanged={vi.fn()} />);
+    const key = screen.getByLabelText("OpenDART API key");
+    await user.type(key, "typed-but-unsaved");
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    const confirmation = screen.getByRole("dialog", { name: "Discard the key you typed?" });
+    expect(onClose).not.toHaveBeenCalled();
+    await user.click(within(confirmation).getByRole("button", { name: "Keep editing" }));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("OpenDART API key")).toHaveValue("typed-but-unsaved");
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Discard the key you typed?" })).getByRole("button", { name: "Discard" }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("closes without asking when no key was typed", async () => {
+    const user = userEvent.setup();
+    const { bridge, entry, connector } = await openDart();
+    const onClose = vi.fn();
+    render(<MarketplaceSetupDialog bridge={bridge} entry={entry} connector={connector} onClose={onClose} onChanged={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog", { name: "Discard the key you typed?" })).toBeNull();
+  });
+
+  it("asks before Escape drops a typed key too", async () => {
+    const user = userEvent.setup();
+    const { bridge, entry, connector } = await openDart();
+    const onClose = vi.fn();
+    render(<MarketplaceSetupDialog bridge={bridge} entry={entry} connector={connector} onClose={onClose} onChanged={vi.fn()} />);
+    await user.type(screen.getByLabelText("OpenDART API key"), "typed");
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog", { name: "Discard the key you typed?" })).toBeVisible();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+it("shows a localized recovery message for a rejected key instead of the raw provider error", async () => {
+  const { bridge, entry, connector } = await openDart();
+  const status = { ...connector, credentials: connector.credentials.map((credential) => ({
+    ...credential, stored: true, pending: true, verification: "rejected" as const, last_error: "HTTP 401 raw provider payload",
+  })) };
+  render(<MarketplaceSetupDialog bridge={bridge} entry={entry} connector={status} onClose={vi.fn()} onChanged={vi.fn()} />);
+  expect(screen.getByText("The provider rejected these credentials. Check the key and try again.")).toBeVisible();
+  expect(screen.queryByText(/raw provider payload/)).toBeNull();
 });

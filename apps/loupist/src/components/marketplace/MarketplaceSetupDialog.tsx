@@ -28,10 +28,10 @@ import type {
   MarketplaceConnectorStatus,
   MarketplaceEntry,
 } from "../../marketplace/types";
-import { CONNECTOR_READINESS_LABELS } from "../../marketplace/readiness";
+import { CONNECTION_STATES, connectionState } from "../../marketplace/readiness";
 import { errorMessage } from "../../lib/errors";
 import type { LoupistBridge } from "../../types";
-import { FREE_STATE_LABELS, setupEntryLabel } from "./MarketplaceCard";
+import { accessLabel, setupEntryLabel } from "./MarketplaceCard";
 
 type SetupMessage = {
   tone: "error" | "success";
@@ -90,6 +90,15 @@ export function MarketplaceSetupDialog({
   const [credentialToDelete, setCredentialToDelete] = useState<string | null>(
     null,
   );
+  const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null);
+  const hasUnsavedKey = Object.values(credentialDraft).some((value) => value.trim() !== "");
+  // Leaving with a key typed but unsaved asks first. A save in flight keeps its own window.
+  const leave = (after?: () => void) => {
+    const go = () => { onClose(); after?.(); };
+    if (hasUnsavedKey && setupBusy !== "save") setPendingLeave(() => go);
+    else go();
+  };
+  const requestClose = () => leave();
 
   const dialogTitle = !entry ? "" : !entry.setup || connector?.readiness === "runtime_unavailable" ? connectionText(entry.name) : entry.id === "community.web-research" ? i18n.t("connections:marketplaceSetupDialog.settingsTitle", { name: connectionText(entry.name) }) : setupEntryLabel(entry, connector);
   const selectedEntryId = entry?.id ?? null;
@@ -329,7 +338,7 @@ export function MarketplaceSetupDialog({
       <Dialog
         open={Boolean(entry)}
         onOpenChange={(open) => {
-          if (!open) onClose();
+          if (!open) requestClose();
         }}
       >
         {entry && (
@@ -349,11 +358,11 @@ export function MarketplaceSetupDialog({
               <DialogBody>
               <div className="marketplace-setup-overview">
                 <div className="marketplace-setup-status">
-                  <Badge variant="outline" data-readiness={connector?.readiness ?? "needs_configuration"}>
-                    {connector ? connectionText(CONNECTOR_READINESS_LABELS[connector.readiness]) : i18n.t("connections:marketplaceSetupDialog.needsSetup")}
+                  <Badge variant="outline" data-tone={CONNECTION_STATES[connectionState(connector)].tone}>
+                    {CONNECTION_STATES[connectionState(connector)].label}
                   </Badge>
                 </div>
-                <span>{FREE_STATE_LABELS[entry.free_state]}</span>
+                <span>{accessLabel(entry)}</span>
               </div>
               {connector?.readiness === "runtime_unavailable" ? (
                 <div className="marketplace-setup-message" data-tone="error" role="alert">
@@ -505,13 +514,13 @@ export function MarketplaceSetupDialog({
                           <p>{i18n.t("connections:marketplaceSetupDialog.krxCoverage")}</p>
                           {(["kospi", "kosdaq"] as const).map(market => (
                             <p key={market}>
-                              {i18n.t(`connections:marketplaceSetupDialog.krxMarket.${market}`, { service: market === "kospi" ? "stk_bydd_trd" : "ksq_bydd_trd" })}
+                              {i18n.t(`connections:marketplaceSetupDialog.krxMarket.${market}`)}
                               {": "}{i18n.t(`connections:marketplaceSetupDialog.krxAccess.${status.krx_coverage![market]}`)}
                             </p>
                           ))}
                         </div>
                       )}
-                      {status?.last_error && !setupMessage ? <p className="marketplace-credential-error">{status.last_error}</p> : null}
+                      {status?.last_error && !setupMessage && (status.verification === "rejected" || status.verification === "temporarily_unavailable") ? <p className="marketplace-credential-error">{i18n.t(`connections:marketplaceSetupDialog.credentialProblem.${status.verification}`)}</p> : null}
                     </div>
                   );
                 })}
@@ -541,7 +550,7 @@ export function MarketplaceSetupDialog({
                 </div>
               )}
 
-              {entry.id === "community.web-research" && onOpenModelSettings ? <Button type="button" variant="link" className="marketplace-inline-action" onClick={() => { onClose(); onOpenModelSettings(); }}>{i18n.t("connections:marketplaceSetupDialog.modelsProviders")}<ExternalLinkIcon /></Button> : null}
+              {entry.id === "community.web-research" && onOpenModelSettings ? <Button type="button" variant="link" className="marketplace-inline-action" onClick={() => leave(onOpenModelSettings)}>{i18n.t("connections:marketplaceSetupDialog.modelsProviders")}<ExternalLinkIcon /></Button> : null}
 
               <Disclosure className="marketplace-details" title={i18n.t("connections:marketplaceSetupDialog.aboutThisConnection")}>
                 <dl>
@@ -585,8 +594,8 @@ export function MarketplaceSetupDialog({
 
               </DialogBody>
               <DialogFooter>
-                {onManageLoupists ? <Button type="button" variant="ghost" className="marketplace-manage-access" onClick={() => { onClose(); onManageLoupists(); }}><SlidersHorizontalIcon />{i18n.t("connections:marketplaceSetupDialog.loupistAccess")}</Button> : null}
-                <Button type="button" variant="outline" onClick={onClose}>
+                {onManageLoupists ? <Button type="button" variant="ghost" className="marketplace-manage-access" onClick={() => leave(onManageLoupists)}><SlidersHorizontalIcon />{i18n.t("connections:marketplaceSetupDialog.loupistAccess")}</Button> : null}
+                <Button type="button" variant="outline" onClick={requestClose}>
                   {i18n.t("connections:marketplaceSetupDialog.done")}</Button>
                 {entry.setup && connector?.readiness !== "runtime_unavailable" ? <Button type="submit" disabled={Boolean(setupBusy)}>
                   {setupBusy === "save" ? <LoaderCircleIcon className="animate-spin" aria-hidden="true" /> : null}
@@ -600,6 +609,18 @@ export function MarketplaceSetupDialog({
             </form>
           </DialogContent>
         )}
+      </Dialog>
+      <Dialog open={Boolean(pendingLeave)} onOpenChange={(open) => { if (!open) setPendingLeave(null); }}>
+        <DialogContent className="marketplace-delete-dialog">
+          <DialogHeader>
+            <DialogTitle>{i18n.t("connections:marketplaceSetupDialog.discardKeyTitle")}</DialogTitle>
+            <DialogDescription>{i18n.t("connections:marketplaceSetupDialog.discardKeyDescription", { name: entry ? connectionText(entry.name) : "" })}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setPendingLeave(null)}>{i18n.t("connections:marketplaceSetupDialog.keepEditing")}</Button>
+            <Button type="button" variant="destructive" onClick={() => { const go = pendingLeave; setPendingLeave(null); setCredentialDraft({}); go?.(); }}>{i18n.t("connections:marketplaceSetupDialog.discardKey")}</Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
       <Dialog
         open={Boolean(credentialToDelete)}

@@ -15,9 +15,15 @@ needs both locales; labels the host composes itself (`Opened {connection}`, `Rea
 {host}`) stay as sent. Rust derives the permitted surface;
 service handlers independently validate arguments, ownership and evidence. The Pi
 extension registers schemas/routes. MCP tools are discovered dynamically; bundled
-OpenBB descriptions are host-generated in
+OpenBB cards (descriptions and per-run pruned schemas,
+[Data services](../capabilities/data-services.md#agent-facing-data-services)) are host-generated in
 `apps/loupist/src-tauri/src/commands/tool_executor/mcp_host/openbb.rs`,
-not taken from upstream docstrings, so edit them there.
+not taken from upstream docstrings, so edit them there. The capability index
+(`formatRuntimeIndex` in `agent/loupist-extension.mjs`) names each enabled
+connection and built-in pack with a purpose cut at a sentence or word, appends
+the activation sentence only to the component Rust marks `bundled`, and replaces
+the list of off connections with one fixed sentence that points at
+`connection_setup`, shown only when that tool is in the turn.
 
 Native `read`, `write`, `edit`, `bash`, `ls`, `find`, and `grep` keep Pi's tool descriptions. [SYSTEM.md](../../apps/loupist/agent/SYSTEM.md) states the permission rule once, under "Authority and local work": those tools run in the selected workspace with the user's permissions, including absolute paths, and that execution is trusted local work. `registerWorkspaceTools` in `agent/workspace-tools.mjs` does not append that sentence to each tool. It still calls the Rust `authorize` hook before every execution, wraps untrusted text with the host boundary, and passes the workspace as the tool cwd while Pi's runtime directory stays private. The two-case form for an investment view is in that same file under "Investment judgment" and in the [Journal Skill](../../apps/loupist/agent/skills/journal/SKILL.md): two compact points, for and against, each a dated observation, then its next check (metric and timing), then what would strengthen or weaken it. The system's dated, linked per-principle checklist still applies. A proposed chart level's observed anchor is date, measure, and value; the [Visualize Skill](../../apps/loupist/agent/skills/visualize/SKILL.md) says "last day" or the chart's overall range does not date that value.
 

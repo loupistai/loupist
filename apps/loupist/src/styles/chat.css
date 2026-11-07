@@ -2096,6 +2096,14 @@ button.sent-image { cursor: zoom-in; }
 .approval-line { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .approval-line button { height: auto; padding: 0; font-size: inherit; }
 
+/* Connection setup card: a connection_setup step's live state, drawn like an approval card without the warning edge. */
+.connection-setup-card { display: grid; gap: var(--gg-space-2); max-width: 640px; margin: var(--gg-space-2) 0 var(--gg-space-3); padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
+.connection-setup-card header strong { font-size: var(--gg-text-subtitle); font-weight: var(--gg-weight-medium); }
+.connection-setup-card p { margin: 0; overflow-wrap: anywhere; }
+.connection-setup-card-note { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.connection-setup-card-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
+.connection-setup-card-error { margin: 0; color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
+
 /* Approval card (D3): the two everyday answers side by side, the lasting one below. */
 .approval-card-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
 .approval-card-actions > .approval-card-always { flex-basis: 100%; justify-content: flex-start; }

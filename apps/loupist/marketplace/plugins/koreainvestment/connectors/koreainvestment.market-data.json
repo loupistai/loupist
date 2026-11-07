@@ -1,7 +1,7 @@
 {
   "id": "koreainvestment.market-data",
   "name": "Korea Investment Open Trading API",
-  "summary": "All 146 read endpoints for Korean and overseas markets and accounts. Order placement is not included.",
+  "summary": "Prices and market data for Korean and overseas markets, plus lookups on your own account. Read-only: it cannot place orders.",
   "publisher": "Korea Investment & Securities",
   "data_authority": "Korea Investment & Securities",
   "kind": "data_source",

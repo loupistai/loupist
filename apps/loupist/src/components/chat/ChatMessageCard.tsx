@@ -49,6 +49,8 @@ import { sensitivityParagraphs, type SensitivitySegment } from "../../chat/sensi
 import { SensitivityCard } from "./SensitivityCard";
 import { ChatArtifactBlock } from "./ChatArtifactBlock";
 import { chartBlocks, gridBlocks } from "../../chat/chartBlocks";
+import { connectionSetupBlocks } from "../../chat/connectionSetupBlocks";
+import { ConnectionSetupCard } from "./ConnectionSetupCard";
 import { ChatGridBlock } from "./GridCard";
 import { MessageMemoryRow } from "./MessageMemoryRow";
 import { NextStepChips, nextStepQuestions } from "./NextStepChips";
@@ -200,6 +202,8 @@ type Props = {
   onNextStep?: (question: string) => void;
   /** Puts text into this Chat's composer; never sends ("Change the rates"). */
   onFillComposer?: (text: string) => void;
+  /** The user's message this answer replies to, which a setup card offers to ask again. */
+  previousQuestion?: string;
   onReadWorldJob?: (jobId: string) => Promise<GraphJobView>;
   onWorldChanged?: () => void;
   onOpenMemory: (location: KnowledgeLocation, title: string) => void;
@@ -286,6 +290,7 @@ function ChatMessageCardComponent({
   guiding,
   onNextStep,
   onFillComposer,
+  previousQuestion,
   onReadWorldJob,
   onWorldChanged,
   onOpenMemory,
@@ -387,6 +392,7 @@ function ChatMessageCardComponent({
   const charts = useMemo(() => chartBlocks(message), [message]);
   // Grid answers and conflict cards render in the answer too, after its charts.
   const grids = useMemo(() => gridBlocks(message), [message]);
+  const connectionSetups = useMemo(() => connectionSetupBlocks(message), [message]);
   // A paragraph that only links to a grid result renders as the sensitivity card where the
   // paragraph stood, and one that only links to a results snapshot as the compact results card.
   // Rust counted the links of the answer as written, so the grid paragraphs come out first.
@@ -513,6 +519,8 @@ function ChatMessageCardComponent({
       {bridge ? results.cards.map((card) => <EarningsChatCard key={card.evidenceId} bridge={bridge} loupistId={loupistId} loupistName={loupistName} assetId={card.assetId} eventId={card.eventId} onOpenLink={(url) => void onOpenLink(url)} />) : null}
 
       {charts.map((block) => <ChatArtifactBlock key={block.key} block={block} onOpen={onOpenArtifact} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} asOf={message.as_of} />)}
+      {bridge ? connectionSetups.map((block) => <ConnectionSetupCard key={block.key} bridge={bridge} loupistId={loupistId} entryId={block.entryId}
+        onAskAgain={onFillComposer && previousQuestion ? () => onFillComposer(previousQuestion) : undefined} />) : null}
       {grids.map((block) => <ChatGridBlock key={block.key} block={block} actions={{ onOpenEvidence: openEvidence, onShowStep: showStep }} onAsk={onAskArtifact} askDisabled={askArtifactDisabled}
         onOpenMap={(entityId) => onOpenMemoryPage({ loupistId, surface: "world", view: { onlyDisputed: true, highlightEntityIds: [entityId] } })} />)}
 

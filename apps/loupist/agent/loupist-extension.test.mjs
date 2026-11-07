@@ -26,7 +26,7 @@ test("keeps host-context nofollow protection off Windows only", () => {
   assert.equal(hostContextOpenNoFollowForPlatform("darwin"), constants.O_NOFOLLOW ?? 0);
 });
 
-const tool = (id, name, tool_names, extra = {}) => ({ id, kind: "tool", name, description: `${name} tools.`, tool_names, provider_ids: [], ...extra });
+const tool = (id, name, tool_names, extra = {}) => ({ id, kind: "tool", name, description: `${name} tools.`, tool_names, ...extra });
 const BUNDLED_COMPONENTS = [
   tool("file-capture", "Local file sources", ["workspace_capture"]),
   tool("datasets", "Datasets and local files", ["dataset_describe", "dataset_query", "dataset_export", "dataset_import"]),
@@ -40,7 +40,7 @@ const BUNDLED_COMPONENTS = [
   {
     id: "openbb", kind: "mcp", connection: "openbb", server_id: "openbb", name: "Market data",
     description: "Read-only market, company, filings, and macro data.",
-    tool_names: [], provider_ids: ["alpha_vantage", "fred", "sec", "yfinance"],
+    tool_names: [], bundled: true,
   },
   tool("opendart", "OpenDART", ["dart_company_lookup", "dart_filing_search", "dart_filing_read", "dart_financials"], { connection: "opendart" }),
   tool("web-research", "Web Research", ["web_search", "web_fetch"], { connection: "web-research" }),
@@ -453,7 +453,7 @@ const ACTIVATE_CARD = {
 };
 const OPENBB_COMPONENT = {
   id: "openbb", kind: "mcp", server_id: "openbb", name: "OpenBB providers",
-  description: "Read-only OpenBB financial data.", tool_names: [], provider_ids: ["fmp", "yfinance"],
+  description: "Read-only OpenBB financial data.", tool_names: [], bundled: true,
 };
 
 test("loads namespaced MCP tools and reconciles list changes, call errors and runtime stops", async (t) => {
@@ -786,6 +786,28 @@ test("warm resume restores allowed components in catalog order and drops revoked
   assert.deepEqual(active(), orderedToolNames(active()));
 });
 
+test("warm resume asks the host for exactly the MCP tools the last turn ended with", async (t) => {
+  useHostContext(t, runtimeContext("chat", ["capability_load"], [OPENBB_COMPONENT]));
+  const holdingsCard = { ...ACTIVATE_CARD, name: "mcp__openbb__etf_holdings", mcp_name: "etf_holdings", label: "ETF holdings" };
+  const frames = await startToolBroker(t, () => ({ server_id: "openbb", tools: [ACTIVATE_CARD, holdingsCard] }));
+  const { handlers, active } = loadExtension();
+  await handlers.get("session_start")(undefined, {
+    sessionManager: {
+      buildSessionContext: () => ({
+        messages: [
+          { role: "system", toolsAdded: [{ name: "mcp__openbb__activate_tools" }, { name: "mcp__openbb__equity_price_quote" }, { name: "mcp__openbb__etf_holdings" }] },
+          { role: "system", toolsRemoved: [{ name: "mcp__openbb__equity_price_quote" }] },
+        ],
+      }),
+    },
+  });
+  // The default set is not requested back; the host activates the named tools and filters them to the grant.
+  assert.deepEqual(frames.map((frame) => [frame.method, frame.params]), [
+    ["mcp.connect", { server_id: "openbb", activate_tool_names: ["activate_tools", "etf_holdings"] }],
+  ]);
+  assert.deepEqual(active().filter((name) => name.startsWith("mcp__")), ["mcp__openbb__activate_tools", "mcp__openbb__etf_holdings"]);
+});
+
 test("catalog schemas survive provider adapters and never ask the model for credentials", () => {
   // Pi's Anthropic adapter copies only parameters.properties and .required, so a
   // top-level oneOf/anyOf would arrive as an empty object.
@@ -797,20 +819,30 @@ test("catalog schemas survive provider adapters and never ask the model for cred
     if ((parameters.required ?? []).length > 0) assert.ok(properties.length > 0, name);
     assert.equal(properties.some((key) => /api.?key|credential|secret|password|app.?key|account/i.test(key)), false, name);
   }
-  const index = formatRuntimeIndex({
+  const runtime = {
     memory_access_enabled: true,
     memory_update_enabled: false,
-    unavailable_connections: [{ name: "World Bank", description: "Country indicators and macroeconomic time series." }],
+    core_tool_names: ["capability_load", "connection_setup"],
+    unavailable_connections: [{ id: "world-bank", name: "World Bank", description: "Country indicators and macroeconomic time series." }],
     components: [
-      { id: "opendart", connection: "opendart", kind: "tool", name: "OpenDART", description: "Korean filings.", tool_names: ["dart_filing_search"], provider_ids: [] },
-      { id: "openbb", connection: "openbb", kind: "mcp", name: "Market data", description: "Read-only market data.", tool_names: [], provider_ids: ["fred"] },
-      { id: "charts", kind: "tool", name: "Chart authoring", description: "Publish charts.", tool_names: ["chart_publish"], provider_ids: [] },
+      { id: "opendart", connection: "opendart", kind: "tool", name: "OpenDART", description: "Korean filings.", tool_names: ["dart_filing_search"] },
+      { id: "openbb", connection: "openbb", kind: "mcp", server_id: "openbb", name: "Market data", description: "Read-only market data.", tool_names: [], bundled: true },
+      { id: "custom.abc123", connection: "custom.abc123", kind: "mcp", server_id: "custom.abc123", name: "Custom data source", description: "User-configured read-only data source.", tool_names: [] },
+      { id: "charts", kind: "tool", name: "Chart authoring", description: "Publish charts.", tool_names: ["chart_publish"] },
     ],
-  });
-  assert.match(index, /Connections:\n- `openbb`/);
+  };
+  const index = formatRuntimeIndex(runtime);
+  assert.match(index, /Connections:\n- `charts`|Connections:\n- `custom/);
   assert.match(index, /Tools: dart_filing_search/);
-  assert.match(index, /Providers: fred\./);
-  assert(index.includes("World Bank: Country indicators and macroeconomic time series."));
+  const line = (id) => index.split("\n").find((text) => text.startsWith(`- \`${id}\``));
+  // Only the bundled runtime activates a default set; a custom server exposes all its approved tools.
+  assert.match(line("openbb"), /Loading activates common price/);
+  assert.doesNotMatch(line("custom.abc123"), /activates|available_tools/);
+  assert.doesNotMatch(index, /Providers:/);
+  // Off connections cost one fixed sentence, never a per-entry list, and only when the model can act on it.
+  assert.doesNotMatch(index, /World Bank/);
+  assert.match(index, /Other data sources .* call connection_setup/);
+  assert.doesNotMatch(formatRuntimeIndex({ ...runtime, core_tool_names: ["capability_load"] }), /connection_setup/);
   assert.match(index, /Built-in:\n- `charts`/);
 });
 
@@ -828,7 +860,7 @@ test("capability resolution uses only unambiguous run ids and gives bounded repa
   const disabled = [{ id: "openbb", name: "Market data" }, { id: "web-research", name: "Web Research" }];
   const restricted = new Map([...components].filter(([id]) => id !== "web-research"));
   for (const id of ["connection:MARKET-DATA", "openbb", "web-research"]) {
-    assert.throws(() => resolveCapability(id, restricted, disabled), /not enabled.*Connections/);
+    assert.throws(() => resolveCapability(id, restricted, disabled), /not enabled.*connection_setup/);
     assert(!restricted.has(id));
   }
   for (const id of ["unknown", undefined, "sk-secret-should-not-echo"]) {

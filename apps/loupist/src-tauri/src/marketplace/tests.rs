@@ -291,12 +291,9 @@ fn every_marketplace_entry_reaches_the_agent_runtime_profile() {
         let represented = match entry.runtime.kind {
             MarketplaceRuntimeKind::BundledMcp => profile.components.iter().any(|component| {
                 component.kind == "mcp"
+                    && component.bundled
                     && component.server_id == entry.runtime.server_id
-                    && entry
-                        .runtime
-                        .provider_ids
-                        .iter()
-                        .all(|provider| component.provider_ids.contains(provider))
+                    && component.connection.as_deref() == Some(entry.plugin.as_str())
             }),
             MarketplaceRuntimeKind::Native => profile
                 .components

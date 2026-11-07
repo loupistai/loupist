@@ -395,6 +395,25 @@ export async function prepareCustomConnectionFixture(bridge: PreviewBridge, scen
   }
 }
 
+/** The answer set up FRED from Chat: its `connection_setup` step leaves a card whose state the card reads live. */
+export async function prepareConnectionSetupFixture(bridge: PreviewBridge, state: "needs_setup" | "ready") {
+  await prepareFixture(bridge, "answer");
+  if (state === "ready") {
+    await bridge.marketplaceCredentialSave({ entry_id: "fred.macro", secrets: { api_key: "preview-fred-key-0123" } });
+    await bridge.marketplaceCredentialVerify({ entry_id: "fred.macro" });
+    await bridge.loupistCapabilityEnable({ loupist_id: "loupist-quality", entry_id: "fred.macro" });
+  }
+  const select = bridge.loupistSelect.bind(bridge);
+  bridge.loupistSelect = async loupistId => {
+    const workspace = await select(loupistId);
+    const answer = workspace.threads[0].messages.find(item => item.id === "preview-answer");
+    if (answer) Object.assign(answer, { progress: { startedAtMs: FIXTURE_TIME - 8000, finishedAtMs: FIXTURE_TIME - 2000, items: [
+      { id: "preview-setup", kind: "tool", toolName: "connection_setup", category: "capability", operation: "generic", action: "Prepared a connection", running: "Preparing a connection", target: "fred.macro", source: { kind: "connector", name: "FRED" }, status: "succeeded", startedAtMs: FIXTURE_TIME - 8000, finishedAtMs: FIXTURE_TIME - 7000 },
+    ] } });
+    return workspace;
+  };
+}
+
 /** One coherent World/Lens history for the learning UI capture matrix. */
 export async function prepareLearningFixture(bridge: PreviewBridge, evidenceCount = 6) {
   await prepareFixture(bridge);

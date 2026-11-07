@@ -38,6 +38,7 @@ pub(super) mod schedules;
 pub(in crate::commands) mod sensitivity;
 mod setup;
 pub(super) use setup::StagedSetup;
+mod connection_setup;
 pub(crate) use setup::{apply_watchlist as apply_setup_watchlist, commit_turn as commit_setup};
 mod workspace;
 mod world_schema;
@@ -1109,6 +1110,7 @@ impl AppToolExecutor {
                     .await
             }
             ToolMethod::LoupistSetup => self.stage_loupist_setup(policy, params, delivery_id).await,
+            ToolMethod::ConnectionSetup => self.connection_setup(params),
             ToolMethod::LensFile => self.stage_lens_file(policy, params, delivery_id).await,
             ToolMethod::ArtifactList => self.artifact_list(policy, params),
             ToolMethod::ArtifactRead => self.artifact_read(policy, params, delivery_id).await,
