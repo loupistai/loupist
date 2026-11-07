@@ -2045,9 +2045,9 @@ export const scenarios: readonly PreviewScenario[] = [
   ...settingsScenarios({ base, select, settings, until }),
   ...readerScenarios({ base, select, navigate, selectPanel, click, clickMapAction, until }),
   ...dataScenarios({ base, select, click, settings }),
-  // W17.3 (providers §2.3): one card per account; ChatGPT plan line, Claude extra usage, a key account.
+  // W17.3 (providers §2.3): one card per account; ChatGPT plan line, key accounts.
   ...([
-    ["settings-models", "Models & providers", '[data-provider-card="anthropic"] .provider-card-row[data-tone="info"]'],
+    ["settings-models", "Models & providers", '[data-provider-card="anthropic"]'],
     ["settings-models-plan-limit", "A ChatGPT plan at its limit", '[data-provider-card="openai"] [data-notice="plan_limit"]'],
     ["settings-models-needs-reconnect", "A sign-in that needs reconnecting", '[data-provider-card="openai"][data-state="needs_reconnect"]'],
     ["settings-models-disconnected", "A disconnected account schedules still use", '[data-provider-card="xai"][data-state="disconnected"]'],
@@ -2060,7 +2060,7 @@ export const scenarios: readonly PreviewScenario[] = [
     }),
     setup: async (bridge) => {
       await prepareFixture(bridge);
-      await bridge.providerConnect("anthropic", () => {});
+      await bridge.providerConfigure({ provider: "anthropic", api_key: "preview-key" });
       await bridge.providerConfigure({ provider: "google", api_key: "preview-key" });
       const hour = 60 * 60 * 1000;
       if (id === "settings-models-plan-limit") bridge.setProviderStatus("openai", { notice: { kind: "plan_limit", at_ms: Date.now() - hour }, last_limit_at_ms: Date.now() - hour });

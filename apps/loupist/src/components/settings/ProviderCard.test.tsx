@@ -11,9 +11,9 @@ const status = (overrides: Partial<ProviderStatusView> = {}): ProviderStatusView
 });
 const option = (id: string, overrides: Partial<ModelProviderOption> = {}): ModelProviderOption => ({
   id, label: id === "openai" ? "ChatGPT" : id === "anthropic" ? "Anthropic" : "Google Gemini", credential_label: "", description: "",
-  api_key: true, oauth: id === "google" ? null : { label: "Continue" }, credential_source: "saved", recommended: false,
-  group: id === "google" ? "api_key" : "sign_in", console_url: null, sign_in_flow: id === "google" ? null : "browser",
-  billing_note: id === "openai" ? "chatgpt_plan" : id === "anthropic" ? "claude_extra_usage" : null, status: status(), ...overrides,
+  api_key: true, oauth: id === "openai" ? { label: "Continue" } : null, credential_source: "saved", recommended: false,
+  group: id === "openai" ? "sign_in" : "api_key", console_url: null, sign_in_flow: id === "openai" ? "browser" : null,
+  billing_note: id === "openai" ? "chatgpt_plan" : null, status: status(), ...overrides,
 });
 const model: ConfiguredModel = {
   id: "openai/gpt-6.1-sol", name: "GPT-6.1 Sol", provider: "openai", model: "gpt-6.1-sol", input: ["text"], reasoning: true,
@@ -42,7 +42,7 @@ it("shows a ChatGPT sign-in as Connected with its date, the plan line and Chat's
   expect(onConnect).toHaveBeenCalledWith({ kind: "provider", provider: "openai", method: "sign_in" });
 });
 
-it("names the key, the local server and the Claude extra-usage billing by credential", async () => {
+it("names the key, the local server and an Anthropic key by credential", async () => {
   const user = userEvent.setup();
   const key = renderCard({ option: option("google", { status: status({ credential_kind: "api_key" }) }), chatModel: undefined });
   expect(key.card).toHaveTextContent("API key saved on this device");
@@ -56,12 +56,11 @@ it("names the key, the local server and the Claude extra-usage billing by creden
   expect(local.card).toHaveTextContent("Running on this Mac · localhost:11434");
   document.body.innerHTML = "";
 
-  const claude = renderCard({ option: option("anthropic") });
-  expect(claude.card).toHaveTextContent("Signed in with Claude");
-  expect(claude.card).toHaveTextContent("Claude sign-in draws on Claude extra usage, billed per token");
-  await user.click(within(claude.card).getByRole("button", { name: "Manage extra usage" }));
-  expect(claude.onOpenUsage).toHaveBeenCalledWith("anthropic");
-  await user.click(within(claude.card).getByRole("button", { name: "Use an API key" }));
+  const claude = renderCard({ option: option("anthropic", { status: status({ credential_kind: "api_key" }) }) });
+  expect(within(claude.card).getByRole("heading", { name: "Anthropic" })).toBeVisible();
+  expect(claude.card).toHaveTextContent("API key saved on this device");
+  expect(claude.card).not.toHaveTextContent(/extra usage|Signed in with/);
+  await user.click(within(claude.card).getByRole("button", { name: "Reconnect Anthropic" }));
   expect(claude.onConnect).toHaveBeenCalledWith({ kind: "provider", provider: "anthropic", method: "api_key" });
 });
 

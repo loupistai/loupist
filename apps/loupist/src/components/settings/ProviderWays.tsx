@@ -8,9 +8,9 @@ import type { ModelCatalog, ModelProviderOption, ProviderStatusView } from "@/ty
 import "@/styles/connect.css";
 
 /** Sign-in rows, in the order the spec lists them (providers §2.1). */
-const SIGN_IN = ["openai", "anthropic", "xai"] as const;
-export const SIGN_IN_LABEL = { openai: "wizard.chatgpt", anthropic: "wizard.claude", xai: "wizard.xai" } as const;
-const SIGN_IN_NOTE = { openai: "wizard.chatgptNote", anthropic: "wizard.claudeNote", xai: null } as const;
+const SIGN_IN = ["openai", "xai"] as const;
+export const SIGN_IN_LABEL = { openai: "wizard.chatgpt", xai: "wizard.xai" } as const;
+const SIGN_IN_NOTE = { openai: "wizard.chatgptNote", xai: null } as const;
 /** One API-key row each; Upstage Solar is a preset endpoint Rust saves, not a Pi provider. */
 export const KEY_ROWS = ["anthropic", "openai", "google", "xai", "upstage", "openrouter"] as const;
 const KEY_NOTE = { anthropic: null, openai: null, google: null, xai: null, upstage: "wizard.upstageNote", openrouter: "wizard.openrouterNote" } as const;

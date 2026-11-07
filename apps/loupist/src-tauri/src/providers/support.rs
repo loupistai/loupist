@@ -76,8 +76,8 @@ pub enum PasteRule {
     /// Sign in with ChatGPT: exactly the loopback address the browser was
     /// sent to, passed to Pi as it is.
     ChatgptLoopback,
-    /// Pi's browser sign-in with its own callback (Claude; the development
-    /// Codex client): the address the browser shows,
+    /// Pi's browser sign-in with its own callback (the development Codex
+    /// client): the address the browser shows,
     /// `http://localhost:<port><path>?code=…&state=…` (or `127.0.0.1`), or a
     /// `code#state` value. Pi receives `code#state`.
     BrowserCallback { port: u16, path: &'static str },
@@ -88,10 +88,6 @@ impl PasteRule {
     pub fn for_provider(provider: &str) -> Option<Self> {
         match provider {
             "openai" => Some(Self::ChatgptLoopback),
-            "anthropic" => Some(Self::BrowserCallback {
-                port: 53692,
-                path: "/callback",
-            }),
             "openai-codex" => Some(Self::BrowserCallback {
                 port: 1455,
                 path: "/auth/callback",
@@ -533,11 +529,11 @@ mod tests {
     }
 
     #[test]
-    fn claude_accepts_the_address_its_browser_shows_and_hands_pi_code_and_state() {
-        let rule = PasteRule::for_provider("anthropic").unwrap();
+    fn the_codex_client_accepts_the_address_its_browser_shows_and_hands_pi_code_and_state() {
+        let rule = PasteRule::for_provider("openai-codex").unwrap();
         for address in [
-            "http://localhost:53692/callback?code=abc123&state=verifier456",
-            "http://127.0.0.1:53692/callback?state=verifier456&code=abc123",
+            "http://localhost:1455/auth/callback?code=abc123&state=verifier456",
+            "http://127.0.0.1:1455/auth/callback?state=verifier456&code=abc123",
         ] {
             assert_eq!(
                 validate_pasted_value(rule, address).unwrap(),
@@ -550,18 +546,17 @@ mod tests {
             "abc123#verifier456"
         );
         for refused in [
-            "https://localhost:53692/callback?code=abc&state=xyz",
-            "http://localhost.evil.example:53692/callback?code=abc&state=xyz",
-            "http://example.com:53692/callback?code=abc&state=xyz",
-            "http://localhost:53693/callback?code=abc&state=xyz",
-            "http://localhost:53692/other?code=abc&state=xyz",
-            "http://localhost:53692/callback?code=abc",
-            "http://localhost:53692/callback?state=xyz",
-            "http://localhost:53692/callback?code=&state=xyz",
-            "http://localhost:53692/callback?code=a%23b&state=xyz",
-            "http://user@localhost:53692/callback?code=abc&state=xyz",
-            "http://localhost:53692/callback?code=abc&state=xyz#fragment",
-            "http://127.0.0.1:1455/auth/callback?code=abc&state=xyz",
+            "https://localhost:1455/auth/callback?code=abc&state=xyz",
+            "http://localhost.evil.example:1455/auth/callback?code=abc&state=xyz",
+            "http://example.com:1455/auth/callback?code=abc&state=xyz",
+            "http://localhost:1456/auth/callback?code=abc&state=xyz",
+            "http://localhost:1455/other?code=abc&state=xyz",
+            "http://localhost:1455/auth/callback?code=abc",
+            "http://localhost:1455/auth/callback?state=xyz",
+            "http://localhost:1455/auth/callback?code=&state=xyz",
+            "http://localhost:1455/auth/callback?code=a%23b&state=xyz",
+            "http://user@localhost:1455/auth/callback?code=abc&state=xyz",
+            "http://localhost:1455/auth/callback?code=abc&state=xyz#fragment",
             "abc123",
             "#state",
             "code#",
@@ -576,13 +571,7 @@ mod tests {
         }
         let long = format!("{}#{}", "a".repeat(MAX_PASTED_CODE_BYTES), "b");
         assert!(validate_pasted_value(rule, &long).is_err());
-        // The development Codex client uses its own port and path.
-        let codex = PasteRule::for_provider("openai-codex").unwrap();
-        assert_eq!(
-            validate_pasted_value(codex, "http://localhost:1455/auth/callback?code=c&state=s")
-                .unwrap(),
-            "c#s"
-        );
+        assert!(PasteRule::for_provider("anthropic").is_none());
         assert!(PasteRule::for_provider("xai").is_none());
     }
 
@@ -602,7 +591,7 @@ mod tests {
         lease
             .set_manual_entry(ManualEntry {
                 request_id: "request-1".into(),
-                rule: PasteRule::for_provider("anthropic").unwrap(),
+                rule: PasteRule::for_provider("openai-codex").unwrap(),
                 responder: sender,
             })
             .unwrap();

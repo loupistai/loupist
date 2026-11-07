@@ -3,7 +3,7 @@ import { CheckCircleIcon } from "lucide-react";
 import { useTranslation } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { Disclosure } from "@/components/ui/disclosure";
-import { ClaudeExtraNote, ConnectSheet, connectedName, type ConnectSheetTarget } from "@/components/settings/ConnectSheet";
+import { ConnectSheet, connectedName, type ConnectSheetTarget } from "@/components/settings/ConnectSheet";
 import { ProviderWays } from "@/components/settings/ProviderWays";
 import { SignInFlow } from "@/components/settings/SignInFlow";
 import { useSignIn } from "@/components/settings/signIn";
@@ -31,8 +31,6 @@ export function ConnectStep({ bridge, catalog, onCatalogChange, connected, onCon
   const { t } = useTranslation("onboarding");
   const [otherOpen, setOtherOpen] = useState(false);
   const [sheet, setSheet] = useState<ConnectSheetTarget | null>(null);
-  /** Claude's billing note comes before its browser opens. */
-  const [claudeConfirm, setClaudeConfirm] = useState(false);
   const accept = useCallback((provider: string, next: ModelCatalog) => {
     onCatalogChange(next);
     onConnected(connectedName(next, provider));
@@ -46,25 +44,14 @@ export function ConnectStep({ bridge, catalog, onCatalogChange, connected, onCon
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [flow, sheet]);
-  const signIn = (provider: string) => {
-    setClaudeConfirm(false);
-    if (provider === "anthropic") { flow.dismiss(); setClaudeConfirm(true); return; }
-    void flow.start(provider);
-  };
+  const signIn = (provider: string) => void flow.start(provider);
   const locked = flow.busy || Boolean(connected);
   return <>
     <h1>{t("wizard.connectTitle")}</h1>
     <p>{t("wizard.connectBody")}</p>
     {connected ? <div className="onboarding-success" role="status"><CheckCircleIcon aria-hidden="true" />{t("wizard.connected", { provider: connected })}</div>
       : flow.state.phase === "waiting" ? <SignInFlow flow={flow} />
-        : claudeConfirm ? <div className="signin-card" data-signin="confirm">
-          <ClaudeExtraNote />
-          <div className="signin-actions">
-            <Button type="button" data-claude-continue onClick={() => { setClaudeConfirm(false); void flow.start("anthropic"); }}>{t("wizard.continue")}</Button>
-            <Button type="button" variant="ghost" onClick={() => setClaudeConfirm(false)}>{t("wizard.cancel")}</Button>
-          </div>
-        </div>
-          : <div className="connect-primary-block">
+        : <div className="connect-primary-block">
             <Button className="onboarding-primary" data-onboarding-connect onClick={() => signIn("openai")}>{t("wizard.chatgpt")}</Button>
             <p className="connect-meta onboarding-connect-note">{t("wizard.chatgptNote")}</p>
             <Button className="onboarding-primary" variant="outline" data-onboarding-connect="xai" onClick={() => signIn("xai")}>{t("wizard.supergrok")}</Button>

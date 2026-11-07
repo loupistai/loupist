@@ -90,7 +90,7 @@ it("adds a provider through the shared connect sheet and reports the connection"
 it("opens the sheet another surface asked for once, and dismisses a disconnected account without a confirmation", async () => {
   const user = userEvent.setup();
   const props = panelProps();
-  props.catalog = { ...catalog, providers: [catalog.providers[0], provider("anthropic", { label: "Anthropic", credential_source: "missing", oauth: { label: "Continue with Claude" }, sign_in_flow: "browser", status: status({ state: "disconnected", credential_kind: "none", used_by: { schedules: 1, chat_default: false, world_models: 0 } }) })] };
+  props.catalog = { ...catalog, providers: [catalog.providers[0], provider("anthropic", { label: "Anthropic", credential_source: "missing", oauth: null, sign_in_flow: null, status: status({ state: "disconnected", credential_kind: "none", used_by: { schedules: 1, chat_default: false, world_models: 0 } }) })] };
   const consumed = vi.fn();
   render(<ModelSettingsPanel {...props} connectTarget={{ kind: "provider", provider: "openai", method: "api_key" }} onConnectTargetConsumed={consumed} />);
   const sheet = await screen.findByRole("dialog", { name: "OpenAI" });
@@ -99,7 +99,7 @@ it("opens the sheet another surface asked for once, and dismisses a disconnected
   expect(within(sheet).getByText(/This replaces your ChatGPT sign-in on this Mac/u)).toBeInTheDocument();
   await user.keyboard("{Escape}");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  const disconnected = screen.getByRole("article", { name: "Claude" });
+  const disconnected = screen.getByRole("article", { name: "Anthropic" });
   expect(disconnected).toHaveTextContent("1 schedule still uses this account.");
   await user.click(within(disconnected).getByRole("button", { name: "Remove" }));
   expect(props.onDisconnect).toHaveBeenCalledWith("anthropic");

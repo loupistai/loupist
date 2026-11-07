@@ -409,7 +409,6 @@ pub enum SignInFlow {
 #[serde(rename_all = "snake_case")]
 pub enum BillingNote {
     ChatgptPlan,
-    ClaudeExtraUsage,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
@@ -540,21 +539,9 @@ pub fn provider_options() -> Vec<ModelProviderOption> {
             )
         },
         ModelProviderOption {
-            group: ProviderGroup::SignIn,
+            group: ProviderGroup::ApiKey,
             console_url: Some("https://console.anthropic.com/settings/keys"),
-            sign_in_flow: Some(SignInFlow::Browser),
-            billing_note: Some(BillingNote::ClaudeExtraUsage),
-            ..oauth_provider(
-                "anthropic",
-                "Anthropic",
-                "Anthropic API key",
-                "Sign in with Claude (billed as Claude extra usage), or use an Anthropic API key stored by Pi in Loupist's private app data.",
-                ProviderOauth {
-                    label: "Continue with Claude",
-                    authorization: OauthAuthorizationRule::exact("claude.ai", "/oauth/authorize"),
-                },
-                true,
-            )
+            ..provider("anthropic", "Anthropic", "Anthropic API key")
         },
         ModelProviderOption {
             group: ProviderGroup::ApiKey,
@@ -1249,8 +1236,16 @@ mod tests {
             "auth.openai.com",
             "/api/accounts/authorize"
         ));
+        // Anthropic does not permit third-party apps to offer Claude.ai sign-in.
         let anthropic = providers.iter().find(|p| p.id == "anthropic").unwrap();
-        assert_eq!(anthropic.billing_note, Some(BillingNote::ClaudeExtraUsage));
+        assert_eq!(anthropic.group, ProviderGroup::ApiKey);
+        assert!(anthropic.api_key && anthropic.oauth.is_none());
+        assert_eq!(anthropic.sign_in_flow, None);
+        assert_eq!(anthropic.billing_note, None);
+        assert!(!catalog_allows_authorization(
+            "claude.ai",
+            "/oauth/authorize"
+        ));
         let xai = providers.iter().find(|p| p.id == "xai").unwrap();
         assert_eq!(xai.sign_in_flow, Some(SignInFlow::Device));
         // OpenRouter is a key provider; its browser sign-in is gone.
@@ -1280,10 +1275,6 @@ mod tests {
         assert!(xai.allows("accounts.x.ai", "/oauth2/device"));
         assert!(!xai.allows("auth.x.ai", "/oauth2/device"));
         assert!(!xai.allows("accounts.x.ai.evil.example", "/oauth2/device"));
-        assert!(catalog_allows_authorization(
-            "claude.ai",
-            "/oauth/authorize"
-        ));
         assert!(!catalog_allows_authorization(
             "example.com",
             "/oauth/authorize"
