@@ -16,6 +16,8 @@ export type AgentCapabilityItem = {
 };
 
 type Props = {
+  /** Deep-link target: `data-loupist-section` on the list. */
+  section?: string;
   title: string;
   description: string;
   action?: ReactNode;
@@ -28,6 +30,7 @@ type Props = {
 };
 
 export function AgentCapabilityList({
+  section,
   title,
   description,
   action,
@@ -43,7 +46,7 @@ export function AgentCapabilityList({
   const switchPrefix = useId();
 
   return (
-    <section className="agent-section" aria-labelledby={headingId}>
+    <section className="agent-section" aria-labelledby={headingId} data-loupist-section={section}>
       <header className="agent-section-heading">
         <div>
           <h2 id={headingId}>{title}<span className="agent-section-count" aria-hidden="true">{formatNumber(items.length)}</span></h2>

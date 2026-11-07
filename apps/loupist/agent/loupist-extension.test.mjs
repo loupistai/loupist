@@ -867,6 +867,12 @@ test("capability resolution uses only unambiguous run ids and gives bounded repa
     assert.throws(() => resolveCapability(id, components, disabled), (error) =>
       /Available capability ids:/.test(error.message) && error.message.includes("krx") && !error.message.includes("sk-secret-should-not-echo"));
   }
+  // A connection's catalog id loads the one component that serves it.
+  const served = new Map([...components, ["openbb", { id: "openbb", entry_ids: ["fred.macro", "sec.edgar"] }]]);
+  assert.equal(resolveCapability("FRED.macro", served).id, "openbb");
+  assert.equal(resolveCapability("connection:sec.edgar", served).id, "openbb");
+  const twice = new Map([...served, ["other", { id: "other", entry_ids: ["fred.macro"] }]]);
+  assert.throws(() => resolveCapability("fred.macro", twice), /Available capability ids/);
   const ambiguous = new Map([["krx", { id: "krx" }], ["KRX", { id: "KRX" }]]);
   assert.throws(() => resolveCapability("krx", ambiguous), /Available capability ids/);
   assert.throws(() => resolveCapability("KRX", new Map(), disabled), /Available capability ids: none/);

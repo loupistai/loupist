@@ -26,6 +26,7 @@ struct Input {
 /// Loupist's binding at the moment of the call.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SetupState {
+    Unavailable,
     NeedsSetup,
     OffHere,
     Ready,
@@ -34,18 +35,30 @@ enum SetupState {
 impl SetupState {
     fn as_str(self) -> &'static str {
         match self {
+            Self::Unavailable => "unavailable",
             Self::NeedsSetup => "needs_setup",
             Self::OffHere => "off_here",
             Self::Ready => "ready",
         }
     }
 
-    fn notice(self) -> &'static str {
+    /// `in_run` says whether this reply's sealed capabilities include the
+    /// entry; `loadable` whether one capability loads its tools.
+    fn notice(self, entry_id: &str, in_run: bool, loadable: bool) -> String {
+        if self == Self::Ready && in_run {
+            return if loadable {
+                format!("This connection is set up and on. Load it now with capability_load {{id: \"{entry_id}\"}} and use it in this reply. Never ask for or repeat a key in chat.")
+            } else {
+                "This connection is set up and on in this reply; use its tools where the capability index lists them. Never ask for or repeat a key in chat.".into()
+            };
+        }
         match self {
+            Self::Unavailable => "This connection cannot run in this Loupist build, so the card in this reply only says it is unavailable here. Tell the user that plainly; do not ask for a key or promise that setup will make it work.",
             Self::NeedsSetup => "The card in this reply asks the user for this connection's setup. Any key goes in the card, never in chat: do not ask for one and never repeat one. The connection works from the user's next message, so finish this reply without it and say the card is ready.",
             Self::OffHere => "This connection is set up but off for this Loupist; the card in this reply offers to turn it on. It works from the user's next message, so finish this reply without it. Never ask for or repeat a key in chat.",
-            Self::Ready => "This connection is set up and on for this Loupist. If the capability index lists it, load it with capability_load now; otherwise it works from the user's next message. Never ask for or repeat a key in chat.",
+            Self::Ready => "This connection is set up and on for this Loupist, but this reply started before it was on, so it works from the user's next message. Finish this reply without it. Never ask for or repeat a key in chat.",
         }
+        .into()
     }
 }
 
@@ -77,14 +90,22 @@ fn setup_state(
         crate::marketplace::connector_readiness(entry, state)
     })
     .map_err(unavailable)?;
-    if readiness != MarketplaceConnectorReadiness::Ready {
-        return Ok(SetupState::NeedsSetup);
+    match readiness {
+        MarketplaceConnectorReadiness::Ready => {}
+        MarketplaceConnectorReadiness::RuntimeUnavailable => return Ok(SetupState::Unavailable),
+        _ => return Ok(SetupState::NeedsSetup),
     }
     let enabled = state
         .store
         .get_loupist_capability(loupist_id, &entry.id)
         .map_err(unavailable)?
-        .is_some_and(|binding| binding.enabled);
+        .is_some_and(|binding| {
+            binding.enabled
+                && binding
+                    .granted_permissions
+                    .iter()
+                    .any(|permission| permission == "execute")
+        });
     Ok(if enabled {
         SetupState::Ready
     } else {
@@ -129,7 +150,14 @@ impl AppToolExecutor {
             "id": entry.id,
             "name": entry.name,
             "state": state.as_str(),
-            "notice": state.notice(),
+            "notice": state.notice(
+                &entry.id,
+                self.capability_ids.contains(&entry.id),
+                crate::marketplace::bundled_plugins()
+                    .ok()
+                    .and_then(|market| crate::agent_harness::serving_component_id(entry, &market))
+                    .is_some(),
+            ),
         }))
     }
 }

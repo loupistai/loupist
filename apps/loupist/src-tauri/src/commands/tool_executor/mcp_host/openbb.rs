@@ -35,6 +35,8 @@ pub(super) const DEFAULT_ACTIVE_TOOLS: &[&str] = &[
 
 /// Keyless providers that scrape a website rather than call a published API.
 /// They stay usable, but layouts, consent walls and blocking break them.
+/// The most values a pruned property names as rejected by some provider.
+const MAX_REJECTED_VALUES: usize = 12;
 const BEST_EFFORT_PROVIDERS: &[&str] = &[
     "yfinance",
     "finviz",
@@ -425,15 +427,59 @@ fn prune_parameters(parameters: &mut Value, enabled: &BTreeSet<String>) {
                             && vendor.get("multiple_items_allowed") != Some(&Value::Bool(true))
                     })
                 });
-            let choices = accepting
+            let listed = accepting
                 .iter()
                 .filter(|_| all_listed)
-                .filter_map(|provider| property.get(provider))
-                .filter_map(|vendor| vendor.get("choices").and_then(Value::as_array))
-                .flatten()
-                .filter(|choice| choice.is_string())
-                .cloned()
+                .filter_map(|provider| {
+                    let choices = property.get(provider)?.get("choices")?.as_array()?;
+                    let names = choices
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>();
+                    Some((provider.clone(), names))
+                })
                 .collect::<Vec<_>>();
+            let choices = listed
+                .iter()
+                .flat_map(|(_, names)| names.iter().map(|name| json!(name)))
+                .collect::<Vec<_>>();
+            // The enum is the union, so a provider that rejects some of its
+            // values says which: yfinance rejects TMX's "unadjusted". Long
+            // disjoint lists (screener industries) would cost more than the
+            // retry they save, so past a few values the note is left out.
+            let rejected = listed
+                .iter()
+                .map(|(provider, names)| {
+                    let refused = choices
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .filter(|choice| !names.iter().any(|name| name == choice))
+                        .fold(Vec::<&str>::new(), |mut refused, choice| {
+                            if !refused.contains(&choice) {
+                                refused.push(choice);
+                            }
+                            refused
+                        });
+                    (provider, refused)
+                })
+                .filter(|(_, refused)| !refused.is_empty())
+                .collect::<Vec<_>>();
+            let by_provider = (!rejected.is_empty()
+                && rejected
+                    .iter()
+                    .map(|(_, refused)| refused.len())
+                    .sum::<usize>()
+                    <= MAX_REJECTED_VALUES)
+                .then(|| {
+                    let parts = rejected
+                        .iter()
+                        .map(|(provider, refused)| {
+                            format!("{provider} rejects {}", refused.join(", "))
+                        })
+                        .collect::<Vec<_>>();
+                    format!("{}.", parts.join("; "))
+                });
             let vendor_keys = property
                 .keys()
                 .filter(|key| !SCHEMA_KEYWORDS.contains(&key.as_str()))
@@ -459,6 +505,14 @@ fn prune_parameters(parameters: &mut Value, enabled: &BTreeSet<String>) {
             if let Some(Value::String(description)) = property.get("description") {
                 let pruned = prune_description(description, enabled);
                 property.insert("description".into(), Value::String(pruned));
+            }
+            if let Some(by_provider) = by_provider {
+                let description = property
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .filter(|text| !text.is_empty())
+                    .map_or(by_provider.clone(), |text| format!("{text} {by_provider}"));
+                property.insert("description".into(), Value::String(description));
             }
         }
         for name in &dropped {
@@ -685,6 +739,53 @@ mod tests {
         assert_eq!(
             listed["properties"]["interval"]["enum"],
             json!(["1m", "1d", "1W"])
+        );
+        // The union enum alone would offer cboe's "1m" to yfinance callers.
+        assert_eq!(
+            listed["properties"]["interval"]["description"],
+            "Time interval of the data to return. cboe rejects 1W; yfinance rejects 1m."
+        );
+
+        let mut same = json!({
+            "type": "object",
+            "properties": {
+                "provider": {"type": "string", "enum": ["cboe", "yfinance"]},
+                "interval": {
+                    "anyOf": [{"type": "string"}],
+                    "description": "Time interval of the data to return.",
+                    "cboe": {"choices": ["1d", "1W"]},
+                    "yfinance": {"choices": ["1W", "1d"]}
+                }
+            }
+        });
+        prune_parameters(&mut same, &enabled(&["cboe", "yfinance"]));
+        assert_eq!(
+            same["properties"]["interval"]["description"],
+            "Time interval of the data to return."
+        );
+
+        // Disjoint long lists keep the union without a note.
+        let many = |prefix: &str| (0..10).map(|n| format!("{prefix}{n}")).collect::<Vec<_>>();
+        let mut long = json!({
+            "type": "object",
+            "properties": {
+                "provider": {"type": "string", "enum": ["finviz", "yfinance"]},
+                "industry": {
+                    "anyOf": [{"type": "string"}],
+                    "description": "Industry.",
+                    "finviz": {"choices": many("f")},
+                    "yfinance": {"choices": many("y")}
+                }
+            }
+        });
+        prune_parameters(&mut long, &enabled(&["finviz", "yfinance"]));
+        assert_eq!(long["properties"]["industry"]["description"], "Industry.");
+        assert_eq!(
+            long["properties"]["industry"]["enum"]
+                .as_array()
+                .unwrap()
+                .len(),
+            20
         );
     }
 

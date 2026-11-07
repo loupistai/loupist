@@ -97,6 +97,10 @@ export function resolveCapability(id, components, unavailable = [], skillNames =
   const requested = normalize(id);
   const matches = [...components.values()].filter((item) => normalize(item.id) === requested);
   if (requested && matches.length === 1) return matches[0];
+  // A connection's catalog id (`fred.macro`) loads the component that serves it.
+  const serving = [...components.values()].filter((item) =>
+    (item.entry_ids ?? []).some((entry) => normalize(entry) === requested));
+  if (requested && matches.length === 0 && serving.length === 1) return serving[0];
   const available = [...components.keys()].slice(0, 64).map((value) => value.slice(0, 193)).join(", ");
   const prefix = "Capability is not available in this run. ";
   if (requested && skillNames.some((name) => normalize(name.replace(/^skill:/, "")) === requested)) {
@@ -166,6 +170,7 @@ function loadHostContext() {
         typeof component.description !== "string" ||
         !component.description ||
         !validRuntimeComponent(component) ||
+        !validEntryIds(component.entry_ids) ||
         (component.bundled !== undefined && (typeof component.bundled !== "boolean" || component.kind !== "mcp"))
       ) {
         throw new Error("Loupist agent runtime profile is invalid");
@@ -248,6 +253,11 @@ function validToolNames(names) {
     new Set(names).size === names.length &&
     names.every((name) => typeof name === "string" && TOOL_SPECS.has(name))
   );
+}
+
+function validEntryIds(ids) {
+  return ids === undefined || (Array.isArray(ids) && ids.length <= 256 &&
+    ids.every((id) => typeof id === "string" && /^[a-z0-9][a-z0-9._-]{0,95}$/u.test(id)));
 }
 
 function validRuntimeComponent(component) {

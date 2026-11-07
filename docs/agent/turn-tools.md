@@ -114,14 +114,18 @@ the user says what they research, what to follow or picks a starting point, and 
 to send them to settings.
 
 `connection_setup` (core, Bot and research sessions only, three calls per reply) takes
-one `id`: a catalog entry id (`fred.macro`), the entry's English or Korean display name
-(case-insensitive), or a plugin name that owns exactly one entry
+one `id`: a catalog entry id (`fred.macro`), the entry's English or Korean display name,
+or a plugin id or group name (`World Bank`, `세계은행`) that covers exactly one entry,
+compared case-insensitively with `-`, `_` and `.` read as spaces
 (`marketplace/entry_lookup.rs`). No field can carry a secret, and an `id` that looks
-like a key is refused. A miss lists up to twelve `id (name)` candidates. The result is
-`{status: "card_shown", id, name, state, notice}`, where `state` is `needs_setup`
-(connector not ready), `off_here` (ready, binding off for this Loupist) or `ready`,
-and the notice tells the model the user enters any key in the card, never to ask for
-or repeat one, and that the connection works from the next message because a turn's
+like a key is refused. A miss lists up to twelve `id (name)` candidates, entries whose
+name or id shares a word with the query first. The result is
+`{status: "card_shown", id, name, state, notice}`, where `state` is `unavailable`
+(this build cannot run the connector, matching the card), `needs_setup` (connector not
+ready), `off_here` (ready, binding off for this Loupist) or `ready`. The notice tells
+the model the user enters any key in the card and never to ask for or repeat one. A
+connection that was on when the reply started is `ready` with the exact
+`capability_load {id}` call; any other works from the next message because a turn's
 authority is sealed at start. The progress step's target is the resolved entry id,
 which the renderer reads to draw the [setup card](../ui/chat-composer.md#chat-composer);
 a failed step draws nothing. `SYSTEM.md`, the capability index, `resolveCapability`,

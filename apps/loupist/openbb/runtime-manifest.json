@@ -188,7 +188,7 @@
       "package": "openbb-cboe",
       "version": "1.6.1",
       "keyless": true,
-      "network_hosts": ["cdn.cboe.com", "www.cboe.com"],
+      "network_hosts": ["cdn-api.cboe.com", "cdn.cboe.com", "www.cboe.com"],
       "credential_mapping": {}
     },
     {

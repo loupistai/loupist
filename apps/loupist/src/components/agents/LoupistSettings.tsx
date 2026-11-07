@@ -58,7 +58,7 @@ import {
 import { LoupistAvailabilityBoundary } from "../app/LoupistAvailabilityBoundary";
 
 /** A section of Loupist settings that a link elsewhere in the app can open. */
-export type LoupistSettingsSection = "chat" | "world" | "capabilities";
+export type LoupistSettingsSection = "chat" | "world" | "capabilities" | "connections";
 
 type Props = {
   bridge: LoupistBridge;
@@ -129,7 +129,9 @@ export function LoupistSettings({
   const openSection = (section: string) => {
     if (section === "world") setWorldOpen(true);
     const target = bodyRef.current?.querySelector<HTMLElement>(`[data-loupist-section="${section}"]`);
-    if (target instanceof HTMLDetailsElement) target.open = true;
+    // A section inside a disclosure (connections) opens the disclosure that holds it.
+    const details = target instanceof HTMLDetailsElement ? target : target?.closest("details");
+    if (details) details.open = true;
     target?.scrollIntoView?.({ block: "start" });
   };
 
@@ -386,7 +388,7 @@ export function LoupistSettings({
 
               {capabilityFilter !== "setup" ? manageSkills ? <div className="agent-section-heading"><h2>{i18n.t("settings:loupistSettings.skills")}</h2><Button variant="ghost" size="sm" aria-expanded onClick={() => setManageSkills(false)}>{i18n.t("settings:loupistSettings.manageSkills")}</Button></div> : <AgentCapabilityList title={i18n.t("settings:loupistSettings.skills")} action={<Button variant="ghost" size="sm" aria-expanded={manageSkills} onClick={() => setManageSkills(value => !value)}>{i18n.t("settings:loupistSettings.manageSkills")}</Button>} description={i18n.t("settings:loupistSettings.optionalResearchAndDocumentWorkflowsEnabledByDefault")} items={skillItems.filter(matchesCapability)} busyId={busyCapabilityId} error={configurationError && failedCapabilityId ? { id: failedCapabilityId, message: configurationError } : undefined} emptyLabel={configurationLoading ? i18n.t("settings:loupistSettings.loadingSkills") : capabilityQuery || capabilityFilter !== "all" ? i18n.t("settings:loupistSettings.noMatchingSkills") : i18n.t("settings:loupistSettings.noSkillsAvailable")} onToggle={(id) => void toggleSkill(id)} /> : null}
               {manageSkills && capabilityFilter !== "setup" ? <SkillsSettings bridge={bridge} loupists={[selectedAgent]} scope={{ kind: "project", loupistId: selectedAgent.id }} onDraftSkill={onDraftSkill} /> : null}
-              <AgentCapabilityList title={i18n.t("settings:loupistSettings.connections")} description={i18n.t("settings:loupistSettings.chooseTheDataSourcesThisLoupistCanUse")} action={<Button type="button" size="sm" variant="ghost" onClick={() => onOpenMarketplace()}><StoreIcon /> {i18n.t("settings:loupistSettings.connections")}</Button>} items={toolItems.filter(matchesCapability)} busyId={busyCapabilityId} error={configurationError && failedCapabilityId ? { id: failedCapabilityId, message: configurationError } : undefined} emptyLabel={configurationLoading ? i18n.t("settings:loupistSettings.loadingConnections") : capabilityQuery || capabilityFilter !== "all" ? i18n.t("settings:loupistSettings.noMatchingConnections") : i18n.t("settings:loupistSettings.connectAServiceToGiveThisLoupistMore")} onToggle={(id) => void toggleTool(id)} onSetup={onOpenMarketplace} />
+              <AgentCapabilityList section="connections" title={i18n.t("settings:loupistSettings.connections")} description={i18n.t("settings:loupistSettings.chooseTheDataSourcesThisLoupistCanUse")} action={<Button type="button" size="sm" variant="ghost" onClick={() => onOpenMarketplace()}><StoreIcon /> {i18n.t("settings:loupistSettings.connections")}</Button>} items={toolItems.filter(matchesCapability)} busyId={busyCapabilityId} error={configurationError && failedCapabilityId ? { id: failedCapabilityId, message: configurationError } : undefined} emptyLabel={configurationLoading ? i18n.t("settings:loupistSettings.loadingConnections") : capabilityQuery || capabilityFilter !== "all" ? i18n.t("settings:loupistSettings.noMatchingConnections") : i18n.t("settings:loupistSettings.connectAServiceToGiveThisLoupistMore")} onToggle={(id) => void toggleTool(id)} onSetup={onOpenMarketplace} />
             </Disclosure> : null}
             {available ? <Disclosure title={i18n.t("app:navigation.worldProcessing")} open={worldOpen} onOpenChange={setWorldOpen} data-loupist-section="world">
               <div className="world-settings-card"><WorldProcessingSettings key={selectedAgent.id} bridge={bridge} loupistId={selectedAgent.id} active={worldOpen} onChanged={onChanged} onManageProviders={onManageProviders} /></div>
