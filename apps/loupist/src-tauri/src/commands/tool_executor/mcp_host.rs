@@ -98,6 +98,51 @@ struct McpRunAuthority {
 #[serde(deny_unknown_fields)]
 struct McpConnectRequest {
     server_id: String,
+    /// Runtime tool names a warm Chat had active when its last turn ended.
+    /// Activating exactly these again keeps the declared tool prefix stable.
+    #[serde(default)]
+    activate_tool_names: Vec<String>,
+}
+
+const MAX_ACTIVATION_NAMES: usize = 512;
+
+impl McpConnectRequest {
+    fn parse(params: Value) -> Result<Self, BrokerError> {
+        let request: Self = serde_json::from_value(params).map_err(|_| BrokerError::Malformed)?;
+        let valid_name = |name: &String| {
+            !name.is_empty()
+                && name.len() <= 128
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        };
+        if request.activate_tool_names.len() > MAX_ACTIVATION_NAMES
+            || !request.activate_tool_names.iter().all(valid_name)
+        {
+            return Err(BrokerError::Malformed);
+        }
+        Ok(request)
+    }
+}
+
+/// The tools a connect activates: the warm Chat's previous set when it named
+/// one (control tools are always present, so they are not requested), else
+/// the default read set. The runtime ignores names outside its inventory and
+/// the host's provider filter drops what the run cannot use.
+fn activation_names(requested: &[String], control_tool_names: &BTreeSet<String>) -> Vec<String> {
+    let restored = requested
+        .iter()
+        .filter(|name| !control_tool_names.contains(*name))
+        .cloned()
+        .collect::<Vec<_>>();
+    if restored.is_empty() {
+        openbb::DEFAULT_ACTIVE_TOOLS
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect()
+    } else {
+        restored
+    }
 }
 
 #[derive(Deserialize)]
@@ -212,8 +257,7 @@ impl ToolCapture {
 
 impl AppToolExecutor {
     pub(super) async fn mcp_connect(&self, params: Value) -> Result<Value, BrokerError> {
-        let request: McpConnectRequest =
-            serde_json::from_value(params).map_err(|_| BrokerError::Malformed)?;
+        let request = McpConnectRequest::parse(params)?;
         if crate::custom_connections::service::valid_id(&request.server_id) {
             return self.custom_mcp_connect(&request.server_id).await;
         }
@@ -231,7 +275,7 @@ impl AppToolExecutor {
             }));
         }
 
-        self.attach_or_spawn_mcp(&request.server_id, authority)
+        self.attach_or_spawn_mcp(&request.server_id, authority, &request.activate_tool_names)
             .await
     }
 
@@ -272,6 +316,7 @@ impl AppToolExecutor {
         &self,
         server_id: &str,
         authority: McpRunAuthority,
+        activate_tool_names: &[String],
     ) -> Result<Value, BrokerError> {
         let notices = authority.setup_notices.clone();
         let activation = if server_id == openbb::OPENBB_SERVER_ID {
@@ -287,11 +332,14 @@ impl AppToolExecutor {
         if let (Some(pool), Some(key)) = (&self.capture.mcp_pool, pool_key.as_ref()) {
             if let Some(mut server) = pool.acquire(key).await {
                 let prepared = match prepare_acquired_session(server_id, &mut server).await {
-                    Ok(tools) => {
-                        activate_default_tools(server_id, &mut server, activation.as_ref())
-                            .await
-                            .map(|activated| activated.unwrap_or(tools))
-                    }
+                    Ok(tools) => activate_tools(
+                        server_id,
+                        &mut server,
+                        activation.as_ref(),
+                        activate_tool_names,
+                    )
+                    .await
+                    .map(|activated| activated.unwrap_or(tools)),
                     Err(error) => Err(error),
                 };
                 match prepared {
@@ -386,6 +434,7 @@ impl AppToolExecutor {
             server_id,
             tools.values(),
             &control_tool_names,
+            &enabled_provider_ids,
             &providerless_tool_policy,
         )?;
         let mut server = TurnMcpServer {
@@ -399,7 +448,13 @@ impl AppToolExecutor {
             pool_key,
             scratch_dir: Some(scratch),
         };
-        let cards = match activate_default_tools(server_id, &mut server, activation.as_ref()).await
+        let cards = match activate_tools(
+            server_id,
+            &mut server,
+            activation.as_ref(),
+            activate_tool_names,
+        )
+        .await
         {
             Ok(activated) => activated.unwrap_or(cards),
             Err(error) => {
@@ -564,14 +619,22 @@ impl AppToolExecutor {
                     }
                     return mcp_call_error_with_inventory(
                         preflight_tools,
-                        provider_failure(mapped, requested_provider.as_deref()),
+                        provider_failure(
+                            mapped,
+                            requested_provider.as_deref(),
+                            &server.enabled_provider_ids,
+                        ),
                     );
                 }
             };
             if result.is_error {
                 return mcp_call_error_with_inventory(
                     preflight_tools,
-                    provider_failure(rejected_mcp_result(&result), requested_provider.as_deref()),
+                    provider_failure(
+                        rejected_mcp_result(&result),
+                        requested_provider.as_deref(),
+                        &server.enabled_provider_ids,
+                    ),
                 );
             }
             if validate_result_provider(
@@ -934,14 +997,15 @@ fn setup_notices<'a>(
                 .map(|labels| labels.join(" and "))
                 .unwrap_or_else(|| "its setup".into());
             Some(format!(
-                "{name} (provider {provider}) is unavailable until the user adds the {fields} in Connections. Until then do not present another provider's data as {name} data.",
+                "{name} (provider {provider}) is unavailable until the user adds the {fields}: if connection_setup is available, call it with {{id: \"{id}\"}} and the user finishes it in a card; otherwise point them to Connections. Until then do not present another provider's data as {name} data.",
                 name = entry.name,
+                id = entry.id,
             ))
         })
         .collect()
 }
 
-const PROVIDER_SETUP_NEXT: &str = "This provider needs setup in Connections before it can run (SEC EDGAR needs a contact email). Ask the user to finish that setup, or use another provider listed in the tool schema and name it when citing.";
+const PROVIDER_SETUP_NEXT: &str = "This provider needs setup before it can run (SEC EDGAR needs a contact email). If connection_setup is available, call it with the provider's connection id or name so the user finishes it in a card (otherwise point them to Connections), or use another provider listed in the tool schema and name it when citing.";
 
 fn connect_response(server_id: &str, tools: Vec<Value>, notices: &[String]) -> Value {
     let mut response = json!({ "server_id": server_id, "tools": tools });
@@ -951,13 +1015,15 @@ fn connect_response(server_id: &str, tools: Vec<Value>, notices: &[String]) -> V
     response
 }
 
-/// Activates the common read set so a first question needs no discovery
-/// round. Unknown names are ignored by the runtime; a refused activation
-/// leaves discovery available instead of failing the connection.
-async fn activate_default_tools(
+/// Activates the warm Chat's previous set, or the common read set so a first
+/// question needs no discovery round. Unknown names are ignored by the
+/// runtime; a refused activation leaves discovery available instead of
+/// failing the connection.
+async fn activate_tools(
     server_id: &str,
     server: &mut TurnMcpServer,
     activation: Option<&McpToolActivation>,
+    requested: &[String],
 ) -> Result<Option<Vec<Value>>, BrokerError> {
     let Some(activation) = activation else {
         return Ok(None);
@@ -967,7 +1033,7 @@ async fn activate_default_tools(
     }
     let arguments = Value::Object(serde_json::Map::from_iter([(
         activation.argument_name.clone(),
-        json!(openbb::DEFAULT_ACTIVE_TOOLS),
+        json!(activation_names(requested, &server.control_tool_names)),
     )]));
     let result = server
         .session
@@ -983,7 +1049,11 @@ async fn activate_default_tools(
 
 /// Scraped providers get a passive health signal: the first failure in a
 /// turn tells the model to switch to an official provider instead of retrying.
-fn provider_failure(error: BrokerError, provider: Option<&str>) -> BrokerError {
+fn provider_failure(
+    error: BrokerError,
+    provider: Option<&str>,
+    enabled_provider_ids: &BTreeSet<String>,
+) -> BrokerError {
     if !provider.is_some_and(openbb::is_best_effort) {
         return error;
     }
@@ -991,7 +1061,7 @@ fn provider_failure(error: BrokerError, provider: Option<&str>) -> BrokerError {
         BrokerError::WithNext { source, .. } => *source,
         other => other,
     };
-    source.with_next(openbb::BEST_EFFORT_FAILURE_NEXT)
+    source.with_next(openbb::best_effort_failure_next(enabled_provider_ids))
 }
 
 fn metadata_fetched_at(metadata: &Value) -> Option<String> {
@@ -1088,6 +1158,7 @@ async fn refresh_inventory(
         server_id,
         filtered.values(),
         &server.control_tool_names,
+        &server.enabled_provider_ids,
         &server.providerless_tool_policy,
     )?;
     server.tools = filtered;
@@ -1163,6 +1234,7 @@ fn agent_tool_cards<'a>(
     server_id: &str,
     tools: impl Iterator<Item = &'a McpTool>,
     control_tool_names: &BTreeSet<String>,
+    enabled_provider_ids: &BTreeSet<String>,
     providerless_tool_policy: &ProviderlessToolPolicy,
 ) -> Result<Vec<Value>, BrokerError> {
     tools
@@ -1174,6 +1246,7 @@ fn agent_tool_cards<'a>(
                     tool,
                     control_tool_names.contains(&tool.name),
                     providerless_tool_policy.local_tools.contains(&tool.name),
+                    enabled_provider_ids,
                 );
             }
             Ok(card)
@@ -1186,6 +1259,7 @@ fn server_cards(server_id: &str, server: &TurnMcpServer) -> Result<Vec<Value>, B
         server_id,
         server.tools.values(),
         &server.control_tool_names,
+        &server.enabled_provider_ids,
         &server.providerless_tool_policy,
     )
 }
@@ -1833,7 +1907,7 @@ done
         let next = capture(&temporary, "reuse-two", Some(pool.clone()));
         let next_executor = turn_executor(&temporary, &state, "loupist-a", next.clone());
         let connected = next_executor
-            .attach_or_spawn_mcp("openbb", authority)
+            .attach_or_spawn_mcp("openbb", authority, &[])
             .await
             .unwrap();
         assert_eq!(
@@ -2121,7 +2195,7 @@ done
         let turn = capture(&temporary, "defaults-two", Some(pool.clone()));
         let executor = turn_executor(&temporary, &state, "loupist-a", turn.clone());
         let connected = executor
-            .attach_or_spawn_mcp("openbb", authority)
+            .attach_or_spawn_mcp("openbb", authority, &[])
             .await
             .unwrap();
         assert!(tool_names(&connected).contains(&"equity_quote".to_owned()));
@@ -2144,19 +2218,87 @@ done
         .unwrap();
         turn.shutdown_mcp().await;
         wait_for_pool_idle(&pool, 1).await;
+
+        // A warm Chat restores the set its last turn ended with, not the defaults.
+        let mut warm_authority = self::authority(&temporary, "yfinance", "default-secret");
+        warm_authority.runtime.tool_activation = Some(McpToolActivation {
+            tool_name: "activate_tools".into(),
+            argument_name: "tool_names".into(),
+        });
+        let warm = capture(&temporary, "defaults-three", Some(pool.clone()));
+        let warm_executor = turn_executor(&temporary, &state, "loupist-a", warm.clone());
+        warm_executor
+            .attach_or_spawn_mcp(
+                "openbb",
+                warm_authority,
+                &["activate_tools".into(), "equity_quote".into()],
+            )
+            .await
+            .unwrap();
+        let restored = fs::read_to_string(&spawned.transcript)
+            .unwrap()
+            .lines()
+            .rfind(|line| line.contains(r#""name":"activate_tools""#))
+            .unwrap()
+            .to_owned();
+        assert!(restored.contains("equity_quote"), "{restored}");
+        assert!(!restored.contains("equity_search"), "{restored}");
+        warm.shutdown_mcp().await;
+        wait_for_pool_idle(&pool, 1).await;
         pool.shutdown().await;
         wait_for_exit_marker(&spawned.exited).await;
     }
 
     #[test]
-    fn a_failed_scraped_provider_points_to_an_official_one() {
+    fn a_connect_restores_the_requested_set_or_falls_back_to_the_defaults() {
+        let control = control_tools();
+        let requested = ["activate_tools".to_owned(), "etf_holdings".to_owned()];
+        assert_eq!(activation_names(&requested, &control), ["etf_holdings"]);
+        assert_eq!(
+            activation_names(&["activate_tools".to_owned()], &control),
+            openbb::DEFAULT_ACTIVE_TOOLS
+        );
+        assert_eq!(
+            activation_names(&[], &control),
+            openbb::DEFAULT_ACTIVE_TOOLS
+        );
+        let parsed = McpConnectRequest::parse(
+            json!({"server_id": "openbb", "activate_tool_names": ["etf_holdings"]}),
+        )
+        .unwrap();
+        assert_eq!(parsed.activate_tool_names, ["etf_holdings"]);
+        assert!(McpConnectRequest::parse(json!({"server_id": "openbb"}))
+            .unwrap()
+            .activate_tool_names
+            .is_empty());
+        for names in [
+            json!(["bad name"]),
+            json!([""]),
+            json!(["x".repeat(129)]),
+            json!(vec!["a"; MAX_ACTIVATION_NAMES + 1]),
+        ] {
+            assert!(matches!(
+                McpConnectRequest::parse(
+                    json!({"server_id": "openbb", "activate_tool_names": names})
+                ),
+                Err(BrokerError::Malformed)
+            ));
+        }
+    }
+
+    #[test]
+    fn a_failed_scraped_provider_points_to_an_enabled_official_one() {
         let generic = || BrokerError::Execution("provider failed".into()).with_next("generic");
-        let BrokerError::WithNext { next, .. } = provider_failure(generic(), Some("yfinance"))
+        let enabled = BTreeSet::from(["yfinance".to_owned(), "tmx".to_owned()]);
+        let BrokerError::WithNext { next, .. } =
+            provider_failure(generic(), Some("yfinance"), &enabled)
         else {
             panic!("expected recovery guidance");
         };
-        assert_eq!(next, openbb::BEST_EFFORT_FAILURE_NEXT);
-        let BrokerError::WithNext { next, .. } = provider_failure(generic(), Some("sec")) else {
+        assert!(next.contains("for example tmx"), "{next}");
+        assert!(!next.contains("sec"), "{next}");
+        let BrokerError::WithNext { next, .. } = provider_failure(generic(), Some("sec"), &enabled)
+        else {
             panic!("expected recovery guidance");
         };
         assert_eq!(next, "generic");

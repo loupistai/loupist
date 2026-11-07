@@ -24,7 +24,7 @@ Pi renders them in this order. Installed Skill bodies load only when selected/re
 | 2 | Host workspace instructions | Each file ≤64 KiB; instruction and custom Skill resources share ≤64 files and ≤256 KiB | Admitted personal/workspace/Loupist instructions exist |
 | 3 | Skills XML index | Fixed bundled selection plus custom resources within the same file/byte limits | Enabled Skills; a mention selects a method without changing Memory authority |
 | 4 | Selected workspace CWD | One canonical filesystem path | Every turn; private Pi runtime CWD is not exposed |
-| 5 | Runtime permissions and connections/capability index | Fixed bundled catalog plus ≤32 custom connections; purpose text ≤160 characters per component | Every turn; enabled and unavailable entries are distinguished |
+| 5 | Runtime permissions and connections/capability index | Fixed bundled catalog plus ≤32 custom connections; purpose text ≤160 characters per component, cut at a sentence or word | Every turn; off connections cost one fixed sentence naming `connection_setup` |
 | 6 | Personal/Loupist Skill folders | Two host-selected paths and fixed guidance | Personal root available |
 | Separate provider field | Active tool definitions | Host-authorized catalog/native definitions; lazy capabilities add their admitted schemas | Permitted active tools only |
 

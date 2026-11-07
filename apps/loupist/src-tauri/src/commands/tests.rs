@@ -18,6 +18,7 @@ use crate::{
 };
 
 mod chat_behavior;
+mod connection_setup;
 mod contracts;
 mod home_links;
 mod home_thread;

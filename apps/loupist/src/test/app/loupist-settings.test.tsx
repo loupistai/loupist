@@ -1,5 +1,6 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { setPreviewLanguage } from "../../i18n/useLanguage";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { chooseLoupist, selectedLoupistButton, headerAction, mainTab, openApp } from "../renderApp";
 
@@ -120,4 +121,39 @@ it("keeps what the map tracks in World processing, not Learning", async () => {
   const learning = page.querySelector<HTMLElement>('[data-loupist-section="learning"]')!;
   expect(await within(world).findByText("What the map tracks")).toBeVisible();
   expect(within(learning).queryByText("What the map tracks")).toBeNull();
+});
+
+it("opens the current Loupist's Skills & connections from the Connections page and leaves the sidebar on Loupists", async () => {
+  const user = userEvent.setup();
+  await openApp();
+  await user.click(await mainTab(/Connections/));
+  expect(document.querySelector('.settings-navigation [aria-current="page"]')).toHaveTextContent("Connections");
+  await user.click(await screen.findByRole("button", { name: "Choose which Loupists can use them" }));
+  const page = await screen.findByRole("region", { name: "Loupist settings" });
+  await waitFor(() => expect(page.querySelector<HTMLDetailsElement>('[data-loupist-section="capabilities"]')!.open).toBe(true));
+  expect(within(page).getByRole("textbox", { name: "Name" })).toHaveValue("Quality Compounder");
+  expect(document.querySelector('.settings-navigation [aria-current="page"]')).toHaveTextContent("Loupists");
+});
+
+it("translates connection names, summaries and group labels in Loupist settings", async () => {
+  const user = userEvent.setup();
+  await openApp();
+  await user.click(headerAction("Loupist settings"));
+  const page = await screen.findByRole("region", { name: "Loupist settings" });
+  await user.click(within(page).getByRole("button", { name: "Skills & connections" }));
+  await within(page).findByText("Market data platform");
+  setPreviewLanguage("ko");
+  await act(async () => { window.dispatchEvent(new Event("languagechange")); });
+  try {
+    const list = (await within(page).findByText("시장 데이터 플랫폼")).closest(".agent-capability-list") as HTMLElement;
+    expect(within(list).getByText("온체인 데이터")).toBeVisible();
+    expect(within(list).getByText("세계은행")).toBeVisible();
+    expect(within(list).queryByText("Market data platform")).toBeNull();
+    expect(within(list).queryByText(/Public blockchains|Global development/)).toBeNull();
+    const names = [...list.querySelectorAll(".agent-capability strong")].map((item) => item.textContent);
+    expect(names[0]).toBe("시장 데이터 플랫폼");
+  } finally {
+    setPreviewLanguage("en");
+    await act(async () => { window.dispatchEvent(new Event("languagechange")); });
+  }
 });

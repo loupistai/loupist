@@ -274,6 +274,14 @@ export function ChatConversation({
   }, [messages]);
   const latestPromptKey = messageKeys[latestPromptIndex] ?? messages[latestPromptIndex]?.id ?? "";
   const lastAssistantIndex = messages.reduce((last, message, index) => (message.role === "assistant" ? index : last), -1);
+  // The user's question each answer replies to, offered again by a setup card once the connection is ready.
+  const previousQuestions = useMemo(() => {
+    let question: string | undefined;
+    return messages.map((message) => {
+      if (message.role === "user" && !message.steer) question = message.content;
+      return question;
+    });
+  }, [messages]);
   return (
     <Conversation
       className="message-scroll"
@@ -325,6 +333,7 @@ export function ChatConversation({
               guiding={index === messages.length - 1 && message.status === "streaming" ? guiding : undefined}
               onNextStep={index === messages.length - 1 && message.role === "assistant" && message.status === "complete" ? onSuggestion : undefined}
               onFillComposer={message.role === "assistant" ? onSuggestion : undefined}
+              previousQuestion={message.role === "assistant" ? previousQuestions[index] : undefined}
               onReadWorldJob={onReadWorldJob}
               onWorldChanged={onWorldChanged}
               onOpenMemory={onOpenMemory}

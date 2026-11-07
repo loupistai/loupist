@@ -1,6 +1,7 @@
 mod catalog;
 pub(crate) mod connector_config;
 pub(crate) mod credentials;
+pub(crate) mod entry_lookup;
 
 pub(crate) use catalog::progress_names;
 pub use catalog::*;
@@ -236,7 +237,14 @@ pub(super) fn connector_ready(
     entry: &MarketplaceEntryDto,
     state: &AppState,
 ) -> Result<bool, CommandError> {
-    Ok(connector_status(entry, state)?.readiness == MarketplaceConnectorReadiness::Ready)
+    Ok(connector_readiness(entry, state)? == MarketplaceConnectorReadiness::Ready)
+}
+
+pub(crate) fn connector_readiness(
+    entry: &MarketplaceEntryDto,
+    state: &AppState,
+) -> Result<MarketplaceConnectorReadiness, CommandError> {
+    Ok(connector_status(entry, state)?.readiness)
 }
 
 /// When Marketplace setup first makes a connector ready, enable it for every

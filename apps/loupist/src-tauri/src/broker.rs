@@ -52,6 +52,9 @@ pub const MAX_MEMORY_PROPOSALS: u8 = 8;
 // Keep retention bounded without exhausting it after the first company.
 pub const MAX_CHAT_TURN_SOURCES: u8 = 16;
 pub const MAX_CHAT_TURN_FILINGS: u8 = 2;
+/// Setup cards a reply can show: one per connection the user asked about,
+/// with room for a wrong guess.
+pub const MAX_CHAT_TURN_CONNECTION_SETUPS: u8 = 3;
 const MAX_CONCURRENT_CONNECTIONS: usize = 64;
 const RESPONSE_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 const DELIVERY_ACK_TIMEOUT: Duration = Duration::from_secs(10);
@@ -264,6 +267,7 @@ pub enum ToolMethod {
     LensFile,
     WorldSchemaUpdate,
     LoupistSetup,
+    ConnectionSetup,
     LensSearch,
     LensRead,
     WorldJob,
@@ -345,7 +349,7 @@ pub enum BrokerError {
     #[error("{source}")]
     WithNext {
         source: Box<BrokerError>,
-        next: &'static str,
+        next: std::borrow::Cow<'static, str>,
     },
     #[error("tool broker authentication failed")]
     Authentication,
@@ -369,10 +373,10 @@ impl BrokerError {
         }
     }
 
-    pub(crate) fn with_next(self, next: &'static str) -> Self {
+    pub(crate) fn with_next(self, next: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         Self::WithNext {
             source: Box::new(self),
-            next,
+            next: next.into(),
         }
     }
 }
@@ -587,6 +591,7 @@ struct TransactionCardinality {
     proposals: u8,
     schema_updates: u8,
     setups: u8,
+    connection_setups: u8,
     filings: u8,
     artifact_publishes: u8,
     research_opens: u8,
@@ -610,6 +615,11 @@ impl TransactionCardinality {
             ToolMethod::LoupistSetup if self.setups >= 1 => {
                 return Err(BrokerError::BudgetExceeded);
             }
+            ToolMethod::ConnectionSetup
+                if self.connection_setups >= MAX_CHAT_TURN_CONNECTION_SETUPS =>
+            {
+                return Err(BrokerError::BudgetExceeded);
+            }
             ToolMethod::LensFile if self.filings >= MAX_CHAT_TURN_FILINGS => {
                 return Err(BrokerError::BudgetExceeded);
             }
@@ -626,6 +636,7 @@ impl TransactionCardinality {
         match method {
             ToolMethod::WorldSchemaUpdate => self.schema_updates += 1,
             ToolMethod::LoupistSetup => self.setups += 1,
+            ToolMethod::ConnectionSetup => self.connection_setups += 1,
             ToolMethod::LensFile => self.filings += 1,
             ToolMethod::ResearchOpen => self.research_opens += 1,
             ToolMethod::NoteSave => self.journals += 1,
@@ -651,6 +662,9 @@ impl TransactionCardinality {
                 self.schema_updates = self.schema_updates.saturating_sub(1)
             }
             ToolMethod::LoupistSetup => self.setups = self.setups.saturating_sub(1),
+            ToolMethod::ConnectionSetup => {
+                self.connection_setups = self.connection_setups.saturating_sub(1)
+            }
             ToolMethod::LensFile => self.filings = self.filings.saturating_sub(1),
             ToolMethod::ArtifactPublish | ToolMethod::ChartPublish | ToolMethod::GridPublish => {
                 self.artifact_publishes = self.artifact_publishes.saturating_sub(1)
@@ -1355,7 +1369,7 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
 fn error_body(error: &BrokerError) -> Value {
     if let BrokerError::ProviderApprovalRequired { provider, services } = error {
         return json!({"code":"needs_approval", "message":error.to_string(), "retryable":false,
-            "next":"Check this key and request the missing service approvals in the provider's portal, then verify it in Connections. Use an approved market or another source meanwhile.",
+            "next":"The user requests the missing service approvals in the provider's portal, then verifies the key: if connection_setup is available, call it with {id: \"krx.market-data\"} so they can do it from a card; otherwise point them to Connections. Use an approved market or another source meanwhile.",
             "connection_id":provider, "services":services, "reason":"provider_service_approval"});
     }
     if let BrokerError::CustomApprovalRequired {

@@ -11,6 +11,13 @@ type Helpers = {
 export function dataScenarios({ base, select, click, settings }: Helpers): PreviewScenario[] {
   return [
     {
+      ...base("connection-setup-fred", "First-time setup of a free-account source", () => select(".marketplace-setup-dialog"), async root => {
+        await settings(root, "connections");
+        await click('[aria-labelledby="connection-fred.macro"] button');
+      }),
+      setup: prepareFixture,
+    },
+    {
       ...base("connection-krx-coverage", "KRX key approved for KOSPI, with KOSDAQ approval still needed", () => select(".marketplace-service-coverage"), async root => {
         await settings(root, "connections");
         await click('[aria-labelledby="connection-krx.market-data"] button');

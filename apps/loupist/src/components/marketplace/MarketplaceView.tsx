@@ -21,10 +21,11 @@ import type {
   MarketplaceSnapshot,
 } from "../../marketplace/types";
 import type { LoupistSummary, LoupistBridge } from "../../types";
-import { MarketplaceCard } from "./MarketplaceCard";
+import { MarketplaceCard, accessLabel } from "./MarketplaceCard";
 import { MarketplaceSetupDialog } from "./MarketplaceSetupDialog";
 import { CONFIG_CHANGED_EVENT } from "../../app/useConfiguration";
 import { connectionGroups } from "../../marketplace/groups";
+import { CONNECTION_STATES, connectionState, sortConnectionEntries } from "../../marketplace/readiness";
 
 type Props = {
   bridge: LoupistBridge;
@@ -36,6 +37,7 @@ type Props = {
 };
 
 type FreeFilter = "all" | MarketplaceFreeState;
+type StatusFilter = "all" | "ready" | "attention";
 
 const FREE_FILTERS: Array<{ id: FreeFilter; label: string }> = [
   { id: "all", get label() { return i18n.t("connections:marketplaceView.allAccess"); } },
@@ -44,26 +46,25 @@ const FREE_FILTERS: Array<{ id: FreeFilter; label: string }> = [
   { id: "paid", get label() { return i18n.t("connections:marketplaceView.paid"); } },
 ];
 
+/** Search matches what a card shows, so every result can say why it matched. */
 function entrySearchText(entry: MarketplaceEntry) {
   return [
     connectionText(entry.name),
     connectionText(entry.summary),
-    entry.publisher,
-    connectionText(entry.data_authority),
-    entry.plugin,
-    ...entry.runtime.provider_ids,
-    ...entry.markets,
-    ...entry.asset_classes,
-    ...entry.capabilities,
+    accessLabel(entry),
+    ...entry.markets.map(connectionText),
   ]
     .join(" ")
     .toLowerCase();
 }
 
+const showGroupHeading = (group: { label: string; entries: MarketplaceEntry[] }) =>
+  group.entries.length > 1 || connectionText(group.entries[0]?.name ?? "") !== group.label;
+
 export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initialEntryId, onManageLoupists, onOpenModelSettings }: Props) {
   const { i18n: activeLanguage } = useTranslation("connections");
   const [snapshot, setSnapshot] = useState<MarketplaceSnapshot | null>(null);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [query, setQuery] = useState("");
   const [freeFilter, setFreeFilter] = useState<FreeFilter>("all");
   const [error, setError] = useState<string | null>(null);
@@ -110,14 +111,19 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
       (snapshot?.catalog.entries ?? []).length,
     [snapshot],
   );
+  const attentionCount = useMemo(
+    () => (snapshot?.catalog.entries ?? []).filter((entry) => CONNECTION_STATES[connectionState(connectorById.get(entry.id))].needsAttention).length,
+    [snapshot, connectorById],
+  );
   const visibleEntries = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    return [...(snapshot?.catalog.entries ?? [])].filter(
-      (entry) =>
-        (freeFilter === "all" || entry.free_state === freeFilter) &&
-        (statusFilter === "all" || (statusFilter === "ready" ? connectorById.get(entry.id)?.readiness === "ready" : connectorById.get(entry.id)?.readiness !== "ready")) &&
-        (!normalizedQuery || entrySearchText(entry).includes(normalizedQuery)),
-    );
+    const matching = (snapshot?.catalog.entries ?? []).filter((entry) => {
+      const state = connectionState(connectorById.get(entry.id));
+      return (freeFilter === "all" || entry.free_state === freeFilter) &&
+        (statusFilter === "all" || (statusFilter === "ready" ? state === "ready" : CONNECTION_STATES[state].needsAttention)) &&
+        (!normalizedQuery || entrySearchText(entry).includes(normalizedQuery));
+    });
+    return sortConnectionEntries(matching, connectorById, (entry) => connectionText(entry.name));
   }, [freeFilter, query, snapshot, statusFilter, connectorById, activeLanguage.language]);
   const discoveryGroups = useMemo(
     () => connectionGroups(snapshot?.plugins ?? [], visibleEntries),
@@ -142,8 +148,6 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
           actions={onManageLoupists ? <Button type="button" variant="outline" onClick={onManageLoupists}><SlidersHorizontalIcon />{i18n.t("connections:marketplaceView.manageLoupistAccess")}</Button> : undefined}
  />
 
-        <CustomConnections bridge={bridge} loupists={loupists} initialLoupistId={currentLoupistId} />
-
         {error ? (
           <div className="marketplace-error" role="alert">
             <DatabaseIcon aria-hidden="true" />
@@ -162,10 +166,10 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
         <section className="connection-catalog" aria-labelledby="available-connections-title">
           <h2 className="connection-section-heading" id="available-connections-title">{i18n.t("connections:marketplaceView.availableConnections")}</h2>
         <div className="marketplace-browser">
-          <SegmentedControl value={statusFilter} onValueChange={setStatusFilter} className="marketplace-status-tabs" aria-label={i18n.t("connections:marketplaceView.connectionReadiness")}>
+          <SegmentedControl value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)} className="marketplace-status-tabs" aria-label={i18n.t("connections:marketplaceView.connectionReadiness")}>
               <SegmentedControlItem value="all">{i18n.t("connections:marketplaceView.allConnections")}</SegmentedControlItem>
               <SegmentedControlItem value="ready">{i18n.t("connections:marketplaceView.readyToUse")}</SegmentedControlItem>
-              <SegmentedControlItem value="setup">{i18n.t("connections:marketplaceView.needsAttention")}</SegmentedControlItem>
+              <SegmentedControlItem value="attention">{i18n.t("connections:marketplaceView.needsAttention")}{attentionCount ? <span className="marketplace-filter-count"> {formatNumber(attentionCount)}</span> : null}</SegmentedControlItem>
             </SegmentedControl>
           <div className="marketplace-controls">
             <label className="marketplace-search">
@@ -204,6 +208,7 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
           {!snapshot && error ? null : !snapshot ? (
             <div
               className="marketplace-loading"
+              role="status"
               aria-label={i18n.t("connections:marketplaceView.loadingConnections")}
             >
               <span /> <span /> <span />
@@ -212,9 +217,8 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
             <div className="marketplace-groups">
               {discoveryGroups.map((group) => (
                 <section className="marketplace-group" key={group.id}>
-                  {group.entries.length > 1 ||
-                  group.entries[0]?.name !== group.label ? (
-                    <h2>{connectionText(group.label)}<span aria-hidden="true">{formatNumber(group.entries.length)}</span></h2>
+                  {showGroupHeading(group) ? (
+                    <h3>{group.label}<span aria-hidden="true">{formatNumber(group.entries.length)}</span></h3>
                   ) : null}
                   <div className="marketplace-grid">
                     {group.entries.map((entry) => (
@@ -222,6 +226,7 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
                         key={entry.id}
                         entry={entry}
                         connector={connectorById.get(entry.id)}
+                        headingLevel={showGroupHeading(group) ? 4 : 3}
                         onSetup={(next) => setSelectedEntryId(next.id)}
                       />
                     ))}
@@ -231,13 +236,15 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
             </div>
           ) : (
             <div className="marketplace-empty">
-              <h2>{i18n.t("connections:marketplaceView.noMatchingConnections")}</h2>
+              <h3>{i18n.t("connections:marketplaceView.noMatchingConnections")}</h3>
               <p>{i18n.t("connections:marketplaceView.tryAnotherSearchOrChooseAllAccess")}</p>
               <Button type="button" variant="outline" onClick={() => { setQuery(""); setFreeFilter("all"); setStatusFilter("all"); }}>{i18n.t("connections:marketplaceView.clearFilters")}</Button>
             </div>
           )}
         </div>
         </section>
+
+        <CustomConnections bridge={bridge} loupists={loupists} initialLoupistId={currentLoupistId} />
       </div>
 
       <MarketplaceSetupDialog

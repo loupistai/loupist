@@ -43,9 +43,9 @@ fn safe_mcp_error_summary(error: &BrokerError) -> String {
         .collect()
 }
 
-fn mcp_error_next(error: &BrokerError) -> Option<&'static str> {
+fn mcp_error_next(error: &BrokerError) -> Option<&str> {
     match error {
-        BrokerError::WithNext { next, .. } => Some(next),
+        BrokerError::WithNext { next, .. } => Some(next.as_ref()),
         _ => None,
     }
 }
@@ -103,7 +103,7 @@ pub(super) fn rejected_mcp_result(result: &crate::mcp::McpCallResult) -> BrokerE
         .and_then(|value| value.pointer("/loupist_error/kind"))
         == Some(&json!("offline"))
     {
-        return BrokerError::Offline("OpenBB data provider".into());
+        return BrokerError::Offline("market data provider".into());
     }
     // MCP tools commonly put a JSON error inside a text content block.
     // Decode one layer only; never return this provider-controlled body.
@@ -171,7 +171,7 @@ fn rejected_mcp_text(diagnostic: &str) -> BrokerError {
     {
         (
             "The MCP provider rejected authentication or access",
-            "Ask the user to check and verify this provider in Connections, including its subscription access. Do not request a key in Chat or retry with guessed credentials.",
+            "If connection_setup is available, call it with this provider's connection name so the user checks and verifies it in a card, including its subscription access; otherwise tell the user to check it in Connections. Do not request a key in Chat or retry with guessed credentials.",
         )
     } else {
         (

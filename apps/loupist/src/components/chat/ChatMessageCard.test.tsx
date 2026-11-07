@@ -20,6 +20,21 @@ function renderAnswer(message: ChatMessage, extra: Partial<ComponentProps<typeof
   return { ...props, view };
 }
 
+it("draws a setup card from a completed connection_setup step and asks the question again once ready", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  await bridge.loupistCapabilityDisable({ loupist_id: "loupist-a", entry_id: "world-bank.indicators" });
+  const onFillComposer = vi.fn();
+  renderAnswer(answer({ content: "World Bank data can be added; finish the card below.", progress: { startedAtMs: 0, items: [
+    { id: "setup", kind: "tool", toolName: "connection_setup", category: "capability", operation: "generic", action: "Prepared a connection", target: "world-bank.indicators", source: { kind: "connector", name: "World Bank Indicators" }, status: "succeeded" },
+    { id: "failed", kind: "tool", toolName: "connection_setup", category: "capability", operation: "generic", action: "Prepared a connection", target: "Bloomberg", status: "failed" },
+  ] } }), { bridge, onFillComposer, previousQuestion: "How did Korea's GDP grow last year?" });
+  const card = await screen.findByRole("region", { name: "Set up World Bank Indicators" });
+  expect(screen.getAllByRole("region", { name: /^Set up / })).toHaveLength(1);
+  await user().click(await within(card).findByRole("button", { name: "Use in this Loupist" }));
+  await user().click(await within(card).findByRole("button", { name: "Ask again" }));
+  expect(onFillComposer).toHaveBeenCalledWith("How did Korea's GDP grow last year?");
+});
+
 it.each([false, true])("keeps one stable research summary from first call to settlement (expanded: %s)", async (expanded) => {
   const first = { id: "a", kind: "tool" as const, category: "files" as const, operation: "read" as const, action: "Read file", running: "Reading file", target: "q1.csv", status: "running" as const, startedAtMs: 2 };
   const second = { ...first, id: "b", target: "q2.csv", startedAtMs: 3 };

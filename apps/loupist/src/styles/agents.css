@@ -33,6 +33,10 @@
 .agent-section { overflow: hidden; }
 .agent-section > .agent-section-heading { padding: var(--gg-space-4) 0 var(--gg-space-3); border-bottom: 1px solid var(--gg-color-border-subtle); }
 .agent-section-count { color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-regular); }
+.agent-capability-search { position: relative; display: block; min-width: 0; }
+.agent-capability-search > svg { position: absolute; top: 50%; left: var(--gg-space-3); width: var(--gg-space-4); height: var(--gg-space-4); color: var(--gg-color-text-secondary); transform: translateY(-50%); pointer-events: none; }
+.agent-capability-search input { padding-left: var(--gg-size-control-lg); }
+.agent-capability-search > button { position: absolute; top: 50%; right: var(--gg-space-1); transform: translateY(-50%); }
 .agent-capability-group { margin: 0; padding: var(--gg-space-4) 0 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); }
 .agent-capability { display: flex; align-items: center; justify-content: space-between; gap: var(--gg-space-5); min-width: 0; padding: 14px 0; }
 .agent-capability + .agent-capability { border-top: 1px solid var(--gg-color-border-subtle); }
@@ -43,6 +47,8 @@
 .agent-capability small { font-size: var(--gg-text-caption); color: var(--gg-color-text-secondary); line-height: 1.5; }
 .agent-capability .agent-capability-error { color: var(--gg-color-text-primary); background: var(--gg-color-bg-hover); border-left: 2px solid var(--gg-color-negative); padding: var(--gg-space-2) 10px; margin-top: 5px; }
 .agent-capability-action { display: flex; align-items: center; gap: var(--gg-space-2); flex: 0 0 auto; }
+/* The switch's enlarged hit area would otherwise reach past the row and widen the page's scroll width. */
+.agent-capability-action [data-slot="switch"]::after { inset-inline-end: 0; }
 .agent-capability[data-locked="true"] .agent-capability-action { flex-direction: column; align-items: flex-end; gap: 5px; }
 .agent-capability-action > .agents-loading-icon { width: 14px; height: 14px; }
 .agent-capability-empty { margin: 0; padding: 22px var(--gg-space-6); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); line-height: 1.6; }
