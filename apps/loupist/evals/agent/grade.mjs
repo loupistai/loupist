@@ -6,7 +6,8 @@ import { TRACE_ASSERTS, MEMORY_ASSERTS, MEMORY_KINDS, ANSWER_ASSERTS,
   toolCalls, memoryCommits, answerEvidence, answerPatterns, validDate, executionMismatches,
   citationAssertion, returnedCitationUrls, citingParagraphs, numbersLinkedAssertion, asOfLeftOutAssertion,
   asOfRefusedAssertion, calculateInputsAssertion, gridCellsAssertion, metricTolerance, numberChecks, asOfReport,
-  toolCalledAssertion, argumentsInclude, sensitivityCardAssertion, sensitivityCards, isRecord } from './eval-contract.mjs';
+  toolCalledAssertion, argumentsInclude, sensitivityCardAssertion, sensitivityCards, isRecord,
+  LENS_ASSERTS, lensAssertion, lensPages, memoryReads } from './eval-contract.mjs';
 import { analyzeToolCalls, toolValidity, comparableArgs } from './tool-evidence.mjs';
 import { planProgressEvidence, calculationChipEvidence } from './research-evidence.mjs';
 
@@ -334,8 +335,49 @@ function memoryMatches(commits, assertion) {
     && (assertion.title_contains == null || String(commit.title ?? '').includes(assertion.title_contains)));
 }
 
+function countPasses({ count, min, max }, found) {
+  if (count !== undefined) return found === count;
+  return found >= (min ?? (max === undefined ? 1 : 0)) && (max === undefined || found <= max);
+}
+
+const NON_LENS_READS = new Set(['source', 'note', 'journal', 'world']);
+
+/** Lens state comes from the store after the turn; a reply's save claim is never evidence. */
+function evaluateLensAssertion(assertion, trace) {
+  const spec = lensAssertion(assertion);
+  if (assertion.assert === 'lens_read' || assertion.assert === 'lens_not_read') {
+    const reads = memoryReads(trace);
+    if (reads === null) return resultOf(trace, assertion, null, 'memory read evidence unavailable');
+    const hits = reads.filter((read) => read.access === 'exact_read' && !NON_LENS_READS.has(read.kind)
+      && spec.title.test(String(read.title ?? '')));
+    const pass = assertion.assert === 'lens_read' ? countPasses(spec, hits.length) : hits.length === 0;
+    return resultOf(trace, assertion, pass, hits.length ? `read ${hits.map((read) => read.title).join(' | ')}` : 'no matching Lens read');
+  }
+  const pages = lensPages(trace);
+  if (pages === null) return resultOf(trace, assertion, null, 'Lens state unavailable');
+  if (assertion.assert === 'lens_unchanged') {
+    const touched = pages.filter((page) => page.ops_this_turn.length > 0);
+    return resultOf(trace, assertion, touched.length === 0,
+      touched.length ? `ops on ${touched.map((page) => page.title).join(' | ')}` : 'no Lens op this turn');
+  }
+  const matching = pages.filter((page) => !page.archived && (spec.kind === undefined || page.kind === spec.kind)
+    && spec.title.test(page.title));
+  const text = (page) => [page.summary ?? '', ...page.sections.map((section) => `${section.heading ?? ''}\n${section.markdown ?? ''}`)];
+  const failures = matching.flatMap((page) => {
+    const why = [];
+    if (spec.sectionMatches && !text(page).some((part) => spec.sectionMatches.test(part))) why.push(`${page.title} lacks ${spec.sectionMatches}`);
+    if (spec.sectionNotMatching && text(page).some((part) => spec.sectionNotMatching.test(part))) why.push(`${page.title} still has ${spec.sectionNotMatching}`);
+    if (spec.basis && !page.sections.some((section) => (section.basis ?? []).includes(spec.basis))) why.push(`${page.title} has no ${spec.basis} basis`);
+    return why;
+  });
+  const counted = countPasses(spec, matching.length);
+  const detail = [`${matching.length} matching page${matching.length === 1 ? '' : 's'}`, ...failures].join('; ');
+  return resultOf(trace, assertion, counted && failures.length === 0, detail);
+}
+
 function evaluateMemoryAssertion(assertion, trace) {
   if (!MEMORY_ASSERTS.has(assertion.assert)) throw new Error(`Unknown memory assertion ${assertion.assert}`);
+  if (LENS_ASSERTS.has(assertion.assert)) return evaluateLensAssertion(assertion, trace);
   const commits = memoryCommits(trace);
   if (commits === null) return resultOf(trace, assertion, null, 'Memory commit evidence unavailable');
   const matches = memoryMatches(commits, assertion);

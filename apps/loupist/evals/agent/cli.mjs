@@ -9,7 +9,8 @@ import { createInterface } from 'node:readline/promises';
 import { assertScenarioSplit, isHeldoutSuitePath } from './suite-contract.mjs';
 import { grade } from './grade.mjs';
 import { validateSuite, validateTraceRecord, positiveTrialCount } from './eval-contract.mjs';
-import { judgeAll, judgeItems, itemId, modelFamily, grokBackend, openAIBackend, DEFAULT_JUDGE_MODEL, DEFAULT_REASONING_EFFORT } from './judge.mjs';
+import { renderLensPages } from './lens-review.mjs';
+import { judgeAll, judgeItems, itemId, modelFamily, grokBackend, codexBackend, openAIBackend, DEFAULT_JUDGE_MODEL, DEFAULT_REASONING_EFFORT } from './judge.mjs';
 import { agreement, importLabels, labelInteractive, labelViews } from './labels.mjs';
 import { compareReports, comparisonMarkdown } from './compare-reports.mjs';
 import { buildReport, compareRuns } from './report.mjs';
@@ -28,6 +29,7 @@ const COMMAND_OPTIONS = {
   judge: ['split', 'suite', 'traces', 'model', 'reasoning-effort', 'endpoint', 'backend', 'api-key-env', 'cache', 'concurrency', 'allow-same-family'],
   calibrate: ['suite', 'traces', 'judgments', 'labels', 'out', 'split', 'model', 'prompt-version', 'reasoning-effort'],
   label: ['import', 'traces', 'judgments'],
+  'lens-pages': ['traces', 'out'],
   report: ['split', 'suite', 'traces', 'judgments', 'trials'],
   adopt: ['baseline', 'candidate', 'security-traces', 'trials', 'reason'],
   compare: ['suite', 'baseline', 'candidate', 'baseline-judgments', 'candidate-judgments', 'trials'],
@@ -42,6 +44,7 @@ export function helpText() {
     '  grade     Grade trace, memory, and answer assertions',
     '  judge     Binary LLM judge for rubrics and save_precision',
     '  label     Label judged items on a TTY, or import labels',
+    '  lens-pages Render each run\'s final Lens pages and per-turn ops as Markdown for review',
     '  calibrate Save judge calibration against human labels',
     '  report    Aggregate metrics, latency, and tokens',
     '  compare   Compare report JSON summaries, or paired traces with --suite',
@@ -200,6 +203,13 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     console.log(JSON.stringify({ output: traces, runner: runnerArgv[0] }));
     return { output: traces };
   }
+  if (command === 'lens-pages') {
+    if (!options.traces) throw new Error('lens-pages requires --traces');
+    const path = await emit(options.out ? dirname(resolve(options.out)) : directory, options.out ? resolve(options.out) : 'lens-pages.md',
+      renderLensPages(await readJsonl(resolve(options.traces))));
+    console.log(JSON.stringify({ output: path }));
+    return { output: path };
+  }
   if (command === 'label') {
     let labels;
     if (options.import) labels = importLabels(await readFile(resolve(options.import), 'utf8'));
@@ -295,11 +305,12 @@ export async function main(argv = process.argv.slice(2), io = {}) {
   }
   if (command === 'judge') {
     const traces = await readRows(options.traces);
-    const model = options.model ?? DEFAULT_JUDGE_MODEL;
+    const codex = options.backend === 'codex';
+    const model = options.model ?? (codex ? 'gpt-6-astra' : DEFAULT_JUDGE_MODEL);
     const reasoningEffort = options['reasoning-effort'] ?? DEFAULT_REASONING_EFFORT;
     const backend = io.backend ?? (options.endpoint || options.backend === 'openai'
       ? openAIBackend({ endpoint: options.endpoint, apiKeyEnv: options['api-key-env'], model, reasoningEffort })
-      : grokBackend({ model, reasoningEffort }));
+      : codex ? codexBackend({ model, reasoningEffort }) : grokBackend({ model, reasoningEffort }));
     const judgeModel = backend.model ?? model;
     const family = modelFamily(judgeModel);
     const conflicts = [...new Set(traces.flatMap((trace) => [trace.observed_model, trace.model?.model])

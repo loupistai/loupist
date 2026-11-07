@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { suite, traces, HIDDEN_SENTINEL } from './fixtures/sample.mjs';
 import { agreement, labelViews } from './labels.mjs';
-import { buildJudgeInput, modelFamily, DEFAULT_REASONING_EFFORT, grokBackend, grokJudgeArgs, itemId, judgeAll, judgeCacheKey, judgeItems, openAIBackend, parseGrokJudgeStdout, parseJudgeResult, renderJudgePrompt } from './judge.mjs';
+import { buildJudgeInput, modelFamily, DEFAULT_REASONING_EFFORT, codexBackend, grokBackend, grokJudgeArgs, itemId, judgeAll, judgeCacheKey, judgeItems, openAIBackend, parseGrokJudgeStdout, parseJudgeResult, renderJudgePrompt } from './judge.mjs';
 
 async function cacheDir(t) {
   const directory = await mkdtemp(join(tmpdir(), 'agent-judge-test-'));
@@ -272,4 +272,20 @@ test('model families ignore routing prefixes and leave unknown IDs unclassified'
     ['minimax-m2', 'minimax'], ['openai/custom', 'unknown'], ['other', 'unknown'], ['opus', 'unknown'],
     ['', 'unknown'], [null, 'unknown'], [undefined, 'unknown'],
   ]) assert.equal(modelFamily(id), family, String(id));
+});
+
+test('codex judge runs tool-free with the verdict schema and reads the last message', async () => {
+  const { writeFile, readFile } = await import('node:fs/promises');
+  let seen;
+  const backend = codexBackend({ model: 'gpt-6-astra', run: async (command, args) => {
+    seen = { command, args, schema: JSON.parse(await readFile(args[args.indexOf('--output-schema') + 1], 'utf8')) };
+    await writeFile(args[args.indexOf('--output-last-message') + 1], '{"pass":false,"reason":"stale value"}');
+    return '';
+  } });
+  assert.deepEqual(await backend.judge('Judge this.', { reasoningEffort: 'low' }), { pass: false, reason: 'stale value' });
+  assert.equal(seen.command, 'codex');
+  assert.equal(seen.args.at(-1), 'Judge this.');
+  for (const flag of ['features.shell_tool=false', 'web_search="disabled"', 'model_reasoning_effort="low"', 'read-only']) assert.ok(seen.args.includes(flag), flag);
+  assert.deepEqual(seen.schema.required, ['pass', 'reason']);
+  assert.equal(modelFamily(backend.model), 'openai');
 });

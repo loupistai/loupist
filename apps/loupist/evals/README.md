@@ -66,7 +66,8 @@ model, prompt version and reasoning effort (`--reasoning-effort`, default `mediu
 A prompt-version change invalidates the cache; rejudge both arms. The default backend
 is the local `grok` CLI (`grok-4.7`, no web search, empty working directory); an
 OpenAI-compatible backend takes `--endpoint` (HTTPS) and `--api-key-env` (the
-variable name, never the key). Judge context includes earlier sessions and turns
+variable name, never the key). `--backend codex` runs `codex exec` (`gpt-6-astra` by
+default) without shell, web or user configuration, for agents on an xAI model. Judge context includes earlier sessions and turns
 of the same run and trial, without additional truncation. Same-family judging
 (requested or observed agent model vs judge) exits 2 unless `--allow-same-family`.
 Every Memory commit in a training session is also judged for `save_precision`.
@@ -90,6 +91,7 @@ per criterion and per metric; groups under 10 labels are `insufficient_labels`).
 | `connection_honesty` | Cited data comes from the replayed connection | scenario majority-of-3 |
 | `prediction_structure` | A requested structured prediction has valid fields | scenario majority-of-3 |
 | `task_success` | Deterministic trace and answer checks | scenario majority-of-3 |
+| `lens_update` | A newer original revises the same Lens page and later answers use the new state | scenario majority-of-3 |
 | `retrieval`, `efficiency` | Memory reads; tool counts on light tasks | reported only |
 
 `report.goals` lists completion targets: carry-forward ≥ 0.8, negative transfer ≤ 0.1,
@@ -317,9 +319,11 @@ for hill-climbing; **heldout** is for final adoption only (see
 | `suites/security-v1.json` | Source injection, impersonation, principle poisoning, exfiltration, injected shared packs ([fixtures](sharing/README.md)), held quantities hidden from account reads | | 9 | |
 | `suites/scheduling-v1.json` | Task creation, changes, lifecycle, session ownership | | 6 | |
 | `suites/smoke-v1.json` | Minimal cross-Chat Lens recall | | 1 | |
+| `suites/lens-lifecycle-v1.json` | [Lens lifecycle](#lens-lifecycle): create, reuse, update, stale premise, alias, detail retention, single-case restraint, read-only, method scope | 6 | 2 | |
 | `suites/citations-v1.json` | Inline citations and Source retention for attached and workspace notes | | 2 | |
 | `heldout/learning-heldout-v1.json` | Adoption check for learning and transfer | | | 6 |
 | `heldout/tool-use-heldout-v1.json` | Adoption check for tools and connection honesty | | | 6 |
+| `heldout/lens-lifecycle-heldout-v1.json` | Lens lifecycle adoption check in sectors the development suite does not use | | | 3 |
 
 `run`, `grade`, `judge`, `report` and `calibrate` accept
 `--split capability|regression|heldout`. Loading a held-out suite or split requires
@@ -357,6 +361,38 @@ Run principles, personalization and security with `openai-codex/gpt-6.1-sol`,
 `medium` thinking, at least two trials and independent `grok-4.7` judgments. Grade
 deterministic checks before judging and classify every regression failure as a
 product bug or suite flaw. Two-trial rates are descriptive only.
+
+### Lens lifecycle
+
+After every turn the runner records `lens.pages`: each Lens page as the store holds
+it (kind, title, summary, sections with heading, Markdown, basis kinds and origin)
+and `ops_this_turn`, the log entries the turn's own reply wrote. Memory assertions
+read that state, never the reply's save claim:
+
+- `lens_pages` (`kind`, `title_matches`, `count` or `min`/`max`, optional
+  `section_matches`, `section_not_matching`, `basis`: `span`, `claim`, `said` or
+  `page`) counts unarchived pages whose title matches; every match must satisfy the
+  section and basis conditions. `max: 0` with `kind: method` checks that one case
+  did not become a method.
+- `lens_unchanged` passes when the turn logged no Lens op.
+- `lens_read` / `lens_not_read` (`title_matches`) look for an exact Lens read in
+  `memory_reads`; search discovery is not a read.
+
+Patterns match case-insensitively. `suites/lens-lifecycle-v1.json` scores filing
+(`save_recall`), restraint (`save_precision`), reuse (`retrieval`,
+`carry_forward`), updates (`lens_update`) and scope (`negative_transfer`) separately,
+so a run cannot pass by filing everything or by reading everything. Its held-out
+twin uses other sectors and is run once per adoption decision. Run both with the
+development profile's agent model and a judge from another family, and read the
+pages themselves before adopting a change:
+
+```sh
+node apps/loupist/evals/agent/cli.mjs run --suite apps/loupist/evals/agent/suites/lens-lifecycle-v1.json \
+  --trials 2 -- --pi-agent-dir "$HOME/.loupist/development/pi" --model xai/grok-4.7 --thinking medium
+node apps/loupist/evals/agent/cli.mjs grade --suite apps/loupist/evals/agent/suites/lens-lifecycle-v1.json --traces <traces.jsonl>
+node apps/loupist/evals/agent/cli.mjs judge --backend codex --suite apps/loupist/evals/agent/suites/lens-lifecycle-v1.json --traces <traces.jsonl>
+node apps/loupist/evals/agent/cli.mjs lens-pages --traces <traces.jsonl> --out <pages.md>
+```
 
 For uncued acquisition, Lens refinement, conversation recall and save restraint use
 the [Memory evaluation loop](world/README.md#uncued-memory-loop).

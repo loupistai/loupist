@@ -325,6 +325,35 @@ pub(crate) fn persisted(message: &ChatMessage, pi: &PiTrace) -> Value {
     })
 }
 
+/// Canonical Lens pages after a turn, read from the store rather than the reply,
+/// so graders can check what a turn filed and that a read-only turn filed nothing.
+pub(crate) fn lens_state(
+    state: &crate::app::AppState,
+    chat: &crate::domain::ChatSession,
+    message_id: Option<&str>,
+) -> super::Result<Value> {
+    use crate::knowledge::*;
+    let store = KnowledgeStore::for_loupist(state.store.clone(), &chat.loupist_id)?;
+    let records = store.list_records(&chat.loupist_id)?;
+    let mut pages = vec![];
+    for record in records.iter().filter(|r| r.kind == RecordKind::Lens) {
+        let page = store.read(|read| read.read_page(&chat.loupist_id, &record.record_id))?;
+        let body = serde_json::to_value(&page.body)?;
+        let sections = body["sections"].as_array().cloned().unwrap_or_default().into_iter().map(|s| {
+            let refs = s["basis"]["refs"].as_array().cloned().unwrap_or_default();
+            let ref_kinds = refs.iter().filter_map(|r| r["kind"].as_str().map(str::to_owned)).collect::<Vec<_>>();
+            json!({"key":s["key"],"heading":s["heading"],"markdown":s["markdown"],"chip":s["chip"],"origin":s["origin"],
+                "contested":s["contested"],"basis":ref_kinds,"uncertainty":s["basis"]["uncertainty"]})
+        }).collect::<Vec<_>>();
+        let ops = page.history.iter().filter(|e| message_id.is_some() && e.message_id.as_deref() == message_id)
+            .map(|e| json!({"op":e.op,"outcome":e.outcome,"key":e.key,"origin":e.origin})).collect::<Vec<_>>();
+        pages.push(json!({"record_id":page.record_id,"revision_digest":page.revision_digest,"kind":page.kind,
+            "title":page.title,"archived":page.archived,"learned":page.learned,"summary":body["summary"],
+            "sections":sections,"ops_this_turn":ops}));
+    }
+    Ok(json!({"pages":pages}))
+}
+
 /// Excerpts come from committed canonical content, never the model's save claim.
 pub(crate) fn enrich_commits(
     state: &crate::app::AppState,

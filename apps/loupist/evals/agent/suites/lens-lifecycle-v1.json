@@ -1,0 +1,770 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "lens-lifecycle",
+  "version": 1,
+  "description": "Lens lifecycle: research turns file subject pages from retained originals, later Chats read and reuse them, newer originals revise the same page (including a stale premise, an alias and a small update that must keep earlier detail), one case never becomes a method, read-only and light turns file nothing, and a method applies only where it fits.",
+  "budget": {
+    "maxInputTokensPerTurn": 250000,
+    "maxTurns": 60
+  },
+  "scenarios": [
+    {
+      "id": "LL-001",
+      "title": "File a researched company into one subject page, reuse it in a new Chat, and leave it out of an unrelated question",
+      "tags": [
+        "create",
+        "reuse",
+        "negative_transfer"
+      ],
+      "split": "regression",
+      "connections": [],
+      "workspace_files": {},
+      "sessions": [
+        {
+          "id": "research",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Here is Halvren Optics' Q2 2026 release. What is driving the margin drop, and is it temporary?",
+              "attachments": [
+                {
+                  "filename": "halvren-q2-2026.md",
+                  "media_type": "text/markdown",
+                  "text": "This is a fictional company created for Loupist's evaluation. It does not trade, and this note is not a recommendation.\n\nHalvren Optics Q2 2026 results (published 6 August 2026)\n\n- Revenue: 412 million USD, up 9% year on year.\n- Gross margin: 31.5%, down from 36.2% a year earlier.\n- Cause named by management: start-up costs at the new Penang lens fab, running at 58% utilization.\n- FY2026 revenue guidance: 1.70 billion USD, unchanged.\n- Management expects gross margin to recover above 35% in the second half of 2027 as Penang utilization passes 80%.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_recall"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "halvren",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span",
+                    "section_matches": "31[.,]5"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "recall",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "What was Halvren Optics' gross margin last quarter, and what did management blame it on?",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_read",
+                    "title_matches": "halvren",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "lens_unchanged",
+                    "metric": "save_precision"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "31.5"
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "halvren-cause",
+                    "criterion": "The answer gives Halvren Optics' Q2 2026 gross margin as 31.5% and attributes the drop to start-up costs at the new Penang fab running at low (58%) utilization.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "unrelated",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "What is 15% of 2,400?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "max_tool_calls",
+                    "n": 0,
+                    "metric": "efficiency"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "lens_not_read",
+                    "title_matches": "halvren",
+                    "metric": "negative_transfer"
+                  },
+                  {
+                    "assert": "lens_unchanged",
+                    "metric": "save_precision"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "360"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LL-002",
+      "title": "A later guidance cut revises the same subject page and later answers give the new figure",
+      "tags": [
+        "update",
+        "ko"
+      ],
+      "split": "capability",
+      "connections": [],
+      "workspace_files": {},
+      "sessions": [
+        {
+          "id": "first",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "한빛소재 5월 실적 설명회 자료야. 올해 전망 어떻게 봐?",
+              "attachments": [
+                {
+                  "filename": "hanbit-guidance-2026-05.md",
+                  "media_type": "text/markdown",
+                  "text": "This is a fictional company created for Loupist's evaluation. It does not trade, and this note is not a recommendation.\n\n한빛소재 2026년 5월 14일 실적 설명회 자료\n\n- 2026년 연간 매출 가이던스: 4,200억 원\n- 2026년 영업이익률 목표: 12%\n- 주요 고객: 국내 2차전지 셀 업체 3곳\n- 증설: 청주 2공장 2026년 3분기 가동 예정\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_recall"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "한빛",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span",
+                    "section_matches": "4,?200"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "second",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "한빛소재가 8월에 공시를 냈어. 바뀐 거 정리해 줘.",
+              "attachments": [
+                {
+                  "filename": "hanbit-guidance-2026-08.md",
+                  "media_type": "text/markdown",
+                  "text": "This is a fictional company created for Loupist's evaluation. It does not trade, and this note is not a recommendation.\n\n한빛소재 2026년 8월 20일 공시: 연간 전망 정정\n\n- 2026년 연간 매출 가이던스를 4,200억 원에서 3,600억 원으로 하향\n- 영업이익률 목표는 12%에서 9%로 하향\n- 사유: 주요 고객사의 재고 조정으로 3분기 주문 감소\n- 청주 2공장 가동은 2027년 1분기로 연기\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_recall"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "한빛",
+                    "metric": "lens_update",
+                    "count": 1,
+                    "section_matches": "3,?600"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "한빛소재 올해 매출 가이던스가 지금 얼마야?",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_read",
+                    "title_matches": "한빛",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "lens_unchanged",
+                    "metric": "save_precision"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "3,600",
+                      "3600"
+                    ],
+                    "metric": "lens_update"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "current-guidance",
+                    "criterion": "The answer states 3,600억 원 as Hanbit's current 2026 revenue guidance. If 4,200억 원 appears, it is clearly presented as the earlier guidance that was cut in August, never as current.",
+                    "metric": "lens_update"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LL-003",
+      "title": "A question built on a stale remembered fact is corrected from the newer original, and the page is revised",
+      "tags": [
+        "update",
+        "stale_premise"
+      ],
+      "split": "capability",
+      "connections": [],
+      "workspace_files": {},
+      "sessions": [
+        {
+          "id": "first",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Here's an extract of Corvane Logistics' annual report. How concentrated is its customer base?",
+              "attachments": [
+                {
+                  "filename": "corvane-2026-02.md",
+                  "media_type": "text/markdown",
+                  "text": "This is a fictional company created for Loupist's evaluation. It does not trade, and this note is not a recommendation.\n\nCorvane Logistics annual report extract (published 20 February 2026)\n\n- Largest customer: Pelham Retail, 22% of 2025 revenue of 880 million USD.\n- The Pelham Retail warehousing contract runs through December 2028.\n- Corvane operates 41 warehouses in the US Midwest.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_recall"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "corvane",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span",
+                    "section_matches": "2028"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "second",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Corvane's Pelham Retail contract runs through 2028, right? Given that, how much of next year's revenue is at risk? I've attached Corvane's latest current report.",
+              "attachments": [
+                {
+                  "filename": "corvane-2026-09.md",
+                  "media_type": "text/markdown",
+                  "text": "This is a fictional company created for Loupist's evaluation. It does not trade, and this note is not a recommendation.\n\nCorvane Logistics current report (published 15 September 2026)\n\n- Pelham Retail has given notice terminating its warehousing contract effective 31 December 2026, two years early, after moving to an in-house network.\n- Corvane expects to close or re-let 6 of its 41 warehouses.\n- Corvane will receive a one-time termination fee of 35 million USD in Q1 2027.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "corvane",
+                    "metric": "lens_update",
+                    "count": 1,
+                    "section_matches": "terminat|31 December 2026|2026-12-31"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "corrects-premise",
+                    "criterion": "The answer corrects the user's premise: Pelham Retail terminated the contract effective 31 December 2026, so it does not run through 2028, and it sizes the 2027 revenue at risk from Pelham's 22% share.",
+                    "metric": "lens_update"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "When does Corvane's Pelham Retail contract end?",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_read",
+                    "title_matches": "corvane",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "lens_unchanged",
+                    "metric": "save_precision"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "runs (?:through|until) (?:December )?2028"
+                    ],
+                    "metric": "lens_update"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "current-end",
+                    "criterion": "The answer says the Pelham Retail contract ends on 31 December 2026 after early termination, not in 2028.",
+                    "metric": "lens_update"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LL-004",
+      "title": "A Korean article on the same company revises the English-titled page instead of creating a second page",
+      "tags": [
+        "update",
+        "alias",
+        "ko"
+      ],
+      "split": "capability",
+      "connections": [],
+      "workspace_files": {},
+      "sessions": [
+        {
+          "id": "first",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Here is Halvren Optics' Q2 2026 release. Summarize what matters for the margin outlook.",
+              "attachments": [
+                {
+                  "filename": "halvren-q2-2026.md",
+                  "media_type": "text/markdown",
+                  "text": "This is a fictional company created for Loupist's evaluation. It does not trade, and this note is not a recommendation.\n\nHalvren Optics Q2 2026 results (published 6 August 2026)\n\n- Revenue: 412 million USD, up 9% year on year.\n- Gross margin: 31.5%, down from 36.2% a year earlier.\n- Cause named by management: start-up costs at the new Penang lens fab, running at 58% utilization.\n- FY2026 revenue guidance: 1.70 billion USD, unchanged.\n- Management expects gross margin to recover above 35% in the second half of 2027 as Penang utilization passes 80%.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "halvren|할브렌",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "max": 1
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "second",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "할브렌 옵틱스 관련 기사야. 이전에 본 내용이랑 비교해서 뭐가 달라졌어?",
+              "attachments": [
+                {
+                  "filename": "halvren-news-2026-09-ko.md",
+                  "media_type": "text/markdown",
+                  "text": "This is a fictional company created for Loupist's evaluation. It does not trade, and this note is not a recommendation.\n\n할브렌 옵틱스(Halvren Optics) 관련 기사 (2026년 9월 10일)\n\n- 할브렌 옵틱스의 페낭 렌즈 공장 가동률이 8월 기준 71%로 올라왔다고 회사 측이 밝혔다.\n- 회사는 2026년 매출 가이던스 17억 달러를 유지했다.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "halvren|할브렌",
+                    "metric": "lens_update",
+                    "count": 1,
+                    "section_matches": "71"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LL-005",
+      "title": "A small dated update keeps the page's earlier detail instead of collapsing it",
+      "tags": [
+        "update",
+        "retention"
+      ],
+      "split": "capability",
+      "connections": [],
+      "workspace_files": {},
+      "sessions": [
+        {
+          "id": "first",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Here is Marrowfield Paper's Q2 2026 release. Give me the main points for an income investor.",
+              "attachments": [
+                {
+                  "filename": "marrowfield-2026-07.md",
+                  "media_type": "text/markdown",
+                  "text": "This is a fictional company created for Loupist's evaluation. It does not trade, and this note is not a recommendation.\n\nMarrowfield Paper Q2 2026 results (published 30 July 2026)\n\n- Revenue: 265 million USD, down 4%.\n- Segments: packaging board 61%, specialty paper 27%, pulp 12%.\n- Net debt: 410 million USD; net debt to EBITDA 2.6x.\n- Mill footprint: Savonlinna (FI), Kemi (FI), Duluth (US).\n- Dividend: 0.18 USD per share, unchanged.\n- CEO: Annika Varis since 2023.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "marrowfield",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span",
+                    "section_matches": "0[.,]18"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "second",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Marrowfield just put out this notice. What does it change?",
+              "attachments": [
+                {
+                  "filename": "marrowfield-2026-10.md",
+                  "media_type": "text/markdown",
+                  "text": "This is a fictional company created for Loupist's evaluation. It does not trade, and this note is not a recommendation.\n\nMarrowfield Paper notice (published 2 October 2026)\n\n- The quarterly dividend is cut to 0.10 USD per share from 0.18 USD to fund debt reduction.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "marrowfield",
+                    "metric": "lens_update",
+                    "count": 1,
+                    "section_matches": "0[.,]10"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "marrowfield",
+                    "metric": "lens_update",
+                    "count": 1,
+                    "section_matches": "2[.,]6"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "marrowfield",
+                    "metric": "lens_update",
+                    "count": 1,
+                    "section_matches": "packaging"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LL-006",
+      "title": "One company's results do not become a general method",
+      "tags": [
+        "restraint",
+        "overgeneralization"
+      ],
+      "split": "capability",
+      "connections": [],
+      "workspace_files": {},
+      "sessions": [
+        {
+          "id": "research",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Here are Ostrava Glass's Q2 2026 results. Why did margin fall, and what should I watch next quarter?",
+              "attachments": [
+                {
+                  "filename": "ostrava-q2-2026.md",
+                  "media_type": "text/markdown",
+                  "text": "This is a fictional company created for Loupist's evaluation. It does not trade, and this note is not a recommendation.\n\nOstrava Glass Q2 2026 results (published 5 August 2026)\n\n- Revenue: 190 million EUR, down 3%.\n- Gross margin: 24.0%, down from 29.1%.\n- Finished-goods inventory rose to 118 days from 81 days a year earlier.\n- Management: distributors cut orders after building stock in Q1; a price cut of 4% was used to move inventory in June.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "ostrava",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "method",
+                    "title_matches": ".",
+                    "metric": "save_precision",
+                    "max": 0
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LL-007",
+      "title": "A read-only research turn and a light question file nothing",
+      "tags": [
+        "restraint",
+        "read_only"
+      ],
+      "split": "regression",
+      "connections": [],
+      "workspace_files": {},
+      "sessions": [
+        {
+          "id": "readonly",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "Here are Tavish Water's Q2 2026 results. Is the allowed return on equity reasonable?",
+              "attachments": [
+                {
+                  "filename": "tavish-q2-2026.md",
+                  "media_type": "text/markdown",
+                  "text": "This is a fictional company created for Loupist's evaluation. It does not trade, and this note is not a recommendation.\n\nTavish Water Q2 2026 results (published 12 August 2026)\n\n- Revenue: 96 million USD, up 6%.\n- Regulated asset base: 1.4 billion USD.\n- Allowed return on equity: 9.1% under the 2025 rate case.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_unchanged",
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens",
+                    "metric": "save_precision"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "light",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "What does ROE stand for?",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_unchanged",
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens",
+                    "metric": "save_precision"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LL-008",
+      "title": "A remembered method is read and applied where it fits and left alone where it does not",
+      "tags": [
+        "method_scope",
+        "negative_transfer"
+      ],
+      "split": "capability",
+      "connections": [],
+      "workspace_files": {},
+      "sessions": [
+        {
+          "id": "fits",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Ferrox Metals' margin fell sharply this quarter. Is it temporary? Results attached.",
+              "attachments": [
+                {
+                  "filename": "ferrox-q2-2026.md",
+                  "media_type": "text/markdown",
+                  "text": "This is a fictional company created for Loupist's evaluation. It does not trade, and this note is not a recommendation.\n\nFerrox Metals Q2 2026 results (published 9 August 2026)\n\n- Revenue: 540 million USD, up 12%.\n- Gross margin: 18.2%, down from 22.7%.\n- The new Monterrey rolling mill started in April and ran at 49% utilization in Q2; the second line reaches commercial output in Q1 2027.\n- Incremental gross margin on the 58 million USD of added revenue: negative.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_read",
+                    "title_matches": "capacity",
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "applies-ramp",
+                    "criterion": "The answer judges whether Ferrox Metals' margin pressure is temporary by using the new Monterrey mill's utilization (49%) and its timeline to commercial output, and by noting the negative incremental gross margin on the added revenue.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "unrelated",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "How should I think about an insurer whose combined ratio rose from 94% to 101% in a year?",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_not_read",
+                    "title_matches": "capacity",
+                    "metric": "negative_transfer"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "no-ramp",
+                    "criterion": "The answer analyzes the insurer's underwriting (loss and expense ratios, reserve development, pricing) and does not apply a manufacturing capacity-ramp or plant-utilization method.",
+                    "metric": "negative_transfer"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "seed": {
+        "lens": [
+          {
+            "title": "Capacity-ramp margin check",
+            "summary": "Separate temporary start-up margin pressure from structural decline during a manufacturer's capacity expansion.",
+            "sections": [
+              {
+                "key": "use-when",
+                "heading": "Use when",
+                "markdown": "A manufacturer's margin falls while a new plant, line or fab ramps up. Not for service, financial or software businesses."
+              },
+              {
+                "key": "steps",
+                "heading": "Steps",
+                "markdown": "1. Find the new capacity's utilization and the date it reaches commercial output.\n2. Compute incremental gross margin on the added revenue.\n3. Compare margin on the legacy footprint with the prior year."
+              },
+              {
+                "key": "checks",
+                "heading": "Checks",
+                "markdown": "Pressure is temporary only if utilization is rising toward the stated target and legacy margin held."
+              },
+              {
+                "key": "limits",
+                "heading": "Limits",
+                "markdown": "Does not cover demand shocks or price cuts on the legacy footprint."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

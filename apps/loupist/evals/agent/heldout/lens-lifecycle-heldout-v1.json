@@ -1,0 +1,303 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "lens-lifecycle-heldout",
+  "version": 1,
+  "description": "Held-out Lens lifecycle adoption check in sectors the development suite does not use (biotech, shipping, packaged food): update, reuse, restraint and unrelated questions. Never tune against these.",
+  "budget": {
+    "maxInputTokensPerTurn": 250000,
+    "maxTurns": 30
+  },
+  "scenarios": [
+    {
+      "id": "LH-001",
+      "title": "A failed trial updates the biotech page and a later answer uses the new state",
+      "tags": [
+        "update",
+        "reuse"
+      ],
+      "split": "heldout",
+      "connections": [],
+      "workspace_files": {},
+      "sessions": [
+        {
+          "id": "first",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Here's Vellam Biotech's April pipeline update. What's the key risk this year?",
+              "attachments": [
+                {
+                  "filename": "vellam-2026-04.md",
+                  "media_type": "text/markdown",
+                  "text": "This is a fictional company created for Loupist's evaluation. It does not trade, and this note is not a recommendation.\n\nVellam Biotech pipeline update (published 18 April 2026)\n\n- Lead drug VB-12 is in a Phase 3 trial with topline data expected in Q4 2026.\n- Cash: 620 million USD, enough to fund operations into 2028.\n- Partner: Orsk Pharma holds ex-US rights.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_recall"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "vellam",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "second",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Vellam just announced trial results. What changed?",
+              "attachments": [
+                {
+                  "filename": "vellam-2026-10.md",
+                  "media_type": "text/markdown",
+                  "text": "This is a fictional company created for Loupist's evaluation. It does not trade, and this note is not a recommendation.\n\nVellam Biotech announcement (published 21 October 2026)\n\n- VB-12's Phase 3 trial missed its primary endpoint.\n- Vellam is cutting 40% of staff; cash runway now extends into 2029.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "vellam",
+                    "metric": "lens_update",
+                    "count": 1,
+                    "section_matches": "miss|endpoint|failed"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "Is Vellam's VB-12 Phase 3 readout still ahead of us?",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_read",
+                    "title_matches": "vellam",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "lens_unchanged",
+                    "metric": "save_precision"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "readout-done",
+                    "criterion": "The answer says the VB-12 Phase 3 readout already happened (October 2026) and the trial missed its primary endpoint; it does not describe the readout as still pending.",
+                    "metric": "lens_update"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LH-002",
+      "title": "선박 매각 공시가 같은 페이지를 갱신하고 이후 답이 새 선대 규모를 쓴다",
+      "tags": [
+        "update",
+        "ko"
+      ],
+      "split": "heldout",
+      "connections": [],
+      "workspace_files": {},
+      "sessions": [
+        {
+          "id": "first",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "동진해운 사업보고서 발췌야. 이 회사 리스크가 뭐야?",
+              "attachments": [
+                {
+                  "filename": "dongjin-2026-03.md",
+                  "media_type": "text/markdown",
+                  "text": "This is a fictional company created for Loupist's evaluation. It does not trade, and this note is not a recommendation.\n\n동진해운 2025년 사업보고서 발췌 (2026년 3월 15일 공시)\n\n- 보유 선박: 컨테이너선 18척\n- 2025년 매출 1조 2,400억 원, 영업이익률 8%\n- 최대 화주: 한별전자, 매출의 19%\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_recall"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "동진",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "second",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "동진해운이 선박 매각 공시를 냈어. 뭐가 바뀐 거야?",
+              "attachments": [
+                {
+                  "filename": "dongjin-2026-09.md",
+                  "media_type": "text/markdown",
+                  "text": "This is a fictional company created for Loupist's evaluation. It does not trade, and this note is not a recommendation.\n\n동진해운 2026년 9월 3일 공시\n\n- 컨테이너선 4척을 매각해 보유 선박이 14척으로 줄었다.\n- 매각 대금 2,100억 원은 차입금 상환에 사용한다.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "동진",
+                    "metric": "lens_update",
+                    "count": 1,
+                    "section_matches": "14"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "동진해운 지금 컨테이너선 몇 척 갖고 있어?",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_read",
+                    "title_matches": "동진",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "lens_unchanged",
+                    "metric": "save_precision"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "14"
+                    ],
+                    "metric": "lens_update"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LH-003",
+      "title": "One food maker's cost squeeze does not become a method, and an unrelated question leaves its page alone",
+      "tags": [
+        "restraint",
+        "negative_transfer"
+      ],
+      "split": "heldout",
+      "connections": [],
+      "workspace_files": {},
+      "sessions": [
+        {
+          "id": "research",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Here are Pinecrest Foods' Q2 2026 results. Will the price increase restore margin?",
+              "attachments": [
+                {
+                  "filename": "pinecrest-q2-2026.md",
+                  "media_type": "text/markdown",
+                  "text": "This is a fictional company created for Loupist's evaluation. It does not trade, and this note is not a recommendation.\n\nPinecrest Foods Q2 2026 results (published 4 August 2026)\n\n- Revenue: 330 million USD, up 2%.\n- Gross margin: 27.4%, down from 30.0%, after cocoa costs rose 38%.\n- Pinecrest raised prices 6% in July.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "pinecrest",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "method",
+                    "title_matches": ".",
+                    "metric": "save_precision",
+                    "max": 0
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "unrelated",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Explain duration risk in a bond fund in two sentences.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_not_read",
+                    "title_matches": "pinecrest",
+                    "metric": "negative_transfer"
+                  },
+                  {
+                    "assert": "lens_unchanged",
+                    "metric": "save_precision"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
