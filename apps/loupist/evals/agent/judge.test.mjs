@@ -298,3 +298,13 @@ test('a judged Lens commit carries the stored page kind and basis', () => {
   const items = judgeItems(suite, [trace]).filter((item) => item.kind === 'save_precision');
   assert.deepEqual(items.map((item) => [item.memory_item.page_kind ?? null, item.memory_item.page_basis ?? null]), [['subject', ['page', 'span']], [null, null]]);
 });
+
+test('judge input carries the stored Lens pages so a stale current value is visible', () => {
+  const suite = { schema: 'loupist-agent-suite/1', suite: 'lens', version: 1, scenarios: [{ id: 'LC', sessions: [{ id: 'train', role: 'train', memory: 'remember', turns: [{ user: 'Update.', expect: { rubric: [{ id: 'current', criterion: 'The page states 14 ships as current.' }] } }] }] }] };
+  const page = (markdown) => ({ record_id: 'rec_a', kind: 'subject', title: 'Dongjin', summary: '', archived: false,
+    sections: [{ key: 'facts', heading: 'Fleet', markdown, basis: ['span'], contested: false }], ops_this_turn: [{ op: 'put', key: 'facts', outcome: 'replaced' }] });
+  const trace = (markdown) => ({ schema: 'loupist-agent-trace/1', run_id: 'r', suite: 'lens', scenario_id: 'LC', session_id: 'train', session_role: 'train', memory_mode: 'remember', turn_index: 0, trial: 0, user: 'Update.', status: 'completed', answer: 'Done.', tool_calls: [], memory_commits: [], lens: { pages: [page(markdown)] } });
+  const input = (markdown) => { const traces = [trace(markdown)]; return buildJudgeInput(suite, judgeItems(suite, traces)[0], traces); };
+  assert.equal(input('Current fleet: 14 ships.').lens_pages_after_turn[0].sections[0].markdown, 'Current fleet: 14 ships.');
+  assert.notDeepEqual(input('Current fleet: 18 ships. A rumor of 14 was rejected.'), input('Current fleet: 14 ships.'));
+});

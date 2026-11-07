@@ -236,6 +236,13 @@
                     "count": 1,
                     "section_matches": "3,?600"
                   }
+                ],
+                "rubric": [
+                  {
+                    "id": "page-current",
+                    "criterion": "In lens_pages_after_turn, the 한빛소재 subject page presents 3,600억 원 as the current 2026 revenue guidance; if 4,200억 원 appears it is marked as the earlier guidance that was cut in August, never as current.",
+                    "metric": "lens_update"
+                  }
                 ]
               }
             }
@@ -368,6 +375,11 @@
                     "id": "corrects-premise",
                     "criterion": "The answer corrects the user's premise: Pelham Retail terminated the contract effective 31 December 2026, so it does not run through 2028, and it sizes the 2027 revenue at risk from Pelham's 22% share.",
                     "metric": "lens_update"
+                  },
+                  {
+                    "id": "page-current",
+                    "criterion": "In lens_pages_after_turn, the Corvane Logistics page states that the Pelham Retail contract ends on 31 December 2026 after early termination and does not present a 2028 end date as current.",
+                    "metric": "lens_update"
                   }
                 ]
               }
@@ -480,6 +492,13 @@
                     "count": 1,
                     "section_matches": "71"
                   }
+                ],
+                "rubric": [
+                  {
+                    "id": "page-current",
+                    "criterion": "In lens_pages_after_turn, exactly one Halvren Optics page exists and it records the August 2026 Penang utilization of 71% as the latest figure, with 58% as the earlier Q2 level.",
+                    "metric": "lens_update"
+                  }
                 ]
               }
             }
@@ -575,6 +594,13 @@
                     "metric": "lens_update",
                     "count": 1,
                     "section_matches": "packaging"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "page-current",
+                    "criterion": "In lens_pages_after_turn, the Marrowfield Paper page gives 0.10 USD per share as the current quarterly dividend and 0.18 USD only as the earlier one, and it still records the July segment mix, net debt and mill footprint.",
+                    "metric": "lens_update"
                   }
                 ]
               }
@@ -814,6 +840,72 @@
           }
         ]
       }
+    },
+    {
+      "id": "LL-009",
+      "title": "A check the user asks to keep becomes one scoped method that a later Chat reads",
+      "tags": [
+        "create",
+        "method",
+        "user_requested"
+      ],
+      "split": "capability",
+      "connections": [],
+      "workspace_files": {},
+      "sessions": [
+        {
+          "id": "keep",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "We've now checked three suppliers the same way: compare days of inventory with the customer's order cuts, then check whether price cuts were used to clear stock, then see whether receivables rose faster than sales. Keep this as a method I can reuse, called Channel-stuffing check.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_pages",
+                    "kind": "method",
+                    "title_matches": "channel",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "max": 1
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "use",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "Brisa Tools' inventory days rose from 60 to 95 this year and it cut prices 5% in June. How should I check whether it is stuffing its channel?",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_read",
+                    "title_matches": "channel",
+                    "metric": "carry_forward"
+                  },
+                  {
+                    "assert": "lens_unchanged",
+                    "metric": "save_precision"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "applies-check",
+                    "criterion": "The answer checks Brisa Tools by comparing inventory days with customer order cuts, examining whether the June price cut cleared stock, and asking whether receivables grew faster than sales.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }

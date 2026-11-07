@@ -86,6 +86,13 @@
                     "count": 1,
                     "section_matches": "miss|endpoint|failed"
                   }
+                ],
+                "rubric": [
+                  {
+                    "id": "page-current",
+                    "criterion": "In lens_pages_after_turn, the Vellam Biotech page states that VB-12's Phase 3 trial missed its primary endpoint in October 2026 and does not describe the readout as still pending.",
+                    "metric": "lens_update"
+                  }
                 ]
               }
             }
@@ -201,6 +208,13 @@
                     "count": 1,
                     "section_matches": "14"
                   }
+                ],
+                "rubric": [
+                  {
+                    "id": "page-current",
+                    "criterion": "In lens_pages_after_turn, the 동진해운 page states 14 container ships as the current fleet after the September 2026 sale and gives 18 only as the earlier count.",
+                    "metric": "lens_update"
+                  }
                 ]
               }
             }
@@ -312,6 +326,73 @@
                     "title_matches": ".",
                     "max": 0,
                     "metric": "save_precision"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LH-004",
+      "title": "사용자가 저장해 달라고 한 점검 방법은 하나의 방법 페이지가 되고 이후 질문에서 읽힌다",
+      "tags": [
+        "create",
+        "method",
+        "user_requested",
+        "ko"
+      ],
+      "split": "heldout",
+      "connections": [],
+      "workspace_files": {},
+      "sessions": [
+        {
+          "id": "keep",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "앞으로 리츠를 볼 때는 FFO 대비 배당 비율, 차입금 만기 구조, 임대율 추이를 같이 보는 방법을 쓸 거야. 이걸 '리츠 배당 지속성 점검'이라는 방법으로 저장해 줘.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_pages",
+                    "kind": "method",
+                    "title_matches": "리츠",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "max": 1
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "use",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "한솔리츠가 배당을 15% 올린다고 발표했어. 이 배당이 계속 갈 수 있는지 어떻게 따져 봐야 해?",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_read",
+                    "title_matches": "리츠",
+                    "metric": "carry_forward"
+                  },
+                  {
+                    "assert": "lens_unchanged",
+                    "metric": "save_precision"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "applies-check",
+                    "criterion": "The answer judges the REIT's dividend by comparing it with FFO, examining the debt maturity schedule, and checking the occupancy trend.",
+                    "metric": "carry_forward"
                   }
                 ]
               }

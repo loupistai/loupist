@@ -319,11 +319,11 @@ for hill-climbing; **heldout** is for final adoption only (see
 | `suites/security-v1.json` | Source injection, impersonation, principle poisoning, exfiltration, injected shared packs ([fixtures](sharing/README.md)), held quantities hidden from account reads | | 9 | |
 | `suites/scheduling-v1.json` | Task creation, changes, lifecycle, session ownership | | 6 | |
 | `suites/smoke-v1.json` | Minimal cross-Chat Lens recall | | 1 | |
-| `suites/lens-lifecycle-v1.json` | [Lens lifecycle](#lens-lifecycle): create, reuse, update, stale premise, alias, detail retention, single-case restraint, read-only, method scope | 6 | 2 | |
+| `suites/lens-lifecycle-v1.json` | [Lens lifecycle](#lens-lifecycle): create, reuse, update, stale premise, alias, detail retention, single-case restraint, read-only, method scope, a method the user asks to keep | 7 | 2 | |
 | `suites/citations-v1.json` | Inline citations and Source retention for attached and workspace notes | | 2 | |
 | `heldout/learning-heldout-v1.json` | Adoption check for learning and transfer | | | 6 |
 | `heldout/tool-use-heldout-v1.json` | Adoption check for tools and connection honesty | | | 6 |
-| `heldout/lens-lifecycle-heldout-v1.json` | Lens lifecycle adoption check in sectors the development suite does not use | | | 3 |
+| `heldout/lens-lifecycle-heldout-v1.json` | Lens lifecycle adoption check in sectors the development suite does not use | | | 4 |
 
 `run`, `grade`, `judge`, `report` and `calibrate` accept
 `--split capability|regression|heldout`. Loading a held-out suite or split requires
@@ -378,11 +378,21 @@ read that state, never the reply's save claim:
 - `lens_read` / `lens_not_read` (`title_matches`) look for an exact Lens read in
   `memory_reads`; search discovery is not a read.
 
-Patterns match case-insensitively. `suites/lens-lifecycle-v1.json` scores filing
-(`save_recall`), restraint (`save_precision`), reuse (`retrieval`,
-`carry_forward`), updates (`lens_update`) and scope (`negative_transfer`) separately,
-so a run cannot pass by filing everything or by reading everything. Its held-out
-twin uses other sectors and is run once per adoption decision. Run both with the
+Patterns match case-insensitively and only smoke-test content: "18 ships; the
+14-ship report was wrong" still matches `14`. So every update turn also has a
+`page-current` rubric, and the judge receives `lens_pages_after_turn`, the stored
+pages with their sections and basis, to decide what a page presents as current.
+`save_precision` items carry the saved page's kind and basis.
+
+`suites/lens-lifecycle-v1.json` scores filing (`save_recall`), restraint
+(`save_precision`), reuse (`retrieval`, `carry_forward`), updates (`lens_update`)
+and scope (`negative_transfer`) separately, so a run cannot pass by filing
+everything, reading everything or never creating a method: single-case turns must
+not leave a method, and a check the user asks to keep must become one. Reading a
+method to rule it out counts only toward `retrieval`. Its held-out twin is a sector
+holdout (biotech, shipping, REITs, packaged food) with the same turn shapes, run
+once per adoption decision; it guards against tuning to the development companies,
+not against a policy fitted to these scenario shapes. Run both with the
 development profile's agent model and a judge from another family, and read the
 pages themselves before adopting a change:
 

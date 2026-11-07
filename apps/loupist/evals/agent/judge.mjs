@@ -11,7 +11,7 @@ import { locateTurn, canonicalJson, turnIdentity, turnFields, validateSuite, val
 export const PROMPT_VERSION = 'agent-judge/3';
 export const DEFAULT_JUDGE_MODEL = 'grok-4.7';
 export const DEFAULT_REASONING_EFFORT = 'medium';
-export const SAVE_PRECISION_CRITERION = 'The committed memory item belongs in this Loupist\'s Memory for later work and is filed in a fitting kind: a user-stated research rule in a principle; a way of checking the user taught or corrected in a method Lens page; dated company, asset or sector facts and what explains them, drawn from material read this turn, in a subject Lens page about that company or theme with a source in its basis (page_kind subject, page_basis including span or claim); an unverified thesis with what would break it in an idea page; facts the user stated or this Chat\'s progress in a note; an acquired original in a Source; a judgment the user explicitly stated for the record in a Journal entry, including an analytical research assessment without a trade action. Fail chatter, a one-off assumption the user said not to keep, a superseded value kept as current, a method page created from the assistant\'s own analysis, general knowledge or a single company\'s case, company facts written into a method or perspective page, a subject page whose facts cite no source, a Journal entry when the user asked only for research without stating their own judgment for the record, or a Journal entry holding a stance the assistant originated rather than the user.';
+export const SAVE_PRECISION_CRITERION = 'The committed memory item belongs in this Loupist\'s Memory for later work and is filed in a fitting kind: a user-stated research rule in a principle; a way of checking the user taught, corrected or asked to keep in a method Lens page; dated company, asset or sector facts and what explains them, drawn from material read this turn, in a subject Lens page about that company or theme with a source in its basis (page_kind subject, page_basis including span or claim); an unverified thesis with what would break it in an idea page; facts the user stated or this Chat\'s progress in a note; an acquired original in a Source; a judgment the user explicitly stated for the record in a Journal entry, including an analytical research assessment without a trade action. Fail chatter, a one-off assumption the user said not to keep, a superseded value kept as current, a method page the user did not ask for, created from the assistant\'s own analysis, general knowledge or a single company\'s case, company facts written into a method or perspective page, a subject page whose facts cite no source, a Journal entry when the user asked only for research without stating their own judgment for the record, or a Journal entry holding a stance the assistant originated rather than the user.';
 /** Provider routing prefixes do not establish the underlying model family. */
 export function modelFamily(id) {
   const model = typeof id === 'string' ? id.trim().toLowerCase().split('/').at(-1) : '';
@@ -149,7 +149,21 @@ export function buildJudgeInput(suite, item, traces) {
     criterion: item.criterion,
   };
   if (item.memory_item) input.memory_item = item.memory_item;
+  const pages = storedLensPages(item.trace);
+  if (pages) input.lens_pages_after_turn = pages;
   return input;
+}
+
+/** What the store holds after the turn, so a judge reads what a page says is current. */
+function storedLensPages(trace) {
+  const pages = trace.lens?.pages;
+  if (!Array.isArray(pages) || pages.length === 0) return null;
+  return pages.filter((page) => !page.archived).map((page) => ({
+    record_id: page.record_id, kind: page.kind, title: page.title, summary: page.summary ?? '',
+    sections: (page.sections ?? []).map((section) => ({ key: section.key, heading: section.heading, markdown: section.markdown,
+      basis: section.basis ?? [], contested: section.contested === true })),
+    ops_this_turn: page.ops_this_turn ?? [],
+  }));
 }
 
 export function renderJudgePrompt(input) {
