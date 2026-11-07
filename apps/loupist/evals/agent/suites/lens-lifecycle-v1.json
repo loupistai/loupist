@@ -4,7 +4,7 @@
   "version": 1,
   "description": "Lens lifecycle: research turns file subject pages from retained originals, later Chats read and reuse them, newer originals revise the same page (including a stale premise, an alias and a small update that must keep earlier detail), one case never becomes a method, read-only and light turns file nothing, and a method applies only where it fits.",
   "budget": {
-    "maxInputTokensPerTurn": 250000,
+    "maxInputTokensPerTurn": 600000,
     "maxTurns": 60
   },
   "scenarios": [

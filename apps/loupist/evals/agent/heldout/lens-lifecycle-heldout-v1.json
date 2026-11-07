@@ -4,7 +4,7 @@
   "version": 1,
   "description": "Held-out Lens lifecycle adoption check in sectors the development suite does not use (biotech, shipping, packaged food): update, reuse, restraint and unrelated questions. Never tune against these.",
   "budget": {
-    "maxInputTokensPerTurn": 250000,
+    "maxInputTokensPerTurn": 600000,
     "maxTurns": 30
   },
   "scenarios": [

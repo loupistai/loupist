@@ -16,7 +16,7 @@ import { compareReports, comparisonMarkdown } from './compare-reports.mjs';
 import { buildReport, compareRuns } from './report.mjs';
 import { assessAdoption } from './adopt.mjs';
 
-export const SUBCOMMANDS = ['run', 'grade', 'judge', 'label', 'calibrate', 'report', 'compare', 'adopt'];
+export const SUBCOMMANDS = ['run', 'grade', 'judge', 'label', 'lens-pages', 'calibrate', 'report', 'compare', 'adopt'];
 export const DEFAULT_RUNNER = [
   'cargo', 'run', '--manifest-path', 'apps/loupist/src-tauri/Cargo.toml',
   '--locked', '--offline', '--features', 'eval-harness', '--example', 'agent_eval', '--',
