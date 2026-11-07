@@ -601,7 +601,13 @@ mod tests {
         )
         .unwrap();
         let original = learned();
-        let receipt = seed(&state, &loupist, &[original.clone()], &ingestion).unwrap();
+        let receipt = seed(
+            &state,
+            &loupist,
+            std::slice::from_ref(&original),
+            &ingestion,
+        )
+        .unwrap();
         assert_eq!(receipt["status"], "completed");
         assert_eq!(receipt["lenses"].as_array().unwrap().len(), 1);
         let imported = &receipt["lenses"][0];

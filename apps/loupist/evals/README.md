@@ -603,6 +603,36 @@ training history in the retained profiles. Context captures must omit headers.
 `knowledge-lens-eval-v1.json` holds 40 frozen held-out Lens cases. Record its digest
 with any run; changing it starts a new comparison. Never copy its cases into suites.
 
+### Method learning from research
+
+`lens/research-v1.json` drives [method learning](../../../docs/knowledge/lens.md#method-learning)
+end to end with a real model. Each arm is a fresh Loupist with World processing and
+learning on. It attaches two fictional manufacturers' reports through production
+attachment intake and asks an ordinary question about each, with Memory saving on,
+then drains World and learning work. The `two-chats` arm asks them in two Chats. It
+then asks two read-only probes in new Chats: a third company's capacity ramp, with
+its own attached report, and an unrelated insurer question. The `one-chat` arm asks
+both questions in one Chat.
+
+The test fails only on deterministic invariants. The one-chat arm has no review. The
+two-chats arm has exactly one settled review. Probes commit no Memory, file no Lens
+op and start no review. Every learned section cites spans from at least two Sources.
+`measures` records the model's outcomes: review status, whether a method was made,
+whether each probe exact-read it, `lens_read` status `applied`, and the method's
+`limits` text. `filed_evidence` shows what each arm filed when no review starts.
+
+```sh
+LOUPIST_RESEARCH_PI_AGENT_DIR=/absolute/pi-agent-dir \
+LOUPIST_RESEARCH_MODEL=xai/grok-4.7 LOUPIST_RESEARCH_THINKING=medium \
+LOUPIST_RESEARCH_OUT=/absolute/new-research-run.json \
+cargo test --locked --offline --features eval-harness --lib \
+  eval_harness::research::live_lens_research_v1 -- --ignored --exact --nocapture
+```
+
+Run it from `apps/loupist/src-tauri`. It makes paid Chat and World calls with the
+one model, never retries, and refuses an existing output path. One run is one sample
+per arm: report its measures as a description, not a rate.
+
 ## Finance workflow evaluation
 
 `finance-heldout-48.json` contains 48 synthetic tasks: eight each for data, charts,

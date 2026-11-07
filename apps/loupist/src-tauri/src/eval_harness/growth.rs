@@ -68,7 +68,7 @@ fn retain(
     }
     Ok(())
 }
-async fn drain(state: &AppState, loupist: &str) -> Result<Value> {
+pub(super) async fn drain(state: &AppState, loupist: &str) -> Result<Value> {
     let store = KnowledgeStore::for_loupist(state.store.clone(), loupist)?;
     let result = tokio::time::timeout(Duration::from_secs(900), async {
         loop {
@@ -265,7 +265,7 @@ async fn live_growth_scenario_v1() -> Result<()> {
     state.graph = GraphSupervisor::with_inference(
         state.store.clone(),
         state.artifacts.app_data_dir.clone(),
-        Some(manifest.join("resources")),
+        Some(staged_resources("embed_assets")?),
         state.maintenance.clone(),
         Some(inference.clone()),
     );
