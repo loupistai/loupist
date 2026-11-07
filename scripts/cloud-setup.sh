@@ -57,14 +57,15 @@ require_sha256() {
         || fail "checksum mismatch for $(basename "$1")"
 }
 
-if command -v apt-get >/dev/null 2>&1 && ! pkg-config --exists webkit2gtk-4.1 2>/dev/null; then
+if command -v apt-get >/dev/null 2>&1 \
+    && { ! pkg-config --exists webkit2gtk-4.1 2>/dev/null || ! command -v xvfb-run >/dev/null 2>&1; }; then
     as_root true 2>/dev/null \
         || fail "Tauri's Linux build libraries are missing; run as root or with passwordless sudo, or install the packages in docs/dev/checks.md"
     as_root apt-get update -qq
     as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
         build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
         libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev \
-        procps lsof curl xz-utils ca-certificates
+        procps lsof xvfb curl xz-utils ca-certificates
 fi
 
 if [ ! -x "$NODE_HOME/bin/node" ]; then
