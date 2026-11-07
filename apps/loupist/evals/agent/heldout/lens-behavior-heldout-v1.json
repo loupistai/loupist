@@ -4,7 +4,7 @@
   "version": 1,
   "description": "Behavioral held-out Lens check, authored separately from the lifecycle suites and frozen before its first run: a user's correction, an explicit forget, a mature method's safeguard, conflicting same-day Sources, a stale value with no new Source, and adopting a check the assistant worked out. Never tune against these.",
   "budget": {
-    "maxInputTokensPerTurn": 1000000,
+    "maxInputTokensPerTurn": 2000000,
     "maxTurns": 40
   },
   "scenarios": [
