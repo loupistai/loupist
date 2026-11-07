@@ -20,9 +20,11 @@ project settings or JS extensions to obtain workspace support.
 ## Tests
 
 Keep shared code and its tests working on macOS and Linux
-([host setup](docs/dev/checks.md#linux-cloud-development)). macOS Apple Silicon is
-the release target: verify WKWebView, Keychain, OS input and release acceptance on
-macOS. A Linux or browser-preview pass does not establish those native results.
+([host setup](docs/dev/checks.md#linux-cloud-development)). On Linux, drive the real
+app with the native suites, `up.sh` and `agent-driver.mjs`; they start Xvfb when no
+display is set ([Linux runs](apps/loupist/e2e/README.md#run-native-suites-on-linux)).
+macOS Apple Silicon is the release target: verify WKWebView, Keychain, OS input and
+release acceptance on macOS. A Linux or browser-preview pass does not establish those.
 
 Run the narrowest observable behavior or security test. Reserve source scans for
 security invariants and release pins. For native work read
@@ -32,8 +34,9 @@ generated schemas/build output untouched. Prefer deleting obsolete pre-1.0 paths
 ## Pull requests
 
 Locally, `scripts/verify.sh` is the handoff gate. In a cloud session, run
-`sh apps/loupist/scripts/check.sh <web|python|rust>` for what you changed; PR CI
-runs the Linux gate and macOS checks run after merge ([CI](docs/ci-cd.md#ci)). Commit, push
+`sh apps/loupist/scripts/check.sh <web|python|rust>` for what you changed, plus
+`npm --prefix apps/loupist/e2e run test:native` when the change reaches the app's
+UI flow, bridge or persistence; PR CI runs the Linux gate and macOS checks run after merge ([CI](docs/ci-cd.md#ci)). Commit, push
 or release only on request; a task that asks for a PR covers pushing its own branch.
 Name the branch `<tool>/<topic>`, sign off with `git commit -s`, target `main`, and
 list the checks you ran. Never push to `main` or create release tags.
