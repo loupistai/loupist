@@ -2239,7 +2239,10 @@ mod tests {
         // from, and the connection's name labels the step.
         let setup = summarize_tool("connection_setup", &json!({"id": "FRED"}), None);
         assert_eq!(setup.target.as_deref(), Some("fred.macro"));
-        assert_eq!(setup.source.map(|source| source.name).as_deref(), Some("FRED"));
+        assert_eq!(
+            setup.source.map(|source| source.name).as_deref(),
+            Some("FRED")
+        );
         assert_eq!(setup.action, "Prepared a connection");
         let unresolved = summarize_tool("connection_setup", &json!({"id": "Bloomberg"}), None);
         assert_eq!(unresolved.target.as_deref(), Some("Bloomberg"));

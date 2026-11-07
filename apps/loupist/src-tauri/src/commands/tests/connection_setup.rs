@@ -74,7 +74,10 @@ async fn the_card_reports_each_state_from_readiness_and_this_loupists_binding() 
     assert_eq!(shown["name"], "KRX Open API");
     assert_eq!(shown["state"], "needs_setup");
     let notice = shown["notice"].as_str().unwrap();
-    assert!(notice.contains("never repeat one") && notice.contains("next message"), "{notice}");
+    assert!(
+        notice.contains("never repeat one") && notice.contains("next message"),
+        "{notice}"
+    );
 
     // World Bank is keyless, so it is ready and the host enabled it for every
     // Loupist; only a binding the user turned off makes it "off here".
@@ -94,26 +97,42 @@ async fn the_card_reports_each_state_from_readiness_and_this_loupists_binding() 
         .await
         .unwrap();
     assert_eq!(ready["state"], "ready");
-    assert!(ready["notice"].as_str().unwrap().contains("capability_load"));
+    assert!(ready["notice"]
+        .as_str()
+        .unwrap()
+        .contains("capability_load"));
 }
 
 #[tokio::test]
 async fn names_resolve_and_a_miss_lists_candidates() {
     let temporary = tempfile::tempdir().unwrap();
     let executor = executor(&temporary, Some(ChatSurface::Session));
-    for (query, id) in [("FRED", "fred.macro"), ("sec edgar", "sec.edgar"), ("opendart", "opendart.disclosures")] {
-        assert_eq!(setup(&executor, json!({"id": query})).await.unwrap()["id"], id);
+    for (query, id) in [
+        ("FRED", "fred.macro"),
+        ("sec edgar", "sec.edgar"),
+        ("opendart", "opendart.disclosures"),
+    ] {
+        assert_eq!(
+            setup(&executor, json!({"id": query})).await.unwrap()["id"],
+            id
+        );
     }
     let error = setup(&executor, json!({"id": "Bloomberg"}))
         .await
         .unwrap_err()
         .to_string();
-    assert!(error.contains("alpha-vantage.market-data (Alpha Vantage)"), "{error}");
+    assert!(
+        error.contains("alpha-vantage.market-data (Alpha Vantage)"),
+        "{error}"
+    );
     let ambiguous = setup(&executor, json!({"id": "openbb"}))
         .await
         .unwrap_err()
         .to_string();
-    assert!(ambiguous.contains("fred.macro (FRED)") && !ambiguous.contains("krx."), "{ambiguous}");
+    assert!(
+        ambiguous.contains("fred.macro (FRED)") && !ambiguous.contains("krx."),
+        "{ambiguous}"
+    );
 }
 
 #[tokio::test]

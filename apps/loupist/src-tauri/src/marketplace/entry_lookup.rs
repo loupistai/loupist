@@ -26,8 +26,12 @@ fn display_names() -> &'static BTreeMap<String, Vec<String>> {
                 .and_then(|catalog| serde_json::from_value(catalog).ok())
                 .unwrap_or_default()
         };
-        let english = copy(include_str!("../../../src/i18n/locales/en/connections.json"));
-        let korean = copy(include_str!("../../../src/i18n/locales/ko/connections.json"));
+        let english = copy(include_str!(
+            "../../../src/i18n/locales/en/connections.json"
+        ));
+        let korean = copy(include_str!(
+            "../../../src/i18n/locales/ko/connections.json"
+        ));
         let Ok(market) = bundled_marketplace() else {
             return BTreeMap::new();
         };
@@ -64,7 +68,10 @@ fn candidate(entry: &MarketplaceEntryDto) -> SetupCandidate {
 pub(crate) fn resolve_setup_entry(
     query: &str,
 ) -> Result<&'static MarketplaceEntryDto, Vec<SetupCandidate>> {
-    let entries = &bundled_marketplace().map_err(|_| Vec::new())?.catalog.entries;
+    let entries = &bundled_marketplace()
+        .map_err(|_| Vec::new())?
+        .catalog
+        .entries;
     let query = query.trim();
     if let Some(entry) = entries.iter().find(|entry| entry.id == query) {
         return Ok(entry);
@@ -89,7 +96,11 @@ pub(crate) fn resolve_setup_entry(
     if let [entry] = by_plugin.as_slice() {
         return Ok(entry);
     }
-    let matches = if !by_name.is_empty() { by_name } else { by_plugin };
+    let matches = if !by_name.is_empty() {
+        by_name
+    } else {
+        by_plugin
+    };
     let listed = if matches.is_empty() {
         entries.iter().collect::<Vec<_>>()
     } else {
@@ -127,7 +138,9 @@ mod tests {
     fn a_plugin_with_many_entries_lists_them_and_an_unknown_name_lists_the_catalog() {
         let ambiguous = resolve_setup_entry("openbb").unwrap_err();
         assert!(ambiguous.len() > 1 && ambiguous.len() <= MAX_CANDIDATES);
-        assert!(ambiguous.iter().any(|candidate| candidate.id == "fred.macro"));
+        assert!(ambiguous
+            .iter()
+            .any(|candidate| candidate.id == "fred.macro"));
         assert!(ambiguous.iter().all(|candidate| !candidate.name.is_empty()));
         let unknown = resolve_setup_entry("Bloomberg").unwrap_err();
         assert_eq!(unknown.len(), MAX_CANDIDATES);

@@ -271,7 +271,9 @@ fn provider_token(token: &str) -> bool {
     characters
         .next()
         .is_some_and(|first| first.is_ascii_lowercase())
-        && characters.all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_')
+        && characters.all(|character| {
+            character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_'
+        })
 }
 
 /// The providers a property's upstream `title` names (`"fmp,intrinio,sec"`),
@@ -315,7 +317,10 @@ fn prune_description(description: &str, enabled: &BTreeSet<String>) -> String {
         })
         .collect::<Vec<_>>();
     if kept.is_empty() {
-        return parts.first().map(|part| marker(part).map_or(part.clone(), |(text, _)| text)).unwrap_or_default();
+        return parts
+            .first()
+            .map(|part| marker(part).map_or(part.clone(), |(text, _)| text))
+            .unwrap_or_default();
     }
     let single = kept.len() == 1;
     kept.into_iter()
@@ -359,7 +364,9 @@ fn prune_parameters(parameters: &mut Value, enabled: &BTreeSet<String>) {
             let choices = property
                 .iter()
                 .filter(|(key, _)| enabled.contains(*key))
-                .filter(|(_, vendor)| vendor.get("multiple_items_allowed") != Some(&Value::Bool(true)))
+                .filter(|(_, vendor)| {
+                    vendor.get("multiple_items_allowed") != Some(&Value::Bool(true))
+                })
                 .filter_map(|(_, vendor)| vendor.get("choices").and_then(Value::as_array))
                 .flatten()
                 .filter(|choice| choice.is_string())
@@ -373,7 +380,10 @@ fn prune_parameters(parameters: &mut Value, enabled: &BTreeSet<String>) {
             for key in vendor_keys {
                 property.remove(&key);
             }
-            if !choices.is_empty() && !property.contains_key("enum") && !property.contains_key("const") {
+            if !choices.is_empty()
+                && !property.contains_key("enum")
+                && !property.contains_key("const")
+            {
                 let mut unique = Vec::new();
                 for choice in choices {
                     if !unique.contains(&choice) {
@@ -394,7 +404,11 @@ fn prune_parameters(parameters: &mut Value, enabled: &BTreeSet<String>) {
         }
     }
     if let Some(required) = schema.get_mut("required").and_then(Value::as_array_mut) {
-        required.retain(|value| value.as_str().is_none_or(|name| !dropped.contains(&name.to_owned())));
+        required.retain(|value| {
+            value
+                .as_str()
+                .is_none_or(|name| !dropped.contains(&name.to_owned()))
+        });
     }
 }
 
@@ -487,7 +501,10 @@ mod tests {
     }
 
     fn enabled(providers: &[&str]) -> BTreeSet<String> {
-        providers.iter().map(|provider| (*provider).to_owned()).collect()
+        providers
+            .iter()
+            .map(|provider| (*provider).to_owned())
+            .collect()
     }
 
     #[test]
@@ -508,7 +525,13 @@ mod tests {
         );
         let source = tool("equity_price_historical", &upstream, schema.clone());
         let mut card = json!({"description": upstream, "parameters": schema});
-        shape_card(&mut card, &source, false, false, &enabled(&["yfinance", "tmx", "cboe"]));
+        shape_card(
+            &mut card,
+            &source,
+            false,
+            false,
+            &enabled(&["yfinance", "tmx", "cboe"]),
+        );
         assert_eq!(
             card["parameters"]["properties"]["provider"]["enum"],
             json!(["tmx", "cboe", "yfinance"])
@@ -574,28 +597,59 @@ mod tests {
         });
         let source = tool("equity_fundamental_filings", "Get filings.", schema.clone());
         let mut card = json!({"description": "", "parameters": schema});
-        shape_card(&mut card, &source, false, false, &enabled(&["sec", "yfinance"]));
+        shape_card(
+            &mut card,
+            &source,
+            false,
+            false,
+            &enabled(&["sec", "yfinance"]),
+        );
         let properties = card["parameters"]["properties"].as_object().unwrap();
-        assert!(!properties.contains_key("thea_enabled"), "intrinio-only property survived");
+        assert!(
+            !properties.contains_key("thea_enabled"),
+            "intrinio-only property survived"
+        );
         assert_eq!(card["parameters"]["required"], json!(["provider"]));
-        assert!(properties.values().all(|property| !property.get("title").is_some()));
+        assert!(properties
+            .values()
+            .all(|property| !property.get("title").is_some()));
         assert!(properties["symbol"].get("nasdaq").is_none());
         assert!(properties["form_type"].get("sec").is_none());
         // A multi-value field stays a free string rather than a one-value enum.
         assert!(properties["form_type"].get("enum").is_none());
-        assert_eq!(properties["form_type"]["description"], "SEC form type to filter by.");
-        assert_eq!(properties["cik"]["description"], "Lookup filings by Central Index Key (CIK) instead of by symbol.");
+        assert_eq!(
+            properties["form_type"]["description"],
+            "SEC form type to filter by."
+        );
+        assert_eq!(
+            properties["cik"]["description"],
+            "Lookup filings by Central Index Key (CIK) instead of by symbol."
+        );
         // The enabled provider's choices replace an anyOf of every provider's enums.
-        assert_eq!(properties["adjustment"]["enum"], json!(["splits_only", "splits_and_dividends"]));
+        assert_eq!(
+            properties["adjustment"]["enum"],
+            json!(["splits_only", "splits_and_dividends"])
+        );
         assert!(properties["adjustment"].get("anyOf").is_none());
-        assert_eq!(properties["adjustment"]["description"], "The adjustment factor to apply. Default is splits only.");
+        assert_eq!(
+            properties["adjustment"]["description"],
+            "The adjustment factor to apply. Default is splits only."
+        );
     }
 
     #[test]
     fn no_card_or_recovery_text_names_the_runtime() {
         let schema = json!({"type": "object", "properties": {"symbol": {"type": "string"}, "provider": {"enum": ["yfinance"]}}, "required": ["symbol", "provider"]});
         let mut shaped = Vec::new();
-        for name in ["equity_price_quote", "some_new_route", "available_categories", "activate_tools", "deactivate_tools", "activate_category", "available_tools"] {
+        for name in [
+            "equity_price_quote",
+            "some_new_route",
+            "available_categories",
+            "activate_tools",
+            "deactivate_tools",
+            "activate_category",
+            "available_tools",
+        ] {
             let source = tool(name, "", schema.clone());
             let mut card = json!({"description": "", "parameters": schema.clone()});
             let control = !name.starts_with("equity") && name != "some_new_route";
@@ -660,18 +714,48 @@ mod tests {
     fn measure_default_card_bytes_from_a_runtime_dump() {
         let path = std::env::var("LOUPIST_OBB_DUMP").expect("LOUPIST_OBB_DUMP");
         let dump: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-        let providers = enabled(&["cboe", "bls", "cftc", "deribit", "ecb", "famafrench", "federal_reserve", "finra", "finviz", "government_us", "imf", "multpl", "nasdaq", "oecd", "seeking_alpha", "stockgrid", "tmx", "wsj", "yfinance"]);
+        let providers = enabled(&[
+            "cboe",
+            "bls",
+            "cftc",
+            "deribit",
+            "ecb",
+            "famafrench",
+            "federal_reserve",
+            "finra",
+            "finviz",
+            "government_us",
+            "imf",
+            "multpl",
+            "nasdaq",
+            "oecd",
+            "seeking_alpha",
+            "stockgrid",
+            "tmx",
+            "wsj",
+            "yfinance",
+        ]);
         let (mut raw, mut filtered, mut shaped) = (0, 0, 0);
         for name in DEFAULT_ACTIVE_TOOLS {
             let active = &dump["active"][*name];
-            let source = tool(name, active["desc"].as_str().unwrap_or(""), active["params"].clone());
+            let source = tool(
+                name,
+                active["desc"].as_str().unwrap_or(""),
+                active["params"].clone(),
+            );
             raw += active["params"].to_string().len();
-            let narrowed = crate::mcp::filter_tool_providers(&source, &providers, false).unwrap().unwrap();
+            let narrowed = crate::mcp::filter_tool_providers(&source, &providers, false)
+                .unwrap()
+                .unwrap();
             filtered += narrowed.input_schema.to_string().len();
             let mut card = json!({"description": "", "parameters": narrowed.input_schema.clone()});
             shape_card(&mut card, &narrowed, false, false, &providers);
             let bytes = card["parameters"].to_string().len();
-            println!("{name}: raw {} filtered {} shaped {bytes}", active["params"].to_string().len(), narrowed.input_schema.to_string().len());
+            println!(
+                "{name}: raw {} filtered {} shaped {bytes}",
+                active["params"].to_string().len(),
+                narrowed.input_schema.to_string().len()
+            );
             shaped += bytes;
         }
         println!("total: raw {raw} filtered {filtered} shaped {shaped}");

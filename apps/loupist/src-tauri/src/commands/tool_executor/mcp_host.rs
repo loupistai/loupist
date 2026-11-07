@@ -2258,7 +2258,10 @@ done
             activation_names(&["activate_tools".to_owned()], &control),
             openbb::DEFAULT_ACTIVE_TOOLS
         );
-        assert_eq!(activation_names(&[], &control), openbb::DEFAULT_ACTIVE_TOOLS);
+        assert_eq!(
+            activation_names(&[], &control),
+            openbb::DEFAULT_ACTIVE_TOOLS
+        );
         let parsed = McpConnectRequest::parse(
             json!({"server_id": "openbb", "activate_tool_names": ["etf_holdings"]}),
         )
@@ -2275,7 +2278,9 @@ done
             json!(vec!["a"; MAX_ACTIVATION_NAMES + 1]),
         ] {
             assert!(matches!(
-                McpConnectRequest::parse(json!({"server_id": "openbb", "activate_tool_names": names})),
+                McpConnectRequest::parse(
+                    json!({"server_id": "openbb", "activate_tool_names": names})
+                ),
                 Err(BrokerError::Malformed)
             ));
         }
