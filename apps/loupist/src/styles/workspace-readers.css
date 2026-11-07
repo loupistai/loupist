@@ -37,7 +37,7 @@
 .reader-browser-file-note > button { flex: none; }
 .reader-image-preview { min-width: 0; }
 .reader-image-controls { display: flex; justify-content: flex-end; margin-bottom: var(--gg-space-3); }
-.reader-image-canvas { overflow: auto; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-sm); background: var(--surface); }
+.reader-image-canvas { overflow: auto; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-sunken); }
 .reader-image-canvas img { display: block; width: auto; max-width: 100%; height: auto; margin-inline: auto; }
 .reader-image-canvas.is-actual-size img { max-width: none; margin: 0; }
 .reader-table-content { padding: 0; }

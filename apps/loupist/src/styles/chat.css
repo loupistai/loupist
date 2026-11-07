@@ -78,8 +78,10 @@
 .message-meta > span:first-child { color: var(--gg-color-text-secondary); font-weight: var(--gg-weight-semibold); }
 .message-meta time { margin-left: 2px; }
 .message-status { padding: 2px 6px; border-radius: var(--gg-space-1); background: var(--gg-color-bg-hover); }
-.message-content { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: 1.75; overflow-wrap: anywhere; white-space: pre-wrap; }
-.message.assistant .message-content { width: 100%; max-width: 100%; min-width: 0; white-space: normal; }
+.message-content { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); overflow-wrap: anywhere; white-space: pre-wrap; }
+.message.assistant .message-content { width: 100%; max-width: 100%; min-width: 0; white-space: normal; font-size: var(--gg-text-reading); line-height: var(--gg-leading-reading); }
+/* Reading measure: prose stops near 72 characters while tables, code and charts keep the full column. */
+.message.assistant .message-content :is(p, ul, ol, blockquote, [data-streamdown^="heading-"]) { max-width: var(--gg-size-reading-measure); }
 /* A turn reads down the column: narration, one activity row per run of steps, then the answer. */
 .message.assistant > .is-assistant + .chat-progress,
 .message.assistant > .is-assistant + .is-assistant,
@@ -284,27 +286,31 @@ svg foreignObject .katex:has(> math) {
 .message.assistant .message-content [data-streamdown^="heading-"] {
   margin: 1.2em 0 0.45em;
   color: var(--gg-color-text-primary);
-  line-height: 1.3;
   font-weight: var(--gg-weight-semibold);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
 }
 
 .message.assistant .message-content [data-streamdown="heading-1"] {
-  font-size: 1.45em;
+  font-size: var(--gg-text-title);
+  line-height: var(--gg-leading-title);
 }
 
 .message.assistant .message-content [data-streamdown="heading-2"] {
-  font-size: 1.28em;
+  font-size: var(--gg-text-subtitle);
+  line-height: var(--gg-leading-subtitle);
 }
 
 .message.assistant .message-content [data-streamdown="heading-3"] {
-  font-size: 1.14em;
+  font-size: var(--gg-text-reading);
+  line-height: var(--gg-leading-reading);
 }
 
 .message.assistant .message-content [data-streamdown="heading-4"],
 .message.assistant .message-content [data-streamdown="heading-5"],
 .message.assistant .message-content [data-streamdown="heading-6"] {
-  font-size: 1em;
+  font-size: var(--gg-text-body);
+  line-height: var(--gg-leading-body);
+  color: var(--gg-color-text-secondary);
 }
 
 .message.assistant .message-content [data-streamdown="unordered-list"],
@@ -362,15 +368,23 @@ svg foreignObject .katex:has(> math) {
   overflow-x: auto;
 }
 
+/* A wide table scrolls inside its frame instead of squeezing columns; figures never split. */
 .message.assistant .message-content [data-streamdown="table"] {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
-  font-size: var(--gg-text-meta);
+  font-size: var(--gg-text-control);
+  line-height: var(--gg-leading-control);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
+/* Markdown column alignment arrives as an inline text-align style, which beats this default. */
 .message.assistant .message-content [data-streamdown="table-header-cell"],
 .message.assistant .message-content [data-streamdown="table-cell"] {
-  padding: var(--gg-space-2) 10px;
+  max-width: 36ch;
+  padding: var(--gg-space-2) 12px;
   border: 1px solid var(--gg-color-border-subtle);
   text-align: left;
   vertical-align: top;
@@ -378,7 +392,9 @@ svg foreignObject .katex:has(> math) {
 
 .message.assistant .message-content [data-streamdown="table-header-cell"] {
   background: var(--gg-color-bg-hover);
+  color: var(--gg-color-text-secondary);
   font-weight: var(--gg-weight-semibold);
+  white-space: nowrap;
 }
 
 .message.assistant .message-content [data-streamdown="link"],
@@ -1505,7 +1521,7 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .chat-tool-output summary { cursor: pointer; color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
 .execution-copy-control { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: var(--gg-text-caption); }
 .execution-copy-button { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 5px; color: var(--gg-color-text-secondary); cursor: pointer; }
-.execution-copy-button:hover { color: var(--gg-color-text-primary); background: var(--hover); }
+.execution-copy-button:hover { color: var(--gg-color-text-primary); background: var(--gg-color-bg-hover); }
 .execution-copy-button svg { width: 14px; height: 14px; }
 /* token-exception: breakpoint; vars unsupported in query conditions */
 @container chat-reading (max-width: 760px) {
@@ -1841,7 +1857,7 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 div.message-action-bar > .answer-correction { order: 1; }
 .answer-correction { display: grid; gap: 6px; flex: 1 0 100%; width: 100%; max-width: 620px; padding-block: var(--gg-space-2); }
 .answer-correction label, .answer-correction small { font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); }
-.answer-correction textarea { width: 100%; min-height: 80px; resize: vertical; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-xs); padding: var(--gg-space-2); background: var(--surface); color: var(--gg-color-text-primary); }
+.answer-correction textarea { width: 100%; min-height: 80px; resize: vertical; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-xs); padding: var(--gg-space-2); background: var(--gg-color-bg-raised); color: var(--gg-color-text-primary); }
 .answer-correction > [role="alert"], .answer-correction > [role="status"] { font-size: var(--gg-text-meta); }
 
 .answer-saved-correction { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--gg-text-control); color: var(--gg-color-text-secondary); }
@@ -1851,7 +1867,7 @@ div.message-action-bar > .answer-correction { order: 1; }
 .message-schedules { display: grid; gap: var(--gg-space-2); max-width: 440px; margin: var(--gg-space-3) 0; }
 .message-schedule-open { display: flex; align-items: center; gap: var(--gg-space-3); width: 100%; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); padding: var(--gg-space-3) 14px; background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-control); text-align: left; }
 .message-schedule-open:not(:disabled) { cursor: pointer; }
-.message-schedule-open:not(:disabled):hover { background: var(--surface); }
+.message-schedule-open:not(:disabled):hover { background: var(--gg-color-bg-hover); }
 .message-schedule-open > svg { width: 17px; height: 17px; flex-shrink: 0; color: var(--gg-color-text-secondary); }
 .message-schedule-summary { flex: 1; min-width: 0; }
 .message-schedule-heading { display: flex; align-items: center; gap: var(--gg-space-3); margin-bottom: 3px; }
@@ -2021,8 +2037,7 @@ button.chat-rail-row:not(:disabled):hover .chat-rail-row-label { text-decoration
 .answer-outline ol { list-style: none; margin: var(--gg-space-1) 0 0; padding: 0 0 0 var(--gg-space-3); border-left: 1px solid var(--gg-color-border-subtle); display: grid; gap: 2px; }
 .answer-outline li[data-level="3"] { padding-left: var(--gg-space-3); }
 .answer-outline li button { min-height: 28px; padding: 0; border: 0; background: transparent; color: var(--gg-color-text-secondary); font: inherit; text-align: left; cursor: pointer; }
-.answer-outline li button:hover { color: var(--gg-color-text-primary); }
-.answer-outline li button:hover { text-decoration: underline; }
+.answer-outline li button:hover { color: var(--gg-color-text-primary); text-decoration: underline; }
 
 /* Sent images (context-rail §2.3): small thumbnails above the user's text that open the lightbox. */
 .sent-images { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--gg-space-1); margin: 0 0 var(--gg-space-1); }
