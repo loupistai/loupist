@@ -87,8 +87,13 @@ export type ChatProgressItem =
       finishedAtMs?: number;
     };
 
-/** `untrusted_text_paused`: the answer read third-party text, so commands, outbound writes and new sites are off. */
-export type ChatStepRefusal = "untrusted_text_paused";
+/**
+ * Why Rust refused a failed step. `untrusted_text_paused`: the answer read third-party text
+ * and the user turned a command down, or a connection, schedule or new site stayed off.
+ * `protected_path`: the path is inside the app's private data. `user_declined`: the user
+ * chose Not now on a file access card.
+ */
+export type ChatStepRefusal = "untrusted_text_paused" | "protected_path" | "user_declined";
 
 export type ChatPlanStatus = "pending" | "active" | "done" | "not_done";
 
@@ -105,12 +110,15 @@ export type ChatPlan = { items: ChatPlanItem[] };
 
 /**
  * A read-only connection tool the reply waits to use until the user decides (composer D3),
- * or, with `kind: "web_site"`, a new website after the reply read third-party text; `target`
- * then names the site and path, and it can only be allowed once.
+ * or, with a `kind`, something the native policy sends to a card: a new website after the
+ * reply read third-party text (`target` names the site and path), a command (`target` is its
+ * first line, `detail` the whole command), a read or write of a file outside the workspace or
+ * a credential file (`target` is the path), or a write to a file later replies load as
+ * instructions. Only a custom connection's tool and a command can be allowed beyond once.
  */
 export type ChatApproval = {
   requestId: string;
-  kind?: "web_site";
+  kind?: "web_site" | "command" | "file_read" | "file_write" | "instructions";
   /** The progress step that waits, when known. */
   itemId?: string;
   connectionId: string;
@@ -118,6 +126,10 @@ export type ChatApproval = {
   toolName: string;
   /** Plain values from the call (company, period); never raw arguments. */
   target?: string;
+  /** A command card's whole command. */
+  detail?: string;
+  /** What a blanket Allow on a command card covers: this reply, or this Chat until revoked. */
+  grant?: "reply" | "chat";
   state: "waiting" | "allowed_once" | "always_allowed" | "declined" | "expired";
   requestedAtMs: number;
 };

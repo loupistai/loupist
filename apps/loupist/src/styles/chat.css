@@ -2052,6 +2052,7 @@ button.sent-image { cursor: zoom-in; }
 .approval-card-clock { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .approval-card p { margin: 0; overflow-wrap: anywhere; }
 .approval-card-note { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.approval-card-command { margin: 0; max-height: 12rem; overflow: auto; padding: var(--gg-space-2) var(--gg-space-3); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-sunken); font-family: var(--gg-font-mono); font-size: var(--gg-text-meta); line-height: var(--gg-leading-body); white-space: pre; }
 .approval-card-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
 .approval-card-error { margin: 0; color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
 .approval-line { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }

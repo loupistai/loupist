@@ -274,6 +274,8 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   chatApprovalDecide(request: { loupist_id: string; request_id: string; decision: import("./chat").ChatApprovalDecision }): Promise<void>;
   /** The user's answer to a question card: exactly one of `choice` (an option index) and `text`. */
   chatQuestionAnswer(request: { loupist_id: string; request_id: string; choice?: number; text?: string }): Promise<void>;
+  /** "Stop allowing" on a settled command card: ends the Chat's blanket command grant. */
+  chatCommandGrantRevoke(request: { loupist_id: string; thread_id: string }): Promise<void>;
   chatDelete(request: ChatDeleteRequest): Promise<void>;
   chatAttachmentRead(
     loupist_id: string,

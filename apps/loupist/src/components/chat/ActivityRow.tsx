@@ -22,7 +22,7 @@ import { useChatMap } from "../workspace/ChatMapContext";
 import { formatAsOf } from "../../chat/asOf";
 import { evidenceTitle } from "../../chat/evidence";
 import { readNoun } from "../../chat/progressLabels";
-import { pausedByRule, planSections, type TurnSegment } from "../../chat/turnView";
+import { pausedByRule, planSections, refusedByRule, type TurnSegment } from "../../chat/turnView";
 import { actionLabel, clockLabel, isActionItem as isAction, scrubIdentifiers, withoutIdentifiers } from "../../chat/runStatus";
 
 const t = i18n.getFixedT(null, "chat");
@@ -202,6 +202,10 @@ const ActionRow = memo(function ActionRow({
       {paused ? <div className="chat-step-paused" role="note">
         <p>{t(`chatProgressTimeline.paused.${pausedWhat(item)}`)}</p>
         <p className="chat-step-paused-why">{t("chatProgressTimeline.paused.why")}</p>
+      </div> : refusedByRule(item) === "protected_path" ? <div className="chat-step-paused" role="note">
+        <p>{t("chatProgressTimeline.refused.protectedPath")}</p>
+      </div> : refusedByRule(item) === "user_declined" ? <div className="chat-step-paused" role="note">
+        <p>{t("chatProgressTimeline.refused.userDeclined")}</p>
       </div> : null}
       {open && skipped && asOf ? <p id={detailsId} className="chat-progress-skipped-detail">{t("asOf.stepRefusedDetail", { date: formatAsOf(asOf) })}</p> : null}
       {open && item.detailId && execution ? <div id={detailsId} className="chat-execution-detail"><ChatActivityDetailView {...execution} detailId={item.detailId} outputRevision={item.kind === "tool" ? item.outputRevision : undefined} /></div> : null}
@@ -261,10 +265,9 @@ const statusGlyph = (status: ChatProgressStatus): ReactNode => {
 };
 
 /** What the pause turned off for this step, in the user's words. */
-const pausedWhat = (item: ActionItem): "command" | "site" | "instructions" | "schedule" | "connection" | "other" => {
+const pausedWhat = (item: ActionItem): "command" | "site" | "schedule" | "connection" | "other" => {
   const tool = item.kind === "tool" ? item.toolName ?? "" : "";
   if (tool === "web_fetch") return "site";
-  if (tool === "write" || tool === "edit") return "instructions";
   if (tool.startsWith("schedule_")) return "schedule";
   if (item.kind === "tool" && (item.source?.kind === "connector" || tool.startsWith("mcp__"))) return "connection";
   if (tool === "bash" || item.category === "compute" || item.operation === "execute") return "command";

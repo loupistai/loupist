@@ -1210,14 +1210,17 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     return structuredClone(thread);
   }
 
-  /** Mock decision: settles the waiting card in the stored reply, as the host's next progress patch would. */
+  /** Mock decision: settles the waiting card in the stored reply, as the host's next progress patch would.
+   * Like Rust, "always" counts as once for every kind but a custom connection's tool and a command. */
   async chatApprovalDecide(request: { loupist_id: string; request_id: string; decision: Contract.ChatApprovalDecision }): Promise<void> {
     for (const thread of this.state.threads[request.loupist_id] ?? []) {
       for (const message of thread.messages) {
         const approval = message.progress?.approvals?.find((item) => item.requestId === request.request_id);
         if (!approval) continue;
         if (approval.state !== "waiting") throw new Error("This approval is no longer waiting");
-        approval.state = request.decision === "once" ? "allowed_once" : request.decision === "always" ? "always_allowed" : "declined";
+        const onceOnly = approval.kind !== undefined && approval.kind !== "command";
+        approval.state = request.decision === "deny" ? "declined"
+          : request.decision === "always" && !onceOnly ? "always_allowed" : "allowed_once";
         return;
       }
     }
@@ -1242,6 +1245,8 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     }
     throw new Error("This question is no longer waiting");
   }
+  /** The grant lives in Rust's memory for the app session; the mock has nothing to end. */
+  async chatCommandGrantRevoke(_request: { loupist_id: string; thread_id: string }): Promise<void> {}
 
   chatDelete(request: Contract.ChatDeleteRequest): Promise<void> {
     return loupistChat.chatDelete(this.state, request);

@@ -84,13 +84,26 @@ it("explains a step paused by the untrusted-text rule in the step, calmly and wi
   expect(screen.queryByText("Ran a command")).toBeNull();
   expect(screen.queryByText("Read a web source")).toBeNull();
   const notes = screen.getAllByRole("note");
-  expect(notes[0]).toHaveTextContent("Paused: this answer read text from other sites, so running commands is turned off for this answer.");
+  expect(notes[0]).toHaveTextContent("Paused: this answer read text from other sites and you chose Not now, so running commands is turned off for this answer.");
   expect(notes[1]).toHaveTextContent("so opening this page is turned off for this answer.");
   // A security rule: nothing in the note offers a way around it.
   for (const note of notes) expect(within(note).queryByRole("button")).toBeNull();
   // Each note sits with its own step.
   expect(follows(screen.getByText("python margin_model.py"), notes[0]!)).toBe(true);
   expect(follows(notes[0]!, screen.getByText("example.com/review"))).toBe(true);
+});
+
+it("explains a step refused for a private app path or turned down on a card", async () => {
+  render(row({ startedAtMs: 1, finishedAtMs: 2000, items: [
+    { id: "auth", kind: "tool", toolName: "read", category: "files", operation: "read", action: "Read a file", target: "auth.json", status: "failed", refusal: "protected_path" },
+    { id: "shared", kind: "tool", toolName: "read", category: "files", operation: "read", action: "Read a file", target: "shared.csv", status: "failed", refusal: "user_declined" },
+  ] }, "complete"));
+  // Failed steps open on their own; each refusal is explained in its step.
+  expect(screen.getByRole("button", { name: /2 failed attempts/ })).toHaveAttribute("aria-expanded", "true");
+  const notes = screen.getAllByRole("note");
+  expect(notes[0]).toHaveTextContent("Not allowed: this path is inside the app's private data");
+  expect(notes[1]).toHaveTextContent("Skipped: you chose Not now, so this kind of file access stayed off for this answer.");
+  for (const note of notes) expect(within(note).queryByRole("button")).toBeNull();
 });
 
 it("labels a refused command as paused in Korean while retaining completed and ordinary failed actions", async () => {

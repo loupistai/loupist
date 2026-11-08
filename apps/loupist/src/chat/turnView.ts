@@ -151,6 +151,10 @@ export function useLastActivity(message: ChatMessage | undefined): number {
 export const pausedByRule = (item: ActionItem) =>
   item.kind === "tool" && item.status === "failed" && item.refusal === "untrusted_text_paused";
 
+/** The rule a failed step was refused under, when Rust named one. */
+export const refusedByRule = (item: ActionItem) =>
+  item.kind === "tool" && item.status === "failed" ? item.refusal : undefined;
+
 /**
  * Steps that started while a plan item was active nest under that item, in
  * activation order; steps before the first activation stay in the flat list.

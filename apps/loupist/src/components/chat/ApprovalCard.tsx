@@ -1,5 +1,5 @@
 import i18n, { useTranslation } from "@/i18n";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { LoupistBridge } from "../../types";
 import type { ChatApproval, ChatApprovalDecision, ChatToolRefusal } from "../../contracts/chat";
 import type { CustomConnection } from "../../contracts/customConnections";
@@ -33,6 +33,39 @@ function useConnectionDetail(bridge: LoupistBridge, loupistId: string) {
   return { open, sheet, failed };
 }
 
+type NativeKind = "command" | "file_read" | "file_write" | "instructions";
+const isNative = (kind: ChatApproval["kind"]): kind is NativeKind =>
+  kind === "command" || kind === "file_read" || kind === "file_write" || kind === "instructions";
+
+/** The card's heading, body and note for one kind; `target` is the site, path or command line. */
+function cardCopy(approval: ChatApproval, tool: string) {
+  const target = approval.target ?? "";
+  switch (approval.kind) {
+    case "web_site":
+      return { label: t("approvalCard.webLabel", { site: target }), body: t("approvalCard.webBody", { site: target }), note: t("approvalCard.webNote") };
+    case "command":
+      return {
+        label: t("approvalCard.commandLabel"),
+        body: approval.grant === "chat" ? t("approvalCard.commandBodyCarried") : t("approvalCard.commandBody"),
+        note: t("approvalCard.commandNote"),
+      };
+    case "file_read":
+      return { label: t("approvalCard.readLabel", { path: target }), body: t("approvalCard.readBody", { path: target }), note: t("approvalCard.readNote") };
+    case "file_write":
+      return { label: t("approvalCard.writeLabel", { path: target }), body: t("approvalCard.writeBody", { path: target }), note: t("approvalCard.writeNote") };
+    case "instructions":
+      return { label: t("approvalCard.instructionsLabel", { path: target }), body: t("approvalCard.instructionsBody", { path: target }), note: t("approvalCard.instructionsNote") };
+    default:
+      return {
+        label: t("approvalCard.label", { tool }),
+        body: approval.target
+          ? t("approvalCard.body", { connection: approval.connectionName, tool, target: approval.target })
+          : t("approvalCard.bodyNoTarget", { connection: approval.connectionName, tool }),
+        note: t("approvalCard.readOnly"),
+      };
+  }
+}
+
 function WaitingCard({ approval, onDecide }: { approval: ChatApproval; onDecide: (decision: ChatApprovalDecision) => Promise<void> }) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
@@ -42,8 +75,7 @@ function WaitingCard({ approval, onDecide }: { approval: ChatApproval; onDecide:
     return () => window.clearInterval(timer);
   }, []);
   const tool = humanizeToolName(approval.toolName);
-  // A new website after third-party text: allowed for this reply only, never always.
-  const site = approval.kind === "web_site" ? approval.target ?? "" : null;
+  const copy = cardCopy(approval, tool);
   const decide = async (decision: ChatApprovalDecision) => {
     setBusy(true);
     setFailed(false);
@@ -54,25 +86,58 @@ function WaitingCard({ approval, onDecide }: { approval: ChatApproval; onDecide:
       setBusy(false);
     }
   };
+  // A blanket Allow exists for a custom connection (stored in Settings) and for a
+  // command (this reply, or this Chat when only earlier replies read other sites).
+  const always = approval.kind === undefined ? t("approvalCard.always")
+    : approval.kind === "command" ? (approval.grant === "chat" ? t("approvalCard.commandAlwaysChat") : t("approvalCard.commandAlwaysReply"))
+      : null;
+  const allow = approval.kind === "file_read" || approval.kind === "file_write" ? t("approvalCard.allow") : t("approvalCard.allowOnce");
   // The rail's "Needs your OK" row scrolls here and moves focus to the card, never to a button.
-  return <section className="approval-card" data-kind={approval.kind} data-request-id={approval.requestId} tabIndex={-1}
-    aria-label={site === null ? t("approvalCard.label", { tool }) : t("approvalCard.webLabel", { site })}>
+  return <section className="approval-card" data-kind={approval.kind} data-request-id={approval.requestId} tabIndex={-1} aria-label={copy.label}>
     <header>
       <strong>{t("approvalCard.title")}</strong>
       <span className="approval-card-clock">{t("approvalCard.waiting", { time: clock(nowMs - approval.requestedAtMs) })}</span>
     </header>
-    <p>{site !== null ? t("approvalCard.webBody", { site })
-      : approval.target
-        ? t("approvalCard.body", { connection: approval.connectionName, tool, target: approval.target })
-        : t("approvalCard.bodyNoTarget", { connection: approval.connectionName, tool })}</p>
-    <p className="approval-card-note">{site === null ? t("approvalCard.readOnly") : t("approvalCard.webNote")}</p>
+    <p>{copy.body}</p>
+    {approval.kind === "command" ? <pre className="approval-card-command" tabIndex={0}>{approval.detail ?? approval.target ?? ""}</pre> : null}
+    <p className="approval-card-note">{copy.note}</p>
     <div className="approval-card-actions">
-      <Button type="button" disabled={busy} onClick={() => void decide("once")}>{t("approvalCard.allowOnce")}</Button>
+      <Button type="button" disabled={busy} onClick={() => void decide("once")}>{allow}</Button>
       <Button type="button" variant="outline" disabled={busy} onClick={() => void decide("deny")}>{t("approvalCard.notNow")}</Button>
-      {site === null ? <Button type="button" variant="ghost" className="approval-card-always" disabled={busy} onClick={() => void decide("always")}>{t("approvalCard.always")}</Button> : null}
+      {always !== null ? <Button type="button" variant={approval.kind === "command" ? "secondary" : "ghost"} className="approval-card-always" disabled={busy} onClick={() => void decide("always")}>{always}</Button> : null}
     </div>
     {failed ? <p role="alert" className="approval-card-error">{t("approvalCard.error")}</p> : null}
   </section>;
+}
+
+/** One quiet line for a settled native card; a Chat-wide command grant offers "Stop allowing". */
+function NativeLine({ approval, kind, onStop }: { approval: ChatApproval; kind: NativeKind; onStop?: () => Promise<void> }) {
+  const [stopped, setStopped] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const target = approval.target ?? "";
+  const key = kind === "command" ? "command" : kind === "file_read" ? "read" : kind === "file_write" ? "write" : "instructions";
+  const stop = async () => {
+    setFailed(false);
+    try {
+      await onStop?.();
+      setStopped(true);
+    } catch {
+      setFailed(true);
+    }
+  };
+  let text: ReactNode;
+  if (approval.state === "declined") text = t(`approvalCard.${key}Declined`, { target });
+  else if (approval.state === "expired") text = t(`approvalCard.${key}Expired`, { target });
+  else if (kind === "command" && approval.state === "always_allowed") {
+    text = approval.grant === "chat"
+      ? stopped ? t("approvalCard.commandStopped")
+        : <>{t("approvalCard.commandAllowedChat")}{onStop ? <> · <Button type="button" variant="link" onClick={() => void stop()}>{t("approvalCard.stopAllowing")}</Button></> : null}</>
+      : t("approvalCard.commandAllowedReply");
+  } else text = t(`approvalCard.${key}Allowed`, { target });
+  return <p className="approval-line" data-state={approval.state} data-kind={kind}>
+    {text}
+    {failed ? <span role="alert" className="approval-card-error"> {t("approvalCard.stopFailed")}</span> : null}
+  </p>;
 }
 
 /**
@@ -82,13 +147,17 @@ function WaitingCard({ approval, onDecide }: { approval: ChatApproval; onDecide:
  * OK" row that leads here. "Always" is stored by Rust per connection and tool and
  * is revocable in the connection's settings. Refusals from runs that could not
  * ask (scheduled runs) point to the same settings. A new website after
- * third-party text offers only Allow once and Not now.
+ * third-party text offers only Allow once and Not now. A native card (a command,
+ * a file outside the workspace, an instruction file) shows what would run or be
+ * touched; a command's blanket Allow covers this reply, or this Chat until
+ * "Stop allowing" ends it (`chat_command_grant_revoke`).
  */
-export function ApprovalCards({ approvals, refusals, bridge, loupistId }: {
+export function ApprovalCards({ approvals, refusals, bridge, loupistId, chatId }: {
   approvals: readonly ChatApproval[];
   refusals: readonly ChatToolRefusal[];
   bridge: LoupistBridge;
   loupistId: string;
+  chatId?: string;
 }) {
   useTranslation("chat");
   const detail = useConnectionDetail(bridge, loupistId);
@@ -96,10 +165,12 @@ export function ApprovalCards({ approvals, refusals, bridge, loupistId }: {
   if (!approvals.length && !settingsOnly.length) return null;
   const decide = (approval: ChatApproval) => (decision: ChatApprovalDecision) =>
     bridge.chatApprovalDecide({ loupist_id: loupistId, request_id: approval.requestId, decision });
+  const stop = chatId ? () => bridge.chatCommandGrantRevoke({ loupist_id: loupistId, thread_id: chatId }) : undefined;
   return <div className="approval-cards">
     {approvals.map((approval) => {
       const tool = humanizeToolName(approval.toolName);
       if (approval.state === "waiting") return <WaitingCard key={approval.requestId} approval={approval} onDecide={decide(approval)} />;
+      if (isNative(approval.kind)) return <NativeLine key={approval.requestId} approval={approval} kind={approval.kind} onStop={stop} />;
       if (approval.kind === "web_site") {
         const site = approval.target ?? "";
         return <p key={approval.requestId} className="approval-line" data-state={approval.state}>

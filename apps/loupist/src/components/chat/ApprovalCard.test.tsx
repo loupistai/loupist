@@ -50,6 +50,87 @@ it("asks once for a new website after third-party text, with no Always", async (
   expect(screen.getByText("Opened once · news.example/markets/morrow")).toBeVisible();
 });
 
+it("shows the whole command and offers it once, for the reply, or not now after this reply read other sites", async () => {
+  const user = userEvent.setup();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const decide = vi.spyOn(bridge, "chatApprovalDecide").mockResolvedValue();
+  const command = (extra: Partial<ChatApproval> = {}) => waiting("workspace", {
+    requestId: "req-cmd", kind: "command", connectionName: "Workspace", toolName: "bash", target: "python3 build_deck.py",
+    detail: "python3 build_deck.py \\\n  --out deck.pptx", grant: "reply", ...extra,
+  });
+  const { rerender } = render(<ApprovalCards approvals={[command()]} refusals={[]} bridge={bridge} loupistId="loupist-one" chatId="chat-one" />);
+  const card = screen.getByRole("region", { name: "Approval to run a command" });
+  expect(within(card).getByText("This reply read text from other sites. It now wants to run this command:")).toBeVisible();
+  expect(card.querySelector(".approval-card-command")).toHaveTextContent("python3 build_deck.py \\ --out deck.pptx");
+  expect(within(card).getByText(/A command can reach your files and the network/)).toBeVisible();
+  expect(within(card).queryByRole("button", { name: "Allow commands in this chat" })).not.toBeInTheDocument();
+  await user.click(within(card).getByRole("button", { name: "Allow commands for this reply" }));
+  expect(decide).toHaveBeenCalledWith({ loupist_id: "loupist-one", request_id: "req-cmd", decision: "always" });
+
+  rerender(<ApprovalCards approvals={[command({ state: "always_allowed" })]} refusals={[]} bridge={bridge} loupistId="loupist-one" chatId="chat-one" />);
+  expect(screen.getByText("Commands allowed for this reply")).toBeVisible();
+  rerender(<ApprovalCards approvals={[command({ state: "allowed_once" })]} refusals={[]} bridge={bridge} loupistId="loupist-one" chatId="chat-one" />);
+  expect(screen.getByText("Ran once · python3 build_deck.py")).toBeVisible();
+  rerender(<ApprovalCards approvals={[command({ state: "declined" })]} refusals={[]} bridge={bridge} loupistId="loupist-one" chatId="chat-one" />);
+  expect(screen.getByText("Skipped · command · the Loupist continued without it")).toBeVisible();
+  rerender(<ApprovalCards approvals={[command({ state: "expired" })]} refusals={[]} bridge={bridge} loupistId="loupist-one" chatId="chat-one" />);
+  expect(screen.getByText("No longer needed · command")).toBeVisible();
+});
+
+it("offers the chat scope when only earlier replies read other sites, and the settled line can stop it", async () => {
+  const user = userEvent.setup();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const decide = vi.spyOn(bridge, "chatApprovalDecide").mockResolvedValue();
+  const revoke = vi.spyOn(bridge, "chatCommandGrantRevoke").mockResolvedValue();
+  const command = (extra: Partial<ChatApproval> = {}) => waiting("workspace", {
+    requestId: "req-cmd", kind: "command", connectionName: "Workspace", toolName: "bash", target: "ls", detail: "ls", grant: "chat", ...extra,
+  });
+  const { rerender } = render(<ApprovalCards approvals={[command()]} refusals={[]} bridge={bridge} loupistId="loupist-one" chatId="chat-one" />);
+  const card = screen.getByRole("region", { name: "Approval to run a command" });
+  expect(within(card).getByText(/An earlier reply in this chat read text from other sites/)).toBeVisible();
+  await user.click(within(card).getByRole("button", { name: "Allow commands in this chat" }));
+  expect(decide).toHaveBeenCalledWith({ loupist_id: "loupist-one", request_id: "req-cmd", decision: "always" });
+
+  rerender(<ApprovalCards approvals={[command({ state: "always_allowed" })]} refusals={[]} bridge={bridge} loupistId="loupist-one" chatId="chat-one" />);
+  expect(screen.getByText(/Commands allowed in this chat/)).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Stop allowing" }));
+  expect(revoke).toHaveBeenCalledWith({ loupist_id: "loupist-one", thread_id: "chat-one" });
+  expect(await screen.findByText("Commands in this chat ask again")).toBeVisible();
+});
+
+it("asks for a file outside the workspace or an instruction file with Allow and Not now only", async () => {
+  const user = userEvent.setup();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const decide = vi.spyOn(bridge, "chatApprovalDecide").mockResolvedValue();
+  const file = (kind: "file_read" | "file_write" | "instructions", extra: Partial<ChatApproval> = {}) => waiting("workspace", {
+    requestId: `req-${kind}`, kind, connectionName: "Workspace", toolName: kind === "file_read" ? "read" : "write",
+    target: kind === "instructions" ? "/Users/me/Research/AGENTS.md" : "/Users/me/Documents/shared.csv", ...extra,
+  });
+  const { rerender } = render(<ApprovalCards approvals={[file("file_read")]} refusals={[]} bridge={bridge} loupistId="loupist-one" />);
+  let card = screen.getByRole("region", { name: "Approval to read /Users/me/Documents/shared.csv" });
+  expect(within(card).getByText(/It now wants to read \/Users\/me\/Documents\/shared\.csv\./)).toBeVisible();
+  expect(within(card).queryByRole("button", { name: /Always|for this reply|in this chat/ })).not.toBeInTheDocument();
+  await user.click(within(card).getByRole("button", { name: "Allow" }));
+  expect(decide).toHaveBeenCalledWith({ loupist_id: "loupist-one", request_id: "req-file_read", decision: "once" });
+
+  rerender(<ApprovalCards approvals={[file("file_write")]} refusals={[]} bridge={bridge} loupistId="loupist-one" />);
+  card = screen.getByRole("region", { name: "Approval to write /Users/me/Documents/shared.csv" });
+  expect(within(card).getByText(/It now wants to write \/Users\/me\/Documents\/shared\.csv\./)).toBeVisible();
+  await user.click(within(card).getByRole("button", { name: "Not now" }));
+  expect(decide).toHaveBeenCalledWith({ loupist_id: "loupist-one", request_id: "req-file_write", decision: "deny" });
+
+  rerender(<ApprovalCards approvals={[file("instructions")]} refusals={[]} bridge={bridge} loupistId="loupist-one" />);
+  card = screen.getByRole("region", { name: "Approval to change /Users/me/Research/AGENTS.md" });
+  expect(within(card).getByText(/which becomes instructions for later replies/)).toBeVisible();
+  expect(within(card).getByRole("button", { name: "Allow once" })).toBeVisible();
+
+  rerender(<ApprovalCards approvals={[file("file_read", { state: "allowed_once" }), file("file_write", { state: "declined" }), file("instructions", { state: "expired" })]}
+    refusals={[]} bridge={bridge} loupistId="loupist-one" />);
+  expect(screen.getByText("Read allowed · /Users/me/Documents/shared.csv")).toBeVisible();
+  expect(screen.getByText("Skipped · /Users/me/Documents/shared.csv · the Loupist continued without it")).toBeVisible();
+  expect(screen.getByText("No longer needed · /Users/me/Research/AGENTS.md")).toBeVisible();
+});
+
 it("says when a card is no longer waiting", async () => {
   const user = userEvent.setup();
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
