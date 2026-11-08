@@ -27,9 +27,12 @@ removed, a dangling symlink followed to where it points, up to 40 hops), then
 matched in this order; the first match wins. A link chain that loops or cannot
 be read is refused for every tool. The extension's `canonicalTargetPath` resolves
 the same way, so its write pin agrees with Rust. A root is found among the
-target's ancestors by case-insensitive equality or by filesystem identity
-(`(dev, ino)`), and the rules below apply to the components after it, so a
-firmlink or case alias of a root counts at whatever depth it spells the root.
+target's ancestors by exact spelling or by the filesystem identity (`(dev,
+ino)`) of an existing folder, and the rules below apply to the components after
+it. A firmlink or a case alias of a root on a case-insensitive volume therefore
+counts at whatever depth it spells the root, while on a case-sensitive volume
+`~/RESEARCH` is another folder, or none, and is Outside. Names inside a root
+(`AGENTS.md`, `skills`, `.ssh`, `.git`) compare without case.
 
 1. Instructions: workspace `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`,
    `.loupist/AGENTS.md`, `.loupist/config.toml`, Skill entries under `.loupist`,
@@ -47,8 +50,10 @@ firmlink or case alias of a root counts at whatever depth it spells the root.
    files (`.zshrc`, `.zprofile`, `.zshenv`, `.zlogin`, `.bashrc`, `.bash_profile`,
    `.profile`, `~/.config/fish/**`). One table (`CREDENTIAL_HOME`) serves this class
    and the sandbox's masks.
-6. GitConfig: the `hooks/**` and `config` of any git directory (`.git`, a
-   submodule's `.git/modules/<path>`, a bare `*.git`).
+6. GitDir: inside the workspace, any path with a `.git` component (the `.git`
+   file or folder itself and everything in it, a nested repository's too) and
+   the `hooks/**` and `config` of a bare `*.git` or a submodule's
+   `.git/modules/<path>`. Another repository's git directory is Outside.
 7. Workspace: inside the selected workspace, the Loupist folder.
 8. Outside: everything else.
 
@@ -56,14 +61,14 @@ firmlink or case alias of a root counts at whatever depth it spells the root.
 
 | Tool | Class | Clean | ThisTurn, Custom |
 | --- | --- | --- | --- |
-| read, ls | Instructions, Scratch, Attachments, GitConfig, Workspace | Allow | Allow |
+| read, ls | Instructions, Scratch, Attachments, GitDir, Workspace | Allow | Allow |
 | read, ls | AppPrivate, Credentials | Refuse `protected_path` | Refuse `protected_path` |
 | read, ls | Outside | Refuse `outside_workspace` | Refuse `outside_workspace` |
 | find, grep | root contains the app data root | Refuse `protected_path` | Refuse `protected_path` |
 | find, grep | otherwise | as read | as read |
 | write, edit | Scratch, Workspace | Allow | Allow |
 | write, edit | Instructions | Allow | Refuse `untrusted_text_paused` |
-| write, edit | AppPrivate, Attachments, Credentials, GitConfig | Refuse `protected_path` | Refuse `protected_path` |
+| write, edit | AppPrivate, Attachments, Credentials, GitDir | Refuse `protected_path` | Refuse `protected_path` |
 | write, edit | Outside | Refuse `outside_workspace` | Refuse `outside_workspace` |
 | bash | | Allow, online | ThisTurn: Allow offline inside a verified sandbox, else Refuse `untrusted_text_paused`. Custom: Refuse `outbound_paused`. |
 

@@ -190,8 +190,10 @@ pub enum PathClass {
     /// A credential store or shell startup file under the home folder: never
     /// read or written, as the command sandbox hides it.
     Credentials,
-    /// The `hooks/**` and `config` of a git directory: read, never written.
-    GitConfig,
+    /// A git directory inside the workspace (`.git` as a file or folder and
+    /// everything in it, the `hooks/**` and `config` of a bare `*.git`): read,
+    /// never written, since the host's `git` runs what it holds.
+    GitDir,
     Workspace,
     Outside,
     /// A symlink chain that loops or cannot be read: no tool touches it.
@@ -227,8 +229,8 @@ pub fn classify(path: &Path, roots: &NativeRoots) -> Classified {
         PathClass::AppPrivate
     } else if credential(&path, roots.home.as_deref()) {
         PathClass::Credentials
-    } else if git_config(&path) {
-        PathClass::GitConfig
+    } else if git_dir(&path, roots) {
+        PathClass::GitDir
     } else if under(&path, &roots.workspace) {
         PathClass::Workspace
     } else {
@@ -259,8 +261,8 @@ pub enum NativeRefusal {
     AppPrivate,
     /// A credential store or startup file under the home folder.
     Credentials,
-    /// A write to a git directory's hooks or config.
-    GitConfig,
+    /// A write into a git directory.
+    GitDir,
     /// A search rooted above the app data root would descend into it.
     SearchCoversAppData,
     /// The target's symlink chain loops or cannot be read.
@@ -326,13 +328,13 @@ pub fn decide(
         PathClass::Credentials => NativeRefusal::Credentials,
         PathClass::Outside => NativeRefusal::Outside,
         PathClass::Attachments if tool.writes() => NativeRefusal::AppPrivate,
-        PathClass::GitConfig if tool.writes() => NativeRefusal::GitConfig,
+        PathClass::GitDir if tool.writes() => NativeRefusal::GitDir,
         PathClass::Instructions if tool.writes() && exposure != Exposure::Clean => {
             NativeRefusal::InstructionsAfterUntrustedText
         }
         PathClass::Scratch
         | PathClass::Attachments
-        | PathClass::GitConfig
+        | PathClass::GitDir
         | PathClass::Instructions
         | PathClass::Workspace => return NativeDecision::AllowFile { resolved: path },
     };
@@ -357,36 +359,46 @@ pub fn decide_command(
     }
 }
 
-const ROOT_INSTRUCTIONS: &[&str] = &["agents.override.md", "agents.md", "claude.md"];
+const ROOT_INSTRUCTIONS: &[&str] = &["AGENTS.override.md", "AGENTS.md", "CLAUDE.md"];
 
 /// Matches what workspace discovery loads: root instructions,
 /// `.loupist/AGENTS.md`, `.loupist/config.toml`, Skill entries (`skills/*.md`,
 /// `skills/**/SKILL.md`) under `.loupist`, `.agents` and `.pi`, and the global
 /// `AGENTS.md` and everything under the global `skills` folder. Names compare
-/// without case, on canonical paths, so an alias cannot reach them.
+/// without case so that a case-insensitive volume cannot spell them past the
+/// rule; on a case-sensitive one that only refuses a few more writes.
 fn instruction_file(target: &Path, roots: &NativeRoots) -> bool {
     let relative = |root: &Path| below(target, root);
     let skill_entry = |rest: &[String]| match rest {
-        [file] => file.ends_with(".md"),
-        [.., file] => file == "skill.md",
+        [file] => file.to_lowercase().ends_with(".md"),
+        [.., file] => named(file, "SKILL.md"),
         [] => false,
     };
     let workspace = relative(&roots.workspace).is_some_and(|parts| match parts.as_slice() {
-        [file] => ROOT_INSTRUCTIONS.contains(&file.as_str()),
-        [folder, file] if folder == ".loupist" => file == "agents.md" || file == "config.toml",
+        [file] => ROOT_INSTRUCTIONS.iter().any(|name| named(file, name)),
+        [folder, file] if named(folder, ".loupist") => {
+            named(file, "AGENTS.md") || named(file, "config.toml")
+        }
         [folder, skills, rest @ ..] => {
-            matches!(folder.as_str(), ".loupist" | ".agents" | ".pi")
-                && skills == "skills"
+            [".loupist", ".agents", ".pi"]
+                .iter()
+                .any(|name| named(folder, name))
+                && named(skills, "skills")
                 && skill_entry(rest)
         }
         _ => false,
     });
     workspace
         || relative(&roots.global).is_some_and(|parts| match parts.as_slice() {
-            [file] => file == "agents.md",
-            [skills, ..] => skills == "skills",
+            [file] => named(file, "AGENTS.md"),
+            [skills, ..] => named(skills, "skills"),
             _ => false,
         })
+}
+
+/// A path component against a known name, without case.
+fn named(part: &str, name: &str) -> bool {
+    part.eq_ignore_ascii_case(name)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -427,27 +439,44 @@ fn credential(target: &Path, home: Option<&Path>) -> bool {
         return false;
     };
     CREDENTIAL_HOME.iter().any(|(entry, reach)| {
-        let entry: Vec<String> = entry.split('/').map(str::to_lowercase).collect();
+        let entry: Vec<&str> = entry.split('/').collect();
+        let matches = |depth: usize| {
+            rest.len() >= depth
+                && rest[..depth]
+                    .iter()
+                    .zip(&entry)
+                    .all(|(part, name)| named(part, name))
+        };
         match reach {
-            Reach::File => rest == entry,
-            Reach::Tree => rest.len() >= entry.len() && rest[..entry.len()] == entry[..],
+            Reach::File => rest.len() == entry.len() && matches(entry.len()),
+            Reach::Tree => matches(entry.len()),
         }
     })
 }
 
-/// The `hooks/**` and `config` of any git directory: `.git`, a submodule's
-/// `.git/modules/<path>`, or a bare `*.git`.
-fn git_config(target: &Path) -> bool {
-    let parts = lower_parts(target);
+/// A git directory inside the workspace: any path with a `.git` component
+/// (the `.git` file or folder itself included), and the `hooks/**` and
+/// `config` of a bare `*.git` or a submodule's `modules/<path>`. The host's
+/// `git` runs hooks, filters and `core.fsmonitor` from there, so no tool
+/// writes it. Another repository's git directory is outside the workspace
+/// and refused as such.
+fn git_dir(target: &Path, roots: &NativeRoots) -> bool {
+    let Some(parts) = below(target, &roots.workspace) else {
+        return false;
+    };
     parts.iter().enumerate().any(|(at, part)| {
-        if !part.ends_with(".git") {
+        if named(part, ".git") {
+            return true;
+        }
+        if !part.to_lowercase().ends_with(".git") {
             return false;
         }
         let mut rest = &parts[at + 1..];
-        while rest.len() >= 2 && rest[0] == "modules" {
+        while rest.len() >= 2 && named(&rest[0], "modules") {
             rest = &rest[2..];
         }
-        rest.first().is_some_and(|folder| folder == "hooks") || rest == ["config"]
+        rest.first().is_some_and(|folder| named(folder, "hooks"))
+            || (rest.len() == 1 && named(&rest[0], "config"))
     })
 }
 
@@ -455,16 +484,17 @@ fn under(target: &Path, root: &Path) -> bool {
     below(target, root).is_some()
 }
 
-/// `target`'s components below `root`, lowercased, when one of `target`'s
-/// ancestors is `root`: equal without case, or the same file by filesystem
-/// identity (`(dev, ino)`, like `fs/pinned_root.rs`). A firmlink or case
-/// alias of a root therefore counts at whatever depth it spells the root.
+/// `target`'s components below `root` when one of `target`'s ancestors is
+/// `root`: spelled the same, or the same existing folder by filesystem
+/// identity (`(dev, ino)`, like `fs/pinned_root.rs`). A firmlink or a case
+/// alias of a root therefore counts at whatever depth it spells the root, and
+/// a case variant that is a different folder, or none, does not.
 fn below(target: &Path, root: &Path) -> Option<Vec<String>> {
     if root.as_os_str().is_empty() {
         return None;
     }
-    let root_parts = lower_parts(root);
-    let target_parts = lower_parts(target);
+    let root_parts = parts(root);
+    let target_parts = parts(target);
     let root_identity = identity(root);
     for (depth, ancestor) in target.ancestors().enumerate() {
         let rest = target_parts.len().checked_sub(depth)?;
@@ -477,9 +507,9 @@ fn below(target: &Path, root: &Path) -> Option<Vec<String>> {
     None
 }
 
-fn lower_parts(path: &Path) -> Vec<String> {
+fn parts(path: &Path) -> Vec<String> {
     path.components()
-        .map(|part| part.as_os_str().to_string_lossy().to_lowercase())
+        .map(|part| part.as_os_str().to_string_lossy().into_owned())
         .collect()
 }
 
@@ -646,6 +676,7 @@ mod tests {
             ".zshrc",
             ".config/gcloud/credentials.db",
             "Documents/shared.csv",
+            "other-repo/.git/config",
         ] {
             let file = home.join(path);
             std::fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -696,7 +727,7 @@ mod tests {
             NativeDecision::AllowCommand { sandbox: Some(_) } => "allow sandboxed",
             NativeDecision::Refuse(NativeRefusal::AppPrivate) => "refuse app_private",
             NativeDecision::Refuse(NativeRefusal::Credentials) => "refuse credentials",
-            NativeDecision::Refuse(NativeRefusal::GitConfig) => "refuse git_config",
+            NativeDecision::Refuse(NativeRefusal::GitDir) => "refuse git_dir",
             NativeDecision::Refuse(NativeRefusal::SearchCoversAppData) => "refuse search",
             NativeDecision::Refuse(NativeRefusal::Unresolvable) => "refuse unresolvable",
             NativeDecision::Refuse(NativeRefusal::Outside) => "refuse outside",
@@ -721,6 +752,7 @@ mod tests {
         let cases: Vec<(PathBuf, PathClass)> = vec![
             (ws.join("AGENTS.md"), PathClass::Instructions),
             (ws.join("notes/../agents.MD"), PathClass::Instructions),
+            (ws.join("claude.md"), PathClass::Instructions),
             (ws.join(".loupist/config.toml"), PathClass::Instructions),
             (
                 ws.join(".loupist/skills/screen/SKILL.md"),
@@ -752,18 +784,10 @@ mod tests {
                 PathClass::AppPrivate,
             ),
             (
-                home.join("library/application support/LOUPIST/pi/auth.json"),
-                PathClass::AppPrivate,
-            ),
-            (
                 ws.join("../Library/Application Support/Loupist/pi/auth.json"),
                 PathClass::AppPrivate,
             ),
             (ws.join(".loupist/loupist.sqlite3"), PathClass::AppPrivate),
-            (
-                ws.join(".LOUPIST/loupist.sqlite3-wal"),
-                PathClass::AppPrivate,
-            ),
             (
                 ws.join(".loupist/loupists/loupist-a/attachments/chat-b/brief.pdf.md"),
                 PathClass::AppPrivate,
@@ -784,30 +808,30 @@ mod tests {
             (home.join(".zshrc.backup"), PathClass::Outside),
             (home.join(".gitconfig"), PathClass::Outside),
             (home.join(".config/other/settings.json"), PathClass::Outside),
-            (ws.join(".git/hooks/pre-commit"), PathClass::GitConfig),
-            (ws.join(".git/config"), PathClass::GitConfig),
-            (ws.join(".git/config.lock"), PathClass::Workspace),
+            (ws.join(".git/hooks/pre-commit"), PathClass::GitDir),
+            (ws.join(".git/config"), PathClass::GitDir),
+            (ws.join(".git/config.lock"), PathClass::GitDir),
+            (ws.join(".git"), PathClass::GitDir),
+            (ws.join("vendor/lib/.git"), PathClass::GitDir),
+            (ws.join("vendor/lib/.git/info/exclude"), PathClass::GitDir),
+            (ws.join(".g2/config"), PathClass::Workspace),
             (
                 ws.join(".git/modules/vendor/hooks/pre-commit"),
-                PathClass::GitConfig,
+                PathClass::GitDir,
             ),
-            (ws.join(".git/modules/vendor/config"), PathClass::GitConfig),
-            (
-                ws.join(".git/modules/vendor/modules/inner/config"),
-                PathClass::GitConfig,
-            ),
-            (ws.join(".git/modules/vendor/HEAD"), PathClass::Workspace),
-            (ws.join("mirrors/site.git/config"), PathClass::GitConfig),
+            (ws.join(".git/modules/vendor/HEAD"), PathClass::GitDir),
+            (ws.join("mirrors/site.git/config"), PathClass::GitDir),
             (
                 ws.join("mirrors/site.git/hooks/post-update"),
-                PathClass::GitConfig,
+                PathClass::GitDir,
             ),
             (ws.join("mirrors/site.git/HEAD"), PathClass::Workspace),
             (ws.join("notes/plan.md"), PathClass::Workspace),
             (ws.join("new/report.md"), PathClass::Workspace),
             (PathBuf::from("relative/report.md"), PathClass::Workspace),
             (home.join("Documents/shared.csv"), PathClass::Outside),
-            (home.join("Downloads/.git/config"), PathClass::GitConfig),
+            (home.join("Downloads/.git/config"), PathClass::Outside),
+            (home.join("other-repo/.git/config"), PathClass::Outside),
         ];
         for (path, expected) in cases {
             assert_eq!(
@@ -904,6 +928,49 @@ mod tests {
         assert!(!instruction_file(&ws.join("notes/plan.md"), &f.roots));
         assert!(under(&ws.join("notes/plan.md"), &f.roots.workspace));
         assert!(!under(&home.join("Documents"), &f.roots.workspace));
+    }
+
+    /// A root is found by spelling or by the identity of an existing folder,
+    /// never by a case-insensitive comparison: on this case-sensitive
+    /// volume `~/RESEARCH` is another folder, or none, so a write there would
+    /// land outside the Loupist folder.
+    #[test]
+    fn a_case_variant_of_a_root_is_outside_on_a_case_sensitive_volume() {
+        let f = fixture();
+        let variant = f.home.join("RESEARCH");
+        let app_variant = f.home.join("library/application support/LOUPIST");
+        if variant.exists() || app_variant.exists() {
+            eprintln!("skipping: this volume folds case");
+            return;
+        }
+        assert_eq!(
+            decide(
+                &request("write", variant.join("new/planted.sh")),
+                &f.roots,
+                Exposure::Clean,
+                None
+            ),
+            NativeDecision::Refuse(NativeRefusal::Outside)
+        );
+        assert_eq!(
+            classify(&app_variant.join("pi/auth.json"), &f.roots).class,
+            PathClass::Outside
+        );
+        std::fs::create_dir_all(variant.join("new")).unwrap();
+        assert_eq!(
+            classify(&variant.join("new/planted.sh"), &f.roots).class,
+            PathClass::Outside,
+            "a folder that merely spells the root differently is not the root"
+        );
+        assert_eq!(
+            classify(
+                &f.roots.workspace.join(".LOUPIST/loupist.sqlite3"),
+                &f.roots
+            )
+            .class,
+            PathClass::Workspace,
+            "a differently spelled folder inside the workspace is an ordinary folder"
+        );
     }
 
     #[test]
@@ -1036,13 +1103,28 @@ mod tests {
             ),
             (
                 request("edit", ws.join(".git/hooks/pre-commit")),
-                "refuse git_config",
-                "refuse git_config",
+                "refuse git_dir",
+                "refuse git_dir",
             ),
             (
                 request("write", ws.join(".git/config")),
-                "refuse git_config",
-                "refuse git_config",
+                "refuse git_dir",
+                "refuse git_dir",
+            ),
+            (
+                request("write", ws.join(".git")),
+                "refuse git_dir",
+                "refuse git_dir",
+            ),
+            (
+                request("write", ws.join("vendor/lib/.git/info/exclude")),
+                "refuse git_dir",
+                "refuse git_dir",
+            ),
+            (
+                request("read", home.join("other-repo/.git/config")),
+                "refuse outside",
+                "refuse outside",
             ),
             (
                 request("write", f.roots.scratch.join("out.csv")),
