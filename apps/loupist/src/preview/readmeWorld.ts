@@ -1,7 +1,7 @@
 import type { KnowledgeMap, KnowledgeMapCount, KnowledgeMapEdge, KnowledgeMapEdgeKind, KnowledgeMapNode, KnowledgeMapNodeKind } from "../contracts/knowledge";
 
 const START = Date.UTC(2026, 6, 1);
-const DAY = 86_400_000;
+const END = Date.UTC(2026, 9, 27);
 
 const foundries = ["TSMC", "Samsung Electronics", "Intel", "GlobalFoundries", "UMC", "SMIC", "Tower Semiconductor", "Vanguard International Semiconductor", "Powerchip", "Hua Hong", "Rapidus", "Nexchip", "X-FAB", "SkyWater", "Win Semiconductors", "DB HiTek"];
 const equipment = ["ASML", "Applied Materials", "Lam Research", "Tokyo Electron", "KLA", "SCREEN Holdings", "ASM International", "Onto Innovation", "Axcelis", "Veeco", "Teradyne", "Advantest", "Disco", "Nikon", "Canon", "Hitachi High-Tech", "FormFactor", "ASMPT", "BE Semiconductor", "Kulicke and Soffa"];
@@ -88,7 +88,7 @@ export function readmeWorldMap(): KnowledgeMap {
     degree: 0,
     watched: watched.has(label),
     held: held.has(label),
-    firstSeenAtMs: START + (index % 45) * DAY,
+    firstSeenAtMs: START + Math.round(index / Math.max(1, labels.length - 1) * (END - START)),
   }));
   const byName = new Map(labels.map(label => [label, slug(label)]));
   const endpoint = (name: string) => {
@@ -105,7 +105,8 @@ export function readmeWorldMap(): KnowledgeMap {
     const id = `${relation}:${source}:${target}`;
     if (seen.has(id)) return;
     seen.add(id);
-    edges.push({ id: `readme-claim-${edges.length}`, kind: "claim", source, target, relation, status, firstSeenAtMs: START + (edges.length % 45) * DAY });
+    const seenAt = (id: string) => nodes.find(node => node.id === id)?.firstSeenAtMs ?? START;
+    edges.push({ id: `readme-claim-${edges.length}`, kind: "claim", source, target, relation, status, firstSeenAtMs: Math.max(seenAt(source), seenAt(target)) });
   };
   for (const ring of rings) for (let index = 0; index < ring.names.length; index += 1) link(ring.names[index]!, ring.names[(index + 1) % ring.names.length]!, ring.relation);
   for (const fan of fans) for (const from of fan.from) for (const to of fan.to) link(from, to, fan.relation);
@@ -127,6 +128,6 @@ export function readmeWorldMap(): KnowledgeMap {
     unmatchedHoldings: [],
     unmatchedWatchlist: [],
     worldRevisionId: "readme-world",
-    generatedAtMs: START + 90 * DAY,
+    generatedAtMs: END,
   };
 }

@@ -24,6 +24,12 @@ You ask what is tight in the AI accelerator chain. The answer cites the note it 
 
 World is the map of that chain. This sample draws 150 names and 393 relationships at once. NVIDIA, TSMC, SK hynix, Samsung Electronics, and ASML sit in it, with high-bandwidth memory and advanced packaging. The names are public companies used as sample context. One link is marked where sources disagree.
 
+## Watch the World grow
+
+<img src="apps/loupist/assets/readme/replay.gif" alt="Replay of the AI chip World filling from 8 names to 150, played at 4×" width="800" />
+
+Replay starts at the first company and plays forward to the latest. In this sample the chain grows from 8 names to 150. The clip is at 4×.
+
 ## Revise the Lens
 
 <img src="apps/loupist/assets/readme/lens.gif" alt="Lens Then vs now for a method that separates AI-chip demand from a packaging bottleneck" width="800" />

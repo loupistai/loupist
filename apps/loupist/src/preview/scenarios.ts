@@ -1819,7 +1819,7 @@ export const scenarios: readonly PreviewScenario[] = [
       }
     },
   })),
-  ...["map-overview", "map-1000", "map-readme", "map-empty", "map-selected", "map-filtered", "map-lens-overlay", "map-lens-on-world", "map-library-sources", "map-replay-paused", "map-export-menu"].map((id): PreviewScenario => ({
+  ...["map-overview", "map-1000", "map-readme", "map-readme-replay", "map-empty", "map-selected", "map-filtered", "map-lens-overlay", "map-lens-on-world", "map-library-sources", "map-replay-paused", "map-export-menu"].map((id): PreviewScenario => ({
     ...base(id, "Research map", () => {
       if (id === "map-export-menu") return select(".map-export-menu, .map-more-menu");
       const map = select(".map-view");
@@ -1866,6 +1866,15 @@ export const scenarios: readonly PreviewScenario[] = [
         for (let frame = 0; frame < 3; frame++) await new Promise(requestAnimationFrame);
         if (id !== "map-replay-paused" && id !== "map-selected") await clickMapAction("[data-map-fit]", map);
       }
+      if (id === "map-readme-replay") {
+        await clickMapAction("[data-map-replay]", map);
+        const pause = await until(() => {
+          const button = select("[data-map-play]");
+          return button?.getAttribute("aria-label") === "Pause" ? button : null;
+        }, "Replay did not start");
+        pause.click();
+        await until(() => select("[data-map-play]")?.getAttribute("aria-label") === "Play", "Replay did not pause");
+      }
       if (id === "map-export-menu") {
         const trigger = map.querySelector("[data-map-export]");
         if (visible(trigger)) await click("[data-map-export]", map);
@@ -1876,9 +1885,9 @@ export const scenarios: readonly PreviewScenario[] = [
     setup: async (bridge) => {
       await prepareFixture(bridge);
       if (id === "map-1000") rememberScope("loupist-quality", "all");
-      if (id === "map-readme") rememberScope("loupist-quality", "all");
-      if (id === "map-readme") { dismissMapHint("loupist-quality"); applyReadmeBriefing(bridge); }
-      if (id === "map-readme") {
+      if (id === "map-readme" || id === "map-readme-replay") rememberScope("loupist-quality", "all");
+      if (id === "map-readme" || id === "map-readme-replay") { dismissMapHint("loupist-quality"); applyReadmeBriefing(bridge); }
+      if (id === "map-readme" || id === "map-readme-replay") {
         const readCatalog = bridge.knowledgeCatalog.bind(bridge);
         bridge.knowledgeCatalog = async request => {
           const catalog = await readCatalog(request);
@@ -1892,7 +1901,7 @@ export const scenarios: readonly PreviewScenario[] = [
       };
       const original = bridge.knowledgeMap.bind(bridge);
       bridge.knowledgeMap = async (request) => {
-        if (id === "map-readme") return readmeWorldMap();
+        if (id === "map-readme" || id === "map-readme-replay") return readmeWorldMap();
         const map = await original(request);
         if (id === "map-replay-paused") {
           const start = Date.now() - 28 * 86_400_000;
