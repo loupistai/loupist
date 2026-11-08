@@ -105,18 +105,24 @@ impl InstructionSnapshot {
         // Deepest first, so a folder is empty by the time it is removed.
         appeared.sort_by_key(|path| std::cmp::Reverse(path.components().count()));
         for path in appeared {
-            let _ = remove(&self.workspace.join(path), &current[path]);
+            if no_link_on_the_way(&self.workspace, path) {
+                let _ = remove(&self.workspace.join(path), &current[path]);
+            }
             changed.push(path.clone());
         }
         for (path, entry) in &self.entries {
             if current.get(path) == Some(entry) {
                 continue;
             }
-            let absolute = self.workspace.join(path);
-            if let Some(present) = current.get(path) {
-                let _ = remove(&absolute, present);
+            // Parents come first in this order, so a folder swapped for a link
+            // is a real folder again before anything below it is put back.
+            if no_link_on_the_way(&self.workspace, path) {
+                let absolute = self.workspace.join(path);
+                if let Some(present) = current.get(path) {
+                    let _ = remove(&absolute, present);
+                }
+                let _ = put_back(&absolute, entry);
             }
-            let _ = put_back(&absolute, entry);
             changed.push(path.clone());
         }
         changed
@@ -129,12 +135,17 @@ fn observe(workspace: &Path, guards: &[Guard]) -> Result<BTreeMap<PathBuf, Entry
     for guard in guards {
         match guard {
             Guard::Path(relative) | Guard::Folder(relative) => {
+                if !no_link_on_the_way(workspace, relative) {
+                    continue;
+                }
                 if let Some(entry) = entry_at(&workspace.join(relative), &mut bytes)? {
                     insert(&mut entries, relative.clone(), entry)?;
                 }
             }
             Guard::Tree(relative) => {
-                walk(workspace, relative, &mut entries, &mut bytes)?;
+                if no_link_on_the_way(workspace, relative) {
+                    walk(workspace, relative, &mut entries, &mut bytes)?;
+                }
             }
             Guard::RootInstructions => {
                 let listing = match std::fs::read_dir(workspace) {
@@ -194,6 +205,26 @@ fn walk(
         walk(workspace, &relative.join(child.file_name()), entries, bytes)?;
     }
     Ok(())
+}
+
+/// Whether every folder between the workspace and `relative` is a real folder
+/// or not there yet. The guard never reads or changes anything through a link:
+/// a command can swap `.agents` for a link to a folder outside the workspace,
+/// and the restore runs on the host, outside the sandbox.
+fn no_link_on_the_way(workspace: &Path, relative: &Path) -> bool {
+    let Some(parent) = relative.parent() else {
+        return true;
+    };
+    let mut current = workspace.to_path_buf();
+    for component in parent.components() {
+        current.push(component);
+        match std::fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_dir() => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return true,
+            _ => return false,
+        }
+    }
+    true
 }
 
 /// The entry at `path` without following a link, or None when there is none.
@@ -406,6 +437,35 @@ mod tests {
     /// A workspace without `.git` keeps none: a `.git` folder or gitdir file
     /// the command plants is removed, and a replaced Skill symlink is put back.
     #[cfg(unix)]
+    /// A guarded folder swapped for a link to a folder outside the workspace
+    /// is undone without the restore reaching through the link: the outside
+    /// folder's own Skills stay where they are.
+    #[cfg(unix)]
+    #[test]
+    fn a_skill_folder_swapped_for_an_outside_link_is_undone_without_touching_its_target() {
+        let (temporary, root) = workspace();
+        let outside = temporary.path().join("outside");
+        std::fs::create_dir_all(outside.join("skills")).unwrap();
+        std::fs::write(outside.join("skills/precious.md"), "the user's own skill\n").unwrap();
+        let snapshot = InstructionSnapshot::take(&root).unwrap();
+        for folder in [".agents", ".pi"] {
+            let _ = std::fs::remove_dir_all(root.join(folder));
+            std::os::unix::fs::symlink(&outside, root.join(folder)).unwrap();
+        }
+        snapshot.restore();
+        assert_eq!(
+            std::fs::read_to_string(outside.join("skills/precious.md")).unwrap(),
+            "the user's own skill\n"
+        );
+        // `.agents` was a folder and is one again; `.pi` was absent and is again.
+        assert!(std::fs::symlink_metadata(root.join(".agents"))
+            .unwrap()
+            .file_type()
+            .is_dir());
+        assert_eq!(read(&root, ".agents/skills/notes.md"), "notes skill\n");
+        assert!(std::fs::symlink_metadata(root.join(".pi")).is_err());
+    }
+
     #[test]
     fn a_planted_git_directory_and_a_swapped_link_are_undone() {
         let (_temporary, root) = workspace();

@@ -133,7 +133,10 @@ When the reply ends, whether complete, stopped or failed, and after Pi and the
 broker have stopped, Rust puts the recorded entries back exactly: changed files
 are rewritten, deleted ones recreated, entries the commands created are removed
 with the folders they left empty, and a `.git` planted in a workspace that had
-none goes away. The paths that changed go to the log and into the reply's tool
+none goes away. The restore runs on the host, so it never reads or changes
+anything through a link: a guarded folder such as `.agents` that a command
+swapped for a link is put back as a folder, and the link's target is left
+alone. The paths that changed go to the log and into the reply's tool
 trace as an `instruction_guard` entry (component `instruction-guard`,
 `args.restored`). A command's other work in the folder stays. A clean reply's
 own instruction edits are the model's and are never undone; the global
