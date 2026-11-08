@@ -158,13 +158,23 @@ fn queue(
 }
 
 /// Lens-log rows an inference attempt already showed: every row through
-/// `through`, and the rows in `shown` above it.
+/// `through` except the `held` ones, and the rows in `shown` above it. A held
+/// row is research about a subject the World had not confirmed when the
+/// review ran; it stays readable below the watermark until the World confirms
+/// the company or the row stops being current.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct Consumed {
     #[serde(skip)]
     through: i64,
     #[serde(default)]
     shown: BTreeSet<i64>,
+    #[serde(default)]
+    held: BTreeSet<i64>,
+}
+impl Consumed {
+    fn rows_json(rows: &BTreeSet<i64>) -> KnowledgeResult<String> {
+        Ok(serde_json::to_string(rows)?)
+    }
 }
 /// What the reviews that reached inference consumed, and the head any review
 /// last read. Rows with a `world_job_id` held growth-event rowids under the
@@ -179,9 +189,10 @@ fn watermarks(
         params![loupist, except],
         |r| r.get(0),
     )?;
-    // A started review stores every shown row above its watermark, carried
-    // forward, so the latest one holds the whole set. A review stored before
-    // shown rows were kept consumed its whole window and parses with none.
+    // A started review stores every shown row above its watermark and every
+    // held row below it, carried forward, so the latest one holds the whole
+    // set. A review stored before they were kept consumed its whole window and
+    // parses with none.
     let latest: Option<(i64, Option<String>)> = tx
         .query_row(
             "SELECT through_event,input_json FROM knowledge_learning_reviews
@@ -200,6 +211,7 @@ fn watermarks(
     };
     consumed.through = through;
     consumed.shown.retain(|&row| row > through);
+    consumed.held.retain(|&row| row <= through);
     Ok((consumed, seen))
 }
 
@@ -366,9 +378,9 @@ impl About {
 /// What a window of the Lens log holds for a review.
 struct Evidence {
     observations: Vec<Observation>,
-    /// The oldest row a review may not consume: research about a subject the
-    /// World has not confirmed yet, which becomes evidence once it does.
-    held: Option<i64>,
+    /// Rows a review may not consume: research about a subject the World has
+    /// not confirmed yet, which becomes evidence once it does.
+    held: BTreeSet<i64>,
 }
 /// Each Chat's cited Sources across all the evidence.
 fn cited_by(all: &[Observation]) -> BTreeMap<&str, BTreeSet<&str>> {
@@ -421,11 +433,11 @@ fn core(all: &[Observation]) -> Option<(usize, usize)> {
         .map(|(i, j)| (firsts[i], firsts[j]))
         .find(|&(i, j)| two_cases(&all[i], &all[j], &by))
 }
-/// Turn puts above `consumed`, through `through`, newest first, that are still
-/// the current section of an active subject or idea page, keeping only spans
-/// whose Source preserves an original. An undone, forgotten, retired or
-/// replaced put no longer counts, and method pages never do: a turn's own
-/// method edits are not research evidence.
+/// Turn puts above `consumed` or held by it, through `through`, newest first,
+/// that are still the current section of an active subject or idea page,
+/// keeping only spans whose Source preserves an original. An undone,
+/// forgotten, retired or replaced put no longer counts, and method pages never
+/// do: a turn's own method edits are not research evidence.
 fn evidence(
     tx: &Transaction<'_>,
     loupist: &str,
@@ -454,36 +466,48 @@ fn evidence(
     let mut subjects = tx.prepare(
         "SELECT node_id, name_fold FROM knowledge_lens_anchors WHERE record_id=?1 AND role='subject'",
     )?;
+    // Shown rows are left out before their op_json is read.
     let mut q = tx.prepare(
         "SELECT l.op_id,l.op_json,l.chat_id,l.message_id,l.record_id,l.after_digest,m.title,m.kind,l.rowid
          FROM knowledge_lens_log l JOIN knowledge_lens_metadata m ON m.record_id=l.record_id
-         WHERE l.loupist_id=?1 AND l.rowid>?2 AND l.rowid<=?3 AND l.origin='turn'
+         WHERE l.loupist_id=?1 AND l.rowid<=?3 AND l.origin='turn'
+           AND (l.rowid>?2 OR l.rowid IN (SELECT value FROM json_each(?4)))
+           AND l.rowid NOT IN (SELECT value FROM json_each(?5))
            AND l.outcome IN ('added','replaced') AND l.chat_id IS NOT NULL AND l.message_id IS NOT NULL
            AND m.kind IN ('subject','idea') AND m.archived_at_ms IS NULL
          ORDER BY l.rowid DESC",
     )?;
     let rows = q
-        .query_map(params![loupist, consumed.through, through], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, String>(3)?,
-                r.get::<_, String>(4)?,
-                r.get::<_, Option<String>>(5)?,
-                r.get::<_, String>(6)?,
-                r.get::<_, String>(7)?,
-                r.get::<_, i64>(8)?,
-            ))
-        })?
+        .query_map(
+            params![
+                loupist,
+                consumed.through,
+                through,
+                Consumed::rows_json(&consumed.held)?,
+                Consumed::rows_json(&consumed.shown)?
+            ],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, Option<String>>(5)?,
+                    r.get::<_, String>(6)?,
+                    r.get::<_, String>(7)?,
+                    r.get::<_, i64>(8)?,
+                ))
+            },
+        )?
         .collect::<Result<Vec<_>, _>>()?;
     let (mut turns, mut chats) = (BTreeMap::new(), BTreeMap::new());
     let mut bodies: BTreeMap<String, Option<LensBody>> = BTreeMap::new();
     let mut cases: BTreeMap<String, About> = BTreeMap::new();
     let mut out = Vec::new();
-    let mut held = None;
+    let mut held = BTreeSet::new();
     for (id, op, chat_id, message_id, page_id, after_digest, page, kind, row) in rows {
-        if hidden(&page_id) || consumed.shown.contains(&row) {
+        if hidden(&page_id) {
             continue;
         }
         let LensOp::Put {
@@ -557,12 +581,11 @@ fn evidence(
         }
         // A page with no subject, or one the World has not confirmed, could be
         // about any company, including the one the other case is about, so it
-        // is not evidence. Rows run newest first, so the last pending row is
-        // the oldest.
+        // is not evidence.
         let about = match &cases[&page_id] {
             About::Unknown => continue,
             About::Pending => {
-                held = Some(row);
+                held.insert(row);
                 continue;
             }
             About::Confirmed(about) => about.clone(),
@@ -658,7 +681,8 @@ impl Input {
     }
 }
 /// The input for evidence after `consumed` through `end`, and what showing it
-/// consumes: rows through the oldest one left out, plus every shown row above.
+/// consumes: rows through the oldest one left out, plus every shown row above,
+/// less the rows still held for a subject the World has not confirmed.
 fn build_input(
     tx: &Transaction<'_>,
     loupist: &str,
@@ -767,9 +791,8 @@ fn build_input(
         }
     }
     // The rest fills oldest first, so what one review leaves out is newer
-    // evidence the next review reads. Research about a subject the World has
-    // not confirmed yet is left out the same way.
-    let mut through = held.map_or(end, |row| row - 1);
+    // evidence the next review reads.
+    let mut through = end;
     for i in (0..all.len()).rev() {
         if picked.contains(&i) {
             continue;
@@ -789,7 +812,15 @@ fn build_input(
         .chain(picked.iter().map(|&i| all[i].row))
         .filter(|&row| row > through)
         .collect();
-    Ok((input, Consumed { through, shown }))
+    let held = held.into_iter().filter(|&row| row <= through).collect();
+    Ok((
+        input,
+        Consumed {
+            through,
+            shown,
+            held,
+        },
+    ))
 }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -922,7 +953,7 @@ pub(super) fn claim(
         Err(e) => return Err(e),
     };
     // Reaching inference consumes only what the input shows.
-    let stored = json!({"input": &input, "shown": &after.shown, "confirmed_subjects": confirmed_subjects(tx, loupist)?});
+    let stored = json!({"input": &input, "shown": &after.shown, "held": &after.held, "confirmed_subjects": confirmed_subjects(tx, loupist)?});
     tx.execute("UPDATE knowledge_learning_reviews SET status='running',started_at_ms=?2,through_event=?3,input_json=?4,settings_json=?5 WHERE review_id=?1 AND status='queued'",params![id,now,after.through,stored.to_string(),serde_json::to_string(&s)?])?;
     Ok(Some(Attempt {
         review_id: id,

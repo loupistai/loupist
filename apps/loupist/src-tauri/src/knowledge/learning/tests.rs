@@ -1679,6 +1679,65 @@ fn unconfirmed_research_outlives_a_review_that_reached_inference_without_it() {
     assert_eq!(pages(&second), ["Halvorsen ramp", "Kestrel ramp"]);
 }
 
+/// The watermark and the row sets the latest started review stored.
+fn latest_consumed(store: &KnowledgeStore) -> (i64, BTreeSet<i64>, BTreeSet<i64>) {
+    store
+        .read(|w| {
+            let (through, stored): (i64, String) = w.tx.query_row(
+                "SELECT through_event,input_json FROM knowledge_learning_reviews
+                 WHERE started_at_ms IS NOT NULL ORDER BY started_at_ms DESC LIMIT 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?;
+            let stored: Value = serde_json::from_str(&stored)?;
+            let rows = |key: &str| serde_json::from_value(stored[key].clone()).unwrap();
+            Ok((through, rows("shown"), rows("held")))
+        })
+        .unwrap()
+}
+
+#[test]
+fn a_subject_the_world_never_confirms_holds_its_rows_without_pinning_the_watermark() {
+    let (_dir, store) = setup();
+    let (k, h) = (source(&store, "Filing K"), source(&store, "Filing H"));
+    let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+    let kestrel = named("Kestrel ramp", "Kestrel Foundry");
+    assert!(put_in(&store, "chat-k", "mk", kestrel, text, &[k], AT + 2).is_none());
+    let halvorsen = named("Halvorsen ramp", "Halvorsen Cellworks");
+    assert!(put_in(&store, "chat-h", "mh", halvorsen, text, &[h], AT + 3).is_none());
+    let pending: BTreeSet<i64> = (1..=2).collect();
+    // Five reviews of other companies each reach inference. None re-reads a
+    // shown row, and each stores only the two held rows above its watermark.
+    let step = SIX_HOURS + 10;
+    for i in 0..5 {
+        let at = AT + 10 + i * step;
+        two_chats(&store, at).expect("queued");
+        let attempt = begin(&store, at + 2);
+        assert_eq!(pages(&attempt), ["Manufacturer 0", "Manufacturer 1"], "{i}");
+        defer(&store, &attempt, at + 3);
+        let (through, shown, held) = latest_consumed(&store);
+        assert_eq!(through, 2 + 2 * (i + 1), "{i}");
+        assert!(shown.is_empty(), "{i}: {shown:?}");
+        assert_eq!(held, pending, "{i}");
+    }
+    assert_eq!(review_states(&store), vec!["deferred"; 5]);
+    // The publication that confirms both companies still finds their rows.
+    reseal_with(
+        &store,
+        &[
+            ("entity-k", "Kestrel Foundry"),
+            ("entity-h", "Halvorsen Cellworks"),
+        ],
+        AT + 10 + 5 * step,
+    );
+    assert_eq!(review_states(&store).len(), 6);
+    assert_eq!(review_states(&store)[5], "queued");
+    let next = begin(&store, AT + 10 + 6 * step);
+    assert_eq!(pages(&next), ["Halvorsen ramp", "Kestrel ramp"]);
+    let (_, shown, held) = latest_consumed(&store);
+    assert!(shown.is_empty() && held.is_empty(), "{shown:?} {held:?}");
+}
+
 #[test]
 fn a_company_confirmed_while_a_review_runs_is_rechecked_when_it_settles() {
     let (_dir, store) = setup();
