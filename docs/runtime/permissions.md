@@ -79,9 +79,18 @@ Chat step says the same to the user, as `protected_path` and
 containing `.loupist` data is still allowed, so a workspace `grep` never refuses;
 `rg` prints no binary database pages.
 
-An allowed `write` or `edit` returns the canonical target as `resolved`; the
-extension re-resolves the path right before writing and refuses on mismatch, so a
-symlink swapped in after authorization cannot redirect the write.
+An allowed file call returns the canonical target as `resolved`. The extension
+re-resolves a `write` or `edit` path right before writing and refuses on
+mismatch, so a symlink swapped in after authorization cannot redirect the
+write. A `read` answer also carries the file's `identity` (`{dev, ino}` as
+strings, `null` when no file is there yet): the extension opens `resolved`,
+compares the descriptor's identity and reads through that descriptor, so a
+link swapped in after authorization reads nothing, and a path with no file at
+authorization never reads a file that appears later. `ls`, `find` and `grep`
+run on `resolved`, the canonical root Rust decided about. In the extension,
+native file tools and Bash never run at the same time: Bash holds a
+per-process lock alone, file tools share it, and waiters go in order, so Pi's
+parallel tool calls cannot race a command against a read.
 
 ## Bash sandbox
 
@@ -188,7 +197,9 @@ Mac, with sandbox-runtime's macOS profile as the reference.
   refuse to read, such as the activity log; `rg` prints no binary database
   pages.
 - Pi's `read` falls back to curly-quote, NFD and U+202F spellings of a missing
-  path, so the file it opens can differ from the one Rust classified. Rust
-  classifies the path the extension sends, not the fallback.
+  path. Rust classifies the path the extension sends, and the extension opens
+  the file Rust decided about by identity, so a fallback spelling never opens
+  another file; a read of a missing path fails even when a fallback spelling
+  exists.
 - The next reply starts clean: the user's new message is the checkpoint, and
   nothing this reply read carries its exposure forward.

@@ -1,7 +1,7 @@
+use super::super::workspace::INSTRUCTION_GUARD_COMPONENT;
 use super::*;
 use crate::agent_harness::native_policy::NativeRoots;
 use crate::chat::approvals::{ApprovalDecision, ApprovalState, ChatApproval};
-use super::super::workspace::INSTRUCTION_GUARD_COMPONENT;
 use crate::custom_connections::taint::{
     delimited_body, retained_trust, COMMAND_UNCONFINED_REFUSAL, INSTRUCTIONS_UNGUARDED_REFUSAL,
     INSTRUCTION_WRITE_REFUSAL, OUTSIDE_WORKSPACE_REFUSAL, WEB_FETCH_PRIVATE_REFUSAL,
@@ -1151,7 +1151,10 @@ async fn instruction_files_a_tainted_command_changes_are_restored_when_the_reply
     let workspace = temporary.path().join("loupist").canonicalize().unwrap();
     for (path, content) in [
         ("AGENTS.md", "root rules\n"),
-        (".loupist/skills/screen/SKILL.md", "---\nname: screen\n---\n"),
+        (
+            ".loupist/skills/screen/SKILL.md",
+            "---\nname: screen\n---\n",
+        ),
         (".git/config", "[core]\n"),
         (".git/hooks/pre-commit", "#!/bin/sh\necho ok\n"),
     ] {
@@ -1170,7 +1173,11 @@ async fn instruction_files_a_tainted_command_changes_are_restored_when_the_reply
     // A clean command's own edit to the instructions is the model's and stays.
     let clean = broker_request(&socket, broker.token(), "native.authorize", bash("ls")).await;
     assert_eq!(clean["ok"], true, "{clean}");
-    fs::write(workspace.join("AGENTS.md"), "root rules\nand a clean edit\n").unwrap();
+    fs::write(
+        workspace.join("AGENTS.md"),
+        "root rules\nand a clean edit\n",
+    )
+    .unwrap();
 
     let fetched = broker_request(
         &socket,
@@ -1197,8 +1204,16 @@ async fn instruction_files_a_tainted_command_changes_are_restored_when_the_reply
     fs::write(workspace.join(".agents/skills/evil/SKILL.md"), "planted\n").unwrap();
     fs::create_dir_all(workspace.join(".pi/skills")).unwrap();
     fs::write(workspace.join(".pi/skills/evil.md"), "planted\n").unwrap();
-    fs::write(workspace.join(".loupist/skills/screen/SKILL.md"), "planted\n").unwrap();
-    fs::write(workspace.join(".git/config"), "[core]\n\tfsmonitor = evil\n").unwrap();
+    fs::write(
+        workspace.join(".loupist/skills/screen/SKILL.md"),
+        "planted\n",
+    )
+    .unwrap();
+    fs::write(
+        workspace.join(".git/config"),
+        "[core]\n\tfsmonitor = evil\n",
+    )
+    .unwrap();
     fs::write(workspace.join(".git/hooks/pre-commit"), "evil\n").unwrap();
     fs::write(workspace.join(".git/hooks/post-checkout"), "evil\n").unwrap();
     fs::create_dir_all(workspace.join("notes")).unwrap();
@@ -1305,4 +1320,63 @@ async fn a_tainted_command_is_refused_when_the_instruction_files_cannot_be_guard
     broker.shutdown().await.unwrap();
     capture.restore_guarded_instructions();
     assert!(!restore_recorded(&capture));
+}
+
+/// A read's answer carries the canonical file and its identity, so the
+/// extension can open that file and refuse another; a path with no file yet
+/// says so, and the answer for a write or a search carries no identity.
+#[cfg(unix)]
+#[tokio::test]
+async fn an_allowed_read_names_the_file_and_its_identity() {
+    use std::os::unix::fs::MetadataExt;
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let workspace = temporary.path().join("loupist").canonicalize().unwrap();
+    fs::create_dir_all(workspace.join("notes")).unwrap();
+    fs::write(workspace.join("notes/a.md"), "note\n").unwrap();
+    std::os::unix::fs::symlink(workspace.join("notes/a.md"), workspace.join("x")).unwrap();
+    let (broker, socket) =
+        start_turn(&state, &temporary, "identity", bound_capture(&temporary)).await;
+    let metadata = fs::metadata(workspace.join("notes/a.md")).unwrap();
+    let read = broker_request(
+        &socket,
+        broker.token(),
+        "native.authorize",
+        json!({"name":"read","path":workspace.join("x")}),
+    )
+    .await;
+    assert_eq!(read["ok"], true, "{read}");
+    assert_eq!(
+        read["result"]["resolved"],
+        json!(workspace.join("notes/a.md"))
+    );
+    assert_eq!(
+        read["result"]["identity"],
+        json!({"dev": metadata.dev().to_string(), "ino": metadata.ino().to_string()})
+    );
+    let missing = broker_request(
+        &socket,
+        broker.token(),
+        "native.authorize",
+        json!({"name":"read","path":workspace.join("notes/none.md")}),
+    )
+    .await;
+    assert_eq!(missing["ok"], true, "{missing}");
+    assert_eq!(missing["result"]["identity"], Value::Null);
+    for (params, resolved) in [
+        (
+            json!({"name":"write","path":workspace.join("notes/a.md")}),
+            workspace.join("notes/a.md"),
+        ),
+        (
+            json!({"name":"grep","path":workspace.join("notes/../notes")}),
+            workspace.join("notes"),
+        ),
+    ] {
+        let answer = broker_request(&socket, broker.token(), "native.authorize", params).await;
+        assert_eq!(answer["ok"], true, "{answer}");
+        assert_eq!(answer["result"]["resolved"], json!(resolved));
+        assert!(answer["result"].get("identity").is_none(), "{answer}");
+    }
+    broker.shutdown().await.unwrap();
 }

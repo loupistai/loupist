@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { setTimeout } from "node:timers/promises";
 import test from "node:test";
 
-import { allowedWorkspaceEnvironment, canonicalTargetPath, nativeTargetPath, registerWorkspaceTools, sandboxedBashOperations } from "./workspace-tools.mjs";
+import { allowedWorkspaceEnvironment, canonicalTargetPath, nativeTargetPath, registerWorkspaceTools, sandboxedBashOperations, ToolLock } from "./workspace-tools.mjs";
 
 function workspaceFixture(t) {
   const temporary = realpathSync(mkdtempSync(join(tmpdir(), "loupist-workspace-tools-")));
@@ -468,4 +468,86 @@ test("a dangling link resolves to where it points, so a write through it is pinn
   pinned = startup;
   await write("report.md");
   assert.equal(readFileSync(startup, "utf8"), "export PATH=evil\n");
+});
+
+test("a read opens the file Rust authorized by identity, so a link swapped in after authorization reads nothing", { skip: process.platform === "win32" }, async (t) => {
+  const { temporary, workspace, privateRuntime } = workspaceFixture(t);
+  const secret = join(temporary, "id_ed25519");
+  writeFileSync(secret, "SSHSECRET\n");
+  writeFileSync(join(workspace, "note.md"), "NOTE\n");
+  symlinkSync(join(workspace, "note.md"), join(workspace, "x"));
+  const identityOf = (path) => {
+    const stat = statSync(path, { bigint: true });
+    return { dev: stat.dev.toString(), ino: stat.ino.toString() };
+  };
+  let swap;
+  const tools = toolsAuthorizedBy(workspace, async (name, request) => {
+    const resolved = canonicalTargetPath(request.path);
+    const identity = existsSync(resolved) ? identityOf(resolved) : null;
+    // Between Rust's answer and the read, a command points a link at the key.
+    if (swap) {
+      rmSync(join(workspace, swap));
+      symlinkSync(secret, join(workspace, swap));
+    }
+    return { allowed: true, resolved, identity };
+  });
+  const read = (path) => tools.get("read").execute("pinned", { path }, undefined, undefined, { cwd: privateRuntime });
+  assert.equal(resultText(await read("x")), "NOTE\n");
+  // The link the model named is swapped: the read opens the canonical file Rust decided about.
+  swap = "x";
+  assert.equal(resultText(await read("x")), "NOTE\n");
+  // The canonical file itself is replaced by a link: the descriptor is another file, so nothing is read.
+  swap = "note.md";
+  await assert.rejects(read("note.md"), /target changed after authorization/);
+  swap = undefined;
+  // No file was there when Rust decided: nothing that appears later is read,
+  // and Pi's spelling fallbacks never open another file.
+  const late = join(workspace, "later.md");
+  const slow = toolsAuthorizedBy(workspace, async (name, request) => {
+    writeFileSync(late, "appeared\n");
+    return { allowed: true, resolved: canonicalTargetPath(request.path), identity: null };
+  });
+  await assert.rejects(slow.get("read").execute("late", { path: "later.md" }, undefined, undefined, { cwd: privateRuntime }), /ENOENT/);
+  // A host without file identity (no `identity` key) reads by path, as before.
+  const plain = toolsAuthorizedBy(workspace, async (name, request) => ({ allowed: true, resolved: canonicalTargetPath(request.path) }));
+  assert.equal(resultText(await plain.get("read").execute("plain", { path: "later.md" }, undefined, undefined, { cwd: privateRuntime })), "appeared\n");
+});
+
+test("ls, find and grep search the canonical root Rust decided about", async (t) => {
+  const { workspace, privateRuntime } = workspaceFixture(t);
+  mkdirSync(join(workspace, "real"));
+  writeFileSync(join(workspace, "real/a.txt"), "needle\n");
+  mkdirSync(join(workspace, "other"));
+  writeFileSync(join(workspace, "other/b.txt"), "needle\n");
+  // Rust resolved the request's root to `real`; the tool must list that, not the path it was given.
+  const tools = toolsAuthorizedBy(workspace, async () => ({ allowed: true, resolved: join(workspace, "real") }));
+  const listed = resultText(await tools.get("ls").execute("ls", { path: "other" }, undefined, undefined, { cwd: privateRuntime }));
+  assert.match(listed, /a\.txt/);
+  assert.doesNotMatch(listed, /b\.txt/);
+});
+
+test("Bash holds the tool lock alone while file tools share it, in order", async (t) => {
+  const { workspace, privateRuntime } = workspaceFixture(t);
+  writeFileSync(join(workspace, "note.md"), "NOTE\n");
+  const tools = toolsAuthorizedBy(workspace, async () => ({ allowed: true }));
+  const order = [];
+  const bash = tools.get("bash").execute("b", { command: `sleep 0.4; echo done`, timeout: 10 }, undefined, undefined, { cwd: privateRuntime })
+    .then(() => order.push("bash"));
+  await setTimeout(50);
+  const reads = [1, 2].map(() => tools.get("read").execute("r", { path: "note.md" }, undefined, undefined, { cwd: privateRuntime })
+    .then((result) => { order.push("read"); return resultText(result); }));
+  const second = setTimeout(50).then(() => tools.get("bash").execute("b2", { command: "echo two", timeout: 10 }, undefined, undefined, { cwd: privateRuntime }))
+    .then(() => order.push("bash2"));
+  assert.deepEqual(await Promise.all(reads), ["NOTE\n", "NOTE\n"]);
+  await Promise.all([bash, second]);
+  assert.deepEqual(order, ["bash", "read", "read", "bash2"], "no read runs while a command runs, and a later command waits for the reads");
+
+  const lock = new ToolLock();
+  const releaseShared = await lock.acquire(false);
+  let exclusiveHeld = false;
+  const exclusive = lock.acquire(true).then((release) => { exclusiveHeld = true; return release; });
+  await setTimeout(10);
+  assert.equal(exclusiveHeld, false, "an exclusive holder waits for the shared one");
+  releaseShared();
+  (await exclusive)();
 });

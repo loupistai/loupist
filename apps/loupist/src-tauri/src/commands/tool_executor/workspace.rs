@@ -154,10 +154,34 @@ impl ToolCapture {
     }
 }
 
+/// The `(dev, ino)` of the file a read was allowed on, as strings so that no
+/// JSON number loses precision: the extension opens the file, compares the
+/// descriptor's identity and refuses another file. Null when no file is at
+/// the path yet, so nothing that appears later is read. None on a host that
+/// reports no file identity, where the extension reads by path.
+#[cfg(unix)]
+fn read_identity(path: &std::path::Path) -> Option<Value> {
+    use std::os::unix::fs::MetadataExt;
+    Some(match std::fs::metadata(path) {
+        Ok(metadata) => json!({
+            "dev": metadata.dev().to_string(),
+            "ino": metadata.ino().to_string(),
+        }),
+        Err(_) => Value::Null,
+    })
+}
+
+#[cfg(not(unix))]
+fn read_identity(_path: &std::path::Path) -> Option<Value> {
+    None
+}
+
 impl AppToolExecutor {
     /// Decides one native call without waiting on anyone. The canonical
-    /// target comes back so the extension can pin a write to it; a command
-    /// comes back with the sandbox it must run in, when the host has one.
+    /// target comes back so the extension can pin a read, write or edit to
+    /// it, with the file's identity for a read; a search runs on it; a
+    /// command comes back with the sandbox it must run in, when the host
+    /// has one.
     pub(super) async fn native_authorize(&self, params: &Value) -> Result<Value, BrokerError> {
         let request = NativeRequest::parse(params).ok_or(BrokerError::Malformed)?;
         let mut result = json!({"allowed": true});
@@ -166,7 +190,14 @@ impl AppToolExecutor {
             .native
             .decide(&request, &self.capture.turn_taint)?
         {
-            NativeDecision::AllowFile { resolved } => result["resolved"] = json!(resolved),
+            NativeDecision::AllowFile { resolved } => {
+                if request.tool == NativeTool::Read {
+                    if let Some(identity) = read_identity(&resolved) {
+                        result["identity"] = identity;
+                    }
+                }
+                result["resolved"] = json!(resolved);
+            }
             NativeDecision::AllowCommand { sandbox: None } => {}
             NativeDecision::AllowCommand {
                 sandbox: Some(sandbox),

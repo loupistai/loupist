@@ -6,11 +6,12 @@ import {
   createLsToolDefinition,
   createReadToolDefinition,
   createWriteToolDefinition,
+  detectSupportedImageMimeTypeFromFile,
   getShellConfig,
 } from "@earendil-works/pi-coding-agent";
 import { spawn } from "node:child_process";
 import { constants, lstatSync, readlinkSync, realpathSync } from "node:fs";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, open, readFile, writeFile } from "node:fs/promises";
 import { constants as osConstants, homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -110,8 +111,70 @@ function authorizedFileOperations(name, expected) {
       access: (path) => access(path, constants.R_OK | constants.W_OK) };
 }
 
+/** Read operations pinned to the file Rust authorized: the canonical path is
+ * opened, the open descriptor's `(dev, ino)` must match what Rust saw, and the
+ * bytes come through that descriptor, so a link swapped in after
+ * authorization cannot redirect the read. `identity` is null when no file was
+ * at the path when Rust decided, so nothing that appears later is read. */
+function pinnedReadOperations(expected, identity) {
+  const missing = () => Object.assign(new Error(`ENOENT: no such file or directory, open '${expected}'`), { code: "ENOENT" });
+  return {
+    access: async () => { if (identity === null) throw missing(); },
+    detectImageMimeType: () => detectSupportedImageMimeTypeFromFile(expected),
+    readFile: async () => {
+      if (identity === null) throw missing();
+      const handle = await open(expected, "r");
+      try {
+        const stat = await handle.stat({ bigint: true });
+        if (stat.dev !== BigInt(identity.dev) || stat.ino !== BigInt(identity.ino)) {
+          throw new Error("Native file target changed after authorization");
+        }
+        return await handle.readFile();
+      } finally {
+        await handle.close();
+      }
+    },
+  };
+}
+
 const FILE_WRITERS = { write: createWriteToolDefinition, edit: createEditToolDefinition };
 const SEARCHERS = new Set(["ls", "find", "grep"]);
+
+/** Native file tools and Bash never run at the same time in this process:
+ * Bash holds the lock alone, file tools share it among themselves, and
+ * waiters go in order, so a command cannot swap a link between Rust's answer
+ * and the file operation it allowed. */
+export class ToolLock {
+  #active = 0;
+  #exclusive = false;
+  #waiting = [];
+
+  /** Resolves to the release function once the lock is held. */
+  acquire(exclusive) {
+    return new Promise((resolve) => {
+      this.#waiting.push({ exclusive, resolve });
+      this.#admit();
+    });
+  }
+
+  #admit() {
+    while (this.#waiting.length > 0) {
+      const next = this.#waiting[0];
+      if (this.#exclusive || (next.exclusive && this.#active > 0)) return;
+      this.#waiting.shift();
+      this.#active += 1;
+      this.#exclusive = next.exclusive;
+      let released = false;
+      next.resolve(() => {
+        if (released) return;
+        released = true;
+        this.#active -= 1;
+        this.#exclusive = false;
+        this.#admit();
+      });
+    }
+  }
+}
 
 /** How long after the shell exits to wait for descendants holding its pipes. */
 const PIPE_GRACE_MS = 500;
@@ -190,9 +253,11 @@ export function nativeRequest(workspaceRoot, name, input) {
 
 /** Native Pi tools operate on the selected workspace while Pi itself keeps a private runtime CWD.
  * `authorize(name, request, signal, id)` asks Rust before every execution with the
- * `nativeRequest` above; Rust owns the permission policy, exported-text trust and the
- * canonical target (`resolved`) a write or edit is pinned to. */
+ * `nativeRequest` above; Rust owns the permission policy, exported-text trust, the
+ * canonical target (`resolved`) a read, write or edit is pinned to and the
+ * `identity` a read must find. */
 export function registerWorkspaceTools(pi, workspaceRoot, authorize) {
+  const lock = new ToolLock();
   const bashOptions = {
     exposeSessionEnvironment: false,
     spawnHook: ({ command, env }) => ({
@@ -215,30 +280,42 @@ export function registerWorkspaceTools(pi, workspaceRoot, authorize) {
     pi.registerTool({
       ...definition,
       async execute(id, input, signal, onUpdate, ctx) {
-        const writer = FILE_WRITERS[definition.name];
-        const request = nativeRequest(workspaceRoot, definition.name, input);
-        const permission = authorize ? await authorize(definition.name, request, signal, id) : undefined;
-        const boundary = permission?.untrusted_text;
-        const deliver = (result) => boundary ? {
-          ...result,
-          content: result.content.map((part) => part.type === "text"
-            ? { ...part, text: `${boundary.prefix}${part.text}${boundary.suffix}` } : part),
-        } : result;
-        const expected = typeof permission?.resolved === "string"
-          ? permission.resolved : request.path === undefined ? undefined : canonicalTargetPath(request.path);
-        // Rust names the sandbox a command must run in; without one the
-        // command runs as before (a clean reply on a host with no sandbox).
-        const run = writer && expected !== undefined
-          ? writer(workspaceRoot, { operations: authorizedFileOperations(definition.name, expected) })
-          : definition.name === "bash" && permission?.sandbox !== undefined
-            ? createBashToolDefinition(workspaceRoot, { ...bashOptions, operations: sandboxedBashOperations(permission.sandbox) })
-            : definition;
-        const result = await run.execute(id, input, signal,
-          onUpdate ? (update) => onUpdate(deliver(update)) : undefined, {
-          ...ctx,
-          cwd: workspaceRoot,
-        });
-        return deliver(result);
+        const release = await lock.acquire(definition.name === "bash");
+        try {
+          const writer = FILE_WRITERS[definition.name];
+          const request = nativeRequest(workspaceRoot, definition.name, input);
+          const permission = authorize ? await authorize(definition.name, request, signal, id) : undefined;
+          const boundary = permission?.untrusted_text;
+          const deliver = (result) => boundary ? {
+            ...result,
+            content: result.content.map((part) => part.type === "text"
+              ? { ...part, text: `${boundary.prefix}${part.text}${boundary.suffix}` } : part),
+          } : result;
+          const expected = typeof permission?.resolved === "string"
+            ? permission.resolved : request.path === undefined ? undefined : canonicalTargetPath(request.path);
+          // Rust names the sandbox a command must run in; without one the
+          // command runs as before (a clean reply on a host with no sandbox).
+          // A search runs on the canonical root Rust decided about, and a
+          // read opens the file Rust decided about, by identity when the
+          // host reports one.
+          const run = writer && expected !== undefined
+            ? writer(workspaceRoot, { operations: authorizedFileOperations(definition.name, expected) })
+            : definition.name === "read" && expected !== undefined && permission?.identity !== undefined
+              ? createReadToolDefinition(workspaceRoot, { operations: pinnedReadOperations(expected, permission.identity) })
+              : definition.name === "bash" && permission?.sandbox !== undefined
+                ? createBashToolDefinition(workspaceRoot, { ...bashOptions, operations: sandboxedBashOperations(permission.sandbox) })
+                : definition;
+          const target = SEARCHERS.has(definition.name) && typeof permission?.resolved === "string"
+            ? { ...input, path: permission.resolved } : input;
+          const result = await run.execute(id, target, signal,
+            onUpdate ? (update) => onUpdate(deliver(update)) : undefined, {
+            ...ctx,
+            cwd: workspaceRoot,
+          });
+          return deliver(result);
+        } finally {
+          release();
+        }
       },
     });
   }
