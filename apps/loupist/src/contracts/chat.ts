@@ -109,14 +109,9 @@ export type ChatPlanItem = {
 /** The agent's checklist for multi-step work, projected by the host from `plan_update`. */
 export type ChatPlan = { items: ChatPlanItem[] };
 
-/**
- * A read-only connection tool the reply waits to use until the user decides (composer D3),
- * or, with `kind: web_site`, a new website after the reply read third-party text (`target`
- * names the site and path), which can be allowed only once.
- */
+/** A read-only connection tool the reply waits to use until the user decides (composer D3). */
 export type ChatApproval = {
   requestId: string;
-  kind?: "web_site";
   /** The progress step that waits, when known. */
   itemId?: string;
   connectionId: string;

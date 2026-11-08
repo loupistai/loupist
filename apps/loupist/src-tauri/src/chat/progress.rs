@@ -2063,7 +2063,6 @@ mod tests {
         projection.start_tool("call-c", "mcp_call", &json!({}), None, 11);
         let card = ChatApproval {
             request_id: "req-1".into(),
-            kind: None,
             item_id: None,
             connection_id: "custom-1".into(),
             connection_name: "Company research".into(),

@@ -934,13 +934,7 @@
     "expired": "더 이상 필요하지 않음 · {{tool}}",
     "error": "이 승인은 이미 끝났어요.",
     "needsSettings": "{{connection}}의 ‘{{tool}}’ 도구는 설정에서 승인이 필요해요.",
-    "review": "검토하기",
-    "webLabel": "{{site}} 열기 승인",
-    "webBody": "이 답변은 다른 사이트의 글을 읽었어요. 이제 새 사이트를 열려고 해요: {{site}}",
-    "webNote": "읽은 페이지가 이렇게 하라고 했을 수도 있어요. 예상한 사이트일 때만 허용하세요.",
-    "webAllowedOnce": "이번만 열었음 · {{site}}",
-    "webDeclined": "건너뜀 · {{site}} · 루피스트는 이 사이트 없이 계속했어요",
-    "webExpired": "더 이상 필요하지 않음 · {{site}}"
+    "review": "검토하기"
   },
   "questionCard": {
     "label": "질문: {{question}}",

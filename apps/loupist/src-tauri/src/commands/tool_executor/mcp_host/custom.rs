@@ -54,7 +54,6 @@ impl AppToolExecutor {
         use crate::chat::approvals::{self, ApprovalDecision, ApprovalState, ChatApproval};
         let approval = ChatApproval {
             request_id: uuid::Uuid::new_v4().to_string(),
-            kind: None,
             item_id: None,
             connection_id: request.server_id.clone(),
             connection_name: connection.name.clone(),

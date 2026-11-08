@@ -33,12 +33,8 @@ function useConnectionDetail(bridge: LoupistBridge, loupistId: string) {
   return { open, sheet, failed };
 }
 
-/** The card's heading, body and note for one kind; `target` is the site or the call's values. */
+/** The card's heading, body and note; `target` is the call's plain values. */
 function cardCopy(approval: ChatApproval, tool: string) {
-  if (approval.kind === "web_site") {
-    const site = approval.target ?? "";
-    return { label: t("approvalCard.webLabel", { site }), body: t("approvalCard.webBody", { site }), note: t("approvalCard.webNote") };
-  }
   return {
     label: t("approvalCard.label", { tool }),
     body: approval.target
@@ -68,10 +64,8 @@ function WaitingCard({ approval, onDecide }: { approval: ChatApproval; onDecide:
       setBusy(false);
     }
   };
-  // A blanket Allow exists only for a custom connection (stored in Settings).
-  const always = approval.kind === undefined ? t("approvalCard.always") : null;
   // The rail's "Needs your OK" row scrolls here and moves focus to the card, never to a button.
-  return <section className="approval-card" data-kind={approval.kind} data-request-id={approval.requestId} tabIndex={-1} aria-label={copy.label}>
+  return <section className="approval-card" data-request-id={approval.requestId} tabIndex={-1} aria-label={copy.label}>
     <header>
       <strong>{t("approvalCard.title")}</strong>
       <span className="approval-card-clock">{t("approvalCard.waiting", { time: clock(nowMs - approval.requestedAtMs) })}</span>
@@ -81,7 +75,7 @@ function WaitingCard({ approval, onDecide }: { approval: ChatApproval; onDecide:
     <div className="approval-card-actions">
       <Button type="button" disabled={busy} onClick={() => void decide("once")}>{t("approvalCard.allowOnce")}</Button>
       <Button type="button" variant="outline" disabled={busy} onClick={() => void decide("deny")}>{t("approvalCard.notNow")}</Button>
-      {always !== null ? <Button type="button" variant="ghost" className="approval-card-always" disabled={busy} onClick={() => void decide("always")}>{always}</Button> : null}
+      <Button type="button" variant="ghost" className="approval-card-always" disabled={busy} onClick={() => void decide("always")}>{t("approvalCard.always")}</Button>
     </div>
     {failed ? <p role="alert" className="approval-card-error">{t("approvalCard.error")}</p> : null}
   </section>;
@@ -93,8 +87,7 @@ function WaitingCard({ approval, onDecide }: { approval: ChatApproval; onDecide:
  * The answer is the only place with the buttons; the rail shows one "Needs your
  * OK" row that leads here. "Always" is stored by Rust per connection and tool and
  * is revocable in the connection's settings. Refusals from runs that could not
- * ask (scheduled runs) point to the same settings. A new website after
- * third-party text offers only Allow once and Not now.
+ * ask (scheduled runs) point to the same settings.
  */
 export function ApprovalCards({ approvals, refusals, bridge, loupistId }: {
   approvals: readonly ChatApproval[];
@@ -112,14 +105,6 @@ export function ApprovalCards({ approvals, refusals, bridge, loupistId }: {
     {approvals.map((approval) => {
       const tool = humanizeToolName(approval.toolName);
       if (approval.state === "waiting") return <WaitingCard key={approval.requestId} approval={approval} onDecide={decide(approval)} />;
-      if (approval.kind === "web_site") {
-        const site = approval.target ?? "";
-        return <p key={approval.requestId} className="approval-line" data-state={approval.state}>
-          {approval.state === "allowed_once" || approval.state === "always_allowed" ? t("approvalCard.webAllowedOnce", { site })
-            : approval.state === "declined" ? t("approvalCard.webDeclined", { site })
-              : t("approvalCard.webExpired", { site })}
-        </p>;
-      }
       return <p key={approval.requestId} className="approval-line" data-state={approval.state}>
         {approval.state === "allowed_once" ? t("approvalCard.allowedOnce", { tool })
           : approval.state === "always_allowed" ? <>{t("approvalCard.alwaysAllowed", { tool, connection: approval.connectionName })} · <Button type="button" variant="link" onClick={() => void detail.open(approval.connectionId)}>{t("approvalCard.changeInSettings")}</Button></>

@@ -973,13 +973,7 @@
     "expired": "No longer needed · {{tool}}",
     "error": "This approval is no longer waiting.",
     "needsSettings": "“{{tool}}” from {{connection}} needs your approval in Settings.",
-    "review": "Review",
-    "webLabel": "Approval to open {{site}}",
-    "webBody": "This reply read text from other sites. It now wants to open a new site: {{site}}.",
-    "webNote": "A page it read may have asked for this. Allow it only if you expect this site.",
-    "webAllowedOnce": "Opened once · {{site}}",
-    "webDeclined": "Skipped · {{site}} · the Loupist continued without it",
-    "webExpired": "No longer needed · {{site}}"
+    "review": "Review"
   },
   "questionCard": {
     "label": "Question: {{question}}",
