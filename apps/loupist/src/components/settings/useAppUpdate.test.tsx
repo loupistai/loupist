@@ -45,6 +45,26 @@ describe("update request lifecycle", () => {
     await act(async () => pending.resolve(idle));
     expect(result.current.phase).toBe("idle");
   });
+
+  it("clears a manual check error after a later status recovers", async () => {
+    vi.useFakeTimers();
+    try {
+      const bridge = new MockLoupistBridge({ delay_ms: 0 });
+      const failing = { ...idle, error: "Could not check for updates. Loupist will retry." };
+      const status = vi.spyOn(bridge, "updateStatus").mockResolvedValue(failing);
+      vi.spyOn(bridge, "updateCheck").mockRejectedValue(new Error("update check failed"));
+      const { result } = renderHook(() => useAppUpdate(bridge));
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      await act(() => result.current.checkForUpdates());
+      expect(result.current.error).toBe("update check failed");
+      status.mockResolvedValue({ ...idle, last_checked_at_ms: 20, error: null });
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+      expect(result.current.error).toBeNull();
+      expect(result.current.status?.last_checked_at_ms).toBe(20);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 
