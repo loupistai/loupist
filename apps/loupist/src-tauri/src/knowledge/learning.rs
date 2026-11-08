@@ -415,7 +415,8 @@ struct Evidence {
     /// [`keyed_evidence`] reads against the Sources their pages cite or holds.
     pending: Vec<PendingObservation>,
     /// Rows a review may not consume: research about a subject the World has
-    /// not confirmed yet, which becomes evidence once it does.
+    /// not confirmed, citing a Source it is not through with, which becomes
+    /// evidence once it is.
     held: BTreeSet<i64>,
 }
 /// An observation on a page with a subject the World has not confirmed.

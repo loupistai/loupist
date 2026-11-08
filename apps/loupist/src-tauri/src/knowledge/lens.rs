@@ -182,9 +182,9 @@ fn world_head(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<Option<
 
 /// Reads the current World through its identity index
 /// ([`super::identity::WorldIdentity`]): the company keys of a node's name and
-/// aliases, the component of nodes whose keys meet, and the company the
-/// Sources a page cites confirm. Method learning reads it to see when two
-/// nodes might spell one company and who a pending page is about. None when
+/// aliases, the component of nodes whose keys meet, and the companies the
+/// World claims on the spans a page cites. Method learning reads it to see
+/// when two nodes might spell one company and who a pending page is about. None when
 /// no World was published. The World is parsed once per revision, not on
 /// every filing.
 pub(super) fn world_identity<R>(
@@ -1160,8 +1160,9 @@ pub(super) fn resolve_anchors(
 }
 
 /// Whether a live subject or idea page still has a subject anchor the World
-/// has not confirmed. Method learning may confirm such a page from the Sources
-/// it cites at read time, so a publication rechecks while any exists.
+/// has not confirmed. Method learning reads such a page against the Sources
+/// it cites at read time, so a publication or a settled World job rechecks
+/// while any exists.
 pub(super) fn pending_subjects_exist(
     tx: &Transaction<'_>,
     loupist_id: &str,
