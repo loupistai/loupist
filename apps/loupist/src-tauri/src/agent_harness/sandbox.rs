@@ -221,7 +221,9 @@ fn resolver_file(runtime: &[PathBuf]) -> Option<PathBuf> {
 /// its own pid namespace with bubblewrap as its init: `--new-session` moves
 /// the command out of the process group Pi kills on abort, and killing the
 /// init kills everything in the namespace, where `--die-with-parent` alone
-/// would spare the command's descendants.
+/// would spare the command's descendants. `--cap-drop ALL` leaves the
+/// command no capability, so an app run by root cannot unmount a mask or
+/// remount the workspace from inside.
 fn bwrap_arguments(roots: &NativeRoots, network: bool) -> Vec<String> {
     let text = |path: &Path| path.to_string_lossy().into_owned();
     let mut arguments: Vec<String> = ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]
@@ -291,6 +293,8 @@ fn bwrap_arguments(roots: &NativeRoots, network: bool) -> Vec<String> {
     }
     arguments.extend([
         "--unshare-pid".into(),
+        "--cap-drop".into(),
+        "ALL".into(),
         "--die-with-parent".into(),
         "--new-session".into(),
         "--chdir".into(),
@@ -484,6 +488,8 @@ impl ProbeLayout {
             .iter()
             .map(|name| format!(" -e {}", shell_quote(name)))
             .collect();
+        // `/run` is listed before the unmount attempt, which leaves
+        // `/run/mount/utab` behind even when it is refused.
         format!(
             "w() {{ ( : > \"$1\" ) 2>/dev/null && echo \"$2=ok\" || echo \"$2=fail\"; }}\n\
              r() {{ grep -qs \"$2\" \"$1\" 2>/dev/null && echo \"$3=ok\" || echo \"$3=fail\"; }}\n\
@@ -495,6 +501,7 @@ impl ProbeLayout {
              w {outside} write_outside\n\
              w {data}/data.txt write_data\n\
              w {ws}/.git/hooks/post-checkout write_hook\n\
+             [ -z \"$(ls -A /run 2>/dev/null | grep -vxF -e ''{allowed_in_run})\" ] && echo run_masked=ok || echo run_masked=fail\n\
              r {app}/pi/auth.json authsecret read_app\n\
              r {home}/.netrc netrcsecret read_netrc\n\
              umount -l {home}/.ssh 2>/dev/null && echo unmount=ok || echo unmount=fail\n\
@@ -503,7 +510,6 @@ impl ProbeLayout {
              r {data}/skills/x/SKILL.md skillok read_skill\n\
              r {attachments}/brief.md attok read_attachment\n\
              r {ws}/.git/hooks/pre-commit hookok read_hook\n\
-             [ -z \"$(ls -A /run 2>/dev/null | grep -vxF -e ''{allowed_in_run})\" ] && echo run_masked=ok || echo run_masked=fail\n\
              grep -Eqs '^CapEff:[[:space:]]+0+$' /proc/self/status && echo caps=ok || echo caps=fail\n\
              (exec 3<>/dev/tcp/127.0.0.1/{port}) 2>/dev/null && echo connect=ok || echo connect=fail\n\
              mv {ws}/.git {ws}/.git-moved 2>/dev/null && echo rename_git=ok || echo rename_git=fail\n\
@@ -723,7 +729,7 @@ mod tests {
         at(&argv, &format!("--remount-ro {ws}/.loupist"));
         at(&argv, &format!("--remount-ro {}/.ssh", home.display()));
         assert!(argv.ends_with(&format!(
-            "--unshare-net --unshare-pid --die-with-parent --new-session --chdir {ws} --"
+            "--unshare-net --unshare-pid --cap-drop ALL --die-with-parent --new-session --chdir {ws} --"
         )));
         assert_eq!(
             command.env.get("XDG_CACHE_HOME").map(String::as_str),
@@ -1128,11 +1134,11 @@ mod tests {
             "write_outside=ok",
             "write_data=ok",
             "write_hook=ok",
+            "run_masked=fail",
             "read_app=ok",
             "read_netrc=ok",
             "read_ssh=ok",
             "read_db=ok",
-            "run_masked=fail",
         ];
         // SAFETY: geteuid reads the process's credentials and cannot fail.
         if unsafe { libc::geteuid() } == 0 {
