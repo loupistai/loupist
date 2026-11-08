@@ -1452,12 +1452,21 @@ fn companies_filed_before_the_world_knew_them_learn_once_their_sources_confirm_t
         "m1",
         halvorsen,
         text,
-        &[a.clone()],
+        std::slice::from_ref(&a),
         AT + 2
     )
     .is_none());
     let ferroluz = named("Ferroluz ramp", "Ferroluz Componentes");
-    assert!(put_in(&store, "chat-2", "m2", ferroluz, text, &[b.clone()], AT + 3).is_none());
+    assert!(put_in(
+        &store,
+        "chat-2",
+        "m2",
+        ferroluz,
+        text,
+        std::slice::from_ref(&b),
+        AT + 3
+    )
+    .is_none());
     assert!(review_states(&store).is_empty());
     // Extraction canonicalizes both with legal forms, each from the report its
     // Chat cited. The publication binds both anchors and queues the review.

@@ -185,7 +185,7 @@ fn world_head(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<Option<
 /// World, by node id, from the node's name and aliases; a node the World does
 /// not hold is left out. Method learning reads it to see when two nodes might
 /// spell one company. The World is parsed once per revision
-/// ([`identity::world_node_keys`]), not on every filing.
+/// ([`super::identity::world_node_keys`]), not on every filing.
 pub(super) fn node_keys(
     tx: &Transaction<'_>,
     loupist_id: &str,
