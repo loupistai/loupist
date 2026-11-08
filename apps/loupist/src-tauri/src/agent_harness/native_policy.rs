@@ -335,6 +335,11 @@ pub fn decide(
         PathClass::Instructions if tool.writes() && exposure != Exposure::Clean => {
             NativeRefusal::InstructionsAfterUntrustedText
         }
+        PathClass::Scratch | PathClass::Workspace
+            if tool.writes() && exposure != Exposure::Clean && hard_linked(&path) =>
+        {
+            NativeRefusal::HardLinkAfterUntrustedText
+        }
         PathClass::Scratch
         | PathClass::Attachments
         | PathClass::GitDir
@@ -342,6 +347,19 @@ pub fn decide(
         | PathClass::Workspace => return NativeDecision::AllowFile { resolved: path },
     };
     NativeDecision::Refuse(refusal)
+}
+
+/// Whether the file has another name on disk. The path classes see one
+/// name; a hard link in a writable folder can be an instruction file.
+#[cfg(unix)]
+fn hard_linked(path: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file() && metadata.nlink() > 1)
+}
+
+#[cfg(not(unix))]
+fn hard_linked(_path: &Path) -> bool {
+    false
 }
 
 /// The `bash` row of the table: the network is on in a clean reply and off
