@@ -122,6 +122,12 @@ it.each(["error", "aborted"] as const)("keeps Try again beside an inline %s noti
   expect(onRetry).toHaveBeenCalledOnce();
 });
 
+it("says the general failure sentence for a failure kind this build does not know", () => {
+  const failed = answer({ content: "Response could not be completed.", status: "error", failure_kind: "quota_reset" as ChatMessage["failure_kind"] });
+  renderAnswer(failed, { onRetry: vi.fn() });
+  expect(screen.getByRole("alert")).toHaveTextContent(i18n.t("chat:chatMessageCard.other"));
+});
+
 it.each(["en", "ko"])("shows one localized failure notice in %s and preserves a partial answer", async (language) => {
   await i18n.changeLanguage(language);
   try {

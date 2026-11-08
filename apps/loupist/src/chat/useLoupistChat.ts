@@ -15,6 +15,7 @@ import { errorMessage } from "../lib/errors";
 import type { ChatAdmission } from "./submission";
 import {
   fromLoupistUIMessage,
+  fromStoreKeepingAnswers,
   toLoupistUIMessage,
   type LoupistUIMessage,
 } from "./ai-sdk";
@@ -373,7 +374,7 @@ export function useLoupistChat({
             )
           ) {
             if (!stillThisChat()) return;
-            setMessages(canonical.messages.map(toLoupistUIMessage));
+            setMessages((current) => fromStoreKeepingAnswers(current, canonical.messages));
             return;
           }
         }
@@ -476,7 +477,7 @@ export function useLoupistChat({
    * X18): the SDK's live messages and the thread list both take its messages.
    */
   const replaceThread = useCallback((thread: ChatThread) => {
-    setMessages(thread.messages.map(toLoupistUIMessage));
+    setMessages((current) => fromStoreKeepingAnswers(current, thread.messages));
     setThreads((current) => current.map((candidate) => candidate.id === thread.id
       ? { ...candidate, messages: thread.messages, versions: thread.versions ?? [], updated_at: thread.updated_at }
       : candidate));

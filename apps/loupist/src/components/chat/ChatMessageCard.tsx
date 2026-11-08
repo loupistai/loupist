@@ -483,7 +483,7 @@ function ChatMessageCardComponent({
           {settled.runState ? (
             <div className="message-run-state" role={settled.runState.kind === "failed" ? "alert" : "status"}>
               {settled.runState.kind === "failed" ? <ChatErrorState kind={settled.runState.failure} retryInSeconds={settled.runState.retryInSeconds} provider={providerName ?? t("chatError.yourProvider")}
-                fallback={failureMessages()[settled.runState.failure]} onRetry={onRetry}
+                fallback={failureMessages()[settled.runState.failure] ?? failureMessages().other} onRetry={onRetry}
                 onProviderAction={onProviderAction ? (action) => onProviderAction(action, message.execution_model?.provider) : undefined} /> : <>
                 <p>{settled.runState.label}</p>
                 {onRetry ? <button type="button" onClick={onRetry}>{t("chatMessageCard.tryAgain")}</button> : null}

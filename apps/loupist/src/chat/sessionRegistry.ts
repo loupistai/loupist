@@ -8,6 +8,7 @@ import type {
 } from "../types";
 import {
   fromLoupistUIMessage,
+  fromStoreKeepingAnswers,
   TauriChatTransport,
   toLoupistUIMessage,
   type LoupistUIMessage,
@@ -208,15 +209,7 @@ export class ChatSessionRegistry {
       };
     }
 
-    // The store never holds the key the settled answer's Markdown node was drawn
-    // under; carrying it over keeps that node mounted through the refresh.
-    const answerKeys = new Map(chat.messages.flatMap((message) =>
-      message.metadata?.answer_key ? [[message.metadata.native_message_id ?? message.id, message.metadata.answer_key]] : []));
-    chat.messages = thread.messages.map((message) => {
-      const ui = toLoupistUIMessage(message);
-      const answerKey = answerKeys.get(message.id);
-      return answerKey ? { ...ui, metadata: { ...ui.metadata, answer_key: answerKey } } : ui;
-    });
+    chat.messages = fromStoreKeepingAnswers(chat.messages, thread.messages);
     return thread;
   }
 

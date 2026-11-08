@@ -178,8 +178,6 @@
     "tokenUsageUnavailable": "Token usage unavailable",
     "previewUnavailable": "Preview unavailable",
     "you": "You",
-    "stopped": "Stopped",
-    "responseFailed": "Response failed",
     "responseDetails": "Response details",
     "thisAnswerListsWhatWasSavedBecauseTheModel": "This answer lists what was saved because the model returned no text.",
     "outputs": "Outputs",

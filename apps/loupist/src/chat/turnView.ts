@@ -429,8 +429,9 @@ export function deriveTurnView(input: TurnInput): TurnView {
           issues: issueLabel(actions, entry.progress, message.as_of),
           durationMs: !streaming && progress?.finishedAtMs !== undefined ? progress.finishedAtMs - startedAtMs : undefined,
         };
-    entry.autoExpand = actions.some((item) => (item.status === "failed" && !pausedByRule(item)) || item.status === "stopped");
-    entry.tone = state.kind === "failed" || entry.autoExpand ? "problem" : running ? "live" : "settled";
+    const failed = actions.some((item) => item.status === "failed" && !pausedByRule(item));
+    entry.autoExpand = failed || actions.some((item) => item.status === "stopped");
+    entry.tone = state.kind === "failed" || failed ? "problem" : running ? "live" : "settled";
   }
   if (!liveDraft && content && !isFailurePlaceholder(message)) {
     segments.push({ kind: "prose", key: answerKey ?? "answer", text: content, tone: "answer", streaming, checks: message.number_checks });

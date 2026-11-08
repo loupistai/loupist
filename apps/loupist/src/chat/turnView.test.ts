@@ -74,6 +74,7 @@ describe("state × slot", () => {
     expect(view(message({ status: "error", content: "Response could not be completed.", failure_kind: "provider_error", progress: clean })).segments[0]).toMatchObject({ tone: "problem" });
     expect(view(message({ status: "complete", content: "Done.", progress: { ...clean, items: [{ ...search, status: "failed" }] } })).segments[0]).toMatchObject({ tone: "problem", autoExpand: true });
     expect(view(message({ phase: "tool", progress: { startedAtMs: start, items: [search, reading] } })).segments[0]).toMatchObject({ tone: "live" });
+    expect(view(message({ status: "aborted", content: "Margin fell while", progress: { startedAtMs: start, items: [search, { ...reading, status: "stopped" }] } })).segments[0]).toMatchObject({ tone: "settled", autoExpand: true });
   });
 
   it("keeps the activity row's citation count out of its own sources until the step linked them", () => {

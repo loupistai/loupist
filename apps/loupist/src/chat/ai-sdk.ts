@@ -194,6 +194,21 @@ const dataUrlPayload = (file: FileUIPart) => {
   };
 };
 
+/**
+ * The store's copy of a thread, with the key each settled answer's Markdown node was
+ * drawn under carried over from the live messages. The store never holds that key, so
+ * without it a refresh remounts the answer and replays its reveal.
+ */
+export function fromStoreKeepingAnswers(current: readonly LoupistUIMessage[], stored: readonly ChatMessage[]): LoupistUIMessage[] {
+  const answerKeys = new Map(current.flatMap((message) =>
+    message.metadata?.answer_key ? [[message.metadata.native_message_id ?? message.id, message.metadata.answer_key]] : []));
+  return stored.map((message) => {
+    const ui = toLoupistUIMessage(message);
+    const answerKey = answerKeys.get(message.id);
+    return answerKey ? { ...ui, metadata: { ...ui.metadata, answer_key: answerKey } } : ui;
+  });
+}
+
 const estimatedBase64Bytes = (url: string) => {
   const payload = url.split(",", 2)[1] ?? "";
   return Math.max(1, Math.floor((payload.replace(/=+$/u, "").length * 3) / 4));
