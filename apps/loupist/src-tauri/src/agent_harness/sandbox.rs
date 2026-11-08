@@ -114,13 +114,29 @@ fn cache_environment(scratch: &Path) -> BTreeMap<String, String> {
     .collect()
 }
 
+/// The real paths of the entries that exist, each once. A mount destination
+/// must be the real path: bubblewrap resolves an absolute link in it against
+/// its own setup root, not the new root, and the mount fails. So a link to a
+/// file is masked at the file, a link to a folder at the folder, and a
+/// dangling link not at all; the link itself still leads to the mask.
+fn canonical(paths: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
+    let mut real_paths: Vec<PathBuf> = Vec::new();
+    for path in paths {
+        if let Ok(real) = std::fs::canonicalize(&path) {
+            if !real_paths.contains(&real) {
+                real_paths.push(real);
+            }
+        }
+    }
+    real_paths
+}
+
 /// Everything the sandbox hides from a command: the Loupist's data folder,
 /// the app data root and the home credential locations that exist.
 fn hidden(roots: &NativeRoots) -> Vec<PathBuf> {
     let mut paths = vec![roots.loupist_data.clone(), roots.app_data.clone()];
     paths.extend(roots.credential_paths().into_iter().map(|(path, _)| path));
-    paths.retain(|path| path.exists());
-    paths
+    canonical(paths)
 }
 
 /// What stays readable inside a hidden folder: instruction files and Skills,
@@ -129,8 +145,7 @@ fn readable_again(roots: &NativeRoots) -> Vec<PathBuf> {
     let mut paths = roots.loupist_data_instructions().to_vec();
     paths.extend(roots.global_instructions());
     paths.push(roots.attachments.clone());
-    paths.retain(|path| path.exists());
-    paths
+    canonical(paths)
 }
 
 /// What a command after third-party text may write in the workspace: every
@@ -195,9 +210,11 @@ fn resolver_file(runtime: &[PathBuf]) -> Option<PathBuf> {
 /// scratch is bound after the app data root is masked. Each masking tmpfs is
 /// remounted read-only last, once its children are mounted, so a write into
 /// a hidden folder fails instead of landing in a tmpfs the command believes
-/// is the folder. Online, the workspace's `.git` is bound onto itself first:
-/// a mount point cannot be renamed or removed, so the read-only `config` and
-/// `hooks` inside it cannot be swapped for writable copies. Offline, the
+/// is the folder. Online, a workspace `.git` that is a folder of its own is
+/// bound onto itself first: a mount point cannot be renamed or removed, so
+/// the read-only `config` and `hooks` inside it cannot be swapped for
+/// writable copies. Every mask and bind-back names a real path
+/// (`canonical`), since bubblewrap cannot mount onto a link. Offline, the
 /// workspace is bound read-only and only `writable_offline` folders are
 /// bound back writable, so its top level, every dot entry (`.git` included)
 /// and the root instruction files take no write at all. The command runs in
@@ -219,16 +236,22 @@ fn bwrap_arguments(roots: &NativeRoots, network: bool) -> Vec<String> {
     if let Some(resolver) = resolver_file(&runtime) {
         arguments.extend(["--ro-bind".into(), text(&resolver), text(&resolver)]);
     }
+    // A `.git` that is a link is not pinned: a mount point cannot be made of a
+    // link, and the pin's point is the entry the workspace spells.
+    let git_dir = roots.workspace.join(".git");
+    let git_kind = git_dir
+        .symlink_metadata()
+        .map(|metadata| metadata.file_type());
+    let git_folder = git_kind.as_ref().is_ok_and(|kind| kind.is_dir());
     if network {
         arguments.extend([
             "--bind".into(),
             text(&roots.workspace),
             text(&roots.workspace),
         ]);
-        let git_dir = roots.workspace.join(".git");
-        if git_dir.is_dir() {
+        if git_folder {
             arguments.extend(["--bind".into(), text(&git_dir), text(&git_dir)]);
-        } else if git_dir.is_file() {
+        } else if git_kind.is_ok_and(|kind| kind.is_file()) {
             arguments.extend(["--ro-bind".into(), text(&git_dir), text(&git_dir)]);
         }
     } else {
@@ -250,11 +273,12 @@ fn bwrap_arguments(roots: &NativeRoots, network: bool) -> Vec<String> {
             arguments.extend(["--ro-bind".into(), "/dev/null".into(), text(&path)]);
         }
     }
-    let git_config = network
-        .then(|| roots.workspace_git_config())
-        .into_iter()
-        .flatten()
-        .filter(|path| path.exists());
+    let git_config = canonical(
+        (network && git_folder)
+            .then(|| roots.workspace_git_config())
+            .into_iter()
+            .flatten(),
+    );
     for path in readable_again(roots).into_iter().chain(git_config) {
         arguments.extend(["--ro-bind".into(), text(&path), text(&path)]);
     }
