@@ -40,6 +40,7 @@ fn interrupt_paid(store: &KnowledgeStore, job: &GraphJobView) -> GraphJobView {
             JOB_RECONCILE,
             true,
             false,
+            AT,
         )
         .unwrap();
     store

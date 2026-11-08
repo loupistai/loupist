@@ -119,6 +119,20 @@ pub(crate) fn identity_changed(
     queue(tx, loupist, now, Recheck::Always)
 }
 
+/// A World job for a Source reached a final status. A pending page citing that
+/// Source may now be judged by the claims the World holds on it, so the
+/// evidence is read again while any live page has a pending subject.
+pub(crate) fn world_job_settled(
+    tx: &Transaction<'_>,
+    loupist: &str,
+    now: i64,
+) -> KnowledgeResult<()> {
+    if super::lens::pending_subjects_exist(tx, loupist)? {
+        identity_changed(tx, loupist, now)?;
+    }
+    Ok(())
+}
+
 #[derive(PartialEq)]
 enum Recheck {
     /// Only once something is filed past the last head a review read, so a
@@ -1213,6 +1227,8 @@ fn requeue(
 /// queued by the claim-count trigger (non-empty `world_job_id`, a growth-event
 /// watermark) is settled. Each affected Loupist then rechecks evidence filed
 /// past its watermark, so nothing filed during the lost attempt is stranded.
+/// A Loupist with a pending subject rechecks too: World jobs interrupted by
+/// the shutdown were just given their final status.
 pub(super) fn recover(tx: &Transaction<'_>, now: i64) -> KnowledgeResult<()> {
     let lost: Vec<(String, Option<String>)> = tx
         .prepare("UPDATE knowledge_learning_reviews SET status='failed',reason='uncertain_paid_attempt',finished_at_ms=started_at_ms WHERE status='running' RETURNING loupist_id,input_json")?
@@ -1227,6 +1243,14 @@ pub(super) fn recover(tx: &Transaction<'_>, now: i64) -> KnowledgeResult<()> {
         .collect::<Result<_, _>>()?;
     for loupist in legacy {
         enqueue(tx, &loupist, now)?;
+    }
+    let mut q = tx.prepare(
+        "SELECT DISTINCT loupist_id FROM knowledge_lens_anchors
+         WHERE role='subject' AND node_id IS NULL AND name_fold<>''",
+    )?;
+    let pending: BTreeSet<String> = q.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
+    for loupist in pending {
+        world_job_settled(tx, &loupist, now)?;
     }
     Ok(())
 }

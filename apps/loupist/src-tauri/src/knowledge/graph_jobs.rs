@@ -1434,8 +1434,8 @@ pub(super) fn claim_running(
     if !writable && !readable_snapshot {
         let mut document = job.document.clone();
         clear_lease(&mut document);
-        if !write_status(tx, job_id, JOB_QUEUED, JOB_FAILED_BEFORE, &document)? {
-            return load_job(tx, job_id).map(GraphJobClaim::Existing);
+        if write_status(tx, job_id, JOB_QUEUED, JOB_FAILED_BEFORE, &document)? {
+            source_job_settled(tx, &job, now_ms)?;
         }
         return load_job(tx, job_id).map(GraphJobClaim::Existing);
     }
@@ -1473,6 +1473,16 @@ pub fn note_inference_attempted(
     Ok(())
 }
 
+/// A Source extraction job reached a final status: method learning may now
+/// judge the pages citing its Source ([`super::learning::world_job_settled`]).
+fn source_job_settled(tx: &Transaction<'_>, job: &GraphJobView, at_ms: i64) -> KnowledgeResult<()> {
+    if job.document.episode_kind == EPISODE_SPAN {
+        super::learning::world_job_settled(tx, &job.loupist_id, at_ms)?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn finish_job(
     tx: &Transaction<'_>,
     settings: &mut GraphProcessingSettings,
@@ -1481,6 +1491,7 @@ pub fn finish_job(
     outcome: &str,
     usage_uncertain: bool,
     validated: bool,
+    now_ms: i64,
 ) -> KnowledgeResult<GraphJobView> {
     let job = active_attempt(tx, job_id, attempt_id)?;
     if super::authority::require_record(tx, &job.loupist_id, &job.world_record_id).is_err() {
@@ -1515,6 +1526,9 @@ pub fn finish_job(
         return Err(KnowledgeError::Invalid(
             "graph job attempt is no longer active",
         ));
+    }
+    if final_status(next) {
+        source_job_settled(tx, &job, now_ms)?;
     }
     load_job(tx, job_id)
 }
@@ -2164,6 +2178,7 @@ pub fn publish_and_complete(
             artifact_utf8,
             logical_digest,
             usage_uncertain,
+            at_ms,
         );
     }
     if usage_uncertain {
@@ -2174,6 +2189,7 @@ pub fn publish_and_complete(
             artifact_utf8,
             logical_digest,
             true,
+            at_ms,
         );
     }
     let current = super::revision::load_revision(write.tx, &job.world_revision_id)?;
@@ -2220,6 +2236,9 @@ pub fn publish_and_complete(
             "graph job attempt is no longer active",
         ));
     }
+    // The seal rechecked learning while this job still ran; now its own
+    // Source is processed.
+    source_job_settled(write.tx, &job, at_ms)?;
     load_job(write.tx, job_id)
 }
 
@@ -2346,6 +2365,7 @@ fn settle_without_head(
     artifact_utf8: &str,
     logical_digest: &str,
     usage_uncertain: bool,
+    at_ms: i64,
 ) -> KnowledgeResult<GraphJobView> {
     let mut document = job.document.clone();
     document.artifact_utf8 = Some(artifact_utf8.to_string());
@@ -2358,6 +2378,7 @@ fn settle_without_head(
             "graph job attempt is no longer active",
         ));
     }
+    source_job_settled(tx, job, at_ms)?;
     load_job(tx, &job.job_id)
 }
 

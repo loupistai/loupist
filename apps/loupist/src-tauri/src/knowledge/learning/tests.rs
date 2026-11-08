@@ -1532,6 +1532,7 @@ fn world_read(store: &KnowledgeStore, spans: &[&BasisRef], at: i64) {
                 super::super::graph_jobs::JOB_FAILED_BEFORE,
                 false,
                 false,
+                at,
             )
             .unwrap();
         assert_eq!(finished.status, super::super::graph_jobs::JOB_FAILED_BEFORE);
@@ -1548,6 +1549,99 @@ fn company_node(id: &str, name: &str, kind: &str) -> GraphNode {
         source_role: "organization".into(),
         properties: BTreeMap::new(),
     }
+}
+
+/// The worker artifact for a World of `nodes` and `claims`, as extraction
+/// returns one: the whole graph, not a delta.
+fn artifact(nodes: &[GraphNode], claims: &[GraphClaim]) -> String {
+    let nodes: Vec<Value> = nodes
+        .iter()
+        .map(|n| {
+            json!({"adapter_id": n.id, "name": n.name, "aliases": n.aliases, "description": n.description,
+                "kind": n.kind, "source_role": n.source_role, "properties": n.properties})
+        })
+        .collect();
+    let claims: Vec<Value> = claims
+        .iter()
+        .map(|c| {
+            json!({"adapter_id": c.id, "proposition": c.proposition, "attribution": c.attribution,
+                "relation": c.relation,
+                "endpoints": c.endpoints.iter().map(|e| json!({"node_id": e.node_id, "role": e.role})).collect::<Vec<_>>(),
+                "qualifiers": [],
+                "evidence": c.evidence.iter().map(|e| json!({"span_id": e.span_id, "role": "extracted_from", "attribution": e.attribution})).collect::<Vec<_>>(),
+                "status": c.status.as_str(), "recorded_at_ms": c.recorded_at_ms, "publication_time": null,
+                "effective_time": null, "valid_at": null, "invalid_at": null, "expired_at": null})
+        })
+        .collect();
+    json!({"format": "loupist.world_graph_snapshot", "nodes": nodes, "claims": claims}).to_string()
+}
+
+/// `span`'s Source goes through World extraction, which publishes `nodes` and
+/// `claims` as the whole World, as a completed job does. A claim may cite a
+/// span of this Source or of one a publication before it cited.
+fn world_publishes(
+    store: &KnowledgeStore,
+    span: &BasisRef,
+    nodes: &[GraphNode],
+    claims: &[GraphClaim],
+    at: i64,
+) {
+    let job = world_job(store, span, at);
+    let running = store
+        .graph_mark_running(&config(), &job.job_id, at)
+        .unwrap();
+    assert_eq!(running.status, super::super::graph_jobs::JOB_RUNNING);
+    let attempt = running.document.attempt_id.clone().unwrap();
+    store.graph_note_inference(&job.job_id, &attempt).unwrap();
+    let artifact = artifact(nodes, claims);
+    let finished = store
+        .graph_publish_and_complete(
+            &mut config(),
+            &job.job_id,
+            &attempt,
+            &artifact,
+            &crate::util::sha256(artifact.as_bytes()),
+            at,
+            false,
+        )
+        .unwrap();
+    assert_eq!(finished.status, super::super::graph_jobs::JOB_COMPLETED);
+}
+
+/// One paid extraction attempt on `span`'s Source ends without publishing.
+/// The first such attempt runs the job again; the second quarantines it.
+fn extraction_fails(store: &KnowledgeStore, span: &BasisRef, at: i64) -> String {
+    let job = world_job(store, span, at);
+    let running = store
+        .graph_mark_running(&config(), &job.job_id, at)
+        .unwrap();
+    assert_eq!(running.status, super::super::graph_jobs::JOB_RUNNING);
+    let attempt = running.document.attempt_id.clone().unwrap();
+    store.graph_note_inference(&job.job_id, &attempt).unwrap();
+    store
+        .graph_finish(
+            &mut config(),
+            &job.job_id,
+            &attempt,
+            super::super::graph_jobs::JOB_FAILED_BEFORE,
+            false,
+            false,
+            at,
+        )
+        .unwrap()
+        .status
+}
+
+/// The Source records the current World revision depends on.
+fn world_dependencies(store: &KnowledgeStore) -> BTreeSet<String> {
+    let (_, head) = world_head(store);
+    store
+        .get_revision(LOUPIST, &head)
+        .unwrap()
+        .dependencies
+        .into_iter()
+        .map(|d| d.record_id)
+        .collect()
 }
 
 /// `reseal_graph` with company nodes.
@@ -1886,6 +1980,127 @@ fn a_page_citing_a_source_the_world_has_not_read_waits_for_it() {
     world_read(&store, &[&report], AT + 5);
     reseal_claiming(&store, nodes, claims, AT + 5);
     assert_eq!(review_states(&store), ["queued"]);
+}
+
+/// The setup's manufacturers beside `extra` company nodes.
+fn manufacturers_and(extra: &[(&str, &str)]) -> Vec<GraphNode> {
+    (0..4)
+        .map(|n| {
+            company_node(
+                &format!("entity-{n}"),
+                &format!("Manufacturer {n}"),
+                "company",
+            )
+        })
+        .chain(
+            extra
+                .iter()
+                .map(|(id, name)| company_node(id, name, "company")),
+        )
+        .collect()
+}
+
+#[test]
+fn a_source_the_world_read_without_a_claim_stays_processed_through_later_publications() {
+    let (_dir, store) = setup();
+    let (h_report, h_metrics) = (
+        source(&store, "Halvorsen report"),
+        source(&store, "Halvorsen metrics"),
+    );
+    let (f_report, f_metrics) = (
+        source(&store, "Ferroluz report"),
+        source(&store, "Ferroluz metrics"),
+    );
+    let unrelated = source(&store, "Unrelated report");
+    let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+    // Each Chat cites its company's report and a metrics table, before any
+    // extraction; attachment intake queues a World job for every Source.
+    let halvorsen = named("Halvorsen ramp", "Halvorsen Cellworks");
+    let h_cited = [h_report.clone(), h_metrics.clone()];
+    assert!(put_in(&store, "chat-1", "m1", halvorsen, text, &h_cited, AT + 2).is_none());
+    let ferroluz = named("Ferroluz ramp", "Ferroluz Componentes");
+    let f_cited = [f_report.clone(), f_metrics.clone()];
+    assert!(put_in(&store, "chat-2", "m2", ferroluz, text, &f_cited, AT + 3).is_none());
+    for span in [&h_report, &h_metrics, &f_report, &f_metrics, &unrelated] {
+        assert_eq!(
+            world_job(&store, span, AT + 4).status,
+            super::super::graph_jobs::JOB_QUEUED
+        );
+    }
+    let nodes = manufacturers_and(&[
+        ("entity-h", "Halvorsen Cellworks ASA"),
+        ("entity-f", "Ferroluz Componentes S.A."),
+        ("entity-u", "Unrelated Works"),
+    ]);
+    let mut claims = vec![claim_citing("clm_h", "entity-h", "entity-0", &h_report)];
+    world_publishes(&store, &h_report, &nodes, &claims, AT + 5);
+    claims.push(claim_citing("clm_f", "entity-f", "entity-1", &f_report));
+    world_publishes(&store, &f_report, &nodes, &claims, AT + 6);
+    // Both reports are extracted, but each page also cites a metrics Source
+    // whose job is still queued: the World may yet name a second spelling.
+    assert!(review_states(&store).is_empty());
+    // The metrics tables yield no claim. That is a complete reading.
+    world_publishes(&store, &h_metrics, &nodes, &claims, AT + 7);
+    assert!(review_states(&store).is_empty(), "Ferroluz still waits");
+    world_publishes(&store, &f_metrics, &nodes, &claims, AT + 8);
+    assert_eq!(review_states(&store), ["queued"]);
+    // An unrelated publication drops the metrics Sources from the revision's
+    // dependency list. The Sources stay processed, and the review reads both.
+    claims.push(claim_citing("clm_u", "entity-u", "entity-2", &unrelated));
+    world_publishes(&store, &unrelated, &nodes, &claims, AT + 9);
+    let dependencies = world_dependencies(&store);
+    assert!(!dependencies.contains(&record_of(&h_metrics)));
+    assert!(dependencies.contains(&record_of(&h_report)));
+    assert_eq!(review_states(&store), ["queued"]);
+    assert_eq!(
+        pages(&begin(&store, AT + 10)),
+        ["Ferroluz ramp", "Halvorsen ramp"]
+    );
+    assert_eq!(pending_subjects(&store), 2, "nothing is persisted");
+}
+
+#[test]
+fn a_source_whose_extraction_was_quarantined_is_processed_and_rechecks_learning() {
+    let (_dir, store) = setup();
+    let (h_report, h_metrics) = (
+        source(&store, "Halvorsen report"),
+        source(&store, "Halvorsen metrics"),
+    );
+    let other = source(&store, "Filing C");
+    let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+    let halvorsen = named("Halvorsen ramp", "Halvorsen Cellworks");
+    let h_cited = [h_report.clone(), h_metrics.clone()];
+    assert!(put_in(&store, "chat-1", "m1", halvorsen, text, &h_cited, AT + 2).is_none());
+    assert!(turn(&store, "chat-2", "m2", 0, &[other], AT + 3).is_none());
+    let nodes = manufacturers_and(&[
+        ("entity-h", "Halvorsen Cellworks ASA"),
+        ("entity-m", "Meridian Motors"),
+    ]);
+    let claims = [claim_citing("clm_h", "entity-h", "entity-m", &h_report)];
+    world_publishes(&store, &h_report, &nodes, &claims, AT + 4);
+    assert!(
+        review_states(&store).is_empty(),
+        "the metrics job is queued"
+    );
+    // Two paid attempts on the metrics table publish nothing. The first runs
+    // the job again; the second quarantines it. A quarantined job is through:
+    // the World cannot reveal more from that Source, so the page counts, with
+    // no publication and no new filing.
+    assert_eq!(
+        extraction_fails(&store, &h_metrics, AT + 5),
+        super::super::graph_jobs::JOB_QUEUED
+    );
+    assert!(review_states(&store).is_empty());
+    assert_eq!(
+        extraction_fails(&store, &h_metrics, AT + 6),
+        super::super::graph_jobs::JOB_RECONCILE
+    );
+    assert_eq!(review_states(&store), ["queued"]);
+    assert_eq!(
+        pages(&begin(&store, AT + 7)),
+        ["Halvorsen ramp", "Manufacturer 0"]
+    );
+    assert_eq!(pending_subjects(&store), 1);
 }
 
 #[test]

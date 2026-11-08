@@ -312,6 +312,7 @@ impl KnowledgeStore {
         self.transact(|write| graph_jobs::note_inference_attempted(write.tx, job_id, attempt_id))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn graph_finish(
         &self,
         settings: &mut GraphProcessingSettings,
@@ -320,6 +321,7 @@ impl KnowledgeStore {
         outcome: &str,
         usage_uncertain: bool,
         validated: bool,
+        now_ms: i64,
     ) -> KnowledgeResult<GraphJobView> {
         self.transact(|write| {
             graph_jobs::finish_job(
@@ -330,6 +332,7 @@ impl KnowledgeStore {
                 outcome,
                 usage_uncertain,
                 validated,
+                now_ms,
             )
         })
     }
