@@ -186,26 +186,21 @@ function planRun(bridge: PreviewBridge) {
     return { run_id };
   };
 }
-type ApprovalScenarioKind = "connection" | "site" | "command";
-const PREVIEW_COMMAND = "python3 scripts/build_deck.py \\\n  --source notes/hanul-q3.md \\\n  --out exports/hanul-q3-deck.pptx";
-/** The steps of a reply that read saved notes and then asked to use a connection, a site or a command. */
+type ApprovalScenarioKind = "connection" | "site";
+/** The steps of a reply that read saved notes and then asked to use a connection or a site. */
 function approvalSteps(at: number, kind: ApprovalScenarioKind, status: "running" | "succeeded"): ChatProgressItem[] {
   const finished = status === "succeeded" ? { finishedAtMs: at - 4_000 } : {};
   return [
     { id: "preview-read", kind: "tool", toolName: "world_read", category: "memory", operation: "read", action: "Read saved notes", target: "Hanul Precision operating report", status: "succeeded", startedAtMs: at - 28_000, finishedAtMs: at - 26_000 },
     kind === "site"
       ? { id: "preview-site", kind: "tool", toolName: "web_fetch", category: "web", operation: "read", action: "Read a web source", running: "Reading markets.example.com", target: "markets.example.com", status, startedAtMs: at - 9_000, ...finished }
-      : kind === "command"
-        ? { id: "preview-command", kind: "tool", toolName: "bash", category: "compute", operation: "execute", action: "Ran a command", running: "Building the deck", target: "python3 scripts/build_deck.py", status, startedAtMs: at - 9_000, ...finished }
-        : { id: "preview-filings", kind: "tool", toolName: "mcp__custom-morrow__read_company_filings", category: "finance", operation: "read", action: "Read company filings", running: "Reading company filings", source: { kind: "connector", name: "Morrow research tools" }, target: "Hanul Precision · 2026 Q3", status, startedAtMs: at - 12_000, ...finished },
+      : { id: "preview-filings", kind: "tool", toolName: "mcp__custom-morrow__read_company_filings", category: "finance", operation: "read", action: "Read company filings", running: "Reading company filings", source: { kind: "connector", name: "Morrow research tools" }, target: "Hanul Precision · 2026 Q3", status, startedAtMs: at - 12_000, ...finished },
   ];
 }
 const approvalFor = (kind: ApprovalScenarioKind, state: ChatApproval["state"], at: number): ChatApproval => kind === "site"
   ? { requestId: "req-web", kind: "web_site", itemId: "preview-site", connectionId: "web", connectionName: "Web", toolName: "web_fetch", target: "markets.example.com/morrow-components/q3-2026-results", state, requestedAtMs: at - 9_000 }
-  : kind === "command"
-    ? { requestId: "req-command", kind: "command", itemId: "preview-command", connectionId: "workspace", connectionName: "Workspace", toolName: "bash", target: "python3 scripts/build_deck.py", detail: PREVIEW_COMMAND, state, requestedAtMs: at - 9_000 }
-    : { requestId: "req-1", itemId: "preview-filings", connectionId: "custom-morrow", connectionName: "Morrow research tools", toolName: "read_company_filings", target: "Hanul Precision · 2026 Q3", state, requestedAtMs: at - 12_000 };
-/** A reply paused on a read-only connection, a new website or a command until the user decides. */
+  : { requestId: "req-1", itemId: "preview-filings", connectionId: "custom-morrow", connectionName: "Morrow research tools", toolName: "read_company_filings", target: "Hanul Precision · 2026 Q3", state, requestedAtMs: at - 12_000 };
+/** A reply paused on a read-only connection or a new website until the user decides. */
 function approvalRun(bridge: PreviewBridge, kind: ApprovalScenarioKind) {
   bridge.chatSend = async (request, observer) => {
     const run_id = request.run_id;
@@ -1056,11 +1051,10 @@ export const scenarios: readonly PreviewScenario[] = [
     },
   },
   // A pending decision remains actionable with the activity summary folded.
-  ...([["chat-approval-card", "connection"], ["chat-approval-web-site", "site"], ["chat-approval-command", "command"]] as const).map(([id, kind]): PreviewScenario => ({
+  ...([["chat-approval-card", "connection"], ["chat-approval-web-site", "site"]] as const).map(([id, kind]): PreviewScenario => ({
     ...base(id, kind === "site" ? "After third-party text, a new website waits for the user's OK"
-      : kind === "command" ? "After third-party text, a command waits for the user's OK with the whole command shown"
-        : "A read-only connection waits for the user's OK",
-      () => select(kind === "site" ? ".chat-progress .approval-card[data-kind='web_site']" : kind === "command" ? ".chat-progress .approval-card[data-kind='command']" : ".chat-progress .approval-card"),
+      : "A read-only connection waits for the user's OK",
+      () => select(kind === "site" ? ".chat-progress .approval-card[data-kind='web_site']" : ".chat-progress .approval-card"),
       async root => { await submitPrompt(root, "Read Hanul Precision’s Q3 filings and tell me what changed."); await centerOn(".approval-card")(); }),
     setup: async (bridge) => { await prepareFixture(bridge, "answer"); approvalRun(bridge, kind); },
   })),

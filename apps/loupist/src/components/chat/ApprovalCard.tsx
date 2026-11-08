@@ -1,5 +1,4 @@
 import i18n, { useTranslation } from "@/i18n";
-import { formatNumber } from "@/i18n/format";
 import { useEffect, useState } from "react";
 import type { LoupistBridge } from "../../types";
 import type { ChatApproval, ChatApprovalDecision, ChatToolRefusal } from "../../contracts/chat";
@@ -34,46 +33,19 @@ function useConnectionDetail(bridge: LoupistBridge, loupistId: string) {
   return { open, sheet, failed };
 }
 
-type NativeKind = "command" | "file_read" | "file_write" | "instructions";
-const isNative = (kind: ChatApproval["kind"]): kind is NativeKind =>
-  kind === "command" || kind === "file_read" || kind === "file_write" || kind === "instructions";
-
-/** The card's heading, body and note for one kind; `target` is the site, path or command line. */
+/** The card's heading, body and note for one kind; `target` is the site or the call's values. */
 function cardCopy(approval: ChatApproval, tool: string) {
-  const target = approval.target ?? "";
-  switch (approval.kind) {
-    case "web_site":
-      return { label: t("approvalCard.webLabel", { site: target }), body: t("approvalCard.webBody", { site: target }), note: t("approvalCard.webNote") };
-    case "command":
-      return {
-        label: t("approvalCard.commandLabel"),
-        body: t("approvalCard.commandBody"),
-        note: t("approvalCard.commandNote"),
-      };
-    case "file_read":
-      return { label: t("approvalCard.readLabel", { path: target }), body: t("approvalCard.readBody", { path: target }), note: t("approvalCard.readNote") };
-    case "file_write":
-      return { label: t("approvalCard.writeLabel", { path: target }), body: t("approvalCard.writeBody", { path: target }), note: t("approvalCard.writeNote") };
-    case "instructions":
-      return { label: t("approvalCard.instructionsLabel", { path: target }), body: t("approvalCard.instructionsBody", { path: target }), note: t("approvalCard.instructionsNote") };
-    default:
-      return {
-        label: t("approvalCard.label", { tool }),
-        body: approval.target
-          ? t("approvalCard.body", { connection: approval.connectionName, tool, target: approval.target })
-          : t("approvalCard.bodyNoTarget", { connection: approval.connectionName, tool }),
-        note: t("approvalCard.readOnly"),
-      };
+  if (approval.kind === "web_site") {
+    const site = approval.target ?? "";
+    return { label: t("approvalCard.webLabel", { site }), body: t("approvalCard.webBody", { site }), note: t("approvalCard.webNote") };
   }
-}
-
-/** The whole command, wrapped, with its line count so a block that scrolls is never mistaken for the whole. */
-function CommandBlock({ command }: { command: string }) {
-  const lines = command.split("\n").length;
-  return <>
-    <pre className="approval-card-command" tabIndex={0}>{command}</pre>
-    <p className="approval-card-command-lines">{t("approvalCard.commandLines", { count: lines, formattedCount: formatNumber(lines) })}</p>
-  </>;
+  return {
+    label: t("approvalCard.label", { tool }),
+    body: approval.target
+      ? t("approvalCard.body", { connection: approval.connectionName, tool, target: approval.target })
+      : t("approvalCard.bodyNoTarget", { connection: approval.connectionName, tool }),
+    note: t("approvalCard.readOnly"),
+  };
 }
 
 function WaitingCard({ approval, onDecide }: { approval: ChatApproval; onDecide: (decision: ChatApprovalDecision) => Promise<void> }) {
@@ -96,12 +68,8 @@ function WaitingCard({ approval, onDecide }: { approval: ChatApproval; onDecide:
       setBusy(false);
     }
   };
-  // A blanket Allow exists for a custom connection (stored in Settings) and for a
-  // command (this reply).
-  const always = approval.kind === undefined ? t("approvalCard.always")
-    : approval.kind === "command" ? t("approvalCard.commandAlwaysReply")
-      : null;
-  const allow = approval.kind === "file_read" || approval.kind === "file_write" ? t("approvalCard.allow") : t("approvalCard.allowOnce");
+  // A blanket Allow exists only for a custom connection (stored in Settings).
+  const always = approval.kind === undefined ? t("approvalCard.always") : null;
   // The rail's "Needs your OK" row scrolls here and moves focus to the card, never to a button.
   return <section className="approval-card" data-kind={approval.kind} data-request-id={approval.requestId} tabIndex={-1} aria-label={copy.label}>
     <header>
@@ -109,26 +77,14 @@ function WaitingCard({ approval, onDecide }: { approval: ChatApproval; onDecide:
       <span className="approval-card-clock">{t("approvalCard.waiting", { time: clock(nowMs - approval.requestedAtMs) })}</span>
     </header>
     <p>{copy.body}</p>
-    {approval.kind === "command" ? <CommandBlock command={approval.detail ?? approval.target ?? ""} /> : null}
     <p className="approval-card-note">{copy.note}</p>
     <div className="approval-card-actions">
-      <Button type="button" disabled={busy} onClick={() => void decide("once")}>{allow}</Button>
+      <Button type="button" disabled={busy} onClick={() => void decide("once")}>{t("approvalCard.allowOnce")}</Button>
       <Button type="button" variant="outline" disabled={busy} onClick={() => void decide("deny")}>{t("approvalCard.notNow")}</Button>
-      {always !== null ? <Button type="button" variant={approval.kind === "command" ? "secondary" : "ghost"} className="approval-card-always" disabled={busy} onClick={() => void decide("always")}>{always}</Button> : null}
+      {always !== null ? <Button type="button" variant="ghost" className="approval-card-always" disabled={busy} onClick={() => void decide("always")}>{always}</Button> : null}
     </div>
     {failed ? <p role="alert" className="approval-card-error">{t("approvalCard.error")}</p> : null}
   </section>;
-}
-
-/** One quiet line for a settled native card. */
-function NativeLine({ approval, kind }: { approval: ChatApproval; kind: NativeKind }) {
-  const target = approval.target ?? "";
-  const key = kind === "command" ? "command" : kind === "file_read" ? "read" : kind === "file_write" ? "write" : "instructions";
-  const text = approval.state === "declined" ? t(`approvalCard.${key}Declined`, { target })
-    : approval.state === "expired" ? t(`approvalCard.${key}Expired`, { target })
-      : kind === "command" && approval.state === "always_allowed" ? t("approvalCard.commandAllowedReply")
-        : t(`approvalCard.${key}Allowed`, { target });
-  return <p className="approval-line" data-state={approval.state} data-kind={kind}>{text}</p>;
 }
 
 /**
@@ -138,9 +94,7 @@ function NativeLine({ approval, kind }: { approval: ChatApproval; kind: NativeKi
  * OK" row that leads here. "Always" is stored by Rust per connection and tool and
  * is revocable in the connection's settings. Refusals from runs that could not
  * ask (scheduled runs) point to the same settings. A new website after
- * third-party text offers only Allow once and Not now. A native card (a command,
- * a file outside the workspace, an instruction file) shows what would run or be
- * touched; a command's blanket Allow covers this reply.
+ * third-party text offers only Allow once and Not now.
  */
 export function ApprovalCards({ approvals, refusals, bridge, loupistId }: {
   approvals: readonly ChatApproval[];
@@ -158,7 +112,6 @@ export function ApprovalCards({ approvals, refusals, bridge, loupistId }: {
     {approvals.map((approval) => {
       const tool = humanizeToolName(approval.toolName);
       if (approval.state === "waiting") return <WaitingCard key={approval.requestId} approval={approval} onDecide={decide(approval)} />;
-      if (isNative(approval.kind)) return <NativeLine key={approval.requestId} approval={approval} kind={approval.kind} />;
       if (approval.kind === "web_site") {
         const site = approval.target ?? "";
         return <p key={approval.requestId} className="approval-line" data-state={approval.state}>

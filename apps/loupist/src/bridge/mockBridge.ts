@@ -1218,7 +1218,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
         const approval = message.progress?.approvals?.find((item) => item.requestId === request.request_id);
         if (!approval) continue;
         if (approval.state !== "waiting") throw new Error("This approval is no longer waiting");
-        const onceOnly = approval.kind !== undefined && approval.kind !== "command";
+        const onceOnly = approval.kind !== undefined;
         approval.state = request.decision === "deny" ? "declined"
           : request.decision === "always" && !onceOnly ? "always_allowed" : "allowed_once";
         return;

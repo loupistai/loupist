@@ -93,16 +93,16 @@ it("explains a step paused by the untrusted-text rule in the step, calmly and wi
   expect(follows(notes[0]!, screen.getByText("example.com/review"))).toBe(true);
 });
 
-it("explains a step refused for a private app path or turned down on a card", async () => {
+it("explains a step refused for a private app path or a file outside the Loupist folder", async () => {
   render(row({ startedAtMs: 1, finishedAtMs: 2000, items: [
     { id: "auth", kind: "tool", toolName: "read", category: "files", operation: "read", action: "Read a file", target: "auth.json", status: "failed", refusal: "protected_path" },
-    { id: "shared", kind: "tool", toolName: "read", category: "files", operation: "read", action: "Read a file", target: "shared.csv", status: "failed", refusal: "user_declined" },
+    { id: "shared", kind: "tool", toolName: "read", category: "files", operation: "read", action: "Read a file", target: "shared.csv", status: "failed", refusal: "outside_workspace" },
   ] }, "complete"));
   // Failed steps open on their own; each refusal is explained in its step.
   expect(screen.getByRole("button", { name: /2 failed attempts/ })).toHaveAttribute("aria-expanded", "true");
   const notes = screen.getAllByRole("note");
   expect(notes[0]).toHaveTextContent("Not allowed: this path is inside the app's private data");
-  expect(notes[1]).toHaveTextContent("Skipped: you chose Not now, so this kind of file access stayed off for this answer.");
+  expect(notes[1]).toHaveTextContent("Not allowed: this file is outside the Loupist folder. Attach it to the chat or copy it into the folder, and the Loupist can work with it.");
   for (const note of notes) expect(within(note).queryByRole("button")).toBeNull();
 });
 

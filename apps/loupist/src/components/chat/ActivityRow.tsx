@@ -204,8 +204,8 @@ const ActionRow = memo(function ActionRow({
         <p className="chat-step-paused-why">{t("chatProgressTimeline.paused.why")}</p>
       </div> : refusedByRule(item) === "protected_path" ? <div className="chat-step-paused" role="note">
         <p>{t("chatProgressTimeline.refused.protectedPath")}</p>
-      </div> : refusedByRule(item) === "user_declined" ? <div className="chat-step-paused" role="note">
-        <p>{t("chatProgressTimeline.refused.userDeclined")}</p>
+      </div> : refusedByRule(item) === "outside_workspace" ? <div className="chat-step-paused" role="note">
+        <p>{t("chatProgressTimeline.refused.outsideWorkspace")}</p>
       </div> : null}
       {open && skipped && asOf ? <p id={detailsId} className="chat-progress-skipped-detail">{t("asOf.stepRefusedDetail", { date: formatAsOf(asOf) })}</p> : null}
       {open && item.detailId && execution ? <div id={detailsId} className="chat-execution-detail"><ChatActivityDetailView {...execution} detailId={item.detailId} outputRevision={item.kind === "tool" ? item.outputRevision : undefined} /></div> : null}

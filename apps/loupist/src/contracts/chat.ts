@@ -88,12 +88,13 @@ export type ChatProgressItem =
     };
 
 /**
- * Why Rust refused a failed step. `untrusted_text_paused`: the answer read third-party text
- * and the user turned a command down, or a connection, schedule or new site stayed off.
- * `protected_path`: the path is inside the app's private data. `user_declined`: the user
- * chose Not now on a file access card.
+ * Why Rust refused a failed step. `untrusted_text_paused`: the answer read third-party text,
+ * so a command without a verified sandbox, an instruction write, a connection, a schedule
+ * change or a new site stayed off. `protected_path`: the path is inside the app's private
+ * data, a credential store or a git directory's hooks or config. `outside_workspace`: the
+ * path is outside the Loupist folder.
  */
-export type ChatStepRefusal = "untrusted_text_paused" | "protected_path" | "user_declined";
+export type ChatStepRefusal = "untrusted_text_paused" | "protected_path" | "outside_workspace";
 
 export type ChatPlanStatus = "pending" | "active" | "done" | "not_done";
 
@@ -110,15 +111,12 @@ export type ChatPlan = { items: ChatPlanItem[] };
 
 /**
  * A read-only connection tool the reply waits to use until the user decides (composer D3),
- * or, with a `kind`, something the native policy sends to a card: a new website after the
- * reply read third-party text (`target` names the site and path), a command (`target` is its
- * first line, `detail` the whole command), a read or write of a file outside the workspace or
- * a credential file (`target` is the path), or a write to a file later replies load as
- * instructions. Only a custom connection's tool and a command can be allowed beyond once.
+ * or, with `kind: web_site`, a new website after the reply read third-party text (`target`
+ * names the site and path), which can be allowed only once.
  */
 export type ChatApproval = {
   requestId: string;
-  kind?: "web_site" | "command" | "file_read" | "file_write" | "instructions";
+  kind?: "web_site";
   /** The progress step that waits, when known. */
   itemId?: string;
   connectionId: string;
@@ -126,8 +124,6 @@ export type ChatApproval = {
   toolName: string;
   /** Plain values from the call (company, period); never raw arguments. */
   target?: string;
-  /** A command card's whole command. */
-  detail?: string;
   state: "waiting" | "allowed_once" | "always_allowed" | "declined" | "expired";
   requestedAtMs: number;
 };
