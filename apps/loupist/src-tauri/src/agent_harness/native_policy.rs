@@ -16,8 +16,12 @@ const MAX_PATH_BYTES: usize = 8 * 1024;
 const MAX_COMMAND_BYTES: usize = 64 * 1024;
 /// The full command a card shows; a longer command ends with an ellipsis.
 pub const MAX_DETAIL_BYTES: usize = 8 * 1024;
-/// A card's one-line target: a command's first line or a path.
-const MAX_TARGET_CHARS: usize = 600;
+/// A card's one-line target (a command's first non-blank line or a path), in
+/// bytes, within the 640 `ChatApproval::validate` accepts.
+const MAX_TARGET_BYTES: usize = 600;
+/// A card's target or detail for a command with no visible text, which
+/// `ChatApproval::validate` would otherwise refuse to save.
+const BLANK_COMMAND: &str = "(blank command)";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeTool {
@@ -485,7 +489,7 @@ pub fn decide_command(
     NativeDecision::Ask(NativeAsk {
         kind: AskKind::Command,
         tool: NativeTool::Bash,
-        target: bounded_chars(command.lines().next().unwrap_or_default(), MAX_TARGET_CHARS),
+        target: bounded_head(first_line(command), MAX_TARGET_BYTES),
         detail: Some(command_detail(command)),
         grant: Grant::Command {
             command: command.to_owned(),
@@ -518,34 +522,46 @@ fn holds_sensitive(root: &Path, home: Option<&Path>) -> bool {
     })
 }
 
+/// A path's card line: its end, where the file name is, when it is too long.
 fn display(path: &Path) -> String {
     let text = path.to_string_lossy();
-    if text.chars().count() <= MAX_TARGET_CHARS {
+    if text.len() <= MAX_TARGET_BYTES {
         return text.into_owned();
     }
-    let tail: String = text
-        .chars()
-        .rev()
-        .take(MAX_TARGET_CHARS - 1)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
-    format!("…{tail}")
+    let mut start = text.len() - (MAX_TARGET_BYTES - '…'.len_utf8());
+    while !text.is_char_boundary(start) {
+        start += 1;
+    }
+    format!("…{}", &text[start..])
 }
 
-fn bounded_chars(text: &str, max: usize) -> String {
-    if text.chars().count() <= max {
+/// The first line of a command with visible text, trimmed.
+fn first_line(command: &str) -> &str {
+    command
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or(BLANK_COMMAND)
+}
+
+fn bounded_head(text: &str, max: usize) -> String {
+    if text.len() <= max {
         return text.to_owned();
     }
-    let head: String = text.chars().take(max - 1).collect();
-    format!("{head}…")
+    let mut end = max - '…'.len_utf8();
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &text[..end])
 }
 
 /// The command as the card shows it. A command longer than the card holds
 /// says how much is hidden, so the user never allows a tail they cannot see
 /// without being told.
 fn command_detail(command: &str) -> String {
+    if command.trim().is_empty() {
+        return BLANK_COMMAND.to_owned();
+    }
     if command.len() <= MAX_DETAIL_BYTES {
         return command.to_owned();
     }

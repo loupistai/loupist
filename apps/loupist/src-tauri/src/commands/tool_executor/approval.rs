@@ -123,3 +123,64 @@ pub(super) fn native_approval(ask: &NativeAsk) -> ChatApproval {
         requested_at_ms: chrono::Utc::now().timestamp_millis(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent_harness::native_policy::{
+        decide, Exposure, NativeDecision, NativeGrants, NativeRequest, NativeRoots,
+    };
+    use serde_json::json;
+
+    /// A card the reply could not save would fail the whole reply, so every
+    /// native card settles into something `validate` accepts: a bounded,
+    /// non-blank target and detail, whatever the command or path looks like.
+    #[test]
+    fn every_native_card_settles_into_a_saveable_approval() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path();
+        let app = root.join("app");
+        let roots = NativeRoots::new(
+            &root.join("workspace"),
+            &app,
+            &app,
+            &root.join("workspace/.loupist"),
+            &app.join("scratch"),
+            &app.join("attachments"),
+            Some(&root.join("home")),
+        );
+        let settled = |params: serde_json::Value| {
+            let request = NativeRequest::parse(&params).unwrap();
+            let NativeDecision::Ask(ask) = decide(
+                &request,
+                &roots,
+                Exposure::ThisTurn,
+                &NativeGrants::default(),
+                false,
+            ) else {
+                panic!("{params} asks after third-party text");
+            };
+            let mut card = native_approval(&ask);
+            card.state = ApprovalState::AllowedOnce;
+            card.validate(true).unwrap_or_else(|_| panic!("{card:?}"));
+            card
+        };
+        let hangul = "한".repeat(300);
+        for (command, target) in [
+            ("\n\npython3 build.py\nls", "python3 build.py"),
+            ("  \n\t\n", "(blank command)"),
+        ] {
+            let card = settled(json!({"name": "bash", "command": command}));
+            assert_eq!(card.target.as_deref(), Some(target), "{command:?}");
+        }
+        let card = settled(json!({"name": "bash", "command": format!("{hangul}\nls")}));
+        let target = card.target.unwrap();
+        assert!(target.len() <= 600 && target.ends_with('…'), "{target}");
+        assert!(target.starts_with(&"한".repeat(190)));
+        let path = root.join("home/Documents").join(format!("{hangul}.csv"));
+        let card = settled(json!({"name": "read", "path": path}));
+        let target = card.target.unwrap();
+        assert!(target.len() <= 600 && target.starts_with('…'), "{target}");
+        assert!(target.ends_with("한.csv"));
+    }
+}
