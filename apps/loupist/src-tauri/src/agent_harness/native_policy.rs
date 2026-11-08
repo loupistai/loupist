@@ -123,8 +123,11 @@ pub struct NativeRoots {
     pub workspace: PathBuf,
     /// The global instruction folder (`AGENTS.md` and `skills/**` live here).
     pub global: PathBuf,
-    /// The app data root: credentials, the database, Pi runtime files.
+    /// The app data root: credentials, Pi runtime files.
     pub app_data: PathBuf,
+    /// This Loupist's data folder (`<workspace>/.loupist`): its database,
+    /// attachments and activity log, beside the instruction files it holds.
+    pub loupist_data: PathBuf,
     /// This run's `TMPDIR` under the Chat's Pi runtime folder.
     pub scratch: PathBuf,
     /// This Chat's attachment folder, which the host asks the model to read.
@@ -137,6 +140,7 @@ impl NativeRoots {
         workspace: &Path,
         global: &Path,
         app_data: &Path,
+        loupist_data: &Path,
         scratch: &Path,
         attachments: &Path,
         home: Option<&Path>,
@@ -145,6 +149,7 @@ impl NativeRoots {
             workspace: resolved(workspace),
             global: resolved(global),
             app_data: resolved(app_data),
+            loupist_data: resolved(loupist_data),
             scratch: resolved(scratch),
             attachments: resolved(attachments),
             home: home.map(resolved),
@@ -162,7 +167,7 @@ pub enum PathClass {
     Scratch,
     /// This Chat's attachments: readable, never written.
     Attachments,
-    /// Anything else under the app data root.
+    /// Anything else under the app data root or the Loupist's data folder.
     AppPrivate,
     /// Credential and startup files anywhere on the host.
     Sensitive,
@@ -189,7 +194,7 @@ pub fn classify(path: &Path, roots: &NativeRoots) -> Classified {
         PathClass::Scratch
     } else if under(&path, &roots.attachments) {
         PathClass::Attachments
-    } else if under(&path, &roots.app_data) {
+    } else if under(&path, &roots.app_data) || loupist_private(&path, roots) {
         PathClass::AppPrivate
     } else if sensitive(&path, roots.home.as_deref()) {
         PathClass::Sensitive
@@ -199,6 +204,12 @@ pub fn classify(path: &Path, roots: &NativeRoots) -> Classified {
         PathClass::Outside
     };
     Classified { class, path }
+}
+
+/// The Loupist's data folder, except its Skills, which workspace discovery
+/// loads like any Skill folder.
+fn loupist_private(target: &Path, roots: &NativeRoots) -> bool {
+    under(target, &roots.loupist_data) && !under(target, &roots.loupist_data.join("skills"))
 }
 
 /// How much third-party text can steer this turn's model.
@@ -725,12 +736,22 @@ mod tests {
             path.canonicalize().unwrap()
         };
         let home = folder(temporary.path().join("home"));
-        let app_data = folder(home.join(".loupist"));
+        let app_data = folder(home.join("Library/Application Support/Loupist"));
         let workspace = folder(home.join("Research"));
+        let loupist_data = folder(workspace.join(".loupist"));
         let runtime = app_data.join("loupists/loupist-a/pi-runtime");
         let scratch = folder(runtime.join("chat-a/temp"));
         let other_chat_temp = folder(runtime.join("chat-b/temp"));
-        let attachments = folder(app_data.join("loupists/loupist-a/attachments/chat-a"));
+        let attachments = folder(loupist_data.join("loupists/loupist-a/attachments/chat-a"));
+        for path in [
+            "loupist.sqlite3",
+            "loupists/loupist-a/attachments/chat-b/brief.pdf.md",
+            "loupists/loupist-a/activity/run-1.jsonl",
+        ] {
+            let file = loupist_data.join(path);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(&file, "x").unwrap();
+        }
         for path in [
             "pi/auth.json",
             "pi/models.json",
@@ -775,6 +796,7 @@ mod tests {
             &workspace,
             &app_data,
             &app_data,
+            &loupist_data,
             &scratch,
             &attachments,
             Some(&home),
@@ -851,8 +873,24 @@ mod tests {
                 app.join("custom-connections/connections.json"),
                 PathClass::AppPrivate,
             ),
-            (home.join(".LOUPIST/pi/auth.json"), PathClass::AppPrivate),
-            (ws.join("../.loupist/pi/auth.json"), PathClass::AppPrivate),
+            (
+                home.join("library/application support/LOUPIST/pi/auth.json"),
+                PathClass::AppPrivate,
+            ),
+            (
+                ws.join("../Library/Application Support/Loupist/pi/auth.json"),
+                PathClass::AppPrivate,
+            ),
+            (ws.join(".loupist/loupist.sqlite3"), PathClass::AppPrivate),
+            (ws.join(".LOUPIST/loupist.sqlite3-wal"), PathClass::AppPrivate),
+            (
+                ws.join(".loupist/loupists/loupist-a/attachments/chat-b/brief.pdf.md"),
+                PathClass::AppPrivate,
+            ),
+            (
+                ws.join(".loupist/loupists/loupist-a/activity/run-1.jsonl"),
+                PathClass::AppPrivate,
+            ),
             (home.join(".ssh/id_ed25519"), PathClass::Sensitive),
             (home.join(".SSH/known_hosts"), PathClass::Sensitive),
             (home.join(".zshrc"), PathClass::Sensitive),
@@ -907,6 +945,26 @@ mod tests {
                 request("ls", app.join("pi")),
                 "refuse app_private",
                 "refuse app_private",
+            ),
+            (
+                request("read", ws.join(".loupist/loupist.sqlite3")),
+                "refuse app_private",
+                "refuse app_private",
+            ),
+            (
+                request("write", ws.join(".loupist/loupist.sqlite3")),
+                "refuse app_private",
+                "refuse app_private",
+            ),
+            (
+                request("grep", ws.join(".loupist")),
+                "refuse app_private",
+                "refuse app_private",
+            ),
+            (
+                request("read", ws.join(".loupist/skills/screen/screen.py")),
+                "allow",
+                "allow",
             ),
             (
                 request("read", home.join(".ssh/id_ed25519")),

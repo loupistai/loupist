@@ -34,8 +34,10 @@ case-insensitive prefix, so a firmlink or case alias of a root still counts.
    `skills` folder.
 2. Scratch: this run's `TMPDIR` (`<app data>/loupists/<id>/pi-runtime/<chat>/temp`).
 3. Attachments: this Chat's attachment folder, which the host asks the model to read.
-4. AppPrivate: anything else under the app data root (credentials, the database,
-   other Chats' runtime folders, `.pi/settings.json`).
+4. AppPrivate: anything else under the app data root (credentials, other Chats'
+   runtime folders, `.pi/settings.json`) or under the Loupist's data folder
+   `<workspace>/.loupist` (the database, other Chats' attachments, the activity
+   log), except its `skills` folder.
 5. Sensitive: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.config/gcloud`, `~/.kube`,
    `~/.docker/config.json`, `~/.netrc`, `~/.git-credentials`, `~/.npmrc`, `~/.pypirc`,
    `~/Library/Keychains`, `~/Library/LaunchAgents`, shell startup files, `~/.gitconfig`,

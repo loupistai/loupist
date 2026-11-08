@@ -21,14 +21,16 @@ const PLAIN_PAGE: &str = "<html><head><title>Brief</title></head><body><article>
     <p>Shipments rose four percent in the quarter while inventories were flat.</p></article></body></html>";
 
 /// The policy's folders for a test turn: the seeded workspace under
-/// `temporary/loupist`, app data under `temporary/app`, home under
-/// `temporary/home`; anything else under `temporary` is outside.
+/// `temporary/loupist` (its data folder at `.loupist` inside it), app data
+/// under `temporary/app`, home under `temporary/home`; anything else under
+/// `temporary` is outside.
 fn native_roots(temporary: &tempfile::TempDir) -> NativeRoots {
     let app = temporary.path().join("app");
     NativeRoots::new(
         &temporary.path().join("loupist"),
         &app,
         &app,
+        &temporary.path().join("loupist/.loupist"),
         &app.join("scratch"),
         &app.join("attachments"),
         Some(&temporary.path().join("home")),

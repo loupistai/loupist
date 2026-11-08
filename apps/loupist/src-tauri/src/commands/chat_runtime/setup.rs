@@ -417,6 +417,10 @@ pub(super) fn admit_chat_turn(
         &instruction_roots.0,
         &instruction_roots.1,
         &state.artifacts.app_data_dir,
+        &state
+            .store
+            .loupist_data_dir(&profile.id)
+            .map_err(map_store)?,
         &turn_resources
             .pi_session()
             .runtime_working_directory()
