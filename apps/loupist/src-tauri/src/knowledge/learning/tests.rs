@@ -1952,38 +1952,114 @@ fn a_short_name_on_a_span_naming_two_companies_is_a_case_with_both() {
 }
 
 #[test]
-fn only_the_cited_spans_name_a_pending_pages_companies() {
-    // The report discusses the bank in its first passage. A "Hana" page that
-    // cites the second passage is bound to the bank only when the claim is on
-    // the passage it cites.
-    for (claimed_on_cited, expected_two_cases) in [(false, true), (true, false)] {
+fn a_claim_on_another_passage_of_the_cited_report_names_a_pending_pages_company() {
+    // The report names the bank in its first passage. A "Hana" page cites the
+    // second passage, whose extraction published no claim. The page may still
+    // be about the bank its report names, so it is one case with a page about
+    // the bank's node whichever passage carries the claim, at admission and at
+    // the next publication, and two cases only beside a company the report
+    // never names.
+    for claimed_on_cited in [false, true] {
+        let nodes = || {
+            vec![
+                company_node("entity-b", "Hana Financial Group", "company"),
+                company_node("entity-m", "Meridian Motors", "company"),
+            ]
+        };
+        let claim = |first: &BasisRef, second: &BasisRef| {
+            let span = if claimed_on_cited { second } else { first };
+            vec![claim_citing("clm_1", "entity-b", "entity-m", span)]
+        };
         let (_dir, store) = setup();
         let (first_passage, second_passage) = two_span_source(&store, "Sector report");
         let other = source(&store, "Filing C");
-        let nodes = vec![
-            company_node("entity-b", "Hana Financial Group", "company"),
-            company_node("entity-m", "Meridian Motors", "company"),
-        ];
-        let span = if claimed_on_cited {
-            &second_passage
-        } else {
-            &first_passage
-        };
-        let claims = vec![claim_citing("clm_1", "entity-b", "entity-m", span)];
-        assert_eq!(
-            two_cases_with(
+        let claims = claim(&first_passage, &second_passage);
+        assert!(
+            !two_cases_with(
                 &store,
                 "Hana",
                 &second_passage,
                 about_node("Hana Financial Group", "entity-b"),
                 &other,
-                nodes,
-                claims
+                nodes(),
+                claims.clone()
             ),
-            expected_two_cases,
             "claim on the cited passage: {claimed_on_cited}"
         );
+        let mut all = manufacturers_and(&[]);
+        all.extend(nodes());
+        reseal_graph(&store, all, claims, AT + 6);
+        assert!(
+            review_states(&store).is_empty(),
+            "a publication reads it the same"
+        );
+        assert_eq!(pending_subjects(&store), 1);
+        let (_dir, store) = setup();
+        let (first_passage, second_passage) = two_span_source(&store, "Sector report");
+        let other = source(&store, "Filing C");
+        let claims = claim(&first_passage, &second_passage);
+        assert!(
+            sources_confirm(&store, "Hana", &second_passage, &other, nodes(), claims),
+            "beside Manufacturer 0, claim on the cited passage: {claimed_on_cited}"
+        );
+        assert_eq!(
+            pages(&begin(&store, AT + 6)),
+            ["Hana ramp", "Manufacturer 0"]
+        );
     }
+}
+
+#[test]
+fn a_pending_spelling_is_a_case_with_the_component_of_the_nodes_keyed_like_it() {
+    // The World holds `삼성전자` and a node spelling it both ways. A page about
+    // the Korean node and a pending "Samsung Electronics Inc." page whose
+    // report published no claim are one company: the English keys meet the
+    // bridge node, whose component holds the Korean one. Admission and the
+    // next publication both read it so; the anchor stays pending; beside an
+    // unrelated company the pending page still counts.
+    let nodes = || {
+        vec![
+            company_node("entity-korean", "삼성전자", "company"),
+            company_node("entity-bridge", "삼성전자(Samsung Electronics)", "company"),
+        ]
+    };
+    let (_dir, store) = setup();
+    let (a, b) = (source(&store, "Report A"), source(&store, "Report B"));
+    assert!(!two_cases_with(
+        &store,
+        "Samsung Electronics Inc.",
+        &a,
+        about_node("삼성전자", "entity-korean"),
+        &b,
+        nodes(),
+        vec![]
+    ));
+    let mut all = manufacturers_and(&[]);
+    all.extend(nodes());
+    reseal_graph(&store, all, vec![], AT + 6);
+    assert!(
+        review_states(&store).is_empty(),
+        "a publication reads it the same"
+    );
+    assert_eq!(
+        pending_subjects(&store),
+        1,
+        "storage binds exact spellings only"
+    );
+    let (_dir, store) = setup();
+    let (a, b) = (source(&store, "Report A"), source(&store, "Report B"));
+    assert!(sources_confirm(
+        &store,
+        "Samsung Electronics Inc.",
+        &a,
+        &b,
+        nodes(),
+        vec![]
+    ));
+    assert_eq!(
+        pages(&begin(&store, AT + 6)),
+        ["Manufacturer 0", "Samsung Electronics Inc. ramp"]
+    );
 }
 
 #[test]

@@ -339,6 +339,8 @@ pub(crate) struct WorldIdentity {
     /// The endpoints of the active claims whose evidence cites each span.
     confirmed_by_span: BTreeMap<String, BTreeSet<String>>,
     keys: BTreeMap<String, BTreeSet<String>>,
+    /// The nodes carrying each key, computed once for the revision.
+    by_key: Option<BTreeMap<String, BTreeSet<String>>>,
     components: Option<BTreeMap<String, String>>,
 }
 
@@ -386,6 +388,7 @@ impl WorldIdentity {
                 .collect(),
             confirmed_by_span,
             keys: BTreeMap::new(),
+            by_key: None,
             components: None,
         }
     }
@@ -439,8 +442,35 @@ impl WorldIdentity {
         self.components.as_ref()?.get(node).cloned()
     }
 
+    /// The nodes whose name or alias keys contain `key`: who a page filed
+    /// under a name with that key may be about, so a pending "Samsung
+    /// Electronics Inc." page joins the node spelled `삼성전자(Samsung
+    /// Electronics)` and, through its component, `삼성전자`.
+    pub(crate) fn nodes_keyed(&mut self, key: &str) -> BTreeSet<String> {
+        self.key_index().get(key).cloned().unwrap_or_default()
+    }
+
+    fn key_index(&mut self) -> &BTreeMap<String, BTreeSet<String>> {
+        if self.by_key.is_none() {
+            let ids: Vec<String> = self.nodes.keys().cloned().collect();
+            let mut by_key: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+            for id in ids {
+                for key in self.keys(&id).cloned().unwrap_or_default() {
+                    by_key.entry(key).or_default().insert(id.clone());
+                }
+            }
+            self.by_key = Some(by_key);
+        }
+        self.by_key.as_ref().expect("the key index")
+    }
+
     fn join_components(&mut self) -> BTreeMap<String, String> {
         let ids: Vec<String> = self.nodes.keys().cloned().collect();
+        let position: BTreeMap<&str, usize> = ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (id.as_str(), i))
+            .collect();
         let mut parent: Vec<usize> = (0..ids.len()).collect();
         fn root(parent: &mut [usize], mut i: usize) -> usize {
             while parent[i] != i {
@@ -449,19 +479,14 @@ impl WorldIdentity {
             }
             i
         }
-        let mut holder: BTreeMap<String, usize> = BTreeMap::new();
-        for (i, id) in ids.iter().enumerate() {
-            let keys = self.keys(id).cloned().unwrap_or_default();
-            for key in keys {
-                match holder.get(&key) {
-                    Some(&j) => {
-                        let (a, b) = (root(&mut parent, i), root(&mut parent, j));
-                        parent[a] = b;
-                    }
-                    None => {
-                        holder.insert(key, i);
-                    }
-                }
+        for holders in self.key_index().values() {
+            let mut holders = holders.iter().map(|id| position[id.as_str()]);
+            let Some(first) = holders.next() else {
+                continue;
+            };
+            for j in holders {
+                let (a, b) = (root(&mut parent, first), root(&mut parent, j));
+                parent[a] = b;
             }
         }
         let mut smallest: BTreeMap<usize, &str> = BTreeMap::new();

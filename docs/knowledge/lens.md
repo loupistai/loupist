@@ -169,20 +169,25 @@ cancelled, quarantined or reconciled, since a World that gave up on a Source
 cannot reveal more from it. The revision's dependency list is not the ledger: a
 Source read without yielding a claim leaves that list on the next publication.
 A Source with no job, or none for its latest revision, holds the page. The page
-is then a case with every company the World claims on the spans it cites (every
-endpoint of an active claim whose evidence is one of those spans, of the core
-Organization kind or an extension type of the company category) and with the
-keys of each name it was filed under. So a page filed under `Halvorsen
-Cellworks` that cites the report extraction canonicalized as `Halvorsen
-Cellworks ASA` is one case with that node, and a `Hana` page citing a loan
-passage whose claim joins `Hana Financial Group` and `Hana Co.` is one case
-with both, never independent of either: a short name cannot pick the
-counterparty on its own span. A name the World never extracted, because the
-extraction failed or found nothing, still counts under its own key, so two
-Chats about `Halvorsen Cellworks` and `Ferroluz Componentes` learn with no
-World output at all, while `Kestrel Foundry` and `Kestrel Foundry Inc.` stay
-one case. A claim on another passage of the report, a Product, or a withdrawn
-claim name no company for the page.
+is then a case with every company the World claims on any span of a Source it
+cites (every endpoint of an active claim whose evidence is a span of that
+Source, of the core Organization kind or an extension type of the company
+category), with the keys of each name it was filed under, and with every World
+node whose names or aliases carry one of those keys, so with that node's keys
+and component too. So a page filed under `Halvorsen Cellworks` that cites the
+report extraction canonicalized as `Halvorsen Cellworks ASA` is one case with
+that node; a `Hana` page citing a loan passage whose claim joins `Hana
+Financial Group` and `Hana Co.` is one case with both, never independent of
+either, and so is a `Hana` page citing a claimless passage of a report whose
+other passage names the bank: a short name cannot pick the counterparty on its
+own span, nor deny the bank its own report names; and a `Samsung Electronics
+Inc.` page whose report published nothing is one case with a page about
+`삼성전자` when a node spells `삼성전자(Samsung Electronics)`. A name the World
+never extracted, because the extraction failed or found nothing, still counts
+under its own key, so two Chats about `Halvorsen Cellworks` and `Ferroluz
+Componentes` learn with no World output at all, while `Kestrel Foundry` and
+`Kestrel Foundry Inc.` stay one case. A Product, a withdrawn claim, or a claim
+on another Source name no company for the page.
 The anchor stays pending in storage either way. A pending page citing a Source
 the World is not through with is not evidence, but its rows are not consumed: a
 review that reaches inference advances its watermark past them and stores their
