@@ -36,8 +36,11 @@ an artifact cascades to its history. Publication, restore and pruning are atomic
 ### Local workspace execution
 
 Pi's CLI CWD stays in a private runtime directory; native `read`, `write`, `edit`,
-`bash`, `ls`, `find` and `grep` operate from the selected workspace. File changes
-are immediate and survive a failed or cancelled reply.
+`bash`, `ls`, `find` and `grep` operate from the selected workspace, the Loupist
+folder, and stay inside it: Rust refuses a file outside the folder, this run's
+scratch and this Chat's attachments, and runs each command inside an OS sandbox
+whose prefix `native.authorize` returns ([Native tool permissions](permissions.md)).
+File changes are immediate and survive a failed or cancelled reply.
 
 `workspace-tools` holds the pinned, digest-verified `fd` and `rg` that Pi's native
 `find` and `grep` need offline (`apps/loupist/scripts/stage_workspace_tools.py`).

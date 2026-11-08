@@ -14,7 +14,7 @@ and qualification procedures.
 
 ## Trust
 
-React submits typed intent. Rust owns credentials, SQLite transactions, broker permissions and process lifetime. Native tools run with the user's host permissions; the workspace is not a filesystem sandbox, but Rust decides each native call from the target's path class and the turn's exposure to third-party text, refusing the app's private data and asking the user in a card where judgment adds safety: [Native tool permissions](runtime/permissions.md). Credentials, custom MCP and where bytes live: [Storage and authority](runtime/storage-authority.md#authority-and-credentials). The untrusted-text tier, web-site approval and holdings redaction: [Untrusted text](runtime/untrusted-text.md). GitHub, the Gallery and import links: [Publishing](knowledge/publishing.md).
+React submits typed intent. Rust owns credentials, SQLite transactions, broker permissions and process lifetime. Native tools run as the user, confined without asking: file tools work inside the Loupist folder, Bash runs inside an OS sandbox that goes offline once the reply has read third-party text, and Rust decides each call from the target's path class and the reply's exposure: [Native tool permissions](runtime/permissions.md). Credentials, custom MCP and where bytes live: [Storage and authority](runtime/storage-authority.md#authority-and-credentials). The untrusted-text tier, the known-site rule and holdings redaction: [Untrusted text](runtime/untrusted-text.md). GitHub, the Gallery and import links: [Publishing](knowledge/publishing.md).
 
 ## Find a topic
 

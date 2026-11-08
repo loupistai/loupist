@@ -1,15 +1,15 @@
 # Native tool permissions
 
-What a native Pi tool (`read`, `ls`, `find`, `grep`, `write`, `edit`, `bash`) may do in one Chat reply, decided by Rust from the target's path class and how much third-party text the model has seen. Ordinary work never shows a card; one card appears where a person's judgment adds safety.
+What a native Pi tool (`read`, `ls`, `find`, `grep`, `write`, `edit`, `bash`) may do in one Chat reply, decided by Rust from the target's path class and whether the reply has read third-party text. Nothing asks the user: file tools work inside the Loupist folder, Bash runs inside an OS sandbox, and everything else is refused with a `next` that tells the model what to do instead.
 
 The policy is one pure module,
-`apps/loupist/src-tauri/src/agent_harness/native_policy.rs`. The extension
+`apps/loupist/src-tauri/src/agent_harness/native_policy.rs`; the sandbox is
+`apps/loupist/src-tauri/src/agent_harness/sandbox.rs`. The extension
 (`apps/loupist/agent/workspace-tools.mjs`) asks `native.authorize` before every
 native execution with the resolved file (`read`, `write`, `edit`), the resolved search
 root (`ls`, `find`, `grep`; the workspace by default) or the exact command (`bash`).
 `AppToolExecutor::native_authorize` (`commands/tool_executor/workspace.rs`) parses the
-request once, decides, and asks the user through an approval card when the policy
-says so. Unattended runs refuse every native tool before this policy
+request once and decides. Unattended runs refuse every native tool before this policy
 (`briefings/policy.rs`).
 
 ## Exposure
@@ -18,7 +18,7 @@ says so. Unattended runs refuse every native tool before this policy
 | --- | --- |
 | Clean | No third-party text this reply. Earlier replies do not count: the user's new message is the checkpoint. |
 | ThisTurn | This turn raised the untrusted-text tier ([Untrusted text](untrusted-text.md)). |
-| Custom | This turn read a custom-connection result. File rows behave as ThisTurn; Bash stays refused by `TurnTaint::enforce` (`outbound_paused`). |
+| Custom | This turn read a custom-connection result. File rows behave as ThisTurn; Bash is refused (`outbound_paused`). |
 
 ## Path classes
 
@@ -41,88 +41,107 @@ firmlink or case alias of a root counts at whatever depth it spells the root.
    runtime folders, `.pi/settings.json`) or under the Loupist's data folder
    `<workspace>/.loupist` (the database, other Chats' attachments, the activity
    log), except its `skills` folder.
-5. Sensitive: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.config/gcloud`, `~/.kube`,
+5. Credentials: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.config/gcloud`, `~/.kube`,
    `~/.docker/config.json`, `~/.netrc`, `~/.git-credentials`, `~/.npmrc`, `~/.pypirc`,
-   `~/Library/Keychains`, `~/Library/LaunchAgents`, shell startup files, `~/.gitconfig`,
-   `~/.config/git/**`, `~/.config/gh/**`, and the `hooks/**` and `config` of any git
-   directory (`.git`, a submodule's `.git/modules/<path>`, a bare `*.git`). One
-   table in the module.
-6. Workspace: inside the selected workspace.
-7. Outside: everything else.
+   `~/.config/gh/**`, `~/.config/git/**`, `~/Library/Keychains` and the shell startup
+   files (`.zshrc`, `.zprofile`, `.zshenv`, `.zlogin`, `.bashrc`, `.bash_profile`,
+   `.profile`, `~/.config/fish/**`). One table (`CREDENTIAL_HOME`) serves this class
+   and the sandbox's masks.
+6. GitConfig: the `hooks/**` and `config` of any git directory (`.git`, a
+   submodule's `.git/modules/<path>`, a bare `*.git`).
+7. Workspace: inside the selected workspace, the Loupist folder.
+8. Outside: everything else.
 
 ## Policy table
 
 | Tool | Class | Clean | ThisTurn, Custom |
 | --- | --- | --- | --- |
-| read, ls | AppPrivate | Refuse | Refuse |
-| read, ls | Sensitive | Ask `file_read` | Ask `file_read` |
-| read, ls | Instructions, Scratch, Attachments, Workspace | Allow | Allow |
-| read, ls | Outside | Allow | Ask `file_read` (folder, this reply) |
-| find, grep | root AppPrivate, or root contains the app data root | Refuse | Refuse |
-| find, grep | root Sensitive, or root holds a home Sensitive location (`~/.config`) | Ask `file_read` | Ask `file_read` |
+| read, ls | Instructions, Scratch, Attachments, GitConfig, Workspace | Allow | Allow |
+| read, ls | AppPrivate, Credentials | Refuse `protected_path` | Refuse `protected_path` |
+| read, ls | Outside | Refuse `outside_workspace` | Refuse `outside_workspace` |
+| find, grep | root contains the app data root | Refuse `protected_path` | Refuse `protected_path` |
 | find, grep | otherwise | as read | as read |
-| write, edit | AppPrivate, Attachments | Refuse | Refuse |
-| write, edit | Sensitive | Ask `file_write` | Ask `file_write` |
 | write, edit | Scratch, Workspace | Allow | Allow |
-| write, edit | Instructions | Allow | Ask `instructions` (that file) |
-| write, edit | Outside | Allow | Ask `file_write` (folder, this reply) |
-| bash | | Allow | ThisTurn: Ask `command`. Custom: Refuse. |
+| write, edit | Instructions | Allow | Refuse `untrusted_text_paused` |
+| write, edit | AppPrivate, Attachments, Credentials, GitConfig | Refuse `protected_path` | Refuse `protected_path` |
+| write, edit | Outside | Refuse `outside_workspace` | Refuse `outside_workspace` |
+| bash | | Allow, online | ThisTurn: Allow offline inside a verified sandbox, else Refuse `untrusted_text_paused`. Custom: Refuse `outbound_paused`. |
 
-Refusals carry a broker code the step shows: `protected_path` for AppPrivate and a
-search above app data, `user_declined` after Not now on a file card, and
-`untrusted_text_paused` after Not now on a command ([Chat turns](chat-turns.md)).
-
-## Cards
-
-`ChatApproval.kind` is `command`, `file_read`, `file_write` or `instructions`;
-`connection_name` is "Workspace", `tool_name` the native tool, `target` the path or
-the command's first non-blank line (at most 600 bytes), and `detail` the whole
-command (at most 8 KiB). A command with no visible text shows "(blank command)";
-zero-width and bidi controls, the byte order mark and other control characters
-in a target or command show as `\u{…}`. The card wraps the command and shows its
-line count beside it.
-
-- `command`: Allow once (this exact command, this reply), Allow commands for this
-  reply, Not now.
-- `file_read`, `file_write`: Allow (this reply), Not now. "Always" counts as once.
-  Allow covers an outside file's folder, except a file directly in the home
-  folder or at the root of the disk, which covers that file only; a directory
-  target or a search root covers that directory only; a sensitive file covers
-  that file only.
-- `instructions`: Allow once (that file, this reply), Not now.
-- Not now, a card the wait outran and a run stop decline that kind for the rest
-  of the reply; later calls of that kind are refused without a card.
-- A call that cannot show a card (an unattended run, no sink, or a reply already
-  holding `MAX_PROGRESS_APPROVALS` cards) is refused on its own with
-  `execution_failed` and a `next` that says why; the kind is not declined.
-
-One `tokio::sync::Mutex` per ask kind: a call that decides Ask takes its kind's lock,
-decides again (a card answered meanwhile may cover it) and only then asks, so
-same-kind asks show one card at a time and different kinds ask concurrently.
-Allowed calls never take a lock.
+Every refusal carries a `next` for the model. `outside_workspace` says to ask the
+user to attach the file to the chat or copy it into the Loupist folder, and the
+Chat step says the same to the user, as `protected_path` and
+`untrusted_text_paused` steps already do ([Chat turns](chat-turns.md)). A search root
+containing `.loupist` data is still allowed, so a workspace `grep` never refuses;
+`rg` prints no binary database pages.
 
 An allowed `write` or `edit` returns the canonical target as `resolved`; the
 extension re-resolves the path right before writing and refuses on mismatch, so a
 symlink swapped in after authorization cannot redirect the write.
 
+## Bash sandbox
+
+An allowed `bash` returns `sandbox: {argv, env}` when the host has a verified
+sandbox. The extension runs the command through Pi's `BashOperations` as
+`argv…, <shell>, -c, <command>`, each its own argument, with `env` added to the
+allowlisted environment; a malformed `sandbox` throws instead of running the
+command. Without `sandbox` in the answer (a clean reply on a host with none) the
+command runs as before. Rust builds the prefix from the turn's roots:
+
+| Rule | Linux (bubblewrap) | macOS (`/usr/bin/sandbox-exec -p`) |
+| --- | --- | --- |
+| Writes | Workspace and scratch bound read-write over a read-only `/`; a private tmpfs `/tmp`. | `(deny file-write*)` except the workspace, scratch and `/dev/null`, `/dev/stdout`, `/dev/stderr`, `/dev/tty*`, `/dev/fd/*`. |
+| `<workspace>/.loupist`, app data root | A tmpfs over each, remounted read-only last; `.loupist/skills`, `.loupist/AGENTS.md`, `.loupist/config.toml`, the global `skills` and `AGENTS.md`, this Chat's attachments and scratch bound back (attachments and instruction files read-only). | `(deny file-read*)` and `(deny file-write*)` on each with `require-not` exclusions for the same paths. |
+| Workspace `.git/config`, `.git/hooks` | Bound read-only over themselves. | `(deny file-write*)`. |
+| Credentials | Each existing `CREDENTIAL_HOME` entry: a folder gets a read-only tmpfs, a file `/dev/null`. | `(deny file-read*)` on each entry. |
+| Network | `--unshare-net` after third-party text. | `(deny network*)` after third-party text. |
+| Processes | `--unshare-pid --die-with-parent --new-session`: bubblewrap is the init of a pid namespace, so Pi's group kill on abort or timeout ends every sandboxed process. | The host's process rules; Pi kills the process group. |
+| Caches | `XDG_CACHE_HOME`, `PIP_CACHE_DIR`, `UV_CACHE_DIR`, `npm_config_cache`, `MPLCONFIGDIR` point under `<scratch>/cache`. | Same. |
+
+The macOS profile is `(allow default)` followed only by deny rules, each with
+its own exclusions, so no allow and deny ever match the same operation and path
+and nothing rests on rule precedence.
+
+### Probe and fallback
+
+At startup Rust probes the sandbox once per app run, prewarmed like the login
+PATH (`sandbox::prewarm`): it lays out a temporary folder like a turn's roots,
+opens a local listener, and runs `/bin/bash` under the sandbox twice. Offline, a
+write inside the folder and scratch must succeed; a write outside, into the
+data folder or into a git hook must fail; the app's `auth.json`, `~/.netrc`,
+`~/.ssh` and the database must read as absent or empty; a Skill, an attachment
+and a hook must still read; a connection to the listener must fail. Online the
+connection must succeed, which proves the offline check measured the network.
+Rust also checks the host folder afterwards. Only a passing probe enables the
+sandbox; a turn that starts before the probe finishes waits for it off the async
+workers, up to the probe's deadline.
+
+Without a verified sandbox (a failed probe, no `bwrap`, Windows): a clean reply
+runs Bash unconfined as before, and a reply that read third-party text refuses
+Bash with `untrusted_text_paused`. Bash never runs unconfined after third-party
+text.
+
 ## Residual risk
 
-- Bash runs with the user's host permissions and no OS sandbox. A macOS seatbelt
-  (no network, writes confined) would let a tainted turn run commands offline
-  without a card; it needs macOS verification.
-- `models.json` and `connections.json` are AppPrivate for native file tools, but a
-  command can still write them. An integrity seal checked before launch is a
-  follow-up.
-- A later reply starts clean even though third-party text read earlier can stay in the
-  model's context. The user's new message is the checkpoint. An OS sandbox for Bash
-  (follow-up) is the real fix.
-- Bash output never raises the untrusted-text tier, and background commands can
-  outlive the turn.
-- A workspace search runs `rg --hidden` over the whole workspace, so it reaches
-  the workspace's `.git` contents and the text files under `.loupist` (other
-  Chats' attachments; the database is binary, which `rg` does not print) that a
-  direct `read` would ask about or refuse. Only a root that holds a home
-  Sensitive location asks.
+- The macOS profile is verified only by the startup probe until it is checked
+  on a Mac; the Linux sandbox has integration tests against real bubblewrap
+  (`sandbox.rs`, `workspace-tools.test.mjs`).
+- In a clean reply Bash has the network, so a command can send what it reads.
+  The reply's own text is the model's; third-party text turns the network off.
+- Bash reads everything the user can read outside the masked set: the app data
+  root, `.loupist` data and the `CREDENTIAL_HOME` table are hidden, other home
+  files are not. `~/.gitconfig` stays readable so `git` keeps its identity.
+- Only the workspace root's `.git/config` and `.git/hooks` are read-only for
+  Bash; a nested repository's are writable like the rest of the workspace. File
+  tools refuse every git directory's hooks and config.
+- A Loupist folder that contains the home folder exposes its non-credential
+  files to every tool and its credential locations to `find` and `grep`.
+- Masks apply to the folders that exist when the command starts; the file tools
+  classify by path regardless.
+- `models.json` and `connections.json` are AppPrivate for native file tools and
+  hidden from Bash; a clean reply's unconfined command on a host without a
+  sandbox can still write them.
+- Bash output never raises the untrusted-text tier, and a background command can
+  outlive the turn, inside the sandbox.
 - Pi's `read` falls back to curly-quote, NFD and U+202F spellings of a missing
   path, so the file it opens can differ from the one Rust classified. Rust
   classifies the path the extension sends, not the fallback.

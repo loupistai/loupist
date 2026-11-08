@@ -10,18 +10,19 @@
 | World extraction (in-process, `knowledge/world_extract/`) | Derived extraction, reconciliation and retrieval through isolated Pi inference; returned JSON is untrusted until Rust validates it and publishes canonical Memory |
 | OpenBB MCP worker | Loupist-scoped read-only financial data under captured connector grants |
 
-Native tools run with the user's host permissions, accept absolute paths and can
-use installed runtimes and network access. The workspace is a starting directory,
-not a filesystem sandbox. Rust decides every native call before it runs: the app's
-private data (credentials, the database, Pi runtime files) is never read or written
-by a native file tool, credential and startup files ask the user, and after
-third-party text a command or a file outside the workspace waits on a card
+Native tools run as the user and can use installed runtimes. Rust decides every
+native call before it runs and never asks: file tools reach the Loupist folder, this
+run's scratch and this Chat's attachments, and refuse the app's private data
+(credentials, the database, Pi runtime files), home credential locations and
+everything outside the folder; Bash runs inside an OS sandbox (bubblewrap on Linux,
+`sandbox-exec` on macOS) that confines writes to the folder and scratch, hides the
+same private data, and drops the network once the reply has read third-party text
 ([Native tool permissions](permissions.md)). Bash receives an allowlisted environment
 without app credentials or shell startup hooks; its PATH is described under
 [Local workspace execution](chat-turns.md#local-workspace-execution). A command can
-still reach other user-readable files, the policy's residual risk. The folder-opening
-UI requires an explicit trust check; there is no saved per-Loupist native-execution
-switch.
+still read other user-readable files outside the masked set, the policy's residual
+risk. The folder-opening UI requires an explicit trust check; there is no saved
+per-Loupist native-execution switch.
 
 Release builds do not forward host `*_API_KEY` variables to Pi; Pi uses the saved
 credential in its private `auth.json` (debug builds other than `e2e` still forward

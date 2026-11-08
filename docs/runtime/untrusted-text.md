@@ -1,6 +1,6 @@
 # Untrusted text
 
-Third-party text raises a turn tier that pauses outbound tools, wraps the text the model sees, and gates new web sites. Holdings quantities stay on this computer.
+Third-party text raises a turn tier that pauses outbound tools, takes commands offline, wraps the text the model sees, and keeps `web_fetch` to known sites. Holdings quantities stay on this computer.
 
 Third-party text raises a weaker tier of the same `TurnTaint`
 (`apps/loupist/src-tauri/src/custom_connections/taint.rs`). After a `web_search`,
@@ -8,16 +8,17 @@ Third-party text raises a weaker tier of the same `TurnTaint`
 numeric-only list (`NUMERIC_ONLY_OPENBB_TOOLS`; profiles, filing documents, transcripts and
 news raise it, prices and statements do not), Rust refuses custom-connection calls
 and schedule create, update, status and Run now for the rest of the turn with
-`untrusted_text_paused`. Native Bash, and reads or writes outside the workspace or of
-instruction files, ask the user in a card instead and are refused only after Not now
-([Native tool permissions](permissions.md)). The refused step carries its
-`refusal` in Chat progress (`untrusted_text_paused`, `protected_path` or
-`user_declined`), set from the broker's own trace of that call
+`untrusted_text_paused`. Native Bash keeps running inside the OS sandbox with the
+network off, or is refused where no verified sandbox exists; a write to an
+instruction file is refused for the reply; native file tools stay inside the Loupist
+folder in every reply ([Native tool permissions](permissions.md)). The refused step
+carries its `refusal` in Chat progress (`untrusted_text_paused`, `protected_path` or
+`outside_workspace`), set from the broker's own trace of that call
 (`ToolTraceCapture::refused`), never from model-facing text, and the Chat labels the
-step and explains it with no override in the step; a new card appears only for a
-different kind. Workspace file tools, datasets, charts, Memory and market data stay
-allowed, and web reads stay allowed within the site rule below. The tier rises
-before the result is delivered, so parallel calls are checked against it.
+step and explains it with no override in the step. Workspace file tools, datasets,
+charts, Memory and market data stay allowed, and web reads stay allowed within the
+site rule below. The tier rises before the result is delivered, so parallel calls are
+checked against it.
 The model's copy of that text, and of custom-connection results, is wrapped in
 `<<untrusted id=… source="…">>` … `<<end untrusted id=…>>` with a random
 per-delivery id; retained captures keep the original bytes. A custom-connection
@@ -70,11 +71,10 @@ perspective, Lens bodies or notes and Journal text, is refused on any site. Offi
 filing and statistics sites (`RESEARCH_SITES`) open. A site seen this turn (a search
 result's or fetched page's host, or a site named in the user's message) opens when its
 path is at most 1024 bytes and its query and fragment total at most 256 bytes. The
-path bound is wider because a percent-encoded Korean article slug is long. Anything else shows an approval card
-(`kind: web_site`, Allow once or Not now). Allow once adds the site for the turn; Not
-now, an expired card or an unattended run refuses it and every later new site in the
-turn without asking. Links and text inside a page, its alternates and a saved Source's
-own site never count as known.
+path bound is wider because a percent-encoded Korean article slug is long. Anything
+else is refused with `untrusted_text_paused` and a `next` that says to find the page
+with `web_search` and fetch the result, whose exact URL then opens. Links and text
+inside a page, its alternates and a saved Source's own site never count as known.
 
 These URL privacy checks run in production builds as well as tests. Debug-only
 prompt and tool-result canary logging is separate from this outbound gate.
