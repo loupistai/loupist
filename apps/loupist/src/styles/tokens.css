@@ -104,6 +104,7 @@
   --gg-space-8: 40px;
   --gg-space-9: 48px;
   --gg-space-10: 64px;
+  --gg-size-control-xs: 24px;
   --gg-size-control-sm: 28px;
   --gg-size-control-md: 32px;
   --gg-size-control-lg: 36px;
@@ -112,7 +113,9 @@
   --gg-size-chat-column: 760px;
   /* The floating "In this chat" rail (context-rail.md R1). */
   --gg-size-rail: 280px;
+  /* A reading page stops at a pixel width; a run of prose inside it stops at a character count. */
   --gg-size-reading-column: 720px;
+  --gg-size-prose-measure: 72ch;
   --gg-size-page: 1120px;
   --gg-size-inspector: 360px;
   --gg-size-mini-map: 320px;
@@ -132,6 +135,8 @@
   --gg-motion-fast: 120ms;
   --gg-motion-normal: 180ms;
   --gg-motion-slow: 280ms;
+  --gg-motion-heartbeat: 1s;
+  --gg-motion-shimmer: 2s;
   --gg-motion-map-enter: 600ms;
   --gg-motion-map-stagger: 40ms;
   --gg-ease-out: cubic-bezier(0.2, 0, 0, 1);
@@ -278,15 +283,6 @@
 
 /* Figures line up (X10): tables, receipts, the Map stats, briefing rows, attention counts and palette captions. */
 .gg-num, table, .chat-receipt, .map-stats, .briefing-sections, .needs-attention, .command-palette-row small, .market-status { font-variant-numeric: tabular-nums; }
-/* Reduced motion (X19): one guard for every CSS animation and transition; progress spinners keep turning because they carry status. */
-@media (prefers-reduced-motion: reduce) {
-  *:not(.animate-spin), *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
 :root:lang(ko) { word-break: keep-all; overflow-wrap: anywhere; }
 * { box-sizing: border-box; }
 html, body, #root { min-height: 100%; margin: 0; }
@@ -346,15 +342,20 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
     --gg-motion-fast: 0ms;
     --gg-motion-normal: 0ms;
     --gg-motion-slow: 0ms;
+    --gg-motion-heartbeat: 0ms;
+    --gg-motion-shimmer: 0ms;
     --gg-motion-map-enter: 0ms;
     --gg-motion-map-stagger: 0ms;
   }
   *, *::before, *::after {
     animation-duration: 0ms !important;
     animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: var(--gg-motion-instant) !important;
     transition-property: opacity !important;
     scroll-behavior: auto !important;
   }
+  /* Motion stops everywhere; a spinner stays on screen as a static glyph, and its role="status" label carries the state. */
+  .animate-spin { animation: none !important; }
 }
 @keyframes gg-map-enter-reduced { from { opacity: 0; } to { opacity: 1; } }

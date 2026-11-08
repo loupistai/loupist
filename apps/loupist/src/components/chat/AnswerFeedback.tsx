@@ -4,7 +4,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import { ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
 import { SavedPrinciple } from "./SavedPrinciple";
 import { PrincipleForm } from "../map/PrincipleForm";
-import type { LoupistBridge, KnowledgeLocation, Principle, ChatFeedback, ChatMessage } from "../../types";
+import type { LoupistBridge, Principle, ChatFeedback, ChatMessage } from "../../types";
+import { useGo } from "../navigation/Open";
 import { feedbackTeachingPrompt } from "../../chat/answerFeedback";
 import { errorMessage } from "../../lib/errors";
 
@@ -14,14 +15,15 @@ export type SaveAnswerFeedback = (messageId: string, value: Pick<ChatFeedback, "
 
 const busyReason = () => t("answerFeedback.availableWhenTheReplyFinishes");
 
-export function AnswerFeedback({ message, onSave, onTeach, feedbackBusy = false, bridge, loupistId, chatId, onOpenPrinciple }: {
-  bridge?: LoupistBridge; loupistId?: string; chatId?: string; onOpenPrinciple?: (location: KnowledgeLocation) => void;
+export function AnswerFeedback({ message, onSave, onTeach, feedbackBusy = false, bridge, loupistId, chatId }: {
+  bridge?: LoupistBridge; loupistId?: string; chatId?: string;
   message: ChatMessage;
   onSave: SaveAnswerFeedback;
   onTeach: (text: string) => void;
   feedbackBusy?: boolean;
 }) {
   useTranslation("chat");
+  const go = useGo();
   const [feedback, setFeedback] = useState(message.feedback);
   const [principleForm, setPrincipleForm] = useState(false);
   const [savedPrinciple, setSavedPrinciple] = useState<Principle>();
@@ -65,7 +67,8 @@ export function AnswerFeedback({ message, onSave, onTeach, feedbackBusy = false,
   };
   const viewPrinciple = () => {
     if (!bridge || !loupistId || !savedPrinciple) return;
-    onOpenPrinciple?.({ loupistId, surface: "lens", recordId: savedPrinciple.recordId });
+    // A principle has no page for the Evidence reader to show; it opens on "What {Loupist} knows".
+    go?.({ kind: "page", location: { loupistId, surface: "lens", recordId: savedPrinciple.recordId } });
   };
   const showCorrection = editing || Boolean(feedback?.correction) || Boolean(error);
   return <>

@@ -135,6 +135,8 @@ export type ChatProgress = {
 export type ChatProgressPatch = {
   sequence: number;
   upsertItems?: ChatProgressItem[];
+  /** Text appended to commentary already published; an id is here or in `upsertItems`, never both. */
+  appendText?: { id: string; text: string }[];
   removeItemIds?: string[];
   finishedAtMs?: number;
   /** The whole plan whenever it changed. */
@@ -682,10 +684,21 @@ export type ChatMessage = HostPostRecords & {
   memory_revision?: string;
   execution_model?: ExecutionModelLock;
   agent_harness?: AgentHarnessSnapshot;
-  /** While the last commentary item is being written, answerOffset is the length of settled text before it. */
-  progress?: ChatProgress & { answerOffset?: number };
+  progress?: ChatProgress;
   /** Live run phase. Not stored with the Chat message. */
   phase?: ChatRunPhase;
+  /**
+   * The commentary the host is writing now, how long the answer was when it
+   * began, and whether its settled text is on its way into the answer. Not
+   * stored with the Chat message.
+   */
+  draft?: { id: string; answerLength: number; settled: boolean };
+  /**
+   * The id of the draft the answer first settled from. The answer's Markdown
+   * node keeps this key from draft to answer and across a refresh from the
+   * store. Not stored with the Chat message.
+   */
+  answer_key?: string;
   attachments?: ChatAttachment[];
   artifact_refs?: ChatArtifactRef[];
   performance?: ChatPerformance;
@@ -828,7 +841,13 @@ export type ChatStreamEvent =
   | { type: "memory"; run_id: string; memories: MemoryRef[] }
   | { type: "schedule"; run_id: string; receipt: ScheduleReceipt }
   | { type: "evidence"; run_id: string; evidence: ChatEvidenceRef }
-  | { type: "delta"; run_id: string; text: string }
+  | {
+      type: "delta";
+      run_id: string;
+      text: string;
+      /** The live commentary this settled text replaces; its copy leaves in the same update. */
+      settles?: string;
+    }
   | {
       type: "generation_finished";
       run_id: string;

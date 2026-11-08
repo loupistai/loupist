@@ -8,8 +8,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { usePacedText } from "../../chat/usePacedText";
-import type { ChatEvidenceRef } from "../../types";
 import type { DiagramPlugin } from "@streamdown/mermaid";
 import { hasCompleteMermaidFence, loadMermaidPlugin } from "./mermaidPlugin";
 
@@ -71,17 +69,9 @@ class MessageRenderBoundary extends Component<
 type Props = {
   text: string;
   isAnimating: boolean;
-  onOpenLink: (url: string) => Promise<void> | void;
-  onOpenFile?: (path: string) => void;
-  onLensLink?: (recordId: string) => void;
-  lensLinks?: import("../ai-elements/message-response").LensLinkActions;
-  evidenceRefs?: ChatEvidenceRef[];
-  memoryRefs?: import("../../types").MemoryRef[];
-  onOpenEvidence?: (evidence: ChatEvidenceRef, anchor?: HTMLElement) => void;
+  /** Draw a caret after the last block; only while animating. */
+  caret?: boolean;
   numberChecks?: import("../../types").NumberCheck[];
-  asOf?: string;
-  onOpenEvidenceCell?: (evidence: ChatEvidenceRef, cell?: import("./NumberChip").EvidenceCell) => void;
-  onShowStep?: (evidence: ChatEvidenceRef) => void;
   workspacePath?: string;
   workspaceBasePath?: string;
 };
@@ -118,13 +108,12 @@ function useDeferredMermaidPlugin(
   return requiresMermaid ? plugin : undefined;
 }
 
-export function SafeMessageResponse({ text, isAnimating, onOpenLink, onOpenFile, onLensLink, lensLinks, evidenceRefs, memoryRefs, onOpenEvidence, numberChecks, asOf, onOpenEvidenceCell, onShowStep, workspacePath, workspaceBasePath }: Props) {
+export function SafeMessageResponse({ text, isAnimating, caret = false, numberChecks, workspacePath, workspaceBasePath }: Props) {
   // A cold instance must keep its Lazy type after the module becomes warm.
   // Switching to the resolved function remounts citations, losing focus and a
   // press already in progress when unrelated chat state next renders.
   const MessageResponse = useRef(readyRenderer ?? LazyMessageResponse).current;
-  const visibleText = usePacedText(text, isAnimating);
-  const fallback = <p className="message-response-fallback">{plainResponseText(visibleText)}</p>;
+  const fallback = <p className="message-response-fallback">{plainResponseText(text)}</p>;
   const mermaidPlugin = useDeferredMermaidPlugin(text, isAnimating);
 
   return (
@@ -132,22 +121,13 @@ export function SafeMessageResponse({ text, isAnimating, onOpenLink, onOpenFile,
       <Suspense fallback={fallback}>
         <MessageResponse
           isAnimating={isAnimating}
+          caret={caret && isAnimating ? "block" : undefined}
           mermaidPlugin={mermaidPlugin}
-          onOpenLink={onOpenLink}
-          onOpenFile={onOpenFile}
-          onLensLink={onLensLink}
-          lensLinks={lensLinks}
-          evidenceRefs={evidenceRefs}
-          memoryRefs={memoryRefs}
-          onOpenEvidence={onOpenEvidence}
           numberChecks={numberChecks}
-          asOf={asOf}
-          onOpenEvidenceCell={onOpenEvidenceCell}
-          onShowStep={onShowStep}
           workspacePath={workspacePath}
           workspaceBasePath={workspaceBasePath}
         >
-          {visibleText}
+          {text}
         </MessageResponse>
       </Suspense>
     </MessageRenderBoundary>

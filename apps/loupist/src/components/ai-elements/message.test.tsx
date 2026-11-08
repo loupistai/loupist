@@ -1,28 +1,33 @@
+import type { ComponentProps } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MessageResponse } from "./message-response";
+import { OpenProvider } from "../navigation/Open";
+import { TurnProvider } from "../chat/TurnProvider";
+import { openSpy, renderWithOpen, destinations } from "../../test/open";
+import { evidenceFixture } from "../../test/evidenceFixtures";
+import type { Open } from "../../chat/navigation";
+import type { ChatEvidenceRef, ChatMessage } from "../../types";
 
 describe("MessageResponse links", () => {
-  it("opens Lens links only through an explicitly enabled Lens callback", async () => {
+  it("opens Lens links through whichever opener is current, and leaves them plain outside one", async () => {
     const user = userEvent.setup();
-    const onOpenLink = vi.fn();
-    const onLensLink = vi.fn();
     const text = "[Valuation](lens:rec_0123456789abcdef0123456789abcdef)";
-    const view = render(<MessageResponse mode="static" onOpenLink={onOpenLink}>{text}</MessageResponse>);
+    const view = render(<MessageResponse mode="static">{text}</MessageResponse>);
     expect(screen.queryByRole("link")).toBeNull();
-    view.rerender(<MessageResponse mode="static" onOpenLink={onOpenLink} onLensLink={onLensLink}>{text}</MessageResponse>);
+    const first = openSpy();
+    view.rerender(<OpenProvider open={first}><MessageResponse mode="static">{text}</MessageResponse></OpenProvider>);
     await user.click(screen.getByRole("link", { name: "Valuation" }));
-    expect(onLensLink).toHaveBeenCalledExactlyOnceWith("rec_0123456789abcdef0123456789abcdef");
-    expect(onOpenLink).not.toHaveBeenCalled();
+    expect(destinations(first)).toEqual([{ kind: "lens", recordId: "rec_0123456789abcdef0123456789abcdef" }]);
 
-    const nextLoupist = vi.fn();
-    view.rerender(<MessageResponse mode="static" onOpenLink={onOpenLink} onLensLink={nextLoupist}>{text}</MessageResponse>);
+    const nextLoupist = openSpy();
+    view.rerender(<OpenProvider open={nextLoupist}><MessageResponse mode="static">{text}</MessageResponse></OpenProvider>);
     await user.click(screen.getByRole("link", { name: "Valuation" }));
-    expect(nextLoupist).toHaveBeenCalledExactlyOnceWith("rec_0123456789abcdef0123456789abcdef");
+    expect(destinations(nextLoupist)).toEqual([{ kind: "lens", recordId: "rec_0123456789abcdef0123456789abcdef" }]);
   });
 
   it("does not navigate malformed Lens destinations, images or literal examples", () => {
-    render(<MessageResponse mode="static" onOpenLink={vi.fn()} onLensLink={vi.fn()}>{[
+    renderWithOpen(<MessageResponse mode="static">{[
       "[Path](lens:..%2Fprivate)", "[Fragment](lens:method%23secret)",
       "[Blank](lens:)", "[Control](lens:method%00)", "[Encoded alias](lens:%72ec_0123456789abcdef0123456789abcdef)",
       "![Image](lens:method)", "`[Example](lens:method)`",
@@ -32,24 +37,22 @@ describe("MessageResponse links", () => {
     expect(screen.getByText("[Example](lens:method)")).toBeVisible();
   });
 
-  it("opens credential-free web links through the host callback and announces a failed open", async () => {
+  it("opens credential-free web links through the host opener and announces a failed open", async () => {
     const user = userEvent.setup();
-    const openLink = vi.fn().mockRejectedValue(new Error("open failed"));
+    const openLink = vi.fn<Open>().mockRejectedValue(new Error("open failed"));
     const windowOpen = vi.spyOn(window, "open").mockImplementation(() => null);
     const url = "https://dart.fss.or.kr/dsab001/search.ax?textCrpNm=005930";
-    render(<MessageResponse mode="static" onOpenLink={openLink}>{`[DART company search](${url})`}</MessageResponse>);
+    renderWithOpen(<MessageResponse mode="static">{`[DART company search](${url})`}</MessageResponse>, openLink);
     await user.click(screen.getByRole("link", { name: "DART company search" }));
-    expect(openLink).toHaveBeenCalledExactlyOnceWith(url);
+    expect(destinations(openLink)).toEqual([{ kind: "link", url }]);
     expect(windowOpen).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Could not open this link."));
     windowOpen.mockRestore();
   });
 
   it.each([false, true])("blocks unsupported and credential-bearing URLs with workspace links %s", (withWorkspace) => {
-    const openLink = vi.fn();
-    const openFile = vi.fn();
-    render(
-      <MessageResponse mode="static" onOpenLink={openLink} onOpenFile={withWorkspace ? openFile : undefined} workspacePath="/research">
+    const { open } = renderWithOpen(
+      <MessageResponse mode="static" workspacePath={withWorkspace ? "/research" : undefined}>
         {[
           "[Local file](file:///tmp/private)",
           "[Script](javascript:alert(1))",
@@ -64,26 +67,27 @@ describe("MessageResponse links", () => {
 
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
     expect(screen.getAllByText("Unsupported link.").length).toBeGreaterThan(0);
-    expect(openLink).not.toHaveBeenCalled();
-    expect(openFile).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
     expect(document.querySelector("script, [onerror]")).toBeNull();
     expect(document.querySelector('img[src^="loupist-workspace:"]')).toBeNull();
   });
 
   it("opens a workspace filename with spaces even when the answer omits angle brackets", async () => {
     const user = userEvent.setup();
-    const openFile = vi.fn();
-    render(<MessageResponse mode="static" onOpenLink={vi.fn()} onOpenFile={openFile} workspacePath="/research" workspaceBasePath="reports">
+    const { open } = renderWithOpen(<MessageResponse mode="static" workspacePath="/research" workspaceBasePath="reports">
       {"Saved [월별 잔액.csv](savings/월별 잔액.csv). Also [Report](</research/annual report.md>)."}
     </MessageResponse>);
-    await user.click(screen.getByRole("link", { name: "월별 잔액.csv" }));
-    expect(openFile).toHaveBeenLastCalledWith("reports/savings/월별 잔액.csv");
+    const saved = screen.getByRole("link", { name: "월별 잔액.csv" });
+    // Prose links carry no icon; the underline is the affordance.
+    expect(saved.querySelector("svg")).toBeNull();
+    await user.click(saved);
+    expect(destinations(open).at(-1)).toEqual({ kind: "file", path: "reports/savings/월별 잔액.csv" });
     await user.click(screen.getByRole("link", { name: "Report" }));
-    expect(openFile).toHaveBeenLastCalledWith("annual report.md");
+    expect(destinations(open).at(-1)).toEqual({ kind: "file", path: "annual report.md" });
   });
 
   it("does not recover unsafe paths, web URLs, images, or literal code as workspace links", () => {
-    render(<MessageResponse mode="static" onOpenLink={vi.fn()} onOpenFile={vi.fn()} workspacePath="/research">
+    renderWithOpen(<MessageResponse mode="static" workspacePath="/research">
       {[
         "[Outside](../private report.csv)",
         "[Absolute](/tmp/private report.csv)",
@@ -108,32 +112,39 @@ it("renders completed math without TeX errors and leaves currency prose alone", 
   expect(container.textContent).toContain("가격은 $25,000입니다.");
 });
 
+const answer = (evidence: ChatEvidenceRef[]): ChatMessage => ({ id: "answer", role: "assistant", status: "streaming", content: "", created_at: "2026-10-28T00:00:00Z", evidence_refs: evidence });
+const inTurn = (message: ChatMessage, text: string, extra: Partial<ComponentProps<typeof MessageResponse>> = {}) =>
+  <TurnProvider message={message} loupistId="loupist-a"><MessageResponse {...extra}>{text}</MessageResponse></TurnProvider>;
+
 it("opens only host-attached citations and refreshes the binding when evidence arrives during streaming", async () => {
-  const { evidenceFixture } = await import("../../test/evidenceFixtures");
   const evidence = evidenceFixture();
   const user = userEvent.setup();
-  const open = vi.fn();
-  const openLink = vi.fn();
   const text = `Revenue rose [1](#evidence-${evidence.id}). Unknown [2](#evidence-ev_unissued).`;
-  const view = render(<MessageResponse isAnimating onOpenLink={openLink} onOpenEvidence={open} evidenceRefs={[]}>{text}</MessageResponse>);
+  const { open, rerender } = renderWithOpen(inTurn(answer([]), text, { isAnimating: true }));
   expect(screen.queryByRole("button")).toBeNull();
   expect(screen.queryByRole("link")).toBeNull();
-  view.rerender(<MessageResponse isAnimating onOpenLink={openLink} onOpenEvidence={open} evidenceRefs={[evidence]}>{text}</MessageResponse>);
+  rerender(inTurn(answer([evidence]), text, { isAnimating: true }));
   const citation = await screen.findByRole("button", { name: "Source 1: Apple FY2025 annual report" });
   await user.click(citation);
-  expect(open).toHaveBeenCalledExactlyOnceWith(evidence, citation);
-  expect(open.mock.calls[0]?.[1]).toBe(citation);
-  expect(openLink).not.toHaveBeenCalled();
+  expect(destinations(open)).toEqual([{ kind: "evidence", evidence }]);
   expect(screen.getAllByRole("button")).toHaveLength(1);
 });
 
-
 it("keeps a citation's visible link text in its accessible name", async () => {
-  const { evidenceFixture } = await import("../../test/evidenceFixtures");
   const evidence = evidenceFixture({ title: "Retained market data" });
-  const open = vi.fn();
-  render(<MessageResponse mode="static" onOpenLink={vi.fn()} onOpenEvidence={open} evidenceRefs={[evidence]}>{`Read the [truncated quote](#evidence-${evidence.id}).`}</MessageResponse>);
+  const { open } = renderWithOpen(inTurn(answer([evidence]), `Read the [truncated quote](#evidence-${evidence.id}).`, { mode: "static" }));
   const citation = await screen.findByRole("button", { name: "truncated quote · Source 1: Retained market data" });
   await userEvent.setup().click(citation);
-  expect(open).toHaveBeenCalledWith(evidence, citation);
+  expect(destinations(open)).toContainEqual(expect.objectContaining({ kind: "evidence", evidence }));
+});
+
+it("never leaves a numbered saved-context citation dead: an asset page read opens its page, other saved research its reader", async () => {
+  const asset = evidenceFixture({ id: "ev_asset", kind: "saved_context", tool_name: "asset_page_read", url: undefined, title: "Asset page: Apple", excerpt: '{\n  "assetId": "NASDAQ:AAPL"\n}' });
+  const journal = evidenceFixture({ id: "ev_journal", kind: "saved_context", tool_name: "journal_read", url: undefined, title: "Journal: hold the quality call" });
+  const user = userEvent.setup();
+  const { open } = renderWithOpen(inTurn(answer([asset, journal]), `Held [1](#evidence-${asset.id}) since [2](#evidence-${journal.id}).`, { mode: "static" }));
+  await user.click(await screen.findByRole("button", { name: /^Source 1:/u }));
+  expect(destinations(open).at(-1)).toEqual({ kind: "asset", target: { loupistId: "loupist-a", assetId: "NASDAQ:AAPL" } });
+  await user.click(screen.getByRole("button", { name: /^Source 2:/u }));
+  expect(destinations(open).at(-1)).toEqual(expect.objectContaining({ kind: "evidence", evidence: journal }));
 });

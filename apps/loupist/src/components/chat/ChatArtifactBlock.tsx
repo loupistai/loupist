@@ -1,4 +1,5 @@
 import i18n, { useTranslation } from "@/i18n";
+import { useGo } from "../navigation/Open";
 import { formatAsOf } from "../../chat/asOf";
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { CheckIcon, ClipboardIcon, Maximize2Icon, MessageCircleIcon, Minimize2Icon } from "lucide-react";
@@ -37,7 +38,6 @@ function useWideWindow() {
 type Props = {
   block: ChartBlock;
   /** Opens the chart's latest revision in the panel. */
-  onOpen?: (artifact: ChatArtifactRef) => void;
   onAsk?: (artifact: ChatArtifactRef) => void;
   askDisabled?: boolean;
   /** An as-of answer's date, shown after the title. */
@@ -51,7 +51,8 @@ type ViewState = { status: "loading" } | { status: "ready"; view: ChatArtifactVi
  * Loupist starts building it until the chart is drawn, so the thread never jumps.
  * Each answer draws its retained revision and notes when a newer version exists.
  */
-export function ChatArtifactBlock({ block, onOpen, onAsk, askDisabled, asOf }: Props) {
+export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf }: Props) {
+  const go = useGo();
   useTranslation("chat");
   const scope = useChatExecution();
   const wide = useWideWindow();
@@ -178,9 +179,9 @@ export function ChatArtifactBlock({ block, onOpen, onAsk, askDisabled, asOf }: P
       </header>
       {revisedLater && current ? <div className="chat-artifact-block-header" role="status">
         <span className="chat-artifact-block-asof">{t("chatBlock.updatedSince")}</span>
-        {onOpen && scope ? <Button type="button" variant="ghost" size="sm" onClick={() => {
+        {go && scope ? <Button type="button" variant="ghost" size="sm" onClick={() => {
           void scope.bridge.chatArtifactRead(scope.loupistId, scope.threadId, current.artifact.id)
-            .then((latest) => onOpen(chatArtifactRef(latest)))
+            .then((latest) => go({ kind: "artifact", artifact: chatArtifactRef(latest) }))
             .catch(() => setView({ status: "unavailable" }));
         }}>{t("chatBlock.openLatest")}</Button> : null}
       </div> : null}

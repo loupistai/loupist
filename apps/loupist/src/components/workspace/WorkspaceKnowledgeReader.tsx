@@ -38,13 +38,14 @@ export function WorkspaceKnowledgeReader({ bridge, location, onOpen, onPatch, on
     return () => { current = false; };
   }, [bridge, location.loupistId, needsCatalog, reload]);
   const changed = () => setReload((value) => value + 1);
-  if (location.surface === "note") return <div ref={researchPane} className="workspace-knowledge-reader workspace-research-reader" onScroll={(event) => onPatch({ ...location, view: { ...location.view, readerScrollTop: event.currentTarget.scrollTop } })}><ResearchReader bridge={bridge} location={location} onOpen={onOpen} onAsk={onAsk} onOpenLink={onOpenLink} onReady={() => { if (researchPane.current) researchPane.current.scrollTop = location.view?.readerScrollTop ?? 0; }} /></div>;
+  if (location.surface === "note") return <div ref={researchPane} className="workspace-knowledge-reader workspace-research-reader" onScroll={(event) => onPatch({ ...location, view: { ...location.view, readerScrollTop: event.currentTarget.scrollTop } })}><ResearchReader bridge={bridge} location={location} onOpen={onOpen} onAsk={onAsk} onReady={() => { if (researchPane.current) researchPane.current.scrollTop = location.view?.readerScrollTop ?? 0; }} /></div>;
   if (location.surface === "world") return <div className="artifact-panel-state"><p>{t("workspaceKnowledgeReader.exploreThisSavedWorldAndItsEvidence")}</p><Button onClick={() => onOpenPage(location)}>{t("workspaceKnowledgeReader.openWorld")}</Button></div>;
   if (error) return <div className="artifact-panel-state" role="alert"><p>{error}</p><Button onClick={changed}>{t("workspaceKnowledgeReader.retryReference")}</Button></div>;
   if (!catalog || catalog.loupistId !== location.loupistId) return <p className="memory-loading-inline" role="status"><Spinner />{t("workspaceKnowledgeReader.openingSavedReference")}</p>;
   const props = { bridge, catalog, location, onOpen, onPatch, onAsk, onOpenLink, onChanged: changed, readerOnly: true };
   const lensId = location.recordId ?? catalog.lenses.find((item) => item.lensKind === "perspective")?.recordId ?? catalog.lenses[0]?.recordId;
-  const page = lensId ? <div className="workspace-page-reader"><PageReader bridge={bridge} loupistId={location.loupistId} recordId={lensId} catalog={catalog} onOpen={onOpen} onOpenLink={onOpenLink}
+  // From chat a Lens record opens here; the whole Lens is one explicit step further.
+  const page = lensId ? <div className="workspace-page-reader"><div className="evidence-actions"><Button type="button" variant="outline" size="sm" onClick={() => onOpenPage({ loupistId: location.loupistId, surface: "lens", recordId: lensId })}>{t("workspaceKnowledgeReader.openInLens")}</Button></div><PageReader bridge={bridge} loupistId={location.loupistId} recordId={lensId} catalog={catalog} onOpen={onOpen}
     onOpenPage={(recordId) => onOpen({ loupistId: location.loupistId, surface: "lens", recordId, objectId: recordId, selection: { kind: "lens", recordId } })}
     onAsk={onAsk} onChanged={changed} /></div> : <p>{t("workspaceKnowledgeReader.thisReferenceIsUnavailable")}</p>;
   return <div className="workspace-knowledge-reader">{location.surface === "lens" ? page : location.surface === "source" ? <SourceWorkspace {...props} /> : <p>{t("workspaceKnowledgeReader.thisReferenceIsUnavailable")}</p>}</div>;

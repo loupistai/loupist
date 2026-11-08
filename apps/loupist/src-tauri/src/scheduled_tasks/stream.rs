@@ -55,6 +55,15 @@ impl Replay {
                                 progress.items.push(item.clone());
                             }
                         }
+                        for append in &patch.append_text {
+                            if let Some(ChatProgressItem::Commentary { text, .. }) = progress
+                                .items
+                                .iter_mut()
+                                .find(|existing| item_id(existing) == append.id)
+                            {
+                                text.push_str(&append.text);
+                            }
+                        }
                         if patch.finished_at_ms.is_some() {
                             progress.finished_at_ms = patch.finished_at_ms;
                         }
@@ -160,6 +169,7 @@ mod tests {
             replay.observe(&ChatStreamEvent::Delta {
                 run_id: "run".into(),
                 text: "a".into(),
+                settles: None,
             });
             replay.observe(&ChatStreamEvent::ProgressPatch {
                 run_id: "run".into(),
@@ -169,6 +179,7 @@ mod tests {
                         id: "comment".into(),
                         text: format!("step {index}"),
                     }],
+                    append_text: vec![],
                     remove_item_ids: vec![],
                     finished_at_ms: None,
                     plan: None,
@@ -192,6 +203,7 @@ mod tests {
         replay.observe(&ChatStreamEvent::Delta {
             run_id: "run".into(),
             text: "a".repeat(MAX_REPLAY_BYTES + 1),
+            settles: None,
         });
         assert!(replay.events().is_none());
         assert!(replay.events.is_empty());
@@ -219,6 +231,7 @@ mod tests {
             patch: ChatProgressPatch {
                 sequence: 2,
                 upsert_items: vec![],
+                append_text: vec![],
                 remove_item_ids: vec!["commentary-1".into()],
                 finished_at_ms: Some(20),
                 plan: None,
@@ -233,6 +246,7 @@ mod tests {
                     id: "commentary-1".into(),
                     text: "Stale".into(),
                 }],
+                append_text: vec![],
                 remove_item_ids: vec![],
                 finished_at_ms: None,
                 plan: None,

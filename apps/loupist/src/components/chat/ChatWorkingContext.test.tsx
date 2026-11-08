@@ -3,12 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { WorkingNote } from "../../types";
 import { ChatWorkingContext } from "./ChatWorkingContext";
+import { renderWithOpen, destinations } from "../../test/open";
 
 const first: WorkingNote = { researchId: "first", chatId: "chat-a", title: "Monthly savings", markdown: "Contribution: **500**. Assumed return: 4%.", changeSummary: "Created the plan", recordedAtMs: 1_700_000_000_000 };
 const second: WorkingNote = { ...first, researchId: "second", markdown: "Contribution: **750**. Assumed return: 4%.", changeSummary: "Changed the contribution" };
 const setup = (bridge = new MockLoupistBridge({ delay_ms: 0 })) => {
   const onAskForChange = vi.fn();
-  const props = { bridge, loupistId: "loupist-a", chatId: "chat-a", isRunning: false, updateKey: "initial", onAskForChange, onOpenLink: vi.fn() };
+  const props = { bridge, loupistId: "loupist-a", chatId: "chat-a", isRunning: false, updateKey: "initial", onAskForChange };
   return { bridge, props, onAskForChange };
 };
 
@@ -33,21 +34,20 @@ describe("Chat working context", () => {
   it("opens the exact Source and Lens versions used by the note", async () => {
     const user = userEvent.setup();
     const { bridge, props } = setup();
-    const onOpenKnowledge = vi.fn();
     const note: WorkingNote = { ...first, inputs: {
       sources: [{ receiptId: "read-source", recordId: "source-record", revisionId: "source-at-research", spanId: "original-span", coverage: "included_full", attribution: "Original filing" }],
       worlds: [],
       lenses: [{ recordId: "lens-record", revisionId: "lens-at-research", markdown: "Original method", status: "applied" }],
     } };
     vi.spyOn(bridge, "knowledgeWorkingNotes").mockResolvedValue({ current: note });
-    render(<ChatWorkingContext {...props} onOpenKnowledge={onOpenKnowledge}><p>Conversation content</p></ChatWorkingContext>);
+    const { open } = renderWithOpen(<ChatWorkingContext {...props}><p>Conversation content</p></ChatWorkingContext>);
     await user.click(await screen.findByRole("button", { name: "Working note" }));
     await user.click(screen.getByRole("button", { name: "Source: Original filing" }));
-    expect(onOpenKnowledge).toHaveBeenLastCalledWith(expect.objectContaining({ loupistId: "loupist-a", surface: "source", recordId: "source-record", revisionId: "source-at-research", selection: { kind: "source", sourceId: undefined, spanId: "original-span" } }), "Source: Original filing");
+    expect(destinations(open).at(-1)).toEqual({ kind: "memory", title: "Source: Original filing", location: expect.objectContaining({ loupistId: "loupist-a", surface: "source", recordId: "source-record", revisionId: "source-at-research", selection: { kind: "source", sourceId: undefined, spanId: "original-span" } }) });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Working note" }));
     await user.click(screen.getByRole("button", { name: "Lens 1 · Applied" }));
-    expect(onOpenKnowledge).toHaveBeenLastCalledWith(expect.objectContaining({ surface: "lens", recordId: "lens-record", revisionId: "lens-at-research" }), "Lens 1 · Applied");
+    expect(destinations(open).at(-1)).toEqual({ kind: "memory", title: "Lens 1 · Applied", location: expect.objectContaining({ surface: "lens", recordId: "lens-record", revisionId: "lens-at-research" }) });
     expect(screen.getByText("Conversation content")).toBeVisible();
   });
 

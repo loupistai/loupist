@@ -1,21 +1,16 @@
-import i18n, { Trans, useTranslation } from "@/i18n";
+import i18n, { useTranslation } from "@/i18n";
 import { ArrowDownIcon } from "lucide-react";
 import type { ChatMessage } from "../../types";
 import { useConversationScroll } from "../ai-elements/conversation";
-import {
-  clockLabel,
-  currentStepLabel,
-  lastStepLabel,
-  progressActivityKey,
-  useNow,
-  useRunHeartbeat,
-  useThrottledAnnouncement,
-} from "../../chat/runStatus";
+import { clockLabel, useNow } from "../../chat/runStatus";
+import { deriveTurnStatus, useLastActivity } from "../../chat/turnView";
 
 const t = i18n.getFixedT(null, "chat");
 
 export type ChatRunStatus = {
   running: boolean;
+  /** A stop was requested and the host has not confirmed it. */
+  stopping?: boolean;
 };
 
 type Props = {
@@ -27,30 +22,28 @@ type Props = {
 /**
  * Floats above the composer only while the reader is away from the end of the
  * thread: the live run while a reply runs, "Jump to latest" always. Stop stays
- * in the composer, which is always on screen below the pill.
+ * in the composer, which is always on screen below the pill. The turn's own
+ * footer announces the run; the pill repeats it silently.
  */
 export function ChatStatusPill({ message, run }: Props) {
   useTranslation("chat");
   const conversation = useConversationScroll();
   const running = Boolean(run?.running);
-  const progress = message?.status === "streaming" ? message.progress : undefined;
-  const phase = message?.status === "streaming" ? message.phase : undefined;
   const now = useNow(running);
-  const stalled = useRunHeartbeat(progressActivityKey(progress, phase), running, phase, now);
-  const step = stalled ? lastStepLabel(progress, phase) : currentStepLabel(progress, phase);
-  const announcement = useThrottledAnnouncement(step, running && !conversation?.isAtBottom);
+  const lastActivityAt = useLastActivity(message);
+  const turn = message && message.status === "streaming"
+    ? deriveTurnStatus({ message, now, lastActivityAt, stopping: Boolean(run?.stopping), retry: { attempt: 1, offered: false } }) : undefined;
   if (!conversation || conversation.isAtBottom) return null;
-  const startedAtMs = progress?.startedAtMs ?? (message ? Date.parse(message.created_at) : Number.NaN);
-  const clock = <span className="chat-status-pill-clock">{Number.isFinite(startedAtMs) ? clockLabel(now - startedAtMs) : ""}</span>;
   const jump = t("chatStatusPill.jumpToLatest");
+  const footer = turn?.footer.kind === "status" ? turn.footer : undefined;
+  const step = turn?.state.kind === "working" && turn.state.stepRunning ? turn.state.step : undefined;
 
   return (
     <div className="chat-status-pill" data-running={running || undefined}>
-      {running ? <>
-        <span className="sr-only" role="status">{announcement}</span>
-        <span className="chat-status-pill-dot" data-heartbeat={stalled || undefined} aria-hidden="true" />
+      {running && footer ? <>
+        <span className="chat-status-pill-dot" data-heartbeat={footer.stalled || undefined} aria-hidden="true" />
         <span className="chat-status-pill-label" aria-hidden="true">
-          <Trans ns="chat" i18nKey={stalled ? "chatStatusPill.stillWorking" : "chatStatusPill.working"} values={{ step }} components={[clock]} />
+          {footer.label} · <span className="chat-status-pill-clock">{clockLabel(now - footer.sinceMs)}</span>{step ? ` · ${step}` : ""}
         </span>
       </> : null}
       <button type="button" className="chat-status-pill-jump" aria-label={jump} title={jump} onClick={conversation.scrollToBottom}>

@@ -24,7 +24,6 @@ import {
   bindActiveBrowserPassage,
   browserWorkspaceTab,
   emptyWorkspaceSession,
-  isPanelEvidence,
   knowledgeEntry,
   moveEvidenceHistory,
   pushEvidenceEntry,
@@ -34,6 +33,7 @@ import {
   type ChatWorkspaceSession,
   type ChatWorkspaceTab,
   type EvidenceEntry,
+  type EvidenceStepLink,
   type WorkspacePlacement,
 } from "../chat/workspace";
 import { workspaceOverlayMedia } from "../components/workspace/useWorkspacePanelResize";
@@ -291,10 +291,10 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
   /**
    * A website citation opens the page itself and remembers that citation on the tab.
    * The saved passage stays in Evidence for a failed open or when the reader asks for it.
-   * Finance, files, quotes, computation and Memory receipts keep the retained reader.
+   * Finance, files and saved research keep the retained reader. Steps, quotes and Memory
+   * reads never reach here: `evidenceTarget` sends them elsewhere first.
    */
-  const openEvidence = useCallback((loupistId: string, threadId: string, evidence: ChatEvidenceRef, step?: { label: string; itemId?: string }) => {
-    if (!isPanelEvidence(evidence)) return;
+  const openEvidence = useCallback((loupistId: string, threadId: string, evidence: ChatEvidenceRef, step?: EvidenceStepLink) => {
     const page = citationPageUrl(evidence);
     if (page) {
       const entry = evidenceEntry(evidence, step);

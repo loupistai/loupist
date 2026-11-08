@@ -1,4 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { openSpy } from "../../test/open";
+import { OpenProvider } from "../navigation/Open";
 import type { ReactNode } from "react";
 import type { ChartDataset, ChatArtifactRef, ChatArtifactView, LoupistBridge } from "../../types";
 import { ChatArtifactBlock } from "./ChatArtifactBlock";
@@ -118,11 +120,11 @@ it("says when a chart could not be built", () => {
 });
 
 it("draws the older answer's revision, keeps the update note, and opens the latest on request", async () => {
-  const onOpen = vi.fn();
+  const onOpen = openSpy();
   const onAsk = vi.fn();
   const original = { ...view, revision: { ...view.revision, revision: 1, digest: "c".repeat(64) } };
   const read = vi.fn().mockImplementation((_loupist, _chat, _artifact, revisionId) => Promise.resolve(revisionId === 1 ? original : view));
-  render(withScope(<ChatArtifactBlock block={{ kind: "ready", key: "r", artifact: { ...ref, revision: 1 }, updating: false }} onOpen={onOpen} onAsk={onAsk} />, read));
+  render(<OpenProvider open={onOpen}>{withScope(<ChatArtifactBlock block={{ kind: "ready", key: "r", artifact: { ...ref, revision: 1 }, updating: false }} onAsk={onAsk} />, read)}</OpenProvider>);
   expect(await screen.findByText("Updated since this answer.")).toBeVisible();
   expect(await screen.findByText("compact-chart")).toBeVisible();
   expect(read).toHaveBeenCalledWith("loupist", "chat", "chart-1", 1);
@@ -131,5 +133,5 @@ it("draws the older answer's revision, keeps the update note, and opens the late
   fireEvent.click(screen.getByRole("button", { name: /Ask about/ }));
   expect(onAsk).toHaveBeenCalledWith({ ...ref, revision: 1, digest: "c".repeat(64) });
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Open latest" })); });
-  expect(onOpen).toHaveBeenCalledWith(ref);
+  expect(onOpen).toHaveBeenCalledWith({ kind: "artifact", artifact: ref });
 });

@@ -1,8 +1,5 @@
 import type { ChatEvidenceRef, ChatMessage } from "../types";
 
-/** How an answer link asks to be opened: in the panel's browser (default) or the system browser. */
-export type OpenLinkOptions = { external?: boolean };
-
 /** Compare pages, not fragments or a trailing slash. */
 function pageKey(url: string) {
   try {

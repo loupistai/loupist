@@ -1,6 +1,5 @@
-import type { ChatEvidenceRef, ChatMessage, GrowthEvent, LearnedDigest, LensKind, MapKind, MemoryUpdateChange, SetupChange } from "../types";
+import type { ChatMessage, GrowthEvent, LearnedDigest, LensKind, MapKind, MemoryUpdateChange, SetupChange } from "../types";
 import type { Verdict } from "../contracts/assets";
-import { citationSources } from "./evidence";
 import { numbersToCheck } from "./numberChecks";
 
 export const SAVED_RECEIPT_KINDS = ["Source", "principle", "Journal", "Research", "World"] as const;
@@ -23,8 +22,6 @@ export type MapAdditions = { nodeIds: ReadonlySet<string>; edgeIds: ReadonlySet<
 export type ThesisMove = { assetId: string; name: string; verdict: Verdict; from?: Verdict };
 
 export type ChatReceiptData = {
-  /** Retained sources the answer read and can cite. */
-  readSources: ChatEvidenceRef[];
   names: number;
   relationships: number;
   /** Reads this answer moved, after the relationships segment. */
@@ -78,7 +75,6 @@ export function chatReceipt(message: ChatMessage, additions?: MapAdditions, opti
   const usedPages = delivered.map(({ recordId, title, kind }) => ({ recordId, title, kind }));
   const learned = options.saveOff ? null : learnedSummary(options.learned);
 
-  const readSources = citationSources(message.evidence_refs ?? []);
   const names = additions?.nodeIds.size ?? 0;
   const relationships = additions?.edgeIds.size ?? 0;
   const thesisMoves = options.thesisMoves ?? [];
@@ -86,7 +82,6 @@ export function chatReceipt(message: ChatMessage, additions?: MapAdditions, opti
   const skippedKinds = update?.skippedKinds ?? [];
   const toCheck = numbersToCheck(message);
   return {
-    readSources,
     names,
     relationships,
     thesisMoves,
@@ -100,7 +95,7 @@ export function chatReceipt(message: ChatMessage, additions?: MapAdditions, opti
     learned,
     saved,
     numbersToCheck: toCheck,
-    empty: !readSources.length && !names && !relationships && !thesisMoves.length && !unsavedTheses.length && !skippedKinds.length && !setup.length && !usedPages.length && !learned && !saved.length && !toCheck,
+    empty: !names && !relationships && !thesisMoves.length && !unsavedTheses.length && !skippedKinds.length && !setup.length && !usedPages.length && !learned && !saved.length && !toCheck,
   };
 }
 

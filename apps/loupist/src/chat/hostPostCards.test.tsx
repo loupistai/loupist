@@ -1,5 +1,6 @@
 import { Chat } from "@ai-sdk/react";
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
+import { renderWithOpen } from "../test/open";
 import { MockLoupistBridge } from "../bridge/mockBridge";
 import type { ChatMessage } from "../types";
 import { TauriChatTransport, toLoupistUIMessage, type LoupistUIMessage } from "./ai-sdk";
@@ -50,11 +51,10 @@ it("shows the link, vocabulary and hand-off cards a host post carries in the con
     });
     return <ChatConversation
       bridge={bridge} messages={messages} messageKeys={messageKeys} loupistId="loupist-a" loupistName="Chip desk"
-      onSuggestion={vi.fn()} onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} onOpenArtifact={vi.fn()}
-      onOpenLink={vi.fn()} onReadAttachment={vi.fn()} onOpenRunChat={vi.fn()}
+      onSuggestion={vi.fn()} onReadAttachment={vi.fn()}
     />;
   }
-  render(<View />);
+  renderWithOpen(<View />);
   const seen = {
     lookInto: screen.queryByRole("button", { name: "Look into it" }) !== null,
     notUseful: screen.queryByRole("button", { name: "Not useful" }) !== null,

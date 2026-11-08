@@ -9,6 +9,7 @@ import type {
   ChatKnowledgePin,
   ChatPerformance,
   ChatProgress,
+  ChatProgressItem,
   ChatProgressPatch,
   ChatStreamEvent,
   ChatThread,
@@ -60,6 +61,8 @@ export type LoupistChatMetadata = HostPostRecords & {
   final_text?: string;
   progress?: ChatProgress;
   phase?: ChatMessage["phase"];
+  draft?: ChatMessage["draft"];
+  answer_key?: string;
   performance?: ChatPerformance;
 };
 
@@ -139,20 +142,29 @@ export const applyChatProgressPatch = (
   const removeIds = new Set(patch.removeItemIds ?? []);
   const upserts = patch.upsertItems ?? [];
   const upsertById = new Map(upserts.map((item) => [item.id, item]));
+  const appends = new Map<string, string>();
+  for (const append of patch.appendText ?? []) appends.set(append.id, (appends.get(append.id) ?? "") + append.text);
   const seen = new Set<string>();
   let itemsChanged = removeIds.size > 0;
   const items: ChatProgress["items"] = [];
   for (const item of state.progress.items) {
     if (removeIds.has(item.id)) continue;
     const replacement = upsertById.get(item.id);
+    const appended = appends.get(item.id);
     if (replacement) {
       seen.add(item.id);
       if (replacement !== item) itemsChanged = true;
       items.push(replacement);
+    } else if (appended !== undefined && item.kind === "commentary") {
+      appends.delete(item.id);
+      itemsChanged = true;
+      items.push({ ...item, text: item.text + appended });
     } else {
       items.push(item);
     }
   }
+  // An append for commentary this stream never saw is a gap: wait for the next snapshot.
+  if (appends.size) return state;
   for (const item of upserts) {
     if (seen.has(item.id)) continue;
     items.push(item);
@@ -181,6 +193,21 @@ const dataUrlPayload = (file: FileUIPart) => {
     data_base64: match[2],
   };
 };
+
+/**
+ * The store's copy of a thread, with the key each settled answer's Markdown node was
+ * drawn under carried over from the live messages. The store never holds that key, so
+ * without it a refresh remounts the answer and replays its reveal.
+ */
+export function fromStoreKeepingAnswers(current: readonly LoupistUIMessage[], stored: readonly ChatMessage[]): LoupistUIMessage[] {
+  const answerKeys = new Map(current.flatMap((message) =>
+    message.metadata?.answer_key ? [[message.metadata.native_message_id ?? message.id, message.metadata.answer_key]] : []));
+  return stored.map((message) => {
+    const ui = toLoupistUIMessage(message);
+    const answerKey = answerKeys.get(message.id);
+    return answerKey ? { ...ui, metadata: { ...ui.metadata, answer_key: answerKey } } : ui;
+  });
+}
 
 const estimatedBase64Bytes = (url: string) => {
   const payload = url.split(",", 2)[1] ?? "";
@@ -327,6 +354,8 @@ export const fromLoupistUIMessage = (message: LoupistUIMessage): ChatMessage => 
     feedback: message.metadata?.feedback,
     progress,
     phase: message.metadata?.phase,
+    draft: message.metadata?.draft,
+    answer_key: message.metadata?.answer_key,
     attachments:
       attachmentParts.length > 0
         ? attachmentParts
@@ -402,7 +431,6 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
         let started = false;
         let finished = false;
         let hasText = false;
-        let answerLength = 0;
         let textStarted = false;
         let abortRequested = false;
         let abortInFlight = false;
@@ -410,20 +438,41 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
         let abortAttempts = 0;
         let abortRetry: number | undefined;
         let progressState: ChatProgressStreamState | undefined;
-        let phase: ChatMessage["phase"];
-        let draftOffset: number | undefined;
+        let answerLength = 0;
+        let draft: ChatMessage["draft"];
+        let answerKey: string | undefined;
+        const publishedCommentary = new Set<string>();
 
         const enqueue = (chunk: UIMessageChunk) => {
           if (!finished && !abortSignal?.aborted) controller.enqueue(chunk);
         };
+        const appendAnswer = (delta: string) => {
+          hasText = true;
+          startText();
+          answerLength += delta.length;
+          enqueue({ type: "text-delta", id: textId, delta });
+        };
         const publishProgress = () => {
           if (!progressState) return;
-          const { progress } = progressState;
-          enqueue({
-            type: "data-progress",
-            id: `progress-${responseId}`,
-            data: draftOffset === undefined ? progress : { ...progress, answerOffset: draftOffset },
-          });
+          enqueue({ type: "data-progress", id: `progress-${responseId}`, data: progressState.progress });
+        };
+        // The first publish of a commentary carries the whole item, so the newest
+        // one in a patch or snapshot is the draft the host is writing now.
+        const noteDraft = (items: readonly ChatProgressItem[]) => {
+          const fresh = items.filter((item) => item.kind === "commentary" && !publishedCommentary.has(item.id));
+          for (const item of fresh) publishedCommentary.add(item.id);
+          const newest = fresh.at(-1);
+          if (!newest) return;
+          draft = { id: newest.id, answerLength, settled: false };
+          enqueue({ type: "message-metadata", messageMetadata: { draft } });
+        };
+        // Said before the settled text arrives, so the view keeps drawing the draft until
+        // the answer has grown, then its key, and never both copies at once.
+        const noteSettle = (settled: string) => {
+          const metadata: Partial<LoupistUIMessage["metadata"] & object> = {};
+          if (draft?.id === settled) metadata.draft = draft = { ...draft, settled: true };
+          if (answerKey === undefined) metadata.answer_key = answerKey = settled;
+          if (Object.keys(metadata).length) enqueue({ type: "message-metadata", messageMetadata: metadata });
         };
         const startResponse = (createdAt = new Date().toISOString()) => {
           if (started) return;
@@ -452,11 +501,7 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
         ) => {
           startResponse(terminal?.created_at);
           const finalText = terminal?.final_text ?? message;
-          if (!hasText) {
-            hasText = true;
-            startText();
-            enqueue({ type: "text-delta", id: textId, delta: finalText });
-          }
+          if (!hasText) appendAnswer(finalText);
           if (terminal?.progress) {
             enqueue({
               type: "data-progress",
@@ -563,19 +608,23 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
             return;
           }
           if (event.type === "delta") {
-            hasText = true;
-            answerLength += event.text.length;
-            startText();
-            enqueue({ type: "text-delta", id: textId, delta: event.text });
+            if (event.settles) noteSettle(event.settles);
+            appendAnswer(event.text);
+            if (event.settles) {
+              // The view stops drawing the settled draft once the answer grew past
+              // it, so the copy may share a projection with the text. It still
+              // leaves here: a stop before Rust's removal patch would otherwise
+              // keep it as a draft beside the text it already settled into.
+              const settled = event.settles;
+              if (progressState?.progress.items.some((item) => item.id === settled)) {
+                progressState = { ...progressState, progress: { ...progressState.progress, items: progressState.progress.items.filter((item) => item.id !== settled) } };
+                publishProgress();
+              }
+            }
             return;
           }
           if (event.type === "phase") {
-            phase = event.phase;
-            enqueue({ type: "message-metadata", messageMetadata: { phase } });
-            if (phase !== "writing" && draftOffset !== undefined) {
-              draftOffset = undefined;
-              publishProgress();
-            }
+            enqueue({ type: "message-metadata", messageMetadata: { phase: event.phase } });
             return;
           }
           if (event.type === "progress" || event.type === "progress_patch") {
@@ -583,18 +632,8 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
               ? applyChatProgressSnapshot(progressState, event.progress, event.sequence)
               : applyChatProgressPatch(progressState, event.patch);
             if (!next || next === progressState) return;
-            const tail = next.progress.items.at(-1);
-            const previous = progressState?.progress.items;
-            if (tail?.id !== previous?.at(-1)?.id) draftOffset = undefined;
-            if (phase === "writing" && tail?.kind === "commentary" && draftOffset === undefined) {
-              // A snapshot repeats old items, including commentary uncovered
-              // by a removed draft. Only new or revised prose starts a draft.
-              const written = event.type === "progress_patch"
-                ? event.patch.upsertItems?.includes(tail)
-                : !previous?.some(item => item.kind === "commentary" && item.id === tail.id && item.text === tail.text);
-              if (written) draftOffset = answerLength;
-            }
             progressState = next;
+            noteDraft(event.type === "progress" ? event.progress.items : event.patch.upsertItems ?? []);
             publishProgress();
             return;
           }
@@ -618,15 +657,7 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
             return;
           }
           if (event.type === "completed") {
-            if (!hasText && event.final_text) {
-              hasText = true;
-              startText();
-              enqueue({
-                type: "text-delta",
-                id: textId,
-                delta: event.final_text,
-              });
-            }
+            if (!hasText && event.final_text) appendAnswer(event.final_text);
             enqueue({
               type: "message-metadata",
               messageMetadata: {

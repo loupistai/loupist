@@ -63,3 +63,19 @@ it("replaces streamed partial text with the canonical native error terminal", as
   expect(assistantOf(chat)).toMatchObject({ id: "assistant-canonical-error", status: "error", content: "Response could not be completed." });
   registry.dispose();
 });
+
+it("keeps the key a settled answer was drawn under when the store refreshes the idle Chat", () => {
+  const registry = new ChatSessionRegistry(new MockLoupistBridge(), handlers());
+  const stored: ChatThread = { ...thread("settled"), messages: [
+    { id: "question", role: "user", content: "How did margins move?", created_at: "2026-08-12T00:00:00.000Z" },
+    { id: "native-answer", role: "assistant", status: "complete", content: "Margins fell.", created_at: "2026-08-12T00:00:02.000Z" },
+  ] };
+  const chat = registry.ensure(stored);
+  chat.messages = stored.messages.map((message) => {
+    const ui = toLoupistUIMessage(message);
+    return message.role === "assistant" ? { ...ui, id: "assistant-local", metadata: { ...ui.metadata, answer_key: "commentary-9" } } : ui;
+  });
+  registry.reconcile({ ...stored, title: "Refreshed" });
+  expect(assistantOf(chat)).toMatchObject({ id: "native-answer", content: "Margins fell.", answer_key: "commentary-9" });
+  registry.dispose();
+});

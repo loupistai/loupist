@@ -5,7 +5,7 @@ import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { lookBackDraft, LookBackProvider } from "../../components/knowledge/lookBack";
 import { JournalThenNow } from "../../components/knowledge/ResearchJournal";
 import { AsOfNote } from "../../components/chat/AsOfNote";
-import { ChatProgressTimeline } from "../../components/chat/ChatProgressTimeline";
+import { ChatMessageCard } from "../../components/chat/ChatMessageCard";
 import { configureTheme, PreviewBridge } from "../../preview/fixtures";
 import { scenarios } from "../../preview/scenarios";
 import type { JournalRecord } from "../../types";
@@ -79,15 +79,19 @@ describe("as-of answers", () => {
   });
 
   it("renders a refused step as neutral and the note from the answer's report", () => {
-    render(<ChatProgressTimeline status="complete" asOf="2026-03-03" onOpenLink={async () => {}} progress={{ startedAtMs: 1, finishedAtMs: 50_000, items: [
-      { id: "quote", kind: "tool", toolName: "kis_read", category: "finance", operation: "read", action: "Read market data", target: "990221", status: "skipped", startedAtMs: 1, finishedAtMs: 2 },
-    ] }} />);
-    fireEvent.click(screen.getByRole("button", { name: /1 step/ }));
+    render(<ChatMessageCard loupistId="loupist-a" loupistName="Quality" onReadAttachment={vi.fn()}
+      message={{ id: "answer", role: "assistant", status: "complete", content: "Done.", created_at: "2026-03-03T00:00:00Z", as_of: "2026-03-03", progress: { startedAtMs: 1, finishedAtMs: 50_000, items: [
+        { id: "quote", kind: "tool", toolName: "kis_read", category: "finance", operation: "read", action: "Read market data", target: "990221", status: "skipped", startedAtMs: 1, finishedAtMs: 2 },
+      ] } }} />);
+    // A refused lookup is not a failure: the summary says "skipped" and the details stay closed until asked.
+    const summary = screen.getByRole("button", { name: /1 lookup skipped for Mar 3, 2026/ });
+    expect(summary).not.toHaveTextContent(/failed/u);
+    expect(summary).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(summary);
     const row = document.querySelector(".chat-progress-row.skipped")!;
     // The row names the source as a noun and leaves the date to the answer's tag; it leads with the skipped glyph.
     expect(row).toHaveTextContent("Can't look back to that day · Market data");
     expect(row.querySelector(".chat-progress-node")).toBe(within(row as HTMLElement).getByLabelText("Not available for this date").parentElement);
-    expect(document.querySelector(".chat-progress.has-failure")).toBeNull();
     render(<AsOfNote loupistName="Quality" report={{ cutoff: "2026-03-03", refused: [{ tool: "kis_read" }], empty: [{ tool: "krx_daily_quote", target: "990221" }], left_out: { facts: 12, sources: 2, notes: 0, methods: 1 } }} />);
     const note = screen.getByRole("region", { name: "Looked back to Mar 3, 2026." });
     expect(within(note).getAllByRole("listitem").map((item) => item.textContent)).toEqual([

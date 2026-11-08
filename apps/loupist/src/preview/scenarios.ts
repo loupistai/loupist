@@ -23,6 +23,7 @@ import { browserScenarios } from "./browserScenarios";
 import { quoteEvidenceScenarios } from "./quoteEvidenceScenarios";
 import { settingsScenarios } from "./settingsScenarios";
 import { readerScenarios } from "./readerScenarios";
+import { liveResearchRun } from "./liveScenario";
 
 export type PreviewScenario = {
   id: string;
@@ -251,7 +252,7 @@ const printLandmark = () => {
 };
 /** jsdom has no scroll geometry; those runs check the scenario reaches the thread. */
 // The live dot is aria-hidden, so landmarks use its visible run header.
-const runningHeader = () => select('.chat-progress[data-run-status="streaming"]') ?? select(".message.assistant.streaming");
+const runningHeader = () => select(".message.assistant.streaming .chat-progress") ?? select(".message.assistant.streaming");
 const stalledHeader = () => { const header = runningHeader(); return header?.querySelector("[data-heartbeat]") ? header : null; };
 async function scrollThreadUp() {
   const thread = await until(() => select(".message-scroll"), "Thread did not appear");
@@ -975,7 +976,7 @@ export const scenarios: readonly PreviewScenario[] = [
   } },
   { ...base("chat-plan-running", "A multi-step reply works through its plan", () => {
     const active = select('.chat-plan [aria-current="step"]');
-    return active && select('.chat-progress-toggle[data-tool-status="running"]') && select('.chat-artifact-block[data-state="building"]') ? select(".chat-plan") : null;
+    return active && select('.chat-progress[data-tone="live"] .chat-progress-toggle') && select('.chat-artifact-block[data-state="building"]') ? select(".chat-plan") : null;
   }, async (root) => {
     await submitPrompt(root, "Why did Hanul Precision’s margin fall while revenue grew?");
     await click("button[data-research-summary]", root);
@@ -1356,6 +1357,26 @@ export const scenarios: readonly PreviewScenario[] = [
       return workspace;
     };
   } },
+  { ...base("chat-table", "A wide answer table keeps its figures whole", () => select('.message-content [data-streamdown="table"]'), async () => {
+    await centerOn('.message-content [data-streamdown="table"]', "center")();
+  }), setup: async (bridge) => {
+    await prepareFixture(bridge, "answer");
+    const table = [
+      "Segment results, ₩ billions.", "",
+      "| Segment | Q3 2025 | Q3 2026 | Change | Operating margin | Inventory days | Note |",
+      "| :--- | ---: | ---: | ---: | ---: | ---: | :--- |",
+      "| Precision parts | 1,204.5 | 1,336.8 | +11.0% | 14.8% | 54 | New production line is still in qualification, so costs run ahead of volume. |",
+      "| Tooling | 312.0 | 298.4 | -4.4% | 9.1% | 71 | Two customers delayed orders into next year. |",
+      "| Services | 88.2 | 101.7 | +15.3% | 22.6% | 12 | Recurring contracts. |",
+    ].join("\n");
+    const original = bridge.loupistSelect.bind(bridge);
+    bridge.loupistSelect = async loupistId => {
+      const workspace = await original(loupistId);
+      const answer = workspace.threads.find(thread => thread.id === "preview-chat")?.messages.find(message => message.id === "preview-answer");
+      if (answer) answer.content = table;
+      return workspace;
+    };
+  } },
   { ...base("chat-chart-inline", "A finished chart sits in the answer", () => {
     const card = select('.chat-artifact-block[data-state="ready"]');
     const chart = card?.querySelector(".artifact-chart-shell");
@@ -1730,7 +1751,7 @@ export const scenarios: readonly PreviewScenario[] = [
       if (!receipt) return null;
       if (id === "chat-receipt-empty") return receipt;
       if (id === "chat-learned") return select(".learned-card .learned-section p") ? receipt : null;
-      return receipt.querySelectorAll(".chat-receipt-item").length >= 7 ? receipt : null;
+      return receipt.querySelectorAll(".chat-receipt-item").length >= 6 ? receipt : null;
     }, async root => {
       await until(() => root.querySelector("article.message.assistant.complete"), "Answer did not load");
       if (id === "chat-learned") {
@@ -2272,3 +2293,18 @@ function sharingScenarios(): PreviewScenario[] {
       bridge => { withIndex(bridge); bridge.sharing.updateCheck = { kind: "upToDate" }; bridge.sharing.seedImport("loupist-quality", { blockedReason: "reported" }); }),
   ];
 }
+
+/**
+ * Scenarios on a real clock, outside the capture matrix: their frames depend on
+ * timing, so they are driven by `scripts/probe-streaming.mjs`, not screenshotted.
+ */
+export const liveScenarios: readonly PreviewScenario[] = [
+  {
+    id: "chat-live-research",
+    title: "A research reply streams on a real clock",
+    setup: async (bridge) => { await prepareFixture(bridge, "answer"); longThread(bridge); liveResearchRun(bridge); },
+    enter: async (root) => { await until(messagesRendered, "Message Markdown did not finish rendering"); await submitPrompt(root, "Why did Hanul Precision’s margin fall while revenue grew?"); },
+    landmark: () => select(".message.user:last-of-type") ?? select(".message.user"),
+  },
+];
+

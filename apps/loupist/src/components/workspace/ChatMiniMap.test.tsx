@@ -19,7 +19,7 @@ function setup(events: GrowthEvent[] = [event('a'), event('b'), event('c')]) {
 }
 function Surface({ onOpenFull = vi.fn() }: { onOpenFull?: (location: KnowledgeLocation) => void }) {
  const state = useChatMap();
- return <><MessageMemoryRow loupistId="loupist" chatId={state?.chatId} message={answer} onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} /><WorkspaceTabBar session={{ tabs: [] }} menuOpen={false} onMenuOpenChange={vi.fn()} onSelectTab={vi.fn()} onCloseTab={vi.fn()} onNewBrowser={vi.fn()} />{state?.active ? <ChatMiniMap onOpenFull={onOpenFull} /> : null}</>;
+ return <><MessageMemoryRow loupistId="loupist" chatId={state?.chatId} message={answer} /><WorkspaceTabBar session={{ tabs: [] }} menuOpen={false} onMenuOpenChange={vi.fn()} onSelectTab={vi.fn()} onCloseTab={vi.fn()} onNewBrowser={vi.fn()} />{state?.active ? <ChatMiniMap onOpenFull={onOpenFull} /> : null}</>;
 }
 it('opens the local Map from its answer chip, highlights every added node, and offers list and full-map actions', async () => {
  const bridge = setup(); const onOpen = vi.fn(), onOpenFull = vi.fn();
@@ -81,7 +81,7 @@ it('shows the answer chip once World processing delivers the saved Source after 
   vi.spyOn(bridge, 'knowledgeMap').mockResolvedValue(map);
   const growth = vi.spyOn(bridge, 'knowledgeGrowthEvents').mockResolvedValueOnce({ events: [{ ...event('source'), kind: 'source_retained' } as GrowthEvent], nextCursor: null }).mockResolvedValue({ events: [event('a')], nextCursor: null });
   const saved: ChatMessage = { ...answer, memory_update: { status: 'applied', commitId: 'commit', changes: [{ kind: 'Source', title: 'Filing', recordId: 'source-1', operation: 'create' }] } as ChatMessage['memory_update'] };
-  function SavedSurface() { const state = useChatMap(); return <MessageMemoryRow loupistId="loupist" chatId={state?.chatId} message={saved} onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} />; }
+  function SavedSurface() { const state = useChatMap(); return <MessageMemoryRow loupistId="loupist" chatId={state?.chatId} message={saved} />; }
   render(<ChatMapProvider bridge={bridge} loupistId="loupist" chatId="chat" messages={[saved]} onOpen={vi.fn()}><SavedSurface /></ChatMapProvider>);
   await waitFor(() => expect(growth).toHaveBeenCalledTimes(1));
   expect(screen.queryByRole('button', { name: /Show 1 new on the map/ })).toBeNull();

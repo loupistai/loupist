@@ -8,6 +8,8 @@ import { quoteEvidence } from "../../chat/quoteEvidence";
 import { quotePreviewLine } from "./QuoteEvidence";
 import { narrowWindow } from "../../chat/narrowWindow";
 import { useOpenEvidenceId } from "./OpenEvidence";
+import { useOpenProps } from "../navigation/Open";
+import type { ChatDestination } from "../../chat/navigation";
 
 /** Hover dwell before the card opens, and the grace period for moving onto it. */
 const OPEN_DELAY_MS = 150;
@@ -21,27 +23,36 @@ const sourceDate = (evidence: ChatEvidenceRef) => {
   return Number.isFinite(time) ? formatDate(time, /^\d{4}-\d{2}-\d{2}$/.test(value ?? "") ? { timeZone: "UTC" } : {}) : "";
 };
 
+/** A citation nothing can open: the number stays in the text, with the reason on hover. */
+export function UnavailableCitation({ children }: { children: ReactNode }) {
+  const { t } = useTranslation("chat");
+  return <span className="loupist-unavailable-citation" title={t("messageResponse.sourceUnavailableInThisReply")}>{children}</span>;
+}
+
 /**
  * A numbered citation in an answer (chat spec X2). Hovering for a moment, or
  * focusing it from the keyboard, shows a card with the source's title, its
  * domain and date, and the retained passage or a short quote line. Clicking
- * opens that citation. Esc closes the card, and only one is open at a time.
+ * opens that citation; Cmd-click (Ctrl elsewhere) or a middle click opens its page in
+ * the system browser. Esc closes the card, and only one is open at a time. A citation
+ * nothing can open is plain text.
  *
  * In a narrow window (700 px) hovering opens nothing, so passing over the text
  * never covers it: pressing and holding the chip opens the card as a popover
  * that stays until a press elsewhere or Esc, and a tap still opens Evidence.
  */
-export function CitationChip({ evidence, label, title, source, onOpen, children }: {
+export function CitationChip({ evidence, label, title, source, to, children }: {
   evidence: ChatEvidenceRef;
   /** Accessible name of the chip ("Source 1: …"). */
   label: string;
   title: string;
   /** Domain, or the kind of source when there is no domain. */
   source: string;
-  onOpen: (anchor: HTMLElement) => void;
+  to: ChatDestination;
   children: ReactNode;
 }) {
   const { t } = useTranslation("chat");
+  const link = useOpenProps(to);
   const [open, setOpen] = useState(false);
   const [byKeyboard, setByKeyboard] = useState(false);
   // Opened by a long press: it stays open until dismissed, like a clicked popover.
@@ -70,6 +81,8 @@ export function CitationChip({ evidence, label, title, source, onOpen, children 
     if (holdTimer.current !== null) window.clearTimeout(holdTimer.current);
   }, []);
 
+  if (!link.available) return <UnavailableCitation>{children}</UnavailableCitation>;
+
   return <Popover.Root open={open} onOpenChange={(next) => { if (next) setOpen(true); else close(); }}>
     <Popover.Anchor asChild>
       <button type="button" className="loupist-citation" data-evidence-id={evidence.id} aria-label={label} aria-current={current ? "true" : undefined} aria-describedby={open ? cardId : undefined}
@@ -97,11 +110,13 @@ export function CitationChip({ evidence, label, title, source, onOpen, children 
         onFocus={() => { if (!pressed.current) { setByKeyboard(true); schedule(true, 0); } }}
         onBlur={() => { pressed.current = false; if (!pinned) schedule(false, CLOSE_DELAY_MS); }}
         onKeyDown={(event) => { if (event.key === "Escape" && open) { event.stopPropagation(); close(); } }}
+        data-open-failed={link.props["data-open-failed"]}
+        onAuxClick={link.props.onAuxClick}
         onClick={(event) => {
           if (heldOpen.current) { heldOpen.current = false; return; }
           close();
           schedule(false, 0);
-          onOpen(event.currentTarget);
+          link.activate(event);
         }}>
         {children}
       </button>

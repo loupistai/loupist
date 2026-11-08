@@ -17,7 +17,7 @@ vi.mock("@/components/ai-elements/message-response", () => ({
 
 import { plainResponseText, SafeMessageResponse } from "./SafeMessageResponse";
 
-const response = (text: string, isAnimating = false) => <SafeMessageResponse isAnimating={isAnimating} onOpenLink={() => undefined} text={text} />;
+const response = (text: string, isAnimating = false) => <SafeMessageResponse isAnimating={isAnimating} text={text} />;
 
 beforeEach(() => mermaid.load.mockReset());
 

@@ -88,7 +88,7 @@ describe("Loupist · Chat memory", () => {
     expect(within(screen.getByLabelText("Used in this answer")).getByText("INTERNAL_MEMORY_TITLE")).toBeVisible();
   });
 
-  it("shows what an answer saved and opens its method in Lens alongside the chat", async () => {
+  it("shows what an answer saved and opens its method in the Evidence reader, then in Lens on request", async () => {
     const user = userEvent.setup();
     await openApp();
     fireEvent.change(screen.getByRole("textbox", { name: "Message Loupist" }), { target: { value: "Learn from this mistake" } });
@@ -101,6 +101,11 @@ describe("Loupist · Chat memory", () => {
     await user.click(within(card).getByRole("button", { name: "Compare independent accounts" }));
 
     expect(screen.queryByRole("button", { name: "Revert" })).toBeNull();
+    // A Lens page opens one way from chat: beside it, in the Evidence reader, with the composer untouched.
+    const panel = await screen.findByLabelText("Chat workspace panel");
+    expect(await within(panel).findByRole("button", { name: "Open in Lens" })).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveValue("Check the next quarter too");
+    await user.click(within(panel).getByRole("button", { name: "Open in Lens" }));
     const page = await screen.findByRole("region", { name: /What .* knows/ });
     expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveValue("Check the next quarter too");
     expect(await within(page).findByRole("complementary", { name: "Compare independent accounts" })).toBeVisible();

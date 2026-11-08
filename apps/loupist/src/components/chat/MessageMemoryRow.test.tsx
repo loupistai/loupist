@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { ChatMessage } from "../../types";
 import { MessageMemoryRow } from "./MessageMemoryRow";
+import { renderWithOpen } from "../../test/open";
 import { libraryState } from "../map/libraryState";
 import { FixMemoryProvider } from "../memory/fixMemory";
 import { ChatSetAsideProvider, type ChatSetAside } from "../../chat/chatSetAside";
@@ -11,14 +12,14 @@ it("shows the principle statement and supports View and Undo", async () => {
   const loupistId = (await bridge.loupistList())[0].id;
   const principle = await bridge.principleCreate({ loupistId, statement: "Check the reporting period before comparing figures.", origin: "settings" });
   const message: ChatMessage = { id: "answer", role: "assistant", content: "Saved.", status: "complete", created_at: new Date().toISOString(), memory_update: { status: "applied", commitId: "commit", changes: [{ kind: "principle", statement: principle.statement, title: "Short title", recordId: principle.recordId, operation: "create", lesson: "", basis: "", futureUse: "", knowledge: { kind: "lens", recordId: principle.recordId, revisionId: principle.revisionId, objectId: principle.recordId } }] } };
-  const open = vi.fn(), archive = vi.spyOn(bridge, "principleArchive");
-  render(<MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={message} onOpenMemory={vi.fn()} onOpenMemoryPage={open} />);
+  const archive = vi.spyOn(bridge, "principleArchive");
+  const { open } = renderWithOpen(<MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={message} />);
   expect(screen.queryByText("Saved to your principles")).toBeNull();
   expect(screen.getByRole("button", { name: "Saved 1 new rule" })).toBeVisible();
   expect(screen.getByText(principle.statement)).toBeVisible();
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "View" }));
-  expect(open).toHaveBeenCalledWith({ loupistId, surface: "lens", recordId: principle.recordId });
+  expect(open).toHaveBeenCalledWith({ kind: "page", location: { loupistId, surface: "lens", recordId: principle.recordId } });
   archive.mockRejectedValueOnce(new Error("Offline"));
   await user.click(screen.getByRole("button", { name: "Undo" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Could not archive this principle.");
@@ -31,22 +32,21 @@ it("opens a saved journal entry on the notes tab", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const loupistId = (await bridge.loupistList())[0].id;
   const message: ChatMessage = { id: "answer", role: "assistant", content: "Saved.", status: "complete", created_at: new Date().toISOString(), memory_update: { status: "applied", commitId: "commit", changes: [{ kind: "Journal", title: "Hold the quality call", recordId: "journal-1", operation: "create", lesson: "", basis: "", futureUse: "", knowledge: { kind: "journal", recordId: "journal-1", revisionId: "rev", objectId: "journal-1" } }] } };
-  const open = vi.fn();
-  render(<MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={message} onOpenMemory={open} onOpenMemoryPage={vi.fn()} />);
+  const { open } = renderWithOpen(<MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={message} />);
   await userEvent.click(screen.getByRole("button", { name: "Saved 1 journal entry" }));
   expect(libraryState(bridge, loupistId)).toMatchObject({ open: true, tab: "note" });
-  expect(open).toHaveBeenCalledWith(expect.objectContaining({ loupistId, surface: "note" }), "Hold the quality call");
+  expect(open).toHaveBeenCalledWith({ kind: "memory", location: expect.objectContaining({ loupistId, surface: "note" }), title: "Hold the quality call" });
 });
 
 it("says when nothing new was saved, and shows nothing for a private chat or a running answer", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const loupistId = (await bridge.loupistList())[0].id;
   const unchanged: ChatMessage = { id: "answer", role: "assistant", content: "Done.", status: "complete", created_at: new Date().toISOString(), memory_update: { status: "no_change", commitId: null, changes: [] } };
-  const { rerender } = render(<MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={unchanged} onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} />);
+  const { rerender } = render(<MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={unchanged} />);
   expect(screen.getByRole("navigation", { name: "What this answer used and saved" })).toHaveTextContent("Nothing new saved");
-  rerender(<MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={{ ...unchanged, memory_update: undefined }} onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} />);
+  rerender(<MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={{ ...unchanged, memory_update: undefined }} />);
   expect(screen.queryByRole("navigation")).toBeNull();
-  rerender(<MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={{ ...unchanged, status: "streaming" }} onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} />);
+  rerender(<MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={{ ...unchanged, status: "streaming" }} />);
   expect(screen.queryByRole("navigation")).toBeNull();
 });
 
@@ -56,9 +56,9 @@ describe("what the answer learned", () => {
   it("says Learned 3 · 1 idea for two filed pages and lists each section with Fix and Forget", async () => {
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const loupistId = (await bridge.loupistList())[0].id;
-    const fix = vi.fn(), openPage = vi.fn();
+    const fix = vi.fn();
     const user = userEvent.setup();
-    render(<FixMemoryProvider value={fix}><MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={filed} onOpenMemory={vi.fn()} onOpenMemoryPage={openPage} /></FixMemoryProvider>);
+    const { open: openPage } = renderWithOpen(<FixMemoryProvider value={fix}><MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={filed} /></FixMemoryProvider>);
     const receipt = await screen.findByRole("navigation", { name: "What this answer used and saved" });
     await waitFor(() => expect(receipt).toHaveTextContent("Learned 3"));
     expect(receipt).toHaveTextContent("Learned 3·1 idea");
@@ -76,14 +76,15 @@ describe("what the answer learned", () => {
     await user.click(within(tcp).getByRole("button", { name: "Undo" }));
     expect(await within(tcp).findByRole("button", { name: "Forget Risks" })).toBeVisible();
     await user.click(within(tcp).getByRole("button", { name: "TCP" }));
-    expect(openPage).toHaveBeenCalledWith({ loupistId, surface: "lens", recordId: "lens-subject-tcp" });
+    // A learned page's title opens the Lens record the one way chat opens Lens: the Evidence reader.
+    expect(openPage).toHaveBeenCalledWith({ kind: "lens", recordId: "lens-subject-tcp" });
   });
 
   it("counts a perspective the host delivered as a used page", async () => {
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const loupistId = (await bridge.loupistList())[0].id;
     const message: ChatMessage = { ...filed, id: "answer-2", lens_receipts: [{ recordId: "lens-perspective", revisionId: "rev", kind: "perspective", title: "Evidence-led perspective", delivery: "context" }] };
-    render(<MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={message} onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} />);
+    render(<MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={message} />);
     const receipt = await screen.findByRole("navigation", { name: "What this answer used and saved" });
     expect(receipt).toHaveTextContent("Used 1 page");
     await userEvent.click(within(receipt).getByRole("button", { name: "Used 1 page" }));
@@ -95,7 +96,7 @@ describe("what the answer learned", () => {
     const loupistId = (await bridge.loupistList())[0].id;
     const read = vi.spyOn(bridge, "memoryLearned");
     const aside: ChatSetAside = { ids: new Set<string>(), saveOff: true, toggle: vi.fn() };
-    render(<ChatSetAsideProvider value={aside}><MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={filed} onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} /></ChatSetAsideProvider>);
+    render(<ChatSetAsideProvider value={aside}><MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={filed} /></ChatSetAsideProvider>);
     await new Promise(resolve => setTimeout(resolve, 20));
     expect(screen.queryByText(/Learned/)).toBeNull();
     expect(read).not.toHaveBeenCalled();

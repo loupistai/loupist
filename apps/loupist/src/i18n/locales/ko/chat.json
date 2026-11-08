@@ -176,8 +176,6 @@
     "tokenUsageUnavailable": "토큰 사용량을 확인할 수 없어요",
     "previewUnavailable": "미리보기를 사용할 수 없어요",
     "you": "나",
-    "stopped": "중지됨",
-    "responseFailed": "응답 실패",
     "responseDetails": "응답 세부 정보",
     "thisAnswerListsWhatWasSavedBecauseTheModel": "모델이 텍스트를 반환하지 않아 저장된 항목을 표시해요.",
     "outputs": "결과물",
@@ -220,7 +218,7 @@
     "downloadAttachment": "{{filename}} 다운로드",
     "reasoningLevel": "추론: {{value1}}",
     "responseTime": "응답 시간: {{value1}}",
-    "sourceCount_other": "근거 {{count}}개",
+    "sourceCount": "출처 ({{formattedCount}})",
     "stoppedKept_other": "중지됨 · {{formattedCount}}단계와 지금까지의 글을 남겼어요",
     "stoppedKeptSteps_other": "중지됨 · {{formattedCount}}단계를 남겼어요",
     "stoppedKeptText": "중지됨 · 지금까지의 글을 남겼어요",
@@ -268,44 +266,13 @@
     "hint": "다음에 보내기 · {{shortcut}} 지금 지시"
   },
   "chatProgressTimeline": {
-    "research": {
-      "activity": "리서치 기록",
-      "calculations": "계산",
-      "sources": "자료 조사",
-      "finance": "금융 데이터",
-      "memory": "저장된 리서치",
-      "outputs": "리서치 결과물",
-      "sourceCount_other": "출처 {{formattedCount}}개",
-      "failedAttempt_other": "실행 {{count}}건 실패",
-      "unavailable_other": "조회 {{count}}건 건너뜀",
-      "unavailableAsOf_other": "{{date}} 기준 조회 {{count}}건 건너뜀",
-      "declined": "승인 거절",
-      "expired": "승인 요청 만료"
-    },
     "failed": "실패",
     "stopped": "중지됨",
-    "thinkingItThrough": "생각을 정리하는 중",
-    "waitingForModel": "응답을 기다리는 중",
-    "waitingForNextStep": "다음 단계를 기다리는 중",
-    "writing": "메시지 작성 중",
-    "commentary": "진행 메모",
-    "stillWorking": "계속 작업 중 · {{step}}",
-    "runningLabel": "{{step}} · <0/>",
     "runStatus": "응답 상태",
     "workProgress": "작업 진행 상황",
     "usedInThisAnswer": "이 답변에 사용됨",
-    "groupQueries_other": "{{action}} · 조회 {{formattedCount}}건",
-    "groupSteps_other": "{{action}} · {{formattedCount}}단계",
     "consultedNotes_other": "저장된 노트 {{formattedCount}}개 참고",
-    "stoppedSummary_other": "작업 중지 · {{formattedCount}}단계",
-    "stoppedDraft": "작성 중지 · 쓰던 글을 남겼어요",
-    "failedSummary_other": "작업 실패 · {{formattedCount}}단계",
-    "completedSummary_other": "작업 시간 <0/> · {{formattedCount}}단계{{issues}}",
-    "completedSteps_other": "{{formattedCount}}단계{{issues}}",
     "inspectAction": "{{action}} 살펴보기",
-    "failedCount": "{{failedCount}}개 실패",
-    "stoppedCount": "{{stoppedCount}}개 중지",
-    "pausedCount": "{{pausedCount}}개 일시 중지",
     "paused": {
       "status": "일시 중지",
       "command": "일시 중지: 이 답변은 다른 사이트의 글을 읽어서, 이번 답변에서는 명령 실행이 꺼져 있어요.",
@@ -378,7 +345,6 @@
   },
   "chatReceipt": {
     "label": "이 답변이 쓰고 저장한 것",
-    "readSources_other": "자료 {{formattedCount}}개 읽음",
     "sourcesRead": "이 답변에서 읽은 자료",
     "names_other": "지도에 이름 {{formattedCount}}개 추가",
     "namesOnMap_other": "지도에서 새 항목 {{formattedCount}}개 보기",
@@ -443,9 +409,32 @@
     "saved": "자료를 저장했어요"
   },
   "chatStatusPill": {
-    "working": "작업 중 · <0/> · {{step}}",
-    "stillWorking": "계속 작업 중 · <0/> · {{step}}",
     "jumpToLatest": "최신으로 이동"
+  },
+  "turn": {
+    "writing": "메시지 작성 중",
+    "thinkingItThrough": "생각을 정리하는 중",
+    "waitingForNextStep": "다음 단계를 기다리는 중",
+    "waitingForModel": "응답을 기다리는 중",
+    "stoppedCount": "{{stoppedCount}}개 중지",
+    "pausedCount": "{{pausedCount}}개 일시 중지",
+    "research": {
+      "activity": "리서치 기록",
+      "calculations": "계산",
+      "sources": "자료 조사",
+      "finance": "금융 데이터",
+      "memory": "저장된 리서치",
+      "outputs": "리서치 결과물",
+      "failedAttempt_other": "실행 {{count}}건 실패",
+      "unavailable_other": "조회 {{count}}건 건너뜀",
+      "unavailableAsOf_other": "{{date}} 기준 조회 {{count}}건 건너뜀",
+      "declined": "승인 거절",
+      "expired": "승인 요청 만료"
+    },
+    "readSources_other": "자료 {{formattedCount}}개 읽음",
+    "working": "작업 중",
+    "stillWorking": "계속 작업 중",
+    "waitingForYou": "확인을 기다리는 중"
   },
   "browserWorkspaceView": {
     "goBack": "뒤로",
@@ -597,6 +586,7 @@
     "couldNotOpenThisSavedReference": "저장된 참고 자료를 열지 못했어요. 다시 시도해 주세요.",
     "exploreThisSavedWorldAndItsEvidence": "저장된 World와 근거를 살펴보세요.",
     "openWorld": "World 열기",
+    "openInLens": "Lens에서 열기",
     "retryReference": "참고 자료 다시 불러오기",
     "openingSavedReference": "저장된 참고 자료 여는 중…",
     "thisReferenceIsUnavailable": "이 참고 자료를 사용할 수 없어요."
@@ -842,8 +832,6 @@
     "unsupportedLink": "지원하지 않는 링크예요.",
     "couldNotOpenThisLink": "링크를 열지 못했어요",
     "couldNotOpenThisLink2": "링크를 열지 못했어요. 주소를 확인해 주세요.",
-    "thisLensIsNotInTheCollection": "이 Lens가 모음에 없어요",
-    "archivedLens": "보관된 Lens",
     "openLinkedLens": "연결된 Lens 열기",
     "openFile": "{{localPath}} 열기",
     "openExternalLink": "{{externalUrl}} 열기",
@@ -1784,5 +1772,8 @@
     "forgotten": "잊었어요.",
     "undo": "되돌리기",
     "error": "이 페이지를 바꾸지 못했어요."
+  },
+  "navigation": {
+    "openedInPanel": "{{title}}을(를) 패널에서 열었어요"
   }
 }

@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { renderWithOpen } from "../../test/open";
 import userEvent from "@testing-library/user-event";
 import { AnswerFeedback } from "./AnswerFeedback";
 import { ChatMessageCard } from "./ChatMessageCard";
@@ -63,7 +64,7 @@ it("keeps the correction editable after a failed save", async () => {
 
 it.each(["streaming", "aborted", "error", "user"] as const)("hides feedback for %s messages", (state) => {
   const item = state === "user" ? { ...message, role: "user" as const } : { ...message, status: state };
-  render(<ChatMessageCard message={item} loupistId="loupist" loupistName="Loupist" onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} onOpenArtifact={vi.fn()} onOpenLink={vi.fn()} onReadAttachment={vi.fn()} onSaveFeedback={vi.fn()} onTeachFeedback={vi.fn()} />);
+  render(<ChatMessageCard message={item} loupistId="loupist" loupistName="Loupist" onReadAttachment={vi.fn()} onSaveFeedback={vi.fn()} onTeachFeedback={vi.fn()} />);
   expect(screen.queryByRole("button", { name: "Helpful" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Suggest a correction" })).toBeNull();
 });
@@ -72,9 +73,9 @@ it("saves a correction as a user principle, opens it and undoes it", async () =>
   const { MockLoupistBridge } = await import("../../bridge/mockBridge");
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const loupistId = (await bridge.loupistList())[0].id;
-  const create = vi.spyOn(bridge, "principleCreate"), archive = vi.spyOn(bridge, "principleArchive"), open = vi.fn();
+  const create = vi.spyOn(bridge, "principleCreate"), archive = vi.spyOn(bridge, "principleArchive");
   const user = userEvent.setup();
-  render(<AnswerFeedback message={{ ...message, feedback: { rating: "down", correction: "Always distinguish operating cash flow from profit.", updatedAt: 1 } }} bridge={bridge} loupistId={loupistId} chatId="original-chat" onOpenPrinciple={open} onSave={vi.fn()} onTeach={vi.fn()} />);
+  const { open } = renderWithOpen(<AnswerFeedback message={{ ...message, feedback: { rating: "down", correction: "Always distinguish operating cash flow from profit.", updatedAt: 1 } }} bridge={bridge} loupistId={loupistId} chatId="original-chat" onSave={vi.fn()} onTeach={vi.fn()} />);
   await user.click(screen.getByRole("button", { name: "Save as a principle" }));
   expect(screen.getByRole("textbox", { name: "Statement" })).toHaveValue("Always distinguish operating cash flow from profit.");
   await user.click(screen.getByRole("button", { name: "Save" }));
@@ -82,7 +83,7 @@ it("saves a correction as a user principle, opens it and undoes it", async () =>
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ origin: "feedback", originChatId: "original-chat", originMessageId: message.id }));
   const recordId = (await create.mock.results[0].value).recordId;
   await user.click(screen.getByRole("button", { name: "View" }));
-  expect(open).toHaveBeenCalledWith({ loupistId, surface: "lens", recordId });
+  expect(open).toHaveBeenCalledWith({ kind: "page", location: { loupistId, surface: "lens", recordId } });
   await user.click(screen.getByRole("button", { name: "Undo" }));
   expect(await screen.findByRole("button", { name: "Save as a principle" })).toBeVisible();
   expect(archive).toHaveBeenCalledWith({ loupistId, recordId, archived: true });

@@ -23,7 +23,7 @@
 .message-sources { margin-top: 14px; max-width: 100%; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .message-sources summary { display: inline-flex; align-items: center; width: fit-content; min-height: var(--gg-size-control-sm); padding: 5px 0; cursor: pointer; }
 .message-sources ol { display: grid; gap: 2px; padding: var(--gg-space-1) 0; margin: 0; list-style: none; }
-.message-sources li > button { display: flex; align-items: center; width: 100%; gap: 9px; padding: var(--gg-space-2); border-radius: var(--gg-radius-sm); text-align: left; }
+.message-sources li > button, .message-sources li > .source-row-static { display: flex; align-items: center; width: 100%; gap: 9px; padding: var(--gg-space-2); border-radius: var(--gg-radius-sm); text-align: left; }
 .message-sources li > button:hover { background: var(--gg-color-bg-hover); }
 .message-sources li > button > span:nth-child(2) { display: grid; flex: 1; gap: 2px; min-width: 0; }
 .message-sources strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--gg-color-text-secondary); font-weight: var(--gg-weight-medium); }

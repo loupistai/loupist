@@ -55,7 +55,6 @@ html[data-desktop-platform="macos"] .app-shell {
   textarea,
   [contenteditable="true"],
   .message-content,
-  .chat-progress-commentary,
   .chat-execution-detail,
   .artifact-markdown,
   .artifact-source,

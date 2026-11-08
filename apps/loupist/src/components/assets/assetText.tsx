@@ -7,7 +7,10 @@ import i18n from "@/i18n";
 import { formatAmount, formatCount, formatDate, formatNumber } from "@/i18n/format";
 import type { ChatEvidenceRef } from "../../types";
 import type { AssetCapitalFacts, AssetChangeRow, AssetDilution, AssetEvidence, AssetFlowRow, AssetGlanceRow, LineCrossing, Verdict } from "../../contracts/assets";
+import { useCallback } from "react";
 import { CitationChip } from "../chat/CitationChip";
+import { OpenProvider, useOpenLayer } from "../navigation/Open";
+import { displayHost } from "../../lib/displayHost";
 import english from "@/i18n/locales/en/assets.json";
 
 const t = i18n.getFixedT(null, "assets");
@@ -280,8 +283,8 @@ export function glanceValue(row: AssetGlanceRow) {
 /** The kind label for a check or a not-yet kind from Rust. */
 export const checkKind = (kind: string) => tDynamic(`checks.kind.${kind}`);
 
-/** Evidence as the citation card expects it; the chip opens the original when there is one. */
-function citation(evidence: AssetEvidence, index: number): ChatEvidenceRef {
+/** An asset row's source as a chat citation, so it opens the way answer citations do. */
+export function assetCitation(evidence: AssetEvidence, index: number): ChatEvidenceRef {
   return {
     id: `${evidence.citationUrl ?? evidence.url ?? evidence.recordId ?? evidence.worldId ?? evidence.title}:${index}`,
     title: evidence.title,
@@ -298,11 +301,8 @@ function citation(evidence: AssetEvidence, index: number): ChatEvidenceRef {
   };
 }
 
-const host = (url?: string) => {
-  try { return url ? new URL(url).hostname.replace(/^www\./, "") : ""; } catch { return ""; }
-};
-
-export type EvidenceOpener = (evidence: AssetEvidence) => void;
+/** Opens one source of an asset row; `citation` is the same source as a chat citation. */
+export type EvidenceOpener = (evidence: AssetEvidence, citation: ChatEvidenceRef) => void;
 
 /** What makes two pieces of evidence the same source: its link, record, Map claim or dataset row. */
 export function evidenceKey(evidence: AssetEvidence) {
@@ -334,6 +334,19 @@ export function citationNumbers(inOrder: Iterable<readonly AssetEvidence[]> = []
   return numberOf;
 }
 
+/**
+ * One numbered source. A plain click goes to the surface's own opener; Cmd-click
+ * (Ctrl elsewhere) or a middle click opens the source page in the system browser.
+ */
+function SourceChip({ item, number, onOpen }: { item: AssetEvidence; number: number; onOpen: EvidenceOpener }) {
+  const evidence = assetCitation(item, number);
+  const open = useOpenLayer(useCallback(() => () => onOpen(item, evidence), [evidence, item, onOpen]));
+  return <OpenProvider open={open}>
+    <CitationChip evidence={evidence} label={i18n.t("chat:evidence.numberedSource", { number, title: item.title })} title={item.title} source={displayHost(item.url) || item.provider || item.title}
+      to={{ kind: "evidence", evidence }}>{number}</CitationChip>
+  </OpenProvider>;
+}
+
 /** Numbered source chips for a row; a source cited twice in the row shows once. */
 export function SourceChips({ evidence, numbers, onOpen }: { evidence: readonly AssetEvidence[]; numbers: CitationNumbers; onOpen: EvidenceOpener }) {
   const seen = new Set<number>();
@@ -341,6 +354,6 @@ export function SourceChips({ evidence, numbers, onOpen }: { evidence: readonly 
     const number = numbers(item);
     if (seen.has(number)) return null;
     seen.add(number);
-    return <CitationChip key={`${number}:${item.title}`} evidence={citation(item, number)} label={i18n.t("chat:evidence.numberedSource", { number, title: item.title })} title={item.title} source={host(item.url) || item.provider || item.title} onOpen={() => onOpen(item)}>{number}</CitationChip>;
+    return <SourceChip key={`${number}:${item.title}`} item={item} number={number} onOpen={onOpen} />;
   })}</>;
 }

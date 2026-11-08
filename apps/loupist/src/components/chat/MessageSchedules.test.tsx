@@ -18,7 +18,7 @@ async function proposed() {
   const receipt: ScheduleReceipt = { task_id: task.id, title: task.title, revision: task.revision, action: "created", status: "paused", schedule: weekly,
     target: { kind: "new_chat" }, next_run_at_ms: null, use_memory: true, update_memory: false, awaiting_confirmation: true };
   const view = () => <ChatExecutionProvider value={{ bridge, loupistId, threadId: "chat", surface: "session", theme: "light", active: true }}>
-    <MessageSchedules receipts={[receipt]} onOpen={vi.fn()} />
+    <MessageSchedules receipts={[receipt]} />
   </ChatExecutionProvider>;
   return { bridge, task, view };
 }

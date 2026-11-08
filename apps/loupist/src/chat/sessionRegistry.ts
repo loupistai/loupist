@@ -8,6 +8,7 @@ import type {
 } from "../types";
 import {
   fromLoupistUIMessage,
+  fromStoreKeepingAnswers,
   TauriChatTransport,
   toLoupistUIMessage,
   type LoupistUIMessage,
@@ -208,7 +209,7 @@ export class ChatSessionRegistry {
       };
     }
 
-    chat.messages = thread.messages.map(toLoupistUIMessage);
+    chat.messages = fromStoreKeepingAnswers(chat.messages, thread.messages);
     return thread;
   }
 

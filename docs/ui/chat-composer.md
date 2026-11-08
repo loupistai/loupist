@@ -65,8 +65,8 @@ occupies its own row between the scroll viewport and composer. It shares the
 conversation’s scroll state, so jumping re-pins the reply while the control stays clear
 of answer text and actions. A short conversation that becomes scrollable when the
 window narrows stays pinned to its newest answer. The viewport follows the
-reply through tool updates and changes in the height of a streaming Markdown
-table, even when the browser temporarily moves the scroll position up. An
+reply in the same commit that grew it, through tool updates and table rows, even
+when the browser temporarily moves the scroll position up. An
 upward scroll, even in single-pixel increments, keeps the reader's position
 once they leave the bottom.
 After a reply saves a Source, its queued or running World job shows “Reviewing
@@ -157,4 +157,4 @@ preference/catalog foundation and its coverage are described in
 
 ## Code
 
-- Chat progress / feedback: `src-tauri/src/chat/progress.rs`, `src/chat/progressLabels.ts`, `src/chat/chartBlocks.ts`, `src/components/chat/ChatProgressTimeline.tsx`, `src/components/chat/AnswerFeedback.tsx`, `src-tauri/src/commands/records.rs`
+- Chat progress / feedback: `src-tauri/src/chat/progress.rs`, `src/chat/progressLabels.ts`, `src/chat/chartBlocks.ts`, `src/chat/turnView.ts`, `src/components/chat/ActivityRow.tsx`, `src/components/chat/TurnFooter.tsx`, `src/components/chat/AnswerFeedback.tsx`, `src-tauri/src/commands/records.rs`

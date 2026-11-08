@@ -3,6 +3,7 @@ import i18n from "../../i18n";
 import userEvent from "@testing-library/user-event";
 import type { ChatMessage, HomeHandoff } from "../../types";
 import { ThreadHandoff } from "./ThreadHandoff";
+import { renderWithOpen } from "../../test/open";
 
 const card = (handoff: Partial<HomeHandoff>, content = "HBM4 supply widens in 2027."): ChatMessage => ({
   id: "handoff-card", role: "assistant", content, status: "complete", created_at: "2026-11-06T09:00:00Z", host_composed: true,
@@ -10,15 +11,14 @@ const card = (handoff: Partial<HomeHandoff>, content = "HBM4 supply widens in 20
 });
 
 it("shows the finished session's title, status, first paragraph and Open", async () => {
-  const onOpen = vi.fn();
-  render(<ThreadHandoff message={card({})} loupistName="Quality" onOpenRunChat={onOpen} />);
+  const { open: onOpen } = renderWithOpen(<ThreadHandoff message={card({})} loupistName="Quality" />);
   const article = screen.getByRole("article", { name: "Research: Hynix HBM supply" });
   expect(within(article).getByText("Researched: Hynix HBM supply")).toBeVisible();
   expect(within(article).getByText("Done")).toBeVisible();
   expect(within(article).getByText("HBM4 supply widens in 2027.")).toBeVisible();
   expect(within(article).queryByText(/Learned/)).toBeNull();
   await userEvent.setup().click(within(article).getByRole("button", { name: "Open" }));
-  expect(onOpen).toHaveBeenCalledExactlyOnceWith("chat-session");
+  expect(onOpen).toHaveBeenCalledExactlyOnceWith({ kind: "chat", threadId: "chat-session" });
 });
 
 it("shows a running session without an answer and counts what a finished one learned", async () => {

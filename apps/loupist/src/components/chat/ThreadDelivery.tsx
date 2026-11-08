@@ -1,4 +1,5 @@
 import i18n, { useTranslation } from "@/i18n";
+import { useGo } from "../navigation/Open";
 import { formatTime } from "@/i18n/format";
 import type { ChatMessage } from "../../types";
 import { cadencePhrase } from "../briefings/scheduledPresentation";
@@ -9,12 +10,12 @@ const t = i18n.getFixedT(null, "chat");
  * A scheduled result the Loupist posted into its home Thread: the run's first
  * paragraph and where it came from. The full answer stays in the run's Chat.
  */
-export function ThreadDelivery({ message, loupistName, onOpenRunChat }: {
+export function ThreadDelivery({ message, loupistName }: {
   message: ChatMessage;
   loupistName: string;
-  onOpenRunChat?: (threadId: string) => void;
 }) {
   useTranslation("chat");
+  const go = useGo();
   const delivery = message.delivery!;
   const finished = delivery.status === "succeeded";
   const title = delivery.task_kind === "briefing" ? i18n.t("briefings:morning") : delivery.task_title;
@@ -28,7 +29,7 @@ export function ThreadDelivery({ message, loupistName, onOpenRunChat }: {
     <p className="thread-delivery-text">{finished ? message.content : t("thread.couldNotFinish", { title })}</p>
     <p className="thread-delivery-source">
       <span>{source}</span>
-      {delivery.run_thread_id && onOpenRunChat ? <><span aria-hidden="true">·</span><button type="button" className="morning-link" onClick={() => onOpenRunChat(delivery.run_thread_id!)}>{t("thread.open")}</button></> : null}
+      {delivery.run_thread_id && go ? <><span aria-hidden="true">·</span><button type="button" className="morning-link" onClick={() => go({ kind: "chat", threadId: delivery.run_thread_id! })}>{t("thread.open")}</button></> : null}
     </p>
   </article>;
 }

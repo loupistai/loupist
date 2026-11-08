@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useGo } from "../navigation/Open";
 import { EllipsisIcon, FileIcon } from "lucide-react";
 import i18n, { useTranslation } from "@/i18n";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -10,12 +11,12 @@ const t = i18n.getFixedT(null, "chat");
  * answer wrote and linked. The chip opens the file's preview in the panel; its ⋯
  * menu shows the file in Finder through the workspace reveal command.
  */
-export function DeliveredFiles({ paths, onOpen, onReveal }: {
+export function DeliveredFiles({ paths, onReveal }: {
   paths: readonly string[];
-  onOpen?: (path: string) => void;
   onReveal?: (path: string) => Promise<void>;
 }) {
   useTranslation("chat");
+  const go = useGo();
   const [failed, setFailed] = useState<string | null>(null);
   if (!paths.length) return null;
   const reveal = (path: string) => {
@@ -27,7 +28,7 @@ export function DeliveredFiles({ paths, onOpen, onReveal }: {
     {paths.map((path) => {
       const name = path.split("/").at(-1) || path;
       return <span className="message-file-chip" key={path}>
-        <button type="button" className="message-file-chip-open" title={path} disabled={!onOpen} onClick={() => onOpen?.(path)}>
+        <button type="button" className="message-file-chip-open" title={path} disabled={!go} onClick={() => go?.({ kind: "file", path })}>
           <FileIcon aria-hidden="true" /><span>{name}</span>
         </button>
         {onReveal ? <DropdownMenu>

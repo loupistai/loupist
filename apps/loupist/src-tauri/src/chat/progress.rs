@@ -546,6 +546,11 @@ pub struct ChatProgressPatch {
     pub sequence: u64,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub upsert_items: Vec<ChatProgressItem>,
+    /// Text appended to commentary this stream already published, in order. A
+    /// commentary id is in `upsert_items` or here, never both: its first
+    /// publication carries the whole item.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub append_text: Vec<CommentaryAppend>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub remove_item_ids: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -556,6 +561,13 @@ pub struct ChatProgressPatch {
     /// Every approval whenever one changed since the last patch.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approvals: Option<Vec<crate::chat::approvals::ChatApproval>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommentaryAppend {
+    pub id: String,
+    pub text: String,
 }
 
 impl ChatProgress {
@@ -620,6 +632,10 @@ pub struct ChatProgressProjection {
     dirty_item_ids: Vec<String>,
     dirty_item_set: HashSet<String>,
     published_item_ids: HashSet<String>,
+    /// The text of each published commentary as the stream has seen it, so a
+    /// patch carries only what was appended since, and the whole item again
+    /// should the text ever change under that prefix.
+    published_text: HashMap<String, String>,
     pending_remove_item_ids: Vec<String>,
     pending_finished_at_ms: Option<i64>,
     plan_dirty: bool,
@@ -772,6 +788,7 @@ impl ChatProgressProjection {
             dirty_item_ids: Vec::new(),
             dirty_item_set: HashSet::new(),
             published_item_ids: HashSet::new(),
+            published_text: HashMap::new(),
             pending_remove_item_ids: Vec::new(),
             pending_finished_at_ms: None,
             plan_dirty: false,
@@ -787,6 +804,11 @@ impl ChatProgressProjection {
 
     fn close_commentary(&mut self) {
         self.active_commentary = None;
+    }
+
+    /// The commentary still being written, which a settling answer replaces.
+    pub fn live_commentary_id(&self) -> Option<&str> {
+        self.active_commentary.as_deref()
     }
 
     pub fn start_assistant_turn(&mut self) {
@@ -1189,17 +1211,38 @@ impl ChatProgressProjection {
     pub fn take_patch(&mut self) -> Option<ChatProgressPatch> {
         let dirty_item_ids = std::mem::take(&mut self.dirty_item_ids);
         let mut upsert_items = Vec::with_capacity(dirty_item_ids.len());
+        let mut append_text = Vec::new();
         for id in dirty_item_ids {
             self.dirty_item_set.remove(&id);
-            if let Some(item) = self
+            let Some(item) = self
                 .item_indices
                 .get(&id)
                 .and_then(|index| self.progress.items.get(*index))
-                .cloned()
-            {
-                self.published_item_ids.insert(id);
-                upsert_items.push(item);
+            else {
+                continue;
+            };
+            if let ChatProgressItem::Commentary { text, .. } = item {
+                match self.published_text.get_mut(&id) {
+                    Some(published) if text.starts_with(published.as_str()) => {
+                        if text.len() > published.len() {
+                            let appended = &text[published.len()..];
+                            append_text.push(CommentaryAppend {
+                                id: id.clone(),
+                                text: appended.to_owned(),
+                            });
+                            published.push_str(appended);
+                        }
+                        continue;
+                    }
+                    // First publish, or text that changed under the published prefix:
+                    // the renderer needs the whole item.
+                    _ => {
+                        self.published_text.insert(id.clone(), text.clone());
+                    }
+                }
             }
+            self.published_item_ids.insert(id);
+            upsert_items.push(item.clone());
         }
         let remove_item_ids = std::mem::take(&mut self.pending_remove_item_ids);
         let finished_at_ms = self.pending_finished_at_ms.take();
@@ -1209,6 +1252,7 @@ impl ChatProgressProjection {
         let approvals =
             std::mem::take(&mut self.approvals_dirty).then(|| self.progress.approvals.clone());
         if upsert_items.is_empty()
+            && append_text.is_empty()
             && remove_item_ids.is_empty()
             && finished_at_ms.is_none()
             && plan.is_none()
@@ -1221,6 +1265,7 @@ impl ChatProgressProjection {
         Some(ChatProgressPatch {
             sequence,
             upsert_items,
+            append_text,
             remove_item_ids,
             finished_at_ms,
             plan,
@@ -1300,6 +1345,7 @@ impl ChatProgressProjection {
         }
         self.dirty_item_set.remove(id);
         self.dirty_item_ids.retain(|dirty_id| dirty_id != id);
+        self.published_text.remove(id);
         if self.published_item_ids.remove(id) {
             self.pending_remove_item_ids.push(id.to_owned());
         }
@@ -2103,11 +2149,26 @@ mod tests {
             &commentary.upsert_items[0],
             ChatProgressItem::Commentary { text, .. } if text == "I will inspect this."
         ));
+        assert!(commentary.append_text.is_empty());
+        assert!(projection.take_patch().is_none());
+
+        // Once published, a commentary travels as the text appended since.
+        projection.append_commentary(" Then ");
+        projection.append_commentary("the filing.");
+        let appended = projection.take_patch().unwrap();
+        assert!(appended.upsert_items.is_empty());
+        assert_eq!(
+            appended.append_text,
+            vec![CommentaryAppend {
+                id: "commentary-1".into(),
+                text: " Then the filing.".into()
+            }]
+        );
         assert!(projection.take_patch().is_none());
 
         projection.start_tool("call-1", "web_search", &json!({"query": "btc"}), None, 11);
         let started = projection.take_patch().unwrap();
-        assert_eq!(started.sequence, 2);
+        assert_eq!(started.sequence, 3);
         assert_eq!(started.upsert_items.len(), 1);
         assert!(matches!(
             started.upsert_items[0],
@@ -2119,7 +2180,7 @@ mod tests {
 
         projection.finish_tool("call-1", false, 12, None);
         let finished = projection.take_patch().unwrap();
-        assert_eq!(finished.sequence, 3);
+        assert_eq!(finished.sequence, 4);
         assert_eq!(finished.upsert_items.len(), 1);
         assert!(matches!(
             finished.upsert_items[0],
@@ -2138,10 +2199,18 @@ mod tests {
         let published = projection.take_patch().unwrap();
         let commentary_id = published.upsert_items[0].id().to_owned();
 
+        projection.append_commentary(" and more");
+        assert_eq!(
+            projection.live_commentary_id(),
+            Some(commentary_id.as_str())
+        );
         projection.finish_assistant_turn(true);
+        assert_eq!(projection.live_commentary_id(), None);
+        // Text appended after the last patch leaves with the item: no append for a removed id.
         let removed = projection.take_patch().unwrap();
         assert_eq!(removed.sequence, 2);
         assert!(removed.upsert_items.is_empty());
+        assert!(removed.append_text.is_empty());
         assert_eq!(removed.remove_item_ids, vec![commentary_id]);
 
         assert!(projection.finish(20, false).is_none());
@@ -2183,6 +2252,69 @@ mod tests {
             matches!(&snapshot.items[2], ChatProgressItem::Commentary { text, .. } if text == "The source is enough to continue.")
         );
         assert!(matches!(&snapshot.items[3], ChatProgressItem::Tool { .. }));
+    }
+
+    #[test]
+    fn a_patch_never_carries_one_commentary_as_both_an_upsert_and_an_append() {
+        let mut projection = ChatProgressProjection::new(10);
+        projection.start_assistant_turn();
+        projection.append_commentary("First");
+        projection.take_patch().unwrap();
+        projection.append_commentary(" and second");
+        projection.finish_assistant_turn(false);
+        projection.start_assistant_turn();
+        projection.append_commentary("A new note");
+        let patch = projection.take_patch().unwrap();
+        let upserted: Vec<&str> = patch
+            .upsert_items
+            .iter()
+            .map(ChatProgressItem::id)
+            .collect();
+        let appended: Vec<&str> = patch
+            .append_text
+            .iter()
+            .map(|append| append.id.as_str())
+            .collect();
+        assert_eq!(upserted, ["commentary-2"]);
+        assert_eq!(appended, ["commentary-1"]);
+        assert!(upserted.iter().all(|id| !appended.contains(id)));
+        assert_eq!(patch.append_text[0].text, " and second");
+    }
+
+    #[test]
+    fn a_commentary_rewritten_under_its_published_prefix_is_published_whole_again() {
+        let mut projection = ChatProgressProjection::new(10);
+        projection.start_assistant_turn();
+        projection.append_commentary("Revenue rose 8%");
+        let first = projection.take_patch().unwrap();
+        let id = first.upsert_items[0].id().to_owned();
+
+        // The same length under a different prefix: an append could carry nothing.
+        let index = projection.item_indices[&id];
+        if let ChatProgressItem::Commentary { text, .. } = &mut projection.progress.items[index] {
+            *text = "Revenue fell 8%".to_owned();
+        }
+        projection.mark_dirty(&id);
+        let rewritten = projection
+            .take_patch()
+            .expect("a rewritten commentary is republished");
+        assert!(rewritten.append_text.is_empty());
+        assert!(matches!(
+            &rewritten.upsert_items[0],
+            ChatProgressItem::Commentary { text, .. } if text == "Revenue fell 8%"
+        ));
+
+        // Growth after the rewrite travels as an append again.
+        projection.append_commentary(" in Q3.");
+        let grown = projection.take_patch().unwrap();
+        assert!(grown.upsert_items.is_empty());
+        assert_eq!(
+            grown.append_text,
+            vec![CommentaryAppend {
+                id,
+                text: " in Q3.".into()
+            }]
+        );
     }
 
     #[test]

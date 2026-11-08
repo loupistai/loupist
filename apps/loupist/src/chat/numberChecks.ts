@@ -5,6 +5,9 @@ import { citationSources, sourceIdentityLabel } from "./evidence";
 
 const t = i18n.getFixedT(null, "chat");
 
+/** A data cell the Evidence reader marks when it opens (`pointer` from the check). */
+export type EvidenceCell = { pointer: string; key: string; value: string };
+
 /**
  * Presentation only, while an answer streams: a link whose whole text reads
  * as one number with its unit gets the pending underline. Rust decides which

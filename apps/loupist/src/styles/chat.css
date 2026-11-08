@@ -66,27 +66,27 @@
 .chat-model-setup-notice p { flex: 1; min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .chat-model-setup-notice button { flex: none; }
 /* Focused controls keep breathing room above the separate Jump to latest row. */
-.message-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0; background: var(--gg-color-bg-app); scroll-padding-top: var(--gg-space-4); scroll-padding-bottom: var(--gg-space-2); }
+.message-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-anchor: none; padding: 0; background: var(--gg-color-bg-app); scroll-padding-top: var(--gg-space-4); scroll-padding-bottom: var(--gg-space-2); }
 .conversation-content { width: min(100%, calc(var(--gg-size-chat-column) + 2 * var(--chat-gutter, var(--gg-space-5)))); min-height: 100%; margin-inline: auto; gap: var(--gg-space-7); padding: var(--gg-size-control-sm) var(--chat-gutter, var(--gg-space-5)) var(--gg-size-control-lg); }
 .message-scroll article { min-width: 0; max-width: 100%; }
 .message { margin: 0; }
 .message.user { width: fit-content; max-width: min(82%, 660px); margin-left: auto; padding: 0; }
 .message.user .message-meta { display: none; }
 .message.user .message-content { border: 1px solid var(--gg-color-border-subtle); border-radius: 14px; background: var(--gg-color-bg-hover); }
-.message-meta { display: flex; align-items: center; gap: var(--gg-space-2); margin-bottom: 10px; color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
+/* The row is as tall as its details trigger from the start, so a finished answer adds nothing above its text. */
+.message-meta { display: flex; align-items: center; gap: var(--gg-space-2); min-height: var(--gg-size-control-xs); margin-bottom: 10px; color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
 .message-meta > span:first-child { color: var(--gg-color-text-secondary); font-weight: var(--gg-weight-semibold); }
 .message-meta time { margin-left: 2px; }
-.message-status { padding: 2px 6px; border-radius: var(--gg-space-1); background: var(--gg-color-bg-hover); }
-.message-content { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: 1.75; overflow-wrap: anywhere; white-space: pre-wrap; }
-.message.assistant .message-content { width: 100%; max-width: 100%; min-width: 0; white-space: normal; }
-/* A turn reads down the column: assistant speech, compact tool receipts, then the next paragraph. */
+.message-content { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); overflow-wrap: anywhere; white-space: pre-wrap; }
+.message.assistant .message-content { width: 100%; max-width: 100%; min-width: 0; white-space: normal; font-size: var(--gg-text-reading); line-height: var(--gg-leading-reading); }
+/* Reading measure: prose stops near 72 characters while tables, code and charts keep the full column. */
+.message.assistant .message-content :is(p, ul, ol, blockquote, [data-streamdown^="heading-"]) { max-width: var(--gg-size-prose-measure); }
+/* A turn reads down the column: narration, one activity row per run of steps, then the answer. */
 .message.assistant > .is-assistant + .chat-progress,
-.message.assistant > .is-assistant + .is-assistant { margin-top: var(--gg-space-3); }
-.message.assistant > .chat-progress + .is-assistant {
-  border-top: 1px solid var(--gg-color-border-subtle);
-  padding-top: var(--gg-space-3);
-}
-.chat-run-label { display: inline-flex; align-items: center; gap: var(--gg-space-2); }
+.message.assistant > .is-assistant + .is-assistant,
+.message.assistant > .chat-progress + .is-assistant { margin-top: var(--gg-space-3); }
+/* Narration is the answer's own text, one step back. */
+.message-content.message-narration { color: var(--gg-color-text-secondary); }
 .chat-progress-toggle[data-research-summary] { flex-wrap: nowrap; }
 .chat-progress-toggle[data-research-summary] .chat-progress-heading { white-space: normal; overflow-wrap: anywhere; }
 .chat-progress-toggle[data-research-summary] .chat-progress-chevron { width: var(--gg-space-3); height: var(--gg-space-3); flex-basis: var(--gg-space-3); }
@@ -288,27 +288,31 @@ svg foreignObject .katex:has(> math) {
 .message.assistant .message-content [data-streamdown^="heading-"] {
   margin: 1.2em 0 0.45em;
   color: var(--gg-color-text-primary);
-  line-height: 1.3;
   font-weight: var(--gg-weight-semibold);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
 }
 
 .message.assistant .message-content [data-streamdown="heading-1"] {
-  font-size: 1.45em;
+  font-size: var(--gg-text-title);
+  line-height: var(--gg-leading-title);
 }
 
 .message.assistant .message-content [data-streamdown="heading-2"] {
-  font-size: 1.28em;
+  font-size: var(--gg-text-subtitle);
+  line-height: var(--gg-leading-subtitle);
 }
 
 .message.assistant .message-content [data-streamdown="heading-3"] {
-  font-size: 1.14em;
+  font-size: var(--gg-text-reading);
+  line-height: var(--gg-leading-reading);
 }
 
 .message.assistant .message-content [data-streamdown="heading-4"],
 .message.assistant .message-content [data-streamdown="heading-5"],
 .message.assistant .message-content [data-streamdown="heading-6"] {
-  font-size: 1em;
+  font-size: var(--gg-text-body);
+  line-height: var(--gg-leading-body);
+  color: var(--gg-color-text-secondary);
 }
 
 .message.assistant .message-content [data-streamdown="unordered-list"],
@@ -366,15 +370,23 @@ svg foreignObject .katex:has(> math) {
   overflow-x: auto;
 }
 
+/* A wide table scrolls inside its frame instead of squeezing columns; figures never split. */
 .message.assistant .message-content [data-streamdown="table"] {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
-  font-size: var(--gg-text-meta);
+  font-size: var(--gg-text-control);
+  line-height: var(--gg-leading-control);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
+/* Markdown column alignment arrives as an inline text-align style, which beats this default. */
 .message.assistant .message-content [data-streamdown="table-header-cell"],
 .message.assistant .message-content [data-streamdown="table-cell"] {
-  padding: var(--gg-space-2) 10px;
+  max-width: 36ch;
+  padding: var(--gg-space-2) var(--gg-space-3);
   border: 1px solid var(--gg-color-border-subtle);
   text-align: left;
   vertical-align: top;
@@ -382,7 +394,9 @@ svg foreignObject .katex:has(> math) {
 
 .message.assistant .message-content [data-streamdown="table-header-cell"] {
   background: var(--gg-color-bg-hover);
+  color: var(--gg-color-text-secondary);
   font-weight: var(--gg-weight-semibold);
+  white-space: nowrap;
 }
 
 .message.assistant .message-content [data-streamdown="link"],
@@ -402,19 +416,6 @@ svg foreignObject .katex:has(> math) {
   text-decoration: inherit;
   cursor: pointer;
 }
-
-[data-streamdown="link"].loupist-external-link > svg {
-  width: 0.78em;
-  height: 0.78em;
-  display: inline;
-  margin-left: 0.22em;
-  vertical-align: 0.02em;
-}
-
-/* X4: the external-link glyph appears on hover or keyboard focus only; file links keep theirs. */
-button[data-streamdown="link"].loupist-external-link > svg { opacity: 0; transition: opacity var(--gg-motion-fast) var(--gg-ease-out); }
-button[data-streamdown="link"].loupist-external-link:hover > svg,
-button[data-streamdown="link"].loupist-external-link:focus-visible > svg { opacity: 1; }
 
 [data-streamdown="link"].loupist-external-link[data-open-failed="true"] {
   color: var(--gg-color-negative);
@@ -475,7 +476,7 @@ button[data-streamdown="link"].loupist-external-link:focus-visible > svg { opaci
   white-space: nowrap;
 }
 
-.chat-progress[data-run-status="error"] .chat-progress-heading {
+.chat-progress[data-tone="problem"] .chat-progress-heading {
   color: var(--gg-color-negative);
 }
 
@@ -503,10 +504,9 @@ button[data-streamdown="link"].loupist-external-link:focus-visible > svg { opaci
 
 /* Actual reasoning and the stalled-run heartbeat have motion; elapsed time alone is not reasoning. */
 @media (prefers-reduced-motion: no-preference) {
-  .chat-progress[data-phase="thinking"] .chat-progress-live,
   .chat-progress-live[data-heartbeat],
   .chat-status-pill-dot[data-heartbeat] {
-    animation: chat-run-heartbeat calc(var(--gg-motion-slow) * 3.5) var(--gg-ease-in-out) infinite;
+    animation: chat-run-heartbeat var(--gg-motion-heartbeat) var(--gg-ease-in-out) infinite;
   }
 }
 
@@ -523,20 +523,6 @@ button[data-streamdown="link"].loupist-external-link:focus-visible > svg { opaci
   padding: 2px var(--gg-space-1) 2px var(--gg-space-4);
   border-left: 1px solid var(--gg-color-border-subtle);
 }
-
-.chat-live-steps {
-  display: grid;
-  gap: var(--gg-space-1);
-  margin: var(--gg-space-1) 0 var(--gg-space-2) var(--gg-space-2);
-  padding-left: var(--gg-space-3);
-  border-left: 1px solid var(--gg-color-border-subtle);
-  list-style: none;
-  color: var(--gg-color-text-secondary);
-  font-size: var(--gg-text-meta);
-}
-.chat-live-steps > li { display: flex; align-items: baseline; gap: var(--gg-space-2); }
-.chat-live-steps svg { flex: none; width: 1em; height: 1em; align-self: center; }
-.chat-live-steps > [data-progress-status="running"] { color: var(--gg-color-text-primary); }
 
 .chat-progress-elapsed {
   font-variant-numeric: tabular-nums;
@@ -576,16 +562,8 @@ button[data-streamdown="link"].loupist-external-link:focus-visible > svg { opaci
   color: var(--gg-color-text-secondary);
 }
 
-.chat-progress-children,
 .chat-tool-result {
   grid-column: 1 / -1;
-}
-
-.chat-progress-children {
-  display: grid;
-  gap: 2px;
-  margin-top: 2px;
-  padding-left: 18px;
 }
 
 /* Plan (S1): the agent's checklist for multi-step work; steps run under an item nest beneath it. */
@@ -677,35 +655,6 @@ button[data-streamdown="link"].loupist-external-link:focus-visible > svg { opaci
   margin-left: var(--gg-space-2);
   padding-left: var(--gg-space-4);
   border-left: 1px solid var(--gg-color-border-subtle);
-}
-
-.chat-progress-commentary {
-  min-width: 0;
-  padding: 2px 0;
-  color: var(--gg-color-text-secondary);
-  font-size: var(--gg-text-meta);
-  line-height: 1.5;
-}
-
-.chat-commentary-label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--gg-space-1);
-  color: var(--gg-color-text-secondary);
-  font-size: var(--gg-text-caption);
-}
-
-.chat-commentary-label { margin-bottom: var(--gg-space-1); font-weight: var(--gg-weight-medium); }
-.chat-commentary-label svg { width: var(--gg-space-3); height: var(--gg-space-3); }
-
-.chat-progress-commentary > :first-child,
-.chat-progress-commentary p:first-child {
-  margin-top: 0;
-}
-
-.chat-progress-commentary > :last-child,
-.chat-progress-commentary p:last-child {
-  margin-bottom: 0;
 }
 
 .chat-progress-copy {
@@ -1093,12 +1042,6 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .chat-receipt .chat-receipt-segment[data-learned="true"], .chat-receipt-text[data-learned="true"] { color: var(--gg-color-accent-ink); }
 /* The one segment that asks the user to act reads as an action, not a fact. */
 .chat-receipt [data-receipt="proposals"] .chat-receipt-segment { color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); }
-.chat-receipt-popover { width: min(var(--gg-size-inspector), calc(100vw - var(--gg-space-8))); padding: var(--gg-space-1); }
-.chat-receipt-popover ul { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
-.chat-receipt-popover button { display: grid; width: 100%; gap: 2px; padding: var(--gg-space-2); border: 0; border-radius: var(--gg-radius-xs); background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-meta); text-align: start; cursor: pointer; }
-.chat-receipt-popover button:hover { background: var(--gg-color-bg-hover); }
-.chat-receipt-popover button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-receipt-popover button small { color: var(--gg-color-text-secondary); }
 
 .memory-chip-verb { color: var(--gg-color-text-secondary); }
 .memory-change-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
@@ -1522,7 +1465,7 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .working-note-actions button { color: var(--gg-color-text-secondary); }
 .working-note-dialog { max-height: calc(100dvh - var(--gg-space-9)); overflow-y: auto; }
 .working-context-error { display: flex; align-items: center; flex-wrap: wrap; padding: var(--gg-space-2) var(--gg-space-6); font-size: var(--gg-text-meta); color: var(--gg-color-negative, var(--gg-color-text-primary)); }
-.message-details-trigger { display: inline-flex; align-items: center; justify-content: center; width: var(--gg-space-6); height: var(--gg-space-6); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-secondary); }
+.message-details-trigger { display: inline-flex; align-items: center; justify-content: center; width: var(--gg-size-control-xs); height: var(--gg-size-control-xs); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-secondary); }
 .message-details-trigger svg { width: 13px; height: 13px; }
 .message-details-trigger:hover { background: var(--gg-color-bg-hover); }
 
@@ -1552,14 +1495,13 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .chat-tool-output summary { cursor: pointer; color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
 .execution-copy-control { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: var(--gg-text-caption); }
 .execution-copy-button { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 5px; color: var(--gg-color-text-secondary); cursor: pointer; }
-.execution-copy-button:hover { color: var(--gg-color-text-primary); background: var(--hover); }
+.execution-copy-button:hover { color: var(--gg-color-text-primary); background: var(--gg-color-bg-hover); }
 .execution-copy-button svg { width: 14px; height: 14px; }
 /* token-exception: breakpoint; vars unsupported in query conditions */
 @container chat-reading (max-width: 760px) {
   .chat-progress-toggle { flex-wrap: wrap; }
   .chat-progress-heading { flex: 1; }
   .chat-execution-detail { padding: 10px; }
-  .chat-progress-children { padding-left: 15px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .chat-progress-chevron { transition: none; }
@@ -1580,6 +1522,25 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .message-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--gg-space-2); margin-top: 10px; font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); }
 div.message-action-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2) var(--gg-space-3); margin-top: 10px; }
 div.message-action-bar > .message-actions { margin-top: 0; }
+/* The slot where a turn completes reserves one control height; the status line and the action row sit centered in it. */
+.turn-footer { display: grid; align-items: center; min-height: var(--gg-size-control-sm); margin-top: var(--gg-space-2); }
+.turn-footer > div.message-action-bar { margin-top: 0; }
+.turn-status { display: flex; align-items: center; gap: var(--gg-space-2); margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.turn-status-clock::before { content: "·"; margin-inline-end: var(--gg-space-2); }
+@media (prefers-reduced-motion: no-preference) {
+  .turn-status-label {
+    background: linear-gradient(90deg, var(--gg-color-text-secondary) 0 35%, var(--gg-color-text-primary) 50%, var(--gg-color-text-secondary) 65% 100%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: turn-status-shimmer var(--gg-motion-shimmer) linear infinite;
+  }
+}
+@keyframes turn-status-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+/* The receipt shares the row with Sources and Copy; its lists open below the line. */
+.message-action-bar > .memory-row { flex: 1 1 auto; min-width: 0; margin-top: 0; }
+.message-action-bar > .memory-row[data-expanded="true"] { flex-basis: 100%; }
 .message-action-bar > .message-sources { border: 0; background: transparent; border-radius: 0; overflow: visible; }
 .message-action-bar > .message-sources { margin-top: 0; }
 .message-action-bar > details > summary { width: auto; padding: 0 2px; }
@@ -1777,7 +1738,6 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 .chat-pending-heading strong { color: inherit; font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); }
 .chat-pending-heading strong span { margin-left: 5px; }
 .chat-pending-context { color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); line-height: 1.5; overflow-wrap: anywhere; }
-.chat-progress[data-run-status="streaming"] .chat-progress-heading { color: var(--gg-color-text-secondary); }
 .chat-tool-result { border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-sm); overflow: hidden; }
 .chat-result-toggle { padding: 10px; }
 .chat-tool-result .chat-tool-output { margin: 0; padding: var(--gg-space-3); border: 0; border-top: 1px solid var(--gg-color-border-subtle); border-radius: 0; }
@@ -1863,11 +1823,6 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 }
 
 .answer-feedback { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; min-width: 0; }
-/* Only the latest answer keeps its controls showing; earlier ones reveal them on hover or focus. */
-.message.assistant:has(~ .message.assistant) .message-action-bar > .message-actions,
-.message.assistant:has(~ .message.assistant) .message-action-bar > .answer-feedback { opacity: 0; transition: opacity var(--gg-motion-fast) var(--gg-ease-out); }
-.message.assistant:has(~ .message.assistant):is(:hover, :focus-within) .message-action-bar > .message-actions,
-.message.assistant:has(~ .message.assistant):is(:hover, :focus-within) .message-action-bar > .answer-feedback { opacity: 1; }
 .answer-feedback .message-actions { flex-wrap: wrap; margin-top: 0; }
 .answer-feedback .message-actions button { width: auto; min-width: var(--gg-size-control-sm); padding-inline: 6px; }
 .answer-feedback .message-actions button:not(:has(svg)) { white-space: nowrap; }
@@ -1875,7 +1830,7 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 div.message-action-bar > .answer-correction { order: 1; }
 .answer-correction { display: grid; gap: 6px; flex: 1 0 100%; width: 100%; max-width: 620px; padding-block: var(--gg-space-2); }
 .answer-correction label, .answer-correction small { font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); }
-.answer-correction textarea { width: 100%; min-height: 80px; resize: vertical; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-xs); padding: var(--gg-space-2); background: var(--surface); color: var(--gg-color-text-primary); }
+.answer-correction textarea { width: 100%; min-height: 80px; resize: vertical; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-xs); padding: var(--gg-space-2); background: var(--gg-color-bg-raised); color: var(--gg-color-text-primary); }
 .answer-correction > [role="alert"], .answer-correction > [role="status"] { font-size: var(--gg-text-meta); }
 
 .answer-saved-correction { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--gg-text-control); color: var(--gg-color-text-secondary); }
@@ -1885,7 +1840,7 @@ div.message-action-bar > .answer-correction { order: 1; }
 .message-schedules { display: grid; gap: var(--gg-space-2); max-width: 440px; margin: var(--gg-space-3) 0; }
 .message-schedule-open { display: flex; align-items: center; gap: var(--gg-space-3); width: 100%; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); padding: var(--gg-space-3) 14px; background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-control); text-align: left; }
 .message-schedule-open:not(:disabled) { cursor: pointer; }
-.message-schedule-open:not(:disabled):hover { background: var(--surface); }
+.message-schedule-open:not(:disabled):hover { background: var(--gg-color-bg-hover); }
 .message-schedule-open > svg { width: 17px; height: 17px; flex-shrink: 0; color: var(--gg-color-text-secondary); }
 .message-schedule-summary { flex: 1; min-width: 0; }
 .message-schedule-heading { display: flex; align-items: center; gap: var(--gg-space-3); margin-bottom: 3px; }
@@ -1954,11 +1909,10 @@ div.message-action-bar > .answer-correction { order: 1; }
 
 /* Offline (X11): a quiet note at the top of the thread; the composer keeps working and queues. */
 .chat-offline-banner { margin: var(--gg-space-2) auto 0; width: min(calc(100% - 2 * var(--chat-gutter, var(--gg-space-5))), var(--gg-size-chat-column)); padding: var(--gg-space-2) var(--gg-space-3); border-radius: var(--gg-radius-sm); background: var(--gg-color-info-soft); color: var(--gg-color-text-primary); font-size: var(--gg-text-meta); }
-/* Message actions (X1): the newest answer keeps its row; earlier answers show it on hover or keyboard focus. */
+/* Message actions (X1): the newest answer keeps Copy and feedback showing; earlier answers reveal them on hover or focus. Sources, the receipt and a stopped or failed state stay visible. */
 @media (hover: hover) {
-  .message.assistant:not([data-latest]) .message-action-bar { opacity: 0; transition: opacity var(--gg-motion-fast) var(--gg-ease-out); }
-  .message.assistant:not([data-latest]):hover .message-action-bar,
-  .message.assistant:not([data-latest]):focus-within .message-action-bar { opacity: 1; }
+  .message.assistant:not([data-latest]) .message-action-bar > :is(.message-actions, .answer-feedback) { opacity: 0; transition: opacity var(--gg-motion-fast) var(--gg-ease-out); }
+  .message.assistant:not([data-latest]):is(:hover, :focus-within) .message-action-bar > :is(.message-actions, .answer-feedback) { opacity: 1; }
 }
 /* Context owns space in the chat body, leaving title, transcript and composer unobscured. */
 .chat-rail {
@@ -2058,8 +2012,7 @@ button.chat-rail-row:not(:disabled):hover .chat-rail-row-label { text-decoration
 .answer-outline ol { list-style: none; margin: var(--gg-space-1) 0 0; padding: 0 0 0 var(--gg-space-3); border-left: 1px solid var(--gg-color-border-subtle); display: grid; gap: 2px; }
 .answer-outline li[data-level="3"] { padding-left: var(--gg-space-3); }
 .answer-outline li button { min-height: 28px; padding: 0; border: 0; background: transparent; color: var(--gg-color-text-secondary); font: inherit; text-align: left; cursor: pointer; }
-.answer-outline li button:hover { color: var(--gg-color-text-primary); }
-.answer-outline li button:hover { text-decoration: underline; }
+.answer-outline li button:hover { color: var(--gg-color-text-primary); text-decoration: underline; }
 
 /* Sent images (context-rail §2.3): small thumbnails above the user's text that open the lightbox. */
 .sent-images { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--gg-space-1); margin: 0 0 var(--gg-space-1); }
@@ -2084,6 +2037,8 @@ button.sent-image { cursor: zoom-in; }
 /* Under a user bubble: text controls on one right-aligned row, "Edit · Earlier version". */
 .message.user .message-action-bar { justify-content: flex-end; }
 .message.user .message-actions button { display: inline-flex; align-items: center; width: auto; padding: 0 var(--gg-space-1); white-space: nowrap; }
+/* Edit waits while a reply runs: a quiet label, not a broken control, so the global disabled fade stays off. */
+.message.user .message-actions button:disabled { color: var(--gg-color-text-tertiary); opacity: 1; cursor: default; background: transparent; }
 .message-actions .message-version-link { color: var(--gg-color-accent-ink); }
 .message-actions .message-version-link::before { content: "·"; margin-right: var(--gg-space-2); color: var(--gg-color-text-tertiary); }
 .chat-editing-note { display: flex; align-items: center; justify-content: space-between; gap: var(--gg-space-3); width: min(calc(100% - 2 * var(--chat-gutter, var(--gg-space-5))), var(--gg-size-chat-column)); margin: 0 auto var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }

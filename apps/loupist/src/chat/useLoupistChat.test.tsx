@@ -197,3 +197,18 @@ it("applies a late feedback receipt only to the original registry Chat", async (
   expect(chatA.messages[0].metadata?.feedback).toEqual(feedback);
   expect(chatB.messages).toEqual([]);
 });
+
+it("keeps the key a settled answer was drawn under when a rewritten thread replaces the live messages", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const workspace = await bridge.loupistSelect("loupist-quality");
+  const setMessages = vi.fn();
+  vi.mocked(useChat).mockReturnValue({ messages: [], sendMessage: vi.fn(), setMessages, stop: vi.fn(), status: "ready", error: undefined } as unknown as ReturnType<typeof useChat>);
+  const chat = { id: "chat-a", messages: [] } as unknown as Chat<LoupistUIMessage>;
+  const { result } = renderHook(() => useLoupistChat({ bridge, chat, loupistId: "loupist-quality", activeThread: workspace.threads[0], setThreads: vi.fn() }));
+  const answer = { id: "native-answer", role: "assistant" as const, status: "complete" as const, content: "Margins fell.", created_at: "2026-08-12T00:00:02.000Z" };
+  const live = { ...toLoupistUIMessage(answer), id: "assistant-local" };
+  live.metadata = { ...live.metadata, answer_key: "commentary-9" };
+  act(() => result.current.replaceThread({ ...workspace.threads[0], messages: [answer] }));
+  const update = setMessages.mock.lastCall?.[0] as (current: LoupistUIMessage[]) => LoupistUIMessage[];
+  expect(update([live]).map((message) => [message.id, message.metadata?.answer_key])).toEqual([["native-answer", "commentary-9"]]);
+});

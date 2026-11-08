@@ -20,7 +20,6 @@ type Props = {
   onOpen: (location: KnowledgeLocation) => void;
   onAsk?: (pin: KnowledgePin, threadId?: string) => void;
   refreshKey?: number;
-  onOpenLink?: (url: string) => void | Promise<void>;
   onReady?: () => void;
   onChanged?: () => void;
   onOpenChat?: (chatId: string) => void;
@@ -31,7 +30,7 @@ export function ResearchReader(props: Props) {
   return <ExactResearchReader key={JSON.stringify([props.location.loupistId, props.location.selection])} {...props} />;
 }
 
-function ExactResearchReader({ bridge, location, onOpen, onAsk, refreshKey = 0, onOpenLink, onReady, onChanged, onOpenChat }: Props) {
+function ExactResearchReader({ bridge, location, onOpen, onAsk, refreshKey = 0, onReady, onChanged, onOpenChat }: Props) {
   const { t } = useTranslation("knowledge");
   const noteId = location.selection?.kind === "research" ? location.selection.recordId : undefined;
   const journalId = location.selection?.kind === "journal" ? location.selection.journalId : undefined;
@@ -111,7 +110,7 @@ function ExactResearchReader({ bridge, location, onOpen, onAsk, refreshKey = 0, 
       if (generation === receiptGeneration.current) setReceiptError(errorMessage(cause, t("researchReader.couldNotReadTheSavedSource")));
     } finally { if (generation === receiptGeneration.current) setOpeningReceipt(false); }
   };
-  const markdown = (text: string) => <SafeMessageResponse text={text} isAnimating={false} onOpenLink={onOpenLink ?? ((url) => bridge.openExternalUrl(url))} />;
+  const markdown = (text: string) => <SafeMessageResponse text={text} isAnimating={false} />;
 
   return <section className="knowledge-research-reader" aria-label={t("researchReader.savedResearchReader")}>
     {error && <div role="alert"><p>{error}</p><Button variant="outline" onClick={() => setReload((value) => value + 1)}>{t("researchReader.retrySavedRecord")}</Button></div>}

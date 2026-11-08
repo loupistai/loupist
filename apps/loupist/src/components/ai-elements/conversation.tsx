@@ -15,6 +15,8 @@ import {
 type ConversationContextValue = {
   isAtBottom: boolean;
   scrollToBottom: () => void;
+  /** Keeps the end in view after content grew, only while the reader follows it. */
+  followGrowth: () => void;
   holdScrollPosition: () => void;
 };
 
@@ -78,6 +80,11 @@ export const Conversation = ({
     updateIsAtBottom(true);
   }, [autoScroll, updateIsAtBottom]);
   const holdScrollPosition = useCallback(() => updateIsAtBottom(false), [updateIsAtBottom]);
+  // Called from the layout effect of the content that grew, so the scroll lands
+  // in the same commit; ResizeObserver would move it a frame after the paint.
+  // Two callers own it: ProseSegment for text growth, ChatMessageCard for a new
+  // segment or footer state (the probe's one 44px frame without the latter).
+  const followGrowth = useCallback(() => { if (isAtBottomRef.current) scrollToBottom(); }, [scrollToBottom]);
   const noteScrollInput = useCallback(() => { lastScrollInputRef.current = performance.now(); }, []);
 
   useLayoutEffect(() => {
@@ -112,8 +119,8 @@ export const Conversation = ({
       hadOverflowRef.current = overflow;
       if (isAtBottomRef.current || wasShort || !overflow) scrollToBottom();
     };
-    // Markdown, tables, and lazily loaded renderers can change height after
-    // the message revision's layout effect. Follow those changes while pinned.
+    // Images, tables and lazily loaded renderers can change height after the
+    // commit that added them. Follow those changes while pinned.
     const observer = new ResizeObserver(followResize);
     observer.observe(element);
     observer.observe(content);
@@ -148,8 +155,8 @@ export const Conversation = ({
   );
 
   const context = useMemo(
-    () => ({ isAtBottom, scrollToBottom, holdScrollPosition }),
-    [isAtBottom, scrollToBottom, holdScrollPosition],
+    () => ({ isAtBottom, scrollToBottom, followGrowth, holdScrollPosition }),
+    [isAtBottom, scrollToBottom, followGrowth, holdScrollPosition],
   );
 
   return (

@@ -1,6 +1,7 @@
 import i18n from "@/i18n";
 import type { ChatArtifactRef, ChatEvidenceRef, KnowledgeLocation } from "../types";
 import { evidenceTitle } from "./evidence";
+import type { EvidenceCell } from "./numberChecks";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -35,7 +36,7 @@ export type FilesWorkspaceTab = { id: string; kind: "files"; title: string; path
 export const filesWorkspaceTab = (filePath?: string): FilesWorkspaceTab => ({ id: "files", kind: "files", title: t("workspace.files"), path: filePath?.split("/").slice(0, -1).join("/") ?? "", filePath });
 
 /** Where an Evidence entry came from: its step, and for a data number the matched cell to mark. */
-export type EvidenceStepLink = { label: string; itemId?: string; cell?: { pointer: string; key: string; value: string } };
+export type EvidenceStepLink = { label: string; itemId?: string; cell?: EvidenceCell };
 
 /** One thing a person reads in the Evidence tab: a retained citation or a saved Memory reader. */
 export type EvidenceEntry =
@@ -49,10 +50,6 @@ export const EVIDENCE_TAB_ID = "evidence";
 export const EVIDENCE_HISTORY_LIMIT = 50;
 /** The chat mini map is a fixed tab outside the session tabs. */
 export const CHAT_MAP_TAB_ID = "chat-map";
-
-/** Panel content is what a person reads or keeps; computation output stays beside its step. */
-export const isPanelEvidence = (evidence: ChatEvidenceRef) =>
-  evidence.kind === "original" || evidence.kind === "discovery" || evidence.kind === "local_file";
 
 export const evidenceEntry = (evidence: ChatEvidenceRef, step?: EvidenceStepLink): EvidenceEntry => ({
   key: `evidence:${evidence.id}`,

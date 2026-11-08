@@ -2,14 +2,16 @@ import { formatDate, formatNumber, formatTime } from "@/i18n/format";
 import i18n, { useTranslation, Trans } from "@/i18n";
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { ArrowRightIcon } from "lucide-react";
-import type { LoupistBridge, LoupistCapabilityBinding, LoupistTemplateId } from "../../types";
+import type { ChatEvidenceRef, LoupistBridge, LoupistCapabilityBinding, LoupistTemplateId } from "../../types";
 import type { GrowthEvent, JournalRecord, KnowledgeMap } from "../../contracts/knowledge";
 import type { InboxItem } from "../../contracts/scheduled";
 import type { WatchlistEntry } from "../../contracts/userContext";
 import { lastSeenAt } from "../../app/loupistVisit";
 import { firstSentence, localDayMs, morningMessage, sinceDayOptions, type CheckBullet, type FollowedBullet, type MorningQuestion } from "../../chat/morningMessage";
 import type { AssetDelta, AssetEvidence, UpcomingAsset, UpcomingEvent } from "../../contracts/assets";
-import { useAssetPageOpener } from "../assets/assetOpener";
+import type { OpenAssetPage } from "../assets/assetOpener";
+import { useGo } from "../navigation/Open";
+import { hostSourceDestination } from "../../chat/navigation";
 import { VerdictChip } from "../assets/VerdictChip";
 import { citationNumbers, datedSentence, SourceChips } from "../assets/assetText";
 import { localAssetName } from "../assets/assetName";
@@ -71,12 +73,6 @@ type Props = {
   focus?: string;
   /** Puts the question into the composer; it never sends. */
   onAsk: (question: string) => void;
-  onOpenMapNode: (node: { id: string; recordId?: string }) => void;
-  onOpenMap: () => void;
-  onOpenBriefing?: (runId: string) => void;
-  onOpenJournal: (journalId: string, title: string) => void;
-  /** Opens a followed asset row's original source. */
-  onOpenLink?: (url: string) => void;
   /**
    * `full`: the empty home Thread's landing. `news`: closes the home Thread
    * when something changed since the last visit, otherwise nothing.
@@ -91,8 +87,6 @@ type Props = {
   asOf?: string;
   /** The template the Loupist was made from: a class template's first message names the connections it works best with. */
   template?: LoupistTemplateId;
-  /** Opens Settings › Connections. */
-  onOpenConnections?: () => void;
 };
 
 /**
@@ -100,8 +94,11 @@ type Props = {
  * last visit, the latest briefing, Journal checks, and three questions, all
  * from data on this computer. It is not saved; the first message replaces it.
  */
-export function MorningMessage({ bridge, loupistId, loupistName, focus, onAsk, onOpenMapNode, onOpenMap, onOpenBriefing, onOpenJournal, onOpenLink, mode = "full", deliveredRunIds, onSettled, asOf, template, onOpenConnections }: Props) {
-  const openAsset = useAssetPageOpener();
+export function MorningMessage({ bridge, loupistId, loupistName, focus, onAsk, mode = "full", deliveredRunIds, onSettled, asOf, template }: Props) {
+  const go = useGo();
+  const openAsset: OpenAssetPage | null = go ? (target) => go({ kind: "asset", target }) : null;
+  const openMap = () => go?.({ kind: "page", location: { loupistId, surface: "world", view: { followCurrent: true, whatsNew: true } } });
+  const openJournal = (journalId: string, title: string) => go?.({ kind: "memory", location: { loupistId, surface: "note", objectId: journalId, selection: { kind: "journal", journalId } }, title });
   const { i18n: instance } = useTranslation("chat");
   const language = instance.language;
   const reasonIds = useId();
@@ -182,32 +179,32 @@ export function MorningMessage({ bridge, loupistId, loupistName, focus, onAsk, o
     bullets.push({ key: "changed", node: <>
       <span>{namesPart && linksPart ? t("today.changedBoth", { names: namesPart, links: linksPart }) : t("today.changedOne", { part: namesPart || linksPart })}</span>
       {chips.length ? <span className="morning-chips">
-        {chips.map((chip) => <button type="button" className="morning-name-chip" key={chip.id} onClick={() => onOpenMapNode({ id: chip.id, recordId: map.value?.nodes.find((node) => node.id === chip.id)?.recordId })}>
+        {chips.map((chip) => <button type="button" className="morning-name-chip" key={chip.id} onClick={() => go?.({ kind: "page", location: { loupistId, surface: "world", recordId: map.value?.nodes.find((node) => node.id === chip.id)?.recordId, objectId: chip.id, selection: { kind: "node", id: chip.id } } })}>
           <i className={`map-swatch is-${chip.swatch}`} aria-hidden="true" />{chip.label}
         </button>)}
-        {more ? <button type="button" className="morning-name-chip" onClick={onOpenMap}>{t("today.moreNames", { formattedCount: formatNumber(more) })}</button> : null}
+        {more ? <button type="button" className="morning-name-chip" onClick={openMap}>{t("today.moreNames", { formattedCount: formatNumber(more) })}</button> : null}
       </span> : null}
-      <button type="button" className="morning-link" data-line="" onClick={onOpenMap}>{t("today.seeAllInMap")}</button>
+      <button type="button" className="morning-link" data-line="" onClick={openMap}>{t("today.seeAllInMap")}</button>
     </> });
   }
   if (message.followed) {
-    bullets.push({ key: "followed", node: <FollowedLine bullet={message.followed} loupistId={loupistId} loupistName={loupistName} nameOf={nameOf} onOpenAsset={openAsset} onOpenLink={onOpenLink} /> });
+    bullets.push({ key: "followed", node: <FollowedLine bullet={message.followed} loupistId={loupistId} loupistName={loupistName} nameOf={nameOf} onOpenAsset={openAsset} /> });
   }
   if (inbox.status === "loading") { if (briefingSlow) bullets.push({ key: "briefing", node: <span className="morning-skeleton" /> }); }
   else if (message.briefing) {
     const run = message.briefing;
     bullets.push({ key: "briefing", node: <>
       <span>{t("today.briefingBullet", { title: tBriefings("morning"), date: `${shortDate(run.finishedAtMs ?? run.startedAtMs)}, ${formatTime(run.finishedAtMs ?? run.startedAtMs)}` })} {firstSentence(run.summary)}</span>
-      {onOpenBriefing ? <button type="button" className="morning-link" onClick={() => onOpenBriefing(run.runId)}>{t("today.open")}</button> : null}
+      {go ? <button type="button" className="morning-link" onClick={() => go({ kind: "briefing", runId: run.runId })}>{t("today.open")}</button> : null}
     </> });
   }
   // A check due soon belongs to the strip, so the bullets wait for it rather than move a line away.
   if (journal.status === "loading" || upcoming.status === "loading") { if (checksSlow) bullets.push({ key: "checks", node: <span className="morning-skeleton" /> }); }
-  else for (const check of message.checks) bullets.push({ key: `check:${check.journalId}`, node: <CheckLine check={check} onReview={() => onOpenJournal(check.journalId, check.claim)} /> });
+  else for (const check of message.checks) bullets.push({ key: `check:${check.journalId}`, node: <CheckLine check={check} onReview={() => openJournal(check.journalId, check.claim)} /> });
   if (missingConnections.length) {
     bullets.push({ key: "worksBest", node: <span data-works-best="">
       <Trans ns="chat" i18nKey="today.worksBest" values={{ connections: missingConnections.map((entry) => entry.name).join(", ") }}
-        components={[onOpenConnections ? <button type="button" className="morning-link" onClick={onOpenConnections} /> : <span />]} />
+        components={[go ? <button type="button" className="morning-link" onClick={() => go({ kind: "settings", section: "connections" })} /> : <span />]} />
     </span> });
   }
 
@@ -237,7 +234,7 @@ export function MorningMessage({ bridge, loupistId, loupistName, focus, onAsk, o
         <time>{formatTime(nowMs)}</time>
       </div>
       {/* Shown once the names it uses are read, so a Korean name never replaces an English one in place. */}
-      {message.upcoming.length && map.status !== "loading" && assets.status !== "loading" ? <UpcomingStrip events={message.upcoming} loupistId={loupistId} nameOf={nameOf} onOpenAsset={openAsset} onOpenJournal={onOpenJournal} /> : null}
+      {message.upcoming.length && map.status !== "loading" && assets.status !== "loading" ? <UpcomingStrip events={message.upcoming} loupistId={loupistId} nameOf={nameOf} onOpenAsset={openAsset} onOpenJournal={openJournal} /> : null}
       {allSettled ? <p className="morning-lead">{lead}</p> : leadSlow ? <p className="morning-lead"><span className="morning-skeleton" /></p> : null}
       {bullets.length ? <ul className="morning-bullets">{bullets.map((bullet) => <li key={bullet.key}>{bullet.node}</li>)}</ul> : null}
       {ask}
@@ -246,15 +243,13 @@ export function MorningMessage({ bridge, loupistId, loupistName, focus, onAsk, o
 }
 
 /** "What you follow:" up to three assets, each with its verdict and most material row, dated and numbered across the message. */
-function FollowedLine({ bullet, loupistId, loupistName, nameOf, onOpenAsset, onOpenLink }: {
+function FollowedLine({ bullet, loupistId, loupistName, nameOf, onOpenAsset }: {
   bullet: FollowedBullet; loupistId: string; loupistName: string; nameOf: (delta: AssetDelta) => string;
-  onOpenAsset: ReturnType<typeof useAssetPageOpener>; onOpenLink?: (url: string) => void;
+  onOpenAsset: OpenAssetPage | null;
 }) {
+  const go = useGo();
   const open = (assetId: string, name?: string) => onOpenAsset?.({ loupistId, assetId, name });
-  const openEvidence = (assetId: string) => (evidence: AssetEvidence) => {
-    if (evidence.url && onOpenLink) onOpenLink(evidence.url);
-    else open(assetId);
-  };
+  const openEvidence = (assetId: string) => (_source: AssetEvidence, citation: ChatEvidenceRef) => go?.(hostSourceDestination(citation, { loupistId, assetId }));
   const numbers = citationNumbers([...bullet.rows.map(({ row }) => row.evidence), ...bullet.alerts.map((event) => event.evidence)]);
   return <>
     <span>{t("today.assetsBullet")}</span>
@@ -303,7 +298,7 @@ function upcomingText(event: UpcomingEvent) {
  */
 function UpcomingStrip({ events, loupistId, nameOf, onOpenAsset, onOpenJournal }: {
   events: readonly UpcomingEvent[]; loupistId: string; nameOf: (asset: UpcomingAsset) => string;
-  onOpenAsset: ReturnType<typeof useAssetPageOpener>; onOpenJournal: (journalId: string, title: string) => void;
+  onOpenAsset: OpenAssetPage | null; onOpenJournal: (journalId: string, title: string) => void;
 }) {
   const labelId = useId();
   return <section className="morning-upcoming" aria-labelledby={labelId}>

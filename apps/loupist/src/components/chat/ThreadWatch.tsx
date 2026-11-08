@@ -1,12 +1,13 @@
 import i18n, { useTranslation } from "@/i18n";
 import { formatNumber, formatTime } from "@/i18n/format";
 import { useEffect, useState } from "react";
-import type { ChatMessage, LoupistBridge } from "../../types";
+import type { ChatEvidenceRef, ChatMessage, LoupistBridge } from "../../types";
 import type { AssetEvidence } from "../../contracts/assets";
 import type { WatchEvent } from "../../contracts/watch";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
-import { useAssetPageOpener } from "../assets/assetOpener";
+import { useGo } from "../navigation/Open";
+import { hostSourceDestination } from "../../chat/navigation";
 import { useAssetNames } from "../assets/assetName";
 import { citationNumbers, SourceChips } from "../assets/assetText";
 import { datedWatchSentence, newestFirst } from "../assets/watchText";
@@ -41,18 +42,16 @@ export function useSeenAfter(bridge: LoupistBridge | undefined, loupistId: strin
  * dated events with their sources, then "+{n} more". Checks ran on this
  * computer without a model call; there is no OS notification.
  */
-export function ThreadWatch({ message, bridge, loupistId, loupistName, active, onOpenLink, onOpenSchedule }: {
+export function ThreadWatch({ message, bridge, loupistId, loupistName, active }: {
   message: ChatMessage;
   bridge?: LoupistBridge;
   loupistId: string;
   loupistName: string;
   active?: boolean;
-  onOpenLink?: (url: string) => void;
-  onOpenSchedule?: (taskId: string) => void;
 }) {
   useTranslation(["chat", "assets"]);
   const watch = message.watch!;
-  const openAsset = useAssetPageOpener();
+  const go = useGo();
   const names = useAssetNames(bridge, loupistId);
   const [preparing, setPreparing] = useState<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -61,8 +60,9 @@ export function ThreadWatch({ message, bridge, loupistId, loupistName, active, o
   useSeenAfter(bridge, loupistId, watch.event_ids, active ?? true);
   const at = Date.parse(message.created_at);
   const numbers = citationNumbers(events.map(event => event.evidence));
-  const openPage = (event: WatchEvent, section?: "results") => openAsset?.({ loupistId, assetId: event.assetId, name: names(event), section, eventId: section ? String(event.facts.eventId ?? "") || undefined : undefined });
-  const openEvidence = (event: WatchEvent) => (evidence: AssetEvidence) => { if (evidence.url && onOpenLink) onOpenLink(evidence.url); else openPage(event); };
+  const pageOf = (event: WatchEvent, section?: "results") => ({ loupistId, assetId: event.assetId, name: names(event), section, eventId: section ? String(event.facts.eventId ?? "") || undefined : undefined });
+  const openPage = (event: WatchEvent, section?: "results") => go?.({ kind: "asset", target: pageOf(event, section) });
+  const openEvidence = (event: WatchEvent) => (_source: AssetEvidence, citation: ChatEvidenceRef) => go?.(hostSourceDestination(citation, pageOf(event)));
   // "Prepare before and after" captures expectations now, then shows the card.
   const prepare = async (event: WatchEvent) => {
     const eventId = typeof event.facts.eventId === "string" ? event.facts.eventId : undefined;
@@ -75,7 +75,7 @@ export function ThreadWatch({ message, bridge, loupistId, loupistName, active, o
     } catch { setFailed(event.eventId); }
     finally { setPreparing(null); }
   };
-  const openWatching = () => onOpenSchedule?.(WATCHING_TASK_ID);
+  const openWatching = () => go?.({ kind: "schedule", taskId: WATCHING_TASK_ID });
   return <article className="message assistant thread-watch" aria-label={t("watchMessage.label")}>
     <div className="message-meta">
       <span>{loupistName}</span>
@@ -88,8 +88,8 @@ export function ThreadWatch({ message, bridge, loupistId, loupistName, active, o
         <div className="thread-watch-actions">
           {event.kind === "results" && typeof event.facts.eventId === "string" && bridge
             ? <Button type="button" variant="outline" size="sm" disabled={preparing !== null} aria-label={`${t("watchMessage.prepare")} · ${name}`} onClick={() => void prepare(event)}>{preparing === event.eventId ? <Spinner /> : null}{t("watchMessage.prepare")}</Button>
-            : openAsset ? <Button type="button" variant="outline" size="sm" aria-label={`${i18n.t("assets:page.open")} · ${name}`} onClick={() => openPage(event)}>{i18n.t("assets:page.open")}</Button> : null}
-          {event.kind === "filings" && openAsset ? <Button type="button" variant="ghost" size="sm" aria-label={`${i18n.t("assets:changed.title")} · ${name}`} onClick={() => openPage(event)}>{i18n.t("assets:changed.title")}</Button> : null}
+            : go ? <Button type="button" variant="outline" size="sm" aria-label={`${i18n.t("assets:page.open")} · ${name}`} onClick={() => openPage(event)}>{i18n.t("assets:page.open")}</Button> : null}
+          {event.kind === "filings" && go ? <Button type="button" variant="ghost" size="sm" aria-label={`${i18n.t("assets:changed.title")} · ${name}`} onClick={() => openPage(event)}>{i18n.t("assets:changed.title")}</Button> : null}
         </div>
         {failed === event.eventId ? <p className="inline-error" role="alert">{i18n.t("assets:earnings.failed", { name })}</p> : null}
       </li>;

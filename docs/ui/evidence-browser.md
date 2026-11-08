@@ -2,8 +2,7 @@
 
 A retrieved website citation opens that page in the panel browser first. Other retained sources open their saved copy. Citation and number chips inspect a source without a new model read.
 
-Reading: links open in the panel's browser (⌘/Ctrl-click or middle click opens the
-system browser). A retrieved website opens its page there first; the saved passage stays in Evidence when that open fails or when the reader asks for it. Any other retained source opens its copy in Evidence. Day
+Reading: links open in the panel's browser. ⌘-click on macOS, Ctrl-click elsewhere, or a middle click opens the system browser instead; the same rule holds for citation and number chips, source rows, host-post source chips and Evidence's Open live page. A retrieved website opens its page there first; the saved passage stays in Evidence when that open fails or when the reader asks for it. Any other retained source opens its copy in Evidence. Day
 dividers separate messages from different days, and "New since you left" marks the
 first answer that finished while the chat was out of view (window hidden, another chat, or the app in the background with the chat on screen; per device), clearing on
 scroll past or send. Answers over 600 words or with three headings get a collapsed
@@ -36,17 +35,25 @@ A retrieved website citation (`web_fetch`, or another `web_*` page tool other th
 
 In Chat, the price-quote receipt fits inside the thread, below the titlebar and above the composer. A short window scrolls the receipt's content without covering the input. A remounted citation is found by its evidence id, so the receipt stays beside that chip.
 
+## Opening from chat
+
+Every chat control opens one typed `ChatDestination` (`src/chat/navigation.ts`) through `useOpenProps`, and `OpenProvider` layers add policy before anything opens. Each layer is one `useOpenLayer` over its parent (`src/components/navigation/Open.tsx`): it passes the destination up, substitutes another, or opens it itself, and a system-browser open passes through every layer. `TurnProvider` resolves a citation against its answer: an exact Memory read opens that Memory in Evidence, execution output reveals its step in the thread, a quote basket opens its receipt, an `asset_page_read` result opens its asset page when the receipt names the asset, and everything else goes up with the step that produced it. `ChatView` turns a link to a page this chat already kept into that retained source. A reader drawn over the chat closes itself first (`useOpenDismissing`). `useAppOpen` (`src/app/useAppOpen.ts`) routes the rest: a panel reader opens beside the visible chat, or beside another chat of the same Loupist that it shows first (`openIn`, which the briefing reader uses), and a page, asset, schedule or settings destination opens its own view. A `lens` destination becomes that record's Memory location in Evidence, titled in the interface language (`lensMemoryLocation`). An `Open` resolves once the destination is routed and rejects only on a real failure; `useGo` wraps it for a page or view switch that has no failure state of its own. `wantsExternal` is the only place that reads the modifier keys. The [activity row](chat-answer.md) and the footer's Sources list are leaves of the same path: a step's page is a `link`, a source is `evidence`, and neither the row nor the card takes an open callback.
+
+Every numbered citation opens something: `evidenceTarget` always resolves to a target. A leaf rendered outside every opener (one component in a test or preview) is plain text, not a button that does nothing. An original whose text was not retained, such as a host post's source, opens its page in the browser tab instead of a reader that would only say the text is gone. ThreadAlert, ThreadWatch, ThreadEarnings and the compact results card open their sources the same way as answer citations, with the asset page as the fallback for a source that has no page.
+
+Icons describe where a control opens. The panel icon (`PanelRightOpen`) marks controls that open in the side panel: source rows and Open live page. `ExternalLink` marks only a system-browser action, such as the browser tab's Open in system browser. A link inside answer prose shows no icon, because its underline already marks it as a link.
+
 ## Citations and number chips
 
 Numbered citation chips use the retained source list’s number for both the visible chip and its accessible name, even when the answer supplied a different reference number. Named citation links retain their visible words in the accessible name alongside the source title.
 
 Citation chips open a card (title,
 domain and date, and either a short quote line or the passage) after 150 ms of hover or on keyboard focus; Esc closes it and
-a click opens the page when the citation is a retrieved website with a credential-free URL, the quote receipt when the source is a price basket, and Evidence otherwise. In windows 720 px wide or narrower hover opens nothing: a 500 ms
+a click opens the page when the citation is a retrieved website with a credential-free URL (⌘/Ctrl-click or a middle click opens it in the system browser), the quote receipt when the source is a price basket, and Evidence otherwise. In windows 720 px wide or narrower hover opens nothing: a 500 ms
 press and hold opens the card as a dialog that stays until a press elsewhere or Esc, and
 a tap still opens that same citation. The number stays inline; the press area is the 28px control size. A number chip ([what it shows](../analysis/surfaces.md#where-each-item-appears))
 is a button named by its value and source ("8.4 percent, calculated. Show the
-math"), with a status other than matched in its description. The figure stays in the line; its press area is 28px tall. Its popover is a
+math"), with a status other than matched in its description. ⌘/Ctrl-click or a middle click on a number with a source address opens that page in the system browser and leaves the popover closed. The figure stays in the line; its press area is 28px tall. Its popover is a
 non-modal dialog labelled by its title, whether it opened after 150 ms of hover (not
 in windows 720 px wide or narrower), on keyboard focus or on click. A click pins it
 and moves focus to its first action; an unpinned popover closes 120 ms after the

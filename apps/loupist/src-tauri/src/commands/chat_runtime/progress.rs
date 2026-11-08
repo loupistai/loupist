@@ -61,7 +61,8 @@ pub(super) fn publish_progress(
     commentary.clear();
 }
 
-/// The settled answer is visible before its live narration copy is removed.
+/// The settled answer names the live narration it replaces, then the patch
+/// that removes that narration follows.
 pub(super) fn publish_settled_answer(
     on_event: &ChatEventSink,
     run_id: &str,
@@ -69,9 +70,12 @@ pub(super) fn publish_settled_answer(
     commentary: &mut CommentaryCoalescer,
     text: &str,
 ) {
+    let settles = projection.live_commentary_id().map(ToOwned::to_owned);
+    projection.finish_assistant_turn(true);
     let _ = on_event.send(ChatStreamEvent::Delta {
         run_id: run_id.to_owned(),
         text: text.to_owned(),
+        settles,
     });
     publish_progress(on_event, run_id, projection, commentary);
 }
@@ -163,7 +167,6 @@ mod tests {
             ChatProgressItem::Commentary { id, .. } => id.clone(),
             other => panic!("expected commentary, got {other:?}"),
         };
-        progress.finish_assistant_turn(true);
         let mut window = CommentaryCoalescer::new();
         assert!(window.note_delta(Instant::now()));
 
@@ -179,7 +182,8 @@ mod tests {
         let events = events.lock().expect("event lock");
         assert!(matches!(
             &events[0],
-            ChatStreamEvent::Delta { text, .. } if text == "Answer text"
+            ChatStreamEvent::Delta { text, settles: Some(settled), .. }
+                if text == "Answer text" && settled == &commentary_id
         ));
         assert!(matches!(
             &events[1],

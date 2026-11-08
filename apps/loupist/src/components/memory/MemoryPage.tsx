@@ -217,7 +217,7 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
       {current === "pages" ? <>
         <ItemList label={t("memoryPage.tabs.pages")} description={t("memoryPage.pages.description")} items={shown} selectedId={selected?.id} usage={data.usage} onOpen={open}
           before={suggestions} searching={Boolean(terms)} empty={<p className="memory-empty">{t("memoryPage.pages.empty")}</p>} />
-        <Reader item={selected} takeFocus={chosen} bridge={bridge} loupistId={loupistId} usage={data.usage} paused={Boolean(selected && data.paused.has(selected.id))} threads={threads} onOpenChat={onOpenChat} onChanged={changed} onClose={() => setCompactReader(false)} backLabel={t("memoryPage.tabs.pages")} catalog={data.catalog} onOpenKnowledge={openKnowledge} onOpenPage={open} onAsk={onAsk} onOpenLink={onOpenLink}
+        <Reader item={selected} takeFocus={chosen} bridge={bridge} loupistId={loupistId} usage={data.usage} paused={Boolean(selected && data.paused.has(selected.id))} threads={threads} onOpenChat={onOpenChat} onChanged={changed} onClose={() => setCompactReader(false)} backLabel={t("memoryPage.tabs.pages")} catalog={data.catalog} onOpenKnowledge={openKnowledge} onOpenPage={open} onAsk={onAsk}
           onShare={recordId => setShare({ recordId })} onAboutShared={() => { setSegment("about"); setCompactReader(false); requestAnimationFrame(() => sharedRef.current?.scrollIntoView?.({ block: "start" })); }} />
       </> : null}
       {current === "history" ? (() => {
@@ -227,7 +227,7 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
         const item = row?.itemId ? items.find(entry => entry.id === row.itemId) : undefined;
         return <>
           <History rows={rows} selectedKey={row?.key} onSelect={entry => { setHistoryKey(entry.key); setCompactReader(true); }} />
-          {item ? <Reader item={item} bridge={bridge} loupistId={loupistId} usage={data.usage} paused={data.paused.has(item.id)} threads={threads} onOpenChat={onOpenChat} onChanged={changed} onClose={() => setCompactReader(false)} backLabel={t("memoryPage.tabs.history")} catalog={data.catalog} onOpenKnowledge={openKnowledge} onOpenPage={id => { setSegment("pages"); open(id); }} onAsk={onAsk} onOpenLink={onOpenLink} />
+          {item ? <Reader item={item} bridge={bridge} loupistId={loupistId} usage={data.usage} paused={data.paused.has(item.id)} threads={threads} onOpenChat={onOpenChat} onChanged={changed} onClose={() => setCompactReader(false)} backLabel={t("memoryPage.tabs.history")} catalog={data.catalog} onOpenKnowledge={openKnowledge} onOpenPage={id => { setSegment("pages"); open(id); }} onAsk={onAsk} />
             : row ? <HistoryNote row={row} onOpenMap={onOpenMap} onClose={() => setCompactReader(false)} /> : null}
         </>;
       })() : null}
@@ -303,10 +303,10 @@ function UsedIn({ usage, threads, onOpenChat }: { usage?: MemoryUsage; threads: 
   </ul></section>;
 }
 
-function Reader({ item, takeFocus, bridge, loupistId, usage, paused, threads, onOpenChat, onChanged, onClose, backLabel, catalog, onOpenKnowledge, onOpenPage, onAsk, onOpenLink, onShare, onAboutShared }: {
+function Reader({ item, takeFocus, bridge, loupistId, usage, paused, threads, onOpenChat, onChanged, onClose, backLabel, catalog, onOpenKnowledge, onOpenPage, onAsk, onShare, onAboutShared }: {
   item?: Item; takeFocus?: boolean; bridge: LoupistBridge; loupistId: string; usage: Map<string, MemoryUsage>; paused: boolean; threads: readonly ChatThread[];
   onOpenChat: (threadId: string) => void; onChanged: () => void; onClose: () => void; backLabel: string;
-  catalog: KnowledgeCatalog; onOpenKnowledge: (location: KnowledgeLocation) => void; onOpenPage: (recordId: string) => void; onAsk: (pin: KnowledgePin) => void; onOpenLink: (url: string) => void | Promise<void>;
+  catalog: KnowledgeCatalog; onOpenKnowledge: (location: KnowledgeLocation) => void; onOpenPage: (recordId: string) => void; onAsk: (pin: KnowledgePin) => void;
   /** "Share this method" for a principle (W19.2). */
   onShare?: (recordId: string) => void; onAboutShared?: () => void;
 }) {
@@ -331,7 +331,7 @@ function Reader({ item, takeFocus, bridge, loupistId, usage, paused, threads, on
       {error ? <p className="memory-reader-error" role="alert">{error}</p> : null}
       <PageReader bridge={bridge} loupistId={loupistId} recordId={item.id} catalog={catalog} toolbar={<>{back}{kind}</>} takeFocus={takeFocus}
         chatTitle={chatId => { const thread = threads.find(entry => entry.id === chatId); return thread ? chatTitle(thread) : undefined; }}
-        onOpenPage={onOpenPage} onOpen={onOpenKnowledge} onAsk={onAsk} onChanged={onChanged} onOpenLink={onOpenLink}>
+        onOpenPage={onOpenPage} onOpen={onOpenKnowledge} onAsk={onAsk} onChanged={onChanged}>
         {item.kind === "method" && item.learned ? <LensLearningPanel bridge={bridge} loupistId={loupistId} node={{ kind: "lens_method", recordId: item.id }} onArchived={onChanged} /> : null}
         <UsedIn usage={usage.get(item.id)} threads={threads} onOpenChat={onOpenChat} />
         {item.kind !== "perspective" ? <div className="memory-reader-actions">{pauseAction}<Button size="sm" variant="ghost" disabled={busy} onClick={() => void act(() => bridge.knowledgeLensArchive({ loupistId, recordId: item.id, archived: true }))}>{t("memoryPage.actions.archive")}</Button></div> : null}

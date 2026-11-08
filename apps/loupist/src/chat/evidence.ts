@@ -1,6 +1,7 @@
 import i18n from "@/i18n";
 import type { ChatEvidenceRef } from "../types";
 import { parseCredentialFreeHttpUrl } from "../lib/credentialFreeUrl";
+import { displayHost } from "../lib/displayHost";
 import { operationName } from "./numberText";
 
 const t = i18n.getFixedT(null, "chat");
@@ -26,9 +27,13 @@ export function webEvidenceUrl(evidence: ChatEvidenceRef): string | null {
   return parseCredentialFreeHttpUrl(evidence.url)?.href ?? null;
 }
 
-/** Page a citation opens first. Same host rule as {@link webEvidenceUrl}. */
+/**
+ * Page a citation opens first: a website the host read, or an original whose text was not
+ * retained (a host post's source), where the reader would only say so.
+ */
 export function citationPageUrl(evidence: ChatEvidenceRef): string | null {
-  return webEvidenceUrl(evidence);
+  const notRetained = evidence.kind === "original" && !evidence.excerpt && evidence.url;
+  return webEvidenceUrl(evidence) ?? (notRetained ? parseCredentialFreeHttpUrl(evidence.url!)?.href ?? null : null);
 }
 
 /** Execution output belongs to the work trace, even when an answer cites it. */
@@ -136,8 +141,8 @@ export function sourceIdentityLabel(evidence: ChatEvidenceRef) {
   if (evidence.tool_name.startsWith("lens")) return "Lens";
   if (evidence.kind === "local_file") return t("evidence.files");
   if (evidence.kind === "saved_context") return t("evidence.memory");
-  const url = evidence.url ? parseCredentialFreeHttpUrl(evidence.url) : null;
-  if (url) return url.hostname.replace(/^www\./, "");
+  const host = displayHost(evidence.url);
+  if (host) return host;
   if (evidence.provider) return evidence.provider;
   if (evidence.tool_name.startsWith("web") || evidence.kind === "original" || evidence.kind === "discovery") return t("evidence.web");
   return evidencePresentation(evidence).label;

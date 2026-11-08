@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { ChatProgressTimeline } from "../chat/ChatProgressTimeline";
+import { ActivityRow } from "../chat/ActivityRow";
 import { ChatStatusPill } from "../chat/ChatStatusPill";
+import { deriveTurnView } from "../../chat/turnView";
 import { Conversation, ConversationContent, useConversationScroll } from "./conversation";
 
 let resize: () => void;
@@ -143,10 +144,12 @@ it("keeps an explicitly opened tool result in place while its lazy content arriv
 });
 
 it("never moves the viewport when the reader expands the run header, even as the stream continues", () => {
-  const progress = { startedAtMs: 1, items: [{ id: "read", kind: "tool" as const, category: "web" as const, operation: "read" as const, action: "Read the quarterly report", status: "succeeded" as const }] };
-  const { element, grow, stream } = conversation(<ChatProgressTimeline progress={{ ...progress, finishedAtMs: 2000 }} status="complete" onOpenLink={async () => undefined} />);
+  const progress = { startedAtMs: 1, finishedAtMs: 2000, items: [{ id: "read", kind: "tool" as const, category: "web" as const, operation: "read" as const, action: "Read the quarterly report", status: "succeeded" as const }] };
+  const view = deriveTurnView({ message: { id: "a", role: "assistant", status: "complete", content: "Done.", created_at: "2026-10-10T00:00:00Z", progress }, now: 3000, lastActivityAt: 3000, stopping: false, retry: { attempt: 1, offered: false } });
+  const segment = view.segments.find((item) => item.kind === "activity")!;
+  const { element, grow, stream } = conversation(<ActivityRow segment={segment} />);
   expect(element.scrollTop).toBe(600);
-  fireEvent.click(screen.getByRole("button", { name: /^Worked/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Source review/ }));
   grow(1400);
   act(() => resize());
   stream("two");

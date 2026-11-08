@@ -2,6 +2,9 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { AssetsGrid, ChatEvidenceRef, ConflictGrid, NumberCheck } from "../../types";
 import { columnFit, ConflictCard, GridCard, headerLabel } from "./GridCard";
+import { ChatExecutionProvider } from "./ChatExecutionContext";
+import { renderWithOpen, destinations } from "../../test/open";
+import type { LoupistBridge } from "../../types";
 
 const DART: ChatEvidenceRef = {
   id: "ev_dart", title: "Solsup Foods FY2025 statements", kind: "original", provider: "OpenDART", tool_name: "dart_financials",
@@ -28,7 +31,7 @@ const grid: AssetsGrid = {
 };
 
 function renderGrid(props: Partial<Parameters<typeof GridCard>[0]> = {}) {
-  return render(<GridCard title="Dividend payers" grid={grid} evidenceRefs={[DART]} actions={{}} {...props} />);
+  return render(<GridCard title="Dividend payers" grid={grid} evidenceRefs={[DART]} {...props} />);
 }
 
 describe("GridCard", () => {
@@ -104,20 +107,19 @@ it("uses the grid row's ticker for a quote cell and does not match by price", as
     id: "ev_quote", title: "Equity price quote", kind: "original", provider: "Yahoo Finance", tool_name: "equity_price_quote",
     retrieved_at: "2026-10-11T15:04:00Z", excerpt, excerpt_truncated: false, content_sha256: "c".repeat(64), warnings: [],
   };
-  const onOpenEvidence = vi.fn();
   const quoteGrid: AssetsGrid = {
     layout: "assets",
     rows: [{ symbol: "AAPL", market: "NASDAQ", label: "Apple" }],
     columns: [{ id: "last", label: "Last", unit: "amount" }],
     cells: [[{ value: "271.4", evidence_id: quote.id, check: { link_index: 0, text: "271.4", evidence_id: quote.id, kind: "passage", status: "matched" }, sort: 271.4 }]],
   };
-  render(<GridCard title="Quotes" grid={quoteGrid} evidenceRefs={[quote]} actions={{ onOpenEvidence }} />);
+  const { open } = renderWithOpen(<GridCard title="Quotes" grid={quoteGrid} evidenceRefs={[quote]} />);
   await user.click(screen.getByRole("button", { name: /271\.4/ }));
   const dialog = await screen.findByRole("dialog");
   expect(dialog).toHaveTextContent("AAPL");
   expect(dialog).toHaveTextContent("271.4 USD");
   expect(dialog).not.toHaveTextContent("MSFT");
-  expect(onOpenEvidence).not.toHaveBeenCalled();
+  expect(open).not.toHaveBeenCalled();
 });
 
 it("keeps the pointed quote when the grid row names a different ticker", async () => {
@@ -139,7 +141,7 @@ it("keeps the pointed quote when the grid row names a different ticker", async (
       fields: [{ key: "symbol", value: "MSFT" }, { key: "period", value: "FY2025" }, { key: "last_price", value: "271.4", matched: true }],
     }, sort: 271.4 }]],
   };
-  render(<GridCard title="Quotes" grid={quoteGrid} evidenceRefs={[quote]} actions={{ onOpenEvidence: vi.fn() }} />);
+  render(<GridCard title="Quotes" grid={quoteGrid} evidenceRefs={[quote]} />);
   await user.click(screen.getByRole("button", { name: /271\.4/ }));
   const dialog = await screen.findByRole("dialog");
   expect(dialog).toHaveTextContent("AAPL");
@@ -164,8 +166,9 @@ describe("ConflictCard", () => {
 
   it("shows each report with its date, why they differ and which one is used, and links the Map only for a disputed entity", async () => {
     const user = userEvent.setup();
-    const onOpenMap = vi.fn();
-    const { rerender } = render(<ConflictCard title="Solsup revenue" conflict={conflict} evidenceRefs={[DART, NEWS]} actions={{}} onOpenMap={onOpenMap} />);
+    const scope = { bridge: {} as LoupistBridge, loupistId: "loupist-a", threadId: "chat", surface: "session" as const, theme: "light" as const, active: true };
+    const card = (value: ConflictGrid) => <ChatExecutionProvider value={scope}><ConflictCard title="Solsup revenue" conflict={value} evidenceRefs={[DART, NEWS]} /></ChatExecutionProvider>;
+    const { rerender, open } = renderWithOpen(card(conflict));
     expect(screen.getByText("Where sources disagree · Solsup Foods · FY2025 revenue", { selector: ".conflict-card-label" })).toBeVisible();
     const rows = screen.getAllByRole("row");
     expect(within(rows[1]!).getByText("Used")).toBeVisible();
@@ -175,9 +178,17 @@ describe("ConflictCard", () => {
     expect(screen.getByText(/Why they differ: preliminary versus final\. The news report/u)).toBeVisible();
     expect(screen.queryByRole("button", { name: "See on the Map" })).toBeNull();
 
-    rerender(<ConflictCard title="Solsup revenue" conflict={{ ...conflict, world_entity_id: "ent:solsup", map_link: true }} evidenceRefs={[DART, NEWS]} actions={{}} onOpenMap={onOpenMap} />);
+    rerender(card({ ...conflict, world_entity_id: "ent:solsup", map_link: true }));
     await user.click(screen.getByRole("button", { name: "See on the Map" }));
-    expect(onOpenMap).toHaveBeenCalledWith("ent:solsup");
+    expect(open).toHaveBeenLastCalledWith({ kind: "page", location: { loupistId: "loupist-a", surface: "world", view: { onlyDisputed: true, highlightEntityIds: ["ent:solsup"] } } });
+  });
+
+  it("cites each report with a real citation that opens its evidence", async () => {
+    const { open } = renderWithOpen(<ConflictCard title="Solsup revenue" conflict={conflict} evidenceRefs={[DART, NEWS]} />);
+    const rows = screen.getAllByRole("row");
+    const chip = within(rows[1]!).getByRole("button", { name: /Source 1/u });
+    await userEvent.setup().click(chip);
+    expect(destinations(open).at(-1)).toEqual({ kind: "evidence", evidence: DART });
   });
 });
 

@@ -6,16 +6,16 @@ import { previewSensitivityAnswer, previewSensitivityGrid, SENSITIVITY_EVIDENCE 
 import { TooltipProvider } from "../ui/tooltip";
 import { ChatMessageCard } from "./ChatMessageCard";
 import { SensitivityCard } from "./SensitivityCard";
+import { renderWithOpen, destinations } from "../../test/open";
 
 const evidenceRefs = Object.values(SENSITIVITY_EVIDENCE);
 const user = () => userEvent.setup({ skipHover: true });
 
 function renderCard(grid: SensitivityGrid, extra: Partial<ComponentProps<typeof SensitivityCard>> = {}) {
-  const actions = { onOpenEvidence: vi.fn(), onShowStep: vi.fn() };
   const onChangeRates = vi.fn();
-  render(<SensitivityCard grid={grid} subject="Solsup Foods" evidence={SENSITIVITY_EVIDENCE.grid} evidenceRefs={evidenceRefs} actions={actions} onChangeRates={onChangeRates} {...extra} />);
+  const { open } = renderWithOpen(<SensitivityCard grid={grid} subject="Solsup Foods" evidence={SENSITIVITY_EVIDENCE.grid} evidenceRefs={evidenceRefs} onChangeRates={onChangeRates} {...extra} />);
   const card = screen.getByRole("region", { name: /What the price implies · Solsup Foods/u });
-  return { card, table: within(card).getByRole("table"), actions, onChangeRates };
+  return { card, table: within(card).getByRole("table"), open, onChangeRates };
 }
 
 /** The cell at a discount rate (row header) and long-run growth (column). */
@@ -69,21 +69,20 @@ it("titles a value grid by rates and never shades it", () => {
 });
 
 it("Show step reveals the grid's own step, sources open evidence, and Change the rates only fills the composer", async () => {
-  const { card, actions, onChangeRates } = renderCard(previewSensitivityGrid("reference"));
+  const { card, open, onChangeRates } = renderCard(previewSensitivityGrid("reference"));
   await user().click(within(card).getByRole("button", { name: "How this was calculated" }));
-  expect(actions.onShowStep).toHaveBeenCalledWith(SENSITIVITY_EVIDENCE.grid);
+  // The grid's own result resolves to its step in the answer's turn.
+  expect(open).toHaveBeenLastCalledWith({ kind: "evidence", evidence: SENSITIVITY_EVIDENCE.grid });
   const source = within(card).getAllByRole("button", { name: /^Source 1:/u })[0]!;
   await user().click(source);
-  expect(actions.onOpenEvidence).toHaveBeenCalledWith(SENSITIVITY_EVIDENCE.statements, undefined, source);
-  expect(actions.onOpenEvidence.mock.calls[0]?.[2]).toBe(source);
+  expect(destinations(open).at(-1)).toEqual({ kind: "evidence", evidence: SENSITIVITY_EVIDENCE.statements });
   await user().click(within(card).getByRole("button", { name: "Change the rates · Solsup Foods" }));
   expect(onChangeRates).toHaveBeenCalledWith("Recalculate with discount rates 8%, 9%, 10%, 11%, 12% and long-run growth 1.5%, 2.0%, 2.5%, 3.0%, 3.5%.");
 });
 
 it("replaces the answer's grid paragraph with the card and fills the composer without sending", async () => {
   const onFillComposer = vi.fn();
-  const view = render(<TooltipProvider><ChatMessageCard message={previewSensitivityAnswer("reference")} loupistId="loupist-a" chatId="chat-a" loupistName="Loupist"
-    onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} onOpenArtifact={vi.fn()} onOpenLink={vi.fn()} onReadAttachment={vi.fn()} onOpenEvidence={vi.fn()} onFillComposer={onFillComposer} /></TooltipProvider>);
+  const view = render(<TooltipProvider><ChatMessageCard message={previewSensitivityAnswer("reference")} loupistId="loupist-a" chatId="chat-a" loupistName="Loupist" onReadAttachment={vi.fn()} onFillComposer={onFillComposer} /></TooltipProvider>);
   const card = screen.getByRole("region", { name: /What the price implies · Solsup Foods/u });
   // The card stands where its link paragraph was: after the paragraph before it, before the one after.
   const [before, after] = [...view.container.querySelectorAll<HTMLElement>(".message-content")];

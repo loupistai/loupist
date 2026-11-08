@@ -2,15 +2,16 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ChatErrorState } from "./ChatErrorState";
 import { CitationChip } from "./CitationChip";
+import { renderWithOpen } from "../../test/open";
 import type { ChatEvidenceRef } from "../../types";
 
-const base = { provider: "OpenAI", fallback: "The response could not be completed.", attempt: 1 };
+const base = { provider: "OpenAI", fallback: "The response could not be completed." };
 
 describe("error shapes", () => {
   it("counts a busy account down and retries once on its own, or right away", async () => {
     vi.useFakeTimers();
     const onRetry = vi.fn();
-    const { unmount } = render(<ChatErrorState {...base} kind="rate_limited" onRetry={onRetry} />);
+    const { unmount } = render(<ChatErrorState {...base} kind="rate_limited" retryInSeconds={20} onRetry={onRetry} />);
     expect(screen.getByText("Your AI account is busy. Retrying in 20 s…")).toBeInTheDocument();
     await act(async () => { vi.advanceTimersByTime(5_000); });
     expect(screen.getByText("Your AI account is busy. Retrying in 15 s…")).toBeInTheDocument();
@@ -21,29 +22,25 @@ describe("error shapes", () => {
     unmount();
 
     const now = vi.fn();
-    render(<ChatErrorState {...base} attempt={2} kind="rate_limited" onRetry={now} />);
+    render(<ChatErrorState {...base} retryInSeconds={40} kind="rate_limited" onRetry={now} />);
     expect(screen.getByText("Your AI account is busy. Retrying in 40 s…")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry now" }));
     expect(now).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
 
-  it("counts down from the provider's own retry hint when Rust sent one", async () => {
+  it("counts down the wait the turn view handed it, whatever its source", async () => {
     vi.useFakeTimers();
     const onRetry = vi.fn();
-    const { unmount } = render(<ChatErrorState {...base} kind="rate_limited" retryAfterSeconds={7} onRetry={onRetry} />);
+    render(<ChatErrorState {...base} kind="rate_limited" retryInSeconds={7} onRetry={onRetry} />);
     expect(screen.getByText("Your AI account is busy. Retrying in 7 s…")).toBeInTheDocument();
     await act(async () => { vi.advanceTimersByTime(7_000); });
     expect(onRetry).toHaveBeenCalledTimes(1);
-    unmount();
-    // The second busy answer uses its own hint too; the third still asks to try later.
-    render(<ChatErrorState {...base} attempt={2} kind="rate_limited" retryAfterSeconds={90} onRetry={vi.fn()} />);
-    expect(screen.getByText("Your AI account is busy. Retrying in 90 s…")).toBeInTheDocument();
     vi.useRealTimers();
   });
 
-  it("stops retrying after the third busy answer and names the provider", () => {
-    render(<ChatErrorState {...base} attempt={3} kind="rate_limited" onRetry={vi.fn()} />);
+  it("asks to try later once no retry is pending, and names the provider", () => {
+    render(<ChatErrorState {...base} kind="rate_limited" onRetry={vi.fn()} />);
     expect(screen.getByText("Try again later (OpenAI)")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Retry now" })).not.toBeInTheDocument();
   });
@@ -109,8 +106,7 @@ describe("citation card", () => {
 
   it("shows title, domain, date and passage on hover or keyboard focus, and opens Evidence on click", async () => {
     const user = userEvent.setup();
-    const onOpen = vi.fn();
-    render(<CitationChip evidence={evidence} label="Source 1" title={evidence.title} source="hanul.example" onOpen={onOpen}>1</CitationChip>);
+    const { open: onOpen } = renderWithOpen(<CitationChip evidence={evidence} label="Source 1" title={evidence.title} source="hanul.example" to={{ kind: "evidence", evidence }}>1</CitationChip>);
     await user.tab();
     const card = await screen.findByRole("dialog", { name: evidence.title });
     expect(card).toHaveTextContent("hanul.example · Oct 27, 2026");

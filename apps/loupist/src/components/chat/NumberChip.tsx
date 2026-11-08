@@ -2,7 +2,7 @@ import "@/styles/answer-checks.css";
 import i18n, { useTranslation } from "@/i18n";
 import { TriangleAlertIcon } from "lucide-react";
 import { Popover } from "radix-ui";
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import type { ChatEvidenceRef, NumberCheck } from "../../types";
 import { formatAsOf } from "../../chat/asOf";
 import { evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
@@ -11,7 +11,9 @@ import { QuoteEvidenceBody } from "./QuoteEvidence";
 import { citationNumber, copiedFormula, evidenceDate, formulaLines, needsChecking, spokenNumber, unbroken } from "../../chat/numberChecks";
 import { calcView, dataRows, exactAmount, shownExactly } from "../../chat/numberText";
 import { narrowWindow } from "../../chat/narrowWindow";
+import { wantsExternal } from "../../chat/navigation";
 import { Button } from "../ui/button";
+import { useOpenProps } from "../navigation/Open";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -22,16 +24,6 @@ const FORMULA_LINES = 4;
 
 /** One number popover or citation card at a time: opening one closes the others. */
 const openChips = new Set<() => void>();
-
-/** A data cell the Evidence reader marks when it opens (`pointer` from the check). */
-export type EvidenceCell = { pointer: string; key: string; value: string };
-
-export type NumberChipActions = {
-  onOpenEvidence?: (evidence: ChatEvidenceRef, cell?: EvidenceCell, anchor?: HTMLElement | null) => void;
-  /** Reveals the producing step inline in the thread; never opens the side panel. */
-  onShowStep?: (evidence: ChatEvidenceRef) => void;
-};
-
 
 /** The status line under a popover's content (finance-show-the-math.md §2.4). */
 function StatusLine({ check, exact, asOf, id }: { check: NumberCheck; exact: string; asOf?: string; id: string }) {
@@ -87,7 +79,20 @@ function PassageBody({ evidence, span, meta }: { evidence: ChatEvidenceRef; span
   </>;
 }
 
-function CalculatedBody({ check, view, evidenceRefs, onOpenEvidence }: { check: NumberCheck; view: ReturnType<typeof calcView>; evidenceRefs: readonly ChatEvidenceRef[]; onOpenEvidence?: NumberChipActions["onOpenEvidence"] }) {
+function InputSource({ source, evidenceRefs }: { source: ChatEvidenceRef; evidenceRefs: readonly ChatEvidenceRef[] }) {
+  const link = useOpenProps({ kind: "evidence", evidence: source });
+  const number = citationNumber(source, evidenceRefs);
+  const chip = number ? <span className="loupist-citation" aria-hidden="true">{number}</span> : null;
+  const date = evidenceDate(source);
+  // The provider may wrap above the date; the date and its citation stay together.
+  const body = <>
+    <span>{source.provider ?? sourceIdentityLabel(source)}{date ? " · " : ""}</span>
+    {date ? <span className="number-chip-date">{date}{chip}</span> : chip}
+  </>;
+  return link.available ? <button type="button" {...link.props}>{body}</button> : <span>{body}</span>;
+}
+
+function CalculatedBody({ check, view, evidenceRefs }: { check: NumberCheck; view: ReturnType<typeof calcView>; evidenceRefs: readonly ChatEvidenceRef[] }) {
   useTranslation("chat");
   const [showAll, setShowAll] = useState(false);
   const calc = check.calc!;
@@ -105,18 +110,11 @@ function CalculatedBody({ check, view, evidenceRefs, onOpenEvidence }: { check: 
       <dl className="number-chip-inputs">
         {view.inputs.map((input) => {
           const source = input.evidenceId ? evidenceRefs.find((item) => item.id === input.evidenceId) : undefined;
-          const number = source ? citationNumber(source, evidenceRefs) : null;
-          const chip = number ? <span className="loupist-citation" aria-hidden="true">{number}</span> : null;
-          const date = source ? evidenceDate(source) : "";
           return <div key={input.name}>
             <dt title={input.label}>{input.label}</dt>
             <dd className="gg-num">{input.value}</dd>
             <dd className="number-chip-source">{source
-              // The provider may wrap above the date; the date and its citation stay together.
-              ? <button type="button" onClick={() => onOpenEvidence?.(source)}>
-                <span>{source.provider ?? sourceIdentityLabel(source)}{date ? " · " : ""}</span>
-                {date ? <span className="number-chip-date">{date}{chip}</span> : chip}
-              </button>
+              ? <InputSource source={source} evidenceRefs={evidenceRefs} />
               : <span className="number-chip-unlinked">{t("numberChip.notLinked")}</span>}</dd>
           </div>;
         })}
@@ -129,17 +127,17 @@ function CalculatedBody({ check, view, evidenceRefs, onOpenEvidence }: { check: 
 /**
  * A number in an answer that Rust checked against its source (W16.3). The
  * number is the control: hovering for a moment (or focusing it) shows where it
- * came from or how it was calculated; a click pins the popover. Rust's check
- * decides the status; the renderer never recomputes it.
+ * came from or how it was calculated; a click pins the popover, and Cmd-click
+ * (Ctrl elsewhere) or a middle click opens the source page in the system browser.
+ * Rust's check decides the status; the renderer never recomputes it.
  */
-export function NumberChip({ check, checks = [check], evidence, evidenceRefs, asOf, actions, asset, children }: {
+export function NumberChip({ check, checks = [check], evidence, evidenceRefs, asOf, asset, children }: {
   check: NumberCheck;
   /** Every check of this answer: inputs and grids read their amounts and range from the others. */
   checks?: readonly NumberCheck[];
   evidence: ChatEvidenceRef;
   evidenceRefs: readonly ChatEvidenceRef[];
   asOf?: string;
-  actions: NumberChipActions;
   /** Exact ticker of the grid row. A quote cell uses it only when it names one saved symbol. */
   asset?: string;
   children: ReactNode;
@@ -258,16 +256,15 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
   const headTitle = quote?.focus && title !== quote.focus.symbol && title !== evidenceTitle(evidence) ? evidenceTitle(evidence) : title;
   const headValue = check.kind === "calculated" ? (view ? view.value : check.text) : undefined;
   const cell = check.pointer ? check.fields?.find((field) => field.matched) : undefined;
-  const openEvidence = () => {
-    actions.onOpenEvidence?.(evidence, cell && check.pointer ? { pointer: check.pointer, key: cell.key, value: cell.value } : undefined);
+  const stepLink = useOpenProps({ kind: "evidence", evidence });
+  const sourceLink = useOpenProps({ kind: "evidence", evidence, cell: cell && check.pointer ? { pointer: check.pointer, key: cell.key, value: cell.value } : undefined });
+  const closeThen = (action: (event: MouseEvent<HTMLElement>) => void) => (event: MouseEvent<HTMLElement>) => {
+    action(event);
     setOpen(false);
     setPinned(false);
   };
-  const showStep = () => {
-    actions.onShowStep?.(evidence);
-    setOpen(false);
-    setPinned(false);
-  };
+  // Calculation and step evidence resolves to its inline step, which only an answer has.
+  const showStep = closeThen(stepLink.activate);
   const published = evidenceDate(evidence);
   const fetched = evidenceDate(evidence, "retrieved_at");
 
@@ -285,7 +282,12 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
           if (!pinned && !content.current?.contains(event.relatedTarget as Node | null)) schedule(false, CLOSE_DELAY_MS);
         }}
         onKeyDown={onChipKeyDown}
-        onClick={() => { if (timer.current !== null) window.clearTimeout(timer.current); show(true); }}>
+        onAuxClick={sourceLink.props.onAuxClick}
+        onClick={(event) => {
+          if (timer.current !== null) window.clearTimeout(timer.current);
+          if (sourceLink.external && wantsExternal(event)) { setOpen(false); setPinned(false); sourceLink.activate(event); return; }
+          show(true);
+        }}>
         {children}
       </button>
     </Popover.Anchor>
@@ -313,7 +315,7 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
           {headValue ? <span className="gg-num">{headValue}</span> : null}
         </div>
         {quote ? <QuoteEvidenceBody read={quote} evidence={evidence} mode="cell" checked={checked} /> : null}
-        {!quote && check.kind === "calculated" && check.calc && view ? <CalculatedBody check={check} view={view} evidenceRefs={evidenceRefs} onOpenEvidence={actions.onOpenEvidence} /> : null}
+        {!quote && check.kind === "calculated" && check.calc && view ? <CalculatedBody check={check} view={view} evidenceRefs={evidenceRefs} /> : null}
         {!quote && check.kind === "passage" ? <PassageBody evidence={evidence} span={check.span}
           meta={published ? t("numberChip.published", { source, date: published }) : source} /> : null}
         {!quote && check.kind === "data" ? <>
@@ -330,8 +332,8 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
           <StatusLine check={check} exact={exact} asOf={asOf} id={`${statusId}-line`} />
           <div className="number-chip-actions">
             {quote ? null : check.kind === "calculated" || check.kind === "step"
-              ? <Button type="button" variant="ghost" size="sm" onClick={showStep}>{t("numberChip.showStep")}</Button>
-              : <Button type="button" variant="ghost" size="sm" onClick={openEvidence}>{t("numberChip.openEvidence")}</Button>}
+              ? stepLink.available ? <Button type="button" variant="ghost" size="sm" onClick={showStep}>{t("numberChip.showStep")}</Button> : null
+              : sourceLink.available ? <Button type="button" variant="ghost" size="sm" onClick={closeThen(sourceLink.activate)} onAuxClick={sourceLink.props.onAuxClick}>{t("numberChip.openEvidence")}</Button> : null}
             {check.kind === "calculated" && !check.calc?.grid ? <Button type="button" variant="ghost" size="sm" onClick={() => {
               void navigator.clipboard?.writeText(copiedFormula(check, evidenceRefs)).then(() => setCopied(true), () => undefined);
             }}>{copied ? t("numberChip.copied") : t("numberChip.copyFormula")}</Button> : null}

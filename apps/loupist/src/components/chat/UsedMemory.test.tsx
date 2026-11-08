@@ -21,7 +21,7 @@ function Harness({ messages, toggle }: { messages: ChatMessage[]; toggle: (recor
     setIds(current => { const next = new Set(current); if (setAside) next.add(recordId); else next.delete(recordId); return next; });
   } };
   return <ChatSetAsideProvider value={value}>
-    {messages.map(message => <MessageMemoryRow key={message.id} loupistId="loupist-quality" chatId="chat-a" message={message} onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} />)}
+    {messages.map(message => <MessageMemoryRow key={message.id} loupistId="loupist-quality" chatId="chat-a" message={message} />)}
   </ChatSetAsideProvider>;
 }
 
@@ -54,7 +54,7 @@ it("labels a deleted receipt target without offering edit or archive actions", a
   const { MockLoupistBridge } = await import("../../bridge/mockBridge");
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   vi.spyOn(bridge, "knowledgeCatalog").mockResolvedValue({ loupistId: "loupist-quality", lenses: [], sources: [], worlds: [] });
-  render(<MessageMemoryRow bridge={bridge} loupistId="loupist-quality" message={answer({ lens_receipts: [{ recordId: "deleted-method", revisionId: "rev", kind: "method", title: "Deleted method", delivery: "exact_read" }] })} onOpenMemory={vi.fn()} onOpenMemoryPage={vi.fn()} />);
+  render(<MessageMemoryRow bridge={bridge} loupistId="loupist-quality" message={answer({ lens_receipts: [{ recordId: "deleted-method", revisionId: "rev", kind: "method", title: "Deleted method", delivery: "exact_read" }] })} />);
   await userEvent.click(screen.getByRole("button", { name: "Used 1 page" }));
   expect(await screen.findByText(/Removed/)).toBeVisible();
   expect(screen.getByText("Deleted method").tagName).toBe("S");

@@ -1,10 +1,6 @@
-import type { ChatEvidenceRef, ChatMessage, MemoryRef, MemoryUpdateChange } from "../types";
+import type { ChatMessage, MemoryRef, MemoryUpdateChange } from "../types";
 import { chatReceipt, learnedSummary, savesMemory, showsReceipt } from "./receipt";
 
-const evidence = (id: string, kind: ChatEvidenceRef["kind"], extra: Partial<ChatEvidenceRef> = {}): ChatEvidenceRef => ({
-  id, title: `Title ${id}`, kind, tool_name: "web_fetch", url: `https://example.com/${id}`, retrieved_at: "2026-10-28T00:00:00Z",
-  excerpt: "Excerpt", excerpt_truncated: false, content_sha256: "a".repeat(64), warnings: [], ...extra,
-});
 const lensRead = (recordId: string, readRef = `read-${recordId}`): MemoryRef => ({
   read_ref: readRef, kind: "lens", title: `Method ${recordId}`, excerpt: "", access: "exact_read",
   knowledge: { kind: "lens", recordId, revisionId: "rev", objectId: recordId },
@@ -15,19 +11,6 @@ const change = (kind: MemoryUpdateChange["kind"], recordId: string, operation: M
   ...(kind === "Research" ? {} : { knowledge: { kind: kind === "principle" || kind === "Lens" ? "lens" : kind.toLowerCase(), recordId, revisionId: "rev", objectId: recordId } }),
 }) as MemoryUpdateChange;
 const answer = (extra: Partial<ChatMessage> = {}): ChatMessage => ({ id: "answer", role: "assistant", content: "Answer", created_at: "2026-10-28", status: "complete", ...extra });
-
-it("counts read sources once per subject and leaves out search previews, computation and Memory receipts", () => {
-  const receipt = chatReceipt(answer({ evidence_refs: [
-    evidence("filing", "original"),
-    evidence("filing-again", "original", { url: "https://example.com/filing", content_sha256: "a".repeat(64), title: "Title filing" }),
-    evidence("preview", "discovery", { tool_name: "web_search" }),
-    evidence("calc", "derived", { tool_name: "bash" }),
-    evidence("memory", "saved_context", { tool_name: "lens_read", url: undefined }),
-    evidence("local", "local_file", { tool_name: "workspace_capture", url: undefined }),
-  ] }));
-  expect(receipt.readSources.map((item) => item.id)).toEqual(["filing", "local"]);
-  expect(receipt.empty).toBe(false);
-});
 
 it("uses host-recorded kinds for exact reads and context delivery, regardless of answer links", () => {
   const receipt = chatReceipt(answer({

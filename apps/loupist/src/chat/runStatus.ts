@@ -1,13 +1,11 @@
 import i18n from "@/i18n";
 import { formatNumber } from "@/i18n/format";
 import { useEffect, useRef, useState } from "react";
-import type { ChatMessage, ChatProgress, ChatProgressItem } from "../types";
+import type { ChatProgressItem } from "../types";
 import { localizedProgressLabel } from "./progressLabels";
 
 const t = i18n.getFixedT(null, "chat");
 
-/** A run with no new progress for this long shows "Still working" instead of a frozen label. */
-export const HEARTBEAT_AFTER_MS = 15_000;
 /** Screen readers hear the live label at most this often. */
 const ANNOUNCE_EVERY_MS = 5_000;
 
@@ -42,34 +40,6 @@ export const clockLabel = (milliseconds: number) => {
   return `${formatNumber(minutes)}:${formatNumber(seconds, { minimumIntegerDigits: 2, useGrouping: false })}`;
 };
 
-const phaseLabel = (phase: ChatMessage["phase"]) => {
-  if (phase === "writing") return t("chatProgressTimeline.writing");
-  if (phase === "thinking") return t("chatProgressTimeline.thinkingItThrough");
-  if (phase === "tool") return t("chatProgressTimeline.waitingForNextStep");
-  return t("chatProgressTimeline.waitingForModel");
-};
-
-const lastRunning = (progress: ChatProgress | undefined) =>
-  [...(progress?.items ?? [])].reverse().find((item): item is ActionItem => isActionItem(item) && item.status === "running");
-
-/** The current step's own words, never a phase word, unless no step is running. */
-export function currentStepLabel(progress: ChatProgress | undefined, phase: ChatMessage["phase"]) {
-  const running = lastRunning(progress);
-  return running ? actionLabel(running) : phaseLabel(phase);
-}
-
-/** The step the reader last saw, for "Still working · {step}". */
-export function lastStepLabel(progress: ChatProgress | undefined, phase: ChatMessage["phase"]) {
-  const last = lastRunning(progress) ?? [...(progress?.items ?? [])].reverse().find(isActionItem);
-  return last ? actionLabel(last) : phaseLabel(phase);
-}
-
-/** Changes whenever the host reports anything new for this run. */
-export function progressActivityKey(progress: ChatProgress | undefined, phase: ChatMessage["phase"]) {
-  const items = progress?.items ?? [];
-  return `${phase ?? ""}|${items.map((item) => isActionItem(item) ? `${item.id}:${item.status}:${item.outputRevision ?? 0}` : `${item.id}:${item.text.length}`).join(",")}`;
-}
-
 /** A one-second clock while `running`; frozen otherwise. */
 export function useNow(running: boolean) {
   const [now, setNow] = useState(() => Date.now());
@@ -80,16 +50,6 @@ export function useNow(running: boolean) {
     return () => window.clearInterval(timer);
   }, [running]);
   return now;
-}
-
-/**
- * True after HEARTBEAT_AFTER_MS without a new progress event. Answer text
- * streams without progress events, so the writing phase never reads as stalled.
- */
-export function useRunHeartbeat(activityKey: string, running: boolean, phase: ChatMessage["phase"], now: number) {
-  const [changed, setChanged] = useState(() => ({ key: activityKey, at: Date.now() }));
-  if (changed.key !== activityKey) setChanged({ key: activityKey, at: Date.now() });
-  return running && phase !== "writing" && changed.key === activityKey && now - changed.at >= HEARTBEAT_AFTER_MS;
 }
 
 /** Throttles a changing label for an aria-live region. */

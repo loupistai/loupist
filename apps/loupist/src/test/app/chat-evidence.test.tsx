@@ -66,6 +66,47 @@ describe("Loupist · Chat evidence", () => {
     expect(browser).not.toHaveBeenCalled();
   });
 
+  it("opens a citation's page in the system browser on Ctrl-click and leaves the panel closed", async () => {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const evidence = evidenceFixture();
+    withEvidence(bridge, [evidence]);
+    const external = vi.spyOn(bridge, "openExternalUrl").mockResolvedValue(undefined);
+    const browser = vi.spyOn(bridge, "browserTabOpen");
+    render(<App bridge={bridge} />);
+    await openChat();
+    fireEvent.click(await screen.findByRole("button", { name: `Source 1: ${evidence.title}` }), { ctrlKey: true });
+    await waitFor(() => expect(external).toHaveBeenCalledExactlyOnceWith(evidence.url));
+    expect(browser).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("Chat workspace panel")).toBeNull();
+  });
+
+  it("announces a panel tab it opened in one polite live region, without moving focus", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const original = evidenceFixture({ tool_name: "finance_market_data", title: "Market source", url: "https://finance.example/filing", excerpt: "Retained market source" });
+    withEvidence(bridge, [original]);
+    render(<App bridge={bridge} />);
+    await openChat();
+    const citation = await screen.findByRole("button", { name: "Source 1: Market source" });
+    await user.click(citation);
+    const regions = document.querySelectorAll("[data-panel-announcement]");
+    expect(regions).toHaveLength(1);
+    expect(regions[0]).toHaveAttribute("aria-live", "polite");
+    await waitFor(() => expect(regions[0]).toHaveTextContent("Opened Market source in the panel"));
+  });
+
+  it("opens a numbered asset page read on its asset page, never a dead citation", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const read = evidenceFixture({ kind: "saved_context", tool_name: "asset_page_read", url: undefined, title: "Asset page: Apple", excerpt: '{\n  "assetId": "NASDAQ:AAPL"\n}' });
+    withEvidence(bridge, [read]);
+    const page = vi.spyOn(bridge, "assetPageGet");
+    render(<App bridge={bridge} />);
+    await openChat();
+    await user.click(await screen.findByRole("button", { name: "Source 1: Asset page: Apple" }));
+    await waitFor(() => expect(page).toHaveBeenCalledWith(expect.objectContaining({ assetId: "NASDAQ:AAPL" })));
+  });
+
   it("routes original sources to readers and tool results to work progress", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
@@ -77,7 +118,7 @@ describe("Loupist · Chat evidence", () => {
     render(<App bridge={bridge} />);
     await openChat();
     const sources = await screen.findByLabelText("Research sources");
-    expect(sources).toHaveTextContent("1 citation");
+    expect(sources).toHaveTextContent("Sources (1)");
     for (const result of [search, derived]) {
       await user.click(screen.getByRole("button", { name: `Result: ${result.title}` }));
       expect(within(screen.getByLabelText("Work progress")).getByText(result.excerpt)).toBeVisible();
@@ -113,10 +154,12 @@ describe("Loupist · Chat evidence", () => {
     const read = within(digest).getByRole("button");
     const article = read.closest("article")!;
     expect(within(article).getAllByLabelText("Work progress")).toHaveLength(1);
-    expect(within(digest).getAllByRole("listitem")).toHaveLength(3);
+    expect(read).toHaveAttribute("aria-expanded", "false");
     expect(within(digest).queryByRole("button", { name: "Rate outlook · example.com" })).toBeNull();
     for (const internal of ["web:f6495eccf2c0cca04e4c6a03", "private-tool-id", "web_search"]) expect(article).not.toHaveTextContent(internal);
     await user.click(read);
+    expect(digest.querySelectorAll(".chat-progress-row")).toHaveLength(3);
+    for (const internal of ["web:f6495eccf2c0cca04e4c6a03", "private-tool-id", "web_search"]) expect(article).not.toHaveTextContent(internal);
     await user.click(within(article).getByRole("button", { name: "Rate outlook · example.com" }));
     await waitFor(() => expect(browser).toHaveBeenCalledWith(expect.objectContaining({ url: "https://example.com/rates" }), expect.any(Function)));
     expect(external).not.toHaveBeenCalled();
@@ -151,7 +194,6 @@ describe("Loupist · Chat evidence", () => {
     const emit = async (event: ChatStreamEvent) => { await act(async () => observer(event)); };
 
     await emit({ type: "evidence", run_id: request.run_id, evidence });
-    expect(await screen.findByLabelText("Research sources")).toHaveTextContent("1 citation");
     await emit({ type: "delta", run_id: request.run_id, text: answer });
     const citation = await screen.findByRole("button", { name: `Source 1: ${evidence.title}` });
     await user.click(citation);
@@ -166,13 +208,16 @@ describe("Loupist · Chat evidence", () => {
     expect(within(panel).getByRole("button", { name: "Back" })).toBeDisabled();
     expect(screen.getByText("Unknown source", { exact: true }).closest("a, button")).toBeNull();
     await emit({ type: "evidence", run_id: request.run_id, evidence });
-    expect(within(screen.getByLabelText("Research sources")).getAllByRole("button", { name: new RegExp(evidence.title) })).toHaveLength(1);
 
     const persisted: ChatMessage = { id: "assistant-evidence", role: "assistant", status: "complete", content: answer, created_at: "2026-10-11T03:01:00Z", evidence_refs: [structuredClone(evidence)] };
     savedWorkspace.threads.find((thread) => thread.id === request.thread_id)!.messages.push(
       { id: "user-evidence", role: "user", status: "complete", content: request.prompt, created_at: "2026-10-11T03:00:00Z" }, persisted);
     saved = true;
     await emit(completed(request.run_id, answer));
+    // The sources list arrives with the settled answer and names a source once, however often it was issued.
+    const sources = await screen.findByLabelText("Research sources");
+    expect(sources).toHaveTextContent("Sources (1)");
+    expect(within(sources).getAllByRole("button", { name: new RegExp(evidence.title) })).toHaveLength(1);
     first.unmount();
 
     render(<App bridge={bridge} />);
