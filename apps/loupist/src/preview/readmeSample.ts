@@ -12,7 +12,6 @@ const CHECKS = [
   "Data-center GPU shipments stay ahead of HBM supply",
 ];
 
-/** Home briefing for the public clips. The shared fixture is a different industry. */
 export function applyReadmeBriefing(bridge: PreviewBridge) {
   const list = bridge.inboxList.bind(bridge);
   bridge.inboxList = async request => {
@@ -35,7 +34,6 @@ export function applyReadmeBriefing(bridge: PreviewBridge) {
   };
 }
 
-/** Chat answer for the public page. Figures stay inside a labeled sample note. */
 export function applyReadmeChat(bridge: PreviewBridge) {
   const select = bridge.loupistSelect.bind(bridge);
   bridge.loupistSelect = async loupistId => {
@@ -61,7 +59,6 @@ export function applyReadmeChat(bridge: PreviewBridge) {
   };
 }
 
-/** Lens revision copy for the public page. The shared learning fixture is a different industry. */
 export function applyReadmeLens(bridge: PreviewBridge) {
   const reviews = bridge.learningReviewList.bind(bridge);
   bridge.learningReviewList = async request => {

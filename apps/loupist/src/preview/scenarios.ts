@@ -1875,8 +1875,8 @@ export const scenarios: readonly PreviewScenario[] = [
     }),
     setup: async (bridge) => {
       await prepareFixture(bridge);
-      // The draw budget is measured on all 1,000 names, not the local view a large Map opens on.
-      if (id === "map-1000" || id === "map-readme") rememberScope("loupist-quality", "all");
+      if (id === "map-1000") rememberScope("loupist-quality", "all");
+      if (id === "map-readme") rememberScope("loupist-quality", "all");
       if (id === "map-readme") { dismissMapHint("loupist-quality"); applyReadmeBriefing(bridge); }
       if (id === "map-readme") {
         const readCatalog = bridge.knowledgeCatalog.bind(bridge);

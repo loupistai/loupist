@@ -1,7 +1,5 @@
 import type { KnowledgeMap, KnowledgeMapCount, KnowledgeMapEdge, KnowledgeMapEdgeKind, KnowledgeMapNode, KnowledgeMapNodeKind } from "../contracts/knowledge";
 
-// The shared map fixture is about forty names. Past sixty, World opens around one company.
-// This graph is the full sample World for the public page, in English, drawn at once.
 const START = Date.UTC(2026, 6, 1);
 const DAY = 86_400_000;
 
