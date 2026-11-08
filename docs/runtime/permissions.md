@@ -128,3 +128,6 @@ symlink swapped in after authorization cannot redirect the write.
   Chats' attachments; the database is binary, which `rg` does not print) that a
   direct `read` would ask about or refuse. Only a root that holds a home
   Sensitive location asks.
+- Pi's `read` falls back to curly-quote, NFD and U+202F spellings of a missing
+  path, so the file it opens can differ from the one Rust classified. Rust
+  classifies the path the extension sends, not the fallback.
