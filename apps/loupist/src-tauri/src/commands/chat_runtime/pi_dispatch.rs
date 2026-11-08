@@ -212,7 +212,7 @@ pub(super) async fn apply_pi_rpc(turn: PiRpcTurn<'_>, payload: &Value) -> PiRpcS
                             ChatStepRefusal::UntrustedTextPaused,
                         ),
                         ("protected_path", ChatStepRefusal::ProtectedPath),
-                        ("user_declined", ChatStepRefusal::UserDeclined),
+                        ("outside_workspace", ChatStepRefusal::OutsideWorkspace),
                     ]
                     .into_iter()
                     .find(|(code, _)| on_event.tool_trace.refused(tool_call_id, code));

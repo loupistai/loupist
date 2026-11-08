@@ -325,12 +325,12 @@ impl ToolMethod {
 pub enum BrokerError {
     #[error("Outbound access is paused for this turn because it read content from a custom connection. The user can ask again in a new message.")]
     OutboundPaused,
-    #[error("This turn read third-party text (web pages, search results, news, filings, provider descriptions, or saved Sources and datasets holding them), so commands and file access outside the workspace wait for the user's card, and custom connections, schedule changes and new websites are paused for the rest of the turn.")]
+    #[error("This turn read third-party text (web pages, search results, news, filings, provider descriptions, or saved Sources and datasets holding them), so custom connections, schedule changes, new websites and instruction writes are paused for the rest of the turn, and commands run offline.")]
     UntrustedTextPaused,
     #[error("This path is inside the app's private data (credentials, the database, Pi runtime files), which native tools never read or write.")]
     ProtectedPath,
-    #[error("The user did not allow this file access in the card.")]
-    UserDeclined,
+    #[error("This path is outside the Loupist folder, which native tools never read or write.")]
+    OutsideWorkspace,
     #[error("This custom tool needs your approval in Connections before it can run.")]
     CustomApprovalRequired {
         connection_id: String,
@@ -1410,8 +1410,8 @@ fn error_body(error: &BrokerError) -> Value {
             "Do not retry this path. App credentials, the database and Pi runtime files are reached only through the app's registered tools; use the workspace for files.",
             false,
         ),
-        BrokerError::UserDeclined => (
-            crate::custom_connections::taint::FILE_ACCESS_DECLINED_REFUSAL,
+        BrokerError::OutsideWorkspace => (
+            crate::custom_connections::taint::OUTSIDE_WORKSPACE_REFUSAL,
             false,
         ),
         BrokerError::WithNext { .. } => unreachable!("handled above"),
@@ -1483,7 +1483,7 @@ fn error_code(error: &BrokerError) -> &'static str {
         BrokerError::OutboundPaused => "outbound_paused",
         BrokerError::UntrustedTextPaused => "untrusted_text_paused",
         BrokerError::ProtectedPath => "protected_path",
-        BrokerError::UserDeclined => "user_declined",
+        BrokerError::OutsideWorkspace => "outside_workspace",
         BrokerError::CustomApprovalRequired { .. } => "needs_approval",
         BrokerError::ProviderApprovalRequired { .. } => "needs_approval",
         BrokerError::MethodDenied => "method_denied",

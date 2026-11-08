@@ -1,37 +1,24 @@
-use std::path::PathBuf;
-
-use super::approval::{native_approval, AskOutcome};
 use super::authority::bounded_text;
 use super::*;
 use crate::agent_harness::native_policy::{
-    self, AskKind, NativeDecision, NativeGrants, NativeRefusal, NativeRequest, NativeRoots,
-    NativeTool,
+    self, NativeDecision, NativeRefusal, NativeRequest, NativeRoots, NativeTool,
 };
-use crate::chat::approvals::ApprovalDecision;
-use crate::custom_connections::taint::{COMMAND_DECLINED_REFUSAL, INSTRUCTION_WRITE_REFUSAL};
+use crate::custom_connections::taint::{COMMAND_UNCONFINED_REFUSAL, INSTRUCTION_WRITE_REFUSAL};
 
-/// A call that could not be shown a card: not a refusal by the user, so the
-/// kind is not paused.
-const UNASKED_NEXT: &str = "No card could be shown for this call: this reply already holds its limit of approval cards, or nobody can answer one here. The user did not refuse it. Group the remaining command or file work into fewer calls, or finish with what is already available.";
 const SEARCH_COVERS_APP_DATA_NEXT: &str = "This search root contains the app's private data folder, so it is not searched. Search a narrower folder, such as the workspace or one of its subfolders.";
 const UNRESOLVABLE_NEXT: &str = "This path goes through a symbolic link that loops or cannot be read, so it is not touched. Use the real file's path.";
+const CREDENTIALS_NEXT: &str = "Do not retry this path. Credential stores and shell startup files are never read or written by the Loupist, and commands cannot see them either.";
+const GIT_CONFIG_NEXT: &str = "Do not retry this write. A git directory's hooks and config run on the user's machine later, so the Loupist never changes them; read them if needed and ask the user to change them.";
 
-/// The native policy's state for one turn: the folders it classifies against,
-/// what the user allowed or turned down in this reply, and one
-/// card-at-a-time lock per ask kind.
+/// The native policy's state for one turn: the folders it classifies against.
 #[derive(Default)]
 pub(in crate::commands) struct NativeGate {
     roots: Option<NativeRoots>,
-    grants: std::sync::Mutex<NativeGrants>,
-    ask_locks: [tokio::sync::Mutex<()>; AskKind::COUNT],
 }
 
 impl NativeGate {
     pub(in crate::commands) fn for_turn(roots: NativeRoots) -> Self {
-        Self {
-            roots: Some(roots),
-            ..Self::default()
-        }
+        Self { roots: Some(roots) }
     }
 
     fn decide(
@@ -41,107 +28,54 @@ impl NativeGate {
     ) -> Result<NativeDecision, BrokerError> {
         let exposure = taint.exposure();
         if request.tool == NativeTool::Bash {
-            return Ok(native_policy::decide_command(
-                request,
-                exposure,
-                &self.grants(),
-            ));
+            return Ok(native_policy::decide_command(exposure, None));
         }
         // A run without turn folders cannot classify a path.
         let roots = self.roots.as_ref().ok_or_else(|| {
             BrokerError::Execution("native file tools are unavailable in this run".into())
         })?;
-        Ok(native_policy::decide(
-            request,
-            roots,
-            exposure,
-            &self.grants(),
-        ))
-    }
-
-    fn grants(&self) -> std::sync::MutexGuard<'_, NativeGrants> {
-        self.grants
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-    }
-
-    fn decline(&self, kind: AskKind) {
-        self.grants().decline(kind);
+        Ok(native_policy::decide(request, roots, exposure, None))
     }
 }
 
 fn refusal_error(refusal: NativeRefusal) -> BrokerError {
     match refusal {
         NativeRefusal::AppPrivate => BrokerError::ProtectedPath,
+        NativeRefusal::Credentials => BrokerError::ProtectedPath.with_next(CREDENTIALS_NEXT),
+        NativeRefusal::GitConfig => BrokerError::ProtectedPath.with_next(GIT_CONFIG_NEXT),
         NativeRefusal::SearchCoversAppData => {
             BrokerError::ProtectedPath.with_next(SEARCH_COVERS_APP_DATA_NEXT)
         }
         NativeRefusal::Unresolvable => BrokerError::ProtectedPath.with_next(UNRESOLVABLE_NEXT),
-        NativeRefusal::Declined(kind) => declined_error(kind),
+        NativeRefusal::Outside => BrokerError::OutsideWorkspace,
+        NativeRefusal::InstructionsAfterUntrustedText => {
+            BrokerError::UntrustedTextPaused.with_next(INSTRUCTION_WRITE_REFUSAL)
+        }
+        NativeRefusal::CommandUnconfined => {
+            BrokerError::UntrustedTextPaused.with_next(COMMAND_UNCONFINED_REFUSAL)
+        }
         NativeRefusal::OutboundPaused => BrokerError::OutboundPaused,
     }
 }
 
-/// A command decline keeps the paused step the Chat already explains; a file
-/// decline is the user's own choice.
-fn declined_error(kind: AskKind) -> BrokerError {
-    match kind {
-        AskKind::Command => BrokerError::UntrustedTextPaused.with_next(COMMAND_DECLINED_REFUSAL),
-        AskKind::Instructions => BrokerError::UserDeclined.with_next(INSTRUCTION_WRITE_REFUSAL),
-        AskKind::FileRead | AskKind::FileWrite => BrokerError::UserDeclined,
-    }
-}
-
 impl AppToolExecutor {
-    /// Decides one native call: allowed calls never wait; a call the policy
-    /// sends to a card takes its kind's lock, decides again (an earlier card
-    /// may have covered it), asks, and records the answer. The canonical
-    /// target comes back so the extension can pin a write to it.
+    /// Decides one native call without waiting on anyone. The canonical
+    /// target comes back so the extension can pin a write to it; a command
+    /// comes back with the sandbox it must run in, when the host has one.
     pub(super) async fn native_authorize(&self, params: &Value) -> Result<Value, BrokerError> {
         let request = NativeRequest::parse(params).ok_or(BrokerError::Malformed)?;
-        let gate = &self.capture.native;
-        let taint = &self.capture.turn_taint;
-        let mut held = None;
-        let mut resolved: Option<PathBuf> = None;
-        for _ in 0..4 {
-            match gate.decide(&request, taint)? {
-                NativeDecision::Allow { resolved: target } => {
-                    resolved = target;
-                    held = None;
-                    break;
-                }
-                NativeDecision::Refuse(refusal) => return Err(refusal_error(refusal)),
-                NativeDecision::Ask(ask) => {
-                    if held.is_none() {
-                        held = Some(gate.ask_locks[ask.kind.index()].lock().await);
-                        continue;
-                    }
-                    match self.ask_user(native_approval(&ask)).await {
-                        AskOutcome::Answered(
-                            decision @ (ApprovalDecision::Once | ApprovalDecision::Always),
-                        ) => gate.grants().grant(&ask, decision),
-                        AskOutcome::Answered(ApprovalDecision::Deny) | AskOutcome::NoAnswer => {
-                            gate.decline(ask.kind);
-                            return Err(declined_error(ask.kind));
-                        }
-                        AskOutcome::Unasked => {
-                            return Err(BrokerError::Execution(
-                                "the user could not be shown a card for this call".into(),
-                            )
-                            .with_next(UNASKED_NEXT))
-                        }
-                    }
-                }
-            }
-        }
-        if held.is_some() {
-            return Err(BrokerError::Execution(
-                "native authorization did not settle".into(),
-            ));
-        }
         let mut result = json!({"allowed": true});
-        if let Some(resolved) = resolved {
-            result["resolved"] = json!(resolved);
+        match self
+            .capture
+            .native
+            .decide(&request, &self.capture.turn_taint)?
+        {
+            NativeDecision::AllowFile { resolved } => result["resolved"] = json!(resolved),
+            NativeDecision::AllowCommand { sandbox: None } => {}
+            NativeDecision::AllowCommand {
+                sandbox: Some(sandbox),
+            } => result["sandbox"] = json!({"argv": sandbox.argv, "env": sandbox.env}),
+            NativeDecision::Refuse(refusal) => return Err(refusal_error(refusal)),
         }
         if request.tool == NativeTool::Read {
             if let Some(path) = request.target.as_deref() {

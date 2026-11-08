@@ -60,7 +60,6 @@ impl AppToolExecutor {
             connection_name: connection.name.clone(),
             tool_name: card.name.clone(),
             target: approvals::target_summary(&request.arguments),
-            detail: None,
             state: ApprovalState::Waiting,
             requested_at_ms: chrono::Utc::now().timestamp_millis(),
         };

@@ -4,8 +4,8 @@ use super::*;
 use crate::agent_harness::native_policy::NativeRoots;
 use crate::chat::approvals::{ApprovalDecision, ApprovalKind, ApprovalState, ChatApproval};
 use crate::custom_connections::taint::{
-    delimited_body, retained_trust, COMMAND_DECLINED_REFUSAL, INSTRUCTION_WRITE_REFUSAL,
-    WEB_FETCH_PRIVATE_REFUSAL, WEB_FETCH_SITE_REFUSAL,
+    delimited_body, retained_trust, COMMAND_UNCONFINED_REFUSAL, INSTRUCTION_WRITE_REFUSAL,
+    OUTSIDE_WORKSPACE_REFUSAL, WEB_FETCH_PRIVATE_REFUSAL, WEB_FETCH_SITE_REFUSAL,
 };
 use crate::web::script;
 
@@ -72,8 +72,8 @@ fn bash(command: &str) -> Value {
     json!({"name":"bash","command":command})
 }
 
-/// A clean turn runs a command; a turn at the untrusted-text tier shows a
-/// `command` card first, which this turn's user turns down.
+/// A clean turn runs a command; a turn at the untrusted-text tier refuses it,
+/// since a test host has no verified sandbox.
 async fn assert_command_tier(
     socket: &Path,
     broker: &crate::broker::ToolBrokerHandle,
@@ -81,7 +81,7 @@ async fn assert_command_tier(
 ) {
     let response = broker_request(socket, broker.token(), "native.authorize", bash("ls")).await;
     if untrusted {
-        refused_with(&response, COMMAND_DECLINED_REFUSAL);
+        refused_with(&response, COMMAND_UNCONFINED_REFUSAL);
     } else {
         assert_eq!(response["ok"], true, "{response}");
     }
@@ -539,8 +539,7 @@ fn refused_with(response: &Value, next: &str) {
 }
 
 #[tokio::test]
-async fn web_text_reaches_the_model_delimited_and_sends_commands_to_a_card_for_the_rest_of_the_turn(
-) {
+async fn web_text_reaches_the_model_delimited_and_pauses_commands_and_instruction_writes() {
     let _script = script::install(vec![(
         "example.com/injected",
         vec![script::ok("text/html", INJECTED_PAGE)],
@@ -548,21 +547,13 @@ async fn web_text_reaches_the_model_delimited_and_sends_commands_to_a_card_for_t
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
     let workspace = temporary.path().join("loupist").canonicalize().unwrap();
-    // Allow once the deck build, turn down the instruction write, turn down
-    // the next command.
-    let (capture, asked) = turn_capture(
-        &temporary,
-        vec![
-            ApprovalDecision::Once,
-            ApprovalDecision::Deny,
-            ApprovalDecision::Deny,
-        ],
-    );
+    let (capture, asked) = turn_capture(&temporary, Vec::new());
     let (broker, socket) = start_turn(&state, &temporary, "untrusted", capture.clone()).await;
     let instructions = json!({"name":"write","path":workspace.join("AGENTS.md")});
 
     let before = broker_request(&socket, broker.token(), "native.authorize", bash("ls")).await;
     assert_eq!(before["ok"], true, "{before}");
+    assert!(before["result"].get("sandbox").is_none(), "{before}");
     let before = broker_request(
         &socket,
         broker.token(),
@@ -571,7 +562,6 @@ async fn web_text_reaches_the_model_delimited_and_sends_commands_to_a_card_for_t
     )
     .await;
     assert_eq!(before["ok"], true, "{before}");
-    assert!(asked.lock().unwrap().is_empty());
 
     let fetched = broker_request(
         &socket,
@@ -594,40 +584,19 @@ async fn web_text_reaches_the_model_delimited_and_sends_commands_to_a_card_for_t
     let retained = capture.run_result(result_ref).await.unwrap();
     assert_eq!(retained.payload["content"], body);
 
-    // A command now waits on a card and runs once the user allows it.
-    let build = "python3 build_deck.py\n  --out deck.pptx";
-    let allowed = broker_request(&socket, broker.token(), "native.authorize", bash(build)).await;
-    assert_eq!(allowed["ok"], true, "{allowed}");
-    let card = asked.lock().unwrap().last().cloned().unwrap();
-    assert_eq!(card.kind, Some(ApprovalKind::Command));
-    assert_eq!(card.tool_name, "bash");
-    assert_eq!(card.target.as_deref(), Some("python3 build_deck.py"));
-    assert_eq!(card.detail.as_deref(), Some(build));
-    // The same command runs again without a card; a different one asks.
-    let again = broker_request(&socket, broker.token(), "native.authorize", bash(build)).await;
-    assert_eq!(again["ok"], true, "{again}");
-    assert_eq!(asked.lock().unwrap().len(), 1);
+    // Without a verified sandbox a command is refused, not asked about; a
+    // later command is refused the same way.
+    for command in ["python3 build_deck.py\n  --out deck.pptx", "whoami"] {
+        let refused =
+            broker_request(&socket, broker.token(), "native.authorize", bash(command)).await;
+        refused_with(&refused, COMMAND_UNCONFINED_REFUSAL);
+        assert_eq!(refused["error"]["retryable"], false);
+    }
 
-    // Injected text cannot persist itself as instructions without the user.
+    // Injected text cannot persist itself as instructions.
     let refused = broker_request(&socket, broker.token(), "native.authorize", instructions).await;
-    assert_eq!(refused["ok"], false, "{refused}");
-    assert_eq!(refused["error"]["code"], "user_declined");
-    assert_eq!(refused["error"]["next"], INSTRUCTION_WRITE_REFUSAL);
-    let card = asked.lock().unwrap().last().cloned().unwrap();
-    assert_eq!(card.kind, Some(ApprovalKind::Instructions));
-    assert_eq!(
-        card.target.as_deref(),
-        Some(workspace.join("AGENTS.md").to_str().unwrap())
-    );
-
-    // Not now on a command pauses commands: the next one is refused with no card.
-    let declined =
-        broker_request(&socket, broker.token(), "native.authorize", bash("whoami")).await;
-    refused_with(&declined, COMMAND_DECLINED_REFUSAL);
-    assert_eq!(declined["error"]["retryable"], false);
-    let unasked = broker_request(&socket, broker.token(), "native.authorize", bash("id")).await;
-    refused_with(&unasked, COMMAND_DECLINED_REFUSAL);
-    assert_eq!(asked.lock().unwrap().len(), 3);
+    refused_with(&refused, INSTRUCTION_WRITE_REFUSAL);
+    assert!(asked.lock().unwrap().is_empty(), "no card was shown");
 
     for (method, params) in [
         (
@@ -650,47 +619,28 @@ async fn web_text_reaches_the_model_delimited_and_sends_commands_to_a_card_for_t
 }
 
 #[tokio::test]
-async fn allow_commands_for_this_reply_covers_every_later_command_in_it() {
-    let temporary = tempfile::tempdir().unwrap();
-    let state = seeded_state(&temporary);
-    let (capture, asked) = turn_capture(&temporary, vec![ApprovalDecision::Always]);
-    capture.turn_taint.mark_untrusted_text();
-    let (broker, socket) = start_turn(&state, &temporary, "reply-grant", capture).await;
-    for command in ["python3 -m venv .venv", "ls", "whoami"] {
-        let allowed =
-            broker_request(&socket, broker.token(), "native.authorize", bash(command)).await;
-        assert_eq!(allowed["ok"], true, "{allowed}");
-    }
-    assert_eq!(asked.lock().unwrap().len(), 1);
-    broker.shutdown().await.unwrap();
-}
-
-#[tokio::test]
-async fn a_clean_reply_runs_commands_without_a_card_after_an_earlier_reply_read_third_party_text() {
+async fn a_clean_reply_runs_commands_after_an_earlier_reply_read_third_party_text() {
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
 
-    let (earlier, asked) = turn_capture(&temporary, vec![ApprovalDecision::Once]);
+    let earlier = bound_capture(&temporary);
     earlier.turn_taint.mark_untrusted_text();
     let (broker, socket) = start_turn(&state, &temporary, "earlier", earlier).await;
-    let allowed = broker_request(&socket, broker.token(), "native.authorize", bash("ls")).await;
-    assert_eq!(allowed["ok"], true, "{allowed}");
-    assert_eq!(asked.lock().unwrap().len(), 1);
+    let refused = broker_request(&socket, broker.token(), "native.authorize", bash("ls")).await;
+    refused_with(&refused, COMMAND_UNCONFINED_REFUSAL);
     broker.shutdown().await.unwrap();
 
-    let (clean, asked) = turn_capture(&temporary, Vec::new());
-    let (broker, socket) = start_turn(&state, &temporary, "clean", clean).await;
+    let (broker, socket) = start_turn(&state, &temporary, "clean", bound_capture(&temporary)).await;
     for command in ["ls", "whoami"] {
         let allowed =
             broker_request(&socket, broker.token(), "native.authorize", bash(command)).await;
         assert_eq!(allowed["ok"], true, "{allowed}");
     }
-    assert!(asked.lock().unwrap().is_empty());
     broker.shutdown().await.unwrap();
 }
 
 #[tokio::test]
-async fn app_private_files_are_never_reached_and_outside_access_asks_once_per_folder() {
+async fn files_outside_the_loupist_folder_are_refused_with_a_way_forward() {
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
     let app = temporary.path().join("app");
@@ -701,183 +651,86 @@ async fn app_private_files_are_never_reached_and_outside_access_asks_once_per_fo
         home.join(".ssh/id_ed25519"),
         home.join("Documents/notes.md"),
         outside.join("q3/report.csv"),
-        outside.join("q3/notes.csv"),
-        outside.join("q4/report.csv"),
     ] {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, "x").unwrap();
     }
     let workspace = temporary.path().join("loupist").canonicalize().unwrap();
+    std::fs::create_dir_all(workspace.join(".git/hooks")).unwrap();
     let authorize = |socket: &Path, token: &str, name: &str, path: &Path| {
         let params = json!({"name":name,"path":path});
         let (socket, token) = (socket.to_path_buf(), token.to_owned());
         async move { broker_request(&socket, &token, "native.authorize", params).await }
     };
 
-    // Clean turn: private app data is refused, a credential file asks, the
-    // rest is open; an allowed write names its canonical target.
-    let (capture, asked) = turn_capture(&temporary, vec![ApprovalDecision::Once]);
-    let (broker, socket) = start_turn(&state, &temporary, "clean", capture).await;
-    let refused = authorize(&socket, broker.token(), "read", &app.join("pi/auth.json")).await;
-    assert_eq!(refused["error"]["code"], "protected_path", "{refused}");
-    assert_eq!(refused["error"]["retryable"], false);
-    // A search root above the app data folder would descend into it.
-    for (name, path) in [
-        ("grep", temporary.path().to_path_buf()),
-        ("find", temporary.path().parent().unwrap().to_path_buf()),
-        ("grep", app.join("pi")),
-    ] {
-        let refused = authorize(&socket, broker.token(), name, &path).await;
-        assert_eq!(
-            refused["error"]["code"], "protected_path",
-            "{name}: {refused}"
-        );
-    }
-    let refused = authorize(
-        &socket,
-        broker.token(),
-        "write",
-        &app.join("custom-connections/connections.json"),
-    )
-    .await;
-    assert_eq!(refused["error"]["code"], "protected_path", "{refused}");
-    let key = authorize(
-        &socket,
-        broker.token(),
-        "read",
-        &home.join(".ssh/id_ed25519"),
-    )
-    .await;
-    assert_eq!(key["ok"], true, "{key}");
-    let card = asked.lock().unwrap()[0].clone();
-    assert_eq!(card.kind, Some(ApprovalKind::FileRead));
-    assert_eq!(card.connection_name, "Workspace");
-    for (name, path) in [
-        ("read", home.join("Documents/notes.md")),
-        ("grep", outside.clone()),
-        ("ls", home.clone()),
-        ("write", outside.join("q3/out.csv")),
-    ] {
-        let allowed = authorize(&socket, broker.token(), name, &path).await;
-        assert_eq!(allowed["ok"], true, "{name}: {allowed}");
-    }
-    assert_eq!(asked.lock().unwrap().len(), 1);
-    let written = authorize(
-        &socket,
-        broker.token(),
-        "write",
-        &workspace.join("notes/./x/../plan.md"),
-    )
-    .await;
-    assert_eq!(
-        written["result"]["resolved"],
-        json!(workspace.join("notes/plan.md")),
-        "{written}"
-    );
-    broker.shutdown().await.unwrap();
-
-    // After third-party text: an outside read asks once per folder, a
-    // decline pauses that kind, workspace and scratch stay open.
-    let (capture, asked) = turn_capture(
-        &temporary,
-        vec![ApprovalDecision::Once, ApprovalDecision::Deny],
-    );
-    capture.turn_taint.mark_untrusted_text();
-    let (broker, socket) = start_turn(&state, &temporary, "tainted", capture).await;
-    for file in ["q3/report.csv", "q3/notes.csv"] {
-        let allowed = authorize(&socket, broker.token(), "read", &outside.join(file)).await;
-        assert_eq!(allowed["ok"], true, "{allowed}");
-    }
-    assert_eq!(asked.lock().unwrap().len(), 1);
-    let target = asked.lock().unwrap()[0].target.clone().unwrap();
-    assert!(target.ends_with("q3/report.csv"), "{target}");
-    let declined = authorize(
-        &socket,
-        broker.token(),
-        "read",
-        &outside.join("q4/report.csv"),
-    )
-    .await;
-    assert_eq!(declined["error"]["code"], "user_declined", "{declined}");
-    let paused = authorize(
-        &socket,
-        broker.token(),
-        "read",
-        &home.join("Documents/notes.md"),
-    )
-    .await;
-    assert_eq!(paused["error"]["code"], "user_declined", "{paused}");
-    assert_eq!(asked.lock().unwrap().len(), 2);
-    for (name, path) in [
-        ("read", workspace.join("notes/plan.md")),
-        ("write", workspace.join("report.md")),
-        ("grep", workspace.clone()),
-        ("write", app.join("scratch/deck.pptx")),
-        ("write", outside.join("q3/out.csv")),
-    ] {
-        let decision = authorize(&socket, broker.token(), name, &path).await;
-        let expected = if name == "write" && path.starts_with(&outside) {
-            "ask"
-        } else {
-            "allow"
-        };
-        if expected == "ask" {
-            assert_eq!(
-                decision["error"]["code"], "user_declined",
-                "{name}: {decision}"
-            );
-        } else {
-            assert_eq!(decision["ok"], true, "{name}: {decision}");
+    // The same table decides a clean reply and one that read third-party text.
+    for (name, untrusted) in [("clean", false), ("tainted", true)] {
+        let capture = bound_capture(&temporary);
+        if untrusted {
+            capture.turn_taint.mark_untrusted_text();
         }
-    }
-    broker.shutdown().await.unwrap();
-}
-
-#[tokio::test]
-async fn a_reply_shows_at_most_twenty_cards_and_an_unasked_call_is_not_a_decline() {
-    let temporary = tempfile::tempdir().unwrap();
-    let state = seeded_state(&temporary);
-    let outside = temporary.path().join("shared");
-    let limit = crate::chat::progress::MAX_PROGRESS_APPROVALS;
-    for index in 0..=limit {
-        let file = outside.join(format!("folder-{index}/data.csv"));
-        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
-        std::fs::write(&file, "x").unwrap();
-    }
-    let (capture, asked) = turn_capture(&temporary, vec![ApprovalDecision::Once; limit]);
-    capture.turn_taint.mark_untrusted_text();
-    let (broker, socket) = start_turn(&state, &temporary, "cards", capture).await;
-    for index in 0..limit {
-        let allowed = broker_request(
+        let (broker, socket) = start_turn(&state, &temporary, name, capture).await;
+        let token = broker.token();
+        for (tool, path) in [
+            ("read", app.join("pi/auth.json")),
+            ("write", app.join("custom-connections/connections.json")),
+            ("read", home.join(".ssh/id_ed25519")),
+            ("ls", home.join(".ssh")),
+            ("write", workspace.join(".git/hooks/pre-commit")),
+            ("edit", workspace.join(".git/config")),
+            // A search root above the app data folder would descend into it.
+            ("grep", temporary.path().to_path_buf()),
+            ("find", temporary.path().parent().unwrap().to_path_buf()),
+            ("grep", app.join("pi")),
+        ] {
+            let refused = authorize(&socket, token, tool, &path).await;
+            assert_eq!(
+                refused["error"]["code"],
+                "protected_path",
+                "{name} {tool} {}: {refused}",
+                path.display()
+            );
+            assert_eq!(refused["error"]["retryable"], false);
+        }
+        for (tool, path) in [
+            ("read", home.join("Documents/notes.md")),
+            ("ls", home.clone()),
+            ("grep", outside.clone()),
+            ("read", outside.join("q3/report.csv")),
+            ("write", outside.join("q3/out.csv")),
+        ] {
+            let refused = authorize(&socket, token, tool, &path).await;
+            assert_eq!(
+                refused["error"]["code"], "outside_workspace",
+                "{name} {tool}: {refused}"
+            );
+            assert_eq!(refused["error"]["next"], OUTSIDE_WORKSPACE_REFUSAL);
+        }
+        for (tool, path) in [
+            ("read", workspace.join("notes/plan.md")),
+            ("write", workspace.join("report.md")),
+            ("grep", workspace.clone()),
+            ("read", workspace.join(".git/config")),
+            ("write", app.join("scratch/deck.pptx")),
+        ] {
+            let allowed = authorize(&socket, token, tool, &path).await;
+            assert_eq!(allowed["ok"], true, "{name} {tool}: {allowed}");
+        }
+        // An allowed write names its canonical target.
+        let written = authorize(
             &socket,
-            broker.token(),
-            "native.authorize",
-            json!({"name":"read","path":outside.join(format!("folder-{index}/data.csv"))}),
+            token,
+            "write",
+            &workspace.join("notes/./x/../plan.md"),
         )
         .await;
-        assert_eq!(allowed["ok"], true, "{index}: {allowed}");
+        assert_eq!(
+            written["result"]["resolved"],
+            json!(workspace.join("notes/plan.md")),
+            "{written}"
+        );
+        broker.shutdown().await.unwrap();
     }
-    assert_eq!(asked.lock().unwrap().len(), limit);
-    let unasked = broker_request(
-        &socket,
-        broker.token(),
-        "native.authorize",
-        json!({"name":"read","path":outside.join(format!("folder-{limit}/data.csv"))}),
-    )
-    .await;
-    assert_eq!(unasked["ok"], false, "{unasked}");
-    assert_eq!(unasked["error"]["code"], "execution_failed", "{unasked}");
-    assert_eq!(asked.lock().unwrap().len(), limit);
-    // The folders already allowed stay allowed: the kind was not declined.
-    let allowed = broker_request(
-        &socket,
-        broker.token(),
-        "native.authorize",
-        json!({"name":"read","path":outside.join("folder-0/data.csv")}),
-    )
-    .await;
-    assert_eq!(allowed["ok"], true, "{allowed}");
-    broker.shutdown().await.unwrap();
 }
 
 #[tokio::test]
@@ -945,7 +798,7 @@ async fn a_saved_web_source_comes_back_delimited_and_pauses_commands_in_a_later_
         );
     }
     let refused = broker_request(&socket, broker.token(), "native.authorize", bash.clone()).await;
-    refused_with(&refused, COMMAND_DECLINED_REFUSAL);
+    refused_with(&refused, COMMAND_UNCONFINED_REFUSAL);
     broker.shutdown().await.unwrap();
 
     // Turn 3: an exact read of the Source raises the tier on its own.
@@ -972,7 +825,7 @@ async fn a_saved_web_source_comes_back_delimited_and_pauses_commands_in_a_later_
     let body = delimited_body(text).unwrap();
     assert!(body.contains("Ignore the user"), "{body}");
     let refused = broker_request(&socket, broker.token(), "native.authorize", bash).await;
-    refused_with(&refused, COMMAND_DECLINED_REFUSAL);
+    refused_with(&refused, COMMAND_UNCONFINED_REFUSAL);
     broker.shutdown().await.unwrap();
 }
 
@@ -1079,7 +932,7 @@ async fn a_retained_news_dataset_queried_later_is_delimited_and_numeric_rows_are
         assert!(delimited_body(delivered).is_some(), "{name}: {delivered}");
         let refused =
             broker_request(&socket, broker.token(), "native.authorize", bash.clone()).await;
-        refused_with(&refused, COMMAND_DECLINED_REFUSAL);
+        refused_with(&refused, COMMAND_UNCONFINED_REFUSAL);
         broker.shutdown().await.unwrap();
     }
     // The retained dataset keeps the provider's bytes.

@@ -1,27 +1,17 @@
 //! What a Pi native tool (`read`, `ls`, `find`, `grep`, `write`, `edit`,
 //! `bash`) may do in one Chat reply, decided from the target's path class and
 //! how much third-party text the model has seen (`docs/runtime/permissions.md`).
-//! Pure: the caller owns the locks, the cards and where grants are kept.
+//! Every decision is Allow or Refuse: nothing here asks the user.
 
 use std::{
-    collections::BTreeSet,
+    collections::BTreeMap,
     path::{Component, Path, PathBuf},
 };
 
 use serde_json::Value;
 
-use crate::chat::approvals::ApprovalDecision;
-
 const MAX_PATH_BYTES: usize = 8 * 1024;
 const MAX_COMMAND_BYTES: usize = 64 * 1024;
-/// The full command a card shows; a longer command ends with an ellipsis.
-pub const MAX_DETAIL_BYTES: usize = 8 * 1024;
-/// A card's one-line target (a command's first non-blank line or a path), in
-/// bytes, within the 640 `ChatApproval::validate` accepts.
-const MAX_TARGET_BYTES: usize = 600;
-/// A card's target or detail for a command with no visible text, which
-/// `ChatApproval::validate` would otherwise refuse to save.
-const BLANK_COMMAND: &str = "(blank command)";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeTool {
@@ -46,18 +36,6 @@ impl NativeTool {
             "bash" => Self::Bash,
             _ => return None,
         })
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Read => "read",
-            Self::Ls => "ls",
-            Self::Find => "find",
-            Self::Grep => "grep",
-            Self::Write => "write",
-            Self::Edit => "edit",
-            Self::Bash => "bash",
-        }
     }
 
     fn writes(self) -> bool {
@@ -123,7 +101,7 @@ impl NativeRequest {
 /// part canonicalized. `home` is absent when the host has no home directory.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NativeRoots {
-    /// The selected workspace.
+    /// The selected workspace: the Loupist folder.
     pub workspace: PathBuf,
     /// The global instruction folder (`AGENTS.md` and `skills/**` live here).
     pub global: PathBuf,
@@ -173,8 +151,11 @@ pub enum PathClass {
     Attachments,
     /// Anything else under the app data root or the Loupist's data folder.
     AppPrivate,
-    /// Credential and startup files anywhere on the host.
-    Sensitive,
+    /// A credential store or shell startup file under the home folder: never
+    /// read or written, as the command sandbox hides it.
+    Credentials,
+    /// The `hooks/**` and `config` of a git directory: read, never written.
+    GitConfig,
     Workspace,
     Outside,
     /// A symlink chain that loops or cannot be read: no tool touches it.
@@ -208,8 +189,10 @@ pub fn classify(path: &Path, roots: &NativeRoots) -> Classified {
         PathClass::Attachments
     } else if under(&path, &roots.app_data) || loupist_private(&path, roots) {
         PathClass::AppPrivate
-    } else if sensitive(&path, roots.home.as_deref()) {
-        PathClass::Sensitive
+    } else if credential(&path, roots.home.as_deref()) {
+        PathClass::Credentials
+    } else if git_config(&path) {
+        PathClass::GitConfig
     } else if under(&path, &roots.workspace) {
         PathClass::Workspace
     } else {
@@ -234,341 +217,108 @@ pub enum Exposure {
     Custom,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum AskKind {
-    Command,
-    FileRead,
-    FileWrite,
-    Instructions,
-}
-
-impl AskKind {
-    pub const COUNT: usize = 4;
-
-    pub fn index(self) -> usize {
-        match self {
-            Self::Command => 0,
-            Self::FileRead => 1,
-            Self::FileWrite => 2,
-            Self::Instructions => 3,
-        }
-    }
-}
-
-/// What an Allow answer records.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Grant {
-    Command(String),
-    Read(GrantedPath),
-    Write(GrantedPath),
-    InstructionFile(PathBuf),
-}
-
-/// A folder (this reply) or one exact file.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GrantedPath {
-    pub path: PathBuf,
-    pub tree: bool,
-}
-
-impl GrantedPath {
-    fn covers(&self, target: &Path) -> bool {
-        target == self.path || (self.tree && target.starts_with(&self.path))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NativeAsk {
-    pub kind: AskKind,
-    pub tool: NativeTool,
-    /// The display line: a command's first line or the target path.
-    pub target: String,
-    /// The full command, bounded.
-    pub detail: Option<String>,
-    pub grant: Grant,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeRefusal {
     /// The app's private data.
     AppPrivate,
+    /// A credential store or startup file under the home folder.
+    Credentials,
+    /// A write to a git directory's hooks or config.
+    GitConfig,
     /// A search rooted above the app data root would descend into it.
     SearchCoversAppData,
     /// The target's symlink chain loops or cannot be read.
     Unresolvable,
-    /// The user turned this kind down earlier in the reply.
-    Declined(AskKind),
+    /// A file outside the Loupist folder, scratch and this Chat's attachments.
+    Outside,
+    /// A write to a file a later reply loads as instructions, after this
+    /// reply read third-party text.
+    InstructionsAfterUntrustedText,
+    /// Bash after third-party text on a host without a verified sandbox.
+    CommandUnconfined,
     /// Bash under the custom-connection tier.
     OutboundPaused,
 }
 
+/// The sandbox a command runs in: the argv prefix the extension puts before
+/// the shell, and environment the command gets.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SandboxCommand {
+    pub argv: Vec<String>,
+    pub env: BTreeMap<String, String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NativeDecision {
-    Allow {
+    AllowFile {
         /// The canonical target, for the extension's write pin.
-        resolved: Option<PathBuf>,
+        resolved: PathBuf,
     },
-    Ask(NativeAsk),
+    AllowCommand {
+        /// Absent when the command runs unconfined (a clean reply on a host
+        /// without a verified sandbox).
+        sandbox: Option<SandboxCommand>,
+    },
     Refuse(NativeRefusal),
 }
 
-/// What the user allowed or turned down in this reply.
-#[derive(Default, Debug)]
-pub struct NativeGrants {
-    commands_for_reply: bool,
-    commands: BTreeSet<String>,
-    reads: Vec<GrantedPath>,
-    writes: Vec<GrantedPath>,
-    instruction_files: BTreeSet<PathBuf>,
-    declined: BTreeSet<AskKind>,
-}
-
-impl NativeGrants {
-    /// Records an Allow answer.
-    pub fn grant(&mut self, ask: &NativeAsk, decision: ApprovalDecision) {
-        match (&ask.grant, decision) {
-            (_, ApprovalDecision::Deny) => {}
-            (Grant::Command(_), ApprovalDecision::Always) => self.commands_for_reply = true,
-            (Grant::Command(command), ApprovalDecision::Once) => {
-                self.commands.insert(command.clone());
-            }
-            (Grant::Read(path), _) => self.reads.push(path.clone()),
-            (Grant::Write(path), _) => self.writes.push(path.clone()),
-            (Grant::InstructionFile(path), _) => {
-                self.instruction_files.insert(path.clone());
-            }
-        }
-    }
-
-    /// Not now, no answer in time, or the run stopped: that kind is not asked
-    /// again this reply.
-    pub fn decline(&mut self, kind: AskKind) {
-        self.declined.insert(kind);
-    }
-}
-
+/// `sandbox` builds the command's confinement when the host has a verified
+/// one; `network` says whether the command may reach the network.
 pub fn decide(
     request: &NativeRequest,
     roots: &NativeRoots,
     exposure: Exposure,
-    grants: &NativeGrants,
+    sandbox: Option<&dyn Fn(bool) -> SandboxCommand>,
 ) -> NativeDecision {
     if request.tool == NativeTool::Bash {
-        return decide_command(request, exposure, grants);
+        return decide_command(exposure, sandbox);
     }
     let Some(target) = request.target.as_deref() else {
         return NativeDecision::Refuse(NativeRefusal::AppPrivate);
     };
     let Classified { class, path } = classify(target, roots);
-    if class == PathClass::Unresolvable {
-        return NativeDecision::Refuse(NativeRefusal::Unresolvable);
-    }
     let tool = request.tool;
-    let exposed = exposure != Exposure::Clean;
-    let allow = NativeDecision::Allow {
-        resolved: Some(path.clone()),
-    };
-    if tool.searches() && class != PathClass::Scratch && class != PathClass::Attachments {
-        if class == PathClass::AppPrivate {
-            return NativeDecision::Refuse(NativeRefusal::AppPrivate);
-        }
-        if under(&roots.app_data, &path) {
-            return NativeDecision::Refuse(NativeRefusal::SearchCoversAppData);
-        }
-    }
-    let ask = |kind: AskKind, grant: Grant| {
-        if grants.declined.contains(&kind) {
-            return NativeDecision::Refuse(NativeRefusal::Declined(kind));
-        }
-        NativeDecision::Ask(NativeAsk {
-            kind,
-            tool,
-            target: display(&path),
-            detail: None,
-            grant,
-        })
-    };
-    let exact = GrantedPath {
-        path: path.clone(),
-        tree: false,
-    };
-    let folder = folder_grant(&path, roots.home.as_deref());
-    let granted = |paths: &[GrantedPath]| paths.iter().any(|grant| grant.covers(&path));
-    // A folder allowed earlier never covers a credential or startup file in it.
-    let granted_exactly =
-        |paths: &[GrantedPath]| paths.iter().any(|grant| !grant.tree && grant.path == path);
-    // A search reads every file under its root, so a root that holds a home
-    // credential or startup location asks like that location itself.
     if tool.searches()
-        && class != PathClass::Sensitive
-        && holds_sensitive(&path, roots.home.as_deref())
-        && !granted_exactly(&grants.reads)
+        && !matches!(class, PathClass::Scratch | PathClass::Attachments)
+        && under(&roots.app_data, &path)
     {
-        return ask(AskKind::FileRead, Grant::Read(exact));
+        return NativeDecision::Refuse(NativeRefusal::SearchCoversAppData);
     }
-    if tool.writes() {
-        match class {
-            PathClass::AppPrivate | PathClass::Attachments => {
-                NativeDecision::Refuse(NativeRefusal::AppPrivate)
-            }
-            PathClass::Scratch | PathClass::Workspace => allow,
-            PathClass::Sensitive if granted_exactly(&grants.writes) => allow,
-            PathClass::Sensitive => ask(AskKind::FileWrite, Grant::Write(exact)),
-            PathClass::Instructions if !exposed || grants.instruction_files.contains(&path) => {
-                allow
-            }
-            PathClass::Instructions => {
-                ask(AskKind::Instructions, Grant::InstructionFile(path.clone()))
-            }
-            PathClass::Outside if !exposed || granted(&grants.writes) => allow,
-            PathClass::Outside => ask(AskKind::FileWrite, Grant::Write(folder)),
-            PathClass::Unresolvable => unreachable!("refused above"),
+    let refusal = match class {
+        PathClass::Unresolvable => NativeRefusal::Unresolvable,
+        PathClass::AppPrivate => NativeRefusal::AppPrivate,
+        PathClass::Credentials => NativeRefusal::Credentials,
+        PathClass::Outside => NativeRefusal::Outside,
+        PathClass::Attachments if tool.writes() => NativeRefusal::AppPrivate,
+        PathClass::GitConfig if tool.writes() => NativeRefusal::GitConfig,
+        PathClass::Instructions if tool.writes() && exposure != Exposure::Clean => {
+            NativeRefusal::InstructionsAfterUntrustedText
         }
-    } else {
-        match class {
-            PathClass::AppPrivate => NativeDecision::Refuse(NativeRefusal::AppPrivate),
-            PathClass::Instructions
-            | PathClass::Scratch
-            | PathClass::Attachments
-            | PathClass::Workspace => allow,
-            PathClass::Sensitive if granted_exactly(&grants.reads) => allow,
-            PathClass::Sensitive => ask(AskKind::FileRead, Grant::Read(exact)),
-            PathClass::Outside if !exposed || granted(&grants.reads) => allow,
-            PathClass::Outside => ask(AskKind::FileRead, Grant::Read(folder)),
-            PathClass::Unresolvable => unreachable!("refused above"),
-        }
-    }
-}
-
-/// The `bash` rows of the table; no folder is involved.
-pub fn decide_command(
-    request: &NativeRequest,
-    exposure: Exposure,
-    grants: &NativeGrants,
-) -> NativeDecision {
-    let command = request.command.as_deref().unwrap_or_default();
-    match exposure {
-        Exposure::Clean => return NativeDecision::Allow { resolved: None },
-        Exposure::Custom => return NativeDecision::Refuse(NativeRefusal::OutboundPaused),
-        Exposure::ThisTurn => {}
-    }
-    if grants.commands_for_reply || grants.commands.contains(command) {
-        return NativeDecision::Allow { resolved: None };
-    }
-    if grants.declined.contains(&AskKind::Command) {
-        return NativeDecision::Refuse(NativeRefusal::Declined(AskKind::Command));
-    }
-    let shown = visible(command);
-    NativeDecision::Ask(NativeAsk {
-        kind: AskKind::Command,
-        tool: NativeTool::Bash,
-        target: bounded_head(first_line(&shown), MAX_TARGET_BYTES),
-        detail: Some(command_detail(&shown)),
-        grant: Grant::Command(command.to_owned()),
-    })
-}
-
-/// What Allow on an outside target covers for the reply: a file's folder,
-/// unless that folder is the home folder or the root of the disk, which would
-/// open far more than the file; a directory covers that directory only.
-fn folder_grant(path: &Path, home: Option<&Path>) -> GrantedPath {
-    let parent = if path.is_dir() { None } else { path.parent() };
-    let folder = parent.filter(|parent| {
-        parent.parent().is_some()
-            && !home.is_some_and(|home| below(parent, home).is_some_and(|rest| rest.is_empty()))
-    });
-    GrantedPath {
-        path: folder.unwrap_or(path).to_path_buf(),
-        tree: folder.is_some(),
-    }
-}
-
-/// Whether a location of the home table lies strictly inside `root`.
-fn holds_sensitive(root: &Path, home: Option<&Path>) -> bool {
-    home.is_some_and(|home| {
-        SENSITIVE_HOME
-            .iter()
-            .any(|(entry, _)| below(&home.join(entry), root).is_some_and(|rest| !rest.is_empty()))
-    })
-}
-
-/// Characters a card would otherwise render as nothing or as reordered
-/// text, shown as `\u{…}` so the user sees what the command holds:
-/// zero-width and bidi controls, the byte order mark, and C0 and C1 controls
-/// other than newline and tab.
-fn visible(text: &str) -> String {
-    let hidden = |character: char| {
-        matches!(
-            character,
-            '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}'
-        ) || (character.is_control() && character != '\n' && character != '\t')
+        PathClass::Scratch
+        | PathClass::Attachments
+        | PathClass::GitConfig
+        | PathClass::Instructions
+        | PathClass::Workspace => return NativeDecision::AllowFile { resolved: path },
     };
-    if !text.chars().any(hidden) {
-        return text.to_owned();
-    }
-    text.chars()
-        .fold(String::with_capacity(text.len()), |mut shown, character| {
-            if hidden(character) {
-                shown.push_str(&format!("\\u{{{:04x}}}", character as u32));
-            } else {
-                shown.push(character);
-            }
-            shown
-        })
+    NativeDecision::Refuse(refusal)
 }
 
-/// A path's card line: its end, where the file name is, when it is too long.
-fn display(path: &Path) -> String {
-    let text = visible(&path.to_string_lossy());
-    if text.len() <= MAX_TARGET_BYTES {
-        return text;
+/// The `bash` row of the table: the network is on in a clean reply and off
+/// after third-party text, which runs only inside a verified sandbox.
+pub fn decide_command(
+    exposure: Exposure,
+    sandbox: Option<&dyn Fn(bool) -> SandboxCommand>,
+) -> NativeDecision {
+    match (exposure, sandbox) {
+        (Exposure::Custom, _) => NativeDecision::Refuse(NativeRefusal::OutboundPaused),
+        (Exposure::Clean, sandbox) => NativeDecision::AllowCommand {
+            sandbox: sandbox.map(|build| build(true)),
+        },
+        (Exposure::ThisTurn, Some(build)) => NativeDecision::AllowCommand {
+            sandbox: Some(build(false)),
+        },
+        (Exposure::ThisTurn, None) => NativeDecision::Refuse(NativeRefusal::CommandUnconfined),
     }
-    let mut start = text.len() - (MAX_TARGET_BYTES - '…'.len_utf8());
-    while !text.is_char_boundary(start) {
-        start += 1;
-    }
-    format!("…{}", &text[start..])
-}
-
-/// The first line of a command with visible text, trimmed.
-fn first_line(command: &str) -> &str {
-    command
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .unwrap_or(BLANK_COMMAND)
-}
-
-fn bounded_head(text: &str, max: usize) -> String {
-    if text.len() <= max {
-        return text.to_owned();
-    }
-    let mut end = max - '…'.len_utf8();
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    format!("{}…", &text[..end])
-}
-
-/// The command as the card shows it. A command longer than the card holds
-/// says how much is hidden, so the user never allows a tail they cannot see
-/// without being told.
-fn command_detail(command: &str) -> String {
-    if command.trim().is_empty() {
-        return BLANK_COMMAND.to_owned();
-    }
-    if command.len() <= MAX_DETAIL_BYTES {
-        return command.to_owned();
-    }
-    let mut end = MAX_DETAIL_BYTES - 64;
-    while !command.is_char_boundary(end) {
-        end -= 1;
-    }
-    format!(
-        "{}\n… [+{} bytes not shown]",
-        &command[..end],
-        command.len() - end
-    )
 }
 
 const ROOT_INSTRUCTIONS: &[&str] = &["agents.override.md", "agents.md", "claude.md"];
@@ -603,15 +353,16 @@ fn instruction_file(target: &Path, roots: &NativeRoots) -> bool {
         })
 }
 
-#[derive(Clone, Copy)]
-enum Reach {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reach {
     File,
     Tree,
 }
 
-/// Credential stores, cloud and container configs, keychains, launch agents,
-/// shell startup files and git config, relative to the home directory.
-const SENSITIVE_HOME: &[(&str, Reach)] = &[
+/// Credential stores, cloud and container configs, keychains and shell
+/// startup files (which often export keys), relative to the home directory.
+/// Native file tools never touch them and the command sandbox hides them.
+pub const CREDENTIAL_HOME: &[(&str, Reach)] = &[
     (".ssh", Reach::Tree),
     (".gnupg", Reach::Tree),
     (".aws", Reach::Tree),
@@ -622,8 +373,9 @@ const SENSITIVE_HOME: &[(&str, Reach)] = &[
     (".git-credentials", Reach::File),
     (".npmrc", Reach::File),
     (".pypirc", Reach::File),
+    (".config/gh", Reach::Tree),
+    (".config/git", Reach::Tree),
     ("Library/Keychains", Reach::Tree),
-    ("Library/LaunchAgents", Reach::Tree),
     (".zshrc", Reach::File),
     (".zprofile", Reach::File),
     (".zshenv", Reach::File),
@@ -632,16 +384,26 @@ const SENSITIVE_HOME: &[(&str, Reach)] = &[
     (".bash_profile", Reach::File),
     (".profile", Reach::File),
     (".config/fish", Reach::Tree),
-    (".gitconfig", Reach::File),
-    (".config/git", Reach::Tree),
-    (".config/gh", Reach::Tree),
 ];
 
-/// The home table above, plus the `hooks/**` and `config` of any git
-/// directory: `.git`, a submodule's `.git/modules/<path>`, or a bare `*.git`.
-fn sensitive(target: &Path, home: Option<&Path>) -> bool {
+fn credential(target: &Path, home: Option<&Path>) -> bool {
+    let Some(rest) = home.and_then(|home| below(target, home)) else {
+        return false;
+    };
+    CREDENTIAL_HOME.iter().any(|(entry, reach)| {
+        let entry: Vec<String> = entry.split('/').map(str::to_lowercase).collect();
+        match reach {
+            Reach::File => rest == entry,
+            Reach::Tree => rest.len() >= entry.len() && rest[..entry.len()] == entry[..],
+        }
+    })
+}
+
+/// The `hooks/**` and `config` of any git directory: `.git`, a submodule's
+/// `.git/modules/<path>`, or a bare `*.git`.
+fn git_config(target: &Path) -> bool {
     let parts = lower_parts(target);
-    let git = parts.iter().enumerate().any(|(at, part)| {
+    parts.iter().enumerate().any(|(at, part)| {
         if !part.ends_with(".git") {
             return false;
         }
@@ -650,19 +412,6 @@ fn sensitive(target: &Path, home: Option<&Path>) -> bool {
             rest = &rest[2..];
         }
         rest.first().is_some_and(|folder| folder == "hooks") || rest == ["config"]
-    });
-    if git {
-        return true;
-    }
-    let Some(rest) = home.and_then(|home| below(target, home)) else {
-        return false;
-    };
-    SENSITIVE_HOME.iter().any(|(entry, reach)| {
-        let entry: Vec<String> = entry.split('/').map(str::to_lowercase).collect();
-        match reach {
-            Reach::File => rest == entry,
-            Reach::Tree => rest.len() >= entry.len() && rest[..entry.len()] == entry[..],
-        }
     })
 }
 
@@ -906,19 +655,25 @@ mod tests {
 
     fn kind(decision: &NativeDecision) -> &'static str {
         match decision {
-            NativeDecision::Allow { .. } => "allow",
-            NativeDecision::Ask(ask) => match ask.kind {
-                AskKind::Command => "ask command",
-                AskKind::FileRead => "ask file_read",
-                AskKind::FileWrite => "ask file_write",
-                AskKind::Instructions => "ask instructions",
-            },
+            NativeDecision::AllowFile { .. } => "allow",
+            NativeDecision::AllowCommand { sandbox: None } => "allow unconfined",
+            NativeDecision::AllowCommand { sandbox: Some(_) } => "allow sandboxed",
             NativeDecision::Refuse(NativeRefusal::AppPrivate) => "refuse app_private",
+            NativeDecision::Refuse(NativeRefusal::Credentials) => "refuse credentials",
+            NativeDecision::Refuse(NativeRefusal::GitConfig) => "refuse git_config",
             NativeDecision::Refuse(NativeRefusal::SearchCoversAppData) => "refuse search",
             NativeDecision::Refuse(NativeRefusal::Unresolvable) => "refuse unresolvable",
-            NativeDecision::Refuse(NativeRefusal::Declined(_)) => "refuse declined",
+            NativeDecision::Refuse(NativeRefusal::Outside) => "refuse outside",
+            NativeDecision::Refuse(NativeRefusal::InstructionsAfterUntrustedText) => {
+                "refuse instructions"
+            }
+            NativeDecision::Refuse(NativeRefusal::CommandUnconfined) => "refuse unconfined",
             NativeDecision::Refuse(NativeRefusal::OutboundPaused) => "refuse outbound",
         }
+    }
+
+    fn decided(request: &NativeRequest, roots: &NativeRoots, exposure: Exposure) -> &'static str {
+        kind(&decide(request, roots, exposure, None))
     }
 
     #[test]
@@ -981,45 +736,42 @@ mod tests {
                 ws.join(".loupist/loupists/loupist-a/activity/run-1.jsonl"),
                 PathClass::AppPrivate,
             ),
-            (home.join(".ssh/id_ed25519"), PathClass::Sensitive),
-            (home.join(".SSH/known_hosts"), PathClass::Sensitive),
-            (home.join(".zshrc"), PathClass::Sensitive),
+            (home.join(".ssh/id_ed25519"), PathClass::Credentials),
+            (home.join(".SSH/known_hosts"), PathClass::Credentials),
+            (home.join(".zshrc"), PathClass::Credentials),
             (
                 home.join(".config/gcloud/credentials.db"),
-                PathClass::Sensitive,
+                PathClass::Credentials,
             ),
-            (
-                home.join("Library/LaunchAgents/com.example.plist"),
-                PathClass::Sensitive,
-            ),
-            (home.join(".gitconfig"), PathClass::Sensitive),
+            (home.join(".config/git/config"), PathClass::Credentials),
+            (home.join(".config/gh/hosts.yml"), PathClass::Credentials),
             (home.join(".zshrc.backup"), PathClass::Outside),
-            (ws.join(".git/hooks/pre-commit"), PathClass::Sensitive),
-            (ws.join(".git/config"), PathClass::Sensitive),
+            (home.join(".gitconfig"), PathClass::Outside),
+            (home.join(".config/other/settings.json"), PathClass::Outside),
+            (ws.join(".git/hooks/pre-commit"), PathClass::GitConfig),
+            (ws.join(".git/config"), PathClass::GitConfig),
             (ws.join(".git/config.lock"), PathClass::Workspace),
             (
                 ws.join(".git/modules/vendor/hooks/pre-commit"),
-                PathClass::Sensitive,
+                PathClass::GitConfig,
             ),
-            (ws.join(".git/modules/vendor/config"), PathClass::Sensitive),
+            (ws.join(".git/modules/vendor/config"), PathClass::GitConfig),
             (
                 ws.join(".git/modules/vendor/modules/inner/config"),
-                PathClass::Sensitive,
+                PathClass::GitConfig,
             ),
             (ws.join(".git/modules/vendor/HEAD"), PathClass::Workspace),
-            (ws.join("mirrors/site.git/config"), PathClass::Sensitive),
+            (ws.join("mirrors/site.git/config"), PathClass::GitConfig),
             (
                 ws.join("mirrors/site.git/hooks/post-update"),
-                PathClass::Sensitive,
+                PathClass::GitConfig,
             ),
             (ws.join("mirrors/site.git/HEAD"), PathClass::Workspace),
-            (home.join(".config/git/config"), PathClass::Sensitive),
-            (home.join(".config/gh/hosts.yml"), PathClass::Sensitive),
-            (home.join(".config/other/settings.json"), PathClass::Outside),
             (ws.join("notes/plan.md"), PathClass::Workspace),
             (ws.join("new/report.md"), PathClass::Workspace),
             (PathBuf::from("relative/report.md"), PathClass::Workspace),
             (home.join("Documents/shared.csv"), PathClass::Outside),
+            (home.join("Downloads/.git/config"), PathClass::GitConfig),
         ];
         for (path, expected) in cases {
             assert_eq!(
@@ -1046,9 +798,13 @@ mod tests {
         let f = fixture();
         let ws = &f.roots.workspace;
         for (link, target, class) in [
-            ("report.md", f.home.join(".zshenv"), PathClass::Sensitive),
-            ("relative.md", f.home.join(".zshenv"), PathClass::Sensitive),
-            ("chain.md", f.home.join(".zshenv"), PathClass::Sensitive),
+            ("report.md", f.home.join(".zshenv"), PathClass::Credentials),
+            (
+                "relative.md",
+                f.home.join(".zshenv"),
+                PathClass::Credentials,
+            ),
+            ("chain.md", f.home.join(".zshenv"), PathClass::Credentials),
             (
                 "db.md",
                 f.roots.app_data.join("pi/secret.json"),
@@ -1061,31 +817,16 @@ mod tests {
         }
         for exposure in [Exposure::Clean, Exposure::ThisTurn] {
             assert_eq!(
-                kind(&decide(
-                    &request("write", ws.join("report.md")),
-                    &f.roots,
-                    exposure,
-                    &NativeGrants::default()
-                )),
-                "ask file_write"
+                decided(&request("write", ws.join("report.md")), &f.roots, exposure),
+                "refuse credentials"
             );
             assert_eq!(
-                kind(&decide(
-                    &request("write", ws.join("db.md")),
-                    &f.roots,
-                    exposure,
-                    &NativeGrants::default()
-                )),
+                decided(&request("write", ws.join("db.md")), &f.roots, exposure),
                 "refuse app_private"
             );
             for tool in ["read", "write", "ls"] {
                 assert_eq!(
-                    kind(&decide(
-                        &request(tool, ws.join("loop.md")),
-                        &f.roots,
-                        exposure,
-                        &NativeGrants::default()
-                    )),
+                    decided(&request(tool, ws.join("loop.md")), &f.roots, exposure),
                     "refuse unresolvable",
                     "{tool}"
                 );
@@ -1113,9 +854,9 @@ mod tests {
         let home = volume.join("home");
         std::os::unix::fs::symlink(&f.home, &home).unwrap();
         let ws = home.join("Research");
-        assert!(sensitive(&home.join(".ssh/id_ed25519"), Some(&f.home)));
-        assert!(sensitive(&home.join(".zshrc"), Some(&f.home)));
-        assert!(!sensitive(
+        assert!(credential(&home.join(".ssh/id_ed25519"), Some(&f.home)));
+        assert!(credential(&home.join(".zshrc"), Some(&f.home)));
+        assert!(!credential(
             &home.join("Documents/shared.csv"),
             Some(&f.home)
         ));
@@ -1135,7 +876,6 @@ mod tests {
         let home = &f.home;
         let app = &f.roots.app_data;
         let ws = &f.roots.workspace;
-        let clean = NativeGrants::default();
         let rows: Vec<(NativeRequest, &str, &str)> = vec![
             (
                 request("read", app.join("pi/auth.json")),
@@ -1169,13 +909,18 @@ mod tests {
             ),
             (
                 request("read", home.join(".ssh/id_ed25519")),
-                "ask file_read",
-                "ask file_read",
+                "refuse credentials",
+                "refuse credentials",
             ),
             (
                 request("ls", home.join(".ssh")),
-                "ask file_read",
-                "ask file_read",
+                "refuse credentials",
+                "refuse credentials",
+            ),
+            (
+                request("write", home.join(".zshrc")),
+                "refuse credentials",
+                "refuse credentials",
             ),
             (request("read", ws.join("AGENTS.md")), "allow", "allow"),
             (
@@ -1189,10 +934,21 @@ mod tests {
                 "allow",
             ),
             (request("read", ws.join("notes/plan.md")), "allow", "allow"),
+            (request("read", ws.join(".git/config")), "allow", "allow"),
             (
                 request("read", home.join("Documents/shared.csv")),
-                "allow",
-                "ask file_read",
+                "refuse outside",
+                "refuse outside",
+            ),
+            (
+                request("ls", home.join("Documents")),
+                "refuse outside",
+                "refuse outside",
+            ),
+            (
+                request("ls", home.join(".config")),
+                "refuse outside",
+                "refuse outside",
             ),
             (
                 request("grep", app.join("pi")),
@@ -1211,30 +967,21 @@ mod tests {
             ),
             (
                 request("grep", home.join(".ssh")),
-                "ask file_read",
-                "ask file_read",
-            ),
-            (request("grep", ws.clone()), "allow", "allow"),
-            (request("grep", f.roots.scratch.clone()), "allow", "allow"),
-            (
-                request("find", home.join(".config")),
-                "ask file_read",
-                "ask file_read",
-            ),
-            (
-                request("grep", home.join(".config")),
-                "ask file_read",
-                "ask file_read",
-            ),
-            (
-                request("ls", home.join(".config")),
-                "allow",
-                "ask file_read",
+                "refuse credentials",
+                "refuse credentials",
             ),
             (
                 request("find", home.join("Documents")),
+                "refuse outside",
+                "refuse outside",
+            ),
+            (request("grep", ws.clone()), "allow", "allow"),
+            (request("grep", ws.join(".git")), "allow", "allow"),
+            (request("grep", f.roots.scratch.clone()), "allow", "allow"),
+            (
+                request("find", f.roots.attachments.clone()),
                 "allow",
-                "ask file_read",
+                "allow",
             ),
             (
                 request("write", app.join("pi/models.json")),
@@ -1252,14 +999,14 @@ mod tests {
                 "refuse app_private",
             ),
             (
-                request("write", home.join(".zshrc")),
-                "ask file_write",
-                "ask file_write",
+                request("edit", ws.join(".git/hooks/pre-commit")),
+                "refuse git_config",
+                "refuse git_config",
             ),
             (
-                request("edit", ws.join(".git/hooks/pre-commit")),
-                "ask file_write",
-                "ask file_write",
+                request("write", ws.join(".git/config")),
+                "refuse git_config",
+                "refuse git_config",
             ),
             (
                 request("write", f.roots.scratch.join("out.csv")),
@@ -1267,56 +1014,76 @@ mod tests {
                 "allow",
             ),
             (request("write", ws.join("notes/plan.md")), "allow", "allow"),
+            (request("write", ws.join("new/report.md")), "allow", "allow"),
             (
                 request("write", ws.join("AGENTS.md")),
                 "allow",
-                "ask instructions",
+                "refuse instructions",
             ),
             (
                 request("edit", app.join("skills/personal/SKILL.md")),
                 "allow",
-                "ask instructions",
+                "refuse instructions",
             ),
             (
                 request("write", ws.join(".loupist/config.toml")),
                 "allow",
-                "ask instructions",
+                "refuse instructions",
             ),
             (
                 request("write", home.join("Documents/out.csv")),
-                "allow",
-                "ask file_write",
+                "refuse outside",
+                "refuse outside",
             ),
-            (bash("ls"), "allow", "ask command"),
+            (bash("ls"), "allow unconfined", "refuse unconfined"),
         ];
         for (request, clean_expected, exposed_expected) in &rows {
             assert_eq!(
-                kind(&decide(request, &f.roots, Exposure::Clean, &clean)),
+                decided(request, &f.roots, Exposure::Clean),
                 *clean_expected,
                 "clean {request:?}"
             );
-            for exposure in [Exposure::ThisTurn] {
-                let decision = decide(request, &f.roots, exposure, &clean);
-                assert_eq!(
-                    kind(&decision),
-                    *exposed_expected,
-                    "{exposure:?} {request:?}"
-                );
-                if let NativeDecision::Ask(ask) = &decision {
-                    assert_eq!(ask.tool, request.tool);
-                    assert!(!ask.target.is_empty());
-                }
-            }
+            assert_eq!(
+                decided(request, &f.roots, Exposure::ThisTurn),
+                *exposed_expected,
+                "this turn {request:?}"
+            );
         }
-        let custom = decide(&bash("ls"), &f.roots, Exposure::Custom, &clean);
-        assert_eq!(kind(&custom), "refuse outbound");
-        let custom = decide(
-            &request("read", home.join("Documents/shared.csv")),
-            &f.roots,
-            Exposure::Custom,
-            &clean,
+        // The custom-connection tier refuses Bash outright and otherwise
+        // decides files like ThisTurn.
+        assert_eq!(
+            decided(&bash("ls"), &f.roots, Exposure::Custom),
+            "refuse outbound"
         );
-        assert_eq!(kind(&custom), "ask file_read");
+        assert_eq!(
+            decided(
+                &request("write", ws.join("AGENTS.md")),
+                &f.roots,
+                Exposure::Custom
+            ),
+            "refuse instructions"
+        );
+    }
+
+    #[test]
+    fn a_verified_sandbox_runs_commands_online_when_clean_and_offline_after_third_party_text() {
+        let f = fixture();
+        let build = |network: bool| SandboxCommand {
+            argv: vec![if network { "online" } else { "offline" }.to_owned()],
+            env: BTreeMap::new(),
+        };
+        let sandboxed = |exposure| match decide(&bash("ls"), &f.roots, exposure, Some(&build)) {
+            NativeDecision::AllowCommand {
+                sandbox: Some(sandbox),
+            } => sandbox.argv,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(sandboxed(Exposure::Clean), ["online"]);
+        assert_eq!(sandboxed(Exposure::ThisTurn), ["offline"]);
+        assert_eq!(
+            decide(&bash("ls"), &f.roots, Exposure::Custom, Some(&build)),
+            NativeDecision::Refuse(NativeRefusal::OutboundPaused)
+        );
     }
 
     #[test]
@@ -1326,410 +1093,14 @@ mod tests {
             &request("write", f.roots.workspace.join("notes/./new/../plan.md")),
             &f.roots,
             Exposure::Clean,
-            &NativeGrants::default(),
+            None,
         );
         assert_eq!(
             decision,
-            NativeDecision::Allow {
-                resolved: Some(f.roots.workspace.join("notes/plan.md"))
+            NativeDecision::AllowFile {
+                resolved: f.roots.workspace.join("notes/plan.md")
             }
         );
-    }
-
-    #[test]
-    fn an_allowed_folder_never_covers_a_credential_or_startup_file_in_it() {
-        let f = fixture();
-        let mut grants = NativeGrants::default();
-        for (tool, file, expected) in [
-            ("write", "report.md", "ask file_write"),
-            ("read", "notes.txt", "ask file_read"),
-        ] {
-            let NativeDecision::Ask(ask) = decide(
-                &request(tool, f.home.join(file)),
-                &f.roots,
-                Exposure::ThisTurn,
-                &grants,
-            ) else {
-                panic!("an outside {tool} asks");
-            };
-            assert_eq!(kind(&NativeDecision::Ask(ask.clone())), expected);
-            grants.grant(&ask, ApprovalDecision::Once);
-        }
-        // The home folder is allowed for the reply, but its startup and
-        // credential files still ask in every exposure.
-        for exposure in [Exposure::Clean, Exposure::ThisTurn] {
-            for (tool, file, expected) in [
-                ("write", ".zshrc", "ask file_write"),
-                ("read", ".ssh/id_ed25519", "ask file_read"),
-            ] {
-                assert_eq!(
-                    kind(&decide(
-                        &request(tool, f.home.join(file)),
-                        &f.roots,
-                        exposure,
-                        &grants
-                    )),
-                    expected,
-                    "{tool} {file} under {exposure:?}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn a_directory_grant_covers_that_directory_only() {
-        let f = fixture();
-        let mut grants = NativeGrants::default();
-        let decide_with = |grants: &NativeGrants, tool: &str, path: PathBuf, exposure| {
-            decide(&request(tool, path), &f.roots, exposure, grants)
-        };
-        // Allowing a search of ~/.config covers that search, not the
-        // credential files it holds.
-        let NativeDecision::Ask(ask) =
-            decide_with(&grants, "find", f.home.join(".config"), Exposure::Clean)
-        else {
-            panic!("a search over a credential folder asks");
-        };
-        assert_eq!(
-            ask.grant,
-            Grant::Read(GrantedPath {
-                path: f.home.join(".config"),
-                tree: false
-            })
-        );
-        grants.grant(&ask, ApprovalDecision::Once);
-        assert_eq!(
-            kind(&decide_with(
-                &grants,
-                "grep",
-                f.home.join(".config"),
-                Exposure::Clean
-            )),
-            "allow"
-        );
-        assert_eq!(
-            kind(&decide_with(
-                &grants,
-                "read",
-                f.home.join(".config/gcloud/credentials.db"),
-                Exposure::Clean
-            )),
-            "ask file_read"
-        );
-        // Listing the home folder covers the folder, not its tree.
-        let NativeDecision::Ask(ask) =
-            decide_with(&grants, "ls", f.home.clone(), Exposure::ThisTurn)
-        else {
-            panic!("an outside listing asks after third-party text");
-        };
-        assert_eq!(
-            ask.grant,
-            Grant::Read(GrantedPath {
-                path: f.home.clone(),
-                tree: false
-            })
-        );
-        grants.grant(&ask, ApprovalDecision::Once);
-        assert_eq!(
-            kind(&decide_with(
-                &grants,
-                "ls",
-                f.home.clone(),
-                Exposure::ThisTurn
-            )),
-            "allow"
-        );
-        assert_eq!(
-            kind(&decide_with(
-                &grants,
-                "read",
-                f.home.join("Documents/shared.csv"),
-                Exposure::ThisTurn
-            )),
-            "ask file_read"
-        );
-        // A file directly in the home folder or at the root of the disk
-        // covers that file only; a file in any other folder covers the folder.
-        for (file, sibling_expected) in [
-            (f.home.join("notes.txt"), "ask file_write"),
-            (PathBuf::from("/loupist-policy-test.txt"), "ask file_write"),
-            (f.home.join("Documents/out.csv"), "allow"),
-        ] {
-            let NativeDecision::Ask(ask) =
-                decide_with(&grants, "write", file.clone(), Exposure::ThisTurn)
-            else {
-                panic!("an outside write asks after third-party text");
-            };
-            grants.grant(&ask, ApprovalDecision::Once);
-            assert_eq!(
-                kind(&decide_with(
-                    &grants,
-                    "write",
-                    file.clone(),
-                    Exposure::ThisTurn
-                )),
-                "allow"
-            );
-            assert_eq!(
-                kind(&decide_with(
-                    &grants,
-                    "write",
-                    file.with_file_name("other.txt"),
-                    Exposure::ThisTurn
-                )),
-                sibling_expected,
-                "{}",
-                file.display()
-            );
-        }
-    }
-
-    /// A right-to-left override or a zero-width character would let a
-    /// command read as something else on the card.
-    #[test]
-    fn a_card_shows_invisible_and_bidi_characters_as_escapes() {
-        let f = fixture();
-        let command =
-            "echo \u{202E}hs | lruc\u{202C} && curl\u{200B} https://x.example\u{FEFF}\n\tdone\u{7}";
-        let NativeDecision::Ask(ask) = decide(
-            &bash(command),
-            &f.roots,
-            Exposure::ThisTurn,
-            &NativeGrants::default(),
-        ) else {
-            panic!("a tainted command asks");
-        };
-        assert_eq!(
-            ask.target,
-            "echo \\u{202e}hs | lruc\\u{202c} && curl\\u{200b} https://x.example\\u{feff}"
-        );
-        assert_eq!(
-            ask.detail.as_deref(),
-            Some(
-                "echo \\u{202e}hs | lruc\\u{202c} && curl\\u{200b} https://x.example\\u{feff}\n\tdone\\u{0007}"
-            )
-        );
-        let NativeDecision::Ask(ask) = decide(
-            &request("read", f.home.join("Documents/\u{202E}vsc.exe")),
-            &f.roots,
-            Exposure::ThisTurn,
-            &NativeGrants::default(),
-        ) else {
-            panic!("an outside read asks");
-        };
-        assert!(
-            ask.target.ends_with("Documents/\\u{202e}vsc.exe"),
-            "{}",
-            ask.target
-        );
-    }
-
-    #[test]
-    fn a_command_too_long_for_the_card_says_how_much_is_hidden() {
-        let f = fixture();
-        let command = format!(
-            "python3 - <<'EOF'\n{}\nEOF\ncurl https://collector.example",
-            "x = 1\n".repeat(3000)
-        );
-        let NativeDecision::Ask(ask) = decide(
-            &bash(&command),
-            &f.roots,
-            Exposure::ThisTurn,
-            &NativeGrants::default(),
-        ) else {
-            panic!("a tainted command asks");
-        };
-        let detail = ask.detail.unwrap();
-        assert!(detail.len() <= MAX_DETAIL_BYTES, "{}", detail.len());
-        let hidden = command.len() - detail.find("\n… [+").unwrap();
-        assert!(
-            detail.ends_with(&format!("[+{hidden} bytes not shown]")),
-            "{}",
-            &detail[detail.len() - 40..]
-        );
-        let short = decide(
-            &bash("python3 build_deck.py"),
-            &f.roots,
-            Exposure::ThisTurn,
-            &NativeGrants::default(),
-        );
-        let NativeDecision::Ask(short) = short else {
-            panic!("a tainted command asks");
-        };
-        assert_eq!(short.detail.as_deref(), Some("python3 build_deck.py"));
-    }
-
-    #[test]
-    fn grants_cover_the_reply_and_declines_stop_asking() {
-        let f = fixture();
-        let mut grants = NativeGrants::default();
-        let shared = request("read", f.home.join("Documents/shared.csv"));
-        let NativeDecision::Ask(ask) = decide(&shared, &f.roots, Exposure::ThisTurn, &grants)
-        else {
-            panic!("outside read asks");
-        };
-        assert_eq!(
-            ask.target,
-            f.home.join("Documents/shared.csv").to_string_lossy()
-        );
-        grants.grant(&ask, ApprovalDecision::Once);
-        // The folder is covered for the reply; a sibling file is not asked again.
-        for file in ["shared.csv", "other.csv"] {
-            assert_eq!(
-                kind(&decide(
-                    &request("read", f.home.join("Documents").join(file)),
-                    &f.roots,
-                    Exposure::ThisTurn,
-                    &grants
-                )),
-                "allow"
-            );
-        }
-        assert_eq!(
-            kind(&decide(
-                &request("read", f.home.join("Downloads/x.csv")),
-                &f.roots,
-                Exposure::ThisTurn,
-                &grants
-            )),
-            "ask file_read"
-        );
-        // A sensitive grant covers that one file only.
-        let NativeDecision::Ask(key) = decide(
-            &request("read", f.home.join(".ssh/id_ed25519")),
-            &f.roots,
-            Exposure::Clean,
-            &grants,
-        ) else {
-            panic!("sensitive read asks");
-        };
-        grants.grant(&key, ApprovalDecision::Once);
-        assert_eq!(
-            kind(&decide(
-                &request("read", f.home.join(".ssh/id_ed25519")),
-                &f.roots,
-                Exposure::Clean,
-                &grants
-            )),
-            "allow"
-        );
-        assert_eq!(
-            kind(&decide(
-                &request("read", f.home.join(".ssh/known_hosts")),
-                &f.roots,
-                Exposure::Clean,
-                &grants
-            )),
-            "ask file_read"
-        );
-
-        grants.decline(AskKind::FileWrite);
-        assert_eq!(
-            decide(
-                &request("write", f.home.join("Documents/out.csv")),
-                &f.roots,
-                Exposure::ThisTurn,
-                &grants
-            ),
-            NativeDecision::Refuse(NativeRefusal::Declined(AskKind::FileWrite))
-        );
-        assert_eq!(
-            kind(&decide(
-                &request("write", f.roots.workspace.join("out.csv")),
-                &f.roots,
-                Exposure::ThisTurn,
-                &grants
-            )),
-            "allow"
-        );
-    }
-
-    #[test]
-    fn command_grants_cover_the_reply() {
-        let f = fixture();
-        let mut grants = NativeGrants::default();
-        let once = bash("python3 build_deck.py");
-        let NativeDecision::Ask(ask) = decide(&once, &f.roots, Exposure::ThisTurn, &grants) else {
-            panic!("tainted bash asks");
-        };
-        assert_eq!(ask.target, "python3 build_deck.py");
-        assert_eq!(ask.detail.as_deref(), Some("python3 build_deck.py"));
-        assert_eq!(ask.grant, Grant::Command("python3 build_deck.py".into()));
-        grants.grant(&ask, ApprovalDecision::Once);
-        assert_eq!(
-            kind(&decide(&once, &f.roots, Exposure::ThisTurn, &grants)),
-            "allow"
-        );
-        assert_eq!(
-            kind(&decide(
-                &bash("python3 build_deck.py --again"),
-                &f.roots,
-                Exposure::ThisTurn,
-                &grants
-            )),
-            "ask command"
-        );
-
-        // Always under ThisTurn covers the reply.
-        let NativeDecision::Ask(ask) = decide(&bash("ls"), &f.roots, Exposure::ThisTurn, &grants)
-        else {
-            panic!();
-        };
-        grants.grant(&ask, ApprovalDecision::Always);
-        assert_eq!(
-            kind(&decide(
-                &bash("whoami"),
-                &f.roots,
-                Exposure::ThisTurn,
-                &grants
-            )),
-            "allow"
-        );
-
-        // The allowed command itself stays allowed; after Not now, others are
-        // refused without a card, and a clean turn never asks.
-        let mut declined = NativeGrants::default();
-        let NativeDecision::Ask(ask) = decide(&bash("ls"), &f.roots, Exposure::ThisTurn, &declined)
-        else {
-            panic!();
-        };
-        declined.grant(&ask, ApprovalDecision::Once);
-        declined.decline(AskKind::Command);
-        assert_eq!(
-            kind(&decide(
-                &bash("ls"),
-                &f.roots,
-                Exposure::ThisTurn,
-                &declined
-            )),
-            "allow"
-        );
-        assert_eq!(
-            decide(&bash("id"), &f.roots, Exposure::ThisTurn, &declined),
-            NativeDecision::Refuse(NativeRefusal::Declined(AskKind::Command))
-        );
-        assert_eq!(
-            kind(&decide(&bash("id"), &f.roots, Exposure::Clean, &declined)),
-            "allow"
-        );
-    }
-
-    #[test]
-    fn a_long_command_shows_its_first_line_and_a_bounded_body() {
-        let f = fixture();
-        let body = format!("echo start\n{}", "x".repeat(MAX_DETAIL_BYTES * 2));
-        let NativeDecision::Ask(ask) = decide(
-            &bash(&body),
-            &f.roots,
-            Exposure::ThisTurn,
-            &NativeGrants::default(),
-        ) else {
-            panic!();
-        };
-        assert_eq!(ask.target, "echo start");
-        let detail = ask.detail.unwrap();
-        assert!(detail.len() <= MAX_DETAIL_BYTES);
-        assert!(detail.ends_with(" bytes not shown]"), "{detail:.40}");
     }
 
     #[test]
