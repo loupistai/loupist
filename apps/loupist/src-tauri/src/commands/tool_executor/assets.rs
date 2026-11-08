@@ -538,15 +538,9 @@ impl AppToolExecutor {
         let mut original = false;
         let mut found_observed = line.is_none();
         for (index, url) in urls.iter().enumerate() {
-            let Some(result) = registry
-                .values()
-                .find(|result| &evidence::citation_url(&result.result_ref) == url)
-            else {
-                return Err(BrokerError::invalid(
-                    "evidence",
-                    format!("evidence[{index}]: not a citation_url from this turn"),
-                ));
-            };
+            let result = evidence::cited_result(&registry, url).map_err(|why| {
+                BrokerError::invalid("evidence", format!("evidence[{index}]: {why}"))
+            })?;
             let Some(date) = Self::evidence_day(&registry, result, today) else {
                 return Err(BrokerError::invalid(
                     "evidence",

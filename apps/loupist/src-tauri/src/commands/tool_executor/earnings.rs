@@ -318,15 +318,9 @@ impl AppToolExecutor {
             let mut candidates = Vec::new();
             let mut dates: Vec<NaiveDate> = Vec::new();
             for (position, url) in urls.iter().enumerate() {
-                let result = registry
-                    .values()
-                    .find(|result| &evidence::citation_url(&result.result_ref) == url)
-                    .ok_or_else(|| {
-                        BrokerError::invalid(
-                            at("evidence"),
-                            format!("evidence[{position}]: not a citation_url from this turn"),
-                        )
-                    })?;
+                let result = evidence::cited_result(&registry, url).map_err(|why| {
+                    BrokerError::invalid(at("evidence"), format!("evidence[{position}]: {why}"))
+                })?;
                 let provider = result
                     .producer
                     .provider
@@ -505,15 +499,8 @@ impl AppToolExecutor {
                 let mut evidence = Vec::new();
                 let mut texts = String::new();
                 for url in &urls {
-                    let result = registry
-                        .values()
-                        .find(|result| &evidence::citation_url(&result.result_ref) == url)
-                        .ok_or_else(|| {
-                            BrokerError::invalid(
-                                "tone.evidence",
-                                "not a citation_url from this turn",
-                            )
-                        })?;
+                    let result = evidence::cited_result(&registry, url)
+                        .map_err(|why| BrokerError::invalid("tone.evidence", why))?;
                     // Tone comes only from a call transcript, read or retained as a Source.
                     let transcript = result.producer.tool_name.contains("transcript")
                         || (result.producer.origin == RunResultOrigin::SavedContext

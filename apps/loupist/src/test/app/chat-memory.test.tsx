@@ -109,7 +109,7 @@ describe("Loupist · Chat memory", () => {
     const page = await screen.findByRole("region", { name: /What .* knows/ });
     expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveValue("Check the next quarter too");
     expect(await within(page).findByRole("complementary", { name: "Compare independent accounts" })).toBeVisible();
-    await user.click(within(page).getByRole("button", { name: "Back" }));
+    await user.click(screen.getByRole("button", { name: "Close workspace" }));
     expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveValue("Check the next quarter too");
     // A streamed reply with a Memory update; a loaded suite needs room.
   }, 60_000);

@@ -895,7 +895,7 @@
       "permission": "memory_write",
       "component": "memory-save",
       "label": "File what this turn established",
-      "description": "File what this turn established into this Loupist's Lens pages when saving is on: a dated fact with its source, a mechanism, a value-chain link, a contradiction, a reusable check. Read the relevant pages first (the index and pointers in the turn envelope, lens_search, then lens_read). Revise the page you read by putting only the sections that change, each with the digest from that read, or create a page; a taken title merges into that page. Subject and idea sections cite this turn's reads as their basis: {world, claimId} for a claim a world_read delivered, {source} for a retained original read or saved this turn, {said: true} for the user's own words, {lens} for synthesis from another page. Synthesis, and any section without a read, states its uncertainty. Method and perspective sections may carry no basis. Suggested keys: subject overview, facts, value-chain, drivers, risks, views, open-questions; method use-when, steps, checks, limits; idea claim, mechanism, evidence-for, evidence-against, would-break, checks; perspective beliefs, priorities, avoid. Chatter, light questions and stated one-offs file nothing. At most two calls, 8 pages and 40 ops per reply. Pages land when the reply completes; say something was saved only after that commit.",
+      "description": "File what this turn established into this Loupist's Lens pages when saving is on: a dated fact with its source, a mechanism, a value-chain link, a contradiction, a check that mattered. Create a method only for a way of checking the user teaches, corrects or asks you to keep; otherwise keep your own checks on the subject or idea page. Read the relevant pages first (the index and pointers in the turn envelope, lens_search, then lens_read). Revise the page you read by putting only the sections that change, each with the digest from that read, or create a page; a taken title merges into that page. Subject and idea sections cite this turn's reads as their basis: {world, claimId} for a claim a world_read delivered, {source} for a retained original read or saved this turn, {said: true} for the user's own words, {lens} for synthesis from another page. Synthesis, and any section without a read, states its uncertainty. A method section cites {said: true}, the user's teaching, correction or request to keep it; perspective sections may carry no basis. Suggested keys: subject overview, facts, value-chain, drivers, risks, views, open-questions; method use-when, steps, checks, limits; idea claim, mechanism, evidence-for, evidence-against, would-break, checks; perspective beliefs, priorities, avoid. Chatter, light questions and stated one-offs file nothing. At most two calls, 8 pages and 40 ops per reply. Pages land when the reply completes; say something was saved only after that commit.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -997,7 +997,7 @@
                                   }
                                 ]
                               },
-                              "description": "What a subject page is about: a World node id, or a name not yet on the map."
+                              "description": "The company or entity a subject or idea page is about: a World node id, or a name not yet on the map. Give it whenever the page concerns one; a page without it never counts toward method learning."
                             }
                           }
                         }
@@ -1178,6 +1178,13 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 400
+                          },
+                          "said": {
+                            "type": "boolean",
+                            "enum": [
+                              true
+                            ],
+                            "description": "Cites the user's message this turn; required on a method page."
                           }
                         }
                       },
@@ -1200,6 +1207,13 @@
                             "minLength": 1,
                             "maxLength": 400,
                             "description": "One paragraph; the index shows it."
+                          },
+                          "said": {
+                            "type": "boolean",
+                            "enum": [
+                              true
+                            ],
+                            "description": "Cites the user's message this turn; required on a method page."
                           }
                         }
                       },
@@ -4086,7 +4100,7 @@
                       "citation_url": {
                         "type": "string",
                         "maxLength": 256,
-                        "pattern": "^#evidence-"
+                        "pattern": "^#evidence-ev_[0-9a-f]{32}$"
                       }
                     }
                   },
@@ -4157,7 +4171,7 @@
                 "citation_url": {
                   "type": "string",
                   "maxLength": 256,
-                  "pattern": "^#evidence-"
+                  "pattern": "^#evidence-ev_[0-9a-f]{32}$"
                 },
                 "says": {
                   "type": "string",
@@ -4658,7 +4672,7 @@
             "additionalProperties": {
               "type": "string",
               "maxLength": 256,
-              "pattern": "^#evidence-"
+              "pattern": "^#evidence-ev_[0-9a-f]{32}$"
             },
             "description": "For each input you read from a source this turn, its exact citation_url ({\"revenue\": \"#evidence-…\"}). The app checks the number against that source and links the input to it."
           },

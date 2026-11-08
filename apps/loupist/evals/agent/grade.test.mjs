@@ -271,6 +271,38 @@ test('a memory assertion may accept any of several kinds', () => {
   assert.throws(() => grade({ ...mini, scenarios: [{ ...mini.scenarios[0], sessions: [{ ...mini.scenarios[0].sessions[0], turns: [{ user: 'x', expect: { memory: [{ assert: 'committed', kind: ['memo'], metric: 'save_recall' }] } }] }] }] }, [row('bad', [])]), /Unknown memory kind/);
 });
 
+test('Lens assertions read the stored pages and reads, not the reply', () => {
+  const memory = [
+    { assert: 'lens_pages', kind: 'subject', title_matches: 'halvren', count: 1, section_matches: '3\\.6', section_not_matching: '4\\.2\\s*B(?!.*(?:superseded|cut|이전))', basis: 'span', metric: 'lens_update' },
+    { assert: 'lens_pages', kind: 'method', title_matches: '.', max: 0, metric: 'save_precision' },
+    { assert: 'lens_unchanged', metric: 'save_precision' },
+    { assert: 'lens_read', title_matches: 'halvren', metric: 'retrieval' },
+    { assert: 'lens_not_read', title_matches: 'torvik', metric: 'negative_transfer' },
+  ];
+  const mini = {
+    schema: 'loupist-agent-suite/1', suite: 'lens', version: 1,
+    scenarios: [{ id: 'LC-1', sessions: [{ id: 'train', role: 'train', memory: 'remember', turns: [{ user: 'Research.', expect: { memory } }] }] }],
+  };
+  const page = (title, kind, markdown, basis, ops = []) => ({ record_id: title, kind, title, archived: false, summary: '',
+    sections: [{ key: 'facts', heading: 'Facts', markdown, basis }], ops_this_turn: ops });
+  const row = (runId, pages, memory_reads = []) => ({
+    schema: 'loupist-agent-trace/1', run_id: runId, suite: 'lens', scenario_id: 'LC-1', session_id: 'train', user: 'Research.', session_role: 'train', memory_mode: 'remember',
+    turn_index: 0, trial: 0, status: 'completed', answer: 'Saved.', tool_calls: [], memory_commits: [], memory_reads, lens: pages === null ? undefined : { pages },
+  });
+  const results = (runId, pages, reads) => grade(mini, [row(runId, pages, reads)]).results.map((item) => item.pass);
+  const read = (title) => ({ kind: 'lens', record_id: title, title, access: 'exact_read' });
+  assert.deepEqual(results('good', [page('Halvren Optics', 'subject', 'Guidance 3.6B', ['span'])], [read('Halvren Optics')]),
+    [true, true, true, true, true]);
+  assert.deepEqual(results('stale', [page('Halvren Optics', 'subject', 'Guidance 4.2B; now 3.6B', ['span']), page('Halvren Optics (KR)', 'subject', 'x', [])]),
+    [false, true, true, false, true]);
+  assert.deepEqual(results('wrote', [page('Halvren Optics', 'subject', '3.6B', ['said'], [{ op: 'put', outcome: 'added' }]),
+    page('Margin ramp check', 'method', 'steps', [])], [read('Torvik Foods'), { ...read('Halvren Optics'), access: 'search' }]),
+  [false, false, false, false, false]);
+  assert.deepEqual(results('unknown', null), [null, null, null, false, true]);
+  assert.throws(() => grade({ ...mini, scenarios: [{ ...mini.scenarios[0], sessions: [{ ...mini.scenarios[0].sessions[0],
+    turns: [{ user: 'x', expect: { memory: [{ assert: 'lens_pages', kind: 'wiki', title_matches: 'a' }] } }] }] }] }, []), /Unknown Lens kind/);
+});
+
 test('prediction assertion names each missing or invalid contract field', () => {
   const valid = { claim: 'Fictional price rises', metric: 'price', direction: 'above', threshold: 10, horizon: '2026-12-31', probability: 0.6 };
   const mini = {
@@ -522,4 +554,35 @@ test('grid_cells_linked needs a staged grid whose checked cells all match, with 
   for (const invalid of [{ layout: 'table' }, { rows: 0 }, { columns: 1.5 }, { empty: ['zero'] }, { layout: 'conflict', rows: 2 }, { layout: 'conflict', empty: ['unavailable'] }]) {
     assert.throws(() => pass(invalid, []), /grid_cells_linked/u, JSON.stringify(invalid));
   }
+});
+
+test('lens-pages renders each run\'s final pages and the ops each turn logged', async () => {
+  const { renderLensPages } = await import('./lens-review.mjs');
+  const page = (markdown, ops) => ({ kind: 'subject', title: 'Halvren Optics', summary: 'Lens maker.', archived: false,
+    sections: [{ key: 'facts', heading: 'Facts', markdown, basis: ['span'], origin: 'loupist' }], ops_this_turn: ops });
+  const text = renderLensPages([
+    { scenario_id: 'LL-002', trial: 0, session_id: 'first', turn_index: 0, lens: { pages: [page('Guidance 4,200', [{ op: 'put', key: 'facts', outcome: 'added' }])] } },
+    { scenario_id: 'LL-002', trial: 0, session_id: 'second', turn_index: 0, lens: { pages: [page('Guidance 3,600 (cut from 4,200)', [{ op: 'put', key: 'facts', outcome: 'replaced' }])] } },
+    { scenario_id: 'LL-007', trial: 0, session_id: 'readonly', turn_index: 0, lens: { pages: [] } },
+  ]);
+  assert.match(text, /## LL-002 trial 0[\s\S]*first#0 put facts on "Halvren Optics": added[\s\S]*second#0 put facts on "Halvren Optics": replaced/u);
+  assert.match(text, /Guidance 3,600 \(cut from 4,200\)/u);
+  assert.doesNotMatch(text, /Guidance 4,200\n/u);
+  assert.match(text, /## LL-007 trial 0[\s\S]*No Lens op was logged\.[\s\S]*No Lens pages\./u);
+});
+
+test('lens_pages unchanged fails an edited page, and lens_read kind needs a read of that kind', () => {
+  const memory = [
+    { assert: 'lens_pages', kind: 'method', title_matches: 'dividend', count: 1, unchanged: true, metric: 'save_precision' },
+    { assert: 'lens_read', kind: 'method', title_matches: '.', metric: 'carry_forward' },
+  ];
+  const mini = { schema: 'loupist-agent-suite/1', suite: 'lens', version: 1,
+    scenarios: [{ id: 'HV', sessions: [{ id: 'use', role: 'probe', memory: 'remember', turns: [{ user: 'Q.', expect: { memory } }] }] }] };
+  const page = (id, kind, title, ops) => ({ record_id: id, kind, title, archived: false, summary: '', sections: [], ops_this_turn: ops });
+  const row = (pages, reads) => ({ schema: 'loupist-agent-trace/1', run_id: 'r', suite: 'lens', scenario_id: 'HV', session_id: 'use', user: 'Q.', session_role: 'probe',
+    memory_mode: 'remember', turn_index: 0, trial: 0, status: 'completed', answer: 'A.', tool_calls: [], memory_commits: [], memory_reads: reads, lens: { pages } });
+  const read = (id, title) => ({ kind: 'lens', record_id: id, title, access: 'exact_read' });
+  const pass = (pages, reads) => grade(mini, [row(pages, reads)]).results.map((item) => item.pass);
+  assert.deepEqual(pass([page('m', 'method', 'Dividend cover check', []), page('s', 'subject', 'Pellmont', [{ op: 'put' }])], [read('m', 'Dividend cover check')]), [true, true]);
+  assert.deepEqual(pass([page('m', 'method', 'Dividend cover check', [{ op: 'put', key: 'limits' }])], [read('s', 'Halden working capital')]), [false, false]);
 });

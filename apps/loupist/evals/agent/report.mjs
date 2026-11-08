@@ -6,7 +6,7 @@ import { analyzeToolCalls, toolValidity } from './tool-evidence.mjs';
 import { measuredTurns, measuredJudgments } from './measurement.mjs';
 
 const ITEM_METRICS = new Set(['save_precision', 'save_recall']);
-const SCENARIO_METRICS = new Set(['carry_forward', 'negative_transfer', 'revision_disclosure', 'connection_honesty', 'task_success', 'prediction_structure']);
+const SCENARIO_METRICS = new Set(['carry_forward', 'negative_transfer', 'revision_disclosure', 'lens_update', 'connection_honesty', 'task_success', 'prediction_structure']);
 
 const Z95 = 1.959963984540054;
 

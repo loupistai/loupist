@@ -118,8 +118,8 @@
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  padding-inline: 5px;
-  border-left: 1px solid var(--gg-color-border-subtle);
+  gap: 2px;
+  padding-inline: var(--gg-space-1) 0;
 }
 
 /* One menu for Expand, Dock and Always dock here. The trigger stays an icon button. */
@@ -282,10 +282,11 @@
   display: flex;
   align-items: stretch;
   border-bottom: 1px solid var(--gg-color-border-subtle);
-  background: color-mix(in oklch, var(--gg-color-bg-hover) 45%, transparent);
+  padding-inline: var(--gg-space-2);
 }
 
 .workspace-tabs {
+  position: relative;
   min-width: 0;
   display: grid;
   grid-auto-columns: max-content;
@@ -294,6 +295,7 @@
   align-items: stretch;
   overflow-x: auto;
   scrollbar-width: thin;
+  column-gap: 2px;
 }
 
 .workspace-tab-list, .workspace-tab-actions { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; grid-row: 1; }
@@ -301,37 +303,60 @@
 .workspace-tab, .workspace-tab-close { grid-row: 1; }
 
 .workspace-tab {
-  min-width: 118px;
+  position: relative;
+  min-width: 0;
   max-width: 220px;
   display: flex;
-  /* Size to the title, up to 220px. Shrinking this tab to the 118px floor cut a short host once Map, Evidence and Work used the row. */
+  /* Size to the title, up to 220px. Shrinking a tab cut a short host once Map, Evidence and Work used the row. */
   flex: 0 0 auto;
   width: max-content;
   align-items: center;
-  border-right: 1px solid var(--gg-color-border-subtle);
   color: var(--gg-color-text-secondary);
 }
 
-.workspace-tab[data-active="true"] {
-  color: var(--gg-color-text-primary);
-  background: var(--gg-color-bg-selected);
-  box-shadow: inset 0 -2px var(--gg-color-text-primary);
+.workspace-tab[data-active="true"] { color: var(--gg-color-text-primary); }
+
+.workspace-tab[data-active="true"]::after {
+  content: "";
+  position: absolute;
+  inset: auto 10px 0;
+  height: 2px;
+  border-radius: var(--gg-radius-full) var(--gg-radius-full) 0 0;
+  background: var(--gg-color-text-primary);
+}
+
+.workspace-tab-fixed + .workspace-tab:not(.workspace-tab-fixed) { margin-left: var(--gg-space-3); }
+.workspace-tab-fixed + .workspace-tab:not(.workspace-tab-fixed)::before {
+  content: "";
+  position: absolute;
+  inset-block: calc(var(--gg-space-3) + 1px);
+  left: calc(var(--gg-space-2) * -1);
+  width: 1px;
+  background: var(--gg-color-border-default);
 }
 
 .workspace-tab > [role="tab"] {
   min-width: 0;
-  height: 100%;
+  height: var(--gg-size-control-sm);
   display: flex;
   flex: 1 1 auto;
   align-items: center;
-  gap: 7px;
-  padding: 0 var(--gg-space-1) 0 10px;
+  gap: var(--gg-space-2);
+  padding: 0 10px;
   border: 0;
+  border-radius: var(--gg-radius-xs);
   color: inherit;
   background: transparent;
   font: inherit;
-  font-size: var(--gg-text-caption);
+  font-size: var(--gg-text-control);
   cursor: pointer;
+}
+
+.workspace-tab > [role="tab"]:focus-visible { outline-offset: -2px !important; }
+
+.workspace-tab:not([data-active="true"]) > [role="tab"]:hover {
+  color: var(--gg-color-text-primary);
+  background: var(--gg-color-bg-hover);
 }
 
 .workspace-tab > [role="tab"] > span {
@@ -350,9 +375,9 @@
 .workspace-tab-close svg,
 .workspace-add svg,
 .workspace-add-menu svg {
-  width: 14px;
-  height: 14px;
-  flex: 0 0 14px;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
 }
 
 .workspace-tab [data-slot="spinner"] {
@@ -360,6 +385,8 @@
 }
 
 .workspace-tab-close {
+  /* Positioned like its tab, which shares the grid cell, so it paints above it and takes the click. */
+  position: relative;
   pointer-events: auto;
   justify-self: end;
   align-self: center;
@@ -368,7 +395,7 @@
   display: grid;
   flex: 0 0 var(--gg-size-control-sm);
   place-items: center;
-  margin-right: 3px;
+  margin-right: 2px;
   padding: 0;
   border: 0;
   border-radius: var(--gg-radius-xs);
@@ -385,14 +412,17 @@
 
 .workspace-add {
   position: relative;
-  flex: 0 0 42px;
+  flex: 0 0 var(--gg-size-control-sm);
+  align-self: center;
+  margin-inline: var(--gg-space-1);
 }
 
 .workspace-add > summary {
-  width: 42px;
-  height: 41px;
+  width: var(--gg-size-control-sm);
+  height: var(--gg-size-control-sm);
   display: grid;
   place-items: center;
+  border-radius: var(--gg-radius-xs);
   color: var(--gg-color-text-secondary);
   cursor: pointer;
   list-style: none;
@@ -406,14 +436,14 @@
 .workspace-add > summary:focus-visible,
 .workspace-add[open] > summary {
   color: var(--gg-color-text-primary);
-  background: var(--gg-color-bg-app);
+  background: var(--gg-color-bg-hover);
 }
 
 .workspace-add:not([open]) > .workspace-add-menu { display: none; }
 .workspace-add-menu {
   position: absolute;
   top: calc(100% + 6px);
-  right: var(--gg-space-2);
+  right: calc(var(--gg-space-1) * -1);
   width: min(330px, calc(var(--artifact-panel-width) - var(--gg-space-6)));
   max-height: min(340px, 55dvh);
   overflow: auto;
@@ -613,10 +643,6 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 .workspace-tab-fixed {
   min-width: 0;
   flex: 0 0 auto;
-}
-
-.workspace-tab-fixed > [role="tab"] {
-  padding-right: var(--gg-space-3);
 }
 
 .browser-toolbar {
@@ -1038,8 +1064,8 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 .work-version-restored { flex: none; margin: 0; padding: var(--gg-space-2) var(--gg-space-3); border-bottom: 1px solid var(--gg-color-border-subtle); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 
 /* Canonical workspace panels share the same split and keep the conversation mounted. */
-.workspace-kind-heading { display:flex; flex:none; align-items:center; justify-content:space-between; min-height:42px; padding-inline:var(--gg-space-3); border-bottom:1px solid var(--gg-color-border-subtle); }
-.workspace-kind-heading > strong { font-size:var(--gg-text-control); font-weight:var(--gg-weight-medium); }
+.workspace-kind-heading { display:flex; flex:none; align-items:center; justify-content:space-between; box-sizing:border-box; min-height:42px; padding-inline:var(--gg-space-2); border-bottom:1px solid var(--gg-color-border-subtle); }
+.workspace-kind-heading > strong { padding-inline:10px; font-size:var(--gg-text-control); font-weight:var(--gg-weight-medium); line-height:var(--gg-size-control-sm); }
 .workspace-kind-content, .workspace-lens-content, .workspace-world-content, .workspace-materials-content { display:flex; flex:1 1 auto; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }
 .workspace-kind-content[hidden], .workspace-lens-content[hidden], .workspace-world-content[hidden], .workspace-materials-content[hidden] { display:none; }
 .workspace-lens-content { overflow:hidden; container:memory-pane / inline-size; }

@@ -31,7 +31,7 @@
 .map-status-stack .map-stats { display:flex; flex-wrap:wrap; align-items:baseline; white-space:normal; overflow:visible; text-overflow:clip; }
 .map-status-stack .map-stats > * { min-width:0; overflow-wrap:anywhere; }
 .map-stats .map-world-kicker { font-weight:var(--gg-weight-medium); }
-.map-stats .map-world-kicker::after { content:" · "; font-weight:var(--gg-weight-regular); color:var(--gg-color-text-secondary); }
+.map-status-stack .map-stats > :is(strong, span):has(~ span)::after { content:"·"; margin-inline:var(--gg-space-2); font-weight:var(--gg-weight-regular); color:var(--gg-color-text-secondary); }
 .map-view[data-hide-map-stats] .map-stats, .map-body[data-hide-map-stats] .map-stats { visibility:hidden; }
 .map-stats small { display:block; color:var(--gg-color-text-secondary); }
 .map-stats button { height:auto; min-height:var(--gg-size-control-sm); padding:0 0 0 var(--gg-space-2); font-size:inherit; }
@@ -221,7 +221,6 @@
 @keyframes map-replay-in { from { transform:translateY(8px); opacity:0; } to { transform:translateY(0); opacity:1; } }
 @container map (max-width:900px) { .map-replay-bar { gap:6px; padding:0 8px; }.map-replay-date { max-width:155px; overflow:hidden; text-overflow:ellipsis; }.map-replay-bar button { padding:4px; }.map-replay-speeds { gap:0; } }
 @media (prefers-reduced-motion:reduce) { .map-replay-bar { animation:none; } }
-#workspace-tab-chat-map svg { width:16px; height:16px; flex:0 0 16px; }
 
 .principle-library { padding:var(--gg-space-3); }
 .principle-library ul { list-style:none; padding:0; margin:var(--gg-space-2) 0; }

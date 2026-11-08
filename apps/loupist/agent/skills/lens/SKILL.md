@@ -23,7 +23,10 @@ does not automatically become a Lens. Keep executable details in files and
 promote only a reusable, supported methodology.
 
 A newly taught method is its own Lens, kind `method`, with a title that names
-the method. Search first. Extend a method only when the new rule refines that
+the method. Only the user creates a method in a turn, by teaching or correcting
+one or by asking you to keep a check you worked out; never file one unasked from
+your own analysis, general knowledge or a single company's case. State the scope
+the user's evidence supports in `limits`. Search first. Extend a method only when the new rule refines that
 same method. Change the standing perspective only when the user changes their
 overall investing philosophy. A stated one-off is not a method. Do not
 rewrite a prior judgment. Preserve competing interpretations when their
@@ -36,8 +39,10 @@ read again and refile. A create with a taken title merges into that page.
 Replace superseded instructions in their owning section; keep the reason for
 the filing in `rationale`. Preserve useful detail, conditions and exceptions
 without copying the same instructions across sections. Keep World, Source and
-Journal dependencies out of a method's body; a method or perspective section
-needs no basis. A kind is fixed, so do not write a new method into the standing
+Journal dependencies out of a method's body. Every write to a method cites the
+user's words this turn: a section's basis includes `{"said": true}` (with the
+`{source}` when a file grounds it), and a `retire` or `summary` op carries
+`"said": true`. A perspective section needs no basis. A kind is fixed, so do not write a new method into the standing
 perspective. For a method grounded in a newly acquired file or page, save the
 original with `source_save` first and cite its `saveRef` as `{source}` in the
 section's basis; a capture or fetch `result_ref` alone is not a Source

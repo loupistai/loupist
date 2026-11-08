@@ -39,6 +39,11 @@ Pi's CLI CWD stays in a private runtime directory; native `read`, `write`, `edit
 `bash`, `ls`, `find` and `grep` operate from the selected workspace. File changes
 are immediate and survive a failed or cancelled reply.
 
+`workspace-tools` holds the pinned, digest-verified `fd` and `rg` that Pi's native
+`find` and `grep` need offline (`apps/loupist/scripts/stage_workspace_tools.py`).
+Pi looks them up on PATH, so the same directory serves both; sidecar checks fail
+when either is missing, linked, or altered.
+
 Native Bash's PATH is the bundled `workspace-tools` directory, then the user's
 login-shell PATH, then inherited entries the login PATH lacks
 (`apps/loupist/src-tauri/src/pi/shell_path.rs`). Rust resolves the login PATH

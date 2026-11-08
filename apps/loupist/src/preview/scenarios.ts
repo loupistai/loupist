@@ -430,7 +430,7 @@ function whatsNewFixture(bridge: PreviewBridge, withChanges: boolean) {
   recordVisit("loupist-quality", lastSeenAtMs - MIN_VISIT_MS, lastSeenAtMs);
   const event = (index: number, kind: GrowthEvent["kind"], subjectId: string | null, atMs: number, summary: string, extra: Partial<GrowthEvent> = {}): GrowthEvent => ({ eventId: `whats-new-${index}`, loupistId: "loupist-quality", atMs, kind, subjectId, recordId: "map-world", originChatId: null, originMessageId: null, actor: "loupist", summary, beforeSummary: null, afterSummary: null, ...extra });
   const events = withChanges ? [
-    event(0, "lens_created", null, now - 27 * hour, "Compare competitive advantages", { recordId: "map-lens-1", origin: { kind: "learning_review", reviewId: "preview-review", worldJobId: "preview-job" } }),
+    event(0, "lens_created", null, now - 27 * hour, "Compare competitive advantages", { recordId: "map-lens-1", origin: { kind: "learning_review", reviewId: "preview-review" } }),
     event(1, "entity_added", "map-entity-09", now - 26 * hour, "SK hynix"),
     event(2, "source_retained", null, now - hour, "Q3 operating review", { originMessageId: "preview-answer" }),
     event(3, "entity_added", "map-entity-03", now - hour, "NVIDIA", { originMessageId: "preview-answer" }),
@@ -794,13 +794,13 @@ export const scenarios: readonly PreviewScenario[] = [
     bridge.loupistChooseFolder = async () => "/Users/research/Backups/Quality Compounder";
   } },
   base("chat-empty", "Empty chat: the Loupist's morning message", () => select('textarea[data-chat-composer]') && select('.morning-message[aria-busy="false"]')),
-  base("composer-focus", "Composer keyboard focus is one stroke on the field edge", () => {
+  base("composer-focus", "Composer keyboard focus is a focus-colored edge with a soft halo", () => {
     const field = select('.composer [data-slot="input-group"]:has(textarea:focus-visible)');
     if (!field) return null;
     if (!hasLayout()) return field;
     const style = getComputedStyle(field);
     const transparent = style.borderTopColor === "rgba(0, 0, 0, 0)" || style.borderTopColor === "transparent"; // token-exception: CSSOM serializes the transparent border in a preview assertion
-    return style.outlineStyle !== "none" && style.outlineOffset.trim().startsWith("-") && transparent && style.boxShadow === "none" ? field : null;
+    return style.outlineStyle === "none" && style.borderTopWidth === "1px" && !transparent && style.boxShadow !== "none" ? field : null;
   }, async () => {
     const prompt = await until(() => select("textarea[data-chat-composer]"), "Composer did not appear");
     prompt.focus({ focusVisible: true });
@@ -1683,6 +1683,10 @@ export const scenarios: readonly PreviewScenario[] = [
     if (window.matchMedia(workspaceOverlayMedia).matches) return;
     pressMenu(await until(() => select(".workspace-dock-options"), "The Dock control's menu did not render"));
   }), setup: workListFixture },
+  { ...base("panel-kind-menu", "The panel kind menu names what Lens, World and Chat materials hold", () => select("[data-workspace-kind]") ? select("[data-workspace-kind=\"lens\"]") : null, async (root) => {
+    await until(() => root.querySelector("textarea[data-chat-composer]"), "Chat did not initialize");
+    pressMenu(await until(() => select(".header-panel-toggle"), "Panel control did not initialize"));
+  }) },
   // The docked chart is the subject: a capture waits for its canvas, not just the Work tab's status row.
   // jsdom cannot draw a canvas, so there the status row stays the landmark.
   { ...base("panel-dock-chart", "A chart opened from Work docks below the chat", () => {

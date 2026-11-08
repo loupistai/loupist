@@ -89,7 +89,7 @@ or the network couldn't be reached.
 ## Learned line
 
 Under every finished answer one line says what it learned, in this order:
-"Learned n · Map +n names · n relationships · n ideas · Used n pages". Sources are
+"Learned n · n names added to the map · n relationships · n ideas · Used n pages". Sources are
 not repeated here: the activity row says "Read n sources" and the footer's Sources (n)
 toggle opens the numbered list. Only the parts that are not zero appear. Learned counts the sections the answer added,
 replaced or retired, read by message id from `memory_learned`; ideas counts filed pages

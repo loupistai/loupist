@@ -14,7 +14,10 @@ files. The English entries must equal the catalog, so a tool that gains progress
 needs both locales; labels the host composes itself (`Opened {connection}`, `Reading
 {host}`) stay as sent. Rust derives the permitted surface;
 service handlers independently validate arguments, ownership and evidence. The Pi
-extension registers schemas/routes. MCP tools are discovered dynamically; bundled
+extension registers schemas/routes. Anchor every schema `pattern` at both ends: xAI
+constrains Grok's arguments to a pattern as a whole-value match, so the open-ended
+`^#evidence-` once let it emit only `#evidence-` and every cited calculation was refused.
+A citation field's pattern is the exact host form, `^#evidence-ev_[0-9a-f]{32}$`. MCP tools are discovered dynamically; bundled
 OpenBB cards (descriptions and per-run pruned schemas,
 [Data services](../capabilities/data-services.md#agent-facing-data-services)) are host-generated in
 `apps/loupist/src-tauri/src/commands/tool_executor/mcp_host/openbb.rs`,

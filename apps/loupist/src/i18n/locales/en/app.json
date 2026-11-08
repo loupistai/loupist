@@ -82,8 +82,7 @@
     "homeDescriptor": "Chat, briefings, and alerts"
   },
   "loupistNavigationGroup": {
-    "hasActiveSessions": "{{label}} has active sessions",
-    "newChatWith": "New chat with {{label}}"
+    "hasActiveSessions": "{{label}} has active sessions"
   },
   "macTitlebarControls": {
     "showOrHideSidebar": "Show or hide sidebar",
@@ -146,11 +145,15 @@
   },
   "shell": {
     "chatMaterials": "Chat materials",
+    "chatMaterialsHint": "This chat's map, evidence and outputs",
+    "lensHint": "Your research principles and methods",
+    "worldHint": "Map of companies, people and links",
     "panelKind": "Panel kind",
     "workspaceControls": "Workspace panels",
     "splitTopBottom": "Split top and bottom",
     "splitLeftRight": "Split left and right",
     "sessions": "Research sessions",
+    "newResearch": "New research",
     "principles": "Research principles",
     "taskHistory": "Scheduled tasks",
     "moreActions": "More",

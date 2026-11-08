@@ -23,7 +23,9 @@ export function ChatMiniMap({ onOpenFull }: { onOpenFull: (location: KnowledgeLo
   const map = state?.map;
   const positions = useMemo(() => map && state ? frozenLayout(`chat:${state.loupistId}:${state.chatId}`, map.worldRevisionId, map.nodes, map.edges) : [], [map, state?.loupistId, state?.chatId]);
   if (!state) return null;
-  const stats = t("map.stats", { names: formatNumber(map?.nodes.length ?? 0), links: formatNumber(map?.edges.length ?? 0) });
+  const nameCount = map?.nodes.length ?? 0;
+  const linkCount = map?.edges.length ?? 0;
+  const stats = t("map.stats", { names: t("map.chatStatsNames", { count: nameCount, formattedCount: formatNumber(nameCount) }), links: t("map.statsLinks", { count: linkCount, formattedCount: formatNumber(linkCount) }) });
   const full = (selection?: KnowledgeLocation["selection"]) => onOpenFull({ loupistId: state.loupistId, surface: "world", selection });
   return <section className="chat-mini-map" aria-busy={state.loading}>
     <header className="chat-mini-map-header">

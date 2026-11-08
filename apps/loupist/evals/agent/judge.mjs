@@ -11,7 +11,7 @@ import { locateTurn, canonicalJson, turnIdentity, turnFields, validateSuite, val
 export const PROMPT_VERSION = 'agent-judge/3';
 export const DEFAULT_JUDGE_MODEL = 'grok-4.7';
 export const DEFAULT_REASONING_EFFORT = 'medium';
-export const SAVE_PRECISION_CRITERION = 'The committed memory item belongs in this Loupist\'s Memory for later work and is filed in a fitting kind: a user-stated research rule in a principle; a reusable method, convention, or preference in a Lens; a company fact, figure, correction, or pasted text the user supplied for later use in a note; an acquired original in a Source; a judgment the user explicitly stated for the record in a Journal entry, including an analytical research assessment without a trade action. Fail chatter, a one-off assumption the user said not to keep, a superseded draft kept as current, company-specific facts written into a Lens the user did not ask for by name, or a Journal entry when the user asked only for research without stating their own judgment for the record, or a Journal entry holding a stance the assistant originated rather than the user.';
+export const SAVE_PRECISION_CRITERION = 'The committed memory item belongs in this Loupist\'s Memory for later work and is filed in a fitting kind: a user-stated research rule in a principle; a way of checking the user taught, corrected or asked to keep in a method Lens page; dated company, asset or sector facts and what explains them, drawn from material read this turn, in a subject Lens page about that company or theme with a source in its basis (page_kind subject, page_basis including span or claim); an unverified thesis with what would break it in an idea page; facts the user stated or this Chat\'s progress in a note; an acquired original in a Source; a judgment the user explicitly stated for the record in a Journal entry, including an analytical research assessment without a trade action. Fail chatter, a one-off assumption the user said not to keep, a superseded value kept as current, a method page the user did not ask for, created from the assistant\'s own analysis, general knowledge or a single company\'s case, company facts written into a method or perspective page, a subject page whose facts cite no source, a Journal entry when the user asked only for research without stating their own judgment for the record, or a Journal entry holding a stance the assistant originated rather than the user.';
 /** Provider routing prefixes do not establish the underlying model family. */
 export function modelFamily(id) {
   const model = typeof id === 'string' ? id.trim().toLowerCase().split('/').at(-1) : '';
@@ -34,6 +34,14 @@ const canonical = (value) => JSON.parse(canonicalJson(value));
 const observedFields = (value, fields) => Object.fromEntries(fields.map((field) => [field, value[field] ?? null]));
 const commitEvidence = (commit) => observedFields(commit,
   ['kind', 'record_id', 'title', 'summary', 'change_summary', 'operation', 'prediction', 'outcome']);
+/** A Lens commit names only "lens"; the stored page tells a subject page from a method. */
+function savedItemEvidence(commit, trace) {
+  const evidence = commitEvidence(commit);
+  const page = commit.kind === 'lens' ? trace.lens?.pages?.find((item) => item.record_id === commit.record_id) : undefined;
+  if (!page) return evidence;
+  const basis = [...new Set(page.sections.flatMap((section) => section.basis ?? []))].sort();
+  return { ...evidence, page_kind: page.kind, page_basis: basis };
+}
 
 export function itemId(trace, criterionId) {
   return canonicalJson([turnIdentity(trace), criterionId]);
@@ -122,7 +130,7 @@ export function judgeItems(suite, traces) {
       const recordId = commit.record_id || String(index);
       items.push({
         kind: 'save_precision', criterion_id: `save_precision:${index}:${recordId}`, metric: 'save_precision', criterion: SAVE_PRECISION_CRITERION, trace,
-        memory_item: commitEvidence(commit),
+        memory_item: savedItemEvidence(commit, trace),
       });
     });
   }
@@ -141,7 +149,21 @@ export function buildJudgeInput(suite, item, traces) {
     criterion: item.criterion,
   };
   if (item.memory_item) input.memory_item = item.memory_item;
+  const pages = storedLensPages(item.trace);
+  if (pages) input.lens_pages_after_turn = pages;
   return input;
+}
+
+/** What the store holds after the turn, so a judge reads what a page says is current. */
+function storedLensPages(trace) {
+  const pages = trace.lens?.pages;
+  if (!Array.isArray(pages) || pages.length === 0) return null;
+  return pages.filter((page) => !page.archived).map((page) => ({
+    record_id: page.record_id, kind: page.kind, title: page.title, summary: page.summary ?? '',
+    sections: (page.sections ?? []).map((section) => ({ key: section.key, heading: section.heading, markdown: section.markdown,
+      basis: section.basis ?? [], contested: section.contested === true })),
+    ops_this_turn: page.ops_this_turn ?? [],
+  }));
 }
 
 export function renderJudgePrompt(input) {
@@ -245,6 +267,32 @@ export function grokBackend({ model = DEFAULT_JUDGE_MODEL, reasoningEffort = DEF
       try {
         const stdout = await run(command, grokJudgeArgs({ prompt, model, cwd, reasoningEffort: controls.reasoningEffort ?? reasoningEffort }), { cwd });
         return parseGrokJudgeStdout(stdout);
+      } finally {
+        await rm(cwd, { recursive: true, force: true });
+      }
+    },
+  };
+}
+
+export function codexJudgeArgs({ prompt, model, cwd, schemaPath, outputPath, reasoningEffort = DEFAULT_REASONING_EFFORT }) {
+  return ['exec', '--ignore-user-config', '--ignore-rules', '--skip-git-repo-check', '--ephemeral', '-m', model,
+    '-c', `model_reasoning_effort="${reasoningEffort}"`, '-c', 'features.shell_tool=false', '-c', 'web_search="disabled"',
+    '-c', 'features.multi_agent=false', '--sandbox', 'read-only', '--cd', cwd,
+    '--output-schema', schemaPath, '--output-last-message', outputPath, prompt];
+}
+
+/** A tool-free `codex exec` judge, for agents whose own family is xAI. */
+export function codexBackend({ model = 'gpt-6-astra', reasoningEffort = DEFAULT_REASONING_EFFORT, command = 'codex', run = runProcess } = {}) {
+  return {
+    model,
+    async judge(prompt, controls = {}) {
+      const cwd = await mkdtemp(join(tmpdir(), 'agent-judge-'));
+      try {
+        const schemaPath = join(cwd, 'schema.json');
+        const outputPath = join(cwd, 'verdict.json');
+        await writeFile(schemaPath, JSON.stringify(JUDGE_SCHEMA));
+        await run(command, codexJudgeArgs({ prompt, model, cwd, schemaPath, outputPath, reasoningEffort: controls.reasoningEffort ?? reasoningEffort }), { cwd });
+        return parseJudgeResult(await readFile(outputPath, 'utf8'));
       } finally {
         await rm(cwd, { recursive: true, force: true });
       }

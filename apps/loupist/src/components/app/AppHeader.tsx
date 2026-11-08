@@ -25,6 +25,7 @@ export function AppHeader({ runningLoupists, unreadCounts, loupists, onSelect, o
   useTranslation();
   const openingPanel = useRef(false);
   const keyboardOpening = useRef(false);
+  const panelHint = (kind: WorkspacePanelKind) => i18n.t(kind === "lens" ? "app:shell.lensHint" : kind === "world" ? "app:shell.worldHint" : "app:shell.chatMaterialsHint");
   const panelLabel = (kind: WorkspacePanelKind) => kind === "lens" ? "Lens" : kind === "world" ? "World" : i18n.t("app:shell.chatMaterials");
   const profiles = useRef<HTMLDivElement>(null);
   useEffect(() => { profiles.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.scrollIntoView?.({ block: "nearest", inline: "nearest" }); }, [loupist?.id]);
@@ -66,9 +67,9 @@ export function AppHeader({ runningLoupists, unreadCounts, loupists, onSelect, o
       <div className="header-market-slot"><MarketStatusChip markets={markets} /></div>
       <div className="header-workspace-controls" role="group" aria-label={i18n.t("app:shell.workspaceControls")}>
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="header-panel-toggle" onPointerDown={() => { keyboardOpening.current = false; }} onKeyDown={() => { keyboardOpening.current = true; }} aria-label={`${panelLabel(workspaceKind)} · ${i18n.t("app:shell.panelKind")}`} aria-controls={workspaceOpen ? "workspace-panel" : undefined}><span>{panelLabel(workspaceKind)}</span><ChevronDownIcon /></Button></DropdownMenuTrigger>
-          <DropdownMenuContent align="end" onCloseAutoFocus={event => { if (openingPanel.current) { openingPanel.current = false; event.preventDefault(); if (keyboardOpening.current) requestAnimationFrame(() => focusForKeyboard(document.querySelector<HTMLButtonElement>("[data-workspace-close]"))); } }}>
+          <DropdownMenuContent align="end" className="header-panel-menu" onCloseAutoFocus={event => { if (openingPanel.current) { openingPanel.current = false; event.preventDefault(); if (keyboardOpening.current) requestAnimationFrame(() => focusForKeyboard(document.querySelector<HTMLButtonElement>("[data-workspace-close]"))); } }}>
             <DropdownMenuRadioGroup value={workspaceKind}>
-              {(["lens", "world", "materials"] as const).map(kind => <DropdownMenuRadioItem key={kind} data-workspace-kind={kind} value={kind} onSelect={() => { openingPanel.current = !workspaceOpen; notePanelOpenedFromHeader(!workspaceOpen && keyboardOpening.current); onWorkspaceKind(kind); }}>{panelLabel(kind)}</DropdownMenuRadioItem>)}
+              {(["lens", "world", "materials"] as const).map(kind => <DropdownMenuRadioItem key={kind} data-workspace-kind={kind} value={kind} aria-labelledby={`panel-kind-${kind}`} aria-describedby={`panel-kind-${kind}-hint`} onSelect={() => { openingPanel.current = !workspaceOpen; notePanelOpenedFromHeader(!workspaceOpen && keyboardOpening.current); onWorkspaceKind(kind); }}><span className="header-panel-kind"><strong id={`panel-kind-${kind}`}>{panelLabel(kind)}</strong><small id={`panel-kind-${kind}-hint`}>{panelHint(kind)}</small></span></DropdownMenuRadioItem>)}
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>

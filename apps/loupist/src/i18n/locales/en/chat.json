@@ -404,8 +404,8 @@
     "readSources_one": "Read {{formattedCount}} source",
     "readSources_other": "Read {{formattedCount}} sources",
     "sourcesRead": "Sources read in this answer",
-    "names_one": "Map +{{formattedCount}} name",
-    "names_other": "Map +{{formattedCount}} names",
+    "names_one": "{{formattedCount}} name added to the map",
+    "names_other": "{{formattedCount}} names added to the map",
     "namesOnMap_one": "Show {{formattedCount}} new on the map",
     "namesOnMap_other": "Show {{formattedCount}} new on the map",
     "relationships_one": "{{formattedCount}} relationship updated",
@@ -1047,6 +1047,7 @@
     "review": "Review",
     "reviewCheck": "Review this check",
     "youCouldAsk": "You could ask",
+    "askGreeting": "What would you like to research?",
     "reason": {
       "new": "new on the map",
       "relation": "new relationship",

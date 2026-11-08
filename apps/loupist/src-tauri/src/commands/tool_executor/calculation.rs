@@ -162,16 +162,9 @@ impl AppToolExecutor {
             input_sources
                 .iter()
                 .map(|(name, url)| {
-                    registry
-                        .values()
-                        .find(|result| &evidence::citation_url(&result.result_ref) == url)
+                    evidence::cited_result(&registry, url)
                         .map(|result| (name.clone(), result.clone()))
-                        .ok_or_else(|| {
-                            BrokerError::invalid(
-                                format!("input_sources.{name}"),
-                                "not a citation_url from this turn",
-                            )
-                        })
+                        .map_err(|why| BrokerError::invalid(format!("input_sources.{name}"), why))
                 })
                 .collect::<Result<_, _>>()?
         };

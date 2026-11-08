@@ -44,7 +44,7 @@ it("lists and selects a new topic chat under the Thread, and its title says whic
   render(<App bridge={bridge} />);
   expect(await screen.findByRole("heading", { name: "Bot", level: 1 })).toBeVisible();
   const chats = document.querySelector<HTMLElement>(".loupist-navigation")!;
-  await user.click(screen.getByRole("button", { name: "New chat with Quality Compounder" }));
+  await user.click(screen.getByRole("button", { name: "New research" }));
   expect(await screen.findByRole("heading", { name: "New chat", level: 1 })).toBeVisible();
   const rows = [...chats.querySelectorAll(".loupist-chat-button")];
   expect(rows[0]).toHaveAccessibleName("Bot");

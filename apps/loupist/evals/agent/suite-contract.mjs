@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const catalogPath = join(here, '../../agent/tool-catalog.json');
 
-import { TRACE_ASSERTS, MEMORY_ASSERTS, MEMORY_KINDS, ANSWER_ASSERTS, answerPatterns, citationAssertion, validDate,
+import { TRACE_ASSERTS, MEMORY_ASSERTS, MEMORY_KINDS, LENS_ASSERTS, lensAssertion, ANSWER_ASSERTS, answerPatterns, citationAssertion, validDate,
   numbersLinkedAssertion, asOfLeftOutAssertion, asOfRefusedAssertion, calculateInputsAssertion, gridCellsAssertion, metricTolerance,
   toolCalledAssertion, sensitivityCardAssertion, planProgressAssertion, calculationChipAssertion } from './eval-contract.mjs';
 const METRICS = new Set([
@@ -15,6 +15,7 @@ const METRICS = new Set([
   'save_recall',
   'save_precision',
   'revision_disclosure',
+  'lens_update',
   'tool_validity',
   'connection_honesty',
   'prediction_structure',
@@ -198,6 +199,10 @@ export function assertScenarioContract(scenario, { suite, label = suite, seenIds
           }
         } else if (bucket === 'memory') {
           assert.ok(MEMORY_ASSERTS.has(item.assert), where);
+          if (LENS_ASSERTS.has(item.assert)) {
+            lensAssertion(item);
+            continue;
+          }
           const kinds = Array.isArray(item.kind) ? item.kind : [item.kind];
           assert.ok(kinds.length > 0 && kinds.every((kind) => MEMORY_KINDS.has(kind)), `${where} ${item.kind}`);
           if (item.min !== undefined) assert.equal(Number.isInteger(item.min) && item.min >= 1, true, where);

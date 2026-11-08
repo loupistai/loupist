@@ -141,9 +141,11 @@ for line in sys.stdin:
             name, method = "lens_file", "lens.file"
             args = {"pages": [{"page": {"create": {"kind": "method", "title": "Hanbit diluted-share rule"}},
                                "ops": [{"op": "put", "key": "use-when", "heading": "Use when",
-                                        "markdown": "Valuing fictional Hanbit companies."},
+                                        "markdown": "Valuing fictional Hanbit companies.",
+                                        "basis": {"refs": [{"said": True}]}},
                                        {"op": "put", "key": "steps", "heading": "Steps",
-                                        "markdown": "Divide equity value by fully diluted shares including warrants."}]}],
+                                        "markdown": "Divide equity value by fully diluted shares including warrants.",
+                                        "basis": {"refs": [{"said": True}]}}]}],
                     "rationale": "The user taught a reusable valuation method."}
         else:
             assert learned, "new chat host memory context did not include the learned Lens"

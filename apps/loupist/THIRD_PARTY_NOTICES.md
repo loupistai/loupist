@@ -59,6 +59,11 @@ workspace file discovery, copyright David Peter and contributors, under the
 MIT or Apache License 2.0. Both upstream license texts are included in
 `pi-runtime/workspace-tools/`.
 
+Loupist bundles [ripgrep](https://github.com/BurntSushi/ripgrep) 15.2.0 for
+offline workspace text search, copyright Andrew Gallant and contributors, under
+the MIT License or the Unlicense. Both upstream license texts are included in
+`pi-runtime/workspace-tools/`.
+
 Loupist bundles Pi coding agent 1.5.0, copyright (c) 2025 Mario Zechner,
 under the MIT License:
 

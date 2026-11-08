@@ -622,7 +622,7 @@ export type GrowthEvent = {
   originChatId: string | null;
   originMessageId: string | null;
   actor: "user" | "loupist" | "import" | "processing";
-  origin?: PrincipleOrigin | { kind: "learning_review"; reviewId: string; worldJobId: string } | { kind: "memory_reset"; counts: MemoryResetCounts } | { labels: SchemaLabels };
+  origin?: PrincipleOrigin | { kind: "learning_review"; reviewId: string } | { kind: "memory_reset"; counts: MemoryResetCounts } | { labels: SchemaLabels };
   summary: string;
   beforeSummary: string | null;
   afterSummary: string | null;

@@ -4,7 +4,10 @@ import { fromMarkdown } from 'mdast-util-from-markdown';
 export const TRACE_SCHEMA = 'loupist-agent-trace/1';
 export const SUITE_SCHEMA = 'loupist-agent-suite/1';
 export const TRACE_ASSERTS = new Set(['tool_called', 'tool_not_called', 'tool_called_before', 'max_tool_calls', 'max_tool_errors', 'no_repeated_failed_call', 'capability_loaded', 'scheduled_tasks', 'tool_args_not_matching', 'calculate_inputs_cited', 'as_of_left_out', 'as_of_refused', 'grid_cells_linked', 'sensitivity_card', 'plan_progress']);
-export const MEMORY_ASSERTS = new Set(['committed', 'not_committed']);
+export const LENS_ASSERTS = new Set(['lens_pages', 'lens_unchanged', 'lens_read', 'lens_not_read']);
+export const MEMORY_ASSERTS = new Set(['committed', 'not_committed', ...LENS_ASSERTS]);
+const LENS_KINDS = new Set(['principle', 'perspective', 'method', 'subject', 'idea']);
+const BASIS_KINDS = new Set(['span', 'claim', 'said', 'page']);
 export const MEMORY_KINDS = new Set(['source', 'note', 'lens', 'lens_proposal', 'principle', 'journal']);
 export const ANSWER_ASSERTS = new Set(['metrics', 'contains_any', 'not_contains', 'answer_not_matching', 'prediction', 'cites_result', 'numbers_linked', 'calculation_chip']);
 /** Saved Memory an as-of answer left out, as Rust counts it in `as_of_report.left_out`. */
@@ -260,6 +263,42 @@ export function memoryCommits(trace) {
     ? commits : null;
 }
 
+/** Canonical Lens pages the runner read from the store after the turn. */
+export function lensPages(trace) {
+  const pages = trace.lens?.pages;
+  return Array.isArray(pages) && pages.every((page) => isRecord(page) && typeof page.title === 'string'
+    && Array.isArray(page.sections) && Array.isArray(page.ops_this_turn)) ? pages : null;
+}
+
+export function memoryReads(trace) {
+  const reads = trace.memory_reads;
+  return Array.isArray(reads) && reads.every(isRecord) ? reads : null;
+}
+
+function lensPattern(value, field) {
+  if (value === undefined) return null;
+  if (typeof value !== 'string' || !value) throw new Error(`Lens ${field} must be a non-empty pattern`);
+  return new RegExp(value, 'iu');
+}
+
+export function lensAssertion(assertion) {
+  const { kind, basis } = assertion;
+  if (kind !== undefined && !LENS_KINDS.has(kind)) throw new Error(`Unknown Lens kind ${kind}`);
+  if (basis !== undefined && !BASIS_KINDS.has(basis)) throw new Error(`Unknown basis kind ${basis}`);
+  for (const field of ['count', 'min', 'max']) {
+    const value = assertion[field];
+    if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) throw new Error(`Lens ${field} must be a non-negative integer`);
+  }
+  if (assertion.assert !== 'lens_unchanged' && assertion.title_matches === undefined) throw new Error(`${assertion.assert} needs title_matches`);
+  if (assertion.unchanged !== undefined && assertion.unchanged !== true) throw new Error('Lens unchanged must be true when present');
+  return {
+    kind, basis, count: assertion.count, min: assertion.min, max: assertion.max, unchanged: assertion.unchanged === true,
+    title: lensPattern(assertion.title_matches, 'title_matches'),
+    sectionMatches: lensPattern(assertion.section_matches, 'section_matches'),
+    sectionNotMatching: lensPattern(assertion.section_not_matching, 'section_not_matching'),
+  };
+}
+
 /** An observed empty answer is data; an absent or non-text answer is not. */
 export function answerEvidence(trace) {
   return typeof trace.answer === 'string' ? trace.answer : null;
@@ -319,6 +358,7 @@ export function validateSuite(suite) {
         }
         for (const assertion of turn.expect?.memory ?? []) {
           if (assertion.count !== undefined && (!Number.isSafeInteger(assertion.count) || assertion.count < 0)) throw new Error('Memory count must be a non-negative integer');
+          if (LENS_ASSERTS.has(assertion.assert)) lensAssertion(assertion);
         }
         const criteria = new Set();
         for (const rubric of turn.expect?.rubric ?? []) {

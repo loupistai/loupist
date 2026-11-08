@@ -2161,7 +2161,6 @@ pub fn publish_and_complete(
             "graph job attempt is no longer active",
         ));
     }
-    super::learning::enqueue(write.tx, &job.loupist_id, job_id, at_ms)?;
     load_job(write.tx, job_id)
 }
 
@@ -2193,7 +2192,7 @@ pub(super) fn complete_reindex(
         ));
     }
     let digest = super::revision::load_revision(write.tx, &job.world_revision_id)?.revision_digest;
-    let completed = finish_indexed_head(write, &job, &digest, at_ms)?;
+    let completed = finish_indexed_head(write, &job, &digest)?;
     if job.document.episode_kind == EPISODE_SEALED {
         return Ok(completed);
     }
@@ -2253,9 +2252,6 @@ pub(super) fn complete_reindex(
     // Sources saved while quarantined can now enter the queue. Original
     // attempted spans still deduplicate against their preserved history.
     write.enqueue_existing_sources(&job.loupist_id, &current, at_ms)?;
-    // Recovery can backfill more work after completing its own job. Recheck
-    // learning admission against that final transaction state.
-    super::learning::enqueue(write.tx, &job.loupist_id, &job.job_id, at_ms)?;
     Ok(completed)
 }
 
@@ -2263,7 +2259,6 @@ fn finish_indexed_head(
     write: &super::KnowledgeWrite<'_>,
     job: &GraphJobView,
     logical_digest: &str,
-    at_ms: i64,
 ) -> KnowledgeResult<GraphJobView> {
     let mut document = job.document.clone();
     finish_artifact(&mut document, logical_digest);
@@ -2275,7 +2270,6 @@ fn finish_indexed_head(
             "graph job attempt is no longer active",
         ));
     }
-    super::learning::enqueue(write.tx, &job.loupist_id, &job.job_id, at_ms)?;
     load_job(write.tx, &job.job_id)
 }
 

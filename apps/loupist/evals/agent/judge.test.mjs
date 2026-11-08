@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { suite, traces, HIDDEN_SENTINEL } from './fixtures/sample.mjs';
 import { agreement, labelViews } from './labels.mjs';
-import { buildJudgeInput, modelFamily, DEFAULT_REASONING_EFFORT, grokBackend, grokJudgeArgs, itemId, judgeAll, judgeCacheKey, judgeItems, openAIBackend, parseGrokJudgeStdout, parseJudgeResult, renderJudgePrompt } from './judge.mjs';
+import { buildJudgeInput, modelFamily, DEFAULT_REASONING_EFFORT, codexBackend, grokBackend, grokJudgeArgs, itemId, judgeAll, judgeCacheKey, judgeItems, openAIBackend, parseGrokJudgeStdout, parseJudgeResult, renderJudgePrompt } from './judge.mjs';
 
 async function cacheDir(t) {
   const directory = await mkdtemp(join(tmpdir(), 'agent-judge-test-'));
@@ -272,4 +272,39 @@ test('model families ignore routing prefixes and leave unknown IDs unclassified'
     ['minimax-m2', 'minimax'], ['openai/custom', 'unknown'], ['other', 'unknown'], ['opus', 'unknown'],
     ['', 'unknown'], [null, 'unknown'], [undefined, 'unknown'],
   ]) assert.equal(modelFamily(id), family, String(id));
+});
+
+test('codex judge runs tool-free with the verdict schema and reads the last message', async () => {
+  const { writeFile, readFile } = await import('node:fs/promises');
+  let seen;
+  const backend = codexBackend({ model: 'gpt-6-astra', run: async (command, args) => {
+    seen = { command, args, schema: JSON.parse(await readFile(args[args.indexOf('--output-schema') + 1], 'utf8')) };
+    await writeFile(args[args.indexOf('--output-last-message') + 1], '{"pass":false,"reason":"stale value"}');
+    return '';
+  } });
+  assert.deepEqual(await backend.judge('Judge this.', { reasoningEffort: 'low' }), { pass: false, reason: 'stale value' });
+  assert.equal(seen.command, 'codex');
+  assert.equal(seen.args.at(-1), 'Judge this.');
+  for (const flag of ['features.shell_tool=false', 'web_search="disabled"', 'model_reasoning_effort="low"', 'read-only']) assert.ok(seen.args.includes(flag), flag);
+  assert.deepEqual(seen.schema.required, ['pass', 'reason']);
+  assert.equal(modelFamily(backend.model), 'openai');
+});
+
+test('a judged Lens commit carries the stored page kind and basis', () => {
+  const suite = { schema: 'loupist-agent-suite/1', suite: 'lens', version: 1, scenarios: [{ id: 'LC', sessions: [{ id: 'train', role: 'train', memory: 'remember', turns: [{ user: 'Research.' }] }] }] };
+  const trace = { schema: 'loupist-agent-trace/1', run_id: 'r', suite: 'lens', scenario_id: 'LC', session_id: 'train', session_role: 'train', memory_mode: 'remember', turn_index: 0, trial: 0, user: 'Research.', status: 'completed', answer: 'Filed.', tool_calls: [],
+    memory_commits: [{ kind: 'lens', record_id: 'rec_a', title: 'Halvren Optics', operation: 'create' }, { kind: 'source', record_id: 'src_b', title: 'Release' }],
+    lens: { pages: [{ record_id: 'rec_a', kind: 'subject', title: 'Halvren Optics', sections: [{ key: 'facts', basis: ['span'] }, { key: 'views', basis: ['span', 'page'] }], ops_this_turn: [] }] } };
+  const items = judgeItems(suite, [trace]).filter((item) => item.kind === 'save_precision');
+  assert.deepEqual(items.map((item) => [item.memory_item.page_kind ?? null, item.memory_item.page_basis ?? null]), [['subject', ['page', 'span']], [null, null]]);
+});
+
+test('judge input carries the stored Lens pages so a stale current value is visible', () => {
+  const suite = { schema: 'loupist-agent-suite/1', suite: 'lens', version: 1, scenarios: [{ id: 'LC', sessions: [{ id: 'train', role: 'train', memory: 'remember', turns: [{ user: 'Update.', expect: { rubric: [{ id: 'current', criterion: 'The page states 14 ships as current.' }] } }] }] }] };
+  const page = (markdown) => ({ record_id: 'rec_a', kind: 'subject', title: 'Dongjin', summary: '', archived: false,
+    sections: [{ key: 'facts', heading: 'Fleet', markdown, basis: ['span'], contested: false }], ops_this_turn: [{ op: 'put', key: 'facts', outcome: 'replaced' }] });
+  const trace = (markdown) => ({ schema: 'loupist-agent-trace/1', run_id: 'r', suite: 'lens', scenario_id: 'LC', session_id: 'train', session_role: 'train', memory_mode: 'remember', turn_index: 0, trial: 0, user: 'Update.', status: 'completed', answer: 'Done.', tool_calls: [], memory_commits: [], lens: { pages: [page(markdown)] } });
+  const input = (markdown) => { const traces = [trace(markdown)]; return buildJudgeInput(suite, judgeItems(suite, traces)[0], traces); };
+  assert.equal(input('Current fleet: 14 ships.').lens_pages_after_turn[0].sections[0].markdown, 'Current fleet: 14 ships.');
+  assert.notDeepEqual(input('Current fleet: 18 ships. A rumor of 14 was rejected.'), input('Current fleet: 14 ships.'));
 });
