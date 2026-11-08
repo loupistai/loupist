@@ -45,10 +45,20 @@ World. Principle, perspective and method pages keep the World-reference ban; no
 page may reference a Journal, a snapshot or a World record id. Links are what the
 Markdown parser reads (inline, reference-style and autolinks, any scheme case),
 for the index and the policy alike. A `world:` link
-becomes a `mention` anchor; a page created with anchors gets `subject` anchors (a
-name anchor without a node stays pending until a World publication names it); a
-final-answer `lens:` link records `applied` anchors to the World nodes delivered
-in that turn. Anchors drive the Map's applies-to edges and the Lens index order.
+becomes a `mention` anchor; a page created with anchors gets `subject` anchors. A
+name anchor names the node whose name or alias folds to the same text, and
+otherwise stays pending until a World publication spells the name or an alias
+exactly, including a spelling extraction resolved to an existing node
+([Worlds](worlds.md#discovery-after-publication)). Nothing else ever binds an
+anchor: a company key or a cited Source never sets a node and never merges or
+binds two pages, so `Hana Co.` stays pending beside a `Hana` node however many
+reports both appear in. A bound anchor only makes its page the target of a
+later create naming that node, and two pages bound to one node stay two pages.
+Method learning may still read a pending page as its company for one review
+([Method learning](#method-learning)); that reading is never stored. A
+final-answer `lens:` link records `applied` anchors to the World nodes
+delivered in that turn. Anchors drive the Map's applies-to edges and the Lens
+index order.
 
 ### Filing
 
@@ -116,16 +126,115 @@ checks the Lens log rows no review that reached inference has shown, once
 something was filed after the head the last review read. When two independent
 Chats filed that evidence about two different cases, Rust records one pending
 review. Chats are independent when each cites a Source the other never cited. A
-page's case is its subject anchors, which `about` sets on a subject or idea page,
-and two cases differ when they share no anchor. A resolved anchor is its World
-node alone, so two companies that held one name at different times stay two
-cases. A pending anchor is its folded name until a World publication resolves it
-to a node. A page with no subject anchor could concern any company, so its
-sections are not evidence and are not shown to a review. So one Chat, one Source, one company
-however many subject and idea pages it has, an unanchored page, or a Chat
-repeating another's Sources never starts one. Two pending spellings of one
-company that the World has not named, such as `Acme` and `Acme Inc.`, still
-count as two cases. Rows with a non-empty `world_job_id` come from the earlier claim-count
+page's case is who its subject anchors (`about` on a subject or idea page) name.
+With World processing on, the World improves identity and never gates liveness:
+a page whose anchors the World resolved counts as those nodes, and a page whose
+subject it has not resolved counts once the World is through with the Sources
+the page cites, however that processing ended, so a failed, empty or slow
+extraction never gates liveness. A case is the World nodes of the page's subject
+anchors, plus the company keys of each node's current World names and aliases
+(`entity_name_keys`: accents, apostrophes and punctuation
+except `&` dropped, NFKC and casefold, a leading `The` and legal forms such as
+`Inc.`, `Co., Ltd.`, `& Co.`, `L.L.C.`, `S.A.`, `S.A.B. de C.V.`, `ASA`,
+`(주)`, `(유)`, `주식회사` or `株式会社` stripped while a name remains; each
+spelling also keyed without its spaces, so `U.S. Bancorp` meets `US Bancorp`
+and `J.P. Morgan` meets `JPMorgan`; a parenthetical in another script,
+`삼성전자(Samsung Electronics)`, as a second spelling, while a qualifier in the
+name's own script, `(한국)`, `(Holdings)`, `(Class A)`, is no key; a listing
+code, parenthesized or after the name, `(005930)`, `(NASDAQ:AAPL)`, as a key of
+its own, so `Apple` meets `Apple Inc. (NASDAQ:AAPL)`; a spelling that is only
+`EXCH:AG` kept whole, keyed `exch ag` and `ag`; a leading `AB` or `AS` and
+`and` for `&` left as words, so `AB Volvo` and `Volvo AB`, or `Johnson &
+Johnson` and `Johnson and Johnson`, share no key) and the component of the
+nodes whose keys meet through other nodes, so `삼성전자` and `Samsung
+Electronics` are one case when a third node spells both. Two cases differ when
+they share no node, key or component. So two companies that held one name at different
+times stay two cases, while `Acme` and `Acme Inc.` are one case whether the
+World names one node or two. Two different companies that share a key only
+defer learning; a key never touches a page. The World is read only when a
+pending page or the nodes alone call for it, and the snapshot is parsed once
+per World revision: a process-wide identity index of the last four revisions
+keys a node the first time learning asks about it and joins the components
+once. A page whose subject node the current World no longer holds (a shared
+pack removed it) is not evidence: it is consumed like an unanchored page, never
+counted. A page with no subject anchor could concern any company, so its
+sections are not evidence, are not shown to a review, and are consumed like any
+other row.
+
+A page whose subject the World has not confirmed is read against the Sources
+its current sections cite, for that read only, once the World is through with
+every one of them. A Source is processed when the World job table
+(`knowledge_graph_outbox`) holds no queued or running job for it and a job for
+its current revision has any other status: completed; failed, cancelled,
+quarantined or reconciled, since a World that gave up on a Source cannot reveal
+more from it; or paused, since a chunk whose frozen allowance cannot fund an
+extraction (a report split into more chunks than its call budget feeds two calls
+each; the first claim parks them and rechecks learning) or a queue the user
+paused is not read without the user's action, and the resume that lets it settle
+rechecks learning then. The revision's dependency list is not the ledger: a
+Source read without yielding a claim leaves that list on the next publication.
+A Source with no job, or none for its latest revision, holds the page. The page
+is then a case with the keys of each name it was filed under, with every World
+node whose names or aliases carry one of those keys, so with that node's keys
+and component too, and with every company in the current World (a node of the
+core Organization kind or an extension type of the company category) whose
+name or alias may name the page's subject, whichever Source the World met it
+in and whether or not a claim names it (`WorldIdentity::companies_naming`). A
+node may name the subject when the words of one of its keys contain, or are
+contained in, the words of one of the page's keys (`identity::may_name`):
+`hana` may name `hana financial group` and `hana co`, `halvorsen cellworks` may
+name `halvorsen cellworks asa` or `halvorsen cellworks group`, and neither may
+name `loupist`, `kpmg` or `nordic auto`. So a page filed under `Halvorsen
+Cellworks` is one case with the node extraction canonicalized as `Halvorsen
+Cellworks ASA`, whether the report it cites claimed that node, claimed it and
+withdrew, or yielded nothing; a `Hana` page is one case with `Hana Financial
+Group` and `Hana Co.` wherever the World holds them, never independent of
+either, even when its own report's extraction failed or found nothing: a short
+name cannot pick the counterparty on its own, nor deny a bank the World already
+knows; and a `Samsung Electronics Inc.` page whose report published nothing is
+one case with a page about `삼성전자` when a node spells `삼성전자(Samsung
+Electronics)`. The auditor, exchange, bank, customer or regulator a report
+names beside its company is no case of the page, since its name does not match
+the page's: two reports whose disclaimers both name `Loupist` or `KPMG` leave
+their two companies two cases, so the review queues. A name the World never
+extracted, because the extraction failed or found nothing, still counts under
+its own key, so two Chats about `Halvorsen Cellworks` and `Ferroluz
+Componentes` learn with no World output at all, while `Kestrel Foundry` and
+`Kestrel Foundry Inc.` stay one case. A Product named like the page is no
+company it could be about.
+The anchor stays pending in storage either way. A pending page citing a Source
+the World is not through with is not evidence, but its rows are not consumed: a
+review that reaches inference advances its watermark past them and stores their
+ids as `held` in its snapshot, carried forward and rebuilt on every read, so the
+job or publication that frees them still finds them, however many reviews ran
+meanwhile.
+`held` also keeps confirmed rows below the watermark that did not fit the
+input, and the watermark never moves below the one already consumed, so a
+row leaves `held` only when shown or no longer current; rows above the
+watermark that a review showed are stored as `shown`, and the latest started
+review's snapshot is the one read. A name on a Source the World never
+reads never counts. So one Chat, one Source, one company however many subject
+and idea pages it has, an unanchored page, a page citing an unread Source, or a
+Chat repeating another's Sources never starts one. A World publication that resolves pending subject
+anchors, that changes the name or alias set of a node a confirmed subject
+anchor names, or that lands while any live page has a pending subject anchor,
+rechecks the evidence at once, without waiting for a new filing, under the
+same rate limits and active-review rule; a publication that spells every
+subject as before, with no pending page, does not. A Source job that reaches a
+final status rechecks too while any live page has a pending subject: after a
+failed or quarantined attempt, after the completed status is written behind a
+publication (the seal rechecked while the job still ran, so its own Source was
+not yet processed), and at startup once interrupted jobs are given their
+final status. A review queued or running
+at that moment rechecks when it settles: its row stored how many subject
+anchors the World had confirmed when it was queued, its claim snapshot how
+many at the claim, and a larger count then means a publication landed
+meanwhile. A settle after inference whose snapshot still holds rows rechecks
+too, so held leftovers reach their next review without a filing, while a
+review deferred before inference held nothing and never requeues itself.
+Rows already shown to a review are never offered again, even when a later
+publication renames their company.
+Rows with a non-empty `world_job_id` come from the earlier claim-count
 trigger and hold growth-event rowids: they never set the watermark, and startup
 defers any still pending or queued with `trigger_changed`.
 

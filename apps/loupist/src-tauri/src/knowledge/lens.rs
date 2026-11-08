@@ -124,6 +124,8 @@ fn load(tx: &Transaction<'_>, loupist_id: &str, record_id: &str) -> KnowledgeRes
 }
 
 /// Node ids, folded names and active claims of the Loupist's current World.
+/// A name anchor binds to a node only through an exact folded name or alias:
+/// a company key is a hint for learning, never an identity for storage.
 #[derive(Default)]
 struct WorldIndex {
     ids: BTreeSet<String>,
@@ -132,7 +134,11 @@ struct WorldIndex {
     active_claims: BTreeSet<String>,
 }
 
-fn world_index(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<WorldIndex> {
+/// The Loupist's current World snapshot, if one was published.
+fn world_body(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+) -> KnowledgeResult<Option<WorldSnapshotBody>> {
     let payload: Option<String> = tx
         .query_row(
             "SELECT v.payload_json FROM knowledge_records r
@@ -143,11 +149,14 @@ fn world_index(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<WorldI
             |row| row.get(0),
         )
         .optional()?;
+    payload.map(|payload| from_json(&payload)).transpose()
+}
+
+fn world_index(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<WorldIndex> {
     let mut index = WorldIndex::default();
-    let Some(payload) = payload else {
+    let Some(body) = world_body(tx, loupist_id)? else {
         return Ok(index);
     };
-    let body: WorldSnapshotBody = from_json(&payload)?;
     index_nodes(&mut index, &body.nodes);
     index.active_claims = body
         .claims
@@ -156,6 +165,43 @@ fn world_index(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<WorldI
         .map(|claim| claim.id.clone())
         .collect();
     Ok(index)
+}
+
+/// The head revision of the Loupist's World, if one was published.
+fn world_head(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<Option<String>> {
+    Ok(tx
+        .query_row(
+            "SELECT h.revision_id FROM knowledge_records r
+             JOIN knowledge_record_heads h ON h.record_id = r.record_id
+             WHERE r.owner_loupist_id = ?1 AND r.kind = 'world'",
+            [loupist_id],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
+/// Reads the current World through its identity index
+/// ([`super::identity::WorldIdentity`]): the company keys of a node's name and
+/// aliases, the component of nodes whose keys meet, and the companies whose
+/// names may name a pending page's subject. Method learning reads it to see
+/// when two nodes might spell one company and who a pending page is about.
+/// None when no World was published. The World is parsed once per revision,
+/// not on every filing.
+pub(super) fn world_identity<R>(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    read: impl FnOnce(&mut super::identity::WorldIdentity) -> R,
+) -> KnowledgeResult<Option<R>> {
+    let Some(revision) = world_head(tx, loupist_id)? else {
+        return Ok(None);
+    };
+    super::identity::with_world_identity(
+        loupist_id,
+        &revision,
+        || from_json(&load_revision(tx, &revision)?.payload_json),
+        read,
+    )
+    .map(Some)
 }
 
 fn index_nodes(index: &mut WorldIndex, nodes: &[GraphNode]) {
@@ -1080,9 +1126,10 @@ pub(super) fn contest_pages(
     Ok(changed_pages)
 }
 
-/// Pending name anchors resolve once the World knows the name or an alias.
-/// Returns how many anchors gained a node. Discovery calls this after every
-/// World publication.
+/// Pending subject name anchors resolve once the World knows the name or an
+/// alias exactly (mention and applied anchors are born with a node); nothing
+/// else ever sets a node, so a shared company key binds no page. Returns how
+/// many gained a node. Discovery calls this after every World publication.
 pub(super) fn resolve_anchors(
     tx: &Transaction<'_>,
     loupist_id: &str,
@@ -1092,7 +1139,7 @@ pub(super) fn resolve_anchors(
     index_nodes(&mut index, nodes);
     let mut statement = tx.prepare(
         "SELECT rowid, name_fold FROM knowledge_lens_anchors
-         WHERE loupist_id = ?1 AND node_id IS NULL AND name_fold <> ''",
+         WHERE loupist_id = ?1 AND role = 'subject' AND node_id IS NULL AND name_fold <> ''",
     )?;
     let pending = statement
         .query_map([loupist_id], |row| {
@@ -1110,6 +1157,62 @@ pub(super) fn resolve_anchors(
         }
     }
     Ok(resolved)
+}
+
+/// Whether a live subject or idea page still has a subject anchor the World
+/// has not confirmed. Method learning reads such a page against the Sources
+/// it cites at read time, so a publication or a settled World job rechecks
+/// while any exists.
+pub(super) fn pending_subjects_exist(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+) -> KnowledgeResult<bool> {
+    Ok(tx.query_row(
+        "SELECT EXISTS(
+            SELECT 1 FROM knowledge_lens_anchors a
+            JOIN knowledge_lens_metadata m ON m.record_id = a.record_id
+            WHERE a.loupist_id = ?1 AND a.role = 'subject' AND a.node_id IS NULL
+              AND a.name_fold <> '' AND m.archived_at_ms IS NULL
+              AND m.kind IN ('subject', 'idea'))",
+        [loupist_id],
+        |row| row.get(0),
+    )?)
+}
+
+/// Whether a node that a confirmed subject anchor names spells itself
+/// differently in `next` than in `previous`: another name or alias set, or
+/// gone. Method learning keys a case by the World's current names, so such a
+/// publication can split or fuse cases without resolving any anchor.
+pub(super) fn subject_spellings_changed(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    previous: Option<&WorldSnapshotBody>,
+    next: &WorldSnapshotBody,
+) -> KnowledgeResult<bool> {
+    let Some(previous) = previous else {
+        return Ok(false);
+    };
+    let mut statement = tx.prepare(
+        "SELECT DISTINCT node_id FROM knowledge_lens_anchors
+         WHERE loupist_id = ?1 AND role = 'subject' AND node_id IS NOT NULL",
+    )?;
+    let confirmed: BTreeSet<String> = statement
+        .query_map([loupist_id], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    if confirmed.is_empty() {
+        return Ok(false);
+    }
+    let spellings = |body: &WorldSnapshotBody| -> BTreeMap<String, (String, BTreeSet<String>)> {
+        body.nodes
+            .iter()
+            .filter(|node| confirmed.contains(&node.id))
+            .map(|node| {
+                let aliases = node.aliases.iter().cloned().collect();
+                (node.id.clone(), (node.name.clone(), aliases))
+            })
+            .collect()
+    };
+    Ok(spellings(previous) != spellings(next))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2041,8 +2144,8 @@ mod tests {
     use super::*;
     use crate::knowledge::lens_page::{BasisRef, PageKind};
     use crate::knowledge::{
-        Authorship, Coverage, CreateRecord, KnowledgeStore, RepresentationRole, RetainMaterial,
-        RetainNewSource, SealWorld, Selector, SourceClass,
+        Authorship, ClaimEndpoint, Coverage, CreateRecord, GraphClaim, KnowledgeStore,
+        RepresentationRole, RetainMaterial, RetainNewSource, SealWorld, Selector, SourceClass,
     };
 
     const LOUPIST: &str = "loupist-a";
@@ -2610,6 +2713,95 @@ mod tests {
     }
 
     #[test]
+    fn a_name_binds_to_a_node_only_when_the_world_spells_it_so() {
+        let (_dir, store) = store();
+        let world = store
+            .create_record(CreateRecord {
+                loupist_id: LOUPIST.into(),
+                kind: RecordKind::World,
+                title: "World".into(),
+                at_ms: 1,
+            })
+            .unwrap();
+        let subject = |message: &str, name: &str, at_ms| {
+            let filed = file_in(
+                &store,
+                &turn(message),
+                vec![PageDelta {
+                    target: PageTarget::Create {
+                        kind: PageKind::Subject,
+                        title: name.to_owned(),
+                        anchors: vec![AnchorInput::Name { name: name.into() }],
+                    },
+                    ops: vec![put("facts", "A", None)],
+                }],
+                at_ms,
+            );
+            filed[0].record_id.clone()
+        };
+        let node_of = |id: &str| read(&store, id).anchors[0].node_id.clone();
+        let node = |id: &str, name: &str, aliases: &[&str]| GraphNode {
+            id: id.into(),
+            name: name.into(),
+            aliases: aliases.iter().map(|a| (*a).to_owned()).collect(),
+            description: String::new(),
+            kind: "Organization".into(),
+            source_role: "subject".into(),
+            properties: Default::default(),
+        };
+        let seal = |nodes: Vec<GraphNode>, at_ms| {
+            let head: Option<String> = store
+                .read(|w| {
+                    Ok(w.tx
+                        .query_row(
+                            "SELECT revision_id FROM knowledge_record_heads WHERE record_id = ?1",
+                            [&world.record_id],
+                            |row| row.get(0),
+                        )
+                        .optional()?)
+                })
+                .unwrap();
+            store
+                .seal_world(SealWorld {
+                    loupist_id: LOUPIST.into(),
+                    record_id: world.record_id.clone(),
+                    expected_revision_id: head,
+                    at_ms,
+                    nodes,
+                    claims: Vec::new(),
+                    annotations: Vec::new(),
+                    dependencies: Vec::new(),
+                })
+                .unwrap();
+        };
+        seal(vec![node("nod_hana", "Hana", &[])], 2);
+        // "Hana" is the World's node. "Hana Co." may be another company the
+        // World has not met yet: its page stays its own and its anchor pending.
+        let hana = subject("m1", "Hana", 3);
+        assert_eq!(node_of(&hana).as_deref(), Some("nod_hana"));
+        let hana_co = subject("m2", "Hana Co.", 4);
+        assert_ne!(hana_co, hana);
+        assert_eq!(node_of(&hana_co), None);
+        let suffixed = subject("m3", "Halvorsen Cellworks ASA", 5);
+        assert_eq!(node_of(&suffixed), None);
+        // A publication that spells the names, as a name or an alias, binds
+        // them to the nodes it says, and the pages stay apart.
+        seal(
+            vec![
+                node("nod_hana", "Hana", &[]),
+                node("nod_hana_co", "Hana Company", &["Hana Co."]),
+                node("nod_h", "Halvorsen Cellworks", &[]),
+            ],
+            6,
+        );
+        assert_eq!(node_of(&hana_co).as_deref(), Some("nod_hana_co"));
+        assert_eq!(node_of(&suffixed), None);
+        assert_eq!(node_of(&hana).as_deref(), Some("nod_hana"));
+        assert_eq!(subject("m4", "hana co.", 7), hana_co);
+        assert_eq!(subject("m5", "Hana", 8), hana);
+    }
+
+    #[test]
     fn world_links_need_known_nodes_and_resolve_pending_anchors() {
         let (_dir, store) = store();
         let world = store
@@ -2952,6 +3144,233 @@ mod tests {
             )
         });
         assert!(matches!(principle, Err(KnowledgeError::LensBodyForbidden)));
+    }
+
+    #[test]
+    fn node_keys_parse_a_world_revision_once_and_know_which_nodes_it_holds() {
+        let (_dir, store) = store();
+        let loupist = "loupist-keys";
+        let revision = seal(&store, loupist, "acme");
+        let computed = || super::super::identity::KEY_COMPUTATIONS.with(|count| count.get());
+        let keys = |nodes: &[&str]| -> BTreeMap<String, BTreeSet<String>> {
+            store
+                .read(|read| {
+                    world_identity(read.tx, loupist, |world| {
+                        nodes
+                            .iter()
+                            .filter_map(|id| Some(((*id).to_owned(), world.keys(id)?.clone())))
+                            .collect()
+                    })
+                })
+                .unwrap()
+                .unwrap_or_default()
+        };
+        let before = computed();
+        let first = keys(&["acme", "ghost"]);
+        assert_eq!(first.keys().collect::<Vec<_>>(), ["acme"]);
+        assert_eq!(first["acme"], BTreeSet::from(["acme".to_owned()]));
+        assert_eq!(computed(), before + 1, "one node's keys computed");
+        assert_eq!(keys(&["acme"]), first);
+        assert_eq!(computed(), before + 1, "the second read reuses them");
+        // A new revision is parsed again, and only the nodes asked about are keyed.
+        let world = revision.record_id.clone();
+        store
+            .seal_world(SealWorld {
+                loupist_id: loupist.into(),
+                record_id: world,
+                expected_revision_id: Some(revision.revision_id),
+                at_ms: 3,
+                nodes: ["acme", "beta"]
+                    .iter()
+                    .map(|id| GraphNode {
+                        id: (*id).into(),
+                        name: format!("{} Inc.", id.to_uppercase()),
+                        aliases: vec![],
+                        description: String::new(),
+                        kind: "Organization".into(),
+                        source_role: "subject".into(),
+                        properties: Default::default(),
+                    })
+                    .collect(),
+                claims: Vec::new(),
+                annotations: Vec::new(),
+                dependencies: Vec::new(),
+            })
+            .unwrap();
+        assert_eq!(keys(&["beta"])["beta"], BTreeSet::from(["beta".to_owned()]));
+        assert_eq!(computed(), before + 2);
+        // Components key every node of the revision once, then are kept.
+        let component = |node: &str| {
+            store
+                .read(|read| world_identity(read.tx, loupist, |world| world.component(node)))
+                .unwrap()
+                .flatten()
+        };
+        assert_eq!(component("acme").as_deref(), Some("acme"));
+        assert_eq!(
+            computed(),
+            before + 3,
+            "the other node keyed for the components"
+        );
+        assert_eq!(component("beta").as_deref(), Some("beta"));
+        assert_eq!(component("ghost"), None);
+        assert_eq!(computed(), before + 3);
+    }
+
+    /// A span of a retained Source, as a turn cites it.
+    fn span_of(source: &crate::knowledge::RetainedSource) -> BasisRef {
+        BasisRef::Span {
+            record_id: source.record_id.clone(),
+            revision_digest: source.revision_digest.clone(),
+            span_id: source.span_id.clone().unwrap(),
+        }
+    }
+
+    /// An idea page named after `company`, citing `span`; its anchor stays pending.
+    fn pending_page(store: &KnowledgeStore, company: &str, span: &BasisRef) -> String {
+        let filed = file_in(
+            store,
+            &turn(&format!("m-{company}")),
+            vec![PageDelta {
+                target: PageTarget::Create {
+                    kind: PageKind::Idea,
+                    title: format!("{company} thesis"),
+                    anchors: vec![AnchorInput::Name {
+                        name: company.into(),
+                    }],
+                },
+                ops: vec![LensOp::Put {
+                    key: SectionKey::new("thesis").unwrap(),
+                    heading: "Thesis".into(),
+                    markdown: "Margins follow utilization.".into(),
+                    basis: Basis {
+                        refs: vec![span.clone()],
+                        uncertainty: None,
+                    },
+                    expected: None,
+                }],
+            }],
+            5,
+        );
+        let id = filed[0].record_id.clone();
+        assert!(read(store, &id).anchors[0].node_id.is_none());
+        id
+    }
+
+    fn company_node(id: &str, name: &str) -> GraphNode {
+        GraphNode {
+            id: id.into(),
+            name: name.into(),
+            aliases: vec![],
+            description: String::new(),
+            kind: "Organization".into(),
+            source_role: "subject".into(),
+            properties: Default::default(),
+        }
+    }
+
+    /// A claim between `from` and `to` whose evidence cites `span`.
+    fn claim_citing(id: &str, from: &str, to: &str, span: &BasisRef) -> GraphClaim {
+        let BasisRef::Span { span_id, .. } = span else {
+            unreachable!()
+        };
+        GraphClaim {
+            id: id.into(),
+            proposition: format!("{from} supplies {to}"),
+            attribution: "report".into(),
+            relation: "supplies".into(),
+            endpoints: vec![
+                ClaimEndpoint {
+                    node_id: from.into(),
+                    role: "source".into(),
+                },
+                ClaimEndpoint {
+                    node_id: to.into(),
+                    role: "target".into(),
+                },
+            ],
+            qualifiers: Vec::new(),
+            evidence: vec![crate::knowledge::EvidenceBinding {
+                span_id: span_id.clone(),
+                role: crate::knowledge::BindingRole::ExtractedFrom,
+                attribution: "report".into(),
+            }],
+            status: ClaimStatus::Active,
+            recorded_at_ms: Some(7),
+            publication_time: None,
+            effective_time: None,
+            valid_at: None,
+            invalid_at: None,
+            expired_at: None,
+        }
+    }
+
+    fn seal_with_claims(store: &KnowledgeStore, nodes: Vec<GraphNode>, claims: Vec<GraphClaim>) {
+        let world = store
+            .create_record(CreateRecord {
+                loupist_id: LOUPIST.into(),
+                kind: RecordKind::World,
+                title: "World".into(),
+                at_ms: 1,
+            })
+            .unwrap();
+        store
+            .seal_world(SealWorld {
+                loupist_id: LOUPIST.into(),
+                record_id: world.record_id,
+                expected_revision_id: None,
+                at_ms: 7,
+                nodes,
+                claims,
+                annotations: Vec::new(),
+                dependencies: Vec::new(),
+            })
+            .unwrap();
+    }
+
+    fn anchor_node(store: &KnowledgeStore, record_id: &str) -> Option<String> {
+        read(store, record_id).anchors[0].node_id.clone()
+    }
+
+    #[test]
+    fn a_source_the_page_cites_never_binds_its_anchor() {
+        let (_dir, store) = store();
+        let report = span_of(&retain(&store));
+        let page = pending_page(&store, "Halvorsen Cellworks", &report);
+        // Extraction canonicalized the company with its legal form and drew a
+        // claim from the report the page cites. Only an exact spelling binds:
+        // the anchor stays pending, and a later create under the World's name
+        // is a page of its own, not this one.
+        seal_with_claims(
+            &store,
+            vec![
+                company_node("nod_h", "Halvorsen Cellworks ASA"),
+                company_node("nod_m", "Meridian Motors"),
+            ],
+            vec![claim_citing("clm_1", "nod_h", "nod_m", &report)],
+        );
+        assert_eq!(anchor_node(&store, &page), None);
+        let filed = file_in(
+            &store,
+            &turn("m-later"),
+            vec![create_subject(
+                "Halvorsen Cellworks ASA",
+                vec![put("facts", "Listed in Oslo.", None)],
+            )],
+            8,
+        );
+        assert!(filed[0].created);
+        assert_ne!(filed[0].record_id, page);
+        assert_eq!(
+            anchor_node(&store, &filed[0].record_id).as_deref(),
+            Some("nod_h")
+        );
+        let pages = store
+            .read(|write| write.pages_for_node(LOUPIST, "nod_h"))
+            .unwrap();
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].record_id, filed[0].record_id);
+        assert_eq!(anchor_node(&store, &page), None);
     }
 
     #[test]

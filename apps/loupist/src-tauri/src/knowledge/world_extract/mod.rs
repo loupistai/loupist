@@ -27,6 +27,7 @@ use super::model::WorldSnapshotBody;
 use super::KnowledgeStore;
 
 pub(crate) use job::drive_job;
+pub(super) use text::casefold;
 
 const QUERY_LIMIT: usize = 25;
 

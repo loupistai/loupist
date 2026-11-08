@@ -73,16 +73,16 @@ where
     ) {
         return match reindex_and_complete(store, settings, &job, &attempt_id, assets, now_ms) {
             Ok(view) => Ok(view),
-            Err(_) => finish(store, settings, &job, &attempt_id, false),
+            Err(_) => finish(store, settings, &job, &attempt_id, false, now_ms),
         };
     }
     let provider = settings.helper_provider.as_deref().unwrap_or("");
     if graph_inference::admit_helper(provider, auth_mode).is_err() {
-        return finish(store, settings, &job, &attempt_id, false);
+        return finish(store, settings, &job, &attempt_id, false, now_ms);
     }
     let prepared = match prepare(store, settings, &job, followed, assets) {
         Ok(prepared) => prepared,
-        Err(_) => return finish(store, settings, &job, &attempt_id, false),
+        Err(_) => return finish(store, settings, &job, &attempt_id, false, now_ms),
     };
     let started = Instant::now();
     let deadline = started + Duration::from_millis(graph_jobs::LOCAL_OPERATION_BUDGET_MS);
@@ -131,16 +131,16 @@ where
         }
     };
     let Ok(ran) = joined else {
-        return finish(store, settings, &job, &attempt_id, true);
+        return finish(store, settings, &job, &attempt_id, true, now_ms);
     };
     write_stage_log(job_id, &ran.stages, started.elapsed(), &ran.result);
     let uncertain = uncertain || ran.uncertain;
     if blocked {
-        return finish(store, settings, &job, &attempt_id, true);
+        return finish(store, settings, &job, &attempt_id, true, now_ms);
     }
     let extracted = match ran.result {
         Ok(extracted) => extracted,
-        Err(_) => return finish(store, settings, &job, &attempt_id, uncertain),
+        Err(_) => return finish(store, settings, &job, &attempt_id, uncertain, now_ms),
     };
     let spans: Vec<String> = extracted
         .claims
@@ -160,6 +160,7 @@ where
             graph_jobs::JOB_COMPLETED,
             uncertain,
             false,
+            now_ms,
         );
     }
     let mut vectors = extracted.vectors;
@@ -185,7 +186,7 @@ where
     });
     match committed {
         Ok(view) => Ok(view),
-        Err(_) => finish(store, settings, &job, &attempt_id, uncertain),
+        Err(_) => finish(store, settings, &job, &attempt_id, uncertain, now_ms),
     }
 }
 
@@ -197,6 +198,7 @@ fn finish(
     job: &GraphJobView,
     attempt_id: &str,
     uncertain: bool,
+    now_ms: i64,
 ) -> KnowledgeResult<GraphJobView> {
     store.graph_finish(
         settings,
@@ -205,6 +207,7 @@ fn finish(
         graph_jobs::JOB_FAILED_BEFORE,
         uncertain,
         false,
+        now_ms,
     )
 }
 
@@ -565,6 +568,7 @@ fn stored_node(node: &GraphNode, schema: &Schema, vector: Option<&Vec<f32>>) -> 
         summary: node.description.clone(),
         attributes,
         name_embedding: vector.cloned(),
+        spellings: Vec::new(),
     }
 }
 

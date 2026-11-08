@@ -164,7 +164,17 @@ pub(super) fn after_seal(
     } else {
         super::lens::contest_pages(tx, loupist_id, &fallen, at_ms)?
     };
+    // Who the filed pages are about may have changed: a pending anchor gained
+    // a node, a confirmed node's name or aliases changed (learning keys its
+    // cases by the World's current spellings), or a page still pending may
+    // now be confirmed for learning by the Sources it cites.
     let resolved_anchors = super::lens::resolve_anchors(tx, loupist_id, &next.nodes)?;
+    if resolved_anchors > 0
+        || super::lens::subject_spellings_changed(tx, loupist_id, previous, next)?
+        || super::lens::pending_subjects_exist(tx, loupist_id)?
+    {
+        super::learning::identity_changed(tx, loupist_id, at_ms)?;
+    }
     let mut seeds: Vec<String> = followed
         .iter()
         .filter_map(|item| match resolve_followed(item, &next.nodes) {

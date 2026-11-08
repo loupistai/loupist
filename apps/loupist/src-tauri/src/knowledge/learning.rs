@@ -106,6 +106,47 @@ pub(crate) fn enqueue(
     loupist: &str,
     now: i64,
 ) -> KnowledgeResult<Option<String>> {
+    queue(tx, loupist, now, Recheck::NewFilings)
+}
+
+/// A World publication resolved pending anchors to nodes. Who the filed pages
+/// are about changed without a new filing, so the evidence is read again.
+pub(crate) fn identity_changed(
+    tx: &Transaction<'_>,
+    loupist: &str,
+    now: i64,
+) -> KnowledgeResult<Option<String>> {
+    queue(tx, loupist, now, Recheck::Always)
+}
+
+/// A World job for a Source reached a final status. A pending page citing that
+/// Source may now be judged by the claims the World holds on it, so the
+/// evidence is read again while any live page has a pending subject.
+pub(crate) fn world_job_settled(
+    tx: &Transaction<'_>,
+    loupist: &str,
+    now: i64,
+) -> KnowledgeResult<()> {
+    if super::lens::pending_subjects_exist(tx, loupist)? {
+        identity_changed(tx, loupist, now)?;
+    }
+    Ok(())
+}
+
+#[derive(PartialEq)]
+enum Recheck {
+    /// Only once something is filed past the last head a review read, so a
+    /// defer never requeues itself.
+    NewFilings,
+    Always,
+}
+
+fn queue(
+    tx: &Transaction<'_>,
+    loupist: &str,
+    now: i64,
+    recheck: Recheck,
+) -> KnowledgeResult<Option<String>> {
     let s = load_settings(tx, loupist)?;
     if !enabled(tx, loupist, &s)? {
         return Ok(None);
@@ -119,25 +160,41 @@ pub(crate) fn enqueue(
     }
     let (consumed, seen) = watermarks(tx, loupist, "")?;
     let end = log_head(tx, loupist)?;
-    // A review settled before inference read up to `seen` without consuming it:
-    // recheck only once more is filed, so a defer never requeues itself.
-    if end <= seen || core(&evidence(tx, loupist, &consumed, end)?).is_none() {
+    // A review settled before inference read up to `seen` without consuming it.
+    let unchanged = recheck == Recheck::NewFilings && end <= seen;
+    if unchanged || core(&keyed_evidence(tx, loupist, &consumed, end)?.observations).is_none() {
         return Ok(None);
     }
     let id = super::model::mint_id("lrn");
-    // world_job_id is kept, written empty, so existing folders open without a schema bump.
-    tx.execute("INSERT INTO knowledge_learning_reviews(review_id,loupist_id,world_job_id,status,created_at_ms,through_event,settings_json,call_budget) VALUES (?1,?2,'','pending',?3,?4,?5,?6)",params![id,loupist,now,end,serde_json::to_string(&s)?,s.max_llm_calls.min(1)])?;
+    // The count the review was queued at: a publication that confirms a company
+    // while it waits is seen when it settles, even before inference. The claim
+    // snapshot replaces it. world_job_id is kept, written empty, so existing
+    // folders open without a schema bump.
+    let queued = json!({"confirmed_subjects": confirmed_subjects(tx, loupist)?});
+    tx.execute("INSERT INTO knowledge_learning_reviews(review_id,loupist_id,world_job_id,status,created_at_ms,through_event,settings_json,call_budget,input_json) VALUES (?1,?2,'','pending',?3,?4,?5,?6,?7)",params![id,loupist,now,end,serde_json::to_string(&s)?,s.max_llm_calls.min(1),queued.to_string()])?;
     admit_pending(tx, loupist, now)
 }
 
 /// Lens-log rows an inference attempt already showed: every row through
-/// `through`, and the rows in `shown` above it.
+/// `through` except the `held` ones, and the rows in `shown` above it. A held
+/// row is research the review could not show: about a subject the World had
+/// not confirmed when the review ran, or confirmed research that did not fit
+/// its input. It stays readable below the watermark until it is shown or
+/// stops being current. The watermark never moves back, so a review's
+/// snapshot carries every exception the one before it still owed.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct Consumed {
     #[serde(skip)]
     through: i64,
     #[serde(default)]
     shown: BTreeSet<i64>,
+    #[serde(default)]
+    held: BTreeSet<i64>,
+}
+impl Consumed {
+    fn rows_json(rows: &BTreeSet<i64>) -> KnowledgeResult<String> {
+        Ok(serde_json::to_string(rows)?)
+    }
 }
 /// What the reviews that reached inference consumed, and the head any review
 /// last read. Rows with a `world_job_id` held growth-event rowids under the
@@ -152,14 +209,15 @@ fn watermarks(
         params![loupist, except],
         |r| r.get(0),
     )?;
-    // A started review stores every shown row above its watermark, carried
-    // forward, so the latest one holds the whole set. A review stored before
-    // shown rows were kept consumed its whole window and parses with none.
+    // A started review stores every shown row above its watermark and every
+    // held row below it, carried forward, so the latest started one holds the
+    // whole set. A review stored before they were kept consumed its whole
+    // window and parses with none.
     let latest: Option<(i64, Option<String>)> = tx
         .query_row(
             "SELECT through_event,input_json FROM knowledge_learning_reviews
              WHERE loupist_id=?1 AND world_job_id='' AND review_id<>?2 AND started_at_ms IS NOT NULL
-             ORDER BY through_event DESC,started_at_ms DESC LIMIT 1",
+             ORDER BY started_at_ms DESC,rowid DESC LIMIT 1",
             params![loupist, except],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
@@ -173,6 +231,7 @@ fn watermarks(
     };
     consumed.through = through;
     consumed.shown.retain(|&row| row > through);
+    consumed.held.retain(|&row| row <= through);
     Ok((consumed, seen))
 }
 
@@ -286,10 +345,89 @@ struct Observation {
     /// The lens-log row that filed it.
     #[serde(skip)]
     row: i64,
-    /// Who the page is about: its subject anchors, never empty. Observations
-    /// sharing one are the same case.
+    /// Who the page is about, never empty. Observations sharing a token are
+    /// the same case.
     #[serde(skip)]
-    cases: BTreeSet<String>,
+    cases: BTreeSet<Case>,
+}
+/// One token of who a page is about. A node is a World company the page is
+/// about, or, on a pending page, may be about: every company the World claims
+/// on the Sources it cites, and every node spelling the name it was filed
+/// under. A key is a spelling of a node's World names, or of
+/// the name a pending page was filed under, so two nodes spelling one company
+/// ("Acme", "Acme Inc.") still share a token, and a component joins the nodes
+/// whose keys meet through other nodes, so `삼성전자` and `Samsung
+/// Electronics` share one when a third node spells both; two companies
+/// sharing a key only defer learning.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum Case {
+    Node(String),
+    Key(String),
+    Component(String),
+}
+impl Case {
+    fn node(&self) -> Option<&str> {
+        match self {
+            Case::Node(id) => Some(id),
+            Case::Key(_) | Case::Component(_) => None,
+        }
+    }
+}
+/// Who a page is about, from its subject anchors.
+enum About {
+    /// No subject anchor, or one that can never resolve: never evidence.
+    Unknown,
+    /// Subjects the World has not confirmed yet, by the names they were filed
+    /// under, beside any it has. Evidence once the World is through with the
+    /// Sources the page cites, read against them ([`pending_cases`]); until
+    /// then a review leaves the page's rows for the review after.
+    Pending {
+        names: Vec<String>,
+        confirmed: BTreeSet<Case>,
+    },
+    Confirmed(BTreeSet<Case>),
+}
+impl About {
+    fn of(anchors: Vec<(Option<String>, String)>) -> Self {
+        let mut confirmed = BTreeSet::new();
+        let mut names = Vec::new();
+        for (node_id, name_fold) in anchors {
+            match node_id {
+                Some(node_id) => {
+                    confirmed.insert(Case::Node(node_id));
+                }
+                None if name_fold.is_empty() => return About::Unknown,
+                None => names.push(name_fold),
+            }
+        }
+        if !names.is_empty() {
+            About::Pending { names, confirmed }
+        } else if confirmed.is_empty() {
+            About::Unknown
+        } else {
+            About::Confirmed(confirmed)
+        }
+    }
+}
+/// What a window of the Lens log holds for a review.
+struct Evidence {
+    observations: Vec<Observation>,
+    /// Observations about a subject the World has not confirmed, which
+    /// [`keyed_evidence`] reads against the Sources their pages cite or holds.
+    pending: Vec<PendingObservation>,
+    /// Rows a review may not consume: research about a subject the World has
+    /// not confirmed, citing a Source it is not through with, which becomes
+    /// evidence once it is.
+    held: BTreeSet<i64>,
+}
+/// An observation on a page with a subject the World has not confirmed.
+struct PendingObservation {
+    /// Its cases are the page's confirmed subjects, if any.
+    observation: Observation,
+    /// The folded names of the pending subjects.
+    names: Vec<String>,
+    /// The Source records the page's current sections cite.
+    cited: BTreeSet<String>,
 }
 /// Each Chat's cited Sources across all the evidence.
 fn cited_by(all: &[Observation]) -> BTreeMap<&str, BTreeSet<&str>> {
@@ -342,17 +480,17 @@ fn core(all: &[Observation]) -> Option<(usize, usize)> {
         .map(|(i, j)| (firsts[i], firsts[j]))
         .find(|&(i, j)| two_cases(&all[i], &all[j], &by))
 }
-/// Turn puts above `consumed`, through `through`, newest first, that are still
-/// the current section of an active subject or idea page, keeping only spans
-/// whose Source preserves an original. An undone, forgotten, retired or
-/// replaced put no longer counts, and method pages never do: a turn's own
-/// method edits are not research evidence.
+/// Turn puts above `consumed` or held by it, through `through`, newest first,
+/// that are still the current section of an active subject or idea page,
+/// keeping only spans whose Source preserves an original. An undone,
+/// forgotten, retired or replaced put no longer counts, and method pages never
+/// do: a turn's own method edits are not research evidence.
 fn evidence(
     tx: &Transaction<'_>,
     loupist: &str,
     consumed: &Consumed,
     through: i64,
-) -> KnowledgeResult<Vec<Observation>> {
+) -> KnowledgeResult<Evidence> {
     let controls = super::memory_controls::load(tx, loupist)?;
     let hidden = |id: &str| controls.paused.contains(id) || controls.removed.contains(id);
     let mut original = tx.prepare(
@@ -370,41 +508,53 @@ fn evidence(
          JOIN knowledge_record_revisions r ON r.revision_id=h.revision_id WHERE h.record_id=?1",
     )?;
     // A resolved anchor is its node alone: the name it was created under may
-    // since belong to another node. A pending one is its folded name until a
-    // World publication resolves it to the node the other pages share.
+    // since belong to another node. A pending one is judged by the Sources the
+    // page cites, once the World is through with them.
     let mut subjects = tx.prepare(
-        "SELECT COALESCE('node:'||node_id,'name:'||name_fold) FROM knowledge_lens_anchors
-         WHERE record_id=?1 AND role='subject' AND (node_id IS NOT NULL OR name_fold<>'')",
+        "SELECT node_id, name_fold FROM knowledge_lens_anchors WHERE record_id=?1 AND role='subject'",
     )?;
+    // Shown rows are left out before their op_json is read.
     let mut q = tx.prepare(
         "SELECT l.op_id,l.op_json,l.chat_id,l.message_id,l.record_id,l.after_digest,m.title,m.kind,l.rowid
          FROM knowledge_lens_log l JOIN knowledge_lens_metadata m ON m.record_id=l.record_id
-         WHERE l.loupist_id=?1 AND l.rowid>?2 AND l.rowid<=?3 AND l.origin='turn'
+         WHERE l.loupist_id=?1 AND l.rowid<=?3 AND l.origin='turn'
+           AND (l.rowid>?2 OR l.rowid IN (SELECT value FROM json_each(?4)))
+           AND l.rowid NOT IN (SELECT value FROM json_each(?5))
            AND l.outcome IN ('added','replaced') AND l.chat_id IS NOT NULL AND l.message_id IS NOT NULL
            AND m.kind IN ('subject','idea') AND m.archived_at_ms IS NULL
          ORDER BY l.rowid DESC",
     )?;
     let rows = q
-        .query_map(params![loupist, consumed.through, through], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, String>(3)?,
-                r.get::<_, String>(4)?,
-                r.get::<_, Option<String>>(5)?,
-                r.get::<_, String>(6)?,
-                r.get::<_, String>(7)?,
-                r.get::<_, i64>(8)?,
-            ))
-        })?
+        .query_map(
+            params![
+                loupist,
+                consumed.through,
+                through,
+                Consumed::rows_json(&consumed.held)?,
+                Consumed::rows_json(&consumed.shown)?
+            ],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, Option<String>>(5)?,
+                    r.get::<_, String>(6)?,
+                    r.get::<_, String>(7)?,
+                    r.get::<_, i64>(8)?,
+                ))
+            },
+        )?
         .collect::<Result<Vec<_>, _>>()?;
     let (mut turns, mut chats) = (BTreeMap::new(), BTreeMap::new());
     let mut bodies: BTreeMap<String, Option<LensBody>> = BTreeMap::new();
-    let mut cases: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut cases: BTreeMap<String, About> = BTreeMap::new();
     let mut out = Vec::new();
+    let mut pending = Vec::new();
     for (id, op, chat_id, message_id, page_id, after_digest, page, kind, row) in rows {
-        if hidden(&page_id) || consumed.shown.contains(&row) {
+        if hidden(&page_id) {
             continue;
         }
         let LensOp::Put {
@@ -471,16 +621,19 @@ fn evidence(
             continue;
         }
         if !cases.contains_key(&page_id) {
-            let about = subjects
-                .query_map([&page_id], |r| r.get(0))?
-                .collect::<Result<_, _>>()?;
-            cases.insert(page_id.clone(), about);
+            let anchors = subjects
+                .query_map([&page_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<Result<Vec<_>, _>>()?;
+            cases.insert(page_id.clone(), About::of(anchors));
         }
-        // A page with no subject could be about any company, including the one
-        // the other case is about, so it is not evidence.
-        if cases[&page_id].is_empty() {
-            continue;
-        }
+        // A page with no subject could be about any company, including the
+        // one the other case is about, so it is not evidence. One the World
+        // has not confirmed is read against the Sources it cites.
+        let (about, names) = match &cases[&page_id] {
+            About::Unknown => continue,
+            About::Pending { names, confirmed } => (confirmed.clone(), Some(names.clone())),
+            About::Confirmed(about) => (about.clone(), None),
+        };
         let n = turns.len() + 1;
         let turn = turns
             .entry(message_id.clone())
@@ -489,7 +642,7 @@ fn evidence(
         let chat = chats
             .entry(chat_id.clone())
             .or_insert_with(|| format!("c{n}"));
-        out.push(Observation {
+        let observation = Observation {
             id,
             turn: turn.clone(),
             chat: chat.clone(),
@@ -500,13 +653,173 @@ fn evidence(
             sources,
             chat_id,
             message_id,
-            cases: cases[&page_id].clone(),
-            page_id,
+            cases: about,
+            page_id: page_id.clone(),
             spans,
             row,
-        });
+        };
+        match names {
+            None => out.push(observation),
+            Some(names) => pending.push(PendingObservation {
+                observation,
+                names,
+                cited: cited_sources(bodies[&page_id].as_ref()),
+            }),
+        }
     }
-    Ok(out)
+    Ok(Evidence {
+        observations: out,
+        pending,
+        held: BTreeSet::new(),
+    })
+}
+/// The Source records a page's current sections cite.
+fn cited_sources(body: Option<&LensBody>) -> BTreeSet<String> {
+    body.and_then(LensBody::page)
+        .map(|page| page.sections.as_slice())
+        .unwrap_or_default()
+        .iter()
+        .filter(|section| matches!(section.state, super::lens_page::SectionState::Current))
+        .flat_map(|section| &section.basis.refs)
+        .filter_map(|r| match r {
+            BasisRef::Span { record_id, .. } => Some(record_id.clone()),
+            _ => None,
+        })
+        .collect()
+}
+/// Whether a World node of `kind` is a company: the core Organization kind,
+/// or an extension type of the company category.
+fn company_kind(kind: &str, extension: &super::world_schema::WorldExtension) -> bool {
+    super::connections::core_category(kind) == "company"
+        || kind.eq_ignore_ascii_case("company")
+        || extension.types.iter().any(|item| {
+            item.name == kind && item.category == super::world_schema::ExtensionCategory::Company
+        })
+}
+/// Who a pending page may be about, for this read only, once the World is
+/// through with every Source it cites ([`super::graph_jobs::processed_sources`]):
+/// the keys of each name the page was filed under, every World node carrying
+/// one of those keys ([`super::identity::WorldIdentity::nodes_keyed`]), and
+/// every company in the World whose names may name the page's subject
+/// ([`super::identity::WorldIdentity::companies_naming`]), whichever Source
+/// the World met it in and whether or not a claim names it. A "Hana" page is
+/// then a case with `Hana Financial Group` and `Hana Co.` wherever the World
+/// holds them, even when the report it cites yielded no claim, while the
+/// auditor, exchange or disclaimer a report names beside its company is no
+/// case of it: two reports naming one `Loupist` or `KPMG` do not make their
+/// two companies one. A "Samsung Electronics Inc." page is a case with the
+/// node spelled `삼성전자(Samsung Electronics)` and its component, and a name
+/// the World never extracted still counts under its own key, so two pages
+/// spelling one company stay one case while a failed extraction holds
+/// nothing. A report the World has yet to read holds the page: the nodes it
+/// may still add are not known. Nothing is stored: the anchor stays pending
+/// until a publication spells the name.
+fn pending_cases(
+    world: &mut super::identity::WorldIdentity,
+    pending: &PendingObservation,
+    processed: &BTreeSet<String>,
+    company: impl Fn(&str) -> bool,
+) -> Option<BTreeSet<Case>> {
+    if !pending.cited.is_subset(processed) {
+        return None;
+    }
+    let mut cases = pending.observation.cases.clone();
+    let mut subject_keys = BTreeSet::new();
+    for name in &pending.names {
+        // A name that is only notation names no company.
+        super::identity::primary_key(name)?;
+        for key in super::identity::entity_name_keys(name) {
+            cases.extend(world.nodes_keyed(&key).into_iter().map(Case::Node));
+            cases.insert(Case::Key(key.clone()));
+            subject_keys.insert(key);
+        }
+    }
+    cases.extend(
+        world
+            .companies_naming(&subject_keys, company)
+            .into_iter()
+            .map(Case::Node),
+    );
+    Some(cases)
+}
+/// [`evidence`] with its pending pages read against the Sources they cite or
+/// held ([`pending_cases`]), and every case carrying the company keys of its
+/// nodes' current World names and the component of nodes whose keys meet. The
+/// World is read only when a pending page or the confirmed nodes alone call
+/// for it. Two nodes spelling one company then share a key and are one case,
+/// and so do two nodes a third node spells both of. The World's current names
+/// decide, not the name an anchor was filed under: that name may since belong
+/// to another company. A page about a node the World no longer holds (a
+/// shared pack took it away, say) names no company now and is not evidence,
+/// like a page with no subject: a key it cannot carry would otherwise let the
+/// company it was about count twice.
+fn keyed_evidence(
+    tx: &Transaction<'_>,
+    loupist: &str,
+    consumed: &Consumed,
+    through: i64,
+) -> KnowledgeResult<Evidence> {
+    let mut found = evidence(tx, loupist, consumed, through)?;
+    if found.pending.is_empty() && core(&found.observations).is_none() {
+        return Ok(found);
+    }
+    let pending = std::mem::take(&mut found.pending);
+    let sources: BTreeSet<String> = pending.iter().flat_map(|p| p.cited.clone()).collect();
+    let processed = super::graph_jobs::processed_sources(tx, loupist, &sources)?;
+    let extension = load_settings(tx, loupist)?.extension;
+    let company = |kind: &str| company_kind(kind, &extension);
+    let read = super::lens::world_identity(tx, loupist, |world| {
+        for mut p in pending {
+            match pending_cases(world, &p, &processed, company) {
+                Some(cases) => {
+                    p.observation.cases = cases;
+                    found.observations.push(p.observation);
+                }
+                None => {
+                    found.held.insert(p.observation.row);
+                }
+            }
+        }
+        let nodes: BTreeSet<String> = found
+            .observations
+            .iter()
+            .flat_map(|o| o.cases.iter().filter_map(Case::node))
+            .map(str::to_owned)
+            .collect();
+        nodes
+            .iter()
+            .filter_map(|node| {
+                let mut tokens: BTreeSet<Case> = world
+                    .keys(node)?
+                    .iter()
+                    .map(|key| Case::Key(key.clone()))
+                    .collect();
+                tokens.insert(Case::Component(world.component(node)?));
+                Some((node.clone(), tokens))
+            })
+            .collect::<BTreeMap<String, BTreeSet<Case>>>()
+    })?;
+    // Without a World, no company is confirmed and nothing is evidence.
+    let tokens = read.unwrap_or_default();
+    found.observations.sort_by_key(|o| std::cmp::Reverse(o.row));
+    found.observations.retain(|o| {
+        o.cases
+            .iter()
+            .filter_map(Case::node)
+            .all(|node| tokens.contains_key(node))
+    });
+    for o in &mut found.observations {
+        let spellings: Vec<Case> = o
+            .cases
+            .iter()
+            .filter_map(Case::node)
+            .filter_map(|node| tokens.get(node))
+            .flatten()
+            .cloned()
+            .collect();
+        o.cases.extend(spellings);
+    }
+    Ok(found)
 }
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -526,7 +839,10 @@ impl Input {
     }
 }
 /// The input for evidence after `consumed` through `end`, and what showing it
-/// consumes: rows through the oldest one left out, plus every shown row above.
+/// consumes: rows through the oldest one left out, never below the watermark
+/// already consumed, plus every shown row above, less the rows still held:
+/// those about a subject the World has not confirmed, and those eligible
+/// below the watermark that did not fit this input.
 fn build_input(
     tx: &Transaction<'_>,
     loupist: &str,
@@ -553,7 +869,11 @@ fn build_input(
         return Err(KnowledgeError::Invalid("principles_exceed_input_limit"));
     }
     // A pair that passes the gate goes in first.
-    let all = evidence(tx, loupist, consumed, end)?;
+    let Evidence {
+        observations: all,
+        held,
+        ..
+    } = keyed_evidence(tx, loupist, consumed, end)?;
     let (i, j) = core(&all).ok_or(KnowledgeError::Invalid("insufficient_turns"))?;
     let mut picked = BTreeSet::from([i, j]);
     input.observations = vec![all[i].clone(), all[j].clone()];
@@ -632,7 +952,8 @@ fn build_input(
         }
     }
     // The rest fills oldest first, so what one review leaves out is newer
-    // evidence the next review reads.
+    // evidence the next review reads, or, below the consumed watermark, stays
+    // held for it.
     let mut through = end;
     for i in (0..all.len()).rev() {
         if picked.contains(&i) {
@@ -640,11 +961,12 @@ fn build_input(
         }
         input.observations.push(all[i].clone());
         if !input.fits(MAX_INPUT)? {
-            through = all[i].row - 1;
+            through = through.min(all[i].row - 1);
             break;
         }
         picked.insert(i);
     }
+    let through = through.max(consumed.through);
     input.observations = picked.iter().map(|&i| all[i].clone()).collect();
     let shown = consumed
         .shown
@@ -653,7 +975,23 @@ fn build_input(
         .chain(picked.iter().map(|&i| all[i].row))
         .filter(|&row| row > through)
         .collect();
-    Ok((input, Consumed { through, shown }))
+    let held = held
+        .into_iter()
+        .chain(
+            (0..all.len())
+                .filter(|i| !picked.contains(i))
+                .map(|i| all[i].row),
+        )
+        .filter(|&row| row <= through)
+        .collect();
+    Ok((
+        input,
+        Consumed {
+            through,
+            shown,
+            held,
+        },
+    ))
 }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -786,7 +1124,7 @@ pub(super) fn claim(
         Err(e) => return Err(e),
     };
     // Reaching inference consumes only what the input shows.
-    let stored = json!({"input": &input, "shown": &after.shown});
+    let stored = json!({"input": &input, "shown": &after.shown, "held": &after.held, "confirmed_subjects": confirmed_subjects(tx, loupist)?});
     tx.execute("UPDATE knowledge_learning_reviews SET status='running',started_at_ms=?2,through_event=?3,input_json=?4,settings_json=?5 WHERE review_id=?1 AND status='queued'",params![id,now,after.through,stored.to_string(),serde_json::to_string(&s)?])?;
     Ok(Some(Attempt {
         review_id: id,
@@ -808,28 +1146,83 @@ fn settle(
     count: usize,
     now: i64,
 ) -> KnowledgeResult<()> {
-    let loupist: String = tx.query_row("UPDATE knowledge_learning_reviews SET status=?2,reason=?3,lens_record_id=?4,rationale=?5,evidence_count=?6,finished_at_ms=?7 WHERE review_id=?1 RETURNING loupist_id",params![id,status,reason,lens,rationale,count as i64,now],|r|r.get(0))?;
-    // Filings committed after this review's watermark start the next one without another turn.
-    enqueue(tx, &loupist, now)?;
+    let (loupist, claimed): (String, Option<String>) = tx.query_row("UPDATE knowledge_learning_reviews SET status=?2,reason=?3,lens_record_id=?4,rationale=?5,evidence_count=?6,finished_at_ms=?7 WHERE review_id=?1 RETURNING loupist_id,input_json",params![id,status,reason,lens,rationale,count as i64,now],|r|Ok((r.get(0)?,r.get(1)?)))?;
+    requeue(tx, &loupist, claimed.as_deref(), now)
+}
+/// Subject anchors the World has confirmed. The queued row and the claim
+/// snapshot store the count, and the settle compares, so a publication that
+/// confirmed a company while the review waited or ran is not lost to the
+/// active-review rule.
+fn confirmed_subjects(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<i64> {
+    Ok(tx.query_row(
+        "SELECT COUNT(*) FROM knowledge_lens_anchors WHERE loupist_id=?1 AND role='subject' AND node_id IS NOT NULL",
+        [loupist],
+        |r| r.get(0),
+    )?)
+}
+/// The queued row or claim snapshot (`input_json`) as a settle reads it back.
+#[derive(Deserialize, Default)]
+struct Claimed {
+    #[serde(default)]
+    confirmed_subjects: Option<i64>,
+    /// Only a claim snapshot has these: a queued row never held a row.
+    #[serde(default)]
+    held: BTreeSet<i64>,
+}
+/// After a review ends: filings committed past its watermark start the next
+/// one without another turn, and so does a subject confirmed since it was
+/// queued or claimed, or a row the attempt held below its watermark, which no
+/// filing would otherwise bring back. A review settled before inference held
+/// nothing, so a defer there never requeues itself.
+fn requeue(
+    tx: &Transaction<'_>,
+    loupist: &str,
+    claimed: Option<&str>,
+    now: i64,
+) -> KnowledgeResult<()> {
+    let at_claim = claimed
+        .map(serde_json::from_str::<Claimed>)
+        .transpose()?
+        .unwrap_or_default();
+    let confirmed_since = match at_claim.confirmed_subjects {
+        Some(then) => confirmed_subjects(tx, loupist)? > then,
+        None => false,
+    };
+    if confirmed_since || !at_claim.held.is_empty() {
+        identity_changed(tx, loupist, now)?;
+    } else {
+        enqueue(tx, loupist, now)?;
+    }
     Ok(())
 }
 /// Startup. An attempt left running is failed and never retried. A review
 /// queued by the claim-count trigger (non-empty `world_job_id`, a growth-event
 /// watermark) is settled. Each affected Loupist then rechecks evidence filed
 /// past its watermark, so nothing filed during the lost attempt is stranded.
+/// A Loupist with a pending subject rechecks too: World jobs interrupted by
+/// the shutdown were just given their final status.
 pub(super) fn recover(tx: &Transaction<'_>, now: i64) -> KnowledgeResult<()> {
-    let mut affected = BTreeSet::new();
-    let mut settle_all = |sql: &str, args: &[&dyn rusqlite::ToSql]| -> KnowledgeResult<()> {
-        let mut q = tx.prepare(sql)?;
-        for loupist in q.query_map(args, |r| r.get::<_, String>(0))? {
-            affected.insert(loupist?);
-        }
-        Ok(())
-    };
-    settle_all("UPDATE knowledge_learning_reviews SET status='failed',reason='uncertain_paid_attempt',finished_at_ms=started_at_ms WHERE status='running' RETURNING loupist_id", &[])?;
-    settle_all("UPDATE knowledge_learning_reviews SET status='deferred',reason='trigger_changed',finished_at_ms=?1 WHERE status IN ('pending','queued') AND world_job_id<>'' RETURNING loupist_id", &[&now])?;
-    for loupist in affected {
+    let lost: Vec<(String, Option<String>)> = tx
+        .prepare("UPDATE knowledge_learning_reviews SET status='failed',reason='uncertain_paid_attempt',finished_at_ms=started_at_ms WHERE status='running' RETURNING loupist_id,input_json")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    for (loupist, claimed) in &lost {
+        requeue(tx, loupist, claimed.as_deref(), now)?;
+    }
+    let mut q = tx.prepare("UPDATE knowledge_learning_reviews SET status='deferred',reason='trigger_changed',finished_at_ms=?1 WHERE status IN ('pending','queued') AND world_job_id<>'' RETURNING loupist_id")?;
+    let legacy: BTreeSet<String> = q
+        .query_map([now], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    for loupist in legacy {
         enqueue(tx, &loupist, now)?;
+    }
+    let mut q = tx.prepare(
+        "SELECT DISTINCT loupist_id FROM knowledge_lens_anchors
+         WHERE role='subject' AND node_id IS NULL AND name_fold<>''",
+    )?;
+    let pending: BTreeSet<String> = q.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
+    for loupist in pending {
+        world_job_settled(tx, &loupist, now)?;
     }
     Ok(())
 }
@@ -950,7 +1343,7 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
         .count();
     // Re-resolve against current evidence: an observation undone, forgotten or
     // replaced since claim, or whose Sources were removed, drops out.
-    let current = evidence(write.tx, &a.loupist_id, &a.before, a.through)?;
+    let current = keyed_evidence(write.tx, &a.loupist_id, &a.before, a.through)?.observations;
     let cited: Vec<_> = current.iter().filter(|c| ids.contains(&c.id)).collect();
     if shown != ids.len() || !recurs(&cited, &current) {
         return Err(invalid());
@@ -1058,17 +1451,20 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
         );
     }
     let record_id = page.record_id;
-    let mut entities = BTreeMap::<String, usize>::new();
-    let pages: BTreeSet<_> = cited.iter().map(|c| &c.page_id).collect();
-    let mut subjects = write.tx.prepare("SELECT node_id FROM knowledge_lens_anchors WHERE record_id=?1 AND role='subject' AND node_id IS NOT NULL")?;
-    for page in pages {
-        for node in subjects.query_map([page], |r| r.get::<_, String>(0))? {
-            *entities.entry(node?).or_default() += 1;
+    let mut entities = BTreeMap::<&str, usize>::new();
+    let mut pages = BTreeSet::new();
+    for c in cited.iter().filter(|c| pages.insert(&c.page_id)) {
+        for node in c.cases.iter().filter_map(Case::node) {
+            *entities.entry(node).or_default() += 1;
         }
     }
     let mut entities: Vec<_> = entities.into_iter().collect();
-    entities.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-    let applied: BTreeSet<String> = entities.into_iter().take(30).map(|(e, _)| e).collect();
+    entities.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+    let applied: BTreeSet<String> = entities
+        .into_iter()
+        .take(30)
+        .map(|(e, _)| e.to_owned())
+        .collect();
     super::lens::record_applied(
         write.tx,
         &a.loupist_id,

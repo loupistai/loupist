@@ -932,6 +932,7 @@ async fn adding_waits_for_a_running_world_job_without_holding_maintenance() {
             "failed_before_mutation",
             false,
             false,
+            AT,
         )
         .unwrap();
     let added = adding.await.unwrap().unwrap();

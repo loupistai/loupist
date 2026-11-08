@@ -5,6 +5,8 @@
 //! after a second such attempt, or a mutation, the job becomes
 //! `reconcile_required` and is not dispatched again.
 
+use std::collections::BTreeSet;
+
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -1191,6 +1193,65 @@ pub(super) fn latest_source_job(
     ).optional().map_err(KnowledgeError::from)
 }
 
+/// Whether a job's status is final. A queued, running or paused job may still
+/// read its Source; every other status means the World has published what it
+/// read, or cannot read more from it (failed, cancelled, quarantined, reconciled).
+pub(super) fn final_status(status: &str) -> bool {
+    !matches!(status, JOB_QUEUED | JOB_RUNNING | JOB_PAUSED)
+}
+
+/// The Sources among `sources` the World is through with: no job of theirs is
+/// queued or running, and a job for the Source's current revision has any
+/// other status. A job that failed or was quarantined counts, because the
+/// World cannot reveal more from it, and so does a paused one: a chunk whose
+/// frozen allowance cannot fund an extraction, or a queue the user paused,
+/// is not read without the user's action, and the resume that lets it settle
+/// rechecks learning then. A Source with no job at all, or whose latest
+/// revision has none, is not processed. Method learning reads this before
+/// judging a pending page by the claims on the Sources it cites.
+pub(super) fn processed_sources(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    sources: &BTreeSet<String>,
+) -> KnowledgeResult<BTreeSet<String>> {
+    let mut statement = tx.prepare(&format!(
+        "SELECT source,
+                SUM(status IN ('{queued}', '{running}')) AS pending,
+                SUM(status NOT IN ('{queued}', '{running}') AND revision = head) AS done
+         FROM (SELECT o.status,
+                      json_extract(o.payload_json, '$.sourceBinding.sourceRecordId') AS source,
+                      json_extract(o.payload_json, '$.sourceBinding.sourceRevisionId') AS revision,
+                      h.revision_id AS head
+               FROM knowledge_graph_outbox o
+               JOIN knowledge_record_heads h
+                 ON h.record_id = json_extract(o.payload_json, '$.sourceBinding.sourceRecordId')
+               WHERE o.loupist_id = ?1
+                 AND json_extract(o.payload_json, '$.sourceBinding.sourceRecordId')
+                     IN (SELECT value FROM json_each(?2)))
+         GROUP BY source",
+        queued = JOB_QUEUED,
+        running = JOB_RUNNING,
+    ))?;
+    let rows = statement.query_map(
+        params![loupist_id, serde_json::to_string(sources)?],
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        },
+    )?;
+    let mut processed = BTreeSet::new();
+    for row in rows {
+        let (source, pending, done) = row?;
+        if pending == 0 && done > 0 {
+            processed.insert(source);
+        }
+    }
+    Ok(processed)
+}
+
 pub fn list_jobs(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<Vec<GraphJobView>> {
     validate_loupist_id(loupist_id)?;
     let mut statement = tx.prepare(
@@ -1299,7 +1360,9 @@ pub(super) fn claim_running(
     // with fewer than two model calls cannot finish even that minimum path.
     // Preserve its frozen allowance and defer it before starting a paid attempt;
     // it must not quarantine the generation and block unrelated Sources.
-    tx.execute(
+    // Learning counts a paused chunk as read, so the pages citing its Source
+    // are rechecked when a Source's every chunk pauses here.
+    let paused = tx.execute(
         "UPDATE knowledge_graph_outbox SET status = ?1
          WHERE loupist_id = ?2 AND status = ?3
            AND json_extract(payload_json, '$.episodeKind') = 'source_span'
@@ -1312,6 +1375,9 @@ pub(super) fn claim_running(
            AND json_extract(payload_json, '$.leaseExpiresAtMs') IS NULL",
         params![JOB_PAUSED, job.loupist_id, JOB_QUEUED],
     )?;
+    if paused > 0 {
+        super::learning::world_job_settled(tx, &job.loupist_id, now_ms)?;
+    }
     if job.document.episode_kind == EPISODE_SPAN
         && (job.document.extraction.max_llm_calls < 2
             || job.document.extraction.max_embedding_calls == 0)
@@ -1375,8 +1441,8 @@ pub(super) fn claim_running(
     if !writable && !readable_snapshot {
         let mut document = job.document.clone();
         clear_lease(&mut document);
-        if !write_status(tx, job_id, JOB_QUEUED, JOB_FAILED_BEFORE, &document)? {
-            return load_job(tx, job_id).map(GraphJobClaim::Existing);
+        if write_status(tx, job_id, JOB_QUEUED, JOB_FAILED_BEFORE, &document)? {
+            source_job_settled(tx, &job, now_ms)?;
         }
         return load_job(tx, job_id).map(GraphJobClaim::Existing);
     }
@@ -1414,6 +1480,16 @@ pub fn note_inference_attempted(
     Ok(())
 }
 
+/// A Source extraction job reached a final status: method learning may now
+/// judge the pages citing its Source ([`super::learning::world_job_settled`]).
+fn source_job_settled(tx: &Transaction<'_>, job: &GraphJobView, at_ms: i64) -> KnowledgeResult<()> {
+    if job.document.episode_kind == EPISODE_SPAN {
+        super::learning::world_job_settled(tx, &job.loupist_id, at_ms)?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn finish_job(
     tx: &Transaction<'_>,
     settings: &mut GraphProcessingSettings,
@@ -1422,6 +1498,7 @@ pub fn finish_job(
     outcome: &str,
     usage_uncertain: bool,
     validated: bool,
+    now_ms: i64,
 ) -> KnowledgeResult<GraphJobView> {
     let job = active_attempt(tx, job_id, attempt_id)?;
     if super::authority::require_record(tx, &job.loupist_id, &job.world_record_id).is_err() {
@@ -1456,6 +1533,9 @@ pub fn finish_job(
         return Err(KnowledgeError::Invalid(
             "graph job attempt is no longer active",
         ));
+    }
+    if final_status(next) {
+        source_job_settled(tx, &job, now_ms)?;
     }
     load_job(tx, job_id)
 }
@@ -1754,7 +1834,7 @@ fn clear_lease(document: &mut JobDocument) {
     document.attempt_id = None;
 }
 
-const EPISODE_CHUNK_CHARS: usize = 7_000;
+pub(super) const EPISODE_CHUNK_CHARS: usize = 7_000;
 
 /// Split a long source at paragraph boundaries so one Graphiti episode stays
 /// inside the extraction budget. A short source stays one episode, which keeps
@@ -2105,6 +2185,7 @@ pub fn publish_and_complete(
             artifact_utf8,
             logical_digest,
             usage_uncertain,
+            at_ms,
         );
     }
     if usage_uncertain {
@@ -2115,6 +2196,7 @@ pub fn publish_and_complete(
             artifact_utf8,
             logical_digest,
             true,
+            at_ms,
         );
     }
     let current = super::revision::load_revision(write.tx, &job.world_revision_id)?;
@@ -2161,6 +2243,9 @@ pub fn publish_and_complete(
             "graph job attempt is no longer active",
         ));
     }
+    // The seal rechecked learning while this job still ran; now its own
+    // Source is processed.
+    source_job_settled(write.tx, &job, at_ms)?;
     load_job(write.tx, job_id)
 }
 
@@ -2287,6 +2372,7 @@ fn settle_without_head(
     artifact_utf8: &str,
     logical_digest: &str,
     usage_uncertain: bool,
+    at_ms: i64,
 ) -> KnowledgeResult<GraphJobView> {
     let mut document = job.document.clone();
     document.artifact_utf8 = Some(artifact_utf8.to_string());
@@ -2299,6 +2385,7 @@ fn settle_without_head(
             "graph job attempt is no longer active",
         ));
     }
+    source_job_settled(tx, job, at_ms)?;
     load_job(tx, &job.job_id)
 }
 

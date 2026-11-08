@@ -7,11 +7,12 @@
 //! the current episode is not stamped onto it. Existing qualifiers and curator
 //! status survive. Temporal invalidation is not a withdrawn verdict.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::{json, Map, Value};
 
 use super::pipeline::{Edge, Node, Time};
+use crate::knowledge::lens::fold_lens_title;
 use crate::util::sha256;
 
 const EVIDENCE_CAP: usize = 32;
@@ -251,6 +252,20 @@ pub(crate) fn project_extraction(
         for alias in [prior_name, original].into_iter().flatten() {
             if !alias.is_empty() && alias != node.name && !aliases.contains(&alias) {
                 aliases.push(alias);
+            }
+        }
+        // A spelling the resolver confirmed as this node stays an alias, within
+        // the cap, unless a name or alias already folds to it.
+        let mut folds: HashSet<String> = std::iter::once(&node.name)
+            .chain(&aliases)
+            .map(|text| fold_lens_title(text))
+            .collect();
+        for spelling in &node.spellings {
+            if aliases.len() >= ALIAS_CAP {
+                break;
+            }
+            if folds.insert(fold_lens_title(spelling)) {
+                aliases.push(spelling.clone());
             }
         }
         let source_role = field("source_role")
