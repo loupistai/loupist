@@ -169,7 +169,7 @@ export function ChatRailCards({ data, actions, compact = false }: { data: RailDa
   const needsCard = data.needs.length || data.waiting.length || data.questions.length ? <section key="needs" className="chat-rail-card chat-rail-needs" data-card="needs">
       <button type="button" className="chat-rail-needs-row" onClick={() => showNeeds(data)}>
         <span className="chat-rail-needs-dot" aria-hidden="true" />
-        <span className="chat-rail-needs-title">{t("chatRail.needsYou.title")}</span>
+        <span className="chat-rail-needs-title">{t(data.waiting.length + data.needs.length === 0 ? "chatRail.needsYou.answerTitle" : "chatRail.needsYou.title")}</span>
         <span className="chat-rail-card-summary">{needsSummary(data)}</span>
         <span className="chat-rail-needs-show">{t("chatRail.needsYou.show")}</span>
       </button>

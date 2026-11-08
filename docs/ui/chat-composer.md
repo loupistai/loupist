@@ -121,8 +121,8 @@ field up to 500 characters and the waiting clock. Answers go through
 `chat_question_answer {loupist_id, request_id, choice | text}` (exactly one; Rust checks the
 Loupist, the option index and the length). The settled line reads "You answered: …" or,
 when the wait ran out or the run stopped, "No answer · continued with <recommended
-option>". A waiting question counts in the rail's "Needs your OK" row and turns the
-footer to "Waiting for you"; one still waiting when the run ends is saved as expired.
+option>". A waiting question counts in the rail's "Needs your OK" row, which reads "Needs your
+answer" when only questions wait, and turns the footer to "Waiting for you"; one still waiting when the run ends is saved as expired.
 
 A completed `connection_setup` step leaves a setup card under the answer
 (`ConnectionSetupCard`, derived by `chat/connectionSetupBlocks.ts` from the step's

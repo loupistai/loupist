@@ -1456,6 +1456,7 @@
     },
     "needsYou": {
       "title": "승인이 필요해요",
+      "answerTitle": "답변이 필요해요",
       "show": "보기",
       "requests_other": "요청 {{formattedCount}}개"
     },

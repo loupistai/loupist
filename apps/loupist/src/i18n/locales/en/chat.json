@@ -1506,6 +1506,7 @@
     },
     "needsYou": {
       "title": "Needs your OK",
+      "answerTitle": "Needs your answer",
       "show": "Show",
       "requests_one": "{{formattedCount}} request",
       "requests_other": "{{formattedCount}} requests"

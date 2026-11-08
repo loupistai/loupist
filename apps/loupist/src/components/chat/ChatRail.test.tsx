@@ -116,7 +116,8 @@ it("counts a waiting question in the same row and leads to its card", async () =
   document.body.append(card);
   try {
     const { rerender } = render(<ChatRail mode="rail" data={{ ...data, questions: [question] }} actions={actions()} />);
-    const row = screen.getByRole("button", { name: /^Needs your OK/ });
+    // A question is not an approval: the row asks for an answer.
+    const row = screen.getByRole("button", { name: /^Needs your answer/ });
     expect(row).toHaveTextContent("Compare on which period?");
     await user.click(row);
     expect(card).toHaveFocus();
