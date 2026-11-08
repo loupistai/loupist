@@ -36,9 +36,13 @@ function publicKeyEnvironmentValue(publicKey, keyId) {
   return Buffer.from(minisign, "utf8").toString("base64");
 }
 
-function signatureFixture(privateKey, keyId, content) {
+function signatureFixture(
+  privateKey,
+  keyId,
+  content,
+  trustedComment = "fixture provenance",
+) {
   const signature = sign(null, blake2b512(content), privateKey);
-  const trustedComment = "fixture provenance";
   const globalSignature = sign(
     null,
     Buffer.concat([signature, Buffer.from(trustedComment, "utf8")]),
@@ -85,7 +89,7 @@ function runVerifier(assets, updaterPublicKey) {
   });
 }
 
-async function withSignedAssets(callback) {
+async function withSignedAssets(callback, trustedComment) {
   const assets = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "loupist-updater-"));
   try {
     const { privateKey, publicKey } = generateKeyPairSync("ed25519");
@@ -96,7 +100,7 @@ async function withSignedAssets(callback) {
       await writeFile(join(assets, name), content);
       await writeFile(
         join(assets, `${name}.sig`),
-        signatureFixture(privateKey, keyId, content),
+        signatureFixture(privateKey, keyId, content, trustedComment),
         "utf8",
       );
     }
@@ -114,6 +118,19 @@ test("accepts the signed macOS updater without Windows artifacts", async () => {
     assert.equal(result.stderr, "");
     assert.match(result.stdout, /Verified macOS updater package/);
   });
+});
+
+test("rejects a signature that does not bind the release version", async () => {
+  for (const trustedComment of [
+    "fixture provenance",
+    "timestamp:1\tfile:package\tversion:9.9.9",
+  ]) {
+    await withSignedAssets(async ({ assets, updaterPublicKey }) => {
+      const result = await runVerifier(assets, updaterPublicKey);
+      assert.equal(result.code, 1, result.stderr);
+      assert.match(result.stderr, /release version/);
+    }, trustedComment);
+  }
 });
 
 test("rejects a package changed after it was signed", async () => {

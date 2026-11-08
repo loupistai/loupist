@@ -73,9 +73,11 @@ class ReleaseConfigTest(ReleaseScriptTest):
         stable = self.created("macos", "--macos-bundle-version", "17")
         self.assertEqual(stable["bundle"]["macOS"]["bundleVersion"], "17")
         self.assertEqual(stable["plugins"]["updater"]["endpoints"], [STABLE_ENDPOINT])
+        self.assertIs(stable["plugins"]["updater"]["requireSignedVersion"], True)
         rc = self.created("windows", version="1.2.3-rc.4")
         endpoints = rc["plugins"]["updater"]["endpoints"]
         self.assertEqual(endpoints, [NEXT_RC_ENDPOINT, STABLE_ENDPOINT])
+        self.assertIs(rc["plugins"]["updater"]["requireSignedVersion"], True)
         self.assertNotIn("macOS", rc["bundle"])
 
     def test_invalid_versions_and_build_counters_are_refused(self) -> None:
