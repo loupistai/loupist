@@ -89,7 +89,7 @@ command runs as before. Rust builds the prefix from the turn's roots:
 
 | Rule | Linux (bubblewrap) | macOS (`/usr/bin/sandbox-exec -p`) |
 | --- | --- | --- |
-| Writes | Workspace and scratch bound read-write over a read-only `/`; a private tmpfs `/tmp`. | `(deny file-write*)` except the workspace, scratch and `/dev/null`, `/dev/stdout`, `/dev/stderr`, `/dev/tty*`, `/dev/fd/*`. |
+| Writes | Workspace and scratch bound read-write over a read-only `/`; a private tmpfs `/tmp`. | `(deny file-write*)` except the workspace, scratch and `/dev/null`, `/dev/stdout`, `/dev/stderr`, `/dev/dtracehelper`, `/dev/autofs_nowait`, `/dev/tty*`, `/dev/fd/*`. |
 | `<workspace>/.loupist`, app data root | A tmpfs over each, remounted read-only last; `.loupist/skills`, `.loupist/AGENTS.md`, `.loupist/config.toml`, the global `skills` and `AGENTS.md`, this Chat's attachments and scratch bound back (attachments and instruction files read-only). | `(deny file-read*)` and `(deny file-write*)` on each with `require-not` exclusions for the same paths. |
 | Workspace `.git/config`, `.git/hooks` | Bound read-only over themselves. | `(deny file-write*)`. |
 | Credentials | Each existing `CREDENTIAL_HOME` entry: a folder gets a read-only tmpfs, a file `/dev/null`. | `(deny file-read*)` on each entry. |
