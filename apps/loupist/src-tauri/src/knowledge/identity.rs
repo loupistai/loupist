@@ -5,7 +5,7 @@ use serde_json::Value;
 use unicode_normalization::UnicodeNormalization;
 
 use super::assets::class::exchange_time_zone;
-use super::{ClaimStatus, DependencyRole, EvidenceRevision, GraphNode, WorldSnapshotBody};
+use super::{ClaimStatus, GraphNode, WorldSnapshotBody};
 use crate::store::user_context::MapContextItem;
 
 #[derive(Clone, Copy)]
@@ -331,16 +331,13 @@ fn keyed(name: &str) -> Keyed {
 }
 
 /// One World revision's identity index: each node's spellings and kind, the
-/// nodes each Source span confirms, the Sources the revision incorporated, the
-/// company keys of a node computed the first time learning asks about it and
-/// kept for the filings after, and the components of nodes whose keys meet,
-/// computed once for the revision.
+/// nodes each Source span confirms, the company keys of a node computed the
+/// first time learning asks about it and kept for the filings after, and the
+/// components of nodes whose keys meet, computed once for the revision.
 pub(crate) struct WorldIdentity {
     nodes: BTreeMap<String, IdentityNode>,
     /// The endpoints of the active claims whose evidence cites each span.
     confirmed_by_span: BTreeMap<String, BTreeSet<String>>,
-    /// The Source records the revision's dependencies name.
-    processed_sources: BTreeSet<String>,
     keys: BTreeMap<String, BTreeSet<String>>,
     components: Option<BTreeMap<String, String>>,
 }
@@ -357,7 +354,7 @@ thread_local! {
 }
 
 impl WorldIdentity {
-    pub(crate) fn new(world: &WorldSnapshotBody, dependencies: &[EvidenceRevision]) -> Self {
+    pub(crate) fn new(world: &WorldSnapshotBody) -> Self {
         let mut confirmed_by_span: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         for claim in world
             .claims
@@ -388,11 +385,6 @@ impl WorldIdentity {
                 })
                 .collect(),
             confirmed_by_span,
-            processed_sources: dependencies
-                .iter()
-                .filter(|dependency| dependency.role == DependencyRole::WorldSource)
-                .map(|dependency| dependency.record_id.clone())
-                .collect(),
             keys: BTreeMap::new(),
             components: None,
         }
@@ -410,13 +402,6 @@ impl WorldIdentity {
                 .flat_map(|spelling| entity_name_keys(spelling))
                 .collect()
         }))
-    }
-
-    /// Whether the revision incorporated `source`. A page citing a Source the
-    /// World has yet to process is not judged by the claims that may still
-    /// come from it.
-    pub(crate) fn processed(&self, source: &str) -> bool {
-        self.processed_sources.contains(source)
     }
 
     /// The one company the spans a page cites confirm under `primary`, the
@@ -526,12 +511,12 @@ static WORLD_IDENTITY: Mutex<VecDeque<(String, String, WorldIdentity)>> =
 const CACHED_REVISIONS: usize = 4;
 
 /// Reads `revision` of `loupist`'s World through its identity index. `load`
-/// reads the revision's snapshot and dependencies the first time it is asked
-/// about; later filings on the same revision reuse the index.
+/// reads the revision's snapshot the first time it is asked about; later
+/// filings on the same revision reuse the index.
 pub(crate) fn with_world_identity<R>(
     loupist: &str,
     revision: &str,
-    load: impl FnOnce() -> super::KnowledgeResult<(WorldSnapshotBody, Vec<EvidenceRevision>)>,
+    load: impl FnOnce() -> super::KnowledgeResult<WorldSnapshotBody>,
     read: impl FnOnce(&mut WorldIdentity) -> R,
 ) -> super::KnowledgeResult<R> {
     let cached =
@@ -541,8 +526,7 @@ pub(crate) fn with_world_identity<R>(
         .unwrap_or_else(PoisonError::into_inner);
     if !cache.iter().any(cached) {
         drop(cache);
-        let (world, dependencies) = load()?;
-        let identity = WorldIdentity::new(&world, &dependencies);
+        let identity = WorldIdentity::new(&load()?);
         cache = WORLD_IDENTITY
             .lock()
             .unwrap_or_else(PoisonError::into_inner);

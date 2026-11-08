@@ -710,19 +710,25 @@ fn company_kind(kind: &str, extension: &super::world_schema::WorldExtension) -> 
 }
 /// The cases of a pending page once the Sources it cites confirm each pending
 /// subject, for this read only. Every cited Source must be through World
-/// processing, so a report the World has yet to read cannot be judged by the
-/// claims that may still come from it, and each name must have exactly one
-/// candidate among the cited spans' claims
-/// ([`super::identity::WorldIdentity::candidate`]). The page then counts as
-/// its candidate node, with the node's keys and the name's own. Nothing is
-/// stored: the anchor stays pending until a publication spells the name.
+/// processing ([`super::graph_jobs::processed_sources`]), so a report the
+/// World has yet to read cannot be judged by the claims that may still come
+/// from it, and each name must have exactly one candidate among the cited
+/// spans' claims ([`super::identity::WorldIdentity::candidate`]). The page
+/// then counts as its candidate node, with the node's keys and the name's
+/// own. Nothing is stored: the anchor stays pending until a publication
+/// spells the name.
 fn confirm_pending(
     world: &super::identity::WorldIdentity,
     pending: &PendingObservation,
+    processed: &BTreeSet<String>,
     spans: &BTreeMap<String, BTreeSet<String>>,
     company: impl Fn(&str) -> bool,
 ) -> Option<BTreeSet<Case>> {
-    if !pending.cited.keys().all(|source| world.processed(source)) {
+    if !pending
+        .cited
+        .keys()
+        .all(|source| processed.contains(source))
+    {
         return None;
     }
     let cited: BTreeSet<String> = pending.cited.values().flatten().cloned().collect();
@@ -772,12 +778,13 @@ fn keyed_evidence(
         .iter()
         .flat_map(|p| p.cited.keys().cloned())
         .collect();
+    let processed = super::graph_jobs::processed_sources(tx, loupist, &sources)?;
     let spans = source_spans(tx, &sources)?;
     let extension = load_settings(tx, loupist)?.extension;
     let company = |kind: &str| company_kind(kind, &extension);
     let read = super::lens::world_identity(tx, loupist, |world| {
         for mut p in pending {
-            match confirm_pending(world, &p, &spans, company) {
+            match confirm_pending(world, &p, &processed, &spans, company) {
                 Some(cases) => {
                     p.observation.cases = cases;
                     found.observations.push(p.observation);

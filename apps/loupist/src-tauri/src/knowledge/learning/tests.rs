@@ -1456,7 +1456,86 @@ fn claim_with_status(
 
 /// Publishes the World again with `nodes`, as World processing does.
 fn reseal(store: &KnowledgeStore, nodes: Vec<(&str, &str)>, at: i64) {
-    reseal_claiming(store, nodes, Vec::new(), &[], at);
+    reseal_claiming(store, nodes, Vec::new(), at);
+}
+
+/// The World record and its head revision.
+fn world_head(store: &KnowledgeStore) -> (String, String) {
+    store
+        .read(|w| {
+            Ok(w.tx.query_row(
+                "SELECT r.record_id,h.revision_id FROM knowledge_records r
+                 JOIN knowledge_record_heads h ON h.record_id=r.record_id
+                 WHERE r.owner_loupist_id=?1 AND r.kind='world'",
+                [LOUPIST],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?)
+        })
+        .unwrap()
+}
+
+/// The World job for `span`'s Source, queued as retaining the Source through a
+/// Chat queues one, or the job it already has.
+fn world_job(store: &KnowledgeStore, span: &BasisRef, at: i64) -> GraphJobView {
+    let BasisRef::Span {
+        record_id, span_id, ..
+    } = span
+    else {
+        panic!("not a span: {span:?}")
+    };
+    let (world, revision) = world_head(store);
+    let source_revision: String = store
+        .read(|w| {
+            Ok(w.tx.query_row(
+                "SELECT revision_id FROM knowledge_record_heads WHERE record_id=?1",
+                [record_id],
+                |r| r.get(0),
+            )?)
+        })
+        .unwrap();
+    store
+        .graph_accept_episode(
+            &config(),
+            super::super::graph_jobs::AddToWorld {
+                loupist_id: LOUPIST.into(),
+                world_record_id: world,
+                world_revision_id: revision,
+                source_record_id: record_id.clone(),
+                source_revision_id: source_revision,
+                span_id: span_id.clone(),
+                at_ms: at,
+                binding_role: "extracted_from".into(),
+            },
+        )
+        .unwrap()
+}
+
+/// The World is through with each of `spans`' Sources: its job ran and ended
+/// without publishing, as an extraction the model could not complete does.
+/// The claims a test wants come from the seal that follows.
+fn world_read(store: &KnowledgeStore, spans: &[&BasisRef], at: i64) {
+    for span in spans {
+        let job = world_job(store, span, at);
+        if super::super::graph_jobs::final_status(&job.status) {
+            continue;
+        }
+        let running = store
+            .graph_mark_running(&config(), &job.job_id, at)
+            .unwrap();
+        assert_eq!(running.status, super::super::graph_jobs::JOB_RUNNING);
+        let attempt = running.document.attempt_id.as_deref().unwrap();
+        let finished = store
+            .graph_finish(
+                &mut config(),
+                &job.job_id,
+                attempt,
+                super::super::graph_jobs::JOB_FAILED_BEFORE,
+                false,
+                false,
+            )
+            .unwrap();
+        assert_eq!(finished.status, super::super::graph_jobs::JOB_FAILED_BEFORE);
+    }
 }
 
 fn company_node(id: &str, name: &str, kind: &str) -> GraphNode {
@@ -1476,53 +1555,18 @@ fn reseal_claiming(
     store: &KnowledgeStore,
     nodes: Vec<(&str, &str)>,
     claims: Vec<GraphClaim>,
-    processed: &[&BasisRef],
     at: i64,
 ) {
     let nodes = nodes
         .into_iter()
         .map(|(id, name)| company_node(id, name, "company"))
         .collect();
-    reseal_graph(store, nodes, claims, processed, at);
+    reseal_graph(store, nodes, claims, at);
 }
 
-/// Publishes the World again with `nodes` and `claims`, naming the Sources of
-/// `processed` as the ones it has read, as a publication from extraction does.
-fn reseal_graph(
-    store: &KnowledgeStore,
-    nodes: Vec<GraphNode>,
-    claims: Vec<GraphClaim>,
-    processed: &[&BasisRef],
-    at: i64,
-) {
-    let mut dependencies: Vec<EvidenceRevision> = processed
-        .iter()
-        .map(|span| match span {
-            BasisRef::Span {
-                record_id,
-                revision_digest,
-                ..
-            } => EvidenceRevision {
-                record_id: record_id.clone(),
-                revision_digest: revision_digest.clone(),
-                role: DependencyRole::WorldSource,
-            },
-            other => panic!("not a span: {other:?}"),
-        })
-        .collect();
-    dependencies.sort_by(|a, b| a.record_id.cmp(&b.record_id));
-    dependencies.dedup_by(|a, b| a.record_id == b.record_id);
-    let (record_id, head): (String, String) = store
-        .read(|w| {
-            Ok(w.tx.query_row(
-                "SELECT r.record_id,h.revision_id FROM knowledge_records r
-                 JOIN knowledge_record_heads h ON h.record_id=r.record_id
-                 WHERE r.owner_loupist_id=?1 AND r.kind='world'",
-                [LOUPIST],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )?)
-        })
-        .unwrap();
+/// Publishes the World again with `nodes` and `claims`.
+fn reseal_graph(store: &KnowledgeStore, nodes: Vec<GraphNode>, claims: Vec<GraphClaim>, at: i64) {
+    let (record_id, head) = world_head(store);
     store
         .seal_world(SealWorld {
             loupist_id: LOUPIST.into(),
@@ -1532,7 +1576,7 @@ fn reseal_graph(
             nodes,
             claims,
             annotations: vec![],
-            dependencies,
+            dependencies: vec![],
         })
         .unwrap();
 }
@@ -1580,7 +1624,8 @@ fn companies_filed_before_the_world_knew_them_learn_once_their_sources_confirm_t
     .is_none());
     assert!(review_states(&store).is_empty());
     // Extraction canonicalizes both with legal forms, each from the report its
-    // Chat cited. The publication binds both anchors and queues the review.
+    // Chat cited. The publication confirms both pages and queues the review.
+    world_read(&store, &[&a, &b], AT + 4);
     let mut nodes: Vec<(&str, &str)> = (0..4)
         .map(|n| {
             (
@@ -1602,12 +1647,12 @@ fn companies_filed_before_the_world_knew_them_learn_once_their_sources_confirm_t
         claim_citing("clm_a", "entity-h", "entity-0", &a),
         claim_citing("clm_b", "entity-f", "entity-1", &b),
     ];
-    reseal_claiming(&store, nodes.clone(), claims.clone(), &[&a, &b], AT + 4);
+    reseal_claiming(&store, nodes.clone(), claims.clone(), AT + 4);
     assert_eq!(review_states(&store), ["queued"]);
     // Confirmation is for learning only: storage still holds both anchors
     // pending, and the next publication does not queue a second review.
     assert_eq!(pending_subjects(&store), 2);
-    reseal_claiming(&store, nodes, claims, &[&a, &b], AT + 5);
+    reseal_claiming(&store, nodes, claims, AT + 5);
     assert_eq!(review_states(&store), ["queued"]);
     assert_eq!(
         pages(&begin(&store, AT + 6)),
@@ -1616,10 +1661,10 @@ fn companies_filed_before_the_world_knew_them_learn_once_their_sources_confirm_t
 }
 
 /// Files a page named `name` in one Chat citing `cited`, Manufacturer 0 in
-/// another citing `other`, then publishes `extra` beside the manufacturers
-/// with `claims`, both Sources processed. Whether a review queues says whether
-/// the Sources confirmed the page's company for learning. Storage never binds
-/// the anchor either way.
+/// another citing `other`, then, both Sources read, publishes `extra` beside
+/// the manufacturers with `claims`. Whether a review queues says whether the
+/// Sources confirmed the page's company for learning. Storage never binds the
+/// anchor either way.
 fn sources_confirm(
     store: &KnowledgeStore,
     name: &str,
@@ -1652,7 +1697,8 @@ fn sources_confirm(
         })
         .collect();
     nodes.extend(extra);
-    reseal_graph(store, nodes, claims, &[cited, other], AT + 4);
+    world_read(store, &[cited, other], AT + 4);
+    reseal_graph(store, nodes, claims, AT + 4);
     assert_eq!(
         pending_subjects(store),
         1,
@@ -1828,12 +1874,17 @@ fn a_page_citing_a_source_the_world_has_not_read_waits_for_it() {
     ];
     nodes.extend(extra);
     let claims = vec![claim_citing("clm_1", "entity-h", "entity-m", &report)];
-    // A publication that claims from the report but has not read it through
+    // A publication that claims from the report while its job is still queued
     // (another of its spans may still name a second spelling) holds the page.
-    reseal_claiming(&store, nodes.clone(), claims.clone(), &[&other], AT + 4);
+    world_read(&store, &[&other], AT + 4);
+    let queued = world_job(&store, &report, AT + 4);
+    assert_eq!(queued.status, super::super::graph_jobs::JOB_QUEUED);
+    reseal_claiming(&store, nodes.clone(), claims.clone(), AT + 4);
     assert!(review_states(&store).is_empty());
-    // The one that has read it confirms the page, with no new filing.
-    reseal_claiming(&store, nodes, claims, &[&other, &report], AT + 5);
+    // Once the job is through, the next publication confirms the page, with
+    // no new filing.
+    world_read(&store, &[&report], AT + 5);
+    reseal_claiming(&store, nodes, claims, AT + 5);
     assert_eq!(review_states(&store), ["queued"]);
 }
 

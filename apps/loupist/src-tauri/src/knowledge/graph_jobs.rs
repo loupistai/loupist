@@ -5,6 +5,8 @@
 //! after a second such attempt, or a mutation, the job becomes
 //! `reconcile_required` and is not dispatched again.
 
+use std::collections::BTreeSet;
+
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -1189,6 +1191,63 @@ pub(super) fn latest_source_job(
         "SELECT job_id, loupist_id, world_record_id, world_revision_id, status, payload_json, payload_digest, created_at_ms FROM knowledge_graph_outbox WHERE loupist_id = ?1 AND json_extract(payload_json, '$.sourceBinding.sourceRecordId') = ?2 ORDER BY created_at_ms DESC, job_id DESC LIMIT 1",
         params![loupist_id, record_id], row_to_job,
     ).optional().map_err(KnowledgeError::from)
+}
+
+/// Whether a job's status is final. A queued, running or paused job may still
+/// read its Source; every other status means the World has published what it
+/// read, or cannot read more from it (failed, cancelled, quarantined, reconciled).
+pub(super) fn final_status(status: &str) -> bool {
+    !matches!(status, JOB_QUEUED | JOB_RUNNING | JOB_PAUSED)
+}
+
+/// The Sources among `sources` the World is through with: no job of theirs is
+/// queued, running or paused, and a job for the Source's current revision has
+/// a final status. A job that failed or was quarantined counts, because the
+/// World cannot reveal more from it; a Source with no job at all, or whose
+/// latest revision has none, is not processed. Method learning reads this
+/// before judging a pending page by the claims on the Sources it cites.
+pub(super) fn processed_sources(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    sources: &BTreeSet<String>,
+) -> KnowledgeResult<BTreeSet<String>> {
+    let mut statement = tx.prepare(&format!(
+        "SELECT source,
+                SUM(status IN ('{queued}', '{running}', '{paused}')) AS pending,
+                SUM(status NOT IN ('{queued}', '{running}', '{paused}') AND revision = head) AS done
+         FROM (SELECT o.status,
+                      json_extract(o.payload_json, '$.sourceBinding.sourceRecordId') AS source,
+                      json_extract(o.payload_json, '$.sourceBinding.sourceRevisionId') AS revision,
+                      h.revision_id AS head
+               FROM knowledge_graph_outbox o
+               JOIN knowledge_record_heads h
+                 ON h.record_id = json_extract(o.payload_json, '$.sourceBinding.sourceRecordId')
+               WHERE o.loupist_id = ?1
+                 AND json_extract(o.payload_json, '$.sourceBinding.sourceRecordId')
+                     IN (SELECT value FROM json_each(?2)))
+         GROUP BY source",
+        queued = JOB_QUEUED,
+        running = JOB_RUNNING,
+        paused = JOB_PAUSED,
+    ))?;
+    let rows = statement.query_map(
+        params![loupist_id, serde_json::to_string(sources)?],
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        },
+    )?;
+    let mut processed = BTreeSet::new();
+    for row in rows {
+        let (source, pending, done) = row?;
+        if pending == 0 && done > 0 {
+            processed.insert(source);
+        }
+    }
+    Ok(processed)
 }
 
 pub fn list_jobs(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<Vec<GraphJobView>> {

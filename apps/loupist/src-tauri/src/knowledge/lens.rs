@@ -198,13 +198,7 @@ pub(super) fn world_identity<R>(
     super::identity::with_world_identity(
         loupist_id,
         &revision,
-        || {
-            let stored = load_revision(tx, &revision)?;
-            Ok((
-                from_json(&stored.payload_json)?,
-                serde_json::from_str(&stored.dependency_json)?,
-            ))
-        },
+        || from_json(&load_revision(tx, &revision)?.payload_json),
         read,
     )
     .map(Some)
