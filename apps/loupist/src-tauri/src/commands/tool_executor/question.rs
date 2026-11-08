@@ -112,8 +112,10 @@ impl AppToolExecutor {
                 json!({"answered": true, "choice": label})
             }
             Some(QuestionAnswer::Text(text)) => {
-                // Sites the user names in an answer stay readable, like sites in a message.
+                // Sites the user names in an answer stay readable, like sites in a message,
+                // and the answer itself never leaves in a URL after third-party text.
                 self.capture.turn_taint.note_user_text(&text);
+                self.capture.turn_taint.protect_private_text(&text);
                 json!({"answered": true, "text": text.trim()})
             }
             None => unanswered(&question),

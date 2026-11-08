@@ -189,7 +189,8 @@ stopping. The result is `{answered: true, choice: "<label>"}` or
 `{answered: true, text}`; with no answer it is `{answered: false, assumed: "<recommended
 label>" | null, next}`, not an error, and `next` tells the model to continue with the
 assumption and say which one it used. A text answer's URLs count as typed by the user for
-the untrusted-text rule. The description tells the model to ask only when the answer
+the untrusted-text rule, and the answer joins the private text no URL may carry after
+third-party text. The description tells the model to ask only when the answer
 changes the work materially and no sensible default exists, never for credentials or
 account numbers, and never for permission to run a tool. Scheduled and delegated runs
 refuse it: the unattended allowlist omits it and the chat surface gates it. The card and
