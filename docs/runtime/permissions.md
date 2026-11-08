@@ -45,7 +45,9 @@ firmlink or case alias of a root counts at whatever depth it spells the root.
 5. Sensitive: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.config/gcloud`, `~/.kube`,
    `~/.docker/config.json`, `~/.netrc`, `~/.git-credentials`, `~/.npmrc`, `~/.pypirc`,
    `~/Library/Keychains`, `~/Library/LaunchAgents`, shell startup files, `~/.gitconfig`,
-   and any `.git/hooks/**` or `.git/config`. One table in the module.
+   `~/.config/git/**`, `~/.config/gh/**`, and the `hooks/**` and `config` of any git
+   directory (`.git`, a submodule's `.git/modules/<path>`, a bare `*.git`). One
+   table in the module.
 6. Workspace: inside the selected workspace.
 7. Outside: everything else.
 

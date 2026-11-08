@@ -596,16 +596,23 @@ const SENSITIVE_HOME: &[(&str, Reach)] = &[
     (".profile", Reach::File),
     (".config/fish", Reach::Tree),
     (".gitconfig", Reach::File),
+    (".config/git", Reach::Tree),
+    (".config/gh", Reach::Tree),
 ];
 
-/// The home table above, plus any `.git/hooks/**` or `.git/config`.
+/// The home table above, plus the `hooks/**` and `config` of any git
+/// directory: `.git`, a submodule's `.git/modules/<path>`, or a bare `*.git`.
 fn sensitive(target: &Path, home: Option<&Path>) -> bool {
-    let parts: Vec<String> = target
-        .components()
-        .map(|part| part.as_os_str().to_string_lossy().to_lowercase())
-        .collect();
-    let git = parts.windows(2).enumerate().any(|(at, pair)| {
-        pair[0] == ".git" && (pair[1] == "hooks" || (pair[1] == "config" && at + 2 == parts.len()))
+    let parts = lower_parts(target);
+    let git = parts.iter().enumerate().any(|(at, part)| {
+        if !part.ends_with(".git") {
+            return false;
+        }
+        let mut rest = &parts[at + 1..];
+        while rest.len() >= 2 && rest[0] == "modules" {
+            rest = &rest[2..];
+        }
+        rest.first().is_some_and(|folder| folder == "hooks") || rest == ["config"]
     });
     if git {
         return true;
@@ -950,6 +957,25 @@ mod tests {
             (ws.join(".git/hooks/pre-commit"), PathClass::Sensitive),
             (ws.join(".git/config"), PathClass::Sensitive),
             (ws.join(".git/config.lock"), PathClass::Workspace),
+            (
+                ws.join(".git/modules/vendor/hooks/pre-commit"),
+                PathClass::Sensitive,
+            ),
+            (ws.join(".git/modules/vendor/config"), PathClass::Sensitive),
+            (
+                ws.join(".git/modules/vendor/modules/inner/config"),
+                PathClass::Sensitive,
+            ),
+            (ws.join(".git/modules/vendor/HEAD"), PathClass::Workspace),
+            (ws.join("mirrors/site.git/config"), PathClass::Sensitive),
+            (
+                ws.join("mirrors/site.git/hooks/post-update"),
+                PathClass::Sensitive,
+            ),
+            (ws.join("mirrors/site.git/HEAD"), PathClass::Workspace),
+            (home.join(".config/git/config"), PathClass::Sensitive),
+            (home.join(".config/gh/hosts.yml"), PathClass::Sensitive),
+            (home.join(".config/other/settings.json"), PathClass::Outside),
             (ws.join("notes/plan.md"), PathClass::Workspace),
             (ws.join("new/report.md"), PathClass::Workspace),
             (PathBuf::from("relative/report.md"), PathClass::Workspace),
