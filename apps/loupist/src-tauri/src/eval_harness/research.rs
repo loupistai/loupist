@@ -241,7 +241,8 @@ fn identity(arm: &Arm) -> Result<Value> {
             let d = &j.document;
             let reason = match j.status.as_str() {
                 "completed" => "published",
-                "queued" | "paused_budget" => "waiting",
+                "queued" => "waiting",
+                "paused_budget" => "paused under its frozen allowance",
                 "running" => "running",
                 "cancelled_before_start" => "cancelled",
                 "reconciled_without_retry" => "reconciled",

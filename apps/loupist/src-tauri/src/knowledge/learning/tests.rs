@@ -70,6 +70,15 @@ fn retain_saved(
     provider: &str,
 ) -> RetainedSource {
     let bytes = format!("{title}: margins fell while utilization stayed near 60 percent.");
+    retain_bytes(store, title, authorship, provider, bytes)
+}
+fn retain_bytes(
+    store: &KnowledgeStore,
+    title: &str,
+    authorship: Authorship,
+    provider: &str,
+    bytes: String,
+) -> RetainedSource {
     store
         .retain_new_source(RetainNewSource {
             origin: None,
@@ -104,6 +113,17 @@ fn retain_saved(
 }
 fn source(store: &KnowledgeStore, title: &str) -> BasisRef {
     retain(store, title, Authorship::Publisher, "fictional publisher")
+}
+/// A report long enough that World extraction splits it into `chunks` chunks.
+fn long_source(store: &KnowledgeStore, title: &str, chunks: usize) -> BasisRef {
+    let bytes = "A".repeat(super::super::graph_jobs::EPISODE_CHUNK_CHARS * chunks);
+    span_of(&retain_bytes(
+        store,
+        title,
+        Authorship::Publisher,
+        "fictional publisher",
+        bytes,
+    ))
 }
 /// One Source with two spans, as a sector report that discusses two companies
 /// in two passages. The second span's ref cites the record's latest revision.
@@ -2059,6 +2079,120 @@ fn a_pending_spelling_is_a_case_with_the_component_of_the_nodes_keyed_like_it() 
     assert_eq!(
         pages(&begin(&store, AT + 6)),
         ["Manufacturer 0", "Samsung Electronics Inc. ramp"]
+    );
+}
+
+/// Runs every chunk the worker loop would dispatch for the Loupist, each ending
+/// without a paid call, as an extraction the model never completes does. The
+/// chunks that ran.
+fn run_dispatchable_chunks(store: &KnowledgeStore, mut at: i64) -> usize {
+    let mut ran = 0;
+    for _ in 0..64 {
+        let Some(head) = store.graph_queue_heads().unwrap().into_iter().next() else {
+            return ran;
+        };
+        let claimed = store.graph_mark_running(&config(), &head, at).unwrap();
+        if claimed.status != super::super::graph_jobs::JOB_RUNNING {
+            assert_eq!(claimed.status, super::super::graph_jobs::JOB_PAUSED);
+            continue;
+        }
+        let attempt = claimed.document.attempt_id.as_deref().unwrap();
+        store
+            .graph_finish(
+                &mut config(),
+                &head,
+                attempt,
+                super::super::graph_jobs::JOB_FAILED_BEFORE,
+                false,
+                false,
+                at,
+            )
+            .unwrap();
+        ran += 1;
+        at += 1;
+    }
+    panic!("the queue never drained");
+}
+
+#[test]
+fn chunks_a_frozen_allowance_cannot_fund_do_not_hold_the_pages_citing_their_report() {
+    // Two Chats cite two long reports. Under the default 16 model calls each
+    // report's nine chunks get [2, 2, 2, 2, 2, 2, 2, 1, 1]; the first claim
+    // parks the two tail chunks of each, which no resume can run. Once the
+    // chunks that can run are through, both pages are cases, with no model
+    // call and no new filing.
+    let (_dir, store) = setup();
+    let (a, b) = (
+        long_source(&store, "Halvorsen annual report", 9),
+        long_source(&store, "Ferroluz annual report", 9),
+    );
+    let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+    let halvorsen = named("Halvorsen ramp", "Halvorsen Cellworks");
+    let a_only = std::slice::from_ref(&a);
+    assert!(put_in(&store, "chat-1", "m1", halvorsen, text, a_only, AT + 2).is_none());
+    let ferroluz = named("Ferroluz ramp", "Ferroluz Componentes");
+    let b_only = std::slice::from_ref(&b);
+    assert!(put_in(&store, "chat-2", "m2", ferroluz, text, b_only, AT + 3).is_none());
+    world_job(&store, &a, AT + 4);
+    world_job(&store, &b, AT + 4);
+    let jobs = store.graph_jobs(LOUPIST).unwrap();
+    assert_eq!(jobs.len(), 18);
+    let underfunded = |jobs: &[GraphJobView]| {
+        jobs.iter()
+            .filter(|j| j.document.extraction.max_llm_calls < 2)
+            .count()
+    };
+    assert_eq!(underfunded(&jobs), 4);
+    assert_eq!(run_dispatchable_chunks(&store, AT + 5), 14);
+    let jobs = store.graph_jobs(LOUPIST).unwrap();
+    let paused: Vec<_> = jobs
+        .iter()
+        .filter(|j| j.status == super::super::graph_jobs::JOB_PAUSED)
+        .collect();
+    assert_eq!(paused.len(), 4);
+    assert!(paused
+        .iter()
+        .all(|j| j.document.extraction.max_llm_calls < 2));
+    assert!(jobs.iter().all(|j| !j.document.inference_attempted));
+    assert_eq!(review_states(&store), ["queued"]);
+    assert_eq!(
+        pages(&begin(&store, AT + 40)),
+        ["Ferroluz ramp", "Halvorsen ramp"]
+    );
+    assert_eq!(pending_subjects(&store), 2, "nothing is persisted");
+}
+
+#[test]
+fn a_report_whose_every_chunk_is_underfunded_is_read_when_the_claim_parks_it() {
+    // Seventeen chunks of a 16-call allowance leave every chunk under two
+    // calls. The first claim parks them all and nothing ever finishes, so the
+    // claim itself rechecks the pages citing the report.
+    let (_dir, store) = setup();
+    let report = long_source(&store, "Halvorsen annual report", 17);
+    let other = source(&store, "Filing C");
+    let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+    let halvorsen = named("Halvorsen ramp", "Halvorsen Cellworks");
+    let report_only = std::slice::from_ref(&report);
+    assert!(put_in(&store, "chat-1", "m1", halvorsen, text, report_only, AT + 2).is_none());
+    let other_only = std::slice::from_ref(&other);
+    assert!(turn(&store, "chat-2", "m2", 0, other_only, AT + 3).is_none());
+    world_read(&store, &[&other], AT + 4);
+    let first = world_job(&store, &report, AT + 5);
+    assert!(review_states(&store).is_empty(), "the report is queued");
+    let claimed = store
+        .graph_mark_running(&config(), &first.job_id, AT + 6)
+        .unwrap();
+    assert_eq!(claimed.status, super::super::graph_jobs::JOB_PAUSED);
+    assert!(store
+        .graph_jobs(LOUPIST)
+        .unwrap()
+        .iter()
+        .filter(|j| j.document.extraction.max_llm_calls < 2)
+        .all(|j| j.status == super::super::graph_jobs::JOB_PAUSED));
+    assert_eq!(review_states(&store), ["queued"]);
+    assert_eq!(
+        pages(&begin(&store, AT + 7)),
+        ["Halvorsen ramp", "Manufacturer 0"]
     );
 }
 

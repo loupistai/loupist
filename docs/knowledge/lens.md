@@ -163,10 +163,14 @@ other row.
 A page whose subject the World has not confirmed is read against the Sources
 its current sections cite, for that read only, once the World is through with
 every one of them. A Source is processed when the World job table
-(`knowledge_graph_outbox`) holds no queued, running or paused job for it and a
-job for its current revision has a final status: completed, or failed,
-cancelled, quarantined or reconciled, since a World that gave up on a Source
-cannot reveal more from it. The revision's dependency list is not the ledger: a
+(`knowledge_graph_outbox`) holds no queued or running job for it and a job for
+its current revision has any other status: completed; failed, cancelled,
+quarantined or reconciled, since a World that gave up on a Source cannot reveal
+more from it; or paused, since a chunk whose frozen allowance cannot fund an
+extraction (a report split into more chunks than its call budget feeds two calls
+each; the first claim parks them and rechecks learning) or a queue the user
+paused is not read without the user's action, and the resume that lets it settle
+rechecks learning then. The revision's dependency list is not the ledger: a
 Source read without yielding a claim leaves that list on the next publication.
 A Source with no job, or none for its latest revision, holds the page. The page
 is then a case with every company the World claims on any span of a Source it
