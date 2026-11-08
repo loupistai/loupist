@@ -1083,6 +1083,46 @@ async fn research_filed_in_two_chats_from_two_saved_sources_queues_one_method_re
         assert!(reviews().is_empty(), "one Chat alone starts no review");
         commit_turn_in(&state, &capture, chat, &format!("assistant-{chat}")).await;
     }
+    assert!(reviews().is_empty(), "names the World has not confirmed");
+    let node = |id: &str, name: &str| crate::knowledge::GraphNode {
+        id: id.into(),
+        name: name.into(),
+        aliases: Vec::new(),
+        description: format!("The {name}."),
+        kind: "company".into(),
+        source_role: "organization".into(),
+        properties: Default::default(),
+    };
+    // World processing publishes onto the Loupist's World record.
+    let (record_id, head): (String, Option<String>) = state
+        .store
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT r.record_id, h.revision_id FROM knowledge_records r
+             LEFT JOIN knowledge_record_heads h ON h.record_id = r.record_id
+             WHERE r.owner_loupist_id = 'loupist-a' AND r.kind = 'world'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    knowledge(&state)
+        .transact(|write| {
+            write.seal_world(crate::knowledge::SealWorld {
+                loupist_id: "loupist-a".into(),
+                record_id,
+                expected_revision_id: head,
+                at_ms: 1_700_000_000_000,
+                nodes: vec![
+                    node("hanbit", "Hanbit Motors Co., Ltd."),
+                    node("daeil", "Daeil Steel"),
+                ],
+                claims: Vec::new(),
+                annotations: Vec::new(),
+                dependencies: Vec::new(),
+            })
+        })
+        .unwrap();
     assert_eq!(reviews(), ["queued"]);
 }
 

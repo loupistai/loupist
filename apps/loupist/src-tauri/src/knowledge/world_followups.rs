@@ -165,6 +165,9 @@ pub(super) fn after_seal(
         super::lens::contest_pages(tx, loupist_id, &fallen, at_ms)?
     };
     let resolved_anchors = super::lens::resolve_anchors(tx, loupist_id, &next.nodes)?;
+    if resolved_anchors > 0 {
+        super::learning::identity_changed(tx, loupist_id, at_ms)?;
+    }
     let mut seeds: Vec<String> = followed
         .iter()
         .filter_map(|item| match resolve_followed(item, &next.nodes) {

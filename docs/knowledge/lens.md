@@ -45,8 +45,12 @@ World. Principle, perspective and method pages keep the World-reference ban; no
 page may reference a Journal, a snapshot or a World record id. Links are what the
 Markdown parser reads (inline, reference-style and autolinks, any scheme case),
 for the index and the policy alike. A `world:` link
-becomes a `mention` anchor; a page created with anchors gets `subject` anchors (a
-name anchor without a node stays pending until a World publication names it); a
+becomes a `mention` anchor; a page created with anchors gets `subject` anchors. A
+name anchor names the node with that exact name or alias, else the one node that
+shares its company key (`entity_name_key`: NFKC, casefold, punctuation except `&`
+dropped, and legal forms such as `Inc.`, `Co., Ltd.`, `ASA`, `주식회사` or `株式会社`
+stripped while a name remains). A key two nodes share names neither. A name anchor
+without a node stays pending until a World publication names it; a
 final-answer `lens:` link records `applied` anchors to the World nodes delivered
 in that turn. Anchors drive the Map's applies-to edges and the Lens index order.
 
@@ -117,15 +121,17 @@ something was filed after the head the last review read. When two independent
 Chats filed that evidence about two different cases, Rust records one pending
 review. Chats are independent when each cites a Source the other never cited. A
 page's case is its subject anchors, which `about` sets on a subject or idea page,
-and two cases differ when they share no anchor. A resolved anchor is its World
-node alone, so two companies that held one name at different times stay two
-cases. A pending anchor is its folded name until a World publication resolves it
-to a node. A page with no subject anchor could concern any company, so its
-sections are not evidence and are not shown to a review. So one Chat, one Source, one company
-however many subject and idea pages it has, an unanchored page, or a Chat
-repeating another's Sources never starts one. Two pending spellings of one
-company that the World has not named, such as `Acme` and `Acme Inc.`, still
-count as two cases. Rows with a non-empty `world_job_id` come from the earlier claim-count
+and two cases differ when they share no anchor. Only companies the World
+confirmed count. A case is the World nodes of a page's subject anchors, so two
+companies that held one name at different times stay two cases, and `Acme` and
+`Acme Inc.` are one case once the World names that node. A page with no subject
+anchor, or with one the World has not confirmed, could concern any company, so
+its sections are not evidence and are not shown to a review. A name the World
+never confirms never counts. So one Chat, one Source, one company however many
+subject and idea pages it has, an unanchored or unconfirmed page, or a Chat
+repeating another's Sources never starts one. A World publication that resolves
+pending anchors rechecks the evidence at once, without waiting for a new filing,
+under the same rate limits and active-review rule. Rows with a non-empty `world_job_id` come from the earlier claim-count
 trigger and hold growth-event rowids: they never set the watermark, and startup
 defers any still pending or queued with `trigger_changed`.
 

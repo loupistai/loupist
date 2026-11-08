@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 use super::authority::{require_edit, require_record, OwnedRecordState};
 use super::canonical::{canonical_string, from_json, to_value};
 use super::error::{KnowledgeError, KnowledgeResult};
+use super::identity::entity_name_key;
 use super::lens_page::{
     apply, links, op_texts, private_reference, section_digest, text_forbidden, world_link_ids,
     AnchorInput, ApplyContext, Basis, BasisChip, BasisRef, FiledOp, FiledPage, FilingOrigin,
@@ -123,13 +124,30 @@ fn load(tx: &Transaction<'_>, loupist_id: &str, record_id: &str) -> KnowledgeRes
     })
 }
 
-/// Node ids, folded names and active claims of the Loupist's current World.
+/// Node ids, folded names, company keys and active claims of the Loupist's
+/// current World.
 #[derive(Default)]
 struct WorldIndex {
     ids: BTreeSet<String>,
     names: BTreeMap<String, String>,
+    keys: BTreeMap<String, BTreeSet<String>>,
     labels: BTreeMap<String, String>,
     active_claims: BTreeSet<String>,
+}
+
+impl WorldIndex {
+    /// The node a folded anchor name names: the node with that exact name or
+    /// alias, else the one node whose names share its company key. A key two
+    /// nodes share names neither, so the anchor stays pending.
+    fn node_named(&self, name_fold: &str) -> Option<String> {
+        if let Some(node) = self.names.get(name_fold) {
+            return Some(node.clone());
+        }
+        match self.keys.get(&entity_name_key(name_fold)) {
+            Some(nodes) if nodes.len() == 1 => nodes.first().cloned(),
+            _ => None,
+        }
+    }
 }
 
 fn world_index(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<WorldIndex> {
@@ -163,10 +181,13 @@ fn index_nodes(index: &mut WorldIndex, nodes: &[GraphNode]) {
         index.ids.insert(node.id.clone());
         index.labels.insert(node.id.clone(), node.name.clone());
         for name in std::iter::once(&node.name).chain(&node.aliases) {
+            let fold = fold_lens_title(name);
             index
-                .names
-                .entry(fold_lens_title(name))
-                .or_insert_with(|| node.id.clone());
+                .keys
+                .entry(entity_name_key(&fold))
+                .or_default()
+                .insert(node.id.clone());
+            index.names.entry(fold).or_insert_with(|| node.id.clone());
         }
     }
 }
@@ -329,10 +350,7 @@ fn subject_by_anchor(
         AnchorInput::Node { node_id } => (Some(node_id.clone()), String::new()),
         AnchorInput::Name { name } => {
             let fold = fold_lens_title(name);
-            let node = ensure_world(tx, loupist_id, world)?
-                .names
-                .get(&fold)
-                .cloned();
+            let node = ensure_world(tx, loupist_id, world)?.node_named(&fold);
             (node, fold)
         }
     };
@@ -393,10 +411,7 @@ fn create_page(
             }
             AnchorInput::Name { name } => {
                 let fold = fold_lens_title(name);
-                let node = ensure_world(tx, loupist_id, world)?
-                    .names
-                    .get(&fold)
-                    .cloned();
+                let node = ensure_world(tx, loupist_id, world)?.node_named(&fold);
                 (node, fold)
             }
         };
@@ -1080,9 +1095,9 @@ pub(super) fn contest_pages(
     Ok(changed_pages)
 }
 
-/// Pending name anchors resolve once the World knows the name or an alias.
-/// Returns how many anchors gained a node. Discovery calls this after every
-/// World publication.
+/// Pending name anchors resolve once the World knows the name or an alias,
+/// or exactly one node shares its company key. Returns how many anchors gained
+/// a node. Discovery calls this after every World publication.
 pub(super) fn resolve_anchors(
     tx: &Transaction<'_>,
     loupist_id: &str,
@@ -1102,7 +1117,7 @@ pub(super) fn resolve_anchors(
     drop(statement);
     let mut resolved = 0;
     for (rowid, name_fold) in pending {
-        if let Some(node_id) = index.names.get(&name_fold) {
+        if let Some(node_id) = index.node_named(&name_fold) {
             resolved += tx.execute(
                 "UPDATE OR IGNORE knowledge_lens_anchors SET node_id = ?1 WHERE rowid = ?2",
                 params![node_id, rowid],
@@ -2607,6 +2622,72 @@ mod tests {
             .sections()
             .iter()
             .all(|s| s.key.as_str() != "views"));
+    }
+
+    #[test]
+    fn a_legal_form_spelling_names_a_node_only_when_one_company_holds_it() {
+        let (_dir, store) = store();
+        let world = store
+            .create_record(CreateRecord {
+                loupist_id: LOUPIST.into(),
+                kind: RecordKind::World,
+                title: "World".into(),
+                at_ms: 1,
+            })
+            .unwrap();
+        let idea = |message: &str, name: &str, at_ms| {
+            let filed = file_in(
+                &store,
+                &turn(message),
+                vec![PageDelta {
+                    target: PageTarget::Create {
+                        kind: PageKind::Idea,
+                        title: format!("Thesis {message}"),
+                        anchors: vec![AnchorInput::Name { name: name.into() }],
+                    },
+                    ops: vec![put("facts", "A", None)],
+                }],
+                at_ms,
+            );
+            filed[0].record_id.clone()
+        };
+        let node_of = |id: &str| read(&store, id).anchors[0].node_id.clone();
+        let suffixed = idea("m1", "Halvorsen Cellworks ASA", 2);
+        let shared = idea("m2", "Kestrel Foundry Inc.", 3);
+        let node = |id: &str, name: &str| GraphNode {
+            id: id.into(),
+            name: name.into(),
+            aliases: vec![],
+            description: String::new(),
+            kind: "Organization".into(),
+            source_role: "subject".into(),
+            properties: Default::default(),
+        };
+        store
+            .seal_world(SealWorld {
+                loupist_id: LOUPIST.into(),
+                record_id: world.record_id,
+                expected_revision_id: None,
+                at_ms: 4,
+                nodes: vec![
+                    node("nod_h", "Halvorsen Cellworks"),
+                    node("nod_k1", "Kestrel Foundry"),
+                    node("nod_k2", "Kestrel Foundry Ltd"),
+                ],
+                claims: Vec::new(),
+                annotations: Vec::new(),
+                dependencies: Vec::new(),
+            })
+            .unwrap();
+        assert_eq!(node_of(&suffixed).as_deref(), Some("nod_h"));
+        assert_eq!(node_of(&shared), None);
+        // Filing against the World already there resolves the same way.
+        let at_create = idea("m3", "HALVORSEN CELLWORKS, ASA", 5);
+        assert_eq!(node_of(&at_create).as_deref(), Some("nod_h"));
+        assert_eq!(node_of(&idea("m4", "Kestrel Foundry, Inc.", 6)), None);
+        // An exact name still names its node when the key is shared.
+        let exact = idea("m5", "kestrel foundry ltd", 7);
+        assert_eq!(node_of(&exact).as_deref(), Some("nod_k2"));
     }
 
     #[test]

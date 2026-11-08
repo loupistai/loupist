@@ -106,6 +106,33 @@ pub(crate) fn enqueue(
     loupist: &str,
     now: i64,
 ) -> KnowledgeResult<Option<String>> {
+    queue(tx, loupist, now, Recheck::NewFilings)
+}
+
+/// A World publication resolved pending anchors to nodes. Who the filed pages
+/// are about changed without a new filing, so the evidence is read again.
+pub(crate) fn identity_changed(
+    tx: &Transaction<'_>,
+    loupist: &str,
+    now: i64,
+) -> KnowledgeResult<Option<String>> {
+    queue(tx, loupist, now, Recheck::Always)
+}
+
+#[derive(PartialEq)]
+enum Recheck {
+    /// Only once something is filed past the last head a review read, so a
+    /// defer never requeues itself.
+    NewFilings,
+    Always,
+}
+
+fn queue(
+    tx: &Transaction<'_>,
+    loupist: &str,
+    now: i64,
+    recheck: Recheck,
+) -> KnowledgeResult<Option<String>> {
     let s = load_settings(tx, loupist)?;
     if !enabled(tx, loupist, &s)? {
         return Ok(None);
@@ -119,9 +146,9 @@ pub(crate) fn enqueue(
     }
     let (consumed, seen) = watermarks(tx, loupist, "")?;
     let end = log_head(tx, loupist)?;
-    // A review settled before inference read up to `seen` without consuming it:
-    // recheck only once more is filed, so a defer never requeues itself.
-    if end <= seen || core(&evidence(tx, loupist, &consumed, end)?).is_none() {
+    // A review settled before inference read up to `seen` without consuming it.
+    let unchanged = recheck == Recheck::NewFilings && end <= seen;
+    if unchanged || core(&evidence(tx, loupist, &consumed, end)?).is_none() {
         return Ok(None);
     }
     let id = super::model::mint_id("lrn");
@@ -286,8 +313,8 @@ struct Observation {
     /// The lens-log row that filed it.
     #[serde(skip)]
     row: i64,
-    /// Who the page is about: its subject anchors, never empty. Observations
-    /// sharing one are the same case.
+    /// Who the page is about: the World nodes of its subject anchors, never
+    /// empty. Observations sharing one are the same case.
     #[serde(skip)]
     cases: BTreeSet<String>,
 }
@@ -370,11 +397,10 @@ fn evidence(
          JOIN knowledge_record_revisions r ON r.revision_id=h.revision_id WHERE h.record_id=?1",
     )?;
     // A resolved anchor is its node alone: the name it was created under may
-    // since belong to another node. A pending one is its folded name until a
-    // World publication resolves it to the node the other pages share.
+    // since belong to another node. A pending one is not yet a company, since two
+    // spellings of one name would count as two.
     let mut subjects = tx.prepare(
-        "SELECT COALESCE('node:'||node_id,'name:'||name_fold) FROM knowledge_lens_anchors
-         WHERE record_id=?1 AND role='subject' AND (node_id IS NOT NULL OR name_fold<>'')",
+        "SELECT node_id FROM knowledge_lens_anchors WHERE record_id=?1 AND role='subject'",
     )?;
     let mut q = tx.prepare(
         "SELECT l.op_id,l.op_json,l.chat_id,l.message_id,l.record_id,l.after_digest,m.title,m.kind,l.rowid
@@ -401,7 +427,7 @@ fn evidence(
         .collect::<Result<Vec<_>, _>>()?;
     let (mut turns, mut chats) = (BTreeMap::new(), BTreeMap::new());
     let mut bodies: BTreeMap<String, Option<LensBody>> = BTreeMap::new();
-    let mut cases: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut cases: BTreeMap<String, Option<BTreeSet<String>>> = BTreeMap::new();
     let mut out = Vec::new();
     for (id, op, chat_id, message_id, page_id, after_digest, page, kind, row) in rows {
         if hidden(&page_id) || consumed.shown.contains(&row) {
@@ -471,16 +497,18 @@ fn evidence(
             continue;
         }
         if !cases.contains_key(&page_id) {
-            let about = subjects
-                .query_map([&page_id], |r| r.get(0))?
-                .collect::<Result<_, _>>()?;
-            cases.insert(page_id.clone(), about);
+            let anchors = subjects
+                .query_map([&page_id], |r| r.get::<_, Option<String>>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            let about: Option<BTreeSet<String>> = anchors.into_iter().collect();
+            cases.insert(page_id.clone(), about.filter(|about| !about.is_empty()));
         }
-        // A page with no subject could be about any company, including the one
-        // the other case is about, so it is not evidence.
-        if cases[&page_id].is_empty() {
+        // A page with no subject, or one the World has not confirmed, could be
+        // about any company, including the one the other case is about, so it
+        // is not evidence.
+        let Some(about) = cases[&page_id].clone() else {
             continue;
-        }
+        };
         let n = turns.len() + 1;
         let turn = turns
             .entry(message_id.clone())
@@ -500,7 +528,7 @@ fn evidence(
             sources,
             chat_id,
             message_id,
-            cases: cases[&page_id].clone(),
+            cases: about,
             page_id,
             spans,
             row,
@@ -1058,17 +1086,20 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
         );
     }
     let record_id = page.record_id;
-    let mut entities = BTreeMap::<String, usize>::new();
-    let pages: BTreeSet<_> = cited.iter().map(|c| &c.page_id).collect();
-    let mut subjects = write.tx.prepare("SELECT node_id FROM knowledge_lens_anchors WHERE record_id=?1 AND role='subject' AND node_id IS NOT NULL")?;
-    for page in pages {
-        for node in subjects.query_map([page], |r| r.get::<_, String>(0))? {
-            *entities.entry(node?).or_default() += 1;
+    let mut entities = BTreeMap::<&str, usize>::new();
+    let mut pages = BTreeSet::new();
+    for c in cited.iter().filter(|c| pages.insert(&c.page_id)) {
+        for node in &c.cases {
+            *entities.entry(node).or_default() += 1;
         }
     }
     let mut entities: Vec<_> = entities.into_iter().collect();
-    entities.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-    let applied: BTreeSet<String> = entities.into_iter().take(30).map(|(e, _)| e).collect();
+    entities.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+    let applied: BTreeSet<String> = entities
+        .into_iter()
+        .take(30)
+        .map(|(e, _)| e.to_owned())
+        .collect();
     super::lens::record_applied(
         write.tx,
         &a.loupist_id,

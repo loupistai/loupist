@@ -131,7 +131,9 @@ writes its growth events, with no model call. Three things follow from the diff
 between the previous and the new snapshot. Lens sections whose `claim` basis names
 a claim the publication disputed, withdrew or dropped become contested (one page
 revision and one `lens_contested` growth event per page; the section's text is
-kept). Pending name anchors resolve by canonical name or alias. Then
+kept). Pending name anchors resolve by canonical name or alias, or by the company
+key exactly one node holds ([Lens](lens.md#lens)); when any resolves, method learning
+rechecks its evidence. Then
 `connections::detect` walks two or three hops from each seed over claims that are
 not withdrawn, keeping each claim's direction and endpoint roles, to a name the seed
 could not reach within two hops before, with at least one hop on a claim this

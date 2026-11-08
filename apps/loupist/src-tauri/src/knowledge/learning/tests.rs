@@ -1256,7 +1256,6 @@ fn a_refine_keeps_user_sections(in_chat: bool) {
 
 #[test]
 fn two_pages_about_one_company_are_one_case() {
-    let name = |name: &str| AnchorInput::Name { name: name.into() };
     let node = |n: usize| AnchorInput::Node {
         node_id: format!("entity-{n}"),
     };
@@ -1275,19 +1274,6 @@ fn two_pages_about_one_company_are_one_case() {
             "subject_sharing_an_anchor",
             company(0),
             page(PageKind::Subject, "Manufacturer 2", vec![node(2), node(0)]),
-        ),
-        (
-            "pending_name",
-            page(
-                PageKind::Subject,
-                "Kestrel Foundry",
-                vec![name("Kestrel Foundry")],
-            ),
-            page(
-                PageKind::Idea,
-                "Kestrel ramp",
-                vec![name("kestrel foundry")],
-            ),
         ),
     ] {
         let (_dir, store) = setup();
@@ -1314,15 +1300,29 @@ fn two_pages_about_one_company_are_one_case() {
 }
 
 #[test]
-fn a_page_with_no_subject_is_never_one_of_the_two_cases() {
+fn a_page_about_an_unknown_company_is_never_one_of_the_two_cases() {
     let idea = |title: &str| PageTarget::Create {
         kind: PageKind::Idea,
         title: title.into(),
         anchors: vec![],
     };
+    // One subject the World has not confirmed makes the whole page unknown.
+    let partly_confirmed = PageTarget::Create {
+        kind: PageKind::Subject,
+        title: "Manufacturer 0 and Kestrel".into(),
+        anchors: vec![
+            AnchorInput::Node {
+                node_id: "entity-0".into(),
+            },
+            AnchorInput::Name {
+                name: "Kestrel Foundry".into(),
+            },
+        ],
+    };
     for (variant, first) in [
         ("subject_and_unanchored_idea", company(0)),
         ("two_unanchored_ideas", idea("Ramp thesis")),
+        ("unconfirmed_subject_and_unanchored_idea", partly_confirmed),
     ] {
         let (_dir, store) = setup();
         let (a, b, c) = (
@@ -1445,6 +1445,92 @@ fn a_resolved_anchor_is_its_node_not_the_name_it_was_filed_under() {
     assert!(put_in(&store, "chat-2", "m2", resolved, text, &[b], AT + 4).is_none());
     assert!(review_states(&store).is_empty());
     assert!(turn(&store, "chat-3", "m3", 0, &[c], AT + 5).is_some());
+}
+
+fn named(title: &str, name: &str) -> PageTarget {
+    PageTarget::Create {
+        kind: PageKind::Idea,
+        title: title.into(),
+        anchors: vec![AnchorInput::Name { name: name.into() }],
+    }
+}
+
+/// `reseal` with the setup's manufacturers kept beside `extra`.
+fn reseal_with(store: &KnowledgeStore, extra: &[(&str, &str)], at: i64) {
+    let kept: Vec<_> = (0..4)
+        .map(|n| (format!("entity-{n}"), format!("Manufacturer {n}")))
+        .collect();
+    let mut nodes: Vec<(&str, &str)> = kept.iter().map(|(i, n)| (i.as_str(), n.as_str())).collect();
+    nodes.extend_from_slice(extra);
+    reseal(store, nodes, at);
+}
+
+#[test]
+fn two_spellings_of_one_company_are_never_two_cases() {
+    let (_dir, store) = setup();
+    let (a, b, c) = (
+        source(&store, "Filing A"),
+        source(&store, "Filing B"),
+        source(&store, "Filing C"),
+    );
+    let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+    let plain = named("Kestrel ramp", "Kestrel Foundry");
+    assert!(put_in(&store, "chat-1", "m1", plain, text, &[a], AT + 2).is_none());
+    let suffixed = named("Kestrel utilization", "Kestrel Foundry Inc.");
+    assert!(put_in(&store, "chat-2", "m2", suffixed, text, &[b], AT + 3).is_none());
+    assert!(review_states(&store).is_empty());
+    // The World confirms both spellings as one company: still one case.
+    reseal_with(&store, &[("entity-k", "Kestrel Foundry")], AT + 4);
+    assert!(review_states(&store).is_empty());
+    // Both pages are now evidence about that company, beside a second one.
+    assert!(turn(&store, "chat-3", "m3", 0, &[c], AT + 5).is_some());
+    let mut pages: Vec<_> = begin(&store, AT + 6)
+        .input
+        .observations
+        .iter()
+        .map(|o| o.page.clone())
+        .collect();
+    pages.sort();
+    assert_eq!(
+        pages,
+        ["Kestrel ramp", "Kestrel utilization", "Manufacturer 0"]
+    );
+}
+
+#[test]
+fn companies_the_world_has_not_confirmed_count_once_it_does() {
+    let (_dir, store) = setup();
+    let (a, b, c, d) = (
+        source(&store, "Filing A"),
+        source(&store, "Filing B"),
+        source(&store, "Filing C"),
+        source(&store, "Filing D"),
+    );
+    let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+    let kestrel = named("Kestrel ramp", "Kestrel Foundry");
+    assert!(put_in(&store, "chat-1", "m1", kestrel, text, &[a], AT + 2).is_none());
+    let halvorsen = named("Halvorsen ramp", "Halvorsen Cellworks ASA");
+    assert!(put_in(&store, "chat-2", "m2", halvorsen, text, &[b], AT + 3).is_none());
+    assert!(review_states(&store).is_empty());
+    // A review reads the whole log, then settles before inference.
+    assert!(turn(&store, "chat-3", "m3", 0, &[c], AT + 4).is_none());
+    assert!(turn(&store, "chat-4", "m4", 1, &[d], AT + 5).is_some());
+    remove_source(&store, "Filing D");
+    assert!(try_claim(&store, AT + 6).is_none());
+    assert_eq!(review_states(&store), ["deferred"]);
+    // A publication that knows neither name changes nothing.
+    reseal_with(&store, &[], AT + 7);
+    assert_eq!(review_states(&store), ["deferred"]);
+    // The one that confirms both companies queues with no new filing.
+    reseal_with(
+        &store,
+        &[
+            ("entity-k", "Kestrel Foundry"),
+            ("entity-h", "Halvorsen Cellworks"),
+        ],
+        AT + 8,
+    );
+    assert_eq!(review_states(&store), ["deferred", "queued"]);
 }
 
 #[test]
