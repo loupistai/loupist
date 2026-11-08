@@ -308,11 +308,14 @@ pub(crate) fn entity_name_keys(name: &str) -> BTreeSet<String> {
     keys
 }
 
-/// The company keys of one World revision's nodes, computed for a node the
-/// first time learning asks about it and kept for the filings after.
-pub(crate) struct WorldKeys {
+/// One World revision's identity index: each node's spellings, the company
+/// keys of a node computed the first time learning asks about it and kept for
+/// the filings after, and the components of nodes whose keys meet, computed
+/// once for the revision.
+pub(crate) struct WorldIdentity {
     spellings: BTreeMap<String, Vec<String>>,
     keys: BTreeMap<String, BTreeSet<String>>,
+    components: Option<BTreeMap<String, String>>,
 }
 
 #[cfg(test)]
@@ -321,7 +324,7 @@ thread_local! {
     pub(crate) static KEY_COMPUTATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-impl WorldKeys {
+impl WorldIdentity {
     pub(crate) fn new(nodes: &[GraphNode]) -> Self {
         Self {
             spellings: nodes
@@ -335,12 +338,13 @@ impl WorldKeys {
                 })
                 .collect(),
             keys: BTreeMap::new(),
+            components: None,
         }
     }
 
     /// The keys of `node`'s name and aliases, or None when the World has no
     /// such node.
-    fn keys(&mut self, node: &str) -> Option<&BTreeSet<String>> {
+    pub(crate) fn keys(&mut self, node: &str) -> Option<&BTreeSet<String>> {
         let spellings = self.spellings.get(node)?;
         Some(self.keys.entry(node.to_owned()).or_insert_with(|| {
             #[cfg(test)]
@@ -351,43 +355,99 @@ impl WorldKeys {
                 .collect()
         }))
     }
+
+    /// The component `node` belongs to: the smallest node id among the nodes
+    /// reachable from it through shared keys, so a node that spells both
+    /// `삼성전자` and `Samsung Electronics` joins the nodes spelling one each.
+    /// None when the World has no such node.
+    pub(crate) fn component(&mut self, node: &str) -> Option<String> {
+        if !self.spellings.contains_key(node) {
+            return None;
+        }
+        if self.components.is_none() {
+            self.components = Some(self.join_components());
+        }
+        self.components.as_ref()?.get(node).cloned()
+    }
+
+    fn join_components(&mut self) -> BTreeMap<String, String> {
+        let ids: Vec<String> = self.spellings.keys().cloned().collect();
+        let mut parent: Vec<usize> = (0..ids.len()).collect();
+        fn root(parent: &mut [usize], mut i: usize) -> usize {
+            while parent[i] != i {
+                parent[i] = parent[parent[i]];
+                i = parent[i];
+            }
+            i
+        }
+        let mut holder: BTreeMap<String, usize> = BTreeMap::new();
+        for (i, id) in ids.iter().enumerate() {
+            let keys = self.keys(id).cloned().unwrap_or_default();
+            for key in keys {
+                match holder.get(&key) {
+                    Some(&j) => {
+                        let (a, b) = (root(&mut parent, i), root(&mut parent, j));
+                        parent[a] = b;
+                    }
+                    None => {
+                        holder.insert(key, i);
+                    }
+                }
+            }
+        }
+        let mut smallest: BTreeMap<usize, &str> = BTreeMap::new();
+        for (i, id) in ids.iter().enumerate() {
+            let r = root(&mut parent, i);
+            let entry = smallest.entry(r).or_insert(id);
+            if id.as_str() < *entry {
+                *entry = id;
+            }
+        }
+        ids.iter()
+            .enumerate()
+            .map(|(i, id)| (id.clone(), smallest[&root(&mut parent, i)].to_owned()))
+            .collect()
+    }
 }
 
-/// The last few World revisions' keys, process-wide, by Loupist and revision.
-static WORLD_KEYS: Mutex<VecDeque<(String, String, WorldKeys)>> = Mutex::new(VecDeque::new());
+/// The last few World revisions' identity indexes, process-wide, by Loupist
+/// and revision.
+static WORLD_IDENTITY: Mutex<VecDeque<(String, String, WorldIdentity)>> =
+    Mutex::new(VecDeque::new());
 const CACHED_REVISIONS: usize = 4;
 
-/// The company keys of `nodes` in `revision` of `loupist`'s World, by node id.
-/// `load` reads the revision's nodes the first time it is asked about; later
-/// filings on the same revision reuse them. A node the World does not hold is
-/// left out.
-pub(crate) fn world_node_keys(
+/// Reads `revision` of `loupist`'s World through its identity index. `load`
+/// reads the revision's nodes the first time it is asked about; later filings
+/// on the same revision reuse the index.
+pub(crate) fn with_world_identity<R>(
     loupist: &str,
     revision: &str,
-    nodes: &BTreeSet<String>,
     load: impl FnOnce() -> super::KnowledgeResult<Vec<GraphNode>>,
-) -> super::KnowledgeResult<BTreeMap<String, BTreeSet<String>>> {
-    let cached = |entry: &(String, String, WorldKeys)| entry.0 == loupist && entry.1 == revision;
-    let mut cache = WORLD_KEYS.lock().unwrap_or_else(PoisonError::into_inner);
+    read: impl FnOnce(&mut WorldIdentity) -> R,
+) -> super::KnowledgeResult<R> {
+    let cached =
+        |entry: &(String, String, WorldIdentity)| entry.0 == loupist && entry.1 == revision;
+    let mut cache = WORLD_IDENTITY
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     if !cache.iter().any(cached) {
         drop(cache);
-        let keys = WorldKeys::new(&load()?);
-        cache = WORLD_KEYS.lock().unwrap_or_else(PoisonError::into_inner);
+        let identity = WorldIdentity::new(&load()?);
+        cache = WORLD_IDENTITY
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         if !cache.iter().any(cached) {
             if cache.len() == CACHED_REVISIONS {
                 cache.pop_front();
             }
-            cache.push_back((loupist.to_owned(), revision.to_owned(), keys));
+            cache.push_back((loupist.to_owned(), revision.to_owned(), identity));
         }
     }
     let entry = cache
         .iter_mut()
         .find(|entry| cached(entry))
         .expect("the revision was just cached");
-    Ok(nodes
-        .iter()
-        .filter_map(|node| entry.2.keys(node).map(|keys| (node.clone(), keys.clone())))
-        .collect())
+    Ok(read(&mut entry.2))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

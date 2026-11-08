@@ -181,23 +181,29 @@ fn world_head(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<Option<
         .optional()?)
 }
 
-/// The company keys ([`entity_name_keys`]) of each of `nodes` in the current
-/// World, by node id, from the node's name and aliases; a node the World does
-/// not hold is left out. Method learning reads it to see when two nodes might
-/// spell one company. The World is parsed once per revision
-/// ([`super::identity::world_node_keys`]), not on every filing.
-pub(super) fn node_keys(
+/// Reads the current World through its identity index
+/// ([`super::identity::WorldIdentity`]): the company keys of a node's name and
+/// aliases, and the component of nodes whose keys meet. Method learning reads
+/// it to see when two nodes might spell one company. None when no World was
+/// published. The World is parsed once per revision, not on every filing.
+pub(super) fn world_identity<R>(
     tx: &Transaction<'_>,
     loupist_id: &str,
-    nodes: &BTreeSet<String>,
-) -> KnowledgeResult<BTreeMap<String, BTreeSet<String>>> {
+    read: impl FnOnce(&mut super::identity::WorldIdentity) -> R,
+) -> KnowledgeResult<Option<R>> {
     let Some(revision) = world_head(tx, loupist_id)? else {
-        return Ok(BTreeMap::new());
+        return Ok(None);
     };
-    super::identity::world_node_keys(loupist_id, &revision, nodes, || {
-        let body: WorldSnapshotBody = from_json(&load_revision(tx, &revision)?.payload_json)?;
-        Ok(body.nodes)
-    })
+    super::identity::with_world_identity(
+        loupist_id,
+        &revision,
+        || {
+            let body: WorldSnapshotBody = from_json(&load_revision(tx, &revision)?.payload_json)?;
+            Ok(body.nodes)
+        },
+        read,
+    )
+    .map(Some)
 }
 
 fn index_nodes(index: &mut WorldIndex, nodes: &[GraphNode]) {
@@ -3244,11 +3250,18 @@ mod tests {
         let loupist = "loupist-keys";
         let revision = seal(&store, loupist, "acme");
         let computed = || super::super::identity::KEY_COMPUTATIONS.with(|count| count.get());
-        let keys = |nodes: &[&str]| {
-            let nodes = nodes.iter().map(|id| (*id).to_owned()).collect();
+        let keys = |nodes: &[&str]| -> BTreeMap<String, BTreeSet<String>> {
             store
-                .read(|read| node_keys(read.tx, loupist, &nodes))
+                .read(|read| {
+                    world_identity(read.tx, loupist, |world| {
+                        nodes
+                            .iter()
+                            .filter_map(|id| Some(((*id).to_owned(), world.keys(id)?.clone())))
+                            .collect()
+                    })
+                })
                 .unwrap()
+                .unwrap_or_default()
         };
         let before = computed();
         let first = keys(&["acme", "ghost"]);
@@ -3284,6 +3297,22 @@ mod tests {
             .unwrap();
         assert_eq!(keys(&["beta"])["beta"], BTreeSet::from(["beta".to_owned()]));
         assert_eq!(computed(), before + 2);
+        // Components key every node of the revision once, then are kept.
+        let component = |node: &str| {
+            store
+                .read(|read| world_identity(read.tx, loupist, |world| world.component(node)))
+                .unwrap()
+                .flatten()
+        };
+        assert_eq!(component("acme").as_deref(), Some("acme"));
+        assert_eq!(
+            computed(),
+            before + 3,
+            "the other node keyed for the components"
+        );
+        assert_eq!(component("beta").as_deref(), Some("beta"));
+        assert_eq!(component("ghost"), None);
+        assert_eq!(computed(), before + 3);
     }
 
     /// A span of a retained Source, as a turn cites it.

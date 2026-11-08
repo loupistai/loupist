@@ -336,18 +336,21 @@ struct Observation {
 }
 /// One token of who a page is about. A node is a World-confirmed company. A
 /// key is a spelling of a node's World names, so two nodes spelling one
-/// company ("Acme", "Acme Inc.") still share a token; two companies sharing a
-/// key only defer learning.
+/// company ("Acme", "Acme Inc.") still share a token, and a component joins
+/// the nodes whose keys meet through other nodes, so `삼성전자` and `Samsung
+/// Electronics` share one when a third node spells both; two companies
+/// sharing a key only defer learning.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Case {
     Node(String),
     Key(String),
+    Component(String),
 }
 impl Case {
     fn node(&self) -> Option<&str> {
         match self {
             Case::Node(id) => Some(id),
-            Case::Key(_) => None,
+            Case::Key(_) | Case::Component(_) => None,
         }
     }
 }
@@ -625,13 +628,14 @@ fn evidence(
     })
 }
 /// [`evidence`] whose cases also carry the company keys of their nodes'
-/// current World names, read only when the nodes alone would pass the gate.
-/// Two nodes spelling one company then share a key and are one case. The
-/// World's current names decide, not the name an anchor was filed under: that
-/// name may since belong to another company. A page about a node the World no
-/// longer holds (a shared pack took it away, say) names no company now and is
-/// not evidence, like a page with no subject: a key it cannot carry would
-/// otherwise let the company it was about count twice.
+/// current World names and the component of nodes whose keys meet, read only
+/// when the nodes alone would pass the gate. Two nodes spelling one company
+/// then share a key and are one case, and so do two nodes a third node spells
+/// both of. The World's current names decide, not the name an anchor was filed
+/// under: that name may since belong to another company. A page about a node
+/// the World no longer holds (a shared pack took it away, say) names no
+/// company now and is not evidence, like a page with no subject: a key it
+/// cannot carry would otherwise let the company it was about count twice.
 fn keyed_evidence(
     tx: &Transaction<'_>,
     loupist: &str,
@@ -646,21 +650,36 @@ fn keyed_evidence(
             .flat_map(|o| o.cases.iter().filter_map(Case::node))
             .map(str::to_owned)
             .collect();
-        let keys = super::lens::node_keys(tx, loupist, &nodes)?;
+        let tokens: BTreeMap<String, BTreeSet<Case>> =
+            super::lens::world_identity(tx, loupist, |world| {
+                nodes
+                    .iter()
+                    .filter_map(|node| {
+                        let mut tokens: BTreeSet<Case> = world
+                            .keys(node)?
+                            .iter()
+                            .map(|key| Case::Key(key.clone()))
+                            .collect();
+                        tokens.insert(Case::Component(world.component(node)?));
+                        Some((node.clone(), tokens))
+                    })
+                    .collect()
+            })?
+            .unwrap_or_default();
         found.observations.retain(|o| {
             o.cases
                 .iter()
                 .filter_map(Case::node)
-                .all(|node| keys.contains_key(node))
+                .all(|node| tokens.contains_key(node))
         });
         for o in &mut found.observations {
             let spellings: Vec<Case> = o
                 .cases
                 .iter()
                 .filter_map(Case::node)
-                .filter_map(|node| keys.get(node))
+                .filter_map(|node| tokens.get(node))
                 .flatten()
-                .map(|key| Case::Key(key.clone()))
+                .cloned()
                 .collect();
             o.cases.extend(spellings);
         }

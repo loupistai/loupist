@@ -1658,6 +1658,39 @@ fn one_company_spelled_two_ways_on_two_nodes_is_one_case() {
 }
 
 #[test]
+fn a_node_spelling_both_names_makes_one_case_of_two_nodes() {
+    let (_dir, store) = setup();
+    let (a, b, c) = (
+        source(&store, "Filing A"),
+        source(&store, "Filing B"),
+        source(&store, "Filing C"),
+    );
+    let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+    let korean = named("Korean ramp", "삼성전자");
+    assert!(put_in(&store, "chat-1", "m1", korean, text, &[a], AT + 2).is_none());
+    let english = named("English ramp", "Samsung Electronics");
+    assert!(put_in(&store, "chat-2", "m2", english, text, &[b], AT + 3).is_none());
+    // The two pages name nodes that share no key. A third node, with no page,
+    // spells both, so the World itself says they are one company.
+    reseal_with(
+        &store,
+        &[
+            ("entity-a", "삼성전자"),
+            ("entity-b", "삼성전자(Samsung Electronics)"),
+            ("entity-c", "Samsung Electronics"),
+        ],
+        AT + 4,
+    );
+    assert!(review_states(&store).is_empty());
+    // An unrelated company beside them still learns.
+    assert!(turn(&store, "chat-3", "m3", 0, &[c], AT + 5).is_some());
+    assert_eq!(
+        pages(&begin(&store, AT + 6)),
+        ["English ramp", "Korean ramp", "Manufacturer 0"]
+    );
+}
+
+#[test]
 fn two_companies_with_one_qualifier_are_two_cases() {
     for (first, second) in [
         ("삼성전자(한국)", "LG전자(한국)"),
