@@ -126,10 +126,19 @@ the repository root:
 sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
   build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
-  libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev procps lsof xvfb
+  libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev procps lsof xvfb \
+  bubblewrap
 sh apps/loupist/scripts/setup.sh
 scripts/verify.sh
 ```
+
+The Bash sandbox tests run real `bwrap`. Ubuntu 23.10 and later restrict
+unprivileged user namespaces through AppArmor, and `bwrap` then fails with
+`loopback: Failed RTM_NEWADDR`. Run
+`sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` on such a host
+before the Rust tests, as CI does. Without it the app's startup probe fails and
+Bash falls back to running without the sandbox
+([Native tool permissions](../runtime/permissions.md#probe-and-fallback)).
 
 If host package installation is unavailable and Docker is already available,
 run these steps inside a disposable Debian/Ubuntu development container with

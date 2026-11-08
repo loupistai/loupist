@@ -198,7 +198,9 @@ console.log("wait-session readiness contract passed");
 // port 1420, or touch the repository's current-session.json in these tests.
 const lifecycleDirectory = mkdtempSync(join(tmpdir(), "loupist-owner-"));
 const appStandIn = join(lifecycleDirectory, "loupist");
-symlinkSync("/bin/sleep", appStandIn);
+// A script, not a link to /bin/sleep: a multicall coreutils (uutils on Ubuntu
+// 26.04) picks the utility from argv[0] and exits at once when it is "loupist".
+writeFileSync(appStandIn, '#!/bin/sh\nsleep "$1"\n', { mode: 0o755 });
 const launcher = spawn(process.execPath, ["--input-type=module", "-e", `
   import { spawn } from "node:child_process";
   import { createServer } from "node:http";

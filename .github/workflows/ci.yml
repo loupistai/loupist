@@ -204,8 +204,18 @@ jobs:
           sudo apt-get $APT update
           sudo apt-get $APT install -y --no-install-recommends \
             build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev procps lsof
+            libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev procps lsof bubblewrap
           sudo chown -R "$(id -u):$(id -g)" "$HOME/apt-archives"
+
+      # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor, and
+      # bubblewrap then cannot set up the offline sandbox's loopback. The app
+      # falls back without the sandbox on such a host; the tests must measure it.
+      - name: Allow the Bash sandbox's user namespaces
+        if: matrix.runtime == 'true'
+        run: |
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
 
       - name: Save Linux package downloads
         if: github.ref == 'refs/heads/main' && steps.apt-cache.outputs.cache-hit != 'true'
