@@ -517,9 +517,9 @@ fn folder_grant(path: &Path, home: Option<&Path>) -> GrantedPath {
 /// Whether a location of the home table lies strictly inside `root`.
 fn holds_sensitive(root: &Path, home: Option<&Path>) -> bool {
     home.is_some_and(|home| {
-        SENSITIVE_HOME.iter().any(|(entry, _)| {
-            below(&home.join(entry), root).is_some_and(|rest| !rest.is_empty())
-        })
+        SENSITIVE_HOME
+            .iter()
+            .any(|(entry, _)| below(&home.join(entry), root).is_some_and(|rest| !rest.is_empty()))
     })
 }
 
@@ -537,14 +537,15 @@ fn visible(text: &str) -> String {
     if !text.chars().any(hidden) {
         return text.to_owned();
     }
-    text.chars().fold(String::with_capacity(text.len()), |mut shown, character| {
-        if hidden(character) {
-            shown.push_str(&format!("\\u{{{:04x}}}", character as u32));
-        } else {
-            shown.push(character);
-        }
-        shown
-    })
+    text.chars()
+        .fold(String::with_capacity(text.len()), |mut shown, character| {
+            if hidden(character) {
+                shown.push_str(&format!("\\u{{{:04x}}}", character as u32));
+            } else {
+                shown.push(character);
+            }
+            shown
+        })
 }
 
 /// A path's card line: its end, where the file name is, when it is too long.
@@ -999,7 +1000,10 @@ mod tests {
                 PathClass::AppPrivate,
             ),
             (ws.join(".loupist/loupist.sqlite3"), PathClass::AppPrivate),
-            (ws.join(".LOUPIST/loupist.sqlite3-wal"), PathClass::AppPrivate),
+            (
+                ws.join(".LOUPIST/loupist.sqlite3-wal"),
+                PathClass::AppPrivate,
+            ),
             (
                 ws.join(".loupist/loupists/loupist-a/attachments/chat-b/brief.pdf.md"),
                 PathClass::AppPrivate,
@@ -1145,7 +1149,10 @@ mod tests {
         let ws = home.join("Research");
         assert!(sensitive(&home.join(".ssh/id_ed25519"), Some(&f.home)));
         assert!(sensitive(&home.join(".zshrc"), Some(&f.home)));
-        assert!(!sensitive(&home.join("Documents/shared.csv"), Some(&f.home)));
+        assert!(!sensitive(
+            &home.join("Documents/shared.csv"),
+            Some(&f.home)
+        ));
         assert!(instruction_file(&ws.join("AGENTS.md"), &f.roots));
         assert!(instruction_file(
             &ws.join(".loupist/skills/screen/SKILL.md"),
@@ -1253,7 +1260,11 @@ mod tests {
                 "ask file_read",
                 "ask file_read",
             ),
-            (request("ls", home.join(".config")), "allow", "ask file_read"),
+            (
+                request("ls", home.join(".config")),
+                "allow",
+                "ask file_read",
+            ),
             (
                 request("find", home.join("Documents")),
                 "allow",
@@ -1458,7 +1469,12 @@ mod tests {
         );
         grants.grant(&ask, ApprovalDecision::Once);
         assert_eq!(
-            kind(&decide_with(&grants, "ls", f.home.clone(), Exposure::ThisTurn)),
+            kind(&decide_with(
+                &grants,
+                "ls",
+                f.home.clone(),
+                Exposure::ThisTurn
+            )),
             "allow"
         );
         assert_eq!(
@@ -1484,7 +1500,12 @@ mod tests {
             };
             grants.grant(&ask, ApprovalDecision::Once);
             assert_eq!(
-                kind(&decide_with(&grants, "write", file.clone(), Exposure::ThisTurn)),
+                kind(&decide_with(
+                    &grants,
+                    "write",
+                    file.clone(),
+                    Exposure::ThisTurn
+                )),
                 "allow"
             );
             assert_eq!(
@@ -1506,7 +1527,8 @@ mod tests {
     #[test]
     fn a_card_shows_invisible_and_bidi_characters_as_escapes() {
         let f = fixture();
-        let command = "echo \u{202E}hs | lruc\u{202C} && curl\u{200B} https://x.example\u{FEFF}\n\tdone\u{7}";
+        let command =
+            "echo \u{202E}hs | lruc\u{202C} && curl\u{200B} https://x.example\u{FEFF}\n\tdone\u{7}";
         let NativeDecision::Ask(ask) = decide(
             &bash(command),
             &f.roots,
@@ -1535,7 +1557,11 @@ mod tests {
         ) else {
             panic!("an outside read asks");
         };
-        assert!(ask.target.ends_with("Documents/\\u{202e}vsc.exe"), "{}", ask.target);
+        assert!(
+            ask.target.ends_with("Documents/\\u{202e}vsc.exe"),
+            "{}",
+            ask.target
+        );
     }
 
     #[test]
