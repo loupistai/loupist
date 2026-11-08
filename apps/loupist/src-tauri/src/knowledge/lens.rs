@@ -1153,6 +1153,42 @@ pub(super) fn resolve_anchors(
     Ok(resolved)
 }
 
+/// Whether a node that a confirmed subject anchor names spells itself
+/// differently in `next` than in `previous`: another name or alias set, or
+/// gone. Method learning keys a case by the World's current names, so such a
+/// publication can split or fuse cases without resolving any anchor.
+pub(super) fn subject_spellings_changed(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    previous: Option<&WorldSnapshotBody>,
+    next: &WorldSnapshotBody,
+) -> KnowledgeResult<bool> {
+    let Some(previous) = previous else {
+        return Ok(false);
+    };
+    let mut statement = tx.prepare(
+        "SELECT DISTINCT node_id FROM knowledge_lens_anchors
+         WHERE loupist_id = ?1 AND role = 'subject' AND node_id IS NOT NULL",
+    )?;
+    let confirmed: BTreeSet<String> = statement
+        .query_map([loupist_id], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    if confirmed.is_empty() {
+        return Ok(false);
+    }
+    let spellings = |body: &WorldSnapshotBody| -> BTreeMap<String, (String, BTreeSet<String>)> {
+        body.nodes
+            .iter()
+            .filter(|node| confirmed.contains(&node.id))
+            .map(|node| {
+                let aliases = node.aliases.iter().cloned().collect();
+                (node.id.clone(), (node.name.clone(), aliases))
+            })
+            .collect()
+    };
+    Ok(spellings(previous) != spellings(next))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AnchorRole {

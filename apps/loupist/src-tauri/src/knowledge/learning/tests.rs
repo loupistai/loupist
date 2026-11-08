@@ -1594,6 +1594,84 @@ fn a_page_about_a_node_the_world_dropped_is_not_evidence() {
 }
 
 #[test]
+fn a_publication_that_renames_a_fused_node_rechecks_without_a_filing() {
+    let (_dir, store) = setup();
+    let (a, b) = (source(&store, "Filing A"), source(&store, "Filing B"));
+    let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+    let plain = named("Kestrel ramp", "Kestrel Foundry");
+    assert!(put_in(&store, "chat-1", "m1", plain, text, &[a], AT + 2).is_none());
+    let suffixed = named("Kestrel utilization", "Kestrel Foundry Inc.");
+    assert!(put_in(&store, "chat-2", "m2", suffixed, text, &[b], AT + 3).is_none());
+    let fused = [
+        ("entity-k", "Kestrel Foundry"),
+        ("entity-k2", "Kestrel Foundry Inc."),
+    ];
+    reseal_with(&store, &fused, AT + 4);
+    assert!(review_states(&store).is_empty());
+    // A publication that spells both nodes as before changes nothing.
+    reseal_with(&store, &fused, AT + 5);
+    assert!(review_states(&store).is_empty());
+    // One that renames the second node makes two companies of the pair.
+    reseal_with(
+        &store,
+        &[
+            ("entity-k", "Kestrel Foundry"),
+            ("entity-k2", "Halvorsen Cellworks"),
+        ],
+        AT + 6,
+    );
+    assert_eq!(review_states(&store), ["queued"]);
+    assert_eq!(
+        pages(&begin(&store, AT + 7)),
+        ["Kestrel ramp", "Kestrel utilization"]
+    );
+}
+
+/// Enough principles that every claim defers before inference.
+fn too_many_principles(store: &KnowledgeStore) {
+    let long = "Check cash conversion before trusting reported profit. ".repeat(6);
+    store
+        .transact(|w| {
+            for i in 0..45 {
+                let statement = format!("{i:02} {long}").chars().take(280).collect();
+                super::super::principles::principle_save(
+                    w.tx,
+                    LOUPIST,
+                    None,
+                    None,
+                    principle(statement),
+                    AT + i,
+                )?;
+            }
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_publication_that_spells_every_subject_as_before_does_not_recheck() {
+    let (_dir, store) = setup();
+    too_many_principles(&store);
+    two_chats(&store, AT + 100).expect("queued");
+    assert!(try_claim(&store, AT + 101).is_none());
+    assert_eq!(review_states(&store), ["deferred"]);
+    // The head was read, so only a change in who the pages are about rechecks.
+    reseal_with(&store, &[], AT + 102);
+    assert_eq!(review_states(&store), ["deferred"]);
+    reseal(
+        &store,
+        vec![
+            ("entity-0", "Manufacturer 0"),
+            ("entity-1", "Manufacturer One"),
+            ("entity-2", "Manufacturer 2"),
+            ("entity-3", "Manufacturer 3"),
+        ],
+        AT + 103,
+    );
+    assert_eq!(review_states(&store), ["deferred", "queued"]);
+}
+
+#[test]
 fn companies_the_world_has_not_confirmed_count_once_it_does() {
     let (_dir, store) = setup();
     let (a, b, c, d) = (
@@ -1810,23 +1888,7 @@ fn a_company_confirmed_while_a_review_runs_is_rechecked_when_it_settles() {
 #[test]
 fn a_company_confirmed_while_a_review_is_queued_is_rechecked_when_the_claim_defers() {
     let (_dir, store) = setup();
-    let long = "Check cash conversion before trusting reported profit. ".repeat(6);
-    store
-        .transact(|w| {
-            for i in 0..45 {
-                let statement = format!("{i:02} {long}").chars().take(280).collect();
-                super::super::principles::principle_save(
-                    w.tx,
-                    LOUPIST,
-                    None,
-                    None,
-                    principle(statement),
-                    AT + i,
-                )?;
-            }
-            Ok(())
-        })
-        .unwrap();
+    too_many_principles(&store);
     let (k, h) = (source(&store, "Filing K"), source(&store, "Filing H"));
     let text = "Margins fell during a capacity ramp at 60 percent utilization.";
     let kestrel = named("Kestrel ramp", "Kestrel Foundry");
