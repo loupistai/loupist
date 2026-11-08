@@ -326,6 +326,8 @@ const PROBE_STDERR_BYTES: usize = 2048;
 /// bound back; offline mode cannot connect to a listener
 /// the probe opened while online mode can; and offline a write at the
 /// folder's top level or into a dot folder fails where online it succeeds.
+/// Then the sandbox must start, offline and online, with the masks of the
+/// host's own home folder in place of the layout's.
 #[cfg(unix)]
 pub fn probe(sandbox: &Sandbox) -> Result<(), ProbeError> {
     let host_home = std::env::var_os("HOME")
@@ -338,7 +340,6 @@ pub fn probe(sandbox: &Sandbox) -> Result<(), ProbeError> {
 /// sandbox masks for every command on this host.
 #[cfg(unix)]
 fn probe_on(sandbox: &Sandbox, host_home: Option<&Path>) -> Result<(), ProbeError> {
-    let _ = host_home;
     let temporary = probe_folder().map_err(|_| ProbeError::Setup)?;
     let layout = ProbeLayout::create(temporary.path()).map_err(|_| ProbeError::Setup)?;
     let listener = std::net::TcpListener::bind("127.0.0.1:0").map_err(|_| ProbeError::Setup)?;
@@ -379,6 +380,24 @@ fn probe_on(sandbox: &Sandbox, host_home: Option<&Path>) -> Result<(), ProbeErro
         }
         let _ = std::fs::remove_file(&layout.inside);
         let _ = std::fs::remove_file(&layout.top);
+    }
+    // The layout proves the rules; the host's own home proves the setup. A
+    // credential entry bubblewrap cannot mount would otherwise fail every
+    // command while the probe passed.
+    if let Some(home) = host_home {
+        let mut roots = layout.roots.clone();
+        roots.home = Some(home.to_path_buf());
+        for network in [false, true] {
+            run_probe(sandbox, &roots, network, &format!("echo {PROBE_END}\n")).map_err(
+                |error| match error {
+                    ProbeError::Failed(mut lines) => {
+                        lines.insert(0, "host_home_setup".into());
+                        ProbeError::Failed(lines)
+                    }
+                    other => other,
+                },
+            )?;
+        }
     }
     Ok(())
 }
