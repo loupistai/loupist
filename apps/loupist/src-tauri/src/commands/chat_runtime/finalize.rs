@@ -344,9 +344,6 @@ async fn settle_turn_runtime(turn: SettleTurn<'_>) -> Option<PiSessionCache> {
         .flatten();
     let _ = broker.shutdown().await;
     capture.shutdown_mcp().await;
-    // Pi and its sandboxed commands have ended, so nothing writes the
-    // workspace while the guarded instruction files go back.
-    capture.restore_guarded_instructions();
     // Pi owns the JSONL session file. Stop it before wiping an incomplete
     // run so a still-draining child cannot recreate a cache we just removed.
     if (aborted || !*completed) && pi_stopped {

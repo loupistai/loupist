@@ -274,9 +274,6 @@ pub enum NativeRefusal {
     InstructionsAfterUntrustedText,
     /// Bash after third-party text on a host without a verified sandbox.
     CommandUnconfined,
-    /// Bash after third-party text when the workspace's instruction files
-    /// and Skill folders could not be recorded for the reply-end restore.
-    InstructionsUnguarded,
     /// Bash under the custom-connection tier.
     OutboundPaused,
 }
@@ -738,7 +735,6 @@ mod tests {
                 "refuse instructions"
             }
             NativeDecision::Refuse(NativeRefusal::CommandUnconfined) => "refuse unconfined",
-            NativeDecision::Refuse(NativeRefusal::InstructionsUnguarded) => "refuse unguarded",
             NativeDecision::Refuse(NativeRefusal::OutboundPaused) => "refuse outbound",
         }
     }

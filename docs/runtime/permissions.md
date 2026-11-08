@@ -70,7 +70,7 @@ counts at whatever depth it spells the root, while on a case-sensitive volume
 | write, edit | Instructions | Allow | Refuse `untrusted_text_paused` |
 | write, edit | AppPrivate, Attachments, Credentials, GitDir | Refuse `protected_path` | Refuse `protected_path` |
 | write, edit | Outside | Refuse `outside_workspace` | Refuse `outside_workspace` |
-| bash | | Allow, online | ThisTurn: Allow offline inside a verified sandbox under the [instruction guard](#instruction-guard), else Refuse `untrusted_text_paused`. Custom: Refuse `outbound_paused`. |
+| bash | | Allow, online | ThisTurn: Allow offline inside a verified sandbox, else Refuse `untrusted_text_paused`. Custom: Refuse `outbound_paused`. |
 
 Every refusal carries a `next` for the model. `outside_workspace` says to ask the
 user to attach the file to the chat or copy it into the Loupist folder, and the
@@ -113,34 +113,6 @@ for every other host.
 | Network | `--unshare-net` after third-party text. In a clean reply the command shares the host's network namespace, abstract Unix sockets included. |
 | Processes | `--unshare-pid --die-with-parent --new-session`: bubblewrap is the init of a pid namespace, so Pi's group kill on abort or timeout ends every sandboxed process, and a background process the command leaves behind ends with the command. |
 | Caches | `XDG_CACHE_HOME`, `PIP_CACHE_DIR`, `UV_CACHE_DIR`, `npm_config_cache`, `MPLCONFIGDIR` point under `<scratch>/cache`. |
-
-### Instruction guard
-
-A sandboxed command can write anywhere in the Loupist folder, the files a
-later reply loads as instructions included, where file tools refuse them after
-third-party text. The guard gives commands the same outcome
-(`agent_harness/instruction_guard.rs`). When a reply's first command under
-ThisTurn is allowed, Rust records every workspace instruction source a later
-reply would load: the root `AGENTS.override.md`, `AGENTS.md` and `CLAUDE.md`
-in any spelling of case, `.loupist/AGENTS.md`, `.loupist/config.toml`, every
-file under `.loupist/skills`, `.agents/skills` and `.pi/skills`, and the root
-`.git` entry (its `config` and `hooks/**` when it is a folder, the file when it
-is a worktree pointer, its absence otherwise). A set beyond the loader's bounds
-(512 entries or 16 MiB) refuses the command with `untrusted_text_paused` and a
-`next` that says commands stay paused this reply; file tools keep working.
-
-When the reply ends, whether complete, stopped or failed, and after Pi and the
-broker have stopped, Rust puts the recorded entries back exactly: changed files
-are rewritten, deleted ones recreated, entries the commands created are removed
-with the folders they left empty, and a `.git` planted in a workspace that had
-none goes away. The restore runs on the host, so it never reads or changes
-anything through a link: a guarded folder such as `.agents` that a command
-swapped for a link is put back as a folder, and the link's target is left
-alone. The paths that changed go to the log and into the reply's tool
-trace as an `instruction_guard` entry (component `instruction-guard`,
-`args.restored`). A command's other work in the folder stays. A clean reply's
-own instruction edits are the model's and are never undone; the global
-`AGENTS.md` and `skills` are read-only inside the sandbox.
 
 ### Probe and fallback
 
