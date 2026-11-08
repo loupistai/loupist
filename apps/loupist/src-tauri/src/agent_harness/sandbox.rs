@@ -1,7 +1,10 @@
 //! The OS sandbox native Bash runs in (`docs/runtime/permissions.md`): writes
 //! confined to the Loupist folder and this run's scratch, the app's data, the
 //! Loupist's `.loupist` data, home credential locations and the host's
-//! runtime sockets hidden, and the network off after third-party text. Rust
+//! runtime sockets hidden, and the network off after third-party text. After
+//! third-party text the Loupist folder itself is read-only and only its
+//! existing subfolders, `outputs` and scratch take writes, so a command can
+//! leave nothing in the files a later reply loads as instructions. Rust
 //! builds the argv prefix the extension puts before the shell: bubblewrap on
 //! Linux. Other hosts have no sandbox, so a reply that read third-party text
 //! refuses Bash there. A startup probe runs the sandbox against a private
@@ -19,6 +22,12 @@ use super::native_policy::{NativeRoots, SandboxCommand};
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_PROBE_OUTPUT_BYTES: usize = 64 * 1024;
+/// The most workspace subfolders bound writable after third-party text; a
+/// folder with more top-level subfolders keeps only `outputs` writable.
+pub const MAX_WRITABLE_CHILDREN: usize = 256;
+/// The workspace folder a command after third-party text can always write,
+/// created before the command when it is missing.
+pub const OUTPUTS_FOLDER: &str = "outputs";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Sandbox {
@@ -124,6 +133,35 @@ fn readable_again(roots: &NativeRoots) -> Vec<PathBuf> {
     paths
 }
 
+/// What a command after third-party text may write in the workspace: every
+/// existing top-level entry that is a folder itself (not a link to one) and
+/// whose name does not start with `.`, plus `outputs`, created here when it
+/// is missing. Beyond `MAX_WRITABLE_CHILDREN` such folders, only `outputs`
+/// stays writable. A name that is not valid UTF-8 cannot be passed to
+/// bubblewrap and stays read-only.
+fn writable_offline(workspace: &Path) -> Vec<PathBuf> {
+    let outputs = workspace.join(OUTPUTS_FOLDER);
+    let _ = std::fs::create_dir(&outputs);
+    let mut children: Vec<PathBuf> = std::fs::read_dir(workspace)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| !name.starts_with('.'))
+                && entry.file_type().is_ok_and(|kind| kind.is_dir())
+        })
+        .map(|entry| entry.path())
+        .collect();
+    children.sort();
+    if children.len() > MAX_WRITABLE_CHILDREN {
+        children.retain(|child| *child == outputs);
+    }
+    children
+}
+
 /// The host's runtime socket folders: `/run` (D-Bus, `XDG_RUNTIME_DIR`
 /// with the session bus, ssh-agent, gpg-agent, PulseAudio and Wayland
 /// sockets, `docker.sock`) and `/var/run` when it is a folder of its own.
@@ -157,13 +195,16 @@ fn resolver_file(runtime: &[PathBuf]) -> Option<PathBuf> {
 /// scratch is bound after the app data root is masked. Each masking tmpfs is
 /// remounted read-only last, once its children are mounted, so a write into
 /// a hidden folder fails instead of landing in a tmpfs the command believes
-/// is the folder. The workspace's `.git` is bound onto itself first: a mount
-/// point cannot be renamed or removed, so the read-only `config` and `hooks`
-/// inside it cannot be swapped for writable copies. The command runs in its
-/// own pid namespace with bubblewrap as its init: `--new-session` moves the
-/// command out of the process group Pi kills on abort, and killing the init
-/// kills everything in the namespace, where `--die-with-parent` alone would
-/// spare the command's descendants.
+/// is the folder. Online, the workspace's `.git` is bound onto itself first:
+/// a mount point cannot be renamed or removed, so the read-only `config` and
+/// `hooks` inside it cannot be swapped for writable copies. Offline, the
+/// workspace is bound read-only and only `writable_offline` folders are
+/// bound back writable, so its top level, every dot entry (`.git` included)
+/// and the root instruction files take no write at all. The command runs in
+/// its own pid namespace with bubblewrap as its init: `--new-session` moves
+/// the command out of the process group Pi kills on abort, and killing the
+/// init kills everything in the namespace, where `--die-with-parent` alone
+/// would spare the command's descendants.
 fn bwrap_arguments(roots: &NativeRoots, network: bool) -> Vec<String> {
     let text = |path: &Path| path.to_string_lossy().into_owned();
     let mut arguments: Vec<String> = ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]
@@ -178,16 +219,27 @@ fn bwrap_arguments(roots: &NativeRoots, network: bool) -> Vec<String> {
     if let Some(resolver) = resolver_file(&runtime) {
         arguments.extend(["--ro-bind".into(), text(&resolver), text(&resolver)]);
     }
-    arguments.extend([
-        "--bind".into(),
-        text(&roots.workspace),
-        text(&roots.workspace),
-    ]);
-    let git_dir = roots.workspace.join(".git");
-    if git_dir.is_dir() {
-        arguments.extend(["--bind".into(), text(&git_dir), text(&git_dir)]);
-    } else if git_dir.is_file() {
-        arguments.extend(["--ro-bind".into(), text(&git_dir), text(&git_dir)]);
+    if network {
+        arguments.extend([
+            "--bind".into(),
+            text(&roots.workspace),
+            text(&roots.workspace),
+        ]);
+        let git_dir = roots.workspace.join(".git");
+        if git_dir.is_dir() {
+            arguments.extend(["--bind".into(), text(&git_dir), text(&git_dir)]);
+        } else if git_dir.is_file() {
+            arguments.extend(["--ro-bind".into(), text(&git_dir), text(&git_dir)]);
+        }
+    } else {
+        arguments.extend([
+            "--ro-bind".into(),
+            text(&roots.workspace),
+            text(&roots.workspace),
+        ]);
+        for folder in writable_offline(&roots.workspace) {
+            arguments.extend(["--bind".into(), text(&folder), text(&folder)]);
+        }
     }
     let mut masked_folders = Vec::new();
     for path in hidden(roots) {
@@ -198,13 +250,12 @@ fn bwrap_arguments(roots: &NativeRoots, network: bool) -> Vec<String> {
             arguments.extend(["--ro-bind".into(), "/dev/null".into(), text(&path)]);
         }
     }
-    let read_only = readable_again(roots).into_iter().chain(
-        roots
-            .workspace_git_config()
-            .into_iter()
-            .filter(|path| path.exists()),
-    );
-    for path in read_only {
+    let git_config = network
+        .then(|| roots.workspace_git_config())
+        .into_iter()
+        .flatten()
+        .filter(|path| path.exists());
+    for path in readable_again(roots).into_iter().chain(git_config) {
         arguments.extend(["--ro-bind".into(), text(&path), text(&path)]);
     }
     arguments.extend(["--bind".into(), text(&roots.scratch), text(&roots.scratch)]);
@@ -238,10 +289,13 @@ const PROBE_END: &str = "__LOUPIST_SANDBOX_PROBE_END__";
 const PROBE_STDERR_BYTES: usize = 2048;
 
 /// Runs the sandbox against a private folder laid out like a turn's roots: a
-/// write inside the folder and scratch succeeds, a write outside, into the
-/// data folder or into a git hook fails, hidden files read as absent or
-/// empty, instruction files and attachments still read, and offline mode
-/// cannot connect to a listener the probe opened while online mode can.
+/// write into an existing subfolder, into `outputs` and into scratch
+/// succeeds; a write outside, into the data folder or into a git hook fails;
+/// `.git` cannot be renamed; hidden files read as absent or empty;
+/// instruction files and attachments still read; `/run` holds nothing but
+/// the resolver file bound back; offline mode cannot connect to a listener
+/// the probe opened while online mode can; and offline a write at the
+/// folder's top level or into a dot folder fails where online it succeeds.
 #[cfg(unix)]
 pub fn probe(sandbox: &Sandbox) -> Result<(), ProbeError> {
     let temporary = probe_folder().map_err(|_| ProbeError::Setup)?;
@@ -262,16 +316,28 @@ pub fn probe(sandbox: &Sandbox) -> Result<(), ProbeError> {
         if connected != network {
             failed.push(format!("listener_connected={connected}"));
         }
+        if layout.top.is_file() != network {
+            failed.push(format!("top_file_present={}", !network));
+        }
         if !layout.inside.is_file() {
             failed.push("inside_file_missing".into());
         }
         if layout.outside.exists() {
             failed.push("outside_file_written".into());
         }
+        if !layout
+            .roots
+            .workspace
+            .join(".git/hooks/pre-commit")
+            .is_file()
+        {
+            failed.push("git_dir_moved".into());
+        }
         if !failed.is_empty() {
             return Err(ProbeError::Failed(failed));
         }
         let _ = std::fs::remove_file(&layout.inside);
+        let _ = std::fs::remove_file(&layout.top);
     }
     Ok(())
 }
@@ -298,16 +364,18 @@ fn probe_folder() -> std::io::Result<tempfile::TempDir> {
         .tempdir_in(parent)
 }
 
-/// What each probe line must say. Online, only the connection differs.
+/// What each probe line must say. Online, the connection and the writes at
+/// the workspace's top level and into a dot folder differ.
 fn expected(line: &str, network: bool) -> bool {
     let Some((name, result)) = line.split_once('=') else {
         return true;
     };
     let ok = match name {
-        "write_inside" | "write_scratch" | "read_skill" | "read_attachment" | "read_hook" => true,
-        "connect" => network,
-        "write_outside" | "write_data" | "write_hook" | "read_app" | "read_netrc" | "read_ssh"
-        | "read_db" => false,
+        "write_inside" | "write_outputs" | "write_scratch" | "read_skill" | "read_attachment"
+        | "read_hook" | "run_masked" => true,
+        "connect" | "write_top" | "write_dot" => network,
+        "write_outside" | "write_data" | "write_hook" | "rename_git" | "read_app"
+        | "read_netrc" | "read_ssh" | "read_db" => false,
         _ => return true,
     };
     result == if ok { "ok" } else { "fail" }
@@ -316,6 +384,9 @@ fn expected(line: &str, network: bool) -> bool {
 #[cfg(unix)]
 struct ProbeLayout {
     roots: NativeRoots,
+    /// A file at the workspace's top level: written online, refused offline.
+    top: PathBuf,
+    /// A file in an existing subfolder: written in both modes.
     inside: PathBuf,
     outside: PathBuf,
     home: PathBuf,
@@ -340,10 +411,12 @@ impl ProbeLayout {
             (home.join(".ssh/id"), "sshsecret"),
             (workspace.join(".git/hooks/pre-commit"), "hookok"),
             (workspace.join(".git/config"), "[core]"),
+            (workspace.join("notes/a.md"), "note"),
         ] {
             std::fs::create_dir_all(file.parent().expect("file has a parent"))?;
             std::fs::write(file, content)?;
         }
+        std::fs::create_dir_all(workspace.join(".agents/skills"))?;
         std::fs::create_dir_all(&scratch)?;
         std::fs::create_dir_all(root.join("outside"))?;
         Ok(Self {
@@ -356,19 +429,42 @@ impl ProbeLayout {
                 &attachments,
                 Some(&home),
             ),
-            inside: workspace.join("inside.txt"),
+            top: workspace.join("top.txt"),
+            inside: workspace.join("notes/inside.txt"),
             outside: root.join("outside/outside.txt"),
             home,
         })
     }
 
+    /// The names `/run` may hold inside the sandbox: the first component of
+    /// the resolver file bound back, when there is one.
+    fn run_entries_allowed() -> Vec<String> {
+        resolver_file(&runtime_folders())
+            .and_then(|resolver| {
+                resolver
+                    .strip_prefix("/run")
+                    .ok()
+                    .and_then(|rest| rest.components().next())
+                    .map(|first| first.as_os_str().to_string_lossy().into_owned())
+            })
+            .into_iter()
+            .collect()
+    }
+
     fn script(&self, port: u16) -> String {
         let q = |path: &Path| shell_quote(&path.to_string_lossy());
         let roots = &self.roots;
+        let allowed_in_run: String = Self::run_entries_allowed()
+            .iter()
+            .map(|name| format!(" -e {}", shell_quote(name)))
+            .collect();
         format!(
             "w() {{ ( : > \"$1\" ) 2>/dev/null && echo \"$2=ok\" || echo \"$2=fail\"; }}\n\
              r() {{ grep -qs \"$2\" \"$1\" 2>/dev/null && echo \"$3=ok\" || echo \"$3=fail\"; }}\n\
+             w {top} write_top\n\
+             w {ws}/.agents/skills/planted.md write_dot\n\
              w {inside} write_inside\n\
+             w {ws}/{outputs}/out.txt write_outputs\n\
              w {scratch}/scratch.txt write_scratch\n\
              w {outside} write_outside\n\
              w {data}/data.txt write_data\n\
@@ -380,9 +476,13 @@ impl ProbeLayout {
              r {data}/skills/x/SKILL.md skillok read_skill\n\
              r {attachments}/brief.md attok read_attachment\n\
              r {ws}/.git/hooks/pre-commit hookok read_hook\n\
+             [ -z \"$(ls -A /run 2>/dev/null | grep -vxF -e ''{allowed_in_run})\" ] && echo run_masked=ok || echo run_masked=fail\n\
              (exec 3<>/dev/tcp/127.0.0.1/{port}) 2>/dev/null && echo connect=ok || echo connect=fail\n\
+             mv {ws}/.git {ws}/.git-moved 2>/dev/null && echo rename_git=ok || echo rename_git=fail\n\
              echo {end}\n",
+            top = q(&self.top),
             inside = q(&self.inside),
+            outputs = OUTPUTS_FOLDER,
             scratch = q(&roots.scratch),
             outside = q(&self.outside),
             data = q(&roots.loupist_data),
@@ -526,16 +626,20 @@ mod tests {
             roots.loupist_data.join("skills"),
             roots.attachments.clone(),
             roots.workspace.join(".git/hooks"),
+            roots.workspace.join(".agents/skills"),
+            roots.workspace.join("notes"),
             home.join(".ssh"),
         ] {
             std::fs::create_dir_all(path).unwrap();
         }
         std::fs::write(home.join(".netrc"), "x").unwrap();
         std::fs::write(roots.workspace.join(".git/config"), "x").unwrap();
+        std::fs::write(roots.workspace.join("AGENTS.md"), "x").unwrap();
+        std::os::unix::fs::symlink("notes", roots.workspace.join("linked")).unwrap();
         let sandbox = Sandbox::Bubblewrap("/usr/bin/bwrap".into());
         let command = sandbox.command(&roots, false);
         let argv = command.argv.join(" ");
-        let at = |needle: &str| {
+        let at = |argv: &str, needle: &str| {
             argv.find(needle)
                 .unwrap_or_else(|| panic!("{needle}\n{argv}"))
         };
@@ -548,52 +652,110 @@ mod tests {
         // the resolver file lives there.
         if let Some(resolver) = resolver_file(&runtime_folders()) {
             let resolver = resolver.display().to_string();
-            assert!(at("--tmpfs /run") < at(&format!("--ro-bind {resolver} {resolver}")));
+            assert!(
+                at(&argv, "--tmpfs /run") < at(&argv, &format!("--ro-bind {resolver} {resolver}"))
+            );
         }
-        assert!(at(&format!("--bind {ws} {ws}")) < at(&format!("--bind {ws}/.git {ws}/.git")));
+        // Offline: the workspace is read-only and only its existing real
+        // subfolders and `outputs`, created here, are bound back writable.
+        assert!(roots.workspace.join("outputs").is_dir());
         assert!(
-            at(&format!("--bind {ws}/.git {ws}/.git"))
-                < at(&format!("--ro-bind {ws}/.git/config {ws}/.git/config"))
+            at(&argv, &format!("--ro-bind {ws} {ws} --bind {ws}/notes {ws}/notes --bind {ws}/outputs {ws}/outputs --tmpfs {ws}/.loupist")) > 0
         );
-        assert!(at(&format!("--bind {ws} {ws}")) < at(&format!("--tmpfs {ws}/.loupist")));
+        for unbound in [
+            format!("--bind {ws} {ws}"),
+            format!("{ws}/.git {ws}/.git"),
+            format!("{ws}/.agents"),
+            format!("{ws}/linked"),
+            format!("{ws}/AGENTS.md"),
+        ] {
+            assert!(!argv.contains(&unbound), "{unbound}\n{argv}");
+        }
         assert!(
-            at(&format!("--tmpfs {app}")) < at(&format!("--bind {0} {0}", roots.scratch.display()))
+            at(&argv, &format!("--tmpfs {app}"))
+                < at(&argv, &format!("--bind {0} {0}", roots.scratch.display()))
         );
         assert!(
-            at(&format!("--tmpfs {ws}/.loupist")) < at(&format!("--ro-bind {ws}/.loupist/skills"))
+            at(&argv, &format!("--tmpfs {ws}/.loupist"))
+                < at(&argv, &format!("--ro-bind {ws}/.loupist/skills"))
         );
-        at(&format!("--ro-bind {0} {0}", roots.attachments.display()));
-        at(&format!("--tmpfs {}/.ssh", home.display()));
-        at(&format!("--ro-bind /dev/null {}/.netrc", home.display()));
-        at(&format!("--ro-bind {ws}/.git/hooks {ws}/.git/hooks"));
+        at(
+            &argv,
+            &format!("--ro-bind {0} {0}", roots.attachments.display()),
+        );
+        at(&argv, &format!("--tmpfs {}/.ssh", home.display()));
+        at(
+            &argv,
+            &format!("--ro-bind /dev/null {}/.netrc", home.display()),
+        );
         assert!(
-            at(&format!("--bind {0} {0}", roots.scratch.display()))
-                < at(&format!("--remount-ro {app}"))
+            at(&argv, &format!("--bind {0} {0}", roots.scratch.display()))
+                < at(&argv, &format!("--remount-ro {app}"))
         );
-        at(&format!("--remount-ro {ws}/.loupist"));
-        at(&format!("--remount-ro {}/.ssh", home.display()));
+        at(&argv, &format!("--remount-ro {ws}/.loupist"));
+        at(&argv, &format!("--remount-ro {}/.ssh", home.display()));
         assert!(argv.ends_with(&format!(
             "--unshare-net --unshare-pid --die-with-parent --new-session --chdir {ws} --"
         )));
-        assert!(!sandbox
-            .command(&roots, true)
-            .argv
-            .contains(&"--unshare-net".to_owned()));
         assert_eq!(
             command.env.get("XDG_CACHE_HOME").map(String::as_str),
             Some(roots.scratch.join("cache").to_str().unwrap())
         );
         assert!(roots.scratch.join("cache").is_dir());
 
-        // A worktree's `.git` is a file naming the real git directory; it is
-        // bound read-only so the pointer cannot be redirected.
+        // Online: the whole workspace is writable, `.git` is pinned onto
+        // itself and its config and hooks are read-only.
+        let online = sandbox.command(&roots, true).argv.join(" ");
+        assert!(!online.contains("--unshare-net"));
+        assert!(!online.contains(&format!("--ro-bind {ws} {ws}")));
+        assert!(
+            at(&online, &format!("--bind {ws} {ws}"))
+                < at(&online, &format!("--bind {ws}/.git {ws}/.git"))
+        );
+        assert!(
+            at(&online, &format!("--bind {ws}/.git {ws}/.git"))
+                < at(
+                    &online,
+                    &format!("--ro-bind {ws}/.git/config {ws}/.git/config")
+                )
+        );
+        at(
+            &online,
+            &format!("--ro-bind {ws}/.git/hooks {ws}/.git/hooks"),
+        );
+
+        // A worktree's `.git` is a file naming the real git directory; online
+        // it is bound read-only so the pointer cannot be redirected.
         std::fs::remove_dir_all(roots.workspace.join(".git")).unwrap();
         std::fs::write(roots.workspace.join(".git"), "gitdir: ../main/.git").unwrap();
-        let argv = sandbox.command(&roots, false).argv.join(" ");
+        let online = sandbox.command(&roots, true).argv.join(" ");
         assert!(
-            argv.contains(&format!("--ro-bind {ws}/.git {ws}/.git")),
-            "{argv}"
+            online.contains(&format!("--ro-bind {ws}/.git {ws}/.git")),
+            "{online}"
         );
+    }
+
+    /// A workspace with more top-level subfolders than the cap keeps only
+    /// `outputs` writable offline.
+    #[test]
+    fn beyond_the_cap_only_outputs_is_writable_offline() {
+        let temporary = tempfile::tempdir().unwrap();
+        let home = temporary.path().canonicalize().unwrap();
+        let roots = roots(&home);
+        for index in 0..=MAX_WRITABLE_CHILDREN {
+            std::fs::create_dir_all(roots.workspace.join(format!("folder{index}"))).unwrap();
+        }
+        let argv = Sandbox::Bubblewrap("/usr/bin/bwrap".into())
+            .command(&roots, false)
+            .argv;
+        let bound: Vec<&String> = argv
+            .windows(3)
+            .filter(|window| {
+                window[0] == "--bind" && window[1].starts_with(roots.workspace.to_str().unwrap())
+            })
+            .map(|window| &window[1])
+            .collect();
+        assert_eq!(bound, [roots.workspace.join("outputs").to_str().unwrap()]);
     }
 
     /// The real sandbox on this host: everything the probe requires, both
@@ -610,7 +772,9 @@ mod tests {
 
     /// Inside the real sandbox the workspace's `.git` cannot be renamed or
     /// replaced, the host's runtime sockets are gone, and name resolution
-    /// still works online when the host can resolve.
+    /// still works online when the host can resolve. Offline, the workspace's
+    /// top level, its dot entries and the root instruction files take no
+    /// write by any route, while existing subfolders and `outputs` do.
     #[cfg(target_os = "linux")]
     #[test]
     fn bubblewrap_pins_the_git_directory_and_hides_runtime_sockets() {
@@ -621,6 +785,7 @@ mod tests {
         let temporary = probe_folder().unwrap();
         let layout = ProbeLayout::create(temporary.path()).unwrap();
         let ws = layout.roots.workspace.display().to_string();
+        std::fs::write(layout.roots.workspace.join("AGENTS.md"), "rules").unwrap();
         // An entry of the host's `/run` that is not on the way to the
         // resolver file, which is bound back.
         let resolver = resolver_file(&runtime_folders());
@@ -670,6 +835,69 @@ mod tests {
             let output = run_probe(&sandbox, &layout.roots, true, &script).unwrap();
             assert!(output.contains("dns=ok"), "{output}");
         }
+
+        let script = format!(
+            "t() {{ eval \"$2\" >/dev/null 2>&1 && echo \"$1=ok\" || echo \"$1=fail\"; }}\n\
+             cd '{ws}'\n\
+             t root_instruction 'echo planted > AGENTS.md'\n\
+             t new_root_instruction 'echo planted > AGENTS.override.md'\n\
+             t new_top_folder 'mkdir top'\n\
+             t rename_child 'mv notes notes2'\n\
+             t remove_child 'rmdir outputs'\n\
+             t dot_skill 'echo planted > .agents/skills/evil.md'\n\
+             t new_dot_folder 'mkdir .pi'\n\
+             t git_commondir 'echo ../x > .git/commondir'\n\
+             t git_rename 'mv .git .git-old'\n\
+             t through_link 'ln -s ../AGENTS.md notes/l && echo planted > notes/l'\n\
+             t hard_link 'ln AGENTS.md notes/h'\n\
+             t subfolder_write 'mkdir notes/sub && echo work > notes/sub/f'\n\
+             t outputs_write 'echo out > outputs/o'\n\
+             t scratch_write 'echo s > \"$TMPDIR/s\"'\n\
+             echo {end}\n",
+            end = PROBE_END
+        );
+        let output = run_probe(&sandbox, &layout.roots, false, &script).unwrap();
+        let lines: Vec<&str> = output.lines().collect();
+        for refused in [
+            "root_instruction",
+            "new_root_instruction",
+            "new_top_folder",
+            "rename_child",
+            "remove_child",
+            "dot_skill",
+            "new_dot_folder",
+            "git_commondir",
+            "git_rename",
+            "through_link",
+            "hard_link",
+        ] {
+            assert!(
+                lines.contains(&format!("{refused}=fail").as_str()),
+                "{refused}\n{output}"
+            );
+        }
+        for allowed in ["subfolder_write", "outputs_write", "scratch_write"] {
+            assert!(
+                lines.contains(&format!("{allowed}=ok").as_str()),
+                "{allowed}\n{output}"
+            );
+        }
+        let workspace = &layout.roots.workspace;
+        assert_eq!(
+            std::fs::read_to_string(workspace.join("AGENTS.md")).unwrap(),
+            "rules"
+        );
+        assert!(!workspace.join("AGENTS.override.md").exists());
+        assert!(!workspace.join(".agents/skills/evil.md").exists());
+        assert!(!workspace.join(".git/commondir").exists());
+        assert_eq!(
+            std::fs::read_to_string(workspace.join("notes/sub/f")).unwrap(),
+            "work\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(workspace.join("outputs/o")).unwrap(),
+            "out\n"
+        );
     }
 
     /// A sandbox that cannot start never runs the script; the probe says so
@@ -731,6 +959,47 @@ mod tests {
         }
     }
 
+    /// A real bubblewrap that lost the `/run` tmpfs fails the probe: the
+    /// host's runtime sockets would be reachable.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_sandbox_without_the_runtime_socket_mask_fails_the_probe() {
+        let Some(Sandbox::Bubblewrap(bwrap)) = detect() else {
+            eprintln!("skipping: bubblewrap (bwrap) is not installed on this host");
+            return;
+        };
+        let allowed = ProbeLayout::run_entries_allowed();
+        let host_has_other_entries = std::fs::read_dir("/run").is_ok_and(|entries| {
+            entries
+                .flatten()
+                .any(|entry| !allowed.iter().any(|name| **name == *entry.file_name()))
+        });
+        if !host_has_other_entries {
+            eprintln!("skipping: this host's /run holds nothing the sandbox would hide");
+            return;
+        }
+        let temporary = tempfile::tempdir().unwrap();
+        let wrapper = temporary.path().join("bwrap-without-run-mask");
+        std::fs::write(
+            &wrapper,
+            format!(
+                "#!/bin/bash\n\
+                 out=()\n\
+                 while [ $# -gt 0 ]; do\n\
+                 \tif [ \"$1\" = --tmpfs ]; then case \"$2\" in /run|/var/run) shift 2; continue ;; esac; fi\n\
+                 \tout+=(\"$1\"); shift\n\
+                 done\n\
+                 exec '{}' \"${{out[@]}}\"\n",
+                bwrap.display()
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let error = probe(&Sandbox::Bubblewrap(wrapper)).unwrap_err();
+        assert_eq!(error, ProbeError::Failed(vec!["run_masked=fail".into()]));
+    }
+
     /// Each probe check fails on its own when the sandbox is missing, so a
     /// passing probe says something about every rule.
     #[cfg(target_os = "linux")]
@@ -738,6 +1007,7 @@ mod tests {
     fn without_a_sandbox_the_probe_reports_every_broken_rule() {
         let temporary = tempfile::tempdir().unwrap();
         let layout = ProbeLayout::create(temporary.path()).unwrap();
+        std::fs::create_dir(layout.roots.workspace.join(OUTPUTS_FOLDER)).unwrap();
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let output = std::process::Command::new("/bin/bash")
@@ -753,6 +1023,8 @@ mod tests {
         assert_eq!(
             broken,
             [
+                "write_top=ok",
+                "write_dot=ok",
                 "write_outside=ok",
                 "write_data=ok",
                 "write_hook=ok",
@@ -760,7 +1032,9 @@ mod tests {
                 "read_netrc=ok",
                 "read_ssh=ok",
                 "read_db=ok",
-                "connect=ok"
+                "run_masked=fail",
+                "connect=ok",
+                "rename_git=ok"
             ],
             "{output}"
         );

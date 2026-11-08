@@ -70,7 +70,7 @@ counts at whatever depth it spells the root, while on a case-sensitive volume
 | write, edit | Instructions | Allow | Refuse `untrusted_text_paused` |
 | write, edit | AppPrivate, Attachments, Credentials, GitDir | Refuse `protected_path` | Refuse `protected_path` |
 | write, edit | Outside | Refuse `outside_workspace` | Refuse `outside_workspace` |
-| bash | | Allow, online | ThisTurn: Allow offline inside a verified sandbox, else Refuse `untrusted_text_paused`. Custom: Refuse `outbound_paused`. |
+| bash | | Allow, online | ThisTurn: Allow offline inside a verified sandbox with the workspace [read-only except its subfolders](#after-third-party-text), else Refuse `untrusted_text_paused`. Custom: Refuse `outbound_paused`. |
 
 Every refusal carries a `next` for the model. `outside_workspace` says to ask the
 user to attach the file to the chat or copy it into the Loupist folder, and the
@@ -105,14 +105,44 @@ for every other host.
 
 | Rule | Linux (bubblewrap) |
 | --- | --- |
-| Writes | Workspace and scratch bound read-write over a read-only `/`; a private tmpfs `/tmp`. |
+| Writes, clean reply | Workspace and scratch bound read-write over a read-only `/`; a private tmpfs `/tmp`. |
+| Writes, after third-party text | The workspace bound read-only, then its existing top-level subfolders, `<workspace>/outputs` and scratch bound back read-write ([After third-party text](#after-third-party-text)); a private tmpfs `/tmp`. |
 | Runtime sockets | A tmpfs over `/run` (and `/var/run` when it is a folder of its own), so `XDG_RUNTIME_DIR` sockets (D-Bus session bus, ssh-agent, gpg-agent, PulseAudio, Wayland), `/run/dbus/system_bus_socket` and `docker.sock` are gone. When `/etc/resolv.conf` resolves into `/run`, that file is bound back read-only so names still resolve online. |
 | `<workspace>/.loupist`, app data root | A tmpfs over each, remounted read-only last; `.loupist/skills`, `.loupist/AGENTS.md`, `.loupist/config.toml`, the global `skills` and `AGENTS.md`, this Chat's attachments and scratch bound back (attachments and instruction files read-only). |
-| Workspace `.git` | A `.git` folder is bound onto itself, so it cannot be renamed or removed, and its `config` and `hooks` are bound read-only over themselves; a `.git` file (a worktree's gitdir pointer) is bound read-only. |
+| Workspace `.git`, clean reply | A `.git` folder is bound onto itself, so it cannot be renamed or removed, and its `config` and `hooks` are bound read-only over themselves; a `.git` file (a worktree's gitdir pointer) is bound read-only. The rest of `.git` is writable. |
+| Workspace `.git`, after third-party text | Part of the read-only workspace: nothing in it can be created, changed, renamed or removed. |
 | Credentials | Each existing `CREDENTIAL_HOME` entry: a folder gets a read-only tmpfs, a file `/dev/null`. |
 | Network | `--unshare-net` after third-party text. In a clean reply the command shares the host's network namespace, abstract Unix sockets included. |
 | Processes | `--unshare-pid --die-with-parent --new-session`: bubblewrap is the init of a pid namespace, so Pi's group kill on abort or timeout ends every sandboxed process, and a background process the command leaves behind ends with the command. |
 | Caches | `XDG_CACHE_HOME`, `PIP_CACHE_DIR`, `UV_CACHE_DIR`, `npm_config_cache`, `MPLCONFIGDIR` point under `<scratch>/cache`. |
+
+### After third-party text
+
+A command that runs after this reply read third-party text may act on
+injected text. Native file tools refuse its writes to the files a later reply
+loads as instructions; the mount gives commands a stronger version of the same
+rule, with nothing for the host to repair afterwards. Rust binds the workspace
+read-only, then binds read-write every existing top-level entry of the
+workspace that is a folder itself (`symlink_metadata`, so a link to a folder
+does not count) and whose name does not start with `.`, plus
+`<workspace>/outputs`, which Rust creates before the command when it is
+missing, plus scratch. So a command cannot create, change, rename or remove
+anything at the workspace's top level (`AGENTS.md`, `AGENTS.override.md`,
+`CLAUDE.md`, a new folder), in any dot entry (`.git`, `.agents`, `.pi`,
+`.loupist`, any other) or through a link or hard link into them, while work
+inside existing folders and in `outputs/` goes on as before. A top-level
+folder is a mount point, so it cannot be renamed or removed either; its
+contents can.
+
+The number of folders bound back is capped at `MAX_WRITABLE_CHILDREN` (256).
+A workspace with more top-level subfolders keeps only `outputs` and scratch
+writable for the command. A folder whose name is not valid UTF-8 cannot be
+passed to bubblewrap and stays read-only. When `outputs` exists as a file or
+a link, it is not bound and nothing is written there.
+
+A clean reply's command keeps the clean-mode layout, so its instruction edits
+are the model's own and stay. Nothing is snapshotted or restored at reply end:
+what a command after third-party text could not write, it did not write.
 
 ### Probe and fallback
 
@@ -122,16 +152,21 @@ folder (`$XDG_CACHE_HOME` or `~/.cache`, under `loupist/`) like a turn's roots,
 opens a local listener, and runs `/bin/bash` under the sandbox twice. The
 layout is not under `/tmp`, which the sandbox replaces with an empty tmpfs: a
 secret there would read as absent with or without the masks, so a sandbox that
-lost them would still pass. Offline, a write inside the folder and scratch must
+lost them would still pass. In both modes a write into an existing subfolder,
+into `outputs` (which the offline run must have created) and into scratch must
 succeed; a write outside, into the data folder or into a git hook must fail;
-the app's `auth.json`, `~/.netrc`, `~/.ssh` and the database must read as
-absent or empty; a Skill, an attachment and a hook must still read; a connection
-to the listener must fail. Online the connection must succeed, which proves the
-offline check measured the network. Rust also checks the host folder
-afterwards. Only a passing probe enables the sandbox; a failed one logs the
-checks that failed and, when the sandbox never started, its own first error
-line; a turn that starts before the probe finishes waits for it off the async
-workers, up to the probe's deadline.
+`mv .git` must fail; the app's `auth.json`, `~/.netrc`, `~/.ssh` and the
+database must read as absent or empty; a Skill, an attachment and a hook must
+still read; and `/run` must hold nothing but the resolver file bound back.
+Offline, a write at the folder's top level and into a dot folder
+(`.agents/skills`) must fail and a connection to the listener must fail; online
+both must succeed, which proves the offline checks measured the mount and the
+network. Rust also checks the host folder afterwards: the top-level file exists
+only after the online run, the subfolder file after both, the outside file
+never, and `.git/hooks/pre-commit` is still in place. Only a passing probe
+enables the sandbox; a failed one logs the checks that failed and, when the
+sandbox never started, its own first error line; a turn that starts before the
+probe finishes waits for it off the async workers, up to the probe's deadline.
 
 Without a verified sandbox (a failed probe, no `bwrap`, macOS, Windows): a
 clean reply runs Bash unconfined as before, and a reply that read third-party
@@ -156,10 +191,22 @@ Mac, with sandbox-runtime's macOS profile as the reference.
   root, `.loupist` data, the `CREDENTIAL_HOME` table and `/run` are hidden,
   other home files are not. `~/.gitconfig` stays readable so `git` keeps its
   identity.
-- Only the workspace root's `.git` is pinned and read-only for Bash; a nested
-  repository's `.git`, or a `.git` Bash creates in a subfolder, is writable
-  like the rest of the workspace, and the host's `git` would run its hooks
-  there. File tools refuse every git directory inside the workspace.
+- In a clean reply only the root `.git` entry, its `config` and its `hooks`
+  are read-only for Bash. The other files in `.git` are writable, and some of
+  them redirect the host's `git` to another directory whose config and hooks
+  it then runs: `commondir`, `config.worktree`, `worktrees/*`,
+  `info/attributes` with a filter. A clean reply's command is the model's own
+  work, and after third-party text `.git` takes no write at all. A nested
+  repository's `.git`, or a `.git` Bash creates inside an existing subfolder,
+  is writable in both modes like the folder around it, and the host's `git`
+  would run its hooks there. File tools refuse every git directory inside the
+  workspace.
+- In a clean reply a command can create or change the workspace's instruction
+  files and Skills; they are the model's own and nothing undoes them. A reply
+  that read third-party text is followed by a clean one once the user sends
+  the next message, and that clean reply's commands are online and may write
+  everything again; what carries over is only what the earlier reply could
+  write, which excludes every instruction file.
 - A Loupist folder that contains the home folder exposes its non-credential
   files to every tool and its credential locations to `find` and `grep`.
 - Masks apply to the folders that exist when the command starts; the file tools
