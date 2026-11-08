@@ -1649,6 +1649,9 @@ fn one_company_spelled_two_ways_on_two_nodes_is_one_case() {
             "삼성전자(Samsung Electronics)",
             "Samsung Electronics Co., Ltd.",
         ),
+        ("Apple", "Apple Inc. (NASDAQ:AAPL)"),
+        ("삼성전자", "삼성전자 (KRX:005930)"),
+        ("CEMEX", "CEMEX, S.A.B. de C.V."),
     ] {
         assert!(!two_nodes_learn(first, second), "{first} / {second}");
     }
@@ -1661,6 +1664,7 @@ fn two_companies_with_one_qualifier_are_two_cases() {
         ("Acme (Inc.)", "Beta (Inc.)"),
         ("Acme (Korea)", "Beta (Korea)"),
         ("Kestrel Foundry", "Halvorsen Cellworks ASA"),
+        ("EXCH:AG", "EXCH:SE"),
     ] {
         assert!(two_nodes_learn(first, second), "{first} / {second}");
     }

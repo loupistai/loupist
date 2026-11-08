@@ -75,6 +75,13 @@ const LEGAL_FORMS: &[(&str, Edge, bool)] = &[
     ("l p", Edge::Trailing, false),
     ("g m b h", Edge::Trailing, false),
     ("k g", Edge::Trailing, false),
+    ("s a b", Edge::Trailing, false),
+    ("sab", Edge::Trailing, false),
+    ("de c v", Edge::Trailing, false),
+    ("de cv", Edge::Trailing, false),
+    ("s a b de c v", Edge::Trailing, false),
+    ("s a de c v", Edge::Trailing, false),
+    ("sa de cv", Edge::Trailing, false),
 ];
 
 /// Latin accents as NFKD exposes them, U+0300 to U+036F. Dropping only these
@@ -231,24 +238,39 @@ fn spelling_keys(segment: &str, keys: &mut BTreeSet<String>) {
     keys.insert(key.to_owned());
 }
 
+/// The code of `text` when the whole of it is `EXCH:CODE`: two to ten letters,
+/// a colon, and one to ten letters, digits, dots or hyphens. A colon anywhere
+/// else is punctuation.
+fn listing_code(text: &str) -> Option<String> {
+    let (exchange, code) = text.trim().split_once(':')?;
+    let exchange_ok =
+        (2..=10).contains(&exchange.len()) && exchange.chars().all(|c| c.is_ascii_alphabetic());
+    let code_ok = (1..=10).contains(&code.len())
+        && code
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-'));
+    (exchange_ok && code_ok).then(|| code.to_ascii_lowercase())
+}
+
 /// One company's identity across the ways pages spell it: "Acme", "ACME
 /// Inc.", "Acme Co., Ltd.", "U.S. Bancorp" and "US Bancorp" share a key. A
 /// parenthetical in another script is another spelling, so
 /// `삼성전자(Samsung Electronics)` carries a key for each, while a qualifier in
 /// the name's own script (`(한국)`, `(Holdings)`, `(Class A)`) is no key, and
-/// `(주)`, `(유)`, `(사)`, `(재)` and `㈜` are legal notation. A ticker-shaped
-/// alias (`EXCH:AG`) keeps its words whole, since its suffix is a code, not a
-/// legal form. Two companies may share a key ("Bath Spa" and "Bath S.p.A."):
-/// a key tells learning when two observations might be one company, never
-/// that they are two.
+/// `(주)`, `(유)`, `(사)`, `(재)` and `㈜` are legal notation. A listing code,
+/// parenthesized (`(005930)`, `(NASDAQ:AAPL)`) or after the name, is a key of
+/// its own, and a spelling that is only `EXCH:CODE` keeps its words whole.
+/// Two companies may share a key ("Bath Spa" and "Bath S.p.A."): a key tells
+/// learning when two observations might be one company, never that they are
+/// two.
 pub(crate) fn entity_name_keys(name: &str) -> BTreeSet<String> {
     let text: String = name.nfkc().collect();
     let mut keys = BTreeSet::new();
-    if text.contains(':') {
-        let plain = name_words(&text);
-        if !plain.is_empty() {
-            keys.insert(plain);
-        }
+    // A spelling that is only a listing code ("EXCH:AG") keeps its words
+    // whole: its suffix is a code, not a legal form.
+    if let Some(code) = listing_code(&text) {
+        keys.insert(name_words(&text));
+        keys.insert(code);
         return keys;
     }
     let text = PARENTHESIZED_LEGAL_NOTATION
@@ -256,9 +278,23 @@ pub(crate) fn entity_name_keys(name: &str) -> BTreeSet<String> {
         .fold(text, |text, notation| text.replace(notation, " "));
     let segments = segments(&text);
     let (outer, inner) = segments.split_first().expect("the outer segment");
+    // A listing code after the name ("Apple Inc. NASDAQ:AAPL") is a key of
+    // its own, not words of the name.
+    let outer = outer.trim();
+    let outer = match outer.rsplit_once(char::is_whitespace) {
+        Some((name, last)) if listing_code(last).is_some() => {
+            keys.extend(listing_code(last));
+            name
+        }
+        _ => outer,
+    };
     spelling_keys(outer, &mut keys);
     let outer_scripts = scripts(outer);
     for segment in inner {
+        if let Some(code) = listing_code(segment) {
+            keys.insert(code);
+            continue;
+        }
         let inner_scripts = scripts(segment);
         let another_script = !inner_scripts.is_empty() && inner_scripts.is_disjoint(&outer_scripts);
         // A listing code in parentheses ("(005930)") names the issuer as surely as a name does.
@@ -625,6 +661,17 @@ mod tests {
                 "mcdonalds",
             ),
             (&["Nestlé S.A.", "Nestle SA", "NESTLÉ"][..], "nestle"),
+            (
+                &[
+                    "CEMEX",
+                    "CEMEX, S.A.B. de C.V.",
+                    "CEMEX, S.A. de C.V.",
+                    "Cemex SAB de CV",
+                    "Cemex SA de CV",
+                    "CEMEX S.A.B.",
+                ][..],
+                "cemex",
+            ),
             (&["The Coca-Cola Company", "Coca-Cola"][..], "coca cola"),
             (
                 &[
@@ -738,10 +785,32 @@ mod tests {
 
     #[test]
     fn a_ticker_shaped_alias_keeps_its_code() {
-        assert_eq!(keys("EXCH:AG"), set(&["exch ag"]));
-        assert_eq!(keys("EXCH:SE"), set(&["exch se"]));
-        assert_eq!(keys("KRX:005930"), set(&["krx 005930"]));
+        assert_eq!(keys("EXCH:AG"), set(&["exch ag", "ag"]));
+        assert_eq!(keys("EXCH:SE"), set(&["exch se", "se"]));
+        assert_eq!(keys("KRX:005930"), set(&["krx 005930", "005930"]));
         assert!(keys("EXCH:AG").is_disjoint(&keys("EXCH:SE")));
+    }
+
+    #[test]
+    fn a_listing_code_beside_the_name_is_a_key_of_its_own() {
+        for (name, expected) in [
+            ("Apple Inc. (NASDAQ:AAPL)", &["apple", "aapl"][..]),
+            ("Apple Inc. NASDAQ:AAPL", &["apple", "aapl"][..]),
+            ("삼성전자 (KRX:005930)", &["삼성전자", "005930"][..]),
+            (
+                "Samsung Electronics (KRX:005930)",
+                &["samsung electronics", "samsungelectronics", "005930"][..],
+            ),
+            (
+                "Acme: The Sequel Inc.",
+                &["acme the sequel", "acmethesequel"][..],
+            ),
+            ("Acme (Class A) NYSE:ACM.A", &["acme", "acm.a"][..]),
+        ] {
+            assert_eq!(keys(name), set(expected), "{name}");
+        }
+        assert!(!keys("Apple").is_disjoint(&keys("Apple Inc. (NASDAQ:AAPL)")));
+        assert!(!keys("삼성전자").is_disjoint(&keys("삼성전자 (KRX:005930)")));
     }
 
     #[test]
