@@ -80,3 +80,18 @@ it("keeps one opener identity while the shell it routes to changes", async () =>
   expect(second.panel.openFiles).toHaveBeenCalledExactlyOnceWith("loupist-a", "chat-b", undefined);
   expect(first.panel.openFiles).not.toHaveBeenCalled();
 });
+
+it("never opens a hidden panel for a briefing that has no chat of its own", async () => {
+  const { targets, hook, announced } = router();
+  await act(() => hook.result.current.openIn(null, { kind: "file", path: "reports/summary.md" }));
+  await act(() => hook.result.current.openIn(null, { kind: "lens", recordId: "rec-1" }));
+  expect(targets.panel.openFiles).not.toHaveBeenCalled();
+  expect(targets.panel.openMemory).not.toHaveBeenCalled();
+  expect(announced()).toBeUndefined();
+  await act(() => hook.result.current.openIn(null, { kind: "link", url: "https://example.com/a" }));
+  expect(targets.openExternalUrl).toHaveBeenCalledExactlyOnceWith("https://example.com/a");
+  expect(targets.panel.openBrowser).not.toHaveBeenCalled();
+  const asset = { loupistId: "loupist-a", assetId: "NASDAQ:AAPL" };
+  await act(() => hook.result.current.openIn(null, { kind: "asset", target: asset }));
+  expect(targets.openAssetPage).toHaveBeenCalledExactlyOnceWith(asset);
+});

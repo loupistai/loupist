@@ -34,27 +34,39 @@ export type AppOpenShell = {
 
 export type PanelAnnouncement = { text: string; key: number };
 
-/** Opens beside a chat other than the visible one (a briefing's own thread), which is shown first. */
+/**
+ * Opens beside a chat other than the visible one (a briefing's own thread), which is
+ * shown first. With no chat of its own (`null`) nothing opens in a panel the user
+ * cannot see: a page with an address opens in the system browser instead.
+ */
 export type OpenIn = (threadId: string | null, to: ChatDestination, how?: OpenHow) => Promise<void>;
 
-async function route(shell: AppOpenShell, threadId: string | null, to: ChatDestination, how: OpenHow | undefined, announce: (title: string) => void): Promise<void> {
+/** Whose panel an open lands in: the visible chat's, or a named chat's (none when null). */
+type PanelHost = "visible" | { threadId: string | null };
+
+async function route(shell: AppOpenShell, host: PanelHost, to: ChatDestination, how: OpenHow | undefined, announce: (title: string) => void): Promise<void> {
   const external = how?.external ? externalUrl(to) : null;
   if (external) { await shell.openExternalUrl(external); return; }
   const { loupistId } = shell;
+  const chatless = host !== "visible" && host.threadId === null;
   // The panel belongs to a chat: the one asked for, shown first, or the visible one.
   const beside = (own?: string) => {
-    const id = threadId ?? own ?? shell.threadId;
-    if (loupistId && threadId) shell.showThread(loupistId, threadId);
+    if (host !== "visible" && host.threadId && loupistId) shell.showThread(loupistId, host.threadId);
+    const id = host === "visible" ? own ?? shell.threadId : host.threadId;
     return loupistId && id ? { loupistId, threadId: id } : null;
+  };
+  const elsewhere = async () => {
+    const url = chatless ? externalUrl(to) : null;
+    if (url) await shell.openExternalUrl(url);
   };
   switch (to.kind) {
     case "evidence": {
       // A step, a quote, Memory or an asset page resolves in the answer's TurnProvider;
       // outside one the card's fallback stands in.
       const target = evidenceTarget(to.evidence, undefined, loupistId ?? "").kind;
-      if (target !== "browser" && target !== "reader") { if (to.fallback) await route(shell, threadId, to.fallback, how, announce); return; }
+      if (target !== "browser" && target !== "reader") { if (to.fallback) await route(shell, host, to.fallback, how, announce); return; }
       const chat = beside();
-      if (!chat) return;
+      if (!chat) { await elsewhere(); return; }
       shell.panel.openEvidence(chat.loupistId, chat.threadId, to.evidence, to.step);
       announce(evidenceTitle(to.evidence));
       return;
@@ -62,6 +74,7 @@ async function route(shell: AppOpenShell, threadId: string | null, to: ChatDesti
     case "link": {
       const url = externalUrl(to);
       if (!loupistId || !url) return;
+      if (chatless) { await elsewhere(); return; }
       // A browser tab opens before the first chat exists too.
       const chat = beside() ?? { loupistId, threadId: EMPTY_CHAT_THREAD_ID };
       shell.panel.openBrowser(chat.loupistId, chat.threadId, url);
@@ -71,7 +84,7 @@ async function route(shell: AppOpenShell, threadId: string | null, to: ChatDesti
     case "lens": {
       if (!loupistId) return;
       const { location, title } = lensMemoryLocation(loupistId, to.recordId);
-      await route(shell, threadId, { kind: "memory", location, title }, how, announce);
+      await route(shell, host, { kind: "memory", location, title }, how, announce);
       return;
     }
     case "memory": {
@@ -127,8 +140,9 @@ export function useAppOpen(shell: AppOpenShell): { open: Open; openIn: OpenIn; a
   const latest = useRef(shell);
   latest.current = shell;
   const [announcement, setAnnouncement] = useState<PanelAnnouncement | null>(null);
-  const openIn = useCallback<OpenIn>((threadId, to, how) => route(latest.current, threadId, to, how, (title) =>
+  const routeIn = useCallback((host: PanelHost, to: ChatDestination, how?: OpenHow) => route(latest.current, host, to, how, (title) =>
     setAnnouncement((current) => ({ text: i18n.t("chat:navigation.openedInPanel", { title }), key: (current?.key ?? 0) + 1 }))), []);
-  const open = useCallback<Open>((to, how) => openIn(null, to, how), [openIn]);
+  const openIn = useCallback<OpenIn>((threadId, to, how) => routeIn({ threadId }, to, how), [routeIn]);
+  const open = useCallback<Open>((to, how) => routeIn("visible", to, how), [routeIn]);
   return { open, openIn, announcement };
 }
