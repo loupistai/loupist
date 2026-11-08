@@ -260,7 +260,12 @@ pub(crate) fn entity_name_keys(name: &str) -> BTreeSet<String> {
     let outer_scripts = scripts(outer);
     for segment in inner {
         let inner_scripts = scripts(segment);
-        if !inner_scripts.is_empty() && inner_scripts.is_disjoint(&outer_scripts) {
+        let another_script = !inner_scripts.is_empty() && inner_scripts.is_disjoint(&outer_scripts);
+        // A listing code in parentheses ("(005930)") names the issuer as surely as a name does.
+        let digits = segment.trim();
+        let year = digits.len() == 4 && matches!(digits.parse::<u32>(), Ok(1900..=2099));
+        let code = digits.len() >= 4 && digits.chars().all(|c| c.is_ascii_digit()) && !year;
+        if another_script || code {
             spelling_keys(segment, &mut keys);
         }
     }
@@ -709,8 +714,14 @@ mod tests {
             ("Samsung (Class A)", &["samsung"][..]),
             (
                 "Samsung Electronics Co., Ltd. (005930)",
-                &["samsung electronics", "samsungelectronics"][..],
+                &["samsung electronics", "samsungelectronics", "005930"][..],
             ),
+            ("Acme (2024)", &["acme"][..]),
+            (
+                "Toyota Motor (7203)",
+                &["toyota motor", "toyotamotor", "7203"][..],
+            ),
+            ("Acme (12)", &["acme"][..]),
         ] {
             assert_eq!(keys(name), set(expected), "{name}");
         }
