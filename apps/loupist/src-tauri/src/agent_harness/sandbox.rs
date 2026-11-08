@@ -900,6 +900,78 @@ mod tests {
         );
     }
 
+    /// Credential entries that are absolute links (`~/.bashrc ->
+    /// ~/dotfiles/bashrc`, as dotbot, rcm and home-manager lay a home out)
+    /// and a workspace `.git` that is a link do not stop the command: each
+    /// mask lands on the link's target, a dangling link masks nothing, and
+    /// the targets read as absent or empty through the link and directly.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn absolute_links_at_credential_entries_and_the_git_directory_still_run_the_command() {
+        use std::os::unix::fs::symlink;
+        let Some(sandbox) = detect() else {
+            eprintln!("skipping: bubblewrap (bwrap) is not installed on this host");
+            return;
+        };
+        let temporary = probe_folder().unwrap();
+        let layout = ProbeLayout::create(temporary.path()).unwrap();
+        let root = temporary.path().canonicalize().unwrap();
+        let home = &layout.home;
+        let dotfiles = root.join("dotfiles");
+        std::fs::create_dir_all(dotfiles.join("config/gh")).unwrap();
+        std::fs::create_dir_all(dotfiles.join("config/other")).unwrap();
+        std::fs::rename(home.join(".ssh"), dotfiles.join("ssh")).unwrap();
+        std::fs::write(dotfiles.join("bashrc"), "export TOKEN=secret").unwrap();
+        std::fs::write(dotfiles.join("config/gh/hosts.yml"), "ghsecret").unwrap();
+        std::fs::write(dotfiles.join("config/other/settings"), "otherok").unwrap();
+        symlink(dotfiles.join("bashrc"), home.join(".bashrc")).unwrap();
+        symlink(dotfiles.join("ssh"), home.join(".ssh")).unwrap();
+        symlink(dotfiles.join("config"), home.join(".config")).unwrap();
+        symlink(root.join("missing"), home.join(".npmrc")).unwrap();
+        let workspace = &layout.roots.workspace;
+        let repository = root.join("repo.git");
+        std::fs::rename(workspace.join(".git"), &repository).unwrap();
+        symlink(&repository, workspace.join(".git")).unwrap();
+        let script = format!(
+            "e() {{ [ -e \"$1\" ] && [ ! -s \"$1\" ] && echo \"$2=empty\" || echo \"$2=other\"; }}\n\
+             a() {{ [ -e \"$1\" ] && echo \"$2=present\" || echo \"$2=absent\"; }}\n\
+             e '{home}/.bashrc' bashrc_link\n\
+             e '{dotfiles}/bashrc' bashrc_target\n\
+             a '{home}/.ssh/id' ssh_link\n\
+             a '{dotfiles}/ssh/id' ssh_target\n\
+             a '{home}/.config/gh/hosts.yml' gh_link\n\
+             a '{dotfiles}/config/gh/hosts.yml' gh_target\n\
+             grep -qs otherok '{home}/.config/other/settings' && echo other=ok || echo other=fail\n\
+             grep -qs hookok '{ws}/.git/hooks/pre-commit' && echo hook=ok || echo hook=fail\n\
+             echo {end}\n",
+            home = home.display(),
+            dotfiles = dotfiles.display(),
+            ws = workspace.display(),
+            end = PROBE_END
+        );
+        for network in [true, false] {
+            let output = run_probe(&sandbox, &layout.roots, network, &script)
+                .unwrap_or_else(|error| panic!("network={network}: {error:?}"));
+            let lines: Vec<&str> = output.lines().collect();
+            for line in [
+                "bashrc_link=empty",
+                "bashrc_target=empty",
+                "ssh_link=absent",
+                "ssh_target=absent",
+                "gh_link=absent",
+                "gh_target=absent",
+                "other=ok",
+                "hook=ok",
+            ] {
+                assert!(lines.contains(&line), "network={network}: {line}\n{output}");
+            }
+        }
+        assert_eq!(
+            std::fs::read_to_string(dotfiles.join("bashrc")).unwrap(),
+            "export TOKEN=secret"
+        );
+    }
+
     /// A sandbox that cannot start never runs the script; the probe says so
     /// and carries the sandbox's own error, which the startup log prints.
     #[cfg(target_os = "linux")]
