@@ -1787,6 +1787,18 @@ impl ToolTraceCapture {
             .untrusted_text = true;
     }
 
+    /// A step the host took on its own at the end of the reply, such as the
+    /// instruction-guard restore, recorded with what it changed.
+    pub(crate) fn record_host_step(&self, name: &str, component: &str, args: &Value) {
+        let mut entry = self.entry(None, name, Some(component), Some(args));
+        entry.outcome = crate::domain::ToolTraceOutcome::Ok;
+        self.state
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .trace
+            .push(entry);
+    }
+
     pub fn snapshot(&self) -> crate::domain::ChatToolTrace {
         let state = self.state.lock().unwrap_or_else(|error| error.into_inner());
         let mut trace = state.trace.clone();

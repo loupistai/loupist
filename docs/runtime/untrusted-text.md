@@ -9,9 +9,11 @@ numeric-only list (`NUMERIC_ONLY_OPENBB_TOOLS`; profiles, filing documents, tran
 news raise it, prices and statements do not), Rust refuses custom-connection calls
 and schedule create, update, status and Run now for the rest of the turn with
 `untrusted_text_paused`. Native Bash keeps running inside the OS sandbox with the
-network off, or is refused where no verified sandbox exists; a write to an
-instruction file is refused for the reply; native file tools stay inside the Loupist
-folder in every reply ([Native tool permissions](permissions.md)). The refused step
+network off, and whatever it changes in the files a later reply loads as
+instructions is put back when the reply ends, or it is refused where no verified
+sandbox exists; a write to an instruction file is refused for the reply; native file
+tools stay inside the Loupist folder in every reply
+([Native tool permissions](permissions.md)). The refused step
 carries its `refusal` in Chat progress (`untrusted_text_paused`, `protected_path` or
 `outside_workspace`), set from the broker's own trace of that call
 (`ToolTraceCapture::refused`), never from model-facing text, and the Chat labels the

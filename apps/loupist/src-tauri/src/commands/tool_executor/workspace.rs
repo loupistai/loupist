@@ -1,22 +1,30 @@
 use super::authority::bounded_text;
 use super::*;
+use crate::agent_harness::instruction_guard::InstructionSnapshot;
 use crate::agent_harness::native_policy::{
-    self, NativeDecision, NativeRefusal, NativeRequest, NativeRoots, NativeTool,
+    self, Exposure, NativeDecision, NativeRefusal, NativeRequest, NativeRoots, NativeTool,
 };
 use crate::agent_harness::sandbox::Sandbox;
-use crate::custom_connections::taint::{COMMAND_UNCONFINED_REFUSAL, INSTRUCTION_WRITE_REFUSAL};
+use crate::custom_connections::taint::{
+    COMMAND_UNCONFINED_REFUSAL, INSTRUCTIONS_UNGUARDED_REFUSAL, INSTRUCTION_WRITE_REFUSAL,
+};
 
 const SEARCH_COVERS_APP_DATA_NEXT: &str = "This search root contains the app's private data folder, so it is not searched. Search a narrower folder, such as the workspace or one of its subfolders.";
 const UNRESOLVABLE_NEXT: &str = "This path goes through a symbolic link that loops or cannot be read, so it is not touched. Use the real file's path.";
 const CREDENTIALS_NEXT: &str = "Do not retry this path. Credential stores and shell startup files are never read or written by the Loupist, and commands cannot see them either.";
 const GIT_DIR_NEXT: &str = "Do not retry this write. The host's git runs what a git directory holds (hooks, config, filters), so the Loupist never writes inside `.git` or a bare repository's hooks and config; read them if needed and ask the user to change them.";
 
-/// The native policy's state for one turn: the folders it classifies against
-/// and the verified sandbox commands run in, when this host has one.
+/// The native policy's state for one turn: the folders it classifies against,
+/// the verified sandbox commands run in, when this host has one, and the
+/// instruction files the reply-end restore puts back.
 #[derive(Default)]
 pub(in crate::commands) struct NativeGate {
     roots: Option<NativeRoots>,
     sandbox: Option<Sandbox>,
+    /// Taken when the reply's first command after third-party text is
+    /// allowed, so that the command, and every later one this reply, cannot
+    /// leave anything behind in the files a later reply loads.
+    guarded: std::sync::Mutex<Option<InstructionSnapshot>>,
 }
 
 impl NativeGate {
@@ -24,6 +32,7 @@ impl NativeGate {
         Self {
             roots: Some(roots),
             sandbox,
+            guarded: std::sync::Mutex::new(None),
         }
     }
 
@@ -42,14 +51,53 @@ impl NativeGate {
                 (Some(sandbox), Ok(roots)) => Some(move |network| sandbox.command(roots, network)),
                 _ => None,
             };
-            return Ok(native_policy::decide_command(
+            let decision = native_policy::decide_command(
                 exposure,
                 confine
                     .as_ref()
                     .map(|confine| confine as &dyn Fn(bool) -> native_policy::SandboxCommand),
-            ));
+            );
+            if exposure == Exposure::ThisTurn
+                && matches!(decision, NativeDecision::AllowCommand { .. })
+                && !self.guard_instructions(roots?)
+            {
+                return Ok(NativeDecision::Refuse(NativeRefusal::InstructionsUnguarded));
+            }
+            return Ok(decision);
         }
         Ok(native_policy::decide(request, roots?, exposure, None))
+    }
+
+    /// Records the workspace's instruction files once per reply, before the
+    /// first command after third-party text runs. False when they cannot be
+    /// recorded, in which case the command does not run.
+    fn guard_instructions(&self, roots: &NativeRoots) -> bool {
+        let mut guarded = self.guarded.lock().unwrap_or_else(|e| e.into_inner());
+        if guarded.is_some() {
+            return true;
+        }
+        match InstructionSnapshot::take(&roots.workspace) {
+            Ok(snapshot) => {
+                *guarded = Some(snapshot);
+                true
+            }
+            Err(error) => {
+                eprintln!("Native Bash is paused for this reply: the workspace's instruction files could not be recorded ({error:?})");
+                false
+            }
+        }
+    }
+
+    /// Puts the recorded instruction files back, once the reply's commands
+    /// have all ended. The workspace-relative paths that had changed, or
+    /// None when no command ran after third-party text.
+    pub(in crate::commands) fn restore_instructions(&self) -> Option<Vec<std::path::PathBuf>> {
+        let snapshot = self
+            .guarded
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()?;
+        Some(snapshot.restore())
     }
 }
 
@@ -69,7 +117,40 @@ fn refusal_error(refusal: NativeRefusal) -> BrokerError {
         NativeRefusal::CommandUnconfined => {
             BrokerError::UntrustedTextPaused.with_next(COMMAND_UNCONFINED_REFUSAL)
         }
+        NativeRefusal::InstructionsUnguarded => {
+            BrokerError::UntrustedTextPaused.with_next(INSTRUCTIONS_UNGUARDED_REFUSAL)
+        }
         NativeRefusal::OutboundPaused => BrokerError::OutboundPaused,
+    }
+}
+
+/// The trace component of the reply-end restore.
+pub const INSTRUCTION_GUARD_COMPONENT: &str = "instruction-guard";
+
+impl ToolCapture {
+    /// Puts the instruction files a tainted command could have changed back
+    /// as they were, once every command of the reply has ended, and records
+    /// what changed in the reply's tool trace and the log.
+    pub(crate) fn restore_guarded_instructions(&self) {
+        let Some(changed) = self.native.restore_instructions() else {
+            return;
+        };
+        if changed.is_empty() {
+            return;
+        }
+        let paths: Vec<String> = changed
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect();
+        eprintln!(
+            "Instruction files changed by a command after third-party text were put back: {}",
+            paths.join(", ")
+        );
+        self.tool_trace.record_host_step(
+            "instruction_guard",
+            INSTRUCTION_GUARD_COMPONENT,
+            &json!({"restored": paths}),
+        );
     }
 }
 
