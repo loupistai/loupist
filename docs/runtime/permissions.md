@@ -60,7 +60,7 @@ firmlink or case alias of a root counts at whatever depth it spells the root.
 | read, ls | Instructions, Scratch, Attachments, Workspace | Allow | Allow |
 | read, ls | Outside | Allow | Ask `file_read` (folder, this reply) |
 | find, grep | root AppPrivate, or root contains the app data root | Refuse | Refuse |
-| find, grep | root Sensitive | Ask `file_read` | Ask `file_read` |
+| find, grep | root Sensitive, or root holds a home Sensitive location (`~/.config`) | Ask `file_read` | Ask `file_read` |
 | find, grep | otherwise | as read | as read |
 | write, edit | AppPrivate, Attachments | Refuse | Refuse |
 | write, edit | Sensitive | Ask `file_write` | Ask `file_write` |
@@ -85,8 +85,11 @@ the command's first line, and `detail` the whole command (at most 8 KiB).
   an in-memory grant keyed by Loupist and Chat, `chat/command_grants.rs`, cleared by
   the settled line's "Stop allowing" through `chat_command_grant_revoke` and by an
   app restart), Not now. Under ThisTurn the Chat grant does not apply.
-- `file_read`, `file_write`: Allow (that folder for an outside file, that file for a
-  sensitive one, this reply), Not now. "Always" counts as once.
+- `file_read`, `file_write`: Allow (this reply), Not now. "Always" counts as once.
+  Allow covers an outside file's folder, except a file directly in the home
+  folder or at the root of the disk, which covers that file only; a directory
+  target or a search root covers that directory only; a sensitive file covers
+  that file only.
 - `instructions`: Allow once (that file, this reply), Not now.
 - Not now, a card the wait outran and a run stop decline that kind for the rest
   of the reply; later calls of that kind are refused without a card.
@@ -113,3 +116,8 @@ symlink swapped in after authorization cannot redirect the write.
   follow-up.
 - Bash output never raises the untrusted-text tier, and background commands can
   outlive the turn.
+- A workspace search runs `rg --hidden` over the whole workspace, so it reaches
+  the workspace's `.git` contents and the text files under `.loupist` (other
+  Chats' attachments; the database is binary, which `rg` does not print) that a
+  direct `read` would ask about or refuse. Only a root that holds a home
+  Sensitive location asks.

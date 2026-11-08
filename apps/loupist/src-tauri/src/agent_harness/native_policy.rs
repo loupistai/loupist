@@ -411,18 +411,20 @@ pub fn decide(
         path: path.clone(),
         tree: false,
     };
-    let folder = GrantedPath {
-        path: if path.is_dir() {
-            path.clone()
-        } else {
-            path.parent().map(Path::to_path_buf).unwrap_or_default()
-        },
-        tree: true,
-    };
+    let folder = folder_grant(&path, roots.home.as_deref());
     let granted = |paths: &[GrantedPath]| paths.iter().any(|grant| grant.covers(&path));
     // A folder allowed earlier never covers a credential or startup file in it.
     let granted_exactly =
         |paths: &[GrantedPath]| paths.iter().any(|grant| !grant.tree && grant.path == path);
+    // A search reads every file under its root, so a root that holds a home
+    // credential or startup location asks like that location itself.
+    if tool.searches()
+        && class != PathClass::Sensitive
+        && holds_sensitive(&path, roots.home.as_deref())
+        && !granted_exactly(&grants.reads)
+    {
+        return ask(AskKind::FileRead, Grant::Read(exact));
+    }
     if tool.writes() {
         match class {
             PathClass::AppPrivate | PathClass::Attachments => {
@@ -489,6 +491,30 @@ pub fn decide_command(
             command: command.to_owned(),
             scope,
         },
+    })
+}
+
+/// What Allow on an outside target covers for the reply: a file's folder,
+/// unless that folder is the home folder or the root of the disk, which would
+/// open far more than the file; a directory covers that directory only.
+fn folder_grant(path: &Path, home: Option<&Path>) -> GrantedPath {
+    let parent = if path.is_dir() { None } else { path.parent() };
+    let folder = parent.filter(|parent| {
+        parent.parent().is_some()
+            && !home.is_some_and(|home| below(parent, home).is_some_and(|rest| rest.is_empty()))
+    });
+    GrantedPath {
+        path: folder.unwrap_or(path).to_path_buf(),
+        tree: folder.is_some(),
+    }
+}
+
+/// Whether a location of the home table lies strictly inside `root`.
+fn holds_sensitive(root: &Path, home: Option<&Path>) -> bool {
+    home.is_some_and(|home| {
+        SENSITIVE_HOME.iter().any(|(entry, _)| {
+            below(&home.join(entry), root).is_some_and(|rest| !rest.is_empty())
+        })
     })
 }
 
@@ -1177,6 +1203,17 @@ mod tests {
             (request("grep", ws.clone()), "allow", "allow"),
             (request("grep", f.roots.scratch.clone()), "allow", "allow"),
             (
+                request("find", home.join(".config")),
+                "ask file_read",
+                "ask file_read",
+            ),
+            (
+                request("grep", home.join(".config")),
+                "ask file_read",
+                "ask file_read",
+            ),
+            (request("ls", home.join(".config")), "allow", "ask file_read"),
+            (
                 request("find", home.join("Documents")),
                 "allow",
                 "ask file_read",
@@ -1322,6 +1359,104 @@ mod tests {
                     "{tool} {file} under {exposure:?}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn a_directory_grant_covers_that_directory_only() {
+        let f = fixture();
+        let mut grants = NativeGrants::default();
+        let decide_with = |grants: &NativeGrants, tool: &str, path: PathBuf, exposure| {
+            decide(&request(tool, path), &f.roots, exposure, grants, false)
+        };
+        // Allowing a search of ~/.config covers that search, not the
+        // credential files it holds.
+        let NativeDecision::Ask(ask) =
+            decide_with(&grants, "find", f.home.join(".config"), Exposure::Clean)
+        else {
+            panic!("a search over a credential folder asks");
+        };
+        assert_eq!(
+            ask.grant,
+            Grant::Read(GrantedPath {
+                path: f.home.join(".config"),
+                tree: false
+            })
+        );
+        grants.grant(&ask, ApprovalDecision::Once);
+        assert_eq!(
+            kind(&decide_with(
+                &grants,
+                "grep",
+                f.home.join(".config"),
+                Exposure::Clean
+            )),
+            "allow"
+        );
+        assert_eq!(
+            kind(&decide_with(
+                &grants,
+                "read",
+                f.home.join(".config/gcloud/credentials.db"),
+                Exposure::Clean
+            )),
+            "ask file_read"
+        );
+        // Listing the home folder covers the folder, not its tree.
+        let NativeDecision::Ask(ask) =
+            decide_with(&grants, "ls", f.home.clone(), Exposure::ThisTurn)
+        else {
+            panic!("an outside listing asks after third-party text");
+        };
+        assert_eq!(
+            ask.grant,
+            Grant::Read(GrantedPath {
+                path: f.home.clone(),
+                tree: false
+            })
+        );
+        grants.grant(&ask, ApprovalDecision::Once);
+        assert_eq!(
+            kind(&decide_with(&grants, "ls", f.home.clone(), Exposure::ThisTurn)),
+            "allow"
+        );
+        assert_eq!(
+            kind(&decide_with(
+                &grants,
+                "read",
+                f.home.join("Documents/shared.csv"),
+                Exposure::ThisTurn
+            )),
+            "ask file_read"
+        );
+        // A file directly in the home folder or at the root of the disk
+        // covers that file only; a file in any other folder covers the folder.
+        for (file, sibling_expected) in [
+            (f.home.join("notes.txt"), "ask file_write"),
+            (PathBuf::from("/loupist-policy-test.txt"), "ask file_write"),
+            (f.home.join("Documents/out.csv"), "allow"),
+        ] {
+            let NativeDecision::Ask(ask) =
+                decide_with(&grants, "write", file.clone(), Exposure::ThisTurn)
+            else {
+                panic!("an outside write asks after third-party text");
+            };
+            grants.grant(&ask, ApprovalDecision::Once);
+            assert_eq!(
+                kind(&decide_with(&grants, "write", file.clone(), Exposure::ThisTurn)),
+                "allow"
+            );
+            assert_eq!(
+                kind(&decide_with(
+                    &grants,
+                    "write",
+                    file.with_file_name("other.txt"),
+                    Exposure::ThisTurn
+                )),
+                sibling_expected,
+                "{}",
+                file.display()
+            );
         }
     }
 
