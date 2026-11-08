@@ -112,7 +112,10 @@ anywhere because particles attach to them. The observed relationship hint counts
 alias mapping.
 Organization records a stated ticker, exchange and identifier, and Asset a symbol,
 identifier and class. Organization, Person, Asset, Product, Place and Policy record a
-non-English original name, which becomes a searchable alias. One attribute call per
+non-English original name, which becomes a searchable alias. A spelling the
+resolver finds to be an existing node ("Acme Corporation" for "Acme Corp") also
+stays an alias of that node, unless a name or alias already folds to it, within
+the 16-alias cap, so a Lens anchor filed under that spelling resolves exactly. One attribute call per
 episode fills every typed entity's fields. World stores names, summaries, relation
 names and facts in English whatever the Source language; the original text stays in
 the retained Source and its evidence spans. Research focus, preferred relationship
@@ -131,9 +134,12 @@ writes its growth events, with no model call. Three things follow from the diff
 between the previous and the new snapshot. Lens sections whose `claim` basis names
 a claim the publication disputed, withdrew or dropped become contested (one page
 revision and one `lens_contested` growth event per page; the section's text is
-kept). Pending subject name anchors resolve by canonical name or alias, exactly
-([Lens](lens.md#lens)); when any resolves, method learning rechecks its evidence,
-at once or when the review running at that moment settles. Then
+kept). Pending subject name anchors resolve by canonical name or alias, exactly,
+or to the one node that the Sources the page cites confirm under the anchor's
+company key ([Lens](lens.md#lens)); when any resolves, or a node a confirmed
+subject anchor names has another name or alias set than in the previous
+snapshot, method learning rechecks its evidence, at once or when the review
+queued or running at that moment settles. Then
 `connections::detect` walks two or three hops from each seed over claims that are
 not withdrawn, keeping each claim's direction and endpoint roles, to a name the seed
 could not reach within two hops before, with at least one hop on a claim this
