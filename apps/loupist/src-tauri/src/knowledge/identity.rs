@@ -181,19 +181,90 @@ fn segments(text: &str) -> Vec<String> {
     std::iter::once(outer).chain(inner).collect()
 }
 
+/// Korean legal notation that only counts inside its parentheses: the bare
+/// syllable is a word ("엔씨소프트 주"). `㈜` is `(주)` after NFKC.
+const PARENTHESIZED_LEGAL_NOTATION: [&str; 4] = ["(주)", "(유)", "(사)", "(재)"];
+
+/// The scripts a name is written in. Kana and Han are one script, since a
+/// Japanese name mixes them.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Script {
+    Latin,
+    Hangul,
+    Cjk,
+    Other,
+}
+
+fn script_of(c: char) -> Option<Script> {
+    let script = match c as u32 {
+        0x1100..=0x11FF | 0x3130..=0x318F | 0xA960..=0xA97F | 0xAC00..=0xD7FF => Script::Hangul,
+        0x3040..=0x30FF
+        | 0x31F0..=0x31FF
+        | 0x3400..=0x4DBF
+        | 0x4E00..=0x9FFF
+        | 0xF900..=0xFAFF
+        | 0xFF66..=0xFF9F
+        | 0x20000..=0x2FFFF => Script::Cjk,
+        0x0041..=0x005A | 0x0061..=0x007A | 0x00C0..=0x024F | 0x1E00..=0x1EFF => Script::Latin,
+        _ if c.is_alphabetic() => Script::Other,
+        _ => return None,
+    };
+    Some(script)
+}
+
+fn scripts(text: &str) -> BTreeSet<Script> {
+    text.chars().filter_map(script_of).collect()
+}
+
+/// The keys of one spelling: its words without legal forms, and the same
+/// with no spaces, so "U.S. Bancorp" meets "US Bancorp" and "J.P. Morgan"
+/// meets "JP Morgan" and "JPMorgan". Joining only runs of initials would
+/// unify nothing more: two spellings with one initials-joined key have one
+/// spaceless key.
+fn spelling_keys(segment: &str, keys: &mut BTreeSet<String>) {
+    let words = name_words(segment);
+    let key = strip_legal_forms(&words);
+    if key.is_empty() {
+        return;
+    }
+    keys.insert(key.chars().filter(|c| *c != ' ').collect());
+    keys.insert(key.to_owned());
+}
+
 /// One company's identity across the ways pages spell it: "Acme", "ACME
-/// Inc." and "Acme Co., Ltd." share a key. A parenthetical is another
-/// spelling, so `삼성전자(Samsung Electronics)` carries a key for each, and a
-/// `(주)` or `㈜` is a legal form. Two companies may share a key ("Bath Spa"
-/// and "Bath S.p.A."): a key tells learning when two observations might be
-/// one company, never that they are two.
+/// Inc.", "Acme Co., Ltd.", "U.S. Bancorp" and "US Bancorp" share a key. A
+/// parenthetical in another script is another spelling, so
+/// `삼성전자(Samsung Electronics)` carries a key for each, while a qualifier in
+/// the name's own script (`(한국)`, `(Holdings)`, `(Class A)`) is no key, and
+/// `(주)`, `(유)`, `(사)`, `(재)` and `㈜` are legal notation. A ticker-shaped
+/// alias (`EXCH:AG`) keeps its words whole, since its suffix is a code, not a
+/// legal form. Two companies may share a key ("Bath Spa" and "Bath S.p.A."):
+/// a key tells learning when two observations might be one company, never
+/// that they are two.
 pub(crate) fn entity_name_keys(name: &str) -> BTreeSet<String> {
     let text: String = name.nfkc().collect();
-    segments(&text.replace("(주)", " "))
+    let mut keys = BTreeSet::new();
+    if text.contains(':') {
+        let plain = name_words(&text);
+        if !plain.is_empty() {
+            keys.insert(plain);
+        }
+        return keys;
+    }
+    let text = PARENTHESIZED_LEGAL_NOTATION
         .iter()
-        .map(|segment| strip_legal_forms(&name_words(segment)).to_owned())
-        .filter(|key| !key.is_empty())
-        .collect()
+        .fold(text, |text, notation| text.replace(notation, " "));
+    let segments = segments(&text);
+    let (outer, inner) = segments.split_first().expect("the outer segment");
+    spelling_keys(outer, &mut keys);
+    let outer_scripts = scripts(outer);
+    for segment in inner {
+        let inner_scripts = scripts(segment);
+        if !inner_scripts.is_empty() && inner_scripts.is_disjoint(&outer_scripts) {
+            spelling_keys(segment, &mut keys);
+        }
+    }
+    keys
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -382,6 +453,13 @@ mod tests {
         }
     }
 
+    fn keys(name: &str) -> BTreeSet<String> {
+        entity_name_keys(name)
+    }
+    fn set(keys: &[&str]) -> BTreeSet<String> {
+        keys.iter().map(|k| (*k).to_owned()).collect()
+    }
+
     #[test]
     fn legal_forms_and_punctuation_do_not_split_one_company() {
         for (spellings, key) in [
@@ -413,6 +491,14 @@ mod tests {
                 ][..],
                 "삼성전자",
             ),
+            (&["(유)네이버", "네이버(유)", "네이버"][..], "네이버"),
+            (&["(사)한국능률협회", "한국능률협회"][..], "한국능률협회"),
+            (&["(재)한국연구재단", "한국연구재단"][..], "한국연구재단"),
+            // Notation beside a Latin name would otherwise be another script.
+            (&["(주)LG", "LG(주)", "LG"][..], "lg"),
+            (&["(유)SK", "SK"][..], "sk"),
+            (&["(사)KT", "KT"][..], "kt"),
+            (&["(재)KB", "KB"][..], "kb"),
             (
                 &["トヨタ自動車株式会社", "株式会社トヨタ自動車", "ﾄﾖﾀ自動車"][..],
                 "トヨタ自動車",
@@ -464,14 +550,32 @@ mod tests {
                 "주성엔지니어링",
             ),
         ] {
+            let expected = keys(spellings[0]);
+            assert!(expected.contains(key), "{key} in {expected:?}");
             for spelling in spellings {
-                assert_eq!(
-                    entity_name_keys(spelling),
-                    BTreeSet::from([key.to_owned()]),
-                    "{spelling}"
-                );
+                assert_eq!(keys(spelling), expected, "{spelling}");
             }
         }
+    }
+
+    #[test]
+    fn initialisms_and_spacing_do_not_split_one_company() {
+        for spellings in [
+            &["U.S. Bancorp", "US Bancorp", "U S Bancorp"][..],
+            &["J.P. Morgan", "JP Morgan", "JPMorgan", "J. P. Morgan"][..],
+            &["A.O. Smith Corporation", "AO Smith", "A. O. Smith Corp."][..],
+            &["JPMorgan Chase & Co.", "J.P. Morgan Chase"][..],
+            &["Super Micro Computer", "Supermicro Computer"][..],
+        ] {
+            let shared = spellings
+                .iter()
+                .map(|s| keys(s))
+                .reduce(|a, b| &a & &b)
+                .unwrap();
+            assert!(!shared.is_empty(), "{spellings:?} share no key");
+        }
+        assert_eq!(keys("U.S. Bancorp"), set(&["u s bancorp", "usbancorp"]));
+        assert_eq!(keys("JPMorgan"), set(&["jpmorgan"]));
     }
 
     #[test]
@@ -490,31 +594,61 @@ mod tests {
             ("주식회사", "주식회사"),
             ("The", "the"),
         ] {
-            assert_eq!(
-                entity_name_keys(name),
-                BTreeSet::from([key.to_owned()]),
-                "{name}"
-            );
+            assert!(keys(name).contains(key), "{name}: {:?}", keys(name));
         }
     }
 
     #[test]
-    fn a_parenthetical_is_another_spelling_of_the_name() {
-        for (name, keys) in [
+    fn a_parenthetical_in_another_script_is_another_spelling_of_the_name() {
+        for (name, expected) in [
             (
                 "삼성전자(Samsung Electronics)",
-                &["삼성전자", "samsung electronics"][..],
+                &["삼성전자", "samsung electronics", "samsungelectronics"][..],
             ),
             ("네이버(NAVER)", &["네이버", "naver"][..]),
+            ("(Samsung) 삼성전자(주)", &["삼성전자", "samsung"][..]),
+            (
+                "トヨタ自動車(Toyota Motor)",
+                &["トヨタ自動車", "toyota motor", "toyotamotor"][..],
+            ),
+        ] {
+            assert_eq!(keys(name), set(expected), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_qualifier_in_the_names_own_script_is_not_a_key() {
+        for (name, expected) in [
+            ("삼성전자(한국)", &["삼성전자"][..]),
+            ("LG전자(한국)", &["lg전자"][..]),
+            ("Acme (Inc.)", &["acme"][..]),
+            ("Acme (Holdings)", &["acme"][..]),
+            ("Acme (Korea)", &["acme"][..]),
+            ("Samsung (Class A)", &["samsung"][..]),
             (
                 "Samsung Electronics Co., Ltd. (005930)",
-                &["samsung electronics", "005930"][..],
+                &["samsung electronics", "samsungelectronics"][..],
             ),
-            ("(Samsung) 삼성전자(주)", &["삼성전자", "samsung"][..]),
         ] {
-            let expected: BTreeSet<String> = keys.iter().map(|k| (*k).to_owned()).collect();
-            assert_eq!(entity_name_keys(name), expected, "{name}");
+            assert_eq!(keys(name), set(expected), "{name}");
         }
+        for (a, b) in [
+            ("삼성전자(한국)", "LG전자(한국)"),
+            ("Acme (Inc.)", "Beta (Inc.)"),
+            ("Acme (Korea)", "Beta (Korea)"),
+            ("Samsung (Class A)", "Hyundai (Class A)"),
+            ("(유)네이버", "(유)카카오"),
+        ] {
+            assert!(keys(a).is_disjoint(&keys(b)), "{a} / {b}");
+        }
+    }
+
+    #[test]
+    fn a_ticker_shaped_alias_keeps_its_code() {
+        assert_eq!(keys("EXCH:AG"), set(&["exch ag"]));
+        assert_eq!(keys("EXCH:SE"), set(&["exch se"]));
+        assert_eq!(keys("KRX:005930"), set(&["krx 005930"]));
+        assert!(keys("EXCH:AG").is_disjoint(&keys("EXCH:SE")));
     }
 
     #[test]

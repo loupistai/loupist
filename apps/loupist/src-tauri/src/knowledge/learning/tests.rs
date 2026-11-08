@@ -1505,6 +1505,57 @@ fn two_spellings_of_one_company_are_never_two_cases() {
     );
 }
 
+/// Two Chats file about two World nodes named `first` and `second`; whether
+/// their confirmation starts a review says whether the gate sees two companies.
+fn two_nodes_learn(first: &str, second: &str) -> bool {
+    let (_dir, store) = setup();
+    let (a, b) = (source(&store, "Filing A"), source(&store, "Filing B"));
+    let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+    let one = named("First ramp", first);
+    assert!(put_in(&store, "chat-1", "m1", one, text, &[a], AT + 2).is_none());
+    let other = named("Second ramp", second);
+    assert!(put_in(&store, "chat-2", "m2", other, text, &[b], AT + 3).is_none());
+    assert!(review_states(&store).is_empty());
+    reseal_with(&store, &[("entity-x", first), ("entity-y", second)], AT + 4);
+    let queued = !review_states(&store).is_empty();
+    if !queued {
+        // One company on two nodes is still evidence beside a third company.
+        let c = source(&store, "Filing C");
+        assert!(turn(&store, "chat-3", "m3", 0, &[c], AT + 5).is_some());
+        let shown = pages(&begin(&store, AT + 6));
+        assert_eq!(shown, ["First ramp", "Manufacturer 0", "Second ramp"]);
+    }
+    queued
+}
+
+#[test]
+fn one_company_spelled_two_ways_on_two_nodes_is_one_case() {
+    for (first, second) in [
+        ("U.S. Bancorp", "US Bancorp"),
+        ("J.P. Morgan", "JPMorgan"),
+        ("A.O. Smith Corporation", "AO Smith"),
+        ("Kestrel Foundry", "Kestrel Foundry Inc."),
+        (
+            "삼성전자(Samsung Electronics)",
+            "Samsung Electronics Co., Ltd.",
+        ),
+    ] {
+        assert!(!two_nodes_learn(first, second), "{first} / {second}");
+    }
+}
+
+#[test]
+fn two_companies_with_one_qualifier_are_two_cases() {
+    for (first, second) in [
+        ("삼성전자(한국)", "LG전자(한국)"),
+        ("Acme (Inc.)", "Beta (Inc.)"),
+        ("Acme (Korea)", "Beta (Korea)"),
+        ("Kestrel Foundry", "Halvorsen Cellworks ASA"),
+    ] {
+        assert!(two_nodes_learn(first, second), "{first} / {second}");
+    }
+}
+
 #[test]
 fn companies_the_world_has_not_confirmed_count_once_it_does() {
     let (_dir, store) = setup();
