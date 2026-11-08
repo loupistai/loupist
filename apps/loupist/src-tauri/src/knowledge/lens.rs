@@ -11,7 +11,6 @@ use serde_json::{json, Value};
 use super::authority::{require_edit, require_record, OwnedRecordState};
 use super::canonical::{canonical_string, from_json, to_value};
 use super::error::{KnowledgeError, KnowledgeResult};
-use super::identity::entity_name_keys;
 use super::lens_page::{
     apply, links, op_texts, private_reference, section_digest, text_forbidden, world_link_ids,
     AnchorInput, ApplyContext, Basis, BasisChip, BasisRef, FiledOp, FiledPage, FilingOrigin,
@@ -183,9 +182,11 @@ fn world_head(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<Option<
 
 /// Reads the current World through its identity index
 /// ([`super::identity::WorldIdentity`]): the company keys of a node's name and
-/// aliases, and the component of nodes whose keys meet. Method learning reads
-/// it to see when two nodes might spell one company. None when no World was
-/// published. The World is parsed once per revision, not on every filing.
+/// aliases, the component of nodes whose keys meet, and the company the
+/// Sources a page cites confirm. Method learning reads it to see when two
+/// nodes might spell one company and who a pending page is about. None when
+/// no World was published. The World is parsed once per revision, not on
+/// every filing.
 pub(super) fn world_identity<R>(
     tx: &Transaction<'_>,
     loupist_id: &str,
@@ -198,8 +199,11 @@ pub(super) fn world_identity<R>(
         loupist_id,
         &revision,
         || {
-            let body: WorldSnapshotBody = from_json(&load_revision(tx, &revision)?.payload_json)?;
-            Ok(body.nodes)
+            let stored = load_revision(tx, &revision)?;
+            Ok((
+                from_json(&stored.payload_json)?,
+                serde_json::from_str(&stored.dependency_json)?,
+            ))
         },
         read,
     )
@@ -1128,48 +1132,30 @@ pub(super) fn contest_pages(
     Ok(changed_pages)
 }
 
-/// Pending subject name anchors resolve at every World publication, two
-/// ways (mention and applied anchors are born with a node). The World knows
-/// the name or an alias exactly. Or the Sources the page cites confirm one
-/// node: among the endpoints of claims whose evidence cites a Source the
-/// page's current sections cite, exactly one shares a company key with the
-/// name, as when a page filed under "Halvorsen Cellworks" cites the report
-/// extraction canonicalized as "Halvorsen Cellworks ASA". A key alone binds
-/// nothing: "Hana Co." stays pending beside a "Hana" whose claims cite other
-/// Sources, and beside two keyed nodes the same Source confirms. Returns how
-/// many gained a node.
+/// Pending subject name anchors resolve once the World knows the name or an
+/// alias exactly (mention and applied anchors are born with a node); nothing
+/// else ever sets a node, so a shared company key binds no page. Returns how
+/// many gained a node. Discovery calls this after every World publication.
 pub(super) fn resolve_anchors(
     tx: &Transaction<'_>,
     loupist_id: &str,
-    world: &WorldSnapshotBody,
+    nodes: &[GraphNode],
 ) -> KnowledgeResult<usize> {
     let mut index = WorldIndex::default();
-    index_nodes(&mut index, &world.nodes);
+    index_nodes(&mut index, nodes);
     let mut statement = tx.prepare(
-        "SELECT rowid, record_id, name_fold FROM knowledge_lens_anchors
+        "SELECT rowid, name_fold FROM knowledge_lens_anchors
          WHERE loupist_id = ?1 AND role = 'subject' AND node_id IS NULL AND name_fold <> ''",
     )?;
     let pending = statement
         .query_map([loupist_id], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-            ))
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
     drop(statement);
-    let mut confirmed = None;
     let mut resolved = 0;
-    for (rowid, record_id, name_fold) in pending {
-        let node_id = match index.names.get(&name_fold) {
-            Some(node_id) => Some(node_id.clone()),
-            None => {
-                let confirmed = confirmed.get_or_insert_with(|| SourceConfirmed::new(world));
-                confirmed.node_for(tx, loupist_id, &record_id, &name_fold)?
-            }
-        };
-        if let Some(node_id) = node_id {
+    for (rowid, name_fold) in pending {
+        if let Some(node_id) = index.names.get(&name_fold) {
             resolved += tx.execute(
                 "UPDATE OR IGNORE knowledge_lens_anchors SET node_id = ?1 WHERE rowid = ?2",
                 params![node_id, rowid],
@@ -1179,97 +1165,23 @@ pub(super) fn resolve_anchors(
     Ok(resolved)
 }
 
-/// Which nodes each Source span confirms: the endpoints of the claims whose
-/// evidence cites it.
-struct SourceConfirmed<'a> {
-    nodes: BTreeMap<&'a str, &'a GraphNode>,
-    by_span: BTreeMap<&'a str, BTreeSet<&'a str>>,
-}
-
-impl<'a> SourceConfirmed<'a> {
-    fn new(world: &'a WorldSnapshotBody) -> Self {
-        let mut by_span: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
-        for claim in &world.claims {
-            for evidence in &claim.evidence {
-                by_span
-                    .entry(evidence.span_id.as_str())
-                    .or_default()
-                    .extend(claim.endpoints.iter().map(|e| e.node_id.as_str()));
-            }
-        }
-        Self {
-            nodes: world
-                .nodes
-                .iter()
-                .map(|node| (node.id.as_str(), node))
-                .collect(),
-            by_span,
-        }
-    }
-
-    /// The one node the Sources that `record_id`'s current sections cite
-    /// confirm under a company key of `name_fold`, if exactly one does.
-    fn node_for(
-        &self,
-        tx: &Transaction<'_>,
-        loupist_id: &str,
-        record_id: &str,
-        name_fold: &str,
-    ) -> KnowledgeResult<Option<String>> {
-        let sources = cited_sources(tx, loupist_id, record_id)?;
-        if sources.is_empty() {
-            return Ok(None);
-        }
-        let mut statement = tx.prepare(
-            "SELECT span_id FROM knowledge_source_spans
-             WHERE record_id IN (SELECT value FROM json_each(?1))",
-        )?;
-        let spans: BTreeSet<String> = statement
-            .query_map([serde_json::to_string(&sources)?], |row| row.get(0))?
-            .collect::<Result<_, _>>()?;
-        let keys = entity_name_keys(name_fold);
-        let keyed = |node: &GraphNode| {
-            std::iter::once(&node.name)
-                .chain(&node.aliases)
-                .flat_map(|spelling| entity_name_keys(spelling))
-                .any(|key| keys.contains(&key))
-        };
-        let matched: BTreeSet<&str> = spans
-            .iter()
-            .filter_map(|span| self.by_span.get(span.as_str()))
-            .flatten()
-            .copied()
-            .filter(|id| self.nodes.get(id).is_some_and(|node| keyed(node)))
-            .collect();
-        Ok(match matched.len() {
-            1 => matched.first().map(|id| (*id).to_owned()),
-            _ => None,
-        })
-    }
-}
-
-/// The Source records the current sections of `record_id` cite.
-fn cited_sources(
+/// Whether a live subject or idea page still has a subject anchor the World
+/// has not confirmed. Method learning may confirm such a page from the Sources
+/// it cites at read time, so a publication rechecks while any exists.
+pub(super) fn pending_subjects_exist(
     tx: &Transaction<'_>,
     loupist_id: &str,
-    record_id: &str,
-) -> KnowledgeResult<BTreeSet<String>> {
-    let loaded = load(tx, loupist_id, record_id)?;
-    Ok(loaded
-        .body
-        .page()
-        .map(|page| {
-            page.sections
-                .iter()
-                .filter(|section| matches!(section.state, SectionState::Current))
-                .flat_map(|section| &section.basis.refs)
-                .filter_map(|r| match r {
-                    BasisRef::Span { record_id, .. } => Some(record_id.clone()),
-                    _ => None,
-                })
-                .collect()
-        })
-        .unwrap_or_default())
+) -> KnowledgeResult<bool> {
+    Ok(tx.query_row(
+        "SELECT EXISTS(
+            SELECT 1 FROM knowledge_lens_anchors a
+            JOIN knowledge_lens_metadata m ON m.record_id = a.record_id
+            WHERE a.loupist_id = ?1 AND a.role = 'subject' AND a.node_id IS NULL
+              AND a.name_fold <> '' AND m.archived_at_ms IS NULL
+              AND m.kind IN ('subject', 'idea'))",
+        [loupist_id],
+        |row| row.get(0),
+    )?)
 }
 
 /// Whether a node that a confirmed subject anchor names spells itself
@@ -3031,11 +2943,6 @@ mod tests {
     }
 
     fn retain(store: &KnowledgeStore) -> crate::knowledge::RetainedSource {
-        retain_from(store, "pasted")
-    }
-
-    /// A Source of its own per `locator`: one locator is one Source record.
-    fn retain_from(store: &KnowledgeStore, locator: &str) -> crate::knowledge::RetainedSource {
         let bytes = b"account text";
         store
             .retain_new_source(RetainNewSource {
@@ -3044,7 +2951,7 @@ mod tests {
                 at_ms: 2,
                 title: "Notes".into(),
                 source_class: SourceClass::UserStatement,
-                origin_locator: locator.into(),
+                origin_locator: "pasted".into(),
                 provider_identity: "editor".into(),
                 authorship: Authorship::User,
                 coverage: Coverage::IncludedFull,
@@ -3431,12 +3338,14 @@ mod tests {
     }
 
     #[test]
-    fn a_source_the_page_cites_binds_its_anchor_to_the_one_node_it_confirms() {
+    fn a_source_the_page_cites_never_binds_its_anchor() {
         let (_dir, store) = store();
         let report = span_of(&retain(&store));
         let page = pending_page(&store, "Halvorsen Cellworks", &report);
-        // Extraction canonicalized the company with its legal form; the claim
-        // it drew from the same report says which node that is.
+        // Extraction canonicalized the company with its legal form and drew a
+        // claim from the report the page cites. Only an exact spelling binds:
+        // the anchor stays pending, and a later create under the World's name
+        // is a page of its own, not this one.
         seal_with_claims(
             &store,
             vec![
@@ -3445,72 +3354,27 @@ mod tests {
             ],
             vec![claim_citing("clm_1", "nod_h", "nod_m", &report)],
         );
-        assert_eq!(anchor_node(&store, &page).as_deref(), Some("nod_h"));
-        // Binding changes no page: a later create under the exact name files
-        // to this page, as a subject create with that node would.
+        assert_eq!(anchor_node(&store, &page), None);
+        let filed = file_in(
+            &store,
+            &turn("m-later"),
+            vec![create_subject(
+                "Halvorsen Cellworks ASA",
+                vec![put("facts", "Listed in Oslo.", None)],
+            )],
+            8,
+        );
+        assert!(filed[0].created);
+        assert_ne!(filed[0].record_id, page);
+        assert_eq!(
+            anchor_node(&store, &filed[0].record_id).as_deref(),
+            Some("nod_h")
+        );
         let pages = store
             .read(|write| write.pages_for_node(LOUPIST, "nod_h"))
             .unwrap();
         assert_eq!(pages.len(), 1);
-        assert_eq!(pages[0].record_id, page);
-    }
-
-    #[test]
-    fn a_key_alone_binds_nothing() {
-        // The node's claims cite another Source than the page does.
-        let (_dir, store) = self::store();
-        let (page_source, other) = (
-            span_of(&retain_from(&store, "report-a")),
-            span_of(&retain_from(&store, "report-b")),
-        );
-        let record_of = |span: &BasisRef| match span {
-            BasisRef::Span { record_id, .. } => record_id.clone(),
-            _ => unreachable!(),
-        };
-        assert_ne!(record_of(&page_source), record_of(&other));
-        let page = pending_page(&store, "Hana Co.", &page_source);
-        seal_with_claims(
-            &store,
-            vec![
-                company_node("nod_hana", "Hana"),
-                company_node("nod_m", "Meridian Motors"),
-            ],
-            vec![claim_citing("clm_1", "nod_hana", "nod_m", &other)],
-        );
-        assert_eq!(anchor_node(&store, &page), None);
-
-        // Two keyed nodes confirmed by the same Source are ambiguous.
-        let (_dir, store) = self::store();
-        let report = span_of(&retain(&store));
-        let page = pending_page(&store, "Hana Co.", &report);
-        seal_with_claims(
-            &store,
-            vec![
-                company_node("nod_hana", "Hana"),
-                company_node("nod_hana2", "Hana Inc."),
-            ],
-            vec![claim_citing("clm_1", "nod_hana", "nod_hana2", &report)],
-        );
-        assert_eq!(anchor_node(&store, &page), None);
-
-        // A page citing no Source has nothing to confirm it.
-        let (_dir, store) = self::store();
-        let report = span_of(&retain(&store));
-        let filed = file_in(
-            &store,
-            &turn("m-bare"),
-            vec![create_subject("Hana Co.", vec![put("facts", "A", None)])],
-            5,
-        );
-        let page = filed[0].record_id.clone();
-        seal_with_claims(
-            &store,
-            vec![
-                company_node("nod_hana", "Hana"),
-                company_node("nod_m", "Meridian Motors"),
-            ],
-            vec![claim_citing("clm_1", "nod_hana", "nod_m", &report)],
-        );
+        assert_eq!(pages[0].record_id, filed[0].record_id);
         assert_eq!(anchor_node(&store, &page), None);
     }
 

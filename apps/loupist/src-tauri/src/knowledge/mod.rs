@@ -635,13 +635,7 @@ impl<'a> KnowledgeWrite<'a> {
 
     #[cfg(test)]
     pub fn resolve_anchors(&self, loupist_id: &str, nodes: &[GraphNode]) -> KnowledgeResult<usize> {
-        let world = WorldSnapshotBody {
-            nodes: nodes.to_vec(),
-            claims: Vec::new(),
-            annotations: Vec::new(),
-            relation_vocabulary: Vec::new(),
-        };
-        lens::resolve_anchors(self.tx, loupist_id, &world)
+        lens::resolve_anchors(self.tx, loupist_id, nodes)
     }
 
     pub fn connections(&self, loupist_id: &str) -> KnowledgeResult<Vec<ConnectionView>> {

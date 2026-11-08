@@ -358,36 +358,56 @@ impl Case {
 enum About {
     /// No subject anchor, or one that can never resolve: never evidence.
     Unknown,
-    /// A subject the World has not confirmed yet: not evidence yet, so a review
-    /// leaves the page's rows for the review after the confirmation.
-    Pending,
+    /// Subjects the World has not confirmed yet, by the names they were filed
+    /// under, beside any it has. Not evidence unless the Sources the page
+    /// cites confirm each one at read time; otherwise a review leaves the
+    /// page's rows for the review after the confirmation.
+    Pending {
+        names: Vec<String>,
+        confirmed: BTreeSet<Case>,
+    },
     Confirmed(BTreeSet<Case>),
 }
 impl About {
     fn of(anchors: Vec<(Option<String>, String)>) -> Self {
-        let mut cases = BTreeSet::new();
+        let mut confirmed = BTreeSet::new();
+        let mut names = Vec::new();
         for (node_id, name_fold) in anchors {
             match node_id {
                 Some(node_id) => {
-                    cases.insert(Case::Node(node_id));
+                    confirmed.insert(Case::Node(node_id));
                 }
                 None if name_fold.is_empty() => return About::Unknown,
-                None => return About::Pending,
+                None => names.push(name_fold),
             }
         }
-        if cases.is_empty() {
+        if !names.is_empty() {
+            About::Pending { names, confirmed }
+        } else if confirmed.is_empty() {
             About::Unknown
         } else {
-            About::Confirmed(cases)
+            About::Confirmed(confirmed)
         }
     }
 }
 /// What a window of the Lens log holds for a review.
 struct Evidence {
     observations: Vec<Observation>,
+    /// Observations about a subject the World has not confirmed, which
+    /// [`keyed_evidence`] confirms from the Sources their pages cite or holds.
+    pending: Vec<PendingObservation>,
     /// Rows a review may not consume: research about a subject the World has
     /// not confirmed yet, which becomes evidence once it does.
     held: BTreeSet<i64>,
+}
+/// An observation on a page with a subject the World has not confirmed.
+struct PendingObservation {
+    /// Its cases are the page's confirmed subjects, if any.
+    observation: Observation,
+    /// The folded names of the pending subjects.
+    names: Vec<String>,
+    /// The span ids the page's current sections cite, by Source record.
+    cited: BTreeMap<String, BTreeSet<String>>,
 }
 /// Each Chat's cited Sources across all the evidence.
 fn cited_by(all: &[Observation]) -> BTreeMap<&str, BTreeSet<&str>> {
@@ -468,8 +488,9 @@ fn evidence(
          JOIN knowledge_record_revisions r ON r.revision_id=h.revision_id WHERE h.record_id=?1",
     )?;
     // A resolved anchor is its node alone: the name it was created under may
-    // since belong to another node. A pending one is not yet a company, since two
-    // spellings of one name would count as two.
+    // since belong to another node. A pending one is not yet a company, since
+    // two spellings of one name would count as two, unless the Sources the
+    // page cites confirm it.
     let mut subjects = tx.prepare(
         "SELECT node_id, name_fold FROM knowledge_lens_anchors WHERE record_id=?1 AND role='subject'",
     )?;
@@ -512,7 +533,7 @@ fn evidence(
     let mut bodies: BTreeMap<String, Option<LensBody>> = BTreeMap::new();
     let mut cases: BTreeMap<String, About> = BTreeMap::new();
     let mut out = Vec::new();
-    let mut held = BTreeSet::new();
+    let mut pending = Vec::new();
     for (id, op, chat_id, message_id, page_id, after_digest, page, kind, row) in rows {
         if hidden(&page_id) {
             continue;
@@ -586,16 +607,13 @@ fn evidence(
                 .collect::<Result<Vec<_>, _>>()?;
             cases.insert(page_id.clone(), About::of(anchors));
         }
-        // A page with no subject, or one the World has not confirmed, could be
-        // about any company, including the one the other case is about, so it
-        // is not evidence.
-        let about = match &cases[&page_id] {
+        // A page with no subject could be about any company, including the
+        // one the other case is about, so it is not evidence. One the World
+        // has not confirmed is judged by the Sources it cites.
+        let (about, names) = match &cases[&page_id] {
             About::Unknown => continue,
-            About::Pending => {
-                held.insert(row);
-                continue;
-            }
-            About::Confirmed(about) => about.clone(),
+            About::Pending { names, confirmed } => (confirmed.clone(), Some(names.clone())),
+            About::Confirmed(about) => (about.clone(), None),
         };
         let n = turns.len() + 1;
         let turn = turns
@@ -605,7 +623,7 @@ fn evidence(
         let chat = chats
             .entry(chat_id.clone())
             .or_insert_with(|| format!("c{n}"));
-        out.push(Observation {
+        let observation = Observation {
             id,
             turn: turn.clone(),
             chat: chat.clone(),
@@ -617,25 +635,126 @@ fn evidence(
             chat_id,
             message_id,
             cases: about,
-            page_id,
+            page_id: page_id.clone(),
             spans,
             row,
-        });
+        };
+        match names {
+            None => out.push(observation),
+            Some(names) => pending.push(PendingObservation {
+                observation,
+                names,
+                cited: cited_spans(bodies[&page_id].as_ref()),
+            }),
+        }
     }
     Ok(Evidence {
         observations: out,
-        held,
+        pending,
+        held: BTreeSet::new(),
     })
 }
-/// [`evidence`] whose cases also carry the company keys of their nodes'
-/// current World names and the component of nodes whose keys meet, read only
-/// when the nodes alone would pass the gate. Two nodes spelling one company
-/// then share a key and are one case, and so do two nodes a third node spells
-/// both of. The World's current names decide, not the name an anchor was filed
-/// under: that name may since belong to another company. A page about a node
-/// the World no longer holds (a shared pack took it away, say) names no
-/// company now and is not evidence, like a page with no subject: a key it
-/// cannot carry would otherwise let the company it was about count twice.
+/// The Source spans a page's current sections cite, by Source record.
+fn cited_spans(body: Option<&LensBody>) -> BTreeMap<String, BTreeSet<String>> {
+    let mut cited: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for section in body
+        .and_then(LensBody::page)
+        .map(|page| page.sections.as_slice())
+        .unwrap_or_default()
+        .iter()
+        .filter(|section| matches!(section.state, super::lens_page::SectionState::Current))
+    {
+        for r in &section.basis.refs {
+            if let BasisRef::Span {
+                record_id, span_id, ..
+            } = r
+            {
+                cited
+                    .entry(record_id.clone())
+                    .or_default()
+                    .insert(span_id.clone());
+            }
+        }
+    }
+    cited
+}
+/// Every span of each of `sources`, by Source record.
+fn source_spans(
+    tx: &Transaction<'_>,
+    sources: &BTreeSet<String>,
+) -> KnowledgeResult<BTreeMap<String, BTreeSet<String>>> {
+    let mut q = tx.prepare(
+        "SELECT record_id, span_id FROM knowledge_source_spans
+         WHERE record_id IN (SELECT value FROM json_each(?1))",
+    )?;
+    let rows = q.query_map([serde_json::to_string(sources)?], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    })?;
+    let mut spans: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for row in rows {
+        let (record_id, span_id) = row?;
+        spans.entry(record_id).or_default().insert(span_id);
+    }
+    Ok(spans)
+}
+/// Whether a World node of `kind` is a company: the core Organization kind,
+/// or an extension type of the company category.
+fn company_kind(kind: &str, extension: &super::world_schema::WorldExtension) -> bool {
+    super::connections::core_category(kind) == "company"
+        || kind.eq_ignore_ascii_case("company")
+        || extension.types.iter().any(|item| {
+            item.name == kind && item.category == super::world_schema::ExtensionCategory::Company
+        })
+}
+/// The cases of a pending page once the Sources it cites confirm each pending
+/// subject, for this read only. Every cited Source must be through World
+/// processing, so a report the World has yet to read cannot be judged by the
+/// claims that may still come from it, and each name must have exactly one
+/// candidate among the cited spans' claims
+/// ([`super::identity::WorldIdentity::candidate`]). The page then counts as
+/// its candidate node, with the node's keys and the name's own. Nothing is
+/// stored: the anchor stays pending until a publication spells the name.
+fn confirm_pending(
+    world: &super::identity::WorldIdentity,
+    pending: &PendingObservation,
+    spans: &BTreeMap<String, BTreeSet<String>>,
+    company: impl Fn(&str) -> bool,
+) -> Option<BTreeSet<Case>> {
+    if !pending.cited.keys().all(|source| world.processed(source)) {
+        return None;
+    }
+    let cited: BTreeSet<String> = pending.cited.values().flatten().cloned().collect();
+    let all: BTreeSet<String> = pending
+        .cited
+        .keys()
+        .filter_map(|source| spans.get(source))
+        .flatten()
+        .cloned()
+        .collect();
+    let mut cases = pending.observation.cases.clone();
+    for name in &pending.names {
+        let primary = super::identity::primary_key(name)?;
+        let node = world.candidate(&primary, &cited, &all, &company)?;
+        cases.insert(Case::Node(node));
+        cases.extend(
+            super::identity::entity_name_keys(name)
+                .into_iter()
+                .map(Case::Key),
+        );
+    }
+    Some(cases)
+}
+/// [`evidence`] with its pending pages confirmed by the Sources they cite or
+/// held ([`confirm_pending`]), and every case carrying the company keys of its
+/// nodes' current World names and the component of nodes whose keys meet. The
+/// World is read only when a pending page or the confirmed nodes alone call
+/// for it. Two nodes spelling one company then share a key and are one case,
+/// and so do two nodes a third node spells both of. The World's current names
+/// decide, not the name an anchor was filed under: that name may since belong
+/// to another company. A page about a node the World no longer holds (a
+/// shared pack took it away, say) names no company now and is not evidence,
+/// like a page with no subject: a key it cannot carry would otherwise let the
+/// company it was about count twice.
 fn keyed_evidence(
     tx: &Transaction<'_>,
     loupist: &str,
@@ -643,46 +762,67 @@ fn keyed_evidence(
     through: i64,
 ) -> KnowledgeResult<Evidence> {
     let mut found = evidence(tx, loupist, consumed, through)?;
-    if core(&found.observations).is_some() {
+    if found.pending.is_empty() && core(&found.observations).is_none() {
+        return Ok(found);
+    }
+    let pending = std::mem::take(&mut found.pending);
+    let sources: BTreeSet<String> = pending
+        .iter()
+        .flat_map(|p| p.cited.keys().cloned())
+        .collect();
+    let spans = source_spans(tx, &sources)?;
+    let extension = load_settings(tx, loupist)?.extension;
+    let company = |kind: &str| company_kind(kind, &extension);
+    let read = super::lens::world_identity(tx, loupist, |world| {
+        for mut p in pending {
+            match confirm_pending(world, &p, &spans, company) {
+                Some(cases) => {
+                    p.observation.cases = cases;
+                    found.observations.push(p.observation);
+                }
+                None => {
+                    found.held.insert(p.observation.row);
+                }
+            }
+        }
         let nodes: BTreeSet<String> = found
             .observations
             .iter()
             .flat_map(|o| o.cases.iter().filter_map(Case::node))
             .map(str::to_owned)
             .collect();
-        let tokens: BTreeMap<String, BTreeSet<Case>> =
-            super::lens::world_identity(tx, loupist, |world| {
-                nodes
+        nodes
+            .iter()
+            .filter_map(|node| {
+                let mut tokens: BTreeSet<Case> = world
+                    .keys(node)?
                     .iter()
-                    .filter_map(|node| {
-                        let mut tokens: BTreeSet<Case> = world
-                            .keys(node)?
-                            .iter()
-                            .map(|key| Case::Key(key.clone()))
-                            .collect();
-                        tokens.insert(Case::Component(world.component(node)?));
-                        Some((node.clone(), tokens))
-                    })
-                    .collect()
-            })?
-            .unwrap_or_default();
-        found.observations.retain(|o| {
-            o.cases
-                .iter()
-                .filter_map(Case::node)
-                .all(|node| tokens.contains_key(node))
-        });
-        for o in &mut found.observations {
-            let spellings: Vec<Case> = o
-                .cases
-                .iter()
-                .filter_map(Case::node)
-                .filter_map(|node| tokens.get(node))
-                .flatten()
-                .cloned()
-                .collect();
-            o.cases.extend(spellings);
-        }
+                    .map(|key| Case::Key(key.clone()))
+                    .collect();
+                tokens.insert(Case::Component(world.component(node)?));
+                Some((node.clone(), tokens))
+            })
+            .collect::<BTreeMap<String, BTreeSet<Case>>>()
+    })?;
+    // Without a World, no company is confirmed and nothing is evidence.
+    let tokens = read.unwrap_or_default();
+    found.observations.sort_by_key(|o| std::cmp::Reverse(o.row));
+    found.observations.retain(|o| {
+        o.cases
+            .iter()
+            .filter_map(Case::node)
+            .all(|node| tokens.contains_key(node))
+    });
+    for o in &mut found.observations {
+        let spellings: Vec<Case> = o
+            .cases
+            .iter()
+            .filter_map(Case::node)
+            .filter_map(|node| tokens.get(node))
+            .flatten()
+            .cloned()
+            .collect();
+        o.cases.extend(spellings);
     }
     Ok(found)
 }
@@ -735,6 +875,7 @@ fn build_input(
     let Evidence {
         observations: all,
         held,
+        ..
     } = keyed_evidence(tx, loupist, consumed, end)?;
     let (i, j) = core(&all).ok_or(KnowledgeError::Invalid("insufficient_turns"))?;
     let mut picked = BTreeSet::from([i, j]);

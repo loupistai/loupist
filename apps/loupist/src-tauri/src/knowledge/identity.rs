@@ -5,7 +5,7 @@ use serde_json::Value;
 use unicode_normalization::UnicodeNormalization;
 
 use super::assets::class::exchange_time_zone;
-use super::GraphNode;
+use super::{ClaimStatus, DependencyRole, EvidenceRevision, GraphNode, WorldSnapshotBody};
 use crate::store::user_context::MapContextItem;
 
 #[derive(Clone, Copy)]
@@ -227,15 +227,16 @@ fn scripts(text: &str) -> BTreeSet<Script> {
 /// with no spaces, so "U.S. Bancorp" meets "US Bancorp" and "J.P. Morgan"
 /// meets "JP Morgan" and "JPMorgan". Joining only runs of initials would
 /// unify nothing more: two spellings with one initials-joined key have one
-/// spaceless key.
-fn spelling_keys(segment: &str, keys: &mut BTreeSet<String>) {
+/// spaceless key. Returns the worded key.
+fn spelling_keys(segment: &str, keys: &mut BTreeSet<String>) -> Option<String> {
     let words = name_words(segment);
     let key = strip_legal_forms(&words);
     if key.is_empty() {
-        return;
+        return None;
     }
     keys.insert(key.chars().filter(|c| *c != ' ').collect());
     keys.insert(key.to_owned());
+    Some(key.to_owned())
 }
 
 /// The code of `text` when the whole of it is `EXCH:CODE`: two to ten letters,
@@ -264,14 +265,35 @@ fn listing_code(text: &str) -> Option<String> {
 /// learning when two observations might be one company, never that they are
 /// two.
 pub(crate) fn entity_name_keys(name: &str) -> BTreeSet<String> {
+    keyed(name).keys
+}
+
+/// The key that names the company in one spelling: the outer name's words
+/// without legal forms, `apple` for "Apple Inc. (NASDAQ:AAPL)", and none for
+/// a spelling that is only notation.
+pub(crate) fn primary_key(name: &str) -> Option<String> {
+    keyed(name).primary
+}
+
+/// One spelling's keys, and the one of them that names the company.
+struct Keyed {
+    primary: Option<String>,
+    keys: BTreeSet<String>,
+}
+
+fn keyed(name: &str) -> Keyed {
     let text: String = name.nfkc().collect();
     let mut keys = BTreeSet::new();
     // A spelling that is only a listing code ("EXCH:AG") keeps its words
     // whole: its suffix is a code, not a legal form.
     if let Some(code) = listing_code(&text) {
-        keys.insert(name_words(&text));
+        let plain = name_words(&text);
+        keys.insert(plain.clone());
         keys.insert(code);
-        return keys;
+        return Keyed {
+            primary: Some(plain),
+            keys,
+        };
     }
     let text = PARENTHESIZED_LEGAL_NOTATION
         .iter()
@@ -288,7 +310,7 @@ pub(crate) fn entity_name_keys(name: &str) -> BTreeSet<String> {
         }
         _ => outer,
     };
-    spelling_keys(outer, &mut keys);
+    let primary = spelling_keys(outer, &mut keys);
     let outer_scripts = scripts(outer);
     for segment in inner {
         if let Some(code) = listing_code(segment) {
@@ -305,17 +327,27 @@ pub(crate) fn entity_name_keys(name: &str) -> BTreeSet<String> {
             spelling_keys(segment, &mut keys);
         }
     }
-    keys
+    Keyed { primary, keys }
 }
 
-/// One World revision's identity index: each node's spellings, the company
-/// keys of a node computed the first time learning asks about it and kept for
-/// the filings after, and the components of nodes whose keys meet, computed
-/// once for the revision.
+/// One World revision's identity index: each node's spellings and kind, the
+/// nodes each Source span confirms, the Sources the revision incorporated, the
+/// company keys of a node computed the first time learning asks about it and
+/// kept for the filings after, and the components of nodes whose keys meet,
+/// computed once for the revision.
 pub(crate) struct WorldIdentity {
-    spellings: BTreeMap<String, Vec<String>>,
+    nodes: BTreeMap<String, IdentityNode>,
+    /// The endpoints of the active claims whose evidence cites each span.
+    confirmed_by_span: BTreeMap<String, BTreeSet<String>>,
+    /// The Source records the revision's dependencies name.
+    processed_sources: BTreeSet<String>,
     keys: BTreeMap<String, BTreeSet<String>>,
     components: Option<BTreeMap<String, String>>,
+}
+
+struct IdentityNode {
+    spellings: Vec<String>,
+    kind: String,
 }
 
 #[cfg(test)]
@@ -325,17 +357,41 @@ thread_local! {
 }
 
 impl WorldIdentity {
-    pub(crate) fn new(nodes: &[GraphNode]) -> Self {
+    pub(crate) fn new(world: &WorldSnapshotBody, dependencies: &[EvidenceRevision]) -> Self {
+        let mut confirmed_by_span: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for claim in world
+            .claims
+            .iter()
+            .filter(|claim| claim.status == ClaimStatus::Active)
+        {
+            for evidence in &claim.evidence {
+                confirmed_by_span
+                    .entry(evidence.span_id.clone())
+                    .or_default()
+                    .extend(claim.endpoints.iter().map(|e| e.node_id.clone()));
+            }
+        }
         Self {
-            spellings: nodes
+            nodes: world
+                .nodes
                 .iter()
                 .map(|node| {
                     let spellings = std::iter::once(&node.name)
                         .chain(&node.aliases)
                         .cloned()
                         .collect();
-                    (node.id.clone(), spellings)
+                    let node_identity = IdentityNode {
+                        spellings,
+                        kind: node.kind.clone(),
+                    };
+                    (node.id.clone(), node_identity)
                 })
+                .collect(),
+            confirmed_by_span,
+            processed_sources: dependencies
+                .iter()
+                .filter(|dependency| dependency.role == DependencyRole::WorldSource)
+                .map(|dependency| dependency.record_id.clone())
                 .collect(),
             keys: BTreeMap::new(),
             components: None,
@@ -345,7 +401,7 @@ impl WorldIdentity {
     /// The keys of `node`'s name and aliases, or None when the World has no
     /// such node.
     pub(crate) fn keys(&mut self, node: &str) -> Option<&BTreeSet<String>> {
-        let spellings = self.spellings.get(node)?;
+        let spellings = &self.nodes.get(node)?.spellings;
         Some(self.keys.entry(node.to_owned()).or_insert_with(|| {
             #[cfg(test)]
             KEY_COMPUTATIONS.with(|count| count.set(count.get() + 1));
@@ -356,12 +412,65 @@ impl WorldIdentity {
         }))
     }
 
+    /// Whether the revision incorporated `source`. A page citing a Source the
+    /// World has yet to process is not judged by the claims that may still
+    /// come from it.
+    pub(crate) fn processed(&self, source: &str) -> bool {
+        self.processed_sources.contains(source)
+    }
+
+    /// The one company the spans a page cites confirm under `primary`, the
+    /// primary key of the anchor's name: an endpoint of an active claim whose
+    /// evidence is one of `cited`, of a kind `company` accepts, whose name or
+    /// alias has that primary key, when no other node on any of
+    /// `source_spans` (every span of the cited Sources) has it. So "Halvorsen
+    /// Cellworks ASA", claimed from the report a "Halvorsen Cellworks" page
+    /// cites, is its company, while a counterparty claimed from another span
+    /// of the report, a Product, a withdrawn claim, or a second "Hana" on the
+    /// report confirm nothing.
+    pub(crate) fn candidate(
+        &self,
+        primary: &str,
+        cited: &BTreeSet<String>,
+        source_spans: &BTreeSet<String>,
+        company: impl Fn(&str) -> bool,
+    ) -> Option<String> {
+        let named = |id: &str| {
+            self.nodes.get(id).is_some_and(|node| {
+                node.spellings
+                    .iter()
+                    .filter_map(|spelling| primary_key(spelling))
+                    .any(|key| key == primary)
+            })
+        };
+        let on = |spans: &BTreeSet<String>| {
+            spans
+                .iter()
+                .filter_map(|span| self.confirmed_by_span.get(span))
+                .flatten()
+                .map(String::as_str)
+                .collect::<BTreeSet<&str>>()
+        };
+        let candidates: BTreeSet<&str> = on(cited)
+            .into_iter()
+            .filter(|id| named(id) && company(&self.nodes[*id].kind))
+            .collect();
+        let [candidate] = candidates.into_iter().collect::<Vec<_>>()[..] else {
+            return None;
+        };
+        let rival = on(source_spans)
+            .into_iter()
+            .chain(on(cited))
+            .any(|id| id != candidate && named(id));
+        (!rival).then(|| candidate.to_owned())
+    }
+
     /// The component `node` belongs to: the smallest node id among the nodes
     /// reachable from it through shared keys, so a node that spells both
     /// `삼성전자` and `Samsung Electronics` joins the nodes spelling one each.
     /// None when the World has no such node.
     pub(crate) fn component(&mut self, node: &str) -> Option<String> {
-        if !self.spellings.contains_key(node) {
+        if !self.nodes.contains_key(node) {
             return None;
         }
         if self.components.is_none() {
@@ -371,7 +480,7 @@ impl WorldIdentity {
     }
 
     fn join_components(&mut self) -> BTreeMap<String, String> {
-        let ids: Vec<String> = self.spellings.keys().cloned().collect();
+        let ids: Vec<String> = self.nodes.keys().cloned().collect();
         let mut parent: Vec<usize> = (0..ids.len()).collect();
         fn root(parent: &mut [usize], mut i: usize) -> usize {
             while parent[i] != i {
@@ -417,12 +526,12 @@ static WORLD_IDENTITY: Mutex<VecDeque<(String, String, WorldIdentity)>> =
 const CACHED_REVISIONS: usize = 4;
 
 /// Reads `revision` of `loupist`'s World through its identity index. `load`
-/// reads the revision's nodes the first time it is asked about; later filings
-/// on the same revision reuse the index.
+/// reads the revision's snapshot and dependencies the first time it is asked
+/// about; later filings on the same revision reuse the index.
 pub(crate) fn with_world_identity<R>(
     loupist: &str,
     revision: &str,
-    load: impl FnOnce() -> super::KnowledgeResult<Vec<GraphNode>>,
+    load: impl FnOnce() -> super::KnowledgeResult<(WorldSnapshotBody, Vec<EvidenceRevision>)>,
     read: impl FnOnce(&mut WorldIdentity) -> R,
 ) -> super::KnowledgeResult<R> {
     let cached =
@@ -432,7 +541,8 @@ pub(crate) fn with_world_identity<R>(
         .unwrap_or_else(PoisonError::into_inner);
     if !cache.iter().any(cached) {
         drop(cache);
-        let identity = WorldIdentity::new(&load()?);
+        let (world, dependencies) = load()?;
+        let identity = WorldIdentity::new(&world, &dependencies);
         cache = WORLD_IDENTITY
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
@@ -849,6 +959,7 @@ mod tests {
         assert_eq!(keys("EXCH:SE"), set(&["exch se", "se"]));
         assert_eq!(keys("KRX:005930"), set(&["krx 005930", "005930"]));
         assert!(keys("EXCH:AG").is_disjoint(&keys("EXCH:SE")));
+        assert_eq!(primary_key("EXCH:AG").as_deref(), Some("exch ag"));
     }
 
     #[test]
@@ -871,6 +982,20 @@ mod tests {
         }
         assert!(!keys("Apple").is_disjoint(&keys("Apple Inc. (NASDAQ:AAPL)")));
         assert!(!keys("삼성전자").is_disjoint(&keys("삼성전자 (KRX:005930)")));
+    }
+
+    #[test]
+    fn the_primary_key_is_the_outer_name_without_legal_forms() {
+        for (name, primary) in [
+            ("Apple Inc. (NASDAQ:AAPL)", Some("apple")),
+            ("Halvorsen Cellworks ASA", Some("halvorsen cellworks")),
+            ("Hana Co.", Some("hana")),
+            ("U.S. Bancorp", Some("u s bancorp")),
+            ("삼성전자(Samsung Electronics)", Some("삼성전자")),
+            ("(주)", None),
+        ] {
+            assert_eq!(primary_key(name).as_deref(), primary, "{name}");
+        }
     }
 
     #[test]

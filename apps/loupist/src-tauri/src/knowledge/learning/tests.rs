@@ -54,8 +54,23 @@ fn config() -> GraphProcessingSettings {
     }
 }
 fn retain(store: &KnowledgeStore, title: &str, authorship: Authorship, provider: &str) -> BasisRef {
+    span_of(&retain_saved(store, title, authorship, provider))
+}
+fn span_of(saved: &RetainedSource) -> BasisRef {
+    BasisRef::Span {
+        record_id: saved.record_id.clone(),
+        revision_digest: saved.revision_digest.clone(),
+        span_id: saved.span_id.clone().unwrap(),
+    }
+}
+fn retain_saved(
+    store: &KnowledgeStore,
+    title: &str,
+    authorship: Authorship,
+    provider: &str,
+) -> RetainedSource {
     let bytes = format!("{title}: margins fell while utilization stayed near 60 percent.");
-    let saved = store
+    store
         .retain_new_source(RetainNewSource {
             origin: None,
             loupist_id: LOUPIST.into(),
@@ -85,15 +100,53 @@ fn retain(store: &KnowledgeStore, title: &str, authorship: Authorship, provider:
                 context_note: "Test source".into(),
             }),
         })
-        .unwrap();
-    BasisRef::Span {
-        record_id: saved.record_id,
-        revision_digest: saved.revision_digest,
-        span_id: saved.span_id.unwrap(),
-    }
+        .unwrap()
 }
 fn source(store: &KnowledgeStore, title: &str) -> BasisRef {
     retain(store, title, Authorship::Publisher, "fictional publisher")
+}
+/// One Source with two spans, as a sector report that discusses two companies
+/// in two passages. The second span's ref cites the record's latest revision.
+fn two_span_source(store: &KnowledgeStore, title: &str) -> (BasisRef, BasisRef) {
+    let first = retain_saved(store, title, Authorship::Publisher, "fictional publisher");
+    let bytes = format!("{title}, second passage: the other company kept its margins.");
+    let second = store
+        .retain_source(RetainSource {
+            origin: None,
+            loupist_id: LOUPIST.into(),
+            record_id: first.record_id.clone(),
+            expected_revision_id: Some(first.revision_id.clone()),
+            at_ms: AT + 1,
+            source_id: Some(first.source_id.clone()),
+            title: title.into(),
+            source_class: SourceClass::PublisherDocument,
+            origin_locator: format!("https://fictional.test/{}", title.replace(' ', "-")),
+            provider_identity: "fictional publisher".into(),
+            authorship: Authorship::Publisher,
+            coverage: Coverage::IncludedFull,
+            origin_chat_id: None,
+            request_ref: None,
+            declared_digest: None,
+            material: Some(RetainMaterial {
+                media_type: "text/plain".into(),
+                role: RepresentationRole::Original,
+                document_id: "filing-2".into(),
+                parser_version: None,
+                parent_representation_id: None,
+                input_span_ids: vec![],
+                bytes: bytes.clone().into_bytes(),
+                selector: Selector::ByteRange {
+                    start: 0,
+                    end: bytes.len() as u64,
+                },
+                context_note: "Test source".into(),
+            }),
+            publication_time: None,
+        })
+        .unwrap();
+    assert_eq!(first.record_id, second.record_id);
+    assert_ne!(first.span_id, second.span_id);
+    (span_of(&first), span_of(&second))
 }
 fn record_of(span: &BasisRef) -> String {
     match span {
@@ -1358,6 +1411,15 @@ fn a_page_about_an_unknown_company_is_never_one_of_the_two_cases() {
 /// A claim between `from` and `to` whose evidence cites `span`, as extraction
 /// records which Source confirmed a company.
 fn claim_citing(id: &str, from: &str, to: &str, span: &BasisRef) -> GraphClaim {
+    claim_with_status(id, from, to, span, ClaimStatus::Active)
+}
+fn claim_with_status(
+    id: &str,
+    from: &str,
+    to: &str,
+    span: &BasisRef,
+    status: ClaimStatus,
+) -> GraphClaim {
     let BasisRef::Span { span_id, .. } = span else {
         unreachable!()
     };
@@ -1382,7 +1444,7 @@ fn claim_citing(id: &str, from: &str, to: &str, span: &BasisRef) -> GraphClaim {
             role: BindingRole::ExtractedFrom,
             attribution: "report".into(),
         }],
-        status: ClaimStatus::Active,
+        status,
         recorded_at_ms: Some(AT),
         publication_time: None,
         effective_time: None,
@@ -1394,15 +1456,62 @@ fn claim_citing(id: &str, from: &str, to: &str, span: &BasisRef) -> GraphClaim {
 
 /// Publishes the World again with `nodes`, as World processing does.
 fn reseal(store: &KnowledgeStore, nodes: Vec<(&str, &str)>, at: i64) {
-    reseal_claiming(store, nodes, Vec::new(), at);
+    reseal_claiming(store, nodes, Vec::new(), &[], at);
 }
 
+fn company_node(id: &str, name: &str, kind: &str) -> GraphNode {
+    GraphNode {
+        id: id.into(),
+        name: name.into(),
+        aliases: vec![],
+        description: "Fictional manufacturer".into(),
+        kind: kind.into(),
+        source_role: "organization".into(),
+        properties: BTreeMap::new(),
+    }
+}
+
+/// `reseal_graph` with company nodes.
 fn reseal_claiming(
     store: &KnowledgeStore,
     nodes: Vec<(&str, &str)>,
     claims: Vec<GraphClaim>,
+    processed: &[&BasisRef],
     at: i64,
 ) {
+    let nodes = nodes
+        .into_iter()
+        .map(|(id, name)| company_node(id, name, "company"))
+        .collect();
+    reseal_graph(store, nodes, claims, processed, at);
+}
+
+/// Publishes the World again with `nodes` and `claims`, naming the Sources of
+/// `processed` as the ones it has read, as a publication from extraction does.
+fn reseal_graph(
+    store: &KnowledgeStore,
+    nodes: Vec<GraphNode>,
+    claims: Vec<GraphClaim>,
+    processed: &[&BasisRef],
+    at: i64,
+) {
+    let mut dependencies: Vec<EvidenceRevision> = processed
+        .iter()
+        .map(|span| match span {
+            BasisRef::Span {
+                record_id,
+                revision_digest,
+                ..
+            } => EvidenceRevision {
+                record_id: record_id.clone(),
+                revision_digest: revision_digest.clone(),
+                role: DependencyRole::WorldSource,
+            },
+            other => panic!("not a span: {other:?}"),
+        })
+        .collect();
+    dependencies.sort_by(|a, b| a.record_id.cmp(&b.record_id));
+    dependencies.dedup_by(|a, b| a.record_id == b.record_id);
     let (record_id, head): (String, String) = store
         .read(|w| {
             Ok(w.tx.query_row(
@@ -1420,23 +1529,25 @@ fn reseal_claiming(
             record_id,
             expected_revision_id: Some(head),
             at_ms: at,
-            nodes: nodes
-                .into_iter()
-                .map(|(id, name)| GraphNode {
-                    id: id.into(),
-                    name: name.into(),
-                    aliases: vec![],
-                    description: "Fictional manufacturer".into(),
-                    kind: "company".into(),
-                    source_role: "organization".into(),
-                    properties: BTreeMap::new(),
-                })
-                .collect(),
+            nodes,
             claims,
             annotations: vec![],
-            dependencies: vec![],
+            dependencies,
         })
         .unwrap();
+}
+
+/// How many subject anchors the World has not confirmed in storage.
+fn pending_subjects(store: &KnowledgeStore) -> i64 {
+    store
+        .read(|w| {
+            Ok(w.tx.query_row(
+                "SELECT COUNT(*) FROM knowledge_lens_anchors WHERE role='subject' AND node_id IS NULL",
+                [],
+                |r| r.get(0),
+            )?)
+        })
+        .unwrap()
 }
 
 #[test]
@@ -1487,20 +1598,243 @@ fn companies_filed_before_the_world_knew_them_learn_once_their_sources_confirm_t
         ("entity-h", "Halvorsen Cellworks ASA"),
         ("entity-f", "Ferroluz Componentes S.A."),
     ]);
-    reseal_claiming(
-        &store,
-        nodes,
-        vec![
-            claim_citing("clm_a", "entity-h", "entity-0", &a),
-            claim_citing("clm_b", "entity-f", "entity-1", &b),
-        ],
-        AT + 4,
-    );
+    let claims = vec![
+        claim_citing("clm_a", "entity-h", "entity-0", &a),
+        claim_citing("clm_b", "entity-f", "entity-1", &b),
+    ];
+    reseal_claiming(&store, nodes.clone(), claims.clone(), &[&a, &b], AT + 4);
+    assert_eq!(review_states(&store), ["queued"]);
+    // Confirmation is for learning only: storage still holds both anchors
+    // pending, and the next publication does not queue a second review.
+    assert_eq!(pending_subjects(&store), 2);
+    reseal_claiming(&store, nodes, claims, &[&a, &b], AT + 5);
     assert_eq!(review_states(&store), ["queued"]);
     assert_eq!(
-        pages(&begin(&store, AT + 5)),
+        pages(&begin(&store, AT + 6)),
         ["Ferroluz ramp", "Halvorsen ramp"]
     );
+}
+
+/// Files a page named `name` in one Chat citing `cited`, Manufacturer 0 in
+/// another citing `other`, then publishes `extra` beside the manufacturers
+/// with `claims`, both Sources processed. Whether a review queues says whether
+/// the Sources confirmed the page's company for learning. Storage never binds
+/// the anchor either way.
+fn sources_confirm(
+    store: &KnowledgeStore,
+    name: &str,
+    cited: &BasisRef,
+    other: &BasisRef,
+    extra: Vec<GraphNode>,
+    claims: Vec<GraphClaim>,
+) -> bool {
+    let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+    let page = named(&format!("{name} ramp"), name);
+    let cited_only = std::slice::from_ref(cited);
+    assert!(put_in(store, "chat-1", "m1", page, text, cited_only, AT + 2).is_none());
+    assert!(turn(
+        store,
+        "chat-2",
+        "m2",
+        0,
+        std::slice::from_ref(other),
+        AT + 3
+    )
+    .is_none());
+    assert_eq!(pending_subjects(store), 1);
+    let mut nodes: Vec<GraphNode> = (0..4)
+        .map(|n| {
+            company_node(
+                &format!("entity-{n}"),
+                &format!("Manufacturer {n}"),
+                "company",
+            )
+        })
+        .collect();
+    nodes.extend(extra);
+    reseal_graph(store, nodes, claims, &[cited, other], AT + 4);
+    assert_eq!(
+        pending_subjects(store),
+        1,
+        "storage never binds a pending anchor"
+    );
+    !review_states(store).is_empty()
+}
+
+#[test]
+fn a_claim_on_the_cited_span_confirms_the_company_for_learning() {
+    let (_dir, store) = setup();
+    let (report, other) = (source(&store, "Report"), source(&store, "Filing C"));
+    let nodes = vec![
+        company_node("entity-h", "Halvorsen Cellworks ASA", "company"),
+        company_node("entity-m", "Meridian Motors", "Organization"),
+    ];
+    let claims = vec![claim_citing("clm_1", "entity-h", "entity-m", &report)];
+    assert!(sources_confirm(
+        &store,
+        "Halvorsen Cellworks",
+        &report,
+        &other,
+        nodes,
+        claims
+    ));
+    assert_eq!(
+        pages(&begin(&store, AT + 5)),
+        ["Halvorsen Cellworks ramp", "Manufacturer 0"]
+    );
+}
+
+#[test]
+fn a_claim_on_another_span_of_the_report_confirms_nothing() {
+    // The report discusses two companies. The page cites the passage about
+    // the second; the World has so far claimed only the first, from the other
+    // passage. A key alone, even on the same Source, names no company.
+    let (_dir, store) = setup();
+    let (first_passage, second_passage) = two_span_source(&store, "Sector report");
+    let other = source(&store, "Filing C");
+    let nodes = vec![
+        company_node("entity-a", "Hana", "company"),
+        company_node("entity-m", "Meridian Motors", "company"),
+    ];
+    let claims = vec![claim_citing(
+        "clm_1",
+        "entity-a",
+        "entity-m",
+        &first_passage,
+    )];
+    assert!(!sources_confirm(
+        &store,
+        "Hana Co.",
+        &second_passage,
+        &other,
+        nodes,
+        claims
+    ));
+}
+
+#[test]
+fn two_nodes_with_one_primary_key_on_the_cited_source_confirm_nothing() {
+    // A claim on the cited passage names "Hana Co.", and another passage of
+    // the same report names "Hana Inc.": a "Hana" page could be about either.
+    let (_dir, store) = setup();
+    let (first_passage, second_passage) = two_span_source(&store, "Sector report");
+    let other = source(&store, "Filing C");
+    let nodes = vec![
+        company_node("entity-a", "Hana Co.", "company"),
+        company_node("entity-b", "Hana Inc.", "company"),
+        company_node("entity-m", "Meridian Motors", "company"),
+    ];
+    let claims = vec![
+        claim_citing("clm_1", "entity-a", "entity-m", &second_passage),
+        claim_citing("clm_2", "entity-b", "entity-m", &first_passage),
+    ];
+    assert!(!sources_confirm(
+        &store,
+        "Hana",
+        &second_passage,
+        &other,
+        nodes,
+        claims
+    ));
+    // With one "Hana" on the report, the cited passage confirms it.
+    let (_dir, store) = setup();
+    let (first_passage, second_passage) = two_span_source(&store, "Sector report");
+    let other = source(&store, "Filing C");
+    let nodes = vec![
+        company_node("entity-a", "Hana Co.", "company"),
+        company_node("entity-m", "Meridian Motors", "company"),
+    ];
+    let claims = vec![
+        claim_citing("clm_1", "entity-a", "entity-m", &second_passage),
+        claim_citing("clm_2", "entity-m", "entity-a", &first_passage),
+    ];
+    assert!(sources_confirm(
+        &store,
+        "Hana",
+        &second_passage,
+        &other,
+        nodes,
+        claims
+    ));
+}
+
+#[test]
+fn a_withdrawn_claim_or_a_product_confirms_nothing() {
+    let (_dir, store) = setup();
+    let (report, other) = (source(&store, "Report"), source(&store, "Filing C"));
+    let nodes = vec![
+        company_node("entity-h", "Halvorsen Cellworks ASA", "company"),
+        company_node("entity-m", "Meridian Motors", "company"),
+    ];
+    let withdrawn = vec![claim_with_status(
+        "clm_1",
+        "entity-h",
+        "entity-m",
+        &report,
+        ClaimStatus::Withdrawn,
+    )];
+    assert!(!sources_confirm(
+        &store,
+        "Halvorsen Cellworks",
+        &report,
+        &other,
+        nodes,
+        withdrawn
+    ));
+
+    let (_dir, store) = setup();
+    let (report, other) = (source(&store, "Report"), source(&store, "Filing C"));
+    let nodes = vec![
+        company_node("entity-h", "Halvorsen Cellworks ASA", "Product"),
+        company_node("entity-m", "Meridian Motors", "company"),
+    ];
+    let claims = vec![claim_citing("clm_1", "entity-h", "entity-m", &report)];
+    assert!(!sources_confirm(
+        &store,
+        "Halvorsen Cellworks",
+        &report,
+        &other,
+        nodes,
+        claims
+    ));
+}
+
+#[test]
+fn a_page_citing_a_source_the_world_has_not_read_waits_for_it() {
+    let (_dir, store) = setup();
+    let (report, other) = (source(&store, "Report"), source(&store, "Filing C"));
+    let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+    let page = named("Halvorsen ramp", "Halvorsen Cellworks");
+    let report_only = std::slice::from_ref(&report);
+    assert!(put_in(&store, "chat-1", "m1", page, text, report_only, AT + 2).is_none());
+    assert!(turn(
+        &store,
+        "chat-2",
+        "m2",
+        0,
+        std::slice::from_ref(&other),
+        AT + 3
+    )
+    .is_none());
+    let extra = [
+        ("entity-h", "Halvorsen Cellworks ASA"),
+        ("entity-m", "Meridian Motors"),
+    ];
+    let mut nodes: Vec<(&str, &str)> = vec![
+        ("entity-0", "Manufacturer 0"),
+        ("entity-1", "Manufacturer 1"),
+        ("entity-2", "Manufacturer 2"),
+        ("entity-3", "Manufacturer 3"),
+    ];
+    nodes.extend(extra);
+    let claims = vec![claim_citing("clm_1", "entity-h", "entity-m", &report)];
+    // A publication that claims from the report but has not read it through
+    // (another of its spans may still name a second spelling) holds the page.
+    reseal_claiming(&store, nodes.clone(), claims.clone(), &[&other], AT + 4);
+    assert!(review_states(&store).is_empty());
+    // The one that has read it confirms the page, with no new filing.
+    reseal_claiming(&store, nodes, claims, &[&other, &report], AT + 5);
+    assert_eq!(review_states(&store), ["queued"]);
 }
 
 #[test]
