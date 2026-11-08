@@ -204,15 +204,21 @@ pub(super) async fn apply_pi_rpc(turn: PiRpcTurn<'_>, payload: &Value) -> PiRpcS
                 }
                 // The broker's own record says which rule refused the call; the
                 // model-facing text is never parsed for it.
-                if failed
-                    && on_event
-                        .tool_trace
-                        .refused(tool_call_id, "untrusted_text_paused")
-                {
-                    progress.refuse_tool(
-                        tool_call_id,
-                        crate::chat::progress::ChatStepRefusal::UntrustedTextPaused,
-                    );
+                if failed {
+                    use crate::chat::progress::ChatStepRefusal;
+                    let refusal = [
+                        (
+                            "untrusted_text_paused",
+                            ChatStepRefusal::UntrustedTextPaused,
+                        ),
+                        ("protected_path", ChatStepRefusal::ProtectedPath),
+                        ("user_declined", ChatStepRefusal::UserDeclined),
+                    ]
+                    .into_iter()
+                    .find(|(code, _)| on_event.tool_trace.refused(tool_call_id, code));
+                    if let Some((_, refusal)) = refusal {
+                        progress.refuse_tool(tool_call_id, refusal);
+                    }
                 }
                 publish_progress(on_event, task_run_id, progress, commentary);
             }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::commands::tool_executor::approval::AskOutcome;
 use crate::custom_connections::{service, ConnectionError};
 
 fn failure(error: ConnectionError, connection_id: &str, tool_name: &str) -> BrokerError {
@@ -51,13 +52,17 @@ impl AppToolExecutor {
             connection_name: connection.name.clone(),
             tool_name: card.name.clone(),
             target: approvals::target_summary(&request.arguments),
+            detail: None,
+            grant: None,
             state: ApprovalState::Waiting,
             requested_at_ms: chrono::Utc::now().timestamp_millis(),
         };
-        match self.ask_user(approval).await? {
-            ApprovalDecision::Once => Some(ApprovalChoice::AllowOnce),
-            ApprovalDecision::Always => Some(ApprovalChoice::Always),
-            ApprovalDecision::Deny => None,
+        match self.ask_user(approval).await {
+            AskOutcome::Answered(ApprovalDecision::Once) => Some(ApprovalChoice::AllowOnce),
+            AskOutcome::Answered(ApprovalDecision::Always) => Some(ApprovalChoice::Always),
+            AskOutcome::Answered(ApprovalDecision::Deny)
+            | AskOutcome::NoAnswer
+            | AskOutcome::Unasked => None,
         }
     }
 

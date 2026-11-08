@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { setTimeout } from "node:timers/promises";
 import test from "node:test";
 
-import { allowedWorkspaceEnvironment, nativeTargetPath, registerWorkspaceTools } from "./workspace-tools.mjs";
+import { allowedWorkspaceEnvironment, canonicalTargetPath, nativeTargetPath, registerWorkspaceTools } from "./workspace-tools.mjs";
 
 function workspaceFixture(t) {
   const temporary = realpathSync(mkdtempSync(join(tmpdir(), "loupist-workspace-tools-")));
@@ -43,7 +43,7 @@ test("native reads send their resolved target and delimit exported text with the
   const asked = [];
   const boundary = { prefix: '<<untrusted id=host-id source="app-exported text">>\n', suffix: '\n<<end untrusted id=host-id>>' };
   registerWorkspaceTools({ registerTool: (tool) => tools.set(tool.name, tool) }, workspace,
-    async (name, path) => { asked.push({ name, path }); return { allowed: true, untrusted_text: boundary }; });
+    async (name, request) => { asked.push({ name, ...request }); return { allowed: true, untrusted_text: boundary }; });
   const result = await tools.get("read").execute("export", { path: "./export.txt", limit: 1 }, undefined, undefined, { cwd: privateRuntime });
   assert.deepEqual(asked, [{ name: "read", path: join(workspace, "export.txt") }]);
   assert.ok(resultText(result).startsWith(boundary.prefix));
@@ -255,16 +255,66 @@ test("host taint refusal prevents native Bash from executing", async (t) => {
   assert.equal(existsSync(marker), false);
 });
 
+test("ls, find and grep send their search root and bash sends its command", async (t) => {
+  const { workspace, privateRuntime, temporary } = workspaceFixture(t);
+  mkdirSync(join(workspace, "notes"));
+  writeFileSync(join(workspace, "notes/a.txt"), "needle\n");
+  const tools = new Map();
+  const asked = [];
+  registerWorkspaceTools({ registerTool: (tool) => tools.set(tool.name, tool) }, workspace,
+    async (name, request) => { asked.push({ name, ...request }); return { allowed: true }; });
+  const run = (name, input) => tools.get(name).execute(`test-${name}`, input, undefined, undefined, { cwd: privateRuntime });
+  // Only the request to the host is under test; find and grep may lack their bundled tools here.
+  const fetch = globalThis.fetch;
+  globalThis.fetch = () => { throw new Error("offline"); };
+  t.after(() => { globalThis.fetch = fetch; });
+  await run("ls", {});
+  await run("ls", { path: "notes" });
+  await run("find", { pattern: "*.txt", path: "@notes" }).catch(() => {});
+  await run("grep", { pattern: "needle", path: temporary }).catch(() => {});
+  await run("bash", { command: "echo ok", timeout: 10 });
+  assert.deepEqual(asked, [
+    { name: "ls", path: workspace },
+    { name: "ls", path: join(workspace, "notes") },
+    { name: "find", path: join(workspace, "notes") },
+    { name: "grep", path: temporary },
+    { name: "bash", command: "echo ok" },
+  ]);
+});
+
+test("a write is pinned to the canonical target Rust returned, so a link swapped in later cannot redirect it", { skip: process.platform === "win32" }, async (t) => {
+  const { workspace, privateRuntime } = workspaceFixture(t);
+  const [first, second] = [join(workspace, "first"), join(workspace, "second")];
+  mkdirSync(first);
+  mkdirSync(second);
+  symlinkSync(first, join(workspace, "link"));
+  assert.equal(canonicalTargetPath(join(workspace, "link/new/../report.md")), join(first, "report.md"));
+  const tools = new Map();
+  registerWorkspaceTools({ registerTool: (tool) => tools.set(tool.name, tool) }, workspace,
+    async (name, request) => {
+      const resolved = canonicalTargetPath(request.path);
+      // Between Rust's answer and the write, the link is pointed elsewhere.
+      rmSync(join(workspace, "link"));
+      symlinkSync(second, join(workspace, "link"));
+      return { allowed: true, resolved };
+    });
+  await assert.rejects(tools.get("write").execute("swap", { path: "link/report.md", content: "x\n" }, undefined, undefined, { cwd: privateRuntime }),
+    /target changed after authorization/);
+  assert.equal(existsSync(join(second, "report.md")), false);
+  assert.equal(existsSync(join(first, "report.md")), false);
+});
+
 test("write and edit ask the host with their resolved target and write only that file", async (t) => {
   const { workspace, privateRuntime } = workspaceFixture(t);
   const tools = new Map();
   const asked = [];
   registerWorkspaceTools({ registerTool: (tool) => tools.set(tool.name, tool) }, workspace,
-    async (name, target) => {
+    async (name, { path: target }) => {
       asked.push([name, target]);
       if (target?.endsWith("AGENTS.md")) {
-        throw new Error("Commands and outbound writes are paused for the rest of this turn because it read third-party text.");
+        throw new Error("The user did not allow this write: the file becomes instructions on later replies. Instruction and Skill writes stay paused for the rest of this reply.");
       }
+      return { allowed: true, resolved: canonicalTargetPath(target) };
     });
   const run = (name, input) => tools.get(name).execute(`test-${name}`, input, undefined, undefined, { cwd: privateRuntime });
 

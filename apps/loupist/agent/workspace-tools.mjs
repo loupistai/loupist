@@ -7,10 +7,10 @@ import {
   createReadToolDefinition,
   createWriteToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { constants } from "node:fs";
+import { constants, realpathSync } from "node:fs";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const WORKSPACE_ENVIRONMENT_KEYS = new Set([
@@ -41,8 +41,8 @@ function windowsShellPath(path) {
   return match ? `${match[1].toUpperCase()}:\\${match[2]?.replaceAll("/", "\\") ?? ""}` : path;
 }
 
-/** The absolute file a native write or edit targets, resolved the way Pi's
- * file tools resolve their `path` argument against the workspace. */
+/** The absolute file a native tool targets, resolved the way Pi's file tools
+ * resolve their `path` argument against the workspace. */
 export function nativeTargetPath(workspaceRoot, input) {
   if (typeof input !== "string") return undefined;
   let path = windowsShellPath(input.replace(UNICODE_SPACES, " ").replace(/^@/u, ""));
@@ -53,10 +53,32 @@ export function nativeTargetPath(workspaceRoot, input) {
   return isAbsolute(path) ? resolve(path) : resolve(workspaceRoot, path);
 }
 
-/** File operations that write only the target Rust authorized. */
-function authorizedFileOperations(name, target) {
+/** The form Rust pins a write to: the longest existing ancestor's real path
+ * plus the parts not yet on disk, so a link swapped in later changes it. */
+export function canonicalTargetPath(path) {
+  const rest = [];
+  let existing = resolve(path);
+  for (;;) {
+    try {
+      return join(realpathSync.native(existing), ...rest.reverse());
+    } catch {
+      const parent = dirname(existing);
+      if (parent === existing) return resolve(path);
+      rest.push(basename(existing));
+      existing = parent;
+    }
+  }
+}
+
+const sameTarget = (left, right) => process.platform === "win32"
+  ? left.toLowerCase() === right.toLowerCase() : left === right;
+
+/** File operations that write only the target Rust authorized, re-resolved at write time. */
+function authorizedFileOperations(name, expected) {
   const write = async (path, content) => {
-    if (resolve(path) !== target) throw new Error("Native file target changed after authorization");
+    if (!sameTarget(canonicalTargetPath(path), expected)) {
+      throw new Error("Native file target changed after authorization");
+    }
     await writeFile(path, content, "utf-8");
   };
   return name === "write"
@@ -66,10 +88,25 @@ function authorizedFileOperations(name, target) {
 }
 
 const FILE_WRITERS = { write: createWriteToolDefinition, edit: createEditToolDefinition };
+const SEARCHERS = new Set(["ls", "find", "grep"]);
+
+/** What `native.authorize` is told about one call: the resolved file for read,
+ * write and edit; the resolved search root for ls, find and grep (the
+ * workspace by default, as Pi resolves it); the exact command for bash. */
+export function nativeRequest(workspaceRoot, name, input) {
+  if (name === "bash") return { command: input?.command };
+  if (FILE_WRITERS[name] || name === "read") {
+    const path = nativeTargetPath(workspaceRoot, input?.path);
+    return path === undefined ? {} : { path };
+  }
+  if (SEARCHERS.has(name)) return { path: nativeTargetPath(workspaceRoot, input?.path || ".") };
+  return {};
+}
 
 /** Native Pi tools operate on the selected workspace while Pi itself keeps a private runtime CWD.
- * `authorize(name, target, signal, id)` asks Rust before every execution; `target` is the
- * resolved file for read, write and edit; Rust owns exported-text trust and instruction guards. */
+ * `authorize(name, request, signal, id)` asks Rust before every execution with the
+ * `nativeRequest` above; Rust owns the permission policy, exported-text trust and the
+ * canonical target (`resolved`) a write or edit is pinned to. */
 export function registerWorkspaceTools(pi, workspaceRoot, authorize) {
   const definitions = [
     createReadToolDefinition(workspaceRoot),
@@ -93,17 +130,18 @@ export function registerWorkspaceTools(pi, workspaceRoot, authorize) {
       ...definition,
       async execute(id, input, signal, onUpdate, ctx) {
         const writer = FILE_WRITERS[definition.name];
-        const target = writer || definition.name === "read"
-          ? nativeTargetPath(workspaceRoot, input?.path) : undefined;
-        const permission = authorize ? await authorize(definition.name, target, signal, id) : undefined;
+        const request = nativeRequest(workspaceRoot, definition.name, input);
+        const permission = authorize ? await authorize(definition.name, request, signal, id) : undefined;
         const boundary = permission?.untrusted_text;
         const deliver = (result) => boundary ? {
           ...result,
           content: result.content.map((part) => part.type === "text"
             ? { ...part, text: `${boundary.prefix}${part.text}${boundary.suffix}` } : part),
         } : result;
-        const run = writer && target !== undefined
-          ? writer(workspaceRoot, { operations: authorizedFileOperations(definition.name, target) })
+        const expected = typeof permission?.resolved === "string"
+          ? permission.resolved : request.path === undefined ? undefined : canonicalTargetPath(request.path);
+        const run = writer && expected !== undefined
+          ? writer(workspaceRoot, { operations: authorizedFileOperations(definition.name, expected) })
           : definition;
         const result = await run.execute(id, input, signal,
           onUpdate ? (update) => onUpdate(deliver(update)) : undefined, {

@@ -7,7 +7,9 @@
 //! per Loupist, connection and tool, like an approval given in Settings.
 //!
 //! After third-party text, a `web_fetch` of a site the turn has not seen asks
-//! the same way (`kind: web_site`); it can be allowed only once.
+//! the same way (`kind: web_site`); it can be allowed only once. The native
+//! policy (`agent_harness::native_policy`) asks for a command, a read or
+//! write outside the workspace, or an instruction write the same way.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -23,6 +25,8 @@ pub const APPROVAL_WAIT: std::time::Duration = std::time::Duration::from_secs(5 
 const MAX_TARGET_CHARS: usize = 160;
 const MAX_TARGET_PARTS: usize = 3;
 const MAX_PART_CHARS: usize = 60;
+/// A card's full command.
+const MAX_DETAIL_BYTES: usize = crate::agent_harness::native_policy::MAX_DETAIL_BYTES;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -49,6 +53,26 @@ pub enum ApprovalState {
 pub enum ApprovalKind {
     /// A new website after third-party text; `target` names the site.
     WebSite,
+    /// A native command after third-party text; `target` is its first line
+    /// and `detail` the whole command.
+    Command,
+    /// A read of a credential file, or outside the workspace after
+    /// third-party text; `target` is the path.
+    FileRead,
+    /// A write the same way.
+    FileWrite,
+    /// A write to a file a later reply loads as instructions.
+    Instructions,
+}
+
+/// What a blanket Allow on a `command` card covers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalGrant {
+    /// This reply read third-party text: Always covers this reply.
+    Reply,
+    /// Only earlier replies did: Always covers this Chat until revoked.
+    Chat,
 }
 
 /// One approval the reply asked for, shown as a card at its step.
@@ -72,6 +96,12 @@ pub struct ChatApproval {
     /// Plain values from the call's arguments (company, period), never raw JSON.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
+    /// A `command` card's whole command, bounded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// A `command` card's blanket scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grant: Option<ApprovalGrant>,
     pub state: ApprovalState,
     #[serde(rename = "requestedAtMs")]
     pub requested_at_ms: i64,
@@ -90,6 +120,10 @@ impl ChatApproval {
                 .target
                 .as_deref()
                 .is_some_and(|target| !short(target, MAX_TARGET_CHARS * 4))
+            || self
+                .detail
+                .as_deref()
+                .is_some_and(|detail| !short(detail, MAX_DETAIL_BYTES))
             || self.requested_at_ms < 0
             || (durable && self.state == ApprovalState::Waiting)
         {

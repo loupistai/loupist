@@ -21,14 +21,19 @@ pub enum ChatProgressStatus {
     Skipped,
 }
 
-/// Why the host refused a failed step, when a security rule did. The renderer
-/// explains it in the step and offers no override.
+/// Why the host refused a failed step, when a security rule or the user's own
+/// card answer did. The renderer explains it in the step and offers no override.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChatStepRefusal {
-    /// The turn read third-party text, so commands, outbound writes and new
-    /// sites stay paused until it ends (broker code `untrusted_text_paused`).
+    /// The turn read third-party text: a command the user turned down, or a
+    /// custom connection, schedule change or new site, stays paused until the
+    /// turn ends (broker code `untrusted_text_paused`).
     UntrustedTextPaused,
+    /// The path is inside the app's private data (`protected_path`).
+    ProtectedPath,
+    /// The user chose Not now on a file access card (`user_declined`).
+    UserDeclined,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -2062,6 +2067,8 @@ mod tests {
             connection_name: "Company research".into(),
             tool_name: "read_company".into(),
             target: Some("Hanul Precision".into()),
+            detail: None,
+            grant: None,
             state: ApprovalState::Waiting,
             requested_at_ms: 12,
         };

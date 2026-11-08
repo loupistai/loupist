@@ -159,7 +159,10 @@ pub(super) struct AdmittedChatTurn {
     pub runtime_policy_sha256: String,
     pub runtime_surface_sha256: String,
     pub policy: crate::broker::ToolPolicy,
-    pub instruction_roots: crate::custom_connections::taint::InstructionRoots,
+    pub native_roots: crate::agent_harness::native_policy::NativeRoots,
+    /// An earlier reply in this Chat read third-party text, so the model's
+    /// context may carry it into this clean turn.
+    pub carried_untrusted: bool,
     pub host_context: String,
     pub harness: AgentHarnessSnapshot,
     pub chat_attachments: PathBuf,
@@ -316,10 +319,10 @@ pub(super) fn admit_chat_turn(
         request.thread_id.clone(),
         request.as_of.clone(),
     );
-    let instruction_roots = crate::custom_connections::taint::InstructionRoots {
-        workspace: context.workspace.root.clone(),
-        global: context.workspace.global_root.clone(),
-    };
+    let instruction_roots = (
+        context.workspace.root.clone(),
+        context.workspace.global_root.clone(),
+    );
     let host_context = serde_json::to_string(&context).map_err(map_internal)?;
     let mentioned_connections = agent_harness::mentioned_connections(
         &request.mentioned_connection_ids,
@@ -406,6 +409,25 @@ pub(super) fn admit_chat_turn(
     )?;
     let memory_revision = host_memory.as_ref().map(|memory| memory.revision.clone());
     let turn_resources = ChatTurnResources::new(run_lease, run_scratch, execution_session);
+    // The native policy's folders: the Carried window is this whole Chat, since
+    // neither the warm Pi session nor the cold transcript records which
+    // replies it holds; a clean turn in a Chat that once read third-party
+    // text asks before its first command.
+    let native_roots = crate::agent_harness::native_policy::NativeRoots::new(
+        &instruction_roots.0,
+        &instruction_roots.1,
+        &state.artifacts.app_data_dir,
+        &turn_resources
+            .pi_session()
+            .runtime_working_directory()
+            .join("temp"),
+        &chat_attachments.join(&chat.id),
+        host_home().as_deref(),
+    );
+    let carried_untrusted = chat
+        .messages
+        .iter()
+        .any(crate::domain::ChatMessage::has_untrusted_text);
     let timestamp = now_ms().max(chat.updated_at_ms + 1);
     let user_message_id = new_id("message");
     let current_prompt = attachment_prompt(
@@ -588,7 +610,8 @@ pub(super) fn admit_chat_turn(
         runtime_policy_sha256,
         runtime_surface_sha256,
         policy,
-        instruction_roots,
+        native_roots,
+        carried_untrusted,
         host_context,
         harness,
         chat_attachments,
@@ -614,4 +637,13 @@ pub(super) fn admit_chat_turn(
         should_generate_title,
         assistant_message_id,
     }))
+}
+
+/// The host user's home folder, as the extension resolves `~` (Node's
+/// `homedir()` reads the same variable).
+fn host_home() -> Option<PathBuf> {
+    let variable = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    std::env::var_os(variable)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
 }

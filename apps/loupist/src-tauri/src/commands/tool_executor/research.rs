@@ -294,13 +294,18 @@ impl AppToolExecutor {
             WebFetchTarget::Refused(next) => Err(BrokerError::UntrustedTextPaused.with_next(next)),
             WebFetchTarget::Approve { target } => {
                 let approval = super::approval::web_site_approval(target);
+                use super::approval::AskOutcome;
                 match self.ask_user(approval).await {
-                    Some(ApprovalDecision::Once | ApprovalDecision::Always) => {
+                    AskOutcome::Answered(ApprovalDecision::Once | ApprovalDecision::Always) => {
                         taint.note_seen_url(url);
                         Ok(())
                     }
-                    Some(ApprovalDecision::Deny) | None => {
+                    AskOutcome::Answered(ApprovalDecision::Deny) | AskOutcome::NoAnswer => {
                         taint.decline_new_sites();
+                        Err(BrokerError::UntrustedTextPaused.with_next(WEB_FETCH_SITE_REFUSAL))
+                    }
+                    // No card could be shown: this site is refused, later ones still ask.
+                    AskOutcome::Unasked => {
                         Err(BrokerError::UntrustedTextPaused.with_next(WEB_FETCH_SITE_REFUSAL))
                     }
                 }

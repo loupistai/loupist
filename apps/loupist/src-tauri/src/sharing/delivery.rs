@@ -5,8 +5,8 @@
 //! reference Sources in World reads — arrives inside `<<shared …>>` delimiters
 //! that a locked SYSTEM rule explains.
 //!
-//! Delivery raises the turn's untrusted-text tier (commands pause for the rest
-//! of the turn) when the model receives a shared item that had a scan finding,
+//! Delivery raises the turn's untrusted-text tier (a command asks the user in
+//! a card for the rest of the turn) when the model receives a shared item that had a scan finding,
 //! or a shared item's full text: a `lens_read` of a shared method or principle,
 //! shared names, relationships or summaries from a World read or search, or a
 //! pack Source's material. The per-turn context (principles, perspective,
@@ -76,7 +76,7 @@ struct Known {
 }
 
 /// Who supplied one delivered object, and whether its short fields alone
-/// pause commands (a flagged Lens item, or any map text).
+/// raise the tier (a flagged Lens item, or any map text).
 struct Owner {
     pack: String,
     pauses: bool,
@@ -129,7 +129,7 @@ impl Shared {
     }
 
     /// Wraps each shared principle's line in the User principles block; true
-    /// when a flagged one was delivered (commands pause).
+    /// when a flagged one was delivered (the tier rises).
     pub(crate) fn wrap_principles(
         &self,
         block: String,
@@ -158,7 +158,7 @@ impl Shared {
     }
 
     /// The standing perspective body, wrapped when a shared pack supplied it;
-    /// true when it was accepted despite a finding (commands pause).
+    /// true when it was accepted despite a finding (the tier rises).
     pub(crate) fn wrap_charter(&self, record_id: Option<&str>, charter: String) -> (String, bool) {
         match record_id.and_then(|id| self.lens(id).map(|pack| (id, pack))) {
             Some((id, pack)) => {
@@ -171,7 +171,7 @@ impl Shared {
 
     /// One short field of a shared Lens record (a catalog title or summary, a
     /// pointer snippet), wrapped with an id stable for that record and field.
-    /// It pauses commands only when the record is flagged (see [`Self::flagged`]).
+    /// It raises the tier only when the record is flagged (see [`Self::flagged`]).
     pub(crate) fn wrap_lens_field(
         &self,
         record_id: &str,
@@ -299,7 +299,7 @@ impl Shared {
     }
 
     /// Wraps every shared field of one Memory tool delivery (lens and World
-    /// search and reads); true when the delivery pauses commands.
+    /// search and reads); true when the delivery raises the tier.
     pub(crate) fn mark_delivery(&self, delivered: &mut Value) -> bool {
         let mut delivery = Delivery::default();
         self.walk(delivered, None, &mut delivery);

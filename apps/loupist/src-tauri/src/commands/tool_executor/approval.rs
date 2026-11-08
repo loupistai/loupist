@@ -1,20 +1,49 @@
 //! Asking the user from inside a running tool call (composer spec D3): a
-//! custom connection's unapproved read-only tool, or a new website after
-//! third-party text.
+//! custom connection's unapproved read-only tool, a new website after
+//! third-party text, or a native command or file access the policy sends to
+//! a card.
+use std::sync::atomic::Ordering;
+
 use super::*;
-use crate::chat::approvals::{self, ApprovalDecision, ApprovalKind, ApprovalState, ChatApproval};
+use crate::agent_harness::native_policy::{AskKind, CommandScope, Grant, NativeAsk};
+use crate::chat::approvals::{
+    self, ApprovalDecision, ApprovalGrant, ApprovalKind, ApprovalState, ChatApproval,
+};
+
+/// How a card ended, as the caller must tell them apart: a decline pauses a
+/// kind for the reply, an unasked card refuses only this call.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::commands::tool_executor) enum AskOutcome {
+    Answered(ApprovalDecision),
+    /// The card was shown, and the wait ran out or the run stopped.
+    NoAnswer,
+    /// No card could be shown: an unattended run, a run without cards, or a
+    /// reply that already holds its limit of cards.
+    Unasked,
+}
 
 impl AppToolExecutor {
     /// Shows `approval` as a waiting card at the calling step and waits for the
     /// user, the wait limit or the run stopping; the card then shows the
-    /// outcome. None when nobody can answer (an unattended run, a run without
-    /// cards) or nobody did. A website is allowed for this turn only, so
-    /// "always" counts as once.
-    pub(super) async fn ask_user(&self, mut approval: ChatApproval) -> Option<ApprovalDecision> {
+    /// outcome. A website, a file access and an instruction write are allowed
+    /// for this reply only, so "always" counts as once for them.
+    pub(super) async fn ask_user(&self, mut approval: ChatApproval) -> AskOutcome {
         if self.capture.unattended_run_id.is_some() {
-            return None;
+            return AskOutcome::Unasked;
         }
-        let sink = self.capture.approval_sink.as_ref()?;
+        let Some(sink) = self.capture.approval_sink.as_ref() else {
+            return AskOutcome::Unasked;
+        };
+        // The stream loop drops a card past the limit, so the call would wait
+        // on a card nobody sees; count here instead.
+        let shown = self.capture.approvals_shown.fetch_update(
+            Ordering::AcqRel,
+            Ordering::Acquire,
+            |count| (count < crate::chat::progress::MAX_PROGRESS_APPROVALS).then_some(count + 1),
+        );
+        if shown.is_err() {
+            return AskOutcome::Unasked;
+        }
         let call_id = current_tool_call_id();
         let request_id = approval.request_id.clone();
         let receiver = approvals::register(&request_id, &self.loupist_id);
@@ -25,11 +54,10 @@ impl AppToolExecutor {
             _ = self.capture.search_cancel.cancelled() => None,
         };
         approvals::forget(&request_id);
-        let decision = match (approval.kind, decision) {
-            (Some(ApprovalKind::WebSite), Some(ApprovalDecision::Always)) => {
-                Some(ApprovalDecision::Once)
-            }
-            (_, decision) => decision,
+        let once_only = !matches!(approval.kind, None | Some(ApprovalKind::Command));
+        let decision = match decision {
+            Some(ApprovalDecision::Always) if once_only => Some(ApprovalDecision::Once),
+            decision => decision,
         };
         approval.state = match decision {
             Some(ApprovalDecision::Once) => ApprovalState::AllowedOnce,
@@ -38,7 +66,10 @@ impl AppToolExecutor {
             None => ApprovalState::Expired,
         };
         sink(call_id, approval);
-        decision
+        match decision {
+            Some(decision) => AskOutcome::Answered(decision),
+            None => AskOutcome::NoAnswer,
+        }
     }
 }
 
@@ -52,6 +83,42 @@ pub(super) fn web_site_approval(target: String) -> ChatApproval {
         connection_name: "Web".into(),
         tool_name: "web_fetch".into(),
         target: Some(target),
+        detail: None,
+        grant: None,
+        state: ApprovalState::Waiting,
+        requested_at_ms: chrono::Utc::now().timestamp_millis(),
+    }
+}
+
+/// A native policy card: the tool, its target line and, for a command, the
+/// whole command and the scope a blanket Allow covers.
+pub(super) fn native_approval(ask: &NativeAsk) -> ChatApproval {
+    let grant = match &ask.grant {
+        Grant::Command {
+            scope: CommandScope::Reply,
+            ..
+        } => Some(ApprovalGrant::Reply),
+        Grant::Command {
+            scope: CommandScope::Chat,
+            ..
+        } => Some(ApprovalGrant::Chat),
+        _ => None,
+    };
+    ChatApproval {
+        request_id: uuid::Uuid::new_v4().to_string(),
+        kind: Some(match ask.kind {
+            AskKind::Command => ApprovalKind::Command,
+            AskKind::FileRead => ApprovalKind::FileRead,
+            AskKind::FileWrite => ApprovalKind::FileWrite,
+            AskKind::Instructions => ApprovalKind::Instructions,
+        }),
+        item_id: None,
+        connection_id: "workspace".into(),
+        connection_name: "Workspace".into(),
+        tool_name: ask.tool.name().into(),
+        target: Some(ask.target.clone()),
+        detail: ask.detail.clone(),
+        grant,
         state: ApprovalState::Waiting,
         requested_at_ms: chrono::Utc::now().timestamp_millis(),
     }
