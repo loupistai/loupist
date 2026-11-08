@@ -268,6 +268,7 @@ mod knowledge_seam;
 mod lens_file;
 mod memory_as_of;
 mod memory_authority;
+mod question;
 mod scope_and_artifacts;
 mod shared_delivery;
 mod untrusted_text;

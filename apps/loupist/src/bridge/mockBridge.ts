@@ -1224,6 +1224,25 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     throw new Error("This approval is no longer waiting");
   }
 
+  /** Mock answer: settles the waiting question in the stored reply, as the host's next progress patch would. */
+  async chatQuestionAnswer(request: { loupist_id: string; request_id: string; choice?: number; text?: string }): Promise<void> {
+    if ((request.choice === undefined) === (request.text === undefined)) throw new Error("Send exactly one of choice and text");
+    for (const thread of this.state.threads[request.loupist_id] ?? []) {
+      for (const message of thread.messages) {
+        const question = message.progress?.questions?.find((item) => item.requestId === request.request_id);
+        if (!question) continue;
+        if (question.state !== "waiting") throw new Error("This question is no longer waiting");
+        if (request.choice !== undefined && !question.options[request.choice]) throw new Error("choice is not one of the options");
+        const text = request.text?.trim();
+        if (request.text !== undefined && (!text || text.length > 500)) throw new Error("text must be 1-500 characters");
+        question.state = "answered";
+        question.answer = request.choice !== undefined ? { choice: request.choice } : { text: text! };
+        return;
+      }
+    }
+    throw new Error("This question is no longer waiting");
+  }
+
   chatDelete(request: Contract.ChatDeleteRequest): Promise<void> {
     return loupistChat.chatDelete(this.state, request);
   }

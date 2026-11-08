@@ -939,6 +939,20 @@
     "webDeclined": "건너뜀 · {{site}} · 루피스트는 이 사이트 없이 계속했어요",
     "webExpired": "더 이상 필요하지 않음 · {{site}}"
   },
+  "questionCard": {
+    "label": "질문: {{question}}",
+    "title": "여쭤볼 게 있어요",
+    "waiting": "{{time}} 대기 중",
+    "recommended": "추천",
+    "options": "선택지",
+    "other": "직접 답하기",
+    "placeholder": "답을 입력하세요",
+    "send": "보내기",
+    "answered": "답변함 · {{answer}}",
+    "unanswered": "답변 없음 · ‘{{option}}’(으)로 계속했어요",
+    "unansweredAssumed": "답변 없음 · 루피스트가 스스로 정해 계속했어요",
+    "error": "이 질문은 이미 끝났어요."
+  },
   "journal": {
     "saved": "저널에 저장했어요: “{{judgment}}”",
     "view": "보기"
@@ -1131,6 +1145,10 @@
     "plan_update": {
       "running": "계획 정리 중",
       "done": "계획 정리함"
+    },
+    "ask_user": {
+      "running": "질문하는 중",
+      "done": "질문함"
     },
     "research_open": {
       "running": "조사 세션 여는 중",

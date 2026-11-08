@@ -1,6 +1,6 @@
 import { knowledgePinKey } from "../knowledge/location";
 import type { ChatMessage, ChatToolRefusal, KnowledgePin } from "../types";
-import type { ChatApproval } from "../contracts/chat";
+import type { ChatApproval, ChatQuestion } from "../contracts/chat";
 import type { GrowthEvent, KnowledgeMap } from "../contracts/knowledge";
 import { addedMapItems } from "../components/workspace/chatMapData";
 import { entityLabel } from "../components/map/labels";
@@ -63,6 +63,8 @@ export type RailData = {
   needs: ChatToolRefusal[];
   /** Approval cards still waiting in the latest answer. */
   waiting: ChatApproval[];
+  /** Question cards still waiting in the latest answer. */
+  questions: ChatQuestion[];
   hasCards: boolean;
 };
 
@@ -147,5 +149,6 @@ export function railData({ messages, pins = [], map, events = [], learningPendin
   const latest = [...messages].reverse().find((message) => message.role === "assistant");
   const needs = (latest?.tool_refusals ?? []).filter((refusal) => refusal.reason === "needs_approval");
   const waiting = (latest?.progress?.approvals ?? []).filter((approval) => approval.state === "waiting");
-  return { files, using, learned, learningPending, needs, waiting, hasCards: files.length > 0 || using.length > 0 || learned !== null || learningPending || needs.length > 0 || waiting.length > 0 };
+  const questions = (latest?.progress?.questions ?? []).filter((question) => question.state === "waiting");
+  return { files, using, learned, learningPending, needs, waiting, questions, hasCards: files.length > 0 || using.length > 0 || learned !== null || learningPending || needs.length > 0 || waiting.length > 0 || questions.length > 0 };
 }

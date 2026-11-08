@@ -51,6 +51,16 @@ describe("rail data", () => {
     expect(data.hasCards).toBe(true);
   });
 
+  it("counts only the waiting questions of the latest answer as needing the user", () => {
+    const ask = (state: "waiting" | "answered") => ({ requestId: `q-${state}`, question: "Which period?", options: [{ label: "A" }, { label: "B" }], state, requestedAtMs: 1 });
+    const asking = { ...answer, tool_refusals: [], progress: { ...answer.progress, questions: [ask("waiting"), ask("answered")] } } as ChatMessage;
+    const data = railData({ messages: [question, asking], chatId: "chat", language: "en", map, events: [] });
+    expect(data.questions.map((item) => item.requestId)).toEqual(["q-waiting"]);
+    expect(data.hasCards).toBe(true);
+    const settled = railData({ messages: [question, { ...asking, progress: { ...asking.progress, questions: [ask("answered")] } } as ChatMessage], chatId: "chat", language: "en", map, events: [] });
+    expect(settled.questions).toEqual([]);
+  });
+
   it("has no cards for a chat with nothing attached, used or learned", () => {
     const data = railData({ messages: [{ ...question, attachments: [] }], chatId: "chat", language: "en", map, events: [] });
     expect(data).toMatchObject({ files: [], using: [], learned: null, needs: [], hasCards: false });

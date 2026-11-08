@@ -106,6 +106,17 @@ unattended runs, keep the plain refusal. After third-party text, a `web_fetch` o
 new site waits on the same kind of card (`kind: web_site`) with only Allow once and
 Not now ([Trust](../runtime/untrusted-text.md)).
 
+An [`ask_user`](../agent/turn-tools.md#turn-tools) call waits on a question card the same
+way: Rust records it on `ChatProgress.questions` (at most four per reply), under the step
+that asked, and the card offers one button per option (the recommended one primary, tagged
+Recommended, with its description under each label), an "Or answer in your own words"
+field up to 500 characters and the waiting clock. Answers go through
+`chat_question_answer {loupist_id, request_id, choice | text}` (exactly one; Rust checks the
+Loupist, the option index and the length). The settled line reads "You answered: …" or,
+when the wait ran out or the run stopped, "No answer · continued with <recommended
+option>". A waiting question counts in the rail's "Needs your OK" row and turns the
+footer to "Waiting for you"; one still waiting when the run ends is saved as expired.
+
 A completed `connection_setup` step leaves a setup card under the answer
 (`ConnectionSetupCard`, derived by `chat/connectionSetupBlocks.ts` from the step's
 target, one card per entry). The card reads the connection's live state through

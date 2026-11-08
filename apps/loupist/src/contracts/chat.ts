@@ -124,12 +124,27 @@ export type ChatApproval = {
 
 export type ChatApprovalDecision = "once" | "always" | "deny";
 
+/** One question the agent asked mid-reply (`ask_user`): 2 to 4 options and always a free-text answer. */
+export type ChatQuestion = {
+  requestId: string;
+  /** The progress step that waits, when known. */
+  itemId?: string;
+  question: string;
+  options: { label: string; description?: string }[];
+  /** Index into `options` the agent suggests and assumes when nobody answers. */
+  recommended?: number;
+  state: "waiting" | "answered" | "expired";
+  answer?: { choice: number } | { text: string };
+  requestedAtMs: number;
+};
+
 export type ChatProgress = {
   startedAtMs: number;
   finishedAtMs?: number;
   items: ChatProgressItem[];
   plan?: ChatPlan;
   approvals?: ChatApproval[];
+  questions?: ChatQuestion[];
 };
 
 export type ChatProgressPatch = {
@@ -143,6 +158,8 @@ export type ChatProgressPatch = {
   plan?: ChatPlan;
   /** Every approval whenever one changed. */
   approvals?: ChatApproval[];
+  /** Every question whenever one changed. */
+  questions?: ChatQuestion[];
 };
 
 export type ChatArtifactKind = "markdown" | "chart" | "grid";

@@ -179,6 +179,22 @@ projects it into the reply's progress plan, keeps each step's first activation
 time and marks unfinished steps Not done when the run ends. It creates no evidence
 and touches no Memory, and scheduled runs may call it.
 
+`ask_user` (core, Bot and research sessions only, two calls per reply) lets the agent
+settle a real fork without ending the reply. It takes `question` (1-300 characters),
+`options` (2-4 of `{label` 1-60 characters, unique ignoring case; `description?` up to
+160`}`) and `recommended?` (an index into `options`); Rust refuses by field
+(`options[1].label`, `recommended`). The card always adds a free-text answer of up to
+500 characters. The call waits for the answer, five minutes (`APPROVAL_WAIT`) or the run
+stopping. The result is `{answered: true, choice: "<label>"}` or
+`{answered: true, text}`; with no answer it is `{answered: false, assumed: "<recommended
+label>" | null, next}`, not an error, and `next` tells the model to continue with the
+assumption and say which one it used. A text answer's URLs count as typed by the user for
+the untrusted-text rule. The description tells the model to ask only when the answer
+changes the work materially and no sensible default exists, never for credentials or
+account numbers, and never for permission to run a tool. Scheduled and delegated runs
+refuse it: the unattended allowlist omits it and the chat surface gates it. The card and
+`chat_question_answer` are described in [Chat composer](../ui/chat-composer.md#chat-composer).
+
 Tool failures should identify the field and expected shape, with a useful repair
 action and no credentials or private payloads. Argument adapters may lift misplaced
 fields or remove supported empty extras, but must not invent evidence or merge

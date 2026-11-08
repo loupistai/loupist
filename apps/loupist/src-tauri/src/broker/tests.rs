@@ -639,6 +639,14 @@ fn turn_budgets_bound_saves_and_publications_but_rollbacks_are_free() {
     ));
     cardinality.rollback(ToolMethod::LensFile);
     cardinality.consume(ToolMethod::LensFile, &policy).unwrap();
+
+    for _ in 0..MAX_CHAT_TURN_QUESTIONS {
+        cardinality.consume(ToolMethod::AskUser, &policy).unwrap();
+    }
+    assert!(matches!(
+        cardinality.consume(ToolMethod::AskUser, &policy),
+        Err(BrokerError::BudgetExceeded)
+    ));
 }
 
 #[tokio::test]

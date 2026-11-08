@@ -163,6 +163,7 @@ mod tests {
                 items: vec![],
                 plan: None,
                 approvals: Vec::new(),
+                questions: Vec::new(),
             },
         });
         for index in 1..=100 {
@@ -184,6 +185,7 @@ mod tests {
                     finished_at_ms: None,
                     plan: None,
                     approvals: None,
+                    questions: None,
                 },
             });
         }
@@ -224,6 +226,7 @@ mod tests {
                 }],
                 plan: None,
                 approvals: Vec::new(),
+                questions: Vec::new(),
             },
         });
         replay.observe(&ChatStreamEvent::ProgressPatch {
@@ -236,6 +239,7 @@ mod tests {
                 finished_at_ms: Some(20),
                 plan: None,
                 approvals: None,
+                questions: None,
             },
         });
         replay.observe(&ChatStreamEvent::ProgressPatch {
@@ -251,6 +255,7 @@ mod tests {
                 finished_at_ms: None,
                 plan: None,
                 approvals: None,
+                questions: None,
             },
         });
         let events = replay.events().unwrap();

@@ -12,6 +12,7 @@ import type {
   ChatProgressItem,
   ChatProgressOperation,
   ChatProgressStatus,
+  ChatQuestion,
 } from "../../types";
 import { ChatActivityDetailView } from "./ChatActivityDetailView";
 import { ChatExecutionProvider, useChatExecution } from "./ChatExecutionContext";
@@ -40,6 +41,8 @@ type Props = {
    * for it; with the steps folded, or without a known step, they follow the row.
    */
   renderApprovals?: (approvals: ChatApproval[]) => ReactNode;
+  /** Draws question cards (`ask_user`) where approval cards go. */
+  renderQuestions?: (questions: ChatQuestion[]) => ReactNode;
 };
 
 type ActionItem = Extract<ChatProgressItem, { kind: "tool" | "system" }>;
@@ -279,7 +282,7 @@ const refusedRead = (item: ActionItem) => {
  * what was read and worked afterwards, at the same height. The details hold
  * the sources, consulted notes, plan and every step.
  */
-export function ActivityRow({ segment, revealedResult, focusItemId, asOf, renderApprovals }: Props) {
+export function ActivityRow({ segment, revealedResult, focusItemId, asOf, renderApprovals, renderQuestions }: Props) {
   useTranslation("chat");
   const { row, tone, progress, evidence, sources, memoryReads, autoExpand } = segment;
   const execution = useChatExecution();
@@ -291,7 +294,9 @@ export function ActivityRow({ segment, revealedResult, focusItemId, asOf, render
   const [expandedResults, setExpandedResults] = useState<Set<string>>(new Set());
   const approvals = progress.approvals ?? [];
   const pendingApprovals = approvals.filter((approval) => approval.state === "waiting");
-  const waiting = pendingApprovals.length > 0;
+  const questions = progress.questions ?? [];
+  const pendingQuestions = questions.filter((question) => question.state === "waiting");
+  const waiting = pendingApprovals.length > 0 || pendingQuestions.length > 0;
   const expanded = userChoice ?? autoExpand;
 
   useEffect(() => {
@@ -325,11 +330,15 @@ export function ActivityRow({ segment, revealedResult, focusItemId, asOf, render
   // Approvals sit with the step that asked; one whose step is unknown follows the steps.
   const stepIds = new Set(actions.map((item) => item.id));
   const unplaced = approvals.filter((approval) => !approval.itemId || !stepIds.has(approval.itemId));
-  const approvalsFor = (item: ActionItem) => {
-    if (!renderApprovals) return undefined;
-    const own = approvals.filter((approval) => approval.itemId === item.id);
-    return own.length ? renderApprovals(own) : undefined;
+  const unplacedQuestions = questions.filter((question) => !question.itemId || !stepIds.has(question.itemId));
+  const cards = (forApprovals: ChatApproval[], forQuestions: ChatQuestion[]) => {
+    const approvalCards = renderApprovals && forApprovals.length ? renderApprovals(forApprovals) : null;
+    const questionCards = renderQuestions && forQuestions.length ? renderQuestions(forQuestions) : null;
+    return approvalCards || questionCards ? <>{approvalCards}{questionCards}</> : undefined;
   };
+  const unplacedCards = cards(unplaced, unplacedQuestions);
+  const approvalsFor = (item: ActionItem) =>
+    cards(approvals.filter((approval) => approval.itemId === item.id), questions.filter((question) => question.itemId === item.id));
   const renderEntry = (entry: ChatProgressItem) => entry.kind === "commentary" ? null : (
     <ActionRow key={entry.id} item={entry} evidence={evidenceFor(entry, evidenceById)} revealedResult={revealedResult} expandedResults={expandedResults}
       onToggleResult={onToggleResult} rowExpanded={expanded} focusItemId={focusItemId} approvals={approvalsFor(entry)} />
@@ -356,7 +365,7 @@ export function ActivityRow({ segment, revealedResult, focusItemId, asOf, render
         </span>
         <ChevronDownIcon className={`chat-progress-chevron ${expanded ? "open" : ""}`} aria-hidden="true" />
       </button>
-      {renderApprovals && pendingApprovals.length && !expanded ? <div className="chat-progress-approvals" data-folded="">{renderApprovals(pendingApprovals)}</div> : null}
+      {!expanded && waiting ? <div className="chat-progress-approvals" data-folded="">{cards(pendingApprovals, pendingQuestions)}</div> : null}
       {expanded ? (
         <ChatExecutionProvider value={detailScope}><RowAsOf.Provider value={asOf}>
           <div id={detailsId} className="chat-progress-items" data-waiting={waiting || undefined}>
@@ -369,7 +378,7 @@ export function ActivityRow({ segment, revealedResult, focusItemId, asOf, render
             {progress.plan ? <PlanList plan={progress.plan} nested={sections.nested} renderSteps={(items) => items.map(renderEntry)} /> : null}
             {sections.rest.map(renderEntry)}
             {unlinked.map((result) => <ChatToolResult key={result.id} evidence={result} expanded={expandedResults.has(result.id)} focusRequest={revealedResult?.id === result.id ? revealedResult.request : undefined} onToggle={() => onToggleResult(result.id)} />)}
-            {renderApprovals && unplaced.length ? <div className="chat-progress-approvals">{renderApprovals(unplaced)}</div> : null}
+            {unplacedCards ? <div className="chat-progress-approvals">{unplacedCards}</div> : null}
           </div>
         </RowAsOf.Provider></ChatExecutionProvider>
       ) : null}

@@ -2076,6 +2076,28 @@ button.sent-image { cursor: zoom-in; }
 .chat-progress-approvals .approval-cards { margin: var(--gg-space-1) 0 var(--gg-space-2); }
 /* The step list is quiet meta text; the card inside it reads at body size like the answer. */
 .chat-progress-approvals .approval-card { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+/* Question card (ask_user): the agent asks one thing mid-reply; options, the recommended one marked, and free text. It settles into one line. */
+.question-cards { display: grid; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 var(--gg-space-3); }
+.question-card { display: grid; gap: var(--gg-space-3); max-width: 640px; padding: var(--gg-space-4); border: 1px solid var(--gg-color-accent); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
+.question-card header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--gg-space-3); }
+.question-card header strong { font-size: var(--gg-text-subtitle); font-weight: var(--gg-weight-medium); }
+.question-card-clock { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.question-card p { margin: 0; overflow-wrap: anywhere; }
+.question-card-options { display: grid; gap: var(--gg-space-2); }
+.question-card .question-card-option { display: grid; justify-content: stretch; justify-items: start; gap: 2px; width: 100%; height: auto; min-height: var(--gg-size-control-md); padding: var(--gg-space-2) var(--gg-space-3); text-align: left; white-space: normal; }
+.question-card-option-label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); font-weight: var(--gg-weight-medium); }
+.question-card-option-description { font-size: var(--gg-text-meta); font-weight: var(--gg-weight-regular, 400); opacity: 0.8; }
+.question-card-tag { padding: 0 var(--gg-space-2); border-radius: var(--gg-radius-sm); background: color-mix(in oklab, currentColor 18%, transparent); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); }
+.question-card-other { display: grid; gap: var(--gg-space-1); }
+.question-card-other-row { display: flex; gap: var(--gg-space-2); }
+.question-card-other-row > input { flex: 1 1 auto; min-width: 0; }
+.question-card-note { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.question-card-error { margin: 0; color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
+.question-line { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); overflow-wrap: anywhere; }
+.question-card:focus { outline: none; }
+.question-card:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
+.chat-progress-approvals .question-cards { margin: var(--gg-space-1) 0 var(--gg-space-2); }
+.chat-progress-approvals .question-card { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
 /* A step the untrusted-text rule paused (B92): a calm note under it, not an error, with nothing to override. */
 .chat-step-paused { grid-column: 2 / -1; display: grid; gap: 2px; min-width: 0; margin: var(--gg-space-1) 0 var(--gg-space-2); padding: var(--gg-space-2) var(--gg-space-3); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-sunken); }
 .chat-step-paused p { margin: 0; color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }

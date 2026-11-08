@@ -179,6 +179,7 @@ export const applyChatProgressPatch = (
         : { finishedAtMs: patch.finishedAtMs }),
       ...(patch.plan === undefined ? {} : { plan: patch.plan }),
       ...(patch.approvals === undefined ? {} : { approvals: patch.approvals }),
+      ...(patch.questions === undefined ? {} : { questions: patch.questions }),
       items: itemsChanged ? items : state.progress.items,
     },
   };

@@ -978,6 +978,20 @@
     "webDeclined": "Skipped · {{site}} · the Loupist continued without it",
     "webExpired": "No longer needed · {{site}}"
   },
+  "questionCard": {
+    "label": "Question: {{question}}",
+    "title": "A question for you",
+    "waiting": "waiting {{time}}",
+    "recommended": "Recommended",
+    "options": "Options",
+    "other": "Or answer in your own words",
+    "placeholder": "Type your answer",
+    "send": "Send",
+    "answered": "You answered: {{answer}}",
+    "unanswered": "No answer · continued with {{option}}",
+    "unansweredAssumed": "No answer · continued with its own assumption",
+    "error": "This question is no longer waiting."
+  },
   "journal": {
     "saved": "Saved to your journal: “{{judgment}}”",
     "view": "View"
@@ -1172,6 +1186,10 @@
     "plan_update": {
       "running": "Updating the plan",
       "done": "Updated the plan"
+    },
+    "ask_user": {
+      "running": "Asking you a question",
+      "done": "Asked you a question"
     },
     "research_open": {
       "running": "Opening a research session",

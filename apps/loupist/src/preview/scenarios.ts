@@ -1057,6 +1057,32 @@ export const scenarios: readonly PreviewScenario[] = [
     setup: async (bridge) => { await prepareFixture(bridge, "answer"); approvalRun(bridge, kind); },
   })),
   {
+    ...base("chat-question-card", "The agent asks one question mid-reply and waits for the user", () => select(".chat-progress .question-card"),
+      async root => { await submitPrompt(root, "Compare Hanul Precision with its peers."); await centerOn(".question-card")(); }),
+    setup: async (bridge) => {
+      await prepareFixture(bridge, "answer");
+      bridge.chatSend = async (request, observer) => {
+        const run_id = request.run_id;
+        const at = Date.now();
+        observer({ type: "started", run_id });
+        observer({ type: "progress", run_id, sequence: 1, progress: {
+          startedAtMs: at - 8_000,
+          items: [{ id: "preview-ask", kind: "tool", toolName: "ask_user", category: "capability", operation: "generic", action: "Asked you a question", running: "Asking you a question", status: "running", startedAtMs: at - 6_000 }],
+          questions: [{
+            requestId: "preview-question", itemId: "preview-ask", question: "Which period should the comparison use?",
+            options: [
+              { label: "Last 4 quarters", description: "Trailing twelve months, closest to today" },
+              { label: "Last 3 fiscal years", description: "Smooths out one-off quarters" },
+            ],
+            recommended: 0, state: "waiting", requestedAtMs: at - 6_000,
+          }],
+        } });
+        observer({ type: "phase", run_id, phase: "tool" });
+        return { run_id };
+      };
+    },
+  },
+  {
     ...base("chat-approval-decided", "Inspect a settled approval", () => select(".approval-line"), async root => {
       await click("button[data-research-summary]", root);
       await centerOn(".approval-line")();

@@ -272,6 +272,8 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   chatVersionSwitch(request: import("./chat").ChatVersionSwitchRequest): Promise<ChatThread>;
   /** The user's answer to an approval card; the waiting tool call resumes or is skipped. */
   chatApprovalDecide(request: { loupist_id: string; request_id: string; decision: import("./chat").ChatApprovalDecision }): Promise<void>;
+  /** The user's answer to a question card: exactly one of `choice` (an option index) and `text`. */
+  chatQuestionAnswer(request: { loupist_id: string; request_id: string; choice?: number; text?: string }): Promise<void>;
   chatDelete(request: ChatDeleteRequest): Promise<void>;
   chatAttachmentRead(
     loupist_id: string,

@@ -23,6 +23,7 @@ const data: RailData = {
   learned: { names: 2, relationships: 1, methods: 0, chips: [{ id: "hanul", label: "Hanul Precision", swatch: "company" }], highlightIds: new Set(["hanul", "morrow"]) },
   needs: [],
   waiting: [],
+  questions: [],
   hasCards: true,
 };
 
@@ -102,6 +103,29 @@ it("flags a waiting approval in compact context, the same as a refusal that need
   const waiting = { ...data, waiting: [{ requestId: "r1", connectionId: "c1", connectionName: "Morrow", toolName: "read_filings", state: "waiting" as const, requestedAtMs: 0 }] };
   render(<ChatRail mode="inline" data={waiting} actions={actions()} />);
   expect(screen.getByRole("button", { name: /^Needs your OK/ })).toHaveTextContent("Read filings");
+});
+
+it("counts a waiting question in the same row and leads to its card", async () => {
+  const user = userEvent.setup();
+  const question = { requestId: "q1", question: "Compare on which period?", options: [{ label: "Last 4 quarters" }, { label: "Last 3 years" }], state: "waiting" as const, requestedAtMs: 0 };
+  const card = document.createElement("section");
+  card.className = "question-card";
+  card.dataset.requestId = "q1";
+  card.tabIndex = -1;
+  Object.defineProperty(card, "scrollIntoView", { value: vi.fn(), configurable: true });
+  document.body.append(card);
+  try {
+    const { rerender } = render(<ChatRail mode="rail" data={{ ...data, questions: [question] }} actions={actions()} />);
+    const row = screen.getByRole("button", { name: /^Needs your OK/ });
+    expect(row).toHaveTextContent("Compare on which period?");
+    await user.click(row);
+    expect(card).toHaveFocus();
+    const waiting = { requestId: "r1", connectionId: "c1", connectionName: "Morrow", toolName: "read_filings", state: "waiting" as const, requestedAtMs: 0 };
+    rerender(<ChatRail mode="rail" data={{ ...data, waiting: [waiting], questions: [question] }} actions={actions()} />);
+    expect(screen.getByRole("button", { name: /^Needs your OK/ })).toHaveTextContent("2 requests");
+  } finally {
+    card.remove();
+  }
 });
 
 it("names a waiting approval in one row with no buttons of its own, and leads to the card in the answer", async () => {

@@ -165,6 +165,7 @@ export const createLoupistBridge = (): LoupistBridge => ({
   chatBranch: request("chat_branch"),
   chatVersionSwitch: request("chat_version_switch"),
   chatApprovalDecide: request("chat_approval_decide"),
+  chatQuestionAnswer: request("chat_question_answer"),
   chatDelete: request("chat_delete"),
   chatFeedbackSet: request("chat_feedback_set"),
   chatActivityRead: request("chat_activity_read"),

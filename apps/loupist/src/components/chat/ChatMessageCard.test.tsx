@@ -451,6 +451,31 @@ it("keeps a waiting approval actionable while folded and leaves its settled rece
   expect(screen.getByText("Allowed once · Read company filings").closest('[data-progress-status="succeeded"]')).not.toBeNull();
 });
 
+it("keeps a waiting question actionable while folded and leaves its settled line with the step", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const answerQuestion = vi.spyOn(bridge, "chatQuestionAnswer").mockResolvedValue();
+  const question = (state: "waiting" | "answered") => ({
+    requestId: "q-1", itemId: "step-ask", question: "Compare on which period?", recommended: 0, state,
+    options: [{ label: "Last 4 quarters" }, { label: "Last 3 years" }],
+    ...(state === "answered" ? { answer: { choice: 1 } } : {}), requestedAtMs: Date.now() - 5_000,
+  });
+  const items = (status: "running" | "succeeded") => [
+    { id: "step-ask", kind: "tool" as const, toolName: "ask_user", category: "capability" as const, operation: "generic" as const, action: "Asked you a question", running: "Asking you a question", status, startedAtMs: 1, ...(status === "succeeded" ? { finishedAtMs: 4 } : {}) },
+  ];
+  const running = answer({ status: "streaming", content: "", progress: { startedAtMs: 0, items: items("running"), questions: [question("waiting")] } });
+  const { view } = renderAnswer(running, { bridge });
+  const card = screen.getByRole("region", { name: "Question: Compare on which period?" });
+  expect(card.closest(".chat-progress")).toHaveAttribute("data-expanded", "false");
+  await user().click(within(card).getByRole("button", { name: /^Last 3 years/ }));
+  expect(answerQuestion).toHaveBeenCalledWith({ loupist_id: "loupist-a", request_id: "q-1", choice: 1 });
+
+  const done = answer({ progress: { startedAtMs: 0, finishedAtMs: 5_000, items: items("succeeded"), questions: [question("answered")] } });
+  view.rerender(<TooltipProvider><ChatMessageCard message={done} loupistId="loupist-a" chatId="chat-a" loupistName="Loupist" bridge={bridge} onReadAttachment={vi.fn()} /></TooltipProvider>);
+  expect(screen.queryByText("You answered: Last 3 years")).toBeNull();
+  await user().click(within(screen.getByLabelText("Work progress")).getByRole("button"));
+  expect(screen.getAllByText("You answered: Last 3 years")).toHaveLength(1);
+});
+
 it("keeps inline references in the question and shows saved tool and date selections below it", () => {
   const { view } = renderAnswer(answer({
     role: "user", as_of: "2026-03-05",
