@@ -1479,8 +1479,16 @@ fn two_spellings_of_one_company_are_never_two_cases() {
     let suffixed = named("Kestrel utilization", "Kestrel Foundry Inc.");
     assert!(put_in(&store, "chat-2", "m2", suffixed, text, &[b], AT + 3).is_none());
     assert!(review_states(&store).is_empty());
-    // The World confirms both spellings as one company: still one case.
-    reseal_with(&store, &[("entity-k", "Kestrel Foundry")], AT + 4);
+    // The World confirms each spelling as its own node. One company key, so
+    // two independent Chats about them are still one case.
+    reseal_with(
+        &store,
+        &[
+            ("entity-k", "Kestrel Foundry"),
+            ("entity-k2", "Kestrel Foundry Inc."),
+        ],
+        AT + 4,
+    );
     assert!(review_states(&store).is_empty());
     // Both pages are now evidence about that company, beside a second one.
     assert!(turn(&store, "chat-3", "m3", 0, &[c], AT + 5).is_some());
@@ -1526,11 +1534,130 @@ fn companies_the_world_has_not_confirmed_count_once_it_does() {
         &store,
         &[
             ("entity-k", "Kestrel Foundry"),
-            ("entity-h", "Halvorsen Cellworks"),
+            ("entity-h", "Halvorsen Cellworks ASA"),
         ],
         AT + 8,
     );
     assert_eq!(review_states(&store), ["deferred", "queued"]);
+}
+
+/// Sorted page titles a claimed review shows.
+fn pages(a: &Attempt) -> Vec<String> {
+    let mut pages: Vec<_> = a
+        .input
+        .observations
+        .iter()
+        .map(|o| o.page.clone())
+        .collect();
+    pages.sort();
+    pages
+}
+
+#[test]
+fn unconfirmed_research_outlives_a_review_that_reached_inference_without_it() {
+    let (_dir, store) = setup();
+    let (a, b, c, d) = (
+        source(&store, "Filing A"),
+        source(&store, "Filing B"),
+        source(&store, "Filing C"),
+        source(&store, "Filing D"),
+    );
+    let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+    let kestrel = named("Kestrel ramp", "Kestrel Foundry");
+    assert!(put_in(&store, "chat-1", "m1", kestrel, text, &[a], AT + 2).is_none());
+    let halvorsen = named("Halvorsen ramp", "Halvorsen Cellworks");
+    assert!(put_in(&store, "chat-2", "m2", halvorsen, text, &[b], AT + 3).is_none());
+    // Two confirmed companies queue a review that reaches inference without
+    // the pending pages and settles.
+    assert!(turn(&store, "chat-3", "m3", 0, &[c], AT + 4).is_none());
+    assert!(turn(&store, "chat-4", "m4", 1, &[d], AT + 5).is_some());
+    let first = begin(&store, AT + 6);
+    assert_eq!(pages(&first), ["Manufacturer 0", "Manufacturer 1"]);
+    defer(&store, &first, AT + 7);
+    assert_eq!(review_states(&store), ["deferred"]);
+    // The World confirms the two pending companies: their research was not
+    // consumed, so it is a review of its own under the normal rate limit.
+    reseal_with(
+        &store,
+        &[
+            ("entity-k", "Kestrel Foundry"),
+            ("entity-h", "Halvorsen Cellworks"),
+        ],
+        AT + 8,
+    );
+    assert_eq!(review_states(&store), ["deferred", "pending"]);
+    assert!(try_claim(&store, AT + 9).is_none());
+    let second = begin(&store, AT + 6 + SIX_HOURS);
+    assert_eq!(pages(&second), ["Halvorsen ramp", "Kestrel ramp"]);
+}
+
+#[test]
+fn a_company_confirmed_while_a_review_runs_is_rechecked_when_it_settles() {
+    let (_dir, store) = setup();
+    let sources: Vec<_> = ["A", "B", "C", "D", "E", "F"]
+        .iter()
+        .map(|n| source(&store, &format!("Filing {n}")))
+        .collect();
+    let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+    for (i, (title, name)) in [
+        ("Kestrel ramp", "Kestrel Foundry"),
+        ("Halvorsen ramp", "Halvorsen Cellworks"),
+        ("Ferroluz ramp", "Ferroluz"),
+        ("Daeil ramp", "Daeil Steel"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let page = named(title, name);
+        let (chat, message) = (format!("chat-{i}"), format!("m{i}"));
+        let at = AT + 2 + i as i64;
+        assert!(put_in(
+            &store,
+            &chat,
+            &message,
+            page,
+            text,
+            &[sources[i].clone()],
+            at
+        )
+        .is_none());
+    }
+    // A review admitted at the log head defers before inference, so the head
+    // counts as read: only a publication can bring the pending pages back.
+    assert!(turn(&store, "chat-4", "m4", 0, &[sources[4].clone()], AT + 6).is_none());
+    assert!(turn(&store, "chat-5", "m5", 1, &[sources[5].clone()], AT + 7).is_some());
+    remove_source(&store, "Filing F");
+    assert!(try_claim(&store, AT + 8).is_none());
+    assert_eq!(review_states(&store), ["deferred"]);
+    reseal_with(
+        &store,
+        &[
+            ("entity-k", "Kestrel Foundry"),
+            ("entity-h", "Halvorsen Cellworks"),
+        ],
+        AT + 9,
+    );
+    let running = begin(&store, AT + 10);
+    assert_eq!(
+        pages(&running),
+        ["Halvorsen ramp", "Kestrel ramp", "Manufacturer 0"]
+    );
+    // Two more companies are confirmed while that review runs.
+    reseal_with(
+        &store,
+        &[
+            ("entity-k", "Kestrel Foundry"),
+            ("entity-h", "Halvorsen Cellworks"),
+            ("entity-f", "Ferroluz"),
+            ("entity-d", "Daeil Steel"),
+        ],
+        AT + 11,
+    );
+    assert_eq!(review_states(&store), ["deferred", "running"]);
+    defer(&store, &running, AT + 12);
+    assert_eq!(review_states(&store), ["deferred", "deferred", "pending"]);
+    let next = begin(&store, AT + 10 + SIX_HOURS);
+    assert_eq!(pages(&next), ["Daeil ramp", "Ferroluz ramp"]);
 }
 
 #[test]

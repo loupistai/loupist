@@ -14,19 +14,24 @@ enum Edge {
     Trailing,
 }
 
-/// Legal-form words a company name may carry, written as filings write them.
-/// A `joined` form also matches with no space before or after it, as Korean
+/// Legal-form words a company name may carry, written as filings write them
+/// and as they read once punctuation has become spaces (`S.A.` is `s a`). A
+/// `joined` form also matches with no space before or after it, as Korean
 /// and Japanese names write it. Only Korean and Japanese forms lead a name, so
-/// "AS Roma" keeps its "AS".
+/// "AS Roma" keeps its "AS". The longest matching form is stripped first, so
+/// "& Co." goes as a whole and leaves no `&` behind. `(주)` and `㈜` go earlier,
+/// while their parentheses still mark them: the bare syllable `주` is a word.
 const LEGAL_FORMS: &[(&str, Edge, bool)] = &[
     ("주식회사", Edge::Leading, true),
-    ("(주)", Edge::Leading, false),
-    ("㈜", Edge::Leading, false),
     ("유한회사", Edge::Leading, true),
     ("株式会社", Edge::Leading, true),
     ("주식회사", Edge::Trailing, true),
-    ("(주)", Edge::Trailing, false),
     ("株式会社", Edge::Trailing, true),
+    ("& co", Edge::Trailing, false),
+    ("& company", Edge::Trailing, false),
+    ("and co", Edge::Trailing, false),
+    ("and company", Edge::Trailing, false),
+    ("&", Edge::Trailing, false),
     ("inc", Edge::Trailing, false),
     ("incorporated", Edge::Trailing, false),
     ("corp", Edge::Trailing, false),
@@ -36,7 +41,10 @@ const LEGAL_FORMS: &[(&str, Edge, bool)] = &[
     ("ltd", Edge::Trailing, false),
     ("limited", Edge::Trailing, false),
     ("llc", Edge::Trailing, false),
+    ("llp", Edge::Trailing, false),
+    ("lp", Edge::Trailing, false),
     ("plc", Edge::Trailing, false),
+    ("kg", Edge::Trailing, false),
     ("sa", Edge::Trailing, false),
     ("ag", Edge::Trailing, false),
     ("nv", Edge::Trailing, false),
@@ -62,14 +70,31 @@ const LEGAL_FORMS: &[(&str, Edge, bool)] = &[
     ("b v", Edge::Trailing, false),
     ("a g", Edge::Trailing, false),
     ("p l c", Edge::Trailing, false),
+    ("l l c", Edge::Trailing, false),
+    ("l l p", Edge::Trailing, false),
+    ("l p", Edge::Trailing, false),
+    ("g m b h", Edge::Trailing, false),
+    ("k g", Edge::Trailing, false),
 ];
 
-/// NFKC, casefold, and every character but a letter, a digit or `&` as a
-/// space, whitespace collapsed.
+/// Latin accents as NFKD exposes them, U+0300 to U+036F. Dropping only these
+/// folds "Nestlé" to "nestle" and leaves kana voicing marks alone.
+fn is_latin_accent(c: &char) -> bool {
+    ('\u{300}'..='\u{36f}').contains(c)
+}
+
+fn is_apostrophe(c: &char) -> bool {
+    matches!(c, '\'' | '\u{2018}' | '\u{2019}' | '\u{02bc}')
+}
+
+/// Accents dropped, NFKC, casefold, apostrophes removed, and every other
+/// character but a letter, a digit or `&` as a space, whitespace collapsed.
 fn name_words(name: &str) -> String {
-    let folded = super::world_extract::casefold(&name.nfkc().collect::<String>());
+    let plain: String = name.nfkd().filter(|c| !is_latin_accent(c)).nfkc().collect();
+    let folded = super::world_extract::casefold(&plain);
     let spaced: String = folded
         .chars()
+        .filter(|c| !is_apostrophe(c))
         .map(|c| {
             if c.is_alphanumeric() || c == '&' {
                 c
@@ -81,13 +106,16 @@ fn name_words(name: &str) -> String {
     spaced.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// [`LEGAL_FORMS`] as words, longest first.
 fn legal_forms() -> &'static [(String, Edge, bool)] {
     static FORMS: OnceLock<Vec<(String, Edge, bool)>> = OnceLock::new();
     FORMS.get_or_init(|| {
-        LEGAL_FORMS
+        let mut forms: Vec<_> = LEGAL_FORMS
             .iter()
             .map(|&(form, edge, joined)| (name_words(form), edge, joined))
-            .collect()
+            .collect();
+        forms.sort_by_key(|(form, _, _)| std::cmp::Reverse(form.len()));
+        forms
     })
 }
 
@@ -109,19 +137,63 @@ fn strip_form<'a>(key: &'a str, form: &str, edge: Edge, joined: bool) -> Option<
     (!rest.is_empty()).then_some(rest)
 }
 
-/// One company's identity across the ways pages spell it: "Acme", "ACME
-/// Inc." and "Acme Co., Ltd." share a key. Legal forms are stripped while a
-/// name remains; a name that is only a legal form keeps it.
-pub(crate) fn entity_name_key(name: &str) -> String {
-    let words = name_words(name);
-    let mut key = words.as_str();
+/// `words` without a leading "the" and without legal forms, while a name
+/// remains; a name that is only a legal form keeps it.
+fn strip_legal_forms(words: &str) -> &str {
+    let mut key = words.strip_prefix("the ").unwrap_or(words);
     while let Some(rest) = legal_forms()
         .iter()
         .find_map(|(form, edge, joined)| strip_form(key, form, *edge, *joined))
     {
         key = rest;
     }
-    key.to_owned()
+    key
+}
+
+/// `text` outside its parentheses, then the inside of each parenthetical.
+fn segments(text: &str) -> Vec<String> {
+    let mut outer = String::new();
+    let mut inner = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0usize;
+    for c in text.chars() {
+        match c {
+            '(' if depth == 0 => depth = 1,
+            '(' => {
+                depth += 1;
+                current.push(c);
+            }
+            ')' if depth == 1 => {
+                depth = 0;
+                inner.push(std::mem::take(&mut current));
+            }
+            ')' if depth > 1 => {
+                depth -= 1;
+                current.push(c);
+            }
+            _ if depth == 0 => outer.push(c),
+            _ => current.push(c),
+        }
+    }
+    if depth > 0 {
+        inner.push(current);
+    }
+    std::iter::once(outer).chain(inner).collect()
+}
+
+/// One company's identity across the ways pages spell it: "Acme", "ACME
+/// Inc." and "Acme Co., Ltd." share a key. A parenthetical is another
+/// spelling, so `삼성전자(Samsung Electronics)` carries a key for each, and a
+/// `(주)` or `㈜` is a legal form. Two companies may share a key ("Bath Spa"
+/// and "Bath S.p.A."): a key tells learning when two observations might be
+/// one company, never that they are two.
+pub(crate) fn entity_name_keys(name: &str) -> BTreeSet<String> {
+    let text: String = name.nfkc().collect();
+    segments(&text.replace("(주)", " "))
+        .iter()
+        .map(|segment| strip_legal_forms(&name_words(segment)).to_owned())
+        .filter(|key| !key.is_empty())
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -351,9 +423,53 @@ mod tests {
                 "ferroluz",
             ),
             (&["Philips N.V.", "Philips"][..], "philips"),
+            (
+                &[
+                    "Acme L.L.C.",
+                    "Acme, L.L.C.",
+                    "Acme LLC",
+                    "Acme L.P.",
+                    "Acme LP",
+                    "Acme L.L.P.",
+                    "Acme GmbH & Co. KG",
+                    "Acme G.m.b.H.",
+                ][..],
+                "acme",
+            ),
+            (
+                &[
+                    "Wells Fargo & Company",
+                    "Wells Fargo & Co.",
+                    "Wells Fargo and Company",
+                    "Wells Fargo and Co.",
+                    "Wells Fargo &",
+                    "Wells Fargo",
+                ][..],
+                "wells fargo",
+            ),
+            (
+                &["McDonald's Corporation", "McDonald\u{2019}s", "McDonalds"][..],
+                "mcdonalds",
+            ),
+            (&["Nestlé S.A.", "Nestle SA", "NESTLÉ"][..], "nestle"),
+            (&["The Coca-Cola Company", "Coca-Cola"][..], "coca cola"),
+            (
+                &[
+                    "(주)주성엔지니어링",
+                    "㈜주성엔지니어링",
+                    "주성엔지니어링(주)",
+                    "주성엔지니어링 (주)",
+                    "주성엔지니어링",
+                ][..],
+                "주성엔지니어링",
+            ),
         ] {
             for spelling in spellings {
-                assert_eq!(entity_name_key(spelling), key, "{spelling}");
+                assert_eq!(
+                    entity_name_keys(spelling),
+                    BTreeSet::from([key.to_owned()]),
+                    "{spelling}"
+                );
             }
         }
     }
@@ -363,14 +479,41 @@ mod tests {
         for (name, key) in [
             ("AS Roma", "as roma"),
             ("Company of Heroes", "company of heroes"),
+            ("Johnson & Johnson", "johnson & johnson"),
             ("제주항공", "제주항공"),
+            ("주 성엔지니어링", "주 성엔지니어링"),
+            ("엔씨소프트 주", "엔씨소프트 주"),
             ("3M", "3m"),
             ("AT&T Inc.", "at&t"),
             ("Inc.", "inc"),
             ("Co Ltd", "co"),
             ("주식회사", "주식회사"),
+            ("The", "the"),
         ] {
-            assert_eq!(entity_name_key(name), key, "{name}");
+            assert_eq!(
+                entity_name_keys(name),
+                BTreeSet::from([key.to_owned()]),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_parenthetical_is_another_spelling_of_the_name() {
+        for (name, keys) in [
+            (
+                "삼성전자(Samsung Electronics)",
+                &["삼성전자", "samsung electronics"][..],
+            ),
+            ("네이버(NAVER)", &["네이버", "naver"][..]),
+            (
+                "Samsung Electronics Co., Ltd. (005930)",
+                &["samsung electronics", "005930"][..],
+            ),
+            ("(Samsung) 삼성전자(주)", &["삼성전자", "samsung"][..]),
+        ] {
+            let expected: BTreeSet<String> = keys.iter().map(|k| (*k).to_owned()).collect();
+            assert_eq!(entity_name_keys(name), expected, "{name}");
         }
     }
 

@@ -46,11 +46,10 @@ page may reference a Journal, a snapshot or a World record id. Links are what th
 Markdown parser reads (inline, reference-style and autolinks, any scheme case),
 for the index and the policy alike. A `world:` link
 becomes a `mention` anchor; a page created with anchors gets `subject` anchors. A
-name anchor names the node with that exact name or alias, else the one node that
-shares its company key (`entity_name_key`: NFKC, casefold, punctuation except `&`
-dropped, and legal forms such as `Inc.`, `Co., Ltd.`, `ASA`, `주식회사` or `株式会社`
-stripped while a name remains). A key two nodes share names neither. A name anchor
-without a node stays pending until a World publication names it; a
+name anchor names the node whose name or alias folds to the same text, and
+otherwise stays pending until a World publication spells it so. Nothing looser
+binds an anchor or merges subject pages: `Hana` and `Hana Co.` may be two
+companies, so their pages stay apart until the World says who each is. A
 final-answer `lens:` link records `applied` anchors to the World nodes delivered
 in that turn. Anchors drive the Map's applies-to edges and the Lens index order.
 
@@ -120,18 +119,32 @@ checks the Lens log rows no review that reached inference has shown, once
 something was filed after the head the last review read. When two independent
 Chats filed that evidence about two different cases, Rust records one pending
 review. Chats are independent when each cites a Source the other never cited. A
-page's case is its subject anchors, which `about` sets on a subject or idea page,
-and two cases differ when they share no anchor. Only companies the World
-confirmed count. A case is the World nodes of a page's subject anchors, so two
-companies that held one name at different times stay two cases, and `Acme` and
-`Acme Inc.` are one case once the World names that node. A page with no subject
-anchor, or with one the World has not confirmed, could concern any company, so
-its sections are not evidence and are not shown to a review. A name the World
-never confirms never counts. So one Chat, one Source, one company however many
-subject and idea pages it has, an unanchored or unconfirmed page, or a Chat
-repeating another's Sources never starts one. A World publication that resolves
-pending anchors rechecks the evidence at once, without waiting for a new filing,
-under the same rate limits and active-review rule. Rows with a non-empty `world_job_id` come from the earlier claim-count
+page's case is who its subject anchors (`about` on a subject or idea page) name.
+Only companies the World confirmed count: a case is the World nodes of the
+page's subject anchors, plus the company keys of each node's current World
+names and aliases (`entity_name_keys`: accents, apostrophes and punctuation
+except `&` dropped, NFKC and casefold, a leading `The` and legal forms such as
+`Inc.`, `Co., Ltd.`, `& Co.`, `L.L.C.`, `S.A.`, `ASA`, `(주)`, `주식회사` or
+`株式会社` stripped while a name remains, and a parenthetical such as
+`삼성전자(Samsung Electronics)` as a second spelling). Two cases differ when they
+share no node and no key. So two companies that held one name at different times
+stay two cases, while `Acme` and `Acme Inc.` are one case whether the World
+names one node or two. Two different companies that share a key only defer
+learning; a key never touches a page. The keys are read from the World only when
+the nodes alone would start a review. A page with no subject anchor could concern
+any company, so its sections are not evidence, are not shown to a review, and
+are consumed like any other row. A page whose subject the World has not confirmed
+yet is not evidence either, but a review that reaches inference leaves its rows
+unconsumed, below its watermark like rows that did not fit, so the publication
+that confirms the company still finds them. A name the World never confirms
+never counts. So one Chat, one Source, one company however many subject and idea
+pages it has, an unanchored or unconfirmed page, or a Chat repeating another's
+Sources never starts one. A World publication that resolves pending subject
+anchors rechecks the evidence at once, without waiting for a new filing, under
+the same rate limits and active-review rule. A review running at that moment
+rechecks when it settles: its claim stored how many subject anchors the World
+had confirmed, and a larger count then means a publication landed meanwhile.
+Rows with a non-empty `world_job_id` come from the earlier claim-count
 trigger and hold growth-event rowids: they never set the watermark, and startup
 defers any still pending or queued with `trigger_changed`.
 

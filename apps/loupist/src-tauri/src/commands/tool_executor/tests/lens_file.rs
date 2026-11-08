@@ -1084,10 +1084,10 @@ async fn research_filed_in_two_chats_from_two_saved_sources_queues_one_method_re
         commit_turn_in(&state, &capture, chat, &format!("assistant-{chat}")).await;
     }
     assert!(reviews().is_empty(), "names the World has not confirmed");
-    let node = |id: &str, name: &str| crate::knowledge::GraphNode {
+    let node = |id: &str, name: &str, aliases: &[&str]| crate::knowledge::GraphNode {
         id: id.into(),
         name: name.into(),
-        aliases: Vec::new(),
+        aliases: aliases.iter().map(|alias| (*alias).to_owned()).collect(),
         description: format!("The {name}."),
         kind: "company".into(),
         source_role: "organization".into(),
@@ -1113,9 +1113,11 @@ async fn research_filed_in_two_chats_from_two_saved_sources_queues_one_method_re
                 record_id,
                 expected_revision_id: head,
                 at_ms: 1_700_000_000_000,
+                // The name a page filed under binds only as the World spells
+                // it, as a name or an alias.
                 nodes: vec![
-                    node("hanbit", "Hanbit Motors Co., Ltd."),
-                    node("daeil", "Daeil Steel"),
+                    node("hanbit", "Hanbit Motors Co., Ltd.", &["Hanbit Motors"]),
+                    node("daeil", "Daeil Steel", &[]),
                 ],
                 claims: Vec::new(),
                 annotations: Vec::new(),
