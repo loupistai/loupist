@@ -84,7 +84,7 @@ it("explains a step paused by the untrusted-text rule in the step, calmly and wi
   expect(screen.queryByText("Ran a command")).toBeNull();
   expect(screen.queryByText("Read a web source")).toBeNull();
   const notes = screen.getAllByRole("note");
-  expect(notes[0]).toHaveTextContent("Paused: this answer read text from other sites and you chose Not now, so running commands is turned off for this answer.");
+  expect(notes[0]).toHaveTextContent("Paused: this answer read text from other sites and this computer has no verified command sandbox, so running commands is turned off for this answer.");
   expect(notes[1]).toHaveTextContent("so opening this page is turned off for this answer.");
   // A security rule: nothing in the note offers a way around it.
   for (const note of notes) expect(within(note).queryByRole("button")).toBeNull();
@@ -111,13 +111,16 @@ it("labels a refused command as paused in Korean while retaining completed and o
   try {
     render(row({ startedAtMs: 1, finishedAtMs: 2000, items: [
       { id: "paused", kind: "tool", toolName: "bash", category: "compute", operation: "execute", action: "Ran a command", target: "paused.py", status: "failed", refusal: "untrusted_text_paused", detailId: "paused-detail" },
+      { id: "agents", kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", target: "AGENTS.md", status: "failed", refusal: "untrusted_text_paused" },
       { id: "failed", kind: "tool", toolName: "bash", category: "compute", operation: "execute", action: "Ran a command", target: "failed.py", status: "failed" },
       { id: "succeeded", kind: "tool", toolName: "bash", category: "compute", operation: "execute", action: "Ran a command", target: "done.py", status: "succeeded" },
     ] }, "complete"));
     const paused = screen.getByText("paused.py").closest(".chat-progress-row")!;
     expect(within(paused as HTMLElement).getByText("일시 중지")).toBeVisible();
     expect(within(paused as HTMLElement).queryByText("명령 실행함")).toBeNull();
-    expect(within(paused as HTMLElement).getByRole("note")).toHaveTextContent("이번 답변에서는 명령 실행이 꺼져 있어요.");
+    expect(within(paused as HTMLElement).getByRole("note")).toHaveTextContent("검증된 명령 샌드박스가 없어서, 이번 답변에서는 명령 실행이 꺼져 있어요.");
+    const agents = screen.getByText("AGENTS.md").closest(".chat-progress-row")!;
+    expect(within(agents as HTMLElement).getByRole("note")).toHaveTextContent("지침 파일과 스킬 파일 변경이 꺼져 있어요.");
     expect(screen.getAllByText("명령 실행함")).toHaveLength(2);
   } finally { await i18n.changeLanguage("en"); }
 });
