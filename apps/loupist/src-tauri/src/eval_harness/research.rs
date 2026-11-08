@@ -3,6 +3,7 @@
 //! method was learned and reused is recorded in `measures`, not asserted.
 use super::*;
 use crate::knowledge::lens_page::{BasisRef, LensKind, LensOp};
+use rusqlite::OptionalExtension;
 use std::collections::BTreeSet;
 
 #[derive(Deserialize)]
@@ -193,6 +194,70 @@ fn reviews(arm: &Arm) -> Result<Vec<Value>> {
 
 /// Turn-filed sections that cite Source spans, read from the Lens log rather than
 /// the learning gate, so a missing review can be explained by what was filed.
+/// What identity learning had to work with: each subject anchor, the World's
+/// nodes and how its claims cite evidence, so a missing review can be traced.
+fn identity(arm: &Arm) -> Result<Value> {
+    let conn = arm.state.store.lock_loupist(&arm.loupist)?;
+    let mut q = conn.prepare(
+        "SELECT a.record_id, m.title, a.role, a.node_id, a.name_fold FROM knowledge_lens_anchors a
+         JOIN knowledge_lens_metadata m ON m.record_id = a.record_id WHERE a.loupist_id = ?1 ORDER BY a.rowid",
+    )?;
+    let anchors = q
+        .query_map([&arm.loupist], |r| {
+            Ok(
+                json!({"page": r.get::<_, String>(1)?, "role": r.get::<_, String>(2)?,
+                "node_id": r.get::<_, Option<String>>(3)?, "name_fold": r.get::<_, String>(4)?}),
+            )
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let mut q = conn.prepare(
+        "SELECT l.op_json, m.title FROM knowledge_lens_log l JOIN knowledge_lens_metadata m ON m.record_id = l.record_id
+         WHERE l.loupist_id = ?1 AND l.origin = 'turn' AND l.outcome IN ('added','replaced') ORDER BY l.rowid",
+    )?;
+    let mut cited = BTreeMap::<String, BTreeSet<String>>::new();
+    for row in q.query_map([&arm.loupist], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    })? {
+        let (op, title) = row?;
+        if let Ok(LensOp::Put { basis, .. }) = serde_json::from_str::<LensOp>(&op) {
+            for r in basis.refs {
+                if let BasisRef::Span {
+                    record_id, span_id, ..
+                } = r
+                {
+                    cited
+                        .entry(title.clone())
+                        .or_default()
+                        .insert(format!("{record_id}/{span_id}"));
+                }
+            }
+        }
+    }
+    let snapshot: Option<String> = conn
+        .query_row(
+            "SELECT s.snapshot_json FROM knowledge_world_snapshots s JOIN knowledge_record_heads h ON h.revision_id = s.revision_id
+             JOIN knowledge_records r ON r.record_id = h.record_id WHERE r.owner_loupist_id = ?1 AND r.kind = 'world'",
+            [&arm.loupist],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let world: Value = snapshot
+        .as_deref()
+        .map(serde_json::from_str)
+        .transpose()?
+        .unwrap_or(Value::Null);
+    let nodes: Vec<Value> = world["nodes"].as_array().cloned().unwrap_or_default().iter()
+        .map(|n| json!({"id": n["id"], "name": n["name"], "aliases": n["aliases"], "kind": n["kind"]}))
+        .collect();
+    let claims: Vec<Value> = world["claims"].as_array().cloned().unwrap_or_default().iter().take(12)
+        .map(|c| json!({"status": c["status"], "endpoints": c["endpoints"], "evidence": c["evidence"]}))
+        .collect();
+    Ok(
+        json!({"anchors": anchors, "cited_spans": cited, "nodes": nodes,
+        "claim_count": world["claims"].as_array().map_or(0, Vec::len), "claims_sample": claims}),
+    )
+}
+
 fn filed(arm: &Arm) -> Result<Value> {
     let store = KnowledgeStore::for_loupist(arm.state.store.clone(), &arm.loupist)?;
     let titles: BTreeMap<_, _> = store
@@ -298,6 +363,7 @@ async fn train(
     let arm_doc = &mut report.doc["arms"][key];
     arm_doc["reviews"] = json!(reviews(arm)?);
     arm_doc["filed_evidence"] = filed(arm)?;
+    arm_doc["identity"] = identity(arm)?;
     arm_doc["methods"] = json!(methods(arm)?);
     arm_doc["helper_inference"] = json!(arm.inference.eval_observations());
     report.save()?;
