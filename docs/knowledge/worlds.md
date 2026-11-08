@@ -135,11 +135,14 @@ between the previous and the new snapshot. Lens sections whose `claim` basis nam
 a claim the publication disputed, withdrew or dropped become contested (one page
 revision and one `lens_contested` growth event per page; the section's text is
 kept). Pending subject name anchors resolve by canonical name or alias, exactly,
-or to the one node that the Sources the page cites confirm under the anchor's
-company key ([Lens](lens.md#lens)); when any resolves, or a node a confirmed
-subject anchor names has another name or alias set than in the previous
-snapshot, method learning rechecks its evidence, at once or when the review
-queued or running at that moment settles. Then
+and by nothing else ([Lens](lens.md#lens)); when any resolves, when a node a
+confirmed subject anchor names has another name or alias set than in the
+previous snapshot, or while any live page still has a pending subject anchor
+(method learning may read it as the company the Sources it cites confirm,
+without storing that), method learning rechecks its evidence, at once or when
+the review queued or running at that moment settles. The revision's
+dependencies say which Sources it has read; learning trusts a cited Source's
+claims about a pending page only once that Source is among them. Then
 `connections::detect` walks two or three hops from each seed over claims that are
 not withdrawn, keeping each claim's direction and endpoint roles, to a name the seed
 could not reach within two hops before, with at least one hop on a claim this
