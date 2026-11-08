@@ -299,6 +299,17 @@ impl KnowledgeStore {
         self.read(|write| graph_jobs::list_jobs(write.tx, loupist_id))
     }
 
+    /// The Sources among `sources` method learning counts as processed
+    /// ([`graph_jobs::processed_sources`]), for the live research eval's record.
+    #[cfg(all(test, feature = "eval-harness"))]
+    pub fn graph_processed_sources(
+        &self,
+        loupist_id: &str,
+        sources: &std::collections::BTreeSet<String>,
+    ) -> KnowledgeResult<std::collections::BTreeSet<String>> {
+        self.read(|read| graph_jobs::processed_sources(read.tx, loupist_id, sources))
+    }
+
     pub(crate) fn graph_claim_running(
         &self,
         settings: &GraphProcessingSettings,

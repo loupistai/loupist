@@ -39,8 +39,13 @@ struct Run {
     root: PathBuf,
     pi: PathBuf,
     frozen: artifacts::FrozenArtifacts,
+    /// The Chat model, `provider/model`.
     model: String,
     thinking: String,
+    /// The World model, for extraction and learning reviews; the Chat model
+    /// unless `LOUPIST_RESEARCH_WORLD_MODEL` names another.
+    world_model: String,
+    world_thinking: String,
 }
 
 struct Arm {
@@ -85,20 +90,18 @@ async fn open_arm(run: &Run, name: &str) -> Result<Arm> {
     )?;
     state.eval_pi_agent_dir = Some(run.pi.clone());
     Arc::make_mut(&mut state.artifacts).pi = Some(run.frozen.pi.clone());
-    let provider = run
-        .model
-        .split_once('/')
-        .ok_or("LOUPIST_RESEARCH_MODEL must be provider/model")?
-        .0;
-    let model = crate::providers::connection::eval_models(&state, provider)
-        .await?
-        .into_iter()
-        .find(|m| m.id == run.model)
-        .ok_or("requested research model unavailable")?;
-    model.validate_thinking_level(&run.thinking)?;
-    state.set_model_catalog(crate::providers::catalog::ModelCatalog {
-        models: vec![model.clone()],
-    })?;
+    let model = eval_model(&state, &run.model, &run.thinking).await?;
+    let world = if run.world_model == run.model {
+        model.clone()
+    } else {
+        eval_model(&state, &run.world_model, &run.world_thinking).await?
+    };
+    world.validate_thinking_level(&run.world_thinking)?;
+    let mut models = vec![model.clone()];
+    if world.id != model.id {
+        models.push(world.clone());
+    }
+    state.set_model_catalog(crate::providers::catalog::ModelCatalog { models })?;
     let inference = crate::providers::inference::ProviderInferenceService::from_state(&state)?;
     state.graph.shutdown().await?;
     state.graph = GraphSupervisor::with_inference(
@@ -126,12 +129,12 @@ async fn open_arm(run: &Run, name: &str) -> Result<Arm> {
     enable_connections(&state, &loupist.id, &[])?;
     let config = GraphProcessingSettings {
         enrichment_enabled: true,
-        helper_provider: Some(model.provider.clone()),
-        helper_model: Some(model.model.clone()),
-        helper_model_profile_id: Some(model.id.clone()),
-        thinking_level: run.thinking.clone(),
+        helper_provider: Some(world.provider.clone()),
+        helper_model: Some(world.model.clone()),
+        helper_model_profile_id: Some(world.id.clone()),
+        thinking_level: run.world_thinking.clone(),
         timeout_ms: 120_000,
-        run_options: model
+        run_options: world
             .run_controls
             .iter()
             .map(|c| (c.id.clone(), c.default_choice.clone()))
@@ -150,6 +153,26 @@ async fn open_arm(run: &Run, name: &str) -> Result<Arm> {
         inference,
         loupist: loupist.id,
     })
+}
+
+/// The configured model `id` (`provider/model`) from its provider's catalog,
+/// able to run at `thinking`.
+async fn eval_model(
+    state: &AppState,
+    id: &str,
+    thinking: &str,
+) -> Result<crate::providers::catalog::ConfiguredModel> {
+    let provider = id
+        .split_once('/')
+        .ok_or("a research model must be provider/model")?
+        .0;
+    let model = crate::providers::connection::eval_models(state, provider)
+        .await?
+        .into_iter()
+        .find(|m| m.id == id)
+        .ok_or_else(|| format!("requested research model {id} unavailable"))?;
+    model.validate_thinking_level(thinking)?;
+    Ok(model)
 }
 
 async fn ask(run: &Run, arm: &Arm, chat: &ChatSession, memory: &str, step: &Step) -> Result<Value> {
@@ -192,11 +215,50 @@ fn reviews(arm: &Arm) -> Result<Vec<Value>> {
     Ok(rows)
 }
 
-/// Turn-filed sections that cite Source spans, read from the Lens log rather than
-/// the learning gate, so a missing review can be explained by what was filed.
-/// What identity learning had to work with: each subject anchor, the World's
-/// nodes and how its claims cite evidence, so a missing review can be traced.
+/// What identity learning had to work with: each subject anchor, the spans
+/// each page cites, the World's nodes and how its claims cite evidence, and
+/// the World job of every Source with whether learning counts the Source as
+/// processed, so a missing review can be traced to the anchor, the claim or
+/// the job that held it.
 fn identity(arm: &Arm) -> Result<Value> {
+    let store = KnowledgeStore::for_loupist(arm.state.store.clone(), &arm.loupist)?;
+    let titles: BTreeMap<_, _> = store
+        .list_records(&arm.loupist)?
+        .into_iter()
+        .map(|r| (r.record_id, r.title))
+        .collect();
+    let jobs = store.graph_jobs(&arm.loupist)?;
+    let sources: BTreeSet<String> = jobs
+        .iter()
+        .filter_map(|j| j.document.source_binding.as_ref())
+        .map(|b| b.source_record_id.clone())
+        .collect();
+    let processed = store.graph_processed_sources(&arm.loupist, &sources)?;
+    let world_jobs: Vec<Value> = jobs
+        .iter()
+        .filter_map(|j| {
+            let binding = j.document.source_binding.as_ref()?;
+            let d = &j.document;
+            let reason = match j.status.as_str() {
+                "completed" => "published",
+                "queued" | "paused_budget" => "waiting",
+                "running" => "running",
+                "cancelled_before_start" => "cancelled",
+                "reconciled_without_retry" => "reconciled",
+                "reconcile_required" if d.usage_uncertain => "quarantined after an uncertain paid attempt",
+                "reconcile_required" => "quarantined after a paid attempt published nothing",
+                _ if d.usage_uncertain => "uncertain paid attempt",
+                _ if d.inference_attempted => "paid attempt published nothing",
+                _ => "no paid attempt",
+            };
+            Some(json!({"source": titles.get(&binding.source_record_id).unwrap_or(&binding.source_record_id),
+                "status": j.status, "reason": reason,
+                "attempts": u32::from(d.interrupted_attempts) + u32::from(d.inference_attempted || d.usage_uncertain || j.status == "completed"),
+                "processed": processed.contains(&binding.source_record_id),
+                "sealed_revision_id": d.sealed_revision_id}))
+        })
+        .collect();
+    drop(store);
     let conn = arm.state.store.lock_loupist(&arm.loupist)?;
     let mut q = conn.prepare(
         "SELECT a.record_id, m.title, a.role, a.node_id, a.name_fold FROM knowledge_lens_anchors a
@@ -254,7 +316,8 @@ fn identity(arm: &Arm) -> Result<Value> {
         .collect();
     Ok(
         json!({"anchors": anchors, "cited_spans": cited, "nodes": nodes,
-        "claim_count": world["claims"].as_array().map_or(0, Vec::len), "claims_sample": claims}),
+        "claim_count": world["claims"].as_array().map_or(0, Vec::len), "claims_sample": claims,
+        "world_jobs": world_jobs}),
     )
 }
 
@@ -554,6 +617,10 @@ async fn live_lens_research_v1() -> Result<()> {
     }
     let model = std::env::var("LOUPIST_RESEARCH_MODEL")?;
     let thinking = std::env::var("LOUPIST_RESEARCH_THINKING").unwrap_or_else(|_| "medium".into());
+    let world_model =
+        std::env::var("LOUPIST_RESEARCH_WORLD_MODEL").unwrap_or_else(|_| model.clone());
+    let world_thinking =
+        std::env::var("LOUPIST_RESEARCH_WORLD_THINKING").unwrap_or_else(|_| thinking.clone());
     // A Chat's broker socket lives under the app directory, and Unix sockets allow
     // 103 path bytes; macOS `temp_dir()` is a long /var/folders path.
     let base = if cfg!(target_os = "macos") {
@@ -567,6 +634,7 @@ async fn live_lens_research_v1() -> Result<()> {
         out,
         doc: json!({"schema":"loupist-lens-research-run/1","fixture_sha256":crate::util::sha256(&bytes),
             "agent_snapshot_sha256":frozen.sha256,"model":model,"thinking":thinking,
+            "world_model":world_model,"world_thinking":world_thinking,
             "git_commit":git(&["rev-parse","HEAD"]),"git_dirty":!git(&["status","--porcelain"]).is_empty(),
             "arms":{"two-chats":{"turns":[]},"one-chat":{"turns":[]}}}),
     };
@@ -578,6 +646,8 @@ async fn live_lens_research_v1() -> Result<()> {
         frozen,
         model,
         thinking,
+        world_model,
+        world_thinking,
     };
 
     let arm = open_arm(&run, "two-chats").await?;

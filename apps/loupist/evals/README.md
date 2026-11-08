@@ -635,10 +635,17 @@ two-chats arm has exactly one settled review. Probes commit no Memory, file no L
 op and start no review. Every learned section cites spans from at least two Sources.
 `measures` records the model's outcomes: review status, whether a method was made,
 whether each probe exact-read it, `lens_read` status `applied`, and the method's
-`limits` text. `filed_evidence` shows what each arm filed when no review starts. A clean exit says the gate held,
-not that learning helped: a deferred review passes, so read `review_status`,
-`method_created`, the probe reads and `method_limits` before claiming a learned
-method was reused.
+`limits` text. `filed_evidence` shows what each arm filed when no review starts.
+`identity` shows what the learning gate saw: each subject anchor with its
+`node_id`, the spans each page cites, the World's nodes and a sample of its
+claims, and under `world_jobs` the World job of every Source with its `status`,
+`attempts`, a `reason` for that status and whether learning counts the Source
+as `processed`. A review that never queued is traced there: an anchor still
+pending beside a Source whose job is `waiting` or `running`, or `claim_count`
+0 after jobs that `published` (the extraction emitted nothing). A clean exit
+says the gate held, not that learning helped: a deferred review passes, so read
+`review_status`, `method_created`, the probe reads and `method_limits` before
+claiming a learned method was reused.
 
 ```sh
 LOUPIST_RESEARCH_PI_AGENT_DIR=/absolute/pi-agent-dir \
@@ -648,9 +655,16 @@ cargo test --locked --offline --features eval-harness --lib \
   eval_harness::research::live_lens_research_v1 -- --ignored --exact --nocapture
 ```
 
-Run it from `apps/loupist/src-tauri`. It makes paid Chat and World calls with the
-one model, never retries, and refuses an existing output path. One run is one sample
-per arm: report its measures as a description, not a rate.
+Run it from `apps/loupist/src-tauri`. It makes paid Chat and World calls, never
+retries, and refuses an existing output path. `LOUPIST_RESEARCH_MODEL` drives the
+Chats. `LOUPIST_RESEARCH_WORLD_MODEL` and `LOUPIST_RESEARCH_WORLD_THINKING`
+(`provider/model` and a thinking level, default the Chat model's) drive World
+extraction and the learning review, which runs on the selected World model. World
+helper calls are capped at 120 s (`knowledge/graph_inference.rs`); a model whose
+extraction call runs longer leaves the job `failed_before_mutation` or
+`reconcile_required` with `claim_count` 0, which the run records and learning no
+longer waits on. One run is one sample per arm: report its measures as a
+description, not a rate.
 
 ## Finance workflow evaluation
 
