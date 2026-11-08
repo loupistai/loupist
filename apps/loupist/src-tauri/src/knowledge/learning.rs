@@ -350,10 +350,12 @@ struct Observation {
     #[serde(skip)]
     cases: BTreeSet<Case>,
 }
-/// One token of who a page is about. A node is a World-confirmed company. A
-/// key is a spelling of a node's World names, so two nodes spelling one
-/// company ("Acme", "Acme Inc.") still share a token, and a component joins
-/// the nodes whose keys meet through other nodes, so `삼성전자` and `Samsung
+/// One token of who a page is about. A node is a World company the page is
+/// about, or, on a pending page, may be about: every company the World claims
+/// on the spans it cites. A key is a spelling of a node's World names, or of
+/// the name a pending page was filed under, so two nodes spelling one company
+/// ("Acme", "Acme Inc.") still share a token, and a component joins the nodes
+/// whose keys meet through other nodes, so `삼성전자` and `Samsung
 /// Electronics` share one when a third node spells both; two companies
 /// sharing a key only defer learning.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -375,9 +377,9 @@ enum About {
     /// No subject anchor, or one that can never resolve: never evidence.
     Unknown,
     /// Subjects the World has not confirmed yet, by the names they were filed
-    /// under, beside any it has. Not evidence unless the Sources the page
-    /// cites confirm each one at read time; otherwise a review leaves the
-    /// page's rows for the review after the confirmation.
+    /// under, beside any it has. Evidence once the World is through with the
+    /// Sources the page cites, read against them ([`pending_cases`]); until
+    /// then a review leaves the page's rows for the review after.
     Pending {
         names: Vec<String>,
         confirmed: BTreeSet<Case>,
@@ -410,7 +412,7 @@ impl About {
 struct Evidence {
     observations: Vec<Observation>,
     /// Observations about a subject the World has not confirmed, which
-    /// [`keyed_evidence`] confirms from the Sources their pages cite or holds.
+    /// [`keyed_evidence`] reads against the Sources their pages cite or holds.
     pending: Vec<PendingObservation>,
     /// Rows a review may not consume: research about a subject the World has
     /// not confirmed yet, which becomes evidence once it does.
@@ -504,9 +506,8 @@ fn evidence(
          JOIN knowledge_record_revisions r ON r.revision_id=h.revision_id WHERE h.record_id=?1",
     )?;
     // A resolved anchor is its node alone: the name it was created under may
-    // since belong to another node. A pending one is not yet a company, since
-    // two spellings of one name would count as two, unless the Sources the
-    // page cites confirm it.
+    // since belong to another node. A pending one is judged by the Sources the
+    // page cites, once the World is through with them.
     let mut subjects = tx.prepare(
         "SELECT node_id, name_fold FROM knowledge_lens_anchors WHERE record_id=?1 AND role='subject'",
     )?;
@@ -625,7 +626,7 @@ fn evidence(
         }
         // A page with no subject could be about any company, including the
         // one the other case is about, so it is not evidence. One the World
-        // has not confirmed is judged by the Sources it cites.
+        // has not confirmed is read against the Sources it cites.
         let (about, names) = match &cases[&page_id] {
             About::Unknown => continue,
             About::Pending { names, confirmed } => (confirmed.clone(), Some(names.clone())),
@@ -694,25 +695,6 @@ fn cited_spans(body: Option<&LensBody>) -> BTreeMap<String, BTreeSet<String>> {
     }
     cited
 }
-/// Every span of each of `sources`, by Source record.
-fn source_spans(
-    tx: &Transaction<'_>,
-    sources: &BTreeSet<String>,
-) -> KnowledgeResult<BTreeMap<String, BTreeSet<String>>> {
-    let mut q = tx.prepare(
-        "SELECT record_id, span_id FROM knowledge_source_spans
-         WHERE record_id IN (SELECT value FROM json_each(?1))",
-    )?;
-    let rows = q.query_map([serde_json::to_string(sources)?], |r| {
-        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-    })?;
-    let mut spans: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for row in rows {
-        let (record_id, span_id) = row?;
-        spans.entry(record_id).or_default().insert(span_id);
-    }
-    Ok(spans)
-}
 /// Whether a World node of `kind` is a company: the core Organization kind,
 /// or an extension type of the company category.
 fn company_kind(kind: &str, extension: &super::world_schema::WorldExtension) -> bool {
@@ -722,20 +704,21 @@ fn company_kind(kind: &str, extension: &super::world_schema::WorldExtension) -> 
             item.name == kind && item.category == super::world_schema::ExtensionCategory::Company
         })
 }
-/// The cases of a pending page once the Sources it cites confirm each pending
-/// subject, for this read only. Every cited Source must be through World
-/// processing ([`super::graph_jobs::processed_sources`]), so a report the
-/// World has yet to read cannot be judged by the claims that may still come
-/// from it, and each name must have exactly one candidate among the cited
-/// spans' claims ([`super::identity::WorldIdentity::candidate`]). The page
-/// then counts as its candidate node, with the node's keys and the name's
-/// own. Nothing is stored: the anchor stays pending until a publication
-/// spells the name.
-fn confirm_pending(
+/// Who a pending page may be about, for this read only, once the World is
+/// through with every Source it cites ([`super::graph_jobs::processed_sources`]):
+/// every company the World claims on the spans the page cites
+/// ([`super::identity::WorldIdentity::companies_on`]), and the keys of each
+/// name the page was filed under. A short name on a span that names two
+/// companies is then a case with both, and a name the World never extracted
+/// still counts under its own key, so two pages spelling one company stay one
+/// case while a failed extraction holds nothing. A report the World has yet
+/// to read holds the page: the claims it may still yield are not known.
+/// Nothing is stored: the anchor stays pending until a publication spells the
+/// name.
+fn pending_cases(
     world: &super::identity::WorldIdentity,
     pending: &PendingObservation,
     processed: &BTreeSet<String>,
-    spans: &BTreeMap<String, BTreeSet<String>>,
     company: impl Fn(&str) -> bool,
 ) -> Option<BTreeSet<Case>> {
     if !pending
@@ -746,18 +729,16 @@ fn confirm_pending(
         return None;
     }
     let cited: BTreeSet<String> = pending.cited.values().flatten().cloned().collect();
-    let all: BTreeSet<String> = pending
-        .cited
-        .keys()
-        .filter_map(|source| spans.get(source))
-        .flatten()
-        .cloned()
-        .collect();
     let mut cases = pending.observation.cases.clone();
+    cases.extend(
+        world
+            .companies_on(&cited, company)
+            .into_iter()
+            .map(Case::Node),
+    );
     for name in &pending.names {
-        let primary = super::identity::primary_key(name)?;
-        let node = world.candidate(&primary, &cited, &all, &company)?;
-        cases.insert(Case::Node(node));
+        // A name that is only notation names no company.
+        super::identity::primary_key(name)?;
         cases.extend(
             super::identity::entity_name_keys(name)
                 .into_iter()
@@ -766,8 +747,8 @@ fn confirm_pending(
     }
     Some(cases)
 }
-/// [`evidence`] with its pending pages confirmed by the Sources they cite or
-/// held ([`confirm_pending`]), and every case carrying the company keys of its
+/// [`evidence`] with its pending pages read against the Sources they cite or
+/// held ([`pending_cases`]), and every case carrying the company keys of its
 /// nodes' current World names and the component of nodes whose keys meet. The
 /// World is read only when a pending page or the confirmed nodes alone call
 /// for it. Two nodes spelling one company then share a key and are one case,
@@ -793,12 +774,11 @@ fn keyed_evidence(
         .flat_map(|p| p.cited.keys().cloned())
         .collect();
     let processed = super::graph_jobs::processed_sources(tx, loupist, &sources)?;
-    let spans = source_spans(tx, &sources)?;
     let extension = load_settings(tx, loupist)?.extension;
     let company = |kind: &str| company_kind(kind, &extension);
     let read = super::lens::world_identity(tx, loupist, |world| {
         for mut p in pending {
-            match confirm_pending(world, &p, &processed, &spans, company) {
+            match pending_cases(world, &p, &processed, company) {
                 Some(cases) => {
                     p.observation.cases = cases;
                     found.observations.push(p.observation);

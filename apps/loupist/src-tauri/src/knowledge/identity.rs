@@ -404,50 +404,25 @@ impl WorldIdentity {
         }))
     }
 
-    /// The one company the spans a page cites confirm under `primary`, the
-    /// primary key of the anchor's name: an endpoint of an active claim whose
-    /// evidence is one of `cited`, of a kind `company` accepts, whose name or
-    /// alias has that primary key, when no other node on any of
-    /// `source_spans` (every span of the cited Sources) has it. So "Halvorsen
-    /// Cellworks ASA", claimed from the report a "Halvorsen Cellworks" page
-    /// cites, is its company, while a counterparty claimed from another span
-    /// of the report, a Product, a withdrawn claim, or a second "Hana" on the
-    /// report confirm nothing.
-    pub(crate) fn candidate(
+    /// The companies the spans in `spans` name: every endpoint of an active
+    /// claim whose evidence is one of them, of a kind `company` accepts. A
+    /// pending page may be about any company the World claims on the spans it
+    /// cites, so each is one of its cases: "Halvorsen Cellworks ASA", claimed
+    /// from the report a "Halvorsen Cellworks" page cites, and the
+    /// counterparty of that claim, while a Product, a withdrawn claim, or a
+    /// claim on another span of the report name none.
+    pub(crate) fn companies_on(
         &self,
-        primary: &str,
-        cited: &BTreeSet<String>,
-        source_spans: &BTreeSet<String>,
+        spans: &BTreeSet<String>,
         company: impl Fn(&str) -> bool,
-    ) -> Option<String> {
-        let named = |id: &str| {
-            self.nodes.get(id).is_some_and(|node| {
-                node.spellings
-                    .iter()
-                    .filter_map(|spelling| primary_key(spelling))
-                    .any(|key| key == primary)
-            })
-        };
-        let on = |spans: &BTreeSet<String>| {
-            spans
-                .iter()
-                .filter_map(|span| self.confirmed_by_span.get(span))
-                .flatten()
-                .map(String::as_str)
-                .collect::<BTreeSet<&str>>()
-        };
-        let candidates: BTreeSet<&str> = on(cited)
-            .into_iter()
-            .filter(|id| named(id) && company(&self.nodes[*id].kind))
-            .collect();
-        let [candidate] = candidates.into_iter().collect::<Vec<_>>()[..] else {
-            return None;
-        };
-        let rival = on(source_spans)
-            .into_iter()
-            .chain(on(cited))
-            .any(|id| id != candidate && named(id));
-        (!rival).then(|| candidate.to_owned())
+    ) -> BTreeSet<String> {
+        spans
+            .iter()
+            .filter_map(|span| self.confirmed_by_span.get(span))
+            .flatten()
+            .filter(|id| self.nodes.get(*id).is_some_and(|node| company(&node.kind)))
+            .cloned()
+            .collect()
     }
 
     /// The component `node` belongs to: the smallest node id among the nodes
