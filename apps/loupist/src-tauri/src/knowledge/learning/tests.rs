@@ -1808,6 +1808,52 @@ fn a_company_confirmed_while_a_review_runs_is_rechecked_when_it_settles() {
 }
 
 #[test]
+fn a_company_confirmed_while_a_review_is_queued_is_rechecked_when_the_claim_defers() {
+    let (_dir, store) = setup();
+    let long = "Check cash conversion before trusting reported profit. ".repeat(6);
+    store
+        .transact(|w| {
+            for i in 0..45 {
+                let statement = format!("{i:02} {long}").chars().take(280).collect();
+                super::super::principles::principle_save(
+                    w.tx,
+                    LOUPIST,
+                    None,
+                    None,
+                    principle(statement),
+                    AT + i,
+                )?;
+            }
+            Ok(())
+        })
+        .unwrap();
+    let (k, h) = (source(&store, "Filing K"), source(&store, "Filing H"));
+    let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+    let kestrel = named("Kestrel ramp", "Kestrel Foundry");
+    assert!(put_in(&store, "chat-k", "mk", kestrel, text, &[k], AT + 50).is_none());
+    let halvorsen = named("Halvorsen ramp", "Halvorsen Cellworks");
+    assert!(put_in(&store, "chat-h", "mh", halvorsen, text, &[h], AT + 51).is_none());
+    two_chats(&store, AT + 100).expect("queued");
+    // The confirmation lands while the review is queued, so it only re-admits.
+    reseal_with(
+        &store,
+        &[
+            ("entity-k", "Kestrel Foundry"),
+            ("entity-h", "Halvorsen Cellworks"),
+        ],
+        AT + 101,
+    );
+    assert_eq!(review_states(&store), ["queued"]);
+    // The claim defers before inference; the settle still sees the confirmation.
+    assert!(try_claim(&store, AT + 102).is_none());
+    assert_eq!(
+        reviews(&store)[0].reason.as_deref(),
+        Some("principles_exceed_input_limit")
+    );
+    assert_eq!(review_states(&store), ["deferred", "queued"]);
+}
+
+#[test]
 fn evidence_a_started_review_left_out_goes_to_the_next_review() {
     let (_dir, store) = setup();
     store

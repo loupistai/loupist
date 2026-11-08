@@ -152,8 +152,12 @@ fn queue(
         return Ok(None);
     }
     let id = super::model::mint_id("lrn");
-    // world_job_id is kept, written empty, so existing folders open without a schema bump.
-    tx.execute("INSERT INTO knowledge_learning_reviews(review_id,loupist_id,world_job_id,status,created_at_ms,through_event,settings_json,call_budget) VALUES (?1,?2,'','pending',?3,?4,?5,?6)",params![id,loupist,now,end,serde_json::to_string(&s)?,s.max_llm_calls.min(1)])?;
+    // The count the review was queued at: a publication that confirms a company
+    // while it waits is seen when it settles, even before inference. The claim
+    // snapshot replaces it. world_job_id is kept, written empty, so existing
+    // folders open without a schema bump.
+    let queued = json!({"confirmed_subjects": confirmed_subjects(tx, loupist)?});
+    tx.execute("INSERT INTO knowledge_learning_reviews(review_id,loupist_id,world_job_id,status,created_at_ms,through_event,settings_json,call_budget,input_json) VALUES (?1,?2,'','pending',?3,?4,?5,?6,?7)",params![id,loupist,now,end,serde_json::to_string(&s)?,s.max_llm_calls.min(1),queued.to_string()])?;
     admit_pending(tx, loupist, now)
 }
 
@@ -978,9 +982,10 @@ fn settle(
     let (loupist, claimed): (String, Option<String>) = tx.query_row("UPDATE knowledge_learning_reviews SET status=?2,reason=?3,lens_record_id=?4,rationale=?5,evidence_count=?6,finished_at_ms=?7 WHERE review_id=?1 RETURNING loupist_id,input_json",params![id,status,reason,lens,rationale,count as i64,now],|r|Ok((r.get(0)?,r.get(1)?)))?;
     requeue(tx, &loupist, claimed.as_deref(), now)
 }
-/// Subject anchors the World has confirmed. A claim stores the count, and the
-/// settle compares, so a publication that confirmed a company while the
-/// review ran is not lost to the active-review rule.
+/// Subject anchors the World has confirmed. The queued row and the claim
+/// snapshot store the count, and the settle compares, so a publication that
+/// confirmed a company while the review waited or ran is not lost to the
+/// active-review rule.
 fn confirmed_subjects(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<i64> {
     Ok(tx.query_row(
         "SELECT COUNT(*) FROM knowledge_lens_anchors WHERE loupist_id=?1 AND role='subject' AND node_id IS NOT NULL",
@@ -988,14 +993,15 @@ fn confirmed_subjects(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<i6
         |r| r.get(0),
     )?)
 }
-/// The claim snapshot (`input_json`) as a settle reads it back.
+/// The queued row or claim snapshot (`input_json`) as a settle reads it back.
 #[derive(Deserialize)]
 struct Claimed {
     #[serde(default)]
     confirmed_subjects: Option<i64>,
 }
 /// After a review ends: filings committed past its watermark start the next
-/// one without another turn, and so does a subject confirmed since the claim.
+/// one without another turn, and so does a subject confirmed since it was
+/// queued or claimed.
 fn requeue(
     tx: &Transaction<'_>,
     loupist: &str,
