@@ -7,10 +7,10 @@ import {
   createReadToolDefinition,
   createWriteToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { constants, realpathSync } from "node:fs";
+import { constants, lstatSync, readlinkSync, realpathSync } from "node:fs";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const WORKSPACE_ENVIRONMENT_KEYS = new Set([
@@ -53,21 +53,42 @@ export function nativeTargetPath(workspaceRoot, input) {
   return isAbsolute(path) ? resolve(path) : resolve(workspaceRoot, path);
 }
 
+/** Symlink hops a target may take before it counts as a loop (as Rust's resolver). */
+const MAX_LINK_HOPS = 40;
+
+const isSymlink = (path) => lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink() === true;
+
 /** The form Rust pins a write to: the longest existing ancestor's real path
- * plus the parts not yet on disk, so a link swapped in later changes it. */
+ * plus the parts not yet on disk, so a link swapped in later changes it. A
+ * dangling link is followed to where it points, since that is where a write
+ * through it lands; a chain that loops or cannot be read throws. */
 export function canonicalTargetPath(path) {
-  const rest = [];
-  let existing = resolve(path);
-  for (;;) {
-    try {
-      return join(realpathSync.native(existing), ...rest.reverse());
-    } catch {
-      const parent = dirname(existing);
-      if (parent === existing) return resolve(path);
-      rest.push(basename(existing));
-      existing = parent;
+  let pending = resolve(path);
+  for (let hop = 0; hop < MAX_LINK_HOPS; hop++) {
+    const rest = [];
+    let existing = pending;
+    let real;
+    for (;;) {
+      try {
+        real = realpathSync.native(existing);
+        break;
+      } catch {
+        if (isSymlink(existing)) break;
+        const parent = dirname(existing);
+        if (parent === existing) return pending;
+        rest.push(basename(existing));
+        existing = parent;
+      }
     }
+    if (real !== undefined) {
+      // `..` left in `rest` comes from a link's target and applies after the links before it.
+      return rest.reverse().reduce((target, part) => part === ".." ? dirname(target) : join(target, part), real);
+    }
+    const target = readlinkSync(existing);
+    const parent = realpathSync.native(dirname(existing));
+    pending = rest.reverse().reduce((target, part) => `${target}${sep}${part}`, isAbsolute(target) ? target : `${parent}${sep}${target}`);
   }
+  throw new Error("Native file target cannot be resolved");
 }
 
 const sameTarget = (left, right) => process.platform === "win32"

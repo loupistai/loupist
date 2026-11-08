@@ -173,6 +173,8 @@ pub enum PathClass {
     Sensitive,
     Workspace,
     Outside,
+    /// A symlink chain that loops or cannot be read: no tool touches it.
+    Unresolvable,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -183,11 +185,17 @@ pub struct Classified {
 }
 
 pub fn classify(path: &Path, roots: &NativeRoots) -> Classified {
-    let path = resolved(&if path.is_absolute() {
+    let path = if path.is_absolute() {
         path.to_path_buf()
     } else {
         roots.workspace.join(path)
-    });
+    };
+    let Some(path) = resolve_links(&path) else {
+        return Classified {
+            class: PathClass::Unresolvable,
+            path: lexical(&path),
+        };
+    };
     let class = if instruction_file(&path, roots) {
         PathClass::Instructions
     } else if under(&path, &roots.scratch) {
@@ -296,6 +304,8 @@ pub enum NativeRefusal {
     AppPrivate,
     /// A search rooted above the app data root would descend into it.
     SearchCoversAppData,
+    /// The target's symlink chain loops or cannot be read.
+    Unresolvable,
     /// The user turned this kind down earlier in the reply.
     Declined(AskKind),
     /// Bash under the custom-connection tier.
@@ -369,6 +379,9 @@ pub fn decide(
         return NativeDecision::Refuse(NativeRefusal::AppPrivate);
     };
     let Classified { class, path } = classify(target, roots);
+    if class == PathClass::Unresolvable {
+        return NativeDecision::Refuse(NativeRefusal::Unresolvable);
+    }
     let tool = request.tool;
     let exposed = exposure != Exposure::Clean;
     let allow = NativeDecision::Allow {
@@ -426,6 +439,7 @@ pub fn decide(
             }
             PathClass::Outside if !exposed || granted(&grants.writes) => allow,
             PathClass::Outside => ask(AskKind::FileWrite, Grant::Write(folder)),
+            PathClass::Unresolvable => unreachable!("refused above"),
         }
     } else {
         match class {
@@ -438,6 +452,7 @@ pub fn decide(
             PathClass::Sensitive => ask(AskKind::FileRead, Grant::Read(exact)),
             PathClass::Outside if !exposed || granted(&grants.reads) => allow,
             PathClass::Outside => ask(AskKind::FileRead, Grant::Read(folder)),
+            PathClass::Unresolvable => unreachable!("refused above"),
         }
     }
 }
@@ -669,8 +684,60 @@ fn case_insensitive_prefix(target: &Path, root: &Path) -> bool {
     target.len() >= root.len() && target[..root.len()] == root[..]
 }
 
-/// Lexically normalized, with the longest existing ancestor canonicalized.
-pub fn resolved(path: &Path) -> PathBuf {
+/// A root's resolved form; a root that cannot be resolved keeps its lexical form.
+fn resolved(path: &Path) -> PathBuf {
+    resolve_links(path).unwrap_or_else(|| lexical(path))
+}
+
+/// Symlink hops a target may take before it counts as a loop.
+const MAX_LINK_HOPS: usize = 40;
+
+/// Lexically normalized, with the longest existing ancestor canonicalized. A
+/// dangling symlink is followed to where it points, since that is where a
+/// write through it lands. None for a link chain that loops or cannot be read.
+pub fn resolve_links(path: &Path) -> Option<PathBuf> {
+    let mut normal = lexical(path);
+    for _ in 0..MAX_LINK_HOPS {
+        let mut existing = normal.as_path();
+        let mut rest: Vec<std::ffi::OsString> = Vec::new();
+        loop {
+            if let Ok(canonical) = existing.canonicalize() {
+                return Some(rest.iter().rev().fold(plain_path(canonical), |path, part| {
+                    if part == ".." {
+                        path.parent().map(Path::to_path_buf).unwrap_or(path)
+                    } else {
+                        path.join(part)
+                    }
+                }));
+            }
+            if existing
+                .symlink_metadata()
+                .is_ok_and(|metadata| metadata.file_type().is_symlink())
+            {
+                let target = std::fs::read_link(existing).ok()?;
+                let parent = existing.parent()?.canonicalize().ok()?;
+                // `..` inside the link's target stays for the fold above, which
+                // applies it after the symlinks before it are resolved.
+                normal = rest
+                    .iter()
+                    .rev()
+                    .fold(parent.join(target), |path, part| path.join(part));
+                break;
+            }
+            match (existing.parent(), existing.file_name()) {
+                (Some(parent), Some(name)) => {
+                    rest.push(name.to_owned());
+                    existing = parent;
+                }
+                _ => return Some(normal),
+            }
+        }
+    }
+    None
+}
+
+/// `.` and `..` removed without touching the disk.
+fn lexical(path: &Path) -> PathBuf {
     let mut normal = PathBuf::new();
     for component in path.components() {
         match component {
@@ -681,24 +748,7 @@ pub fn resolved(path: &Path) -> PathBuf {
             other => normal.push(other),
         }
     }
-    let mut existing = normal.as_path();
-    let mut rest = Vec::new();
-    loop {
-        if let Ok(canonical) = existing.canonicalize() {
-            let canonical = plain_path(canonical);
-            return rest
-                .iter()
-                .rev()
-                .fold(canonical, |path, part: &&std::ffi::OsStr| path.join(part));
-        }
-        match (existing.parent(), existing.file_name()) {
-            (Some(parent), Some(name)) => {
-                rest.push(name);
-                existing = parent;
-            }
-            _ => return normal,
-        }
-    }
+    normal
 }
 
 /// Windows canonical paths carry a verbatim prefix the extension's realpath
@@ -791,7 +841,16 @@ mod tests {
         }
         std::fs::write(attachments.join("brief.pdf.md"), "x").unwrap();
         #[cfg(unix)]
-        std::os::unix::fs::symlink(app_data.join("pi"), scratch.join("link-to-pi")).unwrap();
+        {
+            use std::os::unix::fs::symlink;
+            symlink(app_data.join("pi"), scratch.join("link-to-pi")).unwrap();
+            // Dangling links: their targets do not exist.
+            symlink(home.join(".zshenv"), workspace.join("report.md")).unwrap();
+            symlink("../.zshenv", workspace.join("relative.md")).unwrap();
+            symlink("report.md", workspace.join("chain.md")).unwrap();
+            symlink(app_data.join("pi/secret.json"), workspace.join("db.md")).unwrap();
+            symlink("loop.md", workspace.join("loop.md")).unwrap();
+        }
         let roots = NativeRoots::new(
             &workspace,
             &app_data,
@@ -829,6 +888,7 @@ mod tests {
             },
             NativeDecision::Refuse(NativeRefusal::AppPrivate) => "refuse app_private",
             NativeDecision::Refuse(NativeRefusal::SearchCoversAppData) => "refuse search",
+            NativeDecision::Refuse(NativeRefusal::Unresolvable) => "refuse unresolvable",
             NativeDecision::Refuse(NativeRefusal::Declined(_)) => "refuse declined",
             NativeDecision::Refuse(NativeRefusal::OutboundPaused) => "refuse outbound",
         }
@@ -925,6 +985,73 @@ mod tests {
             classify(&f.roots.scratch.join("link-to-pi/auth.json"), &f.roots).class,
             PathClass::AppPrivate,
             "a symlink inside scratch resolves to its target"
+        );
+    }
+
+    /// A write through a dangling link lands where the link points, so the
+    /// decision is about that target, and the canonical path the extension
+    /// pins the write to is the target too.
+    #[cfg(unix)]
+    #[test]
+    fn a_dangling_symlink_is_decided_by_where_it_points() {
+        let f = fixture();
+        let ws = &f.roots.workspace;
+        for (link, target, class) in [
+            ("report.md", f.home.join(".zshenv"), PathClass::Sensitive),
+            ("relative.md", f.home.join(".zshenv"), PathClass::Sensitive),
+            ("chain.md", f.home.join(".zshenv"), PathClass::Sensitive),
+            (
+                "db.md",
+                f.roots.app_data.join("pi/secret.json"),
+                PathClass::AppPrivate,
+            ),
+        ] {
+            let classified = classify(&ws.join(link), &f.roots);
+            assert_eq!(classified.class, class, "{link}");
+            assert_eq!(classified.path, target, "{link}");
+        }
+        for exposure in [Exposure::Clean, Exposure::ThisTurn] {
+            assert_eq!(
+                kind(&decide(
+                    &request("write", ws.join("report.md")),
+                    &f.roots,
+                    exposure,
+                    &NativeGrants::default(),
+                    false
+                )),
+                "ask file_write"
+            );
+            assert_eq!(
+                kind(&decide(
+                    &request("write", ws.join("db.md")),
+                    &f.roots,
+                    exposure,
+                    &NativeGrants::default(),
+                    false
+                )),
+                "refuse app_private"
+            );
+            for tool in ["read", "write", "ls"] {
+                assert_eq!(
+                    kind(&decide(
+                        &request(tool, ws.join("loop.md")),
+                        &f.roots,
+                        exposure,
+                        &NativeGrants::default(),
+                        false
+                    )),
+                    "refuse unresolvable",
+                    "{tool}"
+                );
+            }
+        }
+        // A link's target with `..` after a symlink applies the `..` to the
+        // resolved link, as the OS does.
+        std::os::unix::fs::symlink(f.home.join("Documents"), ws.join("docs-link")).unwrap();
+        std::os::unix::fs::symlink("docs-link/../.zshenv", ws.join("via-docs.md")).unwrap();
+        assert_eq!(
+            classify(&ws.join("via-docs.md"), &f.roots).path,
+            f.home.join(".zshenv")
         );
     }
 

@@ -24,8 +24,11 @@ says so. Unattended runs refuse every native tool before this policy
 ## Path classes
 
 Targets are canonicalized first (symlinks of the existing ancestor resolved, `..`
-removed), then matched in this order; the first match wins. Root containment is
-decided by filesystem identity (`(dev, ino)` of each existing ancestor) and by a
+removed, a dangling symlink followed to where it points, up to 40 hops), then
+matched in this order; the first match wins. A link chain that loops or cannot
+be read is refused for every tool. The extension's `canonicalTargetPath` resolves
+the same way, so its write pin agrees with Rust. Root containment is decided by
+filesystem identity (`(dev, ino)` of each existing ancestor) and by a
 case-insensitive prefix, so a firmlink or case alias of a root still counts.
 
 1. Instructions: workspace `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`,

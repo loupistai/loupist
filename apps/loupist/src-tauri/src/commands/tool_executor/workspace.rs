@@ -14,6 +14,7 @@ use crate::custom_connections::taint::{COMMAND_DECLINED_REFUSAL, INSTRUCTION_WRI
 /// kind is not paused.
 const UNASKED_NEXT: &str = "No card could be shown for this call: this reply already holds its limit of approval cards, or nobody can answer one here. The user did not refuse it. Group the remaining command or file work into fewer calls, or finish with what is already available.";
 const SEARCH_COVERS_APP_DATA_NEXT: &str = "This search root contains the app's private data folder, so it is not searched. Search a narrower folder, such as the workspace or one of its subfolders.";
+const UNRESOLVABLE_NEXT: &str = "This path goes through a symbolic link that loops or cannot be read, so it is not touched. Use the real file's path.";
 
 /// The native policy's state for one turn: the folders it classifies against,
 /// whether earlier replies carried third-party text, the Chat the blanket
@@ -108,6 +109,7 @@ fn refusal_error(refusal: NativeRefusal) -> BrokerError {
         NativeRefusal::SearchCoversAppData => {
             BrokerError::ProtectedPath.with_next(SEARCH_COVERS_APP_DATA_NEXT)
         }
+        NativeRefusal::Unresolvable => BrokerError::ProtectedPath.with_next(UNRESOLVABLE_NEXT),
         NativeRefusal::Declined(kind) => declined_error(kind),
         NativeRefusal::OutboundPaused => BrokerError::OutboundPaused,
     }

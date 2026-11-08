@@ -335,3 +335,36 @@ test("write and edit ask the host with their resolved target and write only that
   assert.equal(nativeTargetPath(workspace, "~/notes.md"), join(homedir(), "notes.md"));
   assert.equal(nativeTargetPath(workspace, "a/../AGENTS.md"), join(workspace, "AGENTS.md"));
 });
+
+test("a dangling link resolves to where it points, so a write through it is pinned to the real target", { skip: process.platform === "win32" }, async (t) => {
+  const { temporary, workspace, privateRuntime } = workspaceFixture(t);
+  const outside = join(temporary, "outside");
+  mkdirSync(outside);
+  mkdirSync(join(outside, "Documents"));
+  const startup = join(outside, ".zshenv");
+  symlinkSync(startup, join(workspace, "report.md"));
+  symlinkSync("../outside/.zshenv", join(workspace, "relative.md"));
+  symlinkSync("report.md", join(workspace, "chain.md"));
+  symlinkSync(join(outside, "Documents"), join(workspace, "docs-link"));
+  symlinkSync("docs-link/../.zshenv", join(workspace, "via-docs.md"));
+  symlinkSync("loop.md", join(workspace, "loop.md"));
+  for (const link of ["report.md", "relative.md", "chain.md", "via-docs.md"]) {
+    assert.equal(canonicalTargetPath(join(workspace, link)), startup, link);
+  }
+  assert.equal(canonicalTargetPath(join(workspace, "report.md/../x.md")), join(workspace, "x.md"), "`..` before a link is lexical, as Pi resolves it");
+  assert.throws(() => canonicalTargetPath(join(workspace, "loop.md")), /cannot be resolved/);
+
+  const tools = new Map();
+  let pinned;
+  registerWorkspaceTools({ registerTool: (tool) => tools.set(tool.name, tool) }, workspace,
+    async () => ({ allowed: true, resolved: pinned }));
+  const write = (path) => tools.get("write").execute("dangling", { path, content: "export PATH=evil\n" }, undefined, undefined, { cwd: privateRuntime });
+  // Pinned to the link's own path, as a Workspace file would be: the write does not land outside.
+  pinned = join(workspace, "report.md");
+  await assert.rejects(write("report.md"), /target changed after authorization/);
+  assert.equal(existsSync(startup), false);
+  // Pinned to the real target, as Rust answers after the user allows that file: the write lands there.
+  pinned = startup;
+  await write("report.md");
+  assert.equal(readFileSync(startup, "utf8"), "export PATH=evil\n");
+});
