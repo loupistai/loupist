@@ -956,3 +956,49 @@ async fn a_filing_the_text_policy_refuses_never_fails_the_answer() {
     assert!(answer.failure_kind.is_none());
     assert_eq!(answer.content, "Noted, without saving the link.");
 }
+
+/// A question nobody can answer in an eval must not hold the turn for the
+/// wait limit: the waiting call resolves at once, unanswered.
+#[test]
+fn an_eval_turn_settles_a_waiting_question_at_once() {
+    use crate::chat::progress::ChatProgressPatch;
+    use crate::chat::questions::{self, ChatQuestion, ChatQuestionOption, QuestionState};
+    use crate::commands::ChatStreamEvent;
+    let option = |label: &str| ChatQuestionOption {
+        label: label.into(),
+        description: None,
+    };
+    let receiver = questions::register("eval-question-1", "loupist-eval", 2);
+    let question = ChatQuestion {
+        request_id: "eval-question-1".into(),
+        item_id: None,
+        question: "Which period?".into(),
+        options: vec![option("Latest quarter"), option("Full year")],
+        recommended: Some(0),
+        state: QuestionState::Waiting,
+        answer: None,
+        requested_at_ms: 0,
+    };
+    settle_waiting_cards(
+        "loupist-eval",
+        &ChatStreamEvent::ProgressPatch {
+            run_id: "eval-run".into(),
+            patch: ChatProgressPatch {
+                sequence: 1,
+                upsert_items: Vec::new(),
+                append_text: Vec::new(),
+                remove_item_ids: Vec::new(),
+                finished_at_ms: None,
+                plan: None,
+                approvals: None,
+                questions: Some(vec![question]),
+            },
+        },
+    );
+    let mut receiver = receiver;
+    assert_eq!(
+        receiver.try_recv(),
+        Err(tokio::sync::oneshot::error::TryRecvError::Closed),
+        "the ask_user call resolves unanswered"
+    );
+}

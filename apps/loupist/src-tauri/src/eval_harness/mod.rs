@@ -883,19 +883,32 @@ fn enable_connections(state: &AppState, loupist: &str, connections: &[String]) -
     Ok(())
 }
 /// Nobody watches an eval reply, so an approval card (a new website after
-/// third-party text) is answered "Not now" at once, as a cautious user would,
-/// instead of holding the turn for the wait limit.
-fn decline_waiting_approvals(loupist_id: &str, event: &crate::commands::ChatStreamEvent) {
+/// third-party text, a native command or file) is answered "Not now" at once,
+/// as a cautious user would, and a question is left unanswered so its call
+/// continues with the recommended option, instead of holding the turn for the
+/// wait limit.
+fn settle_waiting_cards(loupist_id: &str, event: &crate::commands::ChatStreamEvent) {
     use crate::chat::approvals::{decide, ApprovalDecision, ApprovalState};
+    use crate::chat::questions::{self, QuestionState};
     use crate::commands::ChatStreamEvent;
-    let approvals = match event {
-        ChatStreamEvent::Progress { progress, .. } => Some(&progress.approvals),
-        ChatStreamEvent::ProgressPatch { patch, .. } => patch.approvals.as_ref(),
-        _ => None,
+    let (approvals, questions) = match event {
+        ChatStreamEvent::Progress { progress, .. } => {
+            (Some(&progress.approvals), Some(&progress.questions))
+        }
+        ChatStreamEvent::ProgressPatch { patch, .. } => {
+            (patch.approvals.as_ref(), patch.questions.as_ref())
+        }
+        _ => (None, None),
     };
     for approval in approvals.into_iter().flatten() {
         if approval.state == ApprovalState::Waiting {
             let _ = decide(loupist_id, &approval.request_id, ApprovalDecision::Deny);
+        }
+    }
+    for question in questions.into_iter().flatten() {
+        if question.state == QuestionState::Waiting {
+            // Dropping the registered sender resolves the waiting call unanswered.
+            questions::forget(&question.request_id);
         }
     }
 }
@@ -920,7 +933,7 @@ async fn run_turn(
     let loupist_id = chat.loupist_id.clone();
     let mut sink = ChatEventSink::new(move |event| {
         let _ = &lifetime;
-        decline_waiting_approvals(&loupist_id, &event);
+        settle_waiting_cards(&loupist_id, &event);
         Ok(())
     });
     sink.eval_pi_event = Some(Arc::new(move |event| {
