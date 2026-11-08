@@ -3,7 +3,8 @@ import { ApprovalCards } from "./ApprovalCard";
 import type { LoupistBridge } from "../../types";
 import { formatNumber, formatTime } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
-import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
+import { useConversationScroll } from "../ai-elements/conversation";
 import { AnswerFeedback, type SaveAnswerFeedback } from "./AnswerFeedback";
 import {
   CheckIcon,
@@ -312,6 +313,10 @@ function ChatMessageCardComponent({
   const lastActivityAt = useLastActivity(message);
   const retryOffered = Boolean(onRetry);
   const view = useMemo(() => deriveTurnView({ message, now, lastActivityAt, stopping, retry: { attempt: retryAttempt, offered: retryOffered } }), [message, now, lastActivityAt, stopping, retryAttempt, retryOffered]);
+  // A new row or a settled footer grows the turn in this commit; follow it now, a frame before the ResizeObserver would.
+  const conversation = useConversationScroll();
+  const segmentCount = view.segments.length;
+  useLayoutEffect(() => { conversation?.followGrowth(); }, [conversation, segmentCount, view.state.kind]);
   const complete = view.state.kind === "complete";
   const settled = view.footer.kind === "settled" ? view.footer : null;
   const copyText = settled?.copyText ?? null;

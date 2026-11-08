@@ -62,8 +62,8 @@ streams; `streamingMarkdown.test.tsx` replays the live scenario one character at
 to hold that. The caret follows a paragraph or list item only. Code and math plugins
 load once into a module-level store, so a second answer renders highlighted on its
 first paint and a plugin arriving mid-answer re-renders blocks in place. The scroll
-owner follows growth from the layout effect of the segment that grew, so a pinned
-reader never sees a gap; `scripts/probe-streaming.mjs` measures text drops, height
+owner follows growth from the layout effect of the segment that grew, and from the
+card's when a row or the footer's state is added, so a pinned reader never sees a gap; `scripts/probe-streaming.mjs` measures text drops, height
 shrinks, layout shift and the pinned gap on the `chat-live-research` scenario.
 
 # Answer failures

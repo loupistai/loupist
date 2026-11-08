@@ -82,6 +82,8 @@ export const Conversation = ({
   const holdScrollPosition = useCallback(() => updateIsAtBottom(false), [updateIsAtBottom]);
   // Called from the layout effect of the content that grew, so the scroll lands
   // in the same commit; ResizeObserver would move it a frame after the paint.
+  // Two callers own it: ProseSegment for text growth, ChatMessageCard for a new
+  // segment or footer state (the probe's one 44px frame without the latter).
   const followGrowth = useCallback(() => { if (isAtBottomRef.current) scrollToBottom(); }, [scrollToBottom]);
   const noteScrollInput = useCallback(() => { lastScrollInputRef.current = performance.now(); }, []);
 
