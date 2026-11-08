@@ -315,9 +315,11 @@ const PROBE_STDERR_BYTES: usize = 2048;
 /// Runs the sandbox against a private folder laid out like a turn's roots: a
 /// write into an existing subfolder, into `outputs` and into scratch
 /// succeeds; a write outside, into the data folder or into a git hook fails;
-/// `.git` cannot be renamed; hidden files read as absent or empty;
-/// instruction files and attachments still read; `/run` holds nothing but
-/// the resolver file bound back; offline mode cannot connect to a listener
+/// `.git` cannot be renamed; hidden files read as absent or empty; the
+/// command holds no capability (`CapEff` all zeros, so a root user's command
+/// cannot `umount` a mask, which the probe also tries); instruction files
+/// and attachments still read; `/run` holds nothing but the resolver file
+/// bound back; offline mode cannot connect to a listener
 /// the probe opened while online mode can; and offline a write at the
 /// folder's top level or into a dot folder fails where online it succeeds.
 #[cfg(unix)]
@@ -396,10 +398,10 @@ fn expected(line: &str, network: bool) -> bool {
     };
     let ok = match name {
         "write_inside" | "write_outputs" | "write_scratch" | "read_skill" | "read_attachment"
-        | "read_hook" | "run_masked" => true,
+        | "read_hook" | "run_masked" | "caps" => true,
         "connect" | "write_top" | "write_dot" => network,
         "write_outside" | "write_data" | "write_hook" | "rename_git" | "read_app"
-        | "read_netrc" | "read_ssh" | "read_db" => false,
+        | "read_netrc" | "unmount" | "read_ssh" | "read_db" => false,
         _ => return true,
     };
     result == if ok { "ok" } else { "fail" }
@@ -495,12 +497,14 @@ impl ProbeLayout {
              w {ws}/.git/hooks/post-checkout write_hook\n\
              r {app}/pi/auth.json authsecret read_app\n\
              r {home}/.netrc netrcsecret read_netrc\n\
+             umount -l {home}/.ssh 2>/dev/null && echo unmount=ok || echo unmount=fail\n\
              r {home}/.ssh/id sshsecret read_ssh\n\
              r {data}/db.sqlite3 dbsecret read_db\n\
              r {data}/skills/x/SKILL.md skillok read_skill\n\
              r {attachments}/brief.md attok read_attachment\n\
              r {ws}/.git/hooks/pre-commit hookok read_hook\n\
              [ -z \"$(ls -A /run 2>/dev/null | grep -vxF -e ''{allowed_in_run})\" ] && echo run_masked=ok || echo run_masked=fail\n\
+             grep -Eqs '^CapEff:[[:space:]]+0+$' /proc/self/status && echo caps=ok || echo caps=fail\n\
              (exec 3<>/dev/tcp/127.0.0.1/{port}) 2>/dev/null && echo connect=ok || echo connect=fail\n\
              mv {ws}/.git {ws}/.git-moved 2>/dev/null && echo rename_git=ok || echo rename_git=fail\n\
              echo {end}\n",
@@ -1116,23 +1120,25 @@ mod tests {
             .lines()
             .filter(|line| !expected(line, false))
             .collect();
-        assert_eq!(
-            broken,
-            [
-                "write_top=ok",
-                "write_dot=ok",
-                "write_outside=ok",
-                "write_data=ok",
-                "write_hook=ok",
-                "read_app=ok",
-                "read_netrc=ok",
-                "read_ssh=ok",
-                "read_db=ok",
-                "run_masked=fail",
-                "connect=ok",
-                "rename_git=ok"
-            ],
-            "{output}"
-        );
+        // Only root keeps capabilities outside the sandbox; the `.ssh` folder
+        // is no mount point here, so its `umount` fails either way.
+        let mut expected_broken = vec![
+            "write_top=ok",
+            "write_dot=ok",
+            "write_outside=ok",
+            "write_data=ok",
+            "write_hook=ok",
+            "read_app=ok",
+            "read_netrc=ok",
+            "read_ssh=ok",
+            "read_db=ok",
+            "run_masked=fail",
+        ];
+        // SAFETY: geteuid reads the process's credentials and cannot fail.
+        if unsafe { libc::geteuid() } == 0 {
+            expected_broken.push("caps=fail");
+        }
+        expected_broken.extend(["connect=ok", "rename_git=ok"]);
+        assert_eq!(broken, expected_broken, "{output}");
     }
 }
