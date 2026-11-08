@@ -11,7 +11,6 @@ use serde_json::{json, Value};
 use super::authority::{require_edit, require_record, OwnedRecordState};
 use super::canonical::{canonical_string, from_json, to_value};
 use super::error::{KnowledgeError, KnowledgeResult};
-use super::identity::entity_name_keys;
 use super::lens_page::{
     apply, links, op_texts, private_reference, section_digest, text_forbidden, world_link_ids,
     AnchorInput, ApplyContext, Basis, BasisChip, BasisRef, FiledOp, FiledPage, FilingOrigin,
@@ -168,27 +167,36 @@ fn world_index(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<WorldI
     Ok(index)
 }
 
-/// Every company key ([`entity_name_keys`]) of each current World node's name
-/// and aliases, by node id. Method learning reads it to see when two nodes
-/// might spell one company.
+/// The head revision of the Loupist's World, if one was published.
+fn world_head(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<Option<String>> {
+    Ok(tx
+        .query_row(
+            "SELECT h.revision_id FROM knowledge_records r
+             JOIN knowledge_record_heads h ON h.record_id = r.record_id
+             WHERE r.owner_loupist_id = ?1 AND r.kind = 'world'",
+            [loupist_id],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
+/// The company keys ([`super::identity::entity_name_keys`]) of each of `nodes` in the current
+/// World, by node id, from the node's name and aliases; a node the World does
+/// not hold is left out. Method learning reads it to see when two nodes might
+/// spell one company. The World is parsed once per revision
+/// ([`identity::world_node_keys`]), not on every filing.
 pub(super) fn node_keys(
     tx: &Transaction<'_>,
     loupist_id: &str,
+    nodes: &BTreeSet<String>,
 ) -> KnowledgeResult<BTreeMap<String, BTreeSet<String>>> {
-    let Some(body) = world_body(tx, loupist_id)? else {
+    let Some(revision) = world_head(tx, loupist_id)? else {
         return Ok(BTreeMap::new());
     };
-    Ok(body
-        .nodes
-        .iter()
-        .map(|node| {
-            let keys = std::iter::once(&node.name)
-                .chain(&node.aliases)
-                .flat_map(|name| entity_name_keys(name))
-                .collect();
-            (node.id.clone(), keys)
-        })
-        .collect())
+    super::identity::world_node_keys(loupist_id, &revision, nodes, || {
+        let body: WorldSnapshotBody = from_json(&load_revision(tx, &revision)?.payload_json)?;
+        Ok(body.nodes)
+    })
 }
 
 fn index_nodes(index: &mut WorldIndex, nodes: &[GraphNode]) {
@@ -3074,6 +3082,54 @@ mod tests {
             )
         });
         assert!(matches!(principle, Err(KnowledgeError::LensBodyForbidden)));
+    }
+
+    #[test]
+    fn node_keys_parse_a_world_revision_once_and_know_which_nodes_it_holds() {
+        let (_dir, store) = store();
+        let loupist = "loupist-keys";
+        let revision = seal(&store, loupist, "acme");
+        let computed = || super::super::identity::KEY_COMPUTATIONS.with(|count| count.get());
+        let keys = |nodes: &[&str]| {
+            let nodes = nodes.iter().map(|id| (*id).to_owned()).collect();
+            store
+                .read(|read| node_keys(read.tx, loupist, &nodes))
+                .unwrap()
+        };
+        let before = computed();
+        let first = keys(&["acme", "ghost"]);
+        assert_eq!(first.keys().collect::<Vec<_>>(), ["acme"]);
+        assert_eq!(first["acme"], BTreeSet::from(["acme".to_owned()]));
+        assert_eq!(computed(), before + 1, "one node's keys computed");
+        assert_eq!(keys(&["acme"]), first);
+        assert_eq!(computed(), before + 1, "the second read reuses them");
+        // A new revision is parsed again, and only the nodes asked about are keyed.
+        let world = revision.record_id.clone();
+        store
+            .seal_world(SealWorld {
+                loupist_id: loupist.into(),
+                record_id: world,
+                expected_revision_id: Some(revision.revision_id),
+                at_ms: 3,
+                nodes: ["acme", "beta"]
+                    .iter()
+                    .map(|id| GraphNode {
+                        id: (*id).into(),
+                        name: format!("{} Inc.", id.to_uppercase()),
+                        aliases: vec![],
+                        description: String::new(),
+                        kind: "Organization".into(),
+                        source_role: "subject".into(),
+                        properties: Default::default(),
+                    })
+                    .collect(),
+                claims: Vec::new(),
+                annotations: Vec::new(),
+                dependencies: Vec::new(),
+            })
+            .unwrap();
+        assert_eq!(keys(&["beta"])["beta"], BTreeSet::from(["beta".to_owned()]));
+        assert_eq!(computed(), before + 2);
     }
 
     #[test]

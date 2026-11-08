@@ -1557,6 +1557,43 @@ fn two_companies_with_one_qualifier_are_two_cases() {
 }
 
 #[test]
+fn a_page_about_a_node_the_world_dropped_is_not_evidence() {
+    let (_dir, store) = setup();
+    let (a, b, c) = (
+        source(&store, "Filing A"),
+        source(&store, "Filing B"),
+        source(&store, "Filing C"),
+    );
+    assert!(turn(&store, "chat-1", "m1", 3, &[a], AT + 2).is_none());
+    // A pack removal drops Manufacturer 3; extraction knows it again under a new id.
+    reseal(
+        &store,
+        vec![
+            ("entity-0", "Manufacturer 0"),
+            ("entity-1", "Manufacturer 1"),
+            ("entity-2", "Manufacturer 2"),
+            ("entity-3b", "Manufacturer 3"),
+        ],
+        AT + 3,
+    );
+    let again = PageTarget::Create {
+        kind: PageKind::Idea,
+        title: "Manufacturer 3 ramp".into(),
+        anchors: vec![AnchorInput::Node {
+            node_id: "entity-3b".into(),
+        }],
+    };
+    let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+    assert!(put_in(&store, "chat-2", "m2", again, text, &[b], AT + 4).is_none());
+    assert!(review_states(&store).is_empty());
+    assert!(turn(&store, "chat-3", "m3", 0, &[c], AT + 5).is_some());
+    assert_eq!(
+        pages(&begin(&store, AT + 6)),
+        ["Manufacturer 0", "Manufacturer 3 ramp"]
+    );
+}
+
+#[test]
 fn companies_the_world_has_not_confirmed_count_once_it_does() {
     let (_dir, store) = setup();
     let (a, b, c, d) = (

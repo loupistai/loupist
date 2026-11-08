@@ -1,5 +1,5 @@
-use std::collections::BTreeSet;
-use std::sync::OnceLock;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::sync::{Mutex, OnceLock, PoisonError};
 
 use serde_json::Value;
 use unicode_normalization::UnicodeNormalization;
@@ -265,6 +265,88 @@ pub(crate) fn entity_name_keys(name: &str) -> BTreeSet<String> {
         }
     }
     keys
+}
+
+/// The company keys of one World revision's nodes, computed for a node the
+/// first time learning asks about it and kept for the filings after.
+pub(crate) struct WorldKeys {
+    spellings: BTreeMap<String, Vec<String>>,
+    keys: BTreeMap<String, BTreeSet<String>>,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many nodes this thread computed keys for.
+    pub(crate) static KEY_COMPUTATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl WorldKeys {
+    pub(crate) fn new(nodes: &[GraphNode]) -> Self {
+        Self {
+            spellings: nodes
+                .iter()
+                .map(|node| {
+                    let spellings = std::iter::once(&node.name)
+                        .chain(&node.aliases)
+                        .cloned()
+                        .collect();
+                    (node.id.clone(), spellings)
+                })
+                .collect(),
+            keys: BTreeMap::new(),
+        }
+    }
+
+    /// The keys of `node`'s name and aliases, or None when the World has no
+    /// such node.
+    fn keys(&mut self, node: &str) -> Option<&BTreeSet<String>> {
+        let spellings = self.spellings.get(node)?;
+        Some(self.keys.entry(node.to_owned()).or_insert_with(|| {
+            #[cfg(test)]
+            KEY_COMPUTATIONS.with(|count| count.set(count.get() + 1));
+            spellings
+                .iter()
+                .flat_map(|spelling| entity_name_keys(spelling))
+                .collect()
+        }))
+    }
+}
+
+/// The last few World revisions' keys, process-wide, by Loupist and revision.
+static WORLD_KEYS: Mutex<VecDeque<(String, String, WorldKeys)>> = Mutex::new(VecDeque::new());
+const CACHED_REVISIONS: usize = 4;
+
+/// The company keys of `nodes` in `revision` of `loupist`'s World, by node id.
+/// `load` reads the revision's nodes the first time it is asked about; later
+/// filings on the same revision reuse them. A node the World does not hold is
+/// left out.
+pub(crate) fn world_node_keys(
+    loupist: &str,
+    revision: &str,
+    nodes: &BTreeSet<String>,
+    load: impl FnOnce() -> super::KnowledgeResult<Vec<GraphNode>>,
+) -> super::KnowledgeResult<BTreeMap<String, BTreeSet<String>>> {
+    let cached = |entry: &(String, String, WorldKeys)| entry.0 == loupist && entry.1 == revision;
+    let mut cache = WORLD_KEYS.lock().unwrap_or_else(PoisonError::into_inner);
+    if !cache.iter().any(cached) {
+        drop(cache);
+        let keys = WorldKeys::new(&load()?);
+        cache = WORLD_KEYS.lock().unwrap_or_else(PoisonError::into_inner);
+        if !cache.iter().any(cached) {
+            if cache.len() == CACHED_REVISIONS {
+                cache.pop_front();
+            }
+            cache.push_back((loupist.to_owned(), revision.to_owned(), keys));
+        }
+    }
+    let entry = cache
+        .iter_mut()
+        .find(|entry| cached(entry))
+        .expect("the revision was just cached");
+    Ok(nodes
+        .iter()
+        .filter_map(|node| entry.2.keys(node).map(|keys| (node.clone(), keys.clone())))
+        .collect())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

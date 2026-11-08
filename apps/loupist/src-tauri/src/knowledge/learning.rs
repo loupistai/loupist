@@ -601,7 +601,10 @@ fn evidence(
 /// current World names, read only when the nodes alone would pass the gate.
 /// Two nodes spelling one company then share a key and are one case. The
 /// World's current names decide, not the name an anchor was filed under: that
-/// name may since belong to another company.
+/// name may since belong to another company. A page about a node the World no
+/// longer holds (a shared pack took it away, say) names no company now and is
+/// not evidence, like a page with no subject: a key it cannot carry would
+/// otherwise let the company it was about count twice.
 fn keyed_evidence(
     tx: &Transaction<'_>,
     loupist: &str,
@@ -610,7 +613,19 @@ fn keyed_evidence(
 ) -> KnowledgeResult<Evidence> {
     let mut found = evidence(tx, loupist, consumed, through)?;
     if core(&found.observations).is_some() {
-        let keys = super::lens::node_keys(tx, loupist)?;
+        let nodes: BTreeSet<String> = found
+            .observations
+            .iter()
+            .flat_map(|o| o.cases.iter().filter_map(Case::node))
+            .map(str::to_owned)
+            .collect();
+        let keys = super::lens::node_keys(tx, loupist, &nodes)?;
+        found.observations.retain(|o| {
+            o.cases
+                .iter()
+                .filter_map(Case::node)
+                .all(|node| keys.contains_key(node))
+        });
         for o in &mut found.observations {
             let spellings: Vec<Case> = o
                 .cases
