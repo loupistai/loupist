@@ -328,6 +328,17 @@ const PROBE_STDERR_BYTES: usize = 2048;
 /// folder's top level or into a dot folder fails where online it succeeds.
 #[cfg(unix)]
 pub fn probe(sandbox: &Sandbox) -> Result<(), ProbeError> {
+    let host_home = std::env::var_os("HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from);
+    probe_on(sandbox, host_home.as_deref())
+}
+
+/// `probe` with `host_home` as the home folder whose credential entries the
+/// sandbox masks for every command on this host.
+#[cfg(unix)]
+fn probe_on(sandbox: &Sandbox, host_home: Option<&Path>) -> Result<(), ProbeError> {
+    let _ = host_home;
     let temporary = probe_folder().map_err(|_| ProbeError::Setup)?;
     let layout = ProbeLayout::create(temporary.path()).map_err(|_| ProbeError::Setup)?;
     let listener = std::net::TcpListener::bind("127.0.0.1:0").map_err(|_| ProbeError::Setup)?;
@@ -1004,6 +1015,55 @@ mod tests {
             std::fs::read_to_string(dotfiles.join("bashrc")).unwrap(),
             "export TOKEN=secret"
         );
+        // The startup probe on a host with this home passes too.
+        assert_eq!(probe_on(&sandbox, Some(home)), Ok(()));
+    }
+
+    /// A home the sandbox cannot mask (here a bubblewrap that refuses every
+    /// path under it, as bubblewrap 0.9 did for an absolute link) turns the
+    /// sandbox off with bubblewrap's own line, instead of passing on the
+    /// probe's private home and then failing every command.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_host_home_the_sandbox_cannot_mask_fails_the_probe_with_the_sandboxes_error() {
+        let Some(Sandbox::Bubblewrap(bwrap)) = detect() else {
+            eprintln!("skipping: bubblewrap (bwrap) is not installed on this host");
+            return;
+        };
+        let temporary = tempfile::tempdir().unwrap();
+        let home = temporary.path().canonicalize().unwrap().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(home.join(".netrc"), "x").unwrap();
+        let wrapper = temporary.path().join("bwrap-refusing-the-host-home");
+        std::fs::write(
+            &wrapper,
+            format!(
+                "#!/bin/bash\n\
+                 for argument in \"$@\"; do\n\
+                 \tcase \"$argument\" in '{home}'/*) echo \"bwrap: Can't create file at $argument: No such file or directory\" >&2; exit 1 ;; esac\n\
+                 done\n\
+                 exec '{bwrap}' \"$@\"\n",
+                home = home.display(),
+                bwrap = bwrap.display()
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let sandbox = Sandbox::Bubblewrap(wrapper);
+        assert_eq!(
+            probe_on(&sandbox, Some(&home)),
+            Err(ProbeError::Failed(vec![
+                "host_home_setup".into(),
+                "probe_incomplete".into(),
+                format!(
+                    "stderr=bwrap: Can't create file at {}/.netrc: No such file or directory",
+                    home.display()
+                ),
+            ]))
+        );
+        // Without a home there is nothing to mask, and the probe's own layout passes.
+        assert_eq!(probe_on(&sandbox, None), Ok(()));
     }
 
     /// A sandbox that cannot start never runs the script; the probe says so
