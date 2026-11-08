@@ -2134,6 +2134,57 @@ fn a_claim_on_another_passage_of_the_cited_report_names_a_pending_pages_company(
 }
 
 #[test]
+fn a_company_the_world_knows_is_the_case_of_a_pending_page_that_may_name_it_whatever_its_report_yielded(
+) {
+    // The World holds the bank from earlier reading. A "Hana" page cites
+    // report A, whose extraction finished without a claim, and another Chat
+    // files a page on the bank's node citing report B. The short name may
+    // name the bank, so the two Chats are one case, at admission and at the
+    // next publication, however report A's extraction ended. A pending page
+    // naming a company the World never met counts beside the bank.
+    let nodes = || {
+        vec![
+            company_node("entity-b", "Hana Financial Group", "company"),
+            company_node("entity-m", "Meridian Motors", "company"),
+        ]
+    };
+    let (_dir, store) = setup();
+    let (a, b) = (source(&store, "Report A"), source(&store, "Report B"));
+    assert!(!two_cases_with(
+        &store,
+        "Hana",
+        &a,
+        about_node("Hana Financial Group", "entity-b"),
+        &b,
+        nodes(),
+        vec![]
+    ));
+    let mut all = manufacturers_and(&[]);
+    all.extend(nodes());
+    reseal_graph(&store, all, vec![], AT + 6);
+    assert!(
+        review_states(&store).is_empty(),
+        "a publication reads it the same"
+    );
+    assert_eq!(pending_subjects(&store), 1);
+    let (_dir, store) = setup();
+    let (a, b) = (source(&store, "Report A"), source(&store, "Report B"));
+    assert!(two_cases_with(
+        &store,
+        "Ferroluz Componentes",
+        &a,
+        about_node("Hana Financial Group", "entity-b"),
+        &b,
+        nodes(),
+        vec![]
+    ));
+    assert_eq!(
+        pages(&begin(&store, AT + 6)),
+        ["Ferroluz Componentes ramp", "Hana Financial Group"]
+    );
+}
+
+#[test]
 fn a_pending_spelling_is_a_case_with_the_component_of_the_nodes_keyed_like_it() {
     // The World holds `삼성전자` and a node spelling it both ways. A page about
     // the Korean node and a pending "Samsung Electronics Inc." page whose
@@ -2301,24 +2352,30 @@ fn a_report_whose_every_chunk_is_underfunded_is_read_when_the_claim_parks_it() {
 }
 
 #[test]
-fn a_withdrawn_claim_or_a_product_names_no_company_for_a_pending_page() {
-    // The World spells the company with a word the page's name lacks, so
-    // only the claim on the span can bind the page to its node, and only an
-    // active one does.
-    for (status, expected_two_cases) in
-        [(ClaimStatus::Withdrawn, true), (ClaimStatus::Active, false)]
-    {
+fn a_company_named_like_a_pending_page_is_its_case_with_or_without_a_claim_but_a_product_is_not() {
+    // The World spells the company with a word the page's name lacks. The
+    // node is the page's case because its name may name the subject, whether
+    // the cited report's claim on it is active, withdrawn or never made.
+    for status in [
+        None,
+        Some(ClaimStatus::Withdrawn),
+        Some(ClaimStatus::Active),
+    ] {
         let (_dir, store) = setup();
         let (report, other) = (source(&store, "Report"), source(&store, "Filing C"));
         let nodes = vec![
             company_node("entity-h", "Halvorsen Cellworks Group", "company"),
             company_node("entity-m", "Meridian Motors", "company"),
         ];
-        let claims = vec![claim_with_status(
-            "clm_1", "entity-h", "entity-m", &report, status,
-        )];
-        assert_eq!(
-            two_cases_with(
+        let claims = status
+            .map(|status| {
+                vec![claim_with_status(
+                    "clm_1", "entity-h", "entity-m", &report, status,
+                )]
+            })
+            .unwrap_or_default();
+        assert!(
+            !two_cases_with(
                 &store,
                 "Halvorsen Cellworks",
                 &report,
@@ -2327,12 +2384,11 @@ fn a_withdrawn_claim_or_a_product_names_no_company_for_a_pending_page() {
                 nodes,
                 claims
             ),
-            expected_two_cases,
             "{status:?}"
         );
     }
-    // A Product on the span is no company the page could be about, however
-    // much its name resembles the page's.
+    // A Product is no company the page could be about, however much its
+    // name resembles the page's.
     for (kind, expected_two_cases) in [("Product", true), ("company", false)] {
         let (_dir, store) = setup();
         let (report, other) = (source(&store, "Report"), source(&store, "Filing C"));
