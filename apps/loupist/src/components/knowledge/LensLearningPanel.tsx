@@ -88,7 +88,7 @@ function ThenNow({ events }: { events: GrowthEvent[] }) {
   return <section ref={history} className="lens-history" aria-label={t("learning.thenNow")}><h3>{t("learning.thenNow")}</h3>
     <div className={`lens-then-now${wide ? " is-wide" : ""}`}>{(["then", "now"] as const).map(side => {
       const date = side === "now" ? formatDate(latest.atMs) : beforeDate === undefined ? t("learning.unknownDate") : formatDate(beforeDate);
-      return <div key={side}><h4><Trans ns="knowledge" i18nKey={`learning.${side}`} values={{ date: "<date/>" }} components={{ date: <span className="learning-date">{date}</span> }} /></h4><RevisionSummary key={`${latest.eventId}:${side}`} summary={readable(side === "then" ? latest.beforeSummary : latest.afterSummary) || "—"} /></div>;
+      return <div key={side}><h4><Trans ns="knowledge" i18nKey={`learning.${side}`} values={{ date }} components={{ 0: <span className="learning-date" /> }} /></h4><RevisionSummary key={`${latest.eventId}:${side}`} summary={readable(side === "then" ? latest.beforeSummary : latest.afterSummary) || "—"} /></div>;
     })}</div>
     {latest.rationale && !isStandingPlaceholder(latest.rationale) ? <p className="learning-meta">{t("learning.changedBecause", { rationale: latest.rationale })}</p> : null}
     {revisions.length > 1 ? <><Button variant="link" aria-expanded={earlier} onClick={() => setEarlier(value => !value)}>{t("learning.earlier", { count: revisions.length - 1 })}</Button>{earlier ? <ul className="learning-earlier">{revisions.slice(1).map(event => <li key={event.eventId}>{formatDate(event.atMs)}{event.rationale ? ` · ${event.rationale}` : ""}</li>)}</ul> : null}</> : null}

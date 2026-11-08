@@ -30,9 +30,9 @@ failures with a recovery action. Distinguish retained evidence, processing statu
 a proposed change and a committed save. Do not call a retrieval hit, record count
 or saved method proof of better analysis; evaluation must test subsequent work.
 
-Use the implemented navigation terms Loupist, Thread (ko 기본 대화), Chat, Map, Lens, Schedule and Settings. Use "what you follow" (ko 관심 자산) for the watchlist.
-World names the relationship model; Sources, Lens and the Journal are available
-through [Map’s Library](ui/map-lens.md#map-and-library). Do not expose storage IDs, hashes, worker names, raw envelopes
+Use the implemented navigation terms Loupist, Thread (ko 기본 대화), Chat, World, Lens, Schedule and Settings. The header calls the map World. Use "what you follow" (ko 관심 자산) for the watchlist.
+World names the relationship model. Sources, Lens and the Journal are available
+through the [World library](ui/map-lens.md#map-and-library). Do not expose storage IDs, hashes, worker names, raw envelopes
 or byte offsets as product concepts. Put source limitations, model usage, commands,
 file access and actionable diagnostics in the appropriate details.
 

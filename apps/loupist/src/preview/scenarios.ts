@@ -7,7 +7,7 @@ import type { ChatApproval, ChatProgressItem, ChatRunPhase } from "../contracts/
 import type { GrowthEvent, KnowledgeMapEdge, KnowledgeMapNode } from "../contracts/knowledge";
 import { MIN_VISIT_MS, recordVisit } from "../app/loupistVisit";
 import { MOCK_PACK_PREVIEW } from "../bridge/mock/sharing";
-import { rememberFocal, rememberLegendOpen, rememberScope } from "../components/map/mapVisit";
+import { dismissMapHint, rememberFocal, rememberLegendOpen, rememberScope } from "../components/map/mapVisit";
 import type { MapScope } from "../components/map/localView";
 import { workspaceOverlayMedia } from "../components/workspace/useWorkspacePanelResize";
 import { signInTiming } from "../components/settings/signIn";
@@ -24,6 +24,8 @@ import { quoteEvidenceScenarios } from "./quoteEvidenceScenarios";
 import { settingsScenarios } from "./settingsScenarios";
 import { readerScenarios } from "./readerScenarios";
 import { liveResearchRun } from "./liveScenario";
+import { applyReadmeBriefing, applyReadmeChat, applyReadmeLens } from "./readmeSample";
+import { readmeWorldMap } from "./readmeWorld";
 
 export type PreviewScenario = {
   id: string;
@@ -574,13 +576,17 @@ export const scenarios: readonly PreviewScenario[] = [
       }
     },
   })),
-  ...["map-learned-method", "map-learned-toast", "memory-history", "lens-then-now-stacked"].map((id): PreviewScenario => {
+  ...["map-learned-method", "map-learned-toast", "memory-history", "lens-then-now-stacked", "lens-readme"].map((id): PreviewScenario => {
     let bridge: PreviewBridge;
     let review: Awaited<ReturnType<typeof prepareLearningFixture>>;
     return {
       id, title: "How your Loupist learned a method",
-      setup: async candidate => { bridge = candidate; review = await prepareLearningFixture(candidate, 3); },
-      landmark: () => select(id === "map-learned-toast" ? ".learning-toast" : id === "memory-history" ? ".memory-history" : id === "lens-then-now-stacked" ? ".lens-then-now" : ".method-learning"),
+      setup: async candidate => {
+        bridge = candidate;
+        review = await prepareLearningFixture(candidate, 3);
+        if (id === "lens-readme") { applyReadmeBriefing(candidate); applyReadmeLens(candidate); }
+      },
+      landmark: () => select(id === "map-learned-toast" ? ".learning-toast" : id === "memory-history" ? ".memory-history" : id === "lens-then-now-stacked" || id === "lens-readme" ? ".lens-then-now" : ".method-learning"),
       enter: async root => {
         if (id === "memory-history") {
           // Learning history lives on "What {Loupist} knows".
@@ -599,7 +605,7 @@ export const scenarios: readonly PreviewScenario[] = [
         if (id !== "map-learned-toast") {
           await click(".learning-toast button");
           await until(() => select(".lens-then-now"), "Learning details did not load");
-          if (id === "lens-then-now-stacked") {
+          if (id === "lens-then-now-stacked" || id === "lens-readme") {
             const inspector = select(".workspace-lens-content .memory-reader")!;
             inspector.style.width = "340px";
             inspector.style.height = "100%";
@@ -818,6 +824,10 @@ export const scenarios: readonly PreviewScenario[] = [
   base("chat-private", "Private chat with persistent disclosure", () => select(".composer-private-status") && select(".composer-disclosure"), async (root) => {
     await click('.composer-private-toggle[aria-pressed="false"]', root);
   }),
+  { ...base("chat-readme", "Sample answer on the AI accelerator supply chain", () => {
+    const answer = select("article.message.assistant.complete");
+    return answer && answer.querySelectorAll(".message-content p").length >= 2 && answer.querySelector(".chat-receipt") && answer.querySelector("button.loupist-citation") ? answer : null;
+  }), setup: async bridge => { await prepareFixture(bridge, "answer"); applyReadmeChat(bridge); } },
   { ...base("chat-answer", "Completed sourced answer", () => {
     const answer = select("article.message.assistant.complete");
     return answer && answer.querySelectorAll(".message-content p").length >= 2 && answer.querySelector(".chat-receipt") && answer.querySelector("button.loupist-citation") ? answer : null;
@@ -1809,7 +1819,7 @@ export const scenarios: readonly PreviewScenario[] = [
       }
     },
   })),
-  ...["map-overview", "map-1000", "map-empty", "map-selected", "map-filtered", "map-lens-overlay", "map-lens-on-world", "map-library-sources", "map-replay-paused", "map-export-menu"].map((id): PreviewScenario => ({
+  ...["map-overview", "map-1000", "map-readme", "map-readme-replay", "map-empty", "map-selected", "map-filtered", "map-lens-overlay", "map-lens-on-world", "map-library-sources", "map-replay-paused", "map-export-menu"].map((id): PreviewScenario => ({
     ...base(id, "Research map", () => {
       if (id === "map-export-menu") return select(".map-export-menu, .map-more-menu");
       const map = select(".map-view");
@@ -1856,6 +1866,15 @@ export const scenarios: readonly PreviewScenario[] = [
         for (let frame = 0; frame < 3; frame++) await new Promise(requestAnimationFrame);
         if (id !== "map-replay-paused" && id !== "map-selected") await clickMapAction("[data-map-fit]", map);
       }
+      if (id === "map-readme-replay") {
+        await clickMapAction("[data-map-replay]", map);
+        const pause = await until(() => {
+          const button = select("[data-map-play]");
+          return button?.getAttribute("aria-label") === "Pause" ? button : null;
+        }, "Replay did not start");
+        pause.click();
+        await until(() => select("[data-map-play]")?.getAttribute("aria-label") === "Play", "Replay did not pause");
+      }
       if (id === "map-export-menu") {
         const trigger = map.querySelector("[data-map-export]");
         if (visible(trigger)) await click("[data-map-export]", map);
@@ -1865,14 +1884,24 @@ export const scenarios: readonly PreviewScenario[] = [
     }),
     setup: async (bridge) => {
       await prepareFixture(bridge);
-      // The draw budget is measured on all 1,000 names, not the local view a large Map opens on.
       if (id === "map-1000") rememberScope("loupist-quality", "all");
+      if (id === "map-readme" || id === "map-readme-replay") rememberScope("loupist-quality", "all");
+      if (id === "map-readme" || id === "map-readme-replay") { dismissMapHint("loupist-quality"); applyReadmeBriefing(bridge); }
+      if (id === "map-readme" || id === "map-readme-replay") {
+        const readCatalog = bridge.knowledgeCatalog.bind(bridge);
+        bridge.knowledgeCatalog = async request => {
+          const catalog = await readCatalog(request);
+          for (const source of catalog.sources) for (const object of source.objects) if (object.processing) object.processing = { ...object.processing, status: "ready" };
+          return catalog;
+        };
+      }
       if (id === "map-export-menu") bridge.exportSave = async request => {
         window.dispatchEvent(new CustomEvent("map-preview-export", { detail: request }));
         return `/preview/${request.suggestedName}`;
       };
       const original = bridge.knowledgeMap.bind(bridge);
       bridge.knowledgeMap = async (request) => {
+        if (id === "map-readme" || id === "map-readme-replay") return readmeWorldMap();
         const map = await original(request);
         if (id === "map-replay-paused") {
           const start = Date.now() - 28 * 86_400_000;

@@ -8,77 +8,54 @@
 
 **Watch. Remember. Explain.**
 
-A Loupist is a research colleague for what you invest in: it watches the assets you follow, remembers how you think, and explains what changed with the evidence attached. It runs on your Mac and never trades.
-
-[Install](installation.md) • [Development](apps/loupist/README.md) • [How it learns](#how-a-loupist-remembers) • [Security](#security-model)
+A Loupist watches what you follow, remembers how you research, and explains what changed with the source attached. It runs on your Mac. It never trades.
 
 </div>
 
----
+## Ask where AI supply is tight
 
-A Loupist carries research across conversations. It reads primary filings, runs the valuation math itself, challenges its prior views, and turns each piece of research into knowledge it uses again — in later companies, later markets, and later reviews.
+<img src="apps/loupist/assets/readme/chat.gif" alt="Chat answer on high-bandwidth memory, TSMC packaging, and NVIDIA's supply chain, with the sample note cited" width="800" />
 
-Each Loupist works in a local folder you choose. Reports, code and data stay in that folder; `.loupist/` keeps its Chats and Memory with retained source bytes and immutable revisions. Close the app and copy the whole folder, including `.loupist/`, to preserve or move a Loupist. Lens methods remain Markdown. The app runs on your machine with a supported provider API key or account sign-in. There is no Loupist account or sync.
+You ask what is tight in the AI accelerator chain. The answer cites the note it used. The note in this clip is a sample, not a filing.
 
-## Teach a principle, see it applied
+## Open the chip World
 
-**Day 1** — *"Check whether capacity costs are temporary before trusting margin recovery."* Save a principle and apply it to dated company reports. The Map connects retained Sources to entities, claims, principles and methods. With World processing and method learning enabled, repeated evidence can produce a reusable method; the review can also defer when the evidence is insufficient.
+<img src="apps/loupist/assets/readme/world.gif" alt="World map of the AI chip supply chain, with 150 names and 393 relationships, including NVIDIA, TSMC, SK hynix, and ASML" width="800" />
 
-**Later** — *"Compare these companies’ margin recoveries."* In a new Chat, the Loupist can apply the saved principle and relevant learned method. Inspect a revised method’s dated Then / Now summaries and evidence in the Map.
+World is the map of that chain. This sample draws 150 names and 393 relationships at once. NVIDIA, TSMC, SK hynix, Samsung Electronics, and ASML sit in it, with high-bandwidth memory and advanced packaging. The names are public companies used as sample context. One link is marked where sources disagree.
 
-Follow companies or import holdings as research context, receive dated briefings in the inbox, and keep your own judgments and later checks in a Journal.
+## Watch the World grow
 
-## What makes it a Loupist
+<img src="apps/loupist/assets/readme/replay.gif" alt="Replay of the AI chip World filling from 8 names to 150, played at 4×" width="800" />
 
-- **It carries lessons forward.** Ordinary research can retain Sources and refine research methods. A later relevant turn reads those revisions; historical inputs remain available in private research records.
-- **Primary filings, two markets, one conversation.** OpenBB brings SEC EDGAR, FRED, keyless market data, and configured data vendors into the same chat as native OpenDART, World Bank, KRX, and the Korea Investment read catalog. Credentials stay on the device.
-- **Its own math.** Pi's native file and Bash tools let the Loupist read, edit and run code in your chosen folder using your computer's permissions. The agent sets up local runtimes and dependencies as needed, keeps research scripts and results in that folder, and can preserve exact data revisions for charts.
-- **Records you own.** A Loupist folder preserves its Chats, retained originals and referenced tool activity. Open a copied folder to restore that Loupist. Each Loupist owns its sources, World, Lens, notes and private judgments. Command results appear in Chat progress; files, charts, documents and saved Memory open beside the conversation. Removing a Loupist unregisters it; its folder, Chats and Memory remain available to reopen.
+Replay starts at the first company and plays forward to the latest. In this sample the chain grows from 8 names to 150. The clip is at 4×.
 
-## How a Loupist remembers
+## Revise the Lens
 
-The main destinations are **Chat · Map · Briefings · Settings**. The Map Library holds Sources, methods, principles and Notes, including Journal entries. Briefings and scheduled prompts run while the app is running. Memory is the internal name for the records retained and reused by each Loupist. A quality-compounder Loupist and a deep-value Loupist keep their own sources, knowledge, and perspective.
+<img src="apps/loupist/assets/readme/lens.gif" alt="Lens Then vs now for a method that separates AI-chip demand from a packaging bottleneck" width="800" />
 
-| Kind | What it holds |
-| --- | --- |
-| Source | Retained material, its origin, and the exact passages used |
-| World | Entities, events, and relationships supported by retained Sources |
-| Lens | Reusable research methods and your principles, with scope, limits and revision history |
-| Note / Journal | Chat working notes and your judgments, dated checks and later outcomes, with their exact inputs |
+Lens holds the check. Then vs now keeps the earlier wording beside the one it uses now. This method learns to separate durable AI-chip demand from a temporary packaging bottleneck. The wording is sample research.
 
-The composer defaults to **Remember useful details**, allowing relevant saved-context reads and new memories. **Use saved context only** allows reads; **Memory off** skips both. Chat can retain Sources and revise Lens. New Loupists default to automatic World processing with a recommended connected model, editable during creation or later in Settings. Existing Loupist folders retain their settings. New retained sources enter World processing when a model is configured and processing is enabled. A later relevant turn must use the learned state; storing a record alone does not establish learning.
+## What stays on your machine
 
-> [!NOTE]
-> This is a bounded claim, not a black-box one. A Loupist turns source-grounded experience into reusable knowledge that changes how it handles a later relevant case. It is not model-weight training, a promise of returns, or a single performance score.
+The research lives in a folder you choose. `.loupist/` keeps the chats and memory. Copy that whole folder, including `.loupist/`, to move a Loupist. There is no Loupist account and no sync. Answers use a provider API key or an account sign-in on this Mac. Scheduled briefings run only while the app is running.
+
+Learning means retained sources and revised methods. It does not train model weights. It does not promise returns.
 
 ## Install
 
-The first release targets macOS 13 or newer on Apple Silicon only. Windows, Intel Macs, and Linux are not supported in this release. Signed installers will be published through [GitHub Releases](https://github.com/loupistai/loupist/releases); until an installer is available, use the [development setup](apps/loupist/README.md). See [installation.md](installation.md) for installation instructions. Releases require macOS signing and notarization. The app accepts only updates signed by the Loupist updater key.
+The first release is macOS 13 or newer on Apple Silicon. Windows, Intel Macs, and Linux are outside this release. Signed installers will be published on [GitHub Releases](https://github.com/loupistai/loupist/releases). Until an installer is available, follow [installation](installation.md).
 
 ## Security model
 
 - React submits typed intent and has no raw filesystem, process, credential, or Memory-write authority.
 - Rust owns Loupist isolation, persistence, and Memory writes.
-- Local file and Bash tools are trusted execution with your OS permissions. The selected folder is their working directory, not a sandbox. Bash children receive a filtered environment without app credentials; local host files remain accessible.
+- Local file and Bash tools are trusted execution with your OS permissions. The selected folder is their working directory, not a sandbox. Bash children receive a filtered environment without app credentials. Local host files remain accessible.
 - Model, market-data and graph workers run behind Rust authority. The host owns their process lifetimes and allowed operations.
-- Memory is the Loupist's durable learned state. Bundled Skills define product methods; workspace instructions and Skill entrypoints enter through a bounded, hash-checked snapshot.
+- Memory is the Loupist's durable learned state. Bundled Skills define product methods. Workspace instructions and Skill entrypoints enter through a bounded, hash-checked snapshot.
 
-## Development
+Desktop setup and checks live in [desktop development](apps/loupist/README.md).
 
-Use Node.js 26.13+ LTS (26.x; see `.nvmrc`), Python 3.12 with `uv`, and Rust (CI pins 1.97.1).
-The clean-checkout verifier installs locked dependencies and runs the web, Rust
-and Python checks:
+Loupist is an AI research companion. It can share a view when you ask. It is not a licensed adviser, and it never places a trade.
 
-```sh
-scripts/verify.sh
-```
-
-With dependencies installed, `npm run check --prefix apps/loupist` runs the
-same checks without reinstalling. See [desktop development](apps/loupist/README.md),
-[native UI testing](apps/loupist/e2e/README.md) and
-[release acceptance](LOUPIST.md) for the relevant workflow.
-
-> [!IMPORTANT]
-> Loupist develops a user's investment-research Loupist from source-grounded experience. It is an AI research companion that can share its view when asked; it is not a licensed adviser and never executes trades.
-
-Loupist is licensed under AGPL-3.0-only. See [Licensing](LICENSING.md) for app code, contributions, shared packs, provider data and Gallery terms.
+Loupist is licensed under AGPL-3.0-only. See [Licensing](LICENSING.md).
