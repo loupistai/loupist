@@ -104,16 +104,18 @@
   --gg-space-8: 40px;
   --gg-space-9: 48px;
   --gg-space-10: 64px;
+  --gg-size-control-xs: 24px;
   --gg-size-control-sm: 28px;
   --gg-size-control-md: 32px;
   --gg-size-control-lg: 36px;
   --gg-size-field: 40px;
   --gg-size-sidebar: 248px;
   --gg-size-chat-column: 760px;
-  --gg-size-reading-measure: 72ch;
   /* The floating "In this chat" rail (context-rail.md R1). */
   --gg-size-rail: 280px;
+  /* A reading page stops at a pixel width; a run of prose inside it stops at a character count. */
   --gg-size-reading-column: 720px;
+  --gg-size-prose-measure: 72ch;
   --gg-size-page: 1120px;
   --gg-size-inspector: 360px;
   --gg-size-mini-map: 320px;
@@ -133,6 +135,8 @@
   --gg-motion-fast: 120ms;
   --gg-motion-normal: 180ms;
   --gg-motion-slow: 280ms;
+  --gg-motion-heartbeat: 1s;
+  --gg-motion-shimmer: 2s;
   --gg-motion-map-enter: 600ms;
   --gg-motion-map-stagger: 40ms;
   --gg-ease-out: cubic-bezier(0.2, 0, 0, 1);
@@ -338,6 +342,8 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
     --gg-motion-fast: 0ms;
     --gg-motion-normal: 0ms;
     --gg-motion-slow: 0ms;
+    --gg-motion-heartbeat: 0ms;
+    --gg-motion-shimmer: 0ms;
     --gg-motion-map-enter: 0ms;
     --gg-motion-map-stagger: 0ms;
   }

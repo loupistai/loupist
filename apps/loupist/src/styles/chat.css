@@ -74,13 +74,13 @@
 .message.user .message-meta { display: none; }
 .message.user .message-content { border: 1px solid var(--gg-color-border-subtle); border-radius: 14px; background: var(--gg-color-bg-hover); }
 /* The row is as tall as its details trigger from the start, so a finished answer adds nothing above its text. */
-.message-meta { display: flex; align-items: center; gap: var(--gg-space-2); min-height: var(--gg-space-6); margin-bottom: 10px; color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
+.message-meta { display: flex; align-items: center; gap: var(--gg-space-2); min-height: var(--gg-size-control-xs); margin-bottom: 10px; color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
 .message-meta > span:first-child { color: var(--gg-color-text-secondary); font-weight: var(--gg-weight-semibold); }
 .message-meta time { margin-left: 2px; }
 .message-content { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); overflow-wrap: anywhere; white-space: pre-wrap; }
 .message.assistant .message-content { width: 100%; max-width: 100%; min-width: 0; white-space: normal; font-size: var(--gg-text-reading); line-height: var(--gg-leading-reading); }
 /* Reading measure: prose stops near 72 characters while tables, code and charts keep the full column. */
-.message.assistant .message-content :is(p, ul, ol, blockquote, [data-streamdown^="heading-"]) { max-width: var(--gg-size-reading-measure); }
+.message.assistant .message-content :is(p, ul, ol, blockquote, [data-streamdown^="heading-"]) { max-width: var(--gg-size-prose-measure); }
 /* A turn reads down the column: narration, one activity row per run of steps, then the answer. */
 .message.assistant > .is-assistant + .chat-progress,
 .message.assistant > .is-assistant + .is-assistant,
@@ -386,7 +386,7 @@ svg foreignObject .katex:has(> math) {
 .message.assistant .message-content [data-streamdown="table-header-cell"],
 .message.assistant .message-content [data-streamdown="table-cell"] {
   max-width: 36ch;
-  padding: var(--gg-space-2) 12px;
+  padding: var(--gg-space-2) var(--gg-space-3);
   border: 1px solid var(--gg-color-border-subtle);
   text-align: left;
   vertical-align: top;
@@ -506,7 +506,7 @@ svg foreignObject .katex:has(> math) {
 @media (prefers-reduced-motion: no-preference) {
   .chat-progress-live[data-heartbeat],
   .chat-status-pill-dot[data-heartbeat] {
-    animation: chat-run-heartbeat calc(var(--gg-motion-slow) * 3.5) var(--gg-ease-in-out) infinite;
+    animation: chat-run-heartbeat var(--gg-motion-heartbeat) var(--gg-ease-in-out) infinite;
   }
 }
 
@@ -1465,7 +1465,7 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .working-note-actions button { color: var(--gg-color-text-secondary); }
 .working-note-dialog { max-height: calc(100dvh - var(--gg-space-9)); overflow-y: auto; }
 .working-context-error { display: flex; align-items: center; flex-wrap: wrap; padding: var(--gg-space-2) var(--gg-space-6); font-size: var(--gg-text-meta); color: var(--gg-color-negative, var(--gg-color-text-primary)); }
-.message-details-trigger { display: inline-flex; align-items: center; justify-content: center; width: var(--gg-space-6); height: var(--gg-space-6); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-secondary); }
+.message-details-trigger { display: inline-flex; align-items: center; justify-content: center; width: var(--gg-size-control-xs); height: var(--gg-size-control-xs); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-secondary); }
 .message-details-trigger svg { width: 13px; height: 13px; }
 .message-details-trigger:hover { background: var(--gg-color-bg-hover); }
 
@@ -1522,10 +1522,10 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .message-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--gg-space-2); margin-top: 10px; font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); }
 div.message-action-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2) var(--gg-space-3); margin-top: 10px; }
 div.message-action-bar > .message-actions { margin-top: 0; }
-/* The slot where a turn completes: the status line and the action row share one height. */
-.turn-footer { min-height: var(--gg-size-control-sm); margin-top: var(--gg-space-2); }
-.turn-footer > div.message-action-bar { min-height: var(--gg-size-control-sm); margin-top: 0; }
-.turn-status { display: flex; align-items: center; gap: var(--gg-space-2); min-height: var(--gg-size-control-sm); margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+/* The slot where a turn completes reserves one control height; the status line and the action row sit centered in it. */
+.turn-footer { display: grid; align-items: center; min-height: var(--gg-size-control-sm); margin-top: var(--gg-space-2); }
+.turn-footer > div.message-action-bar { margin-top: 0; }
+.turn-status { display: flex; align-items: center; gap: var(--gg-space-2); margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .turn-status-clock::before { content: "·"; margin-inline-end: var(--gg-space-2); }
 @media (prefers-reduced-motion: no-preference) {
   .turn-status-label {
@@ -1534,7 +1534,7 @@ div.message-action-bar > .message-actions { margin-top: 0; }
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
-    animation: turn-status-shimmer calc(var(--gg-motion-slow) * 7) linear infinite;
+    animation: turn-status-shimmer var(--gg-motion-shimmer) linear infinite;
   }
 }
 @keyframes turn-status-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
@@ -2037,7 +2037,8 @@ button.sent-image { cursor: zoom-in; }
 /* Under a user bubble: text controls on one right-aligned row, "Edit · Earlier version". */
 .message.user .message-action-bar { justify-content: flex-end; }
 .message.user .message-actions button { display: inline-flex; align-items: center; width: auto; padding: 0 var(--gg-space-1); white-space: nowrap; }
-.message.user .message-actions button:disabled { color: var(--gg-color-text-tertiary); cursor: default; background: transparent; }
+/* Edit waits while a reply runs: a quiet label, not a broken control, so the global disabled fade stays off. */
+.message.user .message-actions button:disabled { color: var(--gg-color-text-tertiary); opacity: 1; cursor: default; background: transparent; }
 .message-actions .message-version-link { color: var(--gg-color-accent-ink); }
 .message-actions .message-version-link::before { content: "·"; margin-right: var(--gg-space-2); color: var(--gg-color-text-tertiary); }
 .chat-editing-note { display: flex; align-items: center; justify-content: space-between; gap: var(--gg-space-3); width: min(calc(100% - 2 * var(--chat-gutter, var(--gg-space-5))), var(--gg-size-chat-column)); margin: 0 auto var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
