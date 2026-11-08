@@ -167,7 +167,7 @@ pub(super) fn after_seal(
     // Who the filed pages are about changed when a pending anchor gained a
     // node, or when a confirmed node's name or aliases changed: learning keys
     // its cases by the World's current spellings.
-    let resolved_anchors = super::lens::resolve_anchors(tx, loupist_id, &next.nodes)?;
+    let resolved_anchors = super::lens::resolve_anchors(tx, loupist_id, next)?;
     if resolved_anchors > 0
         || super::lens::subject_spellings_changed(tx, loupist_id, previous, next)?
     {

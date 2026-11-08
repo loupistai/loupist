@@ -1355,8 +1355,54 @@ fn a_page_about_an_unknown_company_is_never_one_of_the_two_cases() {
     }
 }
 
+/// A claim between `from` and `to` whose evidence cites `span`, as extraction
+/// records which Source confirmed a company.
+fn claim_citing(id: &str, from: &str, to: &str, span: &BasisRef) -> GraphClaim {
+    let BasisRef::Span { span_id, .. } = span else {
+        unreachable!()
+    };
+    GraphClaim {
+        id: id.into(),
+        proposition: format!("{from} supplies {to}"),
+        attribution: "report".into(),
+        relation: "supplies".into(),
+        endpoints: vec![
+            ClaimEndpoint {
+                node_id: from.into(),
+                role: "source".into(),
+            },
+            ClaimEndpoint {
+                node_id: to.into(),
+                role: "target".into(),
+            },
+        ],
+        qualifiers: Vec::new(),
+        evidence: vec![EvidenceBinding {
+            span_id: span_id.clone(),
+            role: BindingRole::ExtractedFrom,
+            attribution: "report".into(),
+        }],
+        status: ClaimStatus::Active,
+        recorded_at_ms: Some(AT),
+        publication_time: None,
+        effective_time: None,
+        valid_at: None,
+        invalid_at: None,
+        expired_at: None,
+    }
+}
+
 /// Publishes the World again with `nodes`, as World processing does.
 fn reseal(store: &KnowledgeStore, nodes: Vec<(&str, &str)>, at: i64) {
+    reseal_claiming(store, nodes, Vec::new(), at);
+}
+
+fn reseal_claiming(
+    store: &KnowledgeStore,
+    nodes: Vec<(&str, &str)>,
+    claims: Vec<GraphClaim>,
+    at: i64,
+) {
     let (record_id, head): (String, String) = store
         .read(|w| {
             Ok(w.tx.query_row(
@@ -1386,11 +1432,66 @@ fn reseal(store: &KnowledgeStore, nodes: Vec<(&str, &str)>, at: i64) {
                     properties: BTreeMap::new(),
                 })
                 .collect(),
-            claims: vec![],
+            claims,
             annotations: vec![],
             dependencies: vec![],
         })
         .unwrap();
+}
+
+#[test]
+fn companies_filed_before_the_world_knew_them_learn_once_their_sources_confirm_them() {
+    let (_dir, store) = setup();
+    let (a, b) = (source(&store, "Filing A"), source(&store, "Filing B"));
+    let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+    // Each Chat names its company plainly, before any extraction.
+    let halvorsen = named("Halvorsen ramp", "Halvorsen Cellworks");
+    assert!(put_in(
+        &store,
+        "chat-1",
+        "m1",
+        halvorsen,
+        text,
+        &[a.clone()],
+        AT + 2
+    )
+    .is_none());
+    let ferroluz = named("Ferroluz ramp", "Ferroluz Componentes");
+    assert!(put_in(&store, "chat-2", "m2", ferroluz, text, &[b.clone()], AT + 3).is_none());
+    assert!(review_states(&store).is_empty());
+    // Extraction canonicalizes both with legal forms, each from the report its
+    // Chat cited. The publication binds both anchors and queues the review.
+    let mut nodes: Vec<(&str, &str)> = (0..4)
+        .map(|n| {
+            (
+                ["entity-0", "entity-1", "entity-2", "entity-3"][n],
+                [
+                    "Manufacturer 0",
+                    "Manufacturer 1",
+                    "Manufacturer 2",
+                    "Manufacturer 3",
+                ][n],
+            )
+        })
+        .collect();
+    nodes.extend([
+        ("entity-h", "Halvorsen Cellworks ASA"),
+        ("entity-f", "Ferroluz Componentes S.A."),
+    ]);
+    reseal_claiming(
+        &store,
+        nodes,
+        vec![
+            claim_citing("clm_a", "entity-h", "entity-0", &a),
+            claim_citing("clm_b", "entity-f", "entity-1", &b),
+        ],
+        AT + 4,
+    );
+    assert_eq!(review_states(&store), ["queued"]);
+    assert_eq!(
+        pages(&begin(&store, AT + 5)),
+        ["Ferroluz ramp", "Halvorsen ramp"]
+    );
 }
 
 #[test]

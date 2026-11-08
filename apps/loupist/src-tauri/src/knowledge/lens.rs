@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 use super::authority::{require_edit, require_record, OwnedRecordState};
 use super::canonical::{canonical_string, from_json, to_value};
 use super::error::{KnowledgeError, KnowledgeResult};
+use super::identity::entity_name_keys;
 use super::lens_page::{
     apply, links, op_texts, private_reference, section_digest, text_forbidden, world_link_ids,
     AnchorInput, ApplyContext, Basis, BasisChip, BasisRef, FiledOp, FiledPage, FilingOrigin,
@@ -180,7 +181,7 @@ fn world_head(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<Option<
         .optional()?)
 }
 
-/// The company keys ([`super::identity::entity_name_keys`]) of each of `nodes` in the current
+/// The company keys ([`entity_name_keys`]) of each of `nodes` in the current
 /// World, by node id, from the node's name and aliases; a node the World does
 /// not hold is left out. Method learning reads it to see when two nodes might
 /// spell one company. The World is parsed once per revision
@@ -1121,29 +1122,48 @@ pub(super) fn contest_pages(
     Ok(changed_pages)
 }
 
-/// Pending subject name anchors resolve once the World knows the name or an
-/// alias exactly (mention and applied anchors are born with a node). Returns
-/// how many gained a node. Discovery calls this after every World publication.
+/// Pending subject name anchors resolve at every World publication, two
+/// ways (mention and applied anchors are born with a node). The World knows
+/// the name or an alias exactly. Or the Sources the page cites confirm one
+/// node: among the endpoints of claims whose evidence cites a Source the
+/// page's current sections cite, exactly one shares a company key with the
+/// name, as when a page filed under "Halvorsen Cellworks" cites the report
+/// extraction canonicalized as "Halvorsen Cellworks ASA". A key alone binds
+/// nothing: "Hana Co." stays pending beside a "Hana" whose claims cite other
+/// Sources, and beside two keyed nodes the same Source confirms. Returns how
+/// many gained a node.
 pub(super) fn resolve_anchors(
     tx: &Transaction<'_>,
     loupist_id: &str,
-    nodes: &[GraphNode],
+    world: &WorldSnapshotBody,
 ) -> KnowledgeResult<usize> {
     let mut index = WorldIndex::default();
-    index_nodes(&mut index, nodes);
+    index_nodes(&mut index, &world.nodes);
     let mut statement = tx.prepare(
-        "SELECT rowid, name_fold FROM knowledge_lens_anchors
+        "SELECT rowid, record_id, name_fold FROM knowledge_lens_anchors
          WHERE loupist_id = ?1 AND role = 'subject' AND node_id IS NULL AND name_fold <> ''",
     )?;
     let pending = statement
         .query_map([loupist_id], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
     drop(statement);
+    let mut confirmed = None;
     let mut resolved = 0;
-    for (rowid, name_fold) in pending {
-        if let Some(node_id) = index.names.get(&name_fold) {
+    for (rowid, record_id, name_fold) in pending {
+        let node_id = match index.names.get(&name_fold) {
+            Some(node_id) => Some(node_id.clone()),
+            None => {
+                let confirmed = confirmed.get_or_insert_with(|| SourceConfirmed::new(world));
+                confirmed.node_for(tx, loupist_id, &record_id, &name_fold)?
+            }
+        };
+        if let Some(node_id) = node_id {
             resolved += tx.execute(
                 "UPDATE OR IGNORE knowledge_lens_anchors SET node_id = ?1 WHERE rowid = ?2",
                 params![node_id, rowid],
@@ -1151,6 +1171,99 @@ pub(super) fn resolve_anchors(
         }
     }
     Ok(resolved)
+}
+
+/// Which nodes each Source span confirms: the endpoints of the claims whose
+/// evidence cites it.
+struct SourceConfirmed<'a> {
+    nodes: BTreeMap<&'a str, &'a GraphNode>,
+    by_span: BTreeMap<&'a str, BTreeSet<&'a str>>,
+}
+
+impl<'a> SourceConfirmed<'a> {
+    fn new(world: &'a WorldSnapshotBody) -> Self {
+        let mut by_span: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+        for claim in &world.claims {
+            for evidence in &claim.evidence {
+                by_span
+                    .entry(evidence.span_id.as_str())
+                    .or_default()
+                    .extend(claim.endpoints.iter().map(|e| e.node_id.as_str()));
+            }
+        }
+        Self {
+            nodes: world
+                .nodes
+                .iter()
+                .map(|node| (node.id.as_str(), node))
+                .collect(),
+            by_span,
+        }
+    }
+
+    /// The one node the Sources that `record_id`'s current sections cite
+    /// confirm under a company key of `name_fold`, if exactly one does.
+    fn node_for(
+        &self,
+        tx: &Transaction<'_>,
+        loupist_id: &str,
+        record_id: &str,
+        name_fold: &str,
+    ) -> KnowledgeResult<Option<String>> {
+        let sources = cited_sources(tx, loupist_id, record_id)?;
+        if sources.is_empty() {
+            return Ok(None);
+        }
+        let mut statement = tx.prepare(
+            "SELECT span_id FROM knowledge_source_spans
+             WHERE record_id IN (SELECT value FROM json_each(?1))",
+        )?;
+        let spans: BTreeSet<String> = statement
+            .query_map([serde_json::to_string(&sources)?], |row| row.get(0))?
+            .collect::<Result<_, _>>()?;
+        let keys = entity_name_keys(name_fold);
+        let keyed = |node: &GraphNode| {
+            std::iter::once(&node.name)
+                .chain(&node.aliases)
+                .flat_map(|spelling| entity_name_keys(spelling))
+                .any(|key| keys.contains(&key))
+        };
+        let matched: BTreeSet<&str> = spans
+            .iter()
+            .filter_map(|span| self.by_span.get(span.as_str()))
+            .flatten()
+            .copied()
+            .filter(|id| self.nodes.get(id).is_some_and(|node| keyed(node)))
+            .collect();
+        Ok(match matched.len() {
+            1 => matched.first().map(|id| (*id).to_owned()),
+            _ => None,
+        })
+    }
+}
+
+/// The Source records the current sections of `record_id` cite.
+fn cited_sources(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    record_id: &str,
+) -> KnowledgeResult<BTreeSet<String>> {
+    let loaded = load(tx, loupist_id, record_id)?;
+    Ok(loaded
+        .body
+        .page()
+        .map(|page| {
+            page.sections
+                .iter()
+                .filter(|section| matches!(section.state, SectionState::Current))
+                .flat_map(|section| &section.basis.refs)
+                .filter_map(|r| match r {
+                    BasisRef::Span { record_id, .. } => Some(record_id.clone()),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default())
 }
 
 /// Whether a node that a confirmed subject anchor names spells itself
@@ -2118,8 +2231,8 @@ mod tests {
     use super::*;
     use crate::knowledge::lens_page::{BasisRef, PageKind};
     use crate::knowledge::{
-        Authorship, Coverage, CreateRecord, KnowledgeStore, RepresentationRole, RetainMaterial,
-        RetainNewSource, SealWorld, Selector, SourceClass,
+        Authorship, ClaimEndpoint, Coverage, CreateRecord, GraphClaim, KnowledgeStore,
+        RepresentationRole, RetainMaterial, RetainNewSource, SealWorld, Selector, SourceClass,
     };
 
     const LOUPIST: &str = "loupist-a";
@@ -2912,6 +3025,11 @@ mod tests {
     }
 
     fn retain(store: &KnowledgeStore) -> crate::knowledge::RetainedSource {
+        retain_from(store, "pasted")
+    }
+
+    /// A Source of its own per `locator`: one locator is one Source record.
+    fn retain_from(store: &KnowledgeStore, locator: &str) -> crate::knowledge::RetainedSource {
         let bytes = b"account text";
         store
             .retain_new_source(RetainNewSource {
@@ -2920,7 +3038,7 @@ mod tests {
                 at_ms: 2,
                 title: "Notes".into(),
                 source_class: SourceClass::UserStatement,
-                origin_locator: "pasted".into(),
+                origin_locator: locator.into(),
                 provider_identity: "editor".into(),
                 authorship: Authorship::User,
                 coverage: Coverage::IncludedFull,
@@ -3166,6 +3284,205 @@ mod tests {
             .unwrap();
         assert_eq!(keys(&["beta"])["beta"], BTreeSet::from(["beta".to_owned()]));
         assert_eq!(computed(), before + 2);
+    }
+
+    /// A span of a retained Source, as a turn cites it.
+    fn span_of(source: &crate::knowledge::RetainedSource) -> BasisRef {
+        BasisRef::Span {
+            record_id: source.record_id.clone(),
+            revision_digest: source.revision_digest.clone(),
+            span_id: source.span_id.clone().unwrap(),
+        }
+    }
+
+    /// An idea page named after `company`, citing `span`; its anchor stays pending.
+    fn pending_page(store: &KnowledgeStore, company: &str, span: &BasisRef) -> String {
+        let filed = file_in(
+            store,
+            &turn(&format!("m-{company}")),
+            vec![PageDelta {
+                target: PageTarget::Create {
+                    kind: PageKind::Idea,
+                    title: format!("{company} thesis"),
+                    anchors: vec![AnchorInput::Name {
+                        name: company.into(),
+                    }],
+                },
+                ops: vec![LensOp::Put {
+                    key: SectionKey::new("thesis").unwrap(),
+                    heading: "Thesis".into(),
+                    markdown: "Margins follow utilization.".into(),
+                    basis: Basis {
+                        refs: vec![span.clone()],
+                        uncertainty: None,
+                    },
+                    expected: None,
+                }],
+            }],
+            5,
+        );
+        let id = filed[0].record_id.clone();
+        assert!(read(store, &id).anchors[0].node_id.is_none());
+        id
+    }
+
+    fn company_node(id: &str, name: &str) -> GraphNode {
+        GraphNode {
+            id: id.into(),
+            name: name.into(),
+            aliases: vec![],
+            description: String::new(),
+            kind: "Organization".into(),
+            source_role: "subject".into(),
+            properties: Default::default(),
+        }
+    }
+
+    /// A claim between `from` and `to` whose evidence cites `span`.
+    fn claim_citing(id: &str, from: &str, to: &str, span: &BasisRef) -> GraphClaim {
+        let BasisRef::Span { span_id, .. } = span else {
+            unreachable!()
+        };
+        GraphClaim {
+            id: id.into(),
+            proposition: format!("{from} supplies {to}"),
+            attribution: "report".into(),
+            relation: "supplies".into(),
+            endpoints: vec![
+                ClaimEndpoint {
+                    node_id: from.into(),
+                    role: "source".into(),
+                },
+                ClaimEndpoint {
+                    node_id: to.into(),
+                    role: "target".into(),
+                },
+            ],
+            qualifiers: Vec::new(),
+            evidence: vec![crate::knowledge::EvidenceBinding {
+                span_id: span_id.clone(),
+                role: crate::knowledge::BindingRole::ExtractedFrom,
+                attribution: "report".into(),
+            }],
+            status: ClaimStatus::Active,
+            recorded_at_ms: Some(7),
+            publication_time: None,
+            effective_time: None,
+            valid_at: None,
+            invalid_at: None,
+            expired_at: None,
+        }
+    }
+
+    fn seal_with_claims(store: &KnowledgeStore, nodes: Vec<GraphNode>, claims: Vec<GraphClaim>) {
+        let world = store
+            .create_record(CreateRecord {
+                loupist_id: LOUPIST.into(),
+                kind: RecordKind::World,
+                title: "World".into(),
+                at_ms: 1,
+            })
+            .unwrap();
+        store
+            .seal_world(SealWorld {
+                loupist_id: LOUPIST.into(),
+                record_id: world.record_id,
+                expected_revision_id: None,
+                at_ms: 7,
+                nodes,
+                claims,
+                annotations: Vec::new(),
+                dependencies: Vec::new(),
+            })
+            .unwrap();
+    }
+
+    fn anchor_node(store: &KnowledgeStore, record_id: &str) -> Option<String> {
+        read(store, record_id).anchors[0].node_id.clone()
+    }
+
+    #[test]
+    fn a_source_the_page_cites_binds_its_anchor_to_the_one_node_it_confirms() {
+        let (_dir, store) = store();
+        let report = span_of(&retain(&store));
+        let page = pending_page(&store, "Halvorsen Cellworks", &report);
+        // Extraction canonicalized the company with its legal form; the claim
+        // it drew from the same report says which node that is.
+        seal_with_claims(
+            &store,
+            vec![
+                company_node("nod_h", "Halvorsen Cellworks ASA"),
+                company_node("nod_m", "Meridian Motors"),
+            ],
+            vec![claim_citing("clm_1", "nod_h", "nod_m", &report)],
+        );
+        assert_eq!(anchor_node(&store, &page).as_deref(), Some("nod_h"));
+        // Binding changes no page: a later create under the exact name files
+        // to this page, as a subject create with that node would.
+        let pages = store
+            .read(|write| write.pages_for_node(LOUPIST, "nod_h"))
+            .unwrap();
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].record_id, page);
+    }
+
+    #[test]
+    fn a_key_alone_binds_nothing() {
+        // The node's claims cite another Source than the page does.
+        let (_dir, store) = self::store();
+        let (page_source, other) = (
+            span_of(&retain_from(&store, "report-a")),
+            span_of(&retain_from(&store, "report-b")),
+        );
+        let record_of = |span: &BasisRef| match span {
+            BasisRef::Span { record_id, .. } => record_id.clone(),
+            _ => unreachable!(),
+        };
+        assert_ne!(record_of(&page_source), record_of(&other));
+        let page = pending_page(&store, "Hana Co.", &page_source);
+        seal_with_claims(
+            &store,
+            vec![
+                company_node("nod_hana", "Hana"),
+                company_node("nod_m", "Meridian Motors"),
+            ],
+            vec![claim_citing("clm_1", "nod_hana", "nod_m", &other)],
+        );
+        assert_eq!(anchor_node(&store, &page), None);
+
+        // Two keyed nodes confirmed by the same Source are ambiguous.
+        let (_dir, store) = self::store();
+        let report = span_of(&retain(&store));
+        let page = pending_page(&store, "Hana Co.", &report);
+        seal_with_claims(
+            &store,
+            vec![
+                company_node("nod_hana", "Hana"),
+                company_node("nod_hana2", "Hana Inc."),
+            ],
+            vec![claim_citing("clm_1", "nod_hana", "nod_hana2", &report)],
+        );
+        assert_eq!(anchor_node(&store, &page), None);
+
+        // A page citing no Source has nothing to confirm it.
+        let (_dir, store) = self::store();
+        let report = span_of(&retain(&store));
+        let filed = file_in(
+            &store,
+            &turn("m-bare"),
+            vec![create_subject("Hana Co.", vec![put("facts", "A", None)])],
+            5,
+        );
+        let page = filed[0].record_id.clone();
+        seal_with_claims(
+            &store,
+            vec![
+                company_node("nod_hana", "Hana"),
+                company_node("nod_m", "Meridian Motors"),
+            ],
+            vec![claim_citing("clm_1", "nod_hana", "nod_m", &report)],
+        );
+        assert_eq!(anchor_node(&store, &page), None);
     }
 
     #[test]
