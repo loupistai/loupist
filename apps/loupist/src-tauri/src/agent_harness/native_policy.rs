@@ -272,6 +272,9 @@ pub enum NativeRefusal {
     /// A write to a file a later reply loads as instructions, after this
     /// reply read third-party text.
     InstructionsAfterUntrustedText,
+    /// A write to a file that has another name on disk (a hard link), which
+    /// can be an instruction file, after this reply read third-party text.
+    HardLinkAfterUntrustedText,
     /// Bash after third-party text on a host without a verified sandbox.
     CommandUnconfined,
     /// Bash under the custom-connection tier.
@@ -739,6 +742,7 @@ mod tests {
             NativeDecision::Refuse(NativeRefusal::InstructionsAfterUntrustedText) => {
                 "refuse instructions"
             }
+            NativeDecision::Refuse(NativeRefusal::HardLinkAfterUntrustedText) => "refuse hard_link",
             NativeDecision::Refuse(NativeRefusal::CommandUnconfined) => "refuse unconfined",
             NativeDecision::Refuse(NativeRefusal::OutboundPaused) => "refuse outbound",
         }
@@ -746,6 +750,53 @@ mod tests {
 
     fn decided(request: &NativeRequest, roots: &NativeRoots, exposure: Exposure) -> &'static str {
         kind(&decide(request, roots, exposure, None))
+    }
+
+    /// A hard link in a writable subfolder is another name for its file, so
+    /// after third-party text a write to it could rewrite `AGENTS.md` where
+    /// the Instructions class sees only `notes/alias.md`. The file is still
+    /// read, a clean reply still writes it, and a file with one name is
+    /// written in every reply.
+    #[cfg(unix)]
+    #[test]
+    fn a_file_with_another_name_on_disk_is_not_written_after_third_party_text() {
+        let f = fixture();
+        let ws = &f.roots.workspace;
+        std::fs::hard_link(ws.join("AGENTS.md"), ws.join("notes/alias.md")).unwrap();
+        for exposure in [Exposure::ThisTurn, Exposure::Custom] {
+            for tool in ["write", "edit"] {
+                assert_eq!(
+                    decided(
+                        &request(tool, ws.join("notes/alias.md")),
+                        &f.roots,
+                        exposure
+                    ),
+                    "refuse hard_link",
+                    "{tool} {exposure:?}"
+                );
+                assert_eq!(
+                    decided(&request(tool, ws.join("notes/plan.md")), &f.roots, exposure),
+                    "allow",
+                    "{tool} {exposure:?}"
+                );
+            }
+            assert_eq!(
+                decided(
+                    &request("read", ws.join("notes/alias.md")),
+                    &f.roots,
+                    exposure
+                ),
+                "allow"
+            );
+        }
+        assert_eq!(
+            decided(
+                &request("write", ws.join("notes/alias.md")),
+                &f.roots,
+                Exposure::Clean
+            ),
+            "allow"
+        );
     }
 
     #[test]

@@ -4,7 +4,9 @@ use crate::agent_harness::native_policy::{
     self, NativeDecision, NativeRefusal, NativeRequest, NativeRoots, NativeTool,
 };
 use crate::agent_harness::sandbox::Sandbox;
-use crate::custom_connections::taint::{COMMAND_UNCONFINED_REFUSAL, INSTRUCTION_WRITE_REFUSAL};
+use crate::custom_connections::taint::{
+    COMMAND_UNCONFINED_REFUSAL, HARD_LINK_WRITE_REFUSAL, INSTRUCTION_WRITE_REFUSAL,
+};
 
 const SEARCH_COVERS_APP_DATA_NEXT: &str = "This search root contains the app's private data folder, so it is not searched. Search a narrower folder, such as the workspace or one of its subfolders.";
 const UNRESOLVABLE_NEXT: &str = "This path goes through a symbolic link that loops or cannot be read, so it is not touched. Use the real file's path.";
@@ -65,6 +67,9 @@ fn refusal_error(refusal: NativeRefusal) -> BrokerError {
         NativeRefusal::Outside => BrokerError::OutsideWorkspace,
         NativeRefusal::InstructionsAfterUntrustedText => {
             BrokerError::UntrustedTextPaused.with_next(INSTRUCTION_WRITE_REFUSAL)
+        }
+        NativeRefusal::HardLinkAfterUntrustedText => {
+            BrokerError::UntrustedTextPaused.with_next(HARD_LINK_WRITE_REFUSAL)
         }
         NativeRefusal::CommandUnconfined => {
             BrokerError::UntrustedTextPaused.with_next(COMMAND_UNCONFINED_REFUSAL)

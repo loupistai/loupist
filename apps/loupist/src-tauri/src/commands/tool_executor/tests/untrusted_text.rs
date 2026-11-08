@@ -2,8 +2,9 @@ use super::*;
 use crate::agent_harness::native_policy::NativeRoots;
 use crate::chat::approvals::{ApprovalDecision, ApprovalState, ChatApproval};
 use crate::custom_connections::taint::{
-    delimited_body, retained_trust, COMMAND_UNCONFINED_REFUSAL, INSTRUCTION_WRITE_REFUSAL,
-    OUTSIDE_WORKSPACE_REFUSAL, WEB_FETCH_PRIVATE_REFUSAL, WEB_FETCH_SITE_REFUSAL,
+    delimited_body, retained_trust, COMMAND_UNCONFINED_REFUSAL, HARD_LINK_WRITE_REFUSAL,
+    INSTRUCTION_WRITE_REFUSAL, OUTSIDE_WORKSPACE_REFUSAL, WEB_FETCH_PRIVATE_REFUSAL,
+    WEB_FETCH_SITE_REFUSAL,
 };
 use crate::web::script;
 
@@ -546,18 +547,25 @@ async fn web_text_reaches_the_model_delimited_and_pauses_commands_and_instructio
     let (capture, asked) = turn_capture(&temporary);
     let (broker, socket) = start_turn(&state, &temporary, "untrusted", capture.clone()).await;
     let instructions = json!({"name":"write","path":workspace.join("AGENTS.md")});
+    // Another name for `AGENTS.md` inside a writable subfolder.
+    if !workspace.join("AGENTS.md").exists() {
+        std::fs::write(workspace.join("AGENTS.md"), "rules").unwrap();
+    }
+    std::fs::create_dir_all(workspace.join("notes")).unwrap();
+    std::fs::hard_link(
+        workspace.join("AGENTS.md"),
+        workspace.join("notes/alias.md"),
+    )
+    .unwrap();
+    let alias = json!({"name":"write","path":workspace.join("notes/alias.md")});
 
     let before = broker_request(&socket, broker.token(), "native.authorize", bash("ls")).await;
     assert_eq!(before["ok"], true, "{before}");
     assert!(before["result"].get("sandbox").is_none(), "{before}");
-    let before = broker_request(
-        &socket,
-        broker.token(),
-        "native.authorize",
-        instructions.clone(),
-    )
-    .await;
-    assert_eq!(before["ok"], true, "{before}");
+    for params in [instructions.clone(), alias.clone()] {
+        let before = broker_request(&socket, broker.token(), "native.authorize", params).await;
+        assert_eq!(before["ok"], true, "{before}");
+    }
 
     let fetched = broker_request(
         &socket,
@@ -589,9 +597,12 @@ async fn web_text_reaches_the_model_delimited_and_pauses_commands_and_instructio
         assert_eq!(refused["error"]["retryable"], false);
     }
 
-    // Injected text cannot persist itself as instructions.
+    // Injected text cannot persist itself as instructions, by name or
+    // through another name of the same file.
     let refused = broker_request(&socket, broker.token(), "native.authorize", instructions).await;
     refused_with(&refused, INSTRUCTION_WRITE_REFUSAL);
+    let refused = broker_request(&socket, broker.token(), "native.authorize", alias).await;
+    refused_with(&refused, HARD_LINK_WRITE_REFUSAL);
     assert!(asked.lock().unwrap().is_empty(), "no card was shown");
 
     for (method, params) in [
