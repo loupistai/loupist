@@ -27,9 +27,10 @@ Targets are canonicalized first (symlinks of the existing ancestor resolved, `..
 removed, a dangling symlink followed to where it points, up to 40 hops), then
 matched in this order; the first match wins. A link chain that loops or cannot
 be read is refused for every tool. The extension's `canonicalTargetPath` resolves
-the same way, so its write pin agrees with Rust. Root containment is decided by
-filesystem identity (`(dev, ino)` of each existing ancestor) and by a
-case-insensitive prefix, so a firmlink or case alias of a root still counts.
+the same way, so its write pin agrees with Rust. A root is found among the
+target's ancestors by case-insensitive equality or by filesystem identity
+(`(dev, ino)`), and the rules below apply to the components after it, so a
+firmlink or case alias of a root counts at whatever depth it spells the root.
 
 1. Instructions: workspace `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`,
    `.loupist/AGENTS.md`, `.loupist/config.toml`, Skill entries under `.loupist`,

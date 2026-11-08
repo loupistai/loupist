@@ -542,13 +542,7 @@ const ROOT_INSTRUCTIONS: &[&str] = &["agents.override.md", "agents.md", "claude.
 /// `AGENTS.md` and everything under the global `skills` folder. Names compare
 /// without case, on canonical paths, so an alias cannot reach them.
 fn instruction_file(target: &Path, roots: &NativeRoots) -> bool {
-    let relative = |root: &Path| {
-        target.strip_prefix(root).ok().map(|rest| {
-            rest.components()
-                .map(|part| part.as_os_str().to_string_lossy().to_lowercase())
-                .collect::<Vec<_>>()
-        })
-    };
+    let relative = |root: &Path| below(target, root);
     let skill_entry = |rest: &[String]| match rest {
         [file] => file.ends_with(".md"),
         [.., file] => file == "skill.md",
@@ -616,10 +610,7 @@ fn sensitive(target: &Path, home: Option<&Path>) -> bool {
     if git {
         return true;
     }
-    let Some(home) = home else {
-        return false;
-    };
-    let Some(rest) = lower_relative(target, home) else {
+    let Some(rest) = home.and_then(|home| below(target, home)) else {
         return false;
     };
     SENSITIVE_HOME.iter().any(|(entry, reach)| {
@@ -631,57 +622,49 @@ fn sensitive(target: &Path, home: Option<&Path>) -> bool {
     })
 }
 
-/// `target`'s components under `root`, lowercased, when `root` is an ancestor
-/// by identity or by case-insensitive prefix.
-fn lower_relative(target: &Path, root: &Path) -> Option<Vec<String>> {
-    if !under(target, root) {
+fn under(target: &Path, root: &Path) -> bool {
+    below(target, root).is_some()
+}
+
+/// `target`'s components below `root`, lowercased, when one of `target`'s
+/// ancestors is `root`: equal without case, or the same file by filesystem
+/// identity (`(dev, ino)`, like `fs/pinned_root.rs`). A firmlink or case
+/// alias of a root therefore counts at whatever depth it spells the root.
+fn below(target: &Path, root: &Path) -> Option<Vec<String>> {
+    if root.as_os_str().is_empty() {
         return None;
     }
-    let root_depth = root.components().count();
-    Some(
-        target
-            .components()
-            .skip(root_depth)
-            .map(|part| part.as_os_str().to_string_lossy().to_lowercase())
-            .collect(),
-    )
-}
-
-/// Root containment by filesystem identity (`(dev, ino)` of each existing
-/// ancestor, like `fs/pinned_root.rs`), then by case-insensitive prefix, so a
-/// firmlink or case alias of a root still counts as inside it.
-fn under(target: &Path, root: &Path) -> bool {
-    if root.as_os_str().is_empty() {
-        return false;
-    }
-    if case_insensitive_prefix(target, root) {
-        return true;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        let identity = |path: &Path| {
-            std::fs::metadata(path)
-                .ok()
-                .map(|metadata| (metadata.dev(), metadata.ino()))
-        };
-        if let Some(root_identity) = identity(root) {
-            return target
-                .ancestors()
-                .any(|ancestor| identity(ancestor) == Some(root_identity));
+    let root_parts = lower_parts(root);
+    let target_parts = lower_parts(target);
+    let root_identity = identity(root);
+    for (depth, ancestor) in target.ancestors().enumerate() {
+        let rest = target_parts.len().checked_sub(depth)?;
+        if target_parts[..rest] == root_parts[..]
+            || (root_identity.is_some() && identity(ancestor) == root_identity)
+        {
+            return Some(target_parts[rest..].to_vec());
         }
     }
-    false
+    None
 }
 
-fn case_insensitive_prefix(target: &Path, root: &Path) -> bool {
-    let lower = |path: &Path| {
-        path.components()
-            .map(|part| part.as_os_str().to_string_lossy().to_lowercase())
-            .collect::<Vec<_>>()
-    };
-    let (target, root) = (lower(target), lower(root));
-    target.len() >= root.len() && target[..root.len()] == root[..]
+fn lower_parts(path: &Path) -> Vec<String> {
+    path.components()
+        .map(|part| part.as_os_str().to_string_lossy().to_lowercase())
+        .collect()
+}
+
+#[cfg(unix)]
+fn identity(path: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(path)
+        .ok()
+        .map(|metadata| (metadata.dev(), metadata.ino()))
+}
+
+#[cfg(not(unix))]
+fn identity(_path: &Path) -> Option<(u64, u64)> {
+    None
 }
 
 /// A root's resolved form; a root that cannot be resolved keeps its lexical form.
@@ -1053,6 +1036,31 @@ mod tests {
             classify(&ws.join("via-docs.md"), &f.roots).path,
             f.home.join(".zshenv")
         );
+    }
+
+    /// A macOS firmlink (`/System/Volumes/Data/Users/me`) keeps its spelling
+    /// through canonicalization and shares the root's identity. A symlink the
+    /// resolver is not run on models it here, two components deeper than home.
+    #[cfg(unix)]
+    #[test]
+    fn an_alias_of_a_root_at_another_depth_still_matches_its_files() {
+        let f = fixture();
+        let volume = f._temporary.path().join("Volumes/Data");
+        std::fs::create_dir_all(&volume).unwrap();
+        let home = volume.join("home");
+        std::os::unix::fs::symlink(&f.home, &home).unwrap();
+        let ws = home.join("Research");
+        assert!(sensitive(&home.join(".ssh/id_ed25519"), Some(&f.home)));
+        assert!(sensitive(&home.join(".zshrc"), Some(&f.home)));
+        assert!(!sensitive(&home.join("Documents/shared.csv"), Some(&f.home)));
+        assert!(instruction_file(&ws.join("AGENTS.md"), &f.roots));
+        assert!(instruction_file(
+            &ws.join(".loupist/skills/screen/SKILL.md"),
+            &f.roots
+        ));
+        assert!(!instruction_file(&ws.join("notes/plan.md"), &f.roots));
+        assert!(under(&ws.join("notes/plan.md"), &f.roots.workspace));
+        assert!(!under(&home.join("Documents"), &f.roots.workspace));
     }
 
     #[test]
