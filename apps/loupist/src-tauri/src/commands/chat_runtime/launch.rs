@@ -103,7 +103,7 @@ pub(super) async fn launch_chat_turn(
         runtime_surface_sha256,
         policy,
         native_roots,
-        carried_untrusted,
+        newest_untrusted,
         host_context,
         harness,
         chat_attachments,
@@ -144,7 +144,7 @@ pub(super) async fn launch_chat_turn(
         capture.admit_untrusted_context(untrusted_context);
         capture.native = crate::commands::tool_executor::NativeGate::for_turn(
             native_roots,
-            carried_untrusted,
+            newest_untrusted,
             &profile.id,
             &chat.id,
         );

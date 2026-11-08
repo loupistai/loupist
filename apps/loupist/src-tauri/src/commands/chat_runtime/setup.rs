@@ -160,9 +160,9 @@ pub(super) struct AdmittedChatTurn {
     pub runtime_surface_sha256: String,
     pub policy: crate::broker::ToolPolicy,
     pub native_roots: crate::agent_harness::native_policy::NativeRoots,
-    /// An earlier reply in this Chat read third-party text, so the model's
-    /// context may carry it into this clean turn.
-    pub carried_untrusted: bool,
+    /// The newest earlier reply in this Chat that read third-party text, which
+    /// the model's context may carry into this clean turn.
+    pub newest_untrusted: Option<String>,
     pub host_context: String,
     pub harness: AgentHarnessSnapshot,
     pub chat_attachments: PathBuf,
@@ -428,10 +428,12 @@ pub(super) fn admit_chat_turn(
         &chat_attachments.join(&chat.id),
         host_home().as_deref(),
     );
-    let carried_untrusted = chat
+    let newest_untrusted = chat
         .messages
         .iter()
-        .any(crate::domain::ChatMessage::has_untrusted_text);
+        .rev()
+        .find(|message| message.has_untrusted_text())
+        .map(|message| message.id.clone());
     let timestamp = now_ms().max(chat.updated_at_ms + 1);
     let user_message_id = new_id("message");
     let current_prompt = attachment_prompt(
@@ -615,7 +617,7 @@ pub(super) fn admit_chat_turn(
         runtime_surface_sha256,
         policy,
         native_roots,
-        carried_untrusted,
+        newest_untrusted,
         host_context,
         harness,
         chat_attachments,

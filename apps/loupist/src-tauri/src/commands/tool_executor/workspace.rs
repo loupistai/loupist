@@ -17,13 +17,13 @@ const SEARCH_COVERS_APP_DATA_NEXT: &str = "This search root contains the app's p
 const UNRESOLVABLE_NEXT: &str = "This path goes through a symbolic link that loops or cannot be read, so it is not touched. Use the real file's path.";
 
 /// The native policy's state for one turn: the folders it classifies against,
-/// whether earlier replies carried third-party text, the Chat the blanket
-/// command grant is keyed by, what the user allowed or turned down in this
-/// reply, and one card-at-a-time lock per ask kind.
+/// the newest earlier reply that carried third-party text, the Chat the
+/// blanket command grant is keyed by, what the user allowed or turned down in
+/// this reply, and one card-at-a-time lock per ask kind.
 #[derive(Default)]
 pub(in crate::commands) struct NativeGate {
     roots: Option<NativeRoots>,
-    carried_untrusted: bool,
+    newest_untrusted: Option<String>,
     chat: Option<(String, String)>,
     grants: std::sync::Mutex<NativeGrants>,
     ask_locks: [tokio::sync::Mutex<()>; AskKind::COUNT],
@@ -32,13 +32,13 @@ pub(in crate::commands) struct NativeGate {
 impl NativeGate {
     pub(in crate::commands) fn for_turn(
         roots: NativeRoots,
-        carried_untrusted: bool,
+        newest_untrusted: Option<String>,
         loupist_id: &str,
         thread_id: &str,
     ) -> Self {
         Self {
             roots: Some(roots),
-            carried_untrusted,
+            newest_untrusted,
             chat: Some((loupist_id.to_owned(), thread_id.to_owned())),
             ..Self::default()
         }
@@ -46,7 +46,11 @@ impl NativeGate {
 
     fn chat_commands(&self) -> bool {
         self.chat.as_ref().is_some_and(|(loupist_id, thread_id)| {
-            crate::chat::command_grants::granted(loupist_id, thread_id)
+            crate::chat::command_grants::granted(
+                loupist_id,
+                thread_id,
+                self.newest_untrusted.as_deref(),
+            )
         })
     }
 
@@ -55,7 +59,7 @@ impl NativeGate {
         request: &NativeRequest,
         taint: &crate::custom_connections::taint::TurnTaint,
     ) -> Result<NativeDecision, BrokerError> {
-        let exposure = taint.exposure(self.carried_untrusted);
+        let exposure = taint.exposure(self.newest_untrusted.is_some());
         if request.tool == NativeTool::Bash {
             return Ok(native_policy::decide_command(
                 request,
@@ -93,7 +97,11 @@ impl NativeGate {
             Some((loupist_id, thread_id)),
         ) = (&ask.grant, decision, &self.chat)
         {
-            crate::chat::command_grants::grant(loupist_id, thread_id);
+            crate::chat::command_grants::grant(
+                loupist_id,
+                thread_id,
+                self.newest_untrusted.as_deref(),
+            );
         }
         self.grants().grant(ask, decision);
     }

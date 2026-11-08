@@ -87,8 +87,11 @@ line count beside it.
   commands for this reply, Not now.
 - `command` under Carried: Allow once, Allow commands in this Chat (`grant: chat`;
   an in-memory grant keyed by Loupist and Chat, `chat/command_grants.rs`, cleared by
-  the settled line's "Stop allowing" through `chat_command_grant_revoke` and by an
-  app restart), Not now. Under ThisTurn the Chat grant does not apply.
+  the settled line's "Stop allowing" through `chat_command_grant_revoke`, by the
+  Chat's deletion and by an app restart), Not now. The grant remembers the Chat's
+  newest reply that had recorded third-party text when it was given; once a later
+  reply records more, the grant is void and the next command asks again. Under
+  ThisTurn the Chat grant does not apply.
 - `file_read`, `file_write`: Allow (this reply), Not now. "Always" counts as once.
   Allow covers an outside file's folder, except a file directly in the home
   folder or at the root of the disk, which covers that file only; a directory
