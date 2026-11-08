@@ -137,6 +137,42 @@ impl NativeRoots {
             home: home.map(resolved),
         }
     }
+
+    /// The instruction files and Skill folder the Loupist's data folder
+    /// holds, which stay visible when the rest of the folder is hidden.
+    pub fn loupist_data_instructions(&self) -> [PathBuf; 3] {
+        [
+            self.loupist_data.join("skills"),
+            self.loupist_data.join("AGENTS.md"),
+            self.loupist_data.join("config.toml"),
+        ]
+    }
+
+    /// The global instruction files, which stay visible when the app data
+    /// root is hidden.
+    pub fn global_instructions(&self) -> [PathBuf; 2] {
+        [self.global.join("skills"), self.global.join("AGENTS.md")]
+    }
+
+    /// The workspace's own git config and hooks: read, never written.
+    pub fn workspace_git_config(&self) -> [PathBuf; 2] {
+        [
+            self.workspace.join(".git/config"),
+            self.workspace.join(".git/hooks"),
+        ]
+    }
+
+    /// The `CREDENTIAL_HOME` locations under this host's home folder.
+    pub fn credential_paths(&self) -> Vec<(PathBuf, Reach)> {
+        self.home
+            .iter()
+            .flat_map(|home| {
+                CREDENTIAL_HOME
+                    .iter()
+                    .map(move |(entry, reach)| (home.join(entry), *reach))
+            })
+            .collect()
+    }
 }
 
 /// First match wins, in this order.

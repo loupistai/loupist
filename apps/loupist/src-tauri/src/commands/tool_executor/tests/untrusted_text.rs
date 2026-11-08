@@ -46,7 +46,7 @@ fn turn_capture(
     let shown = asked.clone();
     let capture = ToolCapture {
         bound_chat_id: Some("chat-a".into()),
-        native: NativeGate::for_turn(native_roots(temporary)),
+        native: NativeGate::for_turn(native_roots(temporary), None),
         approval_sink: Some(Arc::new(move |_call, approval: ChatApproval| {
             if approval.state != ApprovalState::Waiting {
                 return;
@@ -637,6 +637,39 @@ async fn a_clean_reply_runs_commands_after_an_earlier_reply_read_third_party_tex
         assert_eq!(allowed["ok"], true, "{allowed}");
     }
     broker.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn a_verified_sandbox_runs_commands_online_when_clean_and_offline_after_third_party_text() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let sandbox = crate::agent_harness::sandbox::Sandbox::Bubblewrap("/usr/bin/bwrap".into());
+    for untrusted in [false, true] {
+        let capture = Arc::new(ToolCapture {
+            bound_chat_id: Some("chat-a".into()),
+            native: NativeGate::for_turn(native_roots(&temporary), Some(sandbox.clone())),
+            ..ToolCapture::for_chat(new_id("reply"))
+        });
+        if untrusted {
+            capture.turn_taint.mark_untrusted_text();
+        }
+        let (broker, socket) = start_turn(&state, &temporary, "sandboxed", capture).await;
+        let allowed = broker_request(&socket, broker.token(), "native.authorize", bash("ls")).await;
+        assert_eq!(allowed["ok"], true, "{allowed}");
+        let argv: Vec<String> =
+            serde_json::from_value(allowed["result"]["sandbox"]["argv"].clone()).unwrap();
+        assert_eq!(argv[0], "/usr/bin/bwrap");
+        assert_eq!(
+            argv.contains(&"--unshare-net".to_owned()),
+            untrusted,
+            "{argv:?}"
+        );
+        let cache = allowed["result"]["sandbox"]["env"]["XDG_CACHE_HOME"]
+            .as_str()
+            .unwrap();
+        assert!(cache.ends_with("/app/scratch/cache"), "{cache}");
+        broker.shutdown().await.unwrap();
+    }
 }
 
 #[tokio::test]

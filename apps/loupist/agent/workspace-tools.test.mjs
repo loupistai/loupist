@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { setTimeout } from "node:timers/promises";
 import test from "node:test";
 
-import { allowedWorkspaceEnvironment, canonicalTargetPath, nativeTargetPath, registerWorkspaceTools } from "./workspace-tools.mjs";
+import { allowedWorkspaceEnvironment, canonicalTargetPath, nativeTargetPath, registerWorkspaceTools, sandboxedBashOperations } from "./workspace-tools.mjs";
 
 function workspaceFixture(t) {
   const temporary = realpathSync(mkdtempSync(join(tmpdir(), "loupist-workspace-tools-")));
@@ -240,6 +240,107 @@ test("aborting native Bash stops the command and its child process", { skip: pro
   for (let attempt = 0; attempt < 60 && pids.some(isRunning); attempt++) await setTimeout(50);
   assert(pids.every((pid) => !isRunning(pid)), "Bash abort must stop both the parent command and its child");
 });
+
+/** A stand-in sandbox: records the arguments it was given, then runs them. */
+function recordingSandbox(directory) {
+  const script = join(directory, "fake-sandbox.mjs");
+  const record = join(directory, "sandbox-argv.json");
+  writeFileSync(script, `
+    import { spawnSync } from "node:child_process";
+    import { writeFileSync } from "node:fs";
+    writeFileSync(${JSON.stringify(record)}, JSON.stringify(process.argv.slice(2)));
+    const result = spawnSync(process.argv[2], process.argv.slice(3), { stdio: "inherit", env: process.env });
+    process.exit(result.status ?? 1);
+  `);
+  return { argv: [process.execPath, script], record };
+}
+
+function toolsAuthorizedBy(workspace, authorize) {
+  const tools = new Map();
+  registerWorkspaceTools({ registerTool: (tool) => tools.set(tool.name, tool) }, workspace, authorize);
+  return tools;
+}
+
+test("native Bash runs inside the sandbox Rust returns, with the command as one argument", async (t) => {
+  const { temporary, workspace, privateRuntime } = workspaceFixture(t);
+  const { argv, record } = recordingSandbox(temporary);
+  const tools = toolsAuthorizedBy(workspace, async () => ({ allowed: true, sandbox: { argv, env: { LOUPIST_SANDBOX_MARK: "confined" } } }));
+  const command = `echo "mark=$LOUPIST_SANDBOX_MARK" 'it''s "quoted"'`;
+  const result = await tools.get("bash").execute("sandboxed", { command, timeout: 10 }, undefined, undefined, { cwd: privateRuntime });
+  assert.equal(result.structuredContent.exit_code, 0);
+  assert.match(resultText(result), /mark=confined its "quoted"/);
+  const recorded = JSON.parse(readFileSync(record, "utf8"));
+  assert.equal(recorded.at(-1), command);
+  assert.equal(recorded.at(-2), "-c");
+
+  // Without a sandbox in the answer the command runs as before.
+  const plain = toolsAuthorizedBy(workspace, async () => ({ allowed: true }));
+  const unconfined = await plain.get("bash").execute("plain", { command: "echo mark=$LOUPIST_SANDBOX_MARK", timeout: 10 }, undefined, undefined, { cwd: privateRuntime });
+  assert.equal(resultText(unconfined).trim(), "mark=");
+});
+
+test("a malformed sandbox refuses to run the command instead of running it unconfined", async (t) => {
+  const { workspace, privateRuntime } = workspaceFixture(t);
+  const marker = join(workspace, "must-not-exist");
+  for (const sandbox of [null, {}, { argv: [] }, { argv: ["bwrap", 7] }, { argv: [""] }, { argv: ["bwrap"], env: { X: 1 } }]) {
+    const tools = toolsAuthorizedBy(workspace, async () => ({ allowed: true, sandbox }));
+    await assert.rejects(tools.get("bash").execute("malformed", {
+      command: nodeCommand(`require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'executed')`), timeout: 10,
+    }, undefined, undefined, { cwd: privateRuntime }), /sandbox is invalid/, JSON.stringify(sandbox));
+    assert.equal(existsSync(marker), false);
+  }
+  assert.throws(() => sandboxedBashOperations(undefined), /sandbox is invalid/);
+});
+
+const bubblewrap = ["/usr/bin/bwrap", "/usr/local/bin/bwrap"].find((path) => existsSync(path));
+
+test("bubblewrap confines native Bash writes and an abort stops the sandboxed command and its child",
+  { skip: process.platform !== "linux" ? "the bubblewrap sandbox is Linux only" : bubblewrap ? false : "bubblewrap (bwrap) is not installed on this host", timeout: 20000 },
+  async (t) => {
+    const { temporary, workspace, privateRuntime } = workspaceFixture(t);
+    const argv = [bubblewrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--bind", workspace, workspace,
+      "--unshare-net", "--unshare-pid", "--die-with-parent", "--new-session", "--"];
+    const tools = toolsAuthorizedBy(workspace, async () => ({ allowed: true, sandbox: { argv } }));
+    const run = (input, signal, onUpdate) => tools.get("bash").execute("bwrap", input, signal, onUpdate, { cwd: privateRuntime });
+    const outside = join(temporary, "outside.txt");
+    const confined = await run({
+      command: `echo in > inside.txt && echo inside=ok; echo out > ${shellQuote(outside)} 2>/dev/null && echo outside=ok || echo outside=denied`,
+      timeout: 10,
+    });
+    assert.match(resultText(confined), /inside=ok/);
+    assert.match(resultText(confined), /outside=denied/);
+    assert.equal(readFileSync(join(workspace, "inside.txt"), "utf8"), "in\n");
+    assert.equal(existsSync(outside), false);
+
+    // Inside the pid namespace the command's pids mean nothing to the host,
+    // so a token in each process's arguments says whether it still runs.
+    const token = `loupist-sandbox-abort-${process.pid}-${Date.now()}`;
+    const running = () => spawnSync("pgrep", ["-f", token], { encoding: "utf8" }).stdout.trim().split("\n").filter(Boolean);
+    t.after(() => spawnSync("pkill", ["-9", "-f", token]));
+    const controller = new AbortController();
+    let ready = false;
+    await assert.rejects(run({
+      command: nodeCommand(`
+        const { spawn } = require('node:child_process');
+        spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', ${JSON.stringify(token)}], { stdio: 'ignore' });
+        console.log('ready');
+        setInterval(() => {}, 1000);
+      `) + ` ${token}`,
+      timeout: 10,
+    }, controller.signal, (update) => {
+      if (!ready && /ready/.test(resultText(update))) {
+        ready = true;
+        // The token also sits in the shell's and bubblewrap's arguments, so
+        // at least the shell, the command and its child match.
+        for (let attempt = 0; attempt < 40 && running().length < 3; attempt++) spawnSync("sleep", ["0.05"]);
+        assert(running().length >= 3, "the command and its child run inside the sandbox");
+        controller.abort();
+      }
+    }), /Command aborted/);
+    assert(ready);
+    for (let attempt = 0; attempt < 60 && running().length > 0; attempt++) await setTimeout(50);
+    assert.deepEqual(running(), [], "an aborted sandboxed command and its child must stop");
+  });
 
 test("host taint refusal prevents native Bash from executing", async (t) => {
   const { workspace } = workspaceFixture(t);

@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 pub(crate) mod native_policy;
+pub(crate) mod sandbox;
 mod skill_mentions;
 pub(crate) mod workspace;
 pub use skill_mentions::explicit_skill_names;

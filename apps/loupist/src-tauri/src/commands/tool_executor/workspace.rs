@@ -3,6 +3,7 @@ use super::*;
 use crate::agent_harness::native_policy::{
     self, NativeDecision, NativeRefusal, NativeRequest, NativeRoots, NativeTool,
 };
+use crate::agent_harness::sandbox::Sandbox;
 use crate::custom_connections::taint::{COMMAND_UNCONFINED_REFUSAL, INSTRUCTION_WRITE_REFUSAL};
 
 const SEARCH_COVERS_APP_DATA_NEXT: &str = "This search root contains the app's private data folder, so it is not searched. Search a narrower folder, such as the workspace or one of its subfolders.";
@@ -10,15 +11,20 @@ const UNRESOLVABLE_NEXT: &str = "This path goes through a symbolic link that loo
 const CREDENTIALS_NEXT: &str = "Do not retry this path. Credential stores and shell startup files are never read or written by the Loupist, and commands cannot see them either.";
 const GIT_CONFIG_NEXT: &str = "Do not retry this write. A git directory's hooks and config run on the user's machine later, so the Loupist never changes them; read them if needed and ask the user to change them.";
 
-/// The native policy's state for one turn: the folders it classifies against.
+/// The native policy's state for one turn: the folders it classifies against
+/// and the verified sandbox commands run in, when this host has one.
 #[derive(Default)]
 pub(in crate::commands) struct NativeGate {
     roots: Option<NativeRoots>,
+    sandbox: Option<Sandbox>,
 }
 
 impl NativeGate {
-    pub(in crate::commands) fn for_turn(roots: NativeRoots) -> Self {
-        Self { roots: Some(roots) }
+    pub(in crate::commands) fn for_turn(roots: NativeRoots, sandbox: Option<Sandbox>) -> Self {
+        Self {
+            roots: Some(roots),
+            sandbox,
+        }
     }
 
     fn decide(
@@ -27,14 +33,23 @@ impl NativeGate {
         taint: &crate::custom_connections::taint::TurnTaint,
     ) -> Result<NativeDecision, BrokerError> {
         let exposure = taint.exposure();
-        if request.tool == NativeTool::Bash {
-            return Ok(native_policy::decide_command(exposure, None));
-        }
-        // A run without turn folders cannot classify a path.
+        // A run without turn folders cannot classify a path or build a sandbox.
         let roots = self.roots.as_ref().ok_or_else(|| {
             BrokerError::Execution("native file tools are unavailable in this run".into())
-        })?;
-        Ok(native_policy::decide(request, roots, exposure, None))
+        });
+        if request.tool == NativeTool::Bash {
+            let confine = match (&self.sandbox, &roots) {
+                (Some(sandbox), Ok(roots)) => Some(move |network| sandbox.command(roots, network)),
+                _ => None,
+            };
+            return Ok(native_policy::decide_command(
+                exposure,
+                confine
+                    .as_ref()
+                    .map(|confine| confine as &dyn Fn(bool) -> native_policy::SandboxCommand),
+            ));
+        }
+        Ok(native_policy::decide(request, roots?, exposure, None))
     }
 }
 

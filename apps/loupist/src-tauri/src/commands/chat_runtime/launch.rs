@@ -141,7 +141,10 @@ pub(super) async fn launch_chat_turn(
         capture.surface = Some(surface.clone());
         capture.tool_trace = on_event.tool_trace.clone();
         capture.admit_untrusted_context(untrusted_context);
-        capture.native = crate::commands::tool_executor::NativeGate::for_turn(native_roots);
+        capture.native = crate::commands::tool_executor::NativeGate::for_turn(
+            native_roots,
+            crate::agent_harness::sandbox::verified_for_launch().await,
+        );
         // Sites the user names stay readable after third-party text arrives.
         // A host briefing prompt includes observation text, not a user message;
         // its embedded URLs must not be admitted as sites the user typed.

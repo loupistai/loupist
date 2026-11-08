@@ -64,19 +64,22 @@ pub(crate) async fn login_shell_path_for_launch() -> Option<&'static [PathBuf]> 
         resolve_for_current_user,
         RESOLVE_TIMEOUT + Duration::from_secs(1),
     )
-    .await
+    .await?
+    .as_deref()
 }
 
-async fn cached_off_runtime(
-    cell: &'static OnceLock<Option<Vec<PathBuf>>>,
-    resolve: fn() -> Option<Vec<PathBuf>>,
+/// A once-per-app-run value resolved on the blocking pool, or None when the
+/// resolution outlasts `wait` (it keeps running for the next caller).
+pub(crate) async fn cached_off_runtime<T: Sync + Send + 'static>(
+    cell: &'static OnceLock<T>,
+    resolve: fn() -> T,
     wait: Duration,
-) -> Option<&'static [PathBuf]> {
+) -> Option<&'static T> {
     if let Some(cached) = cell.get() {
-        return cached.as_deref();
+        return Some(cached);
     }
-    let lookup = tokio::task::spawn_blocking(move || cell.get_or_init(resolve).as_deref());
-    tokio::time::timeout(wait, lookup).await.ok()?.ok()?
+    let lookup = tokio::task::spawn_blocking(move || cell.get_or_init(resolve));
+    tokio::time::timeout(wait, lookup).await.ok()?.ok()
 }
 
 // Unit tests never run the developer's shell; the probe has its own tests
@@ -343,7 +346,10 @@ mod tests {
             }
         });
         let path = cached_off_runtime(&CELL, slow_probe, Duration::from_secs(5)).await;
-        assert_eq!(path, Some(&[PathBuf::from("/opt/login/bin")][..]));
+        assert_eq!(
+            path.and_then(|path| path.as_deref()),
+            Some(&[PathBuf::from("/opt/login/bin")][..])
+        );
         // Other tasks on this single-threaded runtime kept running meanwhile.
         assert!(
             ticks.load(Ordering::SeqCst) >= 5,

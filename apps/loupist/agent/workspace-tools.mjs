@@ -6,10 +6,12 @@ import {
   createLsToolDefinition,
   createReadToolDefinition,
   createWriteToolDefinition,
+  getShellConfig,
 } from "@earendil-works/pi-coding-agent";
+import { spawn } from "node:child_process";
 import { constants, lstatSync, readlinkSync, realpathSync } from "node:fs";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { constants as osConstants, homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -111,6 +113,68 @@ function authorizedFileOperations(name, expected) {
 const FILE_WRITERS = { write: createWriteToolDefinition, edit: createEditToolDefinition };
 const SEARCHERS = new Set(["ls", "find", "grep"]);
 
+/** How long after the shell exits to wait for descendants holding its pipes. */
+const PIPE_GRACE_MS = 500;
+
+const isStringMap = (value) => typeof value === "object" && value !== null && !Array.isArray(value)
+  && Object.values(value).every((entry) => typeof entry === "string");
+
+/** Bash operations that run every command inside the sandbox Rust returned
+ * from `native.authorize`: its argv prefix, then the shell and its arguments,
+ * then the command, each as its own argument, so nothing is re-quoted. A
+ * malformed sandbox throws, so a command Rust meant to confine never runs
+ * unconfined. As Pi's local operations, output streams and an abort or
+ * timeout kills the whole process group. */
+export function sandboxedBashOperations(sandbox) {
+  const argv = sandbox?.argv;
+  if (!Array.isArray(argv) || argv.length === 0 || !argv.every((part) => typeof part === "string" && part.length > 0)
+    || (sandbox.env !== undefined && !isStringMap(sandbox.env))) {
+    throw new Error("Native Bash sandbox is invalid, so the command does not run");
+  }
+  const [program, ...prefix] = argv;
+  const shell = getShellConfig();
+  return {
+    exec: (command, cwd, { onData, signal, timeout, env }) => new Promise((resolve, reject) => {
+      if (signal?.aborted) return reject(new Error("aborted"));
+      const child = spawn(program, [...prefix, shell.shell, ...shell.args, command], {
+        cwd, detached: true, env: { ...env, ...sandbox.env }, stdio: ["ignore", "pipe", "pipe"],
+      });
+      const kill = () => {
+        if (!child.pid) return;
+        try { process.kill(-child.pid, "SIGKILL"); } catch {
+          try { process.kill(child.pid, "SIGKILL"); } catch { /* already gone */ }
+        }
+      };
+      let timedOut = false;
+      let settled = false;
+      let graceTimer;
+      const timer = timeout === undefined ? undefined : setTimeout(() => { timedOut = true; kill(); }, timeout * 1000);
+      signal?.addEventListener("abort", kill, { once: true });
+      child.stdout.on("data", onData);
+      child.stderr.on("data", onData);
+      const settle = (outcome) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        clearTimeout(graceTimer);
+        signal?.removeEventListener("abort", kill);
+        child.stdout.destroy();
+        child.stderr.destroy();
+        outcome();
+      };
+      const finish = (code, signalName) => settle(() => {
+        if (signal?.aborted) return reject(new Error("aborted"));
+        if (timedOut) return reject(new Error(`timeout:${timeout}`));
+        resolve({ exitCode: code ?? (signalName ? 128 + (osConstants.signals[signalName] ?? 0) : 1) });
+      });
+      child.once("error", (error) => settle(() => reject(error)));
+      child.once("close", finish);
+      // A background descendant can hold the pipes open after the shell exits.
+      child.once("exit", (code, signalName) => { graceTimer = setTimeout(() => finish(code, signalName), PIPE_GRACE_MS); });
+    }),
+  };
+}
+
 /** What `native.authorize` is told about one call: the resolved file for read,
  * write and edit; the resolved search root for ls, find and grep (the
  * workspace by default, as Pi resolves it); the exact command for bash. */
@@ -129,18 +193,19 @@ export function nativeRequest(workspaceRoot, name, input) {
  * `nativeRequest` above; Rust owns the permission policy, exported-text trust and the
  * canonical target (`resolved`) a write or edit is pinned to. */
 export function registerWorkspaceTools(pi, workspaceRoot, authorize) {
+  const bashOptions = {
+    exposeSessionEnvironment: false,
+    spawnHook: ({ command, env }) => ({
+      command,
+      cwd: workspaceRoot,
+      env: allowedWorkspaceEnvironment(env),
+    }),
+  };
   const definitions = [
     createReadToolDefinition(workspaceRoot),
     createWriteToolDefinition(workspaceRoot),
     createEditToolDefinition(workspaceRoot),
-    createBashToolDefinition(workspaceRoot, {
-      exposeSessionEnvironment: false,
-      spawnHook: ({ command, env }) => ({
-        command,
-        cwd: workspaceRoot,
-        env: allowedWorkspaceEnvironment(env),
-      }),
-    }),
+    createBashToolDefinition(workspaceRoot, bashOptions),
     createLsToolDefinition(workspaceRoot),
     createFindToolDefinition(workspaceRoot),
     createGrepToolDefinition(workspaceRoot),
@@ -161,9 +226,13 @@ export function registerWorkspaceTools(pi, workspaceRoot, authorize) {
         } : result;
         const expected = typeof permission?.resolved === "string"
           ? permission.resolved : request.path === undefined ? undefined : canonicalTargetPath(request.path);
+        // Rust names the sandbox a command must run in; without one the
+        // command runs as before (a clean reply on a host with no sandbox).
         const run = writer && expected !== undefined
           ? writer(workspaceRoot, { operations: authorizedFileOperations(definition.name, expected) })
-          : definition;
+          : definition.name === "bash" && permission?.sandbox !== undefined
+            ? createBashToolDefinition(workspaceRoot, { ...bashOptions, operations: sandboxedBashOperations(permission.sandbox) })
+            : definition;
         const result = await run.execute(id, input, signal,
           onUpdate ? (update) => onUpdate(deliver(update)) : undefined, {
           ...ctx,
