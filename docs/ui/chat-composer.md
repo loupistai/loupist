@@ -104,7 +104,14 @@ data; it does not promise the request stays on the device. A card still waiting
 when the run ends reads "No longer needed". Tools that are not read-only, and
 unattended runs, keep the plain refusal. After third-party text, a `web_fetch` of a
 new site waits on the same kind of card (`kind: web_site`) with only Allow once and
-Not now ([Trust](../runtime/untrusted-text.md)).
+Not now ([Trust](../runtime/untrusted-text.md)). A native command (`kind: command`)
+shows the whole command in a scrollable block and offers Allow once, Not now and a
+secondary blanket option, "Allow commands for this reply" or, when only earlier
+replies read other sites, "Allow commands in this chat"; that settled line offers
+"Stop allowing" (`chat_command_grant_revoke`). A read or write outside the workspace
+(`file_read`, `file_write`) offers Allow and Not now; an instruction file
+(`instructions`) offers Allow once and Not now. The rail's "Needs your OK" row names a
+native card by its path or command line ([Native tool permissions](../runtime/permissions.md)).
 
 An [`ask_user`](../agent/turn-tools.md#turn-tools) call waits on a question card the same
 way: Rust records it on `ChatProgress.questions` (at most four per reply), under the step

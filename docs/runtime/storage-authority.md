@@ -12,11 +12,16 @@
 
 Native tools run with the user's host permissions, accept absolute paths and can
 use installed runtimes and network access. The workspace is a starting directory,
-not a filesystem sandbox. Bash receives an allowlisted environment without app
-credentials or shell startup hooks; its PATH is described under
-[Local workspace execution](chat-turns.md#local-workspace-execution). This does not prevent
-commands from accessing other user-readable files. The folder-opening UI requires
-an explicit trust check; there is no saved per-Loupist native-execution switch.
+not a filesystem sandbox. Rust decides every native call before it runs: the app's
+private data (credentials, the database, Pi runtime files) is never read or written
+by a native file tool, credential and startup files ask the user, and after
+third-party text a command or a file outside the workspace waits on a card
+([Native tool permissions](permissions.md)). Bash receives an allowlisted environment
+without app credentials or shell startup hooks; its PATH is described under
+[Local workspace execution](chat-turns.md#local-workspace-execution). A command can
+still reach other user-readable files, the policy's residual risk. The folder-opening
+UI requires an explicit trust check; there is no saved per-Loupist native-execution
+switch.
 
 Release builds do not forward host `*_API_KEY` variables to Pi; Pi uses the saved
 credential in its private `auth.json` (debug builds other than `e2e` still forward
