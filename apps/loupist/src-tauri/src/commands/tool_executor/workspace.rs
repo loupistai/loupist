@@ -8,7 +8,7 @@ use crate::custom_connections::taint::{COMMAND_UNCONFINED_REFUSAL, INSTRUCTION_W
 
 const SEARCH_COVERS_APP_DATA_NEXT: &str = "This search root contains the app's private data folder, so it is not searched. Search a narrower folder, such as the workspace or one of its subfolders.";
 const UNRESOLVABLE_NEXT: &str = "This path goes through a symbolic link that loops or cannot be read, so it is not touched. Use the real file's path.";
-const CREDENTIALS_NEXT: &str = "Do not retry this path. Credential stores and shell startup files are never read or written by the Loupist, and commands cannot see them either.";
+const CREDENTIALS_NEXT: &str = "Do not retry this path. Credential stores, container runtime folders and shell startup files are never read or written by the Loupist, and commands cannot see them either.";
 const GIT_DIR_NEXT: &str = "Do not retry this write. The host's git runs what a git directory holds (hooks, config, filters), so the Loupist never writes inside `.git` or a bare repository's hooks and config; read them if needed and ask the user to change them.";
 
 /// The native policy's state for one turn: the folders it classifies against

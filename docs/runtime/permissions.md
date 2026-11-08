@@ -45,11 +45,13 @@ counts at whatever depth it spells the root, while on a case-sensitive volume
    `<workspace>/.loupist` (the database, other Chats' attachments, the activity
    log), except its `skills` folder.
 5. Credentials: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.config/gcloud`, `~/.kube`,
-   `~/.docker/config.json`, `~/.netrc`, `~/.git-credentials`, `~/.npmrc`, `~/.pypirc`,
-   `~/.config/gh/**`, `~/.config/git/**`, `~/Library/Keychains` and the shell startup
-   files (`.zshrc`, `.zprofile`, `.zshenv`, `.zlogin`, `.bashrc`, `.bash_profile`,
-   `.profile`, `~/.config/fish/**`). One table (`CREDENTIAL_HOME`) serves this class
-   and the sandbox's masks.
+   `~/.netrc`, `~/.git-credentials`, `~/.npmrc`, `~/.pypirc`, `~/.config/gh/**`,
+   `~/.config/git/**`, `~/Library/Keychains`, the shell startup files (`.zshrc`,
+   `.zprofile`, `.zshenv`, `.zlogin`, `.bashrc`, `.bash_profile`, `.profile`,
+   `~/.config/fish/**`) and the container runtimes' folders, whole: `~/.docker`
+   (its `config.json` credentials and Docker Desktop's `desktop/docker.sock`),
+   `~/.colima`, `~/.lima` and `~/.rd` (Rancher Desktop). One table
+   (`CREDENTIAL_HOME`) serves this class and the sandbox's masks.
 6. GitDir: inside the workspace, any path with a `.git` component (the `.git`
    file or folder itself and everything in it, a nested repository's too) and
    the `hooks/**` and `config` of a bare `*.git` or a submodule's
@@ -107,7 +109,7 @@ for every other host.
 | --- | --- |
 | Writes, clean reply | Workspace and scratch bound read-write over a read-only `/`; a private tmpfs `/tmp`. |
 | Writes, after third-party text | The workspace bound read-only, then its existing top-level subfolders, `<workspace>/outputs` and scratch bound back read-write ([After third-party text](#after-third-party-text)); a private tmpfs `/tmp`. |
-| Runtime sockets | A tmpfs over `/run` (and `/var/run` when it is a folder of its own), so `XDG_RUNTIME_DIR` sockets (D-Bus session bus, ssh-agent, gpg-agent, PulseAudio, Wayland), `/run/dbus/system_bus_socket` and `docker.sock` are gone. When `/etc/resolv.conf` resolves into `/run`, that file is bound back read-only so names still resolve online. |
+| Runtime sockets | A tmpfs over `/run` (and `/var/run` when it is a folder of its own), so `XDG_RUNTIME_DIR` sockets (D-Bus session bus, ssh-agent, gpg-agent, PulseAudio, Wayland), `/run/dbus/system_bus_socket` and `/run/docker.sock` are gone. When `/etc/resolv.conf` resolves into `/run`, that file is bound back read-only so names still resolve online. The container runtimes' home folders (`~/.docker`, `~/.colima`, `~/.lima`, `~/.rd`) are hidden with the credentials, in both modes. Any other Unix socket under the home folder stays reachable in both modes: offline mode removes the network and abstract sockets only, not filesystem sockets. |
 | `<workspace>/.loupist`, app data root | A tmpfs over each, remounted read-only last; `.loupist/skills`, `.loupist/AGENTS.md`, `.loupist/config.toml`, the global `skills` and `AGENTS.md`, this Chat's attachments and scratch bound back (attachments and instruction files read-only). |
 | Workspace `.git`, clean reply | A `.git` folder is bound onto itself, so it cannot be renamed or removed, and its `config` and `hooks` are bound read-only over themselves; a `.git` file (a worktree's gitdir pointer) is bound read-only. The rest of `.git` is writable. |
 | Workspace `.git`, after third-party text | Part of the read-only workspace: nothing in it can be created, changed, renamed or removed. |
@@ -191,6 +193,11 @@ Mac, with sandbox-runtime's macOS profile as the reference.
   root, `.loupist` data, the `CREDENTIAL_HOME` table and `/run` are hidden,
   other home files are not. `~/.gitconfig` stays readable so `git` keeps its
   identity.
+- A Unix socket a user keeps under the home folder outside the hidden set (a
+  daemon configured to listen under `~/.local`, for example) is reachable in
+  both modes, and a daemon behind it acts outside the sandbox with whatever
+  the daemon has. The known container-runtime socket folders are hidden; the
+  rest of the home folder is not.
 - In a clean reply only the root `.git` entry, its `config` and its `hooks`
   are read-only for Bash. The other files in `.git` are writable, and some of
   them redirect the host's `git` to another directory whose config and hooks

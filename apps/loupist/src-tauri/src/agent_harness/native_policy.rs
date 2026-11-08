@@ -407,16 +407,21 @@ pub enum Reach {
     Tree,
 }
 
-/// Credential stores, cloud and container configs, keychains and shell
-/// startup files (which often export keys), relative to the home directory.
-/// Native file tools never touch them and the command sandbox hides them.
+/// Credential stores, cloud configs, keychains, shell startup files (which
+/// often export keys) and the container runtimes' folders (their credentials
+/// and the sockets that start containers outside the sandbox, with the
+/// network), relative to the home directory. Native file tools never touch
+/// them and the command sandbox hides them in both modes.
 pub const CREDENTIAL_HOME: &[(&str, Reach)] = &[
     (".ssh", Reach::Tree),
     (".gnupg", Reach::Tree),
     (".aws", Reach::Tree),
     (".config/gcloud", Reach::Tree),
     (".kube", Reach::Tree),
-    (".docker/config.json", Reach::File),
+    (".docker", Reach::Tree),
+    (".colima", Reach::Tree),
+    (".lima", Reach::Tree),
+    (".rd", Reach::Tree),
     (".netrc", Reach::File),
     (".git-credentials", Reach::File),
     (".npmrc", Reach::File),
