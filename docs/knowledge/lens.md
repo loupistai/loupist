@@ -127,9 +127,12 @@ something was filed after the head the last review read. When two independent
 Chats filed that evidence about two different cases, Rust records one pending
 review. Chats are independent when each cites a Source the other never cited. A
 page's case is who its subject anchors (`about` on a subject or idea page) name.
-Only companies the World confirmed count: a case is the World nodes of the
-page's subject anchors, plus the company keys of each node's current World
-names and aliases (`entity_name_keys`: accents, apostrophes and punctuation
+The World improves identity and never gates liveness: a page whose anchors the
+World resolved counts as those nodes, and a page whose subject it has not
+resolved counts once the World is through with the Sources the page cites,
+however that processing ended. A case is the World nodes of the page's subject
+anchors, plus the company keys of each node's current World names and aliases
+(`entity_name_keys`: accents, apostrophes and punctuation
 except `&` dropped, NFKC and casefold, a leading `The` and legal forms such as
 `Inc.`, `Co., Ltd.`, `& Co.`, `L.L.C.`, `S.A.`, `S.A.B. de C.V.`, `ASA`,
 `(주)`, `(유)`, `주식회사` or `株式会社` stripped while a name remains; each
@@ -158,36 +161,52 @@ sections are not evidence, are not shown to a review, and are consumed like any
 other row.
 
 A page whose subject the World has not confirmed is read against the Sources
-its current sections cite, for that read only. Its company is the one node
-that is an endpoint of an active claim whose evidence is one of the cited
-spans, of a company kind (the core Organization kind or an extension type of
-the company category), whose name or alias has the anchor name's primary key
-(the outer name without legal forms), when no other node on any span of the
-cited Sources has that primary key; and only once the current revision's
-dependencies name every Source the page cites, so a report the World has not
-read through cannot split a duplicate it would have revealed. So a page filed
-under `Halvorsen Cellworks` that cites the report extraction canonicalized as
-`Halvorsen Cellworks ASA` counts as that node, with the node's keys and the
-name's own, while a claim on another passage of the report, a counterparty, a
-Product, a withdrawn claim, or a second `Hana` on the report confirm nothing.
-The anchor stays pending in storage either way. A pending page that nothing
-confirms is not evidence, but its rows are not consumed: a review that reaches
-inference advances its watermark past them and stores their ids as `held` in
-its snapshot, carried forward and rebuilt on every read, so the publication
-that confirms the company still finds them, however many reviews ran meanwhile.
+its current sections cite, for that read only, once the World is through with
+every one of them. A Source is processed when the World job table
+(`knowledge_graph_outbox`) holds no queued, running or paused job for it and a
+job for its current revision has a final status: completed, or failed,
+cancelled, quarantined or reconciled, since a World that gave up on a Source
+cannot reveal more from it. The revision's dependency list is not the ledger: a
+Source read without yielding a claim leaves that list on the next publication.
+A Source with no job, or none for its latest revision, holds the page. The page
+is then a case with every company the World claims on the spans it cites (every
+endpoint of an active claim whose evidence is one of those spans, of the core
+Organization kind or an extension type of the company category) and with the
+keys of each name it was filed under. So a page filed under `Halvorsen
+Cellworks` that cites the report extraction canonicalized as `Halvorsen
+Cellworks ASA` is one case with that node, and a `Hana` page citing a loan
+passage whose claim joins `Hana Financial Group` and `Hana Co.` is one case
+with both, never independent of either: a short name cannot pick the
+counterparty on its own span. A name the World never extracted, because the
+extraction failed or found nothing, still counts under its own key, so two
+Chats about `Halvorsen Cellworks` and `Ferroluz Componentes` learn with no
+World output at all, while `Kestrel Foundry` and `Kestrel Foundry Inc.` stay
+one case. A claim on another passage of the report, a Product, or a withdrawn
+claim name no company for the page.
+The anchor stays pending in storage either way. A pending page citing a Source
+the World is not through with is not evidence, but its rows are not consumed: a
+review that reaches inference advances its watermark past them and stores their
+ids as `held` in its snapshot, carried forward and rebuilt on every read, so the
+job or publication that frees them still finds them, however many reviews ran
+meanwhile.
 `held` also keeps confirmed rows below the watermark that did not fit the
 input, and the watermark never moves below the one already consumed, so a
 row leaves `held` only when shown or no longer current; rows above the
 watermark that a review showed are stored as `shown`, and the latest started
-review's snapshot is the one read. A name the World never confirms never
-counts. So one Chat, one Source, one company however many subject and idea
-pages it has, an unanchored or unconfirmed page, or a Chat repeating another's
-Sources never starts one. A World publication that resolves pending subject
+review's snapshot is the one read. A name on a Source the World never
+reads never counts. So one Chat, one Source, one company however many subject
+and idea pages it has, an unanchored page, a page citing an unread Source, or a
+Chat repeating another's Sources never starts one. A World publication that resolves pending subject
 anchors, that changes the name or alias set of a node a confirmed subject
 anchor names, or that lands while any live page has a pending subject anchor,
 rechecks the evidence at once, without waiting for a new filing, under the
 same rate limits and active-review rule; a publication that spells every
-subject as before, with no pending page, does not. A review queued or running
+subject as before, with no pending page, does not. A Source job that reaches a
+final status rechecks too while any live page has a pending subject: after a
+failed or quarantined attempt, after the completed status is written behind a
+publication (the seal rechecked while the job still ran, so its own Source was
+not yet processed), and at startup once interrupted jobs are given their
+final status. A review queued or running
 at that moment rechecks when it settles: its row stored how many subject
 anchors the World had confirmed when it was queued, its claim snapshot how
 many at the claim, and a larger count then means a publication landed
