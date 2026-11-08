@@ -1,10 +1,11 @@
 //! The OS sandbox native Bash runs in (`docs/runtime/permissions.md`): writes
 //! confined to the Loupist folder and this run's scratch, the app's data, the
-//! Loupist's `.loupist` data and home credential locations hidden, and the
-//! network off after third-party text. Rust builds the argv prefix the
-//! extension puts before the shell: bubblewrap on Linux, `sandbox-exec` with
-//! a generated profile on macOS. A startup probe runs the sandbox against a
-//! temporary folder once per app run, and only a passing probe enables it.
+//! Loupist's `.loupist` data, home credential locations and the host's
+//! runtime sockets hidden, and the network off after third-party text. Rust
+//! builds the argv prefix the extension puts before the shell: bubblewrap on
+//! Linux. Other hosts have no sandbox, so a reply that read third-party text
+//! refuses Bash there. A startup probe runs the sandbox against a private
+//! folder once per app run, and only a passing probe enables it.
 #![cfg_attr(not(unix), allow(dead_code))]
 
 use std::{
@@ -14,7 +15,7 @@ use std::{
     time::Duration,
 };
 
-use super::native_policy::{NativeRoots, Reach, SandboxCommand};
+use super::native_policy::{NativeRoots, SandboxCommand};
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_PROBE_OUTPUT_BYTES: usize = 64 * 1024;
@@ -23,8 +24,6 @@ const MAX_PROBE_OUTPUT_BYTES: usize = 64 * 1024;
 pub enum Sandbox {
     /// Linux bubblewrap at this path.
     Bubblewrap(PathBuf),
-    /// macOS `/usr/bin/sandbox-exec` with a generated profile.
-    SandboxExec,
 }
 
 static VERIFIED: OnceLock<Option<Sandbox>> = OnceLock::new();
@@ -63,40 +62,27 @@ fn detect_and_probe() -> Option<Sandbox> {
     }
 }
 
-/// The sandbox this host offers, before it is verified.
+/// The sandbox this host offers, before it is verified: bubblewrap on Linux,
+/// nothing elsewhere.
 pub fn detect() -> Option<Sandbox> {
-    if cfg!(target_os = "linux") {
-        let path = std::env::var_os("PATH")?;
-        std::env::split_paths(&path)
-            .chain([PathBuf::from("/usr/bin"), PathBuf::from("/usr/local/bin")])
-            .map(|folder| folder.join("bwrap"))
-            .find(|candidate| candidate.is_file())
-            .map(Sandbox::Bubblewrap)
-    } else if cfg!(target_os = "macos") {
-        Path::new("/usr/bin/sandbox-exec")
-            .is_file()
-            .then_some(Sandbox::SandboxExec)
-    } else {
-        None
+    if !cfg!(target_os = "linux") {
+        return None;
     }
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .chain([PathBuf::from("/usr/bin"), PathBuf::from("/usr/local/bin")])
+        .map(|folder| folder.join("bwrap"))
+        .find(|candidate| candidate.is_file())
+        .map(Sandbox::Bubblewrap)
 }
 
 impl Sandbox {
     /// The prefix and environment for one command in this turn's folders.
     pub fn command(&self, roots: &NativeRoots, network: bool) -> SandboxCommand {
         let _ = std::fs::create_dir_all(roots.scratch.join("cache"));
-        let argv = match self {
-            Self::Bubblewrap(path) => {
-                let mut argv = vec![path.to_string_lossy().into_owned()];
-                argv.extend(bwrap_arguments(roots, network));
-                argv
-            }
-            Self::SandboxExec => vec![
-                "/usr/bin/sandbox-exec".into(),
-                "-p".into(),
-                profile(roots, network),
-            ],
-        };
+        let Self::Bubblewrap(path) = self;
+        let mut argv = vec![path.to_string_lossy().into_owned()];
+        argv.extend(bwrap_arguments(roots, network));
         SandboxCommand {
             argv,
             env: cache_environment(&roots.scratch),
@@ -138,16 +124,46 @@ fn readable_again(roots: &NativeRoots) -> Vec<PathBuf> {
     paths
 }
 
+/// The host's runtime socket folders: `/run` (D-Bus, `XDG_RUNTIME_DIR`
+/// with the session bus, ssh-agent, gpg-agent, PulseAudio and Wayland
+/// sockets, `docker.sock`) and `/var/run` when it is a folder of its own.
+fn runtime_folders() -> Vec<PathBuf> {
+    let mut folders = vec![PathBuf::from("/run")];
+    let var_run = Path::new("/var/run");
+    if var_run.is_dir()
+        && !var_run
+            .symlink_metadata()
+            .is_ok_and(|metadata| metadata.file_type().is_symlink())
+    {
+        folders.push(var_run.to_path_buf());
+    }
+    folders
+}
+
+/// The file `/etc/resolv.conf` resolves to when it lives under a hidden
+/// runtime folder (systemd-resolved, NetworkManager, resolvconf), bound back
+/// read-only so name resolution keeps working online.
+fn resolver_file(runtime: &[PathBuf]) -> Option<PathBuf> {
+    let target = std::fs::canonicalize("/etc/resolv.conf").ok()?;
+    runtime
+        .iter()
+        .any(|folder| target.starts_with(folder))
+        .then_some(target)
+}
+
 /// Bubblewrap: the host read-only, the workspace and scratch writable, hidden
 /// paths masked (a tmpfs over a folder, `/dev/null` over a file), and the
 /// readable parts of hidden folders bound back read-only. Later binds win, so
 /// scratch is bound after the app data root is masked. Each masking tmpfs is
 /// remounted read-only last, once its children are mounted, so a write into
 /// a hidden folder fails instead of landing in a tmpfs the command believes
-/// is the folder. The command runs in its own pid namespace with bubblewrap
-/// as its init: `--new-session` moves the command out of the process group
-/// Pi kills on abort, and killing the init kills everything in the namespace,
-/// where `--die-with-parent` alone would spare the command's descendants.
+/// is the folder. The workspace's `.git` is bound onto itself first: a mount
+/// point cannot be renamed or removed, so the read-only `config` and `hooks`
+/// inside it cannot be swapped for writable copies. The command runs in its
+/// own pid namespace with bubblewrap as its init: `--new-session` moves the
+/// command out of the process group Pi kills on abort, and killing the init
+/// kills everything in the namespace, where `--die-with-parent` alone would
+/// spare the command's descendants.
 fn bwrap_arguments(roots: &NativeRoots, network: bool) -> Vec<String> {
     let text = |path: &Path| path.to_string_lossy().into_owned();
     let mut arguments: Vec<String> = ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]
@@ -155,11 +171,24 @@ fn bwrap_arguments(roots: &NativeRoots, network: bool) -> Vec<String> {
         .map(str::to_owned)
         .collect();
     arguments.extend(["--tmpfs".into(), "/tmp".into()]);
+    let runtime = runtime_folders();
+    for folder in &runtime {
+        arguments.extend(["--tmpfs".into(), text(folder)]);
+    }
+    if let Some(resolver) = resolver_file(&runtime) {
+        arguments.extend(["--ro-bind".into(), text(&resolver), text(&resolver)]);
+    }
     arguments.extend([
         "--bind".into(),
         text(&roots.workspace),
         text(&roots.workspace),
     ]);
+    let git_dir = roots.workspace.join(".git");
+    if git_dir.is_dir() {
+        arguments.extend(["--bind".into(), text(&git_dir), text(&git_dir)]);
+    } else if git_dir.is_file() {
+        arguments.extend(["--ro-bind".into(), text(&git_dir), text(&git_dir)]);
+    }
     let mut masked_folders = Vec::new();
     for path in hidden(roots) {
         if path.is_dir() {
@@ -196,72 +225,6 @@ fn bwrap_arguments(roots: &NativeRoots, network: bool) -> Vec<String> {
     arguments
 }
 
-/// The macOS seatbelt profile. Every rule is a deny with its own exclusions
-/// (`require-all` / `require-not`), so no allow and deny ever match the same
-/// operation and path and nothing depends on rule precedence; `allow default`
-/// covers the rest.
-pub fn profile(roots: &NativeRoots, network: bool) -> String {
-    let subpath = |path: &Path| format!("(subpath {})", sbpl_string(path));
-    let literal = |path: &Path| format!("(literal {})", sbpl_string(path));
-    let mut rules = vec!["(version 1)".to_owned(), "(allow default)".to_owned()];
-    rules.push(format!(
-        "(deny file-write* (require-not (require-any {} {} (literal \"/dev/null\") (literal \"/dev/stdout\") (literal \"/dev/stderr\") (literal \"/dev/dtracehelper\") (literal \"/dev/autofs_nowait\") (regex #\"^/dev/tty\") (regex #\"^/dev/fd/\"))))",
-        subpath(&roots.workspace),
-        subpath(&roots.scratch)
-    ));
-    let [git_config, git_hooks] = roots.workspace_git_config();
-    rules.push(format!(
-        "(deny file-write* {} {} {})",
-        subpath(&roots.loupist_data),
-        subpath(&git_hooks),
-        literal(&git_config)
-    ));
-    let [skills, agents, config] = roots.loupist_data_instructions();
-    rules.push(format!(
-        "(deny file-read* (require-all {} (require-not (require-any {} {} {} {}))))",
-        subpath(&roots.loupist_data),
-        subpath(&skills),
-        literal(&agents),
-        literal(&config),
-        subpath(&roots.attachments)
-    ));
-    let [global_skills, global_agents] = roots.global_instructions();
-    rules.push(format!(
-        "(deny file-read* (require-all {} (require-not (require-any {} {} {}))))",
-        subpath(&roots.app_data),
-        subpath(&roots.scratch),
-        subpath(&global_skills),
-        literal(&global_agents)
-    ));
-    let credentials: Vec<String> = roots
-        .credential_paths()
-        .iter()
-        .map(|(path, reach)| match reach {
-            Reach::Tree => subpath(path),
-            Reach::File => literal(path),
-        })
-        .collect();
-    if !credentials.is_empty() {
-        rules.push(format!("(deny file-read* {})", credentials.join(" ")));
-    }
-    if !network {
-        rules.push("(deny network*)".to_owned());
-    }
-    rules.join("\n")
-}
-
-fn sbpl_string(path: &Path) -> String {
-    let mut text = String::from("\"");
-    for character in path.to_string_lossy().chars() {
-        if character == '"' || character == '\\' {
-            text.push('\\');
-        }
-        text.push(character);
-    }
-    text.push('"');
-    text
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum ProbeError {
     Setup,
@@ -274,14 +237,14 @@ pub enum ProbeError {
 const PROBE_END: &str = "__LOUPIST_SANDBOX_PROBE_END__";
 const PROBE_STDERR_BYTES: usize = 2048;
 
-/// Runs the sandbox against a temporary folder laid out like a turn's roots:
-/// a write inside the folder and scratch succeeds, a write outside, into
-/// the data folder or into a git hook fails, hidden files read as absent or
+/// Runs the sandbox against a private folder laid out like a turn's roots: a
+/// write inside the folder and scratch succeeds, a write outside, into the
+/// data folder or into a git hook fails, hidden files read as absent or
 /// empty, instruction files and attachments still read, and offline mode
 /// cannot connect to a listener the probe opened while online mode can.
 #[cfg(unix)]
 pub fn probe(sandbox: &Sandbox) -> Result<(), ProbeError> {
-    let temporary = tempfile::tempdir().map_err(|_| ProbeError::Setup)?;
+    let temporary = probe_folder().map_err(|_| ProbeError::Setup)?;
     let layout = ProbeLayout::create(temporary.path()).map_err(|_| ProbeError::Setup)?;
     let listener = std::net::TcpListener::bind("127.0.0.1:0").map_err(|_| ProbeError::Setup)?;
     listener
@@ -311,6 +274,28 @@ pub fn probe(sandbox: &Sandbox) -> Result<(), ProbeError> {
         let _ = std::fs::remove_file(&layout.inside);
     }
     Ok(())
+}
+
+/// A private folder for the probe's layout under the user's cache folder.
+/// The sandbox replaces `/tmp` with an empty tmpfs, so a layout there would
+/// read as absent whether or not the masks work; the cache folder is on the
+/// host's own tree, where only a mask can hide a file.
+#[cfg(unix)]
+fn probe_folder() -> std::io::Result<tempfile::TempDir> {
+    let cache = std::env::var_os("XDG_CACHE_HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .filter(|value| !value.is_empty())
+                .map(|home| PathBuf::from(home).join(".cache"))
+        })
+        .ok_or_else(|| std::io::Error::other("no cache folder"))?;
+    let parent = cache.join("loupist");
+    std::fs::create_dir_all(&parent)?;
+    tempfile::Builder::new()
+        .prefix("sandbox-probe-")
+        .tempdir_in(parent)
 }
 
 /// What each probe line must say. Online, only the connection differs.
@@ -354,6 +339,7 @@ impl ProbeLayout {
             (home.join(".netrc"), "netrcsecret"),
             (home.join(".ssh/id"), "sshsecret"),
             (workspace.join(".git/hooks/pre-commit"), "hookok"),
+            (workspace.join(".git/config"), "[core]"),
         ] {
             std::fs::create_dir_all(file.parent().expect("file has a parent"))?;
             std::fs::write(file, content)?;
@@ -531,49 +517,6 @@ mod tests {
     }
 
     #[test]
-    fn the_profile_denies_by_exclusion_and_goes_offline_after_third_party_text() {
-        let temporary = tempfile::tempdir().unwrap();
-        let home = temporary.path().canonicalize().unwrap();
-        let roots = roots(&home);
-        let online = profile(&roots, true);
-        let offline = profile(&roots, false);
-        let ws = home.join("Research").display().to_string();
-        let scratch = roots.scratch.display().to_string();
-        assert!(online.starts_with("(version 1)\n(allow default)\n"));
-        assert!(online.contains(&format!(
-            "(deny file-write* (require-not (require-any (subpath \"{ws}\") (subpath \"{scratch}\")"
-        )));
-        assert!(online.contains(&format!(
-            "(deny file-write* (subpath \"{ws}/.loupist\") (subpath \"{ws}/.git/hooks\") (literal \"{ws}/.git/config\"))"
-        )));
-        assert!(online.contains(&format!(
-            "(deny file-read* (require-all (subpath \"{ws}/.loupist\") (require-not (require-any (subpath \"{ws}/.loupist/skills\") (literal \"{ws}/.loupist/AGENTS.md\") (literal \"{ws}/.loupist/config.toml\") (subpath \"{ws}/.loupist/attachments/chat\"))))"
-        )));
-        assert!(online.contains(&format!(
-            "(deny file-read* (require-all (subpath \"{}\") (require-not (require-any (subpath \"{scratch}\") (subpath \"{}/skills\") (literal \"{}/AGENTS.md\"))))",
-            roots.app_data.display(),
-            roots.app_data.display(),
-            roots.app_data.display()
-        )));
-        assert!(online.contains(&format!(
-            "(deny file-read* (subpath \"{}/.ssh\") (subpath \"{}/.gnupg\")",
-            home.display(),
-            home.display()
-        )));
-        assert!(online.contains(&format!("(literal \"{}/.netrc\")", home.display())));
-        // Node and Python open the DTrace helper at startup; denying it breaks them.
-        assert!(online.contains("(literal \"/dev/dtracehelper\") (literal \"/dev/autofs_nowait\")"));
-        // No rule allows anything but the default, so none can shadow a deny.
-        assert_eq!(online.matches("(allow ").count(), 1);
-        assert!(!online.contains("(deny network*)"));
-        assert!(offline.ends_with("(deny network*)"));
-        assert_eq!(
-            sbpl_string(Path::new("/Users/me/Re\"search\\x")),
-            "\"/Users/me/Re\\\"search\\\\x\""
-        );
-    }
-
-    #[test]
     fn bubblewrap_masks_before_it_binds_scratch_back_and_unshares_the_network_offline() {
         let temporary = tempfile::tempdir().unwrap();
         let home = temporary.path().canonicalize().unwrap();
@@ -598,8 +541,19 @@ mod tests {
         };
         let app = roots.app_data.display().to_string();
         let ws = roots.workspace.display().to_string();
+        assert!(argv.starts_with(
+            "/usr/bin/bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --tmpfs /run"
+        ));
+        // The host's runtime sockets are gone; name resolution survives when
+        // the resolver file lives there.
+        if let Some(resolver) = resolver_file(&runtime_folders()) {
+            let resolver = resolver.display().to_string();
+            assert!(at("--tmpfs /run") < at(&format!("--ro-bind {resolver} {resolver}")));
+        }
+        assert!(at(&format!("--bind {ws} {ws}")) < at(&format!("--bind {ws}/.git {ws}/.git")));
         assert!(
-            argv.starts_with("/usr/bin/bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp")
+            at(&format!("--bind {ws}/.git {ws}/.git"))
+                < at(&format!("--ro-bind {ws}/.git/config {ws}/.git/config"))
         );
         assert!(at(&format!("--bind {ws} {ws}")) < at(&format!("--tmpfs {ws}/.loupist")));
         assert!(
@@ -611,7 +565,6 @@ mod tests {
         at(&format!("--ro-bind {0} {0}", roots.attachments.display()));
         at(&format!("--tmpfs {}/.ssh", home.display()));
         at(&format!("--ro-bind /dev/null {}/.netrc", home.display()));
-        at(&format!("--ro-bind {ws}/.git/config {ws}/.git/config"));
         at(&format!("--ro-bind {ws}/.git/hooks {ws}/.git/hooks"));
         assert!(
             at(&format!("--bind {0} {0}", roots.scratch.display()))
@@ -631,6 +584,16 @@ mod tests {
             Some(roots.scratch.join("cache").to_str().unwrap())
         );
         assert!(roots.scratch.join("cache").is_dir());
+
+        // A worktree's `.git` is a file naming the real git directory; it is
+        // bound read-only so the pointer cannot be redirected.
+        std::fs::remove_dir_all(roots.workspace.join(".git")).unwrap();
+        std::fs::write(roots.workspace.join(".git"), "gitdir: ../main/.git").unwrap();
+        let argv = sandbox.command(&roots, false).argv.join(" ");
+        assert!(
+            argv.contains(&format!("--ro-bind {ws}/.git {ws}/.git")),
+            "{argv}"
+        );
     }
 
     /// The real sandbox on this host: everything the probe requires, both
@@ -643,6 +606,70 @@ mod tests {
             return;
         };
         assert_eq!(probe(&sandbox), Ok(()));
+    }
+
+    /// Inside the real sandbox the workspace's `.git` cannot be renamed or
+    /// replaced, the host's runtime sockets are gone, and name resolution
+    /// still works online when the host can resolve.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn bubblewrap_pins_the_git_directory_and_hides_runtime_sockets() {
+        let Some(sandbox) = detect() else {
+            eprintln!("skipping: bubblewrap (bwrap) is not installed on this host");
+            return;
+        };
+        let temporary = probe_folder().unwrap();
+        let layout = ProbeLayout::create(temporary.path()).unwrap();
+        let ws = layout.roots.workspace.display().to_string();
+        // An entry of the host's `/run` that is not on the way to the
+        // resolver file, which is bound back.
+        let resolver = resolver_file(&runtime_folders());
+        let host_run_entry = std::fs::read_dir("/run").ok().and_then(|entries| {
+            entries.flatten().map(|entry| entry.path()).find(|path| {
+                resolver
+                    .as_deref()
+                    .is_none_or(|resolver| !resolver.starts_with(path))
+            })
+        });
+        let script = format!(
+            "mv '{ws}/.git' '{ws}/.git-old' 2>/dev/null && echo rename=ok || echo rename=fail\n\
+             rmdir '{ws}/.git' 2>/dev/null && echo rmdir=ok || echo rmdir=fail\n\
+             (: > '{ws}/.git/config') 2>/dev/null && echo config=ok || echo config=fail\n\
+             [ -e '{entry}' ] && echo run_entry=visible || echo run_entry=hidden\n\
+             [ -e /run/user ] && echo run_user=visible || echo run_user=hidden\n\
+             getent hosts localhost >/dev/null 2>&1 && echo localhost=ok || echo localhost=fail\n\
+             echo {end}\n",
+            entry = host_run_entry
+                .as_deref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "/run/nothing".into()),
+            end = PROBE_END
+        );
+        let output = run_probe(&sandbox, &layout.roots, true, &script).unwrap();
+        let lines: Vec<&str> = output.lines().collect();
+        assert!(lines.contains(&"rename=fail"), "{output}");
+        assert!(lines.contains(&"rmdir=fail"), "{output}");
+        assert!(lines.contains(&"config=fail"), "{output}");
+        assert!(lines.contains(&"run_entry=hidden"), "{output}");
+        assert!(lines.contains(&"run_user=hidden"), "{output}");
+        assert!(lines.contains(&"localhost=ok"), "{output}");
+        assert!(layout
+            .roots
+            .workspace
+            .join(".git/hooks/pre-commit")
+            .is_file());
+        if std::process::Command::new("getent")
+            .args(["hosts", "example.com"])
+            .output()
+            .is_ok_and(|output| output.status.success())
+        {
+            let script = format!(
+                "getent hosts example.com >/dev/null 2>&1 && echo dns=ok || echo dns=fail\n\
+                 echo {PROBE_END}\n"
+            );
+            let output = run_probe(&sandbox, &layout.roots, true, &script).unwrap();
+            assert!(output.contains("dns=ok"), "{output}");
+        }
     }
 
     /// A sandbox that cannot start never runs the script; the probe says so
@@ -661,6 +688,47 @@ mod tests {
                 .is_some_and(|line| line.starts_with("stderr=/bin/sh")),
             "{lines:?}"
         );
+    }
+
+    /// A real bubblewrap that lost the masks outside the workspace (no app
+    /// data tmpfs, no credential masks) fails the probe on those reads: the
+    /// layout lives on the host's tree, not under the `/tmp` the sandbox
+    /// replaces, so only a mask can make a secret read as absent.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_sandbox_without_the_credential_and_app_data_masks_fails_the_probe() {
+        let Some(Sandbox::Bubblewrap(bwrap)) = detect() else {
+            eprintln!("skipping: bubblewrap (bwrap) is not installed on this host");
+            return;
+        };
+        let temporary = tempfile::tempdir().unwrap();
+        let wrapper = temporary.path().join("bwrap-without-masks");
+        std::fs::write(
+            &wrapper,
+            format!(
+                "#!/bin/bash\n\
+                 out=()\n\
+                 while [ $# -gt 0 ]; do\n\
+                 \tcase \"$1\" in\n\
+                 \t\t--tmpfs|--remount-ro) case \"$2\" in /tmp|/run|/var/run|*/ws/*) ;; *) shift 2; continue ;; esac ;;\n\
+                 \t\t--ro-bind) if [ \"$2\" = /dev/null ]; then shift 3; continue; fi ;;\n\
+                 \tesac\n\
+                 \tout+=(\"$1\"); shift\n\
+                 done\n\
+                 exec '{}' \"${{out[@]}}\"\n",
+                bwrap.display()
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let error = probe(&Sandbox::Bubblewrap(wrapper)).unwrap_err();
+        let ProbeError::Failed(lines) = error else {
+            panic!("expected a failed probe, got {error:?}");
+        };
+        for check in ["read_app=ok", "read_netrc=ok", "read_ssh=ok"] {
+            assert!(lines.iter().any(|line| line == check), "{check}: {lines:?}");
+        }
     }
 
     /// Each probe check fails on its own when the sandbox is missing, so a

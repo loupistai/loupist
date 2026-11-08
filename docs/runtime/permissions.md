@@ -90,55 +90,67 @@ sandbox. The extension runs the command through Pi's `BashOperations` as
 `argv…, <shell>, -c, <command>`, each its own argument, with `env` added to the
 allowlisted environment; a malformed `sandbox` throws instead of running the
 command. Without `sandbox` in the answer (a clean reply on a host with none) the
-command runs as before. Rust builds the prefix from the turn's roots:
+command runs as before. Rust builds the prefix from the turn's roots. Linux
+(bubblewrap) is the only sandbox; see [Probe and fallback](#probe-and-fallback)
+for every other host.
 
-| Rule | Linux (bubblewrap) | macOS (`/usr/bin/sandbox-exec -p`) |
-| --- | --- | --- |
-| Writes | Workspace and scratch bound read-write over a read-only `/`; a private tmpfs `/tmp`. | `(deny file-write*)` except the workspace, scratch and `/dev/null`, `/dev/stdout`, `/dev/stderr`, `/dev/dtracehelper`, `/dev/autofs_nowait`, `/dev/tty*`, `/dev/fd/*`. |
-| `<workspace>/.loupist`, app data root | A tmpfs over each, remounted read-only last; `.loupist/skills`, `.loupist/AGENTS.md`, `.loupist/config.toml`, the global `skills` and `AGENTS.md`, this Chat's attachments and scratch bound back (attachments and instruction files read-only). | `(deny file-read*)` and `(deny file-write*)` on each with `require-not` exclusions for the same paths. |
-| Workspace `.git/config`, `.git/hooks` | Bound read-only over themselves. | `(deny file-write*)`. |
-| Credentials | Each existing `CREDENTIAL_HOME` entry: a folder gets a read-only tmpfs, a file `/dev/null`. | `(deny file-read*)` on each entry. |
-| Network | `--unshare-net` after third-party text. | `(deny network*)` after third-party text. |
-| Processes | `--unshare-pid --die-with-parent --new-session`: bubblewrap is the init of a pid namespace, so Pi's group kill on abort or timeout ends every sandboxed process. | The host's process rules; Pi kills the process group. |
-| Caches | `XDG_CACHE_HOME`, `PIP_CACHE_DIR`, `UV_CACHE_DIR`, `npm_config_cache`, `MPLCONFIGDIR` point under `<scratch>/cache`. | Same. |
-
-The macOS profile is `(allow default)` followed only by deny rules, each with
-its own exclusions, so no allow and deny ever match the same operation and path
-and nothing rests on rule precedence.
+| Rule | Linux (bubblewrap) |
+| --- | --- |
+| Writes | Workspace and scratch bound read-write over a read-only `/`; a private tmpfs `/tmp`. |
+| Runtime sockets | A tmpfs over `/run` (and `/var/run` when it is a folder of its own), so `XDG_RUNTIME_DIR` sockets (D-Bus session bus, ssh-agent, gpg-agent, PulseAudio, Wayland), `/run/dbus/system_bus_socket` and `docker.sock` are gone. When `/etc/resolv.conf` resolves into `/run`, that file is bound back read-only so names still resolve online. |
+| `<workspace>/.loupist`, app data root | A tmpfs over each, remounted read-only last; `.loupist/skills`, `.loupist/AGENTS.md`, `.loupist/config.toml`, the global `skills` and `AGENTS.md`, this Chat's attachments and scratch bound back (attachments and instruction files read-only). |
+| Workspace `.git` | A `.git` folder is bound onto itself, so it cannot be renamed or removed, and its `config` and `hooks` are bound read-only over themselves; a `.git` file (a worktree's gitdir pointer) is bound read-only. |
+| Credentials | Each existing `CREDENTIAL_HOME` entry: a folder gets a read-only tmpfs, a file `/dev/null`. |
+| Network | `--unshare-net` after third-party text. In a clean reply the command shares the host's network namespace, abstract Unix sockets included. |
+| Processes | `--unshare-pid --die-with-parent --new-session`: bubblewrap is the init of a pid namespace, so Pi's group kill on abort or timeout ends every sandboxed process, and a background process the command leaves behind ends with the command. |
+| Caches | `XDG_CACHE_HOME`, `PIP_CACHE_DIR`, `UV_CACHE_DIR`, `npm_config_cache`, `MPLCONFIGDIR` point under `<scratch>/cache`. |
 
 ### Probe and fallback
 
 At startup Rust probes the sandbox once per app run, prewarmed like the login
-PATH (`sandbox::prewarm`): it lays out a temporary folder like a turn's roots,
-opens a local listener, and runs `/bin/bash` under the sandbox twice. Offline, a
-write inside the folder and scratch must succeed; a write outside, into the
-data folder or into a git hook must fail; the app's `auth.json`, `~/.netrc`,
-`~/.ssh` and the database must read as absent or empty; a Skill, an attachment
-and a hook must still read; a connection to the listener must fail. Online the
-connection must succeed, which proves the offline check measured the network.
-Rust also checks the host folder afterwards. Only a passing probe enables the
-sandbox; a failed one logs the checks that failed and, when the sandbox never
-started, its own first error line; a turn that starts before the probe finishes waits for it off the async
+PATH (`sandbox::prewarm`): it lays out a private folder under the user's cache
+folder (`$XDG_CACHE_HOME` or `~/.cache`, under `loupist/`) like a turn's roots,
+opens a local listener, and runs `/bin/bash` under the sandbox twice. The
+layout is not under `/tmp`, which the sandbox replaces with an empty tmpfs: a
+secret there would read as absent with or without the masks, so a sandbox that
+lost them would still pass. Offline, a write inside the folder and scratch must
+succeed; a write outside, into the data folder or into a git hook must fail;
+the app's `auth.json`, `~/.netrc`, `~/.ssh` and the database must read as
+absent or empty; a Skill, an attachment and a hook must still read; a connection
+to the listener must fail. Online the connection must succeed, which proves the
+offline check measured the network. Rust also checks the host folder
+afterwards. Only a passing probe enables the sandbox; a failed one logs the
+checks that failed and, when the sandbox never started, its own first error
+line; a turn that starts before the probe finishes waits for it off the async
 workers, up to the probe's deadline.
 
-Without a verified sandbox (a failed probe, no `bwrap`, Windows): a clean reply
-runs Bash unconfined as before, and a reply that read third-party text refuses
-Bash with `untrusted_text_paused`. Bash never runs unconfined after third-party
-text.
+Without a verified sandbox (a failed probe, no `bwrap`, macOS, Windows): a
+clean reply runs Bash unconfined as before, and a reply that read third-party
+text refuses Bash with `untrusted_text_paused` and no card. Bash never runs
+unconfined after third-party text.
+
+macOS has no sandbox yet. A `sandbox-exec` profile that started from
+`(allow default)` was removed: it left LaunchServices, AppleEvents and XPC
+(`open -a Terminal`, `osascript`) able to start unconfined programs with the
+network, which would have made tainted Bash worse than this fallback on the
+release platform. The follow-up is a deny-default seatbelt profile verified on a
+Mac, with sandbox-runtime's macOS profile as the reference.
 
 ## Residual risk
 
-- The macOS profile is verified only by the startup probe until it is checked
-  on a Mac; the Linux sandbox has integration tests against real bubblewrap
-  (`sandbox.rs`, `workspace-tools.test.mjs`).
 - In a clean reply Bash has the network, so a command can send what it reads.
   The reply's own text is the model's; third-party text turns the network off.
+- In a clean reply the sandbox shares the host's network namespace, so services
+  on abstract Unix sockets (X11, some D-Bus setups) stay reachable; offline mode
+  removes them with the rest of the network.
 - Bash reads everything the user can read outside the masked set: the app data
-  root, `.loupist` data and the `CREDENTIAL_HOME` table are hidden, other home
-  files are not. `~/.gitconfig` stays readable so `git` keeps its identity.
-- Only the workspace root's `.git/config` and `.git/hooks` are read-only for
-  Bash; a nested repository's are writable like the rest of the workspace. File
-  tools refuse every git directory's hooks and config.
+  root, `.loupist` data, the `CREDENTIAL_HOME` table and `/run` are hidden,
+  other home files are not. `~/.gitconfig` stays readable so `git` keeps its
+  identity.
+- Only the workspace root's `.git` is pinned and read-only for Bash; a nested
+  repository's `.git`, or a `.git` Bash creates in a subfolder, is writable
+  like the rest of the workspace, and the host's `git` would run its hooks
+  there. File tools refuse every git directory inside the workspace.
 - A Loupist folder that contains the home folder exposes its non-credential
   files to every tool and its credential locations to `find` and `grep`.
 - Masks apply to the folders that exist when the command starts; the file tools
@@ -146,8 +158,12 @@ text.
 - `models.json` and `connections.json` are AppPrivate for native file tools and
   hidden from Bash; a clean reply's unconfined command on a host without a
   sandbox can still write them.
-- Bash output never raises the untrusted-text tier, and a background command can
-  outlive the turn, inside the sandbox.
+- Bash output never raises the untrusted-text tier.
+- A workspace `grep` can print text from `.loupist` files Rust itself would
+  refuse to read, such as the activity log; `rg` prints no binary database
+  pages.
 - Pi's `read` falls back to curly-quote, NFD and U+202F spellings of a missing
   path, so the file it opens can differ from the one Rust classified. Rust
   classifies the path the extension sends, not the fallback.
+- The next reply starts clean: the user's new message is the checkpoint, and
+  nothing this reply read carries its exposure forward.

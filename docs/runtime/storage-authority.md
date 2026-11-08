@@ -14,8 +14,8 @@ Native tools run as the user and can use installed runtimes. Rust decides every
 native call before it runs and never asks: file tools reach the Loupist folder, this
 run's scratch and this Chat's attachments, and refuse the app's private data
 (credentials, the database, Pi runtime files), home credential locations and
-everything outside the folder; Bash runs inside an OS sandbox (bubblewrap on Linux,
-`sandbox-exec` on macOS) that confines writes to the folder and scratch, hides the
+everything outside the folder; Bash runs inside an OS sandbox (bubblewrap on Linux;
+no other host has one yet) that confines writes to the folder and scratch, hides the
 same private data, and drops the network once the reply has read third-party text
 ([Native tool permissions](permissions.md)). Bash receives an allowlisted environment
 without app credentials or shell startup hooks; its PATH is described under
