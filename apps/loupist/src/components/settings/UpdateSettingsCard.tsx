@@ -39,6 +39,11 @@ export function UpdateSettingsCard({
 }: Props) {
   useTranslation("settings");
   const offer = updateState?.supported === true ? updateState.offer : null;
+  const upToDate =
+    updateState?.supported === true &&
+    !offer &&
+    updateState?.last_checked_at_ms != null &&
+    !error;
   const busy = phase !== "idle";
   const status =
     phase === "checking"
@@ -82,7 +87,7 @@ export function UpdateSettingsCard({
               <p>{i18n.t("settings:updateSettingsCard.thisDevelopmentBuildDoesNotInstallUpdatesAutomatically")}</p>
             </div>
           </div>
-        ) : updateState && !offer ? (
+        ) : upToDate ? (
           <div className="update-summary">
             <CheckCircle2Icon aria-hidden="true" />
             <div>
