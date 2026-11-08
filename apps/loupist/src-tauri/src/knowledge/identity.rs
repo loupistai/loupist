@@ -5,7 +5,7 @@ use serde_json::Value;
 use unicode_normalization::UnicodeNormalization;
 
 use super::assets::class::exchange_time_zone;
-use super::{ClaimStatus, GraphNode, WorldSnapshotBody};
+use super::{GraphNode, WorldSnapshotBody};
 use crate::store::user_context::MapContextItem;
 
 #[derive(Clone, Copy)]
@@ -280,8 +280,9 @@ pub(crate) fn primary_key(name: &str) -> Option<String> {
 /// contained in, the words of one of the page's. A "Hana" page may be about
 /// `Hana Financial Group` or `Hana Co.`, a "Halvorsen Cellworks" page about
 /// `Halvorsen Cellworks ASA`, and neither about `Loupist`, `KPMG` or `Nordic
-/// Auto`, however many of the page's Sources name them. A key's words are
-/// what [`entity_name_keys`] left between its spaces.
+/// Auto`, however many of the page's Sources name them and wherever the
+/// World holds them. A key's words are what [`entity_name_keys`] left between
+/// its spaces.
 pub(crate) fn may_name(keys: &BTreeSet<String>, subject_keys: &BTreeSet<String>) -> bool {
     fn words(key: &str) -> BTreeSet<&str> {
         key.split(' ').collect()
@@ -351,13 +352,11 @@ fn keyed(name: &str) -> Keyed {
 }
 
 /// One World revision's identity index: each node's spellings and kind, the
-/// nodes each Source span confirms, the company keys of a node computed the
-/// first time learning asks about it and kept for the filings after, and the
-/// components of nodes whose keys meet, computed once for the revision.
+/// company keys of a node computed the first time learning asks about it and
+/// kept for the filings after, and the components of nodes whose keys meet,
+/// computed once for the revision.
 pub(crate) struct WorldIdentity {
     nodes: BTreeMap<String, IdentityNode>,
-    /// The endpoints of the active claims whose evidence cites each span.
-    confirmed_by_span: BTreeMap<String, BTreeSet<String>>,
     keys: BTreeMap<String, BTreeSet<String>>,
     /// The nodes carrying each key, computed once for the revision.
     by_key: Option<BTreeMap<String, BTreeSet<String>>>,
@@ -377,19 +376,6 @@ thread_local! {
 
 impl WorldIdentity {
     pub(crate) fn new(world: &WorldSnapshotBody) -> Self {
-        let mut confirmed_by_span: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        for claim in world
-            .claims
-            .iter()
-            .filter(|claim| claim.status == ClaimStatus::Active)
-        {
-            for evidence in &claim.evidence {
-                confirmed_by_span
-                    .entry(evidence.span_id.clone())
-                    .or_default()
-                    .extend(claim.endpoints.iter().map(|e| e.node_id.clone()));
-            }
-        }
         Self {
             nodes: world
                 .nodes
@@ -406,7 +392,6 @@ impl WorldIdentity {
                     (node.id.clone(), node_identity)
                 })
                 .collect(),
-            confirmed_by_span,
             keys: BTreeMap::new(),
             by_key: None,
             components: None,
@@ -427,24 +412,31 @@ impl WorldIdentity {
         }))
     }
 
-    /// The companies the spans in `spans` name: every endpoint of an active
-    /// claim whose evidence is one of them, of a kind `company` accepts.
-    /// "Halvorsen Cellworks ASA", claimed from the report a "Halvorsen
-    /// Cellworks" page cites, and the counterparty of that claim, while a
-    /// Product, a withdrawn claim, or a claim on another span of the report
-    /// name none. Learning keeps the ones that may name the page's subject
-    /// ([`may_name`]).
-    pub(crate) fn companies_on(
-        &self,
-        spans: &BTreeSet<String>,
+    /// The companies that may be the subject a page filed under names with
+    /// `subject_keys` is about: every node of a kind `company` accepts, in
+    /// the whole World, whose name or alias keys may name the subject
+    /// ([`may_name`]), whichever Source the World met it in and whether or
+    /// not a claim names it. `Hana Financial Group` and `Hana Co.` for a
+    /// "Hana" page, `Halvorsen Cellworks ASA` for a "Halvorsen Cellworks"
+    /// page, while a Product spelled like the page, or the `Loupist` or
+    /// `KPMG` its reports name beside the company, are none.
+    pub(crate) fn companies_naming(
+        &mut self,
+        subject_keys: &BTreeSet<String>,
         company: impl Fn(&str) -> bool,
     ) -> BTreeSet<String> {
-        spans
+        // Keys the whole World once; the index is kept for the revision.
+        self.key_index();
+        self.nodes
             .iter()
-            .filter_map(|span| self.confirmed_by_span.get(span))
-            .flatten()
-            .filter(|id| self.nodes.get(*id).is_some_and(|node| company(&node.kind)))
-            .cloned()
+            .filter(|(id, node)| {
+                company(&node.kind)
+                    && self
+                        .keys
+                        .get(*id)
+                        .is_some_and(|keys| may_name(keys, subject_keys))
+            })
+            .map(|(id, _)| id.clone())
             .collect()
     }
 

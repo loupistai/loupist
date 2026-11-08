@@ -182,11 +182,11 @@ fn world_head(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<Option<
 
 /// Reads the current World through its identity index
 /// ([`super::identity::WorldIdentity`]): the company keys of a node's name and
-/// aliases, the component of nodes whose keys meet, and the companies the
-/// World claims on the spans a page cites. Method learning reads it to see
-/// when two nodes might spell one company and who a pending page is about. None when
-/// no World was published. The World is parsed once per revision, not on
-/// every filing.
+/// aliases, the component of nodes whose keys meet, and the companies whose
+/// names may name a pending page's subject. Method learning reads it to see
+/// when two nodes might spell one company and who a pending page is about.
+/// None when no World was published. The World is parsed once per revision,
+/// not on every filing.
 pub(super) fn world_identity<R>(
     tx: &Transaction<'_>,
     loupist_id: &str,

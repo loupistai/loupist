@@ -1857,7 +1857,7 @@ fn a_claim_on_the_cited_span_confirms_the_company_for_learning() {
 fn a_company_both_reports_name_beside_their_subjects_does_not_join_the_two_cases() {
     // Each report names its company and, in a disclaimer both carry, the
     // same auditor, and the World holds all three when it is through with
-    // the reports. Each pending page takes from its Source only the
+    // the reports. Each pending page takes from the World only the
     // companies that may be its subject, so the auditor joins neither and
     // the two Chats are two cases.
     for common in ["Loupist", "KPMG"] {

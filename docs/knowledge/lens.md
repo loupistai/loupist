@@ -127,10 +127,11 @@ something was filed after the head the last review read. When two independent
 Chats filed that evidence about two different cases, Rust records one pending
 review. Chats are independent when each cites a Source the other never cited. A
 page's case is who its subject anchors (`about` on a subject or idea page) name.
-The World improves identity and never gates liveness: a page whose anchors the
-World resolved counts as those nodes, and a page whose subject it has not
-resolved counts once the World is through with the Sources the page cites,
-however that processing ended. A case is the World nodes of the page's subject
+With World processing on, the World improves identity and never gates liveness:
+a page whose anchors the World resolved counts as those nodes, and a page whose
+subject it has not resolved counts once the World is through with the Sources
+the page cites, however that processing ended, so a failed, empty or slow
+extraction never gates liveness. A case is the World nodes of the page's subject
 anchors, plus the company keys of each node's current World names and aliases
 (`entity_name_keys`: accents, apostrophes and punctuation
 except `&` dropped, NFKC and casefold, a leading `The` and legal forms such as
@@ -173,33 +174,34 @@ paused is not read without the user's action, and the resume that lets it settle
 rechecks learning then. The revision's dependency list is not the ledger: a
 Source read without yielding a claim leaves that list on the next publication.
 A Source with no job, or none for its latest revision, holds the page. The page
-is then a case with every company the World claims on any span of a Source it
-cites (every endpoint of an active claim whose evidence is a span of that
-Source, of the core Organization kind or an extension type of the company
-category) whose name or alias may name the page's subject, with the keys of
-each name it was filed under, and with every World node whose names or aliases
-carry one of those keys, so with that node's keys and component too. A node may
-name the subject when the words of one of its keys contain, or are contained
-in, the words of one of the page's keys (`identity::may_name`): `hana` may name
-`hana financial group` and `hana co`, `halvorsen cellworks` may name `halvorsen
-cellworks asa` or `halvorsen cellworks group`, and neither may name `loupist`,
-`kpmg` or `nordic auto`. So a page filed under `Halvorsen Cellworks` that
-cites the report extraction canonicalized as `Halvorsen Cellworks ASA` is one
-case with that node; a `Hana` page citing a loan passage whose claim joins
-`Hana Financial Group` and `Hana Co.` is one case with both, never independent
-of either, and so is a `Hana` page citing a claimless passage of a report
-whose other passage names the bank: a short name cannot pick the counterparty
-on its own span, nor deny the bank its own report names; and a `Samsung
-Electronics Inc.` page whose report published nothing is one case with a page
-about `삼성전자` when a node spells `삼성전자(Samsung Electronics)`. The
-auditor, exchange, bank, customer or regulator a report names beside its
-company is no case of the page: two reports whose disclaimers both name
-`Loupist` or `KPMG` leave their two companies two cases, so the review queues.
-A name the World never extracted, because the extraction failed or found
-nothing, still counts under its own key, so two Chats about `Halvorsen
-Cellworks` and `Ferroluz Componentes` learn with no World output at all, while
-`Kestrel Foundry` and `Kestrel Foundry Inc.` stay one case. A Product, a
-withdrawn claim, or a claim on another Source name no company for the page.
+is then a case with the keys of each name it was filed under, with every World
+node whose names or aliases carry one of those keys, so with that node's keys
+and component too, and with every company in the current World (a node of the
+core Organization kind or an extension type of the company category) whose
+name or alias may name the page's subject, whichever Source the World met it
+in and whether or not a claim names it (`WorldIdentity::companies_naming`). A
+node may name the subject when the words of one of its keys contain, or are
+contained in, the words of one of the page's keys (`identity::may_name`):
+`hana` may name `hana financial group` and `hana co`, `halvorsen cellworks` may
+name `halvorsen cellworks asa` or `halvorsen cellworks group`, and neither may
+name `loupist`, `kpmg` or `nordic auto`. So a page filed under `Halvorsen
+Cellworks` is one case with the node extraction canonicalized as `Halvorsen
+Cellworks ASA`, whether the report it cites claimed that node, claimed it and
+withdrew, or yielded nothing; a `Hana` page is one case with `Hana Financial
+Group` and `Hana Co.` wherever the World holds them, never independent of
+either, even when its own report's extraction failed or found nothing: a short
+name cannot pick the counterparty on its own, nor deny a bank the World already
+knows; and a `Samsung Electronics Inc.` page whose report published nothing is
+one case with a page about `삼성전자` when a node spells `삼성전자(Samsung
+Electronics)`. The auditor, exchange, bank, customer or regulator a report
+names beside its company is no case of the page, since its name does not match
+the page's: two reports whose disclaimers both name `Loupist` or `KPMG` leave
+their two companies two cases, so the review queues. A name the World never
+extracted, because the extraction failed or found nothing, still counts under
+its own key, so two Chats about `Halvorsen Cellworks` and `Ferroluz
+Componentes` learn with no World output at all, while `Kestrel Foundry` and
+`Kestrel Foundry Inc.` stay one case. A Product named like the page is no
+company it could be about.
 The anchor stays pending in storage either way. A pending page citing a Source
 the World is not through with is not evidence, but its rows are not consumed: a
 review that reaches inference advances its watermark past them and stores their

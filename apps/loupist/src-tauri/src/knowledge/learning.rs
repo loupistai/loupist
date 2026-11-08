@@ -426,8 +426,8 @@ struct PendingObservation {
     observation: Observation,
     /// The folded names of the pending subjects.
     names: Vec<String>,
-    /// The span ids the page's current sections cite, by Source record.
-    cited: BTreeMap<String, BTreeSet<String>>,
+    /// The Source records the page's current sections cite.
+    cited: BTreeSet<String>,
 }
 /// Each Chat's cited Sources across all the evidence.
 fn cited_by(all: &[Observation]) -> BTreeMap<&str, BTreeSet<&str>> {
@@ -663,7 +663,7 @@ fn evidence(
             Some(names) => pending.push(PendingObservation {
                 observation,
                 names,
-                cited: cited_spans(bodies[&page_id].as_ref()),
+                cited: cited_sources(bodies[&page_id].as_ref()),
             }),
         }
     }
@@ -673,48 +673,19 @@ fn evidence(
         held: BTreeSet::new(),
     })
 }
-/// The Source spans a page's current sections cite, by Source record.
-fn cited_spans(body: Option<&LensBody>) -> BTreeMap<String, BTreeSet<String>> {
-    let mut cited: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for section in body
-        .and_then(LensBody::page)
+/// The Source records a page's current sections cite.
+fn cited_sources(body: Option<&LensBody>) -> BTreeSet<String> {
+    body.and_then(LensBody::page)
         .map(|page| page.sections.as_slice())
         .unwrap_or_default()
         .iter()
         .filter(|section| matches!(section.state, super::lens_page::SectionState::Current))
-    {
-        for r in &section.basis.refs {
-            if let BasisRef::Span {
-                record_id, span_id, ..
-            } = r
-            {
-                cited
-                    .entry(record_id.clone())
-                    .or_default()
-                    .insert(span_id.clone());
-            }
-        }
-    }
-    cited
-}
-/// Every span of each of `sources`, by Source record.
-fn source_spans(
-    tx: &Transaction<'_>,
-    sources: &BTreeSet<String>,
-) -> KnowledgeResult<BTreeMap<String, BTreeSet<String>>> {
-    let mut q = tx.prepare(
-        "SELECT record_id, span_id FROM knowledge_source_spans
-         WHERE record_id IN (SELECT value FROM json_each(?1))",
-    )?;
-    let rows = q.query_map([serde_json::to_string(sources)?], |r| {
-        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-    })?;
-    let mut spans: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for row in rows {
-        let (record_id, span_id) = row?;
-        spans.entry(record_id).or_default().insert(span_id);
-    }
-    Ok(spans)
+        .flat_map(|section| &section.basis.refs)
+        .filter_map(|r| match r {
+            BasisRef::Span { record_id, .. } => Some(record_id.clone()),
+            _ => None,
+        })
+        .collect()
 }
 /// Whether a World node of `kind` is a company: the core Organization kind,
 /// or an extension type of the company category.
@@ -727,45 +698,31 @@ fn company_kind(kind: &str, extension: &super::world_schema::WorldExtension) -> 
 }
 /// Who a pending page may be about, for this read only, once the World is
 /// through with every Source it cites ([`super::graph_jobs::processed_sources`]):
-/// every company the World claims on any span of a Source the page cites
-/// ([`super::identity::WorldIdentity::companies_on`], over `spans`, the spans
-/// of each Source by record) whose names may name the page's subject
-/// ([`super::identity::may_name`]), the keys of each name the page was filed
-/// under, and every World node carrying one of those keys
-/// ([`super::identity::WorldIdentity::nodes_keyed`]). A "Hana" page citing a
-/// report that names `Hana Financial Group` and `Hana Co.` is then a case
-/// with both, while the auditor, exchange or disclaimer the report names
-/// beside them is no case of it: two reports naming one `Loupist` or `KPMG`
-/// do not make their two companies one. A "Samsung Electronics Inc." page is
-/// a case with the node spelled `삼성전자(Samsung Electronics)` and its
-/// component, and a name the World never extracted still counts under its
-/// own key, so two pages spelling one company stay one case while a failed
-/// extraction holds nothing. A report the World has yet to read holds the
-/// page: the claims it may still yield are not known. Nothing is stored: the
-/// anchor stays pending until a publication spells the name.
+/// the keys of each name the page was filed under, every World node carrying
+/// one of those keys ([`super::identity::WorldIdentity::nodes_keyed`]), and
+/// every company in the World whose names may name the page's subject
+/// ([`super::identity::WorldIdentity::companies_naming`]), whichever Source
+/// the World met it in and whether or not a claim names it. A "Hana" page is
+/// then a case with `Hana Financial Group` and `Hana Co.` wherever the World
+/// holds them, even when the report it cites yielded no claim, while the
+/// auditor, exchange or disclaimer a report names beside its company is no
+/// case of it: two reports naming one `Loupist` or `KPMG` do not make their
+/// two companies one. A "Samsung Electronics Inc." page is a case with the
+/// node spelled `삼성전자(Samsung Electronics)` and its component, and a name
+/// the World never extracted still counts under its own key, so two pages
+/// spelling one company stay one case while a failed extraction holds
+/// nothing. A report the World has yet to read holds the page: the nodes it
+/// may still add are not known. Nothing is stored: the anchor stays pending
+/// until a publication spells the name.
 fn pending_cases(
     world: &mut super::identity::WorldIdentity,
     pending: &PendingObservation,
     processed: &BTreeSet<String>,
-    spans: &BTreeMap<String, BTreeSet<String>>,
     company: impl Fn(&str) -> bool,
 ) -> Option<BTreeSet<Case>> {
-    if !pending
-        .cited
-        .keys()
-        .all(|source| processed.contains(source))
-    {
+    if !pending.cited.is_subset(processed) {
         return None;
     }
-    let mut on_sources: BTreeSet<String> = pending.cited.values().flatten().cloned().collect();
-    on_sources.extend(
-        pending
-            .cited
-            .keys()
-            .filter_map(|source| spans.get(source))
-            .flatten()
-            .cloned(),
-    );
     let mut cases = pending.observation.cases.clone();
     let mut subject_keys = BTreeSet::new();
     for name in &pending.names {
@@ -777,14 +734,12 @@ fn pending_cases(
             subject_keys.insert(key);
         }
     }
-    for node in world.companies_on(&on_sources, company) {
-        let names_subject = world
-            .keys(&node)
-            .is_some_and(|keys| super::identity::may_name(keys, &subject_keys));
-        if names_subject {
-            cases.insert(Case::Node(node));
-        }
-    }
+    cases.extend(
+        world
+            .companies_naming(&subject_keys, company)
+            .into_iter()
+            .map(Case::Node),
+    );
     Some(cases)
 }
 /// [`evidence`] with its pending pages read against the Sources they cite or
@@ -809,17 +764,13 @@ fn keyed_evidence(
         return Ok(found);
     }
     let pending = std::mem::take(&mut found.pending);
-    let sources: BTreeSet<String> = pending
-        .iter()
-        .flat_map(|p| p.cited.keys().cloned())
-        .collect();
+    let sources: BTreeSet<String> = pending.iter().flat_map(|p| p.cited.clone()).collect();
     let processed = super::graph_jobs::processed_sources(tx, loupist, &sources)?;
-    let spans = source_spans(tx, &sources)?;
     let extension = load_settings(tx, loupist)?.extension;
     let company = |kind: &str| company_kind(kind, &extension);
     let read = super::lens::world_identity(tx, loupist, |world| {
         for mut p in pending {
-            match pending_cases(world, &p, &processed, &spans, company) {
+            match pending_cases(world, &p, &processed, company) {
                 Some(cases) => {
                     p.observation.cases = cases;
                     found.observations.push(p.observation);
