@@ -27,6 +27,20 @@ const openUpdates = async (status: UpdateState) => {
 };
 
 describe("Loupist · Updates", () => {
+  it("does not call the app up to date before a successful check", async () => {
+    await openUpdates({ ...current, last_checked_at_ms: null });
+    await screen.findByRole("button", { name: "Check for updates" });
+    expect(screen.queryByText("Loupist is up to date")).not.toBeInTheDocument();
+    expect(screen.getByText("Check for updates to see the installed and latest versions.")).toBeVisible();
+  });
+
+  it("does not call a failed check up to date", async () => {
+    await openUpdates({ ...current, error: "Could not check for updates." });
+    await screen.findByRole("button", { name: "Check for updates" });
+    expect(screen.queryByText("Loupist is up to date")).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not check for updates.");
+  });
+
   it("loads native status and checks manually from Settings", async () => {
     const { user, check } = await openUpdates(current);
     await user.click(await screen.findByRole("button", { name: "Check for updates" }));
