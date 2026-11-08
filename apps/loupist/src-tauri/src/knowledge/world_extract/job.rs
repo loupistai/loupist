@@ -565,6 +565,7 @@ fn stored_node(node: &GraphNode, schema: &Schema, vector: Option<&Vec<f32>>) -> 
         summary: node.description.clone(),
         attributes,
         name_embedding: vector.cloned(),
+        spellings: Vec::new(),
     }
 }
 

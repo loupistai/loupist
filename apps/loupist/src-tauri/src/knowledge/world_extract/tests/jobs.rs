@@ -9,6 +9,9 @@ use serde_json::{json, Value};
 
 use crate::knowledge::graph_inference::{InferenceDisposition, InferenceReply};
 use crate::knowledge::graph_jobs::{self, GraphJobView, GraphProcessingSettings};
+use crate::knowledge::lens_page::{
+    AnchorInput, Basis, BasisRef, FilingOrigin, LensOp, PageDelta, PageKind, PageTarget, SectionKey,
+};
 use crate::knowledge::world_extract::{self, index};
 use crate::knowledge::{
     Authorship, Coverage, CreateRecord, KnowledgeStore, RecordKind, RepresentationRole,
@@ -183,6 +186,8 @@ struct Script {
     replies: HashMap<String, VecDeque<Value>>,
     fail: HashMap<String, InferenceDisposition>,
     calls: Vec<String>,
+    /// Extracted spellings the model resolves to an existing node's name.
+    same_as: HashMap<String, String>,
 }
 
 impl Script {
@@ -221,7 +226,7 @@ impl Script {
             };
         }
         let value = match title.as_str() {
-            "NodeResolutions" => resolve_by_name(request),
+            "NodeResolutions" => resolve_by_name(request, &self.same_as),
             _ => self
                 .replies
                 .get_mut(&title)
@@ -239,8 +244,9 @@ impl Script {
     }
 }
 
-/// Answer `dedupe_nodes` by exact name: a candidate with the same name is the duplicate.
-fn resolve_by_name(request: &Value) -> Value {
+/// Answer `dedupe_nodes` by name: a candidate with the same name, or the name
+/// `same_as` maps the extracted one to, is the duplicate.
+fn resolve_by_name(request: &Value, same_as: &HashMap<String, String>) -> Value {
     let user = request["messages"][1]["content"].as_str().unwrap();
     let between = |open: &str, close: &str| -> Value {
         let start = user.find(open).unwrap() + open.len();
@@ -254,11 +260,13 @@ fn resolve_by_name(request: &Value) -> Value {
         .unwrap()
         .iter()
         .map(|entity| {
+            let name = entity["name"].as_str().unwrap();
+            let name = same_as.get(name).map_or(name, String::as_str);
             let duplicate = existing
                 .as_array()
                 .unwrap()
                 .iter()
-                .find(|candidate| candidate["name"] == entity["name"])
+                .find(|candidate| candidate["name"] == name)
                 .map_or(-1, |candidate| candidate["candidate_id"].as_i64().unwrap());
             json!({"id": entity["id"], "name": entity["name"], "duplicate_candidate_id": duplicate})
         })
@@ -343,6 +351,162 @@ fn two_sources(fixture: &mut Fixture) -> (GraphJobView, GraphJobView, Arc<Mutex<
     let second = fixture.queue("Partner note", &format!("{SUPPLY} {PARTNER}"));
     let second = drive(fixture, &second, &script, "fixture");
     (first, second, script)
+}
+
+impl Fixture {
+    /// File an idea page whose subject anchor names `company`, as a Chat turn does.
+    fn file_about(&self, company: &str) -> String {
+        let origin = FilingOrigin::Turn {
+            chat_id: "chat-1".into(),
+            message_id: "assistant-1".into(),
+            user_message_id: Some("user-1".into()),
+            unattended: false,
+        };
+        let filed = self
+            .store
+            .transact(|write| {
+                write.file(
+                    LOUPIST,
+                    &origin,
+                    vec![PageDelta {
+                        target: PageTarget::Create {
+                            kind: PageKind::Idea,
+                            title: format!("{company} supply thesis"),
+                            anchors: vec![AnchorInput::Name {
+                                name: company.into(),
+                            }],
+                        },
+                        ops: vec![LensOp::Put {
+                            key: SectionKey::new("thesis").unwrap(),
+                            heading: "Thesis".into(),
+                            markdown: "Supply contracts anchor the margin.".into(),
+                            basis: Basis {
+                                refs: vec![BasisRef::UserSaid {
+                                    message_id: "user-1".into(),
+                                }],
+                                uncertainty: None,
+                            },
+                            expected: None,
+                        }],
+                    }],
+                    AT + 500,
+                )
+            })
+            .unwrap();
+        filed[0].record_id.clone()
+    }
+
+    /// The subject anchor of `record_id`: its filed name and the node it resolved to.
+    fn subject_anchor(&self, record_id: &str) -> (String, Option<String>) {
+        self.store
+            .read(|read| {
+                Ok(read.tx.query_row(
+                    "SELECT name_fold, node_id FROM knowledge_lens_anchors WHERE record_id = ?1 AND role = 'subject'",
+                    [record_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )?)
+            })
+            .unwrap()
+    }
+}
+
+#[test]
+fn a_spelling_the_resolver_confirms_becomes_an_alias_that_resolves_pending_anchors() {
+    let mut fixture = Fixture::new();
+    let script = Arc::new(Mutex::new(Script::default()));
+    {
+        let mut script = script.lock().unwrap();
+        script.reply("ExtractedEntities", entities(&["Acme Corp", "Beta Motors"]));
+        script.reply(
+            "ExtractedEdges",
+            json!({"edges": [relation("Acme Corp", "Beta Motors", "SUPPLIES", SUPPLY)]}),
+        );
+        script.reply("CoreAttributeBatch", json!({"entities": []}));
+    }
+    let first = fixture.queue("Supply note", SUPPLY);
+    assert_eq!(
+        drive(&mut fixture, &first, &script, "fixture").status,
+        graph_jobs::JOB_COMPLETED
+    );
+    // A Chat files about the company under a spelling the World does not hold.
+    let page = fixture.file_about("Acme Corporation");
+    assert_eq!(
+        fixture.subject_anchor(&page),
+        ("acme corporation".into(), None)
+    );
+    // The next Source spells it that way, and the resolver says it is Acme Corp.
+    let partner = "Acme Corporation partners with Gamma Labs on solid-state cells.";
+    {
+        let mut script = script.lock().unwrap();
+        script
+            .same_as
+            .insert("Acme Corporation".into(), "Acme Corp".into());
+        script.reply(
+            "ExtractedEntities",
+            entities(&["Acme Corporation", "Gamma Labs"]),
+        );
+        script.reply(
+            "ExtractedEdges",
+            json!({"edges": [relation("Acme Corporation", "Gamma Labs", "PARTNERS_WITH", partner)]}),
+        );
+        script.reply(
+            "EdgeDuplicate",
+            json!({"duplicate_facts": [], "contradicted_facts": []}),
+        );
+        script.reply("CoreAttributeBatch", json!({"entities": []}));
+    }
+    let second = fixture.queue("Partner note", partner);
+    assert_eq!(
+        drive(&mut fixture, &second, &script, "fixture").status,
+        graph_jobs::JOB_COMPLETED
+    );
+    let body = fixture.body();
+    let mut names: Vec<&str> = body.nodes.iter().map(|node| node.name.as_str()).collect();
+    names.sort();
+    assert_eq!(names, ["Acme Corp", "Beta Motors", "Gamma Labs"]);
+    let acme = body
+        .nodes
+        .iter()
+        .find(|node| node.name == "Acme Corp")
+        .unwrap();
+    assert_eq!(acme.aliases, ["Acme Corporation"]);
+    assert_eq!(
+        fixture.subject_anchor(&page),
+        ("acme corporation".into(), Some(acme.id.clone()))
+    );
+    // A spelling that folds to a known alias adds nothing.
+    let shouted = "ACME Corporation hires at Gamma Labs.";
+    {
+        let mut script = script.lock().unwrap();
+        script
+            .same_as
+            .insert("ACME Corporation".into(), "Acme Corp".into());
+        script.reply(
+            "ExtractedEntities",
+            entities(&["ACME Corporation", "Gamma Labs"]),
+        );
+        script.reply(
+            "ExtractedEdges",
+            json!({"edges": [relation("ACME Corporation", "Gamma Labs", "HIRES_FROM", shouted)]}),
+        );
+        script.reply(
+            "EdgeDuplicate",
+            json!({"duplicate_facts": [], "contradicted_facts": []}),
+        );
+        script.reply("CoreAttributeBatch", json!({"entities": []}));
+    }
+    let third = fixture.queue("Hiring note", shouted);
+    assert_eq!(
+        drive(&mut fixture, &third, &script, "fixture").status,
+        graph_jobs::JOB_COMPLETED
+    );
+    let body = fixture.body();
+    let acme = body
+        .nodes
+        .iter()
+        .find(|node| node.name == "Acme Corp")
+        .unwrap();
+    assert_eq!(acme.aliases, ["Acme Corporation"]);
 }
 
 #[test]

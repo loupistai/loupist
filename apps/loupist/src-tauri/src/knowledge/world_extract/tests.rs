@@ -147,6 +147,7 @@ fn node(value: &Value) -> Node {
             _ => Vec::new(),
         },
         name_embedding: None,
+        spellings: Vec::new(),
     }
 }
 

@@ -56,6 +56,10 @@ pub(crate) struct Node {
     /// Attribute values in insertion order.
     pub attributes: Vec<(String, Value)>,
     pub name_embedding: Option<Vec<f32>>,
+    /// Extracted spellings the resolver found to be this existing node, this
+    /// episode. Projection keeps each as an alias, so a Lens anchor filed
+    /// under that spelling can resolve exactly.
+    pub spellings: Vec<String>,
 }
 
 impl Node {
@@ -354,6 +358,7 @@ impl Run<'_, '_> {
                 summary: String::new(),
                 attributes: Vec::new(),
                 name_embedding: None,
+                spellings: Vec::new(),
             });
         }
         // Graphiti collapses same-name duplicates, keeping the more specific one.
@@ -535,6 +540,10 @@ impl Run<'_, '_> {
                 let winner = match target {
                     Some(candidate) => {
                         self.promote(extracted_index, candidate);
+                        let spelling = self.nodes[extracted_index].name.clone();
+                        if spelling != self.nodes[candidate].name {
+                            self.nodes[candidate].spellings.push(spelling);
+                        }
                         candidate
                     }
                     None => extracted_index,
