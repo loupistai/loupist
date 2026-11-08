@@ -205,7 +205,7 @@ pub fn profile(roots: &NativeRoots, network: bool) -> String {
     let literal = |path: &Path| format!("(literal {})", sbpl_string(path));
     let mut rules = vec!["(version 1)".to_owned(), "(allow default)".to_owned()];
     rules.push(format!(
-        "(deny file-write* (require-not (require-any {} {} (literal \"/dev/null\") (literal \"/dev/stdout\") (literal \"/dev/stderr\") (regex #\"^/dev/tty\") (regex #\"^/dev/fd/\"))))",
+        "(deny file-write* (require-not (require-any {} {} (literal \"/dev/null\") (literal \"/dev/stdout\") (literal \"/dev/stderr\") (literal \"/dev/dtracehelper\") (literal \"/dev/autofs_nowait\") (regex #\"^/dev/tty\") (regex #\"^/dev/fd/\"))))",
         subpath(&roots.workspace),
         subpath(&roots.scratch)
     ));
@@ -544,6 +544,8 @@ mod tests {
             home.display()
         )));
         assert!(online.contains(&format!("(literal \"{}/.netrc\")", home.display())));
+        // Node and Python open the DTrace helper at startup; denying it breaks them.
+        assert!(online.contains("(literal \"/dev/dtracehelper\") (literal \"/dev/autofs_nowait\")"));
         // No rule allows anything but the default, so none can shadow a deny.
         assert_eq!(online.matches("(allow ").count(), 1);
         assert!(!online.contains("(deny network*)"));
