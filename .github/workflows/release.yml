@@ -241,6 +241,7 @@ jobs:
           assert any(int(component) > 0 for component in bundle_components)
           assert base["bundle"]["macOS"]["minimumSystemVersion"] == "13.0"
           assert release["bundle"]["createUpdaterArtifacts"] is True
+          assert release["plugins"]["updater"]["requireSignedVersion"] is True
           assert not base["bundle"].get("externalBin")
           assert not release["bundle"].get("externalBin")
           assert release["bundle"]["resources"] == {

@@ -593,6 +593,13 @@ pub(crate) fn configured(
     {
         return false;
     }
+    if config
+        .get("requireSignedVersion")
+        .and_then(serde_json::Value::as_bool)
+        != Some(true)
+    {
+        return false;
+    }
     let Some(endpoints) = config
         .get("endpoints")
         .and_then(serde_json::Value::as_array)

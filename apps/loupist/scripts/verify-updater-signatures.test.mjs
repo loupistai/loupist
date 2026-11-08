@@ -40,7 +40,7 @@ function signatureFixture(
   privateKey,
   keyId,
   content,
-  trustedComment = "fixture provenance",
+  trustedComment = `timestamp:1700000000\tfile:artifact\tversion:${version}`,
 ) {
   const signature = sign(null, blake2b512(content), privateKey);
   const globalSignature = sign(

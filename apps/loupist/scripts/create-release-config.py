@@ -87,6 +87,7 @@ def main() -> int:
     updater = config.setdefault("plugins", {}).setdefault("updater", {})
     updater["pubkey"] = required_environment("LOUPIST_UPDATER_PUBLIC_KEY")
     updater["endpoints"] = update_endpoints(arguments.version)
+    updater["requireSignedVersion"] = True
 
     if arguments.platform == "macos":
         macos = config.setdefault("bundle", {}).setdefault("macOS", {})

@@ -118,6 +118,18 @@ function parseSignature(encoded) {
   };
 }
 
+function boundReleaseVersion(trustedComment, artifact) {
+  const versions = trustedComment
+    .toString("utf8")
+    .split("\t")
+    .filter((field) => field.startsWith("version:"))
+    .map((field) => field.slice("version:".length));
+  if (versions.length !== 1 || versions[0].length === 0) {
+    fail(`updater signature does not bind a release version: ${artifact}`);
+  }
+  return versions[0];
+}
+
 async function requireRegularFile(file) {
   const metadata = await lstat(file);
   if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size === 0) {
@@ -133,7 +145,7 @@ async function blake2b512(file) {
   return digest.digest();
 }
 
-async function verifyArtifact(publicKey, artifact) {
+async function verifyArtifact(publicKey, artifact, version) {
   const signaturePath = `${artifact}.sig`;
   await requireRegularFile(artifact);
   await requireRegularFile(signaturePath);
@@ -153,6 +165,9 @@ async function verifyArtifact(publicKey, artifact) {
     )
   ) {
     fail(`updater signature verification failed: ${artifact}`);
+  }
+  if (boundReleaseVersion(signature.trustedComment, artifact) !== version) {
+    fail(`updater signature release version does not match the release: ${artifact}`);
   }
 }
 
@@ -182,7 +197,7 @@ async function main() {
     `Loupist-${version}-darwin-aarch64.app.tar.gz`,
   ];
   for (const name of artifacts) {
-    await verifyArtifact(publicKey, path.join(assets, name));
+    await verifyArtifact(publicKey, path.join(assets, name), version);
   }
   console.log("Verified macOS updater package against the configured public key.");
 }

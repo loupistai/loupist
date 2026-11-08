@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Show Loupist as up to date only after a check that found no newer release.
+- Refuse an in-app update unless the signed package names the same version as the release feed.
 - Make Lens a shared wiki for the user and the Loupist: Chat links open Lens, search is shared, drafts persist, conflicts merge or become proposals, and methods can be renamed, archived, compared, and viewed as a link graph.
 - Limit the first supported release to macOS 13+ on Apple Silicon; retain Windows implementation and manual compatibility checks outside release gates.
 - Upgrade 0.0.1 data in place after a private backup instead of refusing it, keep Keychain secrets reachable when an older development catalog is set aside, and refuse data a newer Loupist saved with a clear message.

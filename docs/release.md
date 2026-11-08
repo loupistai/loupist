@@ -84,7 +84,7 @@ developer's daily-use machine or on a production network.
    tested asset set; use its successful run ID to dispatch `promote-release.yml` from that same candidate
    tag.
 
-The public download link is `releases/latest/download/Loupist-macOS-arm64.dmg`; do not advertise a Windows installer. The app feed is `https://github.com/loupistai/loupist/releases/latest/download/latest.json`. Install and restart need explicit user confirmation.
+The public download link is `releases/latest/download/Loupist-macOS-arm64.dmg`; do not advertise a Windows installer. The app feed is `https://github.com/loupistai/loupist/releases/latest/download/latest.json`. Install and restart need explicit user confirmation. A release build sets `requireSignedVersion`, and the app treats any other updater configuration as unsupported. The signature's trusted comment has to carry the same version as `latest.json`. A rewritten feed cannot pair a new version number with an older signed package.
 
 Replace a bad stable release with a higher patch; do not downgrade storage or silently roll back.
 
