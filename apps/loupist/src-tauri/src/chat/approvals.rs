@@ -65,16 +65,6 @@ pub enum ApprovalKind {
     Instructions,
 }
 
-/// What a blanket Allow on a `command` card covers.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ApprovalGrant {
-    /// This reply read third-party text: Always covers this reply.
-    Reply,
-    /// Only earlier replies did: Always covers this Chat until revoked.
-    Chat,
-}
-
 /// One approval the reply asked for, shown as a card at its step.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -99,9 +89,6 @@ pub struct ChatApproval {
     /// A `command` card's whole command, bounded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
-    /// A `command` card's blanket scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub grant: Option<ApprovalGrant>,
     pub state: ApprovalState,
     #[serde(rename = "requestedAtMs")]
     pub requested_at_ms: i64,

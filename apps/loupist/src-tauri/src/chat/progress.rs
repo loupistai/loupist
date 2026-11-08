@@ -2068,7 +2068,6 @@ mod tests {
             tool_name: "read_company".into(),
             target: Some("Hanul Precision".into()),
             detail: None,
-            grant: None,
             state: ApprovalState::Waiting,
             requested_at_ms: 12,
         };

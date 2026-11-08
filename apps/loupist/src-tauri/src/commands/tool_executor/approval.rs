@@ -5,10 +5,8 @@
 use std::sync::atomic::Ordering;
 
 use super::*;
-use crate::agent_harness::native_policy::{AskKind, CommandScope, Grant, NativeAsk};
-use crate::chat::approvals::{
-    self, ApprovalDecision, ApprovalGrant, ApprovalKind, ApprovalState, ChatApproval,
-};
+use crate::agent_harness::native_policy::{AskKind, NativeAsk};
+use crate::chat::approvals::{self, ApprovalDecision, ApprovalKind, ApprovalState, ChatApproval};
 
 /// How a card ended, as the caller must tell them apart: a decline pauses a
 /// kind for the reply, an unasked card refuses only this call.
@@ -84,26 +82,14 @@ pub(super) fn web_site_approval(target: String) -> ChatApproval {
         tool_name: "web_fetch".into(),
         target: Some(target),
         detail: None,
-        grant: None,
         state: ApprovalState::Waiting,
         requested_at_ms: chrono::Utc::now().timestamp_millis(),
     }
 }
 
 /// A native policy card: the tool, its target line and, for a command, the
-/// whole command and the scope a blanket Allow covers.
+/// whole command.
 pub(super) fn native_approval(ask: &NativeAsk) -> ChatApproval {
-    let grant = match &ask.grant {
-        Grant::Command {
-            scope: CommandScope::Reply,
-            ..
-        } => Some(ApprovalGrant::Reply),
-        Grant::Command {
-            scope: CommandScope::Chat,
-            ..
-        } => Some(ApprovalGrant::Chat),
-        _ => None,
-    };
     ChatApproval {
         request_id: uuid::Uuid::new_v4().to_string(),
         kind: Some(match ask.kind {
@@ -118,7 +104,6 @@ pub(super) fn native_approval(ask: &NativeAsk) -> ChatApproval {
         tool_name: ask.tool.name().into(),
         target: Some(ask.target.clone()),
         detail: ask.detail.clone(),
-        grant,
         state: ApprovalState::Waiting,
         requested_at_ms: chrono::Utc::now().timestamp_millis(),
     }
@@ -156,7 +141,6 @@ mod tests {
                 &roots,
                 Exposure::ThisTurn,
                 &NativeGrants::default(),
-                false,
             ) else {
                 panic!("{params} asks after third-party text");
             };

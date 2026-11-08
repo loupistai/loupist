@@ -1245,8 +1245,6 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     }
     throw new Error("This question is no longer waiting");
   }
-  /** The grant lives in Rust's memory for the app session; the mock has nothing to end. */
-  async chatCommandGrantRevoke(_request: { loupist_id: string; thread_id: string }): Promise<void> {}
 
   chatDelete(request: Contract.ChatDeleteRequest): Promise<void> {
     return loupistChat.chatDelete(this.state, request);

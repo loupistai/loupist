@@ -298,7 +298,6 @@ pub fn run() {
             commands::skills::skills_reveal,
             commands::approvals::chat_approval_decide,
             commands::questions::chat_question_answer,
-            commands::approvals::chat_command_grant_revoke,
             commands::attention::attention_list,
             commands::assets::asset_page_get,
             commands::assets::asset_delta,

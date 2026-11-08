@@ -2,9 +2,7 @@ use std::collections::VecDeque;
 
 use super::*;
 use crate::agent_harness::native_policy::NativeRoots;
-use crate::chat::approvals::{
-    ApprovalDecision, ApprovalGrant, ApprovalKind, ApprovalState, ChatApproval,
-};
+use crate::chat::approvals::{ApprovalDecision, ApprovalKind, ApprovalState, ChatApproval};
 use crate::custom_connections::taint::{
     delimited_body, retained_trust, COMMAND_DECLINED_REFUSAL, INSTRUCTION_WRITE_REFUSAL,
     WEB_FETCH_PRIVATE_REFUSAL, WEB_FETCH_SITE_REFUSAL,
@@ -37,27 +35,18 @@ fn native_roots(temporary: &tempfile::TempDir) -> NativeRoots {
     )
 }
 
-/// A turn in `chat_id` whose cards the "user" answers from `decisions` in
-/// order, then with Not now; `asked` keeps every card shown.
-/// `newest_untrusted` names the Chat's newest earlier reply that read
-/// third-party text.
-fn chat_capture(
+/// A turn whose cards the "user" answers from `decisions` in order, then with
+/// Not now; `asked` keeps every card shown.
+fn turn_capture(
     temporary: &tempfile::TempDir,
     decisions: Vec<ApprovalDecision>,
-    newest_untrusted: Option<&str>,
-    chat_id: &str,
 ) -> (Arc<ToolCapture>, Arc<std::sync::Mutex<Vec<ChatApproval>>>) {
     let asked = Arc::new(std::sync::Mutex::new(Vec::new()));
     let queue = std::sync::Mutex::new(VecDeque::from(decisions));
     let shown = asked.clone();
     let capture = ToolCapture {
         bound_chat_id: Some("chat-a".into()),
-        native: NativeGate::for_turn(
-            native_roots(temporary),
-            newest_untrusted.map(str::to_owned),
-            "loupist-a",
-            chat_id,
-        ),
+        native: NativeGate::for_turn(native_roots(temporary)),
         approval_sink: Some(Arc::new(move |_call, approval: ChatApproval| {
             if approval.state != ApprovalState::Waiting {
                 return;
@@ -73,13 +62,6 @@ fn chat_capture(
         ..ToolCapture::for_chat(new_id("reply"))
     };
     (Arc::new(capture), asked)
-}
-
-fn turn_capture(
-    temporary: &tempfile::TempDir,
-    decisions: Vec<ApprovalDecision>,
-) -> (Arc<ToolCapture>, Arc<std::sync::Mutex<Vec<ChatApproval>>>) {
-    chat_capture(temporary, decisions, None, &new_id("chat"))
 }
 
 fn bound_capture(temporary: &tempfile::TempDir) -> Arc<ToolCapture> {
@@ -621,7 +603,6 @@ async fn web_text_reaches_the_model_delimited_and_sends_commands_to_a_card_for_t
     assert_eq!(card.tool_name, "bash");
     assert_eq!(card.target.as_deref(), Some("python3 build_deck.py"));
     assert_eq!(card.detail.as_deref(), Some(build));
-    assert_eq!(card.grant, Some(ApprovalGrant::Reply));
     // The same command runs again without a card; a different one asks.
     let again = broker_request(&socket, broker.token(), "native.authorize", bash(build)).await;
     assert_eq!(again["ok"], true, "{again}");
@@ -685,88 +666,26 @@ async fn allow_commands_for_this_reply_covers_every_later_command_in_it() {
 }
 
 #[tokio::test]
-async fn a_chat_that_once_read_third_party_text_asks_before_a_command_and_can_allow_the_chat() {
+async fn a_clean_reply_runs_commands_without_a_card_after_an_earlier_reply_read_third_party_text() {
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
-    let chat_id = new_id("chat");
 
-    // A clean turn after such a reply: the card offers the Chat scope.
-    let (capture, asked) = chat_capture(
-        &temporary,
-        vec![ApprovalDecision::Always],
-        Some("reply-1"),
-        &chat_id,
-    );
-    let (broker, socket) = start_turn(&state, &temporary, "carried", capture).await;
+    let (earlier, asked) = turn_capture(&temporary, vec![ApprovalDecision::Once]);
+    earlier.turn_taint.mark_untrusted_text();
+    let (broker, socket) = start_turn(&state, &temporary, "earlier", earlier).await;
     let allowed = broker_request(&socket, broker.token(), "native.authorize", bash("ls")).await;
     assert_eq!(allowed["ok"], true, "{allowed}");
-    let card = asked.lock().unwrap()[0].clone();
-    assert_eq!(card.kind, Some(ApprovalKind::Command));
-    assert_eq!(card.grant, Some(ApprovalGrant::Chat));
-    let again = broker_request(&socket, broker.token(), "native.authorize", bash("whoami")).await;
-    assert_eq!(again["ok"], true, "{again}");
     assert_eq!(asked.lock().unwrap().len(), 1);
     broker.shutdown().await.unwrap();
 
-    // A later clean turn in the same Chat runs commands without a card ...
-    let (capture, asked) = chat_capture(&temporary, Vec::new(), Some("reply-1"), &chat_id);
-    let (broker, socket) = start_turn(&state, &temporary, "carried-later", capture).await;
-    let allowed = broker_request(&socket, broker.token(), "native.authorize", bash("ls")).await;
-    assert_eq!(allowed["ok"], true, "{allowed}");
+    let (clean, asked) = turn_capture(&temporary, Vec::new());
+    let (broker, socket) = start_turn(&state, &temporary, "clean", clean).await;
+    for command in ["ls", "whoami"] {
+        let allowed =
+            broker_request(&socket, broker.token(), "native.authorize", bash(command)).await;
+        assert_eq!(allowed["ok"], true, "{allowed}");
+    }
     assert!(asked.lock().unwrap().is_empty());
-    broker.shutdown().await.unwrap();
-
-    // ... until a reply after the grant reads third-party text the user never
-    // saw when allowing commands: the grant is void and the card asks again,
-    // and a new Always stands from that reply on ...
-    let (capture, asked) = chat_capture(&temporary, Vec::new(), Some("reply-2"), &chat_id);
-    let (broker, socket) = start_turn(&state, &temporary, "newer-text", capture).await;
-    let refused = broker_request(&socket, broker.token(), "native.authorize", bash("ls")).await;
-    refused_with(&refused, COMMAND_DECLINED_REFUSAL);
-    assert_eq!(asked.lock().unwrap()[0].grant, Some(ApprovalGrant::Chat));
-    broker.shutdown().await.unwrap();
-    let (capture, asked) = chat_capture(
-        &temporary,
-        vec![ApprovalDecision::Always],
-        Some("reply-2"),
-        &chat_id,
-    );
-    let (broker, socket) = start_turn(&state, &temporary, "newer-grant", capture).await;
-    let allowed = broker_request(&socket, broker.token(), "native.authorize", bash("ls")).await;
-    assert_eq!(allowed["ok"], true, "{allowed}");
-    assert_eq!(asked.lock().unwrap().len(), 1);
-    broker.shutdown().await.unwrap();
-    let (capture, asked) = chat_capture(&temporary, Vec::new(), Some("reply-2"), &chat_id);
-    let (broker, socket) = start_turn(&state, &temporary, "newer-later", capture).await;
-    let allowed = broker_request(&socket, broker.token(), "native.authorize", bash("ls")).await;
-    assert_eq!(allowed["ok"], true, "{allowed}");
-    assert!(asked.lock().unwrap().is_empty());
-    broker.shutdown().await.unwrap();
-
-    // ... another Chat does not share it ...
-    let (capture, asked) = chat_capture(&temporary, Vec::new(), Some("reply-2"), &new_id("chat"));
-    let (broker, socket) = start_turn(&state, &temporary, "other-chat", capture).await;
-    let refused = broker_request(&socket, broker.token(), "native.authorize", bash("ls")).await;
-    refused_with(&refused, COMMAND_DECLINED_REFUSAL);
-    assert_eq!(asked.lock().unwrap().len(), 1);
-    broker.shutdown().await.unwrap();
-
-    // ... a turn that reads third-party text itself asks again ...
-    let (capture, asked) = chat_capture(&temporary, Vec::new(), Some("reply-2"), &chat_id);
-    capture.turn_taint.mark_untrusted_text();
-    let (broker, socket) = start_turn(&state, &temporary, "fresh-text", capture).await;
-    let refused = broker_request(&socket, broker.token(), "native.authorize", bash("ls")).await;
-    refused_with(&refused, COMMAND_DECLINED_REFUSAL);
-    assert_eq!(asked.lock().unwrap()[0].grant, Some(ApprovalGrant::Reply));
-    broker.shutdown().await.unwrap();
-
-    // ... and Stop allowing ends it.
-    crate::chat::command_grants::revoke("loupist-a", &chat_id);
-    let (capture, asked) = chat_capture(&temporary, Vec::new(), Some("reply-2"), &chat_id);
-    let (broker, socket) = start_turn(&state, &temporary, "revoked", capture).await;
-    let refused = broker_request(&socket, broker.token(), "native.authorize", bash("ls")).await;
-    refused_with(&refused, COMMAND_DECLINED_REFUSAL);
-    assert_eq!(asked.lock().unwrap().len(), 1);
     broker.shutdown().await.unwrap();
 }
 

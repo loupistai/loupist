@@ -390,7 +390,6 @@ pub async fn chat_delete(
         }
         return Err(error);
     }
-    crate::chat::command_grants::revoke(&expected.loupist_id, &expected.id);
     Ok(())
 }
 

@@ -100,16 +100,13 @@ impl TurnTaint {
         self.untrusted_text.load(Ordering::Acquire)
     }
 
-    /// The native policy's view of this turn; `carried` says an earlier reply
-    /// that read third-party text is in the model's context.
-    pub fn exposure(&self, carried: bool) -> crate::agent_harness::native_policy::Exposure {
+    /// The native policy's view of this reply.
+    pub fn exposure(&self) -> crate::agent_harness::native_policy::Exposure {
         use crate::agent_harness::native_policy::Exposure;
         if self.tainted.load(Ordering::Acquire) {
             Exposure::Custom
         } else if self.untrusted_text() {
             Exposure::ThisTurn
-        } else if carried {
-            Exposure::Carried
         } else {
             Exposure::Clean
         }
@@ -194,9 +191,9 @@ impl TurnTaint {
     /// every URL opens. After it: a URL the host delivered or the user typed
     /// opens; a URL carrying a held quantity or amount, or a run of the user's
     /// Lens or note text, is refused; an official filing or statistics site
-    /// opens; a site seen this turn opens when its query is short; anything
-    /// else asks the user, once per turn. `holdings` are the latest snapshot's
-    /// quantity, cost and value strings.
+    /// opens; a site seen this turn opens when its path and query are short;
+    /// anything else asks the user, once per turn. `holdings` are the latest
+    /// snapshot's quantity, cost and value strings.
     pub fn web_fetch_target(&self, url: &str, holdings: &[String]) -> WebFetchTarget {
         if !self.untrusted_text() {
             return WebFetchTarget::Allowed;
@@ -226,10 +223,11 @@ impl TurnTaint {
         if research_site(&host) {
             return WebFetchTarget::Allowed;
         }
-        let locator = parsed.path().len()
-            + parsed.query().map_or(0, str::len)
-            + parsed.fragment().map_or(0, str::len);
-        if known_host && locator <= MAX_TAINTED_LOCATOR_BYTES {
+        let query = parsed.query().map_or(0, str::len) + parsed.fragment().map_or(0, str::len);
+        if known_host
+            && parsed.path().len() <= MAX_TAINTED_PATH_BYTES
+            && query <= MAX_TAINTED_QUERY_BYTES
+        {
             return WebFetchTarget::Allowed;
         }
         if self.new_sites_declined.load(Ordering::Acquire) {
@@ -698,10 +696,12 @@ fn bundled_text_tool(params: &Value, bundled: &BTreeMap<String, BundledMcpRuntim
     !(server_id == "openbb" && NUMERIC_ONLY_OPENBB_TOOLS.contains(&tool_name))
 }
 
-/// A path, query and fragment longer than this together, on a site seen this
-/// turn, asks the user once third-party text has arrived: room for an article
-/// path and page parameters, not for a copied document in either part.
-const MAX_TAINTED_LOCATOR_BYTES: usize = 256;
+/// On a site seen this turn, a query and fragment longer than this together, or
+/// a path longer than `MAX_TAINTED_PATH_BYTES`, asks the user once third-party
+/// text has arrived. Percent-encoded Korean slugs are long, so the path bound
+/// is wider; it still stops a copied document.
+const MAX_TAINTED_QUERY_BYTES: usize = 256;
+const MAX_TAINTED_PATH_BYTES: usize = 1024;
 /// A run of this many letters and digits of the user's Lens or note text in a
 /// URL counts as copied; shorter text must appear whole.
 const PRIVATE_RUN_CHARS: usize = 24;
@@ -1328,14 +1328,26 @@ mod tests {
                 target: "example.com/a?…".into()
             }
         );
-        // A long path carries data as well as a query does, so it asks too.
+        // A percent-encoded Korean article slug is long but ordinary: it opens.
+        let slug: String = "한국경제신문"
+            .repeat(10)
+            .bytes()
+            .map(|byte| format!("%{byte:02X}"))
+            .collect();
+        assert!(slug.len() > 256 && slug.len() <= 1024);
+        assert_eq!(
+            allowed(&format!("https://example.com/news/{slug}")),
+            WebFetchTarget::Allowed
+        );
+        // A path past the bound carries data as well as a query does, so it asks.
         assert!(matches!(
-            allowed(&format!("https://example.com/{}", "y".repeat(300))),
+            allowed(&format!("https://example.com/{}", "y".repeat(1100))),
             WebFetchTarget::Approve { .. }
         ));
+        // Query and fragment are bounded together.
         assert!(matches!(
             allowed(&format!(
-                "https://example.com/{}?d={}",
+                "https://example.com/a?d={}#{}",
                 "y".repeat(200),
                 "z".repeat(100)
             )),

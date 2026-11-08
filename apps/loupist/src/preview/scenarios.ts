@@ -203,7 +203,7 @@ function approvalSteps(at: number, kind: ApprovalScenarioKind, status: "running"
 const approvalFor = (kind: ApprovalScenarioKind, state: ChatApproval["state"], at: number): ChatApproval => kind === "site"
   ? { requestId: "req-web", kind: "web_site", itemId: "preview-site", connectionId: "web", connectionName: "Web", toolName: "web_fetch", target: "markets.example.com/morrow-components/q3-2026-results", state, requestedAtMs: at - 9_000 }
   : kind === "command"
-    ? { requestId: "req-command", kind: "command", itemId: "preview-command", connectionId: "workspace", connectionName: "Workspace", toolName: "bash", target: "python3 scripts/build_deck.py", detail: PREVIEW_COMMAND, grant: "reply", state, requestedAtMs: at - 9_000 }
+    ? { requestId: "req-command", kind: "command", itemId: "preview-command", connectionId: "workspace", connectionName: "Workspace", toolName: "bash", target: "python3 scripts/build_deck.py", detail: PREVIEW_COMMAND, state, requestedAtMs: at - 9_000 }
     : { requestId: "req-1", itemId: "preview-filings", connectionId: "custom-morrow", connectionName: "Morrow research tools", toolName: "read_company_filings", target: "Hanul Precision · 2026 Q3", state, requestedAtMs: at - 12_000 };
 /** A reply paused on a read-only connection, a new website or a command until the user decides. */
 function approvalRun(bridge: PreviewBridge, kind: ApprovalScenarioKind) {

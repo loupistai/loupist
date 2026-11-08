@@ -4,8 +4,8 @@ use super::approval::{native_approval, AskOutcome};
 use super::authority::bounded_text;
 use super::*;
 use crate::agent_harness::native_policy::{
-    self, AskKind, CommandScope, Grant, NativeAsk, NativeDecision, NativeGrants, NativeRefusal,
-    NativeRequest, NativeRoots, NativeTool,
+    self, AskKind, NativeDecision, NativeGrants, NativeRefusal, NativeRequest, NativeRoots,
+    NativeTool,
 };
 use crate::chat::approvals::ApprovalDecision;
 use crate::custom_connections::taint::{COMMAND_DECLINED_REFUSAL, INSTRUCTION_WRITE_REFUSAL};
@@ -17,41 +17,21 @@ const SEARCH_COVERS_APP_DATA_NEXT: &str = "This search root contains the app's p
 const UNRESOLVABLE_NEXT: &str = "This path goes through a symbolic link that loops or cannot be read, so it is not touched. Use the real file's path.";
 
 /// The native policy's state for one turn: the folders it classifies against,
-/// the newest earlier reply that carried third-party text, the Chat the
-/// blanket command grant is keyed by, what the user allowed or turned down in
-/// this reply, and one card-at-a-time lock per ask kind.
+/// what the user allowed or turned down in this reply, and one
+/// card-at-a-time lock per ask kind.
 #[derive(Default)]
 pub(in crate::commands) struct NativeGate {
     roots: Option<NativeRoots>,
-    newest_untrusted: Option<String>,
-    chat: Option<(String, String)>,
     grants: std::sync::Mutex<NativeGrants>,
     ask_locks: [tokio::sync::Mutex<()>; AskKind::COUNT],
 }
 
 impl NativeGate {
-    pub(in crate::commands) fn for_turn(
-        roots: NativeRoots,
-        newest_untrusted: Option<String>,
-        loupist_id: &str,
-        thread_id: &str,
-    ) -> Self {
+    pub(in crate::commands) fn for_turn(roots: NativeRoots) -> Self {
         Self {
             roots: Some(roots),
-            newest_untrusted,
-            chat: Some((loupist_id.to_owned(), thread_id.to_owned())),
             ..Self::default()
         }
-    }
-
-    fn chat_commands(&self) -> bool {
-        self.chat.as_ref().is_some_and(|(loupist_id, thread_id)| {
-            crate::chat::command_grants::granted(
-                loupist_id,
-                thread_id,
-                self.newest_untrusted.as_deref(),
-            )
-        })
     }
 
     fn decide(
@@ -59,13 +39,12 @@ impl NativeGate {
         request: &NativeRequest,
         taint: &crate::custom_connections::taint::TurnTaint,
     ) -> Result<NativeDecision, BrokerError> {
-        let exposure = taint.exposure(self.newest_untrusted.is_some());
+        let exposure = taint.exposure();
         if request.tool == NativeTool::Bash {
             return Ok(native_policy::decide_command(
                 request,
                 exposure,
                 &self.grants(),
-                self.chat_commands(),
             ));
         }
         // A run without turn folders cannot classify a path.
@@ -77,7 +56,6 @@ impl NativeGate {
             roots,
             exposure,
             &self.grants(),
-            self.chat_commands(),
         ))
     }
 
@@ -85,25 +63,6 @@ impl NativeGate {
         self.grants
             .lock()
             .unwrap_or_else(|error| error.into_inner())
-    }
-
-    fn grant(&self, ask: &NativeAsk, decision: ApprovalDecision) {
-        if let (
-            Grant::Command {
-                scope: CommandScope::Chat,
-                ..
-            },
-            ApprovalDecision::Always,
-            Some((loupist_id, thread_id)),
-        ) = (&ask.grant, decision, &self.chat)
-        {
-            crate::chat::command_grants::grant(
-                loupist_id,
-                thread_id,
-                self.newest_untrusted.as_deref(),
-            );
-        }
-        self.grants().grant(ask, decision);
     }
 
     fn decline(&self, kind: AskKind) {
@@ -160,7 +119,7 @@ impl AppToolExecutor {
                     match self.ask_user(native_approval(&ask)).await {
                         AskOutcome::Answered(
                             decision @ (ApprovalDecision::Once | ApprovalDecision::Always),
-                        ) => gate.grant(&ask, decision),
+                        ) => gate.grants().grant(&ask, decision),
                         AskOutcome::Answered(ApprovalDecision::Deny) | AskOutcome::NoAnswer => {
                             gate.decline(ask.kind);
                             return Err(declined_error(ask.kind));

@@ -16,9 +16,8 @@ says so. Unattended runs refuse every native tool before this policy
 
 | Exposure | When |
 | --- | --- |
-| Clean | No third-party text this turn, and no earlier reply in this Chat read any. |
+| Clean | No third-party text this reply. Earlier replies do not count: the user's new message is the checkpoint. |
 | ThisTurn | This turn raised the untrusted-text tier ([Untrusted text](untrusted-text.md)). |
-| Carried | This turn is clean, but an earlier reply in this Chat recorded `tool_trace.untrusted_text`. The window is the whole Chat: neither the warm Pi session nor the cold transcript records which replies it holds. Carried affects only this policy. |
 | Custom | This turn read a custom-connection result. File rows behave as ThisTurn; Bash stays refused by `TurnTaint::enforce` (`outbound_paused`). |
 
 ## Path classes
@@ -53,7 +52,7 @@ firmlink or case alias of a root counts at whatever depth it spells the root.
 
 ## Policy table
 
-| Tool | Class | Clean | ThisTurn, Carried, Custom |
+| Tool | Class | Clean | ThisTurn, Custom |
 | --- | --- | --- | --- |
 | read, ls | AppPrivate | Refuse | Refuse |
 | read, ls | Sensitive | Ask `file_read` | Ask `file_read` |
@@ -67,7 +66,7 @@ firmlink or case alias of a root counts at whatever depth it spells the root.
 | write, edit | Scratch, Workspace | Allow | Allow |
 | write, edit | Instructions | Allow | Ask `instructions` (that file) |
 | write, edit | Outside | Allow | Ask `file_write` (folder, this reply) |
-| bash | | Allow | ThisTurn: Ask `command`. Carried: Ask `command` with a Chat scope. Custom: Refuse. |
+| bash | | Allow | ThisTurn: Ask `command`. Custom: Refuse. |
 
 Refusals carry a broker code the step shows: `protected_path` for AppPrivate and a
 search above app data, `user_declined` after Not now on a file card, and
@@ -83,15 +82,8 @@ zero-width and bidi controls, the byte order mark and other control characters
 in a target or command show as `\u{…}`. The card wraps the command and shows its
 line count beside it.
 
-- `command` under ThisTurn: Allow once (this exact command, this reply), Allow
-  commands for this reply, Not now.
-- `command` under Carried: Allow once, Allow commands in this Chat (`grant: chat`;
-  an in-memory grant keyed by Loupist and Chat, `chat/command_grants.rs`, cleared by
-  the settled line's "Stop allowing" through `chat_command_grant_revoke`, by the
-  Chat's deletion and by an app restart), Not now. The grant remembers the Chat's
-  newest reply that had recorded third-party text when it was given; once a later
-  reply records more, the grant is void and the next command asks again. Under
-  ThisTurn the Chat grant does not apply.
+- `command`: Allow once (this exact command, this reply), Allow commands for this
+  reply, Not now.
 - `file_read`, `file_write`: Allow (this reply), Not now. "Always" counts as once.
   Allow covers an outside file's folder, except a file directly in the home
   folder or at the root of the disk, which covers that file only; a directory
@@ -121,6 +113,9 @@ symlink swapped in after authorization cannot redirect the write.
 - `models.json` and `connections.json` are AppPrivate for native file tools, but a
   command can still write them. An integrity seal checked before launch is a
   follow-up.
+- A later reply starts clean even though third-party text read earlier can stay in the
+  model's context. The user's new message is the checkpoint. An OS sandbox for Bash
+  (follow-up) is the real fix.
 - Bash output never raises the untrusted-text tier, and background commands can
   outlive the turn.
 - A workspace search runs `rg --hidden` over the whole workspace, so it reaches

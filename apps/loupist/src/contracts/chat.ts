@@ -128,8 +128,6 @@ export type ChatApproval = {
   target?: string;
   /** A command card's whole command. */
   detail?: string;
-  /** What a blanket Allow on a command card covers: this reply, or this Chat until revoked. */
-  grant?: "reply" | "chat";
   state: "waiting" | "allowed_once" | "always_allowed" | "declined" | "expired";
   requestedAtMs: number;
 };

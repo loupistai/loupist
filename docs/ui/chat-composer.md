@@ -106,9 +106,7 @@ unattended runs, keep the plain refusal. After third-party text, a `web_fetch` o
 new site waits on the same kind of card (`kind: web_site`) with only Allow once and
 Not now ([Trust](../runtime/untrusted-text.md)). A native command (`kind: command`)
 shows the whole command in a scrollable block and offers Allow once, Not now and a
-secondary blanket option, "Allow commands for this reply" or, when only earlier
-replies read other sites, "Allow commands in this chat"; that settled line offers
-"Stop allowing" (`chat_command_grant_revoke`). A read or write outside the workspace
+secondary blanket option, "Allow commands for this reply". A read or write outside the workspace
 (`file_read`, `file_write`) offers Allow and Not now; an instruction file
 (`instructions`) offers Allow once and Not now. The rail's "Needs your OK" row names a
 native card by its path or command line ([Native tool permissions](../runtime/permissions.md)).

@@ -160,9 +160,6 @@ pub(super) struct AdmittedChatTurn {
     pub runtime_surface_sha256: String,
     pub policy: crate::broker::ToolPolicy,
     pub native_roots: crate::agent_harness::native_policy::NativeRoots,
-    /// The newest earlier reply in this Chat that read third-party text, which
-    /// the model's context may carry into this clean turn.
-    pub newest_untrusted: Option<String>,
     pub host_context: String,
     pub harness: AgentHarnessSnapshot,
     pub chat_attachments: PathBuf,
@@ -409,10 +406,6 @@ pub(super) fn admit_chat_turn(
     )?;
     let memory_revision = host_memory.as_ref().map(|memory| memory.revision.clone());
     let turn_resources = ChatTurnResources::new(run_lease, run_scratch, execution_session);
-    // The native policy's folders: the Carried window is this whole Chat, since
-    // neither the warm Pi session nor the cold transcript records which
-    // replies it holds; a clean turn in a Chat that once read third-party
-    // text asks before its first command.
     let native_roots = crate::agent_harness::native_policy::NativeRoots::new(
         &instruction_roots.0,
         &instruction_roots.1,
@@ -428,12 +421,6 @@ pub(super) fn admit_chat_turn(
         &chat_attachments.join(&chat.id),
         host_home().as_deref(),
     );
-    let newest_untrusted = chat
-        .messages
-        .iter()
-        .rev()
-        .find(|message| message.has_untrusted_text())
-        .map(|message| message.id.clone());
     let timestamp = now_ms().max(chat.updated_at_ms + 1);
     let user_message_id = new_id("message");
     let current_prompt = attachment_prompt(
@@ -617,7 +604,6 @@ pub(super) fn admit_chat_turn(
         runtime_surface_sha256,
         policy,
         native_roots,
-        newest_untrusted,
         host_context,
         harness,
         chat_attachments,

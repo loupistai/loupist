@@ -69,7 +69,8 @@ digits or more, years excepted), or a 24-character run of the turn's principles,
 perspective, Lens bodies or notes and Journal text, is refused on any site. Official
 filing and statistics sites (`RESEARCH_SITES`) open. A site seen this turn (a search
 result's or fetched page's host, or a site named in the user's message) opens when its
-path, query and fragment total at most 256 bytes. Anything else shows an approval card
+path is at most 1024 bytes and its query and fragment total at most 256 bytes. The
+path bound is wider because a percent-encoded Korean article slug is long. Anything else shows an approval card
 (`kind: web_site`, Allow once or Not now). Allow once adds the site for the turn; Not
 now, an expired card or an unattended run refuses it and every later new site in the
 turn without asking. Links and text inside a page, its alternates and a saved Source's

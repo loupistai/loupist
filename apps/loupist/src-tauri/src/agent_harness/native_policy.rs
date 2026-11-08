@@ -230,9 +230,6 @@ pub enum Exposure {
     Clean,
     /// This turn raised the untrusted-text tier.
     ThisTurn,
-    /// This turn is clean, but an earlier reply that read third-party text is
-    /// in the model's context.
-    Carried,
     /// This turn read a custom-connection result (the stronger tier).
     Custom,
 }
@@ -258,21 +255,10 @@ impl AskKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CommandScope {
-    /// Third-party text arrived this turn: a blanket answer covers this reply.
-    Reply,
-    /// Only earlier replies carry it: a blanket answer covers this Chat.
-    Chat,
-}
-
 /// What an Allow answer records.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Grant {
-    Command {
-        command: String,
-        scope: CommandScope,
-    },
+    Command(String),
     Read(GrantedPath),
     Write(GrantedPath),
     InstructionFile(PathBuf),
@@ -326,8 +312,7 @@ pub enum NativeDecision {
     Refuse(NativeRefusal),
 }
 
-/// What the user allowed or turned down in this reply. Chat-scope command
-/// grants live in the app-session registry, keyed by Loupist and Chat.
+/// What the user allowed or turned down in this reply.
 #[derive(Default, Debug)]
 pub struct NativeGrants {
     commands_for_reply: bool,
@@ -339,18 +324,12 @@ pub struct NativeGrants {
 }
 
 impl NativeGrants {
-    /// Records an Allow answer. An Always answer on a Chat-scope command keeps
-    /// only that command here: the caller stores the Chat grant in its registry.
+    /// Records an Allow answer.
     pub fn grant(&mut self, ask: &NativeAsk, decision: ApprovalDecision) {
         match (&ask.grant, decision) {
             (_, ApprovalDecision::Deny) => {}
-            (Grant::Command { command, scope }, ApprovalDecision::Always) => {
-                if *scope == CommandScope::Reply {
-                    self.commands_for_reply = true;
-                }
-                self.commands.insert(command.clone());
-            }
-            (Grant::Command { command, .. }, ApprovalDecision::Once) => {
+            (Grant::Command(_), ApprovalDecision::Always) => self.commands_for_reply = true,
+            (Grant::Command(command), ApprovalDecision::Once) => {
                 self.commands.insert(command.clone());
             }
             (Grant::Read(path), _) => self.reads.push(path.clone()),
@@ -368,16 +347,14 @@ impl NativeGrants {
     }
 }
 
-/// `chat_commands` is the Chat registry's answer for this Loupist and Chat.
 pub fn decide(
     request: &NativeRequest,
     roots: &NativeRoots,
     exposure: Exposure,
     grants: &NativeGrants,
-    chat_commands: bool,
 ) -> NativeDecision {
     if request.tool == NativeTool::Bash {
-        return decide_command(request, exposure, grants, chat_commands);
+        return decide_command(request, exposure, grants);
     }
     let Some(target) = request.target.as_deref() else {
         return NativeDecision::Refuse(NativeRefusal::AppPrivate);
@@ -468,19 +445,14 @@ pub fn decide_command(
     request: &NativeRequest,
     exposure: Exposure,
     grants: &NativeGrants,
-    chat_commands: bool,
 ) -> NativeDecision {
     let command = request.command.as_deref().unwrap_or_default();
-    let scope = match exposure {
+    match exposure {
         Exposure::Clean => return NativeDecision::Allow { resolved: None },
         Exposure::Custom => return NativeDecision::Refuse(NativeRefusal::OutboundPaused),
-        Exposure::ThisTurn => CommandScope::Reply,
-        Exposure::Carried => CommandScope::Chat,
-    };
-    if grants.commands_for_reply
-        || grants.commands.contains(command)
-        || (scope == CommandScope::Chat && chat_commands)
-    {
+        Exposure::ThisTurn => {}
+    }
+    if grants.commands_for_reply || grants.commands.contains(command) {
         return NativeDecision::Allow { resolved: None };
     }
     if grants.declined.contains(&AskKind::Command) {
@@ -492,10 +464,7 @@ pub fn decide_command(
         tool: NativeTool::Bash,
         target: bounded_head(first_line(&shown), MAX_TARGET_BYTES),
         detail: Some(command_detail(&shown)),
-        grant: Grant::Command {
-            command: command.to_owned(),
-            scope,
-        },
+        grant: Grant::Command(command.to_owned()),
     })
 }
 
@@ -1096,8 +1065,7 @@ mod tests {
                     &request("write", ws.join("report.md")),
                     &f.roots,
                     exposure,
-                    &NativeGrants::default(),
-                    false
+                    &NativeGrants::default()
                 )),
                 "ask file_write"
             );
@@ -1106,8 +1074,7 @@ mod tests {
                     &request("write", ws.join("db.md")),
                     &f.roots,
                     exposure,
-                    &NativeGrants::default(),
-                    false
+                    &NativeGrants::default()
                 )),
                 "refuse app_private"
             );
@@ -1117,8 +1084,7 @@ mod tests {
                         &request(tool, ws.join("loop.md")),
                         &f.roots,
                         exposure,
-                        &NativeGrants::default(),
-                        false
+                        &NativeGrants::default()
                     )),
                     "refuse unresolvable",
                     "{tool}"
@@ -1325,12 +1291,12 @@ mod tests {
         ];
         for (request, clean_expected, exposed_expected) in &rows {
             assert_eq!(
-                kind(&decide(request, &f.roots, Exposure::Clean, &clean, false)),
+                kind(&decide(request, &f.roots, Exposure::Clean, &clean)),
                 *clean_expected,
                 "clean {request:?}"
             );
-            for exposure in [Exposure::ThisTurn, Exposure::Carried] {
-                let decision = decide(request, &f.roots, exposure, &clean, false);
+            for exposure in [Exposure::ThisTurn] {
+                let decision = decide(request, &f.roots, exposure, &clean);
                 assert_eq!(
                     kind(&decision),
                     *exposed_expected,
@@ -1342,14 +1308,13 @@ mod tests {
                 }
             }
         }
-        let custom = decide(&bash("ls"), &f.roots, Exposure::Custom, &clean, false);
+        let custom = decide(&bash("ls"), &f.roots, Exposure::Custom, &clean);
         assert_eq!(kind(&custom), "refuse outbound");
         let custom = decide(
             &request("read", home.join("Documents/shared.csv")),
             &f.roots,
             Exposure::Custom,
             &clean,
-            false,
         );
         assert_eq!(kind(&custom), "ask file_read");
     }
@@ -1362,7 +1327,6 @@ mod tests {
             &f.roots,
             Exposure::Clean,
             &NativeGrants::default(),
-            false,
         );
         assert_eq!(
             decision,
@@ -1385,7 +1349,6 @@ mod tests {
                 &f.roots,
                 Exposure::ThisTurn,
                 &grants,
-                false,
             ) else {
                 panic!("an outside {tool} asks");
             };
@@ -1404,8 +1367,7 @@ mod tests {
                         &request(tool, f.home.join(file)),
                         &f.roots,
                         exposure,
-                        &grants,
-                        false
+                        &grants
                     )),
                     expected,
                     "{tool} {file} under {exposure:?}"
@@ -1419,7 +1381,7 @@ mod tests {
         let f = fixture();
         let mut grants = NativeGrants::default();
         let decide_with = |grants: &NativeGrants, tool: &str, path: PathBuf, exposure| {
-            decide(&request(tool, path), &f.roots, exposure, grants, false)
+            decide(&request(tool, path), &f.roots, exposure, grants)
         };
         // Allowing a search of ~/.config covers that search, not the
         // credential files it holds.
@@ -1534,7 +1496,6 @@ mod tests {
             &f.roots,
             Exposure::ThisTurn,
             &NativeGrants::default(),
-            false,
         ) else {
             panic!("a tainted command asks");
         };
@@ -1553,7 +1514,6 @@ mod tests {
             &f.roots,
             Exposure::ThisTurn,
             &NativeGrants::default(),
-            false,
         ) else {
             panic!("an outside read asks");
         };
@@ -1576,7 +1536,6 @@ mod tests {
             &f.roots,
             Exposure::ThisTurn,
             &NativeGrants::default(),
-            false,
         ) else {
             panic!("a tainted command asks");
         };
@@ -1593,7 +1552,6 @@ mod tests {
             &f.roots,
             Exposure::ThisTurn,
             &NativeGrants::default(),
-            false,
         );
         let NativeDecision::Ask(short) = short else {
             panic!("a tainted command asks");
@@ -1606,8 +1564,7 @@ mod tests {
         let f = fixture();
         let mut grants = NativeGrants::default();
         let shared = request("read", f.home.join("Documents/shared.csv"));
-        let NativeDecision::Ask(ask) =
-            decide(&shared, &f.roots, Exposure::ThisTurn, &grants, false)
+        let NativeDecision::Ask(ask) = decide(&shared, &f.roots, Exposure::ThisTurn, &grants)
         else {
             panic!("outside read asks");
         };
@@ -1623,8 +1580,7 @@ mod tests {
                     &request("read", f.home.join("Documents").join(file)),
                     &f.roots,
                     Exposure::ThisTurn,
-                    &grants,
-                    false
+                    &grants
                 )),
                 "allow"
             );
@@ -1634,8 +1590,7 @@ mod tests {
                 &request("read", f.home.join("Downloads/x.csv")),
                 &f.roots,
                 Exposure::ThisTurn,
-                &grants,
-                false
+                &grants
             )),
             "ask file_read"
         );
@@ -1645,7 +1600,6 @@ mod tests {
             &f.roots,
             Exposure::Clean,
             &grants,
-            false,
         ) else {
             panic!("sensitive read asks");
         };
@@ -1655,8 +1609,7 @@ mod tests {
                 &request("read", f.home.join(".ssh/id_ed25519")),
                 &f.roots,
                 Exposure::Clean,
-                &grants,
-                false
+                &grants
             )),
             "allow"
         );
@@ -1665,8 +1618,7 @@ mod tests {
                 &request("read", f.home.join(".ssh/known_hosts")),
                 &f.roots,
                 Exposure::Clean,
-                &grants,
-                false
+                &grants
             )),
             "ask file_read"
         );
@@ -1677,8 +1629,7 @@ mod tests {
                 &request("write", f.home.join("Documents/out.csv")),
                 &f.roots,
                 Exposure::ThisTurn,
-                &grants,
-                false
+                &grants
             ),
             NativeDecision::Refuse(NativeRefusal::Declined(AskKind::FileWrite))
         );
@@ -1687,34 +1638,26 @@ mod tests {
                 &request("write", f.roots.workspace.join("out.csv")),
                 &f.roots,
                 Exposure::ThisTurn,
-                &grants,
-                false
+                &grants
             )),
             "allow"
         );
     }
 
     #[test]
-    fn command_grants_follow_the_exposure_scope() {
+    fn command_grants_cover_the_reply() {
         let f = fixture();
         let mut grants = NativeGrants::default();
         let once = bash("python3 build_deck.py");
-        let NativeDecision::Ask(ask) = decide(&once, &f.roots, Exposure::ThisTurn, &grants, false)
-        else {
+        let NativeDecision::Ask(ask) = decide(&once, &f.roots, Exposure::ThisTurn, &grants) else {
             panic!("tainted bash asks");
         };
         assert_eq!(ask.target, "python3 build_deck.py");
         assert_eq!(ask.detail.as_deref(), Some("python3 build_deck.py"));
-        assert_eq!(
-            ask.grant,
-            Grant::Command {
-                command: "python3 build_deck.py".into(),
-                scope: CommandScope::Reply
-            }
-        );
+        assert_eq!(ask.grant, Grant::Command("python3 build_deck.py".into()));
         grants.grant(&ask, ApprovalDecision::Once);
         assert_eq!(
-            kind(&decide(&once, &f.roots, Exposure::ThisTurn, &grants, false)),
+            kind(&decide(&once, &f.roots, Exposure::ThisTurn, &grants)),
             "allow"
         );
         assert_eq!(
@@ -1722,15 +1665,13 @@ mod tests {
                 &bash("python3 build_deck.py --again"),
                 &f.roots,
                 Exposure::ThisTurn,
-                &grants,
-                false
+                &grants
             )),
             "ask command"
         );
 
         // Always under ThisTurn covers the reply.
-        let NativeDecision::Ask(ask) =
-            decide(&bash("ls"), &f.roots, Exposure::ThisTurn, &grants, false)
+        let NativeDecision::Ask(ask) = decide(&bash("ls"), &f.roots, Exposure::ThisTurn, &grants)
         else {
             panic!();
         };
@@ -1740,84 +1681,35 @@ mod tests {
                 &bash("whoami"),
                 &f.roots,
                 Exposure::ThisTurn,
-                &grants,
-                false
+                &grants
             )),
             "allow"
-        );
-
-        // Carried only: Always is a Chat grant the caller stores; the Chat
-        // grant never applies once this turn reads third-party text.
-        let mut carried = NativeGrants::default();
-        let NativeDecision::Ask(ask) =
-            decide(&bash("ls"), &f.roots, Exposure::Carried, &carried, false)
-        else {
-            panic!();
-        };
-        assert_eq!(
-            ask.grant,
-            Grant::Command {
-                command: "ls".into(),
-                scope: CommandScope::Chat
-            }
-        );
-        carried.grant(&ask, ApprovalDecision::Always);
-        assert_eq!(
-            kind(&decide(
-                &bash("whoami"),
-                &f.roots,
-                Exposure::Carried,
-                &carried,
-                false
-            )),
-            "ask command"
-        );
-        assert_eq!(
-            kind(&decide(
-                &bash("whoami"),
-                &f.roots,
-                Exposure::Carried,
-                &carried,
-                true
-            )),
-            "allow"
-        );
-        assert_eq!(
-            kind(&decide(
-                &bash("whoami"),
-                &f.roots,
-                Exposure::ThisTurn,
-                &carried,
-                true
-            )),
-            "ask command"
         );
 
         // The allowed command itself stays allowed; after Not now, others are
         // refused without a card, and a clean turn never asks.
-        carried.decline(AskKind::Command);
+        let mut declined = NativeGrants::default();
+        let NativeDecision::Ask(ask) = decide(&bash("ls"), &f.roots, Exposure::ThisTurn, &declined)
+        else {
+            panic!();
+        };
+        declined.grant(&ask, ApprovalDecision::Once);
+        declined.decline(AskKind::Command);
         assert_eq!(
             kind(&decide(
                 &bash("ls"),
                 &f.roots,
-                Exposure::Carried,
-                &carried,
-                false
+                Exposure::ThisTurn,
+                &declined
             )),
             "allow"
         );
         assert_eq!(
-            decide(&bash("id"), &f.roots, Exposure::Carried, &carried, false),
+            decide(&bash("id"), &f.roots, Exposure::ThisTurn, &declined),
             NativeDecision::Refuse(NativeRefusal::Declined(AskKind::Command))
         );
         assert_eq!(
-            kind(&decide(
-                &bash("id"),
-                &f.roots,
-                Exposure::Clean,
-                &carried,
-                false
-            )),
+            kind(&decide(&bash("id"), &f.roots, Exposure::Clean, &declined)),
             "allow"
         );
     }
@@ -1831,7 +1723,6 @@ mod tests {
             &f.roots,
             Exposure::ThisTurn,
             &NativeGrants::default(),
-            false,
         ) else {
             panic!();
         };
