@@ -2298,6 +2298,89 @@ fn a_subject_the_world_never_confirms_holds_its_rows_without_pinning_the_waterma
 }
 
 #[test]
+fn a_held_backlog_larger_than_one_input_drains_once_and_only_once() {
+    let (_dir, store) = setup();
+    let long = "Utilization, ramp cost and margin moved together. ".repeat(12);
+    // Forty rows of research about two companies the World has not confirmed,
+    // each in its own Chat citing its own Source.
+    let mut backlog = BTreeSet::new();
+    for i in 0..20 {
+        for (company, name) in [
+            ("kestrel", "Kestrel Foundry"),
+            ("halvorsen", "Halvorsen Cellworks"),
+        ] {
+            let filing = source(&store, &format!("Filing {company} {i}"));
+            let page = named(&format!("{name} ramp {i}"), name);
+            let chat = format!("chat-{company}-{i}");
+            let message = format!("m-{company}-{i}");
+            assert!(put_in(&store, &chat, &message, page, &long, &[filing], AT + 2 + i).is_none());
+            backlog.insert(message);
+        }
+    }
+    // An unrelated review reaches inference past them and holds all forty.
+    let start = AT + 100;
+    two_chats(&store, start).expect("queued");
+    let first = begin(&store, start + 2);
+    assert_eq!(pages(&first), ["Manufacturer 0", "Manufacturer 1"]);
+    defer(&store, &first, start + 3);
+    let (through, _, held) = latest_consumed(&store);
+    assert_eq!(held.len(), 40);
+    // The World confirms both companies: more evidence than one input holds.
+    reseal_with(
+        &store,
+        &[
+            ("entity-k", "Kestrel Foundry"),
+            ("entity-h", "Halvorsen Cellworks"),
+        ],
+        start + 4,
+    );
+    assert_eq!(
+        review_states(&store).last().map(String::as_str),
+        Some("pending")
+    );
+    let step = SIX_HOURS + 10;
+    let mut shown: BTreeSet<String> = BTreeSet::new();
+    let mut rounds = 0;
+    loop {
+        rounds += 1;
+        let at = start + 2 + rounds * step;
+        let Some(attempt) = try_claim(&store, at) else {
+            break;
+        };
+        let ids: BTreeSet<String> = attempt
+            .input
+            .observations
+            .iter()
+            .map(|o| o.message_id.clone())
+            .collect();
+        assert!(ids.len() < 40, "one input holds the whole backlog");
+        let again: Vec<_> = shown.intersection(&ids).collect();
+        assert!(
+            again.is_empty(),
+            "round {rounds} showed rows again: {again:?}"
+        );
+        shown.extend(ids);
+        let (now_through, _, _) = latest_consumed(&store);
+        assert!(
+            now_through >= through,
+            "round {rounds}: the watermark moved back"
+        );
+        // The second attempt is lost to a restart; the rest defer after inference.
+        if rounds == 2 {
+            store.transact(|w| recover(w.tx, at + 1)).unwrap();
+        } else {
+            defer(&store, &attempt, at + 1);
+        }
+        assert!(rounds < 8, "the backlog never drains");
+    }
+    assert_eq!(shown, backlog, "every held row was shown exactly once");
+    assert!(rounds > 3, "the backlog took several reviews");
+    assert!(!review_states(&store)
+        .iter()
+        .any(|s| matches!(s.as_str(), "pending" | "queued" | "running")));
+}
+
+#[test]
 fn a_company_confirmed_while_a_review_runs_is_rechecked_when_it_settles() {
     let (_dir, store) = setup();
     let sources: Vec<_> = ["A", "B", "C", "D", "E", "F"]

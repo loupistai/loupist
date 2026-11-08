@@ -163,9 +163,11 @@ fn queue(
 
 /// Lens-log rows an inference attempt already showed: every row through
 /// `through` except the `held` ones, and the rows in `shown` above it. A held
-/// row is research about a subject the World had not confirmed when the
-/// review ran; it stays readable below the watermark until the World confirms
-/// the company or the row stops being current.
+/// row is research the review could not show: about a subject the World had
+/// not confirmed when the review ran, or confirmed research that did not fit
+/// its input. It stays readable below the watermark until it is shown or
+/// stops being current. The watermark never moves back, so a review's
+/// snapshot carries every exception the one before it still owed.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct Consumed {
     #[serde(skip)]
@@ -194,14 +196,14 @@ fn watermarks(
         |r| r.get(0),
     )?;
     // A started review stores every shown row above its watermark and every
-    // held row below it, carried forward, so the latest one holds the whole
-    // set. A review stored before they were kept consumed its whole window and
-    // parses with none.
+    // held row below it, carried forward, so the latest started one holds the
+    // whole set. A review stored before they were kept consumed its whole
+    // window and parses with none.
     let latest: Option<(i64, Option<String>)> = tx
         .query_row(
             "SELECT through_event,input_json FROM knowledge_learning_reviews
              WHERE loupist_id=?1 AND world_job_id='' AND review_id<>?2 AND started_at_ms IS NOT NULL
-             ORDER BY through_event DESC,started_at_ms DESC LIMIT 1",
+             ORDER BY started_at_ms DESC,rowid DESC LIMIT 1",
             params![loupist, except],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
@@ -844,8 +846,10 @@ impl Input {
     }
 }
 /// The input for evidence after `consumed` through `end`, and what showing it
-/// consumes: rows through the oldest one left out, plus every shown row above,
-/// less the rows still held for a subject the World has not confirmed.
+/// consumes: rows through the oldest one left out, never below the watermark
+/// already consumed, plus every shown row above, less the rows still held:
+/// those about a subject the World has not confirmed, and those eligible
+/// below the watermark that did not fit this input.
 fn build_input(
     tx: &Transaction<'_>,
     loupist: &str,
@@ -955,7 +959,8 @@ fn build_input(
         }
     }
     // The rest fills oldest first, so what one review leaves out is newer
-    // evidence the next review reads.
+    // evidence the next review reads, or, below the consumed watermark, stays
+    // held for it.
     let mut through = end;
     for i in (0..all.len()).rev() {
         if picked.contains(&i) {
@@ -968,6 +973,7 @@ fn build_input(
         }
         picked.insert(i);
     }
+    let through = through.max(consumed.through);
     input.observations = picked.iter().map(|&i| all[i].clone()).collect();
     let shown = consumed
         .shown
@@ -976,7 +982,15 @@ fn build_input(
         .chain(picked.iter().map(|&i| all[i].row))
         .filter(|&row| row > through)
         .collect();
-    let held = held.into_iter().filter(|&row| row <= through).collect();
+    let held = held
+        .into_iter()
+        .chain(
+            (0..all.len())
+                .filter(|i| !picked.contains(i))
+                .map(|i| all[i].row),
+        )
+        .filter(|&row| row <= through)
+        .collect();
     Ok((
         input,
         Consumed {
@@ -1154,14 +1168,19 @@ fn confirmed_subjects(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<i6
     )?)
 }
 /// The queued row or claim snapshot (`input_json`) as a settle reads it back.
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 struct Claimed {
     #[serde(default)]
     confirmed_subjects: Option<i64>,
+    /// Only a claim snapshot has these: a queued row never held a row.
+    #[serde(default)]
+    held: BTreeSet<i64>,
 }
 /// After a review ends: filings committed past its watermark start the next
 /// one without another turn, and so does a subject confirmed since it was
-/// queued or claimed.
+/// queued or claimed, or a row the attempt held below its watermark, which no
+/// filing would otherwise bring back. A review settled before inference held
+/// nothing, so a defer there never requeues itself.
 fn requeue(
     tx: &Transaction<'_>,
     loupist: &str,
@@ -1171,13 +1190,16 @@ fn requeue(
     let at_claim = claimed
         .map(serde_json::from_str::<Claimed>)
         .transpose()?
-        .and_then(|c| c.confirmed_subjects);
-    match at_claim {
-        Some(then) if confirmed_subjects(tx, loupist)? > then => {
-            identity_changed(tx, loupist, now)?
-        }
-        _ => enqueue(tx, loupist, now)?,
+        .unwrap_or_default();
+    let confirmed_since = match at_claim.confirmed_subjects {
+        Some(then) => confirmed_subjects(tx, loupist)? > then,
+        None => false,
     };
+    if confirmed_since || !at_claim.held.is_empty() {
+        identity_changed(tx, loupist, now)?;
+    } else {
+        enqueue(tx, loupist, now)?;
+    }
     Ok(())
 }
 /// Startup. An attempt left running is failed and never retried. A review
