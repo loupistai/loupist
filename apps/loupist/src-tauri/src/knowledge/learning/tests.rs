@@ -1854,6 +1854,110 @@ fn a_claim_on_the_cited_span_confirms_the_company_for_learning() {
 }
 
 #[test]
+fn a_company_both_reports_name_beside_their_subjects_does_not_join_the_two_cases() {
+    // Each report names its company and, in a disclaimer both carry, the
+    // same auditor, and the World holds all three when it is through with
+    // the reports. Each pending page takes from its Source only the
+    // companies that may be its subject, so the auditor joins neither and
+    // the two Chats are two cases.
+    for common in ["Loupist", "KPMG"] {
+        let (_dir, store) = setup();
+        let (a, b) = (source(&store, "Report A"), source(&store, "Report B"));
+        let mut nodes = manufacturers_and(&[]);
+        nodes.extend([
+            company_node("entity-h", "Halvorsen Cellworks ASA", "company"),
+            company_node("entity-f", "Ferroluz Componentes S.A.", "company"),
+            company_node("entity-common", common, "Organization"),
+        ]);
+        let claims = vec![
+            claim_citing("clm_a", "entity-h", "entity-common", &a),
+            claim_citing("clm_b", "entity-f", "entity-common", &b),
+        ];
+        reseal_graph(&store, nodes, claims, AT + 1);
+        let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+        let halvorsen = named("Halvorsen ramp", "Halvorsen Cellworks");
+        assert!(put_in(
+            &store,
+            "chat-1",
+            "m1",
+            halvorsen,
+            text,
+            std::slice::from_ref(&a),
+            AT + 2
+        )
+        .is_none());
+        let ferroluz = named("Ferroluz ramp", "Ferroluz Componentes");
+        assert!(put_in(
+            &store,
+            "chat-2",
+            "m2",
+            ferroluz,
+            text,
+            std::slice::from_ref(&b),
+            AT + 3
+        )
+        .is_none());
+        assert!(review_states(&store).is_empty(), "the reports are unread");
+        world_read(&store, &[&a, &b], AT + 4);
+        assert_eq!(review_states(&store), ["queued"], "beside {common}");
+        assert_eq!(
+            pages(&begin(&store, AT + 6)),
+            ["Ferroluz ramp", "Halvorsen ramp"]
+        );
+        assert_eq!(pending_subjects(&store), 2, "nothing is persisted");
+    }
+}
+
+#[test]
+fn a_company_the_cited_report_claims_under_a_longer_name_is_the_pending_pages_case() {
+    // The report's extraction spells the company with a legal form, or with
+    // a word the page's name lacks. A "Halvorsen Cellworks" page citing the
+    // report is one case with a page about that node either way, and two
+    // cases beside a company the report never names.
+    for spelling in ["Halvorsen Cellworks ASA", "Halvorsen Cellworks Group"] {
+        let nodes = || {
+            vec![
+                company_node("entity-h", spelling, "company"),
+                company_node("entity-m", "Meridian Motors", "company"),
+            ]
+        };
+        let (_dir, store) = setup();
+        let (report, other) = (source(&store, "Report"), source(&store, "Filing C"));
+        let claims = vec![claim_citing("clm_1", "entity-h", "entity-m", &report)];
+        assert!(
+            !two_cases_with(
+                &store,
+                "Halvorsen Cellworks",
+                &report,
+                about_node(spelling, "entity-h"),
+                &other,
+                nodes(),
+                claims.clone()
+            ),
+            "beside {spelling}"
+        );
+        let (_dir, store) = setup();
+        let (report, other) = (source(&store, "Report"), source(&store, "Filing C"));
+        let claims = vec![claim_citing("clm_1", "entity-h", "entity-m", &report)];
+        assert!(
+            sources_confirm(
+                &store,
+                "Halvorsen Cellworks",
+                &report,
+                &other,
+                nodes(),
+                claims
+            ),
+            "beside Manufacturer 0, spelled {spelling}"
+        );
+        assert_eq!(
+            pages(&begin(&store, AT + 6)),
+            ["Halvorsen Cellworks ramp", "Manufacturer 0"]
+        );
+    }
+}
+
+#[test]
 fn two_pages_the_world_never_extracts_learn_once_their_sources_are_read() {
     // The World read both reports and published nothing, as an extraction
     // the model never completes leaves it. Each page counts under the name
@@ -2198,14 +2302,16 @@ fn a_report_whose_every_chunk_is_underfunded_is_read_when_the_claim_parks_it() {
 
 #[test]
 fn a_withdrawn_claim_or_a_product_names_no_company_for_a_pending_page() {
-    // Only an active claim binds a page to the counterparty on its span.
+    // The World spells the company with a word the page's name lacks, so
+    // only the claim on the span can bind the page to its node, and only an
+    // active one does.
     for (status, expected_two_cases) in
         [(ClaimStatus::Withdrawn, true), (ClaimStatus::Active, false)]
     {
         let (_dir, store) = setup();
         let (report, other) = (source(&store, "Report"), source(&store, "Filing C"));
         let nodes = vec![
-            company_node("entity-h", "Halvorsen Cellworks ASA", "company"),
+            company_node("entity-h", "Halvorsen Cellworks Group", "company"),
             company_node("entity-m", "Meridian Motors", "company"),
         ];
         let claims = vec![claim_with_status(
@@ -2216,7 +2322,7 @@ fn a_withdrawn_claim_or_a_product_names_no_company_for_a_pending_page() {
                 &store,
                 "Halvorsen Cellworks",
                 &report,
-                about_node("Meridian Motors", "entity-m"),
+                about_node("Halvorsen Cellworks Group", "entity-h"),
                 &other,
                 nodes,
                 claims
@@ -2225,21 +2331,22 @@ fn a_withdrawn_claim_or_a_product_names_no_company_for_a_pending_page() {
             "{status:?}"
         );
     }
-    // A Product on the span is no company the page could be about.
+    // A Product on the span is no company the page could be about, however
+    // much its name resembles the page's.
     for (kind, expected_two_cases) in [("Product", true), ("company", false)] {
         let (_dir, store) = setup();
         let (report, other) = (source(&store, "Report"), source(&store, "Filing C"));
         let nodes = vec![
-            company_node("entity-h", "Halvorsen Cellworks ASA", kind),
+            company_node("entity-h", "Halvorsen Cellworks Group", kind),
             company_node("entity-m", "Meridian Motors", "company"),
         ];
         let claims = vec![claim_citing("clm_1", "entity-h", "entity-m", &report)];
         assert_eq!(
             two_cases_with(
                 &store,
-                "Zephyr Metals",
+                "Halvorsen Cellworks",
                 &report,
-                about_node("Halvorsen Cellworks ASA", "entity-h"),
+                about_node("Halvorsen Cellworks Group", "entity-h"),
                 &other,
                 nodes,
                 claims

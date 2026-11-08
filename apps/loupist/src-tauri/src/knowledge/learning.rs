@@ -729,17 +729,20 @@ fn company_kind(kind: &str, extension: &super::world_schema::WorldExtension) -> 
 /// through with every Source it cites ([`super::graph_jobs::processed_sources`]):
 /// every company the World claims on any span of a Source the page cites
 /// ([`super::identity::WorldIdentity::companies_on`], over `spans`, the spans
-/// of each Source by record), the keys of each name the page was filed under,
-/// and every World node carrying one of those keys
-/// ([`super::identity::WorldIdentity::nodes_keyed`]). A short name on a
-/// report that names two companies is then a case with both, a "Samsung
-/// Electronics Inc." page is a case with the node spelled
-/// `삼성전자(Samsung Electronics)` and its component, and a name the World
-/// never extracted still counts under its own key, so two pages spelling one
-/// company stay one case while a failed extraction holds nothing. A report the
-/// World has yet to read holds the page: the claims it may still yield are not
-/// known. Nothing is stored: the anchor stays pending until a publication
-/// spells the name.
+/// of each Source by record) whose names may name the page's subject
+/// ([`super::identity::may_name`]), the keys of each name the page was filed
+/// under, and every World node carrying one of those keys
+/// ([`super::identity::WorldIdentity::nodes_keyed`]). A "Hana" page citing a
+/// report that names `Hana Financial Group` and `Hana Co.` is then a case
+/// with both, while the auditor, exchange or disclaimer the report names
+/// beside them is no case of it: two reports naming one `Loupist` or `KPMG`
+/// do not make their two companies one. A "Samsung Electronics Inc." page is
+/// a case with the node spelled `삼성전자(Samsung Electronics)` and its
+/// component, and a name the World never extracted still counts under its
+/// own key, so two pages spelling one company stay one case while a failed
+/// extraction holds nothing. A report the World has yet to read holds the
+/// page: the claims it may still yield are not known. Nothing is stored: the
+/// anchor stays pending until a publication spells the name.
 fn pending_cases(
     world: &mut super::identity::WorldIdentity,
     pending: &PendingObservation,
@@ -764,18 +767,22 @@ fn pending_cases(
             .cloned(),
     );
     let mut cases = pending.observation.cases.clone();
-    cases.extend(
-        world
-            .companies_on(&on_sources, company)
-            .into_iter()
-            .map(Case::Node),
-    );
+    let mut subject_keys = BTreeSet::new();
     for name in &pending.names {
         // A name that is only notation names no company.
         super::identity::primary_key(name)?;
         for key in super::identity::entity_name_keys(name) {
             cases.extend(world.nodes_keyed(&key).into_iter().map(Case::Node));
-            cases.insert(Case::Key(key));
+            cases.insert(Case::Key(key.clone()));
+            subject_keys.insert(key);
+        }
+    }
+    for node in world.companies_on(&on_sources, company) {
+        let names_subject = world
+            .keys(&node)
+            .is_some_and(|keys| super::identity::may_name(keys, &subject_keys));
+        if names_subject {
+            cases.insert(Case::Node(node));
         }
     }
     Some(cases)

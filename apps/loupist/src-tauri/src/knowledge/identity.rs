@@ -275,6 +275,26 @@ pub(crate) fn primary_key(name: &str) -> Option<String> {
     keyed(name).primary
 }
 
+/// Whether a company with `keys` may be the subject a page filed under names
+/// with `subject_keys` is about: the words of one of its keys contain, or are
+/// contained in, the words of one of the page's. A "Hana" page may be about
+/// `Hana Financial Group` or `Hana Co.`, a "Halvorsen Cellworks" page about
+/// `Halvorsen Cellworks ASA`, and neither about `Loupist`, `KPMG` or `Nordic
+/// Auto`, however many of the page's Sources name them. A key's words are
+/// what [`entity_name_keys`] left between its spaces.
+pub(crate) fn may_name(keys: &BTreeSet<String>, subject_keys: &BTreeSet<String>) -> bool {
+    fn words(key: &str) -> BTreeSet<&str> {
+        key.split(' ').collect()
+    }
+    keys.iter().any(|key| {
+        let spelling = words(key);
+        subject_keys.iter().any(|subject| {
+            let subject = words(subject);
+            spelling.is_subset(&subject) || subject.is_subset(&spelling)
+        })
+    })
+}
+
 /// One spelling's keys, and the one of them that names the company.
 struct Keyed {
     primary: Option<String>,
@@ -408,12 +428,12 @@ impl WorldIdentity {
     }
 
     /// The companies the spans in `spans` name: every endpoint of an active
-    /// claim whose evidence is one of them, of a kind `company` accepts. A
-    /// pending page may be about any company the World claims on the spans it
-    /// cites, so each is one of its cases: "Halvorsen Cellworks ASA", claimed
-    /// from the report a "Halvorsen Cellworks" page cites, and the
-    /// counterparty of that claim, while a Product, a withdrawn claim, or a
-    /// claim on another span of the report name none.
+    /// claim whose evidence is one of them, of a kind `company` accepts.
+    /// "Halvorsen Cellworks ASA", claimed from the report a "Halvorsen
+    /// Cellworks" page cites, and the counterparty of that claim, while a
+    /// Product, a withdrawn claim, or a claim on another span of the report
+    /// name none. Learning keeps the ones that may name the page's subject
+    /// ([`may_name`]).
     pub(crate) fn companies_on(
         &self,
         spans: &BTreeSet<String>,
@@ -979,6 +999,27 @@ mod tests {
             ("(주)", None),
         ] {
             assert_eq!(primary_key(name).as_deref(), primary, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_name_whose_words_contain_or_fall_within_the_subjects_may_name_it() {
+        for (subject, node, expected) in [
+            ("Hana", "Hana Financial Group", true),
+            ("Hana", "Hana Co.", true),
+            ("Halvorsen Cellworks", "Halvorsen Cellworks ASA", true),
+            ("Halvorsen Cellworks", "Halvorsen Cellworks Group", true),
+            ("Samsung Electronics Inc.", "Samsung", true),
+            ("Halvorsen Cellworks", "Loupist", false),
+            ("Halvorsen Cellworks", "Nordic Auto", false),
+            ("Halvorsen Cellworks", "KPMG", false),
+            ("Hana", "Hanwha Financial", false),
+        ] {
+            assert_eq!(
+                may_name(&keys(node), &keys(subject)),
+                expected,
+                "{node} for a {subject} page"
+            );
         }
     }
 
