@@ -54,6 +54,14 @@ const LEGAL_FORMS: &[(&str, Edge, bool)] = &[
     ("pty", Edge::Trailing, false),
     ("srl", Edge::Trailing, false),
     ("sas", Edge::Trailing, false),
+    ("s a", Edge::Trailing, false),
+    ("s a s", Edge::Trailing, false),
+    ("s p a", Edge::Trailing, false),
+    ("s r l", Edge::Trailing, false),
+    ("n v", Edge::Trailing, false),
+    ("b v", Edge::Trailing, false),
+    ("a g", Edge::Trailing, false),
+    ("p l c", Edge::Trailing, false),
 ];
 
 /// NFKC, casefold, and every character but a letter, a digit or `&` as a
@@ -338,6 +346,11 @@ mod tests {
                 "トヨタ自動車",
             ),
             (&["Straße Werke GmbH", "STRASSE WERKE"][..], "strasse werke"),
+            (
+                &["Ferroluz S.A.", "Ferroluz SA", "Ferroluz"][..],
+                "ferroluz",
+            ),
+            (&["Philips N.V.", "Philips"][..], "philips"),
         ] {
             for spelling in spellings {
                 assert_eq!(entity_name_key(spelling), key, "{spelling}");
