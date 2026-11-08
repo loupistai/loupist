@@ -1,4 +1,5 @@
 import i18n, { useTranslation } from "@/i18n";
+import { formatNumber } from "@/i18n/format";
 import { useEffect, useState, type ReactNode } from "react";
 import type { LoupistBridge } from "../../types";
 import type { ChatApproval, ChatApprovalDecision, ChatToolRefusal } from "../../contracts/chat";
@@ -66,6 +67,15 @@ function cardCopy(approval: ChatApproval, tool: string) {
   }
 }
 
+/** The whole command, wrapped, with its line count so a block that scrolls is never mistaken for the whole. */
+function CommandBlock({ command }: { command: string }) {
+  const lines = command.split("\n").length;
+  return <>
+    <pre className="approval-card-command" tabIndex={0}>{command}</pre>
+    <p className="approval-card-command-lines">{t("approvalCard.commandLines", { count: lines, formattedCount: formatNumber(lines) })}</p>
+  </>;
+}
+
 function WaitingCard({ approval, onDecide }: { approval: ChatApproval; onDecide: (decision: ChatApprovalDecision) => Promise<void> }) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
@@ -99,7 +109,7 @@ function WaitingCard({ approval, onDecide }: { approval: ChatApproval; onDecide:
       <span className="approval-card-clock">{t("approvalCard.waiting", { time: clock(nowMs - approval.requestedAtMs) })}</span>
     </header>
     <p>{copy.body}</p>
-    {approval.kind === "command" ? <pre className="approval-card-command" tabIndex={0}>{approval.detail ?? approval.target ?? ""}</pre> : null}
+    {approval.kind === "command" ? <CommandBlock command={approval.detail ?? approval.target ?? ""} /> : null}
     <p className="approval-card-note">{copy.note}</p>
     <div className="approval-card-actions">
       <Button type="button" disabled={busy} onClick={() => void decide("once")}>{allow}</Button>

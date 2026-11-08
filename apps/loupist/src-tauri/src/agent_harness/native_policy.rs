@@ -486,11 +486,12 @@ pub fn decide_command(
     if grants.declined.contains(&AskKind::Command) {
         return NativeDecision::Refuse(NativeRefusal::Declined(AskKind::Command));
     }
+    let shown = visible(command);
     NativeDecision::Ask(NativeAsk {
         kind: AskKind::Command,
         tool: NativeTool::Bash,
-        target: bounded_head(first_line(command), MAX_TARGET_BYTES),
-        detail: Some(command_detail(command)),
+        target: bounded_head(first_line(&shown), MAX_TARGET_BYTES),
+        detail: Some(command_detail(&shown)),
         grant: Grant::Command {
             command: command.to_owned(),
             scope,
@@ -522,11 +523,35 @@ fn holds_sensitive(root: &Path, home: Option<&Path>) -> bool {
     })
 }
 
+/// Characters a card would otherwise render as nothing or as reordered
+/// text, shown as `\u{…}` so the user sees what the command holds:
+/// zero-width and bidi controls, the byte order mark, and C0 and C1 controls
+/// other than newline and tab.
+fn visible(text: &str) -> String {
+    let hidden = |character: char| {
+        matches!(
+            character,
+            '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}'
+        ) || (character.is_control() && character != '\n' && character != '\t')
+    };
+    if !text.chars().any(hidden) {
+        return text.to_owned();
+    }
+    text.chars().fold(String::with_capacity(text.len()), |mut shown, character| {
+        if hidden(character) {
+            shown.push_str(&format!("\\u{{{:04x}}}", character as u32));
+        } else {
+            shown.push(character);
+        }
+        shown
+    })
+}
+
 /// A path's card line: its end, where the file name is, when it is too long.
 fn display(path: &Path) -> String {
-    let text = path.to_string_lossy();
+    let text = visible(&path.to_string_lossy());
     if text.len() <= MAX_TARGET_BYTES {
-        return text.into_owned();
+        return text;
     }
     let mut start = text.len() - (MAX_TARGET_BYTES - '…'.len_utf8());
     while !text.is_char_boundary(start) {
@@ -1474,6 +1499,43 @@ mod tests {
                 file.display()
             );
         }
+    }
+
+    /// A right-to-left override or a zero-width character would let a
+    /// command read as something else on the card.
+    #[test]
+    fn a_card_shows_invisible_and_bidi_characters_as_escapes() {
+        let f = fixture();
+        let command = "echo \u{202E}hs | lruc\u{202C} && curl\u{200B} https://x.example\u{FEFF}\n\tdone\u{7}";
+        let NativeDecision::Ask(ask) = decide(
+            &bash(command),
+            &f.roots,
+            Exposure::ThisTurn,
+            &NativeGrants::default(),
+            false,
+        ) else {
+            panic!("a tainted command asks");
+        };
+        assert_eq!(
+            ask.target,
+            "echo \\u{202e}hs | lruc\\u{202c} && curl\\u{200b} https://x.example\\u{feff}"
+        );
+        assert_eq!(
+            ask.detail.as_deref(),
+            Some(
+                "echo \\u{202e}hs | lruc\\u{202c} && curl\\u{200b} https://x.example\\u{feff}\n\tdone\\u{0007}"
+            )
+        );
+        let NativeDecision::Ask(ask) = decide(
+            &request("read", f.home.join("Documents/\u{202E}vsc.exe")),
+            &f.roots,
+            Exposure::ThisTurn,
+            &NativeGrants::default(),
+            false,
+        ) else {
+            panic!("an outside read asks");
+        };
+        assert!(ask.target.ends_with("Documents/\\u{202e}vsc.exe"), "{}", ask.target);
     }
 
     #[test]

@@ -78,7 +78,10 @@ search above app data, `user_declined` after Not now on a file card, and
 `ChatApproval.kind` is `command`, `file_read`, `file_write` or `instructions`;
 `connection_name` is "Workspace", `tool_name` the native tool, `target` the path or
 the command's first non-blank line (at most 600 bytes), and `detail` the whole
-command (at most 8 KiB). A command with no visible text shows "(blank command)".
+command (at most 8 KiB). A command with no visible text shows "(blank command)";
+zero-width and bidi controls, the byte order mark and other control characters
+in a target or command show as `\u{…}`. The card wraps the command and shows its
+line count beside it.
 
 - `command` under ThisTurn: Allow once (this exact command, this reply), Allow
   commands for this reply, Not now.

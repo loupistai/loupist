@@ -946,6 +946,7 @@
     "commandBody": "이 답변은 다른 사이트의 글을 읽었어요. 이제 이 명령을 실행하려고 해요:",
     "commandBodyCarried": "이 대화의 앞선 답변이 다른 사이트의 글을 읽었어요. 이번 답변이 이제 이 명령을 실행하려고 해요:",
     "commandNote": "명령은 내 파일과 네트워크에 닿을 수 있고, 읽은 페이지가 이렇게 하라고 했을 수도 있어요. 예상한 명령일 때만 허용하세요.",
+    "commandLines_other": "{{formattedCount}}줄",
     "commandAlwaysReply": "이번 답변에서는 명령 허용",
     "commandAlwaysChat": "이 대화에서는 명령 허용",
     "commandAllowed": "한 번 실행함 · {{target}}",

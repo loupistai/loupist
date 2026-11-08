@@ -985,6 +985,8 @@
     "commandBody": "This reply read text from other sites. It now wants to run this command:",
     "commandBodyCarried": "An earlier reply in this chat read text from other sites. This reply now wants to run this command:",
     "commandNote": "A command can reach your files and the network, and a page it read may have asked for it. Allow it only if you expect it.",
+    "commandLines_one": "{{formattedCount}} line",
+    "commandLines_other": "{{formattedCount}} lines",
     "commandAlwaysReply": "Allow commands for this reply",
     "commandAlwaysChat": "Allow commands in this chat",
     "commandAllowed": "Ran once · {{target}}",

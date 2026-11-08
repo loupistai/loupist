@@ -62,6 +62,7 @@ it("shows the whole command and offers it once, for the reply, or not now after 
   const card = screen.getByRole("region", { name: "Approval to run a command" });
   expect(within(card).getByText("This reply read text from other sites. It now wants to run this command:")).toBeVisible();
   expect(card.querySelector(".approval-card-command")).toHaveTextContent("python3 build_deck.py \\ --out deck.pptx");
+  expect(within(card).getByText("2 lines")).toBeVisible();
   expect(within(card).getByText(/A command can reach your files and the network/)).toBeVisible();
   expect(within(card).queryByRole("button", { name: "Allow commands in this chat" })).not.toBeInTheDocument();
   await user.click(within(card).getByRole("button", { name: "Allow commands for this reply" }));
