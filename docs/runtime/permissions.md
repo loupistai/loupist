@@ -112,7 +112,8 @@ data folder or into a git hook must fail; the app's `auth.json`, `~/.netrc`,
 and a hook must still read; a connection to the listener must fail. Online the
 connection must succeed, which proves the offline check measured the network.
 Rust also checks the host folder afterwards. Only a passing probe enables the
-sandbox; a turn that starts before the probe finishes waits for it off the async
+sandbox; a failed one logs the checks that failed and, when the sandbox never
+started, its own first error line; a turn that starts before the probe finishes waits for it off the async
 workers, up to the probe's deadline.
 
 Without a verified sandbox (a failed probe, no `bwrap`, Windows): a clean reply

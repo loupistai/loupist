@@ -272,6 +272,7 @@ pub enum ProbeError {
 }
 
 const PROBE_END: &str = "__LOUPIST_SANDBOX_PROBE_END__";
+const PROBE_STDERR_BYTES: usize = 2048;
 
 /// Runs the sandbox against a temporary folder laid out like a turn's roots:
 /// a write inside the folder and scratch succeeds, a write outside, into
@@ -442,7 +443,7 @@ fn run_probe(
         .current_dir(&roots.workspace)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        .stderr(Stdio::piped());
     // SAFETY: setsid is async-signal-safe and accesses no Rust state.
     unsafe {
         command.pre_exec(|| {
@@ -455,6 +456,19 @@ fn run_probe(
     let mut child = command.spawn().map_err(|_| ProbeError::Launch)?;
     let group = i32::try_from(child.id()).map_err(|_| ProbeError::Launch)?;
     let mut stdout = child.stdout.take().ok_or(ProbeError::Launch)?;
+    let mut stderr = child.stderr.take().ok_or(ProbeError::Launch)?;
+    // The sandbox's own error (a mount or namespace it could not set up) is
+    // the only explanation when the script never ran; keep its first line.
+    let diagnostic = std::thread::spawn(move || {
+        let mut text = Vec::new();
+        let _ = (&mut stderr)
+            .take(PROBE_STDERR_BYTES as u64)
+            .read_to_end(&mut text);
+        String::from_utf8_lossy(&text)
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .map(|line| line.trim().chars().take(240).collect::<String>())
+    });
     let (sender, receiver) = mpsc::channel();
     std::thread::spawn(move || {
         let mut output = Vec::new();
@@ -485,12 +499,15 @@ fn run_probe(
         .unwrap_or(Err(ProbeError::Timeout));
     let _ = crate::process_lease::signal_process_group(group, libc::SIGKILL);
     let _ = child.wait();
+    let diagnostic = diagnostic.join().ok().flatten();
     let output = output?;
     if !output
         .windows(PROBE_END.len())
         .any(|window| window == PROBE_END.as_bytes())
     {
-        return Err(ProbeError::Failed(vec!["probe_incomplete".into()]));
+        let mut failed = vec!["probe_incomplete".to_owned()];
+        failed.extend(diagnostic.map(|line| format!("stderr={line}")));
+        return Err(ProbeError::Failed(failed));
     }
     Ok(String::from_utf8_lossy(&output).into_owned())
 }
@@ -626,6 +643,24 @@ mod tests {
             return;
         };
         assert_eq!(probe(&sandbox), Ok(()));
+    }
+
+    /// A sandbox that cannot start never runs the script; the probe says so
+    /// and carries the sandbox's own error, which the startup log prints.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_sandbox_that_cannot_start_reports_its_own_error() {
+        let error = probe(&Sandbox::Bubblewrap("/bin/sh".into())).unwrap_err();
+        let ProbeError::Failed(lines) = error else {
+            panic!("expected a failed probe, got {error:?}");
+        };
+        assert_eq!(lines.first().map(String::as_str), Some("probe_incomplete"));
+        assert!(
+            lines
+                .get(1)
+                .is_some_and(|line| line.starts_with("stderr=/bin/sh")),
+            "{lines:?}"
+        );
     }
 
     /// Each probe check fails on its own when the sandbox is missing, so a
