@@ -25,6 +25,7 @@ mod process_lease;
 #[cfg(test)]
 mod product_contract;
 mod providers;
+mod python_run;
 mod runs;
 mod scheduled_tasks;
 mod scoped_config;

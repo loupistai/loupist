@@ -90,7 +90,14 @@ for required in \
     "$TAURI_ROOT/resources/embed_assets/config.json" \
     "$TAURI_ROOT/resources/embed_assets/model.safetensors" \
     "$TAURI_ROOT/resources/embed_assets/tokenizer.json" \
-    "$TAURI_ROOT/resources/embed_assets/NOTICE"; do
+    "$TAURI_ROOT/resources/embed_assets/NOTICE" \
+    "$TAURI_ROOT/resources/python-runtime/loupist-python-worker" \
+    "$TAURI_ROOT/resources/python-runtime/python-snapshot.wasm" \
+    "$TAURI_ROOT/resources/python-runtime/lib/python315.zip" \
+    "$TAURI_ROOT/resources/python-runtime/mpl-data/matplotlibrc" \
+    "$TAURI_ROOT/resources/python-runtime/.runtime.json" \
+    "$TAURI_ROOT/resources/python-runtime/MANIFEST" \
+    "$TAURI_ROOT/resources/python-runtime/LICENSES/numpy.txt"; do
     if [ ! -e "$required" ]; then
         echo "required staged asset is missing: $required" >&2
         exit 1
@@ -190,6 +197,10 @@ if [ "$TAURI_MACOS_MINIMUM" != "$MACOS_MINIMUM_VERSION" ]; then
     echo "Tauri and sidecar macOS minimum versions differ." >&2
     exit 1
 fi
+"$PYTHON_BIN" "$SCRIPT_DIR/stage_python_runtime.py" \
+    --verify \
+    --require-signature \
+    --runtime "$TAURI_ROOT/resources/python-runtime"
 "$PYTHON_BIN" "$SCRIPT_DIR/check-sidecars.py" \
     --pi "$PI_BINARY" \
     --pi-version "$PI_VERSION" \
@@ -209,6 +220,9 @@ if [ "${LOUPIST_REQUIRE_DISTRIBUTION_SIGNING:-0}" = 1 ]; then
             exit 1
         fi
     done
+    codesign --verify --strict --verbose=2 \
+        -R 'anchor apple generic' \
+        "$TAURI_ROOT/resources/python-runtime/loupist-python-worker"
     find "$RUNTIME_DIR" -type f -exec sh -c '
         for binary do
             if LC_ALL=C file "$binary" | grep -q "Mach-O"; then

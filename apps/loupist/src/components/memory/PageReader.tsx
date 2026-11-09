@@ -10,6 +10,7 @@ import { Spinner } from "../ui/spinner";
 import { SafeMessageResponse } from "../chat/SafeMessageResponse";
 import { OpenProvider, useOpenLayer, type OpenLayer } from "../navigation/Open";
 import { displayPageTitle, displaySectionHeading } from "../../knowledge/hostDefaults";
+import { sharingReleaseVisible } from "../../sharing/releaseVisibility";
 import { SharedOrigin } from "../sharing/SharedOrigin";
 import { SHARED_SECTION_ITEM } from "../sharing/SharedPacks";
 import { ShareSheet } from "../sharing/ShareSheet";
@@ -63,6 +64,7 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, chil
   const [forgot, setForgot] = useState<{ opId: string; heading: string } | null>(null);
   const [allHistory, setAllHistory] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const showSharing = sharingReleaseVisible();
   const generation = useRef(0);
   const heading = useRef<HTMLHeadingElement>(null);
   const pageRef = useRef(page);
@@ -158,7 +160,7 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, chil
       <p className="page-reader-meta">{toolbar ? null : <span>{t(`pageReader.kind.${page.kind}`)}</span>}{page.updatedAtMs ? <span>{t("pageReader.updated", { date: formatDate(page.updatedAtMs, { year: undefined, month: "short", day: "numeric" }) })}</span> : null}
         {idea ? <span className="page-idea-status" data-status={idea.status}>{t(`pageReader.ideaStatus.${idea.status}`)}</span> : null}</p>
       <h2 ref={heading} tabIndex={-1}>{pageTitle(page)}</h2>
-      <SharedOrigin bridge={bridge} loupistId={loupistId} subjectId={page.recordId} onAbout={() => onOpen({ loupistId, surface: "lens", recordId: SHARED_SECTION_ITEM })} />
+      <SharedOrigin bridge={bridge} loupistId={loupistId} subjectId={page.recordId} onAbout={showSharing ? () => onOpen({ loupistId, surface: "lens", recordId: SHARED_SECTION_ITEM }) : undefined} />
       {body.kind !== "principle" && body.summary ? <p className="page-reader-summary">{body.summary}</p> : null}
     </header>
     {actionError ? <Alert variant="destructive"><AlertDescription>{actionError}</AlertDescription></Alert> : null}
@@ -197,9 +199,9 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, chil
     </section> : null}
     <div className="page-reader-actions">
       {onAsk ? <Button variant="outline" onClick={() => onAsk(pinForLens(loupistId, page))}><MessageSquareIcon />{t("lensWorkspace.discussInChat")}</Button> : null}
-      {SHARABLE.has(page.kind) && page.kind !== "perspective" ? <Button variant="outline" size="sm" data-share-item onClick={() => setShareOpen(true)}>{i18n.t("sharing:share")}</Button> : null}
+      {showSharing && SHARABLE.has(page.kind) && page.kind !== "perspective" ? <Button variant="outline" size="sm" data-share-item onClick={() => setShareOpen(true)}>{i18n.t("sharing:share")}</Button> : null}
     </div>
     {children}
-    <ShareSheet bridge={bridge} loupistId={loupistId} loupistName="" scope={{ kind: "item", recordId: page.recordId }} open={shareOpen} onOpenChange={setShareOpen} />
+    {showSharing ? <ShareSheet bridge={bridge} loupistId={loupistId} loupistName="" scope={{ kind: "item", recordId: page.recordId }} open={shareOpen} onOpenChange={setShareOpen} /> : null}
   </article>;
 }

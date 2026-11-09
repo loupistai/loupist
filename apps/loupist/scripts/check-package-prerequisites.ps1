@@ -84,7 +84,14 @@ $required = @(
     (Join-Path $tauriRoot "resources\embed_assets\config.json"),
     (Join-Path $tauriRoot "resources\embed_assets\model.safetensors"),
     (Join-Path $tauriRoot "resources\embed_assets\tokenizer.json"),
-    (Join-Path $tauriRoot "resources\embed_assets\NOTICE")
+    (Join-Path $tauriRoot "resources\embed_assets\NOTICE"),
+    (Join-Path $tauriRoot "resources\python-runtime\loupist-python-worker.exe"),
+    (Join-Path $tauriRoot "resources\python-runtime\python-snapshot.wasm"),
+    (Join-Path $tauriRoot "resources\python-runtime\lib\python315.zip"),
+    (Join-Path $tauriRoot "resources\python-runtime\mpl-data\matplotlibrc"),
+    (Join-Path $tauriRoot "resources\python-runtime\.runtime.json"),
+    (Join-Path $tauriRoot "resources\python-runtime\MANIFEST"),
+    (Join-Path $tauriRoot "resources\python-runtime\LICENSES\numpy.txt")
 )
 foreach ($path in $required) {
     if (-not (Test-Path -LiteralPath $path)) {
@@ -187,6 +194,11 @@ if ($LASTEXITCODE -ne 0) { throw "Agent extension tests failed." }
 Get-Content -LiteralPath (Join-Path $tauriRoot "tauri.conf.json") -Raw | ConvertFrom-Json | Out-Null
 Get-Content -LiteralPath (Join-Path $tauriRoot "tauri.release.conf.json") -Raw | ConvertFrom-Json | Out-Null
 Get-Content -LiteralPath (Join-Path $tauriRoot "tauri.package-smoke.conf.json") -Raw | ConvertFrom-Json | Out-Null
+
+& $pythonBinary (Join-Path $scriptDir "stage_python_runtime.py") `
+    --verify `
+    --runtime (Join-Path $tauriRoot "resources\python-runtime")
+if ($LASTEXITCODE -ne 0) { throw "Python runtime verification failed." }
 
 & $pythonBinary (Join-Path $scriptDir "check-sidecars.py") `
     --pi $piBinary `

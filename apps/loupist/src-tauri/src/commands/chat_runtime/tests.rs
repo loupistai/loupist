@@ -157,7 +157,7 @@ async fn provider_wait_watchdog_bounds_tool_silence_and_keeps_the_first_body_bud
         "assistantMessageEvent": {"type": "text_delta", "delta": "Working"}
     });
     for body_first in [false, true] {
-        for id in [Some("bash"), None] {
+        for id in [Some("python-call"), None] {
             let mut watchdog = ProviderWaitWatchdog::new(Instant::now(), Duration::from_secs(3));
             if body_first {
                 observe(&mut watchdog, Instant::now(), body.clone());
@@ -191,7 +191,7 @@ async fn provider_wait_watchdog_bounds_tool_silence_and_keeps_the_first_body_bud
         }
     }
     // A pre-body tool pauses, but does not reset, the first-body budget.
-    for id in [Some("bash"), None] {
+    for id in [Some("python-call"), None] {
         let mut watchdog = ProviderWaitWatchdog::new(Instant::now(), Duration::from_secs(3));
         tokio::time::advance(Duration::from_secs(10)).await;
         observe(
@@ -285,7 +285,7 @@ async fn provider_wait_watchdog_bounds_compaction_and_rearms_after_tools() {
         start,
         json!({"type": "message_update", "assistantMessageEvent": {"type": "toolcall_start"}}),
     );
-    for id in ["bash", "world"] {
+    for id in ["python-call", "world"] {
         observe(
             &mut watchdog,
             start,
@@ -298,7 +298,7 @@ async fn provider_wait_watchdog_bounds_compaction_and_rearms_after_tools() {
     observe(
         &mut watchdog,
         later,
-        json!({"type": "tool_execution_end", "toolCallId": "bash"}),
+        json!({"type": "tool_execution_end", "toolCallId": "python-call"}),
     );
     assert_eq!(watchdog.deadline(), Some(later + CHAT_TOOL_SILENCE_TIMEOUT));
     observe(
@@ -667,7 +667,7 @@ fn terminal_replies_keep_acknowledged_records_across_reopen_without_a_renderer()
         sink.tool_trace
             .observe_end("load", false, &json!({"loaded": true}));
         sink.tool_trace
-            .observe_start("failed", "bash", &json!({"command": "ls"}));
+            .observe_start("failed", "grep", &json!({"pattern": "ls"}));
         sink.tool_trace.observe_end("failed", true, &Value::Null);
         persist_and_emit_terminal_chat(
             &store,

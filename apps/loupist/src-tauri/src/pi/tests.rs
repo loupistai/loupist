@@ -524,8 +524,8 @@ fn host_context_is_bounded_and_written_to_a_private_extension_file() {
         .is_err());
 }
 
-/// `ps -E` is how a same-user command (such as the agent's own Bash) reads a
-/// process environment. The broker token must not be there or in argv, and
+/// `ps -E` is how a same-user command reads a process environment. The broker
+/// token must not be there or in argv, and
 /// a host `*_API_KEY` must not reach Pi when the build does not forward keys.
 #[cfg(target_os = "macos")]
 #[tokio::test]

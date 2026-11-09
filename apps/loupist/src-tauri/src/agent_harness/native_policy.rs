@@ -1,6 +1,6 @@
-//! What a Pi native tool (`read`, `ls`, `find`, `grep`, `write`, `edit`,
-//! `bash`) may do in one Chat reply, decided from the target's path class and
-//! how much third-party text the model has seen (`docs/runtime/permissions.md`).
+//! What a Pi native file tool (`read`, `ls`, `find`, `grep`, `write`, `edit`)
+//! may do in one Chat reply, decided from the target's path class and how
+//! much third-party text the model has seen (`docs/runtime/permissions.md`).
 //! Every decision is Allow or Refuse: nothing here asks the user.
 
 use std::path::{Component, Path, PathBuf};
@@ -10,7 +10,6 @@ use serde_json::Value;
 pub mod search;
 
 const MAX_PATH_BYTES: usize = 8 * 1024;
-const MAX_COMMAND_BYTES: usize = 64 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeTool {
@@ -20,7 +19,6 @@ pub enum NativeTool {
     Grep,
     Write,
     Edit,
-    Bash,
 }
 
 impl NativeTool {
@@ -32,7 +30,6 @@ impl NativeTool {
             "grep" => Self::Grep,
             "write" => Self::Write,
             "edit" => Self::Edit,
-            "bash" => Self::Bash,
             _ => return None,
         })
     }
@@ -48,51 +45,33 @@ impl NativeTool {
 
 /// One `native.authorize` call, parsed once at the broker boundary. A file
 /// tool names its resolved target (the search root for `ls`, `find` and
-/// `grep`); `bash` names the exact command Pi will run.
+/// `grep`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NativeRequest {
     pub tool: NativeTool,
     pub target: Option<PathBuf>,
-    pub command: Option<String>,
 }
 
 impl NativeRequest {
-    /// `{name, path?, command?}`; an unknown name, a missing or oversized
-    /// field, a NUL byte or an extra field is malformed.
+    /// `{name, path}`; an unknown name, a missing or oversized field, a NUL
+    /// byte or an extra field is malformed.
     pub fn parse(params: &Value) -> Option<Self> {
         let object = params.as_object()?;
         if object
             .keys()
-            .any(|key| !matches!(key.as_str(), "name" | "path" | "command"))
+            .any(|key| !matches!(key.as_str(), "name" | "path"))
         {
             return None;
         }
         let tool = NativeTool::parse(object.get("name")?.as_str()?)?;
-        let text = |key: &str, max: usize| -> Option<Option<String>> {
-            match object.get(key) {
-                None => Some(None),
-                Some(value) => {
-                    let text = value.as_str()?;
-                    (!text.is_empty() && text.len() <= max && !text.contains('\0'))
-                        .then(|| Some(text.to_owned()))
-                }
-            }
-        };
-        let path = text("path", MAX_PATH_BYTES)?;
-        let command = text("command", MAX_COMMAND_BYTES)?;
-        let request = match tool {
-            NativeTool::Bash => Self {
-                tool,
-                target: None,
-                command: Some(command?),
-            },
-            _ => Self {
-                tool,
-                target: Some(PathBuf::from(path?)),
-                command: None,
-            },
-        };
-        Some(request)
+        let path = object.get("path")?.as_str()?;
+        if path.is_empty() || path.len() > MAX_PATH_BYTES || path.contains('\0') {
+            return None;
+        }
+        Some(Self {
+            tool,
+            target: Some(PathBuf::from(path)),
+        })
     }
 }
 
@@ -196,7 +175,7 @@ pub fn classify(path: &Path, roots: &NativeRoots) -> Classified {
         PathClass::Scratch
     } else if under(&path, &roots.attachments) {
         PathClass::Attachments
-    } else if under(&path, &roots.app_data) || loupist_private(&path, roots) {
+    } else if app_private(&path, roots) || loupist_private(&path, roots) {
         PathClass::AppPrivate
     } else if under(&path, &roots.workspace) {
         PathClass::Workspace
@@ -204,6 +183,15 @@ pub fn classify(path: &Path, roots: &NativeRoots) -> Classified {
         PathClass::Outside
     };
     Classified { class, path }
+}
+
+/// The host can create the selected workspace inside its app-data namespace.
+/// Only that strictly nested, trusted workspace is public content; its own
+/// `.loupist` store remains private, as do every sibling and the app-data root.
+fn app_private(target: &Path, roots: &NativeRoots) -> bool {
+    let nested_workspace =
+        below(&roots.workspace, &roots.app_data).is_some_and(|parts| !parts.is_empty());
+    under(target, &roots.app_data) && !(nested_workspace && under(target, &roots.workspace))
 }
 
 /// The Loupist's data folder, except its Skills, which workspace discovery
@@ -244,10 +232,6 @@ pub enum NativeRefusal {
     /// A write to a file that has another name on disk (a hard link), which
     /// can be an instruction file, after this reply read third-party text.
     HardLinkAfterUntrustedText,
-    /// Bash after third-party text.
-    CommandAfterUntrustedText,
-    /// Bash under the custom-connection tier.
-    OutboundPaused,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -256,14 +240,10 @@ pub enum NativeDecision {
         /// The canonical target, for the extension's write pin.
         resolved: PathBuf,
     },
-    AllowCommand,
     Refuse(NativeRefusal),
 }
 
 pub fn decide(request: &NativeRequest, roots: &NativeRoots, exposure: Exposure) -> NativeDecision {
-    if request.tool == NativeTool::Bash {
-        return decide_command(exposure);
-    }
     let Some(target) = request.target.as_deref() else {
         return NativeDecision::Refuse(NativeRefusal::AppPrivate);
     };
@@ -319,15 +299,6 @@ fn hard_linked(path: &Path) -> bool {
 #[cfg(not(unix))]
 fn hard_linked(_path: &Path) -> bool {
     false
-}
-
-/// Bash retains host execution before third-party text and is refused afterwards.
-pub fn decide_command(exposure: Exposure) -> NativeDecision {
-    match exposure {
-        Exposure::Clean => NativeDecision::AllowCommand,
-        Exposure::ThisTurn => NativeDecision::Refuse(NativeRefusal::CommandAfterUntrustedText),
-        Exposure::Custom => NativeDecision::Refuse(NativeRefusal::OutboundPaused),
-    }
 }
 
 const ROOT_INSTRUCTIONS: &[&str] = &["AGENTS.override.md", "AGENTS.md", "CLAUDE.md"];
@@ -697,14 +668,9 @@ mod tests {
             .unwrap()
     }
 
-    fn bash(command: &str) -> NativeRequest {
-        NativeRequest::parse(&json!({"name": "bash", "command": command})).unwrap()
-    }
-
     fn kind(decision: &NativeDecision) -> &'static str {
         match decision {
             NativeDecision::AllowFile { .. } => "allow",
-            NativeDecision::AllowCommand => "allow command",
             NativeDecision::Refuse(NativeRefusal::AppPrivate) => "refuse app_private",
             NativeDecision::Refuse(NativeRefusal::Credentials) => "refuse credentials",
             NativeDecision::Refuse(NativeRefusal::GitDir) => "refuse git_dir",
@@ -716,13 +682,113 @@ mod tests {
                 "refuse instructions"
             }
             NativeDecision::Refuse(NativeRefusal::HardLinkAfterUntrustedText) => "refuse hard_link",
-            NativeDecision::Refuse(NativeRefusal::CommandAfterUntrustedText) => "refuse command",
-            NativeDecision::Refuse(NativeRefusal::OutboundPaused) => "refuse outbound",
         }
     }
 
     fn decided(request: &NativeRequest, roots: &NativeRoots, exposure: Exposure) -> &'static str {
         kind(&decide(request, roots, exposure))
+    }
+
+    #[test]
+    fn managed_workspace_admits_content_but_keeps_app_state_private() {
+        let mut f = fixture();
+        let managed = f.roots.app_data.join("loupists/portfolio-012345678abc");
+        std::fs::rename(&f.roots.workspace, &managed).unwrap();
+        f.roots.workspace = managed.clone();
+        f.roots.loupist_data = managed.join(".loupist");
+        f.roots.attachments = f
+            .roots
+            .loupist_data
+            .join("loupists/loupist-a/attachments/chat-a");
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(
+                f.roots.app_data.join("pi"),
+                managed.join("notes/private-link"),
+            )
+            .unwrap();
+            std::fs::hard_link(
+                f.roots.app_data.join("pi/auth.json"),
+                managed.join("notes/auth-alias"),
+            )
+            .unwrap();
+            for exposure in [Exposure::Clean, Exposure::ThisTurn, Exposure::Custom] {
+                assert_eq!(
+                    decided(
+                        &request("read", managed.join("notes/private-link/auth.json")),
+                        &f.roots,
+                        exposure
+                    ),
+                    "refuse app_private"
+                );
+                assert_eq!(
+                    decided(
+                        &request("read", managed.join("notes/auth-alias")),
+                        &f.roots,
+                        exposure
+                    ),
+                    "refuse hard_link_alias"
+                );
+            }
+        }
+        for exposure in [Exposure::Clean, Exposure::ThisTurn, Exposure::Custom] {
+            for tool in ["read", "write", "edit", "ls", "find", "grep"] {
+                assert_eq!(
+                    decided(
+                        &request(tool, managed.join("notes/plan.md")),
+                        &f.roots,
+                        exposure
+                    ),
+                    "allow",
+                    "{tool}"
+                );
+            }
+            for private in [
+                f.roots.app_data.join("pi/auth.json"),
+                f.roots
+                    .app_data
+                    .join("loupists/another-workspace/outputs/secret.txt"),
+                f.other_chat_temp.clone(),
+                f.roots.loupist_data.join("loupist.sqlite3"),
+                f.roots
+                    .loupist_data
+                    .join("loupists/loupist-a/attachments/chat-b/brief.pdf.md"),
+            ] {
+                assert_eq!(
+                    decided(&request("read", &private), &f.roots, exposure),
+                    "refuse app_private",
+                    "{}",
+                    private.display()
+                );
+            }
+            assert_eq!(
+                decided(
+                    &request("read", managed.join(".git/config")),
+                    &f.roots,
+                    exposure
+                ),
+                "refuse git_dir"
+            );
+        }
+        assert_eq!(
+            decided(
+                &request("write", managed.join("AGENTS.md")),
+                &f.roots,
+                Exposure::ThisTurn
+            ),
+            "refuse instructions"
+        );
+        // A workspace equal to or above app-data cannot expose its private tree.
+        f.roots.workspace = f.roots.app_data.clone();
+        assert_eq!(
+            classify(&f.roots.app_data.join("pi/auth.json"), &f.roots).class,
+            PathClass::AppPrivate
+        );
+        f.roots.workspace = f.home.clone();
+        assert_eq!(
+            classify(&f.roots.app_data.join("pi/auth.json"), &f.roots).class,
+            PathClass::AppPrivate
+        );
     }
 
     #[cfg(unix)]
@@ -1286,7 +1352,6 @@ mod tests {
                 "refuse outside",
                 "refuse outside",
             ),
-            (bash("ls"), "allow command", "refuse command"),
         ];
         for (request, clean_expected, exposed_expected) in &rows {
             assert_eq!(
@@ -1300,12 +1365,7 @@ mod tests {
                 "this turn {request:?}"
             );
         }
-        // The custom-connection tier refuses Bash outright and otherwise
-        // decides files like ThisTurn.
-        assert_eq!(
-            decided(&bash("ls"), &f.roots, Exposure::Custom),
-            "refuse outbound"
-        );
+        // The custom-connection tier decides files like ThisTurn.
         assert_eq!(
             decided(
                 &request("write", ws.join("AGENTS.md")),
@@ -1339,25 +1399,16 @@ mod tests {
             Some(NativeRequest {
                 tool: NativeTool::Read,
                 target: Some("/tmp/a".into()),
-                command: None
-            })
-        );
-        assert_eq!(
-            NativeRequest::parse(&json!({"name":"bash","command":"ls"})),
-            Some(NativeRequest {
-                tool: NativeTool::Bash,
-                target: None,
-                command: Some("ls".into())
             })
         );
         for malformed in [
             json!({"name":"browser","path":"/tmp/a"}),
+            json!({"name":"bash","command":"ls"}),
             json!({"name":"read"}),
             json!({"name":"bash"}),
-            json!({"name":"bash","command":""}),
+            json!({"name":"read","path":"/tmp/a","command":"ls"}),
             json!({"name":"read","path":"/tmp/a\u{0}"}),
             json!({"name":"read","path":"/".repeat(MAX_PATH_BYTES + 1)}),
-            json!({"name":"bash","command":"x".repeat(MAX_COMMAND_BYTES + 1)}),
             json!({"name":"read","path":"/tmp/a","extra":1}),
             json!({"name":"read","path":7}),
             json!("read"),

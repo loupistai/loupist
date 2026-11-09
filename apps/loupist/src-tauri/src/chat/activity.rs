@@ -96,7 +96,7 @@ impl ActivityRecorder {
     ) -> Result<Option<ActivityReference>, CommandError> {
         if !matches!(
             tool_name,
-            "read" | "write" | "edit" | "bash" | "ls" | "find" | "grep"
+            "read" | "write" | "edit" | "ls" | "find" | "grep" | "run_python"
         ) {
             return Ok(None);
         }
@@ -172,7 +172,9 @@ impl ActivityRecorder {
             return Ok(false);
         };
         assign_output(&mut active.stored.detail, result);
-        active.stored.detail.status = if failed {
+        let python_failed = active.stored.detail.tool_name == "run_python"
+            && python_result(result).is_some_and(|value| !python_completed(&value));
+        active.stored.detail.status = if failed || python_failed {
             ChatProgressStatus::Failed
         } else {
             ChatProgressStatus::Succeeded
@@ -354,12 +356,44 @@ fn assign_output(detail: &mut ChatActivityDetail, result: &Value) {
     } else if let Some(value) = result.as_str() {
         text.push_str(value);
     }
+    if detail.tool_name == "run_python" {
+        if let Some(value) = python_result(result) {
+            detail.file_path = python_artifact_path(&value);
+            detail.truncated |= value.get("stdout_truncated").and_then(Value::as_bool)
+                == Some(true)
+                || value.get("stderr_truncated").and_then(Value::as_bool) == Some(true);
+            text = serde_json::to_string_pretty(&value).unwrap_or(text);
+        }
+    }
     detail.truncated |= text.len() > MAX_OUTPUT_BYTES
         || result
             .pointer("/details/truncation/truncated")
             .and_then(Value::as_bool)
             == Some(true);
     detail.output = bound(&text, MAX_OUTPUT_BYTES).into();
+}
+
+pub(crate) fn python_result(result: &Value) -> Option<Value> {
+    let text = result.pointer("/content/0/text")?.as_str()?;
+    let value: Value = serde_json::from_str(text).ok()?;
+    (value.get("status")?.is_string() && value.get("exit_code")?.is_i64()).then_some(value)
+}
+
+pub(crate) fn python_completed(value: &Value) -> bool {
+    value.get("status").and_then(Value::as_str) == Some("completed")
+        && value.get("exit_code").and_then(Value::as_i64) == Some(0)
+}
+
+pub(crate) fn python_artifact_path(value: &Value) -> Option<String> {
+    value
+        .get("artifacts")?
+        .as_array()?
+        .iter()
+        .find_map(|artifact| {
+            let path = artifact.get("path")?.as_str()?;
+            let relative = crate::fs::workspace_files::relative_path(path).ok()?;
+            (relative != ".").then_some(relative)
+        })
 }
 
 fn bound(value: &str, max: usize) -> &str {
@@ -396,6 +430,43 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn python_activity_retains_code_result_and_generated_file_after_restart() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = SecureDeletionRoot::open(&temp.path().canonicalize().unwrap()).unwrap();
+        let mut recorder =
+            ActivityRecorder::new(&root, "loupist-a", "chat-a", "run-a", temp.path()).unwrap();
+        let reference = recorder
+            .start(
+                "python",
+                "run_python",
+                &json!({"code":"print(391)","timeout_seconds":60}),
+                1,
+            )
+            .unwrap()
+            .unwrap();
+        let value = json!({"status":"timed_out", "exit_code":124, "stdout":"391", "stderr":"", "stdout_truncated":true,
+            "artifacts":[{"path":"../private.txt"},{"path":"outputs/chart.png"}]});
+        recorder
+            .finish(
+                "python",
+                &json!({"content":[{"type":"text", "text":value.to_string()}]}),
+                false,
+                2,
+            )
+            .unwrap();
+        drop(recorder);
+        let detail = read(&root, "loupist-a", "chat-a", &reference.detail_id, |_| {
+            false
+        })
+        .unwrap();
+        assert!(detail.input.contains("print(391)"));
+        assert!(detail.output.contains("391"));
+        assert_eq!(detail.status, ChatProgressStatus::Failed);
+        assert_eq!(detail.file_path.as_deref(), Some("outputs/chart.png"));
+        assert!(detail.truncated);
+    }
+
+    #[test]
     fn activity_survives_restart_with_exact_scope_and_without_hidden_structured_output() {
         let temp = tempfile::tempdir().unwrap();
         let root = SecureDeletionRoot::open(&temp.path().canonicalize().unwrap()).unwrap();
@@ -403,7 +474,7 @@ mod tests {
         let mut recorder =
             ActivityRecorder::new(&root, "loupist-a", "chat-a", "run-a", &workspace).unwrap();
         let reference = recorder
-            .start("call", "bash", &json!({"command":"python analysis.py"}), 1)
+            .start("call", "grep", &json!({"pattern":"python analysis.py"}), 1)
             .unwrap()
             .unwrap();
         recorder
@@ -504,7 +575,7 @@ mod tests {
         let mut recorder =
             ActivityRecorder::new(&root, "loupist-a", "chat-a", "run-a", temp.path()).unwrap();
         let reference = recorder
-            .start("call", "bash", &json!({"command":"report"}), 1)
+            .start("call", "grep", &json!({"pattern":"report"}), 1)
             .unwrap()
             .unwrap();
         let output = "\u{0001}".repeat(MAX_OUTPUT_BYTES);

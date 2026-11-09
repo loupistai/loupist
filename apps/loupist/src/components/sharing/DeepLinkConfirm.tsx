@@ -3,6 +3,7 @@ import i18n, { useTranslation } from "@/i18n";
 import type { LoupistBridge } from "../../types";
 import type { DeepLinkEvent, PackOpenResult } from "../../contracts/sharing";
 import { errorMessage } from "../../lib/errors";
+import { sharingReleaseVisible } from "../../sharing/releaseVisibility";
 import { Button } from "../ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Spinner } from "../ui/spinner";
@@ -13,6 +14,7 @@ import "@/styles/sharing.css";
  * renderer asks once onboarding is done. Nothing is fetched before Preview.
  */
 export function useDeepLinks(bridge: LoupistBridge, ready: boolean, onBad: (message: string) => void) {
+  const present = sharingReleaseVisible();
   const [link, setLink] = useState<string | null>(null);
   const held = useRef<DeepLinkEvent | null>(null);
   const asked = useRef(false);
@@ -21,12 +23,19 @@ export function useDeepLinks(bridge: LoupistBridge, ready: boolean, onBad: (mess
   const onBadRef = useRef(onBad);
   onBadRef.current = onBad;
   useEffect(() => bridge.onDeepLinkImport(event => {
+    // This release dismisses the link. Parsing stays in Rust; nothing opens here.
+    if (!present) { void bridge.deepLinkDismiss(); return; }
     if (!readyRef.current) { held.current = event; return; }
     if (event.status === "bad") onBadRef.current(i18n.t("sharing:linkBad"));
     else setLink(event.source);
-  }), [bridge]);
+  }), [bridge, present]);
   useEffect(() => {
     if (!ready) return;
+    if (!present) {
+      held.current = null;
+      void bridge.deepLinkPending().then(pending => { if (pending) void bridge.deepLinkDismiss(); }).catch(() => undefined);
+      return;
+    }
     const event = held.current;
     held.current = null;
     if (event?.status === "bad") onBadRef.current(i18n.t("sharing:linkBad"));
@@ -36,7 +45,7 @@ export function useDeepLinks(bridge: LoupistBridge, ready: boolean, onBad: (mess
     void bridge.deepLinkPending().then(pending => {
       if (pending?.status === "ok") setLink(pending.source);
     }).catch(() => undefined);
-  }, [bridge, ready]);
+  }, [bridge, ready, present]);
   const clear = useCallback(() => setLink(null), []);
   return { link, clear };
 }

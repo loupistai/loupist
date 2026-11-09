@@ -78,7 +78,7 @@ async fn an_unattended_refusal_is_recorded_on_its_scheduled_run_and_a_delegated_
             .execute(
                 &policy(true, true),
                 ToolMethod::NativeAuthorize,
-                json!({"name": "bash"}),
+                json!({"name": "read"}),
             )
             .await;
         assert!(

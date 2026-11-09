@@ -65,6 +65,7 @@ pub(crate) fn ensure_home_thread(
         versions: Vec::new(),
         created_at_ms: timestamp,
         updated_at_ms: timestamp,
+        bot_memory: Default::default(),
     };
     match state.store.create_chat(&chat) {
         Ok(()) => Ok(chat),

@@ -116,7 +116,7 @@ test('file reuse checks separate Skill reads from original reads and retain unkn
   const trace = row(); const check = { assert: 'original_not_read', paths: ['report.txt'] };
   trace.chat_trace.tool_calls = [{ name: 'read', args: { path: '/agent/skills/world/SKILL.md' } }];
   assert.equal(evaluateMemoryCheck(check, trace, scenario).pass, true);
-  trace.chat_trace.tool_calls.push({ name: 'bash', args: { command: 'cat report.txt' } });
+  trace.chat_trace.tool_calls.push({ name: 'run_python', args: { code: 'print(open("report.txt").read())' } });
   assert.equal(evaluateMemoryCheck(check, trace, scenario).pass, false);
   trace.chat_trace.tool_calls = [{ name: 'read' }];
   assert.equal(evaluateMemoryCheck(check, trace, scenario).pass, null);

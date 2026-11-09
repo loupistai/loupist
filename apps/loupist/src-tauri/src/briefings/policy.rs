@@ -45,6 +45,7 @@ pub(crate) fn allowed_name(name: &str) -> bool {
             | "artifact_list"
             | "artifact_read"
             | "chart_query"
+            | "run_python"
     )
 }
 

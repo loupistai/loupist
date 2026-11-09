@@ -8,7 +8,7 @@ Third-party text raises a weaker tier of the same `TurnTaint`
 numeric-only list (`NUMERIC_ONLY_OPENBB_TOOLS`; profiles, filing documents, transcripts and
 news raise it, prices and statements do not), Rust refuses custom-connection calls
 and schedule create, update, status and Run now for the rest of the turn with
-`untrusted_text_paused`. Native Bash is refused with the same code on every host, without a card or override.
+`untrusted_text_paused`. `run_python` stays allowed on every host, without a card or override.
 Native `write` and `edit` refuse an instruction file, and a file with another
 name on disk (a hard link), for the reply; native file tools stay inside the
 Loupist folder in every reply

@@ -22,20 +22,7 @@ export LOUPIST_LIVE_PI_AGENT_DATA_DIR
 # This suite uses the real account. The credential-free catalog marker stays off.
 unset LOUPIST_E2E_PROVIDER_READY || true
 
-if [ -z "${LOUPIST_E2E_LIVE_MODEL_LABEL:-}" ]; then
-    LOUPIST_E2E_LIVE_MODEL_LABEL="GPT-6.1 Sol"
-fi
-export LOUPIST_E2E_LIVE_MODEL_LABEL
-if [ -z "${LOUPIST_E2E_LIVE_EFFORT:-}" ]; then
-    LOUPIST_E2E_LIVE_EFFORT=medium
-fi
-export LOUPIST_E2E_LIVE_EFFORT
-
-HOLDINGS_CSV="$SCRIPT_DIR/fixtures/journeys/holdings.csv"
-if [ ! -f "$HOLDINGS_CSV" ] || [ -L "$HOLDINGS_CSV" ]; then
-    echo "The holdings CSV fixture is missing." >&2
-    exit 1
-fi
+# Model and effort defaults live in live-preset.mjs; optional overrides pass through.
 
 if [ "${LOUPIST_E2E_REUSE_DEV_SERVER:-}" != "1" ] && [ -z "${LOUPIST_E2E_DEV_PORT:-}" ]; then
     LOUPIST_E2E_DEV_PORT=$(node -e '
@@ -147,7 +134,6 @@ fi
 
 LOUPIST_E2E_STATE_DIR="$STATE_ROOT" \
     LOUPIST_E2E_SESSION_INFO="$SESSION_INFO" \
-    LOUPIST_E2E_PICK_FILE="$HOLDINGS_CSV" \
     LOUPIST_LIVE_PI_AGENT_DATA_DIR="$LOUPIST_LIVE_PI_AGENT_DATA_DIR" \
     "$SCRIPT_DIR/run-app.sh" >"$RUN_LOG" 2>&1 &
 APP_PID=$!

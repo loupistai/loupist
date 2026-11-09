@@ -56,9 +56,10 @@ impl ChatSurface {
 
     pub(crate) fn admits_tool(&self, name: &str) -> bool {
         match self {
-            Self::Bot => name != "schedule_handoff",
+            // The Bot keeps its conversation in bot_memory; a working note is a session's research record.
+            Self::Bot => !matches!(name, "schedule_handoff" | "note_save"),
             Self::Session => {
-                name != "research_open"
+                !matches!(name, "research_open" | "bot_memory")
                     && (!name.starts_with("schedule_")
                         || matches!(name, "schedule_list" | "schedule_read" | "schedule_handoff"))
             }
@@ -85,7 +86,7 @@ impl ChatSurface {
 
     fn hint(&self) -> &'static str {
         match self {
-            Self::Bot => "This is the Bot, the Loupist's one continuing conversation with the user. Answer directly and briefly from Memory and a few reads. When the user asks for depth or the request needs multi-step work, call research_open to hand it to a research session and tell the user the session title; otherwise offer it.",
+            Self::Bot => "This is the Bot, the Loupist's one continuing conversation with the user. Answer directly and briefly from Memory and a few reads. When the user asks for depth or the request needs multi-step work, call research_open to hand it to a research session and tell the user the session title; otherwise offer it. With saving on, bot_memory keeps what this conversation should carry forward.",
             Self::Session => "This is a research session: work in depth and file what you establish. A scheduling request goes to the Bot through schedule_handoff.",
             Self::Scheduled => "This is an unattended scheduled run: only pre-approved tools are available, nobody is present to answer a question, and the result is delivered to the Bot.",
             Self::Delegated { .. } => "This is a research session the Bot handed off: nobody is present to answer a question, so work it through with the tools allowed and finish with a complete answer whose first paragraph can stand alone in the Bot.",

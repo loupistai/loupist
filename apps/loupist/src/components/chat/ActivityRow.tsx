@@ -265,13 +265,12 @@ const statusGlyph = (status: ChatProgressStatus): ReactNode => {
 };
 
 /** What the pause turned off for this step, in the user's words. */
-const pausedWhat = (item: ActionItem): "command" | "instructions" | "site" | "schedule" | "connection" | "other" => {
+const pausedWhat = (item: ActionItem): "instructions" | "site" | "schedule" | "connection" | "other" => {
   const tool = item.kind === "tool" ? item.toolName ?? "" : "";
   if (tool === "write" || tool === "edit") return "instructions";
   if (tool === "web_fetch") return "site";
   if (tool.startsWith("schedule_")) return "schedule";
   if (item.kind === "tool" && (item.source?.kind === "connector" || tool.startsWith("mcp__"))) return "connection";
-  if (tool === "bash" || item.category === "compute" || item.operation === "execute") return "command";
   return "other";
 };
 

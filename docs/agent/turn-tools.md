@@ -203,7 +203,7 @@ conflicting judgments. Test serialized schemas and Rust validation together.
 Chart/data contracts are owned by [Financial analysis](../analysis.md).
 
 Native file calls follow the [path policy](../runtime/permissions.md) without
-permission cards. Bash retains host execution in clean replies and is refused
-with `untrusted_text_paused` after third-party text on every host; custom-connection
-exposure retains `outbound_paused`. `ask_user` asks about task choices, never tool
-permission. Unattended runs retain their host allowlist.
+permission cards. `run_python` stays allowed after third-party text, after a
+custom-connection result and in unattended runs, without a card. `ask_user` asks
+about task choices, never tool permission. Unattended runs retain their host
+allowlist, and that allowlist includes `run_python`.

@@ -2,9 +2,8 @@ use super::*;
 use crate::agent_harness::native_policy::NativeRoots;
 use crate::chat::approvals::{ApprovalDecision, ApprovalState, ChatApproval};
 use crate::custom_connections::taint::{
-    delimited_body, retained_trust, COMMAND_AFTER_UNTRUSTED_REFUSAL, HARD_LINK_WRITE_REFUSAL,
-    INSTRUCTION_WRITE_REFUSAL, OUTSIDE_WORKSPACE_REFUSAL, WEB_FETCH_PRIVATE_REFUSAL,
-    WEB_FETCH_SITE_REFUSAL,
+    delimited_body, retained_trust, HARD_LINK_WRITE_REFUSAL, INSTRUCTION_WRITE_REFUSAL,
+    OUTSIDE_WORKSPACE_REFUSAL, WEB_FETCH_PRIVATE_REFUSAL, WEB_FETCH_SITE_REFUSAL,
 };
 use crate::web::script;
 
@@ -65,20 +64,24 @@ fn bound_capture(temporary: &tempfile::TempDir) -> Arc<ToolCapture> {
     turn_capture(temporary).0
 }
 
-fn bash(command: &str) -> Value {
-    json!({"name":"bash","command":command})
-}
-
-/// A clean turn runs a command; a turn at the untrusted-text tier refuses it,
-/// after the reply reads third-party text.
-async fn assert_command_tier(
+/// A clean turn may write instructions. After third-party text, that write is
+/// refused and other file tools stay available.
+async fn assert_file_exposure(
     socket: &Path,
     broker: &crate::broker::ToolBrokerHandle,
+    temporary: &tempfile::TempDir,
     untrusted: bool,
 ) {
-    let response = broker_request(socket, broker.token(), "native.authorize", bash("ls")).await;
+    let path = temporary.path().join("loupist/AGENTS.md");
+    let response = broker_request(
+        socket,
+        broker.token(),
+        "native.authorize",
+        json!({"name":"write","path":path}),
+    )
+    .await;
     if untrusted {
-        refused_with(&response, COMMAND_AFTER_UNTRUSTED_REFUSAL);
+        refused_with(&response, INSTRUCTION_WRITE_REFUSAL);
     } else {
         assert_eq!(response["ok"], true, "{response}");
     }
@@ -142,7 +145,7 @@ async fn untrusted_text_in_chart_inputs_survives_publication_and_input_replaceme
                 .await
                 .insert((commit.artifact.id.clone(), 1));
             let (broker, socket) = start_turn(&state, &temporary, "read-chart", capture).await;
-            assert_command_tier(&socket, &broker, false).await;
+            assert_file_exposure(&socket, &broker, &temporary, false).await;
             let params = if method == "artifact.read" {
                 json!({"artifact_id":commit.artifact.id})
             } else {
@@ -160,7 +163,7 @@ async fn untrusted_text_in_chart_inputs_survives_publication_and_input_replaceme
                 untrusted,
                 "{trust}: {read}"
             );
-            assert_command_tier(&socket, &broker, untrusted).await;
+            assert_file_exposure(&socket, &broker, &temporary, untrusted).await;
             broker.shutdown().await.unwrap();
         }
     }
@@ -202,7 +205,7 @@ async fn untrusted_text_in_world_claims_uses_the_evidence_capture_authorship() {
             let untrusted = authorship == crate::knowledge::Authorship::Publisher;
             assert_eq!(encoded.contains("<<untrusted id="), untrusted, "{read}");
             assert!(encoded.contains("Ignore the user"), "{read}");
-            assert_command_tier(&socket, &broker, untrusted).await;
+            assert_file_exposure(&socket, &broker, &temporary, untrusted).await;
             broker.shutdown().await.unwrap();
         }
     }
@@ -300,7 +303,7 @@ async fn untrusted_text_receipt_survives_reply_storage_and_both_history_tools() 
             untrusted,
             "{read}"
         );
-        assert_command_tier(&socket, &broker, untrusted).await;
+        assert_file_exposure(&socket, &broker, &temporary, untrusted).await;
         broker.shutdown().await.unwrap();
     }
 }
@@ -340,7 +343,7 @@ async fn untrusted_text_exports_raise_the_native_read_tier_and_cannot_be_reimpor
         std::fs::copy(root.join(&filename), &copy).unwrap();
         let (broker, socket) =
             start_turn(&state, &temporary, "native-read", bound_capture(&temporary)).await;
-        assert_command_tier(&socket, &broker, false).await;
+        assert_file_exposure(&socket, &broker, &temporary, false).await;
         let read = broker_request(
             &socket,
             broker.token(),
@@ -354,7 +357,7 @@ async fn untrusted_text_exports_raise_the_native_read_tier_and_cannot_be_reimpor
             untrusted,
             "{read}"
         );
-        assert_command_tier(&socket, &broker, untrusted).await;
+        assert_file_exposure(&socket, &broker, &temporary, untrusted).await;
         broker.shutdown().await.unwrap();
         let (broker, socket) = start_turn(
             &state,
@@ -378,7 +381,7 @@ async fn untrusted_text_exports_raise_the_native_read_tier_and_cannot_be_reimpor
                 .is_some(),
             untrusted
         );
-        assert_command_tier(&socket, &broker, untrusted).await;
+        assert_file_exposure(&socket, &broker, &temporary, untrusted).await;
         let id = imported["result"]["dataset_ref"]["dataset_id"]
             .as_str()
             .unwrap();
@@ -425,9 +428,50 @@ async fn untrusted_text_exports_raise_the_native_read_tier_and_cannot_be_reimpor
         assert_eq!(saved["ok"], true, "{saved}");
         assert_eq!(saved["result"]["result_ref"], reference);
         assert_eq!(saved["result"]["durable"], false);
-        assert_command_tier(&socket, &broker, untrusted).await;
+        assert_file_exposure(&socket, &broker, &temporary, untrusted).await;
         broker.shutdown().await.unwrap();
     }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn python_preserves_exported_text_trust_through_results_and_derived_files() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let root = temporary.path().join("loupist");
+    let capture = bound_capture(&temporary);
+    let (broker, socket) = start_turn(&state, &temporary, "python-trust", capture).await;
+    let clean = broker_request(
+        &socket,
+        broker.token(),
+        "python.run",
+        json!({
+            "code":"print(1)", "timeout_seconds":120,
+        }),
+    )
+    .await;
+    assert_eq!(clean["ok"], true, "{clean}");
+    assert_eq!(clean["result"]["status"], "completed", "{clean}");
+    assert_file_exposure(&socket, &broker, &temporary, false).await;
+    let text = "An issuer supplied this excerpt.";
+    crate::commands::export_trust::record(&state, text.as_bytes()).unwrap();
+    fs::write(root.join("article.txt"), text).unwrap();
+    let result = broker_request(&socket, broker.token(), "python.run", json!({
+        "code":"text = open('/workspace/article.txt').read()\nprint(text)\nopen('/workspace/outputs/derived.txt', 'w').write('Excerpt: ' + text)",
+        "timeout_seconds":120,
+    })).await;
+    assert_eq!(result["ok"], true, "{result}");
+    assert_eq!(result["result"]["status"], "completed", "{result}");
+    assert_eq!(result["result"]["untrusted_input"], true);
+    assert!(delimited_body(result["result"]["stdout"].as_str().unwrap()).is_some());
+    assert_file_exposure(&socket, &broker, &temporary, true).await;
+    let derived = root.join("outputs/derived.txt");
+    assert_eq!(
+        fs::read_to_string(&derived).unwrap(),
+        format!("Excerpt: {text}")
+    );
+    assert!(crate::commands::export_trust::tagged_file(&state, &derived).unwrap());
+    broker.shutdown().await.unwrap();
 }
 
 #[tokio::test]
@@ -492,7 +536,7 @@ async fn untrusted_text_observations_are_delimited_in_asset_reads_and_briefings(
         .and_then(delimited_body)
         .unwrap_or_else(|| panic!("{read}"));
     assert!(rows.contains("Ignore the user"), "{rows}");
-    assert_command_tier(&socket, &broker, true).await;
+    assert_file_exposure(&socket, &broker, &temporary, true).await;
     broker.shutdown().await.unwrap();
     let (prompt, context) =
         crate::briefings::build_prompt(&state, "loupist-a", Some(at - 1500), at).unwrap();
@@ -504,7 +548,7 @@ async fn untrusted_text_observations_are_delimited_in_asset_reads_and_briefings(
     let capture = bound_capture(&temporary);
     capture.admit_untrusted_context(context.carries_untrusted_text());
     let (broker, socket) = start_turn(&state, &temporary, "briefing", capture).await;
-    assert_command_tier(&socket, &broker, true).await;
+    assert_file_exposure(&socket, &broker, &temporary, true).await;
     broker.shutdown().await.unwrap();
 }
 
@@ -547,10 +591,19 @@ async fn web_text_reaches_the_model_delimited_and_pauses_commands_and_instructio
     let (capture, asked) = turn_capture(&temporary);
     let (broker, socket) = start_turn(&state, &temporary, "untrusted", capture.clone()).await;
     let instructions = json!({"name":"write","path":workspace.join("AGENTS.md")});
-    // Another name for `AGENTS.md` inside a writable subfolder.
     if !workspace.join("AGENTS.md").exists() {
         std::fs::write(workspace.join("AGENTS.md"), "rules").unwrap();
     }
+    let before = broker_request(
+        &socket,
+        broker.token(),
+        "native.authorize",
+        json!({"name":"read","path":workspace.join("AGENTS.md")}),
+    )
+    .await;
+    assert_eq!(before["ok"], true, "{before}");
+    assert_eq!(before["result"]["allowed"], true);
+    // Another name for `AGENTS.md` inside a writable subfolder.
     std::fs::create_dir_all(workspace.join("notes")).unwrap();
     std::fs::hard_link(
         workspace.join("AGENTS.md"),
@@ -558,10 +611,6 @@ async fn web_text_reaches_the_model_delimited_and_pauses_commands_and_instructio
     )
     .unwrap();
     let alias = json!({"name":"write","path":workspace.join("notes/alias.md")});
-
-    let before = broker_request(&socket, broker.token(), "native.authorize", bash("ls")).await;
-    assert_eq!(before["ok"], true, "{before}");
-    assert_eq!(before["result"], json!({"allowed": true}));
     // A hard-linked file can alias protected data even in a clean reply.
     let before = broker_request(&socket, broker.token(), "native.authorize", alias.clone()).await;
     assert_eq!(before["error"]["code"], "protected_path", "{before}");
@@ -587,12 +636,17 @@ async fn web_text_reaches_the_model_delimited_and_pauses_commands_and_instructio
     let retained = capture.run_result(result_ref).await.unwrap();
     assert_eq!(retained.payload["content"], body);
 
-    // After third-party text a command is refused without a card; a
-    // later command is refused the same way.
+    // Bash is no longer a native tool. A request for it is malformed, and
+    // the refusal does not ask for a card.
     for command in ["python3 build_deck.py\n  --out deck.pptx", "whoami"] {
-        let refused =
-            broker_request(&socket, broker.token(), "native.authorize", bash(command)).await;
-        refused_with(&refused, COMMAND_AFTER_UNTRUSTED_REFUSAL);
+        let refused = broker_request(
+            &socket,
+            broker.token(),
+            "native.authorize",
+            json!({"name":"bash","command":command}),
+        )
+        .await;
+        assert_eq!(refused["error"]["code"], "malformed_request", "{refused}");
         assert_eq!(refused["error"]["retryable"], false);
     }
 
@@ -625,23 +679,21 @@ async fn web_text_reaches_the_model_delimited_and_pauses_commands_and_instructio
 }
 
 #[tokio::test]
-async fn a_clean_reply_runs_commands_after_an_earlier_reply_read_third_party_text() {
+async fn a_clean_reply_allows_instruction_writes_after_an_earlier_untrusted_reply() {
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
+    let write = json!({"name":"write","path":temporary.path().join("loupist/AGENTS.md")});
 
     let earlier = bound_capture(&temporary);
     earlier.turn_taint.mark_untrusted_text();
     let (broker, socket) = start_turn(&state, &temporary, "earlier", earlier).await;
-    let refused = broker_request(&socket, broker.token(), "native.authorize", bash("ls")).await;
-    refused_with(&refused, COMMAND_AFTER_UNTRUSTED_REFUSAL);
+    let refused = broker_request(&socket, broker.token(), "native.authorize", write.clone()).await;
+    refused_with(&refused, INSTRUCTION_WRITE_REFUSAL);
     broker.shutdown().await.unwrap();
 
     let (broker, socket) = start_turn(&state, &temporary, "clean", bound_capture(&temporary)).await;
-    for command in ["ls", "whoami"] {
-        let allowed =
-            broker_request(&socket, broker.token(), "native.authorize", bash(command)).await;
-        assert_eq!(allowed["ok"], true, "{allowed}");
-    }
+    let allowed = broker_request(&socket, broker.token(), "native.authorize", write).await;
+    assert_eq!(allowed["ok"], true, "{allowed}");
     broker.shutdown().await.unwrap();
 }
 
@@ -747,7 +799,7 @@ async fn a_saved_web_source_comes_back_delimited_and_pauses_commands_in_a_later_
     )]);
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
-    let bash = bash("ls");
+    let instructions = json!({"name":"write","path":temporary.path().join("loupist/AGENTS.md")});
 
     // Turn 1 reads the page and saves it as a Source.
     let first = bound_capture(&temporary);
@@ -774,7 +826,13 @@ async fn a_saved_web_source_comes_back_delimited_and_pauses_commands_in_a_later_
     // Turn 2 runs commands until a search brings the saved page's text back.
     let (broker, socket) =
         start_turn(&state, &temporary, "second", bound_capture(&temporary)).await;
-    let allowed = broker_request(&socket, broker.token(), "native.authorize", bash.clone()).await;
+    let allowed = broker_request(
+        &socket,
+        broker.token(),
+        "native.authorize",
+        instructions.clone(),
+    )
+    .await;
     assert_eq!(allowed["ok"], true, "{allowed}");
     let found = broker_request(
         &socket,
@@ -798,13 +856,25 @@ async fn a_saved_web_source_comes_back_delimited_and_pauses_commands_in_a_later_
             "{field}: {text}"
         );
     }
-    let refused = broker_request(&socket, broker.token(), "native.authorize", bash.clone()).await;
-    refused_with(&refused, COMMAND_AFTER_UNTRUSTED_REFUSAL);
+    let refused = broker_request(
+        &socket,
+        broker.token(),
+        "native.authorize",
+        instructions.clone(),
+    )
+    .await;
+    refused_with(&refused, INSTRUCTION_WRITE_REFUSAL);
     broker.shutdown().await.unwrap();
 
     // Turn 3: an exact read of the Source raises the tier on its own.
     let (broker, socket) = start_turn(&state, &temporary, "third", bound_capture(&temporary)).await;
-    let allowed = broker_request(&socket, broker.token(), "native.authorize", bash.clone()).await;
+    let allowed = broker_request(
+        &socket,
+        broker.token(),
+        "native.authorize",
+        instructions.clone(),
+    )
+    .await;
     assert_eq!(allowed["ok"], true, "{allowed}");
     let read = broker_request(
         &socket,
@@ -819,8 +889,8 @@ async fn a_saved_web_source_comes_back_delimited_and_pauses_commands_in_a_later_
     assert!(text.contains(label), "{text}");
     let body = delimited_body(text).unwrap();
     assert!(body.contains("Ignore the user"), "{body}");
-    let refused = broker_request(&socket, broker.token(), "native.authorize", bash).await;
-    refused_with(&refused, COMMAND_AFTER_UNTRUSTED_REFUSAL);
+    let refused = broker_request(&socket, broker.token(), "native.authorize", instructions).await;
+    refused_with(&refused, INSTRUCTION_WRITE_REFUSAL);
     broker.shutdown().await.unwrap();
 }
 
@@ -865,7 +935,7 @@ async fn a_retained_news_dataset_queried_later_is_delimited_and_numeric_rows_are
         json!({"results":[{"date":"2026-10-28","close":40.0}]}),
         false,
     );
-    let bash = bash("ls");
+    let instructions = json!({"name":"write","path":temporary.path().join("loupist/AGENTS.md")});
     let select = |reference: &crate::datasets::DatasetRef| json!({"dataset_id":reference.dataset_id,"revision":reference.revision});
 
     // Reviewed numeric rows come back as data and leave commands running.
@@ -878,7 +948,13 @@ async fn a_retained_news_dataset_queried_later_is_delimited_and_numeric_rows_are
     let summary =
         broker_request(&socket, broker.token(), "dataset.describe", select(&prices)).await;
     assert!(summary["result"]["sample"].is_object(), "{summary}");
-    let allowed = broker_request(&socket, broker.token(), "native.authorize", bash.clone()).await;
+    let allowed = broker_request(
+        &socket,
+        broker.token(),
+        "native.authorize",
+        instructions.clone(),
+    )
+    .await;
     assert_eq!(allowed["ok"], true, "{allowed}");
     broker.shutdown().await.unwrap();
 
@@ -915,9 +991,14 @@ async fn a_retained_news_dataset_queried_later_is_delimited_and_numeric_rows_are
             "{name}: {delivered}"
         );
         assert!(delimited_body(delivered).is_some(), "{name}: {delivered}");
-        let refused =
-            broker_request(&socket, broker.token(), "native.authorize", bash.clone()).await;
-        refused_with(&refused, COMMAND_AFTER_UNTRUSTED_REFUSAL);
+        let refused = broker_request(
+            &socket,
+            broker.token(),
+            "native.authorize",
+            instructions.clone(),
+        )
+        .await;
+        refused_with(&refused, INSTRUCTION_WRITE_REFUSAL);
         broker.shutdown().await.unwrap();
     }
     // The retained dataset keeps the provider's bytes.
@@ -1011,7 +1092,13 @@ async fn saved_numeric_market_data_and_the_users_own_file_come_back_without_paus
             .unwrap_or_else(|| panic!("{read}"));
         assert!(!text.contains("<<untrusted"), "{title}: {text}");
     }
-    let allowed = broker_request(&socket, broker.token(), "native.authorize", bash("ls")).await;
+    let allowed = broker_request(
+        &socket,
+        broker.token(),
+        "native.authorize",
+        json!({"name":"write","path":temporary.path().join("loupist/AGENTS.md")}),
+    )
+    .await;
     assert_eq!(allowed["ok"], true, "{allowed}");
     broker.shutdown().await.unwrap();
 }

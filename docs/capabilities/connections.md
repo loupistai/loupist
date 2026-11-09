@@ -64,7 +64,7 @@ Users can add their own MCP data sources under Settings → Connections → Your
   linked from the answer. The model sees host-generated, sanitized tool descriptions; the raw server description is
   shown only to the user.
 - **Outbound block:** after a custom tool result enters a turn, Rust marks the turn tainted, and outbound-capable
-  tools (native Bash, web, browser, other connections) are refused for the rest of that turn.
+  tools (web, browser and other connections) are refused for the rest of that turn. `run_python` stays allowed.
 - **Memory:** "Don't save results to Memory" is on by default per connection. When it is on and the connection
   taints a turn, that turn writes no Memory; otherwise Sources and Map nodes carry their connection origin.
 - **Unattended runs:** briefings and scheduled runs may call only Always-approved read-only custom tools.

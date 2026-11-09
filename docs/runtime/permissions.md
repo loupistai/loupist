@@ -1,15 +1,17 @@
 # Native tool permissions
 
-What a native Pi tool (`read`, `ls`, `find`, `grep`, `write`, `edit`, `bash`) may do in one Chat reply, decided by Rust from the target's path class and whether the reply has read third-party text. Nothing asks the user: file tools work inside the admitted folders, Bash runs with host permissions only before third-party text, and disallowed calls are refused with a `next` that tells the model what to do instead.
+What a native file tool (`read`, `ls`, `find`, `grep`, `write`, `edit`) and `run_python` may do in one Chat reply. Rust decides file calls from the target's path class and whether the reply has read third-party text. Nothing asks the user. File tools work inside the admitted folders. `run_python` stays allowed after third-party text and in unattended runs, without a permission card. Disallowed file calls are refused with a `next` that tells the model what to do instead.
 
-The policy is one pure module,
+The file policy is one pure module,
 `apps/loupist/src-tauri/src/agent_harness/native_policy.rs`. The extension
 (`apps/loupist/agent/workspace-tools.mjs`) asks `native.authorize` before every
-native execution with the resolved file (`read`, `write`, `edit`), the resolved search
-root (`ls`, `find`, `grep`; the workspace by default) or the exact command (`bash`).
+native file execution with the resolved file (`read`, `write`, `edit`) or the resolved search
+root (`ls`, `find`, `grep`; the workspace by default).
 `AppToolExecutor::native_authorize` (`commands/tool_executor/workspace.rs`) parses the
-request once and decides. Unattended runs refuse every native tool before this policy
-(`briefings/policy.rs`).
+request once and decides. Unattended runs refuse native file tools before this policy
+(`briefings/policy.rs`). `run_python` is not part of that refusal.
+
+There is no agent Bash tool. Model code does not get a shell, the host Python, or a JavaScript runtime.
 
 ## Exposure
 
@@ -17,7 +19,7 @@ request once and decides. Unattended runs refuse every native tool before this p
 | --- | --- |
 | Clean | No third-party text admitted in this reply yet. Returned history or retained material can raise the tier. |
 | ThisTurn | This turn raised the untrusted-text tier ([Untrusted text](untrusted-text.md)). |
-| Custom | This turn read a custom-connection result. File rows behave as ThisTurn; Bash is refused (`outbound_paused`). |
+| Custom | This turn read a custom-connection result. File rows behave as ThisTurn. `run_python` stays allowed. |
 
 ## Path classes
 
@@ -56,7 +58,11 @@ counts at whatever depth it spells the root, while on a case-sensitive volume
    runtime folders, `.pi/settings.json`) or under the Loupist's data folder
    `<workspace>/.loupist` (the database, other Chats' attachments, the activity
    log), except its `skills` folder.
-7. Workspace: inside the selected workspace, the Loupist folder.
+7. Workspace: inside the selected workspace, the Loupist folder. A default
+   Loupist is created inside the app-data namespace: its strictly nested selected
+   workspace counts as Workspace, while its own `.loupist` store, other Loupists,
+   runtime folders and the rest of app data remain private. Selecting the app-data
+   root itself or a parent never grants access to its private contents.
 8. Outside: everything else.
 
 ## Policy table
@@ -73,7 +79,7 @@ counts at whatever depth it spells the root, while on a case-sensitive volume
 | write, edit | Instructions | Allow | Refuse `untrusted_text_paused` |
 | write, edit | AppPrivate, Attachments, Credentials, GitDir | Refuse `protected_path` | Refuse `protected_path` |
 | write, edit | Outside | Refuse `outside_workspace` | Refuse `outside_workspace` |
-| bash | | Allow, online | ThisTurn: Refuse `untrusted_text_paused`. Custom: Refuse `outbound_paused`. |
+| run_python | | Allow, no card, including unattended runs and both exposure tiers. | Allow |
 
 A file whose link count is above 1 has another name on disk, and the classes
 see only the name the call used: `notes/alias.md` hard-linked to `AGENTS.md`
@@ -102,34 +108,29 @@ the canonical parent against the approved path, so a swapped link cannot create
 an outside directory. `ls` and `find` use the admitted list. `grep` opens only listed
 files, checks each descriptor and passes it to `rg` as stdin, with no filesystem
 search arguments or ambient configuration. Its output is capped at 50 KiB.
-File tools and Bash never run together in the same Pi process: Bash holds an
-exclusive lock, file tools share it, and waiters go in order.
+`run_python` runs in a separate worker process. It does not share the Pi process with file tools.
 
-## Bash execution
+## Python execution
 
-Before third-party text, Bash runs with the user's host permissions, as before
-this change. The selected workspace is its starting directory. The child receives
-an allowlisted environment without app credentials or shell startup hooks; this
-does not restrict its access to host files, sockets, processes or the network.
-After third-party text Rust refuses Bash with `untrusted_text_paused`, without a
-permission card or override, on every host. The custom-connection tier retains
-`outbound_paused`. There is no OS sandbox, probe, sandbox response or fallback.
+`run_python` is broker method `python.run` with permission always. The model sends `code` and an optional `timeout_seconds`. Code is at most 64 KiB. The timeout defaults to 60 seconds and cannot exceed 120. The worker is `loupist-python-worker` in the staged `python-runtime` resource. It hosts Wasmtime 50.0.1 and the pinned CPython WASI snapshot in `apps/loupist/python-worker/runtime.json` (ClayGendron/wasi-python v0.1.4). The host does not invoke native Python for model code.
+
+Each call snapshots the allowed workspace files, this Chat's attachments and a scratch directory into a private host-owned tree. The guest sees `/workspace` as its relative cwd, `/attachments` for this Chat as read-only, `/scratch` for this run as writable, and `/usr/local/lib` for the runtime as read-only. Matplotlib's data directory is a separate read-only preopen. The snapshot omits dot directories recursively, app private roots, credentials, `.git`, symlinks, hard links, special files and nested instruction locations. Top-level workspace files are read-only. Writes are granted only for `outputs/`, which the host creates, and for existing non-dot top-level subdirectories the host allows. The worker never receives a live host directory as a writable WASI preopen.
+
+The worker has no network and no DNS. TCP, UDP and IP name lookup are disabled, and every socket address check fails. It does not inherit the host environment. The guest environment is only `HOME`, `TMPDIR`, `MPLCONFIGDIR`, `MPLBACKEND`, `PYTHONTZPATH` and `OPENBLAS_NUM_THREADS`. There is no shell and no process spawn. The module's `host.call` import returns failure for every argument. Linear memory is limited to 512 MiB. The parent caps captured output at 64 KiB. The parent kills and reaps the child on cancellation and on the wall timeout, including a blocked sleep or a module load, and the worker exits if its parent dies. Only one Python call runs at a time in an app process; queued calls can be cancelled and wait at most their requested timeout. A broker disconnect cancels the host-owned run without dropping its cleanup or file copy-back.
+
+The offline packages are numpy, pandas, scipy, matplotlib, statsmodels and scikit-learn. The guest cannot install a package or fetch one. macOS arm64 is the release host. Linux is a development host. Both use the same wasm snapshot and a worker built for that machine.
+
+On macOS the worker is signed with the hardened runtime and `com.apple.security.cs.allow-unsigned-executable-memory`. Wasmtime 50 maps executable memory with W^X `mmap` rather than Apple's `MAP_JIT`, so that entitlement is required for the worker to run. The Loupist app binary does not receive it. Pi keeps its own entitlement file for the Node runtime. That file is not applied to the app.
+
+Rust copies allowed guest writes back to the host, including writes made before cancellation or timeout. Copy-back reapplies the native path policy to every destination, including newly created names, and admits only ordinary workspace content. It uses descriptor-relative nofollow and openat checks and refuses symlink races, replaced parents and hard-link aliases. The host does not extract guest archives onto itself. If a host file changes during the call, copy-back does not overwrite it. The snapshot is limited to 2,000 files and 32 MiB; copy-back is limited to 256 changed files and 32 MiB, with an 8 MiB limit per file. Walks visit at most 10,000 entries and 32 directory levels; at most 256 writable roots, including `outputs`, are admitted. Oversized output files and changed host files are reported individually so other allowed results survive. Removing or renaming an existing directory is reported as a conflict and leaves its original host subtree intact; remove individual files when needed.
 
 ## Residual risk
 
-- Clean Bash can read or change any host file the OS user can access, including
-  app data and credentials, and can use the network or start processes. File-tool
-  policy does not confine Bash. This is the pre-PR execution boundary.
-- File changes are immediate and survive cancellation. Writable workspace files
-  may be instructions for another program, such as a build script or hook outside
-  `.git`; this policy does not make those programs safe to run later.
-- Path authorization and execution are separate operations. The read descriptor
-  identity and per-process tool lock prevent same-process Bash/read races; another
-  Chat or a local process can still mutate paths concurrently.
-- Hard-link write checks run at authorization; another local actor can change link
-  topology afterwards. Descriptor checks also refuse a newly multiply-linked file.
-- Bash output and unclassified local files do not raise the untrusted-text tier.
-  A new reply starts clean unless admitted history or retained results raise it.
-  The user's next message does not erase injected text from conversation history.
-- The web site rule limits direct `web_fetch` targets; it is not a general
-  exfiltration firewall. See [Untrusted text](untrusted-text.md).
+- Python can modify files in an authorized workspace subfolder. That includes `outputs/` and any existing non-dot top-level directory the host grants. A file there may be instructions for another program, such as a build script or a hook outside `.git`. This boundary does not make those programs safe to run later.
+- The worker's hardened runtime still allows unsigned executable memory. A bug in Wasmtime, Cranelift or the WASI engine can use that mapping. The entitlement is on the worker binary only. It is not on the Loupist app.
+- The CPython standard library inside the sandbox can still read the granted preopens and can spend the memory and time budgets. Those budgets do not stop an engine bug.
+- The 512 MiB cap covers guest linear memory, not the worker's resident size. Compiling the fixed runtime adds host memory and CPU costs; the private compiled-module cache reduces subsequent startup costs. Calls run serially to prevent parallel compilers multiplying that overhead. The snapshot and copy-back byte limits do not impose a live guest disk quota: temporary writes can use disk space until the call ends and its private tree is removed.
+- File changes that the host copies back survive cancellation. Path checks and execution are separate operations. Another Chat or a local process can change a path during the call. Copy-back refuses a host file whose contents changed. It does not freeze the rest of the machine.
+- Hard-link checks on file tools run at authorization. Another local actor can change link topology afterwards. Descriptor checks also refuse a newly multiply-linked file.
+- A Python snapshot containing exact bytes tagged as third-party exports raises the untrusted-text tier when its result is delivered, and its stdout/stderr are delimited. Without guest read tracing this conservatively applies even if the program did not read that file. Derived copied-back files receive content-addressed tags before publication, so later reads preserve the boundary. Ordinary calculation output and unclassified local files do not raise the tier. A new reply starts clean unless admitted history or retained results raise it. The user's next message does not erase injected text from conversation history.
+- The web site rule limits direct `web_fetch` targets. It is not a general exfiltration firewall. See [Untrusted text](untrusted-text.md).

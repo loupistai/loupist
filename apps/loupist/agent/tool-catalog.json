@@ -6,7 +6,7 @@
       "permission": "always",
       "component": "datasets",
       "label": "Import a local dataset",
-      "description": "Snapshot a workspace UTF-8 JSON file of up to 32 MiB into an immutable Loupist-owned dataset for charts and inspection. Use local Bash to convert other formats or transform exported inputs. Returns dataset_ref, file SHA-256, size and a bounded preview without copying the full file through model arguments. Reimporting a changed file or changed declared inputs creates a new revision. Optional input_refs declare lineage; they do not prove execution, external origin, or historical availability. The host reads only a relative workspace file without following symlinks. Import does not save Memory.",
+      "description": "Snapshot a workspace UTF-8 JSON file of up to 32 MiB into an immutable Loupist-owned dataset for charts and inspection. Use run_python to convert other formats or transform exported inputs. It cannot install packages. Returns dataset_ref, file SHA-256, size and a bounded preview without copying the full file through model arguments. Reimporting a changed file or changed declared inputs creates a new revision. Optional input_refs declare lineage; they do not prove execution, external origin, or historical availability. The host reads only a relative workspace file without following symlinks. Import does not save Memory.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -184,16 +184,26 @@
       }
     },
     {
-      "name": "bash",
-      "method": null,
+      "name": "run_python",
+      "method": "python.run",
       "permission": "always",
       "component": null,
+      "label": "Run Python",
+      "description": "Run Python for analysis and charts. Pass the program as code (at most 64 KiB of UTF-8). timeout_seconds is optional, defaults to 60, and cannot exceed 120. The working directory is /workspace (this Loupist folder). Top-level files there are read-only. /attachments is this Chat's attachments, read-only. /scratch is writable for this call only. Write new files under /workspace/outputs/ or an existing non-dot folder. Save charts as PNG files in outputs/ so the app can show them. /usr/local/lib is the read-only runtime. numpy, pandas, scipy, matplotlib, statsmodels, and scikit-learn are already installed. Do not install packages. There is no network and no way to start another program. The result is bounded stdout, stderr, a status, changed files, and any chart or file the app registered. This tool stays available after web pages and in unattended runs.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code"],
+        "properties": {
+          "code": { "type": "string", "minLength": 1, "maxLength": 65536 },
+          "timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 120 }
+        }
+      },
       "progress": {
         "category": "compute",
         "operation": "execute",
-        "running": "Running a command",
-        "done": "Ran a command",
-        "target": "command"
+        "running": "Running Python",
+        "done": "Ran Python"
       }
     },
     {
@@ -2276,6 +2286,92 @@
         "operation": "generic",
         "running": "Opening a research session",
         "done": "Opened a research session"
+      }
+    },
+    {
+      "name": "bot_memory",
+      "method": "bot.memory",
+      "permission": "memory_write",
+      "component": null,
+      "label": "Remember for this conversation",
+      "description": "Bot only. Keep, change or drop what this continuing conversation carries forward once its early messages leave view (bot_memory.entries): a preference or limit the user set for how you work (preference), something they decided (decision), a request they are still waiting on (open), or their situation as it bears on later replies (context). Write short entries in your own words about what the user said; basis names the user's earlier messages it rests on and defaults to the current one. Save before reading outside material: after third-party text in a reply, remember and update pause, while resolve and forget still work. Use update when the user corrects an entry, resolve when it is done or no longer applies, and forget when they ask you to forget it (match finds what you no longer see). Never keep credentials, account details, holdings quantities or values, or text from web pages, files or tools; a durable research finding goes to lens_file and an investment rule to principle_save. Changes apply when this reply finishes.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "changes"
+        ],
+        "properties": {
+          "changes": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 30,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "remember",
+                    "update",
+                    "resolve",
+                    "forget"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "description": "An entry id from bot_memory.entries; required for update, resolve and forget."
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "preference",
+                    "decision",
+                    "open",
+                    "context"
+                  ],
+                  "description": "remember only."
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300,
+                  "description": "remember and update: one short entry."
+                },
+                "basis": {
+                  "type": "array",
+                  "maxItems": 4,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "description": "remember and update: ids of the user's messages in this conversation it rests on; omit for the current message."
+                },
+                "match": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "description": "forget only, instead of id: forget every stored entry whose text contains these words, including ones resolved or kept on another version of this conversation; * forgets everything. Use it when the user asks you to forget something not in bot_memory.entries. The result gives only a count."
+                }
+              }
+            }
+          }
+        }
+      },
+      "progress": {
+        "category": "memory",
+        "operation": "submit",
+        "running": "Remembering for this conversation",
+        "done": "Remembered for this conversation",
+        "source": "memory"
       }
     },
     {
@@ -4402,7 +4498,7 @@
       "permission": "always",
       "component": "datasets",
       "label": "Export dataset to workspace",
-      "description": "Write an entire immutable dataset revision or JSON Pointer selection directly to a relative workspace file without copying rows through the conversation. JSON preserves the selected structure. CSV requires an array of row objects; columns selects their order (otherwise alphabetical). Returns the actual path, SHA-256, row count, and a .provenance.json sidecar. Creates parent directories and refuses to overwrite existing files or follow symlinks. Use this before local Python/Bash analysis of app data; do not re-download or encode the rows in model text. Files remain after interruption.",
+      "description": "Write an entire immutable dataset revision or JSON Pointer selection directly to a relative workspace file without copying rows through the conversation. JSON preserves the selected structure. CSV requires an array of row objects; columns selects their order (otherwise alphabetical). Returns the actual path, SHA-256, row count, and a .provenance.json sidecar. Creates parent directories and refuses to overwrite existing files or follow symlinks. Use this before run_python analysis of app data; do not re-download or encode the rows in model text. Files remain after interruption.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,

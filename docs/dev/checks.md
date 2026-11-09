@@ -54,6 +54,12 @@ fixture, environment and variable-model failures; preserve their evidence in rep
 Missing credentials/platforms and unapproved external costs are boundaries, not
 passes. Never change a rubric merely to make a candidate pass.
 
+Record the host and source revision or fingerprint with check results. A later
+source change invalidates affected evidence; rerun those checks before handoff.
+Cloud sessions use the affected scope gates plus native checks when the changed
+behavior reaches the bridge, UI or persistence. A renderer-only mock pass cannot
+replace those checks.
+
 ### Work loops
 
 Larger efforts run as bounded loops. Every loop has an iteration cap, a no-progress check, and a cost cap,
@@ -165,8 +171,13 @@ To drive the real app on Linux, run the native suites or `up.sh` from
 [Run native suites on Linux](../../apps/loupist/e2e/README.md#run-native-suites-on-linux).
 They need only the `xvfb` package above; the launchers start a private display.
 
-Pull-request CI runs Rust and the Linux native suites on Ubuntu; the `main` run adds
-macOS Rust, WKWebView/native interaction and packaging, and releases add signing.
+Pull-request CI runs shared Rust, Python and web contracts on Ubuntu; the `main`
+run adds macOS Rust, WKWebView/native interaction and packaging, and releases add
+signing. Linux native UI is opt-in CI:
+`gh workflow run ci.yml --ref <branch> -f linux_native=true`. Codex, Claude and
+Cursor cloud sessions still run the affected native suites locally under Xvfb;
+removing the repeated GUI CI job does not remove Linux development support or
+claim macOS qualification. See the [CI placement and timing rationale](../ci-cd.md#ci).
 Linux is a development and test host, not a release target. The Linux GTK dependency advisory remains
 documented in [Dependency security review](dependencies.md#dependency-security-review).
 
@@ -191,8 +202,18 @@ explicitly; a blanket ignored-file cleanup would also delete private notes in
 ## Runtime staging and package checks
 
 The locked setup and `verify.sh` also stage the pinned offline content-search
-binary, so workspace grep contracts execute on macOS and Linux without skipped
-package tests.
+binary and the pinned offline Python runtime
+(`apps/loupist/scripts/stage_python_runtime.py --ensure`), so workspace grep
+contracts and `python-runtime-verify` execute on macOS and Linux without a
+package download during the check. The Rust check verifies the staged tree.
+Setup builds the worker when the pin or the worker source changed. Both steps
+run as the checkout user. On Linux CI that user is not root. The apt install
+earlier in the job is the root step. `verify-rust` remains the Linux runtime
+proof if the native job becomes opt-in. When `native-e2e-linux` is selected,
+that job also runs `--ensure` as the runner user before the GUI suite.
+`--verify` checks the signed worker bytes against the current worker source.
+`apps/loupist/scripts/python-worker-crate-licenses.json` records each registry
+crate's SPDX license because `Cargo.lock` v4 has no license field.
 
 Stage missing/stale runtimes before a requested native or packaging flow.
 World extraction and search run in Rust; only their local embedding assets need
@@ -205,11 +226,24 @@ dependency set requires Rust 1.90 or newer; use CI's pinned toolchain.
 
 ```sh
 python3 apps/loupist/scripts/stage-embed-assets.py
-# Complete platform staging also includes embeddings:
+python3 apps/loupist/scripts/stage_python_runtime.py --ensure
+# Complete platform staging also includes embeddings and the Python runtime:
 sh apps/loupist/scripts/stage-macos-arm64.sh
 # Windows compatibility staging:
 pwsh apps/loupist/scripts/stage-windows-x64.ps1
 ```
+
+`stage-macos-arm64.sh` signs `loupist-python-worker` with the hardened runtime
+and `apps/loupist/python-worker/Entitlements.plist`. The app bundle does not
+receive that entitlement. `check-macos-app-bundle.sh` runs the signed worker
+and checks the app binary.
+
+For a runtime change, measure both the staged tree and the rebuilt app bundle,
+and include the comparison and measurement method in the PR. Runtime file bytes,
+Tauri's app-size report and a compressed installer are different measurements.
+When `APPLE_SIGNING_IDENTITY` is set, `--ensure` reapplies that identity even when
+the runtime was previously cached with an ad-hoc signature. Distribution checks
+also require the Python worker's signature to chain to Apple.
 
 After a bundle change use the bundle checks in [CI and releases](../ci-cd.md).
 Do not commit staged binaries, build output, credentials, databases or attachments.

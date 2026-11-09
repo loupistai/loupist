@@ -1,7 +1,8 @@
 # Word workflow
 
 Original Loupist guidance grounded in python-docx's document model.
-See [sources](../../NOTICE.md).
+See [sources](../../NOTICE.md). `run_python` does not include python-docx and
+cannot install it. Use the file tools, and say so when the library is required.
 
 ## Inspect and preserve
 
@@ -25,7 +26,7 @@ material financial figures under the common evidence rules. Keep headings with
 the following paragraph and inspect page breaks around large tables.
 
 Reopen the saved file and check text, table contents, images, and section count.
-For page-quality claims, export a copy through an installed office engine and
-inspect the rendered pages. Verify Korean and other non-Latin glyphs, headers,
+`run_python` cannot export a copy through an office engine. Say when a visual
+page check is missing. Verify Korean and other non-Latin glyphs, headers,
 footers, long tables, page numbering, and links. A successful python-docx save
 is not a rendered layout check. Report unsupported features or missing rendering.

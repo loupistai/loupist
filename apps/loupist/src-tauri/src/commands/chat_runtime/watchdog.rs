@@ -66,8 +66,8 @@ pub(super) const CHAT_FIRST_PROVIDER_BODY_PROGRESS_TIMEOUT: Duration = Duration:
 // but neither an unended compaction nor serial compactions may hold a run
 // forever.
 pub(super) const CHAT_PRE_BODY_TOTAL_TIMEOUT: Duration = crate::pi::PI_HTTP_IDLE_TIMEOUT;
-// Pi's core/tools/bash.js has no default timeout (explicit timeouts can reach
-// 2_147_483_647 ms), so this is a SILENCE budget, not a job duration limit.
+// This is a SILENCE budget for the tool protocol, not a job duration limit.
+// Individual host tools enforce their own deadlines.
 // An hour exceeds World graph_jobs::LOCAL_OPERATION_BUDGET_MS (600 s) and
 // tool_executor/mcp_host.rs MCP_CALL_TIMEOUT (45 s). Every Pi event rearms it.
 pub(super) const CHAT_TOOL_SILENCE_TIMEOUT: Duration = Duration::from_secs(60 * 60);

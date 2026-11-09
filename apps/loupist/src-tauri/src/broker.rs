@@ -234,6 +234,7 @@ pub enum ToolMethod {
     ScheduleRunNow,
     ScheduleStop,
     ResearchOpen,
+    BotMemory,
     ChatHistory,
     DatasetDescribe,
     DatasetQuery,
@@ -285,6 +286,8 @@ pub enum ToolMethod {
     ChartPublish,
     GridPublish,
     WorkspaceCapture,
+    #[serde(rename = "run_python")]
+    PythonRun,
 }
 
 impl ToolMethod {
@@ -295,6 +298,7 @@ impl ToolMethod {
             "native.authorize" => Some(Self::NativeAuthorize),
             "mcp.connect" => Some(Self::McpConnect),
             "mcp.call" => Some(Self::McpCall),
+            "python.run" => Some(Self::PythonRun),
             _ => crate::broker::tools::TOOL_CATALOG
                 .tools
                 .iter()
@@ -307,7 +311,7 @@ impl ToolMethod {
         use crate::broker::tools::{ToolPermission, TOOL_CATALOG};
         if matches!(
             self,
-            Self::NativeAuthorize | Self::McpConnect | Self::McpCall
+            Self::NativeAuthorize | Self::McpConnect | Self::McpCall | Self::PythonRun
         ) {
             return ToolPermission::Always;
         }
@@ -325,7 +329,7 @@ impl ToolMethod {
 pub enum BrokerError {
     #[error("Outbound access is paused for this turn because it read content from a custom connection. The user can ask again in a new message.")]
     OutboundPaused,
-    #[error("This turn read third-party text (web pages, search results, news, filings, provider descriptions, or saved Sources and datasets holding them), so custom connections, schedule changes, new websites and instruction writes are paused for the rest of the turn, and commands run offline.")]
+    #[error("This turn read third-party text (web pages, search results, news, filings, provider descriptions, or saved Sources and datasets holding them), so custom connections, schedule changes, new websites and instruction writes are paused for the rest of the turn.")]
     UntrustedTextPaused,
     #[error("This path is inside the app's private data (credentials, the database, Pi runtime files), which native tools never read or write.")]
     ProtectedPath,
@@ -1728,7 +1732,7 @@ impl ToolTraceCapture {
     pub(crate) fn observe_start(&self, call_id: &str, name: &str, args: &Value) {
         if !matches!(
             name,
-            "capability_load" | "read" | "write" | "edit" | "bash" | "ls" | "find" | "grep"
+            "capability_load" | "read" | "write" | "edit" | "ls" | "find" | "grep"
         ) {
             return;
         }

@@ -48,6 +48,12 @@ for required in \
     "$EMBED_ASSETS/model.safetensors" \
     "$EMBED_ASSETS/tokenizer.json" \
     "$EMBED_ASSETS/NOTICE" \
+    "$RESOURCE_DIR/python-runtime/loupist-python-worker" \
+    "$RESOURCE_DIR/python-runtime/python-snapshot.wasm" \
+    "$RESOURCE_DIR/python-runtime/lib/python315.zip" \
+    "$RESOURCE_DIR/python-runtime/mpl-data/matplotlibrc" \
+    "$RESOURCE_DIR/python-runtime/.runtime.json" \
+    "$RESOURCE_DIR/python-runtime/MANIFEST" \
     "$OPENBB_RUNTIME/_internal/loupist_openbb/runtime-manifest.json" \
     "$OPENBB_RUNTIME/runtime-manifest.json" \
     "$OPENBB_RUNTIME/THIRD_PARTY_LICENSES/python-distributions.json" \
@@ -150,6 +156,12 @@ find "$OPENBB_RUNTIME" -type f -exec sh -c '
         esac
     done
 ' sh {} +
+"$PYTHON_BIN" "$SCRIPT_DIR/stage_python_runtime.py" \
+    --verify \
+    --require-signature \
+    --smoke \
+    --app-binary "$MACOS_DIR/loupist" \
+    --runtime "$RESOURCE_DIR/python-runtime"
 "$PYTHON_BIN" "$SCRIPT_DIR/check-sidecars.py" \
     --pi "$PI_BINARY" \
     --pi-version "$PI_VERSION" \

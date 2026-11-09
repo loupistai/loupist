@@ -1,8 +1,9 @@
-//! PATH for native Bash. A GUI-launched app inherits the launchd PATH, so
-//! executables the user's shell startup files add (Homebrew, uv, pyenv) are not
+//! PATH for native file search (`rg`). A GUI-launched app inherits the launchd
+//! PATH, so executables the user's shell startup files add (Homebrew) are not
 //! found. Resolve the login-shell PATH once per app run with a short,
 //! interactive login probe without a terminal, after the bundled workspace tools.
-//! Any failure keeps the inherited PATH.
+//! Any failure keeps the inherited PATH. The probe reads `$PATH` from the user's
+//! login shell; that shell name is not a Loupist tool.
 #![cfg_attr(not(unix), allow(dead_code))]
 use std::{
     ffi::OsString,
@@ -97,7 +98,7 @@ fn resolve_for_current_user() -> Option<Vec<PathBuf>> {
     None
 }
 
-/// PATH for the Pi process and its Bash children: bundled tools first, then
+/// PATH for the Pi process and its native file-search children: bundled tools first, then
 /// the login-shell entries, then inherited entries the login PATH lacks.
 /// Without a login PATH the inherited value is kept exactly.
 pub(crate) fn bash_path(

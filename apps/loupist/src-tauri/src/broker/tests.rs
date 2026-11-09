@@ -824,8 +824,8 @@ fn broker_tool_trace_observes_capabilities_native_tools_and_interruption() {
     capture.observe_end("load", false, &Value::Null);
     capture.observe_start(
         "native",
-        "bash",
-        &json!({"command": "never-copy-this-command"}),
+        "grep",
+        &json!({"pattern": "never-copy-this-command"}),
     );
     capture.observe_end("native", true, &Value::Null);
     // Broker-routed Pi events must not produce duplicate entries.
@@ -862,14 +862,14 @@ fn broker_tool_trace_observes_capabilities_native_tools_and_interruption() {
 #[test]
 fn the_trace_tells_which_tool_call_the_untrusted_text_rule_refused() {
     let capture = Arc::new(ToolTraceCapture::default());
-    // Native Bash asks the broker first; its authorization carries the model's call id.
+    // A native authorization carries the model's call id.
     capture
         .clone()
         .begin(
-            Some("call-bash"),
+            Some("call-instructions"),
             "native.authorize",
             None,
-            Some(&json!({"name": "bash"})),
+            Some(&json!({"name": "write"})),
         )
         .finish(Some(&error_body(&BrokerError::UntrustedTextPaused)), None);
     capture
@@ -888,7 +888,7 @@ fn the_trace_tells_which_tool_call_the_untrusted_text_rule_refused() {
         .clone()
         .begin(Some("call-read"), "world_read", None, Some(&json!({})))
         .finish(None, Some(5));
-    assert!(capture.refused("call-bash", "untrusted_text_paused"));
+    assert!(capture.refused("call-instructions", "untrusted_text_paused"));
     assert!(!capture.refused("call-schedule", "untrusted_text_paused"));
     assert!(!capture.refused("call-read", "untrusted_text_paused"));
     assert!(!capture.refused("call-unknown", "untrusted_text_paused"));

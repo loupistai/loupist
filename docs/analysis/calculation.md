@@ -48,9 +48,9 @@ label "reference growth" and carries `labels.reference_growth_pct` as `period`.
 Each result returns values with units, a one-line formula with the inputs
 substituted and each input's provenance. It is a citable derived `result_ref`
 whose lineage includes the reads behind its dataset inputs; it is never Source
-material, so answers cite the original evidence beside it. Bash, Python or
-JavaScript remain for custom transformations, covariance, optimization,
-simulations and workbooks; [Agent development](../agent/tools.md#tool-contracts-and-turn-preparation)
+material, so answers cite the original evidence beside it. `run_python` remains
+for custom transformations, covariance, optimization, simulations and workbooks.
+[Agent development](../agent/tools.md#tool-contracts-and-turn-preparation)
 owns the order in which Skills choose these routes.
 
 `input_sources` (`{ <input name>: <citation_url> }`, at most 16) names the result
@@ -96,11 +96,11 @@ fiscal year ("free cash flow FY2025").
 
 ## Execution and history
 
-Native writes survive a cancelled reply. Bash limits and the missing sandbox are in [Chat turns](../runtime/chat-turns.md#local-workspace-execution). There is no resumable analysis job.
+Native writes survive a cancelled reply. `run_python` limits and the writable-subfolder risk are in [Chat turns](../runtime/chat-turns.md#local-workspace-execution). There is no resumable analysis job.
 
 For long calculations, save checkpoints and explicit environment/dependency
-versions alongside scripts. A rerun executes those files again through Bash;
-there is no separate resumable analysis-job engine. A [Scheduled Chat](../runtime/scheduled-runs.md#scheduled-chats) can execute a saved prompt, but does not resume a Bash process.
+versions alongside scripts. A rerun executes those files again through `run_python`.
+There is no separate resumable analysis-job engine. A [Scheduled Chat](../runtime/scheduled-runs.md#scheduled-chats) can execute a saved prompt, but does not resume a Python worker.
 Code and runtime version, exact input revisions, parameters, seed, assumptions,
 fees, adjustment rules and validation checks should accompany reusable research.
 Use the retained dataset export/import boundary when follow-up charts must keep

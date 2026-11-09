@@ -1627,9 +1627,18 @@ mod tests {
         assert!(interactive
             .core_tool_names
             .iter()
-            .any(|name| name == "bash"));
+            .any(|name| name == "read"));
+        assert!(interactive
+            .core_tool_names
+            .iter()
+            .any(|name| name == "run_python"));
         let scheduled = interactive.with_schedule_management(false);
+        assert!(!scheduled.core_tool_names.iter().any(|name| name == "read"));
         assert!(!scheduled.core_tool_names.iter().any(|name| name == "bash"));
+        assert!(scheduled
+            .core_tool_names
+            .iter()
+            .any(|name| name == "run_python"));
         assert!(!scheduled
             .components
             .iter()

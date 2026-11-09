@@ -23,7 +23,7 @@ test('headless refuses unenforceable comparison settings before any model call',
   for (const patch of [{ effort: '' }, { thinking: 'high' }, { budget: { ...config.budget, max_output_tokens: 100 } }, { budget: { ...config.budget, max_cost: 1 } }, { data_access: { fixture: 'supplied', external: 'disabled' } }, { data_access: { ...config.data_access, network: 'off' } }, { pi_agent_dir: 'relative' }, { request_options: {} }, { connections: ['web'] }]) assert.throws(() => validateConfig({ ...config, ...patch }));
 });
 test('headless maps observed execution, usage, latency, and retained trace without inventing measurements', () => {
-  const record = { status: 'completed', answer: 'answer', observed_model: 'openai-codex/gpt-6-luna', model: { provider: 'configured', model: 'not-observed' }, usage: { input: 10, output: 5, cache_read: 2 }, duration_ms: 123, tool_calls: [{ name: 'bash' }], harness: { dirty: true } };
+  const record = { status: 'completed', answer: 'answer', observed_model: 'openai-codex/gpt-6-luna', model: { provider: 'configured', model: 'not-observed' }, usage: { input: 10, output: 5, cache_read: 2 }, duration_ms: 123, tool_calls: [{ name: 'run_python' }], harness: { dirty: true } };
   const response = mapResult(record, '/trace.jsonl');
   assert.equal(response.status, 'completed'); assert.equal(response.observed_model, record.observed_model);
   assert.deepEqual(response.execution, record.tool_calls); assert.equal(response.answer, 'answer');

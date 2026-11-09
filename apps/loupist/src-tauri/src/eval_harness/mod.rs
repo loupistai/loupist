@@ -404,6 +404,7 @@ fn new_chat(state: &AppState, loupist_id: &str, title: &str) -> Result<ChatSessi
         messages: vec![],
         created_at_ms: now,
         updated_at_ms: now,
+        bot_memory: Default::default(),
     };
     state.store.create_chat(&chat)?;
     Ok(chat)

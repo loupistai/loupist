@@ -886,7 +886,7 @@ impl AppToolExecutor {
     }
 }
 
-const CHART_RESHAPE_HINT: &str = "If the selected result is not chart-shaped, export the dataset, transform it with local Bash, then use dataset_import and publish from its dataset_ref.";
+const CHART_RESHAPE_HINT: &str = "If the selected result is not chart-shaped, export the dataset, transform it with run_python, then use dataset_import and publish from its dataset_ref.";
 
 fn chart_dataset_error(error: crate::chat::artifacts::ChatArtifactError) -> BrokerError {
     BrokerError::Execution(error.to_string()).with_next(CHART_RESHAPE_HINT)

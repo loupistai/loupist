@@ -2,6 +2,7 @@ mod approval;
 mod artifacts;
 mod as_of_turn;
 pub(super) mod assets;
+mod bot_memory;
 mod earnings;
 #[cfg(test)]
 mod earnings_tests;
@@ -173,6 +174,11 @@ pub(super) struct ToolCapture {
     pub(in crate::commands) staged_filings: Mutex<Vec<StagedFiling>>,
     /// The reply's one `loupist_setup` call.
     pub(in crate::commands) staged_setup: Mutex<Option<StagedSetup>>,
+    /// `bot_memory` calls reserved under this one lock when checked; only
+    /// delivered ones apply when the Bot reply commits.
+    pub(in crate::commands) staged_bot_memory: Mutex<bot_memory::BotMemoryReservations>,
+    /// Messages this Bot turn was offered for review (`chat::bot_memory`).
+    pub(in crate::commands) bot_memory_review: Vec<String>,
     /// Pages and ops each `lens_file` delivery reserved from the turn's
     /// budget; an undelivered call frees its share.
     lens_file_budget: Mutex<BTreeMap<String, (usize, usize)>>,
@@ -586,9 +592,11 @@ impl ToolCapture {
             .await
             .retain(|_, delivery| delivery != delivery_id);
         self.lens_file_budget.lock().await.remove(delivery_id);
+        self.staged_bot_memory.lock().await.discard(delivery_id);
     }
 
     async fn commit_delivery(&self, delivery_id: &str) {
+        self.staged_bot_memory.lock().await.deliver(delivery_id);
         // Keep the reservation transfer atomic with staging: both paths acquire
         // the registry before pending deliveries, so no concurrent call can
         // reserve the slot between removal and committed insertion.
@@ -1067,6 +1075,7 @@ impl AppToolExecutor {
                     .stage_research_open(policy, params, delivery_id)
                     .await
             }
+            ToolMethod::BotMemory => self.stage_bot_memory(policy, params, delivery_id).await,
             ToolMethod::ChatHistory => self.chat_history(policy, params),
             ToolMethod::DatasetExport => self.dataset_export(policy, params),
             ToolMethod::DatasetDescribe | ToolMethod::DatasetQuery => {
@@ -1131,6 +1140,7 @@ impl AppToolExecutor {
             ToolMethod::ChartPublish => self.chart_publish(policy, params, delivery_id).await,
             ToolMethod::GridPublish => self.grid_publish(policy, params, delivery_id).await,
             ToolMethod::WorkspaceCapture => self.workspace_capture(params),
+            ToolMethod::PythonRun => self.python_run(params).await,
         }?;
         // Holdings redaction over every tool result (D9): an account read
         // keeps no quantity, amount or price paid in any copy below, a reused
@@ -1395,6 +1405,7 @@ fn run_result_producer(
         ToolMethod::ArtifactRead => ("artifact-store", "artifact_read"),
         ToolMethod::ChartQuery => ("artifact-store", "chart_query"),
         ToolMethod::WorkspaceCapture => ("workspace", "workspace_capture"),
+        ToolMethod::PythonRun => ("python-worker", "run_python"),
         ToolMethod::DatasetDescribe => ("dataset-store", "dataset_describe"),
         ToolMethod::DatasetQuery => ("dataset-store", "dataset_query"),
         ToolMethod::DatasetImport => ("workspace", "dataset_import"),
@@ -1542,6 +1553,7 @@ fn refuse_sensitive_memory(
     if !matches!(
         method,
         ToolMethod::NoteSave
+            | ToolMethod::BotMemory
             | ToolMethod::PrincipleSave
             | ToolMethod::LensFile
             | ToolMethod::WorldSchemaUpdate

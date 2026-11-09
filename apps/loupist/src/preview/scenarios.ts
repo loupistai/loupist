@@ -1274,9 +1274,10 @@ export const scenarios: readonly PreviewScenario[] = [
       chip.click();
     } else chip.focus();
   }), setup: (bridge) => prepareFixture(bridge, "answer") },
-  // B92: a step Rust refused after the answer read other sites explains itself in the step, with no override.
-  { ...base("chat-step-paused", "A command paused because the answer read other sites", () => select(".chat-step-paused"), async root => {
-    await click("button[data-research-summary]", root);
+  // A protected-path refusal explains itself in the step, with no override.
+  { ...base("chat-step-paused", "A private app path stays closed", () => select(".chat-step-paused"), async root => {
+    const summary = await until(() => root.querySelector("button[data-research-summary]"), "Source review did not render");
+    if (summary.getAttribute("aria-expanded") !== "true") await click("button[data-research-summary]", root);
     await centerOn(".chat-step-paused")();
   }), setup: async (bridge) => {
     await prepareFixture(bridge, "answer");
@@ -1288,7 +1289,7 @@ export const scenarios: readonly PreviewScenario[] = [
       if (answer) answer.progress = { startedAtMs: at, finishedAtMs: at + 12_000, items: [
         { id: "paused-search", kind: "tool", toolName: "web_search", category: "web", operation: "search", action: "Searched the web", target: "Hanul Precision third-quarter margin", status: "succeeded", startedAtMs: at + 1_000, finishedAtMs: at + 3_000 },
         { id: "paused-page", kind: "tool", toolName: "web_fetch", category: "web", operation: "read", action: "Read a web source", target: "Q3 operating review · hanul.example", href: "https://hanul.example/quarterly-review", status: "succeeded", startedAtMs: at + 3_000, finishedAtMs: at + 6_000 },
-        { id: "paused-bash", kind: "tool", toolName: "bash", category: "compute", operation: "execute", action: "Ran a command", target: "python3 margin_model.py", status: "failed", refusal: "untrusted_text_paused", startedAtMs: at + 7_000, finishedAtMs: at + 7_100 },
+        { id: "paused-file", kind: "tool", toolName: "read", category: "files", operation: "read", action: "Read a file", target: "credentials.json", status: "failed", refusal: "protected_path", startedAtMs: at + 7_000, finishedAtMs: at + 7_100 },
       ] };
       return workspace;
     };

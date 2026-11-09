@@ -15,8 +15,8 @@ Confirmed Pi shutdown is required before cache reuse or cleanup.
 Brokered reads become usable evidence only after client acknowledgment. The
 turn-local `result_ref` records payload and provenance; it expires with the turn.
 Persisted `ChatEvidenceRef` snapshots remain inspectable even when Memory is off
-or a reply fails. A read receipt proves delivery, not truth. Native file/Bash calls
-produce Chat activity, not broker evidence or immutable datasets.
+or a reply fails. A read receipt proves delivery, not truth. Native file calls and
+`run_python` produce Chat activity, not broker evidence or immutable datasets.
 
 Host-issued citation links resolve against the message's evidence. A citation of a
 credential-free web page opens that page in a browser tab, one tab per address.
@@ -35,12 +35,14 @@ an artifact cascades to its history. Publication, restore and pruning are atomic
 
 ### Local workspace execution
 
-Pi's CLI CWD stays in a private runtime directory; native `read`, `write`, `edit`,
-`bash`, `ls`, `find` and `grep` operate from the selected workspace, the Loupist
+Pi's CLI CWD stays in a private runtime directory. Native `read`, `write`, `edit`,
+`ls`, `find` and `grep` operate from the selected workspace, the Loupist
 folder. Rust refuses file calls outside admitted roots: the folder, this run's
-scratch and this Chat's attachments. Bash runs with host permissions in a clean
-reply and is refused after third-party text, without a card ([Native tool permissions](permissions.md)).
-File changes are immediate and survive a failed or cancelled reply.
+scratch and this Chat's attachments. `run_python` is the code execution tool.
+It stays allowed after third-party text and in unattended runs, without a card
+([Native tool permissions](permissions.md)).
+File changes are immediate and survive a failed or cancelled reply. Python may
+write only host-granted workspace subfolders, `outputs/` and this run's scratch.
 
 `workspace-tools` holds pinned, digest-verified `rg` for offline content search
 (`apps/loupist/scripts/stage_workspace_tools.py`). Rust supplies a bounded manifest
@@ -50,15 +52,9 @@ cannot traverse private subtrees. Rust reads only admitted local `.gitignore` an
 `.ignore` files; host git config and `.git/info/exclude` are never consulted.
 Sidecar checks fail if `rg` is missing, linked or altered.
 
-Native Bash's PATH is the bundled `workspace-tools` directory, then the user's
-login-shell PATH, then inherited entries the login PATH lacks
-(`apps/loupist/src-tauri/src/pi/shell_path.rs`). Rust resolves the login PATH
-once per app run, prewarmed at startup, with `$SHELL -l -i -c` for a supported shell,
-a cleared environment that keeps only the allowlisted profile inputs (no app
-credentials), no stdin or controlling terminal, and a 3 s timeout. Marker-delimited
-output ignores startup banners, including non-UTF-8 bytes outside the PATH.
-The user's login and interactive startup files (including `.zshrc`) therefore run
-once per app run. Any failure keeps the inherited PATH unchanged.
+`run_python` does not use a shell PATH. The worker receives no host environment.
+Its offline packages are the pinned WASI stack staged by
+`apps/loupist/scripts/stage_python_runtime.py`.
 
 Rust snapshots bounded instructions in this order: global `AGENTS.md`, one selected
 workspace-root instruction, then `.loupist/AGENTS.md`. Root precedence is
@@ -84,7 +80,8 @@ Rust independently gates Memory reads and writes. Search, Skill selection and
 renderer inspection do not grant exact-read or write authority. Broker delivery
 uses acknowledgment and a commit barrier; an indeterminate barrier aborts the turn.
 One successful host transaction publishes the completed Chat and authorized Memory
-changes, graph jobs and artifacts. It also records acknowledged Lens delivery receipts
+changes, graph jobs and artifacts. A Bot reply's [Bot memory](../ui/home-thread.md#bot-memory)
+changes and review queue ride in the same Chat compare-and-swap. It also records acknowledged Lens delivery receipts
 and usage, including principles actually attached to bounded context when the turn
 saves no new Memory. The host records each receipt's kind and revision; model text
 cannot set it. A conflicting Lens update becomes a proposal. Failed or cancelled

@@ -2,6 +2,9 @@ import "../i18n";
 import { setPreviewLanguage } from "../i18n/useLanguage";
 import { createRoot } from "react-dom/client";
 import { App } from "../App";
+import { enableSharingPreviewHarness } from "../sharing/releaseVisibility";
+
+enableSharingPreviewHarness();
 import { configureTheme, freezePreviewClock, PreviewBridge } from "./fixtures";
 import { liveScenarios, scenarios, until, visible } from "./scenarios";
 import "../styles.css";

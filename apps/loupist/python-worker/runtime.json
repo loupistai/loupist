@@ -1,0 +1,9 @@
+{
+  "version": "0.1.4",
+  "url": "https://github.com/ClayGendron/wasi-python/releases/download/v0.1.4/wasi-python-0.1.4-wasm32-wasip1.tar.xz",
+  "archive_sha256": "d3ee2008dc112b7d5e1ee8dd9de7501dec4138d384d7a9b165a9abf56ea45ebb",
+  "files": {
+    "python-snapshot.wasm": "57b02e279b7b3bad244528de994dc0525a8e9cb21efd33a1354ccb81aa8dc33b",
+    "python-stdlib.zip": "81cd609567236d0cdfa76474a89d463eda388bba3b4dba356ce4617e4cddd3f9"
+  }
+}

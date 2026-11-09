@@ -12,10 +12,15 @@ Preserve behavior coverage through the current entry point. Use the
 
 React submits typed intent via `apps/loupist/src/bridge/tauriBridge.ts`. Rust owns
 credentials, persistence, Memory transactions, grants and worker lifetime.
-Pi's native file and Bash tools run with host permissions. Keep its runtime CWD
-private, direct tools to the trusted workspace, and load only the host's bounded
-instructions and Skills. File changes survive cancellation. Never enable automatic
-project settings or JS extensions to obtain workspace support.
+Pi's native file tools stay inside the admitted workspace, scratch and attachment
+paths. `run_python` is the only agent code execution tool. It runs in the pinned
+WASI worker, with no shell, network, DNS, process spawn or host environment.
+The Loupist app binary does not receive the worker's unsigned-executable-memory
+entitlement. Keep Pi's runtime CWD private, direct file tools to the trusted
+workspace, and load only the host's bounded instructions and Skills. File changes
+survive cancellation. Python may write only `outputs/`, this run's scratch and
+existing non-dot top-level workspace subdirectories the host grants. Never enable
+automatic project settings or JS extensions to obtain workspace support.
 
 ## Tests
 
@@ -33,11 +38,17 @@ generated schemas/build output untouched. Prefer deleting obsolete pre-1.0 paths
 
 ## Pull requests
 
-Locally, `scripts/verify.sh` is the handoff gate. In a cloud session, run
-`sh apps/loupist/scripts/check.sh <web|python|rust>` for what you changed, plus
-`npm --prefix apps/loupist/e2e run test:native` when the change reaches the app's
-UI flow, bridge or persistence; PR CI runs the Linux gate and macOS checks run after merge ([CI](docs/ci-cd.md#ci)). Commit, push
-or release only on request; a task that asks for a PR covers pushing its own branch.
+Before local handoff, run `scripts/verify.sh` on the final source tree.
+Linux cloud agents (Codex, Claude or Cursor) use the pinned
+[cloud setup](docs/dev/checks.md#setup-across-development-hosts) and run
+`sh apps/loupist/scripts/check.sh <web|python|rust>` for affected scopes. On either
+host, run `npm --prefix apps/loupist/e2e run test:native` when UI flow, bridge or
+persistence changes; add persistence coverage for storage/restart changes.
+PR CI checks shared code on Linux. Native UI is checked on macOS after merge;
+Linux GUI CI is an explicit cloud-validation dispatch, so it does not substitute
+for an agent's affected native check ([CI](docs/ci-cd.md#ci)). Record the host and
+unrun platform boundaries. Commit, push or release only on request; a task that
+asks for a PR covers pushing its own branch.
 Name the branch `<tool>/<topic>`, sign off with `git commit -s`, target `main`, and
 list the checks you ran. Never push to `main` or create release tags.
 

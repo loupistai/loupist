@@ -44,6 +44,7 @@ pub(crate) fn chat_session(id: &str, loupist_id: &str) -> ChatSession {
         messages: Vec::new(),
         created_at_ms: 1,
         updated_at_ms: 1,
+        bot_memory: Default::default(),
     }
 }
 

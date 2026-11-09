@@ -967,6 +967,33 @@ impl ChatProgressProjection {
         }
     }
 
+    /// Python can retain a file even when the program times out. Only the
+    /// host tool result supplies this link; assistant prose never does.
+    pub(crate) fn attach_python_result(&mut self, tool_call_id: &str, result: &Value) -> bool {
+        let Some(id) = self.tool_items.get(tool_call_id) else {
+            return false;
+        };
+        let Some(&index) = self.item_indices.get(id) else {
+            return false;
+        };
+        let Some(ChatProgressItem::Tool {
+            tool_name,
+            file_path,
+            ..
+        }) = self.progress.items.get_mut(index)
+        else {
+            return false;
+        };
+        if tool_name.as_deref() != Some("run_python") {
+            return false;
+        }
+        let Some(value) = super::activity::python_result(result) else {
+            return false;
+        };
+        *file_path = super::activity::python_artifact_path(&value);
+        !super::activity::python_completed(&value)
+    }
+
     pub fn finish_tool(
         &mut self,
         tool_call_id: &str,
@@ -1998,18 +2025,18 @@ mod tests {
     fn a_step_refused_after_third_party_text_carries_its_rule_to_the_renderer() {
         let mut projection = ChatProgressProjection::new(10);
         projection.start_tool(
-            "call-bash",
-            "bash",
-            &json!({"command": "python3 model.py"}),
+            "call-edit",
+            "edit",
+            &json!({"path": "notes/model.py"}),
             None,
             11,
         );
         projection.start_tool("call-read", "read", &json!({"path": "notes.md"}), None, 11);
         // Only a failed step can carry a refusal.
         projection.refuse_tool("call-read", ChatStepRefusal::UntrustedTextPaused);
-        projection.finish_tool("call-bash", true, 12, None);
+        projection.finish_tool("call-edit", true, 12, None);
         projection.finish_tool("call-read", false, 12, None);
-        projection.refuse_tool("call-bash", ChatStepRefusal::UntrustedTextPaused);
+        projection.refuse_tool("call-edit", ChatStepRefusal::UntrustedTextPaused);
         projection.refuse_tool("call-read", ChatStepRefusal::UntrustedTextPaused);
         let snapshot = projection.snapshot();
         let encoded = serde_json::to_value(&snapshot.items).unwrap();
@@ -2551,6 +2578,30 @@ mod tests {
 #[cfg(test)]
 mod dataset_export_progress_tests {
     use super::*;
+    #[test]
+    fn python_results_link_retained_files_and_report_program_failure() {
+        let mut projection = ChatProgressProjection::new(1);
+        projection.start_tool(
+            "python",
+            "run_python",
+            &serde_json::json!({"code":"print(1)"}),
+            None,
+            2,
+        );
+        let result = serde_json::json!({"content":[{"type":"text", "text":serde_json::json!({
+            "status":"timed_out", "exit_code":124, "artifacts":[{"path":"outputs/chart.png"}]
+        }).to_string()}]});
+        let failed = projection.attach_python_result("python", &result);
+        assert!(failed);
+        projection.finish_tool("python", failed, 3, None);
+        let patch = projection.take_patch().unwrap();
+        assert!(matches!(&patch.upsert_items[0], ChatProgressItem::Tool {
+            file_path: Some(path), status: ChatProgressStatus::Failed, ..
+        } if path == "outputs/chart.png"));
+        projection.start_tool("web", "web_fetch", &serde_json::json!({}), None, 4);
+        assert!(!projection.attach_python_result("web", &result));
+    }
+
     #[test]
     fn dataset_exports_link_the_exact_file_only_after_success() {
         let mut projection = ChatProgressProjection::new(1);

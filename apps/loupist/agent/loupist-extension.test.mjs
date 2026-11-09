@@ -19,7 +19,7 @@ import loupistTerminalExtension, {
 } from "./loupist-extension.mjs";
 
 const CATALOG = JSON.parse(readFileSync(new URL("./tool-catalog.json", import.meta.url), "utf8"));
-const WORKSPACE_TOOLS = ["read", "write", "edit", "bash", "ls", "find", "grep"];
+const WORKSPACE_TOOLS = ["read", "write", "edit", "ls", "find", "grep"];
 
 test("keeps host-context nofollow protection off Windows only", () => {
   assert.equal(hostContextOpenNoFollowForPlatform("win32"), 0);
@@ -350,7 +350,7 @@ async function startToolBroker(t, handler) {
 }
 
 const CORE_TOOLS = [
-  ...WORKSPACE_TOOLS, "run_results_list", "chat_history",
+  ...WORKSPACE_TOOLS, "run_python", "run_results_list", "chat_history",
   "world_search", "world_read", "lens_search", "lens_read", "world_job", "conversation_memory", "capability_load",
   "artifact_list", "artifact_read",
 ];
@@ -763,6 +763,25 @@ test("calculate accepts numbers, dataset cells and columns, and routes them unch
   ]) {
     assert.throws(() => validate(rejected), JSON.stringify(rejected));
   }
+});
+
+test("run_python sends python.run and rejects a shell-shaped call", async (t) => {
+  useHostContext(t, runtimeContext("chat", ["run_python"]));
+  const received = await startToolBroker(t, () => ({ status: "completed", exit_code: 0, stdout: "1\n", stderr: "", truncated: false, changed_files: [], artifacts: [] }));
+  const { registered } = loadExtension();
+  const tool = registered.get("run_python");
+  const params = { code: "print(1)\n", timeout_seconds: 30 };
+  const validate = (args) => validateToolArguments(tool, { id: "py", name: "run_python", arguments: args });
+  assert.deepEqual(validate(params), params);
+  assert.deepEqual(validate({ code: "print(1)" }), { code: "print(1)" });
+  assert.throws(() => validate({ command: "echo hi" }));
+  assert.throws(() => validate({ code: "" }));
+  assert.throws(() => validate({ code: "print(1)", timeout_seconds: 0 }));
+  assert.throws(() => validate({ code: "print(1)", timeout_seconds: 121 }));
+  await tool.execute("py", params, new AbortController().signal);
+  assert.equal(received.at(-1).method, "python.run");
+  assert.deepEqual(received.at(-1).params, params);
+  assert.equal(registered.has("bash"), false);
 });
 
 test("the host's citation_url satisfies every citation schema, also where a provider reads a pattern as the whole value", (t) => {

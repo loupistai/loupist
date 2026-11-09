@@ -1,6 +1,8 @@
 # Workbook workflow
 
 Original Loupist guidance grounded in openpyxl's formula documentation.
+`run_python` does not include openpyxl and cannot install it. Use the file
+tools, and say so when the library is required.
 See [sources](../../NOTICE.md).
 
 ## Inspect and edit
@@ -22,10 +24,10 @@ a distinct output unless replacement is authorized.
 
 ## Recalculate and validate
 
-openpyxl writes formulas but does not evaluate them. Loading with data_only
-reads cached results, which may be absent or stale. Use an installed Excel or
-LibreOffice engine to recalculate a copy when the workflow needs evaluated
-formulas. Do not claim fresh results from a save or cached values alone.
+openpyxl writes formulas but does not evaluate them, and `run_python` does not
+include it. Loading with data_only reads cached results, which may be absent
+or stale. A host spreadsheet engine is not available from `run_python`. Do not
+claim fresh results from a save or cached values alone.
 
 Check formula errors, representative cell references, totals, dimensions, and
 scenario/sensitivity consistency. Independently recompute decisive outputs.

@@ -12,7 +12,7 @@ market data. Static contracts are in `agent/tool-catalog.json`.
 
 | Connection / pack | Agent surface |
 | --- | --- |
-| Native workspace | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls` |
+| Native workspace | `read`, `write`, `edit`, `run_python`, `grep`, `find`, `ls` |
 | `datasets` | `dataset_describe`, `dataset_query`, `dataset_export`, `dataset_import` |
 | `calculations` | `calculate` |
 | `charts` | `chart_query`, `chart_publish`, `grid_publish` ([grid cells](../analysis/grids.md#grid-cells)) |
@@ -112,7 +112,7 @@ app-global connection or a Chat transcript.
 Successful acknowledged data reads can supply turn-local result references and
 Source material. Capability administration, Skill reads and result-list discovery
 are control metadata, not original data. Common arithmetic uses the host
-`calculate` tool and custom work uses Bash; [Financial analysis](../analysis.md)
+`calculate` tool and custom work uses `run_python`. [Financial analysis](../analysis.md)
 owns calculation and dataset/import/chart provenance.
 
 `grid_publish` belongs to the `charts` pack with `chart_publish`; unattended runs may call

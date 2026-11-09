@@ -1,11 +1,11 @@
 # Financial analysis
 
-Chat can query data, calculate, write Python or JavaScript, and publish saved charts. Native Pi file and Bash tools work directly in the Loupist's selected local workspace, using installed runtimes, packages and network access with the user's host permissions. Research scripts, downloaded data and exported results remain ordinary files.
+Chat can query data, calculate, run pinned Python, and publish saved charts. Native file tools work in the selected local workspace. `run_python` uses the bundled offline scientific packages and has no network. Research scripts, downloaded data and exported results remain ordinary files.
 
 The host [`calculate`](analysis/calculation.md#calculation) tool owns common finance arithmetic; local
 scripts own custom calculation and rerun behavior. For scripts, the prompt directs
-the agent to check runtimes, install missing dependencies only in the project or
-user environment, save reproducible inputs/code/outputs, and verify calculated
+the agent to use the bundled Python runtime, save reproducible inputs, code and
+outputs, and verify calculated
 values with local code. Review results against those instructions; execution
 alone does not establish their correctness.
 App services own dataset snapshots, charts, connector credentials and canonical

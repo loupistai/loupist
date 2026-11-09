@@ -44,6 +44,7 @@ runs:
       with:
         workspaces: |
           apps/loupist/src-tauri -> target
+          ${{ hashFiles('apps/loupist/python-worker/Cargo.toml') != '' && 'apps/loupist/python-worker -> target' || '' }}
         shared-key: ${{ inputs.rust-cache-key }}
         save-if: ${{ github.ref == 'refs/heads/main' }}
 

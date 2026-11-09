@@ -17,6 +17,7 @@ use crate::{
     web::browser::validated_http_url as validated_external_url,
 };
 
+mod bot_memory;
 mod chat_behavior;
 mod connection_setup;
 mod contracts;

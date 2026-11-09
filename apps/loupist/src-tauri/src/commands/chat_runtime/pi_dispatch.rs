@@ -156,25 +156,25 @@ pub(super) async fn apply_pi_rpc(turn: PiRpcTurn<'_>, payload: &Value) -> PiRpcS
         }
         Some("tool_execution_end") => {
             if let Some(tool_call_id) = payload.get("toolCallId").and_then(Value::as_str) {
+                let result = payload.get("result").unwrap_or(&Value::Null);
+                let failed = payload
+                    .get("isError")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+                    || progress.attach_python_result(tool_call_id, result);
                 pending_tool_calls.remove(tool_call_id);
-                if payload.get("isError").and_then(Value::as_bool) == Some(false) {
+                if !failed {
                     *successful_tool_calls += 1;
                 }
                 on_event.tool_trace.observe_end(
                     tool_call_id,
-                    payload
-                        .get("isError")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false),
+                    failed,
                     payload.get("result").unwrap_or(&Value::Null),
                 );
                 match activity_recorder.finish(
                     tool_call_id,
                     payload.get("result").unwrap_or(&Value::Null),
-                    payload
-                        .get("isError")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false),
+                    failed,
                     now_ms(),
                 ) {
                     Ok(flushed) => {
@@ -188,11 +188,6 @@ pub(super) async fn apply_pi_rpc(turn: PiRpcTurn<'_>, payload: &Value) -> PiRpcS
                         return PiRpcStep::Break;
                     }
                 }
-                let failed = payload
-                    .get("isError")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false);
-                let result = payload.get("result").unwrap_or(&Value::Null);
                 progress.finish_tool(
                     tool_call_id,
                     failed,

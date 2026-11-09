@@ -4,6 +4,7 @@
     "resources": {
       "resources/pi-runtime/": "pi-runtime",
       "resources/embed_assets/": "embed_assets",
+      "resources/python-runtime/": "python-runtime",
       "../agent/": "loupist-agent",
       "../../../LICENSE": "LICENSE",
       "../../../NOTICE": "NOTICE",

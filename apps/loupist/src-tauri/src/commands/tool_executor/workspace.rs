@@ -3,9 +3,7 @@ use super::*;
 use crate::agent_harness::native_policy::{
     self, NativeDecision, NativeRefusal, NativeRequest, NativeRoots, NativeTool,
 };
-use crate::custom_connections::taint::{
-    COMMAND_AFTER_UNTRUSTED_REFUSAL, HARD_LINK_WRITE_REFUSAL, INSTRUCTION_WRITE_REFUSAL,
-};
+use crate::custom_connections::taint::{HARD_LINK_WRITE_REFUSAL, INSTRUCTION_WRITE_REFUSAL};
 
 const SEARCH_COVERS_APP_DATA_NEXT: &str = "This search root contains the app's private data folder, so it is not searched. Search a narrower folder, such as the workspace or one of its subfolders.";
 const UNRESOLVABLE_NEXT: &str = "This path goes through a symbolic link that loops or cannot be read, so it is not touched. Use the real file's path.";
@@ -25,15 +23,16 @@ impl NativeGate {
         Self { roots: Some(roots) }
     }
 
+    pub(in crate::commands) fn roots(&self) -> Option<&NativeRoots> {
+        self.roots.as_ref()
+    }
+
     fn decide(
         &self,
         request: &NativeRequest,
         taint: &crate::custom_connections::taint::TurnTaint,
     ) -> Result<NativeDecision, BrokerError> {
         let exposure = taint.exposure();
-        if request.tool == NativeTool::Bash {
-            return Ok(native_policy::decide_command(exposure));
-        }
         let roots = self.roots.as_ref().ok_or_else(|| {
             BrokerError::Execution("native file tools are unavailable in this run".into())
         })?;
@@ -58,10 +57,6 @@ fn refusal_error(refusal: NativeRefusal) -> BrokerError {
         NativeRefusal::HardLinkAfterUntrustedText => {
             BrokerError::UntrustedTextPaused.with_next(HARD_LINK_WRITE_REFUSAL)
         }
-        NativeRefusal::CommandAfterUntrustedText => {
-            BrokerError::UntrustedTextPaused.with_next(COMMAND_AFTER_UNTRUSTED_REFUSAL)
-        }
-        NativeRefusal::OutboundPaused => BrokerError::OutboundPaused,
     }
 }
 
@@ -128,7 +123,6 @@ impl AppToolExecutor {
                 }
                 result["resolved"] = json!(resolved);
             }
-            NativeDecision::AllowCommand => {}
             NativeDecision::Refuse(refusal) => return Err(refusal_error(refusal)),
         }
         if request.tool == NativeTool::Read {
@@ -143,6 +137,24 @@ impl AppToolExecutor {
             }
         }
         Ok(result)
+    }
+
+    pub(super) async fn python_run(&self, params: Value) -> Result<Value, BrokerError> {
+        let (code, timeout) = crate::python_run::parse_params(&params)?;
+        let roots = self
+            .capture
+            .native
+            .roots()
+            .cloned()
+            .ok_or_else(|| BrokerError::Execution("Python execution is unavailable".into()))?;
+        crate::python_run::execute(
+            &roots,
+            &self.state.artifacts.app_data_dir,
+            &code,
+            timeout,
+            self.capture.search_cancel.clone(),
+        )
+        .await
     }
 
     pub(super) fn workspace_capture(&self, params: Value) -> Result<Value, BrokerError> {
