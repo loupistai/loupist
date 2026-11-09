@@ -391,10 +391,11 @@ def unpack(archive: Path, destination: Path) -> None:
 
 
 def download_archive(destination: Path) -> None:
+    request: str | urllib.request.Request = PIN["url"]
     for attempt in range(3):
         try:
             with (
-                urllib.request.urlopen(PIN["url"], timeout=120) as response,
+                urllib.request.urlopen(request, timeout=120) as response,
                 destination.open("wb") as output,
             ):
                 shutil.copyfileobj(response, output)
@@ -403,6 +404,10 @@ def download_archive(destination: Path) -> None:
             if error.code not in (502, 503, 504) or attempt == 2:
                 raise
             error.close()
+            request = urllib.request.Request(
+                PIN["asset_api_url"],
+                headers={"Accept": "application/octet-stream"},
+            )
             time.sleep(2**attempt)
 
 
