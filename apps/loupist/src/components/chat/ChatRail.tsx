@@ -155,7 +155,7 @@ export function ChatRailCards({ data, actions, compact = false }: { data: RailDa
   const waitingReason = data.learningWaiting === "unknown" ? t("chatRail.learned.statusUnavailable") : data.learningWaiting ? worldReadinessLabels()[data.learningWaiting] : "";
   const learnedCard = learned || learningUnfinished ? <Card key="learned" id="learned" title={t("chatRail.learned.title")} summary={data.learningPending
       ? <span className="chat-rail-processing" role="status"><Spinner className="motion-reduce:animate-none" aria-hidden="true" />{t("chatRail.learned.processing")}</span>
-      : data.learningWaiting ? <span role="status">{t("chatRail.learned.waiting", { reason: waitingReason })}</span> : learnedSummary} collapsed={isCollapsed("learned")} onToggle={() => toggle("learned")}>
+      : data.learningWaiting ? <span role="status">{waitingReason}</span> : learnedSummary} collapsed={isCollapsed("learned")} onToggle={() => toggle("learned")}>
       {learned && <>
         {learned.chips.length ? <div className="chat-rail-chips">
           {learned.chips.map((chip) => <button type="button" key={chip.id} className="chat-rail-chip" title={chip.label} onClick={() => actions.onShowLearned(new Set([chip.id]))}>

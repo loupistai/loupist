@@ -186,10 +186,10 @@ it("leads from compact context to the newest waiting card without opening an ove
 it("shows why source review is waiting without a processing spinner", () => {
   const { rerender } = render(<ChatRail mode="inline" data={{ ...data, learned: null, learningWaiting: "provider_disconnected" }} actions={actions()} />);
   const status = screen.getByRole("status");
-  expect(status).toHaveTextContent("Waiting to review sources · Reconnect provider");
+  expect(status).toHaveTextContent("Reconnect your AI account");
   expect(status.querySelector("svg")).toBeNull();
   expect(screen.queryByText("Reviewing sources…")).toBeNull();
   expect(screen.getByRole("complementary").firstElementChild).toHaveAttribute("data-card", "learned");
   rerender(<ChatRail mode="rail" data={{ ...data, learningWaiting: "paused" }} actions={actions()} />);
-  expect(screen.getByRole("status")).toHaveTextContent("Processing is paused");
+  expect(screen.getByRole("status")).toHaveTextContent("Source review is paused");
 });

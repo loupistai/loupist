@@ -69,7 +69,7 @@ reply in the same commit that grew it, through tool updates and table rows, even
 when the browser temporarily moves the scroll position up. An
 upward scroll, even in single-pixel increments, keeps the reader's position
 once they leave the bottom.
-After a reply saves a Source, a running World job, or a queued job whose processing is ready, shows “Reviewing sources…” in the Learned row, including when it is folded. A queued job blocked by a disconnected provider, paused processing or another readiness condition shows “Waiting to review sources” and the actual reason, without a spinner. If readiness cannot be read, it says the status could not be checked. Polling continues so reconnecting or resuming processing updates the row. In a narrow chat the
+After a reply saves a Source, a running World job, or a queued job whose processing is ready, shows “Reviewing sources…” in the Learned row, including when it is folded. A queued job blocked by a disconnected provider, paused processing or another readiness condition shows the useful status or action, such as “Reconnect your AI account” or “Source review is paused”, without a spinner. If readiness cannot be read, it says “Waiting to review sources”. Polling continues so reconnecting or resuming processing updates the row. In a narrow chat the
 compact context card shows the same status above the transcript, with approval requests alongside it. As
 jobs finish, their additions become available in the row. When all work settles,
 the row shows the chat's learned counts or disappears if there are none.
@@ -153,7 +153,7 @@ attach context and focus the composer; they never send. At narrow widths this
 closes the panel overlay so the composer can take focus.
 The composer's run-profile control shows "Auto" while nothing is chosen for the
 Loupist (Chat defaults apply), the chosen model's name as a chip otherwise, and
-"Connect an AI account" when no account is connected. An explicit selection shows its model and reasoning level in the tooltip. Auto explains that it uses the Chat default or resolves a model when sent; the last answer’s model is not a prediction of that choice. Per-Loupist message overrides last for the current app session and return to Auto after reload. With nothing chosen and no Chat default, a send names no model and Rust
+"Connect an AI account" when no account is connected. An explicit selection shows its model and reasoning level in the tooltip. Auto says "Uses your default model settings"; it does not explain selection timing or show the last answer’s model as a prediction. Per-Loupist message overrides last for the current app session and return to Auto after reload. With nothing chosen and no Chat default, a send names no model and Rust
 resolves [Auto](../runtime/providers.md#shared-providers-and-world-processing) at admission. The menu
 starts with Auto (or Reset to Auto); for a ChatGPT sign-in its plan line
 ("Using your ChatGPT plan · Manage usage") follows the account that answers. Reasoning options are inside the model menu's

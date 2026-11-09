@@ -383,7 +383,7 @@ describe("Loupist · Model providers", () => {
     await waitFor(() => expect(updateVisibility).toHaveBeenCalledWith({ model_profile_id: "model-test", visible_in_chat: false }));
     await user.click(screen.getByRole("button", { name: "Back" }));
     await user.hover(await screen.findByRole("button", { name: /Model settings for this message/ }));
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("The automatic choice is resolved when you send.");
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Uses your default model settings.");
     await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
     expect(screen.getByRole("menuitemradio", { name: "google default" })).toBeVisible();
     expect(screen.queryByRole("menuitemradio", { name: "GPT-5.6 Luna" })).not.toBeInTheDocument();

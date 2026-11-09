@@ -98,6 +98,6 @@ it("does not describe the last used model as Auto's next execution after a remou
   first.unmount();
   render(<TooltipProvider><ChatModelMenu {...props} auto /></TooltipProvider>);
   const trigger = screen.getByRole("button", { name: "Auto · Model settings for this message" });
-  expect(trigger).toHaveAttribute("aria-description", "Uses your default model settings. The automatic choice is resolved when you send.");
+  expect(trigger).toHaveAttribute("aria-description", "Uses your default model settings.");
   expect(trigger).not.toHaveAccessibleDescription(/Terra/);
 });

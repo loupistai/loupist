@@ -874,7 +874,7 @@ try {
       });
       const picker = await displayed('[aria-label$="Model settings for this message"]');
       assert.match(await picker.getAttribute("aria-label") ?? "", /^Auto ·/u);
-      assert.match(await picker.getAttribute("aria-description") ?? "", /resolved when you send/u);
+      assert.match(await picker.getAttribute("aria-description") ?? "", /Uses your default model settings/u);
       // Assert the actual Auto model on the host request below, after admission.
       const firstTiming = await sendPrompt("Say hello.");
       const answer = await answerText();
