@@ -50,6 +50,33 @@ fn development_build_isolated_from_installed_app_data() {
     );
 }
 
+#[tokio::test]
+async fn restart_fixture_waits_for_final_instance_owner() {
+    use std::time::Duration;
+
+    let temporary = tempfile::tempdir().unwrap();
+    let app_data = temporary.path().join("app-data");
+    let state = AppState::for_test(app_data.clone());
+    let finishing_turn = state.clone();
+    let closing = state.close_after_turns_for_restart_test();
+    tokio::pin!(closing);
+
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), closing.as_mut())
+            .await
+            .is_err()
+    );
+    assert!(is_app_instance_conflict(
+        &AppInstanceLock::acquire(&app_data).err().unwrap()
+    ));
+
+    drop(finishing_turn);
+    tokio::time::timeout(Duration::from_secs(1), closing)
+        .await
+        .expect("restart did not observe the final owner leaving");
+    let _restarted = AppState::for_test(app_data);
+}
+
 #[test]
 fn hidden_models_are_rejected_before_pi_execution() {
     let temporary = tempfile::tempdir().unwrap();

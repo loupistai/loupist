@@ -839,6 +839,21 @@ impl AppState {
     }
 
     #[cfg(test)]
+    pub(crate) async fn close_after_turns_for_restart_test(self) {
+        // A completed turn can still retain AppState while delivering Bot
+        // follow-ups after its run lease has gone. Observe those owners leaving
+        // before the synchronous restart boundary asserts exclusive ownership.
+        tokio::time::timeout(std::time::Duration::from_secs(15), async {
+            while Arc::strong_count(&self._instance_lock) != 1 {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("restart fixture retained an AppState instance-lock owner");
+        self.close_for_restart_test();
+    }
+
+    #[cfg(test)]
     pub(crate) fn close_for_restart_test(self) {
         // Restart tests intentionally reacquire the same app-data lock in one
         // process. Transfer the final lock reference out of AppState, prove no

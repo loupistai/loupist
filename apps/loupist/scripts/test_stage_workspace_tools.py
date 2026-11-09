@@ -6,7 +6,9 @@ import os
 import tarfile
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
+from unittest.mock import call, patch
 
 import stage_workspace_tools as stage
 
@@ -45,7 +47,13 @@ class WorkspaceToolsTests(unittest.TestCase):
             tools.append(
                 dataclasses.replace(
                     tool,
-                    releases={TARGET: ("tar.gz", stage.digest(encoded))},
+                    releases={
+                        TARGET: (
+                            "tar.gz",
+                            stage.digest(encoded),
+                            tool.releases[TARGET][2],
+                        )
+                    },
                 )
             )
         original = stage.TOOLS
@@ -102,6 +110,99 @@ class WorkspaceToolsTests(unittest.TestCase):
             stage.stage_workspace_tools(
                 self.root / "other", TARGET, {**self.archives, "rg": bad}
             )
+
+    def test_transient_download_uses_pinned_asset_api_then_verifies(self):
+        tool = stage.TOOLS[0]
+        payload = self.archives[tool.name].read_bytes()
+        failure = urllib.error.HTTPError(
+            tool.release_url(TARGET), 504, "timeout", {}, io.BytesIO()
+        )
+        with (
+            patch.object(
+                stage.urllib.request,
+                "urlopen",
+                side_effect=[failure, io.BytesIO(payload)],
+            ) as opened,
+            patch.object(stage.time, "sleep") as sleep,
+        ):
+            stage.stage_workspace_tools(self.runtime, TARGET)
+        self.assertEqual(opened.call_count, 2)
+        request = opened.call_args.args[0]
+        self.assertEqual(
+            request.full_url,
+            "https://api.github.com/repos/BurntSushi/ripgrep/releases/assets/478118851",
+        )
+        self.assertEqual(request.get_header("Accept"), "application/octet-stream")
+        self.assertEqual(opened.call_args.kwargs, {"timeout": 60})
+        sleep.assert_called_once_with(1)
+        stage.verify_workspace_tools(self.runtime, TARGET)
+
+    def test_download_failures_preserve_runtime_and_have_bounded_retries(self):
+        before = {path.name: path.read_bytes() for path in self.tools.iterdir()}
+        for codes in ([502, 503, 504], [404], [504, 404], [403]):
+            with (
+                self.subTest(codes=codes),
+                patch.object(
+                    stage.urllib.request,
+                    "urlopen",
+                    side_effect=[
+                        urllib.error.HTTPError(
+                            "https://github.com/fixture",
+                            code,
+                            "failed",
+                            {},
+                            io.BytesIO(),
+                        )
+                        for code in codes
+                    ],
+                ) as opened,
+                patch.object(stage.time, "sleep") as sleep,
+            ):
+                with self.assertRaises(urllib.error.HTTPError):
+                    stage.stage_workspace_tools(self.runtime, TARGET)
+                self.assertEqual(opened.call_count, len(codes))
+                self.assertEqual(
+                    sleep.call_args_list,
+                    [call(2**index) for index in range(len(codes) - 1)],
+                )
+                self.assertEqual(
+                    before,
+                    {path.name: path.read_bytes() for path in self.tools.iterdir()},
+                )
+
+    def test_asset_api_response_still_requires_the_pinned_digest(self):
+        before = (self.tools / "rg").read_bytes()
+        with (
+            patch.object(
+                stage.urllib.request,
+                "urlopen",
+                side_effect=[
+                    urllib.error.HTTPError(
+                        "https://github.com/fixture", 504, "timeout", {}, io.BytesIO()
+                    ),
+                    io.BytesIO(b'{"not": "the archive"}'),
+                ],
+            ) as opened,
+            patch.object(stage.time, "sleep"),
+        ):
+            with self.assertRaisesRegex(ValueError, "archive checksum mismatch"):
+                stage.stage_workspace_tools(self.runtime, TARGET)
+        self.assertEqual(opened.call_count, 2)
+        self.assertEqual((self.tools / "rg").read_bytes(), before)
+
+    def test_success_downloads_once_and_local_archive_never_downloads(self):
+        payload = self.archives["rg"].read_bytes()
+        with patch.object(
+            stage.urllib.request, "urlopen", return_value=io.BytesIO(payload)
+        ) as opened:
+            stage.stage_workspace_tools(self.runtime, TARGET)
+            opened.assert_called_once_with(
+                stage.TOOLS[0].release_url(TARGET), timeout=60
+            )
+        with patch.object(
+            stage.urllib.request, "urlopen", side_effect=AssertionError("network")
+        ):
+            stage.stage_workspace_tools(self.runtime, TARGET, self.archives)
 
 
 if __name__ == "__main__":

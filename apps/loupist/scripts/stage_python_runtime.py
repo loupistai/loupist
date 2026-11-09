@@ -16,6 +16,8 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -388,6 +390,27 @@ def unpack(archive: Path, destination: Path) -> None:
             target.write_bytes(data_zip.read(entry))
 
 
+def download_archive(destination: Path) -> None:
+    request: str | urllib.request.Request = PIN["url"]
+    for attempt in range(3):
+        try:
+            with (
+                urllib.request.urlopen(request, timeout=120) as response,
+                destination.open("wb") as output,
+            ):
+                shutil.copyfileobj(response, output)
+            return
+        except urllib.error.HTTPError as error:
+            if error.code not in (502, 503, 504) or attempt == 2:
+                raise
+            error.close()
+            request = urllib.request.Request(
+                PIN["asset_api_url"],
+                headers={"Accept": "application/octet-stream"},
+            )
+            time.sleep(2**attempt)
+
+
 def stage(root: Path, archive: Path | None, source: str) -> None:
     subprocess.run(
         [
@@ -408,11 +431,7 @@ def stage(root: Path, archive: Path | None, source: str) -> None:
         stage_root.mkdir()
         if archive is None:
             archive = Path(temporary) / "python.tar.xz"
-            with (
-                urllib.request.urlopen(PIN["url"], timeout=120) as response,
-                archive.open("wb") as output,
-            ):
-                shutil.copyfileobj(response, output)
+            download_archive(archive)
         unpack(archive, stage_root)
         executable = stage_root / BINARY
         shutil.copy2(WORKER / "target/release" / BINARY, executable)
