@@ -215,6 +215,12 @@ that job also runs `--ensure` as the runner user before the GUI suite.
 `apps/loupist/scripts/python-worker-crate-licenses.json` records each registry
 crate's SPDX license because `Cargo.lock` v4 has no license field.
 
+Runtime archive downloads retry HTTP 502/503/504 at most three times with one-
+and two-second backoff. Workspace tools retry through GitHub's fixed release
+asset API when its download edge fails. Every response still requires the pinned
+checksum and normal staging verification; permission, missing-file, checksum and
+validation failures are not retried.
+
 Stage missing/stale runtimes before a requested native or packaging flow.
 World extraction and search run in Rust; only their local embedding assets need
 staging. Pi staging verifies its pinned archive and executable regressions.

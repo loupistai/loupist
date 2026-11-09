@@ -13,9 +13,10 @@ import sys
 import tarfile
 import tempfile
 import unittest
+import urllib.error
 import zipfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import check_runner
 import stage_python_runtime as stage
@@ -308,6 +309,58 @@ class PythonRuntimeTests(unittest.TestCase):
             stage.stage(self.root / "downloaded", None, "source-a")
         self.assertEqual(calls, [(self.pin["url"], 120)])
         self.assertEqual(signed, [])
+
+    def test_download_retry_replaces_a_partial_archive(self):
+        payload = self.archive.read_bytes()
+        destination = self.root / "download-retry.tar.xz"
+
+        class PartialResponse(io.BytesIO):
+            def read(self, size=-1):
+                chunk = super().read(size)
+                if chunk:
+                    return chunk
+                raise urllib.error.HTTPError(
+                    "https://github.com/fixture", 504, "timeout", {}, io.BytesIO()
+                )
+
+        with (
+            patch.object(
+                stage.urllib.request,
+                "urlopen",
+                side_effect=[PartialResponse(b"partial archive"), io.BytesIO(payload)],
+            ) as opened,
+            patch.object(stage.time, "sleep") as sleep,
+        ):
+            stage.download_archive(destination)
+        self.assertEqual(destination.read_bytes(), payload)
+        self.assertEqual(
+            opened.call_args_list, [call(self.pin["url"], timeout=120)] * 2
+        )
+        sleep.assert_called_once_with(1)
+
+    def test_download_retries_only_transient_http_errors_and_stops(self):
+        for codes in ([502, 503, 504], [401], [403], [404], [504, 404]):
+            with (
+                self.subTest(codes=codes),
+                patch.object(
+                    stage.urllib.request,
+                    "urlopen",
+                    side_effect=[
+                        urllib.error.HTTPError(
+                            self.pin["url"], code, "failed", {}, io.BytesIO()
+                        )
+                        for code in codes
+                    ],
+                ) as opened,
+                patch.object(stage.time, "sleep") as sleep,
+            ):
+                with self.assertRaises(urllib.error.HTTPError):
+                    stage.download_archive(self.root / "failed-download.tar.xz")
+                self.assertEqual(opened.call_count, len(codes))
+                self.assertEqual(
+                    sleep.call_args_list,
+                    [call(2**index) for index in range(len(codes) - 1)],
+                )
 
     def test_removed_license_fails_verification(self):
         destination = self.stage_runtime("linux", "x86_64", elf_x86_64())

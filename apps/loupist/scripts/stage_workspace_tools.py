@@ -12,6 +12,8 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import time
+import urllib.error
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -26,8 +28,8 @@ class Tool:
     tag: str
     archive_prefix: str
     banner: str
-    # target -> (archive extension, archive SHA-256)
-    releases: dict[str, tuple[str, str]]
+    # target -> (archive extension, archive SHA-256, GitHub release asset ID)
+    releases: dict[str, tuple[str, str, int]]
     # archive member -> staged name, besides the executable
     licenses: dict[str, str]
 
@@ -56,14 +58,17 @@ TOOLS = (
             "x86_64-unknown-linux-musl": (
                 "tar.gz",
                 "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c",
+                478120097,
             ),
             "aarch64-apple-darwin": (
                 "tar.gz",
                 "3750b2e93f37e0c692657da574d7019a101c0084da05a790c83fd335bad973e4",
+                478118851,
             ),
             "x86_64-pc-windows-msvc": (
                 "zip",
                 "71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5",
+                478119643,
             ),
         },
         {"LICENSE-MIT": "rg-LICENSE-MIT", "UNLICENSE": "rg-UNLICENSE"},
@@ -143,6 +148,27 @@ def read_members(tool: Tool, target: str, encoded: bytes) -> dict[str, bytes]:
     return files
 
 
+def download_archive(tool: Tool, target: str) -> bytes:
+    request: str | urllib.request.Request = tool.release_url(target)
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                return response.read(16 * 1024 * 1024 + 1)
+        except urllib.error.HTTPError as error:
+            if error.code not in (502, 503, 504) or attempt == 2:
+                raise
+            error.close()
+            # GitHub's download edge can fail while its asset API still serves
+            # the same pinned bytes. No authentication or alternate mirror.
+            request = urllib.request.Request(
+                f"https://api.github.com/repos/{tool.repository}/releases/assets/"
+                f"{tool.releases[target][2]}",
+                headers={"Accept": "application/octet-stream"},
+            )
+            time.sleep(2**attempt)
+    raise AssertionError("unreachable download retry state")
+
+
 def stage_workspace_tools(
     runtime: Path, target: str, archives: dict[str, Path] | None = None
 ) -> None:
@@ -154,10 +180,7 @@ def stage_workspace_tools(
         if tool.name in archives:
             encoded = archives[tool.name].read_bytes()
         else:
-            with urllib.request.urlopen(
-                tool.release_url(target), timeout=60
-            ) as response:
-                encoded = response.read(16 * 1024 * 1024 + 1)
+            encoded = download_archive(tool, target)
         if digest(encoded) != archive_digest:
             raise ValueError(f"{tool.name} archive checksum mismatch")
         members = read_members(tool, target, encoded)
