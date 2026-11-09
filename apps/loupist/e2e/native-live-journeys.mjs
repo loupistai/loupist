@@ -63,7 +63,8 @@ const selectedJourneys = new Set(
     .map((item) => item.trim())
     .filter(Boolean),
 );
-const localProviderJourney = selectedJourneys.size === 1 && selectedJourneys.has("7");
+const compactionJourney = selectedJourneys.size === 1 && selectedJourneys.has("compaction");
+const localProviderJourney = compactionJourney || (selectedJourneys.size === 1 && selectedJourneys.has("7"));
 const pythonJourneys = ["python-chart", "python-cancel", "python-denial", "python-after-web"];
 const extraJourneys = ["bot-memory", "private-document", "research-handoff"];
 function journeyEnabled(id) {
@@ -802,9 +803,10 @@ try {
     }
   });
 
-  if (journeyEnabled("7")) await step("custom OpenAI-compatible provider from onboarding", async () => {
+  if (journeyEnabled("7") || compactionJourney) await step("custom OpenAI-compatible provider from onboarding", async () => {
     // A local stand-in for Ollama or LM Studio. It records only the auth prefix and model it was sent.
     const seen = [];
+    let followToolIssued = false;
     const server = createServer((request, response) => {
       let body = "";
       request.on("data", (chunk) => { body += chunk; });
@@ -816,18 +818,24 @@ try {
           history = JSON.stringify(payload.messages ?? []);
         } catch {}
         const followUp = history.includes("What did you say earlier?");
+        const summary = /conversation to summarize|structured context checkpoint|Create a concise checkpoint of the user's request/u.test(history);
+        const toolRound = compactionJourney && followUp && !summary && !followToolIssued;
+        if (toolRound) followToolIssued = true;
         seen.push({
           path: request.url,
           bearer: (request.headers.authorization ?? "") === "Bearer e2e-custom-key",
           model,
           followUp,
+          summary,
+          restoredInput: history.includes("The host restored the original input for this reply after summarization."),
+          summaryLabeled: history.includes("This is a model-written summary of earlier context"),
           hasFirstQuestion: history.includes("Say hello."),
           hasFirstAnswer: history.includes("Hello from the custom provider."),
         });
         response.writeHead(200, { "content-type": "text/event-stream" });
         for (const chunk of [
-          { choices: [{ index: 0, delta: { role: "assistant", content: followUp ? "Earlier I said: Hello from the custom provider." : "Hello from the custom provider." } }] },
-          { choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 6, total_tokens: 11 } },
+          { choices: [{ index: 0, delta: toolRound ? { role: "assistant", tool_calls: [{ index: 0, id: "compaction-ls", type: "function", function: { name: "ls", arguments: '{"path":"."}' } }] } : { role: "assistant", content: summary ? "Derived checkpoint: the server greeted the user." : followUp ? "Earlier I said: Hello from the custom provider." : "Hello from the custom provider." } }] },
+          { choices: [{ index: 0, delta: {}, finish_reason: toolRound ? "tool_calls" : "stop" }], usage: { prompt_tokens: compactionJourney && !summary ? 200000 : 5, completion_tokens: 6, total_tokens: compactionJourney && !summary ? 200006 : 11 } },
         ]) response.write(`data: ${JSON.stringify({ id: "e2e", object: "chat.completion.chunk", created: 0, model: "local-test-model", ...chunk })}\n\n`);
         response.end("data: [DONE]\n\n");
       });
@@ -855,6 +863,14 @@ try {
       await shot("07-custom-form");
       await (await form.$("[data-custom-add]")).click();
       await waitForShell(browser, 30_000);
+      if (compactionJourney) await browser.execute(async () => {
+        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const snapshot = await invoke("config_read", { request: { scope: { kind: "global" } } });
+        await invoke("config_update", { request: {
+          scope: snapshot.scope, expectedRevision: snapshot.revision,
+          set: { pi: { compaction: { reserve_tokens: 16384, keep_recent_tokens: 1 } } }, unset: [],
+        } });
+      });
       const picker = await displayed('[aria-label$="Model settings for this message"]');
       // The composer shows "Auto"; the resolved model is the control's description.
       assert.match(await picker.getAttribute("aria-description") ?? "", /local-test-model/u, "Chat did not default to the custom provider's model");
@@ -866,11 +882,20 @@ try {
       assert.ok(chat, `The custom provider received no chat request: ${JSON.stringify(seen)}`);
       assert.equal(chat.bearer, true, "The saved key was not sent to the custom provider");
       assert.equal(chat.model, "local-test-model");
+      if (compactionJourney) assert.equal(seen.filter(item => item.summary).length, 0, "The finished answer must not wait for a summary request");
       await sendPrompt("What did you say earlier? Answer in one sentence.");
       const followUpAnswer = await answerText();
       assert.match(followUpAnswer, /Earlier I said: Hello from the custom provider\./u);
-      const followUp = seen.find((item) => item.path === "/v1/chat/completions" && item.followUp);
-      assert.ok(followUp?.hasFirstQuestion && followUp.hasFirstAnswer, "The second request lost the first turn's context");
+      const followUp = seen.findLast((item) => item.path === "/v1/chat/completions" && item.followUp && !item.summary);
+      if (compactionJourney) {
+        assert.ok(seen.some(item => item.summary), "The next input did not execute compaction");
+        assert.ok(followUp?.restoredInput && followUp.summaryLabeled, "Compaction lost the sealed input or summary provenance");
+        const rows = (await collectWorkProgress(browser, { latestOnly: true })).flatMap(section => section.rows);
+        assert.ok(rows.some(row => row.operation === "compact" && row.status === "succeeded"), JSON.stringify(rows));
+        assert.ok(!rows.some(row => row.operation === "compact" && row.status === "failed"), JSON.stringify(rows));
+        assert.ok(followToolIssued, "The fixture did not reach its between-tool-round compaction");
+        assert.ok(rows.some(row => row.operation === "list" && row.status === "succeeded"), "The native file tool did not execute");
+      } else assert.ok(followUp?.hasFirstQuestion && followUp.hasFirstAnswer, "The second request lost the first turn's context");
       assert.equal(followUp.bearer, true);
       await shot("07-custom-follow-up");
       await browser.refresh();
@@ -895,6 +920,8 @@ try {
       report.journeys.customProvider = { answered: true, followUpRetainedContext: true, reloaded: true,
         answerKeptAfterRemoval: true, firstTokenMs: firstTiming.firstTokenMs,
         keySent: chat.bearer, model: chat.model, removed: true };
+      if (compactionJourney) report.journeys.compaction = { postAnswerDeferred: true, nextInputCompacted: true,
+        sealedInputRestored: followUp.restoredInput, summaryLabeled: followUp.summaryLabeled, answerSurvivedReload: true };
     } finally {
       await new Promise((resolveClose) => server.close(resolveClose));
     }

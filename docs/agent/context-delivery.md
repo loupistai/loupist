@@ -45,6 +45,27 @@ continuation on work that depends on earlier context. The Bot carries the user's
 preferences, decisions and open requests past the cold transcript bound in
 [Bot memory](../ui/home-thread.md#bot-memory).
 
+During a reply, the host freezes the current request and full turn envelope in the
+private Pi bootstrap. After Pi compacts in this reply's process, the extension
+restores that input just before this reply's retained prompt, or after the last
+summary if the prompt was summarized away, unless the same full input is already
+retained. Older turns stay earlier, and later user corrections and steering remain
+later. An inherited summary alone does not restore input or rewrite the retained
+prefix on subsequent warm replies.
+This model-context projection does not rewrite JSONL. Both compaction and branch
+summaries are labeled as model-written, potentially incomplete context, never
+user words, authorization or exact-read evidence. The label does not enforce a
+security boundary or reconstruct omitted historical work: missing originals still
+need `chat_history` and exact-read tools. Rust's permissions and receipts remain
+authoritative.
+
+Automatic compaction after a finished assistant answer is deferred to the next
+input, including an overflow reported by successful-response usage, so an auxiliary
+summary request cannot delay answer settlement. Pre-prompt, between-tool-round,
+error/length overflow recovery and manual compaction remain available. Compaction
+pressure marks the envelope stale for the next reply even when the post-answer
+attempt is deferred.
+
 
 Under an as-of date, automatic context follows
 [the cutoff rules](../knowledge/memory.md#memory-under-a-cutoff): a perspective (1) or

@@ -72,6 +72,7 @@ for required in \
     "$APP_ROOT/agent/workspace-tools.mjs" \
     "$APP_ROOT/agent/workspace-resources.mjs" \
     "$APP_ROOT/agent/pi-settings.mjs" \
+    "$APP_ROOT/agent/session-continuity.mjs" \
     "$APP_ROOT/agent/model-run-controls.mjs" \
     "$APP_ROOT/agent/loupist-native-search.mjs" \
     "$APP_ROOT/agent/native-search/common.mjs" \
@@ -172,6 +173,7 @@ node --check "$APP_ROOT/agent/broker-client.mjs"
 node --check "$APP_ROOT/agent/workspace-tools.mjs"
 node --check "$APP_ROOT/agent/workspace-resources.mjs"
 node --check "$APP_ROOT/agent/pi-settings.mjs"
+node --check "$APP_ROOT/agent/session-continuity.mjs"
 node --check "$APP_ROOT/agent/model-run-controls.mjs"
 node --check "$APP_ROOT/agent/loupist-native-search.mjs"
 node --check "$APP_ROOT/agent/native-search/common.mjs"

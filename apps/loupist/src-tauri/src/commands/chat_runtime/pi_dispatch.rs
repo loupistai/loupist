@@ -230,7 +230,13 @@ pub(super) async fn apply_pi_rpc(turn: PiRpcTurn<'_>, payload: &Value) -> PiRpcS
             publish_progress(on_event, task_run_id, progress, commentary);
         }
         Some("compaction_end") => {
-            progress.finish_system("compaction", compaction_end_failed(payload), now_ms());
+            match compaction_outcome(payload) {
+                CompactionOutcome::Cancelled => progress.discard_system("compaction"),
+                CompactionOutcome::Succeeded => {
+                    progress.finish_system("compaction", false, now_ms())
+                }
+                CompactionOutcome::Failed => progress.finish_system("compaction", true, now_ms()),
+            }
             publish_progress(on_event, task_run_id, progress, commentary);
         }
         Some("auto_retry_start") => {

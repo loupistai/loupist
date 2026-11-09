@@ -1148,6 +1148,13 @@ impl ChatProgressProjection {
         self.mark_dirty(&id);
     }
 
+    /// Cancelled auxiliary work is neither a success nor a failure.
+    pub fn discard_system(&mut self, key: &str) {
+        if let Some(id) = self.system_items.remove(key) {
+            self.remove_item(&id);
+        }
+    }
+
     pub fn finish_system(&mut self, key: &str, failed: bool, at_ms: i64) {
         let Some(id) = self.system_items.remove(key) else {
             return;

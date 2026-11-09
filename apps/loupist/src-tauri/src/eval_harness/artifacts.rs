@@ -174,6 +174,7 @@ const FILES: &[(&str, &[u8])] = &[
     asset!("native-search/common.mjs"),
     asset!("native-search/xai.mjs"),
     asset!("pi-settings.mjs"),
+    asset!("session-continuity.mjs"),
     asset!("prompts/briefing.md"),
     asset!("prompts/method-learning.md"),
     asset!("provider-inference.mjs"),

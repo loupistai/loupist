@@ -137,7 +137,17 @@ test("invalid host context and run options terminate native Pi instead of dispat
     assert.match(probe.stderr, /Chat initialization failed/);
     assert.equal(existsSync(join(temporary, "host-context.json")), false);
   }
-  const valid = probeNativeExtensionStartup(temporary, context, "{}", "Read this test prompt.");
+  for (const extra of [
+    { continuation_prompt: 3 }, { continuation_prompt: " " }, { continuation_prompt: "a\0b" },
+    { continuation_prompt: "한".repeat(175000) },
+    { continuation_prompt: "valid", extra: "x".repeat(65536) },
+  ]) {
+    const probe = probeNativeExtensionStartup(temporary, { ...context, ...extra });
+    assert.equal(probe.status, 76, probe.stderr);
+    assert.equal(probe.stdout, "");
+    assert.equal(existsSync(join(temporary, "host-context.json")), false);
+  }
+  const valid = probeNativeExtensionStartup(temporary, { ...context, continuation_prompt: "Bounded original request" }, "{}", "Read this test prompt.");
   assert.equal(valid.status, 0, valid.stderr);
   assert.deepEqual(JSON.parse(valid.stdout), { extensionErrors: 0, providerCalls: 1 });
 });

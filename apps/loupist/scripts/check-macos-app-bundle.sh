@@ -65,6 +65,7 @@ for required in \
     "$AGENT_DIR/workspace-tools.mjs" \
     "$AGENT_DIR/workspace-resources.mjs" \
     "$AGENT_DIR/pi-settings.mjs" \
+    "$AGENT_DIR/session-continuity.mjs" \
     "$AGENT_DIR/loupist-native-search.mjs" \
     "$AGENT_DIR/native-search/common.mjs" \
     "$AGENT_DIR/native-search/codex.mjs" \

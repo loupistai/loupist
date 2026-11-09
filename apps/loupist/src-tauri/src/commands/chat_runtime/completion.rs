@@ -329,8 +329,14 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                     }
                     _ => false,
                 };
-                // A host receipt is absent from Pi's JSONL; rebuild canonical history next turn.
-                chat.pi_session_cache = if host_composed {
+                // A host receipt is absent from Pi's JSONL. Corrected or forgotten
+                // Bot notes can still occur in its old envelopes and summaries.
+                let bot_context_changed = bot_memory.as_ref().is_some_and(|(staged, _)| {
+                    staged
+                        .iter()
+                        .any(crate::chat::bot_memory::StagedBotMemory::invalidates_session_context)
+                });
+                chat.pi_session_cache = if host_composed || bot_context_changed {
                     None
                 } else {
                     sealed_cache.clone()

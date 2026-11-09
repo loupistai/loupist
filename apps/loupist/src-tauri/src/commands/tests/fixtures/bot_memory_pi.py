@@ -58,7 +58,7 @@ fixture_root = pathlib.Path(__file__).parent
 turns_file = fixture_root / "bot-memory-turns.jsonl"
 script_file = fixture_root / "bot-memory-turn.json"
 
-entries = []
+entries = [json.loads(line) for line in session_file.read_text().splitlines()] if session_file.exists() else []
 
 for line in sys.stdin:
     request = json.loads(line)
@@ -104,6 +104,12 @@ for line in sys.stdin:
         emit({"type": "message_start", "message": {"role": "assistant"}})
         emit({"type": "message_update", "assistantMessageEvent": {"type": "text_delta", "delta": answer}})
         emit({"type": "message_end", "message": message})
+        if turn.get("exit_during_post_answer_compaction"):
+            emit({"type": "compaction_start", "reason": "threshold"})
+            sys.exit(1)
+        if turn.get("deferred_compaction"):
+            emit({"type": "compaction_start", "reason": "threshold"})
+            emit({"type": "compaction_end", "reason": "threshold", "aborted": True})
         emit({"type": "agent_settled"})
     elif command == "abort":
         respond(request, {})
