@@ -1336,9 +1336,15 @@ mod tests {
         let temporary = probe_folder().unwrap();
         let layout = ProbeLayout::create(temporary.path()).unwrap();
         let socket = layout.socket.display().to_string();
-        let replaced = tempfile::tempdir().unwrap();
-        let in_tmp = replaced.path().canonicalize().unwrap().join("tmp.sock");
-        let _tmp_daemon = std::os::unix::net::UnixListener::bind(&in_tmp).unwrap();
+        // A host whose `/tmp` this user cannot write skips that part.
+        let in_tmp = tempfile::Builder::new()
+            .tempdir_in("/tmp")
+            .ok()
+            .map(|folder| {
+                let path = folder.path().canonicalize().unwrap().join("tmp.sock");
+                let daemon = std::os::unix::net::UnixListener::bind(&path).unwrap();
+                (folder, path, daemon)
+            });
         let sandbox = Sandbox::Bubblewrap("/usr/bin/bwrap".into());
         let offline = sandbox.command(&layout.roots, false).argv;
         let masks = |argv: &[String], path: &str| {
@@ -1346,7 +1352,9 @@ mod tests {
                 .any(|window| window == ["--ro-bind", "/dev/null", path])
         };
         assert!(masks(&offline, &socket), "{offline:?}");
-        assert!(!masks(&offline, in_tmp.to_str().unwrap()), "{offline:?}");
+        if let Some((_, path, _)) = &in_tmp {
+            assert!(!masks(&offline, path.to_str().unwrap()), "{offline:?}");
+        }
         assert!(!masks(&sandbox.command(&layout.roots, true).argv, &socket));
 
         let Some(sandbox) = detect() else {
@@ -1530,9 +1538,11 @@ mod tests {
             .lines()
             .filter(|line| !expected(line, false))
             .collect();
-        // Only root keeps capabilities and writes `/proc/sys` outside the
-        // sandbox; the `.ssh` folder is no mount point here, so its `umount`
-        // fails either way.
+        // Only root keeps capabilities outside the sandbox. `find -writable`
+        // reads mode bits, so outside the sandbox root sees every `/proc/sys`
+        // file as writable and any user sees `kernel/ns_last_pid` (0666 since
+        // Linux 5.9, its write gated by a capability). The `.ssh` folder is no
+        // mount point here, so its `umount` fails either way.
         let mut expected_broken = vec![
             "write_top=ok",
             "write_dot=ok",
@@ -1547,7 +1557,14 @@ mod tests {
         ];
         // SAFETY: geteuid reads the process's credentials and cannot fail.
         if unsafe { libc::geteuid() } == 0 {
-            expected_broken.extend(["caps=fail", "write_sysctl=ok"]);
+            expected_broken.push("caps=fail");
+        }
+        let host_sysctl_writable = std::process::Command::new("find")
+            .args(["/proc/sys", "-type", "f", "-writable"])
+            .output()
+            .is_ok_and(|output| !output.stdout.is_empty());
+        if host_sysctl_writable {
+            expected_broken.push("write_sysctl=ok");
         }
         expected_broken.extend(["connect=ok", "daemon_socket=ok", "rename_git=ok"]);
         assert_eq!(broken, expected_broken, "{output}");
