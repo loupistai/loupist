@@ -198,15 +198,19 @@ console.log("wait-session readiness contract passed");
 // port 1420, or touch the repository's current-session.json in these tests.
 const lifecycleDirectory = mkdtempSync(join(tmpdir(), "loupist-owner-"));
 const appStandIn = join(lifecycleDirectory, "loupist");
-// A real executable named loupist works with macOS ps comm; a shell script
-// reports its interpreter there. Set argv[0] separately for uutils multicall
-// sleep on Linux, whose executable name must still identify the owned process.
-copyFileSync("/bin/sleep", appStandIn);
-chmodSync(appStandIn, 0o755);
+// macOS ps comm names a script's interpreter, so use a real executable there.
+// Linux uutils dispatches on argv[0]; the shell fixture preserves the owned
+// script path in ps args while invoking sleep by its own name.
+if (process.platform === "darwin") {
+  copyFileSync("/bin/sleep", appStandIn);
+  chmodSync(appStandIn, 0o755);
+} else {
+  writeFileSync(appStandIn, '#!/bin/sh\nsleep "$1"\n', { mode: 0o755 });
+}
 const launcher = spawn(process.execPath, ["--input-type=module", "-e", `
   import { spawn } from "node:child_process";
   import { createServer } from "node:http";
-  const child = spawn(process.argv[1], ["30"], { stdio: "ignore", argv0: process.platform === "linux" ? "sleep" : undefined });
+  const child = spawn(process.argv[1], ["30"], { stdio: "ignore" });
   const server = createServer((_request, response) => {
     response.setHeader("content-type", "application/json");
     response.end(JSON.stringify({ value: { ready: true } }));
