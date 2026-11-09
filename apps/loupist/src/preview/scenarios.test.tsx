@@ -2,6 +2,9 @@ import i18n from "../i18n";
 import { setPreviewLanguage } from "../i18n/useLanguage";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { App } from "../App";
+import { enableSharingPreviewHarness } from "../sharing/releaseVisibility";
+
+enableSharingPreviewHarness();
 import { BROWSER_ARTICLE_URL, BROWSER_RAW_ENGINE_MESSAGE } from "./browserScenarios";
 import { configureTheme, PreviewBridge } from "./fixtures";
 import { scenarios } from "./scenarios";

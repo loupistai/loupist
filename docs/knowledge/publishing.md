@@ -1,6 +1,6 @@
 # Publishing
 
-GitHub publishing, the community Gallery and `loupist://import` links are Rust flows. No command returns the GitHub token. What a pack may contain is [Sharing a pack](sharing.md).
+GitHub publishing, the community Gallery and `loupist://import` links are Rust flows. No command returns the GitHub token. What a pack may contain is [Sharing a pack](sharing.md). [This release](sharing.md#this-release) keeps those flows and leaves them out of the user app: a link is dismissed, and the Gallery, publish controls and pack review do not open.
 
 GitHub publishing (`sharing/github.rs`) uses an OAuth App device flow with scopes
 `public_repo gist`. The client ID, community index URL and Gallery listing terms URL are build-time variables
@@ -43,8 +43,8 @@ Windows, not e2e builds; scheme in `tauri.conf.json`) and the single-instance pl
 (`sharing/deep_link.rs`) accepts only host `import` with one `url` parameter that passes
 the [link allowlist](../capabilities/packs.md#shared-loupist-packs), holds at most one link
 (a newer one replaces it) and emits `deep-link-import` (`ok` with the source label, or
-`bad`). The renderer asks only after onboarding; nothing is fetched before Preview, and
-nothing is added before the review's Add.
+`bad`). When pack sharing is shown, the renderer asks only after onboarding; nothing is fetched before Preview, and
+nothing is added before the review's Add. This release dismisses the link instead ([This release](sharing.md#this-release)).
 
 **Updates** (`sharing/update.rs`). A pack added from a link is checked for a newer version
 when that section opens, at most once a day (Rust keeps the date; nothing checks in the
@@ -65,7 +65,7 @@ Sharing again a Loupist that started from a pack writes the origin chain (each e
 pack, author and version) into the new pack's manifest.
 
 **Gallery** (`sharing/gallery.rs`). When the build names a community index
-(`LOUPIST_COMMUNITY_INDEX_URL`), New Loupist offers Browse the Gallery: listed packs with
+(`LOUPIST_COMMUNITY_INDEX_URL`) and the user app is showing pack sharing, New Loupist offers Browse the Gallery: listed packs with
 name, author, focus, counts, license and an optional map image, sortable and searchable,
 kept for offline use. The list scrolls in the page, including below 1060px, and focusing a card below the fold scrolls it into the page. Preview opens the ordinary review and Use adds it as above; the
 renderer never sees a pack's location, which Rust resolves from the listing id. The Share

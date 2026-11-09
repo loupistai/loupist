@@ -20,6 +20,7 @@ import { MapRelationships } from "./MapRelationships";
 import { hasRelationshipsView } from "./relationships";
 import { isBasePerspective, isLensNode, isStandingPlaceholder, lensDisplayTitle } from "./lensReading";
 import { InspectorThesis } from "../assets/InspectorThesis";
+import { sharingReleaseVisible } from "../../sharing/releaseVisibility";
 import { SharedOrigin } from "../sharing/SharedOrigin";
 import { SHARED_SECTION_ITEM } from "../sharing/SharedPacks";
 export function MapInspector({ node, map, bridge, location, onClose, onSelect, onOpen, onAsk, providedGraph, catalog, onChanged, onOpenChat, onExplainDisagreement, onPointRelationship }: {
@@ -105,7 +106,7 @@ export function MapInspector({ node, map, bridge, location, onClose, onSelect, o
     {!isLensNode(node) && name !== node.label ? <p className="map-muted">{node.label}</p> : null}
     {basePerspective ? <p className="map-base-perspective">{t("principles.perspectiveCaption")}</p> : null}
     <ConnectionOrigin origin={node.origin} />
-    <SharedOrigin bridge={bridge} loupistId={location.loupistId} subjectId={node.recordId ?? node.id} onAbout={() => onOpen({ loupistId: location.loupistId, surface: "lens", recordId: SHARED_SECTION_ITEM })} />
+    <SharedOrigin bridge={bridge} loupistId={location.loupistId} subjectId={node.recordId ?? node.id} onAbout={sharingReleaseVisible() ? () => onOpen({ loupistId: location.loupistId, surface: "lens", recordId: SHARED_SECTION_ITEM }) : undefined} />
     {node.kind !== "entity" && node.recordId ? <LensLearningPanel key={`${location.loupistId}:${node.recordId}:${lens?.revisionId ?? ""}`} bridge={bridge} loupistId={location.loupistId} node={node} onArchived={() => { onChanged?.(); onClose(); }} /> : null}
     {node.kind !== "entity" && lens?.summary && !isStandingPlaceholder(lens.summary) ? <p className="map-lens-applicability">{lens.summary}</p> : null}
     {entity?.aliases.length ? <p className="map-aliases" title={entity.aliases.join(", ")}>{entity.aliases.join(", ")}</p> : null}

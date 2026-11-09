@@ -19,6 +19,7 @@ import { PrincipleSource } from "./PrincipleSource";
 import { entityLabel } from "../map/labels";
 import { useAssetPageOpener } from "../assets/assetOpener";
 import type { PackImportView, PackSuggestionGroup } from "../../contracts/sharing";
+import { sharingReleaseVisible } from "../../sharing/releaseVisibility";
 import { ShareSheet } from "../sharing/ShareSheet";
 import { PackSuggestions } from "../sharing/PackSuggestions";
 import { SHARED_SECTION_ITEM, SharedPacks } from "../sharing/SharedPacks";
@@ -100,6 +101,7 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
   const [sourceLocation, setSourceLocation] = useState<KnowledgeLocation | null>(null);
   const [share, setShare] = useState<{ recordId?: string } | null>(null);
   const sharedRef = useRef<HTMLElement>(null);
+  const showSharing = sharingReleaseVisible();
   const changed = useCallback(() => { setRefresh(value => value + 1); onChanged?.(); }, [onChanged]);
 
   useEffect(() => {
@@ -147,15 +149,16 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
   useEffect(() => {
     if (!data || segment) return;
     const target = items.find(item => item.id === initialItem);
-    const pendingSuggestions = data.suggestions.some(group => group.items.some(item => item.state === "pending"));
+    const pendingSuggestions = showSharing && data.suggestions.some(group => group.items.some(item => item.state === "pending"));
+    const sharedLanding = showSharing && initialItem === SHARED_SECTION_ITEM;
     if (!initialItem) setSelectedId(KIND_ORDER.flatMap(kind => items.filter(item => item.kind === kind))[0]?.id);
-    setSegment(initialItem === SHARED_SECTION_ITEM ? "about" : target || pendingSuggestions || items.length ? "pages" : "about");
-  }, [data, items, initialItem, segment]);
+    setSegment(sharedLanding ? "about" : target || pendingSuggestions || items.length ? "pages" : "about");
+  }, [data, items, initialItem, segment, showSharing]);
   // "About this shared Loupist" lands on the shared Loupists section.
   useEffect(() => {
-    if (initialItem === SHARED_SECTION_ITEM && segment === "about") sharedRef.current?.scrollIntoView?.({ block: "start" });
-  }, [initialItem, segment, data]);
-  const suggestions = data ? <PackSuggestions bridge={bridge} loupistId={loupistId} groups={data.suggestions}
+    if (showSharing && initialItem === SHARED_SECTION_ITEM && segment === "about") sharedRef.current?.scrollIntoView?.({ block: "start" });
+  }, [showSharing, initialItem, segment, data]);
+  const suggestions = showSharing && data ? <PackSuggestions bridge={bridge} loupistId={loupistId} groups={data.suggestions}
     onChanged={groups => { setData(current => current && { ...current, suggestions: groups }); changed(); }} /> : null;
 
   const terms = query.trim().toLowerCase();
@@ -196,9 +199,9 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
   return <section className="memory-page" aria-label={title} data-segment={current} data-reader-open={compactReader && (current === "history" || Boolean(selected) && current === "pages") || undefined}>
     <header className="memory-page-header">
       <h1>{title}</h1>
-      <Button variant="outline" size="sm" data-share-loupist onClick={() => setShare({})}>{i18n.t("sharing:share")}</Button>
+      {showSharing ? <Button variant="outline" size="sm" data-share-loupist onClick={() => setShare({})}>{i18n.t("sharing:share")}</Button> : null}
     </header>
-    <ShareSheet bridge={bridge} loupistId={loupistId} loupistName={loupist.name} scope={share?.recordId ? { kind: "item", recordId: share.recordId } : { kind: "loupist" }} open={share !== null} onOpenChange={open => { if (!open) setShare(null); }} />
+    {showSharing ? <ShareSheet bridge={bridge} loupistId={loupistId} loupistName={loupist.name} scope={share?.recordId ? { kind: "item", recordId: share.recordId } : { kind: "loupist" }} open={share !== null} onOpenChange={open => { if (!open) setShare(null); }} /> : null}
     <div className="memory-page-subbar">
       <SegmentTabs value={current} counts={{ pages: data ? items.length : undefined }} onChange={value => { setSegment(value); setCompactReader(false); }} />
       {current === "pages" ? <label className="memory-page-search">
@@ -212,13 +215,13 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
     {!data && !error ? <div className="memory-page-loading" role="status" aria-label={t("memoryPage.loading")}><span /><span /><span /></div> : null}
     {data ? <div className="memory-page-body" data-segment={current} onFocus={revealFocused}>
       {current === "about" ? <AboutYou bridge={bridge} loupist={loupist} data={data} onChanged={changed}
-        shared={<SharedPacks ref={sharedRef} bridge={bridge} loupistId={loupistId} imports={data.imports} indexConfigured={data.indexConfigured}
-          onChanged={imports => { setData(current => current && { ...current, imports }); changed(); }} />} /> : null}
+        shared={showSharing ? <SharedPacks ref={sharedRef} bridge={bridge} loupistId={loupistId} imports={data.imports} indexConfigured={data.indexConfigured}
+          onChanged={imports => { setData(current => current && { ...current, imports }); changed(); }} /> : null} /> : null}
       {current === "pages" ? <>
         <ItemList label={t("memoryPage.tabs.pages")} description={t("memoryPage.pages.description")} items={shown} selectedId={selected?.id} usage={data.usage} onOpen={open}
           before={suggestions} searching={Boolean(terms)} empty={<p className="memory-empty">{t("memoryPage.pages.empty")}</p>} />
         <Reader item={selected} takeFocus={chosen} bridge={bridge} loupistId={loupistId} usage={data.usage} paused={Boolean(selected && data.paused.has(selected.id))} threads={threads} onOpenChat={onOpenChat} onChanged={changed} onClose={() => setCompactReader(false)} backLabel={t("memoryPage.tabs.pages")} catalog={data.catalog} onOpenKnowledge={openKnowledge} onOpenPage={open} onAsk={onAsk}
-          onShare={recordId => setShare({ recordId })} onAboutShared={() => { setSegment("about"); setCompactReader(false); requestAnimationFrame(() => sharedRef.current?.scrollIntoView?.({ block: "start" })); }} />
+          onShare={showSharing ? recordId => setShare({ recordId }) : undefined} onAboutShared={showSharing ? () => { setSegment("about"); setCompactReader(false); requestAnimationFrame(() => sharedRef.current?.scrollIntoView?.({ block: "start" })); } : undefined} />
       </> : null}
       {current === "history" ? (() => {
         // The newest row that names a principle or method opens by default, so the tab shows how something was learned.

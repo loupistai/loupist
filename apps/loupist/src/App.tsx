@@ -88,6 +88,7 @@ import { AssetPageOpenerProvider } from "./components/assets/assetOpener";
 import { LookBackProvider, lookBackDraft, type LookBackEntry } from "./components/knowledge/lookBack";
 import { FixMemoryProvider } from "./components/memory/fixMemory";
 import { SHARED_SECTION_ITEM } from "./components/sharing/SharedPacks";
+import { sharingReleaseVisible } from "./sharing/releaseVisibility";
 import { PackLinkDialog } from "./components/sharing/PackLinkDialog";
 import { DeepLinkConfirm, useDeepLinks } from "./components/sharing/DeepLinkConfirm";
 import type { PackAddResult, PackOpenResult } from "./contracts/sharing";
@@ -266,6 +267,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
   const [packUse, setPackUse] = useState(false);
   const [indexConfigured, setIndexConfigured] = useState(false);
   useEffect(() => { void bridge.githubAccount().then(account => setIndexConfigured(account.indexConfigured)).catch(() => undefined); }, [bridge]);
+  const sharingVisible = sharingReleaseVisible();
   const deepLinks = useDeepLinks(bridge, model.resolved && !loupist.loading && !loupist.error && !onboardingActive && !needsOnboarding, setBriefingToast);
   // The morning message reads "last seen" per Loupist; leaving a Loupist (or Settings) records the visit.
   useLoupistVisit(selectedLoupist?.id ?? null, tab !== "settings" && !onboardingActive);
@@ -502,7 +504,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
   const openKnowledgePage = useCallback((next: KnowledgeLocation, camera?: GraphCamera) => {
     if (next.loupistId !== selectedLoupistId) return;
     if (next.surface === "lens") {
-      if (next.recordId === SHARED_SECTION_ITEM) { openWhatItKnows(next.recordId); return; }
+      if (next.recordId === SHARED_SECTION_ITEM) { openWhatItKnows(sharingReleaseVisible() ? next.recordId : undefined); return; }
       setMemoryPage(null); setNoteReaderOpen(false); setAssetPage(null);
       lens.open(next); setTab("lens"); return;
     }
@@ -834,8 +836,8 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
             return imported;
           }}
           onChooseFolder={() => bridge.loupistChooseFolder()}
-          onUseLinkOrFile={() => { dialogs.setCreateLoupistOpen(false); setPackLinkOpen(true); }}
-          onBrowseGallery={indexConfigured ? () => { dialogs.setCreateLoupistOpen(false); setMemoryPage(null); setGalleryOpen(true); } : undefined}
+          onUseLinkOrFile={sharingVisible ? () => { dialogs.setCreateLoupistOpen(false); setPackLinkOpen(true); } : undefined}
+          onBrowseGallery={sharingVisible && indexConfigured ? () => { dialogs.setCreateLoupistOpen(false); setMemoryPage(null); setGalleryOpen(true); } : undefined}
           onReconnectLoupist={loupist.reconnectLoupist}
           onRenameThread={threadActions.renameThread}
           onDeleteThread={threadActions.deleteThread}
@@ -978,10 +980,10 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                   onAddSource={() => { setAssetPage(null); openKnowledgePage({ loupistId: selectedLoupist.id, surface: "source" }); }}
                   onChanged={refreshKnowledge} />
               </Suspense></div> : null}
-              {galleryOpen && !packReview ? <div className="pack-review-layer" onFocus={event => { if (event.target instanceof HTMLElement) event.target.scrollIntoView({ block: "nearest", inline: "nearest" }); }}><Suspense fallback={<Spinner />}>
+              {sharingVisible && galleryOpen && !packReview ? <div className="pack-review-layer" onFocus={event => { if (event.target instanceof HTMLElement) event.target.scrollIntoView({ block: "nearest", inline: "nearest" }); }}><Suspense fallback={<Spinner />}>
                 <Gallery bridge={bridge} onBack={() => setGalleryOpen(false)} onOpened={(result, use) => openPackReview(result, use)} onUseLinkOrFile={() => setPackLinkOpen(true)} />
               </Suspense></div> : null}
-              {packReview ? <div className="pack-review-layer"><Suspense fallback={<Spinner />}>
+              {sharingVisible && packReview ? <div className="pack-review-layer"><Suspense fallback={<Spinner />}>
                 <PackReview bridge={bridge} result={packReview} loupists={loupists} currentLoupistId={selectedLoupistId} focusAdd={packUse} onBack={() => setPackReview(null)} onAdded={added => void landSharedLoupist(added)} />
               </Suspense></div> : null}
               <div className="app-stage-view" inert={loupistSettingsOpen || assetPageOpen || Boolean(packReview) || galleryOpen || undefined} aria-hidden={loupistSettingsOpen || assetPageOpen || Boolean(packReview) || galleryOpen || undefined}>
@@ -1283,8 +1285,8 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
         </Dialog>
 
         {appDialogs}
-        <PackLinkDialog bridge={bridge} open={packLinkOpen} onOpenChange={setPackLinkOpen} onOpened={result => openPackReview(result)} />
-        <DeepLinkConfirm bridge={bridge} source={packReview ? null : deepLinks.link} onClose={deepLinks.clear} onOpened={result => openPackReview(result)} />
+        {sharingVisible ? <PackLinkDialog bridge={bridge} open={packLinkOpen} onOpenChange={setPackLinkOpen} onOpened={result => openPackReview(result)} /> : null}
+        {sharingVisible ? <DeepLinkConfirm bridge={bridge} source={packReview ? null : deepLinks.link} onClose={deepLinks.clear} onOpened={result => openPackReview(result)} /> : null}
         <CommandPalette
           open={palette.open}
           focusGroup={palette.focus}

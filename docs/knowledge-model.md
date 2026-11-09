@@ -27,5 +27,6 @@ storage locations are in [Architecture](architecture.md).
 - [Saving one completed turn](knowledge/growth.md#saving-one-completed-turn)
 - [Folder portability](knowledge/growth.md#folder-portability)
 - [Sharing a pack](knowledge/sharing.md#sharing)
+- [Sharing in this release](knowledge/sharing.md#this-release)
 - [Pack add and remove](knowledge/pack-add.md)
 - [Publishing](knowledge/publishing.md)

@@ -2,6 +2,10 @@
 
 A pack is a folder, ZIP or public GitHub repo of selected Memory. Scan and license checks run before anything leaves the machine. Adding someone else's pack is [Pack add](pack-add.md). GitHub and the Gallery are [Publishing](publishing.md).
 
+## This release
+
+Pack sharing stays in the program. The user app leaves out Share on Lens and in Settings › Loupists, the Gallery, "use a link or file", pack review, the list of packs already added, and suggestions from those packs. A `loupist://import` link is dismissed, and no dialog opens. There is no settings switch, and no address opens those screens. World and Lens reading stay, including "Shared · {pack}" on a name or page that already came from a pack. Map image and replay export stay; that control is also labeled Share. Importing a local Loupist folder stays. Rust (`src-tauri/src/sharing/`, `src-tauri/src/knowledge/shared_pack.rs`) still owns the format, scans, network calls and storage. The screens in `src/components/sharing/` stay, and the development preview harness can still open them. Set `SHARING_UI_IN_RELEASE` in `src/sharing/releaseVisibility.ts` to show the entry points again.
+
 ## Sharing
 
 A Loupist can be shared as a `loupist-pack/1` pack: a folder, a ZIP, a public GitHub
@@ -12,9 +16,9 @@ matched value) and validated text. [Pack bounds and scans](../capabilities/packs
 own file and text rules; [Trust](../architecture.md#trust) owns GitHub, deep links and how
 shared text reaches the model.
 
-Share opens from "What {Loupist} knows" and each Settings › Loupists row; Share on a
+When the entry points are shown, Share opens from "What {Loupist} knows" and each Settings › Loupists row; Share on a
 method in the Lens reader, or on a principle on "What {Loupist} knows", shares that item
-alone. A pack carries the Profile (name,
+alone. [This release](#this-release) leaves those controls out of the user app. A pack carries the Profile (name,
 focus, tone, avatar), a standing perspective other than the default, active methods and
 principles, and the Map's names, relationships and Sources, each section switchable.
 Sources travel as references (title, host, URL, EDGAR or DART filing ID, DOI, publication
