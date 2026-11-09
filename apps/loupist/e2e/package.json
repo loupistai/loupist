@@ -18,7 +18,7 @@
     "verify-security": "node verify-security.mjs"
   },
   "devDependencies": {
-    "webdriverio": "10.1.0"
+    "webdriverio": "10.2.0"
   },
   "overrides": {
     "minimatch": "11.0.4",
