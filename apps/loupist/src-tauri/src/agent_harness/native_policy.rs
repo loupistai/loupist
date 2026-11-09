@@ -3,12 +3,11 @@
 //! how much third-party text the model has seen (`docs/runtime/permissions.md`).
 //! Every decision is Allow or Refuse: nothing here asks the user.
 
-use std::{
-    collections::BTreeMap,
-    path::{Component, Path, PathBuf},
-};
+use std::path::{Component, Path, PathBuf};
 
 use serde_json::Value;
+
+pub mod search;
 
 const MAX_PATH_BYTES: usize = 8 * 1024;
 const MAX_COMMAND_BYTES: usize = 64 * 1024;
@@ -137,42 +136,6 @@ impl NativeRoots {
             home: home.map(resolved),
         }
     }
-
-    /// The instruction files and Skill folder the Loupist's data folder
-    /// holds, which stay visible when the rest of the folder is hidden.
-    pub fn loupist_data_instructions(&self) -> [PathBuf; 3] {
-        [
-            self.loupist_data.join("skills"),
-            self.loupist_data.join("AGENTS.md"),
-            self.loupist_data.join("config.toml"),
-        ]
-    }
-
-    /// The global instruction files, which stay visible when the app data
-    /// root is hidden.
-    pub fn global_instructions(&self) -> [PathBuf; 2] {
-        [self.global.join("skills"), self.global.join("AGENTS.md")]
-    }
-
-    /// The workspace's own git config and hooks: read, never written.
-    pub fn workspace_git_config(&self) -> [PathBuf; 2] {
-        [
-            self.workspace.join(".git/config"),
-            self.workspace.join(".git/hooks"),
-        ]
-    }
-
-    /// The `CREDENTIAL_HOME` locations under this host's home folder.
-    pub fn credential_paths(&self) -> Vec<(PathBuf, Reach)> {
-        self.home
-            .iter()
-            .flat_map(|home| {
-                CREDENTIAL_HOME
-                    .iter()
-                    .map(move |(entry, reach)| (home.join(entry), *reach))
-            })
-            .collect()
-    }
 }
 
 /// First match wins, in this order.
@@ -188,11 +151,11 @@ pub enum PathClass {
     /// Anything else under the app data root or the Loupist's data folder.
     AppPrivate,
     /// A credential store or shell startup file under the home folder: never
-    /// read or written, as the command sandbox hides it.
+    /// read or written by file tools.
     Credentials,
     /// A git directory inside the workspace (`.git` as a file or folder and
-    /// everything in it, the `hooks/**` and `config` of a bare `*.git`): read,
-    /// never written, since the host's `git` runs what it holds.
+    /// everything in it, the `hooks/**` and `config` of a bare `*.git`): never
+    /// read or written.
     GitDir,
     Workspace,
     Outside,
@@ -213,13 +176,21 @@ pub fn classify(path: &Path, roots: &NativeRoots) -> Classified {
     } else {
         roots.workspace.join(path)
     };
+    let declared_git = git_dir(&lexical(&path), roots);
     let Some(path) = resolve_links(&path) else {
         return Classified {
             class: PathClass::Unresolvable,
             path: lexical(&path),
         };
     };
-    let class = if instruction_file(&path, roots) {
+    let class = if credential(&path, roots.home.as_deref()) {
+        PathClass::Credentials
+    } else if declared_git
+        || git_dir(&path, roots)
+        || under(&path, &resolved(&roots.workspace.join(".git")))
+    {
+        PathClass::GitDir
+    } else if instruction_file(&path, roots) {
         PathClass::Instructions
     } else if under(&path, &roots.scratch) {
         PathClass::Scratch
@@ -227,10 +198,6 @@ pub fn classify(path: &Path, roots: &NativeRoots) -> Classified {
         PathClass::Attachments
     } else if under(&path, &roots.app_data) || loupist_private(&path, roots) {
         PathClass::AppPrivate
-    } else if credential(&path, roots.home.as_deref()) {
-        PathClass::Credentials
-    } else if git_dir(&path, roots) {
-        PathClass::GitDir
     } else if under(&path, &roots.workspace) {
         PathClass::Workspace
     } else {
@@ -261,8 +228,10 @@ pub enum NativeRefusal {
     AppPrivate,
     /// A credential store or startup file under the home folder.
     Credentials,
-    /// A write into a git directory.
+    /// Any access to a git directory.
     GitDir,
+    /// A file with another name on disk can alias a protected file.
+    HardLink,
     /// A search rooted above the app data root would descend into it.
     SearchCoversAppData,
     /// The target's symlink chain loops or cannot be read.
@@ -275,18 +244,10 @@ pub enum NativeRefusal {
     /// A write to a file that has another name on disk (a hard link), which
     /// can be an instruction file, after this reply read third-party text.
     HardLinkAfterUntrustedText,
-    /// Bash after third-party text on a host without a verified sandbox.
-    CommandUnconfined,
+    /// Bash after third-party text.
+    CommandAfterUntrustedText,
     /// Bash under the custom-connection tier.
     OutboundPaused,
-}
-
-/// The sandbox a command runs in: the argv prefix the extension puts before
-/// the shell, and environment the command gets.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SandboxCommand {
-    pub argv: Vec<String>,
-    pub env: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -295,24 +256,13 @@ pub enum NativeDecision {
         /// The canonical target, for the extension's write pin.
         resolved: PathBuf,
     },
-    AllowCommand {
-        /// Absent when the command runs unconfined (a clean reply on a host
-        /// without a verified sandbox).
-        sandbox: Option<SandboxCommand>,
-    },
+    AllowCommand,
     Refuse(NativeRefusal),
 }
 
-/// `sandbox` builds the command's confinement when the host has a verified
-/// one; `network` says whether the command may reach the network.
-pub fn decide(
-    request: &NativeRequest,
-    roots: &NativeRoots,
-    exposure: Exposure,
-    sandbox: Option<&dyn Fn(bool) -> SandboxCommand>,
-) -> NativeDecision {
+pub fn decide(request: &NativeRequest, roots: &NativeRoots, exposure: Exposure) -> NativeDecision {
     if request.tool == NativeTool::Bash {
-        return decide_command(exposure, sandbox);
+        return decide_command(exposure);
     }
     let Some(target) = request.target.as_deref() else {
         return NativeDecision::Refuse(NativeRefusal::AppPrivate);
@@ -331,7 +281,7 @@ pub fn decide(
         PathClass::Credentials => NativeRefusal::Credentials,
         PathClass::Outside => NativeRefusal::Outside,
         PathClass::Attachments if tool.writes() => NativeRefusal::AppPrivate,
-        PathClass::GitDir if tool.writes() => NativeRefusal::GitDir,
+        PathClass::GitDir => NativeRefusal::GitDir,
         PathClass::Instructions if tool.writes() && exposure != Exposure::Clean => {
             NativeRefusal::InstructionsAfterUntrustedText
         }
@@ -342,9 +292,18 @@ pub fn decide(
         }
         PathClass::Scratch
         | PathClass::Attachments
-        | PathClass::GitDir
         | PathClass::Instructions
-        | PathClass::Workspace => return NativeDecision::AllowFile { resolved: path },
+        | PathClass::Workspace
+            if hard_linked(&path) =>
+        {
+            NativeRefusal::HardLink
+        }
+        PathClass::Scratch
+        | PathClass::Attachments
+        | PathClass::Instructions
+        | PathClass::Workspace => {
+            return NativeDecision::AllowFile { resolved: path };
+        }
     };
     NativeDecision::Refuse(refusal)
 }
@@ -362,21 +321,12 @@ fn hard_linked(_path: &Path) -> bool {
     false
 }
 
-/// The `bash` row of the table: the network is on in a clean reply and off
-/// after third-party text, which runs only inside a verified sandbox.
-pub fn decide_command(
-    exposure: Exposure,
-    sandbox: Option<&dyn Fn(bool) -> SandboxCommand>,
-) -> NativeDecision {
-    match (exposure, sandbox) {
-        (Exposure::Custom, _) => NativeDecision::Refuse(NativeRefusal::OutboundPaused),
-        (Exposure::Clean, sandbox) => NativeDecision::AllowCommand {
-            sandbox: sandbox.map(|build| build(true)),
-        },
-        (Exposure::ThisTurn, Some(build)) => NativeDecision::AllowCommand {
-            sandbox: Some(build(false)),
-        },
-        (Exposure::ThisTurn, None) => NativeDecision::Refuse(NativeRefusal::CommandUnconfined),
+/// Bash retains host execution before third-party text and is refused afterwards.
+pub fn decide_command(exposure: Exposure) -> NativeDecision {
+    match exposure {
+        Exposure::Clean => NativeDecision::AllowCommand,
+        Exposure::ThisTurn => NativeDecision::Refuse(NativeRefusal::CommandAfterUntrustedText),
+        Exposure::Custom => NativeDecision::Refuse(NativeRefusal::OutboundPaused),
     }
 }
 
@@ -430,9 +380,8 @@ pub enum Reach {
 
 /// Credential stores, cloud configs, keychains, shell startup files (which
 /// often export keys) and the container runtimes' folders (their credentials
-/// and the sockets that start containers outside the sandbox, with the
-/// network), relative to the home directory. Native file tools never touch
-/// them and the command sandbox hides them in both modes.
+/// and their control sockets), relative to the home directory. Native file
+/// tools never touch them.
 pub const CREDENTIAL_HOME: &[(&str, Reach)] = &[
     (".ssh", Reach::Tree),
     (".gnupg", Reach::Tree),
@@ -461,22 +410,28 @@ pub const CREDENTIAL_HOME: &[(&str, Reach)] = &[
 ];
 
 fn credential(target: &Path, home: Option<&Path>) -> bool {
-    let Some(rest) = home.and_then(|home| below(target, home)) else {
-        return false;
-    };
+    let Some(home) = home else { return false };
+    let rest = below(target, home);
     CREDENTIAL_HOME.iter().any(|(entry, reach)| {
-        let entry: Vec<&str> = entry.split('/').collect();
-        let matches = |depth: usize| {
-            rest.len() >= depth
-                && rest[..depth]
-                    .iter()
-                    .zip(&entry)
-                    .all(|(part, name)| named(part, name))
+        // Also cover a credential store symlinked into the workspace. Path
+        // spelling alone loses the protected home name after canonicalization.
+        let real = resolved(&home.join(entry));
+        let canonical = match reach {
+            Reach::Tree => under(target, &real),
+            Reach::File => {
+                target == real || identity(target).is_some_and(|id| Some(id) == identity(&real))
+            }
         };
-        match reach {
-            Reach::File => rest.len() == entry.len() && matches(entry.len()),
-            Reach::Tree => matches(entry.len()),
-        }
+        canonical
+            || rest.as_ref().is_some_and(|rest| {
+                let entry: Vec<&str> = entry.split('/').collect();
+                rest.len() >= entry.len()
+                    && rest[..entry.len()]
+                        .iter()
+                        .zip(&entry)
+                        .all(|(part, name)| named(part, name))
+                    && (*reach == Reach::Tree || rest.len() == entry.len())
+            })
     })
 }
 
@@ -484,7 +439,7 @@ fn credential(target: &Path, home: Option<&Path>) -> bool {
 /// (the `.git` file or folder itself included), and the `hooks/**` and
 /// `config` of a bare `*.git` or a submodule's `modules/<path>`. The host's
 /// `git` runs hooks, filters and `core.fsmonitor` from there, so no tool
-/// writes it. Another repository's git directory is outside the workspace
+/// reads or writes it. Another repository's git directory is outside the workspace
 /// and refused as such.
 fn git_dir(target: &Path, roots: &NativeRoots) -> bool {
     let Some(parts) = below(target, &roots.workspace) else {
@@ -749,11 +704,11 @@ mod tests {
     fn kind(decision: &NativeDecision) -> &'static str {
         match decision {
             NativeDecision::AllowFile { .. } => "allow",
-            NativeDecision::AllowCommand { sandbox: None } => "allow unconfined",
-            NativeDecision::AllowCommand { sandbox: Some(_) } => "allow sandboxed",
+            NativeDecision::AllowCommand => "allow command",
             NativeDecision::Refuse(NativeRefusal::AppPrivate) => "refuse app_private",
             NativeDecision::Refuse(NativeRefusal::Credentials) => "refuse credentials",
             NativeDecision::Refuse(NativeRefusal::GitDir) => "refuse git_dir",
+            NativeDecision::Refuse(NativeRefusal::HardLink) => "refuse hard_link_alias",
             NativeDecision::Refuse(NativeRefusal::SearchCoversAppData) => "refuse search",
             NativeDecision::Refuse(NativeRefusal::Unresolvable) => "refuse unresolvable",
             NativeDecision::Refuse(NativeRefusal::Outside) => "refuse outside",
@@ -761,13 +716,110 @@ mod tests {
                 "refuse instructions"
             }
             NativeDecision::Refuse(NativeRefusal::HardLinkAfterUntrustedText) => "refuse hard_link",
-            NativeDecision::Refuse(NativeRefusal::CommandUnconfined) => "refuse unconfined",
+            NativeDecision::Refuse(NativeRefusal::CommandAfterUntrustedText) => "refuse command",
             NativeDecision::Refuse(NativeRefusal::OutboundPaused) => "refuse outbound",
         }
     }
 
     fn decided(request: &NativeRequest, roots: &NativeRoots, exposure: Exposure) -> &'static str {
-        kind(&decide(request, roots, exposure, None))
+        kind(&decide(request, roots, exposure))
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn credentials_cannot_be_reached_by_symlinked_store_or_hard_link() {
+        use std::os::unix::fs::symlink;
+        let f = fixture();
+        let workspace = &f.roots.workspace;
+        let relocated = workspace.join("notes/keys");
+        std::fs::rename(f.home.join(".ssh"), &relocated).unwrap();
+        symlink(&relocated, f.home.join(".ssh")).unwrap();
+        let alias = workspace.join("notes/key-alias");
+        std::fs::hard_link(relocated.join("id_ed25519"), &alias).unwrap();
+        for exposure in [Exposure::Clean, Exposure::ThisTurn, Exposure::Custom] {
+            for tool in ["read", "ls", "find", "grep", "write", "edit"] {
+                for path in [
+                    f.home.join(".ssh/id_ed25519"),
+                    relocated.join("id_ed25519"),
+                    alias.clone(),
+                ] {
+                    assert!(
+                        matches!(
+                            decide(&request(tool, &path), &f.roots, exposure),
+                            NativeDecision::Refuse(_)
+                        ),
+                        "{tool} {path:?} {exposure:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn searches_admit_every_entry_and_never_follow_protected_or_ignore_links() {
+        use std::os::unix::fs::symlink;
+        let f = fixture();
+        let workspace = &f.roots.workspace;
+        let private = f.roots.loupist_data.join("activity.log");
+        std::fs::write(&private, "private-app-marker").unwrap();
+        std::fs::hard_link(
+            f.home.join(".ssh/id_ed25519"),
+            workspace.join("notes/alias"),
+        )
+        .unwrap();
+        symlink(&f.roots.app_data, workspace.join("notes/app-link")).unwrap();
+        // A malicious ignore file would hide the ordinary note if read.
+        std::fs::write(f.home.join(".ssh/id_ed25519"), "plan.md\n").unwrap();
+        symlink(
+            f.home.join(".ssh/id_ed25519"),
+            workspace.join("notes/.ignore"),
+        )
+        .unwrap();
+        std::fs::write(workspace.join(".gitignore"), "ignored.csv\nignored-dir/\n").unwrap();
+        std::fs::create_dir_all(workspace.join("ignored-dir")).unwrap();
+        std::fs::create_dir_all(workspace.join("exports")).unwrap();
+        std::fs::write(workspace.join("exports/.gitignore"), "*.csv\n!keep.csv\n").unwrap();
+        for name in [
+            "root.csv",
+            "ignored.csv",
+            "exports/keep.csv",
+            "exports/hidden.csv",
+            "ignored-dir/data.csv",
+        ] {
+            std::fs::write(workspace.join(name), "value\n1\n").unwrap();
+        }
+        for exposure in [Exposure::Clean, Exposure::ThisTurn] {
+            let result = search::snapshot(workspace, &f.roots, exposure, true).unwrap();
+            let paths: Vec<&str> = result["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|e| e["path"].as_str().unwrap())
+                .collect();
+            for refused in [
+                ".git/config",
+                ".loupist/activity.log",
+                "notes/alias",
+                "notes/app-link",
+                "notes/.ignore",
+                "ignored.csv",
+                "ignored-dir/data.csv",
+                "exports/hidden.csv",
+            ] {
+                assert!(
+                    !paths.contains(&workspace.join(refused).to_str().unwrap()),
+                    "{refused}: {paths:?}"
+                );
+            }
+            for admitted in ["root.csv", "exports/keep.csv", "notes/plan.md"] {
+                assert!(
+                    paths.contains(&workspace.join(admitted).to_str().unwrap()),
+                    "{admitted}: {paths:?}"
+                );
+            }
+            assert_eq!(result["truncated"], false);
+        }
     }
 
     /// A hard link in a writable subfolder is another name for its file, so
@@ -804,7 +856,7 @@ mod tests {
                     &f.roots,
                     exposure
                 ),
-                "allow"
+                "refuse hard_link_alias"
             );
         }
         assert_eq!(
@@ -813,7 +865,7 @@ mod tests {
                 &f.roots,
                 Exposure::Clean
             ),
-            "allow"
+            "refuse hard_link_alias"
         );
     }
 
@@ -1022,7 +1074,6 @@ mod tests {
                 &request("write", variant.join("new/planted.sh")),
                 &f.roots,
                 Exposure::Clean,
-                None
             ),
             NativeDecision::Refuse(NativeRefusal::Outside)
         );
@@ -1111,7 +1162,11 @@ mod tests {
                 "allow",
             ),
             (request("read", ws.join("notes/plan.md")), "allow", "allow"),
-            (request("read", ws.join(".git/config")), "allow", "allow"),
+            (
+                request("read", ws.join(".git/config")),
+                "refuse git_dir",
+                "refuse git_dir",
+            ),
             (
                 request("read", home.join("Documents/shared.csv")),
                 "refuse outside",
@@ -1153,7 +1208,11 @@ mod tests {
                 "refuse outside",
             ),
             (request("grep", ws.clone()), "allow", "allow"),
-            (request("grep", ws.join(".git")), "allow", "allow"),
+            (
+                request("grep", ws.join(".git")),
+                "refuse git_dir",
+                "refuse git_dir",
+            ),
             (request("grep", f.roots.scratch.clone()), "allow", "allow"),
             (
                 request("find", f.roots.attachments.clone()),
@@ -1227,7 +1286,7 @@ mod tests {
                 "refuse outside",
                 "refuse outside",
             ),
-            (bash("ls"), "allow unconfined", "refuse unconfined"),
+            (bash("ls"), "allow command", "refuse command"),
         ];
         for (request, clean_expected, exposed_expected) in &rows {
             assert_eq!(
@@ -1258,34 +1317,12 @@ mod tests {
     }
 
     #[test]
-    fn a_verified_sandbox_runs_commands_online_when_clean_and_offline_after_third_party_text() {
-        let f = fixture();
-        let build = |network: bool| SandboxCommand {
-            argv: vec![if network { "online" } else { "offline" }.to_owned()],
-            env: BTreeMap::new(),
-        };
-        let sandboxed = |exposure| match decide(&bash("ls"), &f.roots, exposure, Some(&build)) {
-            NativeDecision::AllowCommand {
-                sandbox: Some(sandbox),
-            } => sandbox.argv,
-            other => panic!("{other:?}"),
-        };
-        assert_eq!(sandboxed(Exposure::Clean), ["online"]);
-        assert_eq!(sandboxed(Exposure::ThisTurn), ["offline"]);
-        assert_eq!(
-            decide(&bash("ls"), &f.roots, Exposure::Custom, Some(&build)),
-            NativeDecision::Refuse(NativeRefusal::OutboundPaused)
-        );
-    }
-
-    #[test]
     fn allowed_writes_return_the_canonical_target() {
         let f = fixture();
         let decision = decide(
             &request("write", f.roots.workspace.join("notes/./new/../plan.md")),
             &f.roots,
             Exposure::Clean,
-            None,
         );
         assert_eq!(
             decision,

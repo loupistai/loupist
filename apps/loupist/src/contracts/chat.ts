@@ -89,7 +89,7 @@ export type ChatProgressItem =
 
 /**
  * Why Rust refused a failed step. `untrusted_text_paused`: the answer read third-party text,
- * so a command without a verified sandbox, an instruction write, a connection, a schedule
+ * so a command, an instruction write, a connection, a schedule
  * change or a new site stayed off. `protected_path`: the path is inside the app's private
  * data, a credential store or a git directory's hooks or config. `outside_workspace`: the
  * path is outside the Loupist folder.

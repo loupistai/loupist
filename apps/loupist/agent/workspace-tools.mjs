@@ -7,13 +7,12 @@ import {
   createReadToolDefinition,
   createWriteToolDefinition,
   detectSupportedImageMimeTypeFromFile,
-  getShellConfig,
 } from "@earendil-works/pi-coding-agent";
-import { spawn } from "node:child_process";
 import { constants, lstatSync, readlinkSync, realpathSync } from "node:fs";
-import { access, mkdir, open, readFile, writeFile } from "node:fs/promises";
-import { constants as osConstants, homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { spawn } from "node:child_process";
+import { access, mkdir, open } from "node:fs/promises";
+import { homedir } from "node:os";
+import { basename, dirname, isAbsolute, join, matchesGlob, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const WORKSPACE_ENVIRONMENT_KEYS = new Set([
@@ -98,17 +97,37 @@ const sameTarget = (left, right) => process.platform === "win32"
   ? left.toLowerCase() === right.toLowerCase() : left === right;
 
 /** File operations that write only the target Rust authorized, re-resolved at write time. */
-function authorizedFileOperations(name, expected) {
+function authorizedFileOperations(name, expected, identity) {
   const write = async (path, content) => {
     if (!sameTarget(canonicalTargetPath(path), expected)) {
       throw new Error("Native file target changed after authorization");
     }
-    await writeFile(path, content, "utf-8");
+    const flags = identity === null ? constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL
+      : constants.O_WRONLY | (identity === undefined ? constants.O_CREAT : 0);
+    const handle = await open(expected, flags | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+    try {
+      await verifyHandle(handle, identity);
+      await handle.truncate(0);
+      await handle.writeFile(content, "utf-8");
+    } finally { await handle.close(); }
   };
   return name === "write"
-    ? { writeFile: write, mkdir: (directory) => mkdir(directory, { recursive: true }).then(() => {}) }
-    : { readFile: (path) => readFile(path), writeFile: write,
+    ? { writeFile: write, mkdir: async (directory) => {
+      if (!sameTarget(canonicalTargetPath(directory), dirname(expected))) {
+        throw new Error("Native file target changed after authorization");
+      }
+      await mkdir(dirname(expected), { recursive: true });
+    } }
+    : { readFile: () => pinnedReadOperations(expected, identity).readFile(), writeFile: write,
       access: (path) => access(path, constants.R_OK | constants.W_OK) };
+}
+
+async function verifyHandle(handle, identity) {
+  const stat = await handle.stat({ bigint: true });
+  if (!stat.isFile() || stat.nlink > 1n || (identity != null &&
+    (stat.dev !== BigInt(identity.dev) || stat.ino !== BigInt(identity.ino)))) {
+    throw new Error("Native file target changed after authorization");
+  }
 }
 
 /** Read operations pinned to the file Rust authorized: the canonical path is
@@ -120,15 +139,21 @@ function pinnedReadOperations(expected, identity) {
   const missing = () => Object.assign(new Error(`ENOENT: no such file or directory, open '${expected}'`), { code: "ENOENT" });
   return {
     access: async () => { if (identity === null) throw missing(); },
-    detectImageMimeType: () => detectSupportedImageMimeTypeFromFile(expected),
+    detectImageMimeType: async () => {
+      if (identity === null) throw missing();
+      const handle = await open(expected, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+      try {
+        await verifyHandle(handle, identity);
+        // Pi's detector opens its argument. On the supported Unix hosts this
+        // reopens the verified descriptor, so sniffing cannot follow a swap.
+        return await detectSupportedImageMimeTypeFromFile(process.platform === "win32" ? expected : `/dev/fd/${handle.fd}`);
+      } finally { await handle.close(); }
+    },
     readFile: async () => {
       if (identity === null) throw missing();
-      const handle = await open(expected, "r");
+      const handle = await open(expected, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
       try {
-        const stat = await handle.stat({ bigint: true });
-        if (stat.dev !== BigInt(identity.dev) || stat.ino !== BigInt(identity.ino)) {
-          throw new Error("Native file target changed after authorization");
-        }
+        await verifyHandle(handle, identity);
         return await handle.readFile();
       } finally {
         await handle.close();
@@ -139,6 +164,98 @@ function pinnedReadOperations(expected, identity) {
 
 const FILE_WRITERS = { write: createWriteToolDefinition, edit: createEditToolDefinition };
 const SEARCHERS = new Set(["ls", "find", "grep"]);
+
+const MAX_SEARCH_BYTES = 50 * 1024;
+
+/** Rust admits every entry, including ignore files, before any content search.
+ * rg receives an identity-checked descriptor on stdin, never a host path to
+ * walk. A stale or missing manifest fails closed. */
+async function searchWorkspace(name, input, permission, signal) {
+  const scope = permission?.search;
+  if (!scope || !Array.isArray(scope.entries) || typeof permission.resolved !== "string") {
+    throw new Error("Native search scope is unavailable");
+  }
+  if (signal?.aborted) throw new Error("Operation aborted");
+  if (name === "ls" && !scope.directory) throw new Error("Not a directory");
+  const root = permission.resolved;
+  const limit = Math.min(10000, Math.max(1, input.limit ?? (name === "grep" ? 100 : name === "ls" ? 500 : 1000)));
+  const lines = [];
+  let bytes = 0;
+  let count = 0;
+  let truncated = scope.truncated === true;
+  const glob = name === "find" ? input.pattern : input.glob;
+  const matches = (path) => !glob || matchesGlob(glob.includes("/") ? relative(root, path) : basename(path), glob);
+  for (const entry of scope.entries) {
+    if (signal?.aborted) throw new Error("Operation aborted");
+    if (count >= limit || bytes >= MAX_SEARCH_BYTES) { truncated = true; break; }
+    if (typeof entry.path !== "string" || !matches(entry.path)) continue;
+    const label = scope.directory ? relative(root, entry.path).replaceAll("\\", "/") : basename(entry.path);
+    if (name !== "grep") {
+      const line = label + (name === "ls" && entry.directory ? "/" : "");
+      lines.push(line); bytes += Buffer.byteLength(line) + 1; count++;
+      continue;
+    }
+    if (entry.directory) continue;
+    const handle = await open(entry.path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+    try {
+      await verifyHandle(handle, entry.identity);
+      const args = ["--no-config", "--json", "--color=never", "--max-count", String(limit - count)];
+      if (input.ignoreCase) args.push("--ignore-case");
+      if (input.literal) args.push("--fixed-strings");
+      if (input.context > 0) args.push("--context", String(Math.min(100, input.context)));
+      args.push("--", input.pattern, "-");
+      const remaining = MAX_SEARCH_BYTES - bytes;
+      const result = await grepDescriptor(handle.fd, args, signal, remaining);
+      for (const event of result.events) {
+        if (event.type !== "match" && event.type !== "context") continue;
+        const text = event.data?.lines?.text;
+        if (typeof text !== "string") continue;
+        const line = `${label}:${event.data.line_number}: ${text.replace(/\r?\n$/, "").slice(0, 2000)}`;
+        lines.push(line); bytes += Buffer.byteLength(line) + 1;
+        if (event.type === "match") count++;
+      }
+      truncated ||= result.truncated;
+    } finally { await handle.close(); }
+  }
+  let text = lines.join("\n") || (name === "grep" ? "No matches found" : name === "find" ? "No files found matching pattern" : "(empty directory)");
+  if (Buffer.byteLength(text) > MAX_SEARCH_BYTES) { text = Buffer.from(text).subarray(0, MAX_SEARCH_BYTES).toString("utf8"); truncated = true; }
+  if (truncated || count >= limit) text += `\n\n[Search limit reached; narrow the path or pattern.]`;
+  return { content: [{ type: "text", text }], details: {
+    ...(count >= limit ? { resultLimitReached: limit } : {}),
+    ...(truncated ? { truncated: true } : {}),
+  } };
+}
+
+function grepDescriptor(fd, args, signal, maxBytes) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error("Operation aborted"));
+    const child = spawn(process.platform === "win32" ? "rg.exe" : "rg", args, {
+      stdio: [fd, "pipe", "pipe"], env: allowedWorkspaceEnvironment(),
+    });
+    let output = "", errors = "", truncated = false, timedOut = false;
+    const kill = () => child.kill("SIGKILL");
+    const timer = setTimeout(() => { timedOut = true; kill(); }, 10000);
+    signal?.addEventListener("abort", kill, { once: true });
+    child.stdout.on("data", (chunk) => {
+      // JSON framing can exceed rendered text size; cap both independently.
+      if (Buffer.byteLength(output) + chunk.length > Math.max(maxBytes * 4, 16384)) { truncated = true; kill(); }
+      else output += chunk.toString("utf8");
+    });
+    child.stderr.on("data", (chunk) => { errors = (errors + chunk).slice(0, 4096); });
+    const cleanup = () => { clearTimeout(timer); signal?.removeEventListener("abort", kill); };
+    child.once("error", (error) => { cleanup(); reject(error); });
+    child.once("close", (code) => {
+      cleanup();
+      if (signal?.aborted) return reject(new Error("Operation aborted"));
+      if (timedOut) return reject(new Error("Native search timed out"));
+      if (!truncated && code !== 0 && code !== 1) return reject(new Error(errors || "Native search failed"));
+      const events = output.split("\n").filter(Boolean).flatMap((line) => {
+        try { return [JSON.parse(line)]; } catch { return []; }
+      });
+      resolve({ events, truncated });
+    });
+  });
+}
 
 /** Native file tools and Bash never run at the same time in this process:
  * Bash holds the lock alone, file tools share it among themselves, and
@@ -174,68 +291,6 @@ export class ToolLock {
       });
     }
   }
-}
-
-/** How long after the shell exits to wait for descendants holding its pipes. */
-const PIPE_GRACE_MS = 500;
-
-const isStringMap = (value) => typeof value === "object" && value !== null && !Array.isArray(value)
-  && Object.values(value).every((entry) => typeof entry === "string");
-
-/** Bash operations that run every command inside the sandbox Rust returned
- * from `native.authorize`: its argv prefix, then the shell and its arguments,
- * then the command, each as its own argument, so nothing is re-quoted. A
- * malformed sandbox throws, so a command Rust meant to confine never runs
- * unconfined. As Pi's local operations, output streams and an abort or
- * timeout kills the whole process group. */
-export function sandboxedBashOperations(sandbox) {
-  const argv = sandbox?.argv;
-  if (!Array.isArray(argv) || argv.length === 0 || !argv.every((part) => typeof part === "string" && part.length > 0)
-    || (sandbox.env !== undefined && !isStringMap(sandbox.env))) {
-    throw new Error("Native Bash sandbox is invalid, so the command does not run");
-  }
-  const [program, ...prefix] = argv;
-  const shell = getShellConfig();
-  return {
-    exec: (command, cwd, { onData, signal, timeout, env }) => new Promise((resolve, reject) => {
-      if (signal?.aborted) return reject(new Error("aborted"));
-      const child = spawn(program, [...prefix, shell.shell, ...shell.args, command], {
-        cwd, detached: true, env: { ...env, ...sandbox.env }, stdio: ["ignore", "pipe", "pipe"],
-      });
-      const kill = () => {
-        if (!child.pid) return;
-        try { process.kill(-child.pid, "SIGKILL"); } catch {
-          try { process.kill(child.pid, "SIGKILL"); } catch { /* already gone */ }
-        }
-      };
-      let timedOut = false;
-      let settled = false;
-      let graceTimer;
-      const timer = timeout === undefined ? undefined : setTimeout(() => { timedOut = true; kill(); }, timeout * 1000);
-      signal?.addEventListener("abort", kill, { once: true });
-      child.stdout.on("data", onData);
-      child.stderr.on("data", onData);
-      const settle = (outcome) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        clearTimeout(graceTimer);
-        signal?.removeEventListener("abort", kill);
-        child.stdout.destroy();
-        child.stderr.destroy();
-        outcome();
-      };
-      const finish = (code, signalName) => settle(() => {
-        if (signal?.aborted) return reject(new Error("aborted"));
-        if (timedOut) return reject(new Error(`timeout:${timeout}`));
-        resolve({ exitCode: code ?? (signalName ? 128 + (osConstants.signals[signalName] ?? 0) : 1) });
-      });
-      child.once("error", (error) => settle(() => reject(error)));
-      child.once("close", finish);
-      // A background descendant can hold the pipes open after the shell exits.
-      child.once("exit", (code, signalName) => { graceTimer = setTimeout(() => finish(code, signalName), PIPE_GRACE_MS); });
-    }),
-  };
 }
 
 /** What `native.authorize` is told about one call: the resolved file for read,
@@ -293,20 +348,21 @@ export function registerWorkspaceTools(pi, workspaceRoot, authorize) {
           } : result;
           const expected = typeof permission?.resolved === "string"
             ? permission.resolved : request.path === undefined ? undefined : canonicalTargetPath(request.path);
-          // Rust names the sandbox a command must run in; without one the
-          // command runs as before (a clean reply on a host with no sandbox).
+          if (SEARCHERS.has(definition.name)) {
+            return deliver(await searchWorkspace(definition.name, input, permission, signal));
+          }
           // A search runs on the canonical root Rust decided about, and a
           // read opens the file Rust decided about, by identity when the
           // host reports one.
+          if (writer && expected !== undefined && !sameTarget(canonicalTargetPath(request.path), expected)) {
+            throw new Error("Native file target changed after authorization");
+          }
           const run = writer && expected !== undefined
-            ? writer(workspaceRoot, { operations: authorizedFileOperations(definition.name, expected) })
+            ? writer(workspaceRoot, { operations: authorizedFileOperations(definition.name, expected, permission?.identity) })
             : definition.name === "read" && expected !== undefined && permission?.identity !== undefined
               ? createReadToolDefinition(workspaceRoot, { operations: pinnedReadOperations(expected, permission.identity) })
-              : definition.name === "bash" && permission?.sandbox !== undefined
-                ? createBashToolDefinition(workspaceRoot, { ...bashOptions, operations: sandboxedBashOperations(permission.sandbox) })
-                : definition;
-          const target = SEARCHERS.has(definition.name) && typeof permission?.resolved === "string"
-            ? { ...input, path: permission.resolved } : input;
+              : definition;
+          const target = writer && expected !== undefined ? { ...input, path: expected } : input;
           const result = await run.execute(id, target, signal,
             onUpdate ? (update) => onUpdate(deliver(update)) : undefined, {
             ...ctx,

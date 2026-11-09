@@ -1,6 +1,6 @@
 # Untrusted text
 
-Third-party text raises a turn tier that pauses outbound tools, takes commands offline, wraps the text the model sees, and keeps `web_fetch` to known sites. Holdings quantities stay on this computer.
+Third-party text raises a turn tier that pauses outbound tools, pauses commands, wraps the text the model sees, and keeps `web_fetch` to known sites. Holdings quantities stay on this computer.
 
 Third-party text raises a weaker tier of the same `TurnTaint`
 (`apps/loupist/src-tauri/src/custom_connections/taint.rs`). After a `web_search`,
@@ -8,14 +8,7 @@ Third-party text raises a weaker tier of the same `TurnTaint`
 numeric-only list (`NUMERIC_ONLY_OPENBB_TOOLS`; profiles, filing documents, transcripts and
 news raise it, prices and statements do not), Rust refuses custom-connection calls
 and schedule create, update, status and Run now for the rest of the turn with
-`untrusted_text_paused`. Native Bash keeps running inside the OS sandbox with the
-network and the host's Unix sockets off and the Loupist folder mounted read-only
-except its existing subfolders, `outputs/` and scratch, so a command cannot
-create, change or remove anything at the folder's top level or in its dot
-folders, where a later reply loads instructions; a hard link the user or a clean
-reply left in a subfolder is the one way through
-([After third-party text](permissions.md#after-third-party-text)). Where no
-verified sandbox exists Bash is refused.
+`untrusted_text_paused`. Native Bash is refused with the same code on every host, without a card or override.
 Native `write` and `edit` refuse an instruction file, and a file with another
 name on disk (a hard link), for the reply; native file tools stay inside the
 Loupist folder in every reply

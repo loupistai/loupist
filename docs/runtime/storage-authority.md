@@ -14,14 +14,13 @@ Native tools run as the user and can use installed runtimes. Rust decides every
 native call before it runs and never asks: file tools reach the Loupist folder, this
 run's scratch and this Chat's attachments, and refuse the app's private data
 (credentials, the database, Pi runtime files), home credential locations and
-everything outside the folder; Bash runs inside an OS sandbox (bubblewrap on Linux;
-no other host has one yet) that confines writes to the folder and scratch, hides the
-same private data, and drops the network once the reply has read third-party text
+everything outside the folder. Bash keeps its pre-PR host execution before
+third-party text and is refused afterwards, with no permission card
 ([Native tool permissions](permissions.md)). Bash receives an allowlisted environment
 without app credentials or shell startup hooks; its PATH is described under
-[Local workspace execution](chat-turns.md#local-workspace-execution). A command can
-still read other user-readable files outside the masked set, the policy's residual
-risk. The folder-opening UI requires an explicit trust check; there is no saved
+[Local workspace execution](chat-turns.md#local-workspace-execution). Clean commands
+can still access user-readable host files, app data and network services.
+The folder-opening UI requires an explicit trust check; there is no saved
 per-Loupist native-execution switch.
 
 Release builds do not forward host `*_API_KEY` variables to Pi; Pi uses the saved

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -7,7 +7,24 @@ import { pathToFileURL } from "node:url";
 import { setTimeout } from "node:timers/promises";
 import test from "node:test";
 
-import { allowedWorkspaceEnvironment, canonicalTargetPath, nativeTargetPath, registerWorkspaceTools, sandboxedBashOperations, ToolLock } from "./workspace-tools.mjs";
+import { allowedWorkspaceEnvironment, canonicalTargetPath, nativeTargetPath, registerWorkspaceTools, ToolLock } from "./workspace-tools.mjs";
+
+function manifestEntry(path) {
+  const stat = statSync(path, { bigint: true });
+  return { path, directory: stat.isDirectory(), identity: { dev: String(stat.dev), ino: String(stat.ino) } };
+}
+
+function localPermission(name, request) {
+  if (name === "bash") return { allowed: true };
+  const resolved = canonicalTargetPath(request.path);
+  const entry = existsSync(resolved) ? manifestEntry(resolved) : null;
+  const result = { allowed: true, resolved, identity: entry?.identity ?? null };
+  if (["ls", "find", "grep"].includes(name)) {
+    result.search = { directory: entry?.directory, entries: entry?.directory
+      ? readdirSync(resolved).map((file) => manifestEntry(join(resolved, file))) : entry ? [entry] : [], truncated: false };
+  }
+  return result;
+}
 
 function workspaceFixture(t) {
   const temporary = realpathSync(mkdtempSync(join(tmpdir(), "loupist-workspace-tools-")));
@@ -17,7 +34,7 @@ function workspaceFixture(t) {
   mkdirSync(privateRuntime);
   t.after(() => rmSync(temporary, { recursive: true, force: true }));
   const tools = new Map();
-  registerWorkspaceTools({ registerTool: (tool) => tools.set(tool.name, tool) }, workspace);
+  registerWorkspaceTools({ registerTool: (tool) => tools.set(tool.name, tool) }, workspace, localPermission);
   const run = (name, input, signal, onUpdate) => tools.get(name).execute(
     `test-${name}`, input, signal, onUpdate, { cwd: privateRuntime },
   );
@@ -86,65 +103,42 @@ test("native read, write, edit, and ls target the workspace despite a private se
   assert.equal(resultText(await run("read", { path: externalFile })), "shared research\n");
 });
 
-test("native find works offline without system fd and preserves glob, ignore, limit, and symlink behavior", (t) => {
-  const { temporary, workspace, privateRuntime } = workspaceFixture(t);
-  const bundledTools = resolve(import.meta.dirname, "../src-tauri/resources/pi-runtime/workspace-tools");
-  const bundledFd = join(bundledTools, process.platform === "win32" ? "fd.exe" : "fd");
-  if (!existsSync(bundledFd)) {
-    t.skip("stage the pinned workspace tools to run the packaged find integration test");
-    return;
-  }
-  mkdirSync(join(workspace, ".git"));
+test("native find uses only the host manifest and preserves glob, limits and cancellation offline", async (t) => {
+  const { workspace, privateRuntime } = workspaceFixture(t);
   mkdirSync(join(workspace, "exports"));
-  mkdirSync(join(workspace, "ignored-dir"));
-  writeFileSync(join(workspace, ".gitignore"), "ignored.csv\nignored-dir/\n");
-  writeFileSync(join(workspace, "exports/.gitignore"), "*.csv\n!keep.csv\n");
-  for (const name of ["root.csv", "ignored.csv", "exports/keep.csv", "exports/hidden.csv", "ignored-dir/data.csv"]) {
-    writeFileSync(join(workspace, name), "value\n1\n");
-  }
-  const outside = join(temporary, "external");
-  mkdirSync(outside);
-  writeFileSync(join(outside, "external.csv"), "private research");
-  if (process.platform !== "win32") symlinkSync(outside, join(workspace, "linked-directory"));
-  const source = `
-    import assert from 'node:assert/strict';
-    import { registerWorkspaceTools } from ${JSON.stringify(pathToFileURL(join(import.meta.dirname, "workspace-tools.mjs")).href)};
-    globalThis.fetch = () => { throw new Error('offline find must never download tools'); };
-    const tools = new Map();
-    registerWorkspaceTools({ registerTool: tool => tools.set(tool.name, tool) }, ${JSON.stringify(workspace)});
-    const run = (input, signal) => tools.get('find').execute('find', input, signal, undefined, { cwd: ${JSON.stringify(privateRuntime)} });
-    const found = await run({ pattern: '**/*.csv' });
-    assert.deepEqual(found.content[0].text.split('\\n').sort(), ['exports/keep.csv', 'root.csv']);
-    const selected = await run({ pattern: '*.csv', path: ${JSON.stringify(join(workspace, "exports"))} });
-    assert.equal(selected.content[0].text, 'keep.csv');
-    const bounded = await run({ pattern: '*.csv', limit: 1 });
-    assert.equal(bounded.details.resultLimitReached, 1);
-    const aborted = new AbortController(); aborted.abort();
-    await assert.rejects(run({ pattern: '*.csv' }, aborted.signal), /Operation aborted/);
-  `;
-  const child = spawnSync(process.execPath, ["--input-type=module", "-e", source], {
-    cwd: privateRuntime,
-    env: { ...allowedWorkspaceEnvironment(), PATH: bundledTools, PI_OFFLINE: "1", PI_CODING_AGENT_DIR: join(temporary, "private-agent") },
-    encoding: "utf8",
-    timeout: 15_000,
-  });
-  assert.equal(child.status, 0, child.stderr || child.error?.message);
+  mkdirSync(join(workspace, ".loupist"));
+  for (const file of ["root.csv", "exports/keep.csv", ".loupist/secret.csv"]) writeFileSync(join(workspace, file), "value\n1\n");
+  const approved = ["root.csv", "exports/keep.csv"].map((path) => manifestEntry(join(workspace, path)));
+  const tools = toolsAuthorizedBy(workspace, async (name, request) => ({
+    allowed: true, resolved: request.path,
+    search: { directory: true, entries: approved.filter((e) => e.path.startsWith(request.path + "/")), truncated: false },
+  }));
+  const run = (input, signal) => tools.get("find").execute("find", input, signal, undefined, { cwd: privateRuntime });
+  assert.deepEqual(resultText(await run({ pattern: "**/*.csv" })).split("\n").sort(), ["exports/keep.csv", "root.csv"]);
+  assert.equal(resultText(await run({ pattern: "*.csv", path: "exports" })), "keep.csv");
+  assert.equal((await run({ pattern: "*.csv", limit: 1 })).details.resultLimitReached, 1);
+  const aborted = new AbortController(); aborted.abort();
+  await assert.rejects(run({ pattern: "*.csv" }, aborted.signal), /Operation aborted/);
+  const missing = toolsAuthorizedBy(workspace, async () => ({ allowed: true }));
+  await assert.rejects(missing.get("find").execute("missing", { pattern: "*" }), /scope is unavailable/);
 });
 
 test("native grep works offline without system rg", (t) => {
   const { temporary, workspace, privateRuntime } = workspaceFixture(t);
   const bundledTools = resolve(import.meta.dirname, "../src-tauri/resources/pi-runtime/workspace-tools");
-  if (!existsSync(join(bundledTools, process.platform === "win32" ? "rg.exe" : "rg"))) {
-    t.skip("stage the pinned workspace tools to run the packaged grep integration test");
-    return;
-  }
+  assert(existsSync(join(bundledTools, process.platform === "win32" ? "rg.exe" : "rg")), "stage the pinned workspace tools before running the grep integration test");
   writeFileSync(join(workspace, "notes.txt"), "alpha\nneedle here\nomega\n");
   const source = `
     import assert from 'node:assert/strict';
     import { registerWorkspaceTools } from ${JSON.stringify(pathToFileURL(join(import.meta.dirname, "workspace-tools.mjs")).href)};
+    import { statSync } from "node:fs";
+    const entry = ${JSON.stringify(join(workspace, "notes.txt"))};
     globalThis.fetch = () => { throw new Error('offline grep must never download tools'); };
     const tools = new Map();
-    registerWorkspaceTools({ registerTool: tool => tools.set(tool.name, tool) }, ${JSON.stringify(workspace)});
+    registerWorkspaceTools({ registerTool: tool => tools.set(tool.name, tool) }, ${JSON.stringify(workspace)}, async () => {
+      const stat = statSync(entry, { bigint: true });
+      return { allowed: true, resolved: ${JSON.stringify(workspace)}, search: { directory: true, entries: [{ path: entry, directory: false, identity: { dev: String(stat.dev), ino: String(stat.ino) } }] } };
+    });
     const found = await tools.get('grep').execute('grep', { pattern: 'needle', literal: true }, undefined, undefined, { cwd: ${JSON.stringify(privateRuntime)} });
     assert.match(found.content[0].text, /notes\\.txt:2: needle here/);
   `;
@@ -241,106 +235,11 @@ test("aborting native Bash stops the command and its child process", { skip: pro
   assert(pids.every((pid) => !isRunning(pid)), "Bash abort must stop both the parent command and its child");
 });
 
-/** A stand-in sandbox: records the arguments it was given, then runs them. */
-function recordingSandbox(directory) {
-  const script = join(directory, "fake-sandbox.mjs");
-  const record = join(directory, "sandbox-argv.json");
-  writeFileSync(script, `
-    import { spawnSync } from "node:child_process";
-    import { writeFileSync } from "node:fs";
-    writeFileSync(${JSON.stringify(record)}, JSON.stringify(process.argv.slice(2)));
-    const result = spawnSync(process.argv[2], process.argv.slice(3), { stdio: "inherit", env: process.env });
-    process.exit(result.status ?? 1);
-  `);
-  return { argv: [process.execPath, script], record };
-}
-
 function toolsAuthorizedBy(workspace, authorize) {
   const tools = new Map();
   registerWorkspaceTools({ registerTool: (tool) => tools.set(tool.name, tool) }, workspace, authorize);
   return tools;
 }
-
-test("native Bash runs inside the sandbox Rust returns, with the command as one argument", async (t) => {
-  const { temporary, workspace, privateRuntime } = workspaceFixture(t);
-  const { argv, record } = recordingSandbox(temporary);
-  const tools = toolsAuthorizedBy(workspace, async () => ({ allowed: true, sandbox: { argv, env: { LOUPIST_SANDBOX_MARK: "confined" } } }));
-  const command = `echo "mark=$LOUPIST_SANDBOX_MARK" 'it''s "quoted"'`;
-  const result = await tools.get("bash").execute("sandboxed", { command, timeout: 10 }, undefined, undefined, { cwd: privateRuntime });
-  assert.equal(result.structuredContent.exit_code, 0);
-  assert.match(resultText(result), /mark=confined its "quoted"/);
-  const recorded = JSON.parse(readFileSync(record, "utf8"));
-  assert.equal(recorded.at(-1), command);
-  assert.equal(recorded.at(-2), "-c");
-
-  // Without a sandbox in the answer the command runs as before.
-  const plain = toolsAuthorizedBy(workspace, async () => ({ allowed: true }));
-  const unconfined = await plain.get("bash").execute("plain", { command: "echo mark=$LOUPIST_SANDBOX_MARK", timeout: 10 }, undefined, undefined, { cwd: privateRuntime });
-  assert.equal(resultText(unconfined).trim(), "mark=");
-});
-
-test("a malformed sandbox refuses to run the command instead of running it unconfined", async (t) => {
-  const { workspace, privateRuntime } = workspaceFixture(t);
-  const marker = join(workspace, "must-not-exist");
-  for (const sandbox of [null, {}, { argv: [] }, { argv: ["bwrap", 7] }, { argv: [""] }, { argv: ["bwrap"], env: { X: 1 } }]) {
-    const tools = toolsAuthorizedBy(workspace, async () => ({ allowed: true, sandbox }));
-    await assert.rejects(tools.get("bash").execute("malformed", {
-      command: nodeCommand(`require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'executed')`), timeout: 10,
-    }, undefined, undefined, { cwd: privateRuntime }), /sandbox is invalid/, JSON.stringify(sandbox));
-    assert.equal(existsSync(marker), false);
-  }
-  assert.throws(() => sandboxedBashOperations(undefined), /sandbox is invalid/);
-});
-
-const bubblewrap = ["/usr/bin/bwrap", "/usr/local/bin/bwrap"].find((path) => existsSync(path));
-
-test("bubblewrap confines native Bash writes and an abort stops the sandboxed command and its child",
-  { skip: process.platform !== "linux" ? "the bubblewrap sandbox is Linux only" : bubblewrap ? false : "bubblewrap (bwrap) is not installed on this host", timeout: 20000 },
-  async (t) => {
-    const { temporary, workspace, privateRuntime } = workspaceFixture(t);
-    const argv = [bubblewrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--bind", workspace, workspace,
-      "--unshare-net", "--unshare-pid", "--die-with-parent", "--new-session", "--"];
-    const tools = toolsAuthorizedBy(workspace, async () => ({ allowed: true, sandbox: { argv } }));
-    const run = (input, signal, onUpdate) => tools.get("bash").execute("bwrap", input, signal, onUpdate, { cwd: privateRuntime });
-    const outside = join(temporary, "outside.txt");
-    const confined = await run({
-      command: `echo in > inside.txt && echo inside=ok; echo out > ${shellQuote(outside)} 2>/dev/null && echo outside=ok || echo outside=denied`,
-      timeout: 10,
-    });
-    assert.match(resultText(confined), /inside=ok/);
-    assert.match(resultText(confined), /outside=denied/);
-    assert.equal(readFileSync(join(workspace, "inside.txt"), "utf8"), "in\n");
-    assert.equal(existsSync(outside), false);
-
-    // Inside the pid namespace the command's pids mean nothing to the host,
-    // so a token in each process's arguments says whether it still runs.
-    const token = `loupist-sandbox-abort-${process.pid}-${Date.now()}`;
-    const running = () => spawnSync("pgrep", ["-f", token], { encoding: "utf8" }).stdout.trim().split("\n").filter(Boolean);
-    t.after(() => spawnSync("pkill", ["-9", "-f", token]));
-    const controller = new AbortController();
-    let ready = false;
-    await assert.rejects(run({
-      command: nodeCommand(`
-        const { spawn } = require('node:child_process');
-        spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', ${JSON.stringify(token)}], { stdio: 'ignore' });
-        console.log('ready');
-        setInterval(() => {}, 1000);
-      `) + ` ${token}`,
-      timeout: 10,
-    }, controller.signal, (update) => {
-      if (!ready && /ready/.test(resultText(update))) {
-        ready = true;
-        // The token also sits in the shell's and bubblewrap's arguments, so
-        // at least the shell, the command and its child match.
-        for (let attempt = 0; attempt < 40 && running().length < 3; attempt++) spawnSync("sleep", ["0.05"]);
-        assert(running().length >= 3, "the command and its child run inside the sandbox");
-        controller.abort();
-      }
-    }), /Command aborted/);
-    assert(ready);
-    for (let attempt = 0; attempt < 60 && running().length > 0; attempt++) await setTimeout(50);
-    assert.deepEqual(running(), [], "an aborted sandboxed command and its child must stop");
-  });
 
 test("host taint refusal prevents native Bash from executing", async (t) => {
   const { workspace } = workspaceFixture(t);
@@ -363,7 +262,7 @@ test("ls, find and grep send their search root and bash sends its command", asyn
   const tools = new Map();
   const asked = [];
   registerWorkspaceTools({ registerTool: (tool) => tools.set(tool.name, tool) }, workspace,
-    async (name, request) => { asked.push({ name, ...request }); return { allowed: true }; });
+    async (name, request) => { asked.push({ name, ...request }); return localPermission(name, request); });
   const run = (name, input) => tools.get(name).execute(`test-${name}`, input, undefined, undefined, { cwd: privateRuntime });
   // Only the request to the host is under test; find and grep may lack their bundled tools here.
   const fetch = globalThis.fetch;
@@ -399,10 +298,10 @@ test("a write is pinned to the canonical target Rust returned, so a link swapped
       symlinkSync(second, join(workspace, "link"));
       return { allowed: true, resolved };
     });
-  await assert.rejects(tools.get("write").execute("swap", { path: "link/report.md", content: "x\n" }, undefined, undefined, { cwd: privateRuntime }),
+  await assert.rejects(tools.get("write").execute("swap", { path: "link/new/report.md", content: "x\n" }, undefined, undefined, { cwd: privateRuntime }),
     /target changed after authorization/);
-  assert.equal(existsSync(join(second, "report.md")), false);
-  assert.equal(existsSync(join(first, "report.md")), false);
+  assert.equal(existsSync(join(second, "new")), false, "no unapproved parent directory is created");
+  assert.equal(existsSync(join(first, "new")), false);
 });
 
 test("write and edit ask the host with their resolved target and write only that file", async (t) => {
@@ -498,7 +397,7 @@ test("a read opens the file Rust authorized by identity, so a link swapped in af
   assert.equal(resultText(await read("x")), "NOTE\n");
   // The canonical file itself is replaced by a link: the descriptor is another file, so nothing is read.
   swap = "note.md";
-  await assert.rejects(read("note.md"), /target changed after authorization/);
+  await assert.rejects(read("note.md"), /target changed after authorization|ELOOP/);
   swap = undefined;
   // No file was there when Rust decided: nothing that appears later is read,
   // and Pi's spelling fallbacks never open another file.
@@ -520,10 +419,39 @@ test("ls, find and grep search the canonical root Rust decided about", async (t)
   mkdirSync(join(workspace, "other"));
   writeFileSync(join(workspace, "other/b.txt"), "needle\n");
   // Rust resolved the request's root to `real`; the tool must list that, not the path it was given.
-  const tools = toolsAuthorizedBy(workspace, async () => ({ allowed: true, resolved: join(workspace, "real") }));
+  const tools = toolsAuthorizedBy(workspace, async () => localPermission("ls", { path: join(workspace, "real") }));
   const listed = resultText(await tools.get("ls").execute("ls", { path: "other" }, undefined, undefined, { cwd: privateRuntime }));
   assert.match(listed, /a\.txt/);
   assert.doesNotMatch(listed, /b\.txt/);
+});
+
+test("image sniffing and reads use the admitted file descriptor", async (t) => {
+  const { workspace, run } = workspaceFixture(t);
+  writeFileSync(join(workspace, "pixel.png"), readFileSync(join(import.meta.dirname, "../src-tauri/icons/32x32.png")));
+  const image = await run("read", { path: "pixel.png" });
+  assert(image.content.some((part) => part.type === "image" && part.mimeType === "image/png"));
+});
+
+test("search and edit refuse a file replaced by a protected link after authorization", { skip: process.platform === "win32" }, async (t) => {
+  const { temporary, workspace } = workspaceFixture(t);
+  const secret = join(temporary, "credential");
+  const target = join(workspace, "note.txt");
+  writeFileSync(secret, "PRIVATE-CREDENTIAL\n");
+  writeFileSync(target, "ordinary note\n");
+  const entry = manifestEntry(target);
+  const search = toolsAuthorizedBy(workspace, async () => {
+    rmSync(target); symlinkSync(secret, target);
+    return { allowed: true, resolved: workspace, search: { directory: true, entries: [entry] } };
+  });
+  await assert.rejects(search.get("grep").execute("swap", { pattern: "PRIVATE" }), /ELOOP|target changed/);
+  rmSync(target); writeFileSync(target, "ordinary note\n");
+  const edit = toolsAuthorizedBy(workspace, async (name, request) => {
+    const permission = localPermission(name, request);
+    rmSync(target); linkSync(secret, target);
+    return permission;
+  });
+  await assert.rejects(edit.get("edit").execute("alias", { path: target, edits: [{ oldText: "PRIVATE", newText: "CORRUPTED" }] }), /target changed/);
+  assert.equal(readFileSync(secret, "utf8"), "PRIVATE-CREDENTIAL\n");
 });
 
 test("Bash holds the tool lock alone while file tools share it, in order", async (t) => {

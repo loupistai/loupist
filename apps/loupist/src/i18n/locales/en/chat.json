@@ -284,7 +284,7 @@
     "inspectAction": "Inspect {{action}}",
     "paused": {
       "status": "Paused",
-      "command": "Paused: this answer read text from other sites and this computer has no verified command sandbox, so running commands is turned off for this answer.",
+      "command": "Paused: this answer read text from other sites, so running commands is turned off for this answer.",
       "instructions": "Paused: this answer read text from other sites, so changing instruction and Skill files is turned off for this answer.",
       "site": "Paused: this answer read text from other sites, so opening this page is turned off for this answer.",
       "schedule": "Paused: this answer read text from other sites, so creating or changing schedules is turned off for this answer.",

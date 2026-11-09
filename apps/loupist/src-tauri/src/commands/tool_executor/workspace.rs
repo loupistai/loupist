@@ -3,30 +3,26 @@ use super::*;
 use crate::agent_harness::native_policy::{
     self, NativeDecision, NativeRefusal, NativeRequest, NativeRoots, NativeTool,
 };
-use crate::agent_harness::sandbox::Sandbox;
 use crate::custom_connections::taint::{
-    COMMAND_UNCONFINED_REFUSAL, HARD_LINK_WRITE_REFUSAL, INSTRUCTION_WRITE_REFUSAL,
+    COMMAND_AFTER_UNTRUSTED_REFUSAL, HARD_LINK_WRITE_REFUSAL, INSTRUCTION_WRITE_REFUSAL,
 };
 
 const SEARCH_COVERS_APP_DATA_NEXT: &str = "This search root contains the app's private data folder, so it is not searched. Search a narrower folder, such as the workspace or one of its subfolders.";
 const UNRESOLVABLE_NEXT: &str = "This path goes through a symbolic link that loops or cannot be read, so it is not touched. Use the real file's path.";
-const CREDENTIALS_NEXT: &str = "Do not retry this path. Credential stores, container runtime folders and shell startup files are never read or written by the Loupist, and commands cannot see them either.";
-const GIT_DIR_NEXT: &str = "Do not retry this write. The host's git runs what a git directory holds (hooks, config, filters), so the Loupist never writes inside `.git` or a bare repository's hooks and config; read them if needed and ask the user to change them.";
+const CREDENTIALS_NEXT: &str = "Do not retry this path. Credential stores, container runtime folders and shell startup files are never read or written by the Loupist.";
+const GIT_DIR_NEXT: &str = "Do not retry this path. Native file tools do not read or write git metadata, config or hooks. Work with research files outside `.git`.";
+const HARD_LINK_NEXT: &str = "This file has another name on disk and may alias protected data. Ask the user for an ordinary copy; do not retry this alias.";
 
 /// The native policy's state for one turn: the folders it classifies against
-/// and the verified sandbox commands run in, when this host has one.
+/// and the current third-party exposure.
 #[derive(Default)]
 pub(in crate::commands) struct NativeGate {
     roots: Option<NativeRoots>,
-    sandbox: Option<Sandbox>,
 }
 
 impl NativeGate {
-    pub(in crate::commands) fn for_turn(roots: NativeRoots, sandbox: Option<Sandbox>) -> Self {
-        Self {
-            roots: Some(roots),
-            sandbox,
-        }
+    pub(in crate::commands) fn for_turn(roots: NativeRoots) -> Self {
+        Self { roots: Some(roots) }
     }
 
     fn decide(
@@ -35,23 +31,13 @@ impl NativeGate {
         taint: &crate::custom_connections::taint::TurnTaint,
     ) -> Result<NativeDecision, BrokerError> {
         let exposure = taint.exposure();
-        // A run without turn folders cannot classify a path or build a sandbox.
+        if request.tool == NativeTool::Bash {
+            return Ok(native_policy::decide_command(exposure));
+        }
         let roots = self.roots.as_ref().ok_or_else(|| {
             BrokerError::Execution("native file tools are unavailable in this run".into())
-        });
-        if request.tool == NativeTool::Bash {
-            let confine = match (&self.sandbox, &roots) {
-                (Some(sandbox), Ok(roots)) => Some(move |network| sandbox.command(roots, network)),
-                _ => None,
-            };
-            return Ok(native_policy::decide_command(
-                exposure,
-                confine
-                    .as_ref()
-                    .map(|confine| confine as &dyn Fn(bool) -> native_policy::SandboxCommand),
-            ));
-        }
-        Ok(native_policy::decide(request, roots?, exposure, None))
+        })?;
+        Ok(native_policy::decide(request, roots, exposure))
     }
 }
 
@@ -60,6 +46,7 @@ fn refusal_error(refusal: NativeRefusal) -> BrokerError {
         NativeRefusal::AppPrivate => BrokerError::ProtectedPath,
         NativeRefusal::Credentials => BrokerError::ProtectedPath.with_next(CREDENTIALS_NEXT),
         NativeRefusal::GitDir => BrokerError::ProtectedPath.with_next(GIT_DIR_NEXT),
+        NativeRefusal::HardLink => BrokerError::ProtectedPath.with_next(HARD_LINK_NEXT),
         NativeRefusal::SearchCoversAppData => {
             BrokerError::ProtectedPath.with_next(SEARCH_COVERS_APP_DATA_NEXT)
         }
@@ -71,8 +58,8 @@ fn refusal_error(refusal: NativeRefusal) -> BrokerError {
         NativeRefusal::HardLinkAfterUntrustedText => {
             BrokerError::UntrustedTextPaused.with_next(HARD_LINK_WRITE_REFUSAL)
         }
-        NativeRefusal::CommandUnconfined => {
-            BrokerError::UntrustedTextPaused.with_next(COMMAND_UNCONFINED_REFUSAL)
+        NativeRefusal::CommandAfterUntrustedText => {
+            BrokerError::UntrustedTextPaused.with_next(COMMAND_AFTER_UNTRUSTED_REFUSAL)
         }
         NativeRefusal::OutboundPaused => BrokerError::OutboundPaused,
     }
@@ -103,9 +90,7 @@ fn read_identity(_path: &std::path::Path) -> Option<Value> {
 impl AppToolExecutor {
     /// Decides one native call without waiting on anyone. The canonical
     /// target comes back so the extension can pin a read, write or edit to
-    /// it, with the file's identity for a read; a search runs on it; a
-    /// command comes back with the sandbox it must run in, when the host
-    /// has one.
+    /// it, with the file's identity for a read; a search runs on it.
     pub(super) async fn native_authorize(&self, params: &Value) -> Result<Value, BrokerError> {
         let request = NativeRequest::parse(params).ok_or(BrokerError::Malformed)?;
         let mut result = json!({"allowed": true});
@@ -115,17 +100,35 @@ impl AppToolExecutor {
             .decide(&request, &self.capture.turn_taint)?
         {
             NativeDecision::AllowFile { resolved } => {
-                if request.tool == NativeTool::Read {
+                if matches!(
+                    request.tool,
+                    NativeTool::Read | NativeTool::Write | NativeTool::Edit
+                ) {
                     if let Some(identity) = read_identity(&resolved) {
                         result["identity"] = identity;
                     }
                 }
+                if matches!(
+                    request.tool,
+                    NativeTool::Ls | NativeTool::Find | NativeTool::Grep
+                ) {
+                    let roots = self
+                        .capture
+                        .native
+                        .roots
+                        .as_ref()
+                        .ok_or(BrokerError::ProtectedPath)?;
+                    result["search"] = native_policy::search::snapshot(
+                        &resolved,
+                        roots,
+                        self.capture.turn_taint.exposure(),
+                        request.tool != NativeTool::Ls,
+                    )
+                    .map_err(|error| BrokerError::Execution(error.to_string()))?;
+                }
                 result["resolved"] = json!(resolved);
             }
-            NativeDecision::AllowCommand { sandbox: None } => {}
-            NativeDecision::AllowCommand {
-                sandbox: Some(sandbox),
-            } => result["sandbox"] = json!({"argv": sandbox.argv, "env": sandbox.env}),
+            NativeDecision::AllowCommand => {}
             NativeDecision::Refuse(refusal) => return Err(refusal_error(refusal)),
         }
         if request.tool == NativeTool::Read {

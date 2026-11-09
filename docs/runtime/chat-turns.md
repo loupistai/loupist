@@ -37,15 +37,18 @@ an artifact cascades to its history. Publication, restore and pruning are atomic
 
 Pi's CLI CWD stays in a private runtime directory; native `read`, `write`, `edit`,
 `bash`, `ls`, `find` and `grep` operate from the selected workspace, the Loupist
-folder, and stay inside it: Rust refuses a file outside the folder, this run's
-scratch and this Chat's attachments, and runs each command inside an OS sandbox
-whose prefix `native.authorize` returns ([Native tool permissions](permissions.md)).
+folder. Rust refuses file calls outside admitted roots: the folder, this run's
+scratch and this Chat's attachments. Bash runs with host permissions in a clean
+reply and is refused after third-party text, without a card ([Native tool permissions](permissions.md)).
 File changes are immediate and survive a failed or cancelled reply.
 
-`workspace-tools` holds the pinned, digest-verified `fd` and `rg` that Pi's native
-`find` and `grep` need offline (`apps/loupist/scripts/stage_workspace_tools.py`).
-Pi looks them up on PATH, so the same directory serves both; sidecar checks fail
-when either is missing, linked, or altered.
+`workspace-tools` holds pinned, digest-verified `rg` for offline content search
+(`apps/loupist/scripts/stage_workspace_tools.py`). Rust supplies a bounded manifest
+of individually authorized entries. `ls` and `find` display/filter that list;
+`grep` passes identity-checked file descriptors to `rg` as stdin, so the engine
+cannot traverse private subtrees. Rust reads only admitted local `.gitignore` and
+`.ignore` files; host git config and `.git/info/exclude` are never consulted.
+Sidecar checks fail if `rg` is missing, linked or altered.
 
 Native Bash's PATH is the bundled `workspace-tools` directory, then the user's
 login-shell PATH, then inherited entries the login PATH lacks

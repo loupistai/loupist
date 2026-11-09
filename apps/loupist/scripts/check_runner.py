@@ -78,6 +78,25 @@ def web_plan(harness, install):
     commands = [step("node-version", ["node", "-e", NODE_VERSION])]
     if install:
         commands.append(step("install-app", ["npm", "ci"]))
+        target = (
+            "aarch64-apple-darwin"
+            if platform.system() == "Darwin"
+            else "x86_64-unknown-linux-musl"
+        )
+        commands.append(
+            step(
+                "install-workspace-search",
+                [
+                    sys.executable,
+                    APP / "scripts/stage_workspace_tools.py",
+                    "--ensure",
+                    "--runtime",
+                    APP / "src-tauri/resources/pi-runtime",
+                    "--target",
+                    target,
+                ],
+            )
+        )
     if not harness:
         lockfiles.append("e2e/node_modules/.package-lock.json")
         if install:

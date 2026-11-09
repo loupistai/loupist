@@ -26,8 +26,8 @@ pub enum ChatProgressStatus {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChatStepRefusal {
-    /// The turn read third-party text: a command on a host without a verified
-    /// sandbox, an instruction write, a custom connection, a schedule change
+    /// The turn read third-party text: a command,
+    /// an instruction write, a custom connection, a schedule change
     /// or a new site stays paused until the turn ends (broker code
     /// `untrusted_text_paused`).
     UntrustedTextPaused,

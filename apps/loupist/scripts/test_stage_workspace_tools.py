@@ -1,4 +1,4 @@
-"""Staged workspace tools fail closed when fd or rg is missing, linked, or altered."""
+"""Staged workspace tools fail closed when rg is missing, linked, or altered."""
 
 import dataclasses
 import io
@@ -55,14 +55,13 @@ class WorkspaceToolsTests(unittest.TestCase):
         stage.stage_workspace_tools(self.runtime, TARGET, self.archives)
         self.tools = self.runtime / "workspace-tools"
 
-    def test_stages_both_tools_and_verifies(self):
+    def test_stages_ripgrep_and_verifies(self):
         stage.verify_workspace_tools(self.runtime, TARGET)
-        for name in ("fd", "rg"):
+        for name in ("rg",):
             self.assertTrue(os.access(self.tools / name, os.X_OK))
 
-    def test_real_pins_cover_the_same_targets(self):
-        pins = {tool.name: set(tool.releases) for tool in stage.TOOLS}
-        self.assertEqual(pins["rg"], pins["fd"])
+    def test_real_pins_include_linux(self):
+        self.assertIn("x86_64-unknown-linux-musl", stage.TARGETS)
 
     def test_missing_rg_fails(self):
         (self.tools / "rg").unlink()
@@ -71,7 +70,7 @@ class WorkspaceToolsTests(unittest.TestCase):
 
     def test_linked_rg_fails(self):
         (self.tools / "rg").unlink()
-        (self.tools / "rg").symlink_to(self.tools / "fd")
+        (self.tools / "rg").symlink_to(self.tools / "rg-UNLICENSE")
         with self.assertRaisesRegex(ValueError, "rg executable is missing or linked"):
             stage.verify_workspace_tools(self.runtime, TARGET)
 

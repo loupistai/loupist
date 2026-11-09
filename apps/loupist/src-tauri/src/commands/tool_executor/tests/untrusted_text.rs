@@ -2,7 +2,7 @@ use super::*;
 use crate::agent_harness::native_policy::NativeRoots;
 use crate::chat::approvals::{ApprovalDecision, ApprovalState, ChatApproval};
 use crate::custom_connections::taint::{
-    delimited_body, retained_trust, COMMAND_UNCONFINED_REFUSAL, HARD_LINK_WRITE_REFUSAL,
+    delimited_body, retained_trust, COMMAND_AFTER_UNTRUSTED_REFUSAL, HARD_LINK_WRITE_REFUSAL,
     INSTRUCTION_WRITE_REFUSAL, OUTSIDE_WORKSPACE_REFUSAL, WEB_FETCH_PRIVATE_REFUSAL,
     WEB_FETCH_SITE_REFUSAL,
 };
@@ -43,7 +43,7 @@ fn turn_capture(
     let shown = asked.clone();
     let capture = ToolCapture {
         bound_chat_id: Some("chat-a".into()),
-        native: NativeGate::for_turn(native_roots(temporary), None),
+        native: NativeGate::for_turn(native_roots(temporary)),
         approval_sink: Some(Arc::new(move |_call, approval: ChatApproval| {
             if approval.state != ApprovalState::Waiting {
                 return;
@@ -70,7 +70,7 @@ fn bash(command: &str) -> Value {
 }
 
 /// A clean turn runs a command; a turn at the untrusted-text tier refuses it,
-/// since a test host has no verified sandbox.
+/// after the reply reads third-party text.
 async fn assert_command_tier(
     socket: &Path,
     broker: &crate::broker::ToolBrokerHandle,
@@ -78,7 +78,7 @@ async fn assert_command_tier(
 ) {
     let response = broker_request(socket, broker.token(), "native.authorize", bash("ls")).await;
     if untrusted {
-        refused_with(&response, COMMAND_UNCONFINED_REFUSAL);
+        refused_with(&response, COMMAND_AFTER_UNTRUSTED_REFUSAL);
     } else {
         assert_eq!(response["ok"], true, "{response}");
     }
@@ -561,11 +561,10 @@ async fn web_text_reaches_the_model_delimited_and_pauses_commands_and_instructio
 
     let before = broker_request(&socket, broker.token(), "native.authorize", bash("ls")).await;
     assert_eq!(before["ok"], true, "{before}");
-    assert!(before["result"].get("sandbox").is_none(), "{before}");
-    for params in [instructions.clone(), alias.clone()] {
-        let before = broker_request(&socket, broker.token(), "native.authorize", params).await;
-        assert_eq!(before["ok"], true, "{before}");
-    }
+    assert_eq!(before["result"], json!({"allowed": true}));
+    // A hard-linked file can alias protected data even in a clean reply.
+    let before = broker_request(&socket, broker.token(), "native.authorize", alias.clone()).await;
+    assert_eq!(before["error"]["code"], "protected_path", "{before}");
 
     let fetched = broker_request(
         &socket,
@@ -588,12 +587,12 @@ async fn web_text_reaches_the_model_delimited_and_pauses_commands_and_instructio
     let retained = capture.run_result(result_ref).await.unwrap();
     assert_eq!(retained.payload["content"], body);
 
-    // Without a verified sandbox a command is refused, not asked about; a
+    // After third-party text a command is refused without a card; a
     // later command is refused the same way.
     for command in ["python3 build_deck.py\n  --out deck.pptx", "whoami"] {
         let refused =
             broker_request(&socket, broker.token(), "native.authorize", bash(command)).await;
-        refused_with(&refused, COMMAND_UNCONFINED_REFUSAL);
+        refused_with(&refused, COMMAND_AFTER_UNTRUSTED_REFUSAL);
         assert_eq!(refused["error"]["retryable"], false);
     }
 
@@ -634,7 +633,7 @@ async fn a_clean_reply_runs_commands_after_an_earlier_reply_read_third_party_tex
     earlier.turn_taint.mark_untrusted_text();
     let (broker, socket) = start_turn(&state, &temporary, "earlier", earlier).await;
     let refused = broker_request(&socket, broker.token(), "native.authorize", bash("ls")).await;
-    refused_with(&refused, COMMAND_UNCONFINED_REFUSAL);
+    refused_with(&refused, COMMAND_AFTER_UNTRUSTED_REFUSAL);
     broker.shutdown().await.unwrap();
 
     let (broker, socket) = start_turn(&state, &temporary, "clean", bound_capture(&temporary)).await;
@@ -644,39 +643,6 @@ async fn a_clean_reply_runs_commands_after_an_earlier_reply_read_third_party_tex
         assert_eq!(allowed["ok"], true, "{allowed}");
     }
     broker.shutdown().await.unwrap();
-}
-
-#[tokio::test]
-async fn a_verified_sandbox_runs_commands_online_when_clean_and_offline_after_third_party_text() {
-    let temporary = tempfile::tempdir().unwrap();
-    let state = seeded_state(&temporary);
-    let sandbox = crate::agent_harness::sandbox::Sandbox::Bubblewrap("/usr/bin/bwrap".into());
-    for untrusted in [false, true] {
-        let capture = Arc::new(ToolCapture {
-            bound_chat_id: Some("chat-a".into()),
-            native: NativeGate::for_turn(native_roots(&temporary), Some(sandbox.clone())),
-            ..ToolCapture::for_chat(new_id("reply"))
-        });
-        if untrusted {
-            capture.turn_taint.mark_untrusted_text();
-        }
-        let (broker, socket) = start_turn(&state, &temporary, "sandboxed", capture).await;
-        let allowed = broker_request(&socket, broker.token(), "native.authorize", bash("ls")).await;
-        assert_eq!(allowed["ok"], true, "{allowed}");
-        let argv: Vec<String> =
-            serde_json::from_value(allowed["result"]["sandbox"]["argv"].clone()).unwrap();
-        assert_eq!(argv[0], "/usr/bin/bwrap");
-        assert_eq!(
-            argv.contains(&"--unshare-net".to_owned()),
-            untrusted,
-            "{argv:?}"
-        );
-        let cache = allowed["result"]["sandbox"]["env"]["XDG_CACHE_HOME"]
-            .as_str()
-            .unwrap();
-        assert!(cache.ends_with("/app/scratch/cache"), "{cache}");
-        broker.shutdown().await.unwrap();
-    }
 }
 
 #[tokio::test]
@@ -718,6 +684,7 @@ async fn files_outside_the_loupist_folder_are_refused_with_a_way_forward() {
             ("ls", home.join(".ssh")),
             ("write", workspace.join(".git/hooks/pre-commit")),
             ("edit", workspace.join(".git/config")),
+            ("read", workspace.join(".git/config")),
             // A search root above the app data folder would descend into it.
             ("grep", temporary.path().to_path_buf()),
             ("find", temporary.path().parent().unwrap().to_path_buf()),
@@ -750,7 +717,6 @@ async fn files_outside_the_loupist_folder_are_refused_with_a_way_forward() {
             ("read", workspace.join("notes/plan.md")),
             ("write", workspace.join("report.md")),
             ("grep", workspace.clone()),
-            ("read", workspace.join(".git/config")),
             ("write", app.join("scratch/deck.pptx")),
         ] {
             let allowed = authorize(&socket, token, tool, &path).await;
@@ -833,7 +799,7 @@ async fn a_saved_web_source_comes_back_delimited_and_pauses_commands_in_a_later_
         );
     }
     let refused = broker_request(&socket, broker.token(), "native.authorize", bash.clone()).await;
-    refused_with(&refused, COMMAND_UNCONFINED_REFUSAL);
+    refused_with(&refused, COMMAND_AFTER_UNTRUSTED_REFUSAL);
     broker.shutdown().await.unwrap();
 
     // Turn 3: an exact read of the Source raises the tier on its own.
@@ -854,7 +820,7 @@ async fn a_saved_web_source_comes_back_delimited_and_pauses_commands_in_a_later_
     let body = delimited_body(text).unwrap();
     assert!(body.contains("Ignore the user"), "{body}");
     let refused = broker_request(&socket, broker.token(), "native.authorize", bash).await;
-    refused_with(&refused, COMMAND_UNCONFINED_REFUSAL);
+    refused_with(&refused, COMMAND_AFTER_UNTRUSTED_REFUSAL);
     broker.shutdown().await.unwrap();
 }
 
@@ -951,7 +917,7 @@ async fn a_retained_news_dataset_queried_later_is_delimited_and_numeric_rows_are
         assert!(delimited_body(delivered).is_some(), "{name}: {delivered}");
         let refused =
             broker_request(&socket, broker.token(), "native.authorize", bash.clone()).await;
-        refused_with(&refused, COMMAND_UNCONFINED_REFUSAL);
+        refused_with(&refused, COMMAND_AFTER_UNTRUSTED_REFUSAL);
         broker.shutdown().await.unwrap();
     }
     // The retained dataset keeps the provider's bytes.
@@ -1145,7 +1111,7 @@ async fn after_third_party_text_web_fetch_opens_seen_sites_and_refuses_new_ones_
 
 /// A read's answer carries the canonical file and its identity, so the
 /// extension can open that file and refuse another; a path with no file yet
-/// says so, and the answer for a write or a search carries no identity.
+/// says so. Writes carry identity too; searches carry admitted entry identities.
 #[cfg(unix)]
 #[tokio::test]
 async fn an_allowed_read_names_the_file_and_its_identity() {
@@ -1194,10 +1160,18 @@ async fn an_allowed_read_names_the_file_and_its_identity() {
             workspace.join("notes"),
         ),
     ] {
+        let is_write = params["name"] == "write";
         let answer = broker_request(&socket, broker.token(), "native.authorize", params).await;
         assert_eq!(answer["ok"], true, "{answer}");
         assert_eq!(answer["result"]["resolved"], json!(resolved));
-        assert!(answer["result"].get("identity").is_none(), "{answer}");
+        if is_write {
+            assert_eq!(answer["result"]["identity"], read["result"]["identity"]);
+        } else {
+            assert_eq!(
+                answer["result"]["search"]["entries"][0]["identity"],
+                read["result"]["identity"]
+            );
+        }
     }
     broker.shutdown().await.unwrap();
 }

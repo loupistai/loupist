@@ -239,7 +239,6 @@ pub fn run() {
             let update_coordinator = state.updates.clone();
             app.manage(state);
             pi::shell_path::prewarm();
-            agent_harness::sandbox::prewarm();
             providers::status::install(app.handle());
             if let Err(error) = briefings::desktop::install(app.handle()) {
                 eprintln!("Briefing tray could not be installed: {error}");
