@@ -170,6 +170,9 @@ async function choosePreset() {
     });
   };
   await openModelMenu();
+  // Filter the scrollable catalog so the exact preset is visible regardless
+  // of provider ordering and the native WebView's clipped-item visibility.
+  await (await displayed('.model-menu-header input[type="search"]')).setValue(preset.modelLabel);
   const choose = async (label) => {
     const item = await browser.waitUntil(async () => visibleMenuItem(label), {
       timeout: 8_000,
