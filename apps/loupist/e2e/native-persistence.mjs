@@ -326,6 +326,60 @@ async function verifyPrinciple() {
   const row = await visibleWithText("section.memory-page button.memory-row", PRINCIPLE.statement);
   await row.click();
   await waitForText(await displayed("section.memory-page aside.memory-reader"), PRINCIPLE.statement);
+  const back = await browser.$(".memory-reader-back");
+  if (await back.isDisplayed().catch(() => false)) await back.click();
+  await (await visibleWithText("section.memory-page button.memory-row", FIXTURE.method)).click();
+  const method = await displayed("section.memory-page aside.memory-reader");
+  await waitForText(method, "Separate observations from assumptions.");
+  await displayed(".memory-reader .page-history");
+  const history = await displayed(".memory-reader .lens-then-now");
+  assert.equal((await history.$$("h4")).length, 2, "The revised method did not show Then and Now");
+}
+
+async function verifyFollowedAndHoldings({ copied }) {
+  await openMemorySegment("about");
+  const chips = await browser.$(".memory-about .memory-chips");
+  const names = await chips.getText();
+  assert.equal(names.includes("NWHLD"), !copied, "Followed assets belong to app data, not a copied Loupist folder");
+  const summary = await (await displayed("[data-holdings-kinds]")).getText();
+  if (copied) assert.doesNotMatch(summary, /3 assets/u, "Global holdings followed a copied folder");
+  else assert.match(summary, /3 assets/u, "The committed holdings snapshot did not survive");
+}
+
+async function followAndImportHoldings() {
+  await openMemorySegment("about");
+  const follow = async symbol => {
+    await setField(".memory-follow-add input", `${symbol}:US`);
+    await (await displayed('.memory-follow-add button[type="submit"]')).click();
+    await waitForText(await displayed(".memory-chips"), symbol);
+  };
+  await follow("LMHLD");
+  await (await displayed('button[aria-label="Stop following LMHLD"]')).click();
+  await browser.waitUntil(async () => !(await (await displayed(".memory-chips")).getText()).includes("LMHLD"), { timeout: 10_000 });
+  await follow("NWHLD");
+  await (await displayed("button.memory-holdings-update")).click();
+  const sheet = await displayed("[data-holdings-sheet]");
+  const stockSource = '.holdings-section[aria-labelledby="holdings-stocks"] .holdings-source';
+  await writeFile(resolve(stateRoot, "holdings.csv"), "symbol,market,name,quantity\nBAD,US,Invalid holding,not-a-number\n");
+  await clickButton("Import file", await displayed(stockSource));
+  let preview = await displayed('[data-holdings-preview="stocks"]');
+  assert.ok((await preview.$$("[role=alert]")).length > 0, "Invalid quantity produced no validation error");
+  const importButton = await preview.$(".holdings-actions button:last-child");
+  assert.equal(await importButton.isEnabled(), false, "An invalid preview can be committed");
+  await clickButton("Cancel", preview);
+  await writeFile(resolve(stateRoot, "holdings.csv"), await readFile(resolve(e2eRoot, "fixtures/journeys/holdings.csv")));
+  await clickButton("Import file", await displayed(stockSource));
+  preview = await displayed('[data-holdings-preview="stocks"]');
+  assert.equal((await preview.$$("tbody tr")).length, 3);
+  // Previewing a valid file is not a commit; dismiss and check the source.
+  await clickButton("Cancel", preview);
+  assert.match(await (await displayed(stockSource)).getText(), /not imported/iu);
+  await clickButton("Import file", await displayed(stockSource));
+  preview = await displayed('[data-holdings-preview="stocks"]');
+  await clickButton("Import 3 assets", preview);
+  await browser.waitUntil(async () => (await (await displayed(stockSource)).getText()).includes("3 assets"), { timeout: 10_000 });
+  await clickButton("Done", sheet);
+  await verifyFollowedAndHoldings({ copied: false });
 }
 
 async function addJournalEntry() {
@@ -355,6 +409,34 @@ async function verifyJournal(id) {
   const reader = await displayed('.map-view aside.map-reader article[aria-label]');
   await waitForText(reader, JOURNAL.judgment);
   await waitForText(reader, JOURNAL.reasoning);
+  await openLibrary("Journal & notes");
+  await (await visibleWithText(".map-view button.journal-library-row", FIXTURE.journal)).click();
+  const frozen = await displayed(".knowledge-journal");
+  await waitForText(frozen, "Metric will exceed the threshold");
+  await clickButton("Read saved source", frozen);
+  await waitForText(await displayed(".knowledge-journal-source .knowledge-passage"), "sealed-world-anchor sentence");
+}
+
+async function replayMap() {
+  await openMainTab(browser, "map");
+  await closeLibrary();
+  await closeMapReader();
+  await clickControl(browser, ".map-view [data-map-more]");
+  await (await displayed('[role="menuitemcheckbox"][data-map-replay]')).click();
+  const bar = await displayed(".map-replay-bar");
+  const play = await displayed("[data-map-play]");
+  if (await play.getAttribute("aria-label") === "Play") await play.click();
+  await browser.waitUntil(async () => (await play.getAttribute("aria-label")) === "Pause", { timeout: 5_000 });
+  if (await play.getAttribute("aria-label") === "Pause") await play.click();
+  await clickButton("4×", bar);
+  assert.equal(await (await childWithText(bar, "button", "4×")).getAttribute("aria-pressed"), "true");
+  const timeline = await displayed('input[aria-label="Replay timeline"]');
+  await timeline.click();
+  const before = await timeline.getValue();
+  await browser.keys("ArrowRight");
+  await browser.waitUntil(async () => (await timeline.getValue()) !== before, { timeout: 5_000, timeoutMsg: "Replay did not move when scrubbed" });
+  await (await bar.$('button[aria-label="Exit replay"]')).click();
+  await browser.waitUntil(() => browser.execute(() => document.querySelector(".map-replay-bar") === null), { timeout: 5_000, timeoutMsg: "Replay did not close" });
 }
 
 // Loupist and app settings ---------------------------------------------------------
@@ -519,6 +601,7 @@ async function seed() {
     record.sourceId = await addSource();
   });
   await step("save a rule in What it knows", addPrinciple);
+  await step("follow and unfollow assets; validate, preview and commit holdings", followAndImportHoldings);
   await step("save a Journal entry in the Library", async () => {
     record.journalId = await addJournalEntry();
     assert.ok(record.journalId, "The Journal entry has no identity");
@@ -529,6 +612,7 @@ async function seed() {
     await selectLoupist(FOLDER_LOUPIST);
     record.mapStats = await settledMapStats();
   });
+  await step("replay the saved Map, pause, scrub, change speed and exit", replayMap);
   await browser.saveScreenshot(resolve(artifactRoot, "seed.png"));
   await writeFile(recordPath, `${JSON.stringify(record, null, 2)}\n`);
   report.record = record;
@@ -562,6 +646,7 @@ async function verify(record, { copied }) {
   });
   await step("the Library keeps the Source", () => verifySource(record.sourceId));
   await step("What it knows keeps the rule and learned method", verifyPrinciple);
+  await step(copied ? "global followed assets and holdings stay with the original app" : "followed assets and committed holdings survive restart", () => verifyFollowedAndHoldings({ copied }));
   await step("the Library keeps the Journal entry", () => verifyJournal(record.journalId));
   await step("Loupist instructions", verifyInstructions);
   await step(copied ? "Loupist preferences follow the folder; global settings stay with the app" : "global and Loupist preferences", () => verifySettings({ copied }));

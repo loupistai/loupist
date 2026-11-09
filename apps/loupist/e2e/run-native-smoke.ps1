@@ -482,6 +482,9 @@ function New-CleanTauriProcessInfo(
     $workspaceDirectory = Resolve-RealAbsoluteDirectory $workspaceDirectory "LOUPIST_E2E_WORKSPACE_DIR"
     $startInfo.Environment["LOUPIST_E2E_WORKSPACE_DIR"] = $workspaceDirectory
     $startInfo.Environment["LOUPIST_E2E_APP_DATA_DIR"] = $AppDataDirectory
+    if (-not [string]::IsNullOrWhiteSpace($PersistencePhase)) {
+        $startInfo.Environment["LOUPIST_E2E_PICK_FILE"] = Join-Path (Split-Path -Parent $AppDataDirectory) "holdings.csv"
+    }
     if ($KnowledgeSeed -eq "1") {
         $startInfo.Environment["LOUPIST_E2E_KNOWLEDGE_SEED"] = "1"
     }

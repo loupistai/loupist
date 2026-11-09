@@ -63,6 +63,7 @@ try {
     foreach ($phase in @("seed", "restart", "copy")) {
         $PhaseRoot = Join-Path $StateRoot $(if ($phase -eq "restart") { "seed" } else { $phase })
         New-Item -ItemType Directory -Path $PhaseRoot -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $ScriptDir "fixtures/journeys/holdings.csv") -Destination (Join-Path $PhaseRoot "holdings.csv") -Force
         $Seed = if ($phase -eq "seed") { "1" } else { "0" }
         if ($phase -eq "copy") {
             Copy-Item -LiteralPath (Join-Path $StateRoot "seed/workspace") -Destination (Join-Path $PhaseRoot "workspace") -Recurse -Force

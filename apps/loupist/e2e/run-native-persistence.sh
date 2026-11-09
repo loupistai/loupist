@@ -118,9 +118,12 @@ RUN_LOG=$(mktemp "${TMPDIR:-/tmp}/loupist-persistence-log.XXXXXX")
 run_phase() {
     phase=$1
     phase_root="$STATE_ROOT/$2"
+    mkdir -p "$phase_root"
+    cp "$SCRIPT_DIR/fixtures/journeys/holdings.csv" "$phase_root/holdings.csv"
     : >"$RUN_LOG"
     rm -f -- "$SESSION_INFO"
     LOUPIST_E2E_STATE_DIR="$phase_root" \
+        LOUPIST_E2E_PICK_FILE="$phase_root/holdings.csv" \
         LOUPIST_E2E_SESSION_INFO="$SESSION_INFO" \
         "$SCRIPT_DIR/run-app.sh" >"$RUN_LOG" 2>&1 &
     APP_PID=$!

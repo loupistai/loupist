@@ -211,6 +211,9 @@ export async function openMainTab(browser, tab, timeout = 15_000) {
     await browser.$(".loupist-header-selector").waitForDisplayed({ timeout });
   }
   if (tab === "map" || tab === "lens") {
+    // Picking the current workspace pane toggles it closed. Opening a
+    // destination must be idempotent for successive reader checks.
+    if (await visible(tab === "map" ? ".map-view" : ".memory-page")) return;
     await clickControl(browser, ".header-panel-toggle");
     const item = await browser.$(`[data-workspace-kind="${tab === "map" ? "world" : "lens"}"]`);
     await item.waitForDisplayed({ timeout });
