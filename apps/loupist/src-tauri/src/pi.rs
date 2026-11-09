@@ -257,6 +257,7 @@ impl PiLaunchConfig {
             arguments.push("--no-session".into());
         }
         arguments.extend([
+            // Built-in tools, including Bash, stay off. Analysis is the broker tool run_python.
             "--no-builtin-tools".into(),
             "--no-extensions".into(),
             "--extension".into(),
@@ -295,10 +296,9 @@ impl PiLaunchConfig {
         host_context_file: &Path,
         login_path: Option<&[PathBuf]>,
     ) -> BTreeMap<String, String> {
-        // Supply OS essentials for native local tools, never inherit arbitrary
-        // shell startup variables or credentials. The Bash definition applies
-        // its own allowlist before spawning commands so provider/broker values
-        // below are not handed to those child processes.
+        // Supply OS essentials for native file tools, never inherit arbitrary
+        // shell startup variables or credentials. `rg` uses the login PATH
+        // below; provider and broker values are not handed to that child.
         let mut env = local_tool_environment();
         // Native Pi find runs in offline mode. Resolve its pinned helper from
         // the app resources before the user's login-shell and inherited PATH.
@@ -853,6 +853,7 @@ impl PiSupportLaunchConfig {
             "--mode".into(),
             "rpc".into(),
             "--no-session".into(),
+            // Built-in tools, including Bash, stay off.
             "--no-builtin-tools".into(),
             "--no-extensions".into(),
             "--extension".into(),
@@ -1120,7 +1121,7 @@ pub(crate) const BROKER_TOKEN_FD_ENV: &str = "LOUPIST_BROKER_TOKEN_FD";
 /// Unix: a pipe whose read end Pi inherits at fd 3; the token is followed by a
 /// newline, and the extension reads only up to it (never waiting for EOF,
 /// which a child that briefly inherited the write end could delay) and closes
-/// it at load, before any native tool can start, so no Bash command inherits
+/// it at load, before any native tool can start, so no child process inherits
 /// it. Other platforms: a one-shot private file.
 pub(crate) struct BrokerTokenHandoff {
     #[cfg(unix)]

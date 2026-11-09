@@ -10,16 +10,14 @@
 | World extraction (in-process, `knowledge/world_extract/`) | Derived extraction, reconciliation and retrieval through isolated Pi inference; returned JSON is untrusted until Rust validates it and publishes canonical Memory |
 | OpenBB MCP worker | Loupist-scoped read-only financial data under captured connector grants |
 
-Native tools run as the user and can use installed runtimes. Rust decides every
-native call before it runs and never asks: file tools reach the Loupist folder, this
-run's scratch and this Chat's attachments, and refuse the app's private data
-(credentials, the database, Pi runtime files), home credential locations and
-everything outside the folder. Bash keeps its pre-PR host execution before
-third-party text and is refused afterwards, with no permission card
-([Native tool permissions](permissions.md)). Bash receives an allowlisted environment
-without app credentials or shell startup hooks; its PATH is described under
-[Local workspace execution](chat-turns.md#local-workspace-execution). Clean commands
-can still access user-readable host files, app data and network services.
+Native file tools run as the user. Rust decides every file call before it runs
+and never asks. File tools reach the Loupist folder, this run's scratch and this
+Chat's attachments, and refuse the app's private data (credentials, the database,
+Pi runtime files), home credential locations and everything outside the folder.
+`run_python` is the only agent code execution tool. It does not inherit the host
+environment, the network or a shell
+([Native tool permissions](permissions.md)). Its guest view of the workspace is
+described under [Local workspace execution](chat-turns.md#local-workspace-execution).
 The folder-opening UI requires an explicit trust check; there is no saved
 per-Loupist native-execution switch.
 
@@ -29,8 +27,8 @@ host keys). The per-turn broker token reaches the extension on an inherited pipe
 at fd 3 (`LOUPIST_BROKER_TOKEN_FD`; on Windows, a one-shot private file the
 extension deletes) and is never in Pi's environment or argv. The extension takes
 it at load, before any native tool runs. Residual risk: `auth.json` stays readable
-by same-user processes, including commands the agent runs; there the boundary is
-the prompt and the user's machine.
+by same-user processes. The agent has no shell that can read it. Another
+same-user process on the machine still can.
 
 Sidecars are private app resources, verified against staged inventories. OpenBB's
 host restrictions cover its audited clients, not arbitrary hostile native code.

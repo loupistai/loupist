@@ -1064,7 +1064,7 @@ fn recovered_inbox_retains_tool_refusals_and_is_unread_once() {
         .0
         .run;
     assert_eq!(store.inbox_unread_count("loupist-a").unwrap(), 0);
-    for name in ["bash", "browser"] {
+    for name in ["read", "browser"] {
         assert!(crate::briefings::policy::enforce(
             &store,
             "loupist-a",
@@ -1084,7 +1084,7 @@ fn recovered_inbox_retains_tool_refusals_and_is_unread_once() {
             .iter()
             .map(|t| t.name.as_str())
             .collect::<Vec<_>>(),
-        ["bash", "browser"]
+        ["read", "browser"]
     );
     assert_eq!(store.inbox_unread_count("loupist-a").unwrap(), 1);
 }

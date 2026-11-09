@@ -11,8 +11,13 @@ keys, units, time coverage, and the requested output before transforming data.
 Prefer the no-runtime path: `calculate` (`calculations` pack) for growth,
 returns, drawdown, ratios and moving averages over explicit values or a
 dataset column, then the market data connection's local `quantitative_*` and
-`technical_*` tools. Use Bash or Python for transformations they cannot do,
-starting from `dataset_export` files.
+`technical_*` tools. Use `run_python` for transformations they cannot do,
+starting from `dataset_export` files. The working directory is `/workspace`
+(top-level files are read-only). `/attachments` is this Chat, read-only.
+`/scratch` is writable for this call only. Write new files and PNG charts
+under `/workspace/outputs/` or an existing non-dot folder. numpy, pandas,
+scipy, matplotlib, statsmodels, and scikit-learn are already available.
+Do not install packages. There is no network and no shell.
 
 Read [data validation](references/validation.md) for profiling, joins,
 deduplication, aggregation, or pre-delivery quality review. Apply checks that

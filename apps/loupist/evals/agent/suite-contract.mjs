@@ -27,7 +27,7 @@ const METRICS = new Set([
 const CONNECTIONS = new Set(['opendart', 'krx', 'koreainvestment', 'world-bank', 'web-research']);
 const ROLES = new Set(['train', 'probe']);
 const MEMORY_MODES = new Set(['remember', 'read_only', 'off']);
-const NATIVE_TOOLS = ['read', 'write', 'edit', 'bash', 'ls', 'find', 'grep'];
+const NATIVE_TOOLS = ['read', 'write', 'edit', 'ls', 'find', 'grep'];
 
 const catalog = JSON.parse(await readFile(catalogPath, 'utf8'));
 export const toolNames = new Set(catalog.tools.map((tool) => tool.name));

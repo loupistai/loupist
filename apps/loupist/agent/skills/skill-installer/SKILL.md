@@ -6,7 +6,7 @@ description: Find, inspect, or install existing Skills from a requested GitHub f
 
 Adapted from OpenAI's Skill Installer (Apache-2.0); Loupist destinations and installation workflow are modified.
 
-Use the skill folders in the runtime context: this Loupist by default, personal when the user asks for availability across Loupists. Settings → Skills offers ZIP/folder imports and public GitHub folder URLs. Native file/Bash tools can perform the same requested task. Do not use `$CODEX_HOME`, install a whole repository, or modify bundled resources.
+Use the skill folders in the runtime context: this Loupist by default, personal when the user asks for availability across Loupists. Settings → Skills offers ZIP/folder imports and public GitHub folder URLs. Native file tools can perform the same requested task. Do not use `$CODEX_HOME`, install a whole repository, or modify bundled resources.
 
 When the user asks what is available, inspect the named source and show relevant choices without installing them. OpenAI's public examples are at https://github.com/openai/skills and https://github.com/openai/plugins; follow the source's current guidance and each skill's own license. Do not assume every skill in a repository has the same license.
 

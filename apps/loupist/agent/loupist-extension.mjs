@@ -612,9 +612,9 @@ function registerLoupistExtension(originalPi) {
     },
   };
   // Rust owns both unattended policy and the native permission policy. Every
-  // native execution asks the same host gate with its resolved target, search
-  // root or exact command, so a script cannot bypass a refusal or a card, and
-  // Rust can keep private app data and instruction files out of reach.
+  // native file execution asks the same host gate with its resolved target or
+  // search root, so a script cannot bypass a refusal or a card, and Rust can
+  // keep private app data and instruction files out of reach.
   registerWorkspaceTools(pi, hostContext.workspace.root,
     (name, request, signal, id) => requestBroker("native.authorize", { name, ...request }, signal, id));
   async function loadCapabilityComponent(component, signal, activateToolNames = []) {

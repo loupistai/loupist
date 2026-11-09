@@ -4,6 +4,7 @@
 pub(crate) mod activity;
 pub(crate) mod approvals;
 pub(crate) mod artifacts;
+pub(crate) mod bot_memory;
 pub(crate) mod chart;
 pub(crate) mod control;
 pub(crate) mod execution_session;

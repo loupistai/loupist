@@ -32,7 +32,7 @@ Follow companies or import holdings as research context, receive dated briefings
 
 - **It carries lessons forward.** Ordinary research can retain Sources and refine research methods. A later relevant turn reads those revisions; historical inputs remain available in private research records.
 - **Primary filings, two markets, one conversation.** OpenBB brings SEC EDGAR, FRED, keyless market data, and configured data vendors into the same chat as native OpenDART, World Bank, KRX, and the Korea Investment read catalog. Credentials stay on the device.
-- **Its own math.** Pi's native file and Bash tools let the Loupist read, edit and run code in your chosen folder using your computer's permissions. The agent sets up local runtimes and dependencies as needed, keeps research scripts and results in that folder, and can preserve exact data revisions for charts.
+- **Its own math.** Pi's native file tools let the Loupist read and edit files in your chosen folder. `run_python` runs numerical code in a pinned offline Python runtime with no shell and no network. Research scripts and results stay in that folder, and charts can preserve exact data revisions.
 - **Records you own.** A Loupist folder preserves its Chats, retained originals and referenced tool activity. Open a copied folder to restore that Loupist. Each Loupist owns its sources, World, Lens, notes and private judgments. Command results appear in Chat progress; files, charts, documents and saved Memory open beside the conversation. Removing a Loupist unregisters it; its folder, Chats and Memory remain available to reopen.
 
 ## How a Loupist remembers
@@ -59,7 +59,7 @@ The first release targets macOS 13 or newer on Apple Silicon only. Windows, Inte
 
 - React submits typed intent and has no raw filesystem, process, credential, or Memory-write authority.
 - Rust owns Loupist isolation, persistence, and Memory writes.
-- Native file tools are restricted to admitted workspace, scratch and attachment paths; private app data and credentials are refused. Bash retains host permissions before third-party text and is refused afterwards. Its filtered environment omits app credentials, but a clean command can still access host files. See [Native tool permissions](docs/runtime/permissions.md).
+- Native file tools are restricted to admitted workspace, scratch and attachment paths; private app data and credentials are refused. `run_python` is the only agent code execution tool. It has no shell, network or host environment, and it stays allowed after third-party text. See [Native tool permissions](docs/runtime/permissions.md).
 - Model, market-data and graph workers run behind Rust authority. The host owns their process lifetimes and allowed operations.
 - Memory is the Loupist's durable learned state. Bundled Skills define product methods; workspace instructions and Skill entrypoints enter through a bounded, hash-checked snapshot.
 

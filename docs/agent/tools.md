@@ -28,7 +28,7 @@ the activation sentence only to the component Rust marks `bundled`, and replaces
 the list of off connections with one fixed sentence that points at
 `connection_setup`, shown only when that tool is in the turn.
 
-Native `read`, `write`, `edit`, `bash`, `ls`, `find`, and `grep` keep Pi's tool descriptions. [SYSTEM.md](../../apps/loupist/agent/SYSTEM.md) states the permission rule once, under "Authority and local work": file tools are restricted to admitted workspace, scratch and attachment paths; private app data, credentials and git metadata are refused. Clean Bash retains host permissions and is refused after third-party text. [Native tool permissions](../runtime/permissions.md) owns the complete boundary. `registerWorkspaceTools` in `agent/workspace-tools.mjs` does not append that sentence to each tool. It still calls the Rust `authorize` hook before every execution, wraps untrusted text with the host boundary, and passes the workspace as the tool cwd while Pi's runtime directory stays private. The two-case form for an investment view is in that same file under "Investment judgment" and in the [Journal Skill](../../apps/loupist/agent/skills/journal/SKILL.md): two compact points, for and against, each a dated observation, then its next check (metric and timing), then what would strengthen or weaken it. The system's dated, linked per-principle checklist still applies. A proposed chart level's observed anchor is date, measure, and value; the [Visualize Skill](../../apps/loupist/agent/skills/visualize/SKILL.md) says "last day" or the chart's overall range does not date that value.
+Native `read`, `write`, `edit`, `ls`, `find`, and `grep` keep Pi's tool descriptions. [SYSTEM.md](../../apps/loupist/agent/SYSTEM.md) states the permission rule once, under "Authority and local work". File tools are restricted to admitted workspace, scratch and attachment paths. Private app data, credentials and git metadata are refused. `run_python` is the code execution tool and stays allowed after third-party text. [Native tool permissions](../runtime/permissions.md) owns the complete boundary. `registerWorkspaceTools` in `agent/workspace-tools.mjs` does not append that sentence to each tool. It still calls the Rust `authorize` hook before every execution, wraps untrusted text with the host boundary, and passes the workspace as the tool cwd while Pi's runtime directory stays private. The two-case form for an investment view is in that same file under "Investment judgment" and in the [Journal Skill](../../apps/loupist/agent/skills/journal/SKILL.md): two compact points, for and against, each a dated observation, then its next check (metric and timing), then what would strengthen or weaken it. The system's dated, linked per-principle checklist still applies. A proposed chart level's observed anchor is date, measure, and value; the [Visualize Skill](../../apps/loupist/agent/skills/visualize/SKILL.md) says "last day" or the chart's overall range does not date that value.
 
 `web_search` follows the [routing setting](../capabilities/data-services.md#agent-facing-data-services)
 in Rust. Model-native search runs as a Pi support command through
@@ -38,11 +38,11 @@ client share the Responses hosted-search request in `codex.mjs`; `anthropic.mjs`
 and `xai.mjs` have their own. Every adapter needs a resolvable credential before
 any request.
 
-`calculate` (`calculations` pack) is the host arithmetic tool; its contract is in
+`calculate` (`calculations` pack) is the host arithmetic tool. Its contract is in
 [Calculation](../analysis/calculation.md#calculation). `SYSTEM.md` sends common arithmetic to
-`calculate` before Bash, and the financial Skills route numeric work without a
-runtime first: `calculate`, then OpenBB's local `quantitative_*`, `technical_*`
-and `econometrics_*` tools, then `dataset_export` plus local code for what those
+`calculate` before `run_python`. The financial Skills route numeric work through
+`calculate`, then OpenBB's local `quantitative_*`, `technical_*` and
+`econometrics_*` tools, then `dataset_export` plus `run_python` for what those
 cannot do.
 
 A `dcf_grid` or `reverse_dcf` result shows as a [sensitivity card](../analysis/calculation.md#sensitivity-cards)

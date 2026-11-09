@@ -82,9 +82,9 @@ fn wrapped(text: &str) -> bool {
     wrapped_by(text, PACK)
 }
 
-fn bash_allowed(executor: &AppToolExecutor) -> bool {
+fn file_tool_allowed(executor: &AppToolExecutor) -> bool {
     executor
-        .enforce_turn_policy(ToolMethod::NativeAuthorize, &json!({"name": "bash"}))
+        .enforce_turn_policy(ToolMethod::NativeAuthorize, &json!({"name": "read"}))
         .is_ok()
 }
 
@@ -97,7 +97,7 @@ fn untrusted_text(executor: &AppToolExecutor) -> bool {
 /// A fresh turn: its own capture, so each delivery is checked on its own.
 fn turn(state: &AppState) -> AppToolExecutor {
     let executor = executor_for(state, Arc::new(ToolCapture::default()));
-    assert!(bash_allowed(&executor));
+    assert!(file_tool_allowed(&executor));
     executor
 }
 
@@ -155,7 +155,7 @@ async fn shared_pack_text_arrives_delimited_and_pauses_for_flags_and_full_text()
         "{hit}"
     );
     assert!(
-        bash_allowed(&executor) && !untrusted_text(&executor),
+        file_tool_allowed(&executor) && !untrusted_text(&executor),
         "a clean title is not its full text"
     );
     let clean = hit["recordId"].as_str().unwrap().to_owned();
@@ -238,7 +238,7 @@ async fn shared_pack_text_arrives_delimited_and_pauses_for_flags_and_full_text()
         .await
         .unwrap();
     assert!(!read["text"].as_str().unwrap().contains("<<shared"));
-    assert!(bash_allowed(&executor) && !untrusted_text(&executor));
+    assert!(file_tool_allowed(&executor) && !untrusted_text(&executor));
 
     // world_read: shared names, the summary asking for the system prompt, the relationship.
     let world = crate::commands::knowledge::catalog(

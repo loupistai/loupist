@@ -215,6 +215,7 @@ pub(crate) fn seed_e2e_knowledge_fixture(state: &AppState) -> Result<(), Command
         )?],
         created_at_ms: 10,
         updated_at_ms: 10,
+        bot_memory: Default::default(),
     };
     state
         .store

@@ -681,6 +681,7 @@ impl SqliteStore {
                     messages: Vec::new(),
                     created_at_ms: now,
                     updated_at_ms: now,
+                    bot_memory: Default::default(),
                 };
                 chat.validate()
                     .map_err(|error| invalid(&error.to_string()))?;

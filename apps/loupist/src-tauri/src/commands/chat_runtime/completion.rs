@@ -184,6 +184,23 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
         };
         let saved_principles = capture.staged_principles.lock().await.clone();
         let staged_handoff = capture.staged_handoff.lock().await.clone();
+        // Only a Bot reply with saving on changes Bot memory; one that read
+        // third-party text keeps its review batch for the next reply.
+        let bot_memory = if task_update_memory
+            && capture
+                .surface
+                .as_ref()
+                .is_some_and(crate::chat::surface::ChatSurface::is_bot)
+        {
+            let reviewed = if capture.turn_taint.has_untrusted_content() {
+                Vec::new()
+            } else {
+                capture.bot_memory_review.clone()
+            };
+            Some((capture.staged_bot_memory.lock().await.delivered(), reviewed))
+        } else {
+            None
+        };
         let citation_reads = capture.staged_reads.lock().await.clone();
         // Asset pages change only with Memory saving on and never under an as-of date.
         let asset_work = task_update_memory && !capture.as_of_turn();
@@ -291,6 +308,20 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                     progress: progress_snapshot.clone(),
                 };
                 chat.messages.push(completed_message.clone());
+                if let Some((staged, reviewed)) = &bot_memory {
+                    crate::chat::bot_memory::settle_reply(
+                        &mut chat,
+                        &message_id,
+                        created_at_ms,
+                        staged,
+                        reviewed,
+                        capture.principle_user_message_id.as_deref(),
+                    )
+                    .map_err(|error| {
+                        on_event.set_failure_kind(ChatFailureKind::MemoryCommitFailed);
+                        CommandError::internal(error)
+                    })?;
+                }
                 let title_applied = match &title {
                     Some(title) if chat.title.is_empty() => {
                         chat.title = title.clone();

@@ -70,7 +70,7 @@ it("opens the details for a failed step and offers its exact activity", async ()
 it("explains a step paused by the untrusted-text rule in the step, calmly and with no override (B92)", async () => {
   render(row({ startedAtMs: 1, finishedAtMs: 2000, items: [
     { id: "search", kind: "tool", toolName: "web_search", category: "web", operation: "search", action: "Searched the web", status: "succeeded" },
-    { id: "bash", kind: "tool", toolName: "bash", category: "compute", operation: "execute", action: "Ran a command", target: "python margin_model.py", status: "failed", refusal: "untrusted_text_paused" },
+    { id: "instructions", kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", target: "AGENTS.md", status: "failed", refusal: "untrusted_text_paused" },
     { id: "fetch", kind: "tool", toolName: "web_fetch", category: "web", operation: "read", action: "Read a web source", target: "example.com/review", status: "failed", refusal: "untrusted_text_paused" },
   ] }, "complete"));
   // The header counts a pause, not a failure, and the details stay closed.
@@ -81,15 +81,15 @@ it("explains a step paused by the untrusted-text rule in the step, calmly and wi
   expect(screen.queryByLabelText("Failed")).toBeNull();
   expect(screen.getAllByRole("img", { name: "Paused" })).toHaveLength(2);
   expect(screen.getAllByText("Paused")).toHaveLength(2);
-  expect(screen.queryByText("Ran a command")).toBeNull();
+  expect(screen.queryByText("Wrote a file")).toBeNull();
   expect(screen.queryByText("Read a web source")).toBeNull();
   const notes = screen.getAllByRole("note");
-  expect(notes[0]).toHaveTextContent("Paused: this answer read text from other sites, so running commands is turned off for this answer.");
+  expect(notes[0]).toHaveTextContent("so changing instruction and Skill files is turned off for this answer.");
   expect(notes[1]).toHaveTextContent("so opening this page is turned off for this answer.");
   // A security rule: nothing in the note offers a way around it.
   for (const note of notes) expect(within(note).queryByRole("button")).toBeNull();
   // Each note sits with its own step.
-  expect(follows(screen.getByText("python margin_model.py"), notes[0]!)).toBe(true);
+  expect(follows(screen.getByText("AGENTS.md"), notes[0]!)).toBe(true);
   expect(follows(notes[0]!, screen.getByText("example.com/review"))).toBe(true);
 });
 
@@ -106,39 +106,39 @@ it("explains a step refused for a private app path or a file outside the Loupist
   for (const note of notes) expect(within(note).queryByRole("button")).toBeNull();
 });
 
-it("labels a refused command as paused in Korean while retaining completed and ordinary failed actions", async () => {
+it("labels a refused page as paused in Korean while retaining completed and ordinary failed actions", async () => {
   await i18n.changeLanguage("ko");
   try {
     render(row({ startedAtMs: 1, finishedAtMs: 2000, items: [
-      { id: "paused", kind: "tool", toolName: "bash", category: "compute", operation: "execute", action: "Ran a command", target: "paused.py", status: "failed", refusal: "untrusted_text_paused", detailId: "paused-detail" },
+      { id: "paused", kind: "tool", toolName: "web_fetch", category: "web", operation: "read", action: "Read a web source", target: "example.com/page", status: "failed", refusal: "untrusted_text_paused", detailId: "paused-detail" },
       { id: "agents", kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", target: "AGENTS.md", status: "failed", refusal: "untrusted_text_paused" },
-      { id: "failed", kind: "tool", toolName: "bash", category: "compute", operation: "execute", action: "Ran a command", target: "failed.py", status: "failed" },
-      { id: "succeeded", kind: "tool", toolName: "bash", category: "compute", operation: "execute", action: "Ran a command", target: "done.py", status: "succeeded" },
+      { id: "failed", kind: "tool", toolName: "run_python", category: "compute", operation: "execute", action: "Ran Python", target: "failed.py", status: "failed" },
+      { id: "succeeded", kind: "tool", toolName: "run_python", category: "compute", operation: "execute", action: "Ran Python", target: "done.py", status: "succeeded" },
     ] }, "complete"));
-    const paused = screen.getByText("paused.py").closest(".chat-progress-row")!;
+    const paused = screen.getByText("example.com/page").closest(".chat-progress-row")!;
     expect(within(paused as HTMLElement).getByText("일시 중지")).toBeVisible();
-    expect(within(paused as HTMLElement).queryByText("명령 실행함")).toBeNull();
-    expect(within(paused as HTMLElement).getByRole("note")).toHaveTextContent("다른 사이트의 글을 읽어서, 이번 답변에서는 명령 실행이 꺼져 있어요.");
+    expect(within(paused as HTMLElement).queryByText("웹 자료 읽음")).toBeNull();
+    expect(within(paused as HTMLElement).getByRole("note")).toHaveTextContent("다른 사이트의 글을 읽어서, 이번 답변에서는 이 페이지 열기가 꺼져 있어요.");
     const agents = screen.getByText("AGENTS.md").closest(".chat-progress-row")!;
     expect(within(agents as HTMLElement).getByRole("note")).toHaveTextContent("지침 파일과 스킬 파일 변경이 꺼져 있어요.");
-    expect(screen.getAllByText("명령 실행함")).toHaveLength(2);
+    expect(screen.getAllByText("파이썬 실행함")).toHaveLength(2);
   } finally { await i18n.changeLanguage("en"); }
 });
 
 it("loads running command output on demand and stops polling when closed", async () => {
   vi.useFakeTimers();
   try {
-    const { read, wrapper } = withActivity({ id: "durable-detail", tool_name: "bash", status: "running", input: JSON.stringify({ command: "python calculate.py" }), output: "Partial result: 391", truncated: true, started_at_ms: 10 });
+    const { read, wrapper } = withActivity({ id: "durable-detail", tool_name: "run_python", status: "running", input: JSON.stringify({ code: "print(391)", timeout_seconds: 30 }), output: "Partial result: 391", truncated: true, started_at_ms: 10 });
     render(row({ startedAtMs: 1, items: [
-      { id: "tool", kind: "tool", toolName: "bash", category: "compute", operation: "execute", action: "Ran a command", running: "Running a command", status: "running", detailId: "durable-detail" },
+      { id: "tool", kind: "tool", toolName: "run_python", category: "compute", operation: "execute", action: "Ran Python", running: "Running Python", status: "running", detailId: "durable-detail" },
     ] }, "streaming"), { wrapper });
     expect(read).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Running a command" }));
-    const inspect = screen.getByRole("button", { name: "Inspect Running a command" });
+    fireEvent.click(screen.getByRole("button", { name: "Running Python" }));
+    const inspect = screen.getByRole("button", { name: "Inspect Running Python" });
     fireEvent.click(inspect);
     await act(async () => { await Promise.resolve(); });
     expect(within(screen.getByLabelText("Work progress")).getByText("Partial result: 391")).toBeVisible();
-    expect(screen.getByText("python calculate.py")).toBeVisible();
+    expect(screen.getByText("print(391)")).toBeVisible();
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     expect(read).toHaveBeenCalledTimes(2);
     fireEvent.click(inspect);
@@ -149,9 +149,9 @@ it("loads running command output on demand and stops polling when closed", async
 });
 
 it("reveals a focused command's saved output in the work trace", async () => {
-  const { wrapper } = withActivity({ id: "durable-detail", tool_name: "bash", status: "succeeded", input: "python calculate.py", output: "Partial result: 391", truncated: false, started_at_ms: 10, finished_at_ms: 20 });
+  const { wrapper } = withActivity({ id: "durable-detail", tool_name: "run_python", status: "succeeded", input: "print(391)", output: "Partial result: 391", truncated: false, started_at_ms: 10, finished_at_ms: 20 });
   render(row({ startedAtMs: 1, finishedAtMs: 20, items: [
-    { id: "tool", kind: "tool", toolName: "bash", category: "compute", operation: "execute", action: "Ran a command", target: "python calculate.py", status: "succeeded", detailId: "durable-detail" },
+    { id: "tool", kind: "tool", toolName: "run_python", category: "compute", operation: "execute", action: "Ran Python", status: "succeeded", detailId: "durable-detail" },
   ] }, "complete", {}, { focusItemId: "tool" }), { wrapper });
   expect(await screen.findByLabelText("Command output")).toHaveTextContent("Partial result: 391");
 });

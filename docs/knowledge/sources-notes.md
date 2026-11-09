@@ -13,8 +13,8 @@ See the [workspace contract](../runtime/chat-turns.md#local-workspace-execution)
 
 There is no automatic file indexing or two-way synchronization into Memory.
 `workspace_capture` reads a bounded UTF-8 snapshot, optionally checking its preview
-digest. After acknowledgment, `source_save` can retain it. Native `read` and Bash
-output alone do not create Source receipts. Binary originals can be retained through
+digest. After acknowledgment, `source_save` can retain it. Native `read` and
+`run_python` output alone do not create Source receipts. Binary originals can be retained through
 Add source. A generated report is analysis, not independent original evidence.
 
 ## Sources and exact references
@@ -48,7 +48,8 @@ the hostname for HTTP(S) URLs or the retained label for other origins.
 
 ## Working notes and Journal
 
-Substantial work can have one current Working note per Chat. An update replaces its
+Substantial work can have one current Working note per Chat; the Bot keeps
+[Bot memory](../ui/home-thread.md#bot-memory) instead. An update replaces its
 body in the completed-turn transaction and checks the expected identity; failed or
 cancelled turns preserve the existing note. Earlier Chats' notes can be referenced
 by a new note, and discovery can expose later corrections. Notes remain available

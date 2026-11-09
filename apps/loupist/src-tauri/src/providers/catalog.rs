@@ -708,9 +708,8 @@ const fn oauth_provider(
     }
 }
 
-/// Only development builds read host `*_API_KEY` variables. Pi and its native
-/// Bash are same-user processes and `ps -E` shows a process environment, so a
-/// forwarded key would be readable by any command the agent runs. Release
+/// Only development builds read host `*_API_KEY` variables. Other same-user
+/// host processes can inspect an environment through `ps -E`. Release
 /// builds use the saved credential in Pi's private auth.json instead.
 const FORWARD_HOST_PROVIDER_KEYS: bool = cfg!(debug_assertions) && !cfg!(feature = "e2e");
 

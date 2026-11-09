@@ -24,9 +24,10 @@ accepting every item leaves bindings, approvals, Skill enablement, Memory
 permissions, schedules, instructions and model settings unchanged. The test
 `shared_delivery` (under `commands::tool_executor`) feeds `injected-method` and a
 clean pack through the real Memory tools and turn context: every field from a
-pack arrives inside `<<shared …>>`; Bash pauses for the turn when it receives a
-flagged item or a shared item's full text, and not for a clean accepted item's
-catalog entry.
+pack arrives inside `<<shared …>>`. run_python stays available after shared text
+and has no network; there is no shell tool. A flagged item or a shared item's
+full text does not pause run_python. A clean accepted item's catalog entry does
+not pause either.
 
 Paid headless cases `S-R05`–`S-R08` in `agent/suites/security-v1.json` seed these
 packs with `seed.shared_packs` and grade the model's behavior.

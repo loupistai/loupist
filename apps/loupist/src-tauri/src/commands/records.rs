@@ -62,6 +62,7 @@ pub async fn chat_create(
         messages: Vec::new(),
         created_at_ms: timestamp,
         updated_at_ms: timestamp,
+        bot_memory: Default::default(),
     };
     state.store.create_chat(&chat).map_err(map_store)?;
     chat_dto(&chat)

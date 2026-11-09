@@ -1,5 +1,4 @@
 import {
-  createBashToolDefinition,
   createEditToolDefinition,
   createFindToolDefinition,
   createGrepToolDefinition,
@@ -257,47 +256,10 @@ function grepDescriptor(fd, args, signal, maxBytes) {
   });
 }
 
-/** Native file tools and Bash never run at the same time in this process:
- * Bash holds the lock alone, file tools share it among themselves, and
- * waiters go in order, so a command cannot swap a link between Rust's answer
- * and the file operation it allowed. */
-export class ToolLock {
-  #active = 0;
-  #exclusive = false;
-  #waiting = [];
-
-  /** Resolves to the release function once the lock is held. */
-  acquire(exclusive) {
-    return new Promise((resolve) => {
-      this.#waiting.push({ exclusive, resolve });
-      this.#admit();
-    });
-  }
-
-  #admit() {
-    while (this.#waiting.length > 0) {
-      const next = this.#waiting[0];
-      if (this.#exclusive || (next.exclusive && this.#active > 0)) return;
-      this.#waiting.shift();
-      this.#active += 1;
-      this.#exclusive = next.exclusive;
-      let released = false;
-      next.resolve(() => {
-        if (released) return;
-        released = true;
-        this.#active -= 1;
-        this.#exclusive = false;
-        this.#admit();
-      });
-    }
-  }
-}
-
 /** What `native.authorize` is told about one call: the resolved file for read,
  * write and edit; the resolved search root for ls, find and grep (the
- * workspace by default, as Pi resolves it); the exact command for bash. */
+ * workspace by default, as Pi resolves it). */
 export function nativeRequest(workspaceRoot, name, input) {
-  if (name === "bash") return { command: input?.command };
   if (FILE_WRITERS[name] || name === "read") {
     const path = nativeTargetPath(workspaceRoot, input?.path);
     return path === undefined ? {} : { path };
@@ -306,26 +268,16 @@ export function nativeRequest(workspaceRoot, name, input) {
   return {};
 }
 
-/** Native Pi tools operate on the selected workspace while Pi itself keeps a private runtime CWD.
+/** Native Pi file tools operate on the selected workspace while Pi itself keeps a private runtime CWD.
  * `authorize(name, request, signal, id)` asks Rust before every execution with the
  * `nativeRequest` above; Rust owns the permission policy, exported-text trust, the
  * canonical target (`resolved`) a read, write or edit is pinned to and the
- * `identity` a read must find. */
+ * `identity` a read must find. Analysis runs through the broker tool `run_python`. */
 export function registerWorkspaceTools(pi, workspaceRoot, authorize) {
-  const lock = new ToolLock();
-  const bashOptions = {
-    exposeSessionEnvironment: false,
-    spawnHook: ({ command, env }) => ({
-      command,
-      cwd: workspaceRoot,
-      env: allowedWorkspaceEnvironment(env),
-    }),
-  };
   const definitions = [
     createReadToolDefinition(workspaceRoot),
     createWriteToolDefinition(workspaceRoot),
     createEditToolDefinition(workspaceRoot),
-    createBashToolDefinition(workspaceRoot, bashOptions),
     createLsToolDefinition(workspaceRoot),
     createFindToolDefinition(workspaceRoot),
     createGrepToolDefinition(workspaceRoot),
@@ -335,43 +287,38 @@ export function registerWorkspaceTools(pi, workspaceRoot, authorize) {
     pi.registerTool({
       ...definition,
       async execute(id, input, signal, onUpdate, ctx) {
-        const release = await lock.acquire(definition.name === "bash");
-        try {
-          const writer = FILE_WRITERS[definition.name];
-          const request = nativeRequest(workspaceRoot, definition.name, input);
-          const permission = authorize ? await authorize(definition.name, request, signal, id) : undefined;
-          const boundary = permission?.untrusted_text;
-          const deliver = (result) => boundary ? {
-            ...result,
-            content: result.content.map((part) => part.type === "text"
-              ? { ...part, text: `${boundary.prefix}${part.text}${boundary.suffix}` } : part),
-          } : result;
-          const expected = typeof permission?.resolved === "string"
-            ? permission.resolved : request.path === undefined ? undefined : canonicalTargetPath(request.path);
-          if (SEARCHERS.has(definition.name)) {
-            return deliver(await searchWorkspace(definition.name, input, permission, signal));
-          }
-          // A search runs on the canonical root Rust decided about, and a
-          // read opens the file Rust decided about, by identity when the
-          // host reports one.
-          if (writer && expected !== undefined && !sameTarget(canonicalTargetPath(request.path), expected)) {
-            throw new Error("Native file target changed after authorization");
-          }
-          const run = writer && expected !== undefined
-            ? writer(workspaceRoot, { operations: authorizedFileOperations(definition.name, expected, permission?.identity) })
-            : definition.name === "read" && expected !== undefined && permission?.identity !== undefined
-              ? createReadToolDefinition(workspaceRoot, { operations: pinnedReadOperations(expected, permission.identity) })
-              : definition;
-          const target = writer && expected !== undefined ? { ...input, path: expected } : input;
-          const result = await run.execute(id, target, signal,
-            onUpdate ? (update) => onUpdate(deliver(update)) : undefined, {
-            ...ctx,
-            cwd: workspaceRoot,
-          });
-          return deliver(result);
-        } finally {
-          release();
+        const writer = FILE_WRITERS[definition.name];
+        const request = nativeRequest(workspaceRoot, definition.name, input);
+        const permission = authorize ? await authorize(definition.name, request, signal, id) : undefined;
+        const boundary = permission?.untrusted_text;
+        const deliver = (result) => boundary ? {
+          ...result,
+          content: result.content.map((part) => part.type === "text"
+            ? { ...part, text: `${boundary.prefix}${part.text}${boundary.suffix}` } : part),
+        } : result;
+        const expected = typeof permission?.resolved === "string"
+          ? permission.resolved : request.path === undefined ? undefined : canonicalTargetPath(request.path);
+        if (SEARCHERS.has(definition.name)) {
+          return deliver(await searchWorkspace(definition.name, input, permission, signal));
         }
+        // A search runs on the canonical root Rust decided about, and a
+        // read opens the file Rust decided about, by identity when the
+        // host reports one.
+        if (writer && expected !== undefined && !sameTarget(canonicalTargetPath(request.path), expected)) {
+          throw new Error("Native file target changed after authorization");
+        }
+        const run = writer && expected !== undefined
+          ? writer(workspaceRoot, { operations: authorizedFileOperations(definition.name, expected, permission?.identity) })
+          : definition.name === "read" && expected !== undefined && permission?.identity !== undefined
+            ? createReadToolDefinition(workspaceRoot, { operations: pinnedReadOperations(expected, permission.identity) })
+            : definition;
+        const target = writer && expected !== undefined ? { ...input, path: expected } : input;
+        const result = await run.execute(id, target, signal,
+          onUpdate ? (update) => onUpdate(deliver(update)) : undefined, {
+          ...ctx,
+          cwd: workspaceRoot,
+        });
+        return deliver(result);
       },
     });
   }

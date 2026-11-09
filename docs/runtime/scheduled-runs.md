@@ -35,8 +35,8 @@ schedule creation. Schedule writes commit immediately, including if the creating
 reply later fails. A task cannot overlap itself and shares ordinary Chat capacity.
 Run now attempts admission immediately; it is not a durable manual-run queue.
 Pause prevents future starts; Stop cancels the current run separately. Run now also
-starts a paused task, so the Schedule tab's Run now creates a missing briefing task paused: a
-one-off run never turns on the weekday schedule.
+starts a paused task without turning on its future weekday schedule. The user
+asks the Bot to run a task now; Schedule shows its definition and run history.
 
 Missed recurring occurrences coalesce into one due run. Startup marks unfinished
 runs interrupted; failed/interrupted recurring tasks pause unless a newer edit
@@ -75,10 +75,10 @@ unchecked for that run. Wallet balances are then read for the held flags, within
 seconds.
 
 Unattended runs, both briefing and custom, may call only the fixed allowlist in
-`briefings/policy.rs`: read-only data tools, `calculate`, and selected Memory reads and saves
+`briefings/policy.rs`: read-only data tools, `calculate`, `run_python`, and selected Memory reads and saves
 (including `asset_page_read`, `thesis_update` and `earnings_snapshot_save`).
-Journal saves, principle saves, publishing charts, tables or documents, native tools and
-schedule management are refused
+Journal saves, principle saves, publishing charts, tables or documents through
+the publish tools, native file tools and schedule management are refused
 and recorded on the run as skipped tools; a delegated hand-off run has no scheduled
 run row, so its refusals are not recorded, and a scheduled run whose row cannot take
 the record fails the call. A custom MCP call still requires an

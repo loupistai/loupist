@@ -4,7 +4,7 @@ import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { ChatActivityDetail } from "../../types";
 import { ChatActivityDetailView } from "./ChatActivityDetailView";
 
-const detail: ChatActivityDetail = { id: "activity", tool_name: "bash", status: "succeeded", input: "python analysis.py", output: "391", truncated: false, started_at_ms: 10, finished_at_ms: 20, file_path: "analysis.py" };
+const detail: ChatActivityDetail = { id: "activity", tool_name: "run_python", status: "succeeded", input: "print(391)", output: "391", truncated: false, started_at_ms: 10, finished_at_ms: 20, file_path: "outputs/margin.png" };
 it("ignores late activity from another thread", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   let resolve!: (value: ChatActivityDetail) => void;
@@ -20,11 +20,11 @@ it("ignores late activity from another thread", async () => {
 it("presents command parameters and failures without displaying the raw request envelope", async () => {
   const user = userEvent.setup();
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
-  const input = JSON.stringify({ command: "python analysis.py", timeout: 30, working_directory: "research" });
+  const input = JSON.stringify({ code: "print(391)", timeout_seconds: 30, working_directory: "research" });
   vi.spyOn(bridge, "chatActivityRead").mockResolvedValue({ ...detail, input, status: "failed", output: "No such file: prices.csv" });
   render(<ChatActivityDetailView bridge={bridge} loupistId="loupist" threadId="chat" detailId="activity" />);
   expect(await screen.findByText("No such file: prices.csv")).toBeVisible();
-  expect(screen.getByText("python analysis.py", { selector: "code" })).toBeVisible();
+  expect(screen.getByText("print(391)", { selector: "pre" })).toBeVisible();
   expect(screen.getByRole("alert")).toBeInTheDocument();
   await user.click(screen.getByText("Details"));
   expect(screen.getByText("research", { selector: "dd" })).toBeVisible();

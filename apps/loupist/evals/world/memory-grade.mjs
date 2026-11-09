@@ -212,7 +212,7 @@ export function evaluateMemoryCheck(check, row, scenario, prior = new Map()) {
   if (check.assert === 'original_not_read') {
     const calls = row.chat_trace.tool_calls;
     if (!Array.isArray(calls)) return unknown('tool evidence missing');
-    const candidates = calls.filter((call) => ['read', 'workspace_capture', 'bash'].includes(call.name));
+    const candidates = calls.filter((call) => ['read', 'workspace_capture', 'run_python'].includes(call.name));
     if (candidates.some((call) => !call.args || /\[redacted\]|\[truncated\]|"_truncated"/iu.test(JSON.stringify(call.args)))) return unknown('file read arguments unavailable');
     const hit = candidates.find((call) => check.paths.some((path) => JSON.stringify(call.args).includes(path)));
     return result(!hit, hit ? `original accessed by ${hit.name}` : 'no original-file access in observed tools');

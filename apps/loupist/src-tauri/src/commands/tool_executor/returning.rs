@@ -16,6 +16,18 @@ impl AppToolExecutor {
         result: &Value,
     ) -> Result<Option<Returning>, BrokerError> {
         match method {
+            ToolMethod::PythonRun if result["untrusted_input"] == true => {
+                Ok(Some(Returning::Fields(BTreeMap::from([
+                    (
+                        "/stdout".into(),
+                        "Python result from app-exported text".into(),
+                    ),
+                    (
+                        "/stderr".into(),
+                        "Python result from app-exported text".into(),
+                    ),
+                ]))))
+            }
             ToolMethod::ChartQuery | ToolMethod::ArtifactRead => {
                 self.returning_artifact(method, result)
             }

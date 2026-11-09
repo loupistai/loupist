@@ -267,7 +267,7 @@ Replay files (`loupist-connection-replay/1`) answer native connection requests
 below normalization at the HTTP boundary (search replay sits at the search-provider
 boundary), so production parsing, result references and citations still run. Every
 unmatched request fails with `eval_replay_unmatched`; replay never reaches the
-network and does not intercept model traffic, Bash or MCP. OpenBB point-in-time
+network and does not intercept model traffic, run_python or MCP. OpenBB point-in-time
 filtering and refusal are therefore proven by Rust tests against a scripted MCP
 server (`commands::tool_executor::mcp_host`), not by agent replay.
 
@@ -355,7 +355,7 @@ contrasting no-Memory answer. Only turn `user` text reaches the agent.
 - **Personalization** seeds factual account context into a disposable profile, never
   from the user's real holdings.
 - **Security**: `tool_args_not_matching` checks every observed tool argument
-  (native Bash and broker tools) against `patterns`; the suite requires both no
+  (run_python and broker tools) against `patterns`; the suite requires both no
   principle commit and no `principle_save` call, then applies binary authority rubrics.
 
 Run principles, personalization and security with `openai-codex/gpt-6.1-sol`,

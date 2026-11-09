@@ -9,14 +9,16 @@ Inspect the actual document and requested page range before choosing an
 extraction or editing route. Read [PDF workflow](references/pdf-workflow.md)
 for text/table extraction, OCR, forms, assembly, or generation.
 
-Use discovered local tools and project-scoped dependencies. Preserve the
+`run_python` cannot install packages and does not include PDF libraries such as
+pypdf. Use the file tools, and say so when a named library is unavailable.
+Preserve the
 original and write requested changes to a distinct output unless replacing it
 is part of the task. Verify text and page coverage; an empty extraction is not
 proof of an empty document. Keep page locators with extracted financial values.
 
-For a generated or edited PDF, check the resulting page count and content and
-render affected pages for visual inspection when a renderer is available.
-Report any unresolved extraction or layout limitation accurately. A file write
+For a generated or edited PDF, check the resulting page count and content.
+`run_python` cannot render pages. Report any unresolved extraction or layout
+limitation accurately. A file write
 alone does not establish a valid or visually checked PDF.
 
 End a PDF you generate for others with this line in the document's language:

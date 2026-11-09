@@ -83,7 +83,7 @@ export function liveResearchRun(bridge: PreviewBridge) {
       tool("live-memory", "world_read", "memory", "read", "Read saved notes", "Reading saved notes", "Hanul Precision"),
       tool("live-search", "web_search", "web", "search", "Searched the web", "Searching the web", "Hanul Precision Q3 utilization"),
       tool("live-page", "web_fetch", "web", "read", "Read a web source", "Reading hanul.example", "Q3 operating review · hanul.example"),
-      tool("live-calc", "bash", "compute", "execute", "Ran a calculation", "Running a calculation", "margin bridge Q2 → Q3"),
+      tool("live-calc", "run_python", "compute", "execute", "Ran Python", "Running Python", ""),
     ];
     const preamble = commentaryBeats("commentary-0", "I’ll start with the saved notes and the Q3 operating review, then check the margin bridge.", 900, false);
     const beats: Beat[] = [{ at: 880, phase: "writing" }, ...preamble.beats, { at: preamble.end + 60, phase: "tool" }];

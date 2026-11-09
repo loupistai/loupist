@@ -46,8 +46,8 @@ from the log.
 
 A staged Source returns `saveRef`; job lookup before commit reports
 `waiting_for_turn_commit`. Processing begins after completion. Failed/cancelled
-turns publish none of these staged changes; native file and shell effects have
-already happened. The answer's Memory row reports actual retained changes.
+turns publish none of these staged changes. Native file writes and `run_python`
+copy-back have already happened. There is no agent shell. The answer's Memory row reports actual retained changes.
 
 ## Folder portability
 

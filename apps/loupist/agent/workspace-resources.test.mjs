@@ -51,7 +51,7 @@ function promptEvent(cwd, skills = []) {
     systemPromptOptions: {
       cwd,
       customPrompt: "Research the supplied data.",
-      selectedTools: ["read", "bash"],
+      selectedTools: ["read", "run_python"],
       toolSnippets: {},
       toolGuidelines: {},
       promptGuidelines: [],

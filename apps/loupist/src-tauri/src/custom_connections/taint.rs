@@ -16,12 +16,10 @@ use crate::{
 };
 
 pub const OUTBOUND_REFUSAL: &str = "Outbound access is paused for this turn because it read content from a custom connection. The user can ask again in a new message.";
-pub const UNTRUSTED_TEXT_REFUSAL: &str = "This reply read third-party text, so commands, custom connections and schedule changes stay paused for the rest of this reply. Do not retry a paused call this reply and do not ask the user to send a new message to unlock it. Keep working with reads, workspace file tools, web_search, web_fetch of search results and sites this reply already read, datasets, charts, Memory and market data.";
+pub const UNTRUSTED_TEXT_REFUSAL: &str = "This reply read third-party text, so custom connections and schedule changes stay paused for the rest of this reply. Do not retry a paused call this reply and do not ask the user to send a new message to unlock it. Keep working with reads, workspace file tools, Python, web_search, web_fetch of search results and sites this reply already read, datasets, charts, Memory and market data.";
 /// A native file tool aimed outside the Loupist folder, scratch and this
 /// Chat's attachments.
 pub const OUTSIDE_WORKSPACE_REFUSAL: &str = "This path is outside the Loupist folder, so native file tools do not touch it. Ask the user to attach the file to this chat or copy it into the Loupist folder, then work with that copy. Do not retry the outside path.";
-/// Bash after third-party text, on every host.
-pub const COMMAND_AFTER_UNTRUSTED_REFUSAL: &str = "This reply read third-party text, so commands stay paused for the rest of this reply. Do not retry a command this reply and do not ask the user to send a new message to unlock it. Finish with reads, workspace file tools and what is already read.";
 /// A URL that would carry the user's own values to a website.
 pub const WEB_FETCH_PRIVATE_REFUSAL: &str = "This URL carries the user's own values (a held quantity or amount, or text from their Lens or notes), and this turn read third-party text, so it is not opened. Do not put Memory, Lens or holdings values in a URL. Answer from the search results and sites already read.";
 /// A new website, or a long address on a known one, after third-party text.
@@ -44,10 +42,10 @@ pub struct CustomOrigin {
 /// descriptions, and saved Sources and datasets that hold them) pauses
 /// custom-connection calls and schedule changes and keeps `web_fetch` to
 /// sites the turn already knows ([`Self::web_fetch_target`]); a
-/// custom-connection result also pauses every outbound read, Bash included,
-/// because its server may be the exfiltration target. What native file tools
-/// and Bash may do under either tier is decided by
-/// `agent_harness::native_policy` from [`Self::exposure`].
+/// custom-connection result also pauses every outbound read, because its
+/// server may be the exfiltration target. What native file tools may do under
+/// either tier is decided by `agent_harness::native_policy` from
+/// [`Self::exposure`]. `run_python` stays available at both tiers.
 #[derive(Default)]
 pub struct TurnTaint {
     tainted: AtomicBool,
@@ -838,47 +836,37 @@ fn char_windows(text: &str, size: usize) -> impl Iterator<Item = String> + '_ {
         .map(move |index| text[starts[index]..starts[index + size]].to_owned())
 }
 
-fn native_file_tool(params: &Value) -> bool {
+fn outbound_capable(method: ToolMethod, _params: &Value) -> bool {
     matches!(
-        params.get("name").and_then(Value::as_str),
-        Some("read" | "write" | "edit" | "ls" | "grep" | "find")
+        method,
+        ToolMethod::McpConnect
+            | ToolMethod::McpCall
+            | ToolMethod::WebSearch
+            | ToolMethod::WebFetch
+            | ToolMethod::WorldbankSeries
+            | ToolMethod::KrxDailyQuote
+            | ToolMethod::KisRead
+            | ToolMethod::DartFinancials
+            | ToolMethod::DartFilingSearch
+            | ToolMethod::DartFilingRead
+            | ToolMethod::DartCompanyLookup
+            | ToolMethod::DartMajorReport
+            | ToolMethod::DartOwnership
+            | ToolMethod::DartDividends
+            | ToolMethod::WorldJob
+            | ToolMethod::ScheduleCreate
+            | ToolMethod::ScheduleHandoff
+            | ToolMethod::ScheduleWatch
+            | ToolMethod::ScheduleBriefing
+            | ToolMethod::ScheduleUpdate
+            | ToolMethod::ScheduleRunNow
+            | ToolMethod::ScheduleSetStatus
     )
 }
 
-fn outbound_capable(method: ToolMethod, params: &Value) -> bool {
-    match method {
-        // The host cannot prove arbitrary Bash is offline. Block all Bash,
-        // including aliases, interpreters and scripts, rather than scanning commands.
-        ToolMethod::NativeAuthorize => !native_file_tool(params),
-        ToolMethod::McpConnect
-        | ToolMethod::McpCall
-        | ToolMethod::WebSearch
-        | ToolMethod::WebFetch
-        | ToolMethod::WorldbankSeries
-        | ToolMethod::KrxDailyQuote
-        | ToolMethod::KisRead
-        | ToolMethod::DartFinancials
-        | ToolMethod::DartFilingSearch
-        | ToolMethod::DartFilingRead
-        | ToolMethod::DartCompanyLookup
-        | ToolMethod::DartMajorReport
-        | ToolMethod::DartOwnership
-        | ToolMethod::DartDividends
-        | ToolMethod::WorldJob
-        | ToolMethod::ScheduleCreate
-        | ToolMethod::ScheduleHandoff
-        | ToolMethod::ScheduleWatch
-        | ToolMethod::ScheduleBriefing
-        | ToolMethod::ScheduleUpdate
-        | ToolMethod::ScheduleRunNow
-        | ToolMethod::ScheduleSetStatus => true,
-        _ => false,
-    }
-}
-
-/// The weaker tier keeps research reads (web, market data, Memory, files)
-/// and pauses what could act on injected instructions beyond this reply.
-/// Native tools are not judged here: the native policy asks the user.
+/// The weaker tier keeps research reads (web, market data, Memory, files,
+/// Python) and pauses what could act on injected instructions beyond this
+/// reply. Native file tools are not judged here: the native policy decides.
 fn command_or_outbound_write(method: ToolMethod, params: &Value) -> bool {
     match method {
         // A custom server's tools may write to an outside service.
@@ -949,11 +937,13 @@ mod tests {
                 Err(BrokerError::OutboundPaused)
             ));
         }
-        for name in ["bash", "browser", "unknown"] {
-            assert!(matches!(
-                taint.enforce(ToolMethod::NativeAuthorize, &json!({"name":name})),
-                Err(BrokerError::OutboundPaused)
-            ));
+        assert!(taint
+            .enforce(ToolMethod::PythonRun, &json!({"code":"print(1)"}))
+            .is_ok());
+        for name in ["browser", "unknown"] {
+            assert!(taint
+                .enforce(ToolMethod::NativeAuthorize, &json!({"name":name}))
+                .is_ok());
         }
         assert!(taint
             .enforce(ToolMethod::NativeAuthorize, &json!({"name":"read"}))
@@ -971,8 +961,8 @@ mod tests {
     }
 
     #[test]
-    fn third_party_text_pauses_commands_and_outbound_writes_but_keeps_research_reads() {
-        let bash = json!({"name":"bash"});
+    fn third_party_text_pauses_outbound_writes_but_keeps_research_reads() {
+        let python = json!({"code":"print(1)"});
         let custom_call = json!({"server_id":CUSTOM,"tool_name":"send_message","arguments":{}});
         let openbb_call = openbb("equity_price_quote");
         let fetch = json!({"url":"https://example.com/a"});
@@ -1017,7 +1007,7 @@ mod tests {
         }
 
         let taint = TurnTaint::default();
-        assert!(taint.enforce(ToolMethod::NativeAuthorize, &bash).is_ok());
+        assert!(taint.enforce(ToolMethod::PythonRun, &python).is_ok());
         assert!(taint.enforce(ToolMethod::McpCall, &custom_call).is_ok());
         taint.mark_untrusted_text();
         for (method, params) in [
@@ -1039,7 +1029,7 @@ mod tests {
         // Native tools are the native policy's to judge, so the tier itself
         // lets them through.
         for (method, params) in [
-            (ToolMethod::NativeAuthorize, bash.clone()),
+            (ToolMethod::PythonRun, python.clone()),
             (ToolMethod::NativeAuthorize, json!({"name":"read"})),
             (
                 ToolMethod::NativeAuthorize,
@@ -1067,10 +1057,10 @@ mod tests {
             taint.enforce(ToolMethod::WebFetch, &fetch),
             Err(BrokerError::OutboundPaused)
         ));
-        assert!(matches!(
-            taint.enforce(ToolMethod::NativeAuthorize, &bash),
-            Err(BrokerError::OutboundPaused)
-        ));
+        assert!(taint.enforce(ToolMethod::PythonRun, &python).is_ok());
+        assert!(taint
+            .enforce(ToolMethod::PythonRun, &json!({"code":"print(1)"}))
+            .is_ok());
     }
 
     #[test]

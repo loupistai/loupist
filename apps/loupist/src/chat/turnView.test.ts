@@ -210,7 +210,7 @@ describe("segments", () => {
   });
 
   it("does not open the details for a step paused by the untrusted-text rule", () => {
-    const paused: ChatProgressItem = { id: "bash", kind: "tool", toolName: "bash", category: "compute", operation: "execute", action: "Ran a command", status: "failed", refusal: "untrusted_text_paused" };
+    const paused: ChatProgressItem = { id: "instructions", kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", target: "AGENTS.md", status: "failed", refusal: "untrusted_text_paused" };
     const turn = view(message({ status: "complete", content: "Done.", progress: { startedAtMs: start, finishedAtMs: start + 100, items: [search, paused] } }));
     expect(turn.segments[0]).toMatchObject({ autoExpand: false, row: { issues: "1 paused" } });
   });

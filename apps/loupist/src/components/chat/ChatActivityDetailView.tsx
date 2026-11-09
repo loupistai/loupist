@@ -53,8 +53,8 @@ function ActivityReader({ bridge, loupistId, threadId, detailId, active: visible
   }, [bridge, loupistId, threadId, detailId, revision, visible, outputRevision]);
 
   const fields = detail ? inputFields(detail.input) : null;
-  const command = detail?.tool_name === "bash" ? (typeof fields?.command === "string" ? fields.command : !fields ? detail.input : null) : null;
-  const facts = fields ? Object.entries(fields).filter(([key]) => ["working_directory", "cwd", "timeout"].includes(key)) : [];
+  const program = detail?.tool_name === "run_python" ? (typeof fields?.code === "string" ? fields.code : !fields ? detail.input : null) : null;
+  const facts = fields ? Object.entries(fields).filter(([key]) => ["working_directory", "cwd", "timeout", "timeout_seconds"].includes(key)) : [];
   const writtenContent = detail?.tool_name === "write" && typeof fields?.content === "string" ? fields.content : null;
   const replacement = detail?.tool_name === "edit" && typeof fields?.oldText === "string" && typeof fields?.newText === "string"
     ? { before: fields.oldText, after: fields.newText } : null;
@@ -65,7 +65,7 @@ function ActivityReader({ bridge, loupistId, threadId, detailId, active: visible
     {!detail ? !error && <p role="status">{t("chatActivityDetailView.openingActivity")}</p> : <>
       {detail.status === "failed" ? <p role="alert">{detail.output ? t("chatActivityDetailView.thisStepFailedTheOutputIsBelow") : t("chatActivityDetailView.thisStepFailedBeforeItReturnedOutput")}</p> : null}
       {detail.status === "stopped" ? <p className="reader-notice">{t("chatActivityDetailView.thisStepWasStoppedBeforeItCompletedAnyFiles")}</p> : null}
-      {command ? <p className="chat-command-line"><code>{command}</code></p> : null}
+      {program ? <pre className="chat-command-line" tabIndex={0}>{program}</pre> : null}
       {writtenContent !== null ? <Disclosure title={<>{t("chatActivityDetailView.writtenContent")}</>}><pre tabIndex={0}>{writtenContent}</pre></Disclosure> : null}
       {replacement ? <Disclosure title={<>{t("chatActivityDetailView.requestedChange")}</>}><h3>{t("chatActivityDetailView.before")}</h3><pre tabIndex={0}>{replacement.before}</pre><h3>{t("chatActivityDetailView.after")}</h3><pre tabIndex={0}>{replacement.after}</pre></Disclosure> : null}
       {editCount ? <p className="reader-notice">{t("chatActivityDetailView.replacements", { count: editCount, formattedCount: formatNumber(editCount) })}</p> : null}
@@ -73,7 +73,7 @@ function ActivityReader({ bridge, loupistId, threadId, detailId, active: visible
       {detail.output ? <pre tabIndex={0} aria-label={t("chatActivityDetailView.commandOutput")} data-failed={detail.status === "failed"}>{detail.output}</pre> : <p className="reader-empty-output">{detail.status === "running" ? t("chatActivityDetailView.waitingForOutput") : detail.status === "succeeded" ? t("chatActivityDetailView.completedWithoutTextOutput") : t("chatActivityDetailView.noOutputWasRecorded")}</p>}
       {detail.truncated ? <p className="reader-notice">{t("chatActivityDetailView.thisIsALimitedPreviewOfTheSavedInput")}</p> : null}
       {detail.file_path ? <div className="reader-activity-file"><FileTextIcon aria-hidden="true" /><span title={detail.file_path}>{detail.file_path}</span></div> : null}
-      {facts.length ? <Disclosure className="reader-technical-details" title={<>{t("chatActivityDetailView.details")}</>}><dl className="reader-facts">{facts.map(([key, value]) => <div key={key}><dt>{key === "timeout" ? t("chatActivityDetailView.timeLimitSeconds") : t("chatActivityDetailView.folder")}</dt><dd>{readerValue(value)}</dd></div>)}</dl></Disclosure> : null}
+      {facts.length ? <Disclosure className="reader-technical-details" title={<>{t("chatActivityDetailView.details")}</>}><dl className="reader-facts">{facts.map(([key, value]) => <div key={key}><dt>{key === "timeout" || key === "timeout_seconds" ? t("chatActivityDetailView.timeLimitSeconds") : t("chatActivityDetailView.folder")}</dt><dd>{readerValue(value)}</dd></div>)}</dl></Disclosure> : null}
     </>}
   </section>;
 }

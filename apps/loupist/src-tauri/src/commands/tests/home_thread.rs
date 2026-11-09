@@ -187,6 +187,49 @@ fn a_failed_run_is_posted_as_unfinished_and_a_busy_thread_receives_it_later() {
 }
 
 #[test]
+fn a_scheduled_result_posted_into_the_bot_leaves_its_memory_and_review_queue_alone() {
+    use crate::chat::bot_memory::{
+        self, BotMemoryAction, BotMemoryKind, BotMemoryNote, StagedBotMemory,
+    };
+
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary);
+    let expected = ensure_home_thread(&state, "loupist-a").unwrap();
+    let mut home = expected.clone();
+    home.messages = vec![
+        crate::test_fixtures::chat_message("u1", ChatRole::User, "Brief me on chips every Monday."),
+        crate::test_fixtures::chat_message("r1", ChatRole::Assistant, "Scheduled."),
+    ];
+    let staged = StagedBotMemory {
+        entry_id: "bm-chips".into(),
+        action: BotMemoryAction::Remember(BotMemoryNote {
+            kind: BotMemoryKind::Context,
+            text: "Reads the chip briefing on Mondays".into(),
+            basis: vec!["u1".into()],
+        }),
+    };
+    bot_memory::settle_reply(&mut home, "r1", 2, &[staged], &[], Some("u1")).unwrap();
+    home.updated_at_ms += 1;
+    state.store.replace_chat(&expected, &home).unwrap();
+
+    let task = service::create(&state, "loupist-a", draft("Chip briefing"), None).unwrap();
+    finish_run(
+        &state,
+        &task.id,
+        "Chip inventories fell for a third week.",
+        RunStatus::Succeeded,
+    );
+    assert_eq!(deliver_finished_runs(&state, "loupist-a").unwrap(), 1);
+
+    let delivered = state.store.get_chat(&home.id).unwrap().unwrap();
+    assert_eq!(delivered.messages.len(), 3);
+    assert!(delivered.messages[2].delivery.is_some());
+    // The schedule stays the host's record; the post is neither memory nor queued for review.
+    assert_eq!(delivered.bot_memory, home.bot_memory);
+    assert_eq!(delivered.bot_memory.unreviewed, ["u1"]);
+}
+
+#[test]
 fn pause_and_resume_check_the_task_revision() {
     let temporary = tempfile::tempdir().unwrap();
     let state = fixture(&temporary);

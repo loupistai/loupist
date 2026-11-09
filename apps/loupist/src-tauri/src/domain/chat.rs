@@ -1373,6 +1373,12 @@ pub struct ChatSession {
     /// Edit forks (X18): versions of the tail the user is not looking at.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub versions: Vec<ChatVersion>,
+    /// What the Bot keeps from this conversation; only the home Thread has any.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::chat::bot_memory::BotMemory::is_empty"
+    )]
+    pub bot_memory: crate::chat::bot_memory::BotMemory,
     pub messages: Vec<ChatMessage>,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
@@ -1407,6 +1413,10 @@ impl ChatSession {
                 ));
             }
         }
+        if !self.bot_memory.is_empty() && !crate::chat::home::is_home(self) {
+            return Err(DomainError::Invalid("only the Bot keeps Bot memory"));
+        }
+        self.bot_memory.validate().map_err(DomainError::Invalid)?;
         if self.set_aside_memory.len() > MAX_SET_ASIDE_MEMORY {
             return Err(DomainError::Invalid("too many set-aside memory records"));
         }

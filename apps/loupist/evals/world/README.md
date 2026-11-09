@@ -61,8 +61,9 @@ combined `.pending.jsonl`, without mixing attempts of one trial.
 Controls: verify the exact Chat and World model/effort against the connected catalog
 and keep the observed receipts; a different model, effort or executable is a
 different comparison. Chat turns time out after 600,000 ms. Every final probe uses
-`read_only` Memory. Native permissions may still allow network or Bash; record that
-rather than claiming isolation. Stop on a provider rejection.
+`read_only` Memory. Native permissions may still allow network through web tools.
+run_python has no network and there is no shell; record that rather than claiming
+isolation. Stop on a provider rejection.
 
 Harness behavior worth knowing when reading traces:
 

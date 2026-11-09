@@ -44,7 +44,8 @@ items with known Loupist authorship: whole pages the Loupist created that hold n
 user or shared section, and Loupist-origin sections retired from pages the user
 keeps (a user retire, so the Loupist cannot refile that key), with the summary
 cleared when the log shows the Loupist wrote it last (counted with the sections). User-created pages,
-shared items, manually saved Sources, Journal, watchlist and holdings stay. Relationships with independent user/shared support and names still
+shared items, manually saved Sources, Journal, watchlist, holdings and
+[Bot memory](../ui/home-thread.md#bot-memory) stay. Relationships with independent user/shared support and names still
 used by preserved relationships stay. A Source also stays if it is the sole basis
 of a protected user/shared/unknown-authored relationship. Immutable removed Sources and Lens records
 are hidden, and removed Lens titles are released for reuse. Pending extraction of
@@ -59,7 +60,9 @@ submits both Memory read and save as true; private Chat submits both as false.
 Loupist settings and Chat preferences use a positive Remember new chats switch, on
 by default. Turning it off stores `chat.use_memory` and `chat.update_memory` as
 false for new Chats and leaves existing Chats unchanged. Private Chat still
-persists its transcript and does not undo native workspace file changes. There
+persists its transcript and does not undo native workspace file changes. The switch
+also covers the Bot's [Bot memory](../ui/home-thread.md#bot-memory): a private Bot
+turn neither receives nor changes it. There
 is no read-only composer choice. Rust keeps the two flags separate for scoped
 defaults and scheduled runs.
 
@@ -91,6 +94,7 @@ counts.
 | Journal | Entries created by then; an outcome observed later is removed, so its check reads as pending. Due pointers count from the cutoff day; a later entry read fails with `as_of_later` |
 | Notes | Working and research notes recorded by then, with pointers only to later notes written by then; the current Chat's working note and relevant-note pointers follow the same rule |
 | Chat history and earlier Chats | Messages written by then, or answered under a cutoff no later than this one (`chat_history`, `conversation_memory`); a later message read fails with `as_of_later` |
+| [Bot memory](../ui/home-thread.md#bot-memory) | As it stood then: changes whose reply passes the chat-history rule, with later entries counted as notes. Forgotten entries never return, and no review is offered |
 | Asset pages | Reasons and lines written by then, rows dated by then ([rules](asset-pages.md#asset-pages)) |
 
 What each filter removes is counted for the answer's note

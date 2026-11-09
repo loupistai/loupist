@@ -35,7 +35,6 @@ fn allowed(path: &Path, roots: &NativeRoots, exposure: Exposure) -> bool {
             &NativeRequest {
                 tool: NativeTool::Read,
                 target: Some(path.to_path_buf()),
-                command: None,
             },
             roots,
             exposure

@@ -122,6 +122,8 @@ pub(super) struct TurnEnvelopeInputs {
     pub followed: Option<Value>,
     pub selected_references: Option<Value>,
     pub working_context: Option<WorkingNote>,
+    /// The Bot's memory of its conversation; Bot turns with Memory on only.
+    pub bot_memory: Option<crate::chat::bot_memory::BotMemoryContext>,
     /// Memory the as-of cutoff left out of the automatic context.
     pub left_out: crate::commands::knowledge::as_of::LeftOut,
 }
@@ -379,7 +381,8 @@ pub(super) fn admit_chat_turn(
     } else {
         None
     };
-    let working_context = if request.use_memory {
+    // The Bot carries its conversation in Bot memory, not a research working note.
+    let working_context = if request.use_memory && !surface.is_bot() {
         crate::commands::knowledge::current_working_context(state, &profile.id, &chat.id)?.filter(
             |note| {
                 // Under an as-of date, a working note written later is left out.
@@ -393,6 +396,26 @@ pub(super) fn admit_chat_turn(
     } else {
         None
     };
+    let bot_memory = (surface.is_bot() && request.use_memory).then(|| {
+        let known = cutoff.map(|cutoff| {
+            move |message: &ChatMessage| {
+                crate::commands::knowledge::as_of::message_known(message, cutoff)
+            }
+        });
+        let context = crate::chat::bot_memory::context(
+            &chat,
+            known
+                .as_ref()
+                .map(|known| known as &dyn Fn(&ChatMessage) -> bool),
+        );
+        left_out.notes.extend(context.left_out.iter().cloned());
+        // A turn that cannot keep anything is not asked to review.
+        if request.update_memory {
+            context
+        } else {
+            context.without_review()
+        }
+    });
     let execution_session =
         ChatExecutionSession::prepare(state.artifacts.deletion_root.clone(), &chat)?;
     // Validate activity storage before accepting the user turn, so a local
@@ -616,6 +639,7 @@ pub(super) fn admit_chat_turn(
             followed,
             selected_references,
             working_context,
+            bot_memory,
             left_out,
         },
         activity_recorder,

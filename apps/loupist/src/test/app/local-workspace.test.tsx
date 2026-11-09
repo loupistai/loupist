@@ -6,9 +6,9 @@ import type { ChatActivityDetail, LoupistWorkspace } from "../../types";
 import { openApp, openChat } from "../renderApp";
 
 const commandProgress = { startedAtMs: 10, finishedAtMs: 20, items: [
-  { id: "command", kind: "tool" as const, toolName: "bash", category: "compute" as const, operation: "execute" as const, action: "Ran a command", status: "succeeded" as const, detailId: "durable-command", startedAtMs: 10, finishedAtMs: 20 },
+  { id: "command", kind: "tool" as const, toolName: "run_python", category: "compute" as const, operation: "execute" as const, action: "Ran Python", status: "succeeded" as const, detailId: "durable-command", startedAtMs: 10, finishedAtMs: 20 },
 ] };
-const commandDetail = (output: string, file_path?: string): ChatActivityDetail => ({ id: "durable-command", tool_name: "bash", status: "succeeded", input: "python analysis.py", output, file_path, started_at_ms: 10, finished_at_ms: 20, truncated: false });
+const commandDetail = (output: string, file_path?: string): ChatActivityDetail => ({ id: "durable-command", tool_name: "run_python", status: "succeeded", input: "print(391)", output, file_path, started_at_ms: 10, finished_at_ms: 20, truncated: false });
 const unavailable = (bridge: MockLoupistBridge, edit: (workspace: LoupistWorkspace) => void = () => {}) => {
   const select = bridge.loupistSelect.bind(bridge);
   return vi.spyOn(bridge, "loupistSelect").mockImplementationOnce(async (id) => {
@@ -64,7 +64,7 @@ it("inspects a saved command inline and sends a file reference only after Ask an
   await user.type(screen.getByRole("textbox", { name: "Message Loupist" }), "Compare margins.");
   expect(activity).not.toHaveBeenCalled();
   await user.click(within(screen.getByLabelText("Work progress")).getByRole("button"));
-  await user.click(screen.getByRole("button", { name: "Inspect Ran a command" }));
+  await user.click(screen.getByRole("button", { name: "Inspect Ran Python" }));
   expect(await within(screen.getByLabelText("Work progress")).findByText("Margin 12.4%")).toBeVisible();
   expect(activity).toHaveBeenCalledWith({ loupist_id: "loupist-quality", thread_id: "thread-margin", detail_id: "durable-command" });
   await user.click(screen.getByRole("link", { name: "Analysis script" }));
@@ -99,7 +99,7 @@ it("keeps a disconnected Loupist readable and reconnects it with the draft intac
   await user.keyboard("{Enter}");
   expect(chatSend).not.toHaveBeenCalled();
   await user.click(within(screen.getByLabelText("Work progress")).getByRole("button"));
-  await user.click(screen.getByRole("button", { name: "Inspect Ran a command" }));
+  await user.click(screen.getByRole("button", { name: "Inspect Ran Python" }));
   expect(await within(screen.getByLabelText("Work progress")).findByText("Retained command result")).toBeVisible();
   await reconnectFolder(user);
   await waitFor(() => expect(reconnect).toHaveBeenCalledWith({ loupist_id: loupist!.id, workspace_path: "/Users/research/moved" }));

@@ -284,7 +284,6 @@
     "inspectAction": "Inspect {{action}}",
     "paused": {
       "status": "Paused",
-      "command": "Paused: this answer read text from other sites, so running commands is turned off for this answer.",
       "instructions": "Paused: this answer read text from other sites, so changing instruction and Skill files is turned off for this answer.",
       "site": "Paused: this answer read text from other sites, so opening this page is turned off for this answer.",
       "schedule": "Paused: this answer read text from other sites, so creating or changing schedules is turned off for this answer.",
@@ -1097,9 +1096,9 @@
       "running": "Editing a file",
       "done": "Edited a file"
     },
-    "bash": {
-      "running": "Running a command",
-      "done": "Ran a command"
+    "run_python": {
+      "running": "Running Python",
+      "done": "Ran Python"
     },
     "ls": {
       "running": "Listing files",
@@ -1132,6 +1131,10 @@
     "source_save": {
       "running": "Saving a source",
       "done": "Saved a source"
+    },
+    "bot_memory": {
+      "running": "Remembering for this conversation",
+      "done": "Remembered for this conversation"
     },
     "note_save": {
       "running": "Saving a working note",

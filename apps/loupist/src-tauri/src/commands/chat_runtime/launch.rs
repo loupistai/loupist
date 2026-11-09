@@ -152,6 +152,11 @@ pub(super) async fn launch_chat_turn(
         capture.bound_chat_id = Some(chat.id.clone());
         capture.turn_as_of = request.as_of.clone();
         capture.principle_user_message_id = Some(user_message_id.clone());
+        capture.bot_memory_review = envelope
+            .bot_memory
+            .as_ref()
+            .map(|memory| memory.reviewed.clone())
+            .unwrap_or_default();
         capture.schedule_context =
             Some(crate::commands::tool_executor::schedules::ScheduleContext {
                 model_profile_id: request.model_profile_id.clone(),
@@ -481,6 +486,7 @@ async fn build_turn_envelope(
         followed,
         selected_references,
         working_context,
+        bot_memory,
         left_out,
     } = inputs;
     capture.note_left_out(left_out);
@@ -562,6 +568,13 @@ async fn build_turn_envelope(
         .unwrap_or_else(|_| r#"{"live_time":{"not_evidence":true}}"#.into())
     });
     let turn_envelope = agent_harness::attach_chat_surface(&turn_envelope, surface);
+    let turn_envelope = match bot_memory {
+        Some(memory) => {
+            memory.protect(&capture.turn_taint);
+            crate::chat::bot_memory::attach(&turn_envelope, memory.block)
+        }
+        None => turn_envelope,
+    };
     let turn_envelope = match capture.turn_as_of.as_deref() {
         Some(cutoff) => agent_harness::attach_as_of(&turn_envelope, cutoff),
         None => turn_envelope,

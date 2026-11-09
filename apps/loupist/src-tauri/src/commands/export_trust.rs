@@ -5,27 +5,40 @@ use crate::app::{AppState, CommandError};
 use sha2::{Digest, Sha256};
 use std::{io::Read, path::Path};
 
-fn marker(state: &AppState, digest: &str) -> std::path::PathBuf {
-    state
-        .artifacts
-        .app_data_dir
-        .join("export-trust")
-        .join(digest)
+fn marker(app_data: &Path, digest: &str) -> std::path::PathBuf {
+    app_data.join("export-trust").join(digest)
 }
 
 /// Record before publishing bytes so a failed tag cannot leave an unmarked export.
 pub(crate) fn record(state: &AppState, bytes: &[u8]) -> Result<(), CommandError> {
-    let path = marker(state, &hex::encode(Sha256::digest(bytes)));
+    record_digest(
+        &state.artifacts.app_data_dir,
+        &hex::encode(Sha256::digest(bytes)),
+    )
+}
+
+pub(crate) fn record_digest(app_data: &Path, digest: &str) -> Result<(), CommandError> {
+    validate_digest(digest)?;
+    let path = marker(app_data, digest);
     std::fs::create_dir_all(path.parent().expect("export trust directory"))
         .and_then(|()| std::fs::write(path, b"third_party_text\n"))
         .map_err(|e| CommandError::internal(e.to_string()))
 }
 
 pub(crate) fn contains(state: &AppState, digest: &str) -> Result<bool, CommandError> {
+    contains_at(&state.artifacts.app_data_dir, digest)
+}
+
+fn validate_digest(digest: &str) -> Result<(), CommandError> {
     if digest.len() != 64 || !digest.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(CommandError::invalid("Invalid export digest"));
     }
-    match std::fs::metadata(marker(state, digest)) {
+    Ok(())
+}
+
+pub(crate) fn contains_at(app_data: &Path, digest: &str) -> Result<bool, CommandError> {
+    validate_digest(digest)?;
+    match std::fs::metadata(marker(app_data, digest)) {
         Ok(_) => Ok(true),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(CommandError::internal(error.to_string())),

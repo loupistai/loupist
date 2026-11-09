@@ -62,7 +62,7 @@ function readTokenLine(descriptor) {
  * an inherited pipe (`LOUPIST_BROKER_TOKEN_FD`, one newline-terminated line)
  * or, off Unix, a one-shot file, never in the environment or argv that
  * same-user processes can read. The descriptor is closed here, before any
- * native tool runs, so no Bash command inherits it.
+ * native tool runs, so no child process inherits it.
  */
 export function loadBrokerConnection(env = process.env) {
   const socketPath = env.LOUPIST_BROKER_SOCKET;

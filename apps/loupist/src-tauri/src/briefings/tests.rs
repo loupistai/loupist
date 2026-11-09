@@ -41,6 +41,7 @@ fn journal_hook_is_empty_and_unattended_native_tools_are_denied() {
         "web_search",
         "plan_update",
         "lens_file",
+        "run_python",
     ] {
         assert!(policy::allowed_name(name), "{name}");
     }
