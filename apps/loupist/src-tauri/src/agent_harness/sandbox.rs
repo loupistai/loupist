@@ -1,7 +1,8 @@
 //! The OS sandbox native Bash runs in (`docs/runtime/permissions.md`): writes
 //! confined to the Loupist folder and this run's scratch, the app's data, the
 //! Loupist's `.loupist` data, home credential locations and the host's
-//! runtime sockets hidden, and the network off after third-party text. After
+//! runtime sockets hidden, `/proc/sys` read-only, and the network and every
+//! host Unix socket off after third-party text. After
 //! third-party text the Loupist folder itself is read-only and only its
 //! existing subfolders, `outputs` and scratch take writes, so a command can
 //! leave nothing in the files a later reply loads as instructions. Rust
@@ -132,11 +133,21 @@ fn canonical(paths: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
 }
 
 /// Everything the sandbox hides from a command: the Loupist's data folder,
-/// the app data root and the home credential locations that exist.
+/// the app data root and the home credential locations that exist. A
+/// credential entry whose real path is the workspace or the app data root, or
+/// a folder holding either, is not masked: the mask would hide the folder the
+/// command works in, and what it would hide is that folder.
 fn hidden(roots: &NativeRoots) -> Vec<PathBuf> {
-    let mut paths = vec![roots.loupist_data.clone(), roots.app_data.clone()];
-    paths.extend(roots.credential_paths().into_iter().map(|(path, _)| path));
-    canonical(paths)
+    let mut paths = canonical([roots.loupist_data.clone(), roots.app_data.clone()]);
+    let working = canonical([roots.workspace.clone(), roots.app_data.clone()]);
+    for credential in canonical(roots.credential_paths().into_iter().map(|(path, _)| path)) {
+        if !paths.contains(&credential)
+            && !working.iter().any(|folder| folder.starts_with(&credential))
+        {
+            paths.push(credential);
+        }
+    }
+    paths
 }
 
 /// What stays readable inside a hidden folder: instruction files and Skills,
@@ -204,6 +215,58 @@ fn resolver_file(runtime: &[PathBuf]) -> Option<PathBuf> {
         .then_some(target)
 }
 
+/// The Unix sockets host processes have bound by path, as the app's network
+/// namespace lists them (`/proc/net/unix`), at their real paths: each one
+/// that is still a socket, outside the folders the sandbox already replaces
+/// (`replaced`). Offline each is masked with `/dev/null`, so a daemon that
+/// acts on a request (a Nix or Guix daemon that downloads, a container
+/// manager) cannot carry data out. A name with `@` is abstract and stays in
+/// the host's network namespace; a path that is not valid UTF-8 cannot be
+/// passed to bubblewrap and is skipped.
+fn host_sockets(replaced: &[PathBuf]) -> Vec<PathBuf> {
+    use std::os::unix::fs::FileTypeExt;
+    let Ok(table) = std::fs::read("/proc/net/unix") else {
+        return Vec::new();
+    };
+    let mut sockets: Vec<PathBuf> = Vec::new();
+    for path in table
+        .split(|byte| *byte == b'\n')
+        .skip(1)
+        .filter_map(socket_path)
+    {
+        let Ok(real) = std::fs::canonicalize(path) else {
+            continue;
+        };
+        if real.to_str().is_none()
+            || sockets.contains(&real)
+            || replaced.iter().any(|folder| real.starts_with(folder))
+        {
+            continue;
+        }
+        if std::fs::symlink_metadata(&real).is_ok_and(|metadata| metadata.file_type().is_socket()) {
+            sockets.push(real);
+        }
+    }
+    sockets
+}
+
+/// The path column of one `/proc/net/unix` line, when it names an absolute
+/// path: the text after the seventh column (`Num RefCount Protocol Flags
+/// Type St Inode`), which may itself hold spaces.
+fn socket_path(line: &[u8]) -> Option<PathBuf> {
+    use std::os::unix::ffi::OsStrExt;
+    let mut rest = line;
+    for _ in 0..7 {
+        let start = rest.iter().position(|byte| *byte != b' ')?;
+        rest = &rest[start..];
+        let end = rest.iter().position(|byte| *byte == b' ')?;
+        rest = &rest[end..];
+    }
+    let path = rest.strip_prefix(b" ")?;
+    path.starts_with(b"/")
+        .then(|| PathBuf::from(std::ffi::OsStr::from_bytes(path)))
+}
+
 /// Bubblewrap: the host read-only, the workspace and scratch writable, hidden
 /// paths masked (a tmpfs over a folder, `/dev/null` over a file), and the
 /// readable parts of hidden folders bound back read-only. Later binds win, so
@@ -223,13 +286,30 @@ fn resolver_file(runtime: &[PathBuf]) -> Option<PathBuf> {
 /// init kills everything in the namespace, where `--die-with-parent` alone
 /// would spare the command's descendants. `--cap-drop ALL` leaves the
 /// command no capability, so an app run by root cannot unmount a mask or
-/// remount the workspace from inside.
+/// remount the workspace from inside. `/proc/sys` is bound read-only over
+/// the new `/proc`: bubblewrap covers it only when its own access check can
+/// write there, which an app run by root fails once it drops capabilities,
+/// and root needs no capability to write `kernel/core_pattern` or
+/// `kernel/modprobe`, which the host kernel runs outside the sandbox.
+/// Offline, every host Unix socket outside the replaced folders is masked
+/// too (`host_sockets`).
 fn bwrap_arguments(roots: &NativeRoots, network: bool) -> Vec<String> {
     let text = |path: &Path| path.to_string_lossy().into_owned();
-    let mut arguments: Vec<String> = ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]
-        .into_iter()
-        .map(str::to_owned)
-        .collect();
+    let mut arguments: Vec<String> = [
+        "--ro-bind",
+        "/",
+        "/",
+        "--dev",
+        "/dev",
+        "--proc",
+        "/proc",
+        "--ro-bind",
+        "/proc/sys",
+        "/proc/sys",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
     arguments.extend(["--tmpfs".into(), "/tmp".into()]);
     let runtime = runtime_folders();
     for folder in &runtime {
@@ -266,13 +346,26 @@ fn bwrap_arguments(roots: &NativeRoots, network: bool) -> Vec<String> {
             arguments.extend(["--bind".into(), text(&folder), text(&folder)]);
         }
     }
+    let hidden = hidden(roots);
     let mut masked_folders = Vec::new();
-    for path in hidden(roots) {
+    for path in &hidden {
         if path.is_dir() {
-            arguments.extend(["--tmpfs".into(), text(&path)]);
-            masked_folders.push(path);
+            arguments.extend(["--tmpfs".into(), text(path)]);
+            masked_folders.push(path.clone());
         } else {
-            arguments.extend(["--ro-bind".into(), "/dev/null".into(), text(&path)]);
+            arguments.extend(["--ro-bind".into(), "/dev/null".into(), text(path)]);
+        }
+    }
+    if !network {
+        let mut replaced = canonical(
+            ["/tmp", "/dev", "/proc"]
+                .map(PathBuf::from)
+                .into_iter()
+                .chain(runtime.iter().cloned()),
+        );
+        replaced.extend(hidden);
+        for socket in host_sockets(&replaced) {
+            arguments.extend(["--ro-bind".into(), "/dev/null".into(), text(&socket)]);
         }
     }
     let git_config = canonical(
@@ -321,11 +414,13 @@ const PROBE_STDERR_BYTES: usize = 2048;
 /// succeeds; a write outside, into the data folder or into a git hook fails;
 /// `.git` cannot be renamed; hidden files read as absent or empty; the
 /// command holds no capability (`CapEff` all zeros, so a root user's command
-/// cannot `umount` a mask, which the probe also tries); instruction files
-/// and attachments still read; `/run` holds nothing but the resolver file
-/// bound back; offline mode cannot connect to a listener
-/// the probe opened while online mode can; and offline a write at the
-/// folder's top level or into a dot folder fails where online it succeeds.
+/// cannot `umount` a mask, which the probe also tries); no file under
+/// `/proc/sys` is writable; instruction files and attachments still read;
+/// `/run` holds nothing but the resolver file bound back; offline mode cannot
+/// connect to a listener the probe opened, and the Unix socket the probe
+/// listens on reads as no socket, while online both are there; and offline a
+/// write at the folder's top level or into a dot folder fails where online it
+/// succeeds.
 /// Then the sandbox must start, offline and online, with the masks of the
 /// host's own home folder in place of the layout's.
 #[cfg(unix)]
@@ -433,9 +528,9 @@ fn expected(line: &str, network: bool) -> bool {
     let ok = match name {
         "write_inside" | "write_outputs" | "write_scratch" | "read_skill" | "read_attachment"
         | "read_hook" | "run_masked" | "caps" => true,
-        "connect" | "write_top" | "write_dot" => network,
+        "connect" | "daemon_socket" | "write_top" | "write_dot" => network,
         "write_outside" | "write_data" | "write_hook" | "rename_git" | "read_app"
-        | "read_netrc" | "unmount" | "read_ssh" | "read_db" => false,
+        | "read_netrc" | "unmount" | "read_ssh" | "read_db" | "write_sysctl" => false,
         _ => return true,
     };
     result == if ok { "ok" } else { "fail" }
@@ -450,6 +545,10 @@ struct ProbeLayout {
     inside: PathBuf,
     outside: PathBuf,
     home: PathBuf,
+    /// A Unix socket the probe listens on outside every masked folder, as a
+    /// host daemon would.
+    socket: PathBuf,
+    _daemon: std::os::unix::net::UnixListener,
 }
 
 #[cfg(unix)]
@@ -479,6 +578,8 @@ impl ProbeLayout {
         std::fs::create_dir_all(workspace.join(".agents/skills"))?;
         std::fs::create_dir_all(&scratch)?;
         std::fs::create_dir_all(root.join("outside"))?;
+        let socket = root.join("daemon.sock");
+        let daemon = std::os::unix::net::UnixListener::bind(&socket)?;
         Ok(Self {
             roots: NativeRoots::new(
                 &workspace,
@@ -493,6 +594,8 @@ impl ProbeLayout {
             inside: workspace.join("notes/inside.txt"),
             outside: root.join("outside/outside.txt"),
             home,
+            socket,
+            _daemon: daemon,
         })
     }
 
@@ -541,7 +644,9 @@ impl ProbeLayout {
              r {attachments}/brief.md attok read_attachment\n\
              r {ws}/.git/hooks/pre-commit hookok read_hook\n\
              grep -Eqs '^CapEff:[[:space:]]+0+$' /proc/self/status && echo caps=ok || echo caps=fail\n\
+             [ -n \"$(find /proc/sys -type f -writable 2>/dev/null | head -n 1)\" ] && echo write_sysctl=ok || echo write_sysctl=fail\n\
              (exec 3<>/dev/tcp/127.0.0.1/{port}) 2>/dev/null && echo connect=ok || echo connect=fail\n\
+             [ -S {socket} ] && echo daemon_socket=ok || echo daemon_socket=fail\n\
              mv {ws}/.git {ws}/.git-moved 2>/dev/null && echo rename_git=ok || echo rename_git=fail\n\
              echo {end}\n",
             top = q(&self.top),
@@ -554,6 +659,7 @@ impl ProbeLayout {
             app = q(&roots.app_data),
             home = q(&self.home),
             attachments = q(&roots.attachments),
+            socket = q(&self.socket),
             end = PROBE_END,
         )
     }
@@ -563,14 +669,49 @@ fn shell_quote(text: &str) -> String {
     format!("'{}'", text.replace('\'', "'\\''"))
 }
 
+const PROBE_ATTEMPTS: usize = 3;
+
 /// Runs `/bin/bash -c <script>` under the sandbox with a cleared
 /// environment, no stdin and a deadline; the whole process group is killed
-/// at the deadline.
+/// at the deadline. When the sandbox never started and a path it was to mask
+/// is gone (a socket its process removed, another probe's layout, after the
+/// command was built), the command is built and run again, up to
+/// `PROBE_ATTEMPTS` times.
 #[cfg(unix)]
 fn run_probe(
     sandbox: &Sandbox,
     roots: &NativeRoots,
     network: bool,
+    script: &str,
+) -> Result<String, ProbeError> {
+    let mut attempt = 1;
+    loop {
+        let command = sandbox.command(roots, network);
+        let masked: Vec<String> = command
+            .argv
+            .windows(3)
+            .filter(|window| window[0] == "--ro-bind" && window[1] == "/dev/null")
+            .map(|window| window[2].clone())
+            .collect();
+        let result = run_probe_once(command, roots, script);
+        let never_started = matches!(
+            &result,
+            Err(ProbeError::Failed(lines)) if lines.first().is_some_and(|line| line == "probe_incomplete")
+        );
+        let vanished = masked
+            .iter()
+            .any(|path| std::fs::symlink_metadata(path).is_err());
+        if attempt == PROBE_ATTEMPTS || !(never_started && vanished) {
+            return result;
+        }
+        attempt += 1;
+    }
+}
+
+#[cfg(unix)]
+fn run_probe_once(
+    command: SandboxCommand,
+    roots: &NativeRoots,
     script: &str,
 ) -> Result<String, ProbeError> {
     use std::{
@@ -579,7 +720,7 @@ fn run_probe(
         process::{Command, Stdio},
         sync::mpsc,
     };
-    let SandboxCommand { argv, env } = sandbox.command(roots, network);
+    let SandboxCommand { argv, env } = command;
     let (program, prefix) = argv.split_first().ok_or(ProbeError::Launch)?;
     let mut command = Command::new(program);
     command
@@ -710,7 +851,7 @@ mod tests {
         let app = roots.app_data.display().to_string();
         let ws = roots.workspace.display().to_string();
         assert!(argv.starts_with(
-            "/usr/bin/bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --tmpfs /run"
+            "/usr/bin/bwrap --ro-bind / / --dev /dev --proc /proc --ro-bind /proc/sys /proc/sys --tmpfs /tmp --tmpfs /run"
         ));
         // The host's runtime sockets are gone; name resolution survives when
         // the resolver file lives there.
@@ -1185,6 +1326,190 @@ mod tests {
         assert_eq!(error, ProbeError::Failed(vec!["run_masked=fail".into()]));
     }
 
+    /// Offline, a Unix socket a host process listens on outside the masked
+    /// folders reads as no socket, by its own path and through a link in the
+    /// workspace, and a connection to it fails; online it is there. A socket
+    /// the sandbox's `/tmp` already replaces is not masked again.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn offline_a_host_daemon_socket_cannot_be_reached() {
+        let temporary = probe_folder().unwrap();
+        let layout = ProbeLayout::create(temporary.path()).unwrap();
+        let socket = layout.socket.display().to_string();
+        let replaced = tempfile::tempdir().unwrap();
+        let in_tmp = replaced.path().canonicalize().unwrap().join("tmp.sock");
+        let _tmp_daemon = std::os::unix::net::UnixListener::bind(&in_tmp).unwrap();
+        let sandbox = Sandbox::Bubblewrap("/usr/bin/bwrap".into());
+        let offline = sandbox.command(&layout.roots, false).argv;
+        let masks = |argv: &[String], path: &str| {
+            argv.windows(3)
+                .any(|window| window == ["--ro-bind", "/dev/null", path])
+        };
+        assert!(masks(&offline, &socket), "{offline:?}");
+        assert!(!masks(&offline, in_tmp.to_str().unwrap()), "{offline:?}");
+        assert!(!masks(&sandbox.command(&layout.roots, true).argv, &socket));
+
+        let Some(sandbox) = detect() else {
+            eprintln!("skipping: bubblewrap (bwrap) is not installed on this host");
+            return;
+        };
+        std::os::unix::fs::symlink(&layout.socket, layout.roots.workspace.join("notes/daemon"))
+            .unwrap();
+        let python = std::process::Command::new("python3")
+            .arg("--version")
+            .output()
+            .is_ok_and(|output| output.status.success());
+        let connect = |path: &str, name: &str| {
+            if python {
+                format!(
+                    "python3 -c 'import socket,sys; socket.socket(socket.AF_UNIX).connect(sys.argv[1])' '{path}' 2>/dev/null && echo {name}=ok || echo {name}=fail\n"
+                )
+            } else {
+                format!("[ -S '{path}' ] && echo {name}=ok || echo {name}=fail\n")
+            }
+        };
+        let script = format!(
+            "[ -S '{socket}' ] && echo socket=ok || echo socket=fail\n{}{}echo {PROBE_END}\n",
+            connect(&socket, "direct"),
+            connect(
+                &layout
+                    .roots
+                    .workspace
+                    .join("notes/daemon")
+                    .display()
+                    .to_string(),
+                "link"
+            ),
+        );
+        for network in [false, true] {
+            let output = run_probe(&sandbox, &layout.roots, network, &script).unwrap();
+            let lines: Vec<&str> = output.lines().collect();
+            let result = if network { "ok" } else { "fail" };
+            for check in ["socket", "direct", "link"] {
+                assert!(
+                    lines.contains(&format!("{check}={result}").as_str()),
+                    "network={network}: {check}\n{output}"
+                );
+            }
+        }
+    }
+
+    /// A credential entry that is the workspace, or a folder holding the app
+    /// data root, is not masked: masking it would hide the folder the
+    /// command works in, and every command would fail.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_credential_entry_linked_to_the_working_folders_is_not_masked() {
+        let temporary = probe_folder().unwrap();
+        let layout = ProbeLayout::create(temporary.path()).unwrap();
+        let mut roots = layout.roots.clone();
+        let home = temporary.path().canonicalize().unwrap().join("linked-home");
+        std::fs::create_dir_all(&home).unwrap();
+        std::os::unix::fs::symlink(&roots.workspace, home.join(".ssh")).unwrap();
+        std::os::unix::fs::symlink(roots.app_data.parent().unwrap(), home.join(".aws")).unwrap();
+        std::fs::write(home.join(".netrc"), "x").unwrap();
+        roots.home = Some(home.clone());
+        let ws = roots.workspace.display().to_string();
+        let above_app = roots.app_data.parent().unwrap().display().to_string();
+        let argv = Sandbox::Bubblewrap("/usr/bin/bwrap".into())
+            .command(&roots, false)
+            .argv;
+        for folder in [&ws, &above_app] {
+            assert!(
+                !argv
+                    .windows(2)
+                    .any(|window| window == ["--tmpfs", folder.as_str()]),
+                "{folder}\n{argv:?}"
+            );
+        }
+        assert!(argv.windows(3).any(|window| window
+            == [
+                "--ro-bind",
+                "/dev/null",
+                home.join(".netrc").to_str().unwrap()
+            ]));
+
+        let Some(sandbox) = detect() else {
+            eprintln!("skipping: bubblewrap (bwrap) is not installed on this host");
+            return;
+        };
+        let script = format!(
+            "grep -qs note '{ws}/notes/a.md' && echo read=ok || echo read=fail\necho {PROBE_END}\n"
+        );
+        for network in [false, true] {
+            let output = run_probe(&sandbox, &roots, network, &script).unwrap();
+            assert!(output.contains("read=ok"), "network={network}\n{output}");
+        }
+    }
+
+    /// A real bubblewrap that lost the socket masks fails the probe offline:
+    /// the probe's own listener would be reachable.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_sandbox_without_the_socket_masks_fails_the_probe() {
+        let Some(Sandbox::Bubblewrap(bwrap)) = detect() else {
+            eprintln!("skipping: bubblewrap (bwrap) is not installed on this host");
+            return;
+        };
+        let temporary = tempfile::tempdir().unwrap();
+        let wrapper = temporary.path().join("bwrap-without-socket-masks");
+        std::fs::write(
+            &wrapper,
+            format!(
+                "#!/bin/bash\n\
+                 out=()\n\
+                 while [ $# -gt 0 ]; do\n\
+                 \tif [ \"$1\" = --ro-bind ] && [ \"$2\" = /dev/null ]; then case \"$3\" in *.sock) shift 3; continue ;; esac; fi\n\
+                 \tout+=(\"$1\"); shift\n\
+                 done\n\
+                 exec '{}' \"${{out[@]}}\"\n",
+                bwrap.display()
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let error = probe(&Sandbox::Bubblewrap(wrapper)).unwrap_err();
+        assert_eq!(error, ProbeError::Failed(vec!["daemon_socket=ok".into()]));
+    }
+
+    /// For an app run by root, a real bubblewrap without the `/proc/sys`
+    /// cover fails the probe: root writes host kernel settings with no
+    /// capability. Skipped for other users, who cannot write there anyway.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn as_root_a_sandbox_without_the_proc_sys_cover_fails_the_probe() {
+        // SAFETY: geteuid reads the process's credentials and cannot fail.
+        if unsafe { libc::geteuid() } != 0 {
+            eprintln!("skipping: only root can write /proc/sys without the cover");
+            return;
+        }
+        let Some(Sandbox::Bubblewrap(bwrap)) = detect() else {
+            eprintln!("skipping: bubblewrap (bwrap) is not installed on this host");
+            return;
+        };
+        let temporary = tempfile::tempdir().unwrap();
+        let wrapper = temporary.path().join("bwrap-without-proc-sys-cover");
+        std::fs::write(
+            &wrapper,
+            format!(
+                "#!/bin/bash\n\
+                 out=()\n\
+                 while [ $# -gt 0 ]; do\n\
+                 \tif [ \"$1\" = --ro-bind ] && [ \"$2\" = /proc/sys ]; then shift 3; continue; fi\n\
+                 \tout+=(\"$1\"); shift\n\
+                 done\n\
+                 exec '{}' \"${{out[@]}}\"\n",
+                bwrap.display()
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let error = probe(&Sandbox::Bubblewrap(wrapper)).unwrap_err();
+        assert_eq!(error, ProbeError::Failed(vec!["write_sysctl=ok".into()]));
+    }
+
     /// Each probe check fails on its own when the sandbox is missing, so a
     /// passing probe says something about every rule.
     #[cfg(target_os = "linux")]
@@ -1205,8 +1530,9 @@ mod tests {
             .lines()
             .filter(|line| !expected(line, false))
             .collect();
-        // Only root keeps capabilities outside the sandbox; the `.ssh` folder
-        // is no mount point here, so its `umount` fails either way.
+        // Only root keeps capabilities and writes `/proc/sys` outside the
+        // sandbox; the `.ssh` folder is no mount point here, so its `umount`
+        // fails either way.
         let mut expected_broken = vec![
             "write_top=ok",
             "write_dot=ok",
@@ -1221,9 +1547,9 @@ mod tests {
         ];
         // SAFETY: geteuid reads the process's credentials and cannot fail.
         if unsafe { libc::geteuid() } == 0 {
-            expected_broken.push("caps=fail");
+            expected_broken.extend(["caps=fail", "write_sysctl=ok"]);
         }
-        expected_broken.extend(["connect=ok", "rename_git=ok"]);
+        expected_broken.extend(["connect=ok", "daemon_socket=ok", "rename_git=ok"]);
         assert_eq!(broken, expected_broken, "{output}");
     }
 }
