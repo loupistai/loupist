@@ -9,9 +9,13 @@ numeric-only list (`NUMERIC_ONLY_OPENBB_TOOLS`; profiles, filing documents, tran
 news raise it, prices and statements do not), Rust refuses custom-connection calls
 and schedule create, update, status and Run now for the rest of the turn with
 `untrusted_text_paused`. Native Bash keeps running inside the OS sandbox with the
-network off and the Loupist folder mounted read-only except its existing
-subfolders, `outputs/` and scratch, so a command cannot touch the files a later
-reply loads as instructions; where no verified sandbox exists it is refused.
+network and the host's Unix sockets off and the Loupist folder mounted read-only
+except its existing subfolders, `outputs/` and scratch, so a command cannot
+create, change or remove anything at the folder's top level or in its dot
+folders, where a later reply loads instructions; a hard link the user or a clean
+reply left in a subfolder is the one way through
+([After third-party text](permissions.md#after-third-party-text)). Where no
+verified sandbox exists Bash is refused.
 Native `write` and `edit` refuse an instruction file, and a file with another
 name on disk (a hard link), for the reply; native file tools stay inside the
 Loupist folder in every reply

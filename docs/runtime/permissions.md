@@ -116,11 +116,13 @@ for every other host.
 | --- | --- |
 | Writes, clean reply | Workspace and scratch bound read-write over a read-only `/`; a private tmpfs `/tmp`. |
 | Writes, after third-party text | The workspace bound read-only, then its existing top-level subfolders, `<workspace>/outputs` and scratch bound back read-write ([After third-party text](#after-third-party-text)); a private tmpfs `/tmp`. |
-| Runtime sockets | A tmpfs over `/run` (and `/var/run` when it is a folder of its own), so `XDG_RUNTIME_DIR` sockets (D-Bus session bus, ssh-agent, gpg-agent, PulseAudio, Wayland), `/run/dbus/system_bus_socket` and `/run/docker.sock` are gone. When `/etc/resolv.conf` resolves into `/run`, that file is bound back read-only so names still resolve online. The container runtimes' home folders (`~/.docker`, `~/.colima`, `~/.lima`, `~/.rd`) are hidden with the credentials, in both modes. Any other Unix socket under the home folder stays reachable in both modes: offline mode removes the network and abstract sockets only, not filesystem sockets. |
+| Runtime sockets | A tmpfs over `/run` (and `/var/run` when it is a folder of its own), so `XDG_RUNTIME_DIR` sockets (D-Bus session bus, ssh-agent, gpg-agent, PulseAudio, Wayland), `/run/dbus/system_bus_socket` and `/run/docker.sock` are gone. When `/etc/resolv.conf` resolves into `/run`, that file is bound back read-only so names still resolve online. The container runtimes' home folders (`~/.docker`, `~/.colima`, `~/.lima`, `~/.rd`) are hidden with the credentials, in both modes. |
+| Host Unix sockets, after third-party text | Every other socket a host process has bound by path, as the app's network namespace lists them (`/proc/net/unix`), is masked at its real path with `/dev/null`, so it reads as no socket and a connection fails: the Nix and Guix daemons (which download what a client asks for), LXD, Incus, a socket under the home folder or in the workspace. Sockets under `/tmp`, `/dev`, `/proc`, the runtime folders and the hidden set are already gone and are not masked again. Abstract sockets stay in the host's network namespace, which the command leaves. In a clean reply these sockets stay reachable. |
 | `<workspace>/.loupist`, app data root | A tmpfs over each, remounted read-only last; `.loupist/skills`, `.loupist/AGENTS.md`, `.loupist/config.toml`, the global `skills` and `AGENTS.md`, this Chat's attachments and scratch bound back (attachments and instruction files read-only). |
 | Workspace `.git`, clean reply | A `.git` folder is bound onto itself, so it cannot be renamed or removed, and its `config` and `hooks` are bound read-only over themselves; a `.git` file (a worktree's gitdir pointer) is bound read-only. The rest of `.git` is writable. A `.git` that is a link gets no pin and no read-only `config` or `hooks`: a mount point cannot be made of a link. |
 | Workspace `.git`, after third-party text | Part of the read-only workspace: nothing in it can be created, changed, renamed or removed. |
-| Credentials | Each existing `CREDENTIAL_HOME` entry, at its real path: a folder gets a read-only tmpfs, a file `/dev/null`. Every mask and bind-back is canonicalized first, because bubblewrap cannot mount onto a link (it resolves an absolute link against its own setup root). So `~/.bashrc -> ~/dotfiles/bashrc` is masked at `~/dotfiles/bashrc`, which the link still leads to, and a dangling entry is skipped. |
+| Credentials | Each existing `CREDENTIAL_HOME` entry, at its real path: a folder gets a read-only tmpfs, a file `/dev/null`. Every mask and bind-back is canonicalized first, because bubblewrap cannot mount onto a link (it resolves an absolute link against its own setup root). So `~/.bashrc -> ~/dotfiles/bashrc` is masked at `~/dotfiles/bashrc`, which the link still leads to, and a dangling entry is skipped. An entry whose real path is the workspace or the app data root, or a folder holding either, is not masked: the mask would hide the folder the command works in, and what it would hide is that folder. |
+| Kernel settings | `/proc/sys` bound read-only over the new `/proc`, in both modes. Bubblewrap covers it itself only when its own access check can write there, which an app run by root fails once bubblewrap has dropped its capabilities, and root needs no capability to write `kernel/core_pattern` or `kernel/modprobe`, which the host kernel runs outside the sandbox. |
 | Network | `--unshare-net` after third-party text. In a clean reply the command shares the host's network namespace, abstract Unix sockets included. |
 | Processes | `--unshare-pid --cap-drop ALL --die-with-parent --new-session`: bubblewrap is the init of a pid namespace, so Pi's group kill on abort or timeout ends every sandboxed process, and a background process the command leaves behind ends with the command. The command holds no capability (`CapEff` all zeros), so an app run by root cannot `umount` a mask or remount the workspace from inside; `no_new_privs` is set, so a setuid program regains none. |
 | Caches | `XDG_CACHE_HOME`, `PIP_CACHE_DIR`, `UV_CACHE_DIR`, `npm_config_cache`, `MPLCONFIGDIR` point under `<scratch>/cache`. |
@@ -171,12 +173,14 @@ into `outputs` (which the offline run must have created) and into scratch must
 succeed; a write outside, into the data folder or into a git hook must fail;
 `mv .git` must fail; the app's `auth.json`, `~/.netrc`, `~/.ssh` and the
 database must read as absent or empty; `umount -l` of the `~/.ssh` mask must
-fail and the command's `CapEff` must be all zeros; a Skill, an attachment and
-a hook must still read; and `/run` must hold nothing but the resolver file
-bound back. Offline, a write at the folder's top level and into a dot folder
-(`.agents/skills`) must fail and a connection to the listener must fail; online
-both must succeed, which proves the offline checks measured the mount and the
-network. Rust also checks the host folder afterwards: the top-level file exists
+fail and the command's `CapEff` must be all zeros; no file under `/proc/sys`
+may be writable (`find -writable`, which writes nothing); a Skill, an
+attachment and a hook must still read; and `/run` must hold nothing but the
+resolver file bound back. Offline, a write at the folder's top level and into
+a dot folder (`.agents/skills`) must fail, a connection to the listener must
+fail, and a Unix socket the probe listens on outside every masked folder must
+read as no socket; online all three must succeed, which proves the offline
+checks measured the mount, the network and the socket masks. Rust also checks the host folder afterwards: the top-level file exists
 only after the online run, the subfolder file after both, the outside file
 never, and `.git/hooks/pre-commit` is still in place. After the layout passes,
 the sandbox must also start, offline and online, with the masks of the host's
@@ -184,7 +188,9 @@ real home folder (`$HOME`) on the layout's workspace and scratch
 (`host_home_setup`), so a credential entry bubblewrap cannot mount turns the
 sandbox off instead of failing every command. Only a passing probe enables the
 sandbox; a failed one logs the checks that failed and, when the sandbox never
-started, its own first error line; a turn that starts before the probe
+started, its own first error line. A run whose sandbox never started while a
+path it was to mask had vanished (a socket its process removed after the
+command was built) is built and run again, up to three times; a turn that starts before the probe
 finishes waits for it off the async workers, up to the probe's deadline.
 
 Without a verified sandbox (a failed probe, no `bwrap`, macOS, Windows): a
@@ -210,11 +216,18 @@ Mac, with sandbox-runtime's macOS profile as the reference.
   root, `.loupist` data, the `CREDENTIAL_HOME` table and `/run` are hidden,
   other home files are not. `~/.gitconfig` stays readable so `git` keeps its
   identity.
-- A Unix socket a user keeps under the home folder outside the hidden set (a
-  daemon configured to listen under `~/.local`, for example) is reachable in
-  both modes, and a daemon behind it acts outside the sandbox with whatever
-  the daemon has. The known container-runtime socket folders are hidden; the
-  rest of the home folder is not.
+- In a clean reply every host Unix socket outside `/run`, `/tmp` and the
+  hidden set is reachable, and a daemon behind it acts outside the sandbox
+  with whatever the daemon has; the command has the network anyway. After
+  third-party text a socket stays reachable only when the app's network
+  namespace does not list it (one a containerized process bound in its own
+  network namespace on a host path), when it is reached through a second
+  mount of its folder (`/nix` bind-mounted from another folder: the mask
+  covers the path the daemon bound), or when its path is not valid UTF-8.
+- The socket masks are listed when the command is built. A socket bound after
+  that is not masked for that command, and one removed before bubblewrap
+  mounts over it fails that command's setup; the probe retries that case,
+  a model command reports bubblewrap's error.
 - In a clean reply only the root `.git` entry, its `config` and its `hooks`
   are read-only for Bash. The other files in `.git` are writable, and some of
   them redirect the host's `git` to another directory whose config and hooks
@@ -229,13 +242,17 @@ Mac, with sandbox-runtime's macOS profile as the reference.
 - Files in writable subfolders that other programs run can be changed after
   third-party text: a hook the repository links to or points at with
   `core.hooksPath` (`.git/hooks/pre-commit -> ../../scripts/pre-commit`),
-  `.pre-commit-config.yaml`, `.husky/pre-commit`, build scripts, `notes/.envrc`.
+  `.pre-commit-config.yaml`, `.husky/pre-commit`, build scripts, `notes/.envrc`,
+  and the config and hooks of a git directory inside a subfolder: a nested
+  repository's, or the workspace's own when its `.git` file points there.
   The host's `git commit`, the build or `direnv allow` then runs them. Native
   `write` allows them too, as before the sandbox.
 - A hard link that already exists in a writable subfolder lets an offline
   command change the linked file, an instruction file included
   ([After third-party text](#after-third-party-text)); only the user or a
-  clean reply can create it.
+  clean reply can create it. Native `write` and `edit` check for one when Rust
+  authorizes the call, so a link another actor makes between that check and
+  the write still takes it.
 - A top-level folder that is a bind mount of another folder exposes that
   folder: the sandbox binds the folder it finds, so a home folder mounted at
   `<workspace>/home` would give Bash `~/.ssh` and `~/.bashrc` in both modes.
