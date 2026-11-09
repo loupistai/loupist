@@ -276,12 +276,16 @@
     "paused": {
       "status": "일시 중지",
       "command": "일시 중지: 이 답변은 다른 사이트의 글을 읽어서, 이번 답변에서는 명령 실행이 꺼져 있어요.",
+      "instructions": "일시 중지: 이 답변은 다른 사이트의 글을 읽어서, 이번 답변에서는 지침 파일과 스킬 파일 변경이 꺼져 있어요.",
       "site": "일시 중지: 이 답변은 다른 사이트의 글을 읽어서, 이번 답변에서는 이 페이지 열기가 꺼져 있어요.",
-      "instructions": "일시 중지: 이 답변은 다른 사이트의 글을 읽어서, 이번 답변에서는 지침·스킬 파일 수정이 꺼져 있어요.",
       "schedule": "일시 중지: 이 답변은 다른 사이트의 글을 읽어서, 이번 답변에서는 예약 만들기와 변경이 꺼져 있어요.",
       "connection": "일시 중지: 이 답변은 다른 사이트의 글을 읽어서, 이번 답변에서는 직접 추가한 연결이 꺼져 있어요.",
       "other": "일시 중지: 이 답변은 다른 사이트의 글을 읽어서, 이번 답변에서는 이 단계가 꺼져 있어요.",
       "why": "다른 사이트의 글에는 숨은 지시가 들어 있을 수 있어요. 이 안전 규칙은 그런 지시가 대신 실행되지 않게 막고, 새 메시지는 이 제한 없이 시작해요."
+    },
+    "refused": {
+      "protectedPath": "허용되지 않음: 이 경로는 앱의 비공개 데이터(자격 증명, 데이터베이스, 실행 파일) 안에 있어서 루피스트가 읽거나 쓰지 않아요.",
+      "outsideWorkspace": "허용되지 않음: 이 파일은 루피스트 폴더 밖에 있어요. 채팅에 첨부하거나 폴더 안으로 복사하면 루피스트가 다룰 수 있어요."
     },
     "namesTouched_other": "지도에 {{formattedCount}}개",
     "namesTouchedOnMap_other": "지도에서 {{formattedCount}}개 보기",
@@ -931,13 +935,21 @@
     "expired": "더 이상 필요하지 않음 · {{tool}}",
     "error": "이 승인은 이미 끝났어요.",
     "needsSettings": "{{connection}}의 ‘{{tool}}’ 도구는 설정에서 승인이 필요해요.",
-    "review": "검토하기",
-    "webLabel": "{{site}} 열기 승인",
-    "webBody": "이 답변은 다른 사이트의 글을 읽었어요. 이제 새 사이트를 열려고 해요: {{site}}",
-    "webNote": "읽은 페이지가 이렇게 하라고 했을 수도 있어요. 예상한 사이트일 때만 허용하세요.",
-    "webAllowedOnce": "이번만 열었음 · {{site}}",
-    "webDeclined": "건너뜀 · {{site}} · 루피스트는 이 사이트 없이 계속했어요",
-    "webExpired": "더 이상 필요하지 않음 · {{site}}"
+    "review": "검토하기"
+  },
+  "questionCard": {
+    "label": "질문: {{question}}",
+    "title": "여쭤볼 게 있어요",
+    "waiting": "{{time}} 대기 중",
+    "recommended": "추천",
+    "options": "선택지",
+    "other": "직접 답하기",
+    "placeholder": "답을 입력하세요",
+    "send": "보내기",
+    "answered": "답변함 · {{answer}}",
+    "unanswered": "답변 없음 · ‘{{option}}’(으)로 계속했어요",
+    "unansweredAssumed": "답변 없음 · 루피스트가 스스로 정해 계속했어요",
+    "error": "이 질문은 이미 끝났어요."
   },
   "journal": {
     "saved": "저널에 저장했어요: “{{judgment}}”",
@@ -1131,6 +1143,10 @@
     "plan_update": {
       "running": "계획 정리 중",
       "done": "계획 정리함"
+    },
+    "ask_user": {
+      "running": "질문하는 중",
+      "done": "질문함"
     },
     "research_open": {
       "running": "조사 세션 여는 중",
@@ -1402,6 +1418,7 @@
     },
     "needsYou": {
       "title": "승인이 필요해요",
+      "answerTitle": "답변이 필요해요",
       "show": "보기",
       "requests_other": "요청 {{formattedCount}}개"
     },

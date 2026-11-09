@@ -611,13 +611,12 @@ function registerLoupistExtension(originalPi) {
       originalPi.registerTool(tool);
     },
   };
-  // Rust owns both unattended policy and turn taint. Every native execution
-  // asks the same host gate, so a script cannot bypass a tainted-turn refusal.
-  // Write and edit also name their resolved target, so Rust can keep a
-  // tainted turn from rewriting instruction and Skill files.
+  // Rust owns both unattended policy and the native permission policy. Every
+  // native execution asks the same host gate with its resolved target, search
+  // root or exact command, so a script cannot bypass a refusal or a card, and
+  // Rust can keep private app data and instruction files out of reach.
   registerWorkspaceTools(pi, hostContext.workspace.root,
-    (name, path, signal, id) => requestBroker("native.authorize",
-      path === undefined ? { name } : { name, path }, signal, id));
+    (name, request, signal, id) => requestBroker("native.authorize", { name, ...request }, signal, id));
   async function loadCapabilityComponent(component, signal, activateToolNames = []) {
     if ((component.kind === "mcp" && component.loaded === true) ||
         (component.kind !== "mcp" && component.tool_names.every((name) => activeTools.has(name)))) {

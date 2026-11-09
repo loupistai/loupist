@@ -1,6 +1,5 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    path::{Component, Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
         Mutex,
@@ -17,22 +16,20 @@ use crate::{
 };
 
 pub const OUTBOUND_REFUSAL: &str = "Outbound access is paused for this turn because it read content from a custom connection. The user can ask again in a new message.";
-pub const UNTRUSTED_TEXT_REFUSAL: &str = "Keep working with reads and host tools: read, ls, grep, find, write, edit, web_search, web_fetch of search results and sites this turn already read, datasets, charts, Memory and market data. For a command, a custom connection or a schedule change, finish this reply and ask the user to send a new message; the pause ends with this turn.";
+pub const UNTRUSTED_TEXT_REFUSAL: &str = "This reply read third-party text, so commands, custom connections and schedule changes stay paused for the rest of this reply. Do not retry a paused call this reply and do not ask the user to send a new message to unlock it. Keep working with reads, workspace file tools, web_search, web_fetch of search results and sites this reply already read, datasets, charts, Memory and market data.";
+/// A native file tool aimed outside the Loupist folder, scratch and this
+/// Chat's attachments.
+pub const OUTSIDE_WORKSPACE_REFUSAL: &str = "This path is outside the Loupist folder, so native file tools do not touch it. Ask the user to attach the file to this chat or copy it into the Loupist folder, then work with that copy. Do not retry the outside path.";
+/// Bash after third-party text, on every host.
+pub const COMMAND_AFTER_UNTRUSTED_REFUSAL: &str = "This reply read third-party text, so commands stay paused for the rest of this reply. Do not retry a command this reply and do not ask the user to send a new message to unlock it. Finish with reads, workspace file tools and what is already read.";
 /// A URL that would carry the user's own values to a website.
 pub const WEB_FETCH_PRIVATE_REFUSAL: &str = "This URL carries the user's own values (a held quantity or amount, or text from their Lens or notes), and this turn read third-party text, so it is not opened. Do not put Memory, Lens or holdings values in a URL. Answer from the search results and sites already read.";
-/// A new website the user did not allow in this turn.
-pub const WEB_FETCH_SITE_REFUSAL: &str = "After third-party text, this turn opens only search results, sites it already read, sites in the user's message and official filing and statistics sites, and the user did not allow this new site. Do not retry it this turn. Answer from what is already read, and name the site if the user may want it read in a new message.";
-/// Workspace instructions and Skills load as instructions on later turns, so
-/// text read this turn must not rewrite them.
-pub const INSTRUCTION_WRITE_REFUSAL: &str = "Writing AGENTS.md, CLAUDE.md or Skill files is paused for this turn because they become instructions on later turns. Other file writes still work. Finish this reply and ask the user to send a new message if the change is still wanted; the pause ends with this turn.";
-
-/// Folders whose instruction and Skill files a later turn loads
-/// (`agent_harness::workspace` and `agent/workspace-resources.mjs`).
-#[derive(Clone, Debug)]
-pub struct InstructionRoots {
-    pub workspace: PathBuf,
-    pub global: PathBuf,
-}
+/// A new website, or a long address on a known one, after third-party text.
+pub const WEB_FETCH_SITE_REFUSAL: &str = "After third-party text, this reply opens only search results, sites it already read, sites in the user's message and official filing and statistics sites; this address is new or long, so it did not open. Find the page with web_search and fetch the result's URL, which opens. Do not retry this address as typed.";
+/// An instruction or Skill write after third-party text.
+pub const INSTRUCTION_WRITE_REFUSAL: &str = "This file becomes instructions on later replies, and this reply read third-party text, so it is not written. Instruction and Skill writes stay paused for the rest of this reply; other workspace writes still work. Do not retry it this reply and do not ask the user to send a new message to unlock it.";
+/// A write to a hard-linked file after third-party text.
+pub const HARD_LINK_WRITE_REFUSAL: &str = "This file has another name on disk (a hard link), which can be a file a later reply loads as instructions, and this reply read third-party text, so it is not written. Write a new file instead. Do not retry this path this reply and do not ask the user to send a new message to unlock it.";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -45,24 +42,22 @@ pub struct CustomOrigin {
 /// Untrusted content this turn has already handed to the model. Tiers only
 /// rise. Third-party text (web pages, search results, news, filings, provider
 /// descriptions, and saved Sources and datasets that hold them) pauses
-/// commands and outbound writes and keeps `web_fetch` to sites the turn
-/// already knows ([`Self::web_fetch_target`]); a custom-connection result also
-/// pauses every outbound read, because its server may be the exfiltration
-/// target. Either tier also keeps file writes away from the instruction and
-/// Skill files a later turn loads.
+/// custom-connection calls and schedule changes and keeps `web_fetch` to
+/// sites the turn already knows ([`Self::web_fetch_target`]); a
+/// custom-connection result also pauses every outbound read, Bash included,
+/// because its server may be the exfiltration target. What native file tools
+/// and Bash may do under either tier is decided by
+/// `agent_harness::native_policy` from [`Self::exposure`].
 #[derive(Default)]
 pub struct TurnTaint {
     tainted: AtomicBool,
     untrusted_text: AtomicBool,
     memory_blocked: AtomicBool,
     origin: Mutex<Option<CustomOrigin>>,
-    instruction_roots: Option<InstructionRoots>,
     /// Sites this turn may read after third-party text.
     web: Mutex<SeenWeb>,
     /// The user's own Lens and note text delivered this turn, normalized.
     private_text: Mutex<BTreeSet<String>>,
-    /// The user turned down a new site this turn; later ones are not asked again.
-    new_sites_declined: AtomicBool,
 }
 
 /// Locators the host itself delivered or the user typed this turn. Text inside
@@ -77,19 +72,10 @@ struct SeenWeb {
 #[derive(Debug, PartialEq, Eq)]
 pub enum WebFetchTarget {
     Allowed,
-    /// A new site, or a long query: the user decides in the reply.
-    Approve {
-        target: String,
-    },
     Refused(&'static str),
 }
 
 impl TurnTaint {
-    /// The turn's workspace and global folders, set before the turn starts.
-    pub fn protect_instructions(&mut self, roots: InstructionRoots) {
-        self.instruction_roots = Some(roots);
-    }
-
     pub fn mark(&self, connection_id: &str, name: &str, dont_save: bool) {
         *self.origin.lock().unwrap_or_else(|e| e.into_inner()) = Some(CustomOrigin {
             kind: "custom_connection".into(),
@@ -109,6 +95,18 @@ impl TurnTaint {
     /// Whether third-party text reached the model this turn.
     pub fn untrusted_text(&self) -> bool {
         self.untrusted_text.load(Ordering::Acquire)
+    }
+
+    /// The native policy's view of this reply.
+    pub fn exposure(&self) -> crate::agent_harness::native_policy::Exposure {
+        use crate::agent_harness::native_policy::Exposure;
+        if self.tainted.load(Ordering::Acquire) {
+            Exposure::Custom
+        } else if self.untrusted_text() {
+            Exposure::ThisTurn
+        } else {
+            Exposure::Clean
+        }
     }
 
     /// A reply or export derived from either tier remains third-party text
@@ -190,9 +188,9 @@ impl TurnTaint {
     /// every URL opens. After it: a URL the host delivered or the user typed
     /// opens; a URL carrying a held quantity or amount, or a run of the user's
     /// Lens or note text, is refused; an official filing or statistics site
-    /// opens; a site seen this turn opens when its query is short; anything
-    /// else asks the user, once per turn. `holdings` are the latest snapshot's
-    /// quantity, cost and value strings.
+    /// opens; a site seen this turn opens when its path and query are short;
+    /// anything else is refused, with a `web_search` as the way to it.
+    /// `holdings` are the latest snapshot's quantity, cost and value strings.
     pub fn web_fetch_target(&self, url: &str, holdings: &[String]) -> WebFetchTarget {
         if !self.untrusted_text() {
             return WebFetchTarget::Allowed;
@@ -223,21 +221,13 @@ impl TurnTaint {
             return WebFetchTarget::Allowed;
         }
         let query = parsed.query().map_or(0, str::len) + parsed.fragment().map_or(0, str::len);
-        if known_host && query <= MAX_TAINTED_QUERY_BYTES {
+        if known_host
+            && parsed.path().len() <= MAX_TAINTED_PATH_BYTES
+            && query <= MAX_TAINTED_QUERY_BYTES
+        {
             return WebFetchTarget::Allowed;
         }
-        if self.new_sites_declined.load(Ordering::Acquire) {
-            return WebFetchTarget::Refused(WEB_FETCH_SITE_REFUSAL);
-        }
-        WebFetchTarget::Approve {
-            target: approval_target(&parsed, &host),
-        }
-    }
-
-    /// The user turned down (or did not answer) a new site; later requests in
-    /// this turn are refused without asking again.
-    pub fn decline_new_sites(&self) {
-        self.new_sites_declined.store(true, Ordering::Release);
+        WebFetchTarget::Refused(WEB_FETCH_SITE_REFUSAL)
     }
 
     fn seen(&self) -> std::sync::MutexGuard<'_, SeenWeb> {
@@ -278,16 +268,6 @@ impl TurnTaint {
         }
         if untrusted_text && command_or_outbound_write(method, params) {
             return Err(BrokerError::UntrustedTextPaused);
-        }
-        if (tainted || untrusted_text)
-            && instruction_write(method, params, self.instruction_roots.as_ref())
-        {
-            let paused = if tainted {
-                BrokerError::OutboundPaused
-            } else {
-                BrokerError::UntrustedTextPaused
-            };
-            return Err(paused.with_next(INSTRUCTION_WRITE_REFUSAL));
         }
         if self.memory_blocked()
             && matches!(
@@ -702,10 +682,12 @@ fn bundled_text_tool(params: &Value, bundled: &BTreeMap<String, BundledMcpRuntim
     !(server_id == "openbb" && NUMERIC_ONLY_OPENBB_TOOLS.contains(&tool_name))
 }
 
-/// A query (with its fragment) longer than this, on a site seen this turn,
-/// asks the user once third-party text has arrived: room for search terms and
-/// page parameters, not for a copied document.
+/// On a site seen this turn, a query and fragment longer than this together, or
+/// a path longer than `MAX_TAINTED_PATH_BYTES`, asks the user once third-party
+/// text has arrived. Percent-encoded Korean slugs are long, so the path bound
+/// is wider; it still stops a copied document.
 const MAX_TAINTED_QUERY_BYTES: usize = 256;
+const MAX_TAINTED_PATH_BYTES: usize = 1024;
 /// A run of this many letters and digits of the user's Lens or note text in a
 /// URL counts as copied; shorter text must appear whole.
 const PRIVATE_RUN_CHARS: usize = 24;
@@ -776,19 +758,6 @@ fn bare_site(token: &str) -> bool {
         && labels
             .last()
             .is_some_and(|top| top.len() >= 2 && top.chars().all(|c| c.is_ascii_alphabetic()))
-}
-
-/// What the approval card names: the host and path, never the query.
-fn approval_target(url: &Url, site: &str) -> String {
-    let host = url.host_str().unwrap_or(site);
-    let mut target: String = format!("{host}{}", url.path().trim_end_matches('/'))
-        .chars()
-        .take(120)
-        .collect();
-    if url.query().is_some() {
-        target.push_str("?…");
-    }
-    target
 }
 
 /// The parts of a URL that can carry data (host, path, query, fragment),
@@ -869,113 +838,6 @@ fn char_windows(text: &str, size: usize) -> impl Iterator<Item = String> + '_ {
         .map(move |index| text[starts[index]..starts[index + size]].to_owned())
 }
 
-/// A native `write` or `edit` whose target a later turn loads as an
-/// instruction or Skill. The extension sends the resolved absolute target;
-/// a missing target fails closed.
-fn instruction_write(method: ToolMethod, params: &Value, roots: Option<&InstructionRoots>) -> bool {
-    if method != ToolMethod::NativeAuthorize
-        || !matches!(
-            params.get("name").and_then(Value::as_str),
-            Some("write" | "edit")
-        )
-    {
-        return false;
-    }
-    match params.get("path").and_then(Value::as_str) {
-        Some(path) if !path.is_empty() => loaded_instruction_file(Path::new(path), roots),
-        _ => true,
-    }
-}
-
-const ROOT_INSTRUCTIONS: &[&str] = &["agents.override.md", "agents.md", "claude.md"];
-
-/// Matches the names and locations workspace discovery loads: root
-/// instructions, `.loupist/AGENTS.md`, the global `AGENTS.md`, and Skill
-/// entries (`skills/*.md`, `skills/**/SKILL.md`) under `.loupist`, `.agents`,
-/// `.pi` and the global folder. Names compare without case, and links in the
-/// existing part of the path are resolved, so an alias cannot reach them.
-fn loaded_instruction_file(path: &Path, roots: Option<&InstructionRoots>) -> bool {
-    let Some(roots) = roots else {
-        // Without the turn's folders, refuse by name rather than allow.
-        let name = path
-            .file_name()
-            .map(|name| name.to_string_lossy().to_ascii_lowercase());
-        let parent = path
-            .parent()
-            .and_then(Path::file_name)
-            .map(|name| name.to_string_lossy().to_ascii_lowercase());
-        return name.as_deref().is_some_and(|name| {
-            ROOT_INSTRUCTIONS.contains(&name)
-                || name == "skill.md"
-                || (parent.as_deref() == Some("skills") && name.ends_with(".md"))
-        });
-    };
-    let target = resolved(&if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        roots.workspace.join(path)
-    });
-    let relative = |root: &Path| {
-        target.strip_prefix(resolved(root)).ok().map(|rest| {
-            rest.components()
-                .map(|part| part.as_os_str().to_string_lossy().to_ascii_lowercase())
-                .collect::<Vec<_>>()
-        })
-    };
-    let skill_entry = |rest: &[String]| match rest {
-        [file] => file.ends_with(".md"),
-        [.., file] => file == "skill.md",
-        [] => false,
-    };
-    let workspace = relative(&roots.workspace).is_some_and(|parts| match parts.as_slice() {
-        [file] => ROOT_INSTRUCTIONS.contains(&file.as_str()),
-        [folder, file] if folder == ".loupist" && file == "agents.md" => true,
-        [folder, skills, rest @ ..] => {
-            matches!(folder.as_str(), ".loupist" | ".agents" | ".pi")
-                && skills == "skills"
-                && skill_entry(rest)
-        }
-        _ => false,
-    });
-    workspace
-        || relative(&roots.global).is_some_and(|parts| match parts.as_slice() {
-            [file] => file == "agents.md",
-            [skills, rest @ ..] => skills == "skills" && skill_entry(rest),
-            _ => false,
-        })
-}
-
-/// Lexically normalized, with the longest existing ancestor canonicalized.
-fn resolved(path: &Path) -> PathBuf {
-    let mut normal = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::ParentDir => {
-                normal.pop();
-            }
-            Component::CurDir => {}
-            other => normal.push(other),
-        }
-    }
-    let mut existing = normal.as_path();
-    let mut rest = Vec::new();
-    loop {
-        if let Ok(canonical) = existing.canonicalize() {
-            return rest
-                .iter()
-                .rev()
-                .fold(canonical, |path, part: &&std::ffi::OsStr| path.join(part));
-        }
-        match (existing.parent(), existing.file_name()) {
-            (Some(parent), Some(name)) => {
-                rest.push(name);
-                existing = parent;
-            }
-            _ => return normal,
-        }
-    }
-}
-
 fn native_file_tool(params: &Value) -> bool {
     matches!(
         params.get("name").and_then(Value::as_str),
@@ -1016,9 +878,9 @@ fn outbound_capable(method: ToolMethod, params: &Value) -> bool {
 
 /// The weaker tier keeps research reads (web, market data, Memory, files)
 /// and pauses what could act on injected instructions beyond this reply.
+/// Native tools are not judged here: the native policy asks the user.
 fn command_or_outbound_write(method: ToolMethod, params: &Value) -> bool {
     match method {
-        ToolMethod::NativeAuthorize => !native_file_tool(params),
         // A custom server's tools may write to an outside service.
         ToolMethod::McpConnect | ToolMethod::McpCall => custom_server(params),
         // Standing work outlives the turn and would carry injected instructions forward.
@@ -1159,8 +1021,6 @@ mod tests {
         assert!(taint.enforce(ToolMethod::McpCall, &custom_call).is_ok());
         taint.mark_untrusted_text();
         for (method, params) in [
-            (ToolMethod::NativeAuthorize, bash.clone()),
-            (ToolMethod::NativeAuthorize, json!({"name":"unknown"})),
             (ToolMethod::McpCall, custom_call.clone()),
             (ToolMethod::McpConnect, json!({"server_id":CUSTOM})),
             (ToolMethod::ScheduleCreate, json!({})),
@@ -1176,7 +1036,10 @@ mod tests {
                 "{method:?} {params}"
             );
         }
+        // Native tools are the native policy's to judge, so the tier itself
+        // lets them through.
         for (method, params) in [
+            (ToolMethod::NativeAuthorize, bash.clone()),
             (ToolMethod::NativeAuthorize, json!({"name":"read"})),
             (
                 ToolMethod::NativeAuthorize,
@@ -1208,111 +1071,6 @@ mod tests {
             taint.enforce(ToolMethod::NativeAuthorize, &bash),
             Err(BrokerError::OutboundPaused)
         ));
-    }
-
-    #[test]
-    fn tainted_turns_cannot_rewrite_instructions_or_skills_a_later_turn_loads() {
-        let temporary = tempfile::tempdir().unwrap();
-        let folder = |path: PathBuf| {
-            std::fs::create_dir_all(&path).unwrap();
-            path.canonicalize().unwrap()
-        };
-        let workspace = folder(temporary.path().join("workspace"));
-        let global = folder(temporary.path().join("global"));
-        std::fs::create_dir_all(workspace.join("notes")).unwrap();
-        std::fs::create_dir_all(workspace.join(".loupist/skills/screen")).unwrap();
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(workspace.join(".loupist"), workspace.join("notes/alias"))
-            .unwrap();
-        let write = |path: PathBuf| json!({"name":"write","path":path.to_string_lossy()});
-        let edit = |path: PathBuf| json!({"name":"edit","path":path.to_string_lossy()});
-        let loaded = [
-            write(workspace.join("AGENTS.md")),
-            edit(workspace.join("CLAUDE.md")),
-            write(workspace.join("agents.override.md")),
-            write(workspace.join("notes/../AGENTS.md")),
-            write(workspace.join(".loupist/AGENTS.md")),
-            edit(workspace.join(".loupist/skills/screen/SKILL.md")),
-            write(workspace.join(".agents/skills/new/nested/SKILL.md")),
-            write(workspace.join(".pi/skills/quick.md")),
-            write(global.join("AGENTS.md")),
-            write(global.join("skills/personal/SKILL.md")),
-            json!({"name":"write"}),
-        ];
-        let ordinary = [
-            write(workspace.join("notes/AGENTS.md")),
-            write(workspace.join("report.md")),
-            write(workspace.join(".loupist/skills/screen/screen.py")),
-            write(workspace.join(".loupist/skills/screen/reference.md")),
-            write(global.join("notes.md")),
-            json!({"name":"read","path":workspace.join("AGENTS.md").to_string_lossy()}),
-        ];
-
-        let mut taint = TurnTaint::default();
-        taint.protect_instructions(InstructionRoots {
-            workspace: workspace.clone(),
-            global: global.clone(),
-        });
-        for params in loaded.iter().chain(&ordinary) {
-            assert!(taint.enforce(ToolMethod::NativeAuthorize, params).is_ok());
-        }
-        taint.mark_untrusted_text();
-        let refusal = |error: BrokerError| match error {
-            BrokerError::WithNext { source, next } => (*source, next),
-            other => panic!("expected a refusal with next steps, got {other:?}"),
-        };
-        for params in &loaded {
-            let (source, next) = refusal(
-                taint
-                    .enforce(ToolMethod::NativeAuthorize, params)
-                    .unwrap_err(),
-            );
-            assert!(
-                matches!(source, BrokerError::UntrustedTextPaused),
-                "{params}"
-            );
-            assert_eq!(next, INSTRUCTION_WRITE_REFUSAL);
-        }
-        #[cfg(unix)]
-        assert!(taint
-            .enforce(
-                ToolMethod::NativeAuthorize,
-                &write(workspace.join("notes/alias/AGENTS.md"))
-            )
-            .is_err());
-        for params in &ordinary {
-            assert!(
-                taint.enforce(ToolMethod::NativeAuthorize, params).is_ok(),
-                "{params}"
-            );
-        }
-        // The stronger custom tier refuses the same writes in its own words.
-        taint.mark(CUSTOM, "Private source", false);
-        let (source, _) = refusal(
-            taint
-                .enforce(ToolMethod::NativeAuthorize, &loaded[0])
-                .unwrap_err(),
-        );
-        assert!(matches!(source, BrokerError::OutboundPaused));
-        assert!(taint
-            .enforce(ToolMethod::NativeAuthorize, &ordinary[1])
-            .is_ok());
-
-        // Without the turn's folders, the names alone are refused.
-        let unrooted = TurnTaint::default();
-        unrooted.mark_untrusted_text();
-        assert!(unrooted
-            .enforce(
-                ToolMethod::NativeAuthorize,
-                &write("/elsewhere/CLAUDE.md".into())
-            )
-            .is_err());
-        assert!(unrooted
-            .enforce(
-                ToolMethod::NativeAuthorize,
-                &write("/elsewhere/notes.md".into())
-            )
-            .is_ok());
     }
 
     #[test]
@@ -1531,17 +1289,41 @@ mod tests {
             "https://example.com.attacker.example/a",
             "https://notsec.gov/a",
         ] {
-            assert!(
-                matches!(allowed(url), WebFetchTarget::Approve { .. }),
+            assert_eq!(
+                allowed(url),
+                WebFetchTarget::Refused(WEB_FETCH_SITE_REFUSAL),
                 "{url}"
             );
         }
-        // A long query on a known site asks; the card names the site and path only.
+        // A long query on a known site is refused the same way.
         assert_eq!(
             allowed(&format!("https://example.com/a?d={}", "y".repeat(300))),
-            WebFetchTarget::Approve {
-                target: "example.com/a?…".into()
-            }
+            WebFetchTarget::Refused(WEB_FETCH_SITE_REFUSAL)
+        );
+        // A percent-encoded Korean article slug is long but ordinary: it opens.
+        let slug: String = "한국경제신문"
+            .repeat(10)
+            .bytes()
+            .map(|byte| format!("%{byte:02X}"))
+            .collect();
+        assert!(slug.len() > 256 && slug.len() <= 1024);
+        assert_eq!(
+            allowed(&format!("https://example.com/news/{slug}")),
+            WebFetchTarget::Allowed
+        );
+        // A path past the bound carries data as well as a query does.
+        assert_eq!(
+            allowed(&format!("https://example.com/{}", "y".repeat(1100))),
+            WebFetchTarget::Refused(WEB_FETCH_SITE_REFUSAL)
+        );
+        // Query and fragment are bounded together.
+        assert_eq!(
+            allowed(&format!(
+                "https://example.com/a?d={}#{}",
+                "y".repeat(200),
+                "z".repeat(100)
+            )),
+            WebFetchTarget::Refused(WEB_FETCH_SITE_REFUSAL)
         );
         // Held amounts and the user's own words are refused on any site.
         for url in [
@@ -1566,15 +1348,5 @@ mod tests {
         ] {
             assert_eq!(allowed(url), WebFetchTarget::Allowed, "{url}");
         }
-        // Once the user turns a site down, later new sites are refused unasked.
-        taint.decline_new_sites();
-        assert_eq!(
-            allowed("https://another.example/"),
-            WebFetchTarget::Refused(WEB_FETCH_SITE_REFUSAL)
-        );
-        assert_eq!(
-            allowed("https://example.com/other"),
-            WebFetchTarget::Allowed
-        );
     }
 }

@@ -190,6 +190,10 @@ explicitly; a blanket ignored-file cleanup would also delete private notes in
 
 ## Runtime staging and package checks
 
+The locked setup and `verify.sh` also stage the pinned offline content-search
+binary, so workspace grep contracts execute on macOS and Linux without skipped
+package tests.
+
 Stage missing/stale runtimes before a requested native or packaging flow.
 World extraction and search run in Rust; only their local embedding assets need
 staging. Pi staging verifies its pinned archive and executable regressions.

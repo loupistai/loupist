@@ -21,14 +21,21 @@ pub enum ChatProgressStatus {
     Skipped,
 }
 
-/// Why the host refused a failed step, when a security rule did. The renderer
-/// explains it in the step and offers no override.
+/// Why the host refused a failed step, when a security rule or the user's own
+/// card answer did. The renderer explains it in the step and offers no override.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChatStepRefusal {
-    /// The turn read third-party text, so commands, outbound writes and new
-    /// sites stay paused until it ends (broker code `untrusted_text_paused`).
+    /// The turn read third-party text: a command,
+    /// an instruction write, a custom connection, a schedule change
+    /// or a new site stays paused until the turn ends (broker code
+    /// `untrusted_text_paused`).
     UntrustedTextPaused,
+    /// The path is inside the app's private data, a credential store or a
+    /// git directory's hooks or config (`protected_path`).
+    ProtectedPath,
+    /// The path is outside the Loupist folder (`outside_workspace`).
+    OutsideWorkspace,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -387,6 +394,9 @@ pub struct ChatProgress {
     /// Approvals this reply asked for (composer spec D3), in request order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub approvals: Vec<crate::chat::approvals::ChatApproval>,
+    /// Questions this reply asked the user (`ask_user`), in request order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub questions: Vec<crate::chat::questions::ChatQuestion>,
 }
 
 /// A plan has this many items at least and at most.
@@ -561,6 +571,9 @@ pub struct ChatProgressPatch {
     /// Every approval whenever one changed since the last patch.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approvals: Option<Vec<crate::chat::approvals::ChatApproval>>,
+    /// Every question whenever one changed since the last patch.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub questions: Option<Vec<crate::chat::questions::ChatQuestion>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -595,6 +608,12 @@ impl ChatProgress {
         }
         for approval in &self.approvals {
             approval.validate(durable)?;
+        }
+        if self.questions.len() > crate::chat::questions::MAX_PROGRESS_QUESTIONS {
+            return Err(DomainError::Invalid("chat progress has too many questions"));
+        }
+        for question in &self.questions {
+            question.validate(durable)?;
         }
         Ok(())
     }
@@ -640,6 +659,7 @@ pub struct ChatProgressProjection {
     pending_finished_at_ms: Option<i64>,
     plan_dirty: bool,
     approvals_dirty: bool,
+    questions_dirty: bool,
     asset_names: AssetNames,
 }
 
@@ -777,6 +797,7 @@ impl ChatProgressProjection {
                 items: Vec::new(),
                 plan: None,
                 approvals: Vec::new(),
+                questions: Vec::new(),
             },
             next_item: 1,
             next_patch_sequence: 1,
@@ -793,6 +814,7 @@ impl ChatProgressProjection {
             pending_finished_at_ms: None,
             plan_dirty: false,
             approvals_dirty: false,
+            questions_dirty: false,
             asset_names: AssetNames::default(),
         }
     }
@@ -1190,6 +1212,43 @@ impl ChatProgressProjection {
         true
     }
 
+    /// Adds or updates a question card, attached to the step of `tool_call_id` when known.
+    /// Returns false when the reply already holds its maximum of questions.
+    pub fn upsert_question(
+        &mut self,
+        tool_call_id: Option<&str>,
+        mut question: crate::chat::questions::ChatQuestion,
+    ) -> bool {
+        question.item_id = tool_call_id.and_then(|call| self.tool_items.get(call).cloned());
+        if let Some(existing) = self
+            .progress
+            .questions
+            .iter_mut()
+            .find(|existing| existing.request_id == question.request_id)
+        {
+            if question.item_id.is_none() {
+                question.item_id = existing.item_id.clone();
+            }
+            *existing = question;
+        } else if self.progress.questions.len() >= crate::chat::questions::MAX_PROGRESS_QUESTIONS {
+            return false;
+        } else {
+            self.progress.questions.push(question);
+        }
+        self.questions_dirty = true;
+        true
+    }
+
+    /// A question still waiting when the run ends can no longer be answered.
+    fn expire_waiting_questions(&mut self) {
+        for question in &mut self.progress.questions {
+            if question.state == crate::chat::questions::QuestionState::Waiting {
+                question.state = crate::chat::questions::QuestionState::Expired;
+                self.questions_dirty = true;
+            }
+        }
+    }
+
     /// A card still waiting when the run ends can no longer be answered.
     fn expire_waiting_approvals(&mut self) {
         for approval in &mut self.progress.approvals {
@@ -1251,12 +1310,15 @@ impl ChatProgressProjection {
             .flatten();
         let approvals =
             std::mem::take(&mut self.approvals_dirty).then(|| self.progress.approvals.clone());
+        let questions =
+            std::mem::take(&mut self.questions_dirty).then(|| self.progress.questions.clone());
         if upsert_items.is_empty()
             && append_text.is_empty()
             && remove_item_ids.is_empty()
             && finished_at_ms.is_none()
             && plan.is_none()
             && approvals.is_none()
+            && questions.is_none()
         {
             return None;
         }
@@ -1270,12 +1332,14 @@ impl ChatProgressProjection {
             finished_at_ms,
             plan,
             approvals,
+            questions,
         })
     }
 
     pub fn finish(&mut self, finished_at_ms: i64, stopped: bool) -> Option<ChatProgress> {
         self.close_commentary();
         self.expire_waiting_approvals();
+        self.expire_waiting_questions();
         let closed_at = finished_at_ms.max(self.progress.started_at_ms);
         self.progress.finished_at_ms = Some(closed_at);
         let mut changed_item_ids = Vec::new();
@@ -1999,7 +2063,6 @@ mod tests {
         projection.start_tool("call-c", "mcp_call", &json!({}), None, 11);
         let card = ChatApproval {
             request_id: "req-1".into(),
-            kind: None,
             item_id: None,
             connection_id: "custom-1".into(),
             connection_name: "Company research".into(),
@@ -2028,6 +2091,58 @@ mod tests {
         assert_eq!(snapshot.approvals[0].state, ApprovalState::Expired);
         assert!(snapshot.approvals[0].item_id.is_some());
         assert!(snapshot.validate(true).is_ok());
+    }
+
+    #[test]
+    fn a_question_card_sits_at_its_step_is_capped_and_cannot_stay_waiting_after_the_run() {
+        use crate::chat::questions::{
+            ChatQuestion, ChatQuestionOption, QuestionAnswer, QuestionState, MAX_PROGRESS_QUESTIONS,
+        };
+        let card = |request_id: &str| ChatQuestion {
+            request_id: request_id.into(),
+            item_id: None,
+            question: "Which period?".into(),
+            options: ["Quarterly", "Annual"]
+                .map(|label| ChatQuestionOption {
+                    label: label.into(),
+                    description: None,
+                })
+                .to_vec(),
+            recommended: Some(0),
+            state: QuestionState::Waiting,
+            answer: None,
+            requested_at_ms: 12,
+        };
+        let mut projection = ChatProgressProjection::new(10);
+        projection.start_tool("call-q", "ask_user", &json!({}), None, 11);
+        assert!(projection.upsert_question(Some("call-q"), card("req-1")));
+        let questions = projection.take_patch().unwrap().questions.unwrap();
+        assert!(
+            questions[0].item_id.is_some(),
+            "the card is attached to its step"
+        );
+        assert!(projection.take_patch().is_none());
+        // The answer replaces the waiting card and keeps its step.
+        let mut answered = card("req-1");
+        answered.state = QuestionState::Answered;
+        answered.answer = Some(QuestionAnswer::Choice(1));
+        assert!(projection.upsert_question(None, answered));
+        let questions = projection.take_patch().unwrap().questions.unwrap();
+        assert_eq!(questions.len(), 1);
+        assert_eq!(questions[0].answer, Some(QuestionAnswer::Choice(1)));
+        assert!(questions[0].item_id.is_some());
+        for index in 2..=MAX_PROGRESS_QUESTIONS {
+            assert!(projection.upsert_question(None, card(&format!("req-{index}"))));
+        }
+        assert!(!projection.upsert_question(None, card("req-over")));
+        projection.finish_tool("call-q", false, 13, None);
+        let snapshot = projection.finish(20, true).unwrap();
+        assert_eq!(snapshot.questions[0].state, QuestionState::Answered);
+        assert_eq!(snapshot.questions[1].state, QuestionState::Expired);
+        assert!(snapshot.validate(true).is_ok());
+        let mut waiting = snapshot;
+        waiting.questions[1].state = QuestionState::Waiting;
+        assert!(waiting.validate(true).is_err());
     }
 
     #[test]
@@ -2610,6 +2725,7 @@ mod plan_tests {
             items: vec![],
             plan: Some(ChatPlan { items }),
             approvals: Vec::new(),
+            questions: Vec::new(),
         };
         let running = progress(vec![
             item("a", ChatPlanStatus::Active),

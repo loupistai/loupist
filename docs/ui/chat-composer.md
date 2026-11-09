@@ -102,9 +102,22 @@ approval that Settings › Connections shows and revokes, and Not now records a
 custom connection receives the request and that the approved tool can only read
 data; it does not promise the request stays on the device. A card still waiting
 when the run ends reads "No longer needed". Tools that are not read-only, and
-unattended runs, keep the plain refusal. After third-party text, a `web_fetch` of a
-new site waits on the same kind of card (`kind: web_site`) with only Allow once and
-Not now ([Trust](../runtime/untrusted-text.md)).
+unattended runs, keep the plain refusal. This is the only approval card: a native
+command or file access is allowed or refused by Rust without asking, and a refused
+step explains itself in place ([Native tool permissions](../runtime/permissions.md));
+a new site after third-party text is refused the same way
+([Trust](../runtime/untrusted-text.md)).
+
+An [`ask_user`](../agent/turn-tools.md#turn-tools) call waits on a question card the same
+way: Rust records it on `ChatProgress.questions` (at most four per reply), under the step
+that asked, and the card offers one button per option (the recommended one primary, tagged
+Recommended, with its description under each label), an "Or answer in your own words"
+field up to 500 characters and the waiting clock. Answers go through
+`chat_question_answer {loupist_id, request_id, choice | text}` (exactly one; Rust checks the
+Loupist, the option index and the length). The settled line reads "You answered: …" or,
+when the wait ran out or the run stopped, "No answer · continued with <recommended
+option>". A waiting question counts in the rail's "Needs your OK" row, which reads "Needs your
+answer" when only questions wait, and turns the footer to "Waiting for you"; one still waiting when the run ends is saved as expired.
 
 A completed `connection_setup` step leaves a setup card under the answer
 (`ConnectionSetupCard`, derived by `chat/connectionSetupBlocks.ts` from the step's

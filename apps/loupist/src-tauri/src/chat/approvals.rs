@@ -5,9 +5,6 @@
 //! the reply's progress, and resumes on the user's decision. Decisions arrive
 //! through `chat_approval_decide`; "Always" is stored by the connection service
 //! per Loupist, connection and tool, like an approval given in Settings.
-//!
-//! After third-party text, a `web_fetch` of a site the turn has not seen asks
-//! the same way (`kind: web_site`); it can be allowed only once.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -43,23 +40,12 @@ pub enum ApprovalState {
     Expired,
 }
 
-/// What an approval card asks about.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ApprovalKind {
-    /// A new website after third-party text; `target` names the site.
-    WebSite,
-}
-
 /// One approval the reply asked for, shown as a card at its step.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChatApproval {
     #[serde(rename = "requestId")]
     pub request_id: String,
-    /// Absent for a custom connection's tool.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub kind: Option<ApprovalKind>,
     /// The progress step that waits; absent when the call carried no tool call id.
     #[serde(rename = "itemId", default, skip_serializing_if = "Option::is_none")]
     pub item_id: Option<String>,
@@ -204,19 +190,11 @@ mod tests {
 
     #[test]
     fn a_decision_reaches_only_the_waiting_call_of_the_same_loupist() {
-        // Cards saved before `kind` existed still read; a web site card round-trips.
         let saved: ChatApproval = serde_json::from_value(json!({"requestId":"req-0",
             "connectionId":"custom-a","connectionName":"A","toolName":"read","state":"declined",
             "requestedAtMs":1}))
         .unwrap();
-        assert_eq!(saved.kind, None);
-        let site = ChatApproval {
-            kind: Some(ApprovalKind::WebSite),
-            ..saved
-        };
-        let value = serde_json::to_value(&site).unwrap();
-        assert_eq!(value["kind"], "web_site");
-        assert_eq!(serde_json::from_value::<ChatApproval>(value).unwrap(), site);
+        assert_eq!(serde_json::to_value(&saved).unwrap()["state"], "declined");
 
         let mut receiver = register("req-1", "loupist-a");
         assert_eq!(

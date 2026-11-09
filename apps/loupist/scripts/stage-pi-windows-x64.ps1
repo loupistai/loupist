@@ -62,7 +62,7 @@ try {
 
     & python (Join-Path $scriptDir "stage_workspace_tools.py") --runtime $newRuntime --target $target
     if ($LASTEXITCODE -ne 0) { throw "Offline workspace tool staging failed." }
-    foreach ($tool in @("fd.exe", "rg.exe")) {
+    foreach ($tool in @("rg.exe")) {
         & (Join-Path $scriptDir "sign-windows-binary.ps1") -Path (Join-Path $newRuntime "workspace-tools\$tool")
     }
     & python (Join-Path $scriptDir "stage_workspace_tools.py") --runtime $newRuntime --target $target --record-signature

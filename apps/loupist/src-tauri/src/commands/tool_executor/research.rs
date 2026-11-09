@@ -272,11 +272,10 @@ impl AppToolExecutor {
     }
 
     /// After third-party text, a fetch can carry data out in its URL (B88).
-    /// The turn's taint decides; a new site waits for the user's Allow once,
-    /// and a decline holds for the rest of the turn.
+    /// The turn's taint decides; a new site is refused with `web_search` as
+    /// the way to it.
     async fn web_fetch_gate(&self, url: &str) -> Result<(), BrokerError> {
-        use crate::chat::approvals::ApprovalDecision;
-        use crate::custom_connections::taint::{WebFetchTarget, WEB_FETCH_SITE_REFUSAL};
+        use crate::custom_connections::taint::WebFetchTarget;
         let taint = &self.capture.turn_taint;
         if !taint.untrusted_text() {
             return Ok(());
@@ -292,19 +291,6 @@ impl AppToolExecutor {
         match taint.web_fetch_target(url, &holdings) {
             WebFetchTarget::Allowed => Ok(()),
             WebFetchTarget::Refused(next) => Err(BrokerError::UntrustedTextPaused.with_next(next)),
-            WebFetchTarget::Approve { target } => {
-                let approval = super::approval::web_site_approval(target);
-                match self.ask_user(approval).await {
-                    Some(ApprovalDecision::Once | ApprovalDecision::Always) => {
-                        taint.note_seen_url(url);
-                        Ok(())
-                    }
-                    Some(ApprovalDecision::Deny) | None => {
-                        taint.decline_new_sites();
-                        Err(BrokerError::UntrustedTextPaused.with_next(WEB_FETCH_SITE_REFUSAL))
-                    }
-                }
-            }
         }
     }
 

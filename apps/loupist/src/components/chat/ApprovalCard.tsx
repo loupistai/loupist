@@ -33,6 +33,17 @@ function useConnectionDetail(bridge: LoupistBridge, loupistId: string) {
   return { open, sheet, failed };
 }
 
+/** The card's heading, body and note; `target` is the call's plain values. */
+function cardCopy(approval: ChatApproval, tool: string) {
+  return {
+    label: t("approvalCard.label", { tool }),
+    body: approval.target
+      ? t("approvalCard.body", { connection: approval.connectionName, tool, target: approval.target })
+      : t("approvalCard.bodyNoTarget", { connection: approval.connectionName, tool }),
+    note: t("approvalCard.readOnly"),
+  };
+}
+
 function WaitingCard({ approval, onDecide }: { approval: ChatApproval; onDecide: (decision: ChatApprovalDecision) => Promise<void> }) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
@@ -42,8 +53,7 @@ function WaitingCard({ approval, onDecide }: { approval: ChatApproval; onDecide:
     return () => window.clearInterval(timer);
   }, []);
   const tool = humanizeToolName(approval.toolName);
-  // A new website after third-party text: allowed for this reply only, never always.
-  const site = approval.kind === "web_site" ? approval.target ?? "" : null;
+  const copy = cardCopy(approval, tool);
   const decide = async (decision: ChatApprovalDecision) => {
     setBusy(true);
     setFailed(false);
@@ -55,21 +65,17 @@ function WaitingCard({ approval, onDecide }: { approval: ChatApproval; onDecide:
     }
   };
   // The rail's "Needs your OK" row scrolls here and moves focus to the card, never to a button.
-  return <section className="approval-card" data-kind={approval.kind} data-request-id={approval.requestId} tabIndex={-1}
-    aria-label={site === null ? t("approvalCard.label", { tool }) : t("approvalCard.webLabel", { site })}>
+  return <section className="approval-card" data-request-id={approval.requestId} tabIndex={-1} aria-label={copy.label}>
     <header>
       <strong>{t("approvalCard.title")}</strong>
       <span className="approval-card-clock">{t("approvalCard.waiting", { time: clock(nowMs - approval.requestedAtMs) })}</span>
     </header>
-    <p>{site !== null ? t("approvalCard.webBody", { site })
-      : approval.target
-        ? t("approvalCard.body", { connection: approval.connectionName, tool, target: approval.target })
-        : t("approvalCard.bodyNoTarget", { connection: approval.connectionName, tool })}</p>
-    <p className="approval-card-note">{site === null ? t("approvalCard.readOnly") : t("approvalCard.webNote")}</p>
+    <p>{copy.body}</p>
+    <p className="approval-card-note">{copy.note}</p>
     <div className="approval-card-actions">
       <Button type="button" disabled={busy} onClick={() => void decide("once")}>{t("approvalCard.allowOnce")}</Button>
       <Button type="button" variant="outline" disabled={busy} onClick={() => void decide("deny")}>{t("approvalCard.notNow")}</Button>
-      {site === null ? <Button type="button" variant="ghost" className="approval-card-always" disabled={busy} onClick={() => void decide("always")}>{t("approvalCard.always")}</Button> : null}
+      <Button type="button" variant="ghost" className="approval-card-always" disabled={busy} onClick={() => void decide("always")}>{t("approvalCard.always")}</Button>
     </div>
     {failed ? <p role="alert" className="approval-card-error">{t("approvalCard.error")}</p> : null}
   </section>;
@@ -81,8 +87,7 @@ function WaitingCard({ approval, onDecide }: { approval: ChatApproval; onDecide:
  * The answer is the only place with the buttons; the rail shows one "Needs your
  * OK" row that leads here. "Always" is stored by Rust per connection and tool and
  * is revocable in the connection's settings. Refusals from runs that could not
- * ask (scheduled runs) point to the same settings. A new website after
- * third-party text offers only Allow once and Not now.
+ * ask (scheduled runs) point to the same settings.
  */
 export function ApprovalCards({ approvals, refusals, bridge, loupistId }: {
   approvals: readonly ChatApproval[];
@@ -100,14 +105,6 @@ export function ApprovalCards({ approvals, refusals, bridge, loupistId }: {
     {approvals.map((approval) => {
       const tool = humanizeToolName(approval.toolName);
       if (approval.state === "waiting") return <WaitingCard key={approval.requestId} approval={approval} onDecide={decide(approval)} />;
-      if (approval.kind === "web_site") {
-        const site = approval.target ?? "";
-        return <p key={approval.requestId} className="approval-line" data-state={approval.state}>
-          {approval.state === "allowed_once" || approval.state === "always_allowed" ? t("approvalCard.webAllowedOnce", { site })
-            : approval.state === "declined" ? t("approvalCard.webDeclined", { site })
-              : t("approvalCard.webExpired", { site })}
-        </p>;
-      }
       return <p key={approval.requestId} className="approval-line" data-state={approval.state}>
         {approval.state === "allowed_once" ? t("approvalCard.allowedOnce", { tool })
           : approval.state === "always_allowed" ? <>{t("approvalCard.alwaysAllowed", { tool, connection: approval.connectionName })} · <Button type="button" variant="link" onClick={() => void detail.open(approval.connectionId)}>{t("approvalCard.changeInSettings")}</Button></>

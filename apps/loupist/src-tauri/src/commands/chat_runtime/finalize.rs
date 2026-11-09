@@ -39,7 +39,7 @@ pub(super) async fn finalize_chat_turn(turn: LaunchedChatTurn, streamed: Streame
         chat_controls: _chat_controls,
         pi,
         cancel: _cancel,
-        approval_rx: _approval_rx,
+        card_rx: _card_rx,
         entity_links: _entity_links,
         run_id: task_run_id,
         on_event,

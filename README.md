@@ -59,7 +59,7 @@ The first release targets macOS 13 or newer on Apple Silicon only. Windows, Inte
 
 - React submits typed intent and has no raw filesystem, process, credential, or Memory-write authority.
 - Rust owns Loupist isolation, persistence, and Memory writes.
-- Local file and Bash tools are trusted execution with your OS permissions. The selected folder is their working directory, not a sandbox. Bash children receive a filtered environment without app credentials; local host files remain accessible.
+- Native file tools are restricted to admitted workspace, scratch and attachment paths; private app data and credentials are refused. Bash retains host permissions before third-party text and is refused afterwards. Its filtered environment omits app credentials, but a clean command can still access host files. See [Native tool permissions](docs/runtime/permissions.md).
 - Model, market-data and graph workers run behind Rust authority. The host owns their process lifetimes and allowed operations.
 - Memory is the Loupist's durable learned state. Bundled Skills define product methods; workspace instructions and Skill entrypoints enter through a bounded, hash-checked snapshot.
 

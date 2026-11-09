@@ -10,13 +10,18 @@
 | World extraction (in-process, `knowledge/world_extract/`) | Derived extraction, reconciliation and retrieval through isolated Pi inference; returned JSON is untrusted until Rust validates it and publishes canonical Memory |
 | OpenBB MCP worker | Loupist-scoped read-only financial data under captured connector grants |
 
-Native tools run with the user's host permissions, accept absolute paths and can
-use installed runtimes and network access. The workspace is a starting directory,
-not a filesystem sandbox. Bash receives an allowlisted environment without app
-credentials or shell startup hooks; its PATH is described under
-[Local workspace execution](chat-turns.md#local-workspace-execution). This does not prevent
-commands from accessing other user-readable files. The folder-opening UI requires
-an explicit trust check; there is no saved per-Loupist native-execution switch.
+Native tools run as the user and can use installed runtimes. Rust decides every
+native call before it runs and never asks: file tools reach the Loupist folder, this
+run's scratch and this Chat's attachments, and refuse the app's private data
+(credentials, the database, Pi runtime files), home credential locations and
+everything outside the folder. Bash keeps its pre-PR host execution before
+third-party text and is refused afterwards, with no permission card
+([Native tool permissions](permissions.md)). Bash receives an allowlisted environment
+without app credentials or shell startup hooks; its PATH is described under
+[Local workspace execution](chat-turns.md#local-workspace-execution). Clean commands
+can still access user-readable host files, app data and network services.
+The folder-opening UI requires an explicit trust check; there is no saved
+per-Loupist native-execution switch.
 
 Release builds do not forward host `*_API_KEY` variables to Pi; Pi uses the saved
 credential in its private `auth.json` (debug builds other than `e2e` still forward

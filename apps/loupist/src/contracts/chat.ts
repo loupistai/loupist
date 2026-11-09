@@ -87,8 +87,14 @@ export type ChatProgressItem =
       finishedAtMs?: number;
     };
 
-/** `untrusted_text_paused`: the answer read third-party text, so commands, outbound writes and new sites are off. */
-export type ChatStepRefusal = "untrusted_text_paused";
+/**
+ * Why Rust refused a failed step. `untrusted_text_paused`: the answer read third-party text,
+ * so a command, an instruction write, a connection, a schedule
+ * change or a new site stayed off. `protected_path`: the path is inside the app's private
+ * data, a credential store or a git directory's hooks or config. `outside_workspace`: the
+ * path is outside the Loupist folder.
+ */
+export type ChatStepRefusal = "untrusted_text_paused" | "protected_path" | "outside_workspace";
 
 export type ChatPlanStatus = "pending" | "active" | "done" | "not_done";
 
@@ -103,14 +109,9 @@ export type ChatPlanItem = {
 /** The agent's checklist for multi-step work, projected by the host from `plan_update`. */
 export type ChatPlan = { items: ChatPlanItem[] };
 
-/**
- * A read-only connection tool the reply waits to use until the user decides (composer D3),
- * or, with `kind: "web_site"`, a new website after the reply read third-party text; `target`
- * then names the site and path, and it can only be allowed once.
- */
+/** A read-only connection tool the reply waits to use until the user decides (composer D3). */
 export type ChatApproval = {
   requestId: string;
-  kind?: "web_site";
   /** The progress step that waits, when known. */
   itemId?: string;
   connectionId: string;
@@ -124,12 +125,27 @@ export type ChatApproval = {
 
 export type ChatApprovalDecision = "once" | "always" | "deny";
 
+/** One question the agent asked mid-reply (`ask_user`): 2 to 4 options and always a free-text answer. */
+export type ChatQuestion = {
+  requestId: string;
+  /** The progress step that waits, when known. */
+  itemId?: string;
+  question: string;
+  options: { label: string; description?: string }[];
+  /** Index into `options` the agent suggests and assumes when nobody answers. */
+  recommended?: number;
+  state: "waiting" | "answered" | "expired";
+  answer?: { choice: number } | { text: string };
+  requestedAtMs: number;
+};
+
 export type ChatProgress = {
   startedAtMs: number;
   finishedAtMs?: number;
   items: ChatProgressItem[];
   plan?: ChatPlan;
   approvals?: ChatApproval[];
+  questions?: ChatQuestion[];
 };
 
 export type ChatProgressPatch = {
@@ -143,6 +159,8 @@ export type ChatProgressPatch = {
   plan?: ChatPlan;
   /** Every approval whenever one changed. */
   approvals?: ChatApproval[];
+  /** Every question whenever one changed. */
+  questions?: ChatQuestion[];
 };
 
 export type ChatArtifactKind = "markdown" | "chart" | "grid";

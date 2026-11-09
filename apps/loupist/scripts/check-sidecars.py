@@ -1106,7 +1106,7 @@ def openbb_smoke(executable: Path, runtime_dir: Path) -> None:
 
 
 def workspace_find_smoke(executable: Path, runtime_dir: Path, agent_dir: Path) -> None:
-    """Run native find and grep in the shipped Pi without host fd or rg, credentials, or network."""
+    """Run native find and grep with an admitted manifest in shipped Pi, offline."""
     with tempfile.TemporaryDirectory(prefix="loupist-find-smoke-") as name:
         root = Path(name)
         workspace = root / "research workspace"
@@ -1119,14 +1119,18 @@ def workspace_find_smoke(executable: Path, runtime_dir: Path, agent_dir: Path) -
         shutil.copyfile(agent_dir / "workspace-tools.mjs", root / "workspace-tools.mjs")
         extension = root / "find-smoke.mjs"
         extension.write_text(
-            'import { writeFileSync } from "node:fs";\n'
+            'import { statSync, writeFileSync } from "node:fs";\n'
             'import { registerWorkspaceTools } from "./workspace-tools.mjs";\n'
             'globalThis.fetch = () => { throw new Error("offline smoke must not use network"); };\n'
             "export default function(pi) {\n"
             "  const tools = new Map();\n"
             "  registerWorkspaceTools({ registerTool: tool => tools.set(tool.name, tool) }, "
             + json.dumps(str(workspace))
-            + ");\n"
+            + ", async () => { const path = "
+            + json.dumps(str(workspace / "results.csv"))
+            + "; const stat = statSync(path, { bigint: true }); return { allowed: true, resolved: "
+            + json.dumps(str(workspace))
+            + ", search: { directory: true, entries: [{ path, directory: false, identity: { dev: String(stat.dev), ino: String(stat.ino) } }] } }; });\n"
             '  pi.registerCommand("offline-find-smoke", { handler: async () => {\n'
             '    const result = await tools.get("find").execute("find", { pattern: "*.csv" });\n'
             "    writeFileSync("

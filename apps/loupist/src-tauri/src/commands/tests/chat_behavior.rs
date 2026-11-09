@@ -1353,6 +1353,7 @@ fn cold_bootstrap_restores_history_saved_work_and_attachments() {
                 }],
                 plan: None,
                 approvals: Vec::new(),
+                questions: Vec::new(),
             }),
             ..chat_message("answer", ChatRole::Assistant, "First answer")
         },

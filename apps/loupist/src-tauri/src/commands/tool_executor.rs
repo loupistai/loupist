@@ -5,6 +5,7 @@ pub(super) mod assets;
 mod earnings;
 #[cfg(test)]
 mod earnings_tests;
+mod question;
 pub(crate) use earnings::commit_turn as commit_earnings;
 #[cfg(test)]
 mod assets_tests;
@@ -41,6 +42,7 @@ pub(super) use setup::StagedSetup;
 mod connection_setup;
 pub(crate) use setup::{apply_watchlist as apply_setup_watchlist, commit_turn as commit_setup};
 mod workspace;
+pub(in crate::commands) use workspace::NativeGate;
 mod world_schema;
 #[cfg(test)]
 mod world_schema_tests;
@@ -125,6 +127,9 @@ type EntitySink = Arc<dyn Fn(String, Vec<String>) + Send + Sync>;
 /// Receives (tool call id, approval card) when a call starts or stops waiting for the user.
 pub(super) type ApprovalSink =
     Arc<dyn Fn(Option<String>, crate::chat::approvals::ChatApproval) + Send + Sync>;
+/// Receives (tool call id, question card) when an `ask_user` call starts or stops waiting.
+pub(super) type QuestionSink =
+    Arc<dyn Fn(Option<String>, crate::chat::questions::ChatQuestion) + Send + Sync>;
 
 #[derive(Default)]
 pub(super) struct ToolCapture {
@@ -146,6 +151,12 @@ pub(super) struct ToolCapture {
     pub(super) entity_sink: Option<EntitySink>,
     /// Set for interactive Chats: unapproved read-only custom tools wait for the user here.
     pub(super) approval_sink: Option<ApprovalSink>,
+    /// Set for interactive Chats: `ask_user` shows its question card here.
+    pub(super) question_sink: Option<QuestionSink>,
+    /// Cards this reply has shown; it holds at most `MAX_PROGRESS_APPROVALS`.
+    pub(super) approvals_shown: std::sync::atomic::AtomicUsize,
+    /// The native policy's turn state (`agent_harness::native_policy`).
+    pub(in crate::commands) native: workspace::NativeGate,
     pub(super) provider_pace: Mutex<finance::ProviderPace>,
     pub(super) staged_sources: Mutex<Vec<StagedSource>>,
     pub(super) staged_reads: Mutex<Vec<StagedKnowledgeRead>>,
@@ -1039,7 +1050,7 @@ impl AppToolExecutor {
         let mut result = match method {
             // A fresh-enough saved result stands in for the provider call.
             _ if reused_payload.is_some() => Ok(reused_payload.take().unwrap_or_default()),
-            ToolMethod::NativeAuthorize => self.native_authorize(&params),
+            ToolMethod::NativeAuthorize => self.native_authorize(&params).await,
             ToolMethod::ScheduleList
             | ToolMethod::ScheduleRead
             | ToolMethod::ScheduleCreate
@@ -1111,6 +1122,7 @@ impl AppToolExecutor {
             }
             ToolMethod::LoupistSetup => self.stage_loupist_setup(policy, params, delivery_id).await,
             ToolMethod::ConnectionSetup => self.connection_setup(params),
+            ToolMethod::AskUser => self.ask_user_question(params).await,
             ToolMethod::LensFile => self.stage_lens_file(policy, params, delivery_id).await,
             ToolMethod::ArtifactList => self.artifact_list(policy, params),
             ToolMethod::ArtifactRead => self.artifact_read(policy, params, delivery_id).await,

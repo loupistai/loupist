@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage the pinned offline fd and ripgrep used by Pi's native find and grep tools."""
+"""Stage the pinned offline ripgrep used on admitted native grep descriptors."""
 
 from __future__ import annotations
 
@@ -46,25 +46,6 @@ class Tool:
 
 TOOLS = (
     Tool(
-        "fd",
-        "10.5.0",
-        "sharkdp/fd",
-        "v10.5.0",
-        "fd-v{version}-{target}",
-        "fd 10.5.0",
-        {
-            "aarch64-apple-darwin": (
-                "tar.gz",
-                "b67e1836c468e42e411984b56e52fa7abec08c2bd22c867398e7cc134aac5e12",
-            ),
-            "x86_64-pc-windows-msvc": (
-                "zip",
-                "a227701b8551c35a9931d9f6da75503cf86d88e182d71fb849a70864c5d57cd7",
-            ),
-        },
-        {"LICENSE-MIT": "fd-LICENSE-MIT", "LICENSE-APACHE": "fd-LICENSE-APACHE"},
-    ),
-    Tool(
         "rg",
         "15.2.0",
         "BurntSushi/ripgrep",
@@ -72,6 +53,10 @@ TOOLS = (
         "ripgrep-{version}-{target}",
         "ripgrep 15.2.0",
         {
+            "x86_64-unknown-linux-musl": (
+                "tar.gz",
+                "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c",
+            ),
             "aarch64-apple-darwin": (
                 "tar.gz",
                 "3750b2e93f37e0c692657da574d7019a101c0084da05a790c83fd335bad973e4",
@@ -216,6 +201,7 @@ def main() -> None:
     parser.add_argument("--target", choices=TARGETS, required=True)
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--verify", action="store_true")
+    modes.add_argument("--ensure", action="store_true")
     modes.add_argument("--record-signature", action="store_true")
     args = parser.parse_args()
     if args.verify or args.record_signature:
@@ -223,6 +209,13 @@ def main() -> None:
             args.runtime, args.target, record_signature=args.record_signature
         )
     else:
+        if args.ensure:
+            try:
+                verify_workspace_tools(args.runtime, args.target)
+                print(f"Verified offline workspace tools for {args.target}.")
+                return
+            except (OSError, ValueError, subprocess.SubprocessError):
+                pass
         archives = {
             tool.name: Path(path)
             for tool in TOOLS

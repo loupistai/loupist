@@ -55,6 +55,8 @@ pub const MAX_CHAT_TURN_FILINGS: u8 = 2;
 /// Setup cards a reply can show: one per connection the user asked about,
 /// with room for a wrong guess.
 pub const MAX_CHAT_TURN_CONNECTION_SETUPS: u8 = 3;
+/// Questions a reply can ask the user with `ask_user`.
+pub const MAX_CHAT_TURN_QUESTIONS: u8 = 2;
 const MAX_CONCURRENT_CONNECTIONS: usize = 64;
 const RESPONSE_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 const DELIVERY_ACK_TIMEOUT: Duration = Duration::from_secs(10);
@@ -268,6 +270,7 @@ pub enum ToolMethod {
     WorldSchemaUpdate,
     LoupistSetup,
     ConnectionSetup,
+    AskUser,
     LensSearch,
     LensRead,
     WorldJob,
@@ -322,8 +325,12 @@ impl ToolMethod {
 pub enum BrokerError {
     #[error("Outbound access is paused for this turn because it read content from a custom connection. The user can ask again in a new message.")]
     OutboundPaused,
-    #[error("Commands, outbound writes and new websites are paused for the rest of this turn because it read third-party text (web pages, search results, news, filings, provider descriptions, or saved Sources and datasets holding them).")]
+    #[error("This turn read third-party text (web pages, search results, news, filings, provider descriptions, or saved Sources and datasets holding them), so custom connections, schedule changes, new websites and instruction writes are paused for the rest of the turn, and commands run offline.")]
     UntrustedTextPaused,
+    #[error("This path is inside the app's private data (credentials, the database, Pi runtime files), which native tools never read or write.")]
+    ProtectedPath,
+    #[error("This path is outside the Loupist folder, which native tools never read or write.")]
+    OutsideWorkspace,
     #[error("This custom tool needs your approval in Connections before it can run.")]
     CustomApprovalRequired {
         connection_id: String,
@@ -592,6 +599,7 @@ struct TransactionCardinality {
     schema_updates: u8,
     setups: u8,
     connection_setups: u8,
+    questions: u8,
     filings: u8,
     artifact_publishes: u8,
     research_opens: u8,
@@ -620,6 +628,9 @@ impl TransactionCardinality {
             {
                 return Err(BrokerError::BudgetExceeded);
             }
+            ToolMethod::AskUser if self.questions >= MAX_CHAT_TURN_QUESTIONS => {
+                return Err(BrokerError::BudgetExceeded);
+            }
             ToolMethod::LensFile if self.filings >= MAX_CHAT_TURN_FILINGS => {
                 return Err(BrokerError::BudgetExceeded);
             }
@@ -637,6 +648,7 @@ impl TransactionCardinality {
             ToolMethod::WorldSchemaUpdate => self.schema_updates += 1,
             ToolMethod::LoupistSetup => self.setups += 1,
             ToolMethod::ConnectionSetup => self.connection_setups += 1,
+            ToolMethod::AskUser => self.questions += 1,
             ToolMethod::LensFile => self.filings += 1,
             ToolMethod::ResearchOpen => self.research_opens += 1,
             ToolMethod::NoteSave => self.journals += 1,
@@ -665,6 +677,7 @@ impl TransactionCardinality {
             ToolMethod::ConnectionSetup => {
                 self.connection_setups = self.connection_setups.saturating_sub(1)
             }
+            ToolMethod::AskUser => self.questions = self.questions.saturating_sub(1),
             ToolMethod::LensFile => self.filings = self.filings.saturating_sub(1),
             ToolMethod::ArtifactPublish | ToolMethod::ChartPublish | ToolMethod::GridPublish => {
                 self.artifact_publishes = self.artifact_publishes.saturating_sub(1)
@@ -1393,6 +1406,14 @@ fn error_body(error: &BrokerError) -> Value {
             crate::custom_connections::taint::UNTRUSTED_TEXT_REFUSAL,
             false,
         ),
+        BrokerError::ProtectedPath => (
+            "Do not retry this path. App credentials, the database and Pi runtime files are reached only through the app's registered tools; use the workspace for files.",
+            false,
+        ),
+        BrokerError::OutsideWorkspace => (
+            crate::custom_connections::taint::OUTSIDE_WORKSPACE_REFUSAL,
+            false,
+        ),
         BrokerError::WithNext { .. } => unreachable!("handled above"),
         BrokerError::MethodDenied => (
             "This tool is not available. Load the capability that provides it, or use a tool that is already active.",
@@ -1461,6 +1482,8 @@ fn error_code(error: &BrokerError) -> &'static str {
     match error {
         BrokerError::OutboundPaused => "outbound_paused",
         BrokerError::UntrustedTextPaused => "untrusted_text_paused",
+        BrokerError::ProtectedPath => "protected_path",
+        BrokerError::OutsideWorkspace => "outside_workspace",
         BrokerError::CustomApprovalRequired { .. } => "needs_approval",
         BrokerError::ProviderApprovalRequired { .. } => "needs_approval",
         BrokerError::MethodDenied => "method_denied",

@@ -14,6 +14,7 @@ pub(crate) mod handoff;
 pub(crate) mod knowledge;
 pub(crate) mod loupist;
 mod memory_updates;
+pub(crate) mod questions;
 pub(crate) mod records;
 pub(crate) mod scheduled_tasks;
 pub(crate) mod skills;

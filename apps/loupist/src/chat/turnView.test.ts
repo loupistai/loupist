@@ -31,6 +31,9 @@ describe("state × slot", () => {
     ["awaiting approval", message({ phase: "tool", progress: { startedAtMs: start, items: [search, reading], approvals: [
       { requestId: "req", itemId: "read", connectionId: "web", connectionName: "Web", toolName: "web_fetch", state: "waiting", requestedAtMs: now - 2_000 },
     ] } }), {}, { state: "awaiting_approval", footer: "status:Waiting for you", rows: ["live:Reading hanul.example"] }],
+    ["awaiting a question's answer", message({ phase: "tool", progress: { startedAtMs: start, items: [search, reading], questions: [
+      { requestId: "ask", itemId: "read", question: "Which period?", options: [{ label: "Quarterly" }, { label: "Annual" }], state: "waiting", requestedAtMs: now - 2_000 },
+    ] } }), {}, { state: "awaiting_approval", footer: "status:Waiting for you", rows: ["live:Reading hanul.example"] }],
     ["writing", message({ phase: "writing", progress: { startedAtMs: start, items: [search, read, draft] } }), {},
       { state: "writing", footer: "status:Writing", rows: ["summary:Read 1 source · hanul.example"] }],
     ["stopping", message({ phase: "writing", progress: { startedAtMs: start, items: [search, read, draft] } }), { stopping: true },
@@ -182,6 +185,16 @@ describe("segments", () => {
     expect(first).toMatchObject({ key: "activity", autoExpand: true, row: { issues: "1 failed attempt" } });
     expect(second).toMatchObject({ key: "step-e", autoExpand: false, progress: { approvals: [approval] } });
     expect(first).not.toHaveProperty("progress.approvals");
+  });
+
+  it("places a question under the step that asked and keeps it out of other rows", () => {
+    const ask: ChatProgressItem = { id: "ask-step", kind: "tool", toolName: "ask_user", category: "capability", operation: "generic", action: "Asked you a question", status: "succeeded" };
+    const note = { kind: "commentary" as const, id: "note", text: "Next." };
+    const questionCard = { requestId: "q", itemId: "ask-step", question: "Which period?", options: [{ label: "Quarterly" }, { label: "Annual" }], state: "answered" as const, answer: { choice: 1 }, requestedAtMs: 1 };
+    const turn = view(message({ status: "complete", content: "Done.", progress: { startedAtMs: start, finishedAtMs: start + 100, items: [search, note, ask], questions: [questionCard] } }));
+    const [first, , second] = turn.segments;
+    expect(second).toMatchObject({ progress: { questions: [questionCard] } });
+    expect(first).not.toHaveProperty("progress.questions");
   });
 
   it("keeps each result and source with its step, excluding search hits and command output from the count", () => {

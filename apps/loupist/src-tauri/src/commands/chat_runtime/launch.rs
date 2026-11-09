@@ -5,8 +5,13 @@ use super::setup::{AdmittedChatTurn, TurnEnvelopeInputs};
 use super::*;
 use crate::{broker::ToolBrokerHandle, chat::activity::ActivityRecorder, domain::LoupistProfile};
 
-pub(super) type ApprovalReceiver =
-    tokio::sync::mpsc::UnboundedReceiver<(Option<String>, crate::chat::approvals::ChatApproval)>;
+/// A card a tool call shows while it waits for the user.
+pub(super) enum CardUpdate {
+    Approval(crate::chat::approvals::ChatApproval),
+    Question(crate::chat::questions::ChatQuestion),
+}
+
+pub(super) type CardReceiver = tokio::sync::mpsc::UnboundedReceiver<(Option<String>, CardUpdate)>;
 
 /// Launch → stream → finalize: the live turn that the spawned task owns.
 ///
@@ -22,7 +27,7 @@ pub(super) struct LaunchedChatTurn {
     pub on_event: ChatEventSink,
     pub run_id: String,
     pub entity_links: std::sync::mpsc::Receiver<(String, Vec<String>)>,
-    pub approval_rx: ApprovalReceiver,
+    pub card_rx: CardReceiver,
     pub cancel: tokio::sync::watch::Receiver<bool>,
     pub pi: PiProcess,
     pub chat_controls: ChatControlReceiver,
@@ -97,7 +102,7 @@ pub(super) async fn launch_chat_turn(
         runtime_policy_sha256,
         runtime_surface_sha256,
         policy,
-        instruction_roots,
+        native_roots,
         host_context,
         harness,
         chat_attachments,
@@ -128,18 +133,15 @@ pub(super) async fn launch_chat_turn(
         tool_broker_endpoint(state.artifacts.broker_dir.join(format!("{run_id}.sock")));
     let result_links = std::sync::mpsc::channel::<(String, String)>();
     let entity_links = std::sync::mpsc::channel::<(String, Vec<String>)>();
-    // Approval cards wake the run loop even while a tool waits and no Pi event arrives.
-    let (approval_tx, approval_rx) = tokio::sync::mpsc::unbounded_channel::<(
-        Option<String>,
-        crate::chat::approvals::ChatApproval,
-    )>();
+    // Approval and question cards wake the run loop even while a tool waits and no Pi event arrives.
+    let (card_tx, card_rx) = tokio::sync::mpsc::unbounded_channel::<(Option<String>, CardUpdate)>();
     let capture = {
         let mut capture = ToolCapture::for_chat(assistant_message_id.clone());
         capture.unattended_run_id = (!surface.interactive()).then(|| run_id.clone());
         capture.surface = Some(surface.clone());
         capture.tool_trace = on_event.tool_trace.clone();
         capture.admit_untrusted_context(untrusted_context);
-        capture.turn_taint.protect_instructions(instruction_roots);
+        capture.native = crate::commands::tool_executor::NativeGate::for_turn(native_roots);
         // Sites the user names stay readable after third-party text arrives.
         // A host briefing prompt includes observation text, not a user message;
         // its embedded URLs must not be admitted as sites the user typed.
@@ -182,8 +184,12 @@ pub(super) async fn launch_chat_turn(
         capture.entity_sink = Some(Arc::new(move |call_id, ids| {
             let _ = entity_link_tx.send((call_id, ids));
         }));
+        let approval_tx = card_tx.clone();
         capture.approval_sink = Some(Arc::new(move |call_id, approval| {
-            let _ = approval_tx.send((call_id, approval));
+            let _ = approval_tx.send((call_id, CardUpdate::Approval(approval)));
+        }));
+        capture.question_sink = Some(Arc::new(move |call_id, question| {
+            let _ = card_tx.send((call_id, CardUpdate::Question(question)));
         }));
         capture.mcp_scratch_root = Some(turn_resources.run_scratch_path().join("mcp"));
         capture.mcp_pool = Some(state.mcp_pool.clone());
@@ -417,7 +423,7 @@ pub(super) async fn launch_chat_turn(
         on_event,
         run_id: task_run_id,
         entity_links: entity_links.1,
-        approval_rx,
+        card_rx,
         cancel,
         pi,
         chat_controls,

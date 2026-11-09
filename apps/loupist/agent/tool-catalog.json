@@ -2136,6 +2136,67 @@
       }
     },
     {
+      "name": "ask_user",
+      "method": "user.ask",
+      "permission": "always",
+      "component": null,
+      "label": "Ask the user",
+      "description": "Ask the user one question in a card and wait for the answer, without ending the reply. Ask only when the answer changes the work materially and no sensible default exists; otherwise assume, proceed and say what you assumed. Give 2 to 4 concrete options, mark the one you would pick with recommended (an index into options), and keep the question short. The card also lets the user type their own answer. Never ask for passwords, API keys or account numbers, and never ask permission to run tools: the host asks when it needs to. At most 2 questions per reply. If the user does not answer, the result says which option was assumed: continue with it and say so. Interactive chats only; unavailable in scheduled runs.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "question",
+          "options"
+        ],
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "The question, in the user's language."
+          },
+          "options": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "label"
+              ],
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60,
+                  "description": "A short answer; labels must differ."
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 160,
+                  "description": "One line on what choosing it means."
+                }
+              }
+            }
+          },
+          "recommended": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3,
+            "description": "Index into options of the one you would pick; assumed if the user does not answer."
+          }
+        }
+      },
+      "progress": {
+        "category": "capability",
+        "operation": "generic",
+        "running": "Asking you a question",
+        "done": "Asked you a question"
+      }
+    },
+    {
       "name": "research_open",
       "method": "research.open",
       "permission": "always",

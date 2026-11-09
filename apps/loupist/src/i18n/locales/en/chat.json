@@ -285,12 +285,16 @@
     "paused": {
       "status": "Paused",
       "command": "Paused: this answer read text from other sites, so running commands is turned off for this answer.",
-      "site": "Paused: this answer read text from other sites, so opening this page is turned off for this answer.",
       "instructions": "Paused: this answer read text from other sites, so changing instruction and Skill files is turned off for this answer.",
+      "site": "Paused: this answer read text from other sites, so opening this page is turned off for this answer.",
       "schedule": "Paused: this answer read text from other sites, so creating or changing schedules is turned off for this answer.",
       "connection": "Paused: this answer read text from other sites, so connections you added are turned off for this answer.",
       "other": "Paused: this answer read text from other sites, so this step is turned off for this answer.",
       "why": "Text from other sites can carry hidden instructions. This safety rule keeps them from acting for you, and a new message starts without the pause."
+    },
+    "refused": {
+      "protectedPath": "Not allowed: this path is inside the app's private data (credentials, the database, runtime files), which the Loupist never reads or writes.",
+      "outsideWorkspace": "Not allowed: this file is outside the Loupist folder. Attach it to the chat or copy it into the folder, and the Loupist can work with it."
     },
     "namesTouched_one": "{{formattedCount}} on the map",
     "namesTouched_other": "{{formattedCount}} on the map",
@@ -970,13 +974,21 @@
     "expired": "No longer needed · {{tool}}",
     "error": "This approval is no longer waiting.",
     "needsSettings": "“{{tool}}” from {{connection}} needs your approval in Settings.",
-    "review": "Review",
-    "webLabel": "Approval to open {{site}}",
-    "webBody": "This reply read text from other sites. It now wants to open a new site: {{site}}.",
-    "webNote": "A page it read may have asked for this. Allow it only if you expect this site.",
-    "webAllowedOnce": "Opened once · {{site}}",
-    "webDeclined": "Skipped · {{site}} · the Loupist continued without it",
-    "webExpired": "No longer needed · {{site}}"
+    "review": "Review"
+  },
+  "questionCard": {
+    "label": "Question: {{question}}",
+    "title": "A question for you",
+    "waiting": "waiting {{time}}",
+    "recommended": "Recommended",
+    "options": "Options",
+    "other": "Or answer in your own words",
+    "placeholder": "Type your answer",
+    "send": "Send",
+    "answered": "You answered: {{answer}}",
+    "unanswered": "No answer · continued with {{option}}",
+    "unansweredAssumed": "No answer · continued with its own assumption",
+    "error": "This question is no longer waiting."
   },
   "journal": {
     "saved": "Saved to your journal: “{{judgment}}”",
@@ -1172,6 +1184,10 @@
     "plan_update": {
       "running": "Updating the plan",
       "done": "Updated the plan"
+    },
+    "ask_user": {
+      "running": "Asking you a question",
+      "done": "Asked you a question"
     },
     "research_open": {
       "running": "Opening a research session",
@@ -1452,6 +1468,7 @@
     },
     "needsYou": {
       "title": "Needs your OK",
+      "answerTitle": "Needs your answer",
       "show": "Show",
       "requests_one": "{{formattedCount}} request",
       "requests_other": "{{formattedCount}} requests"

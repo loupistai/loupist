@@ -1,5 +1,16 @@
 use super::*;
+use crate::commands::tool_executor::approval::AskOutcome;
+use crate::custom_connections::policy::ApprovalChoice;
 use crate::custom_connections::{service, ConnectionError};
+
+/// How a card for an unapproved read-only tool ended. Only a card the user
+/// saw and turned down (or let expire) is a decline; a call no card could be
+/// shown for still needs an approval in Settings.
+enum CardAnswer {
+    Allowed(ApprovalChoice),
+    Declined,
+    Unasked,
+}
 
 fn failure(error: ConnectionError, connection_id: &str, tool_name: &str) -> BrokerError {
     match error {
@@ -34,18 +45,15 @@ impl AppToolExecutor {
     }
 
     /// Shows an approval card and waits for the user, the wait limit or the run stopping.
-    /// Returns the approval to store, or None when the run continues without the tool.
     async fn wait_for_approval(
         &self,
         connection: &service::ConnectionView,
         request: &McpToolCallRequest,
         card: &service::ToolCard,
-    ) -> Option<crate::custom_connections::policy::ApprovalChoice> {
+    ) -> CardAnswer {
         use crate::chat::approvals::{self, ApprovalDecision, ApprovalState, ChatApproval};
-        use crate::custom_connections::policy::ApprovalChoice;
         let approval = ChatApproval {
             request_id: uuid::Uuid::new_v4().to_string(),
-            kind: None,
             item_id: None,
             connection_id: request.server_id.clone(),
             connection_name: connection.name.clone(),
@@ -54,10 +62,17 @@ impl AppToolExecutor {
             state: ApprovalState::Waiting,
             requested_at_ms: chrono::Utc::now().timestamp_millis(),
         };
-        match self.ask_user(approval).await? {
-            ApprovalDecision::Once => Some(ApprovalChoice::AllowOnce),
-            ApprovalDecision::Always => Some(ApprovalChoice::Always),
-            ApprovalDecision::Deny => None,
+        match self.ask_user(approval).await {
+            AskOutcome::Answered(ApprovalDecision::Once) => {
+                CardAnswer::Allowed(ApprovalChoice::AllowOnce)
+            }
+            AskOutcome::Answered(ApprovalDecision::Always) => {
+                CardAnswer::Allowed(ApprovalChoice::Always)
+            }
+            AskOutcome::Answered(ApprovalDecision::Deny) | AskOutcome::NoAnswer => {
+                CardAnswer::Declined
+            }
+            AskOutcome::Unasked => CardAnswer::Unasked,
         }
     }
 
@@ -113,17 +128,17 @@ impl AppToolExecutor {
             )
             .await;
         // An interactive turn asks the user instead of refusing a read-only tool outright.
-        let mut asked = None;
+        let mut declined = false;
         if matches!(result, Err(ConnectionError::ApprovalRequired)) {
             if let Some(card) = self.approvable_tool(&connection, &request.tool_name) {
                 drop(service);
-                let decision = self.wait_for_approval(&connection, &request, &card).await;
+                let answer = self.wait_for_approval(&connection, &request, &card).await;
                 service = manager.lock().await;
                 self.capture
                     .turn_taint
                     .enforce(ToolMethod::McpCall, &json!({}))?;
-                result = match decision {
-                    Some(choice) => {
+                result = match answer {
+                    CardAnswer::Allowed(choice) => {
                         let approved = service
                             .approve(
                                 &self.loupist_id,
@@ -148,9 +163,12 @@ impl AppToolExecutor {
                             Err(error) => Err(error),
                         }
                     }
-                    None => Err(ConnectionError::ApprovalRequired),
+                    CardAnswer::Declined => {
+                        declined = true;
+                        Err(ConnectionError::ApprovalRequired)
+                    }
+                    CardAnswer::Unasked => Err(ConnectionError::ApprovalRequired),
                 };
-                asked = Some(decision.is_some());
             }
         }
         let mut result = match result {
@@ -164,7 +182,7 @@ impl AppToolExecutor {
                             tool_name: request.tool_name.clone(),
                             reason: if self.capture.unattended_run_id.is_some() {
                                 crate::domain::ChatToolRefusalReason::BlockedUnattended
-                            } else if asked == Some(false) {
+                            } else if declined {
                                 crate::domain::ChatToolRefusalReason::Declined
                             } else {
                                 crate::domain::ChatToolRefusalReason::NeedsApproval

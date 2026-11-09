@@ -99,8 +99,8 @@ pub(super) enum ChatLoopInput {
     CommentaryFlush,
     CancelChanged(Result<(), tokio::sync::watch::error::RecvError>),
     Control(Option<ChatControlRequest>),
-    /// An approval card changed: (tool call id, card), or None once the sender is gone.
-    Approval(Option<(Option<String>, crate::chat::approvals::ChatApproval)>),
+    /// An approval or question card changed: (tool call id, card), or None once the sender is gone.
+    Card(Option<(Option<String>, super::launch::CardUpdate)>),
     PiEvent(PiEventReceive),
 }
 

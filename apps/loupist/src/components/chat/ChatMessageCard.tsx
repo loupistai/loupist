@@ -1,5 +1,6 @@
 import { Disclosure } from "../ui/disclosure";
 import { ApprovalCards } from "./ApprovalCard";
+import { QuestionCards } from "./QuestionCard";
 import type { LoupistBridge } from "../../types";
 import { formatNumber, formatTime } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
@@ -366,7 +367,8 @@ function ChatMessageCardComponent({
       if (segment.kind === "activity") {
         transcript.push(<ActivityRow key={segment.key} segment={segment} focusItemId={progressFocus} asOf={message.as_of}
           revealedResult={segment.evidence.some(e => e.id === revealedResult?.id) ? revealedResult : undefined}
-          renderApprovals={bridge ? approvals => <ApprovalCards approvals={approvals} refusals={[]} bridge={bridge} loupistId={loupistId} /> : undefined} />);
+          renderApprovals={bridge ? approvals => <ApprovalCards approvals={approvals} refusals={[]} bridge={bridge} loupistId={loupistId} /> : undefined}
+          renderQuestions={bridge ? questions => <QuestionCards questions={questions} bridge={bridge} loupistId={loupistId} /> : undefined} />);
         continue;
       }
       // The settled answer alone splits around its cards; the first piece keeps the answer's key.

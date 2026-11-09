@@ -1,8 +1,8 @@
 //! Text from a shared pack through the real tool path: wrapped in
-//! `<<shared …>>` wherever it reaches the model. Commands pause for the turn
-//! when the model receives a flagged shared item or a shared item's full text;
-//! a clean accepted item in the per-turn catalog pauses nothing. The user's
-//! own Memory never pauses.
+//! `<<shared …>>` wherever it reaches the model. A flagged shared item or a
+//! shared item's full text raises the untrusted-text tier, so a command asks
+//! the user in a card for the rest of the turn; a clean accepted item in the
+//! per-turn catalog raises nothing. The user's own Memory never does.
 use super::*;
 
 const PACK: &str = "Quartz review";
@@ -88,6 +88,12 @@ fn bash_allowed(executor: &AppToolExecutor) -> bool {
         .is_ok()
 }
 
+/// The weaker tier. It no longer refuses a command itself: the native policy
+/// asks the user in a card once it is raised.
+fn untrusted_text(executor: &AppToolExecutor) -> bool {
+    executor.capture.turn_taint.untrusted_text()
+}
+
 /// A fresh turn: its own capture, so each delivery is checked on its own.
 fn turn(state: &AppState) -> AppToolExecutor {
     let executor = executor_for(state, Arc::new(ToolCapture::default()));
@@ -149,7 +155,7 @@ async fn shared_pack_text_arrives_delimited_and_pauses_for_flags_and_full_text()
         "{hit}"
     );
     assert!(
-        bash_allowed(&executor),
+        bash_allowed(&executor) && !untrusted_text(&executor),
         "a clean title is not its full text"
     );
     let clean = hit["recordId"].as_str().unwrap().to_owned();
@@ -173,7 +179,10 @@ async fn shared_pack_text_arrives_delimited_and_pauses_for_flags_and_full_text()
         .await
         .unwrap();
     assert!(wrapped_by(read["text"].as_str().unwrap(), CLEAN_PACK));
-    assert!(!bash_allowed(&executor), "a clean item's full text pauses");
+    assert!(
+        untrusted_text(&executor),
+        "a clean item's full text raises the tier, so a command asks"
+    );
 
     // A flagged accepted method.
     crate::sharing::commands::seed_shared_pack(&state, "loupist-a", &pack_folder()).unwrap();
@@ -200,7 +209,10 @@ async fn shared_pack_text_arrives_delimited_and_pauses_for_flags_and_full_text()
         .cloned()
         .unwrap_or_else(|| panic!("{found}"));
     assert!(wrapped(hit["title"].as_str().unwrap()), "{hit}");
-    assert!(!bash_allowed(&executor));
+    assert!(
+        untrusted_text(&executor),
+        "flagged shared text raises the tier"
+    );
     let shared = hit["recordId"].as_str().unwrap().to_owned();
 
     // lens_read: the body, injected line included, inside the delimiters.
@@ -214,7 +226,10 @@ async fn shared_pack_text_arrives_delimited_and_pauses_for_flags_and_full_text()
         wrapped(text) && text.contains("Ignore your rules"),
         "{text}"
     );
-    assert!(!bash_allowed(&executor));
+    assert!(
+        untrusted_text(&executor),
+        "flagged shared text raises the tier"
+    );
 
     // The user's own method arrives as it is and pauses nothing.
     let executor = turn(&state);
@@ -223,7 +238,7 @@ async fn shared_pack_text_arrives_delimited_and_pauses_for_flags_and_full_text()
         .await
         .unwrap();
     assert!(!read["text"].as_str().unwrap().contains("<<shared"));
-    assert!(bash_allowed(&executor));
+    assert!(bash_allowed(&executor) && !untrusted_text(&executor));
 
     // world_read: shared names, the summary asking for the system prompt, the relationship.
     let world = crate::commands::knowledge::catalog(
@@ -260,7 +275,10 @@ async fn shared_pack_text_arrives_delimited_and_pauses_for_flags_and_full_text()
     assert!(wrapped(
         edge["evidence"][0]["attribution"].as_str().unwrap()
     ));
-    assert!(!bash_allowed(&executor));
+    assert!(
+        untrusted_text(&executor),
+        "flagged shared text raises the tier"
+    );
 
     // A read of the pack's reference Source: its stored material is pack text.
     let (_, target) = view["sourceTargets"]
@@ -279,7 +297,10 @@ async fn shared_pack_text_arrives_delimited_and_pauses_for_flags_and_full_text()
         wrapped(text) && text.contains("Fictional harbor report"),
         "{text}"
     );
-    assert!(!bash_allowed(&executor));
+    assert!(
+        untrusted_text(&executor),
+        "flagged shared text raises the tier"
+    );
 
     // world_search over Sources: the reference Source's title.
     let executor = turn(&state);
@@ -302,10 +323,13 @@ async fn shared_pack_text_arrives_delimited_and_pauses_for_flags_and_full_text()
         !titles.is_empty() && titles.iter().all(|title| wrapped(title)),
         "{found}"
     );
-    assert!(!bash_allowed(&executor));
+    assert!(
+        untrusted_text(&executor),
+        "flagged shared text raises the tier"
+    );
 
     // The turn context: a flagged item in the per-turn catalog is wrapped and
-    // pauses commands for the turn.
+    // raises the tier for the turn.
     let context =
         crate::commands::knowledge::host_memory_context(&state, "loupist-a", "quartz margin")
             .unwrap();

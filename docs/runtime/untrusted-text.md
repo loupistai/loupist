@@ -1,20 +1,25 @@
 # Untrusted text
 
-Third-party text raises a turn tier that pauses outbound tools, wraps the text the model sees, and gates new web sites. Holdings quantities stay on this computer.
+Third-party text raises a turn tier that pauses outbound tools, pauses commands, wraps the text the model sees, and keeps `web_fetch` to known sites. Holdings quantities stay on this computer.
 
 Third-party text raises a weaker tier of the same `TurnTaint`
 (`apps/loupist/src-tauri/src/custom_connections/taint.rs`). After a `web_search`,
 `web_fetch`, `dart_filing_read` or bundled OpenBB data result outside the reviewed
 numeric-only list (`NUMERIC_ONLY_OPENBB_TOOLS`; profiles, filing documents, transcripts and
-news raise it, prices and statements do not), Rust refuses native Bash and other
-non-file native tools, custom-connection calls and schedule create, update,
-status and Run now for the rest of the turn with `untrusted_text_paused`. The refused step carries `refusal: "untrusted_text_paused"` in Chat progress, set from the broker's own trace of that call (`ToolTraceCapture::refused`), never from model-facing text, and the Chat labels the refused step as paused and explains it with no override. Under
-either tier, `write`/`edit` of a file a later turn would load as instructions
-(workspace `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md` and Skill entries) is
-refused too; the extension reports each write's resolved target. Other file
-tools, datasets, charts, Memory and market data stay allowed, and web reads stay
-allowed within the site rule below. The tier
-rises before the result is delivered, so parallel calls are checked against it.
+news raise it, prices and statements do not), Rust refuses custom-connection calls
+and schedule create, update, status and Run now for the rest of the turn with
+`untrusted_text_paused`. Native Bash is refused with the same code on every host, without a card or override.
+Native `write` and `edit` refuse an instruction file, and a file with another
+name on disk (a hard link), for the reply; native file tools stay inside the
+Loupist folder in every reply
+([Native tool permissions](permissions.md)). The refused step
+carries its `refusal` in Chat progress (`untrusted_text_paused`, `protected_path` or
+`outside_workspace`), set from the broker's own trace of that call
+(`ToolTraceCapture::refused`), never from model-facing text, and the Chat labels the
+step and explains it with no override in the step. Workspace file tools, datasets,
+charts, Memory and market data stay allowed, and web reads stay allowed within the
+site rule below. The tier rises before the result is delivered, so parallel calls are
+checked against it.
 The model's copy of that text, and of custom-connection results, is wrapped in
 `<<untrusted id=… source="…">>` … `<<end untrusted id=…>>` with a random
 per-delivery id; retained captures keep the original bytes. A custom-connection
@@ -66,11 +71,11 @@ digits or more, years excepted), or a 24-character run of the turn's principles,
 perspective, Lens bodies or notes and Journal text, is refused on any site. Official
 filing and statistics sites (`RESEARCH_SITES`) open. A site seen this turn (a search
 result's or fetched page's host, or a site named in the user's message) opens when its
-query and fragment total at most 256 bytes. Anything else shows an approval card
-(`kind: web_site`, Allow once or Not now). Allow once adds the site for the turn; Not
-now, an expired card or an unattended run refuses it and every later new site in the
-turn without asking. Links and text inside a page, its alternates and a saved Source's
-own site never count as known.
+path is at most 1024 bytes and its query and fragment total at most 256 bytes. The
+path bound is wider because a percent-encoded Korean article slug is long. Anything
+else is refused with `untrusted_text_paused` and a `next` that says to find the page
+with `web_search` and fetch the result, whose exact URL then opens. Links and text
+inside a page, its alternates and a saved Source's own site never count as known.
 
 These URL privacy checks run in production builds as well as tests. Debug-only
 prompt and tool-result canary logging is separate from this outbound gate.

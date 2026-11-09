@@ -44,6 +44,7 @@ export type TurnState =
   | { kind: "starting" }
   /** `step` is the running step's own words, or the phase while no step runs. */
   | { kind: "working"; step: string; stepRunning: boolean; stalled: boolean }
+  /** An approval or a question waits for the user. */
   | { kind: "awaiting_approval" }
   | { kind: "writing" }
   | { kind: "stopping" }
@@ -134,7 +135,8 @@ function activityKey(message: ChatMessage | undefined): string {
     isActionItem(item) ? [`${item.id}:${item.status}:${item.outputRevision ?? 0}`] : []);
   const plan = (progress?.plan?.items ?? []).map((item) => `${item.id}:${item.status}`);
   const approvals = (progress?.approvals ?? []).map((approval) => `${approval.requestId}:${approval.state}`);
-  return `${message.phase ?? ""}|${items.join(",")}|${plan.join(",")}|${approvals.join(",")}`;
+  const questions = (progress?.questions ?? []).map((question) => `${question.requestId}:${question.state}`);
+  return `${message.phase ?? ""}|${items.join(",")}|${plan.join(",")}|${approvals.join(",")}|${questions.join(",")}`;
 }
 
 /** When the host last reported progress for this message, on this renderer's clock. */
@@ -148,6 +150,10 @@ export function useLastActivity(message: ChatMessage | undefined): number {
 /** A step Rust refused because the answer had read third-party text (`untrusted_text_paused`). */
 export const pausedByRule = (item: ActionItem) =>
   item.kind === "tool" && item.status === "failed" && item.refusal === "untrusted_text_paused";
+
+/** The rule a failed step was refused under, when Rust named one. */
+export const refusedByRule = (item: ActionItem) =>
+  item.kind === "tool" && item.status === "failed" ? item.refusal : undefined;
 
 /**
  * Steps that started while a plan item was active nest under that item, in
@@ -287,7 +293,8 @@ function deriveState({ message, now, lastActivityAt, stopping, retry }: TurnInpu
   if (message.status === "aborted") return { kind: "stopped", kept: keptByStop(message, content) };
   if (message.status !== "streaming") return { kind: "complete" };
   if (stopping) return { kind: "stopping" };
-  if ((progress?.approvals ?? []).some((approval) => approval.state === "waiting")) return { kind: "awaiting_approval" };
+  if ((progress?.approvals ?? []).some((approval) => approval.state === "waiting")
+    || (progress?.questions ?? []).some((question) => question.state === "waiting")) return { kind: "awaiting_approval" };
   const running = lastRunning(items);
   if (running || message.phase === "tool" || message.phase === "thinking" || (message.phase !== "writing" && items.length)) {
     return { kind: "working", step: running ? actionLabel(running) : phaseLabel(message.phase), stepRunning: Boolean(running), stalled: now - lastActivityAt >= HEARTBEAT_AFTER_MS };
@@ -415,6 +422,10 @@ export function deriveTurnView(input: TurnInput): TurnView {
   for (const approval of progress?.approvals ?? []) {
     const owner = (approval.itemId && owners.get(approval.itemId)) || first();
     (owner.progress.approvals ??= []).push(approval);
+  }
+  for (const question of progress?.questions ?? []) {
+    const owner = (question.itemId && owners.get(question.itemId)) || first();
+    (owner.progress.questions ??= []).push(question);
   }
   for (const source of evidenceRefs) resultOwners.get(source.id)?.sources.push(source);
   for (const entry of groups) {

@@ -29,27 +29,6 @@ it("asks for one read-only tool and sends the user's choice to the host", async 
   expect(screen.getByText("Skipped · Read filings · the Loupist continued without it")).toBeVisible();
 });
 
-it("asks once for a new website after third-party text, with no Always", async () => {
-  const user = userEvent.setup();
-  const bridge = new MockLoupistBridge({ delay_ms: 0 });
-  const decide = vi.spyOn(bridge, "chatApprovalDecide").mockResolvedValue();
-  const site = (extra: Partial<ChatApproval> = {}) => waiting("web", {
-    requestId: "req-web", kind: "web_site", connectionName: "Web", toolName: "web_fetch", target: "news.example/markets/morrow", ...extra,
-  });
-  const { rerender } = render(<ApprovalCards approvals={[site()]} refusals={[]} bridge={bridge} loupistId="loupist-one" />);
-  const card = screen.getByRole("region", { name: "Approval to open news.example/markets/morrow" });
-  expect(within(card).getByText("This reply read text from other sites. It now wants to open a new site: news.example/markets/morrow.")).toBeVisible();
-  expect(within(card).getByText("A page it read may have asked for this. Allow it only if you expect this site.")).toBeVisible();
-  expect(within(card).queryByRole("button", { name: "Always allow for this connection" })).not.toBeInTheDocument();
-  await user.click(within(card).getByRole("button", { name: "Not now" }));
-  expect(decide).toHaveBeenCalledWith({ loupist_id: "loupist-one", request_id: "req-web", decision: "deny" });
-
-  rerender(<ApprovalCards approvals={[site({ state: "declined" })]} refusals={[]} bridge={bridge} loupistId="loupist-one" />);
-  expect(screen.getByText("Skipped · news.example/markets/morrow · the Loupist continued without it")).toBeVisible();
-  rerender(<ApprovalCards approvals={[site({ state: "allowed_once" })]} refusals={[]} bridge={bridge} loupistId="loupist-one" />);
-  expect(screen.getByText("Opened once · news.example/markets/morrow")).toBeVisible();
-});
-
 it("says when a card is no longer waiting", async () => {
   const user = userEvent.setup();
   const bridge = new MockLoupistBridge({ delay_ms: 0 });

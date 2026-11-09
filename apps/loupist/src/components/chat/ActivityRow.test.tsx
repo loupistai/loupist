@@ -93,18 +93,34 @@ it("explains a step paused by the untrusted-text rule in the step, calmly and wi
   expect(follows(notes[0]!, screen.getByText("example.com/review"))).toBe(true);
 });
 
+it("explains a step refused for a private app path or a file outside the Loupist folder", async () => {
+  render(row({ startedAtMs: 1, finishedAtMs: 2000, items: [
+    { id: "auth", kind: "tool", toolName: "read", category: "files", operation: "read", action: "Read a file", target: "auth.json", status: "failed", refusal: "protected_path" },
+    { id: "shared", kind: "tool", toolName: "read", category: "files", operation: "read", action: "Read a file", target: "shared.csv", status: "failed", refusal: "outside_workspace" },
+  ] }, "complete"));
+  // Failed steps open on their own; each refusal is explained in its step.
+  expect(screen.getByRole("button", { name: /2 failed attempts/ })).toHaveAttribute("aria-expanded", "true");
+  const notes = screen.getAllByRole("note");
+  expect(notes[0]).toHaveTextContent("Not allowed: this path is inside the app's private data");
+  expect(notes[1]).toHaveTextContent("Not allowed: this file is outside the Loupist folder. Attach it to the chat or copy it into the folder, and the Loupist can work with it.");
+  for (const note of notes) expect(within(note).queryByRole("button")).toBeNull();
+});
+
 it("labels a refused command as paused in Korean while retaining completed and ordinary failed actions", async () => {
   await i18n.changeLanguage("ko");
   try {
     render(row({ startedAtMs: 1, finishedAtMs: 2000, items: [
       { id: "paused", kind: "tool", toolName: "bash", category: "compute", operation: "execute", action: "Ran a command", target: "paused.py", status: "failed", refusal: "untrusted_text_paused", detailId: "paused-detail" },
+      { id: "agents", kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", target: "AGENTS.md", status: "failed", refusal: "untrusted_text_paused" },
       { id: "failed", kind: "tool", toolName: "bash", category: "compute", operation: "execute", action: "Ran a command", target: "failed.py", status: "failed" },
       { id: "succeeded", kind: "tool", toolName: "bash", category: "compute", operation: "execute", action: "Ran a command", target: "done.py", status: "succeeded" },
     ] }, "complete"));
     const paused = screen.getByText("paused.py").closest(".chat-progress-row")!;
     expect(within(paused as HTMLElement).getByText("일시 중지")).toBeVisible();
     expect(within(paused as HTMLElement).queryByText("명령 실행함")).toBeNull();
-    expect(within(paused as HTMLElement).getByRole("note")).toHaveTextContent("이번 답변에서는 명령 실행이 꺼져 있어요.");
+    expect(within(paused as HTMLElement).getByRole("note")).toHaveTextContent("다른 사이트의 글을 읽어서, 이번 답변에서는 명령 실행이 꺼져 있어요.");
+    const agents = screen.getByText("AGENTS.md").closest(".chat-progress-row")!;
+    expect(within(agents as HTMLElement).getByRole("note")).toHaveTextContent("지침 파일과 스킬 파일 변경이 꺼져 있어요.");
     expect(screen.getAllByText("명령 실행함")).toHaveLength(2);
   } finally { await i18n.changeLanguage("en"); }
 });

@@ -1,7 +1,7 @@
 //! Stream phase: the turn's event loop. It multiplexes Pi events, Stop,
 //! steering, approval cards, evidence/entity links, the commentary flush and
 //! the provider watchdog until the turn completes, fails or is stopped.
-use super::launch::LaunchedChatTurn;
+use super::launch::{CardUpdate, LaunchedChatTurn};
 use super::*;
 
 /// Stream → finalize: what the event loop observed about the reply.
@@ -32,7 +32,7 @@ pub(super) async fn stream_chat_turn(turn: &mut LaunchedChatTurn) -> StreamedCha
         ref on_event,
         run_id: ref task_run_id,
         ref mut entity_links,
-        ref mut approval_rx,
+        ref mut card_rx,
         ref mut cancel,
         ref mut pi,
         ref mut chat_controls,
@@ -70,7 +70,7 @@ pub(super) async fn stream_chat_turn(turn: &mut LaunchedChatTurn) -> StreamedCha
         progress.set_asset_names(asset_names(app_state, profile_id));
         progress
     });
-    let mut approvals_open = true;
+    let mut cards_open = true;
     let mut provider_wait_watchdog =
         ProviderWaitWatchdog::new(provider_wait_started_at, provider_idle_timeout);
     let provider_wait_timer = tokio::time::sleep_until(
@@ -95,8 +95,8 @@ pub(super) async fn stream_chat_turn(turn: &mut LaunchedChatTurn) -> StreamedCha
             progress.attach_entities(&call_id, &ids);
             publish_progress(on_event, task_run_id, &mut progress, &mut commentary);
         }
-        while let Ok((call_id, approval)) = approval_rx.try_recv() {
-            progress.upsert_approval(call_id.as_deref(), approval);
+        while let Ok((call_id, card)) = card_rx.try_recv() {
+            upsert_card(&mut progress, call_id.as_deref(), card);
             publish_progress(on_event, task_run_id, &mut progress, &mut commentary);
         }
         // A window that has already elapsed is published before the next
@@ -126,7 +126,7 @@ pub(super) async fn stream_chat_turn(turn: &mut LaunchedChatTurn) -> StreamedCha
                     _ = &mut provider_wait_timer, if provider_wait_watchdog.deadline().is_some() => ChatLoopInput::WatchdogElapsed,
                     changed = cancel.changed() => ChatLoopInput::CancelChanged(changed),
                     control = chat_controls.recv() => ChatLoopInput::Control(control),
-                    approval = approval_rx.recv(), if approvals_open => ChatLoopInput::Approval(approval),
+                    card = card_rx.recv(), if cards_open => ChatLoopInput::Card(card),
                     event = pi_events.recv() => ChatLoopInput::PiEvent(event),
                 }
             }
@@ -162,13 +162,13 @@ pub(super) async fn stream_chat_turn(turn: &mut LaunchedChatTurn) -> StreamedCha
                 publish_progress(on_event, task_run_id, &mut progress, &mut commentary);
                 continue;
             }
-            ChatLoopInput::Approval(Some((call_id, approval))) => {
-                progress.upsert_approval(call_id.as_deref(), approval);
+            ChatLoopInput::Card(Some((call_id, card))) => {
+                upsert_card(&mut progress, call_id.as_deref(), card);
                 publish_progress(on_event, task_run_id, &mut progress, &mut commentary);
                 continue;
             }
-            ChatLoopInput::Approval(None) => {
-                approvals_open = false;
+            ChatLoopInput::Card(None) => {
+                cards_open = false;
                 continue;
             }
             ChatLoopInput::CancelChanged(changed) => {
@@ -316,6 +316,13 @@ pub(super) async fn stream_chat_turn(turn: &mut LaunchedChatTurn) -> StreamedCha
         commentary,
         envelope_compacted,
     }
+}
+
+fn upsert_card(progress: &mut ChatProgressProjection, call_id: Option<&str>, card: CardUpdate) {
+    match card {
+        CardUpdate::Approval(approval) => progress.upsert_approval(call_id, approval),
+        CardUpdate::Question(question) => progress.upsert_question(call_id, question),
+    };
 }
 
 /// The Loupist's asset pages by symbol, for step labels; a failed read leaves

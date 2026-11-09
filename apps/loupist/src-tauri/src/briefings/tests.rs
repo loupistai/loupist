@@ -31,6 +31,7 @@ fn journal_hook_is_empty_and_unattended_native_tools_are_denied() {
         "schedule_create",
         "principle_save",
         "loupist_setup",
+        "ask_user",
     ] {
         assert!(!policy::allowed_name(name), "{name}");
     }

@@ -89,8 +89,9 @@ function Thumbnail({ file }: { file: RailFile }) {
  * moves focus to its card, never to one of its buttons.
  */
 function showNeeds(data: RailData) {
-  const requests = data.waiting.length
-    ? [...document.querySelectorAll<HTMLElement>(".approval-card[data-request-id]")].filter((card) => data.waiting.some((approval) => approval.requestId === card.dataset.requestId))
+  const requests = data.waiting.length || data.questions.length
+    ? [...document.querySelectorAll<HTMLElement>(".approval-card[data-request-id], .question-card[data-request-id]")].filter((card) =>
+      data.waiting.some((approval) => approval.requestId === card.dataset.requestId) || data.questions.some((question) => question.requestId === card.dataset.requestId))
     : [...document.querySelectorAll<HTMLElement>('.approval-line[data-state="settings"]')];
   const target = requests.at(-1);
   if (!target) return;
@@ -101,10 +102,11 @@ function showNeeds(data: RailData) {
 
 /** What the "Needs your OK" row names: the one request, or how many there are. */
 function needsSummary(data: RailData) {
-  const count = data.waiting.length + data.needs.length;
+  const count = data.waiting.length + data.questions.length + data.needs.length;
   if (count > 1) return t("chatRail.needsYou.requests", { count, formattedCount: formatNumber(count) });
+  if (data.questions[0]) return data.questions[0].question;
   const approval = data.waiting[0];
-  if (approval) return approval.kind === "web_site" ? approval.target ?? "" : humanizeToolName(approval.toolName);
+  if (approval) return humanizeToolName(approval.toolName);
   return data.needs[0] ? humanizeToolName(data.needs[0].tool_name) : "";
 }
 
@@ -163,10 +165,10 @@ export function ChatRailCards({ data, actions, compact = false }: { data: RailDa
       </>}
     </Card> : null;
   // Keep requests and source-review status visible before an open Files card in compact space.
-  const needsCard = data.needs.length || data.waiting.length ? <section key="needs" className="chat-rail-card chat-rail-needs" data-card="needs">
+  const needsCard = data.needs.length || data.waiting.length || data.questions.length ? <section key="needs" className="chat-rail-card chat-rail-needs" data-card="needs">
       <button type="button" className="chat-rail-needs-row" onClick={() => showNeeds(data)}>
         <span className="chat-rail-needs-dot" aria-hidden="true" />
-        <span className="chat-rail-needs-title">{t("chatRail.needsYou.title")}</span>
+        <span className="chat-rail-needs-title">{t(data.waiting.length + data.needs.length === 0 ? "chatRail.needsYou.answerTitle" : "chatRail.needsYou.title")}</span>
         <span className="chat-rail-card-summary">{needsSummary(data)}</span>
         <span className="chat-rail-needs-show">{t("chatRail.needsYou.show")}</span>
       </button>
