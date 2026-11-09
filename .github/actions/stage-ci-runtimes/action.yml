@@ -1,0 +1,72 @@
+name: Stage unsigned macOS CI runtimes
+description: Reuse exact-source runtime builds, verify every restored byte, then run current prerequisite checks
+runs:
+  using: composite
+  steps:
+    - name: Install locked staging dependencies
+      shell: bash
+      run: uv sync --project apps/loupist/openbb --locked --python 3.12
+
+    - name: Fingerprint runtime source and toolchains
+      id: source
+      shell: bash
+      run: echo "key=$(python3 apps/loupist/scripts/ci_runtime_cache.py key)" >> "$GITHUB_OUTPUT"
+
+    - name: Restore unsigned staged runtimes
+      id: cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        # No fallback: a changed runtime source or toolchain must rebuild.
+        key: ci-runtimes-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.source.outputs.key }}
+        path: |
+          apps/loupist/src-tauri/resources/pi-runtime
+          apps/loupist/src-tauri/resources/embed_assets
+          apps/loupist/src-tauri/resources/python-runtime
+          apps/loupist/src-tauri/resources/.ci-runtime-cache.json
+
+    - name: Validate restored file inventory before executing a runtime
+      id: restored
+      shell: bash
+      env:
+        SOURCE_KEY: ${{ steps.source.outputs.key }}
+      run: |
+        if python3 apps/loupist/scripts/ci_runtime_cache.py verify --key "$SOURCE_KEY"; then
+          echo "valid=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "Runtime cache is absent or invalid; rebuilding from pinned sources."
+          echo "valid=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Build missing or changed runtimes
+      if: steps.restored.outputs.valid != 'true'
+      shell: bash
+      run: |
+        # These are generated CI resources only. In particular, do not let an
+        # --ensure stager reuse a tree whose cache inventory was rejected.
+        rm -rf -- apps/loupist/src-tauri/resources/pi-runtime \
+          apps/loupist/src-tauri/resources/embed_assets \
+          apps/loupist/src-tauri/resources/python-runtime
+        rm -f -- apps/loupist/src-tauri/resources/.ci-runtime-cache.json
+        apps/loupist/scripts/stage-macos-arm64.sh
+
+    - name: Verify cached runtimes against current product contracts
+      if: steps.restored.outputs.valid == 'true'
+      shell: bash
+      run: apps/loupist/scripts/check-package-prerequisites.sh
+
+    - name: Record verified runtime inventory
+      shell: bash
+      env:
+        SOURCE_KEY: ${{ steps.source.outputs.key }}
+      run: python3 apps/loupist/scripts/ci_runtime_cache.py record --key "$SOURCE_KEY"
+
+    - name: Save trusted main runtime builds
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        key: ${{ steps.cache.outputs.cache-primary-key }}
+        path: |
+          apps/loupist/src-tauri/resources/pi-runtime
+          apps/loupist/src-tauri/resources/embed_assets
+          apps/loupist/src-tauri/resources/python-runtime
+          apps/loupist/src-tauri/resources/.ci-runtime-cache.json

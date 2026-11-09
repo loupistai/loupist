@@ -36,6 +36,10 @@ CHECKS_ABSENT_FROM_PULL_REQUESTS = frozenset(
         "Native macOS interaction",
         "Package smoke (aarch64-apple-darwin)",
         "Rust contracts (macOS)",
+        "Rust lint (macOS)",
+        "Rust tests (macOS)",
+        "Rust eval (macOS)",
+        "Native Linux interaction (WebKitGTK)",
         "Native Windows interaction",
         "Package smoke (x86_64-pc-windows-msvc)",
     )

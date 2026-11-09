@@ -139,8 +139,12 @@ def cargo(arguments):
     return ["cargo", command, "--manifest-path", APP / "src-tauri/Cargo.toml", *rest]
 
 
-def rust_plan():
-    return [
+def python_runtime_step(name, flag):
+    return step(name, [sys.executable, APP / "scripts/stage_python_runtime.py", flag])
+
+
+def rust_plan(install=False):
+    steps = [
         step("format", cargo("fmt -- --check")),
         step("clippy", cargo("clippy --locked --all-targets -- -D warnings")),
         # The native E2E build compiles feature-gated fixtures that the default build skips.
@@ -155,7 +159,11 @@ def rust_plan():
             "headless-eval-contracts",
             cargo("test --locked --features eval-harness --lib eval_harness::"),
         ),
+        python_runtime_step("python-runtime-verify", "--verify"),
     ]
+    if install:
+        steps.insert(0, python_runtime_step("install-python-runtime", "--ensure"))
+    return steps
 
 
 def python_plan(install):
@@ -201,13 +209,16 @@ def python_plan(install):
 def plan(scope, install=False):
     if scope in ("web", "harness"):
         return web_plan(scope == "harness", install)
-    return rust_plan() if scope == "rust" else python_plan(install)
+    return rust_plan(install) if scope == "rust" else python_plan(install)
 
 
 def setup_steps(scope, steps):
     """Dependency installation only; it never claims verification."""
     if scope == "rust":
-        return [step("install-cargo", cargo("fetch --locked"))]
+        return [
+            step("install-cargo", cargo("fetch --locked")),
+            python_runtime_step("install-python-runtime", "--ensure"),
+        ]
     return [
         s
         for s in steps

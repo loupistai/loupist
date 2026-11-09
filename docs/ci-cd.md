@@ -75,13 +75,15 @@ rather than adding a broader long-lived credential to every release job.
 
 ## CI
 
-Pull requests run only Linux jobs: web, Python, Rust lint and tests, and native
-interaction in WebKitGTK, selected by changed paths. They never wait for a macOS
-runner. The `main` push run, manual
+Pull requests run shared web, Python and Rust contracts on Linux, selected by
+changed paths. They never wait for a macOS runner. Linux WebKitGTK UI validation
+is available on demand for cloud-development changes; it is not repeated on every
+PR and main push. The `main` push run, manual
 `workflow_dispatch` and the release call also run the macOS Rust contracts, native
 interaction and package smoke for the selected scopes. To run the macOS jobs on a
 branch before merging, use `gh workflow run ci.yml --ref <branch>`; a dispatch runs
-the full set. Every run checks guide links, scope regression tests, credential
+all source and macOS checks. Add `-f linux_native=true` to also exercise Linux
+WebKitGTK interaction and persistence under Xvfb. Every run checks guide links, scope regression tests, credential
 boundaries and Node pins without installing npm, OpenBB or Rust dependencies. The
 Linux Rust checks do not need a display.
 
@@ -102,20 +104,23 @@ also select Rust, and agent eval fixtures select Web and Rust. Inline Rust tests
 in production files retain native/package checks. PRs use a merge-base diff;
 `main` pushes diff from the last successful `main` push run. Deleted and renamed source paths
 remain in scope. Missing history or classification errors select all checks.
-Native interaction runs on Linux for every selected run and on macOS only outside
-pull requests. Packaging runs only outside pull requests.
+Native interaction runs on macOS outside pull requests and on Linux only for an
+explicit `workflow_dispatch` with `linux_native=true`. Automatic Linux Rust tests
+remain required: they exercise shared persistence, process ownership and worker
+isolation on the host used by cloud agents. Packaging runs only outside pull requests.
 
 Rust, uv and Ubuntu package caches are saved only by `main` runs; pull requests restore
 them without uploading branch copies. The signed build shares the package-smoke
 dependency cache. Official package CI has one explicit macOS job; experimental
 Windows packaging stays manual-only. Unselected jobs are skipped. The source gate,
 `Source and product contracts`, accepts a skip only for a scope the classifier
-deselected or a macOS job on a pull request, and fails on any other result,
+deselected, a macOS job on a pull request, or the opt-in Linux native job, and
+fails on any other result,
 including `cancelled` and `abandoned`. A newer pull-request or `main` push cancels
 the older run. A `main` run classifies every change since the last successful
 `main` push run, so a cancelled run's changes stay in scope, and a burst of merges
 runs the macOS jobs once. Manual `workflow_dispatch` and release validation always run
-the full set. When GitHub cannot assign a macOS runner, the job ends cancelled and
+all source and macOS checks; only the explicit dispatch option adds Linux GUI validation. When GitHub cannot assign a macOS runner, the job ends cancelled and
 the `main` run fails; rerun it with `gh run rerun <run-id> --failed`.
 Actions are pinned to commit SHAs. Toolchain pins:
 Node 26.13.0 LTS (root `.nvmrc`), Rust 1.97.1, uv 0.11.2,
@@ -128,27 +133,46 @@ a 60-minute job limit. Their receipts and logs upload on
 success or failure and expire after seven days. The web gate includes agent and
 World evaluator regression tests; Rust also checks the `eval-harness` contracts.
 The web job runs as two parallel legs that split the Vitest files with
-`check.sh web --shard 1/2` and `--shard 2/2`. The first leg also runs every other
-web step; the second runs only the installs and its renderer-test shard. Raising
+`check.sh web --shard 1/2` and `--shard 2/2`. The first leg also runs the Node, source and harness checks; the second runs
+layout and renderer build checks after its renderer-test shard. A contract test
+compares both legs with the complete check plan, allowing duplication only for
+setup and the sharded renderer step. Raising
 Vitest workers does not help on the 4-vCPU runner: with the same 1593 tests, four
 workers took 482 s and two took 464 s.
 
-Linux Rust runs as two parallel jobs that split the Rust plan. `lint` runs
-formatting and both Clippy builds and installs only Rust. `tests` runs the Rust
-tests and `eval-harness` contracts and installs the locked Node dependencies and
-OpenBB Python environment, because host integration tests exercise Pi prompts and
-Python process ownership. `check.sh rust --only <steps>` runs one part locally, and
-a scope test keeps the two parts equal to the whole plan. The macOS Rust job runs
-the whole plan. Ubuntu also installs Tauri's GTK/WebKitGTK development libraries;
-the [Linux development procedure](dev/checks.md#linux-cloud-development) uses the
-same source gate. These gates make no paid model calls. See
-[broader checks](dev/checks.md#broader-checks).
+Rust runs three parallel legs on each selected host: `lint` (formatting and both
+Clippy builds), `tests` (all-target tests) and `eval` (headless eval contracts).
+Lint installs only Rust; the other legs install locked Node and OpenBB dependencies
+for host integration tests. The plans still execute every Rust step exactly once
+on each host. `check.sh rust --only <steps>` runs the same parts locally. Rust
+caches include the Python worker workspace when it exists, so its Wasmtime
+dependencies are not rebuilt from scratch by each runtime consumer. Ubuntu installs
+Tauri's GTK/WebKitGTK development libraries; the [Linux development
+procedure](dev/checks.md#linux-cloud-development) uses the same source gate.
+These gates make no paid model calls. See [broader checks](dev/checks.md#broader-checks).
 
-`Native Linux interaction (WebKitGTK)` runs `test:native:full` and
-`test:persistence` on Ubuntu with no `DISPLAY`, so the GUI lease starts a
-private Xvfb for each suite ([Run native suites on Linux](../apps/loupist/e2e/README.md#run-native-suites-on-linux)).
-It stages no sidecars, and it catches bridge, persistence and renderer flow
-regressions before merge. It does not replace the macOS job.
+For cloud-native validation, run
+`gh workflow run ci.yml --ref <branch> -f linux_native=true`.
+`Native Linux interaction (WebKitGTK)` then runs `test:native:full` and
+`test:persistence` with no `DISPLAY`, so the GUI lease starts a private Xvfb.
+The [same commands](../apps/loupist/e2e/README.md#run-native-suites-on-linux) remain
+available to Codex, Claude and Cursor cloud agents while implementing UI, bridge
+or storage changes. Linux does not qualify the macOS release surface.
+
+Unsigned macOS native/package jobs reuse an exact-source runtime cache through
+`.github/actions/stage-ci-runtimes`. The key covers staging scripts, runtime source
+and pins, embedding assets and toolchain/host versions. Only successful main-push
+staging can save it, and there are no fallback keys. Before running a restored
+binary, a complete file/mode/digest inventory rejects missing, added, changed or
+linked files. The current package-prerequisite checks run on every hit; a missing
+or invalid cache rebuilds from pinned sources. Caches contain only staged resources,
+never `.venv`, credentials or user data. Signed release jobs do not use this cache:
+they stage afresh with their signing identity after full exact-commit CI.
+[GitHub cache access rules](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching)
+and the [Rust cache key contract](https://github.com/Swatinem/rust-cache#example-usage)
+explain the trusted-main writes and cache selection. Tests and eval use the same
+dependency cache because `eval-harness` adds no dependencies; workspace crate
+outputs are not retained by the Rust cache. Lint uses its own cache.
 
 The macOS native job stages the same pinned sidecars used by the package smoke
 and first selects a supported CI display mode of at least 1920x1080. The helper
@@ -186,9 +210,28 @@ secrets are not prerequisites for the macOS release audit.
 
 The only required check is `Source and product contracts`, owned by GitHub Actions,
 with no bypass. Pull requests never report `Native macOS interaction`,
-`Package smoke (aarch64-apple-darwin)`, `Rust contracts (macOS)` or the Windows
-checks, so no `main` ruleset or legacy branch protection may require them. The
+`Package smoke (aarch64-apple-darwin)`, `Rust lint/tests/eval (macOS)`,
+`Native Linux interaction (WebKitGTK)` or the Windows checks, so no `main` ruleset or legacy branch protection may require them. The
 read-only release audit flags them.
+
+### Timing baseline (2026-11-09)
+
+The five latest successful PR runs took 6m43s–9m58s (median 7m38s).
+[PR #54's final run](https://github.com/loupistai/loupist/actions/runs/42555521674)
+spent 193s on ordinary Rust tests and another 107s on eval contracts in one leg;
+its first web shard also carried 75s of layout/build work. Linux native UI used
+6m16s–6m56s per sampled run but was not the critical path. Moving it to an explicit
+cloud check saves runner time; it does not by itself explain a wall-time reduction.
+
+The [latest green main run](https://github.com/loupistai/loupist/actions/runs/42556292654)
+took 19m35s: macOS Rust took 19m14s and packaging 18m14s. The Rust receipt included
+236s of Clippy, 404s of tests and 333s of evals in sequence. Mac native/package
+staging separately took 226s and 309s. Two earlier green main runs took 21m38s
+and 25m33s. These timings motivate parallel Rust legs, balanced web work and
+verified staging reuse; they are a baseline, not measurements of the new workflow.
+Cache misses and runner queues still affect elapsed time. Record the new exact-head
+CI timings before claiming a speedup. There were no release-workflow runs available
+for a measured CD baseline; signing and publication gates remain intact.
 
 ### Model-provider authentication and live acceptance
 
@@ -218,7 +261,13 @@ After creating a macOS bundle, run:
 sh apps/loupist/scripts/check-macos-app-bundle.sh "/path/to/Loupist.app"
 ```
 
-The script checks Pi/OpenBB and embedding inventory, embedding bytes, safe links,
-architecture/deployment targets, launchers and signatures, then runs the offline
-Pi/OpenBB sidecar smoke checks. It does not download missing resources. Runtime staging is documented in
+`native-e2e-linux` stages that runtime only when the native job is selected.
+`verify-rust` still runs the offline runtime check on Linux when native is skipped.
+
+The script checks Pi/OpenBB, the pinned Python runtime and embedding inventory,
+embedding bytes, safe links, architecture, launchers and signatures, then runs
+the offline Pi/OpenBB sidecar checks and the signed Python worker. The worker
+must carry the hardened runtime and its executable-memory entitlement. The
+Loupist app binary must not. The script does not download missing resources.
+Runtime staging is documented in
 [Development](dev/checks.md#runtime-staging-and-package-checks).

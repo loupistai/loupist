@@ -6,6 +6,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      linux_native:
+        description: Also run Linux WebKitGTK interaction and persistence for cloud-development validation
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       full:
@@ -40,6 +45,7 @@ jobs:
       native: ${{ steps.scope.outputs.native }}
       packaging: ${{ steps.scope.outputs.packaging }}
       macos: ${{ steps.platform.outputs.macos }}
+      linux_native: ${{ steps.platform.outputs.linux_native }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -66,9 +72,11 @@ jobs:
           CI_DIFF_MODE: ${{ github.event_name == 'pull_request' && 'merge-base' || 'direct' }}
         run: python3 apps/loupist/scripts/ci_change_scope.py
 
-      - name: Select macOS jobs
+      - name: Select native platforms
         id: platform
-        run: echo "macos=${{ github.event_name != 'pull_request' }}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "macos=${{ github.event_name != 'pull_request' }}" >> "$GITHUB_OUTPUT"
+          echo "linux_native=${{ github.event_name == 'workflow_dispatch' && inputs.linux_native }}" >> "$GITHUB_OUTPUT"
 
       - name: Check repository guidance and scope regressions
         run: |
@@ -97,9 +105,9 @@ jobs:
       matrix:
         include:
           - shard: 1/2
-            only: ""
+            only: node-version,install-app,install-workspace-search,install-e2e,installed-dependencies,process-tools,repository-guidance,shell-syntax,tauri-e2e-config,module-syntax,node-contracts,e2e-security,i18n-report,i18n-parity,ui-copy,design-tokens,boundaries,unused-files,renderer-tests
           - shard: 2/2
-            only: node-version,install-app,install-e2e,installed-dependencies,renderer-tests
+            only: node-version,install-app,install-e2e,installed-dependencies,renderer-tests,chat-layout,renderer-build
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -177,7 +185,11 @@ jobs:
             runtime: "false"
             cache: verify-lint
           - leg: tests
-            steps: tests,headless-eval-contracts
+            steps: tests,python-runtime-verify
+            runtime: "true"
+            cache: verify
+          - leg: eval
+            steps: headless-eval-contracts
             runtime: "true"
             cache: verify
     runs-on: ubuntu-24.04
@@ -226,6 +238,7 @@ jobs:
           rust-components: clippy,rustfmt
           rust-cache-key: ${{ matrix.cache }}
 
+      # setup.sh stages the Python runtime as the runner user. apt above is the root step.
       - name: Install locked runtime test dependencies
         if: matrix.runtime == 'true'
         run: sh apps/loupist/scripts/setup.sh
@@ -246,7 +259,7 @@ jobs:
 
   native-e2e-linux:
     needs: changes
-    if: needs.changes.outputs.native == 'true'
+    if: needs.changes.outputs.native == 'true' && needs.changes.outputs.linux_native == 'true'
     timeout-minutes: 60
     name: Native Linux interaction (WebKitGTK)
     runs-on: ubuntu-24.04
@@ -300,6 +313,11 @@ jobs:
         working-directory: apps/loupist/e2e
         run: npm ci
 
+      # Selected only when this native job runs. verify-rust keeps the Linux
+      # runtime proof if native is later made opt-in. Staging is not the apt step.
+      - name: Stage the pinned offline Python runtime
+        run: python3 apps/loupist/scripts/stage_python_runtime.py --ensure
+
       # No DISPLAY is set, so the GUI lease starts a private Xvfb per suite.
       - name: Run native interaction regression suite
         working-directory: apps/loupist/e2e
@@ -325,7 +343,23 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.macos == 'true'
     timeout-minutes: 60
-    name: Rust contracts (macOS)
+    name: Rust ${{ matrix.leg }} (macOS)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: lint
+            steps: format,clippy,e2e-feature-clippy
+            runtime: "false"
+            cache: verify-lint
+          - leg: tests
+            steps: tests,python-runtime-verify
+            runtime: "true"
+            cache: verify
+          - leg: eval
+            steps: headless-eval-contracts
+            runtime: "true"
+            cache: verify
     runs-on: macos-15
     steps:
       - name: Check out repository
@@ -336,28 +370,29 @@ jobs:
       - name: Install Rust and runtime test toolchains
         uses: ./.github/actions/setup-toolchains
         with:
-          node: "true"
+          node: ${{ matrix.runtime }}
           node-cache: |
             apps/loupist/package-lock.json
             apps/loupist/e2e/package-lock.json
-          python: "true"
+          python: ${{ matrix.runtime }}
           rust: "true"
           rust-components: clippy,rustfmt
-          rust-cache-key: verify
+          rust-cache-key: ${{ matrix.cache }}
 
       - name: Install locked runtime test dependencies
+        if: matrix.runtime == 'true'
         run: sh apps/loupist/scripts/setup.sh
 
       - name: Verify desktop Rust
         run: |
           set -euo pipefail
-          sh apps/loupist/scripts/check.sh rust
+          sh apps/loupist/scripts/check.sh rust --only "${{ matrix.steps }}"
 
       - name: Retain rust check evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: checks-rust-macos
+          name: checks-rust-macos-${{ matrix.leg }}
           path: apps/loupist/output/checks/*/
           retention-days: 7
           if-no-files-found: ignore
@@ -396,8 +431,8 @@ jobs:
         working-directory: apps/loupist/e2e
         run: npm ci
 
-      - name: Stage pinned macOS sidecars
-        run: apps/loupist/scripts/stage-macos-arm64.sh
+      - name: Stage verified unsigned macOS runtimes
+        uses: ./.github/actions/stage-ci-runtimes
 
       - name: Run native interaction regression suite
         working-directory: apps/loupist/e2e
@@ -447,8 +482,8 @@ jobs:
         working-directory: apps/loupist
         run: npm ci
 
-      - name: Stage pinned macOS sidecars
-        run: apps/loupist/scripts/stage-macos-arm64.sh
+      - name: Stage verified unsigned macOS runtimes
+        uses: ./.github/actions/stage-ci-runtimes
 
       - name: Build unsigned package smoke
         working-directory: apps/loupist
@@ -524,7 +559,7 @@ jobs:
           RUST_RESULT: ${{ needs.verify-rust.result }}
           RUST_MACOS_REQUIRED: ${{ needs.changes.outputs.rust == 'true' && needs.changes.outputs.macos == 'true' }}
           RUST_MACOS_RESULT: ${{ needs.verify-rust-macos.result }}
-          NATIVE_LINUX_REQUIRED: ${{ needs.changes.outputs.native }}
+          NATIVE_LINUX_REQUIRED: ${{ needs.changes.outputs.native == 'true' && needs.changes.outputs.linux_native == 'true' }}
           NATIVE_LINUX_RESULT: ${{ needs.native-e2e-linux.result }}
           NATIVE_REQUIRED: ${{ needs.changes.outputs.native == 'true' && needs.changes.outputs.macos == 'true' }}
           NATIVE_RESULT: ${{ needs.native-e2e.result }}

@@ -283,10 +283,23 @@ class ChangeScopeTests(unittest.TestCase):
                 .split("\n", 1)[0]
             )
             self.assertIn("needs.changes.outputs.macos == 'true'", condition, job)
-        # Pull requests still drive the real app: WebKitGTK under Xvfb.
+        # Linux GUI validation is explicit; shared Rust/worker tests remain automatic.
         linux_native = self.job_block(workflow, "native-e2e-linux")
         self.assertIn("runs-on: ubuntu", linux_native)
-        self.assertIn("if: needs.changes.outputs.native == 'true'\n", linux_native)
+        self.assertIn("needs.changes.outputs.linux_native == 'true'", linux_native)
+        self.assertIn(
+            "linux_native=${{ github.event_name == 'workflow_dispatch' && inputs.linux_native }}",
+            self.job_block(workflow, "changes"),
+        )
+        self.assertIn("      linux_native:\n", workflow)
+        self.assertIn(
+            "if: needs.changes.outputs.rust == 'true'\n",
+            self.job_block(workflow, "verify-rust"),
+        )
+        self.assertIn(
+            "NATIVE_LINUX_REQUIRED: ${{ needs.changes.outputs.native == 'true' && needs.changes.outputs.linux_native == 'true' }}",
+            self.job_block(workflow, "verify"),
+        )
 
     def test_a_cancelled_main_run_leaves_its_changes_in_scope(self) -> None:
         # Main pushes cancel older runs, so each must classify from the last green
@@ -303,28 +316,63 @@ class ChangeScopeTests(unittest.TestCase):
         )
         self.assertNotIn("github.event.before", workflow)
 
-    def test_web_legs_split_the_renderer_tests_and_keep_every_web_step(self) -> None:
+    def test_web_legs_cover_every_step_and_balance_build_work(self) -> None:
         workflow = (SCRIPTS.parents[2] / ".github/workflows/ci.yml").read_text()
         block = self.job_block(workflow, "verify-web")
         legs = re.findall(r"- shard: (\S+)\n\s+only: (\S*)\n", block)
         self.assertEqual(sorted(shard for shard, _ in legs), ["1/2", "2/2"])
         runner = runpy.run_path(str(SCRIPTS / "check_runner.py"))
         planned = {item["name"] for item in runner["web_plan"](False, True)}
-        self.assertIn('""', [only for _, only in legs])
+        selected = [set(only.split(",")) for _, only in legs]
+        self.assertEqual(set.union(*selected), planned)
+        shared = {
+            "node-version",
+            "install-app",
+            "install-e2e",
+            "installed-dependencies",
+            "renderer-tests",
+        }
+        self.assertEqual(set.intersection(*selected), shared)
+        self.assertNotIn("chat-layout", selected[0])
+        self.assertNotIn("renderer-build", selected[0])
+        self.assertTrue({"chat-layout", "renderer-build"} <= selected[1])
         for _, only in legs:
-            if only != '""':
-                self.assertIn("renderer-tests", only.split(","))
-                self.assertLessEqual(set(only.split(",")), planned)
+            self.assertIn("renderer-tests", only.split(","))
+            self.assertLessEqual(set(only.split(",")), planned)
 
-    def test_linux_rust_legs_cover_the_whole_rust_plan_once(self) -> None:
+    def test_rust_legs_cover_the_whole_plan_once_on_each_host(self) -> None:
         workflow = (SCRIPTS.parents[2] / ".github/workflows/ci.yml").read_text()
-        legs = re.findall(
-            r"\n            steps: (\S+)\n", self.job_block(workflow, "verify-rust")
-        )
-        names = [name for leg in legs for name in leg.split(",")]
         runner = runpy.run_path(str(SCRIPTS / "check_runner.py"))
         planned = [item["name"] for item in runner["rust_plan"]()]
-        self.assertEqual(sorted(names), sorted(planned))
+        for job in ("verify-rust", "verify-rust-macos"):
+            with self.subTest(job=job):
+                block = self.job_block(workflow, job)
+                legs = re.findall(r"\n            steps: (\S+)\n", block)
+                names = [name for leg in legs for name in leg.split(",")]
+                self.assertEqual(sorted(names), sorted(planned))
+                self.assertEqual(len(legs), 3)
+                self.assertIn("if: matrix.runtime == 'true'", block)
+                self.assertIn('--only "${{ matrix.steps }}"', block)
+
+    def test_unsigned_runtime_cache_cannot_feed_signed_staging(self) -> None:
+        # Security invariant: only main pushes save. Signed builds stage afresh.
+        root = SCRIPTS.parents[2]
+        action = (root / ".github/actions/stage-ci-runtimes/action.yml").read_text()
+        self.assertNotIn("restore-keys:", action)
+        self.assertIn(
+            "github.event_name == 'push' && github.ref == 'refs/heads/main'", action
+        )
+        self.assertLess(
+            action.index("ci_runtime_cache.py verify"),
+            action.index("check-package-prerequisites.sh"),
+        )
+        self.assertNotIn("secrets.", action)
+        self.assertNotIn(".venv", action)
+        signed = self.job_block(
+            (root / ".github/workflows/release.yml").read_text(), "build-macos"
+        )
+        self.assertIn("stage-macos-arm64.sh", signed)
+        self.assertNotIn("stage-ci-runtimes", signed)
 
     def job_block(self, workflow: str, job_id: str) -> str:
         match = re.search(
