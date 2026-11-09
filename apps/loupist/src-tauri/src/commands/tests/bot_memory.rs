@@ -547,14 +547,14 @@ mod turns {
         }
 
         /// Closes the app and opens it again on the same data.
-        fn restart(self) -> Self {
+        async fn restart(self) -> Self {
             let Fixture {
                 temporary,
                 state,
                 loupist_id,
                 ..
             } = self;
-            state.close_for_restart_test();
+            state.close_after_turns_for_restart_test().await;
             let mut state = AppState::for_persistent_test(temporary.path().join("app"));
             let root = temporary.path().join("after-restart");
             fs::create_dir(&root).unwrap();
@@ -628,7 +628,7 @@ mod turns {
             "a private turn is never queued for review"
         );
 
-        let fixture = fixture.restart();
+        let fixture = fixture.restart().await;
         fixture.script(json!({"answer": "Prices in KRW; SOXX after the Fed."}));
         let remembered = fixture
             .bot("bot-2", "What did I ask you to keep in mind?", true)
