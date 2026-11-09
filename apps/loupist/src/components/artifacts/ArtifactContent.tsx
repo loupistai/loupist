@@ -20,6 +20,7 @@ const ArtifactChart = lazy(() => import("./ArtifactChart"));
 type Props = {
   view: ChatArtifactView;
   theme: "light" | "dark";
+  workspacePath?: string;
   onAsk?: (artifact: ChatArtifactRef) => void;
   askDisabled?: boolean;
   onExport?: (request: { suggestedName: string; bytes: number[]; kind: "csv" | "md" | "png" }) => Promise<string | null>;
@@ -56,6 +57,7 @@ export function ArtifactStatus({ view, version }: { view: ChatArtifactView; vers
 export function ArtifactContent({
   view,
   theme,
+  workspacePath,
   onAsk,
   askDisabled,
   onExport,
@@ -181,6 +183,7 @@ export function ArtifactContent({
             <SafeMessageResponse
               text={view.revision.payload.markdown}
               isAnimating={false}
+              workspacePath={workspacePath}
             />
           </article>
         ) : view.chart_dataset ? (

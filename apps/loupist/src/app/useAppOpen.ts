@@ -1,7 +1,7 @@
 import i18n from "@/i18n";
 import { useCallback, useRef, useState } from "react";
 import type { AssetPageTarget } from "../contracts/assets";
-import type { ChatArtifactRef, ChatEvidenceRef, KnowledgeLocation } from "../types";
+import type { ChatArtifactRef, ChatArtifactView, ChatEvidenceRef, KnowledgeLocation } from "../types";
 import { evidenceTitle } from "../chat/evidence";
 import { evidenceTarget, externalUrl, type ChatDestination, type Open, type OpenHow } from "../chat/navigation";
 import type { EvidenceStepLink } from "../chat/workspace";
@@ -13,6 +13,7 @@ import type { SettingsSection } from "./navigation";
 /** The shell as the router sees it. Every field is read when a leaf is clicked, never when it renders. */
 export type AppOpenShell = {
   openExternalUrl: (url: string) => Promise<void>;
+  readArtifact: (loupistId: string, threadId: string, artifactId: string) => Promise<ChatArtifactView>;
   loupistId: string | null;
   /** The visible chat's thread, which the panel belongs to. */
   threadId: string | null;
@@ -103,6 +104,17 @@ async function route(shell: AppOpenShell, host: PanelHost, to: ChatDestination, 
       if (!chat) return;
       shell.panel.openArtifact(chat.loupistId, chat.threadId, to.artifact);
       announce(to.artifact.title);
+      return;
+    }
+    case "artifact-link": {
+      const chat = beside();
+      if (!chat) return;
+      const { artifact, revision } = await shell.readArtifact(chat.loupistId, chat.threadId, to.artifactId);
+      shell.panel.openArtifact(chat.loupistId, chat.threadId, {
+        artifact_id: artifact.id, title: artifact.title, kind: artifact.kind,
+        revision: revision.revision, digest: revision.digest,
+      });
+      announce(artifact.title);
       return;
     }
     case "file": {

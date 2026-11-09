@@ -1,12 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ChatMessage, LoupistBridge } from "../../types";
 import type { GrowthEvent, KnowledgeMap } from "../../contracts/knowledge";
+import type { WorldReadinessStatus } from "../../knowledge/worldReadiness";
 import { addedMapItems, chatMapData, chatSourceWork, stepEntityIds } from "./chatMapData";
 
 type ChatMapState = {
   loupistId: string; chatId: string; map?: KnowledgeMap; events: GrowthEvent[];
   loading: boolean; error: boolean; retry: () => void;
   learningPending: boolean;
+  learningWaiting?: WorldReadinessStatus | "unknown";
   active: boolean; select: (ids?: ReadonlySet<string>) => void; deselect: () => void;
   highlightIds: ReadonlySet<string>; glowNodeIds: ReadonlySet<string>; glowEdgeIds: ReadonlySet<string>;
   /** Names the running reply's steps read that are on this chat's map (chat-run.md A4). */
@@ -30,7 +32,7 @@ export function ChatMapProvider(props: { bridge: LoupistBridge; loupistId: strin
   const scopeKey = JSON.stringify([loupistId, chatId]);
   const [result, setResult] = useState<{ scopeKey: string; map: KnowledgeMap; events: GrowthEvent[] }>();
   const [loading, setLoading] = useState(true);
-  const [learningScope, setLearningScope] = useState<string>();
+  const [learning, setLearning] = useState<{ scopeKey: string; waiting?: WorldReadinessStatus | "unknown" }>();
   const [error, setError] = useState(false);
   const [revision, setRevision] = useState(0);
   const [activeScope, setActiveScope] = useState<string>();
@@ -106,7 +108,12 @@ export function ChatMapProvider(props: { bridge: LoupistBridge; loupistId: strin
           settled = true;
         }
       }
-      if (pending) setLearningScope(scopeKey);
+      if (pending) {
+        const running = jobs.some(job => job.status === "running");
+        const readiness = running ? "ready" : (await bridge.knowledgeGraphSettingsGet({ loupistId }).catch(() => null))?.readiness.status ?? "unknown";
+        if (cancelled) return;
+        setLearning({ scopeKey, waiting: readiness === "ready" ? undefined : readiness });
+      }
       // Read after job status so the final snapshot includes its committed growth.
       if (polls === 0 || settled || (legacyMessages.size && polls <= MAX_UNCONFIRMED_POLLS)) {
         try {
@@ -117,7 +124,7 @@ export function ChatMapProvider(props: { bridge: LoupistBridge; loupistId: strin
         }
       }
       if (cancelled) return;
-      if (!pending) setLearningScope(undefined);
+      if (!pending) setLearning(undefined);
       setLoading(false);
       if (jobIds.size || (legacyMessages.size && polls < MAX_UNCONFIRMED_POLLS)) {
         polls += 1;
@@ -141,5 +148,5 @@ export function ChatMapProvider(props: { bridge: LoupistBridge; loupistId: strin
     const ids = liveKey ? liveKey.split("\n").filter(id => scoped?.nodes.some(node => node.id === id)) : [];
     return ids.length ? new Set(ids) : emptyIds;
   }, [liveKey, scoped]);
-  return <ChatMapContext.Provider value={{ loupistId, chatId, map: scoped, events: result?.scopeKey === scopeKey ? result.events : [], learningPending: learningScope === scopeKey, loading: loading || !scoped && !error, error, retry: () => setRevision(value => value + 1), active: activeScope === scopeKey, select, deselect: () => setActiveScope(undefined), highlightIds: activeScope === scopeKey ? highlightIds : emptyIds, glowNodeIds: glow.scopeKey === scopeKey ? glow.nodeIds : emptyIds, glowEdgeIds: glow.scopeKey === scopeKey ? glow.edgeIds : emptyIds, liveNodeIds, reportLive, badged: badge === scopeKey && activeScope !== scopeKey }}>{children}</ChatMapContext.Provider>;
+  return <ChatMapContext.Provider value={{ loupistId, chatId, map: scoped, events: result?.scopeKey === scopeKey ? result.events : [], learningPending: learning?.scopeKey === scopeKey && !learning.waiting, learningWaiting: learning?.scopeKey === scopeKey ? learning.waiting : undefined, loading: loading || !scoped && !error, error, retry: () => setRevision(value => value + 1), active: activeScope === scopeKey, select, deselect: () => setActiveScope(undefined), highlightIds: activeScope === scopeKey ? highlightIds : emptyIds, glowNodeIds: glow.scopeKey === scopeKey ? glow.nodeIds : emptyIds, glowEdgeIds: glow.scopeKey === scopeKey ? glow.edgeIds : emptyIds, liveNodeIds, reportLive, badged: badge === scopeKey && activeScope !== scopeKey }}>{children}</ChatMapContext.Provider>;
 }

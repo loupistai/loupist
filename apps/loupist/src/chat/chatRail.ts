@@ -1,3 +1,4 @@
+import type { WorldReadinessStatus } from "../knowledge/worldReadiness";
 import { knowledgePinKey } from "../knowledge/location";
 import type { ChatMessage, ChatToolRefusal, KnowledgePin } from "../types";
 import type { ChatApproval, ChatQuestion } from "../contracts/chat";
@@ -59,6 +60,7 @@ export type RailData = {
   using: RailUsing[];
   learned: RailLearned | null;
   learningPending: boolean;
+  learningWaiting?: WorldReadinessStatus | "unknown";
   /** Connections the latest answer could not use without the user's OK. */
   needs: ChatToolRefusal[];
   /** Approval cards still waiting in the latest answer. */
@@ -76,12 +78,13 @@ const fileName = (path: string) => path.split(/[\\/]/u).filter(Boolean).at(-1) ?
  * chat already holds. Nothing here reads or writes beyond the chat's messages,
  * its growth events and the composer's pins.
  */
-export function railData({ messages, pins = [], map, events = [], learningPending = false, chatId, language, workspacePath }: {
+export function railData({ messages, pins = [], map, events = [], learningPending = false, learningWaiting, chatId, language, workspacePath }: {
   messages: readonly ChatMessage[];
   pins?: readonly KnowledgePin[];
   map?: KnowledgeMap | null;
   events?: readonly GrowthEvent[];
   learningPending?: boolean;
+  learningWaiting?: WorldReadinessStatus | "unknown";
   chatId: string;
   language: string;
   workspacePath?: string;
@@ -150,5 +153,5 @@ export function railData({ messages, pins = [], map, events = [], learningPendin
   const needs = (latest?.tool_refusals ?? []).filter((refusal) => refusal.reason === "needs_approval");
   const waiting = (latest?.progress?.approvals ?? []).filter((approval) => approval.state === "waiting");
   const questions = (latest?.progress?.questions ?? []).filter((question) => question.state === "waiting");
-  return { files, using, learned, learningPending, needs, waiting, questions, hasCards: files.length > 0 || using.length > 0 || learned !== null || learningPending || needs.length > 0 || waiting.length > 0 || questions.length > 0 };
+  return { files, using, learned, learningPending, learningWaiting, needs, waiting, questions, hasCards: files.length > 0 || using.length > 0 || learned !== null || learningPending || !!learningWaiting || needs.length > 0 || waiting.length > 0 || questions.length > 0 };
 }

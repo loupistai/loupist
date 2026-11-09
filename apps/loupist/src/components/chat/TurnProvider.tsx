@@ -47,6 +47,7 @@ export function TurnProvider({ message, loupistId, children }: { message: ChatMe
     const current = latest.current;
     const target = evidenceTarget(to.evidence, current.memory_refs, loupistId);
     switch (target.kind) {
+      case "artifact": return { kind: "artifact-link", artifactId: target.artifactId };
       case "memory": return { kind: "memory", location: target.location, title: target.title };
       case "asset": return { kind: "asset", target: target.target };
       case "step": return () => {

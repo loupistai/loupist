@@ -39,9 +39,9 @@ export function workspaceFileLink(href: string, rootPath?: string, basePath = ""
 
 export const WORKSPACE_LINK_PROTOCOL = "loupist-workspace";
 const WORKSPACE_LINK_PREFIX = `${WORKSPACE_LINK_PROTOCOL}:`;
-type LinkNode = { type?: string; value?: string; tagName?: string; properties?: { href?: unknown }; children?: LinkNode[] };
+type LinkNode = { type?: string; value?: string; tagName?: string; properties?: { href?: unknown; src?: unknown }; children?: LinkNode[] };
 
-/** Replaces only validated links, leaving images and web URLs for the normal sanitizer. */
+/** Normalize workspace links and image sources before the protocol sanitizer. */
 export function workspaceLinksPlugin({ rootPath, basePath }: { rootPath?: string; basePath?: string } = {}) {
   return (tree: LinkNode) => {
     // Models sometimes omit CommonMark's angle brackets around filenames with
@@ -68,6 +68,11 @@ export function workspaceLinksPlugin({ rootPath, basePath }: { rootPath?: string
     };
     const visit = (node: LinkNode) => {
       if (node.tagName === "code" || node.tagName === "pre") return;
+      if (node.tagName === "img" && typeof node.properties?.src === "string") {
+        const path = workspaceFileLink(node.properties.src, rootPath, basePath);
+        if (path) node.properties.src = `${WORKSPACE_LINK_PREFIX}${encodeURIComponent(path)}`;
+        return;
+      }
       if (node.tagName === "a" && typeof node.properties?.href === "string") {
         const path = workspaceFileLink(node.properties.href, rootPath, basePath);
         if (path) node.properties.href = `${WORKSPACE_LINK_PREFIX}${encodeURIComponent(path)}`;

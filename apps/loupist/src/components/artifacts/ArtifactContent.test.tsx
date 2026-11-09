@@ -94,3 +94,17 @@ it("rejects an unsupported schema even when its view kind is still supported", (
   expect(screen.getByRole("alert")).toHaveTextContent(/unsupported/);
   expect(screen.queryByText("financial-engine")).not.toBeInTheDocument();
 });
+
+it("opens generated file links from a document inside its workspace", async () => {
+  const user = userEvent.setup();
+  const { renderWithOpen, destinations } = await import("../../test/open");
+  const view: ChatArtifactView = {
+    artifact: { ...chartView.artifact, kind: "markdown", title: "Research note" },
+    revision: { ...chartView.revision, payload: { kind: "markdown", schema: "loupist-markdown/1", markdown: "[Corrected CSV](outputs/corrected.csv) · [Chart](outputs/chart.png) · [Outside](../private.txt)" } },
+  };
+  const { open } = renderWithOpen(<ArtifactContent view={view} theme="light" workspacePath="/research" />);
+  await user.click(await screen.findByRole("link", { name: "Corrected CSV" }));
+  await user.click(screen.getByRole("link", { name: "Chart" }));
+  expect(destinations(open)).toEqual([{ kind: "file", path: "outputs/corrected.csv" }, { kind: "file", path: "outputs/chart.png" }]);
+  expect(screen.queryByRole("link", { name: "Outside" })).not.toBeInTheDocument();
+});

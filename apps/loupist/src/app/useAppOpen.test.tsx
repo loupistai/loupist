@@ -5,6 +5,7 @@ import { useAppOpen, type AppOpenShell } from "./useAppOpen";
 
 const shell = (): AppOpenShell => ({
   openExternalUrl: vi.fn(async () => undefined),
+  readArtifact: vi.fn(),
   loupistId: "loupist-a",
   threadId: "chat-a",
   panel: { openEvidence: vi.fn(), openBrowser: vi.fn(), openMemory: vi.fn(), openArtifact: vi.fn(), openFiles: vi.fn() },
@@ -94,4 +95,19 @@ it("never opens a hidden panel for a briefing that has no chat of its own", asyn
   const asset = { loupistId: "loupist-a", assetId: "NASDAQ:AAPL" };
   await act(() => hook.result.current.openIn(null, { kind: "asset", target: asset }));
   expect(targets.openAssetPage).toHaveBeenCalledExactlyOnceWith(asset);
+});
+
+it("resolves a retained artifact link in its chat to the latest saved revision", async () => {
+  const { targets, hook, announced } = router();
+  vi.mocked(targets.readArtifact).mockResolvedValue({
+    artifact: { id: "artifact-1", chat_session_id: "chat-a", title: "Updated analysis", kind: "markdown", current_revision: 2, created_at_ms: 1, updated_at_ms: 2 },
+    revision: { artifact_id: "artifact-1", revision: 2, digest: "latest", source_message_id: "answer", created_at_ms: 2, payload: { kind: "markdown", schema: "loupist-markdown/1", markdown: "Updated" } },
+  });
+  await act(() => hook.result.current.open({ kind: "artifact-link", artifactId: "artifact-1" }));
+  expect(targets.readArtifact).toHaveBeenCalledExactlyOnceWith("loupist-a", "chat-a", "artifact-1");
+  expect(targets.panel.openArtifact).toHaveBeenCalledExactlyOnceWith("loupist-a", "chat-a", { artifact_id: "artifact-1", revision: 2, digest: "latest", kind: "markdown", title: "Updated analysis" });
+  expect(announced()).toBe("Opened Updated analysis in the panel");
+  vi.mocked(targets.readArtifact).mockRejectedValueOnce(new Error("outside this chat"));
+  await expect(hook.result.current.open({ kind: "artifact-link", artifactId: "outside" })).rejects.toThrow("outside this chat");
+  expect(targets.panel.openArtifact).toHaveBeenCalledOnce();
 });

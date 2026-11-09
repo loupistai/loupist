@@ -246,6 +246,7 @@
     "modelForThisMessage": "Model for this message",
     "advanced": "Advanced",
     "auto": "Auto",
+    "autoDescription": "Uses your default model settings. The automatic choice is resolved when you send.",
     "autoRecommended": "Auto (recommended)",
     "resetToAuto": "Reset to Auto",
     "connectAccount": "Connect an AI account"
@@ -1467,7 +1468,9 @@
       "relationships_one": "{{formattedCount}} relationship",
       "relationships_other": "{{formattedCount}} relationships",
       "methods_one": "{{formattedCount}} method",
-      "methods_other": "{{formattedCount}} methods"
+      "methods_other": "{{formattedCount}} methods",
+      "waiting": "Waiting to review sources · {{reason}}",
+      "statusUnavailable": "Could not check processing status"
     },
     "needsYou": {
       "title": "Needs your OK",

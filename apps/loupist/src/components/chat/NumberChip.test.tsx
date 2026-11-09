@@ -58,9 +58,16 @@ it("renders a numeric link as a number chip and a non-numeric one as a numbered 
   expect(margin).toHaveAttribute("aria-haspopup", "dialog");
   expect(margin).toHaveAccessibleName("8.4 percent, calculated. Show the math");
   expect(await chip("₩452.3bn")).toHaveAccessibleName("₩452.3bn, from OpenDART");
-  const citation = await screen.findByRole("button", { name: "Source 2: February guidance call" });
+  const citation = await screen.findByRole("button", { name: "1 · Source 2: February guidance call" });
   expect(citation).toHaveClass("loupist-citation");
-  expect(citation).toHaveTextContent("2");
+  expect(citation).toHaveTextContent("1");
+});
+
+it("preserves bare integer data labels instead of substituting source ordinals", async () => {
+  const source = evidenceFixture({ id: "ev_csv", title: "Synthetic data", kind: "local_file", tool_name: "workspace_capture", url: undefined });
+  renderAnswer(answer({ content: "Last year: Aster [100](#evidence-ev_csv), Boreal [79](#evidence-ev_csv).", evidence_refs: [source], number_checks: [] }));
+  expect(await screen.findByRole("button", { name: /^100 ·/ })).toHaveTextContent("100");
+  expect(await screen.findByRole("button", { name: /^79 ·/ })).toHaveTextContent("79");
 });
 
 it("keeps a bold attached-note token linked through the workspace-aware answer renderer", async () => {

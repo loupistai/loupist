@@ -5,6 +5,7 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import { ModelSelectionMenu } from "../models/ModelSelectionMenu";
+import { worldReadinessLabels } from "../../knowledge/worldReadiness";
 import { errorMessage } from "../../lib/errors";
 import type { GraphProcessingSettings, GraphProcessingView, GraphReadinessNote, LoupistBridge, ModelCatalog } from "../../types";
 
@@ -18,17 +19,6 @@ type Props = {
 };
 
 type Loaded = { loupistId: string; view: GraphProcessingView; draft: GraphProcessingSettings; catalog: ModelCatalog };
-const readinessLabels = (): Record<GraphProcessingView["readiness"]["status"], string> => ({
-  ready: i18n.t("knowledge:worldProcessingSettings.readyToProcess"),
-  disabled: i18n.t("knowledge:worldProcessingSettings.automaticProcessingIsOff"),
-  paused: i18n.t("knowledge:worldProcessingSettings.processingIsPaused"),
-  model_required: i18n.t("knowledge:worldProcessingSettings.chooseAModel"),
-  provider_disconnected: i18n.t("knowledge:worldProcessingSettings.reconnectProvider"),
-  runtime_unavailable: i18n.t("knowledge:worldProcessingSettings.processingIsUnavailable"),
-  model_unavailable: i18n.t("knowledge:worldProcessingSettings.modelIsUnavailable"),
-  reconciliation_required: i18n.t("knowledge:worldProcessingSettings.recoveryRequired"),
-  recovering: i18n.t("knowledge:worldProcessingSettings.recoveringWorldProcessing"),
-});
 const readinessNotes = (): Record<GraphReadinessNote, string> => ({
   recovery_required: i18n.t("settings:worldSettings.readiness.recoveryRequired"),
   recovering: i18n.t("settings:worldSettings.readiness.recovering"),
@@ -117,7 +107,7 @@ export function WorldProcessingSettings({ bridge, loupistId, active = true, coll
   const { draft, view, catalog } = current;
   const busy = action !== null || recovering;
   const models = catalog.models.filter((model) => model.credential_source !== "missing" && catalog.providers.find((provider) => provider.id === model.provider)?.credential_source !== "missing");
-  const readinessLabel = view.readiness.status === "model_required" && !models.length ? t("worldProcessingSettings.waitingForAProvider") : readinessLabels()[view.readiness.status];
+  const readinessLabel = view.readiness.status === "model_required" && !models.length ? t("worldProcessingSettings.waitingForAProvider") : worldReadinessLabels()[view.readiness.status];
   const readinessMessage = (view.readiness.note ? readinessNotes()[view.readiness.note] : null) || (!models.length ? t("worldProcessingSettings.noConnectedModelsConnectAProviderToStartProcessing") : null);
   const selectedModel = models.find((model) => model.id === draft.helperModelProfileId);
   const savedRelations = (view.settings.relationHints ?? []).join(", ");

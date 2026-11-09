@@ -8,6 +8,7 @@ import { OpenProvider, useOpenLayer, type OpenLayer } from "../navigation/Open";
 import { errorMessage } from "../../lib/errors";
 import type { LoupistBridge, WorkspaceDirectory, WorkspaceFile } from "../../types";
 import { delimitedPreview, PREVIEW_COLUMNS, PREVIEW_ROWS } from "./delimitedPreview";
+import { workspaceRasterPreview } from "./WorkspaceFileContext";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -20,7 +21,6 @@ const parentPath = (path: string) => path.split("/").slice(0, -1).join("/");
 const bytes = (size: number) => size < 1024 ? t("workspaceFiles.bytes", { size: size }) : size < 1048576 ? t("workspaceFiles.kilobytes", { value1: formatNumber(size / 1024, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }) : t("workspaceFiles.megabytes", { value1: formatNumber(size / 1048576, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) });
 const isDelimited = (file: WorkspaceFile) => /\.(csv|tsv)$/i.test(file.path) || /^(text\/(csv|tab-separated-values)|application\/csv)(;|$)/i.test(file.media_type);
 const fileType = (file: WorkspaceFile) => file.path.split("/").at(-1)?.match(/\.([^.]+)$/)?.[1].toUpperCase() ?? t("workspaceFiles.file");
-const rasterPreview = (file: WorkspaceFile) => !file.truncated && file.image_data_url && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(file.image_data_url) ? file.image_data_url : null;
 
 type LoadedItem = { key: string; value: WorkspaceDirectory | WorkspaceFile };
 
@@ -126,7 +126,7 @@ export function WorkspaceFiles({ bridge, loupistId, rootPath, path, filePath, on
         <Button type="button" variant="outline" size="sm" onClick={() => void reveal()}>{t("workspaceFiles.showFile")}</Button>
       </div> : null}
       <div className={`workspace-file-content${tabular && !source ? " reader-table-content" : ""}`} ref={contentRef} onScroll={rememberScroll}>
-        {rasterPreview(file) ? <WorkspaceImage key={`${selection}:${file.content_sha256}`} file={file} src={rasterPreview(file)!} onReveal={() => void reveal()} />
+        {workspaceRasterPreview(file) ? <WorkspaceImage key={`${selection}:${file.content_sha256}`} file={file} src={workspaceRasterPreview(file)!} onReveal={() => void reveal()} />
           : file.binary || file.content === null ? <div className="reader-empty"><p>{t("workspaceFiles.noTextPreviewForThisFileUseShowIn")}</p><Button type="button" variant="outline" size="sm" onClick={() => void reveal()}>{t("workspaceFiles.openInFileManager")}</Button></div>
           : tabular && !source ? <DelimitedFilePreview file={file} header={headerViews[selection] ?? !/header=absent/i.test(file.media_type)} onHeaderChange={(header) => setHeaderViews((current) => ({ ...current, [selection]: header }))} />
           : markdown && !source ? <OpenProvider open={open}><SafeMessageResponse text={file.content} isAnimating={false} workspacePath={rootPath} workspaceBasePath={parentPath(file.path)} /></OpenProvider>

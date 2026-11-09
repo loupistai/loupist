@@ -209,6 +209,7 @@ async function choosePreset() {
   }
   await browser.keys("Escape");
   await composer.click();
+  assert.ok((await modelMenu.getAttribute("aria-label"))?.startsWith(`${preset.modelLabel} ·`), "Journey must select an explicit model, not Auto");
   assertPresetSelection(await modelMenu.getAttribute("aria-description"), "Journey model menu");
 }
 
@@ -872,8 +873,9 @@ try {
         } });
       });
       const picker = await displayed('[aria-label$="Model settings for this message"]');
-      // The composer shows "Auto"; the resolved model is the control's description.
-      assert.match(await picker.getAttribute("aria-description") ?? "", /local-test-model/u, "Chat did not default to the custom provider's model");
+      assert.match(await picker.getAttribute("aria-label") ?? "", /^Auto ·/u);
+      assert.match(await picker.getAttribute("aria-description") ?? "", /resolved when you send/u);
+      // Assert the actual Auto model on the host request below, after admission.
       const firstTiming = await sendPrompt("Say hello.");
       const answer = await answerText();
       await shot("07-custom-answer");
