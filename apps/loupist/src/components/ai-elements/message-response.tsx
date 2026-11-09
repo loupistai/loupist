@@ -1,6 +1,6 @@
 import i18n, { useTranslation } from "@/i18n";
 import type { NumberCheck } from "../../types";
-import { citationLabel, citationNumber, evidencePresentation, evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
+import { citationLabel, evidencePresentation, evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
 import { memoryReadForEvidence } from "../../chat/memoryActivity";
 import { checkFor, looksLikeNumber } from "../../chat/numberChecks";
 import { keepNumberParticles } from "../../chat/keepParticles";
@@ -19,7 +19,9 @@ import type { MathPlugin } from "@streamdown/math";
 import type { DiagramPlugin } from "@streamdown/mermaid";
 import type { ComponentProps, ReactNode } from "react";
 import { createContext, isValidElement, memo, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
-import { Streamdown, defaultRehypePlugins, defaultUrlTransform, type StreamdownTranslations } from "streamdown";
+import { Streamdown, defaultComponents, defaultRehypePlugins, defaultUrlTransform, type StreamdownTranslations } from "streamdown";
+import { WorkspaceImage } from "../workspace/WorkspaceImage";
+import { useArtifactReadLinks } from "../chat/ArtifactReadLinks";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -41,13 +43,24 @@ function nodeText(node: ReactNode): string {
 
 type MarkdownLinkProps = ComponentProps<"a"> & { node?: unknown };
 
+const DefaultMarkdownImage = defaultComponents.img;
+function LoupistMarkdownImage(props: ComponentProps<typeof DefaultMarkdownImage>) {
+  const path = typeof props.src === "string" ? decodedWorkspaceLink(props.src) : null;
+  return path ? <WorkspaceImage path={path} alt={props.alt ?? ""} /> : <DefaultMarkdownImage {...props} />;
+}
+
 function EvidenceLink({ href, children }: { href: string; children?: ReactNode }) {
   useTranslation("chat");
   const turn = useTurn();
+  const artifactLinks = useArtifactReadLinks();
   const { numberChecks, streaming } = useContext(TextBlockContext);
   const evidenceRefs = turn?.evidenceRefs ?? [];
   const evidence = evidenceRefs.find((ref) => href === `#evidence-${ref.id}`);
-  if (!evidence) return <UnavailableCitation>{children}</UnavailableCitation>;
+  if (!evidence) {
+    const artifactId = artifactLinks.get(href);
+    return artifactId ? <ProseLink to={{ kind: "artifact-link", artifactId }} title={nodeText(children)}>{children}</ProseLink>
+      : <UnavailableCitation>{children}</UnavailableCitation>;
+  }
   // A number link is the control for its own evidence: Rust checked it when the answer finished.
   const linkText = nodeText(children).trim();
   const check = checkFor(numberChecks, evidence.id, linkText);
@@ -55,12 +68,11 @@ function EvidenceLink({ href, children }: { href: string; children?: ReactNode }
   if (streaming && looksLikeNumber(linkText)) return <PendingNumber>{children}</PendingNumber>;
   const read = memoryReadForEvidence(evidence, turn?.memoryRefs);
   const label = citationLabel(evidence, evidenceRefs, read?.title);
-  // Model-written reference numbers can disagree with the retained source list.
-  // Keep the visible number and spoken source number tied to the same evidence.
-  const number = /^\d+$/u.test(linkText) ? citationNumber(evidence, evidenceRefs) : null;
-  const accessibleLabel = number === null && linkText && !label.toLocaleLowerCase().includes(linkText.toLocaleLowerCase()) ? `${linkText} · ${label}` : label;
+  // A bare integer can be a measured value, a year or a reference label. Never
+  // replace answer text with the source ordinal when no number check identifies it.
+  const accessibleLabel = linkText && !label.toLocaleLowerCase().includes(linkText.toLocaleLowerCase()) ? `${linkText} · ${label}` : label;
   return <CitationChip evidence={evidence} label={accessibleLabel} title={evidenceTitle(evidence)} source={sourceIdentityLabel(evidence) || evidencePresentation(evidence).label}
-    to={{ kind: "evidence", evidence }}>{number ?? children}</CitationChip>;
+    to={{ kind: "evidence", evidence }}>{children}</CitationChip>;
 }
 
 /** A prose link: the underline is its affordance, so it carries no icon. */
@@ -206,7 +218,10 @@ export const MessageResponse = memo(
       // the URL transform and link component validate the relative path again.
       const fileSanitizer: typeof sanitizer = Array.isArray(sanitizer) ? [sanitizer[0], {
         ...sanitizer[1],
-        protocols: { ...sanitizer[1]?.protocols, href: [...(sanitizer[1]?.protocols?.href ?? []), ...(hasFileAction ? [WORKSPACE_LINK_PROTOCOL] : []), ...(hasLinkAction ? [LENS_LINK_PROTOCOL] : [])] },
+        protocols: { ...sanitizer[1]?.protocols,
+          href: [...(sanitizer[1]?.protocols?.href ?? []), ...(hasFileAction ? [WORKSPACE_LINK_PROTOCOL] : []), ...(hasLinkAction ? [LENS_LINK_PROTOCOL] : [])],
+          src: [...(sanitizer[1]?.protocols?.src ?? []), ...(hasFileAction ? [WORKSPACE_LINK_PROTOCOL] : [])],
+        },
       }] : sanitizer;
       // Streamdown's processor cache keys plugins by their name and options.
       // Explicit options keep each Loupist and relative Markdown base separate.
@@ -214,11 +229,11 @@ export const MessageResponse = memo(
       return [defaultRehypePlugins.raw, ...(hasFileAction ? [fileLinks] : []), fileSanitizer, defaultRehypePlugins.harden, keepNumberParticles];
     }, [hasFileAction, hasLinkAction, workspacePath, workspaceBasePath]);
     const fileUrlTransform = useMemo(() => hasLinkAction ? ((url: string, key: string, node: Parameters<typeof defaultUrlTransform>[2]) =>
-      key === "href" && ((hasFileAction && decodedWorkspaceLink(url)) || lensLinkRecordId(url))
+      ((key === "href" && ((hasFileAction && decodedWorkspaceLink(url)) || lensLinkRecordId(url))) || (key === "src" && hasFileAction && decodedWorkspaceLink(url)))
         ? url : defaultUrlTransform(url, key, node)) : undefined, [hasFileAction, hasLinkAction]);
     // Links read their actions and evidence from context, so retained blocks never
     // see a new component and a focused citation is never replaced.
-    const resolvedComponents = useMemo(() => hasLinkAction ? { ...components, a: LoupistMarkdownLink } : components, [components, hasLinkAction]);
+    const resolvedComponents = useMemo(() => hasLinkAction ? { ...components, a: LoupistMarkdownLink, ...(hasFileAction ? { img: LoupistMarkdownImage } : {}) } : components, [components, hasLinkAction, hasFileAction]);
     const streamdownPlugins = useMemo(
       () =>
         mermaidPlugin

@@ -13,6 +13,14 @@ request once and decides. Unattended runs refuse native file tools before this p
 
 There is no agent Bash tool. Model code does not get a shell, the host Python, or a JavaScript runtime.
 
+The host's private Pi bootstrap uses a mode-0600 file, opened without following
+symlinks and removed after the extension reads it. Its runtime/workspace metadata
+remains limited to 64 KiB. A separate, optional continuation input (current request
+and full turn envelope) is limited to 512 KiB; encoded bootstrap JSON is limited to
+1 MiB. Neither payload travels in command arguments or environment variables. The
+extension restores this host input after compaction without turning a model-written
+summary into authority ([context delivery](../agent/context-delivery.md#memory-and-context)).
+
 ## Exposure
 
 | Exposure | When |

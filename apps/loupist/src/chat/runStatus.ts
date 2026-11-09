@@ -27,6 +27,9 @@ export const isActionItem = (item: ChatProgressItem): item is ActionItem => item
 
 /** A step's own words: running while it runs, paused when refused, its action afterwards. */
 export const actionLabel = (item: ActionItem) => {
+  if (item.kind === "system" && item.operation === "compact") {
+    return t(item.status === "running" ? "conversationReview.running" : item.status === "succeeded" ? "conversationReview.done" : "conversationReview.incomplete");
+  }
   if (item.kind === "tool" && item.status === "failed" && item.refusal === "untrusted_text_paused") return t("chatProgressTimeline.paused.status");
   const raw = item.status === "running" && item.kind === "tool" && item.running ? item.running : item.action;
   return localizedProgressLabel(scrubIdentifiers(raw) || item.action, item.kind === "tool" ? item.toolName : undefined);

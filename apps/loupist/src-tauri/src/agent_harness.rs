@@ -67,6 +67,10 @@ const EXTENSION_FILES: &[(&str, &[u8])] = &[
         "model-run-controls.mjs",
         include_bytes!("../../agent/model-run-controls.mjs"),
     ),
+    (
+        "session-continuity.mjs",
+        include_bytes!("../../agent/session-continuity.mjs"),
+    ),
 ];
 const PROVIDER_EXTENSION_FILES: &[(&str, &[u8])] = &[
     (
@@ -1867,6 +1871,48 @@ mod tests {
                 original["memory_protocol"][key]
             );
         }
+    }
+
+    #[test]
+    fn a_changed_bot_memory_block_resends_the_full_envelope() {
+        let forgotten = "FORGOTTEN-BASIC-SHARES";
+        let kept = "KEPT-DILUTED-SHARES";
+        let evidence = "ev_compactionfixture0000000000000001";
+        let envelope = |memory: &str| {
+            crate::chat::bot_memory::attach(
+                &json!({
+                    "live_time": {"current_date_utc": "2026-11-09"},
+                    "memory_protocol": {
+                        "active": true,
+                        "charter": format!("Prefer the filing {evidence}"),
+                        "charterReadRef": "read-a",
+                    }
+                })
+                .to_string(),
+                json!({
+                    "schema": "loupist-bot-memory/1",
+                    "entries": [{"id": "mem_1", "text": memory}],
+                }),
+            )
+        };
+        let stored = envelope(forgotten);
+        let digest = envelope_context_digest(&stored);
+        let (cold, _) = maybe_abbreviate_envelope(&stored, Some(&digest), false);
+        assert_eq!(cold, stored);
+        let (warm, _) = maybe_abbreviate_envelope(&stored, Some(&digest), true);
+        let warm_value: Value = serde_json::from_str(&warm).unwrap();
+        assert_eq!(warm_value["context"]["unchanged"], true);
+        assert!(warm_value.get("bot_memory").is_none());
+        assert!(!warm.contains(forgotten));
+        assert!(!warm.contains(evidence));
+
+        let corrected = envelope(kept);
+        assert_ne!(digest, envelope_context_digest(&corrected));
+        let (resent, _) = maybe_abbreviate_envelope(&corrected, Some(&digest), true);
+        assert_eq!(resent, corrected);
+        assert!(resent.contains(kept));
+        assert!(resent.contains(evidence));
+        assert!(!resent.contains(forgotten));
     }
 
     #[test]

@@ -522,6 +522,39 @@ fn host_context_is_bounded_and_written_to_a_private_extension_file() {
         .clone()
         .with_host_context("x".repeat(MAX_HOST_CONTEXT_BYTES + 1))
         .is_err());
+
+    let continuation = "original request and current host envelope";
+    let config = config
+        .with_continuation_prompt(continuation.into())
+        .unwrap();
+    let context_file = write_host_context_file(&config).unwrap();
+    let parsed: Value =
+        serde_json::from_slice(&std::fs::read(context_file.path()).unwrap()).unwrap();
+    assert_eq!(parsed["continuation_prompt"], continuation);
+    assert!(!config
+        .rpc_arguments()
+        .iter()
+        .any(|arg| arg.contains(continuation)));
+    assert!(!config
+        .environment(context_file.path(), None)
+        .values()
+        .any(|value| value.contains(continuation)));
+    for prompt in [
+        " ".into(),
+        "a\0b".into(),
+        "한".repeat(MAX_CONTINUATION_PROMPT_BYTES / 3 + 1),
+    ] {
+        assert!(config.clone().with_continuation_prompt(prompt).is_err());
+    }
+    for invalid in [
+        serde_json::json!({"continuation_prompt": 4}),
+        serde_json::json!({"continuation_prompt": "valid", "extra": "x".repeat(MAX_HOST_CONTEXT_BYTES)}),
+    ] {
+        assert!(config
+            .clone()
+            .with_host_context(invalid.to_string())
+            .is_err());
+    }
 }
 
 /// `ps -E` is how a same-user command reads a process environment. The broker

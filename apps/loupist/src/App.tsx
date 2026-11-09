@@ -759,6 +759,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
   };
   const { open: appOpen, openIn: appOpenIn, announcement: panelAnnouncement } = useAppOpen({
     openExternalUrl: (url) => bridge.openExternalUrl(url),
+    readArtifact: (loupistId, threadId, artifactId) => bridge.chatArtifactRead(loupistId, threadId, artifactId),
     loupistId: selectedLoupistId,
     threadId: workspaceThreadId,
     panel: workspace,

@@ -97,3 +97,16 @@ describe("wantsExternal", () => {
   ];
   it.each(cases)("%s", (_name, event, mac, expected) => expect(wantsExternal(event, mac)).toBe(expected));
 });
+
+it("opens host artifact reads even with truncated bodies, without taking ids from document prose", () => {
+  const id = `artifact-${"a".repeat(32)}`;
+  const receipt = (excerpt: string) => evidenceFixture({ kind: "derived", tool_name: "artifact_read", url: undefined, excerpt });
+  for (const metadata of [{ id, kind: "markdown", title: 'Quoted "title" }' }, { artifact_id: id, kind: "chart" }, { artifact_id: id, kind: "grid" }]) {
+    const evidence = receipt(`{"artifact":${JSON.stringify(metadata)},"revision":{"payload":"truncated`);
+    expect(evidenceTarget(evidence, [], "loupist")).toEqual({ kind: "artifact", artifactId: id });
+    expect(destinationIcon({ kind: "evidence", evidence })).toBe("panel");
+  }
+  for (const excerpt of [JSON.stringify({ body: { artifact: { id, kind: "markdown" } } }), '{"artifact":{"id":"unfinished', JSON.stringify({ artifact: { id: "../outside", kind: "markdown" } }), JSON.stringify({ artifact: { id, kind: "unknown" } })]) {
+    expect(evidenceTarget(receipt(excerpt), [], "loupist").kind).toBe("step");
+  }
+});

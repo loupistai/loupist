@@ -45,15 +45,34 @@ pub(super) fn pi_event_indicates_first_provider_body_progress(
     }
 }
 
-/// Pi `compaction_end` has no `success` field. Failure is `result: null`
-/// with `aborted` and/or `errorMessage`.
-pub(super) fn compaction_end_failed(payload: &Value) -> bool {
-    payload.get("aborted").and_then(Value::as_bool) == Some(true)
-        || payload
-            .get("errorMessage")
-            .and_then(Value::as_str)
-            .is_some_and(|message| !message.is_empty())
-        || !payload.get("result").is_some_and(Value::is_object)
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum CompactionOutcome {
+    Succeeded,
+    Cancelled,
+    Failed,
+}
+
+/// Pi has no `success` field. Cancellation without an error or result also
+/// represents auxiliary compaction deferred by the host extension.
+pub(super) fn compaction_outcome(payload: &Value) -> CompactionOutcome {
+    let has_result = payload.get("result").is_some_and(Value::is_object);
+    if payload
+        .get("errorMessage")
+        .and_then(Value::as_str)
+        .is_some_and(|message| !message.is_empty())
+    {
+        CompactionOutcome::Failed
+    } else if payload.get("aborted").and_then(Value::as_bool) == Some(true) {
+        if has_result {
+            CompactionOutcome::Failed
+        } else {
+            CompactionOutcome::Cancelled
+        }
+    } else if has_result {
+        CompactionOutcome::Succeeded
+    } else {
+        CompactionOutcome::Failed
+    }
 }
 
 // Any post-prompt Pi event arrives before provider streaming can make visible

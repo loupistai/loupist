@@ -124,6 +124,25 @@ mod chat_pi_resume_tests {
         assert_eq!(resume(&"e".repeat(64), true), CACHED);
         assert_eq!(resume(&"f".repeat(64), true), FRESH);
         assert_eq!(resume(&"f".repeat(64), false), SEED);
+
+        // Compaction marks the envelope stale without rotating the warm JSONL.
+        let mut stale = cache.clone();
+        stale.context_envelope_stale = true;
+        stale.context_envelope_sha256 = "f".repeat(64);
+        let scope = PiSessionCacheScope {
+            harness_digest: &cache.harness_digest,
+            runtime_policy_sha256: &cache.runtime_policy_sha256,
+            runtime_surface_sha256: &cache.runtime_surface_sha256,
+            connector_authority_sha256: &cache.connector_authority_sha256,
+            memory_access_enabled: true,
+            memory_update_enabled: true,
+            execution_model: &cache.execution_model,
+        };
+        assert!(stale.matches(&scope));
+        assert_eq!(
+            select_chat_pi_resume(Some(stale), true, SEED, || FRESH.into()).session_id(),
+            CACHED
+        );
     }
 }
 

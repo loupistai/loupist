@@ -119,6 +119,13 @@ host-composed receipt summary. Unfinished tools, provider/process failures and
 storage errors do not qualify. Host diagnostics are bounded/redacted and exclude
 raw credential-bearing payloads.
 
+Pi's `agent_settled` remains the completion barrier; a visible final text chunk
+alone cannot commit Chat or Memory, bypass Stop, or discard acknowledged steering.
+The extension defers automatic compaction after a finished answer until the next
+input. A cancelled or deferred attempt leaves no successful or failed compaction step in the
+answer's progress. Compaction before a prompt and between tool rounds retains its
+normal error, timeout and cancellation handling.
+
 ## Code
 
 - Chat execution: `src-tauri/src/commands/chat_runtime.rs`, `src-tauri/src/commands/chat_runtime/`, `src-tauri/src/chat/`

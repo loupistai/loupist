@@ -371,7 +371,7 @@ describe("Loupist · Model providers", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: "Disconnect ChatGPT" })).not.toBeInTheDocument());
   });
 
-  it("hides unchecked models from Chat and falls back to a visible model", async () => {
+  it("hides unchecked models and blocks Chat when no visible model remains", async () => {
     const user = userEvent.setup();
     const bridge = await openApp();
     const updateVisibility = vi.spyOn(bridge, "modelVisibilityUpdate");
@@ -383,7 +383,11 @@ describe("Loupist · Model providers", () => {
     await waitFor(() => expect(updateVisibility).toHaveBeenCalledWith({ model_profile_id: "model-test", visible_in_chat: false }));
     await user.click(screen.getByRole("button", { name: "Back" }));
     await user.hover(await screen.findByRole("button", { name: /Model settings for this message/ }));
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("google default");
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Uses your default model settings.");
+    await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
+    expect(screen.getByRole("menuitemradio", { name: "google default" })).toBeVisible();
+    expect(screen.queryByRole("menuitemradio", { name: "GPT-5.6 Luna" })).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
 
     await openModelSettings(user);
     const gemini = await screen.findByRole("article", { name: "Google Gemini" });

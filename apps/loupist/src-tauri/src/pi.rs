@@ -70,6 +70,8 @@ pub const PI_WINDOWS_X64_ARCHIVE_SHA256: &str =
 const MAX_RPC_FRAME_BYTES: usize = 8 * 1024 * 1024;
 const PI_EVENT_BUFFER_CAPACITY: usize = 1_024;
 const MAX_HOST_CONTEXT_BYTES: usize = 64 * 1024;
+const MAX_CONTINUATION_PROMPT_BYTES: usize = 512 * 1024;
+const MAX_HOST_BOOTSTRAP_BYTES: usize = 1024 * 1024;
 const RPC_WRITE_TIMEOUT: Duration = Duration::from_secs(2);
 const PI_PROJECT_SETTINGS_MAX_BYTES: u64 = 4 * 1024;
 /// Versioned identity of the app-owned Pi cache environment. Bump this when a
@@ -146,13 +148,25 @@ impl PiLaunchConfig {
     }
 
     pub fn with_host_context(mut self, host_context: String) -> Result<Self, PiError> {
-        if host_context.trim().is_empty()
-            || host_context.len() > MAX_HOST_CONTEXT_BYTES
-            || host_context.contains('\0')
-        {
-            return Err(PiError::InvalidLaunchValue);
-        }
+        validate_host_context(&host_context)?;
         self.host_context = Some(host_context);
+        Ok(self)
+    }
+
+    pub(crate) fn with_continuation_prompt(mut self, prompt: String) -> Result<Self, PiError> {
+        let mut context: Value = serde_json::from_str(
+            self.host_context
+                .as_deref()
+                .ok_or(PiError::InvalidLaunchValue)?,
+        )
+        .map_err(|_| PiError::InvalidLaunchValue)?;
+        context
+            .as_object_mut()
+            .ok_or(PiError::InvalidLaunchValue)?
+            .insert("continuation_prompt".into(), Value::String(prompt));
+        let context = context.to_string();
+        validate_host_context(&context)?;
+        self.host_context = Some(context);
         Ok(self)
     }
 
@@ -219,12 +233,7 @@ impl PiLaunchConfig {
             .host_context
             .as_deref()
             .ok_or(PiError::InvalidLaunchValue)?;
-        if host_context.trim().is_empty()
-            || host_context.len() > MAX_HOST_CONTEXT_BYTES
-            || host_context.contains('\0')
-        {
-            return Err(PiError::InvalidLaunchValue);
-        }
+        validate_host_context(host_context)?;
         if let Some((name, secret)) = &self.provider_credential {
             if !PROVIDER_CREDENTIAL_ENVIRONMENTS.contains(&name.as_str())
                 || secret.is_empty()
@@ -1225,6 +1234,28 @@ impl BrokerTokenHandoff {
             Some(self)
         }
     }
+}
+
+fn validate_host_context(encoded: &str) -> Result<(), PiError> {
+    if encoded.is_empty() || encoded.len() > MAX_HOST_BOOTSTRAP_BYTES || encoded.contains('\0') {
+        return Err(PiError::InvalidLaunchValue);
+    }
+    let mut context: Value =
+        serde_json::from_str(encoded).map_err(|_| PiError::InvalidLaunchValue)?;
+    let fields = context.as_object_mut().ok_or(PiError::InvalidLaunchValue)?;
+    if let Some(prompt) = fields.remove("continuation_prompt") {
+        let prompt = prompt.as_str().ok_or(PiError::InvalidLaunchValue)?;
+        if prompt.trim().is_empty()
+            || prompt.len() > MAX_CONTINUATION_PROMPT_BYTES
+            || prompt.contains('\0')
+        {
+            return Err(PiError::InvalidLaunchValue);
+        }
+    }
+    if context.to_string().len() > MAX_HOST_CONTEXT_BYTES {
+        return Err(PiError::InvalidLaunchValue);
+    }
+    Ok(())
 }
 
 fn write_host_context_file(config: &PiLaunchConfig) -> Result<BootstrapFile, PiError> {

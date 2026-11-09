@@ -666,6 +666,103 @@ mod turns {
     }
 
     #[tokio::test]
+    async fn compaction_pressure_reviews_short_bot_history_without_a_failed_progress_step() {
+        let fixture = fixture();
+        fixture.script(json!({"deferred_compaction": true}));
+        fixture.bot("pressure", "Keep answers brief.", true).await;
+        let home = fixture.home();
+        assert_eq!(
+            home.messages.last().unwrap().status,
+            ChatMessageStatus::Complete
+        );
+        assert!(
+            home.pi_session_cache
+                .as_ref()
+                .unwrap()
+                .context_envelope_stale
+        );
+        assert!(
+            !serde_json::to_string(&home.messages.last().unwrap().progress)
+                .unwrap()
+                .contains("Summarized earlier messages")
+        );
+        let pending = home.messages[0].id.clone();
+        fixture.script(json!({}));
+        let next = fixture.bot("review", "Continue.", true).await;
+        let sent = envelope(next["prompt"].as_str().unwrap());
+        assert_eq!(sent["bot_memory"]["review"]["messages"][0]["id"], pending);
+        assert!(!fixture.home().bot_memory.unreviewed.contains(&pending));
+    }
+
+    #[tokio::test]
+    async fn corrections_and_forgetting_rebuild_the_session_from_current_memory() {
+        for action in ["update", "resolve", "forget", "forget_matching"] {
+            let fixture = fixture();
+            fixture.script(json!({"calls": [remember("preference", "Quote in KRW")]}));
+            let first = fixture
+                .bot("memory-seed", "Remember: quote in KRW.", true)
+                .await;
+            assert!(
+                fixture.home().pi_session_cache.is_some(),
+                "remember alone keeps the cache"
+            );
+            let entry =
+                bot_memory::context(&fixture.home(), None).block["entries"][0]["id"].clone();
+            let change = match action {
+                "update" => json!({"action": "update", "id": entry, "text": "Quote in USD"}),
+                "forget_matching" => json!({"action": "forget", "match": "KRW"}),
+                _ => json!({"action": action, "id": entry}),
+            };
+            fixture.script(
+                json!({"calls": [{"method": "bot.memory", "params": {"changes": [change]}}]}),
+            );
+            let changed = fixture
+                .bot("memory-change", "Change that currency preference.", true)
+                .await;
+            assert_eq!(
+                first["session_id"], changed["session_id"],
+                "change starts in the warm session"
+            );
+            assert!(fixture.home().pi_session_cache.is_none(), "{action}");
+            fixture.script(json!({}));
+            let next = fixture
+                .bot("memory-next", "Continue with current preferences.", true)
+                .await;
+            assert_ne!(changed["session_id"], next["session_id"], "{action}");
+            let current = kept_texts(&envelope(next["prompt"].as_str().unwrap()));
+            assert_eq!(
+                current,
+                if action == "update" {
+                    vec!["Quote in USD"]
+                } else {
+                    vec![]
+                },
+                "{action}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unsettled_answer_never_commits_memory_if_pi_exits() {
+        let fixture = fixture();
+        fixture.script(json!({
+            "calls": [remember("preference", "Use diluted shares")],
+            "answer": "I'll use diluted shares.",
+            "exit_during_post_answer_compaction": true,
+        }));
+        fixture
+            .bot("compaction-crash", "Use diluted shares from now on.", true)
+            .await;
+        let home = fixture.home();
+        let answer = home.messages.last().unwrap();
+        // The extension defers this auxiliary phase in real Pi. A process
+        // violating that protocol still cannot bypass the settlement barrier.
+        assert_eq!(answer.status, ChatMessageStatus::Error);
+        assert!(fixture.kept().is_empty());
+        assert!(home.pi_session_cache.is_none());
+    }
+
+    #[tokio::test]
     async fn a_reply_that_fails_or_is_stopped_keeps_nothing_and_try_again_keeps_it_once() {
         let fixture = fixture();
         let short = remember("preference", "Short answers");

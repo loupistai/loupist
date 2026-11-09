@@ -132,6 +132,15 @@ pub(crate) struct StagedBotMemory {
     pub action: BotMemoryAction,
 }
 
+impl StagedBotMemory {
+    /// Old envelopes and rolling summaries may still carry the replaced text.
+    /// Rebuild from the canonical transcript after a committed correction,
+    /// resolution or forget; remembering a new item only needs a fresh envelope.
+    pub(crate) fn invalidates_session_context(&self) -> bool {
+        !matches!(self.action, BotMemoryAction::Remember(_))
+    }
+}
+
 /// What a Bot turn receives, and the review it was offered.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct BotMemoryContext {
@@ -653,7 +662,11 @@ fn review_batch(chat: &crate::domain::ChatSession) -> Vec<&ChatMessage> {
     match queued.first() {
         Some(oldest)
             if followed[oldest.id.as_str()] >= REVIEW_AFTER_BYTES
-                || queued.len() >= REVIEW_PRESSURE =>
+                || queued.len() >= REVIEW_PRESSURE
+                || chat
+                    .pi_session_cache
+                    .as_ref()
+                    .is_some_and(|cache| cache.context_envelope_stale) =>
         {
             queued.into_iter().take(REVIEW_BATCH).collect()
         }

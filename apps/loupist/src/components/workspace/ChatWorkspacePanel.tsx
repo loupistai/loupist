@@ -50,6 +50,7 @@ import { sourceIdentityLabel } from "../../chat/evidence";
 import { errorMessage } from "../../lib/errors";
 import { focusForKeyboard } from "../../lib/inputModality";
 import { ArtifactContent, ArtifactStatus, chatArtifactRef } from "../artifacts/ArtifactContent";
+import { WorkspaceFileProvider } from "./WorkspaceFileContext";
 import { BrowserWorkspaceView } from "./BrowserWorkspaceView";
 import { useNativeBrowserTabs } from "./useNativeBrowserTabs";
 import {
@@ -566,7 +567,7 @@ function ScopedChatWorkspacePanel({
             {shownRevision !== null ? <Button type="button" variant="ghost" size="sm" onClick={() => showRevision(null)}>{t("workVersions.backToCurrent")}</Button> : null}
           </div>
         ) : view ? (
-          <ArtifactContent view={view} theme={theme} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} onExport={(request) => bridge.exportSave(request)} />
+          <ArtifactContent view={view} theme={theme} workspacePath={workspacePath} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} onExport={(request) => bridge.exportSave(request)} />
         ) : null}
       </> : <WorkspaceWorkList bridge={bridge} loupistId={loupistId} refreshKey={workRefreshKey} building={buildingWork}
         onOpen={async (item) => {
@@ -604,7 +605,7 @@ function ScopedChatWorkspacePanel({
   ) : null);
 
   return (
-    <>
+    <WorkspaceFileProvider value={{ bridge, loupistId }}>
       {open && overlay && <button
         type="button"
         className="artifact-panel-backdrop"
@@ -683,7 +684,7 @@ function ScopedChatWorkspacePanel({
           : <div className="workspace-reading-column">{tabPanel}</div> : null}
         </div>
       </aside>
-    </>
+    </WorkspaceFileProvider>
   );
 }
 

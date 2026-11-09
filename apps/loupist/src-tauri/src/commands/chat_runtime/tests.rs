@@ -374,23 +374,34 @@ fn pi_progress_and_compaction_failure_follow_pi_event_fields() {
     assert!(!body(Err(RecvError::Closed)));
     assert!(!body(Ok(PiEvent::Exited)));
 
-    // Pi's `compaction_end` reports failure with a null result, not a success flag.
-    for (payload, failed) in [
+    // A cancelled summary differs from a completed summary or an actual error.
+    for (payload, outcome) in [
         (
             json!({"result": {"summary": "Kept"}, "aborted": false, "willRetry": true}),
-            false,
+            CompactionOutcome::Succeeded,
         ),
         (
             json!({"result": null, "aborted": false, "errorMessage": "quota exceeded"}),
-            true,
+            CompactionOutcome::Failed,
         ),
-        (json!({"result": null, "aborted": true}), true),
+        (
+            json!({"result": null, "aborted": true}),
+            CompactionOutcome::Cancelled,
+        ),
+        (
+            json!({"aborted": true, "errorMessage": "failed"}),
+            CompactionOutcome::Failed,
+        ),
+        (
+            json!({"aborted": true, "result": {}}),
+            CompactionOutcome::Failed,
+        ),
         (
             json!({"success": true, "result": null, "aborted": false}),
-            true,
+            CompactionOutcome::Failed,
         ),
     ] {
-        assert_eq!(compaction_end_failed(&payload), failed, "{payload}");
+        assert_eq!(compaction_outcome(&payload), outcome, "{payload}");
     }
 }
 

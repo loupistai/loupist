@@ -9,6 +9,10 @@ open policy either: `TurnProvider` wraps it, and a step's page, a source row or 
 citation opens through the one `ChatDestination` path
 ([opening from chat](evidence-browser.md#opening-from-chat)).
 
+System activity uses plain, localized status copy. Compaction appears as reviewing
+the earlier conversation, with distinct running, completed and incomplete labels;
+it does not expose summarization rules or session bookkeeping.
+
 Segments are prose and activity rows. A closed commentary item is narration (the
 answer's own metrics in the secondary color), keyed by its id. The commentary the host
 is writing now (`ChatMessage.draft`: the transport records it when the item is first

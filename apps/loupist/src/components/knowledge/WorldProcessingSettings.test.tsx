@@ -34,7 +34,7 @@ it("uses the shared model catalog and controls while leaving automatic processin
   await user.type(screen.getByLabelText("Time limit per request (seconds)"), "45");
   await user.click(screen.getByRole("button", { name: "Save processing settings" }));
   await waitFor(() => expect(save).toHaveBeenCalledExactlyOnceWith({ loupistId: props.loupistId, settings: { enrichmentEnabled: true, paused: false, helperModelProfileId: "model-test", thinkingLevel: "high", runOptions: { performance: "fast" }, maxLlmCalls: 6, timeoutMs: 45000, researchFocus: "", relationHints: [], anchors: [], fastModel: null } }));
-  expect(await screen.findByText("Ready to process")).toBeVisible();
+  expect(await screen.findByText("Ready to review sources")).toBeVisible();
   expect(screen.getByLabelText("World processing readiness")).toHaveTextContent("GPT-5.6 Luna");
 });
 
@@ -69,7 +69,7 @@ it("offers provider management when there are no connected models without enabli
 });
 
 it("shows host readiness for a disconnected provider", async () => {
-  const [status, label] = ["provider_disconnected", "Reconnect provider"] as const;
+  const [status, label] = ["provider_disconnected", "Reconnect your AI account"] as const;
   const props = setup();
   const view = await props.bridge.knowledgeGraphSettingsGet({ loupistId: props.loupistId });
   vi.spyOn(props.bridge, "knowledgeGraphSettingsGet").mockResolvedValue({ ...view, settings: { ...view.settings, enrichmentEnabled: true, helperModelProfileId: "removed-model" }, readiness: { status, note: "not_connected", modelName: "Saved model", providerName: "Saved provider", authKind: "oauth" } });

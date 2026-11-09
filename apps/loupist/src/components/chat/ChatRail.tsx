@@ -6,6 +6,7 @@ import { ArrowUpRightIcon, ChevronDownIcon, ChevronRightIcon, FileIcon, LayersIc
 import { humanizeToolName } from "../connections/custom/toolTitle";
 import type { LoupistBridge } from "../../types";
 import type { RailData, RailFile, RailMode, RailUsing } from "../../chat/chatRail";
+import { worldReadinessLabels } from "../../knowledge/worldReadiness";
 import { Spinner } from "../ui/spinner";
 import { useChatLightbox } from "./ChatLightbox";
 
@@ -150,9 +151,11 @@ export function ChatRailCards({ data, actions, compact = false }: { data: RailDa
     learned.methods ? t("chatRail.learned.methods", { count: learned.methods, formattedCount: formatNumber(learned.methods) }) : "",
   ].filter(Boolean).join(" · ") : "";
 
-  const learnedCard = learned || data.learningPending ? <Card key="learned" id="learned" title={t("chatRail.learned.title")} summary={data.learningPending
+  const learningUnfinished = data.learningPending || !!data.learningWaiting;
+  const waitingReason = data.learningWaiting === "unknown" ? t("chatRail.learned.statusUnavailable") : data.learningWaiting ? worldReadinessLabels()[data.learningWaiting] : "";
+  const learnedCard = learned || learningUnfinished ? <Card key="learned" id="learned" title={t("chatRail.learned.title")} summary={data.learningPending
       ? <span className="chat-rail-processing" role="status"><Spinner className="motion-reduce:animate-none" aria-hidden="true" />{t("chatRail.learned.processing")}</span>
-      : learnedSummary} collapsed={isCollapsed("learned")} onToggle={() => toggle("learned")}>
+      : data.learningWaiting ? <span role="status">{waitingReason}</span> : learnedSummary} collapsed={isCollapsed("learned")} onToggle={() => toggle("learned")}>
       {learned && <>
         {learned.chips.length ? <div className="chat-rail-chips">
           {learned.chips.map((chip) => <button type="button" key={chip.id} className="chat-rail-chip" title={chip.label} onClick={() => actions.onShowLearned(new Set([chip.id]))}>
@@ -176,7 +179,7 @@ export function ChatRailCards({ data, actions, compact = false }: { data: RailDa
 
   return <>
     {compact && needsCard}
-    {compact && data.learningPending && learnedCard}
+    {compact && learningUnfinished && learnedCard}
     {data.files.length ? <Card id="files" title={t("chatRail.files.title")} summary={[
       images.length ? t("chatRail.files.images", { count: images.length, formattedCount: formatNumber(images.length) }) : "",
       otherFiles.length ? t("chatRail.files.files", { count: otherFiles.length, formattedCount: formatNumber(otherFiles.length) }) : "",
@@ -216,7 +219,7 @@ export function ChatRailCards({ data, actions, compact = false }: { data: RailDa
       </ul>
       {!allUsing && data.using.length > MAX_ROWS ? <button type="button" className="chat-rail-more" onClick={() => setAllUsing(true)}>{t("chatRail.showAll")}</button> : null}
     </Card> : null}
-    {(!compact || !data.learningPending) && learnedCard}
+    {(!compact || !learningUnfinished) && learnedCard}
     {!compact && needsCard}
   </>;
 }

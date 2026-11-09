@@ -40,7 +40,7 @@ describe("Loupist · Chat streaming and concurrency", () => {
       observer({ type: "started", run_id: request.run_id });
       observer({ type: "progress", run_id: request.run_id, progress: { startedAtMs: 1, items: [
         { id: "commentary-1", kind: "commentary", text: "Tool preamble that must not become the final answer." },
-        { id: "system-2", kind: "system", category: "system", operation: "retry", action: "Retrying model request", status: "succeeded" },
+        { id: "system-2", kind: "system", category: "system", operation: "compact", action: "Summarized earlier messages", status: "succeeded" },
       ] } });
       await gate;
       observer({ type: "completed", run_id: request.run_id, message_id: "message-final", final_text: "Authoritative final answer.", ...terminal });
@@ -51,14 +51,15 @@ describe("Loupist · Chat streaming and concurrency", () => {
     expect(await screen.findByText("Tool preamble that must not become the final answer.")).toBeVisible();
     // The steps stay inside the row, before and after the answer; the row keeps its height.
     expect(within(progress).getByRole("button")).toHaveAttribute("aria-expanded", "false");
-    expect(progress).not.toHaveTextContent("Retrying model request");
+    expect(progress).not.toHaveTextContent("Reviewed earlier conversation");
     expect(screen.queryByText("Authoritative final answer.")).not.toBeInTheDocument();
     finishRun();
     const answer = await screen.findByText("Authoritative final answer.");
     const message = answer.closest("article")!;
     await waitFor(() => expect(within(progress).getByRole("button")).toHaveAttribute("aria-expanded", "false"));
     await user.click(within(progress).getByRole("button"));
-    expect(within(progress).getByText("Retrying model request")).toBeVisible();
+    expect(within(progress).getByText("Reviewed earlier conversation")).toBeVisible();
+    expect(progress).not.toHaveTextContent("Summarized earlier messages");
     expect(within(message).getByText("Tool preamble that must not become the final answer.")).toBeVisible();
   });
 

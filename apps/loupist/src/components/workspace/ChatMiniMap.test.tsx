@@ -141,3 +141,29 @@ it('shows the Map tab itself when the panel accepts the first names', async () =
  expect(await screen.findByRole('img')).toBeInTheDocument();
  expect(props.onOpen).not.toHaveBeenCalled();
 });
+
+it('shows a queued source as waiting until its provider is ready, then clears on completion and chat switch', async () => {
+ vi.useFakeTimers({ shouldAdvanceTime: true });
+ try {
+  const bridge = setup([]);
+  const jobs = vi.spyOn(bridge, 'knowledgeGraphJob').mockResolvedValue({ jobId: 'job', status: 'queued' } as Awaited<ReturnType<typeof bridge.knowledgeGraphJob>>);
+  const settings = vi.spyOn(bridge, 'knowledgeGraphSettingsGet').mockResolvedValue({ readiness: { status: 'provider_disconnected' } } as Awaited<ReturnType<typeof bridge.knowledgeGraphSettingsGet>>);
+  const saved: ChatMessage = { ...answer, memory_update: { status: 'applied', commitId: 'commit', changes: [{ kind: 'Source', title: 'Filing', recordId: 'source-1', operation: 'create', worldJobId: 'job', worldStatus: 'queued' }] } as ChatMessage['memory_update'] };
+  function Status() { const state = useChatMap(); return <p role="status">{state?.learningWaiting ?? (state?.learningPending ? 'processing' : 'idle')}</p>; }
+  const props = { bridge, loupistId: 'loupist', chatId: 'chat', messages: [saved], onOpen: vi.fn() };
+  const view = render(<ChatMapProvider {...props}><Status /></ChatMapProvider>);
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('provider_disconnected'));
+  settings.mockResolvedValue({ readiness: { status: 'ready' } } as Awaited<ReturnType<typeof bridge.knowledgeGraphSettingsGet>>);
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+  expect(screen.getByRole('status')).toHaveTextContent('processing');
+  settings.mockRejectedValueOnce(new Error('offline'));
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+  expect(screen.getByRole('status')).toHaveTextContent('unknown');
+  jobs.mockResolvedValue({ jobId: 'job', status: 'completed' } as Awaited<ReturnType<typeof bridge.knowledgeGraphJob>>);
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+  expect(screen.getByRole('status')).toHaveTextContent('idle');
+  expect(bridge.knowledgeMap).toHaveBeenCalledTimes(2);
+  view.rerender(<ChatMapProvider {...props} chatId="other" messages={[]}><Status /></ChatMapProvider>);
+  expect(screen.getByRole('status')).toHaveTextContent('idle');
+ } finally { vi.useRealTimers(); }
+});

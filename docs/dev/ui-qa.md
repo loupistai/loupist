@@ -14,7 +14,7 @@ and dark themes, for implemented locales, and at the minimum (700×560) and larg
 
 | Area | Pass when |
 | --- | --- |
-| Clarity | One obvious primary action per view. Plain words; no internal terms (revision, digest, receipt, worker, envelope, byte offset). |
+| Clarity | One obvious primary action per view. Describe the result, useful status or next action in plain words. Keep runtime rules and bookkeeping out of UI copy and ordinary assistant answers; no internal terms (revision, digest, receipt, worker, envelope, byte offset). |
 | Hierarchy | The type, spacing, and radius come from tokens. Alignment is consistent. Density fits the task. |
 | States | Empty, loading, partial, error with a recovery action, offline or disconnected, disabled, long text, many items, and first run are all designed. None of them shows raw errors or a blank region. |
 | Feedback | Every action responds within 100 ms. Long work shows progress. Motion is purposeful and respects reduced motion. |

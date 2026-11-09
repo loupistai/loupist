@@ -111,6 +111,12 @@ inside another version included), and past 2,018 drops the oldest so a reply can
 always commit. A new edit before a change replaced long ago can leave out an entry
 whose older changes were already dropped. An entry keeps the date it was first kept.
 
+A committed correction, resolution or forget also invalidates the warm Pi session
+cache. The next reply starts from the current host memory and bounded transcript
+instead of reusing a summary containing the previous entry. Remembering a new
+entry alone preserves the session and refreshes its envelope. Forget removes Bot
+memory copies; it does not delete the user's original conversation messages.
+
 **When it changes.** Only through `bot_memory`, a Bot-only tool that needs Memory
 saving on. A call is checked and reserved under one lock, so parallel calls in a reply
 share the 30-entry and 30-change budgets and an undelivered call frees its share.
@@ -130,7 +136,8 @@ files or tools; a research finding goes to `lens_file` and an investment rule to
 
 **Review before the cut.** Each remembered Bot message (Memory saving on, reply
 committed) joins a review queue of at most 48. When the oldest has 128 KiB of later
-conversation after it (half of what a fresh start reads), or 24 messages wait, the
+conversation after it (half of what a fresh start reads), 24 messages wait, or Pi
+reports compaction pressure (including a deferred post-answer attempt), the
 next Bot reply is offered up to eight of them, oldest first, as 600-character excerpts, and can keep
 what still matters. The batch leaves the queue when that reply commits without
 third-party text; otherwise the next reply sees it again. There is no extra model

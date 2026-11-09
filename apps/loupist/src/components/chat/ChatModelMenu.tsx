@@ -31,13 +31,15 @@ export const ChatModelMenu = memo(function ChatModelMenu({ auto, onResetToAuto, 
     </PromptInputButton>;
   }
   const selected = props.models.find((model) => model.id === props.selection.model_profile_id);
-  // The billing line follows the account that answers: the chosen model's provider, or Auto's.
-  const billing = props.providers.find((provider) => provider.id === (selected ?? props.models[0])?.provider);
+  // Auto is chosen by Rust at admission. The last-used model is not a forecast
+  // of that choice; show a plan only when its account is unambiguous.
+  const connectedProviders = new Set(props.models.filter((model) => model.credential_source !== "missing").map((model) => model.provider));
+  const billingProvider = auto ? connectedProviders.size === 1 ? [...connectedProviders][0] : undefined : selected?.provider;
+  const billing = props.providers.find((provider) => provider.id === billingProvider);
   const planLine = onOpenUsage && planLineKind(billing) ? <ProviderPlanLine provider={billing} onOpenUsage={onOpenUsage} /> : undefined;
   return <ModelSelectionMenu contextLabel={t("chatModelMenu.modelForThisMessage")} {...props} planLine={planLine} auto={{ active: auto, onSelect: onResetToAuto }} renderTrigger={(label) => (
-    // The model behind "Auto" is one hover away for people who want it, never on the screen by default.
-    <PromptInputButton size="sm" className="composer-model-menu" aria-label={`${auto || !selected ? t("chatModelMenu.auto") : selected.name} · ${t("chatModelMenu.modelSettingsForThisMessage")}`} aria-description={label}
-      disabled={props.disabled || (!props.models.length && !props.onManageModels)} tooltip={label}>
+    <PromptInputButton size="sm" className="composer-model-menu" aria-label={`${auto || !selected ? t("chatModelMenu.auto") : selected.name} · ${t("chatModelMenu.modelSettingsForThisMessage")}`} aria-description={auto ? t("chatModelMenu.autoDescription") : label}
+      disabled={props.disabled || (!props.models.length && !props.onManageModels)} tooltip={auto ? t("chatModelMenu.autoDescription") : label}>
       {auto || !selected ? <span>{t("chatModelMenu.auto")}</span> : <span className="composer-model-chip">{selected.name}</span>}
       <ChevronDownIcon aria-hidden="true" />
     </PromptInputButton>

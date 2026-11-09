@@ -240,6 +240,7 @@
     "modelForThisMessage": "이 메시지의 모델",
     "advanced": "고급 설정",
     "auto": "자동",
+    "autoDescription": "기본 모델 설정을 따라요.",
     "autoRecommended": "자동 (권장)",
     "resetToAuto": "자동으로 되돌리기",
     "connectAccount": "AI 계정 연결"
@@ -1417,7 +1418,8 @@
       "processing": "자료 정리 중…",
       "names_other": "지도에 +{{formattedCount}}",
       "relationships_other": "관계 {{formattedCount}}개",
-      "methods_other": "분석 방법 {{formattedCount}}개"
+      "methods_other": "분석 방법 {{formattedCount}}개",
+      "statusUnavailable": "자료 정리 대기 중"
     },
     "needsYou": {
       "title": "승인이 필요해요",
@@ -1795,5 +1797,10 @@
   },
   "navigation": {
     "openedInPanel": "{{title}}을(를) 패널에서 열었어요"
+  },
+  "conversationReview": {
+    "running": "이전 대화 확인 중…",
+    "done": "이전 대화 확인함",
+    "incomplete": "이전 대화를 끝까지 확인하지 못했어요"
   }
 }

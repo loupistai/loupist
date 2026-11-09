@@ -48,6 +48,8 @@ import type { ComposerOption } from "./chat/ComposerAssist";
 import { ChatConversation } from "./chat/ChatConversation";
 import { ChatSetAsideProvider, declinedSensitiveMemory } from "../chat/chatSetAside";
 import { ChatExecutionProvider } from "./chat/ChatExecutionContext";
+import { WorkspaceFileProvider } from "./workspace/WorkspaceFileContext";
+import { ArtifactReadLinksProvider } from "./chat/ArtifactReadLinks";
 import { ChatWorkingContext } from "./chat/ChatWorkingContext";
 import { ChatRail, type ChatRailActions } from "./chat/ChatRail";
 import { railData, railMode, type RailUsing } from "../chat/chatRail";
@@ -321,8 +323,8 @@ export function ChatView({
   const railMap = chatMap?.loupistId === loupist.id && chatMap.chatId === railChatId ? chatMap : undefined;
   const rail = useMemo(() => railData({
     messages, pins: draft?.pins ?? [], chatId: railChatId, language: i18n.language, workspacePath: loupist.workspace_path,
-    map: railMap?.map, events: railMap?.events, learningPending: railMap?.learningPending,
-  }), [messages, draft?.pins, railChatId, loupist.workspace_path, railMap?.map, railMap?.events, railMap?.learningPending, i18n.language]);
+    map: railMap?.map, events: railMap?.events, learningPending: railMap?.learningPending, learningWaiting: railMap?.learningWaiting,
+  }), [messages, draft?.pins, railChatId, loupist.workspace_path, railMap?.map, railMap?.events, railMap?.learningPending, railMap?.learningWaiting, i18n.language]);
   const chatRailMode = !railChatId || isEmptyChatThreadId(railChatId) ? "none" : railMode(chatWidth, rail.hasCards);
   // Read through a ref so the opener stays stable while answers stream (earlier answers do not rerender).
   const linkMessages = useRef(activeThread?.messages ?? []);
@@ -819,7 +821,7 @@ export function ChatView({
       setThreads(current => current.map(thread => thread.id === updated.id ? { ...thread, set_aside_memory: updated.set_aside_memory ?? [] } : thread));
     },
   }), [setAsideIds, firstDeclinedMessageId, saveOff, activeThread?.id, bridge, loupist.id, setThreads]);
-  const conversation = <ChatExecutionProvider key={`${loupist.id}:${activeThread?.id ?? "draft"}`} value={executionScope}><ChatSetAsideProvider value={setAside}><ChatConversation
+  const conversation = <ChatExecutionProvider key={`${loupist.id}:${activeThread?.id ?? "draft"}`} value={executionScope}><WorkspaceFileProvider value={executionScope}><ArtifactReadLinksProvider messages={visibleConversation.messages}><ChatSetAsideProvider value={setAside}><ChatConversation
     active={active}
     messages={visibleConversation.messages}
     messageKeys={visibleConversation.messageKeys}
@@ -868,7 +870,7 @@ export function ChatView({
     retryAttempt={retryAttempt}
     onProviderAction={providerAction}
     onRetry={() => retryFailed()}
-  /></ChatSetAsideProvider></ChatExecutionProvider>;
+  /></ChatSetAsideProvider></ArtifactReadLinksProvider></WorkspaceFileProvider></ChatExecutionProvider>;
 
   return (
     <OpenProvider open={open}>

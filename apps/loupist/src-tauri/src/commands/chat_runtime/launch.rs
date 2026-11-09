@@ -272,7 +272,15 @@ pub(super) async fn launch_chat_turn(
     let pi_config = match pi_config
         .with_skills(skill_files)
         .and_then(|config| config.with_host_context(host_context))
-    {
+        .and_then(|config| {
+            let continuation = pi_chat_turn_prompt(
+                &current_prompt,
+                &agent_harness::render_turn_context(&turn_envelope),
+                None,
+            )
+            .map_err(|_| crate::pi::PiError::InvalidLaunchValue)?;
+            config.with_continuation_prompt(continuation)
+        }) {
         Ok(config) => config,
         Err(error) => {
             on_event.set_failure_kind(classify_turn_failure(

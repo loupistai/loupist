@@ -3,6 +3,7 @@ import type { ChatArtifactRef, ChatEvidenceRef, KnowledgeLocation, MemoryRef } f
 import { parseCredentialFreeHttpUrl } from "../lib/credentialFreeUrl";
 import { knowledgeLocationFromMemoryRef } from "../knowledge/location";
 import { citationPageUrl } from "./evidence";
+import { artifactReadTarget } from "./artifactReadTarget";
 import { isInlineWorkEvidence, memoryReadForEvidence } from "./memoryActivity";
 import type { EvidenceCell } from "./numberChecks";
 import { quoteEvidence } from "./quoteEvidence";
@@ -26,6 +27,8 @@ export type ChatDestination =
   | { kind: "lens"; recordId: string }
   | { kind: "page"; location: KnowledgeLocation }
   | { kind: "artifact"; artifact: ChatArtifactRef; threadId?: string }
+  /** Resolve a retained read receipt to the latest saved work through the host. */
+  | { kind: "artifact-link"; artifactId: string }
   /** A workspace file by its path, or the Files tab at the workspace root without one. */
   | { kind: "file"; path?: string }
   | { kind: "asset"; target: AssetPageTarget }
@@ -41,6 +44,7 @@ export type Open = (to: ChatDestination, how?: OpenHow) => Promise<void>;
 
 /** Where a citation goes. Every evidence ref has one, so a numbered citation is never a no-op. */
 export type EvidenceTarget =
+  | { kind: "artifact"; artifactId: string }
   | { kind: "memory"; location: KnowledgeLocation; title: string }
   | { kind: "asset"; target: AssetPageTarget }
   | { kind: "step" }
@@ -67,6 +71,8 @@ function assetReadTarget(evidence: ChatEvidenceRef, loupistId: string): AssetPag
 }
 
 export function evidenceTarget(evidence: ChatEvidenceRef, memoryRefs: readonly MemoryRef[] | undefined, loupistId: string): EvidenceTarget {
+  const artifactId = artifactReadTarget(evidence);
+  if (artifactId) return { kind: "artifact", artifactId };
   const read = memoryReadForEvidence(evidence, memoryRefs);
   const location = read ? knowledgeLocationFromMemoryRef(loupistId, read) : null;
   if (read && location) return { kind: "memory", location, title: read.title };
@@ -105,12 +111,13 @@ export function destinationIcon(to: ChatDestination, how: OpenHow = {}): "panel"
     case "memory":
     case "lens":
     case "artifact":
+    case "artifact-link":
     case "file":
       return "panel";
     case "evidence": {
       // Without the answer's Memory reads a citation is never a Memory target here.
       const target = evidenceTarget(to.evidence, undefined, "").kind;
-      return target === "browser" || target === "reader" ? "panel" : null;
+      return target === "browser" || target === "reader" || target === "artifact" ? "panel" : null;
     }
     default:
       return null;

@@ -77,3 +77,20 @@
 @keyframes reader-spin { to { transform: rotate(360deg); } }
 .reader-refreshing { animation: reader-spin calc(var(--gg-motion-slow) * 4.286) linear infinite; }
 @media (prefers-reduced-motion: reduce) { .reader-refreshing { animation: none; } }
+
+/* Inline workspace images open the same bounded preview as Files. */
+.workspace-inline-image {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.workspace-inline-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 480px;
+  object-fit: contain;
+}

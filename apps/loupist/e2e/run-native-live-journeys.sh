@@ -127,7 +127,7 @@ RUN_LOG=$(mktemp "${TMPDIR:-/tmp}/loupist-live-journeys-log.XXXXXX")
 
 # Journey 7 connects a custom provider from onboarding. It runs on an empty Pi
 # directory inside the state root, so the real account directory is never written.
-if [ "${LOUPIST_E2E_JOURNEYS:-}" = "7" ]; then
+if [ "${LOUPIST_E2E_JOURNEYS:-}" = "7" ] || [ "${LOUPIST_E2E_JOURNEYS:-}" = "compaction" ]; then
     mkdir -m 700 "$STATE_ROOT/pi"
     LOUPIST_LIVE_PI_AGENT_DATA_DIR="$STATE_ROOT/pi"
 fi

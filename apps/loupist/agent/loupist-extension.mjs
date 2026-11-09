@@ -14,8 +14,11 @@ import { registerWorkspaceTools } from "./workspace-tools.mjs";
 import { applyWorkspacePrompt, loadWorkspaceResources, registerWorkspaceResources, validExplicitSkillNames } from "./workspace-resources.mjs";
 import { registerPiSettingsControl } from "./pi-settings.mjs";
 import { applyRunOptions } from "./model-run-controls.mjs";
+import { registerSessionContinuity } from "./session-continuity.mjs";
 
 const MAX_HOST_CONTEXT_BYTES = 64 * 1024;
+const MAX_CONTINUATION_PROMPT_BYTES = 512 * 1024;
+const MAX_HOST_BOOTSTRAP_BYTES = 1024 * 1024;
 const MAX_RUN_OPTIONS_BYTES = 4 * 1024;
 const MAX_MCP_TOOLS = 512;
 const MAX_MCP_SCHEMA_BYTES = 64 * 1024;
@@ -127,7 +130,7 @@ function loadHostContext() {
   try {
     descriptor = openSync(path, constants.O_RDONLY | HOST_CONTEXT_OPEN_NOFOLLOW);
     const metadata = fstatSync(descriptor);
-    if (!metadata.isFile() || metadata.size <= 0 || metadata.size > MAX_HOST_CONTEXT_BYTES) {
+    if (!metadata.isFile() || metadata.size <= 0 || metadata.size > MAX_HOST_BOOTSTRAP_BYTES) {
       throw new Error("Loupist host context is invalid");
     }
     const context = readFileSync(descriptor, "utf8");
@@ -142,6 +145,13 @@ function loadHostContext() {
       typeof parsed.agent_runtime !== "object"
     ) {
       throw new Error("Loupist host context is invalid");
+    }
+    const { continuation_prompt: continuationPrompt, ...runtimeContext } = parsed;
+    if (Buffer.byteLength(JSON.stringify(runtimeContext), "utf8") > MAX_HOST_CONTEXT_BYTES ||
+        (continuationPrompt !== undefined && (typeof continuationPrompt !== "string" ||
+          !continuationPrompt.trim() || continuationPrompt.includes("\0") ||
+          Buffer.byteLength(continuationPrompt, "utf8") > MAX_CONTINUATION_PROMPT_BYTES))) {
+      throw new Error("Loupist continuation context is invalid");
     }
     const runtime = parsed.agent_runtime;
     if (
@@ -211,6 +221,7 @@ function loadHostContext() {
       preloadComponentIds,
       explicitSkillNames,
       workspace: parsed.workspace,
+      continuationPrompt,
     };
   } finally {
     if (descriptor !== undefined) closeSync(descriptor);
@@ -657,6 +668,7 @@ function registerLoupistExtension(originalPi) {
     };
   }
 
+  registerSessionContinuity(originalPi, hostContext.continuationPrompt);
   originalPi.on("session_start", async (_event, ctx) => {
     await restoreStickyComponents(ctx);
     publishActiveTools();

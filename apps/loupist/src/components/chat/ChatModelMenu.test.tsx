@@ -88,3 +88,16 @@ it("names the plan behind the answer under the model list and turns it to a warn
   await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
   expect(screen.queryByText("Using your ChatGPT plan")).not.toBeInTheDocument();
 });
+
+it("does not describe the last used model as Auto's next execution after a remount", () => {
+  const terra = { id: "openai/gpt-6.1-terra", name: "GPT-6.1 Terra", provider: "openai", model: "gpt-6.1-terra", input: ["text" as const], reasoning: true,
+    context_window: 272_000, max_tokens: 128_000, thinking_levels: ["medium"], thinking_level_map: {}, run_controls: [], credential_source: "saved" as const };
+  const props = { models: [terra], providers: [chatgpt()], selection: { model_profile_id: terra.id, thinking_level: "medium", run_options: {} }, onSelectionChange: vi.fn(), onResetToAuto: vi.fn() };
+  const first = render(<TooltipProvider><ChatModelMenu {...props} auto={false} /></TooltipProvider>);
+  expect(screen.getByRole("button", { name: /Model settings for this message/ })).toHaveAttribute("aria-description", "GPT-6.1 Terra · Medium");
+  first.unmount();
+  render(<TooltipProvider><ChatModelMenu {...props} auto /></TooltipProvider>);
+  const trigger = screen.getByRole("button", { name: "Auto · Model settings for this message" });
+  expect(trigger).toHaveAttribute("aria-description", "Uses your default model settings.");
+  expect(trigger).not.toHaveAccessibleDescription(/Terra/);
+});

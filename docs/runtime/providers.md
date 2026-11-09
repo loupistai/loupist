@@ -56,6 +56,8 @@ credit, one background attempt per 30-minute window
 (`PROBE_WINDOW_MS`, claimed once in `provider_probe`) lets an account that
 recovered on its own clear; a reconnect or an ineligible plan waits for the user.
 
+The composer’s Auto tooltip describes admission-time resolution rather than displaying the last answer’s model. Its explicit per-Loupist message override is session state; a saved Chat default remains host state.
+
 Auto is resolved in Rust (`providers/auto.rs`) at each Chat or scheduled
 admission: an explicit model that is still offered runs; an empty choice, or one
 that left the catalog, uses Auto. Connected providers rank by connection date,

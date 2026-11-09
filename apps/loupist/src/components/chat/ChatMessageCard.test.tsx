@@ -486,3 +486,12 @@ it("keeps inline references in the question and shows saved tool and date select
   expect(body.nextElementSibling).toHaveTextContent("Lens");
   expect(body.nextElementSibling?.querySelector('[data-kind="request"]')).toBeTruthy();
 });
+
+it("opens a cited document read as saved work instead of expanding the old JSON receipt", async () => {
+  const artifactId = `artifact-${"a".repeat(32)}`;
+  const receipt = evidenceFixture({ id: "ev_document", kind: "derived", tool_name: "artifact_read", url: undefined, excerpt: JSON.stringify({ artifact: { id: artifactId, kind: "markdown", current_revision: 1, title: "Analysis" }, revision: { payload: "old body" } }) });
+  const { open } = renderAnswer(answer({ content: "[Final analysis](#evidence-ev_document)", evidence_refs: [receipt] }));
+  await user().click(screen.getByRole("button", { name: /Final analysis/ }));
+  expect(opened(open, "artifact-link")).toEqual([{ kind: "artifact-link", artifactId }]);
+  expect(screen.queryByText("old body")).toBeNull();
+});
