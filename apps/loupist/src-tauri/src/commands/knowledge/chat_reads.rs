@@ -999,26 +999,31 @@ pub(in crate::commands) fn host_search_with_options(
             .join(format!("{cache_key}.sqlite3"));
         let mut ranked = prepared.rank(Some(&cache_path));
         admit(state, loupist_id)?;
-        let (current, world_payloads) = with_loupist_knowledge(state, loupist_id, |tx, blobs| {
-            let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
-            let current = write.visible_search_revisions(loupist_id)?;
-            ranked.retain_current(&current);
-            let mut world_payloads = std::collections::BTreeMap::<String, String>::new();
-            for document in ranked
-                .documents
-                .iter()
-                .filter(|document| document.kind == "world")
-            {
-                if !world_payloads.contains_key(&document.revision_id) {
-                    let payload = tx.query_row(
+        let (current, world_payloads, awaiting_world) = with_loupist_knowledge(
+            state,
+            loupist_id,
+            |tx, blobs| {
+                let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
+                let current = write.visible_search_revisions(loupist_id)?;
+                let awaiting_world = write.sources_awaiting_world(loupist_id)?;
+                ranked.retain_current(&current);
+                let mut world_payloads = std::collections::BTreeMap::<String, String>::new();
+                for document in ranked
+                    .documents
+                    .iter()
+                    .filter(|document| document.kind == "world")
+                {
+                    if !world_payloads.contains_key(&document.revision_id) {
+                        let payload = tx.query_row(
                         "SELECT payload_json FROM knowledge_record_revisions WHERE revision_id = ?1",
                         [&document.revision_id], |row| row.get(0),
                     )?;
-                    world_payloads.insert(document.revision_id.clone(), payload);
+                        world_payloads.insert(document.revision_id.clone(), payload);
+                    }
                 }
-            }
-            Ok((current, world_payloads))
-        })?;
+                Ok((current, world_payloads, awaiting_world))
+            },
+        )?;
         ranked.prune_cache(&current);
         let mut world_claims = std::collections::BTreeMap::new();
         for (revision_id, payload) in world_payloads {
@@ -1046,6 +1051,11 @@ pub(in crate::commands) fn host_search_with_options(
                 "matched_terms": document.matched_terms,
                 "retrieval": document.retrieval,
             });
+            // A Source still in the World queue: its relationships are not on
+            // the Map yet, so an empty World result says nothing about them.
+            if document.kind == "source" && awaiting_world.contains(&document.record_id) {
+                hit["mapPending"] = serde_json::json!(true);
+            }
             // Claim identifiers are open tokens, not a reliable type prefix.
             // Bind the discovered object to this exact canonical revision so
             // following its read hint cannot land on an unrelated browse page.

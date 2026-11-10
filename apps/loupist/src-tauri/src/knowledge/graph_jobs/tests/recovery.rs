@@ -104,8 +104,14 @@ fn startup_recovers_future_leases_and_persists_each_loupists_pause_and_quarantin
         document.lease_expires_at_ms = Some(9_000_000_000_000);
         document.inference_attempted = uncertain;
         document.usage_uncertain = uncertain;
-        // Its one retry is already spent, so the uncertain call quarantines.
+        // Its host allowance and one retry are already spent, so the
+        // uncertain call quarantines.
         document.interrupted_attempts = u8::from(uncertain);
+        document.host_interruptions = if uncertain {
+            HOST_INTERRUPTION_RETRIES
+        } else {
+            0
+        };
         let settings = GraphProcessingSettings {
             paused,
             ..enabled()
@@ -153,7 +159,9 @@ fn startup_recovers_future_leases_and_persists_each_loupists_pause_and_quarantin
             uncertain
         );
     }
-    let candidates = store.read(|write| queued_loupist_heads(write.tx)).unwrap();
+    let candidates = store
+        .read(|write| queued_loupist_heads(write.tx, &[]))
+        .unwrap();
     assert!(!candidates
         .iter()
         .any(|job| job.loupist_id == "loupist-uncertain"));
@@ -348,16 +356,34 @@ fn an_interrupted_paid_attempt_runs_once_more_and_a_second_quarantines() {
         .contains(&first.document.generation_id));
 }
 
+/// Quitting, a crash or lost power cut the attempt: it runs again within the
+/// host allowance, then once more on the one retry, then quarantines.
 #[test]
-fn startup_runs_an_interrupted_paid_attempt_once_more() {
+fn startup_reruns_a_cut_paid_attempt_within_its_host_allowance_then_retries_once() {
     let (_dir, store) = open();
-    for (loupist, earlier, expected) in [
-        ("loupist-first-cut", 0, JOB_QUEUED),
-        ("loupist-second-cut", 1, JOB_RECONCILE),
+    for (loupist, host, earlier, expected, host_after, retries_after) in [
+        ("loupist-first-cut", 0, 0, JOB_QUEUED, 1, 0),
+        (
+            "loupist-host-spent",
+            HOST_INTERRUPTION_RETRIES,
+            0,
+            JOB_QUEUED,
+            HOST_INTERRUPTION_RETRIES,
+            1,
+        ),
+        (
+            "loupist-all-spent",
+            HOST_INTERRUPTION_RETRIES,
+            1,
+            JOB_RECONCILE,
+            HOST_INTERRUPTION_RETRIES,
+            1,
+        ),
     ] {
         let (job, _) = queued_pair(&store, loupist);
         let mut document = claim(&store, &enabled(), &job.job_id, AT).document;
         document.inference_attempted = true;
+        document.host_interruptions = host;
         document.interrupted_attempts = earlier;
         store
             .transact(|write| {
@@ -376,6 +402,17 @@ fn startup_runs_an_interrupted_paid_attempt_once_more() {
             .unwrap();
         let recovered = store.graph_job(loupist, &job.job_id).unwrap();
         assert_eq!(recovered.status, expected, "{loupist}");
+        assert_eq!(
+            recovered.document.host_interruptions, host_after,
+            "{loupist}"
+        );
+        assert_eq!(
+            recovered.document.interrupted_attempts, retries_after,
+            "{loupist}"
+        );
+        if expected == JOB_QUEUED {
+            assert!(!recovered.document.inference_attempted, "{loupist}");
+        }
         assert_eq!(
             settings_of(&store, loupist)
                 .quarantined_generations

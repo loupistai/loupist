@@ -24,6 +24,8 @@ export type MockBridgeState = {
   >;
   run_activities: Map<string, RunActivity>;
   knowledgeStores: Record<string, unknown>;
+  /** Application-wide keep-awake while the World is processing. */
+  keepAwake?: boolean;
 };
 
 export const clone = <T>(value: T): T => structuredClone(value);

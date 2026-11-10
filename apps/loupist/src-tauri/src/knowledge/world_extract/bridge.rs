@@ -111,8 +111,30 @@ pub(crate) struct StageRecord {
     pub texts: usize,
 }
 
+/// The host's inference callback: one request at a time, or several sent
+/// together and answered in request order.
+enum Infer<'a> {
+    #[cfg_attr(not(test), allow(dead_code))]
+    One(&'a mut dyn FnMut(Value) -> InferenceReply),
+    Many(&'a mut dyn FnMut(Vec<Value>) -> Vec<InferenceReply>),
+}
+
+impl Infer<'_> {
+    fn one(&mut self, request: Value) -> InferenceReply {
+        match self {
+            Self::One(infer) => infer(request),
+            Self::Many(infer) => infer(vec![request])
+                .pop()
+                .unwrap_or_else(|| InferenceReply {
+                    disposition: InferenceDisposition::NotSent,
+                    body: json!({"status": "not_sent"}),
+                }),
+        }
+    }
+}
+
 pub(crate) struct Bridge<'a> {
-    infer: &'a mut dyn FnMut(Value) -> InferenceReply,
+    infer: Infer<'a>,
     scope: Value,
     operation_id: String,
     profile: String,
@@ -140,10 +162,25 @@ pub(crate) struct BridgeConfig {
 }
 
 impl<'a> Bridge<'a> {
+    /// Calls go out one at a time; [`Bridge::llm_many`] sends its calls in order
+    /// and stops at the first that fails, as separate calls would.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn new(
         config: BridgeConfig,
         infer: &'a mut dyn FnMut(Value) -> InferenceReply,
     ) -> Self {
+        Self::with_infer(config, Infer::One(infer))
+    }
+
+    /// Independent calls of one [`Bridge::llm_many`] go out together.
+    pub(crate) fn concurrent(
+        config: BridgeConfig,
+        infer: &'a mut dyn FnMut(Vec<Value>) -> Vec<InferenceReply>,
+    ) -> Self {
+        Self::with_infer(config, Infer::Many(infer))
+    }
+
+    fn with_infer(config: BridgeConfig, infer: Infer<'a>) -> Self {
         Self {
             infer,
             scope: config.scope,
@@ -188,16 +225,20 @@ impl<'a> Bridge<'a> {
         } else if self.embedding_calls >= self.max_embedding_calls {
             return Err(Stop::BudgetExceeded("embedding call budget is exhausted"));
         }
-        let reply = (self.infer)(request);
+        let reply = self.infer.one(request);
+        self.settle(&kind, reply)
+    }
+
+    fn settle(&mut self, kind: &str, reply: InferenceReply) -> StopResult<Value> {
         match reply.disposition {
             InferenceDisposition::NotSent => Err(Stop::NotSent),
             InferenceDisposition::Uncertain => {
-                self.attempted(&kind);
+                self.attempted(kind);
                 self.uncertain = true;
                 Err(Stop::Uncertain)
             }
             InferenceDisposition::Completed => {
-                self.attempted(&kind);
+                self.attempted(kind);
                 if reply
                     .body
                     .get("json_object")
@@ -228,6 +269,70 @@ impl<'a> Bridge<'a> {
 
     /// One model call; returns the JSON object the model produced.
     pub(crate) fn llm(&mut self, call: LlmCall<'_>) -> StopResult<Value> {
+        self.llm_many(vec![call])
+            .pop()
+            .unwrap_or(Err(Stop::NotSent))
+    }
+
+    /// Model calls whose inputs do not depend on each other, answered in call
+    /// order. The call budget is taken in that order, so a call past it is not
+    /// sent, exactly as when each call follows the one before. A caller reads
+    /// the results in order and stops at the first error.
+    pub(crate) fn llm_many(&mut self, calls: Vec<LlmCall<'_>>) -> Vec<StopResult<Value>> {
+        let mut results: Vec<Option<StopResult<Value>>> = (0..calls.len()).map(|_| None).collect();
+        let mut pending: Vec<(usize, &'static str, Value)> = Vec::new();
+        let mut budget = self.max_llm_calls.saturating_sub(self.llm_calls);
+        for (index, call) in calls.into_iter().enumerate() {
+            if budget == 0 {
+                results[index] = Some(Err(Stop::BudgetExceeded("llm call budget is exhausted")));
+                continue;
+            }
+            budget -= 1;
+            let stage = call.stage;
+            pending.push((index, stage, self.llm_request(call)));
+        }
+        if matches!(self.infer, Infer::Many(_)) && pending.len() > 1 {
+            let started = Instant::now();
+            let requests = pending
+                .iter()
+                .map(|(_, _, request)| request.clone())
+                .collect();
+            let Infer::Many(infer) = &mut self.infer else {
+                unreachable!("checked above")
+            };
+            let mut replies = infer(requests).into_iter();
+            for (index, stage, _) in pending {
+                let reply = replies.next().unwrap_or_else(|| InferenceReply {
+                    disposition: InferenceDisposition::NotSent,
+                    body: json!({"status": "not_sent"}),
+                });
+                let settled = self.settle("llm", reply);
+                results[index] = Some(self.llm_result(stage, started, settled));
+            }
+        } else {
+            for (index, stage, request) in pending {
+                let started = Instant::now();
+                let settled = self.infer_one_llm(request);
+                let result = self.llm_result(stage, started, settled);
+                let failed = result.is_err();
+                results[index] = Some(result);
+                if failed {
+                    break;
+                }
+            }
+        }
+        results
+            .into_iter()
+            .map(|result| result.unwrap_or(Err(Stop::NotSent)))
+            .collect()
+    }
+
+    fn infer_one_llm(&mut self, request: Value) -> StopResult<Value> {
+        let reply = self.infer.one(request);
+        self.settle("llm", reply)
+    }
+
+    fn llm_request(&mut self, call: LlmCall<'_>) -> Value {
         let messages = assemble(call.messages, call.schema, call.attribute_extraction);
         let profile = if call.small && !self.fast_profile.is_empty() {
             self.fast_profile.clone()
@@ -235,6 +340,7 @@ impl<'a> Bridge<'a> {
             self.profile.clone()
         };
         let mut request = self.callback("llm", &profile);
+        request["stage"] = json!(call.stage);
         request["messages"] = Value::Array(
             messages
                 .iter()
@@ -243,11 +349,19 @@ impl<'a> Bridge<'a> {
         );
         request["max_tokens"] = json!(call.max_tokens);
         request["response_schema"] = call.schema.map_or(Value::Null, Py::to_value);
-        let started = Instant::now();
-        let body = self.complete(request)?;
+        request
+    }
+
+    fn llm_result(
+        &mut self,
+        stage: &'static str,
+        started: Instant,
+        settled: StopResult<Value>,
+    ) -> StopResult<Value> {
+        let body = settled?;
         self.stages.push(StageRecord {
             kind: "llm",
-            stage: call.stage,
+            stage,
             ms: started.elapsed().as_millis() as u64,
             usage: body.get("usage").cloned().unwrap_or(Value::Null),
             texts: 0,
@@ -436,5 +550,85 @@ mod tests {
         );
         drop(bridge);
         assert_eq!(calls, 1);
+    }
+
+    fn config(max_llm_calls: u32) -> BridgeConfig {
+        BridgeConfig {
+            scope: json!({}),
+            operation_id: "job".into(),
+            profile: "p".into(),
+            fast_profile: String::new(),
+            timeout_ms: 1000,
+            max_llm_calls,
+            max_embedding_calls: 1,
+        }
+    }
+
+    fn call(stage: &'static str) -> LlmCall<'static> {
+        LlmCall {
+            stage,
+            messages: vec![Message::new("user", stage)],
+            schema: None,
+            max_tokens: DEFAULT_MAX_TOKENS,
+            small: false,
+            attribute_extraction: false,
+        }
+    }
+
+    fn answered(request: &Value) -> InferenceReply {
+        InferenceReply {
+            disposition: InferenceDisposition::Completed,
+            body: json!({"status": "ok", "json_object": {"stage": request["stage"]}}),
+        }
+    }
+
+    #[test]
+    fn independent_calls_go_out_together_and_come_back_in_call_order() {
+        let mut batches: Vec<Vec<String>> = Vec::new();
+        let mut infer = |requests: Vec<Value>| {
+            batches.push(
+                requests
+                    .iter()
+                    .map(|request| request["stage"].as_str().unwrap().to_string())
+                    .collect(),
+            );
+            requests.iter().map(answered).collect::<Vec<_>>()
+        };
+        let mut bridge = Bridge::concurrent(config(3), &mut infer);
+        let results = bridge.llm_many(vec![call("dedupe_nodes"), call("extract_edges")]);
+        assert_eq!(results[0], Ok(json!({"stage": "dedupe_nodes"})));
+        assert_eq!(results[1], Ok(json!({"stage": "extract_edges"})));
+        assert_eq!(bridge.llm_calls, 2);
+        // The budget is taken in call order: a call past it is never sent.
+        let results = bridge.llm_many(vec![call("resolve_edges"), call("attributes")]);
+        assert!(results[0].is_ok());
+        assert_eq!(
+            results[1],
+            Err(Stop::BudgetExceeded("llm call budget is exhausted"))
+        );
+        drop(bridge);
+        assert_eq!(
+            batches,
+            [vec!["dedupe_nodes", "extract_edges"], vec!["resolve_edges"]]
+        );
+    }
+
+    #[test]
+    fn one_at_a_time_stops_at_the_first_failed_call() {
+        let mut sent = Vec::new();
+        let mut infer = |request: Value| {
+            sent.push(request["stage"].as_str().unwrap().to_string());
+            InferenceReply {
+                disposition: InferenceDisposition::Uncertain,
+                body: json!({"status": "uncertain"}),
+            }
+        };
+        let mut bridge = Bridge::new(config(4), &mut infer);
+        let results = bridge.llm_many(vec![call("resolve_edges"), call("attributes")]);
+        assert_eq!(results[0], Err(Stop::Uncertain));
+        assert!(results[1].is_err());
+        assert!(bridge.uncertain);
+        drop(bridge);
+        assert_eq!(sent, ["resolve_edges"]);
     }
 }

@@ -38,7 +38,9 @@ Scheduled executions produce both their ordinary Chat entry and a `scheduled`
 or `briefing` receipt; summary counts include both kinds, while usage totals
 count the same execution once when both entries are selected.
 World entries carry `inferenceCalls { llm, embedding }`, counting only calls the
-host made (refused requests excluded); Chat entries carry `openbbFirstCallMs`, the
+host made (refused requests excluded), `queueWaitMs`, how long the job waited before
+this attempt, and `stageMs`, the time paid calls took per extraction stage (calls
+sent together overlap, so the sum can exceed the duration); Chat entries carry `openbbFirstCallMs`, the
 duration of the turn's first OpenBB call including any cold start.
 
 The logger never takes prompts, answer or Source text, file contents, holdings

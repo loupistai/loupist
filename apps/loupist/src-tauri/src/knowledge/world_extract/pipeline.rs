@@ -157,6 +157,74 @@ type Assigned = Vec<(usize, Vec<(String, Value)>)>;
 /// Stated attribute values per batch row.
 type Rows = HashMap<usize, Vec<(String, Option<String>)>>;
 
+/// The entity resolution call and what its reply indexes into.
+struct NodeResolution {
+    /// Positions in the extracted list that have candidates.
+    unresolved: Vec<usize>,
+    /// Arena indices of the candidates, by candidate id.
+    pool: Vec<usize>,
+    call: Planned,
+}
+
+/// Relation resolution before its model replies.
+struct EdgePlan {
+    extracted: Vec<usize>,
+    related_lists: Vec<Vec<usize>>,
+    other_lists: Vec<Vec<usize>>,
+    /// Decisions the candidates already settle.
+    decisions: Vec<Option<Decision>>,
+    batches: Vec<EdgeBatch>,
+}
+
+struct EdgeBatch {
+    positions: Vec<usize>,
+    /// One case asked on its own, with the single-case schema.
+    single: bool,
+    call: Planned,
+}
+
+struct AttributeBatch {
+    batch: Vec<(usize, String)>,
+    fields: Fields,
+    call: Planned,
+}
+
+/// A model call built before it is sent; it owns its prompt and schema so that
+/// calls whose inputs do not depend on each other can go out together.
+struct Planned {
+    stage: &'static str,
+    messages: Vec<Message>,
+    schema: Py,
+    max_tokens: u32,
+    small: bool,
+    attribute_extraction: bool,
+}
+
+impl Planned {
+    fn call(&self) -> LlmCall<'_> {
+        LlmCall {
+            stage: self.stage,
+            messages: self.messages.clone(),
+            schema: Some(&self.schema),
+            max_tokens: self.max_tokens,
+            small: self.small,
+            attribute_extraction: self.attribute_extraction,
+        }
+    }
+}
+
+/// The next reply of a [`Bridge::llm_many`] wave, in call order.
+fn next_reply(replies: &mut impl Iterator<Item = StopResult<Value>>) -> StopResult<Value> {
+    replies.next().unwrap_or(Err(Stop::NotSent))
+}
+
+/// Graphiti 0.30.1 `add_episode` in four model waves. Calls in one wave take
+/// inputs no other call in it changes, so they go out together; the prompts,
+/// the number of calls and the call budget order are those of one call after
+/// another. Entity resolution and relation extraction share a wave as
+/// Graphiti's `semaphore_gather` does: relations name the entities as
+/// extracted. Relation resolution and attributes share one, since neither
+/// reads what the other writes.
 pub(crate) fn add_episode(input: Input<'_>, bridge: &mut Bridge<'_>) -> StopResult<Output> {
     let mut run = Run {
         bridge,
@@ -171,8 +239,25 @@ pub(crate) fn add_episode(input: Input<'_>, bridge: &mut Bridge<'_>) -> StopResu
         response_models: HashMap::new(),
     };
     let extracted = run.extract_nodes()?;
-    let (resolved, uuid_map) = run.resolve_nodes(&extracted)?;
-    let mut extracted_edges = run.extract_edges(&extracted)?;
+    let resolution = if extracted.is_empty() {
+        None
+    } else {
+        let candidates = run.node_candidates(&extracted)?;
+        run.plan_resolution(&extracted, candidates)
+    };
+    let relations = run.plan_extract_edges(&extracted);
+    let mut calls = Vec::new();
+    if let Some(plan) = &resolution {
+        calls.push(plan.call.call());
+    }
+    calls.push(relations.call());
+    let mut replies = run.bridge.llm_many(calls).into_iter();
+    let response = match &resolution {
+        Some(_) => Some(next_reply(&mut replies)?),
+        None => None,
+    };
+    let (resolved, uuid_map) = run.apply_resolution(&extracted, resolution, response)?;
+    let mut extracted_edges = run.apply_extract_edges(&extracted, next_reply(&mut replies)?)?;
     for index in &extracted_edges {
         let edge = &mut run.edges[*index];
         if let Some(mapped) = uuid_map.get(&edge.source) {
@@ -182,8 +267,20 @@ pub(crate) fn add_episode(input: Input<'_>, bridge: &mut Bridge<'_>) -> StopResu
             edge.target = mapped.clone();
         }
     }
-    let (resolved_edges, invalidated, new_edges) = run.resolve_edges(&mut extracted_edges)?;
-    run.attributes_and_summaries(&resolved, &new_edges)?;
+    let decisions = run.plan_edge_resolution(&mut extracted_edges)?;
+    let attributes = run.plan_attributes(&resolved);
+    let mut calls = Vec::new();
+    if let Some(plan) = &decisions {
+        calls.extend(plan.batches.iter().map(|batch| batch.call.call()));
+    }
+    calls.extend(attributes.iter().map(|batch| batch.call.call()));
+    let mut replies = run.bridge.llm_many(calls).into_iter();
+    let (resolved_edges, invalidated, new_edges) = match decisions {
+        Some(plan) => run.apply_edge_resolution(plan, &mut replies)?,
+        None => (Vec::new(), Vec::new(), Vec::new()),
+    };
+    run.apply_attributes(attributes, &mut replies)?;
+    run.summaries(&resolved, &new_edges)?;
     Ok(Output {
         nodes: resolved
             .iter()
@@ -396,13 +493,8 @@ impl Run<'_, '_> {
 
     // --- 2. Entity resolution ------------------------------------------------
 
-    fn resolve_nodes(
-        &mut self,
-        extracted: &[usize],
-    ) -> StopResult<(Vec<usize>, HashMap<String, String>)> {
-        if extracted.is_empty() {
-            return Ok((Vec::new(), HashMap::new()));
-        }
+    /// Name-vector candidates among the stored nodes for each extracted node.
+    fn node_candidates(&mut self, extracted: &[usize]) -> StopResult<Vec<Vec<Node>>> {
         let queries: Vec<String> = extracted
             .iter()
             .map(|index| self.nodes[*index].name.replace('\n', " "))
@@ -422,7 +514,7 @@ impl Run<'_, '_> {
                 )
             })
             .collect();
-        let candidates: Vec<Vec<Node>> = candidates
+        Ok(candidates
             .iter()
             .map(|uuids| {
                 uuids
@@ -436,22 +528,38 @@ impl Run<'_, '_> {
                     })
                     .collect()
             })
-            .collect();
-        self.resolve_with_candidates(extracted, candidates)
+            .collect())
     }
 
     /// Graphiti's `_resolve_with_llm` over each extracted node's candidates.
+    #[cfg(test)]
     pub(super) fn resolve_with_candidates(
         &mut self,
         extracted: &[usize],
         candidates: Vec<Vec<Node>>,
     ) -> StopResult<(Vec<usize>, HashMap<String, String>)> {
-        let mut uuid_map = HashMap::new();
+        let plan = self.plan_resolution(extracted, candidates);
+        let response = match &plan {
+            Some(plan) => Some(self.bridge.llm(plan.call.call())?),
+            None => None,
+        };
+        self.apply_resolution(extracted, plan, response)
+    }
+
+    /// The resolution call for the extracted nodes that have candidates, or
+    /// none when no node has one.
+    fn plan_resolution(
+        &mut self,
+        extracted: &[usize],
+        candidates: Vec<Vec<Node>>,
+    ) -> Option<NodeResolution> {
         let unresolved: Vec<usize> = (0..extracted.len())
             .filter(|index| !candidates[*index].is_empty())
             .collect();
-        let mut resolved: Vec<Option<usize>> = vec![None; extracted.len()];
-        if !unresolved.is_empty() {
+        if unresolved.is_empty() {
+            return None;
+        }
+        {
             // One object per candidate, in first-seen order across the unresolved nodes.
             let mut pool: Vec<usize> = Vec::new();
             let mut seen = HashSet::new();
@@ -502,8 +610,7 @@ impl Run<'_, '_> {
                     })
                     .collect(),
             );
-            let schema_py = schema::node_resolutions();
-            let response = self.bridge.llm(LlmCall {
+            let call = Planned {
                 stage: "dedupe_nodes",
                 messages: prompts::dedupe_nodes(
                     &previous_context(&self.previous),
@@ -512,11 +619,35 @@ impl Run<'_, '_> {
                     &existing_context,
                     unresolved.len(),
                 ),
-                schema: Some(&schema_py),
+                schema: schema::node_resolutions(),
                 max_tokens: DEFAULT_MAX_TOKENS,
                 small: false,
                 attribute_extraction: false,
-            })?;
+            };
+            Some(NodeResolution {
+                unresolved,
+                pool,
+                call,
+            })
+        }
+    }
+
+    /// Apply the resolution reply; nodes without candidates stay as extracted.
+    fn apply_resolution(
+        &mut self,
+        extracted: &[usize],
+        plan: Option<NodeResolution>,
+        response: Option<Value>,
+    ) -> StopResult<(Vec<usize>, HashMap<String, String>)> {
+        let mut uuid_map = HashMap::new();
+        let mut resolved: Vec<Option<usize>> = vec![None; extracted.len()];
+        if let (
+            Some(NodeResolution {
+                unresolved, pool, ..
+            }),
+            Some(response),
+        ) = (plan, response)
+        {
             let mut resolutions = Vec::new();
             for item in schema::objects(schema::field(&response, "entity_resolutions")?)? {
                 let id = schema::lax_int(schema::field(item, "id")?)?;
@@ -605,7 +736,16 @@ impl Run<'_, '_> {
 
     // --- 3. Relations ----------------------------------------------------------
 
+    #[cfg(test)]
     fn extract_edges(&mut self, extracted: &[usize]) -> StopResult<Vec<usize>> {
+        let call = self.plan_extract_edges(extracted);
+        let response = self.bridge.llm(call.call())?;
+        self.apply_extract_edges(extracted, response)
+    }
+
+    /// The relation call names the entities as extracted, so it does not wait
+    /// for their resolution.
+    fn plan_extract_edges(&self, extracted: &[usize]) -> Planned {
         let mut signatures: Vec<(String, Vec<(String, String)>)> = Vec::new();
         for (pair, names) in &self.schema.edge_map {
             for name in names {
@@ -655,8 +795,7 @@ impl Run<'_, '_> {
                 })
                 .collect(),
         );
-        let schema_py = schema::extracted_edges();
-        let response = self.bridge.llm(LlmCall {
+        Planned {
             stage: "extract_edges",
             messages: prompts::extract_edges(
                 &previous_context(&self.previous),
@@ -666,11 +805,18 @@ impl Run<'_, '_> {
                 &edge_types,
                 &self.instructions,
             ),
-            schema: Some(&schema_py),
+            schema: schema::extracted_edges(),
             max_tokens: EXTRACT_EDGES_MAX_TOKENS,
             small: false,
             attribute_extraction: false,
-        })?;
+        }
+    }
+
+    fn apply_extract_edges(
+        &mut self,
+        extracted: &[usize],
+        response: Value,
+    ) -> StopResult<Vec<usize>> {
         // `{node.name: node}`: a later duplicate name wins.
         let mut by_name: HashMap<String, usize> = HashMap::new();
         for index in extracted {
@@ -761,11 +907,10 @@ impl Run<'_, '_> {
         found.into_iter().map(|edge| self.push_edge(edge)).collect()
     }
 
-    #[allow(clippy::type_complexity)]
-    fn resolve_edges(
-        &mut self,
-        extracted: &mut Vec<usize>,
-    ) -> StopResult<(Vec<usize>, Vec<usize>, Vec<usize>)> {
+    /// Same-endpoint and hybrid candidates for every extracted relation, and the
+    /// model calls that decide the relations the candidates do not settle.
+    /// None when no relation remains after exact duplicates are dropped.
+    fn plan_edge_resolution(&mut self, extracted: &mut Vec<usize>) -> StopResult<Option<EdgePlan>> {
         let mut seen = HashSet::new();
         extracted.retain(|index| {
             let edge = &self.edges[*index];
@@ -776,7 +921,7 @@ impl Run<'_, '_> {
             ))
         });
         if extracted.is_empty() {
-            return Ok((Vec::new(), Vec::new(), Vec::new()));
+            return Ok(None);
         }
         let facts: Vec<String> = extracted
             .iter()
@@ -822,11 +967,16 @@ impl Run<'_, '_> {
                 .collect();
             other_lists.push(others);
         }
-        self.decide_edges(extracted, related_lists, other_lists)
+        Ok(Some(self.plan_decisions(
+            extracted,
+            related_lists,
+            other_lists,
+        )))
     }
 
     /// Graphiti's `resolve_extracted_edge` for every edge, with the worker's
     /// batched model calls, then one embedding wave over the outcome.
+    #[cfg(test)]
     #[allow(clippy::type_complexity)]
     pub(super) fn decide_edges(
         &mut self,
@@ -834,6 +984,21 @@ impl Run<'_, '_> {
         related_lists: Vec<Vec<usize>>,
         other_lists: Vec<Vec<usize>>,
     ) -> StopResult<(Vec<usize>, Vec<usize>, Vec<usize>)> {
+        let plan = self.plan_decisions(extracted, related_lists, other_lists);
+        let calls = plan.batches.iter().map(|batch| batch.call.call()).collect();
+        let mut replies = self.bridge.llm_many(calls).into_iter();
+        self.apply_edge_resolution(plan, &mut replies)
+    }
+
+    /// Decisions the candidates settle without a model (no candidates, or a
+    /// verbatim duplicate between the same endpoints), and the worker's case
+    /// batches for the rest.
+    fn plan_decisions(
+        &mut self,
+        extracted: &[usize],
+        related_lists: Vec<Vec<usize>>,
+        other_lists: Vec<Vec<usize>>,
+    ) -> EdgePlan {
         let mut decisions: Vec<Option<Decision>> = (0..extracted.len()).map(|_| None).collect();
         let mut pending: Vec<(usize, Vec<Message>)> = Vec::new();
         for (position, index) in extracted.iter().enumerate() {
@@ -887,22 +1052,24 @@ impl Run<'_, '_> {
                 prompts::resolve_edge(&existing, &invalidation, &edge.fact),
             ));
         }
+        let mut batches = Vec::new();
         for batch in edge_batches(pending) {
             if batch.len() == 1 {
                 let (position, messages) = batch.into_iter().next().expect("one case");
-                let schema_py = schema::edge_duplicate();
-                let response = self.bridge.llm(LlmCall {
-                    stage: "resolve_edges",
-                    messages,
-                    schema: Some(&schema_py),
-                    max_tokens: DEFAULT_MAX_TOKENS,
-                    small: true,
-                    attribute_extraction: false,
-                })?;
-                decisions[position] = Some(parse_edge_duplicate(&response, false)?);
+                batches.push(EdgeBatch {
+                    positions: vec![position],
+                    single: true,
+                    call: Planned {
+                        stage: "resolve_edges",
+                        messages,
+                        schema: schema::edge_duplicate(),
+                        max_tokens: DEFAULT_MAX_TOKENS,
+                        small: true,
+                        attribute_extraction: false,
+                    },
+                });
                 continue;
             }
-            let schema_py = schema::edge_resolution_batch(batch.len());
             let cases = Py::Dict(
                 batch
                     .iter()
@@ -925,24 +1092,59 @@ impl Run<'_, '_> {
                     })
                     .collect(),
             );
-            let response = self.bridge.llm(LlmCall {
-                stage: "resolve_edges",
-                messages: vec![
-                    Message::new("system", EDGE_BATCH_INSTRUCTIONS),
-                    Message::new("user", cases.dumps(false)),
-                ],
-                schema: Some(&schema_py),
-                max_tokens: DEFAULT_MAX_TOKENS,
-                small: true,
-                attribute_extraction: false,
-            })?;
+            batches.push(EdgeBatch {
+                positions: batch.iter().map(|(position, _)| *position).collect(),
+                single: false,
+                call: Planned {
+                    stage: "resolve_edges",
+                    messages: vec![
+                        Message::new("system", EDGE_BATCH_INSTRUCTIONS),
+                        Message::new("user", cases.dumps(false)),
+                    ],
+                    schema: schema::edge_resolution_batch(batch.len()),
+                    max_tokens: DEFAULT_MAX_TOKENS,
+                    small: true,
+                    attribute_extraction: false,
+                },
+            });
+        }
+        EdgePlan {
+            extracted: extracted.to_vec(),
+            related_lists,
+            other_lists,
+            decisions,
+            batches,
+        }
+    }
+
+    /// Read the batch replies in call order, then apply every decision and
+    /// embed the outcome in one wave.
+    #[allow(clippy::type_complexity)]
+    fn apply_edge_resolution(
+        &mut self,
+        plan: EdgePlan,
+        replies: &mut impl Iterator<Item = StopResult<Value>>,
+    ) -> StopResult<(Vec<usize>, Vec<usize>, Vec<usize>)> {
+        let EdgePlan {
+            extracted,
+            related_lists,
+            other_lists,
+            mut decisions,
+            batches,
+        } = plan;
+        for batch in &batches {
+            let response = next_reply(replies)?;
+            if batch.single {
+                decisions[batch.positions[0]] = Some(parse_edge_duplicate(&response, false)?);
+                continue;
+            }
             let object = response
                 .as_object()
                 .ok_or(Stop::Rejected("model result was not an object"))?;
-            if object.len() != batch.len() {
+            if object.len() != batch.positions.len() {
                 return Err(Stop::Invalid("edge batch has missing or extra cases"));
             }
-            for (case, (position, _)) in batch.iter().enumerate() {
+            for (case, position) in batch.positions.iter().enumerate() {
                 let value = object
                     .get(&format!("case_{case}"))
                     .ok_or(Stop::Invalid("edge batch case is missing"))?;
@@ -1071,7 +1273,18 @@ impl Run<'_, '_> {
 
     // --- 5 and 6. Attributes and summaries ----------------------------------------
 
+    #[cfg(test)]
     fn attributes_and_summaries(&mut self, nodes: &[usize], new_edges: &[usize]) -> StopResult<()> {
+        let plan = self.plan_attributes(nodes);
+        let calls = plan.iter().map(|batch| batch.call.call()).collect();
+        let mut replies = self.bridge.llm_many(calls).into_iter();
+        self.apply_attributes(plan, &mut replies)?;
+        self.summaries(nodes, new_edges)
+    }
+
+    /// One attribute call per batch of typed nodes. Every batch reads the
+    /// attributes as they stood before any reply, so the calls are independent.
+    fn plan_attributes(&mut self, nodes: &[usize]) -> Vec<AttributeBatch> {
         let typed: Vec<(usize, String)> = nodes
             .iter()
             .filter_map(|index| {
@@ -1080,13 +1293,45 @@ impl Run<'_, '_> {
                 (!entity.fields.is_empty()).then_some((*index, kind))
             })
             .collect();
+        self.attribute_batches(&typed)
+            .into_iter()
+            .map(|batch| {
+                let fields = self.attribute_fields(&batch);
+                let call = Planned {
+                    stage: "attributes",
+                    messages: self.attribute_messages(&batch),
+                    schema: schema::attribute_batch(&fields),
+                    max_tokens: DEFAULT_MAX_TOKENS,
+                    small: true,
+                    attribute_extraction: true,
+                };
+                AttributeBatch {
+                    batch,
+                    fields,
+                    call,
+                }
+            })
+            .collect()
+    }
+
+    fn apply_attributes(
+        &mut self,
+        plan: Vec<AttributeBatch>,
+        replies: &mut impl Iterator<Item = StopResult<Value>>,
+    ) -> StopResult<()> {
         let mut assigned: Vec<(usize, Vec<(String, Value)>)> = Vec::new();
-        for batch in self.attribute_batches(&typed) {
-            assigned.extend(self.attribute_call(&batch)?);
+        for AttributeBatch { batch, fields, .. } in plan {
+            let response = next_reply(replies)?;
+            assigned.extend(self.attribute_assigned(&batch, &fields, &response)?);
         }
         for (index, attributes) in assigned {
             self.nodes[index].attributes = attributes;
         }
+        Ok(())
+    }
+
+    /// Summaries for the resolved nodes, then their name embeddings.
+    fn summaries(&mut self, nodes: &[usize], new_edges: &[usize]) -> StopResult<()> {
         let mut by_node: HashMap<String, Vec<usize>> = HashMap::new();
         for index in new_edges {
             let edge = &self.edges[*index];
@@ -1282,18 +1527,13 @@ impl Run<'_, '_> {
         fields
     }
 
-    fn attribute_call(&mut self, batch: &[(usize, String)]) -> StopResult<Assigned> {
-        let fields = self.attribute_fields(batch);
-        let schema_py = schema::attribute_batch(&fields);
-        let response = self.bridge.llm(LlmCall {
-            stage: "attributes",
-            messages: self.attribute_messages(batch),
-            schema: Some(&schema_py),
-            max_tokens: DEFAULT_MAX_TOKENS,
-            small: true,
-            attribute_extraction: true,
-        })?;
-        let rows = parse_attribute_batch(&response, batch.len(), &fields)?;
+    fn attribute_assigned(
+        &self,
+        batch: &[(usize, String)],
+        fields: &Fields,
+        response: &Value,
+    ) -> StopResult<Assigned> {
+        let rows = parse_attribute_batch(response, batch.len(), fields)?;
         let mut out = Vec::new();
         for (position, (index, kind)) in batch.iter().enumerate() {
             let node = &self.nodes[*index];

@@ -233,7 +233,7 @@
     "maximumModelRequestsPerSource": "자료당 최대 모델 요청 수",
     "164RequestsMoreRequestsCanIncreaseCost": "1~64회 요청할 수 있어요. 요청이 많을수록 비용이 늘어날 수 있어요.",
     "timeLimitPerRequestSeconds": "요청당 제한 시간 (초)",
-    "1120SecondsPerRequest": "요청당 1~120초예요.",
+    "1300SecondsPerRequest": "요청당 1~300초예요. 긴 자료는 몇 분 걸릴 수 있어요.",
     "fastModelForRoutineChecks": "일상적인 확인용 빠른 모델",
     "fastModel": "빠른 모델",
     "optionalFasterModelForRoutineChecksSuchAsSpottingDuplicates": "중복 확인 등의 작업에 사용할 빠른 모델이에요. 비워 두면 처리 모델을 사용해요.",
@@ -245,7 +245,12 @@
     "pauseProcessing": "처리 일시정지",
     "refreshStatus": "상태 새로고침",
     "worldProcessing": "World 처리",
-    "chooseModel": "모델 선택"
+    "chooseModel": "모델 선택",
+    "keepThisMacAwakeWhileTheWorldIsProcessing": "World 처리 중에는 Mac이 잠들지 않게 하기",
+    "keepAwakeAppliesToEveryLoupistOnlyWhilePluggedIn": "모든 루피스트에 적용되며, 전원에 연결되어 있을 때만 작동해요. 화면은 꺼질 수 있고, 덮개를 닫으면 Mac은 잠자기 상태가 돼요.",
+    "keepingThisMacAwakeSourcesLeft_other": "Mac을 깨워 두는 중 · 남은 자료 {{formattedCount}}개",
+    "onBatteryThisMacCanSleepAsUsual": "배터리로 작동 중이라 Mac이 평소처럼 잠들 수 있어요.",
+    "couldNotSaveTheKeepAwakeSetting": "Mac 깨워 두기 설정을 저장하지 못했어요. 다시 시도해 주세요."
   },
   "presentation": {
     "unknownTime": "알 수 없음",

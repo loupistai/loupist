@@ -65,6 +65,7 @@ import type {
   GraphJobView,
   GraphProcessingSettings,
   GraphProcessingView,
+  KeepAwakeStatus,
   KnowledgeCatalog,
   KnowledgePin,
   KnowledgeCatalogRequest,
@@ -347,6 +348,8 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
     loupistId: string;
     settings: GraphProcessingSettings;
   }): Promise<GraphProcessingView>;
+  worldKeepAwakeGet(): Promise<KeepAwakeStatus>;
+  worldKeepAwakeSet(request: { enabled: boolean }): Promise<KeepAwakeStatus>;
   journalList(request: JournalListRequest): Promise<JournalRecord[]>;
   journalCreate(request: JournalCreateRequest): Promise<JournalRecord>;
   journalUpdate(request: JournalUpdateRequest): Promise<JournalRecord>;

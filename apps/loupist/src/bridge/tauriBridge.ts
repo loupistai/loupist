@@ -219,6 +219,8 @@ export const createLoupistBridge = (): LoupistBridge => ({
   knowledgeGraphPause: request("knowledge_graph_pause"),
   knowledgeGraphSettingsGet: request("knowledge_graph_settings_get"),
   knowledgeGraphSettingsSet: request("knowledge_graph_settings_set"),
+  worldKeepAwakeGet: () => call("world_keep_awake_get"),
+  worldKeepAwakeSet: request("world_keep_awake_set"),
   learningReviewList: request("learning_review_list"),
   memoryLearningSettingsGet: request("memory_learning_settings_get"),
   memoryLearningSettingsSet: request("memory_learning_settings_set"),

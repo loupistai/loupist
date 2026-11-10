@@ -140,3 +140,52 @@ fn context_only_delivery_counts_once_per_completed_turn_and_records_kind() {
     assert_eq!(usage[0].used_count, 1);
     assert_eq!(usage[0].used_in[0].chat_id, "chat-1");
 }
+
+#[test]
+fn a_source_still_waiting_for_the_world_is_marked_in_search() {
+    let temp = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(temp.path().join("app"));
+    state
+        .store
+        .create_loupist(&loupist_profile("loupist-a"))
+        .unwrap();
+    let job = with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
+        let settings = crate::knowledge::GraphProcessingSettings {
+            enrichment_enabled: true,
+            helper_provider: Some("fixture".into()),
+            helper_model: Some("fixture-local".into()),
+            ..Default::default()
+        };
+        crate::knowledge::store_settings(tx, "loupist-a", &settings)?;
+        let write = KnowledgeWrite::bind(tx, blobs);
+        let saved = write.retain_new_source(text_source(
+            "loupist-a",
+            "example-publisher",
+            b"Turbine maker Volta expands its Ohio plant.",
+        ))?;
+        write.enqueue_source_world("loupist-a", &saved, &settings, 7)
+    })
+    .unwrap()
+    .expect("the Source is queued for the World");
+    let marked = |state: &AppState| {
+        let hits = host_search(state, "loupist-a", "Volta turbine plant", "source").unwrap();
+        let hit = hits
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|hit| hit["scope"] == "source")
+            .cloned()
+            .expect("the Source is found before the World has it");
+        hit.get("mapPending").cloned()
+    };
+    assert_eq!(marked(&state), Some(serde_json::json!(true)));
+    with_loupist_knowledge(&state, "loupist-a", |tx, _| {
+        tx.execute(
+            "UPDATE knowledge_graph_outbox SET status = 'completed' WHERE job_id = ?1",
+            [&job.job_id],
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(marked(&state), None);
+}

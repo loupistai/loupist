@@ -39,7 +39,8 @@ For Memory, preserve the discovery/exact-read boundary. `world_search` and
 `conversation_memory` return `readArgs`; copy those opaque IDs instead of guessing.
 World search combines local discovery with the hybrid World index Rust keeps in
 the folder database, and returns partial results when that branch fails (for
-example without the local embedding assets). Empty partial results do not prove absence.
+example without the local embedding assets). Empty partial results do not prove absence,
+and neither does a Source hit marked `mapPending`, whose World job has not settled.
 A Source read returns retained attribution/coverage alongside its bytes. A World
 read can supply `sourceTargets` for the original spans.
 

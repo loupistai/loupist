@@ -232,7 +232,7 @@
     "maximumModelRequestsPerSource": "Maximum model requests per source",
     "164RequestsMoreRequestsCanIncreaseCost": "1–64 requests. More requests can increase cost.",
     "timeLimitPerRequestSeconds": "Time limit per request (seconds)",
-    "1120SecondsPerRequest": "1–120 seconds per request.",
+    "1300SecondsPerRequest": "1–300 seconds per request. A long source can take a few minutes.",
     "fastModelForRoutineChecks": "Fast model for routine checks",
     "fastModel": "Fast model",
     "optionalFasterModelForRoutineChecksSuchAsSpottingDuplicates": "Optional faster model for routine checks, such as spotting duplicates. Leave empty to use the processing model.",
@@ -244,7 +244,13 @@
     "pauseProcessing": "Pause processing",
     "refreshStatus": "Refresh status",
     "worldProcessing": "World processing",
-    "chooseModel": "Choose model"
+    "chooseModel": "Choose model",
+    "keepThisMacAwakeWhileTheWorldIsProcessing": "Keep this Mac awake while the World is processing",
+    "keepAwakeAppliesToEveryLoupistOnlyWhilePluggedIn": "Applies to every Loupist, and only while plugged in. The display can still turn off, and closing the lid still puts the Mac to sleep.",
+    "keepingThisMacAwakeSourcesLeft_one": "Keeping this Mac awake · {{formattedCount}} source left",
+    "keepingThisMacAwakeSourcesLeft_other": "Keeping this Mac awake · {{formattedCount}} sources left",
+    "onBatteryThisMacCanSleepAsUsual": "On battery power, so this Mac can sleep as usual.",
+    "couldNotSaveTheKeepAwakeSetting": "Could not save the keep-awake setting. Try again."
   },
   "presentation": {
     "unknownTime": "unknown",
