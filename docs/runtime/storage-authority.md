@@ -149,7 +149,8 @@ Tables a module creates on first use (`CREATE TABLE IF NOT EXISTS`, such as shar
 provider status or artifact history) are outside the ladder: a database may lack
 them, and their module creates them at their current shape. Their DDL never changes
 shape in place. A shape change is a ladder step that alters the table only when it
-exists, together with the module's DDL for databases that never created it.
+exists, together with the module's DDL for databases that never created it. Store 5
+adds `application_settings.keep_awake` (off) this way.
 
 Rust refuses data it cannot read and leaves it unchanged:
 

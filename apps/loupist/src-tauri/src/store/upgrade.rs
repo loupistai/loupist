@@ -451,7 +451,31 @@ fn store_4_to_5(transaction: &Transaction<'_>) -> StoreResult<()> {
     for (table, columns) in STORE_5_ENUMERATIONS {
         rebuild_without_enumerations(transaction, table, columns)?;
     }
-    restore_removed_session_cache_keys(transaction)
+    restore_removed_session_cache_keys(transaction)?;
+    add_application_keep_awake(transaction)
+}
+
+/// Keep-awake joined the lazily created `application_settings` table (catalog
+/// only) while store 4 was current. A table created before it gains the
+/// column, off; a database without the table is left for its module to create.
+fn add_application_keep_awake(transaction: &Transaction<'_>) -> StoreResult<()> {
+    let table = transaction
+        .prepare(
+            "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'application_settings'",
+        )?
+        .exists([])?;
+    let column = transaction
+        .prepare(
+            "SELECT 1 FROM pragma_table_info('application_settings') WHERE name = 'keep_awake'",
+        )?
+        .exists([])?;
+    if table && !column {
+        transaction.execute_batch(
+            "ALTER TABLE application_settings
+             ADD COLUMN keep_awake INTEGER NOT NULL DEFAULT 0 CHECK(keep_awake IN (0, 1));",
+        )?;
+    }
+    Ok(())
 }
 
 /// Builds before store 5 cleared Pi session caches on reconnect and import with

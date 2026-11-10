@@ -544,6 +544,8 @@ commands! {
         browser_tab_set_bounds: crate::web::browser::BrowserTabBoundsRequest => ();
         browser_tabs_reset: () => ();
         site_favicon: () => Option<String>;
+        world_keep_awake_get: () => crate::power::KeepAwakeStatus;
+        world_keep_awake_set: crate::commands::power::WorldKeepAwakeRequest => crate::power::KeepAwakeStatus;
 }
 
 /// Never called: it compiles only while each command takes the request and
@@ -1641,6 +1643,12 @@ async fn command_signatures() {
     .await;
     let _: Result<(), CommandError> = crate::web::browser::browser_tabs_reset(any(), any()).await;
     let _: Option<String> = crate::web::favicon::site_favicon(any()).await;
+    let _: crate::power::KeepAwakeStatus = crate::commands::power::world_keep_awake_get(any());
+    let _: Result<crate::power::KeepAwakeStatus, CommandError> =
+        crate::commands::power::world_keep_awake_set(
+            any::<crate::commands::power::WorldKeepAwakeRequest>(),
+            any(),
+        );
 }
 
 struct Command {

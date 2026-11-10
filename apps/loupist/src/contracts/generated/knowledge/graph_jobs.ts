@@ -83,6 +83,16 @@ export type JobDocument = {
    * again; the second quarantines the generation.
    */
   interruptedAttempts: number,
+  /**
+   * Paid attempts the host cut short (quit, crash, power loss, sleep). These
+   * run again up to [`HOST_INTERRUPTION_RETRIES`] times before the rule above.
+   */
+  hostInterruptions?: number,
+  /**
+   * Attempts that ended before any paid call went out. They cost nothing and
+   * run again up to [`UNSENT_RETRIES`] times.
+   */
+  unsentAttempts?: number,
 };
 
 /**

@@ -26,6 +26,7 @@ import type { PrincipleArchiveRequest, PrincipleCreateRequest, PrincipleListRequ
 import type { SourceSelectionPin, SourceSelectionRequest } from "./commands/knowledge/source_selection";
 import type { WorkingNoteReadRequest, WorkingNotesPage, WorkingNotesRequest } from "./commands/knowledge/working_notes";
 import type { RemoveRequest, UndoRequest, WorldSchemaLoupistRequest } from "./commands/knowledge/world_schema";
+import type { WorldKeepAwakeRequest } from "./commands/power";
 import type { QuestionAnswerRequest } from "./commands/questions";
 import type { RevisionRequest, RunRequest, ScheduledTasksLoupistRequest, StatusRequest, TaskRequest } from "./commands/scheduled_tasks";
 import type { SkillCreateRequest, SkillDeleteRequest, SkillImportRequest, SkillReadRequest, SkillSaveRequest } from "./commands/skills";
@@ -56,6 +57,7 @@ import type { WatchEventView } from "./knowledge/watch";
 import type { ConnectionView } from "./knowledge/world_followups";
 import type { WorldSchemaView } from "./knowledge/world_schema";
 import type { LoupistCapabilityBindingDto, LoupistCapabilityRequest, MarketplaceConnectorConfigureRequest, MarketplaceConnectorStatusDto, MarketplaceCredentialRequest, MarketplaceCredentialSaveRequest, MarketplaceCredentialStatusDto, MarketplaceSnapshotDto } from "./marketplace/catalog";
+import type { KeepAwakeStatus } from "./power";
 import type { ModelCatalogView } from "./providers/catalog";
 import type { ModelNoticeAckRequest, ProviderConfigureRequest, ProviderConnectionRequest, ProviderModelsRequest, ProviderPageRequest, ProviderSubmitCodeRequest } from "./providers/connection";
 import type { CustomProviderRequest } from "./providers/custom";
@@ -364,4 +366,6 @@ export type BridgeCommands = {
   browser_tab_set_bounds: { request: BrowserTabBoundsRequest, response: null },
   browser_tabs_reset: { request: never, response: null },
   site_favicon: { request: never, response: string | null },
+  world_keep_awake_get: { request: never, response: KeepAwakeStatus },
+  world_keep_awake_set: { request: WorldKeepAwakeRequest, response: KeepAwakeStatus },
 };

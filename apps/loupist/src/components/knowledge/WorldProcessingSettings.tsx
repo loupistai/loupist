@@ -1,6 +1,6 @@
 import i18n, { useTranslation } from "../../i18n";
 import { Disclosure } from "@/components/ui/disclosure";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
@@ -46,18 +46,18 @@ function KeepAwakeSetting({ bridge, active }: { bridge: LoupistBridge; active: b
   // The newest read or save wins; an older answer never overwrites it.
   const latest = useRef(0);
   const enabled = status?.enabled ?? false;
-  const read = (isCurrent: () => boolean) => {
+  const read = useCallback((isCurrent: () => boolean) => {
     const ticket = ++latest.current;
     return bridge.worldKeepAwakeGet().then((next) => {
       if (isCurrent() && latest.current === ticket) setStatus(next);
     }, () => undefined); // A failed read keeps the last status.
-  };
+  }, [bridge]);
   useEffect(() => {
     if (!active) return;
     let current = true;
     void read(() => current);
     return () => { current = false; };
-  }, [active, bridge]);
+  }, [active, read]);
   // While enabled, refresh how much World work is left.
   useEffect(() => {
     if (!active || !enabled || saving) return;
@@ -66,7 +66,7 @@ function KeepAwakeSetting({ bridge, active }: { bridge: LoupistBridge; active: b
     const poll = () => { timer = setTimeout(() => void read(() => current).then(() => { if (current) poll(); }), KEEP_AWAKE_REFRESH_MS); };
     poll();
     return () => { current = false; clearTimeout(timer); };
-  }, [active, bridge, enabled, saving]);
+  }, [active, enabled, read, saving]);
 
   if (!status?.supported) return null;
   const toggle = (next: boolean) => {

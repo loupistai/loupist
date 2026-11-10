@@ -300,6 +300,39 @@ fn the_upgrade_restores_a_session_cache_key_an_earlier_reconnect_removed() {
 }
 
 #[test]
+fn the_upgrade_gives_an_earlier_settings_table_keep_awake_off() {
+    let temporary = tempfile::tempdir().unwrap();
+    let directory = temporary.path().join("app-data");
+    std::fs::create_dir(&directory).unwrap();
+    let path = baseline_database(&directory, BASELINE_FIXTURE);
+    Connection::open(&path)
+        .unwrap()
+        .execute_batch(
+            "CREATE TABLE application_settings (
+                id INTEGER PRIMARY KEY CHECK(id = 1),
+                notice_acknowledged_version INTEGER NOT NULL DEFAULT 0
+                    CHECK(notice_acknowledged_version BETWEEN 0 AND 4294967295)
+             ) STRICT;
+             INSERT INTO application_settings (id, notice_acknowledged_version) VALUES (1, 1);",
+        )
+        .unwrap();
+
+    let store = SqliteStore::open(&path).unwrap();
+    assert!(!store.keep_awake_enabled().unwrap());
+    assert_eq!(
+        store.notice_settings().unwrap().notice_acknowledged_version,
+        1
+    );
+    store.set_keep_awake(true).unwrap();
+    assert!(store.keep_awake_enabled().unwrap());
+    assert!(store
+        .lock()
+        .unwrap()
+        .execute("UPDATE application_settings SET keep_awake = 2", [])
+        .is_err());
+}
+
+#[test]
 fn a_failed_step_leaves_the_database_unchanged_beside_its_backup() {
     let temporary = tempfile::tempdir().unwrap();
     let directory = temporary.path().join("app-data");

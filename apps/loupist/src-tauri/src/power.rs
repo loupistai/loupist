@@ -27,13 +27,20 @@ pub(crate) struct Demand {
     pub remaining: u64,
 }
 
+/// Whether World processing keeps this computer awake. One choice for every
+/// Loupist; it holds only while plugged in and work remains.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct KeepAwakeStatus {
+    /// The host can prevent idle sleep (macOS).
     pub supported: bool,
     pub enabled: bool,
+    /// The host is keeping this computer awake now.
     pub active: bool,
+    /// `null` when the power source is unknown or keep-awake is unsupported.
     pub on_battery: Option<bool>,
+    /// Sources the World still has to process.
     pub remaining: u64,
 }
 

@@ -23,17 +23,8 @@ fn initialize(connection: &Connection) -> StoreResult<()> {
             {KEEP_AWAKE_COLUMN}
          ) STRICT;"
     ))?;
-    // A table created before keep-awake existed gains the column, off.
-    let has_keep_awake = connection
-        .prepare(
-            "SELECT 1 FROM pragma_table_info('application_settings') WHERE name = 'keep_awake'",
-        )?
-        .exists([])?;
-    if !has_keep_awake {
-        connection.execute_batch(&format!(
-            "ALTER TABLE application_settings ADD COLUMN {KEEP_AWAKE_COLUMN};"
-        ))?;
-    }
+    // A table created before keep-awake existed gains the column in the
+    // store 5 step (`store/upgrade.rs`); this DDL never changes shape in place.
     Ok(())
 }
 
@@ -155,35 +146,5 @@ mod tests {
         );
         reopened.set_keep_awake(false).unwrap();
         assert!(!reopened.keep_awake_enabled().unwrap());
-    }
-
-    #[test]
-    fn a_settings_table_from_before_keep_awake_gains_the_column_off() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = SqliteStore::open(dir.path().join("upgrade.sqlite3")).unwrap();
-        store
-            .lock()
-            .unwrap()
-            .execute_batch(
-                "CREATE TABLE application_settings (
-                    id INTEGER PRIMARY KEY CHECK(id = 1),
-                    notice_acknowledged_version INTEGER NOT NULL DEFAULT 0
-                        CHECK(notice_acknowledged_version BETWEEN 0 AND 4294967295)
-                 ) STRICT;
-                 INSERT INTO application_settings (id, notice_acknowledged_version) VALUES (1, 1);",
-            )
-            .unwrap();
-        assert!(!store.keep_awake_enabled().unwrap());
-        assert_eq!(
-            store.notice_settings().unwrap().notice_acknowledged_version,
-            1
-        );
-        store.set_keep_awake(true).unwrap();
-        assert!(store.keep_awake_enabled().unwrap());
-        assert!(store
-            .lock()
-            .unwrap()
-            .execute("UPDATE application_settings SET keep_awake = 2", [])
-            .is_err());
     }
 }

@@ -371,17 +371,8 @@ export type GraphReadinessNote =
  * Whether World processing keeps this computer awake (Rust `KeepAwakeStatus`).
  * One choice for every Loupist; it holds only while plugged in and work remains.
  */
-export type KeepAwakeStatus = {
-  /** The host can prevent idle sleep (macOS). */
-  supported: boolean;
-  enabled: boolean;
-  /** The host is keeping this computer awake now. */
-  active: boolean;
-  /** `null` when the power source is unknown or keep-awake is unsupported. */
-  onBattery: boolean | null;
-  /** Sources the World still has to process. */
-  remaining: number;
-};
+export type KeepAwakeStatus = Wire.KeepAwakeStatus;
+export type WorldKeepAwakeRequest = Wire.WorldKeepAwakeRequest;
 
 export type GraphProcessingView = {
   settings: GraphProcessingSettings;
