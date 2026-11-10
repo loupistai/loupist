@@ -266,7 +266,9 @@ the user to copy hidden account details into Chat as a workaround, or reconstruc
 those details from other results.
 
 Before substantive research, check `world_search`, `lens_search` and
-`conversation_memory` as applicable. Exact-read useful matches, apply fitting
+`conversation_memory` as applicable. A Source hit marked `mapPending` is not on
+the Map yet, so missing World relationships for it prove nothing; read the
+Source. Exact-read useful matches, apply fitting
 methods and name them, preserving output labels/order. Once exact Source reads
 cover requested dated facts, use those originals; do not reopen files/URLs just
 to verify them. Fetch again only for missing coverage, newer information or an

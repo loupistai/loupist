@@ -9,15 +9,16 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
+use futures_util::stream::{FuturesUnordered, StreamExt};
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot};
 
 use super::super::error::{KnowledgeError, KnowledgeResult};
 use super::super::graph_inference::{self, InferenceDisposition, InferenceReply};
 use super::super::graph_jobs::{
-    self, GraphJobView, GraphProcessingSettings, JobDocument, StoredSourceBinding,
+    self, GraphJobView, GraphProcessingSettings, JobDocument, StoredSourceBinding, Unpublished,
 };
 use super::super::model::{GraphNode, TimePoint, TimePrecision, WorldSnapshotBody};
 use super::super::KnowledgeStore;
@@ -78,14 +79,23 @@ where
     }
     let provider = settings.helper_provider.as_deref().unwrap_or("");
     if graph_inference::admit_helper(provider, auth_mode).is_err() {
-        return finish(store, settings, &job, &attempt_id, false, now_ms);
+        // The provider went away after selection; nothing was sent.
+        return store.graph_finish_unpublished(
+            settings,
+            &job.job_id,
+            &attempt_id,
+            Unpublished::default(),
+            now_ms,
+        );
     }
     let prepared = match prepare(store, settings, &job, followed, assets) {
         Ok(prepared) => prepared,
         Err(_) => return finish(store, settings, &job, &attempt_id, false, now_ms),
     };
     let started = Instant::now();
-    let deadline = started + Duration::from_millis(graph_jobs::LOCAL_OPERATION_BUDGET_MS);
+    let wall_started = SystemTime::now();
+    let deadline = started
+        + Duration::from_millis(graph_jobs::attempt_budget_ms(opened.extraction.timeout_ms));
     let (requests, mut incoming) = mpsc::channel::<(Value, oneshot::Sender<InferenceReply>)>(1);
     let config = BridgeConfig {
         scope: json!({
@@ -104,25 +114,29 @@ where
     tokio::pin!(task);
     let mut uncertain = false;
     let mut blocked = false;
+    // Calls the pipeline sends together are in flight together; each one's
+    // reply goes back on its own channel, so the pipeline reads them in order.
+    let mut in_flight = FuturesUnordered::new();
     let joined = loop {
         tokio::select! {
             joined = &mut task => break joined,
             request = incoming.recv() => {
                 let Some((request, reply)) = request else { continue };
-                let response = if blocked || store.graph_note_inference(job_id, &attempt_id).is_err() {
+                if blocked || store.graph_note_inference(job_id, &attempt_id).is_err() {
                     blocked = true;
-                    not_sent()
-                } else {
-                    let remaining = deadline.saturating_duration_since(Instant::now());
-                    match tokio::time::timeout(remaining, on_inference(request)).await {
-                        Ok(response) => response,
-                        // The call was sent; its outcome is unknown.
-                        Err(_) => InferenceReply {
-                            disposition: InferenceDisposition::Uncertain,
-                            body: json!({"status": "uncertain"}),
-                        },
-                    }
-                };
+                    let _ = reply.send(not_sent());
+                    continue;
+                }
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                let call = on_inference(request);
+                in_flight.push(async move { (tokio::time::timeout(remaining, call).await, reply) });
+            }
+            Some((outcome, reply)) = in_flight.next(), if !in_flight.is_empty() => {
+                let response = outcome.unwrap_or_else(|_| InferenceReply {
+                    // The call was sent; its outcome is unknown.
+                    disposition: InferenceDisposition::Uncertain,
+                    body: json!({"status": "uncertain"}),
+                });
                 if response.disposition == InferenceDisposition::Uncertain {
                     uncertain = true;
                 }
@@ -140,7 +154,14 @@ where
     }
     let extracted = match ran.result {
         Ok(extracted) => extracted,
-        Err(_) => return finish(store, settings, &job, &attempt_id, uncertain, now_ms),
+        Err(_) => {
+            let end = Unpublished {
+                uncertain,
+                paid: ran.paid,
+                suspended: suspended(wall_started, started),
+            };
+            return store.graph_finish_unpublished(settings, job_id, &attempt_id, end, now_ms);
+        }
     };
     let spans: Vec<String> = extracted
         .claims
@@ -188,6 +209,18 @@ where
         Ok(view) => Ok(view),
         Err(_) => finish(store, settings, &job, &attempt_id, uncertain, now_ms),
     }
+}
+
+/// Sleep longer than this during an attempt marks it cut short by the host.
+const SUSPEND_GAP: Duration = Duration::from_secs(30);
+
+/// Whether the Mac slept while the attempt ran: the wall clock moved on while
+/// the monotonic clock, which stops during sleep on macOS and Linux, did not.
+fn suspended(wall_started: SystemTime, started: Instant) -> bool {
+    let wall = SystemTime::now()
+        .duration_since(wall_started)
+        .unwrap_or_default();
+    wall.saturating_sub(started.elapsed()) > SUSPEND_GAP
 }
 
 /// End an attempt that did not publish. With no paid attempt it can run again;
@@ -377,6 +410,8 @@ struct Extracted {
 struct Ran {
     result: Result<Extracted, Stop>,
     uncertain: bool,
+    /// A paid model call went out (completed or uncertain).
+    paid: bool,
     stages: Vec<StageRecord>,
 }
 
@@ -602,18 +637,33 @@ fn run_pipeline(
     config: BridgeConfig,
     requests: mpsc::Sender<(Value, oneshot::Sender<InferenceReply>)>,
 ) -> Ran {
-    let mut infer = |request: Value| -> InferenceReply {
-        let (reply, response) = oneshot::channel();
-        if requests.blocking_send((request, reply)).is_err() {
-            return not_sent();
-        }
-        response.blocking_recv().unwrap_or_else(|_| not_sent())
+    let mut infer = |batch: Vec<Value>| -> Vec<InferenceReply> {
+        // Send every request before waiting on any reply.
+        let waiting: Vec<_> = batch
+            .into_iter()
+            .map(|request| {
+                let (reply, response) = oneshot::channel();
+                requests
+                    .blocking_send((request, reply))
+                    .is_ok()
+                    .then_some(response)
+            })
+            .collect();
+        waiting
+            .into_iter()
+            .map(|response| {
+                response
+                    .and_then(|response| response.blocking_recv().ok())
+                    .unwrap_or_else(not_sent)
+            })
+            .collect()
     };
-    let mut bridge = Bridge::new(config, &mut infer);
+    let mut bridge = Bridge::concurrent(config, &mut infer);
     let result = extract(&prepared, &mut bridge);
     Ran {
         result,
         uncertain: bridge.uncertain,
+        paid: bridge.llm_calls > 0,
         stages: std::mem::take(&mut bridge.stages),
     }
 }

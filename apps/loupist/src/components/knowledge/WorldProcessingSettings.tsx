@@ -7,7 +7,8 @@ import { Badge } from "../ui/badge";
 import { ModelSelectionMenu } from "../models/ModelSelectionMenu";
 import { worldReadinessLabels } from "../../knowledge/worldReadiness";
 import { errorMessage } from "../../lib/errors";
-import type { GraphProcessingSettings, GraphProcessingView, GraphReadinessNote, LoupistBridge, ModelCatalog } from "../../types";
+import { formatNumber } from "@/i18n/format";
+import type { GraphProcessingSettings, GraphProcessingView, GraphReadinessNote, KeepAwakeStatus, LoupistBridge, ModelCatalog } from "../../types";
 
 type Props = {
   bridge: LoupistBridge;
@@ -34,6 +35,61 @@ const readinessNotes = (): Record<GraphReadinessNote, string> => ({
   account_waiting: i18n.t("settings:worldSettings.readiness.accountWaiting"),
 });
 const recoveryComplete = () => i18n.t("knowledge:worldProcessingSettings.worldProcessingRecoveredSavedSourcesAreRetainedInterruptedProcessingWas");
+const KEEP_AWAKE_REFRESH_MS = 5_000;
+
+/** One host choice for every Loupist. It saves at once and never joins the per-Loupist form. */
+function KeepAwakeSetting({ bridge, active }: { bridge: LoupistBridge; active: boolean }) {
+  const { t } = useTranslation("knowledge");
+  const [status, setStatus] = useState<KeepAwakeStatus | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // The newest read or save wins; an older answer never overwrites it.
+  const latest = useRef(0);
+  const enabled = status?.enabled ?? false;
+  const read = (isCurrent: () => boolean) => {
+    const ticket = ++latest.current;
+    return bridge.worldKeepAwakeGet().then((next) => {
+      if (isCurrent() && latest.current === ticket) setStatus(next);
+    }, () => undefined); // A failed read keeps the last status.
+  };
+  useEffect(() => {
+    if (!active) return;
+    let current = true;
+    void read(() => current);
+    return () => { current = false; };
+  }, [active, bridge]);
+  // While enabled, refresh how much World work is left.
+  useEffect(() => {
+    if (!active || !enabled || saving) return;
+    let current = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = () => { timer = setTimeout(() => void read(() => current).then(() => { if (current) poll(); }), KEEP_AWAKE_REFRESH_MS); };
+    poll();
+    return () => { current = false; clearTimeout(timer); };
+  }, [active, bridge, enabled, saving]);
+
+  if (!status?.supported) return null;
+  const toggle = (next: boolean) => {
+    if (saving) return;
+    const ticket = ++latest.current;
+    setSaving(true);
+    setError(null);
+    void bridge.worldKeepAwakeSet({ enabled: next }).then((result) => {
+      if (latest.current === ticket) setStatus(result);
+    }, (cause: unknown) => {
+      setError(errorMessage(cause, t("worldProcessingSettings.couldNotSaveTheKeepAwakeSetting")));
+    }).finally(() => setSaving(false));
+  };
+  return <div className="world-processing-keep-awake">
+    <label>
+      <input className="knowledge-checkbox" type="checkbox" checked={status.enabled} disabled={saving} onChange={(event) => toggle(event.target.checked)} />
+      {t("worldProcessingSettings.keepThisMacAwakeWhileTheWorldIsProcessing")}</label>
+    <p className="knowledge-hint">{t("worldProcessingSettings.keepAwakeAppliesToEveryLoupistOnlyWhilePluggedIn")}</p>
+    {status.active ? <p role="status">{t("worldProcessingSettings.keepingThisMacAwakeSourcesLeft", { count: status.remaining, formattedCount: formatNumber(status.remaining) })}</p> : null}
+    {status.enabled && !status.active && status.onBattery ? <p className="knowledge-hint">{t("worldProcessingSettings.onBatteryThisMacCanSleepAsUsual")}</p> : null}
+    {error ? <p role="alert">{error}</p> : null}
+  </div>;
+}
 
 export function WorldProcessingSettings({ bridge, loupistId, active = true, collapsible = false, onChanged, onManageProviders }: Props) {
   const { t } = useTranslation("knowledge");
@@ -205,7 +261,7 @@ export function WorldProcessingSettings({ bridge, loupistId, active = true, coll
       <Disclosure title={t("worldProcessingSettings.advancedLimits")}>
         <div className="knowledge-processing-fields">
           <label>{t("worldProcessingSettings.maximumModelRequestsPerSource")}<Input aria-label={t("worldProcessingSettings.maximumModelRequestsPerSource")} type="number" min={1} max={64} step={1} required value={draft.maxLlmCalls} onChange={(event) => edit({ maxLlmCalls: Number(event.target.value) })} /><span className="knowledge-hint">{t("worldProcessingSettings.164RequestsMoreRequestsCanIncreaseCost")}</span></label>
-          <label>{t("worldProcessingSettings.timeLimitPerRequestSeconds")}<Input aria-label={t("worldProcessingSettings.timeLimitPerRequestSeconds")} type="number" min={1} max={120} step={1} required value={draft.timeoutMs / 1000} onChange={(event) => edit({ timeoutMs: Number(event.target.value) * 1000 })} /><span className="knowledge-hint">{t("worldProcessingSettings.1120SecondsPerRequest")}</span></label>
+          <label>{t("worldProcessingSettings.timeLimitPerRequestSeconds")}<Input aria-label={t("worldProcessingSettings.timeLimitPerRequestSeconds")} type="number" min={1} max={300} step={1} required value={draft.timeoutMs / 1000} onChange={(event) => edit({ timeoutMs: Number(event.target.value) * 1000 })} /><span className="knowledge-hint">{t("worldProcessingSettings.1300SecondsPerRequest")}</span></label>
           <label>{t("worldProcessingSettings.fastModelForRoutineChecks")}<Input aria-label={t("worldProcessingSettings.fastModel")} value={draft.fastModel ?? ""} onChange={(event) => edit({ fastModel: event.target.value.trim() || null })} /><span className="knowledge-hint">{t("worldProcessingSettings.optionalFasterModelForRoutineChecksSuchAsSpottingDuplicates")}</span></label>
         </div>
       </Disclosure>
@@ -220,8 +276,10 @@ export function WorldProcessingSettings({ bridge, loupistId, active = true, coll
     {error ? <p role="alert">{error}</p> : null}
     {note ? <p role="status">{note}</p> : null}
   </form>;
+  const keepAwake = <KeepAwakeSetting bridge={bridge} active={active} />;
   return collapsible ? <details className="knowledge-advanced world-processing-panel">
     <summary><span>{t("worldProcessingSettings.worldProcessing")}</span><Badge variant="outline">{readinessLabel}</Badge>{view.readiness.modelName ? <span>{view.readiness.modelName}</span> : <span className="knowledge-hint">{t("worldProcessingSettings.chooseModel")}</span>}</summary>
     {form}
-  </details> : form;
+    {keepAwake}
+  </details> : <>{form}{keepAwake}</>;
 }

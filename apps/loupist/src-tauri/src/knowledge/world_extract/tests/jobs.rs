@@ -586,12 +586,21 @@ fn an_uncertain_paid_call_runs_once_more_then_quarantines_without_touching_the_w
     assert_eq!(fixture.head(), head);
     assert_eq!(fixture.stamp(), Some(head));
     assert_eq!(fixture.index_rows(), rows);
-    // A disconnected provider fails before any paid attempt and may run again.
+    // A provider that went away before any paid attempt costs nothing: the job
+    // queues again a few times, then fails without quarantine and may run again.
     let mut fresh = Fixture::new();
     let job = fresh.queue("Note", SUPPLY);
+    for attempt in 1..=3 {
+        let queued = drive(&mut fresh, &job, &script, "missing");
+        assert_eq!(queued.status, graph_jobs::JOB_QUEUED);
+        assert_eq!(queued.document.unsent_attempts, attempt);
+        assert!(!queued.document.inference_attempted);
+        assert_eq!(queued.document.interrupted_attempts, 0);
+    }
     let failed = drive(&mut fresh, &job, &script, "missing");
     assert_eq!(failed.status, graph_jobs::JOB_FAILED_BEFORE);
     assert!(failed.host_may_redrive);
+    assert!(fresh.settings.quarantined_generations.is_empty());
 }
 
 #[test]
@@ -747,4 +756,125 @@ fn world_search_ranks_claims_and_entity_neighborhoods_without_a_worker() {
         .is_empty());
     assert_eq!(fixture.stamp(), Some(head));
     assert_eq!(fixture.index_rows(), (3, 2, 2));
+}
+
+/// Calls whose inputs do not depend on each other are in flight together:
+/// entity resolution with relation extraction, relation resolution with
+/// attributes. The World is the one one call after another produces.
+#[test]
+fn independent_calls_of_one_episode_are_in_flight_together() {
+    let mut fixture = Fixture::new();
+    let script = Arc::new(Mutex::new(Script::default()));
+    {
+        let mut script = script.lock().unwrap();
+        script.reply("ExtractedEntities", entities(&["Acme Corp", "Beta Motors"]));
+        script.reply(
+            "ExtractedEdges",
+            json!({"edges": [relation("Acme Corp", "Beta Motors", "SUPPLIES", SUPPLY)]}),
+        );
+        script.reply(
+            "CoreAttributeBatch",
+            json!({"entities": [{"index": 0, "attributes": {"ticker": "ACME"}}]}),
+        );
+    }
+    let first = fixture.queue("Supply note", SUPPLY);
+    assert_eq!(
+        drive(&mut fixture, &first, &script, "fixture").status,
+        graph_jobs::JOB_COMPLETED
+    );
+    {
+        let mut script = script.lock().unwrap();
+        script.reply(
+            "ExtractedEntities",
+            entities(&["Acme Corp", "Beta Motors", "Gamma Labs"]),
+        );
+        script.reply(
+            "ExtractedEdges",
+            json!({"edges": [
+                relation("Acme Corp", "Beta Motors", "SUPPLIES", SUPPLY),
+                relation("Acme Corp", "Gamma Labs", "PARTNERS_WITH", PARTNER),
+            ]}),
+        );
+        script.reply(
+            "EdgeDuplicate",
+            json!({"duplicate_facts": [], "contradicted_facts": []}),
+        );
+        script.reply("CoreAttributeBatch", json!({"entities": []}));
+    }
+    let second = fixture.queue("Partner note", &format!("{SUPPLY} {PARTNER}"));
+    // Each model reply takes a moment; record which calls were out at once.
+    let flying = Arc::new(Mutex::new((
+        Vec::<String>::new(),
+        Vec::<Vec<String>>::new(),
+    )));
+    let (shared, observed) = (script.clone(), flying.clone());
+    let finished = runtime()
+        .block_on(world_extract::drive_job(
+            &fixture.store,
+            &mut fixture.settings,
+            &second.job_id,
+            "fixture",
+            AT + 2_000,
+            &[],
+            &assets(),
+            move |request: Value| {
+                let reply = shared.lock().unwrap().answer(&request);
+                let title = request["response_schema"]["title"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string();
+                let llm = request["kind"] == "llm";
+                let observed = observed.clone();
+                async move {
+                    if llm {
+                        {
+                            let mut state = observed.lock().unwrap();
+                            state.0.push(title.clone());
+                            let now = state.0.clone();
+                            state.1.push(now);
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                        observed.lock().unwrap().0.retain(|flying| *flying != title);
+                    }
+                    reply
+                }
+            },
+        ))
+        .unwrap();
+    assert_eq!(finished.status, graph_jobs::JOB_COMPLETED);
+    let snapshots = flying.lock().unwrap().1.clone();
+    let together = |a: &str, b: &str| {
+        snapshots
+            .iter()
+            .any(|seen| seen.iter().any(|t| t == a) && seen.iter().any(|t| t == b))
+    };
+    assert!(
+        together("NodeResolutions", "ExtractedEdges"),
+        "{snapshots:?}"
+    );
+    assert!(
+        together("EdgeDuplicate", "CoreAttributeBatch"),
+        "{snapshots:?}"
+    );
+    assert!(
+        !snapshots
+            .iter()
+            .any(|seen| seen.len() > 1 && seen.iter().any(|t| t == "ExtractedEntities")),
+        "entities come first, alone: {snapshots:?}"
+    );
+    // The same calls, in the same order, as one after another.
+    let calls = script.lock().unwrap().calls.clone();
+    assert_eq!(
+        &calls[calls.len() - 5..],
+        [
+            "ExtractedEntities",
+            "NodeResolutions",
+            "ExtractedEdges",
+            "EdgeDuplicate",
+            "CoreAttributeBatch"
+        ]
+    );
+    let body = fixture.body();
+    assert_eq!(body.claims.len(), 2);
+    assert_eq!(body.nodes.len(), 3);
 }

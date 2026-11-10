@@ -26,8 +26,32 @@ pub const JOB_COMPLETED: &str = "completed";
 pub const JOB_CANCELLED: &str = "cancelled_before_start";
 
 /// Absolute budget for a local extraction or index operation and its attempt lease.
-/// Provider callbacks stay on `extraction.timeout_ms` (default 60 seconds).
+/// Provider callbacks stay on `extraction.timeout_ms`; see [`attempt_budget_ms`].
 pub const LOCAL_OPERATION_BUDGET_MS: u64 = 600_000;
+/// Per-request World model limit. A high-thinking extraction of a full episode
+/// can take minutes; the shared provider path accepts up to five.
+pub const DEFAULT_TIMEOUT_MS: u64 = 240_000;
+pub const MAX_TIMEOUT_MS: u64 = 300_000;
+/// The earlier default. A saved value equal to it reads as [`DEFAULT_TIMEOUT_MS`].
+const LEGACY_DEFAULT_TIMEOUT_MS: u64 = 60_000;
+/// Sequential model waves in one episode (entities, entity resolution with
+/// relations, relation resolution with attributes, summaries) plus one spare.
+const EXTRACTION_WAVES: u64 = 5;
+/// Extra runs for a Source whose attempt the host cut short: the app quit,
+/// crashed, lost power or the Mac slept mid-call.
+const HOST_INTERRUPTION_RETRIES: u8 = 2;
+/// Attempts that sent no paid call before the job ends without quarantine.
+const UNSENT_RETRIES: u8 = 3;
+
+/// One attempt's wall-clock allowance: every model wave at its full limit, and
+/// never less than the local operation budget.
+pub fn attempt_budget_ms(timeout_ms: u64) -> u64 {
+    LOCAL_OPERATION_BUDGET_MS.max(
+        timeout_ms
+            .saturating_add(15_000)
+            .saturating_mul(EXTRACTION_WAVES),
+    )
+}
 pub const JOB_FAILED_BEFORE: &str = "failed_before_mutation";
 pub const JOB_RECONCILE: &str = "reconcile_required";
 pub const JOB_RECONCILED: &str = "reconciled_without_retry";
@@ -103,6 +127,18 @@ pub struct JobDocument {
     /// again; the second quarantines the generation.
     #[serde(default)]
     pub interrupted_attempts: u8,
+    /// Paid attempts the host cut short (quit, crash, power loss, sleep). These
+    /// run again up to [`HOST_INTERRUPTION_RETRIES`] times before the rule above.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub host_interruptions: u8,
+    /// Attempts that ended before any paid call went out. They cost nothing and
+    /// run again up to [`UNSENT_RETRIES`] times.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub unsent_attempts: u8,
+}
+
+fn is_zero(value: &u8) -> bool {
+    *value == 0
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -181,7 +217,7 @@ impl Default for GraphProcessingSettings {
             embedding_profile: "local-en-128".to_string(),
             max_llm_calls: 16,
             max_embedding_calls: 64,
-            timeout_ms: 60_000,
+            timeout_ms: DEFAULT_TIMEOUT_MS,
             inactive_loupists: Vec::new(),
             quarantined_generations: Vec::new(),
             helper_model_profile_id: None,
@@ -235,6 +271,9 @@ pub fn load_settings(
         .map(|value| serde_json::from_str(&value))
         .transpose()?
         .unwrap_or_default();
+    if settings.timeout_ms == LEGACY_DEFAULT_TIMEOUT_MS {
+        settings.timeout_ms = DEFAULT_TIMEOUT_MS;
+    }
     settings.extension = super::world_schema::live_extension(connection, loupist_id)?;
     settings.validate()?;
     Ok(settings)
@@ -286,6 +325,11 @@ struct EnqueueWorld {
 }
 
 impl super::KnowledgeWrite<'_> {
+    /// Sources whose relationships are not on the Map yet ([`sources_awaiting_world`]).
+    pub fn sources_awaiting_world(&self, loupist_id: &str) -> KnowledgeResult<BTreeSet<String>> {
+        sources_awaiting_world(self.tx, loupist_id)
+    }
+
     /// Called when automatic processing is enabled or resumed. Deduplication
     /// preserves already attempted/completed sources and uncertain paid calls.
     pub fn enqueue_existing_sources(
@@ -750,6 +794,8 @@ pub fn accept_episode(
             sealed_revision_id: Some(request.world_revision_id.clone()),
             attempt_id: None,
             interrupted_attempts: 0,
+            host_interruptions: 0,
+            unsent_attempts: 0,
         };
         let job = insert_job(
             tx,
@@ -850,6 +896,8 @@ pub fn accept_sealed_world(
         sealed_revision_id: Some(request.world_revision_id.clone()),
         attempt_id: None,
         interrupted_attempts: 0,
+        host_interruptions: 0,
+        unsent_attempts: 0,
     };
     insert_job(
         tx,
@@ -1055,6 +1103,8 @@ fn insert_world_load(
         sealed_revision_id: Some(revision.to_owned()),
         attempt_id: None,
         interrupted_attempts: 0,
+        host_interruptions: 0,
+        unsent_attempts: 0,
     };
     insert_job(
         tx,
@@ -1131,7 +1181,13 @@ pub fn get_job(
     Ok(job)
 }
 
-pub(super) fn queued_loupist_heads(tx: &Transaction<'_>) -> KnowledgeResult<Vec<GraphJobView>> {
+/// The next runnable job of each Loupist. Sources a Chat in `hot_chats` saved
+/// come before an older backlog; otherwise jobs run in the order they were
+/// queued. Either way a chunk still waits for the chunk before it.
+pub(super) fn queued_loupist_heads(
+    tx: &Transaction<'_>,
+    hot_chats: &[String],
+) -> KnowledgeResult<Vec<GraphJobView>> {
     // Read predecessor keys once. A correlated scan of full job JSON for each
     // queued chunk makes a large backfill quadratic and blocks other folder reads.
     // A chunk waits for the chunk before it, which is only extraction context:
@@ -1150,7 +1206,10 @@ pub(super) fn queued_loupist_heads(tx: &Transaction<'_>) -> KnowledgeResult<Vec<
          FROM knowledge_graph_outbox WHERE job_id IN (
            SELECT job_id FROM (
              SELECT job_id, ROW_NUMBER() OVER (
-               PARTITION BY loupist_id ORDER BY created_at_ms, job_id
+               PARTITION BY loupist_id
+               ORDER BY COALESCE(json_extract(payload_json, '$.originChatId')
+                                   IN (SELECT value FROM json_each(?1)), 0) DESC,
+                        created_at_ms, job_id
              ) AS position
              FROM knowledge_graph_outbox candidate
              WHERE status = 'queued'
@@ -1177,9 +1236,38 @@ pub(super) fn queued_loupist_heads(tx: &Transaction<'_>) -> KnowledgeResult<Vec<
          ) ORDER BY created_at_ms, job_id"
     )?;
     let rows = statement
-        .query_map([], row_to_job)?
+        .query_map([serde_json::to_string(hot_chats)?], row_to_job)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
+}
+
+/// World jobs still to run in this database: queued or running.
+pub(crate) fn backlog(tx: &Transaction<'_>) -> KnowledgeResult<u64> {
+    Ok(tx.query_row(
+        "SELECT COUNT(*) FROM knowledge_graph_outbox WHERE status IN (?1, ?2)",
+        params![JOB_QUEUED, JOB_RUNNING],
+        |row| row.get::<_, i64>(0),
+    )? as u64)
+}
+
+/// Source records whose relationships are not on the Map yet: a job for them is
+/// queued, running or paused.
+fn sources_awaiting_world(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+) -> KnowledgeResult<BTreeSet<String>> {
+    let mut statement = tx.prepare(
+        "SELECT DISTINCT json_extract(payload_json, '$.sourceBinding.sourceRecordId')
+         FROM knowledge_graph_outbox
+         WHERE loupist_id = ?1 AND status IN (?2, ?3, ?4)
+           AND json_extract(payload_json, '$.sourceBinding.sourceRecordId') IS NOT NULL",
+    )?;
+    let rows = statement.query_map(
+        params![loupist_id, JOB_QUEUED, JOB_RUNNING, JOB_PAUSED],
+        |row| row.get::<_, String>(0),
+    )?;
+    rows.collect::<Result<BTreeSet<_>, _>>()
+        .map_err(KnowledgeError::from)
 }
 
 pub(super) fn latest_source_job(
@@ -1311,8 +1399,10 @@ pub fn resume_processing(
 
 /// Called once after acquiring the app-data lock and reclaiming orphaned processes.
 /// No prior process can still own these running attempts; wall-clock lease expiry
-/// is irrelevant on startup. A Source's interrupted paid call runs once more
-/// (`retry_once`); any other dispatched or uncertain call is never replayed.
+/// is irrelevant on startup. The app quit, crashed or lost power during each of
+/// them, so a Source's attempt runs again within its host allowance
+/// ([`host_interrupted`]), then once more (`retry_once`); any other dispatched
+/// or uncertain call is never replayed.
 pub(crate) fn recover_interrupted(tx: &Transaction<'_>) -> KnowledgeResult<u32> {
     let mut changed = 0;
     for job in list_all(tx)?
@@ -1321,7 +1411,7 @@ pub(crate) fn recover_interrupted(tx: &Transaction<'_>) -> KnowledgeResult<u32> 
     {
         let mut settings = load_settings(tx, &job.loupist_id)?;
         let mut document = job.document.clone();
-        let retried = retry_once(&mut document);
+        let retried = host_interrupted(&mut document) || retry_once(&mut document);
         let uncertain = !retried
             && (document.mutation_sent || document.inference_attempted || document.usage_uncertain);
         let next = if uncertain {
@@ -1451,13 +1541,17 @@ pub(super) fn claim_running(
         && !document.inference_attempted
         && !document.mutation_sent
     {
+        // The request limit is not an allowance: it follows the saved setting,
+        // as the model does. The call count stays as frozen.
         let selected = budget(settings);
         document.extraction.model_profile = selected.model_profile;
         document.extraction.thinking_level = selected.thinking_level;
         document.extraction.run_options = selected.run_options;
+        document.extraction.timeout_ms = selected.timeout_ms;
     }
     document.attempt_id = Some(mint_id("atm"));
-    document.lease_expires_at_ms = Some(now_ms.saturating_add(LOCAL_OPERATION_BUDGET_MS as i64));
+    document.lease_expires_at_ms =
+        Some(now_ms.saturating_add(attempt_budget_ms(document.extraction.timeout_ms) as i64));
     if !write_status(tx, job_id, JOB_QUEUED, JOB_RUNNING, &document)? {
         return load_job(tx, job_id).map(GraphJobClaim::Existing);
     }
@@ -1538,6 +1632,72 @@ pub fn finish_job(
         source_job_settled(tx, &job, now_ms)?;
     }
     load_job(tx, job_id)
+}
+
+/// How an attempt that published nothing ended, as the host observed it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Unpublished {
+    /// A sent call's outcome or usage could not be confirmed.
+    pub uncertain: bool,
+    /// A paid call was sent (completed or uncertain). Refused calls do not count.
+    pub paid: bool,
+    /// The Mac slept while the attempt ran.
+    pub suspended: bool,
+}
+
+/// End an attempt that published nothing. One that never sent a paid call costs
+/// nothing and runs again, up to [`UNSENT_RETRIES`] times, without touching the
+/// retry rule; after that it fails without quarantining the World. One the Mac's
+/// sleep cut short runs again within its host allowance. Anything else follows
+/// [`finish_job`].
+pub fn finish_unpublished(
+    tx: &Transaction<'_>,
+    settings: &mut GraphProcessingSettings,
+    job_id: &str,
+    attempt_id: &str,
+    end: Unpublished,
+    now_ms: i64,
+) -> KnowledgeResult<GraphJobView> {
+    let job = active_attempt(tx, job_id, attempt_id)?;
+    let free = !end.paid && !end.uncertain && !job.document.mutation_sent;
+    if job.document.episode_kind == EPISODE_SPAN && (free || end.suspended) {
+        let mut document = job.document.clone();
+        let next = if free {
+            document.inference_attempted = false;
+            if document.unsent_attempts < UNSENT_RETRIES {
+                document.unsent_attempts += 1;
+                Some(requeued(settings, &document))
+            } else {
+                Some(JOB_FAILED_BEFORE)
+            }
+        } else if host_interrupted(&mut document) {
+            Some(requeued(settings, &document))
+        } else {
+            None
+        };
+        if let Some(next) = next {
+            clear_lease(&mut document);
+            if !write_status(tx, job_id, JOB_RUNNING, next, &document)? {
+                return Err(KnowledgeError::Invalid(
+                    "graph job attempt is no longer active",
+                ));
+            }
+            if final_status(next) {
+                source_job_settled(tx, &job, now_ms)?;
+            }
+            return load_job(tx, job_id);
+        }
+    }
+    finish_job(
+        tx,
+        settings,
+        job_id,
+        attempt_id,
+        JOB_FAILED_BEFORE,
+        end.uncertain,
+        false,
+        now_ms,
+    )
 }
 
 pub(super) fn ready_to_run(settings: &GraphProcessingSettings, job: &GraphJobView) -> bool {
@@ -1689,7 +1849,7 @@ impl GraphProcessingSettings {
             || self.max_embedding_calls == 0
             || self.max_embedding_calls > 256
             || self.timeout_ms < 1_000
-            || self.timeout_ms > 120_000
+            || self.timeout_ms > MAX_TIMEOUT_MS
             || self.embedding_profile != "local-en-128"
         {
             return Err(KnowledgeError::Invalid(
@@ -1804,6 +1964,24 @@ fn retry_once(document: &mut JobDocument) -> bool {
         return false;
     }
     document.interrupted_attempts += 1;
+    document.inference_attempted = false;
+    document.usage_uncertain = false;
+    true
+}
+
+/// A Source's paid attempt the host cut short runs again without spending its
+/// one retry, at most [`HOST_INTERRUPTION_RETRIES`] times. Returns false,
+/// leaving the document as it was, for any other attempt.
+fn host_interrupted(document: &mut JobDocument) -> bool {
+    let paid = document.inference_attempted || document.usage_uncertain;
+    if document.episode_kind != EPISODE_SPAN
+        || document.mutation_sent
+        || !paid
+        || document.host_interruptions >= HOST_INTERRUPTION_RETRIES
+    {
+        return false;
+    }
+    document.host_interruptions += 1;
     document.inference_attempted = false;
     document.usage_uncertain = false;
     true
@@ -2841,7 +3019,7 @@ impl super::KnowledgeStore {
     /// The jobs the worker loop would dispatch next, one per Loupist.
     pub fn graph_queue_heads(&self) -> KnowledgeResult<Vec<String>> {
         self.read(|write| {
-            Ok(queued_loupist_heads(write.tx)?
+            Ok(queued_loupist_heads(write.tx, &[])?
                 .into_iter()
                 .map(|job| job.job_id)
                 .collect())

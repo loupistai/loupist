@@ -14,6 +14,7 @@ import type {
   GraphNode,
   GraphProcessingSettings,
   GraphProcessingView,
+  KeepAwakeStatus,
   KnowledgeCatalog,
   KnowledgeCatalogRequest,
   KnowledgeJournalReadRequest,
@@ -760,7 +761,7 @@ const defaultSettings = (): GraphProcessingSettings => ({
   thinkingLevel: "off",
   runOptions: {},
   maxLlmCalls: 16,
-  timeoutMs: 60_000,
+  timeoutMs: 240_000,
   researchFocus: "",
   relationHints: [],
   anchors: [],
@@ -911,6 +912,18 @@ export const knowledgeGraphPause = async (
   const current = await knowledgeGraphSettingsGet(state, request);
   current.paused = request.paused;
   return knowledgeGraphSettingsSet(state, { loupistId: request.loupistId, settings: current });
+};
+
+/** One choice for every Loupist, like the host's. The preview has no World work left to wait for. */
+export const worldKeepAwakeGet = async (state: MockBridgeState): Promise<KeepAwakeStatus> => {
+  await shortPause(state);
+  return { supported: true, enabled: state.keepAwake ?? false, active: false, onBattery: false, remaining: 0 };
+};
+
+export const worldKeepAwakeSet = async (state: MockBridgeState, request: { enabled: boolean }) => {
+  await shortPause(state);
+  state.keepAwake = request.enabled;
+  return worldKeepAwakeGet(state);
 };
 
 export const knowledgeJournalRead = async (state: MockBridgeState, request: KnowledgeJournalReadRequest): Promise<JournalRecord> => {

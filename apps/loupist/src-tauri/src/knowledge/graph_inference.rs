@@ -9,7 +9,7 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 
-use super::graph_jobs::GraphProcessingSettings;
+use super::graph_jobs::{GraphProcessingSettings, MAX_TIMEOUT_MS};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InferenceDisposition {
@@ -36,7 +36,7 @@ pub fn admit_local_embedding(settings: &GraphProcessingSettings) -> Result<(), &
     if settings.max_embedding_calls == 0 {
         return Err("local embedding budget is closed");
     }
-    if settings.timeout_ms == 0 || settings.timeout_ms > 120_000 {
+    if settings.timeout_ms == 0 || settings.timeout_ms > MAX_TIMEOUT_MS {
         return Err("graph helper timeout is invalid");
     }
     Ok(())
@@ -104,7 +104,7 @@ fn embed_locally(
         .get("timeout_ms")
         .and_then(Value::as_u64)
         .unwrap_or(settings.timeout_ms);
-    if timeout_ms == 0 || timeout_ms > 120_000 {
+    if timeout_ms == 0 || timeout_ms > MAX_TIMEOUT_MS {
         return not_sent("graph helper timeout is invalid");
     }
     let inputs = match request.get("inputs").and_then(Value::as_array) {
@@ -210,7 +210,7 @@ pub async fn dispatch_inference(
         .and_then(Value::as_u64)
         .unwrap_or(settings.timeout_ms)
         .min(settings.timeout_ms);
-    if timeout_ms == 0 || timeout_ms > 120_000 {
+    if timeout_ms == 0 || timeout_ms > MAX_TIMEOUT_MS {
         return not_sent("World model timeout is invalid");
     }
     let schema = match request.get("response_schema") {

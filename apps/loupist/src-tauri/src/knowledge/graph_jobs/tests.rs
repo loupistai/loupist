@@ -200,7 +200,7 @@ fn publish(
 
 fn heads(store: &KnowledgeStore) -> Vec<String> {
     store
-        .read(|write| queued_loupist_heads(write.tx))
+        .read(|write| queued_loupist_heads(write.tx, &[]))
         .unwrap()
         .into_iter()
         .map(|job| job.job_id)
@@ -525,7 +525,7 @@ fn pause_and_resume_restore_the_queue_without_resetting_the_job_budget() {
     assert_eq!(running.document.extraction, job.document.extraction);
     assert_eq!(
         running.document.lease_expires_at_ms,
-        Some(T + 100 + LOCAL_OPERATION_BUDGET_MS as i64)
+        Some(T + 100 + attempt_budget_ms(job.document.extraction.timeout_ms) as i64)
     );
 }
 
@@ -1064,4 +1064,263 @@ fn a_chunk_runs_once_its_earlier_chunk_can_no_longer_finish() {
         .unwrap();
     // The earlier chunk is only context; without it the rest of the Source still reaches the World.
     assert_eq!(heads(&store), std::slice::from_ref(&second.job_id));
+}
+
+/// Claim and record a paid attempt; returns its attempt id.
+fn paid_attempt(
+    store: &KnowledgeStore,
+    settings: &GraphProcessingSettings,
+    job_id: &str,
+    at_ms: i64,
+) -> String {
+    let running = claim(store, settings, job_id, at_ms);
+    let attempt = running.document.attempt_id.clone().unwrap();
+    store.graph_note_inference(job_id, &attempt).unwrap();
+    attempt
+}
+
+#[test]
+fn sleep_through_an_attempt_runs_it_again_before_the_one_retry() {
+    let (_directory, store) = open();
+    let mut settings = enabled();
+    let job = queued(&store, &settings, "loupist-a", b"sleepy note");
+    let cut = Unpublished {
+        uncertain: true,
+        paid: true,
+        suspended: true,
+    };
+    for expected in 1..=HOST_INTERRUPTION_RETRIES {
+        let attempt = paid_attempt(&store, &settings, &job.job_id, T);
+        let view = store
+            .graph_finish_unpublished(&mut settings, &job.job_id, &attempt, cut, T)
+            .unwrap();
+        assert_eq!(view.status, JOB_QUEUED);
+        assert_eq!(view.document.host_interruptions, expected);
+        assert_eq!(view.document.interrupted_attempts, 0);
+        assert!(!view.document.inference_attempted && !view.document.usage_uncertain);
+    }
+    // The host allowance is spent: the one retry, then quarantine.
+    let attempt = paid_attempt(&store, &settings, &job.job_id, T);
+    let view = store
+        .graph_finish_unpublished(&mut settings, &job.job_id, &attempt, cut, T)
+        .unwrap();
+    assert_eq!(
+        (view.status.as_str(), view.document.interrupted_attempts),
+        (JOB_QUEUED, 1)
+    );
+    let attempt = paid_attempt(&store, &settings, &job.job_id, T);
+    let view = store
+        .graph_finish_unpublished(&mut settings, &job.job_id, &attempt, cut, T)
+        .unwrap();
+    assert_eq!(view.status, JOB_RECONCILE);
+    assert!(settings
+        .quarantined_generations
+        .contains(&view.document.generation_id));
+}
+
+#[test]
+fn a_failure_while_awake_keeps_the_one_retry_rule() {
+    let (_directory, store) = open();
+    let mut settings = enabled();
+    let job = queued(&store, &settings, "loupist-a", b"awake note");
+    let failed = Unpublished {
+        uncertain: true,
+        paid: true,
+        suspended: false,
+    };
+    let attempt = paid_attempt(&store, &settings, &job.job_id, T);
+    let view = store
+        .graph_finish_unpublished(&mut settings, &job.job_id, &attempt, failed, T)
+        .unwrap();
+    assert_eq!(
+        (view.status.as_str(), view.document.interrupted_attempts),
+        (JOB_QUEUED, 1)
+    );
+    assert_eq!(view.document.host_interruptions, 0);
+    let attempt = paid_attempt(&store, &settings, &job.job_id, T);
+    let view = store
+        .graph_finish_unpublished(&mut settings, &job.job_id, &attempt, failed, T)
+        .unwrap();
+    assert_eq!(view.status, JOB_RECONCILE);
+}
+
+#[test]
+fn a_paused_queue_keeps_an_unsent_attempt_paused() {
+    let (_directory, store) = open();
+    let mut settings = enabled();
+    let job = queued(&store, &settings, "loupist-a", b"unsent note");
+    let attempt = paid_attempt(&store, &settings, &job.job_id, T);
+    settings.paused = true;
+    let view = store
+        .graph_finish_unpublished(
+            &mut settings,
+            &job.job_id,
+            &attempt,
+            Unpublished::default(),
+            T,
+        )
+        .unwrap();
+    assert_eq!(view.status, JOB_PAUSED);
+    assert_eq!(view.document.unsent_attempts, 1);
+    assert!(!view.document.inference_attempted);
+}
+
+#[test]
+fn the_old_default_request_limit_reads_as_the_new_one_and_the_cap_is_five_minutes() {
+    let (_directory, store) = open();
+    let mut settings = enabled();
+    settings.timeout_ms = 60_000;
+    // Stored as the earlier default; validation runs on the value read.
+    store
+        .transact(|write| {
+            write.tx.execute(
+                "INSERT INTO app_settings (id, data_json) VALUES ('world_processing:loupist-a', ?1)",
+                [serde_json::to_string(&settings).unwrap()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let loaded = store
+        .read(|read| load_settings(read.tx, "loupist-a"))
+        .unwrap();
+    assert_eq!(loaded.timeout_ms, DEFAULT_TIMEOUT_MS);
+    settings.timeout_ms = MAX_TIMEOUT_MS;
+    assert!(settings.validate().is_ok());
+    settings.timeout_ms = MAX_TIMEOUT_MS + 1;
+    assert!(settings.validate().is_err());
+    // An attempt allows every model wave its full limit.
+    assert!(attempt_budget_ms(MAX_TIMEOUT_MS) >= 5 * MAX_TIMEOUT_MS);
+    assert_eq!(attempt_budget_ms(1_000), LOCAL_OPERATION_BUDGET_MS);
+}
+
+#[test]
+fn a_queued_job_runs_under_the_saved_request_limit() {
+    let (_directory, store) = open();
+    let mut settings = enabled();
+    settings.timeout_ms = 30_000;
+    let job = queued(&store, &settings, "loupist-a", b"limit note");
+    assert_eq!(job.document.extraction.timeout_ms, 30_000);
+    settings.timeout_ms = 200_000;
+    let running = claim(&store, &settings, &job.job_id, T);
+    assert_eq!(running.document.extraction.timeout_ms, 200_000);
+    assert_eq!(
+        running.document.extraction.max_llm_calls,
+        job.document.extraction.max_llm_calls
+    );
+}
+
+#[test]
+fn sources_the_current_chat_saved_come_before_an_older_backlog() {
+    let (_directory, store) = open();
+    let settings = enabled();
+    let loupist = "loupist-a";
+    let source = source_module(&store, loupist);
+    let (world_module, revision) = world(&store, loupist);
+    let mut jobs = Vec::new();
+    let mut previous = None;
+    for body in [b"backlog one".as_slice(), b"backlog two", b"chat source"] {
+        let (span, source_revision) = retain(&store, loupist, &source, previous.clone(), body);
+        jobs.push(add(
+            &store,
+            &settings,
+            loupist,
+            &world_module,
+            &revision,
+            &source,
+            &source_revision,
+            &span,
+        ));
+        previous = Some(source_revision);
+    }
+    store
+        .transact(|write| {
+            for (index, job) in jobs.iter().enumerate() {
+                write.tx.execute(
+                    "UPDATE knowledge_graph_outbox SET created_at_ms = ?1 WHERE job_id = ?2",
+                    params![T + index as i64, job.job_id],
+                )?;
+            }
+            Ok(())
+        })
+        .unwrap();
+    // The newest Source came from the Chat the user is in.
+    let mut chat = jobs[2].clone();
+    chat.document.origin_chat_id = Some("chat-now".into());
+    store
+        .transact(|write| {
+            assert!(write_status(
+                write.tx,
+                &chat.job_id,
+                JOB_QUEUED,
+                JOB_QUEUED,
+                &chat.document
+            )?);
+            Ok(())
+        })
+        .unwrap();
+    let head_with = |hot: &[String]| {
+        store
+            .read(|read| queued_loupist_heads(read.tx, hot))
+            .unwrap()
+            .into_iter()
+            .map(|job| job.job_id)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(head_with(&[]), [jobs[0].job_id.clone()]);
+    assert_eq!(head_with(&["chat-now".to_string()]), [chat.job_id.clone()]);
+    assert_eq!(
+        head_with(&["chat-other".to_string()]),
+        [jobs[0].job_id.clone()]
+    );
+}
+
+#[test]
+fn queued_sources_count_as_awaiting_the_world_until_their_job_settles() {
+    let (_directory, store) = open();
+    let mut settings = enabled();
+    let job = queued(&store, &settings, "loupist-a", b"pending note");
+    let source = job
+        .document
+        .source_binding
+        .clone()
+        .unwrap()
+        .source_record_id;
+    let awaiting = || {
+        store
+            .read(|read| sources_awaiting_world(read.tx, "loupist-a"))
+            .unwrap()
+    };
+    assert!(awaiting().contains(&source));
+    assert_eq!(store.read(|read| backlog(read.tx)).unwrap(), 1);
+    let attempt = paid_attempt(&store, &settings, &job.job_id, T);
+    assert!(awaiting().contains(&source), "a running job still awaits");
+    store
+        .graph_finish(
+            &mut settings,
+            &job.job_id,
+            &attempt,
+            JOB_FAILED_BEFORE,
+            false,
+            false,
+            T,
+        )
+        .unwrap();
+    // Its one retry, then quarantine: settled either way.
+    let again = paid_attempt(&store, &settings, &job.job_id, T);
+    store
+        .graph_finish(
+            &mut settings,
+            &job.job_id,
+            &again,
+            JOB_FAILED_BEFORE,
+            false,
+            false,
+            T,
+        )
+        .unwrap();
+    assert!(
+        !awaiting().contains(&source),
+        "a settled job no longer awaits"
+    );
+    assert_eq!(store.read(|read| backlog(read.tx)).unwrap(), 0);
 }

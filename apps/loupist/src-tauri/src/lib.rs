@@ -20,6 +20,7 @@ mod market_calendar;
 mod marketplace;
 mod mcp;
 mod pi;
+mod power;
 mod privacy;
 mod process_lease;
 #[cfg(test)]
@@ -401,6 +402,8 @@ pub fn run() {
             commands::knowledge::knowledge_graph_pause,
             commands::knowledge::knowledge_graph_settings_get,
             commands::knowledge::knowledge_graph_settings_set,
+            commands::power::world_keep_awake_get,
+            commands::power::world_keep_awake_set,
             commands::knowledge::world_schema::world_schema_get,
             commands::knowledge::world_schema::world_schema_undo,
             commands::knowledge::world_schema::world_schema_remove,

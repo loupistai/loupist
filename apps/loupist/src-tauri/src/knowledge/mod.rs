@@ -348,6 +348,19 @@ impl KnowledgeStore {
         })
     }
 
+    pub(crate) fn graph_finish_unpublished(
+        &self,
+        settings: &mut GraphProcessingSettings,
+        job_id: &str,
+        attempt_id: &str,
+        end: graph_jobs::Unpublished,
+        now_ms: i64,
+    ) -> KnowledgeResult<GraphJobView> {
+        self.transact(|write| {
+            graph_jobs::finish_unpublished(write.tx, settings, job_id, attempt_id, end, now_ms)
+        })
+    }
+
     // Fixture publication without the derived index; product jobs commit both together.
     #[cfg(test)]
     #[allow(clippy::too_many_arguments)]

@@ -28,16 +28,6 @@ World history or restore feature. Recovery rebuilds the derived index from the
 current canonical World and retained Source evidence. An uncertain publication
 instead keeps its extraction JSON while quarantined for reconciliation.
 
-A Source extraction whose paid call was interrupted, timed out or failed without
-publishing runs once more (`retry_once` in `knowledge/graph_jobs.rs`), on the app's next
-pump or after a restart. Publication is one transaction, so a failed attempt left the
-World unchanged; the retry caps that Source at two charged attempts. A second such
-attempt quarantines its generation and is not retried. The graph worker then queues the recovery itself
-(`recover_world_unattended`): the rebuild calls no model, re-queues the jobs that
-never ran, and enqueues Sources saved during the quarantine. If that rebuild fails,
-the next one waits for World processing recovery in Loupist settings, so a broken
-rebuild cannot loop.
-
 Long Sources become bounded episodes retaining the original span as evidence.
 Each episode runs after the one before it, whose text is its extraction context; once
 that episode completed or can no longer finish, the next one runs.
@@ -57,6 +47,69 @@ rates_fx, real_asset, prediction, private), rendered from the enum, and its
 estate and private deals are Assets of class `real_asset` and `private`. An entity
 that fits no type stays `Entity`, and a relationship that fits no type keeps a
 specific open name, so the vocabulary guides extraction without closing it.
+
+### Queue and interruptions
+
+World jobs wait in each Loupist's folder database and survive restarts. The graph
+worker (`knowledge/graph_service.rs`) runs up to two jobs at once, never two for one
+Loupist, since each publishes on its own World head; their paid calls share four
+slots, so a provider sees at most four World calls at a time. A Loupist with a Chat
+turn in the last 30 minutes goes first, and among its jobs the Sources that Chat
+saved come before an older backlog (`queued_loupist_heads`). The other Loupists take
+turns, the one that started a job longest ago first, so one Loupist's backlog does
+not hold back another's research. A job that ran without progress waits until
+something outside the loop changes (a save, a setting, a connection).
+
+Within an episode, calls whose inputs do not depend on each other go out together:
+entity resolution with relation extraction (relations name the entities as
+extracted, as Graphiti's `semaphore_gather` runs them), then relation resolution with
+attributes. Prompts, the number of calls and the order the call budget is spent in
+are those of one call after another (`Bridge::llm_many`). The next episode's entity
+extraction does not start early: its instructions name the relations already on
+the Map, which the episode before it can change.
+
+Each request has a time limit, four minutes by default and at most five
+(`DEFAULT_TIMEOUT_MS`, `MAX_TIMEOUT_MS`); a saved 60 seconds, the earlier default,
+reads as four minutes. A queued job runs under the saved limit; its call allowance
+stays as frozen. One attempt may use every model wave at its full limit
+(`attempt_budget_ms`).
+
+An attempt that publishes nothing ends one of three ways (`finish_unpublished` in
+`knowledge/graph_jobs.rs`). Publication is one transaction, so the World is unchanged
+in each case.
+
+- **Nothing paid was sent** (the provider went away, its settings changed under
+  it): the attempt cost nothing and queues again, up to three times, then fails
+  without quarantining the World; Try again can run it.
+- **The host cut it short**: the app quit, crashed or lost power (the job is found
+  running at the next start, `recover_interrupted`), or the Mac slept through it
+  (the wall clock moved on more than 30 seconds past the monotonic clock). It runs
+  again, up to two times, before the rule below.
+- **Otherwise** a paid call that was interrupted, timed out or failed runs once more
+  (`retry_once`), on the app's next pump or after a restart. A second such attempt
+  quarantines its generation and is not retried. A Source is charged at most two
+  attempts this way, four when the host cut two short.
+
+After a quarantine the graph worker queues the recovery itself
+(`recover_world_unattended`): the rebuild calls no model, re-queues the jobs that
+never ran, and enqueues Sources saved during the quarantine. If that rebuild fails,
+the next one waits for World processing recovery in Loupist settings, so a broken
+rebuild cannot loop.
+
+### Keeping the Mac awake
+
+Settings → World processing offers one application-wide choice, off by default:
+keep this Mac awake while the World is processing (`keep_awake` in the host
+`application_settings` row, read once at startup). Rust holds a single
+`PreventUserIdleSystemSleep` IOKit assertion exactly while the choice is on, World
+jobs are running and the Mac is not on battery or UPS power; an unknown power source
+counts as AC (`power.rs`). The display may still sleep and closing the lid still
+sleeps the Mac. While the hold is wanted the graph worker re-checks the power source
+every minute, so unplugging releases it; a queue that cannot move on its own
+(stalled, blocked, waiting for a provider) releases it too, and shutdown drops it.
+The panel shows "Keeping this Mac awake · n sources left" while it holds. Work cut
+off by sleep with the choice off resumes as [interruptions](#queue-and-interruptions)
+describe. Other platforms report the choice as unsupported and the panel hides it.
 
 ### Presets, changes and undo
 
@@ -163,3 +216,5 @@ Loupist, never a claim that the market missed it.
 
 - Discovery: `src-tauri/src/knowledge/connections.rs` (pure detector), `src-tauri/src/knowledge/world_followups.rs` (post-seal steps and the `knowledge_connections` table)
 - World extraction and index: `src-tauri/src/knowledge/world_extract/` (`pipeline`, `bridge`, `index`, `search`, `job`)
+- Queue, scheduling and interruptions: `src-tauri/src/knowledge/graph_service.rs` (worker loop and slots), `src-tauri/src/knowledge/graph_jobs.rs` (job states, retries, request limits)
+- Keep-awake: `src-tauri/src/power.rs` (rule and macOS assertion), `src-tauri/src/commands/power.rs`

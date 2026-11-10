@@ -446,6 +446,10 @@ pub(crate) async fn send_chat(
         let state = state.clone();
         move |model, failure| crate::providers::status::record_chat_outcome(&state, model, failure)
     });
+    // Sources this turn saves reach the Map before an older backlog.
+    state
+        .graph
+        .note_attention(&request.loupist_id, &request.thread_id);
     let mut record =
         crate::runs::log::RunLog::new("chat", &request.loupist_id, &request.run_id, now_ms());
     record.chat_id = Some(request.thread_id.clone());

@@ -40,6 +40,13 @@ pub(crate) struct RunLog {
     /// Requests the host refused are not counted.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub inference_calls: BTreeMap<String, u64>,
+    /// World jobs: milliseconds paid model calls took, summed per extraction
+    /// stage. Calls sent together overlap, so the sum can exceed the duration.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub stage_ms: BTreeMap<String, u64>,
+    /// World jobs: how long the job waited in the queue before this attempt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue_wait_ms: Option<u64>,
     /// Chat turns: duration of the turn's first OpenBB call. It includes the
     /// worker's cold start when no pooled OpenBB process was ready.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -121,6 +128,8 @@ impl RunLog {
             memory_changes: BTreeMap::new(),
             notes: vec![],
             inference_calls: BTreeMap::new(),
+            stage_ms: BTreeMap::new(),
+            queue_wait_ms: None,
             openbb_first_call_ms: None,
             observed_calls: BTreeSet::new(),
         }

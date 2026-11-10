@@ -364,14 +364,45 @@ async fn rust_engine_drives_queued_jobs_without_a_staged_worker_or_runtime() {
         )
         .unwrap();
     // No worker or graph runtime is staged; the job still runs in-process. With
-    // no provider service the paid call is not sent. The first attempt runs
-    // again, and the second is quarantined.
-    for _ in 0..2 {
-        assert_eq!(
-            supervisor.pump_once().await.unwrap().as_deref(),
-            Some(job.job_id.as_str())
-        );
+    // no provider service the paid call is not sent, which costs nothing: the
+    // job queues again, spends no retry and never quarantines the World.
+    for attempt in 1..=3u8 {
+        assert_eq!(supervisor.pump_once().await.unwrap(), None);
+        let queued = knowledge.graph_job(loupist, &job.job_id).unwrap();
+        assert_eq!(queued.status, super::super::graph_jobs::JOB_QUEUED);
+        assert_eq!(queued.document.unsent_attempts, attempt);
+        assert_eq!(queued.document.interrupted_attempts, 0);
+        assert!(!queued.document.inference_attempted);
     }
+    assert!(
+        load_settings(&supervisor.inner.store.lock().unwrap(), loupist)
+            .unwrap()
+            .quarantined_generations
+            .is_empty()
+    );
+    // Two paid attempts that published nothing quarantine the generation.
+    let mut driven = settings.clone();
+    for _ in 0..2 {
+        let running = knowledge
+            .graph_mark_running(&driven, &job.job_id, now_ms())
+            .unwrap();
+        let attempt = running.document.attempt_id.clone().unwrap();
+        knowledge
+            .graph_note_inference(&job.job_id, &attempt)
+            .unwrap();
+        knowledge
+            .graph_finish(
+                &mut driven,
+                &job.job_id,
+                &attempt,
+                super::super::graph_jobs::JOB_FAILED_BEFORE,
+                true,
+                false,
+                now_ms(),
+            )
+            .unwrap();
+    }
+    merge_quarantine(&supervisor.inner.store, loupist, &driven).unwrap();
     let finished = knowledge.graph_job(loupist, &job.job_id).unwrap();
     assert_eq!(finished.document.interrupted_attempts, 1);
     assert_eq!(finished.status, super::super::graph_jobs::JOB_RECONCILE);
@@ -395,4 +426,250 @@ async fn rust_engine_drives_queued_jobs_without_a_staged_worker_or_runtime() {
         super::super::graph_jobs::JOB_RECONCILED
     );
     assert_eq!(supervisor.pump_once().await.unwrap(), None);
+}
+
+#[test]
+fn schedule_rank_puts_the_attended_loupist_first_then_takes_turns() {
+    // A recent Chat turn wins over every unattended Loupist, latest turn first.
+    assert!(schedule_rank(Some(10), 9, 500) < schedule_rank(None, 0, 1));
+    assert!(schedule_rank(Some(20), 9, 500) < schedule_rank(Some(10), 0, 1));
+    // Otherwise the Loupist served longest ago (or never) goes next, then the
+    // older job.
+    assert!(schedule_rank(None, 0, 900) < schedule_rank(None, 3, 1));
+    assert!(schedule_rank(None, 3, 1) < schedule_rank(None, 3, 2));
+}
+
+/// Queue `count` Source jobs for `loupist` in a fresh World, `at_ms` apart.
+fn queued_jobs(knowledge: &KnowledgeStore, loupist: &str, count: usize, at_ms: i64) -> Vec<String> {
+    let settings = fixture_settings();
+    let (first, digest, span) =
+        retained_source(knowledge, loupist, b"Ada described the engine.", at_ms);
+    let (world, revision) = sealed_world(knowledge, loupist, &first, &digest, &span);
+    (0..count)
+        .map(|index| {
+            let at = at_ms + index as i64;
+            let (source, _, span) = retained_source(
+                knowledge,
+                loupist,
+                format!("Note {index} about the engine.").as_bytes(),
+                at,
+            );
+            let source_revision = knowledge
+                .read(|read| read.owned_record(loupist, &source))
+                .unwrap()
+                .revision_id
+                .unwrap();
+            knowledge
+                .graph_accept_episode(
+                    &settings,
+                    AddToWorld {
+                        loupist_id: loupist.into(),
+                        world_record_id: world.clone(),
+                        world_revision_id: revision.clone(),
+                        source_record_id: source,
+                        source_revision_id: source_revision,
+                        span_id: span,
+                        at_ms: at,
+                        binding_role: "extracted_from".into(),
+                    },
+                )
+                .unwrap()
+                .job_id
+        })
+        .collect()
+}
+
+fn fixture_settings() -> GraphProcessingSettings {
+    GraphProcessingSettings {
+        enrichment_enabled: true,
+        helper_provider: Some("fixture".into()),
+        helper_model: Some("fixture-local".into()),
+        ..GraphProcessingSettings::default()
+    }
+}
+
+fn select(supervisor: &GraphSupervisor) -> Option<(String, String)> {
+    supervisor
+        .inner
+        .select_world_job()
+        .unwrap()
+        .map(|selected| (selected.job.loupist_id, selected.job.job_id))
+}
+
+fn finish_worker(supervisor: &GraphSupervisor, loupist: &str) {
+    supervisor.inner.running.lock().unwrap().remove(loupist);
+}
+
+#[tokio::test]
+async fn a_backlog_in_one_loupist_no_longer_holds_back_another() {
+    let directory = tempfile::tempdir().unwrap();
+    let (supervisor, knowledge) = supervised(directory.path(), None);
+    for loupist in ["loupist-backlog", "loupist-new"] {
+        store_settings(
+            &supervisor.inner.store.lock().unwrap(),
+            loupist,
+            &fixture_settings(),
+        )
+        .unwrap();
+    }
+    let backlog = queued_jobs(&knowledge, "loupist-backlog", 3, 1_700_000_000_000);
+    let fresh = queued_jobs(&knowledge, "loupist-new", 1, 1_700_000_100_000);
+    // Neither has been served: the older job goes first.
+    assert_eq!(
+        select(&supervisor),
+        Some(("loupist-backlog".into(), backlog[0].clone()))
+    );
+    finish_worker(&supervisor, "loupist-backlog");
+    // With one slot free, the Loupist that has waited takes its turn before the
+    // backlog's next job (the old queue drained the backlog first).
+    assert_eq!(
+        select(&supervisor),
+        Some(("loupist-new".into(), fresh[0].clone()))
+    );
+    // One job per Loupist at a time: the backlog runs alongside it.
+    assert_eq!(select(&supervisor).unwrap().0, "loupist-backlog");
+    assert_eq!(
+        select(&supervisor),
+        None,
+        "both Loupists already have a job running"
+    );
+}
+
+#[tokio::test]
+async fn the_loupist_with_a_recent_chat_turn_goes_first() {
+    let directory = tempfile::tempdir().unwrap();
+    let (supervisor, knowledge) = supervised(directory.path(), None);
+    for loupist in ["loupist-backlog", "loupist-research"] {
+        store_settings(
+            &supervisor.inner.store.lock().unwrap(),
+            loupist,
+            &fixture_settings(),
+        )
+        .unwrap();
+    }
+    queued_jobs(&knowledge, "loupist-backlog", 3, 1_700_000_000_000);
+    let research = queued_jobs(&knowledge, "loupist-research", 1, 1_700_000_100_000);
+    supervisor.note_attention("loupist-research", "chat-research");
+    assert_eq!(
+        select(&supervisor),
+        Some(("loupist-research".into(), research[0].clone()))
+    );
+    finish_worker(&supervisor, "loupist-research");
+    // A Loupist with nothing runnable does not hold the others back.
+    knowledge
+        .graph_mark_running(&fixture_settings(), &research[0], now_ms())
+        .unwrap();
+    assert_eq!(select(&supervisor).unwrap().0, "loupist-backlog");
+}
+
+#[tokio::test]
+async fn a_job_that_made_no_progress_waits_for_a_wake_from_outside_the_loop() {
+    let directory = tempfile::tempdir().unwrap();
+    let (supervisor, knowledge) = supervised(directory.path(), None);
+    store_settings(
+        &supervisor.inner.store.lock().unwrap(),
+        "loupist-a",
+        &fixture_settings(),
+    )
+    .unwrap();
+    let jobs = queued_jobs(&knowledge, "loupist-a", 1, 1_700_000_000_000);
+    supervisor
+        .inner
+        .stalled
+        .lock()
+        .unwrap()
+        .insert(jobs[0].clone());
+    assert_eq!(select(&supervisor), None);
+    supervisor.inner.stalled.lock().unwrap().clear();
+    assert_eq!(
+        select(&supervisor),
+        Some(("loupist-a".into(), jobs[0].clone()))
+    );
+}
+
+#[tokio::test]
+async fn the_loop_runs_world_jobs_for_different_loupists_up_to_the_job_limit() {
+    let directory = tempfile::tempdir().unwrap();
+    let (supervisor, knowledge) = supervised(directory.path(), None);
+    let loupists = ["loupist-a", "loupist-b", "loupist-c"];
+    for (index, loupist) in loupists.iter().enumerate() {
+        store_settings(
+            &supervisor.inner.store.lock().unwrap(),
+            loupist,
+            &fixture_settings(),
+        )
+        .unwrap();
+        queued_jobs(
+            &knowledge,
+            loupist,
+            2,
+            1_700_000_000_000 + index as i64 * 1_000,
+        );
+    }
+    let inner = supervisor.inner.clone();
+    assert!(inner.step().await.unwrap());
+    assert_eq!(inner.running_count(), MAX_WORLD_JOBS);
+    let running: HashSet<String> = inner.running.lock().unwrap().keys().cloned().collect();
+    assert_eq!(
+        running.len(),
+        MAX_WORLD_JOBS,
+        "never two jobs for one Loupist"
+    );
+    // With no provider nothing is sent: each worker frees its slot and its job
+    // waits for a wake from outside the loop.
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        while inner.running_count() > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("workers finish");
+    assert_eq!(inner.stalled.lock().unwrap().len(), MAX_WORLD_JOBS);
+    assert!(inner.step().await.unwrap());
+    let next: Vec<String> = inner.running.lock().unwrap().keys().cloned().collect();
+    assert_eq!(next.len(), 1);
+    assert!(
+        !running.contains(&next[0]),
+        "the Loupist that waited runs now"
+    );
+    supervisor.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn the_mac_stays_awake_while_world_jobs_run_and_sleeps_when_they_stop() {
+    let directory = tempfile::tempdir().unwrap();
+    let (supervisor, knowledge) = supervised(directory.path(), None);
+    store_settings(
+        &supervisor.inner.store.lock().unwrap(),
+        "loupist-a",
+        &fixture_settings(),
+    )
+    .unwrap();
+    queued_jobs(&knowledge, "loupist-a", 2, 1_700_000_000_000);
+    let inner = supervisor.inner.clone();
+    // Off by default: running work never holds the Mac awake.
+    assert!(select(&supervisor).is_some());
+    inner.update_keep_awake();
+    assert!(!supervisor.keep_awake().status().active);
+    let status = supervisor.keep_awake().set_enabled(true).unwrap();
+    assert!(
+        status.active,
+        "turning it on applies to the work already running"
+    );
+    inner.update_keep_awake();
+    let status = supervisor.keep_awake().status();
+    assert!(status.active);
+    assert_eq!(status.remaining, 2);
+    assert!(supervisor.keep_awake().poll_interval().is_some());
+    // The queue stopped moving on its own: the Mac may sleep.
+    finish_worker(&supervisor, "loupist-a");
+    inner.update_keep_awake();
+    assert!(!supervisor.keep_awake().status().active);
+    assert!(supervisor.keep_awake().poll_interval().is_none());
+    // Shutdown drops the hold.
+    assert!(select(&supervisor).is_some());
+    inner.update_keep_awake();
+    assert!(supervisor.keep_awake().status().active);
+    supervisor.shutdown().await.unwrap();
+    assert!(!supervisor.keep_awake().status().active);
 }

@@ -436,6 +436,22 @@ export type GraphReadinessNote =
   | "recovery_required" | "recovering" | "runtime_unavailable" | "awaiting_provider" | "choose_model" | "model_unavailable" | "connect_provider"
   | "isolation_unsupported" | "runtime_missing" | "choose_connected_model" | "not_connected" | "account_waiting";
 
+/**
+ * Whether World processing keeps this computer awake (Rust `KeepAwakeStatus`).
+ * One choice for every Loupist; it holds only while plugged in and work remains.
+ */
+export type KeepAwakeStatus = {
+  /** The host can prevent idle sleep (macOS). */
+  supported: boolean;
+  enabled: boolean;
+  /** The host is keeping this computer awake now. */
+  active: boolean;
+  /** `null` when the power source is unknown or keep-awake is unsupported. */
+  onBattery: boolean | null;
+  /** Sources the World still has to process. */
+  remaining: number;
+};
+
 export type GraphProcessingView = {
   settings: GraphProcessingSettings;
   readiness: {

@@ -2,9 +2,10 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import i18n from "@/i18n";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
-import type { GraphProcessingView } from "../../types";
+import type { GraphProcessingView, KeepAwakeStatus } from "../../types";
 import { WorldProcessingSettings } from "./WorldProcessingSettings";
 
+const autoProcess = () => screen.getByRole("checkbox", { name: "Automatically process saved sources" });
 const setup = (bridge = new MockLoupistBridge({ delay_ms: 0 })) => ({ bridge, loupistId: "loupist-quality", onChanged: vi.fn(), onManageProviders: vi.fn() });
 const selection = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(await screen.findByRole("button", { name: /World processing model/ }));
@@ -24,9 +25,9 @@ it("uses the shared model catalog and controls while leaving automatic processin
   const user = userEvent.setup();
   expect(await screen.findByRole("checkbox", { name: "Automatically process saved sources" })).not.toBeChecked();
   await selection(user);
-  expect(screen.getByRole("checkbox")).not.toBeChecked();
+  expect(autoProcess()).not.toBeChecked();
   expect(save).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("checkbox"));
+  await user.click(autoProcess());
   await user.click(screen.getByText("Advanced limits"));
   await user.clear(screen.getByLabelText("Maximum model requests per source"));
   await user.type(screen.getByLabelText("Maximum model requests per source"), "6");
@@ -47,7 +48,7 @@ it("keeps model preferences per Loupist and independent of the Chat picker", asy
   await screen.findByText("World processing settings saved for this Loupist.");
   rerender(<WorldProcessingSettings {...props} loupistId="loupist-value" />);
   expect(await screen.findByRole("button", { name: /World processing model/ })).toHaveTextContent("Choose model");
-  expect(screen.getByRole("checkbox")).not.toBeChecked();
+  expect(autoProcess()).not.toBeChecked();
   rerender(<WorldProcessingSettings {...props} />);
   expect(await screen.findByRole("button", { name: /World processing model/ })).toHaveTextContent("GPT-5.6 Luna · High · Fast");
 });
@@ -60,10 +61,10 @@ it("offers provider management when there are no connected models without enabli
   const user = userEvent.setup();
   expect(await screen.findByText(/No connected models/)).toBeVisible();
   expect(screen.queryByRole("button", { name: /World processing model/ })).toBeNull();
-  expect(screen.getByRole("checkbox")).not.toBeChecked();
+  expect(autoProcess()).not.toBeChecked();
   await user.click(screen.getByRole("button", { name: "Manage providers" }));
   expect(props.onManageProviders).toHaveBeenCalledOnce();
-  await user.click(screen.getByRole("checkbox"));
+  await user.click(autoProcess());
   expect(screen.getByRole("button", { name: "Save processing settings" })).toBeDisabled();
   expect(save).not.toHaveBeenCalled();
 });
@@ -153,7 +154,7 @@ it("recovers explicitly without a connected model, enabling processing, or savin
   expect(screen.getByText(/Recovery does not use a model/)).toBeVisible();
   await act(async () => resolve(saved));
   expect(screen.getByLabelText("Maximum model requests per source")).toHaveValue(8);
-  expect(screen.getByRole("checkbox")).not.toBeChecked();
+  expect(autoProcess()).not.toBeChecked();
   expect(screen.getByRole("status")).toHaveTextContent("Interrupted processing was not retried");
   expect(screen.queryByRole("button", { name: "Recover World processing" })).toBeNull();
   expect(save).not.toHaveBeenCalled();
@@ -225,4 +226,61 @@ it("saves guidance-only edits, preserves anchor identifiers, and discards all gu
   await user.type(screen.getByLabelText("Key companies and topics"), "; Acme");
   await user.click(screen.getByRole("button", { name: "Discard changes" }));
   expect(screen.getByLabelText("Key companies and topics")).toHaveValue("Samsung | 삼성 | 005930");
+});
+
+const keepAwakeLabel = "Keep this Mac awake while the World is processing";
+const keepAwake = (overrides: Partial<KeepAwakeStatus> = {}): KeepAwakeStatus => ({ supported: true, enabled: false, active: false, onBattery: false, remaining: 0, ...overrides });
+
+it("hides keep-awake where the host cannot prevent sleep", async () => {
+  const props = setup();
+  vi.spyOn(props.bridge, "worldKeepAwakeGet").mockResolvedValue(keepAwake({ supported: false, enabled: true }));
+  render(<WorldProcessingSettings {...props} />);
+  await screen.findByRole("form", { name: "World processing settings" });
+  await waitFor(() => expect(props.bridge.worldKeepAwakeGet).toHaveBeenCalled());
+  expect(screen.queryByRole("checkbox", { name: keepAwakeLabel })).toBeNull();
+  expect(screen.queryByText(/closing the lid/)).toBeNull();
+});
+
+it("saves keep-awake at once for every Loupist without touching the processing form", async () => {
+  const props = setup();
+  const save = vi.spyOn(props.bridge, "knowledgeGraphSettingsSet");
+  let resolveSet!: (status: KeepAwakeStatus) => void;
+  const set = vi.spyOn(props.bridge, "worldKeepAwakeSet").mockImplementationOnce(() => new Promise((resolve) => { resolveSet = resolve; }));
+  render(<WorldProcessingSettings {...props} />);
+  const user = userEvent.setup();
+  const toggle = await screen.findByRole("checkbox", { name: keepAwakeLabel });
+  expect(toggle).not.toBeChecked();
+  expect(screen.getByText(/Applies to every Loupist, and only while plugged in/)).toHaveTextContent("closing the lid still puts the Mac to sleep");
+  await user.click(toggle);
+  expect(set).toHaveBeenCalledExactlyOnceWith({ enabled: true });
+  expect(toggle).toBeDisabled();
+  await act(async () => resolveSet(keepAwake({ enabled: true, active: true, remaining: 1 })));
+  expect(toggle).toBeChecked();
+  expect(toggle).toBeEnabled();
+  expect(screen.getByRole("status")).toHaveTextContent("Keeping this Mac awake · 1 source left");
+  expect(screen.queryByText(/Unsaved changes/)).toBeNull();
+  expect(screen.getByRole("button", { name: "Save processing settings" })).toBeDisabled();
+  expect(save).not.toHaveBeenCalled();
+  set.mockRejectedValueOnce(new Error("Settings are read-only"));
+  await user.click(toggle);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Settings are read-only");
+  expect(autoProcess()).not.toBeChecked();
+});
+
+it("shows how many sources keep the Mac awake and when battery power lets it sleep", async () => {
+  const props = setup();
+  const get = vi.spyOn(props.bridge, "worldKeepAwakeGet").mockResolvedValueOnce(keepAwake({ enabled: true, active: true, remaining: 1234 })).mockResolvedValue(keepAwake({ enabled: true, onBattery: true, remaining: 1234 }));
+  vi.useFakeTimers();
+  try {
+    render(<WorldProcessingSettings {...props} />);
+    // Settings load first; the keep-awake read follows.
+    await act(async () => {});
+    await act(async () => {});
+    expect(get).toHaveBeenCalledOnce();
+    expect(screen.getByRole("status")).toHaveTextContent("Keeping this Mac awake · 1,234 sources left");
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(/Keeping this Mac awake/)).toBeNull();
+    expect(screen.getByText("On battery power, so this Mac can sleep as usual.")).toBeVisible();
+  } finally { vi.useRealTimers(); }
 });

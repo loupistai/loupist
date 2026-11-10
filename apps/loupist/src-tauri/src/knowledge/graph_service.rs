@@ -3,13 +3,20 @@
 //! Jobs live in each Loupist folder database. This loop aggregates candidates
 //! from registered folders. Pi owns the shared provider credentials; extraction receives only
 //! host-mediated inference results, never keys or OAuth tokens.
+//!
+//! Schema reviews, method learning and quarantine recovery run one unit at a
+//! time. World jobs run up to [`MAX_WORLD_JOBS`] at once, never two for one
+//! Loupist (each publishes on its own World head), and their paid model calls
+//! share [`MAX_WORLD_CALLS`] slots. The Loupist the user is researching in goes
+//! first; the rest take turns ([`schedule_rank`]).
 
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use tokio::sync::{Mutex, Notify};
+use tokio::sync::{Mutex, Notify, Semaphore};
 
 use super::blob::BlobStore;
 use super::error::{KnowledgeError, KnowledgeResult};
@@ -52,7 +59,63 @@ struct Inner {
     schema_events: tokio::sync::broadcast::Sender<serde_json::Value>,
     stopped: AtomicBool,
     task: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
-    pump_lock: Mutex<()>,
+    /// Queue selection and the schema, learning and recovery pumps take turns.
+    control: Mutex<()>,
+    /// World jobs in flight, by Loupist.
+    running: std::sync::Mutex<HashMap<String, Worker>>,
+    /// Jobs that ran without progress; skipped until a wake from outside the loop.
+    stalled: std::sync::Mutex<HashSet<String>>,
+    /// A wake from outside the loop (a save, a setting, a connection) may
+    /// unblock a stalled job; a finished worker's wake does not.
+    external: AtomicBool,
+    /// Recent Chat turns per Loupist.
+    attention: std::sync::Mutex<HashMap<String, Attention>>,
+    /// When each Loupist last started a World job, as a sequence number.
+    served: std::sync::Mutex<HashMap<String, u64>>,
+    serve_sequence: AtomicU64,
+    /// In-flight paid World model calls across every Loupist.
+    call_slots: Arc<Semaphore>,
+    keep_awake: crate::power::KeepAwake,
+}
+
+/// World jobs that run at once, each for a different Loupist.
+pub(crate) const MAX_WORLD_JOBS: usize = 2;
+/// Paid World model calls in flight at once. Several jobs, and calls one
+/// episode sends together, share them, so a provider sees a bounded load.
+pub(crate) const MAX_WORLD_CALLS: usize = 4;
+/// A Loupist with a Chat turn this recent goes first.
+const ATTENTION_WINDOW_MS: i64 = 30 * 60 * 1000;
+
+struct Worker {
+    job_id: String,
+    abort: Option<tokio::task::AbortHandle>,
+}
+
+#[derive(Default)]
+struct Attention {
+    at_ms: i64,
+    chats: HashMap<String, i64>,
+}
+
+/// A World job chosen to run, with the settings it was chosen under.
+struct Selected {
+    job: super::graph_jobs::GraphJobView,
+    settings: GraphProcessingSettings,
+    auth_mode: String,
+}
+
+/// Lower ranks run first. A Loupist with a recent Chat turn comes before the
+/// rest, latest turn first; the others go by when they last started a job,
+/// longest ago (or never) first, then by the age of their next job.
+pub(super) fn schedule_rank(
+    attended_at: Option<i64>,
+    served: u64,
+    created_at_ms: i64,
+) -> (u8, i64, i64) {
+    match attended_at {
+        Some(at) => (0, -at, created_at_ms),
+        None => (1, served as i64, created_at_ms),
+    }
 }
 
 /// Inference the host made for one World job, by kind. Refusals are not calls.
@@ -102,7 +165,16 @@ impl GraphSupervisor {
         maintenance: MaintenanceCoordinator,
         inference: Option<crate::providers::inference::ProviderInferenceService>,
     ) -> Self {
+        // Tests never hold a real power assertion.
+        #[cfg(not(test))]
+        let keep_awake = crate::power::KeepAwake::new(store.clone());
+        #[cfg(test)]
+        let keep_awake = crate::power::KeepAwake::with_backend(
+            store.clone(),
+            crate::power::testing::FakePower::new(true),
+        );
         let inner = Arc::new(Inner {
+            keep_awake,
             store,
             inference,
             maintenance,
@@ -116,7 +188,14 @@ impl GraphSupervisor {
             schema_events: tokio::sync::broadcast::channel(64).0,
             stopped: AtomicBool::new(false),
             task: std::sync::Mutex::new(None),
-            pump_lock: Mutex::new(()),
+            control: Mutex::new(()),
+            running: std::sync::Mutex::new(HashMap::new()),
+            stalled: std::sync::Mutex::new(HashSet::new()),
+            external: AtomicBool::new(false),
+            attention: std::sync::Mutex::new(HashMap::new()),
+            served: std::sync::Mutex::new(HashMap::new()),
+            serve_sequence: AtomicU64::new(0),
+            call_slots: Arc::new(Semaphore::new(MAX_WORLD_CALLS)),
         });
         Self {
             lifetime: Arc::new(SupervisorLifetime {
@@ -173,7 +252,30 @@ impl GraphSupervisor {
 
     pub fn wake(&self) {
         self.ensure_started();
+        self.inner.external.store(true, Ordering::SeqCst);
         self.inner.notify.notify_one();
+    }
+
+    pub(crate) fn keep_awake(&self) -> &crate::power::KeepAwake {
+        &self.inner.keep_awake
+    }
+
+    /// A Chat turn started in `chat_id`: this Loupist's World jobs, and among
+    /// them the Sources that Chat saves, go first for a while.
+    pub fn note_attention(&self, loupist_id: &str, chat_id: &str) {
+        let at = now_ms();
+        let mut attention = self
+            .inner
+            .attention
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        attention.retain(|_, entry| at.saturating_sub(entry.at_ms) <= ATTENTION_WINDOW_MS);
+        let entry = attention.entry(loupist_id.to_string()).or_default();
+        entry.at_ms = at;
+        entry
+            .chats
+            .retain(|_, seen| at.saturating_sub(*seen) <= ATTENTION_WINDOW_MS);
+        entry.chats.insert(chat_id.to_string(), at);
     }
 
     pub fn ensure_started(&self) {
@@ -187,7 +289,7 @@ impl GraphSupervisor {
         match tokio::runtime::Handle::try_current() {
             Ok(handle) => {
                 let task = handle.spawn(async move {
-                    inner.run().await;
+                    Inner::run(inner).await;
                 });
                 *self.inner.task.lock().expect("graph task lock") = Some(task);
             }
@@ -350,11 +452,24 @@ fn not_sent_reply(
 impl Inner {
     fn cancel_task(&self) -> Option<tokio::task::JoinHandle<()>> {
         self.stopped.store(true, Ordering::SeqCst);
+        self.keep_awake.release();
         self.shutdown.notify_waiters();
         self.notify.notify_waiters();
         let task = self.task.lock().expect("graph task lock").take();
         if let Some(task) = &task {
             task.abort();
+        }
+        // A worker cut off here stays running in SQLite; the next start
+        // recovers it within its host allowance.
+        for worker in self
+            .running
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .values()
+        {
+            if let Some(abort) = &worker.abort {
+                abort.abort();
+            }
         }
         task
     }
@@ -385,7 +500,7 @@ impl Inner {
         result
     }
 
-    async fn run(&self) {
+    async fn run(self: Arc<Self>) {
         let mut checked_at = now_ms();
         loop {
             if self.stopped.load(Ordering::SeqCst) {
@@ -412,7 +527,16 @@ impl Inner {
             // A probe that is already due was offered to the last pump.
             let next_probe =
                 crate::providers::status::next_probe_at(&self.store).filter(|at| *at > now_ms());
-            let next_learning = next_learning.into_iter().chain(next_probe).min();
+            // While the Mac is kept awake, notice a switch to battery power.
+            let next_power = self
+                .keep_awake
+                .poll_interval()
+                .map(|interval| now_ms().saturating_add(interval.as_millis() as i64));
+            let next_learning = next_learning
+                .into_iter()
+                .chain(next_probe)
+                .chain(next_power)
+                .min();
             if let Some(at) = next_learning {
                 tokio::select! {
                     _ = &mut notified => {},
@@ -426,6 +550,12 @@ impl Inner {
             if self.stopped.load(Ordering::SeqCst) {
                 break;
             }
+            if self.external.swap(false, Ordering::SeqCst) {
+                self.stalled
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .clear();
+            }
             // Keep deadlines that expire between the last admission check and
             // the next wait; comparing with a later wall time could miss them.
             checked_at = now_ms();
@@ -433,22 +563,85 @@ impl Inner {
                 if self.stopped.load(Ordering::SeqCst) {
                     break;
                 }
-                match self.until_shutdown(self.pump_once()).await {
-                    Ok(Some(_)) => continue,
-                    Ok(None) => break,
-                    Err(_) => break,
+                match self.until_shutdown(self.step()).await {
+                    Ok(true) => continue,
+                    Ok(false) | Err(_) => break,
                 }
+            }
+            if !self.stopped.load(Ordering::SeqCst) {
+                self.update_keep_awake();
             }
         }
     }
 
-    async fn pump_once(&self) -> KnowledgeResult<Option<String>> {
-        // Public drains and the background loop share one queue consumer.
-        // Keep its result with the claim through publication.
-        let _pump = self.pump_lock.lock().await;
+    /// Keep the Mac awake while World jobs run; a queue that cannot move on its
+    /// own (blocked, stalled, waiting for a provider) lets it sleep.
+    fn update_keep_awake(&self) {
+        let pending = self.running_count() > 0;
+        let remaining = if pending && self.keep_awake.enabled() {
+            self.store
+                .for_each_database(|_, connection| {
+                    let tx = connection.transaction()?;
+                    super::graph_jobs::backlog(&tx)
+                        .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))
+                })
+                .map(|counts| counts.into_iter().sum())
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        self.keep_awake
+            .update(crate::power::Demand { pending, remaining });
+    }
+
+    /// One pass of the background loop: one schema, learning or recovery unit,
+    /// or World jobs for every free slot. True when it did or started something.
+    async fn step(self: &Arc<Self>) -> KnowledgeResult<bool> {
+        let _control = self.control.lock().await;
         if self.stopped.load(Ordering::SeqCst) {
-            return Ok(None);
+            return Ok(false);
         }
+        if self.pump_control().await?.is_some() {
+            return Ok(true);
+        }
+        let mut started = false;
+        while self.running_count() < MAX_WORLD_JOBS {
+            let Some(selected) = self.select_world_job()? else {
+                break;
+            };
+            self.spawn_world_job(selected);
+            started = true;
+        }
+        Ok(started)
+    }
+
+    /// Public drains run one unit to completion. World jobs the background
+    /// loop runs meanwhile are for other Loupists.
+    #[cfg(any(test, feature = "eval-harness"))]
+    async fn pump_once(&self) -> KnowledgeResult<Option<String>> {
+        let selected = {
+            let _control = self.control.lock().await;
+            if self.stopped.load(Ordering::SeqCst) {
+                return Ok(None);
+            }
+            if let Some(id) = self.pump_control().await? {
+                return Ok(Some(id));
+            }
+            self.select_world_job()?
+        };
+        let Some(selected) = selected else {
+            return Ok(None);
+        };
+        let loupist = selected.job.loupist_id.clone();
+        let result = self.run_world_job(selected).await;
+        self.running
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .remove(&loupist);
+        result
+    }
+
+    async fn pump_control(&self) -> KnowledgeResult<Option<String>> {
         if let Some(id) = self.pump_schema().await? {
             return Ok(Some(id));
         }
@@ -456,18 +649,73 @@ impl Inner {
             return Ok(Some(id));
         }
         self.recover_quarantined()?;
+        Ok(None)
+    }
+
+    fn running_count(&self) -> usize {
+        self.running
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .len()
+    }
+
+    /// Recent Chat turns: when each Loupist last had one, and the Chats.
+    fn attention_now(&self, at: i64) -> (HashMap<String, i64>, Vec<String>) {
+        let attention = self
+            .attention
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let mut loupists = HashMap::new();
+        let mut chats = Vec::new();
+        for (loupist, entry) in attention.iter() {
+            if at.saturating_sub(entry.at_ms) > ATTENTION_WINDOW_MS {
+                continue;
+            }
+            loupists.insert(loupist.clone(), entry.at_ms);
+            chats.extend(
+                entry
+                    .chats
+                    .iter()
+                    .filter(|(_, seen)| at.saturating_sub(**seen) <= ATTENTION_WINDOW_MS)
+                    .map(|(chat, _)| chat.clone()),
+            );
+        }
+        chats.sort();
+        (loupists, chats)
+    }
+
+    /// The next World job to run, by [`schedule_rank`], among Loupists with no
+    /// job in flight. The Loupist is marked running before this returns.
+    /// Callers hold `control`.
+    fn select_world_job(&self) -> KnowledgeResult<Option<Selected>> {
+        let (attended, hot_chats) = self.attention_now(now_ms());
+        let busy: HashSet<String> = self
+            .running
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .keys()
+            .cloned()
+            .collect();
+        let stalled = self
+            .stalled
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone();
         let candidates = self
             .store
             .for_each_database(|_, connection| {
                 let tx = connection.transaction()?;
-                super::graph_jobs::queued_loupist_heads(&tx)
+                super::graph_jobs::queued_loupist_heads(&tx, &hot_chats)
                     .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))
             })
             .map_err(|_| KnowledgeError::Invalid("could not read Loupist jobs"))?
             .into_iter()
             .flatten()
+            .filter(|candidate| {
+                !busy.contains(&candidate.loupist_id) && !stalled.contains(&candidate.job_id)
+            })
             .collect::<Vec<_>>();
-        let mut selected = None;
+        let mut ready = Vec::new();
         for candidate in candidates {
             let settings = load_settings(
                 &*self
@@ -489,12 +737,88 @@ impl Inner {
             {
                 continue;
             }
-            selected = Some((candidate, settings, auth_mode));
-            break;
+            ready.push(Selected {
+                job: candidate,
+                settings,
+                auth_mode,
+            });
         }
-        let Some((job, mut settings, auth_mode)) = selected else {
-            return Ok(None);
+        let selected = {
+            let served = self
+                .served
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            ready.into_iter().min_by_key(|selected| {
+                let loupist = &selected.job.loupist_id;
+                schedule_rank(
+                    attended.get(loupist).copied(),
+                    served.get(loupist).copied().unwrap_or(0),
+                    selected.job.created_at_ms,
+                )
+            })
         };
+        if let Some(selected) = &selected {
+            let loupist = selected.job.loupist_id.clone();
+            let sequence = self.serve_sequence.fetch_add(1, Ordering::SeqCst) + 1;
+            self.served
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .insert(loupist.clone(), sequence);
+            self.running
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .insert(
+                    loupist,
+                    Worker {
+                        job_id: selected.job.job_id.clone(),
+                        abort: None,
+                    },
+                );
+        }
+        Ok(selected)
+    }
+
+    fn spawn_world_job(self: &Arc<Self>, selected: Selected) {
+        let loupist = selected.job.loupist_id.clone();
+        let job_id = selected.job.job_id.clone();
+        let inner = self.clone();
+        let (owner, worker_job) = (loupist.clone(), job_id.clone());
+        let task = tokio::spawn(async move {
+            let result = inner.until_shutdown(inner.run_world_job(selected)).await;
+            let progressed = matches!(result, Ok(Some(_)));
+            inner
+                .running
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .remove(&owner);
+            if !progressed {
+                inner
+                    .stalled
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .insert(worker_job);
+            }
+            inner.notify.notify_one();
+        });
+        if let Some(worker) = self
+            .running
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .get_mut(&loupist)
+            .filter(|worker| worker.job_id == job_id)
+        {
+            worker.abort = Some(task.abort_handle());
+        }
+    }
+
+    /// Run one selected World job to its next status. Some(job id) when it
+    /// made progress; None when it stayed queued and needs a change first.
+    async fn run_world_job(&self, selected: Selected) -> KnowledgeResult<Option<String>> {
+        let Selected {
+            job,
+            mut settings,
+            auth_mode,
+        } = selected;
         let knowledge = loupist_knowledge(self.store.clone(), &job.loupist_id, &self.app_data)?;
         let _activity = self
             .maintenance
@@ -505,8 +829,10 @@ impl Inner {
             })
             .await
             .map_err(|_| KnowledgeError::Invalid("graph activity gate is unavailable"))?;
+        let started_at = now_ms();
         let mut run_log =
-            crate::runs::log::RunLog::new("world", &job.loupist_id, &job.job_id, now_ms());
+            crate::runs::log::RunLog::new("world", &job.loupist_id, &job.job_id, started_at);
+        run_log.queue_wait_ms = Some(started_at.saturating_sub(job.created_at_ms).max(0) as u64);
         run_log.model = settings.helper_model.as_ref().map(|model| {
             format!(
                 "{}/{}",
@@ -519,6 +845,9 @@ impl Inner {
             crate::runs::log::InferenceUsage::default(),
         ));
         let calls = Arc::new(WorldCalls::default());
+        let stage_ms = Arc::new(std::sync::Mutex::new(BTreeMap::<String, u64>::new()));
+        let callback_stages = stage_ms.clone();
+        let call_slots = self.call_slots.clone();
         let recovery = job.document.episode_kind == "world_recovery";
         let inference = self.inference.clone();
         let shared_store = self.store.clone();
@@ -554,17 +883,29 @@ impl Inner {
             let assets = assets.clone();
             let usage = callback_usage.clone();
             let calls = callback_calls.clone();
+            let stages = callback_stages.clone();
+            let slots = call_slots.clone();
             async move {
-                let kind = request
-                    .get("kind")
-                    .or_else(|| request.pointer("/params/kind"))
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or_default()
-                    .to_string();
+                let field = |name: &str| {
+                    request
+                        .get(name)
+                        .or_else(|| request.pointer(&format!("/params/{name}")))
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_default()
+                        .to_string()
+                };
+                let kind = field("kind");
                 let paid = kind == "llm";
+                // Local embeddings take no slot; a paid call waits for one.
+                let _slot = if paid {
+                    slots.acquire_owned().await.ok()
+                } else {
+                    None
+                };
                 if paid {
                     usage.lock().unwrap_or_else(|e| e.into_inner()).begin();
                 }
+                let sent = Instant::now();
                 let reply = current_inference(
                     &shared_store,
                     &loupist,
@@ -579,6 +920,19 @@ impl Inner {
                         &reply.body["usage"],
                         reply.disposition == super::graph_inference::InferenceDisposition::NotSent,
                     );
+                    if reply.disposition != super::graph_inference::InferenceDisposition::NotSent {
+                        let stage = field("stage");
+                        let elapsed = sent.elapsed().as_millis() as u64;
+                        *stages
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .entry(if stage.is_empty() {
+                                "llm".into()
+                            } else {
+                                stage
+                            })
+                            .or_default() += elapsed;
+                    }
                 }
                 calls.observe(&kind, &reply);
                 reply
@@ -596,6 +950,7 @@ impl Inner {
         )
         .await;
         run_log.usage = usage.lock().unwrap_or_else(|e| e.into_inner()).snapshot();
+        run_log.stage_ms = std::mem::take(&mut *stage_ms.lock().unwrap_or_else(|e| e.into_inner()));
         calls.record(&mut run_log);
         match &driven {
             Ok(view) => match view.status.as_str() {
@@ -621,10 +976,12 @@ impl Inner {
             merge_quarantine(&self.store, &job.loupist_id, &settings)?;
         }
         driven.map(|view| {
-            // A queued job that could not be claimed needs a settings change or
-            // another attempt to finish before this loop can make progress. A
-            // job queued again for its one retry did make progress.
-            let retrying = view.document.interrupted_attempts > job.document.interrupted_attempts;
+            // A queued job that could not be claimed, or that sent nothing, needs
+            // a settings change or another attempt to finish before this loop
+            // can make progress. A job queued again for its one retry, or after
+            // the Mac slept through it, did make progress.
+            let retrying = view.document.interrupted_attempts > job.document.interrupted_attempts
+                || view.document.host_interruptions > job.document.host_interruptions;
             (view.status != super::graph_jobs::JOB_QUEUED || retrying).then_some(view.job_id)
         })
     }

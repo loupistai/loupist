@@ -1499,6 +1499,14 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     return knowledge.graphProcessingView(await knowledge.knowledgeGraphSettingsSet(this.state, request), await this.modelCatalogGet(), await knowledge.knowledgeGraphJobs(this.state, request));
   }
 
+  worldKeepAwakeGet() {
+    return knowledge.worldKeepAwakeGet(this.state);
+  }
+
+  worldKeepAwakeSet(request: { enabled: boolean }) {
+    return knowledge.worldKeepAwakeSet(this.state, request);
+  }
+
   journalList(request: Contract.JournalListRequest) {
     return knowledge.journalList(this.state, request);
   }
