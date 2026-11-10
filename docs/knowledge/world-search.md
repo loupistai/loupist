@@ -25,7 +25,11 @@ Focusing a field there scrolls it into the settings column.
 Defaults prefer connected,
 supported text models using the ordered policy in
 [`world-model-defaults.json`](../../apps/loupist/world-model-defaults.json).
-The exact model/effort pair must exist in the catalog. Existing folders keep their
+The exact model/effort pair must exist in the catalog. Each provider lists its
+newest low-cost model first and keeps older ones as fallbacks; flagship models are
+never recommended. `agent/world-model-defaults.test.mjs` sends every pair through
+Pi's request serializer and response parser. GPT-6 Luna stays at high effort: on the
+World ontology corpus, medium was 42% faster but stored 14–18% fewer claims. Existing folders keep their
 saved choices; changing the Chat model does not change World processing.
 
 An enabled new Loupist without a suitable default stores a pending marker. Connecting

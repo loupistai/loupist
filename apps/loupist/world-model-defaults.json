@@ -32,11 +32,19 @@
     "provider": "anthropic",
     "models": [
       {
+        "id": "claude-haiku-5-5",
+        "thinking_level": "medium"
+      },
+      {
         "id": "claude-haiku-4-5",
         "thinking_level": "low"
       },
       {
         "id": "claude-haiku-4-5-20251001",
+        "thinking_level": "low"
+      },
+      {
+        "id": "claude-sonnet-5-5",
         "thinking_level": "low"
       },
       {
@@ -117,6 +125,10 @@
         "thinking_level": "medium"
       },
       {
+        "id": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        "thinking_level": "high"
+      },
+      {
         "id": "deepseek-ai/DeepSeek-V4.1-Flash",
         "thinking_level": "high"
       },
@@ -142,6 +154,10 @@
   {
     "provider": "minimax",
     "models": [
+      {
+        "id": "MiniMax-M3.1-Flash",
+        "thinking_level": "low"
+      },
       {
         "id": "MiniMax-M3",
         "thinking_level": "off"
