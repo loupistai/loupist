@@ -126,6 +126,7 @@ export function WorldProcessingSettings({ bridge, loupistId, active = true, coll
       setError(errorMessage(cause, t("worldProcessingSettings.couldNotOpenWorldProcessingSettings")));
     });
     return () => { serial.current += 1; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` only words the failure; a language change must not reload.
   }, [active, bridge, loupistId, reload]);
 
   const current = loaded?.loupistId === loupistId ? loaded : null;
@@ -157,6 +158,7 @@ export function WorldProcessingSettings({ bridge, loupistId, active = true, coll
     };
     timer = setTimeout(() => void refresh(), interval);
     return () => { cancelled = true; clearTimeout(timer); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` only words the failure; a language change must not reload.
   }, [active, action, bridge, loupistId, readiness, recovering, recoveryPoll]);
 
   if (!current) return error ? <div className="knowledge-settings-error"><p role="alert">{error}</p><Button type="button" variant="outline" onClick={() => setReload((value) => value + 1)}>{t("worldProcessingSettings.tryAgain")}</Button></div> : <p role="status">{t("worldProcessingSettings.openingWorldProcessingSettings")}</p>;

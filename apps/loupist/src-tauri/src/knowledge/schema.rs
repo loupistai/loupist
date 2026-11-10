@@ -9,7 +9,7 @@ use super::error::KnowledgeResult;
 #[cfg(test)]
 use crate::fs::artifact_trust::ensure_private_directory;
 
-pub const KNOWLEDGE_SCHEMA_VERSION: i64 = 6;
+pub const KNOWLEDGE_SCHEMA_VERSION: i64 = 7;
 pub const KNOWLEDGE_FORMAT_VERSION: u32 = 1;
 
 const EXPECTED_TABLES: &[&str] = &[
@@ -116,12 +116,6 @@ pub(super) fn inspect_knowledge(
     })
 }
 
-/// Whether a Loupist database's Memory schema predates this build. Such a
-/// folder is refused with a typed state instead of half-working turns.
-pub(crate) fn made_by_earlier_build(connection: &Connection) -> KnowledgeResult<bool> {
-    Ok(knowledge_version(connection)?.is_some_and(|found| found < KNOWLEDGE_SCHEMA_VERSION))
-}
-
 #[cfg(test)]
 pub(super) fn blob_root_for(db_path: &Path) -> KnowledgeResult<PathBuf> {
     let canonical = canonical_leaf(db_path)?;
@@ -177,12 +171,12 @@ fn schema_sql() -> String {
             event_id TEXT PRIMARY KEY NOT NULL,
             loupist_id TEXT NOT NULL,
             at_ms INTEGER NOT NULL CHECK (at_ms >= 0),
-            kind TEXT NOT NULL CHECK (kind IN ('entity_added', 'claim_added', 'claim_disputed', 'claim_withdrawn', 'lens_created', 'lens_revised', 'lens_renamed', 'lens_archived', 'lens_restored', 'lens_contested', 'source_retained', 'journal_created', 'journal_updated', 'journal_archived', 'journal_restored', 'journal_reviewed', 'schema_extended', 'schema_reduced', 'thesis_moved', 'growth_truncated')),
+            kind TEXT NOT NULL,
             record_id TEXT,
             subject_id TEXT,
             origin_chat_id TEXT,
             origin_message_id TEXT,
-            actor TEXT NOT NULL CHECK (actor IN ('user', 'loupist', 'import', 'processing')),
+            actor TEXT NOT NULL,
             summary TEXT NOT NULL CHECK (length(summary) <= 240 AND instr(summary, char(10)) = 0 AND instr(summary, char(13)) = 0),
             before_summary TEXT,
             after_summary TEXT
@@ -193,7 +187,7 @@ fn schema_sql() -> String {
         ) STRICT;
         CREATE TABLE knowledge_learning_reviews (
             review_id TEXT PRIMARY KEY NOT NULL, loupist_id TEXT NOT NULL,
-            world_job_id TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending','queued','running','created','refined','deferred','failed')),
+            world_job_id TEXT NOT NULL, status TEXT NOT NULL,
             reason TEXT, lens_record_id TEXT, rationale TEXT,
             evidence_count INTEGER NOT NULL DEFAULT 0,
             created_at_ms INTEGER NOT NULL, started_at_ms INTEGER, finished_at_ms INTEGER,
@@ -208,7 +202,7 @@ fn schema_sql() -> String {
             loupist_id TEXT NOT NULL,
             before_json TEXT NOT NULL,
             after_json TEXT NOT NULL,
-            producer TEXT NOT NULL CHECK (producer IN ('preset', 'chat', 'review', 'undo')),
+            producer TEXT NOT NULL,
             evidence_json TEXT NOT NULL,
             origin_chat_id TEXT,
             origin_message_id TEXT,
@@ -401,7 +395,7 @@ fn schema_sql() -> String {
             loupist_id TEXT NOT NULL,
             title TEXT NOT NULL,
             title_fold TEXT NOT NULL,
-            kind TEXT NOT NULL CHECK (kind IN ('principle', 'perspective', 'method', 'subject', 'idea')),
+            kind TEXT NOT NULL,
             principle_statement_fold TEXT,
             archived_at_ms INTEGER,
             learned INTEGER NOT NULL DEFAULT 0 CHECK (learned IN (0, 1)),
@@ -426,7 +420,7 @@ fn schema_sql() -> String {
             before_digest TEXT,
             after_digest TEXT,
             before_json TEXT,
-            origin TEXT NOT NULL CHECK (origin IN ('turn', 'user', 'learning', 'import')),
+            origin TEXT NOT NULL,
             chat_id TEXT,
             message_id TEXT,
             created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0),
@@ -439,7 +433,7 @@ fn schema_sql() -> String {
         CREATE TABLE knowledge_lens_anchors (
             loupist_id TEXT NOT NULL,
             record_id TEXT NOT NULL REFERENCES knowledge_records(record_id) ON DELETE RESTRICT,
-            role TEXT NOT NULL CHECK (role IN ('subject', 'mention', 'applied')),
+            role TEXT NOT NULL,
             node_id TEXT,
             name_fold TEXT NOT NULL DEFAULT '',
             turn_id TEXT,
@@ -456,7 +450,7 @@ fn schema_sql() -> String {
             far_node_id TEXT NOT NULL,
             path_json TEXT NOT NULL,
             score INTEGER NOT NULL,
-            status TEXT NOT NULL CHECK (status IN ('new', 'shown', 'opened', 'dismissed', 'filed')),
+            status TEXT NOT NULL,
             created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0),
             status_at_ms INTEGER NOT NULL CHECK (status_at_ms >= 0),
             shown_at_ms INTEGER CHECK (shown_at_ms IS NULL OR shown_at_ms >= 0)
@@ -511,10 +505,10 @@ fn schema_sql() -> String {
         CREATE TABLE knowledge_search_documents (
             record_id TEXT NOT NULL,
             revision_id TEXT NOT NULL,
-            kind TEXT NOT NULL CHECK (kind IN ('source', 'lens', 'world')),
+            kind TEXT NOT NULL,
             span_id TEXT NOT NULL DEFAULT '',
             object_id TEXT NOT NULL DEFAULT '',
-            coverage TEXT NOT NULL CHECK (coverage IN ('included_full', 'metadata_only', 'snippet')),
+            coverage TEXT NOT NULL,
             title TEXT NOT NULL,
             body TEXT NOT NULL,
             aliases TEXT NOT NULL DEFAULT '',
@@ -624,7 +618,10 @@ mod tests {
             inspect_knowledge(&connection, &tables(&connection)).unwrap(),
             SchemaState::Current
         );
-        assert!(!made_by_earlier_build(&connection).unwrap());
+        assert_eq!(
+            crate::store::schema_standing(&connection).unwrap(),
+            crate::store::Standing::Current
+        );
         connection
             .execute_batch(
                 "DROP TABLE knowledge_lens_anchors; DROP TABLE knowledge_lens_log;
@@ -639,6 +636,19 @@ mod tests {
             inspect_knowledge(&connection, &tables(&connection)).unwrap(),
             SchemaState::Unsupported(5)
         );
-        assert!(made_by_earlier_build(&connection).unwrap());
+        assert_eq!(
+            crate::store::schema_standing(&connection).unwrap(),
+            crate::store::Standing::Earlier
+        );
+        connection
+            .execute(
+                "UPDATE knowledge_schema SET version = ?1",
+                [KNOWLEDGE_SCHEMA_VERSION + 1],
+            )
+            .unwrap();
+        assert_eq!(
+            crate::store::schema_standing(&connection).unwrap(),
+            crate::store::Standing::Newer
+        );
     }
 }

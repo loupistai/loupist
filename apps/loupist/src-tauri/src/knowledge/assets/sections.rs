@@ -16,6 +16,7 @@ const MAX_SPANS_PER_SECTION: usize = 64;
 pub const MAX_PARAGRAPHS_PER_SECTION: usize = 400;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Section {
     Risk,

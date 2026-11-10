@@ -25,30 +25,18 @@ use crate::{
     providers::connection::create_search_support_files,
     providers::status::BackgroundHold,
     runs::maintenance::{ActivityLease, MaintenanceBlocker, MaintenanceCoordinator},
-    store::{LoupistStore, SqliteStore},
+    store::SqliteStore,
 };
 
 const PROTOCOL: &str = "loupist-provider/1";
 const MAX_REQUEST_BYTES: usize = 512 * 1024;
 const MAX_RESULT_BYTES: u64 = 512 * 1024;
 
-/// Pinned Pi providers whose model adapters support our fetch guard. The Pi
-/// process checks the selected model's actual API again before dispatch.
+/// Pinned Pi providers whose model adapters support our fetch guard
+/// (`isolated_inference` in the provider manifest). The Pi process checks the
+/// selected model's actual API again before dispatch.
 pub fn supports_isolated_inference(provider: &str) -> bool {
-    matches!(
-        provider,
-        "openai"
-            | "openai-codex"
-            | "anthropic"
-            | "xai"
-            | "deepseek"
-            | "groq"
-            | "cerebras"
-            | "baseten"
-            | "together"
-            | "kimi-coding"
-            | "minimax"
-    )
+    crate::providers::manifest::spec(provider).is_some_and(|spec| spec.isolated_inference)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -108,6 +96,7 @@ impl ProviderInferenceReply {
 
 /// Why a provider cannot run World processing now.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum UnreadyReason {
     IsolationUnsupported,

@@ -30,10 +30,16 @@ mod folder;
 mod host;
 pub(crate) mod provider_status;
 mod schema;
+mod upgrade;
 pub mod user_context;
 pub(crate) use folder::StoreConnection;
-pub(crate) use host::AppliedConnectorConfig;
+pub(crate) use host::{recorded_environment_id, AppliedConnectorConfig};
 pub(crate) use schema::{STORE_APPLICATION_ID, STORE_SCHEMA_VERSION};
+#[cfg(test)]
+pub(crate) use upgrade::restore_baseline_for_test;
+pub(crate) use upgrade::{
+    standing as schema_standing, upgraded_copy, Standing, STORE_BASELINE_VERSION,
+};
 
 /// Fields a profile edit may change; `None` keeps the stored value.
 #[derive(Clone, Copy, Debug, Default)]
@@ -55,22 +61,44 @@ pub enum StoreError {
     Json(#[from] serde_json::Error),
     #[error("invalid object: {0}")]
     Invalid(String),
-    #[error(
-        "database schema {found} is unsupported (expected {expected}); initialize a fresh library"
-    )]
-    UnsupportedSchema { found: i64, expected: i64 },
+    /// A newer Loupist wrote this database; it is refused and left untouched.
+    #[error("this data was written by a newer version of Loupist")]
+    NewerVersion,
+    /// An upgrade step failed; its transaction rolled back.
+    #[error("database upgrade failed: {0}")]
+    Upgrade(String),
     #[error("database schema is nonempty but has user_version 0; refusing to initialize it")]
     UnversionedNonemptySchema,
     #[error("immutable record conflicts with an existing record: {0}")]
     Conflict(&'static str),
     #[error("store lock was poisoned")]
     LockPoisoned,
-    /// The folder's Memory schema predates this build; it is refused, never migrated.
+    /// A development format from before the upgrade ladder; refused, never migrated.
     #[error("this Loupist was made by an earlier version of the app")]
     EarlierVersion,
 }
 
 pub type StoreResult<T> = Result<T, StoreError>;
+
+/// Ids the `app_settings` table holds. Rust owns this list (store schema 5
+/// dropped the SQL whitelist), so a new setting needs no schema step.
+pub(crate) fn is_app_setting_id(id: &str) -> bool {
+    matches!(id, "model" | "model_visibility" | "update")
+        || id
+            .strip_prefix("world_processing:")
+            .is_some_and(|loupist| !loupist.is_empty())
+}
+
+fn put_app_setting(connection: &Connection, id: &str, data_json: &str) -> StoreResult<()> {
+    if !is_app_setting_id(id) {
+        return Err(StoreError::Invalid("app setting id is unknown".into()));
+    }
+    connection.execute(
+        "INSERT INTO app_settings (id, data_json) VALUES (?1, ?2) ON CONFLICT(id) DO UPDATE SET data_json = excluded.data_json",
+        params![id, data_json],
+    )?;
+    Ok(())
+}
 
 #[derive(Debug)]
 pub enum DeletionJournalRecord {
@@ -80,88 +108,6 @@ pub enum DeletionJournalRecord {
         loupist_id: String,
         reason: String,
     },
-}
-
-pub trait LoupistStore: Send + Sync {
-    fn create_deletion_journal(&self, journal: &DeletionJournal) -> StoreResult<()>;
-    fn replace_deletion_journal(
-        &self,
-        expected: &DeletionJournal,
-        journal: &DeletionJournal,
-    ) -> StoreResult<()>;
-    fn list_deletion_journals(&self) -> StoreResult<Vec<DeletionJournalRecord>>;
-    fn delete_deletion_journal(&self, expected: &DeletionJournal) -> StoreResult<()>;
-    fn save_model_catalog(&self, catalog: &ModelCatalog) -> StoreResult<()>;
-    fn get_model_catalog(&self) -> StoreResult<Option<ModelCatalog>>;
-    fn save_update_schedule(&self, schedule: &PersistedUpdateSchedule) -> StoreResult<()>;
-    fn get_update_schedule(&self) -> StoreResult<Option<PersistedUpdateSchedule>>;
-
-    fn create_loupist(&self, profile: &LoupistProfile) -> StoreResult<()>;
-    fn save_loupist(&self, profile: &LoupistProfile) -> StoreResult<()>;
-    fn reconnect_loupist_workspace(
-        &self,
-        expected: &LoupistProfile,
-        updated: &LoupistProfile,
-    ) -> StoreResult<()>;
-    fn set_loupist_last_model_profile(
-        &self,
-        id: &str,
-        model_profile_id: &str,
-        updated_at_ms: i64,
-    ) -> StoreResult<LoupistProfile>;
-    fn update_loupist_profile(
-        &self,
-        id: &str,
-        edit: LoupistProfileEdit<'_>,
-        updated_at_ms: i64,
-    ) -> StoreResult<LoupistProfile>;
-    fn delete_loupist(&self, expected: &LoupistProfile) -> StoreResult<()>;
-    fn get_loupist(&self, id: &str) -> StoreResult<Option<LoupistProfile>>;
-    fn list_loupists(&self) -> StoreResult<Vec<LoupistProfile>>;
-    fn save_loupist_capability(&self, binding: &LoupistCapabilityBinding) -> StoreResult<()>;
-    fn get_loupist_capability(
-        &self,
-        loupist_id: &str,
-        entry_id: &str,
-    ) -> StoreResult<Option<LoupistCapabilityBinding>>;
-    fn list_loupist_capabilities(
-        &self,
-        loupist_id: &str,
-    ) -> StoreResult<Vec<LoupistCapabilityBinding>>;
-
-    fn create_chat(&self, chat: &ChatSession) -> StoreResult<()>;
-    fn replace_chat(&self, expected: &ChatSession, chat: &ChatSession) -> StoreResult<()>;
-    fn delete_chat(&self, expected: &ChatSession) -> StoreResult<()>;
-    fn get_chat(&self, id: &str) -> StoreResult<Option<ChatSession>>;
-    fn list_chats_for_loupist(&self, loupist_id: &str) -> StoreResult<Vec<ChatSession>>;
-    /// Chats updated since `since_ms` whose last message is an answer with tool refusals:
-    /// `(chat id, title, updated at, refusals JSON)`. Reads only the last message.
-    fn chats_ending_in_refusals(
-        &self,
-        loupist_id: &str,
-        since_ms: i64,
-    ) -> StoreResult<Vec<(String, String, i64, String)>>;
-    /// Chats updated since `since_ms` whose last message is a finished answer the
-    /// model wrote (no refusals, no host-posted receipt, delivery or alert):
-    /// `(chat id, title, updated at, answer text)`. Reads only the last message.
-    fn chats_ending_in_answer(
-        &self,
-        loupist_id: &str,
-        since_ms: i64,
-    ) -> StoreResult<Vec<(String, String, i64, String)>>;
-    fn get_chat_artifact(&self, id: &str) -> StoreResult<Option<ChatArtifact>>;
-    fn list_chat_artifacts(&self, chat_session_id: &str) -> StoreResult<Vec<ChatArtifact>>;
-    /// The Loupist's charts and documents across its chats, newest first: `(artifact, chat title)`.
-    fn list_loupist_artifacts(
-        &self,
-        loupist_id: &str,
-        limit: usize,
-    ) -> StoreResult<Vec<(ChatArtifact, String)>>;
-    fn get_chat_artifact_current(
-        &self,
-        artifact_id: &str,
-    ) -> StoreResult<Option<ChatArtifactRevision>>;
-    fn get_chart_dataset(&self, id: &str) -> StoreResult<Option<ChartDataset>>;
 }
 
 pub struct SqliteStore {
@@ -400,8 +346,8 @@ impl SqliteStore {
     }
 }
 
-impl LoupistStore for SqliteStore {
-    fn create_deletion_journal(&self, journal: &DeletionJournal) -> StoreResult<()> {
+impl SqliteStore {
+    pub fn create_deletion_journal(&self, journal: &DeletionJournal) -> StoreResult<()> {
         journal
             .validate()
             .map_err(|error| StoreError::Invalid(error.to_string()))?;
@@ -417,7 +363,7 @@ impl LoupistStore for SqliteStore {
         Ok(())
     }
 
-    fn replace_deletion_journal(
+    pub fn replace_deletion_journal(
         &self,
         expected: &DeletionJournal,
         journal: &DeletionJournal,
@@ -450,7 +396,7 @@ impl LoupistStore for SqliteStore {
         Ok(())
     }
 
-    fn list_deletion_journals(&self) -> StoreResult<Vec<DeletionJournalRecord>> {
+    pub fn list_deletion_journals(&self) -> StoreResult<Vec<DeletionJournalRecord>> {
         let connection = self.lock()?;
         let mut statement = connection.prepare(
             "SELECT id, loupist_id, data_json FROM deletion_journals ORDER BY updated_at_ms ASC, id ASC",
@@ -481,7 +427,7 @@ impl LoupistStore for SqliteStore {
         .collect()
     }
 
-    fn delete_deletion_journal(&self, expected: &DeletionJournal) -> StoreResult<()> {
+    pub fn delete_deletion_journal(&self, expected: &DeletionJournal) -> StoreResult<()> {
         expected
             .validate()
             .map_err(|error| StoreError::Invalid(error.to_string()))?;
@@ -497,34 +443,26 @@ impl LoupistStore for SqliteStore {
         Ok(())
     }
 
-    fn save_model_catalog(&self, catalog: &ModelCatalog) -> StoreResult<()> {
+    pub fn save_model_catalog(&self, catalog: &ModelCatalog) -> StoreResult<()> {
         catalog
             .validate()
             .map_err(|error| StoreError::Invalid(error.to_string()))?;
         let connection = self.lock()?;
-        connection.execute(
-            "INSERT INTO app_settings (id, data_json) VALUES ('model', ?1) ON CONFLICT(id) DO UPDATE SET data_json = excluded.data_json",
-            [to_json(catalog)?],
-        )?;
-        Ok(())
+        put_app_setting(&connection, "model", &to_json(catalog)?)
     }
 
-    fn get_model_catalog(&self) -> StoreResult<Option<ModelCatalog>> {
+    pub fn get_model_catalog(&self) -> StoreResult<Option<ModelCatalog>> {
         let connection = self.lock()?;
         load_json_by_id(&connection, "app_settings", "model")
     }
 
-    fn save_update_schedule(&self, schedule: &PersistedUpdateSchedule) -> StoreResult<()> {
+    pub fn save_update_schedule(&self, schedule: &PersistedUpdateSchedule) -> StoreResult<()> {
         schedule.validate()?;
         let connection = self.lock()?;
-        connection.execute(
-            "INSERT INTO app_settings (id, data_json) VALUES ('update', ?1) ON CONFLICT(id) DO UPDATE SET data_json = excluded.data_json",
-            [to_json(schedule)?],
-        )?;
-        Ok(())
+        put_app_setting(&connection, "update", &to_json(schedule)?)
     }
 
-    fn get_update_schedule(&self) -> StoreResult<Option<PersistedUpdateSchedule>> {
+    pub fn get_update_schedule(&self) -> StoreResult<Option<PersistedUpdateSchedule>> {
         let connection = self.lock()?;
         let schedule: Option<PersistedUpdateSchedule> =
             load_json_by_id(&connection, "app_settings", "update")?;
@@ -534,7 +472,7 @@ impl LoupistStore for SqliteStore {
         Ok(schedule)
     }
 
-    fn create_loupist(&self, profile: &LoupistProfile) -> StoreResult<()> {
+    pub fn create_loupist(&self, profile: &LoupistProfile) -> StoreResult<()> {
         profile
             .validate()
             .map_err(|error| StoreError::Invalid(error.to_string()))?;
@@ -584,7 +522,7 @@ impl LoupistStore for SqliteStore {
         Ok(())
     }
 
-    fn save_loupist(&self, profile: &LoupistProfile) -> StoreResult<()> {
+    pub fn save_loupist(&self, profile: &LoupistProfile) -> StoreResult<()> {
         profile
             .validate()
             .map_err(|error| StoreError::Invalid(error.to_string()))?;
@@ -622,7 +560,7 @@ impl LoupistStore for SqliteStore {
         Ok(())
     }
 
-    fn reconnect_loupist_workspace(
+    pub fn reconnect_loupist_workspace(
         &self,
         expected: &LoupistProfile,
         updated: &LoupistProfile,
@@ -661,16 +599,12 @@ impl LoupistStore for SqliteStore {
         }
         // Pi sessions are bound to the old CWD and must be rebuilt from the
         // canonical transcript after a folder is reconnected.
-        transaction.execute(
-            "UPDATE chat_sessions SET data_json = json_remove(data_json, '$.piSessionCache')
-             WHERE loupist_id = ?1",
-            [&updated.id],
-        )?;
+        folder::drop_pi_session_caches(&transaction, Some(&updated.id))?;
         transaction.commit()?;
         Ok(())
     }
 
-    fn set_loupist_last_model_profile(
+    pub fn set_loupist_last_model_profile(
         &self,
         id: &str,
         model_profile_id: &str,
@@ -681,7 +615,7 @@ impl LoupistStore for SqliteStore {
         })
     }
 
-    fn update_loupist_profile(
+    pub fn update_loupist_profile(
         &self,
         id: &str,
         edit: LoupistProfileEdit<'_>,
@@ -706,7 +640,7 @@ impl LoupistStore for SqliteStore {
         })
     }
 
-    fn delete_loupist(&self, expected: &LoupistProfile) -> StoreResult<()> {
+    pub fn delete_loupist(&self, expected: &LoupistProfile) -> StoreResult<()> {
         expected
             .validate()
             .map_err(|error| StoreError::Invalid(error.to_string()))?;
@@ -755,12 +689,12 @@ impl LoupistStore for SqliteStore {
         Ok(())
     }
 
-    fn get_loupist(&self, id: &str) -> StoreResult<Option<LoupistProfile>> {
+    pub fn get_loupist(&self, id: &str) -> StoreResult<Option<LoupistProfile>> {
         let connection = self.lock()?;
         load_json_by_id(&connection, "loupist_profiles", id)
     }
 
-    fn list_loupists(&self) -> StoreResult<Vec<LoupistProfile>> {
+    pub fn list_loupists(&self) -> StoreResult<Vec<LoupistProfile>> {
         let connection = self.lock()?;
         let mut statement = connection.prepare(
             "SELECT data_json FROM loupist_profiles ORDER BY updated_at_ms DESC, id ASC",
@@ -769,7 +703,7 @@ impl LoupistStore for SqliteStore {
         rows.map(|row| from_json(&row?)).collect()
     }
 
-    fn save_loupist_capability(&self, binding: &LoupistCapabilityBinding) -> StoreResult<()> {
+    pub fn save_loupist_capability(&self, binding: &LoupistCapabilityBinding) -> StoreResult<()> {
         binding
             .validate()
             .map_err(|error| StoreError::Invalid(error.to_string()))?;
@@ -798,7 +732,7 @@ impl LoupistStore for SqliteStore {
         Ok(())
     }
 
-    fn get_loupist_capability(
+    pub fn get_loupist_capability(
         &self,
         loupist_id: &str,
         entry_id: &str,
@@ -815,7 +749,7 @@ impl LoupistStore for SqliteStore {
             .transpose()
     }
 
-    fn list_loupist_capabilities(
+    pub fn list_loupist_capabilities(
         &self,
         loupist_id: &str,
     ) -> StoreResult<Vec<LoupistCapabilityBinding>> {
@@ -827,7 +761,7 @@ impl LoupistStore for SqliteStore {
         rows.map(|row| from_json(&row?)).collect()
     }
 
-    fn create_chat(&self, chat: &ChatSession) -> StoreResult<()> {
+    pub fn create_chat(&self, chat: &ChatSession) -> StoreResult<()> {
         chat.validate()
             .map_err(|error| StoreError::Invalid(error.to_string()))?;
         let data = to_json(chat)?;
@@ -838,11 +772,11 @@ impl LoupistStore for SqliteStore {
         Ok(())
     }
 
-    fn replace_chat(&self, expected: &ChatSession, chat: &ChatSession) -> StoreResult<()> {
+    pub fn replace_chat(&self, expected: &ChatSession, chat: &ChatSession) -> StoreResult<()> {
         self.replace_chat_with(expected, chat, |_| Ok(()))
     }
 
-    fn delete_chat(&self, expected: &ChatSession) -> StoreResult<()> {
+    pub fn delete_chat(&self, expected: &ChatSession) -> StoreResult<()> {
         expected
             .validate()
             .map_err(|error| StoreError::Invalid(error.to_string()))?;
@@ -885,12 +819,12 @@ impl LoupistStore for SqliteStore {
         Ok(())
     }
 
-    fn get_chat(&self, id: &str) -> StoreResult<Option<ChatSession>> {
+    pub fn get_chat(&self, id: &str) -> StoreResult<Option<ChatSession>> {
         let connection = self.lock_record("chat_sessions", id)?;
         load_json_by_id(&connection, "chat_sessions", id)
     }
 
-    fn list_chats_for_loupist(&self, loupist_id: &str) -> StoreResult<Vec<ChatSession>> {
+    pub fn list_chats_for_loupist(&self, loupist_id: &str) -> StoreResult<Vec<ChatSession>> {
         let connection = self.lock_loupist(loupist_id)?;
         let mut statement = connection.prepare(
             "SELECT data_json FROM chat_sessions WHERE loupist_id = ?1 ORDER BY updated_at_ms DESC, id ASC",
@@ -907,7 +841,9 @@ impl LoupistStore for SqliteStore {
         Ok(chats)
     }
 
-    fn chats_ending_in_refusals(
+    /// Chats updated since `since_ms` whose last message is an answer with tool refusals:
+    /// `(chat id, title, updated at, refusals JSON)`. Reads only the last message.
+    pub fn chats_ending_in_refusals(
         &self,
         loupist_id: &str,
         since_ms: i64,
@@ -933,7 +869,10 @@ impl LoupistStore for SqliteStore {
         rows.collect::<Result<_, _>>().map_err(Into::into)
     }
 
-    fn chats_ending_in_answer(
+    /// Chats updated since `since_ms` whose last message is a finished answer the
+    /// model wrote (no refusals, no host-posted receipt, delivery or alert):
+    /// `(chat id, title, updated at, answer text)`. Reads only the last message.
+    pub fn chats_ending_in_answer(
         &self,
         loupist_id: &str,
         since_ms: i64,
@@ -968,12 +907,12 @@ impl LoupistStore for SqliteStore {
         rows.collect::<Result<_, _>>().map_err(Into::into)
     }
 
-    fn get_chat_artifact(&self, id: &str) -> StoreResult<Option<ChatArtifact>> {
+    pub fn get_chat_artifact(&self, id: &str) -> StoreResult<Option<ChatArtifact>> {
         let connection = self.lock_record("chat_artifacts", id)?;
         load_json_by_id(&connection, "chat_artifacts", id)
     }
 
-    fn list_chat_artifacts(&self, chat_session_id: &str) -> StoreResult<Vec<ChatArtifact>> {
+    pub fn list_chat_artifacts(&self, chat_session_id: &str) -> StoreResult<Vec<ChatArtifact>> {
         let connection = self.lock_record("chat_sessions", chat_session_id)?;
         let mut statement = connection.prepare(
             "SELECT data_json FROM chat_artifacts WHERE chat_session_id = ?1 ORDER BY updated_at_ms DESC, id ASC",
@@ -982,7 +921,8 @@ impl LoupistStore for SqliteStore {
         rows.map(|row| from_json(&row?)).collect()
     }
 
-    fn list_loupist_artifacts(
+    /// The Loupist's charts and documents across its chats, newest first: `(artifact, chat title)`.
+    pub fn list_loupist_artifacts(
         &self,
         loupist_id: &str,
         limit: usize,
@@ -1007,7 +947,7 @@ impl LoupistStore for SqliteStore {
         .collect()
     }
 
-    fn get_chat_artifact_current(
+    pub fn get_chat_artifact_current(
         &self,
         artifact_id: &str,
     ) -> StoreResult<Option<ChatArtifactRevision>> {
@@ -1023,7 +963,7 @@ impl LoupistStore for SqliteStore {
             .transpose()
     }
 
-    fn get_chart_dataset(&self, id: &str) -> StoreResult<Option<ChartDataset>> {
+    pub fn get_chart_dataset(&self, id: &str) -> StoreResult<Option<ChartDataset>> {
         let connection = self.lock_record("chart_artifact_datasets", id)?;
         let stored = connection
             .query_row(

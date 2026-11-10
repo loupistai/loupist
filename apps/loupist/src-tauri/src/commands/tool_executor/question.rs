@@ -17,9 +17,19 @@ use crate::chat::{
 #[serde(deny_unknown_fields)]
 struct Input {
     question: String,
-    options: Vec<ChatQuestionOption>,
+    options: Vec<OptionInput>,
     #[serde(default)]
     recommended: Option<u8>,
+}
+
+/// An option as the model writes it, checked exactly. A saved question's
+/// options (`ChatQuestionOption`) are read leniently from the Chat instead.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OptionInput {
+    label: String,
+    #[serde(default)]
+    description: Option<String>,
 }
 
 fn invalid(field: &str, expected: String) -> BrokerError {
@@ -62,14 +72,21 @@ impl AppToolExecutor {
                 format!("{{question, options: [{{label, description?}}] (2 to 4), recommended?: index}}: {error}"),
             )
         })?;
-        check_question(&request.question, &request.options, request.recommended)
+        let options = request
+            .options
+            .into_iter()
+            .map(|option| ChatQuestionOption {
+                label: option.label,
+                description: option.description,
+            })
+            .collect::<Vec<_>>();
+        check_question(&request.question, &options, request.recommended)
             .map_err(|(field, expected)| invalid(&field, expected))?;
         let mut question = ChatQuestion {
             request_id: uuid::Uuid::new_v4().to_string(),
             item_id: None,
             question: request.question.trim().to_owned(),
-            options: request
-                .options
+            options: options
                 .into_iter()
                 .map(|option| ChatQuestionOption {
                     label: option.label.trim().to_owned(),

@@ -41,6 +41,7 @@ export function LensLearningPanel({ bridge, loupistId, node, onArchived }: {
       setReview(reviews.filter(item => item.lensRecordId === node.recordId && (item.status === "created" || item.status === "refined")).sort((a, b) => b.createdAtMs - a.createdAtMs)[0]);
     }).catch(() => { if (active) setError(true); });
     return () => { active = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the node's record; its kind follows the record.
   }, [bridge, loupistId, node.recordId, node.learnedAtMs, reload]);
   // Map provenance is the publication time; review.createdAtMs is admission time.
   const learnedAt = node.learnedAtMs ?? review?.createdAtMs;
@@ -86,7 +87,7 @@ function ThenNow({ events }: { events: GrowthEvent[] }) {
   if (!latest) return null;
   const beforeDate = events.filter(event => event.atMs < latest.atMs && (event.kind === "lens_revised" || event.kind === "lens_created")).sort((a, b) => b.atMs - a.atMs)[0]?.atMs;
   return <section ref={history} className="lens-history" aria-label={t("learning.thenNow")}><h3>{t("learning.thenNow")}</h3>
-    <div className={`lens-then-now${wide ? " is-wide" : ""}`}>{(["then", "now"] as const).map(side => {
+    <div className={`lens-then-now${wide ? " is-wide" : ""}`} data-testid="lens-then-now">{(["then", "now"] as const).map(side => {
       const date = side === "now" ? formatDate(latest.atMs) : beforeDate === undefined ? t("learning.unknownDate") : formatDate(beforeDate);
       return <div key={side}><h4><Trans ns="knowledge" i18nKey={`learning.${side}`} values={{ date: "<date/>" }} components={{ date: <span className="learning-date">{date}</span> }} /></h4><RevisionSummary key={`${latest.eventId}:${side}`} summary={readable(side === "then" ? latest.beforeSummary : latest.afterSummary) || "—"} /></div>;
     })}</div>

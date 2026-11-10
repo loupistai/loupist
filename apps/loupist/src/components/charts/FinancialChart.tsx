@@ -274,14 +274,17 @@ export default function FinancialChart({ chart, dataset, theme, onAskRange, comp
       instanceRef.current = null;
       dispose(instance);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the chart is rebuilt only for new data, theme or size; the style and edit callbacks are read at build time.
   }, [chart, dataset, theme, compact]);
 
   useEffect(() => {
     instanceRef.current?.setStyles(chartStyles());
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- restyles when the palette changes; `chartStyles` reads it.
   }, [colors]);
 
   useEffect(() => {
     instanceRef.current?.setLocale(chartLocale());
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the interface language is the recompute trigger; `i18n` itself is not reactive.
   }, [i18n.language]);
 
   return (

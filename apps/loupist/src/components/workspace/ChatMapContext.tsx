@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ChatMessage, LoupistBridge } from "../../types";
 import type { GrowthEvent, KnowledgeMap } from "../../contracts/knowledge";
 import type { WorldReadinessStatus } from "../../knowledge/worldReadiness";
-import { addedMapItems, chatMapData, chatSourceWork, stepEntityIds } from "./chatMapData";
+import { addedMapItems, chatMapData, chatSourceWork, stepEntityIds } from "../../chat/chatMapData";
 
 type ChatMapState = {
   loupistId: string; chatId: string; map?: KnowledgeMap; events: GrowthEvent[];
@@ -44,6 +44,7 @@ export function ChatMapProvider(props: { bridge: LoupistBridge; loupistId: strin
   firstNames.current = onFirstNames;
   const glowTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // A saved receipt keeps its original status even after its job completes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- a new completion cache per bridge and chat scope; they are its identity, not values it reads.
   const completedJobs = useMemo(() => new Set<string>(), [bridge, scopeKey]);
   // Ignore streaming text updates; reload when a turn or its Memory delivery changes.
   const messageKey = JSON.stringify(messages.map(message => [message.id, message.status, message.memory_update, message.memory_refs, stepEntityIds(message)]));
@@ -133,6 +134,7 @@ export function ChatMapProvider(props: { bridge: LoupistBridge; loupistId: strin
     };
     void refresh();
     return () => { cancelled = true; clearTimeout(timer); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `completionKey` names the messages' jobs, and the scope follows `loupistId` and `chatId`.
   }, [bridge, loupistId, chatId, completedJobs, completionKey, revision, refreshKey]);
   useEffect(() => () => clearTimeout(glowTimer.current), []);
   const [live, setLive] = useState<{ scopeKey: string; key: string }>();
@@ -141,6 +143,7 @@ export function ChatMapProvider(props: { bridge: LoupistBridge; loupistId: strin
     setLive(current => current?.scopeKey === next?.scopeKey && current?.key === next?.key ? current : next);
   }, []);
   const liveKey = live?.scopeKey === scopeKey ? live.key : "";
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `messageKey` names the messages the map reads.
   const scoped = useMemo(() => result?.scopeKey === scopeKey ? { ...result.map, ...chatMapData(result.map, messages, result.events, chatId, liveKey ? liveKey.split("\n") : []) } : undefined, [result, messageKey, chatId, scopeKey, liveKey]);
   const select = useCallback((ids: ReadonlySet<string> = emptyIds) => { setHighlightIds(ids); setActiveScope(scopeKey); setBadge(undefined); onOpen(); }, [onOpen, scopeKey]);
   // Names the running reply's steps read glow on the map while it runs; the canvas fades them after.

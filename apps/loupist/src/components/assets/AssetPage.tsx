@@ -22,6 +22,7 @@ import type { EarningsEventSummary, EarningsSnapshot } from "../../contracts/ear
 import type { WatchKind, WatchKindState } from "../../contracts/watch";
 import "@/styles/asset-page.css";
 import "@/styles/earnings.css";
+import { commandErrorCode } from "@/lib/errors";
 
 const t = i18n.getFixedT(null, "assets");
 const tDynamic = t as unknown as (key: string, options?: Record<string, unknown>) => string;
@@ -227,7 +228,7 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onA
     if (target.section !== "results" || !page) return;
     const frame = window.requestAnimationFrame(() => scrollToResults(target.eventId));
     return () => window.cancelAnimationFrame(frame);
-    // Once per opening, after the card or the events arrive.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per opening, after the card or the events arrive.
   }, [target.section, target.eventId, page?.assetId, snapshot?.eventId, events.length]);
 
   const since = useCallback((choice: Range, visit: number | undefined) => {
@@ -271,6 +272,7 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onA
   useEffect(() => {
     if (target.section !== "history" || !page) return;
     historyRef.current?.scrollIntoView({ block: "start" });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- scrolls once per opened asset, not on every page refresh.
   }, [target.section, page?.assetId]);
 
   const changed = useCallback(() => { setReload(value => value + 1); onChanged?.(); }, [onChanged]);
@@ -303,7 +305,7 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onA
     setActionError(null);
     try { setPage(await bridge.assetVerdictUndo({ loupistId, assetId: page.assetId, moveId, sinceMs: lastVisit })); }
     catch (cause) {
-      const stale = (cause as { code?: unknown } | null)?.code === "conflict";
+      const stale = commandErrorCode(cause) === "conflict";
       setActionError(t(stale ? "error.undoStale" : "error.undo"));
       if (stale) changed();
     }

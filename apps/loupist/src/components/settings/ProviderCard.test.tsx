@@ -51,7 +51,7 @@ it("names the key, the local server and an Anthropic key by credential", async (
   expect(key.onConnect).toHaveBeenCalledWith({ kind: "provider", provider: "google", method: "api_key" });
   document.body.innerHTML = "";
 
-  const custom = { id: "custom-ollama", name: "Ollama", base_url: "http://localhost:11434/v1", api: "openai-completions" as const, model_ids: ["qwen3:32b"], credential_source: "saved" as const };
+  const custom = { id: "custom-ollama", name: "Ollama", base_url: "http://localhost:11434/v1", api: "openai-completions" as const, model_ids: ["qwen3:32b"], credential_source: "saved" as const, status: status({ credential_kind: "local" }) };
   const local = renderCard({ option: { ...option("custom-ollama", { status: status({ credential_kind: "local" }), billing_note: null }), label: "Ollama", custom } });
   expect(local.card).toHaveTextContent("Running on this Mac · localhost:11434");
   document.body.innerHTML = "";

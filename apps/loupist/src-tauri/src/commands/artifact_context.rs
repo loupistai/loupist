@@ -1,5 +1,4 @@
 use super::{map_store, ChatArtifactSelection, CommandError};
-use crate::store::LoupistStore;
 use serde_json::{json, Value};
 
 /// The caller has already checked that this thread belongs to the selected Loupist.

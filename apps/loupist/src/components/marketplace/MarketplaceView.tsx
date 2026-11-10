@@ -124,6 +124,7 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
         (!normalizedQuery || entrySearchText(entry).includes(normalizedQuery));
     });
     return sortConnectionEntries(matching, connectorById, (entry) => connectionText(entry.name));
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the interface language is the recompute trigger; `i18n` itself is not reactive.
   }, [freeFilter, query, snapshot, statusFilter, connectorById, activeLanguage.language]);
   const discoveryGroups = useMemo(
     () => connectionGroups(snapshot?.plugins ?? [], visibleEntries),

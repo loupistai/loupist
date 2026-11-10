@@ -102,6 +102,7 @@ it("resolves a retained artifact link in its chat to the latest saved revision",
   vi.mocked(targets.readArtifact).mockResolvedValue({
     artifact: { id: "artifact-1", chat_session_id: "chat-a", title: "Updated analysis", kind: "markdown", current_revision: 2, created_at_ms: 1, updated_at_ms: 2 },
     revision: { artifact_id: "artifact-1", revision: 2, digest: "latest", source_message_id: "answer", created_at_ms: 2, payload: { kind: "markdown", schema: "loupist-markdown/1", markdown: "Updated" } },
+    chart_dataset: null,
   });
   await act(() => hook.result.current.open({ kind: "artifact-link", artifactId: "artifact-1" }));
   expect(targets.readArtifact).toHaveBeenCalledExactlyOnceWith("loupist-a", "chat-a", "artifact-1");

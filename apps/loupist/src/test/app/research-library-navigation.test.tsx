@@ -13,6 +13,7 @@ it.each(["Chat", "Lens"])("opens an exact research note inline and restores it a
     researchId: "saved-margin-review", chatId: workspace.threads[0].id, title: "Quarterly margin review",
     markdown: "Operating margin declined in the saved quarter. Compare the filing before changing the thesis.",
     changeSummary: "Saved the current research conclusion.", recordedAtMs: Date.parse("2026-10-10T12:00:00Z"),
+    previousNoteIds: [],
   };
   const search = vi.spyOn(bridge, "knowledgeResearchSearch").mockResolvedValue({
     loupistId: loupist.id,

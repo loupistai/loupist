@@ -13,6 +13,7 @@ const BUNDLED_MARKETPLACE: &str =
 pub(super) const MAX_CATALOG_ENTRIES: usize = 128;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct MarketplaceCatalogDto {
     pub schema_version: String,
@@ -20,6 +21,7 @@ pub struct MarketplaceCatalogDto {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct MarketplaceEntryDto {
     pub id: String,
@@ -47,6 +49,7 @@ pub struct MarketplaceEntryDto {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct MarketplaceRuntimeDto {
     pub kind: MarketplaceRuntimeKind,
@@ -62,6 +65,7 @@ pub struct MarketplaceRuntimeDto {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum MarketplaceRuntimeKind {
     Native,
@@ -70,6 +74,7 @@ pub enum MarketplaceRuntimeKind {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct MarketplaceVerificationProbeDto {
     pub tool_name: String,
@@ -77,6 +82,7 @@ pub struct MarketplaceVerificationProbeDto {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct MarketplaceSetupDto {
     #[serde(default)]
@@ -88,6 +94,7 @@ pub struct MarketplaceSetupDto {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct MarketplaceSetupFieldDto {
     pub id: String,
@@ -101,6 +108,7 @@ pub struct MarketplaceSetupFieldDto {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum MarketplaceSetupFieldKind {
     ApiKey,
@@ -109,12 +117,14 @@ pub enum MarketplaceSetupFieldKind {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum MarketplaceEntryKind {
     DataSource,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum MarketplaceFreeState {
     Keyless,
@@ -123,6 +133,7 @@ pub enum MarketplaceFreeState {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum MarketplaceTrust {
     FirstParty,
@@ -130,6 +141,7 @@ pub enum MarketplaceTrust {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum MarketplaceReleaseStage {
     Available,
@@ -137,6 +149,7 @@ pub enum MarketplaceReleaseStage {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct MarketplacePermissionsDto {
     pub network_hosts: Vec<String>,
@@ -144,6 +157,7 @@ pub struct MarketplacePermissionsDto {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct MarketplaceInstalledDto {
     pub entry_id: String,
     pub configured: bool,
@@ -151,6 +165,7 @@ pub struct MarketplaceInstalledDto {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum MarketplaceHealth {
     Ready,
@@ -159,6 +174,7 @@ pub enum MarketplaceHealth {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct MarketplaceSnapshotDto {
     pub schema_version: String,
     pub plugins: Vec<MarketplacePluginDto>,
@@ -168,6 +184,7 @@ pub struct MarketplaceSnapshotDto {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct MarketplacePluginDto {
     pub name: String,
     pub version: String,
@@ -179,16 +196,20 @@ pub struct MarketplacePluginDto {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct MarketplaceAuthorDto {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub email: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub url: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct MarketplacePluginInterfaceDto {
     pub display_name: String,
@@ -198,14 +219,17 @@ pub struct MarketplacePluginInterfaceDto {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct MarketplacePluginPolicyDto {
     pub installation: MarketplaceInstallationPolicy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub authentication: Option<MarketplaceAuthenticationPolicy>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum MarketplaceInstallationPolicy {
     InstalledByDefault,
@@ -214,6 +238,7 @@ pub enum MarketplaceInstallationPolicy {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum MarketplaceAuthenticationPolicy {
     OnInstall,
@@ -221,6 +246,7 @@ pub enum MarketplaceAuthenticationPolicy {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct LoupistCapabilityBindingDto {
     pub entry_id: String,
     pub enabled: bool,
@@ -229,6 +255,7 @@ pub struct LoupistCapabilityBindingDto {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct MarketplaceConnectorStatusDto {
     pub entry_id: String,
     pub config: BTreeMap<String, String>,
@@ -238,6 +265,7 @@ pub struct MarketplaceConnectorStatusDto {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum MarketplaceConfigState {
     NotRequired,
@@ -246,6 +274,7 @@ pub enum MarketplaceConfigState {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum MarketplaceConnectorReadiness {
     Ready,
@@ -254,6 +283,7 @@ pub enum MarketplaceConnectorReadiness {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum MarketplaceCredentialVerification {
     Never,
@@ -263,6 +293,7 @@ pub enum MarketplaceCredentialVerification {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct MarketplaceCredentialStatusDto {
     pub entry_id: String,
     pub credential_id: String,
@@ -276,6 +307,7 @@ pub struct MarketplaceCredentialStatusDto {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct LoupistCapabilityRequest {
     pub loupist_id: String,
@@ -283,6 +315,7 @@ pub struct LoupistCapabilityRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct MarketplaceConnectorConfigureRequest {
     pub entry_id: String,
@@ -290,12 +323,14 @@ pub struct MarketplaceConnectorConfigureRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct MarketplaceCredentialRequest {
     pub entry_id: String,
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct MarketplaceCredentialSaveRequest {
     pub entry_id: String,
@@ -906,6 +941,19 @@ fn validate_runtime(entry: &MarketplaceEntryDto) -> Result<(), String> {
                     "entry {} has invalid native runtime metadata",
                     entry.id
                 ));
+            }
+            // A native vendor's connector declares exactly the hosts its reads
+            // reach and whether setup stores a credential.
+            if let Some(vendor) = crate::finance_data::native_vendor(&entry.id) {
+                let keyless = vendor.credential == crate::finance_data::VendorCredential::Keyless;
+                if entry.permissions.network_hosts != vendor.hosts
+                    || entry.permissions.credential_kinds.is_empty() != keyless
+                {
+                    return Err(format!(
+                        "entry {} does not declare its native vendor's hosts and credential",
+                        entry.id
+                    ));
+                }
             }
         }
     }

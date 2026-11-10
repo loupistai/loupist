@@ -5,7 +5,7 @@ import type { WorkingNote } from "../../types";
 import { ChatWorkingContext } from "./ChatWorkingContext";
 import { renderWithOpen, destinations } from "../../test/open";
 
-const first: WorkingNote = { researchId: "first", chatId: "chat-a", title: "Monthly savings", markdown: "Contribution: **500**. Assumed return: 4%.", changeSummary: "Created the plan", recordedAtMs: 1_700_000_000_000 };
+const first: WorkingNote = { researchId: "first", chatId: "chat-a", title: "Monthly savings", markdown: "Contribution: **500**. Assumed return: 4%.", changeSummary: "Created the plan", recordedAtMs: 1_700_000_000_000, previousNoteIds: [] };
 const second: WorkingNote = { ...first, researchId: "second", markdown: "Contribution: **750**. Assumed return: 4%.", changeSummary: "Changed the contribution" };
 const setup = (bridge = new MockLoupistBridge({ delay_ms: 0 })) => {
   const onAskForChange = vi.fn();
@@ -38,6 +38,7 @@ describe("Chat working context", () => {
       sources: [{ receiptId: "read-source", recordId: "source-record", revisionId: "source-at-research", spanId: "original-span", coverage: "included_full", attribution: "Original filing" }],
       worlds: [],
       lenses: [{ recordId: "lens-record", revisionId: "lens-at-research", markdown: "Original method", status: "applied" }],
+      earlier: [],
     } };
     vi.spyOn(bridge, "knowledgeWorkingNotes").mockResolvedValue({ current: note });
     const { open } = renderWithOpen(<ChatWorkingContext {...props}><p>Conversation content</p></ChatWorkingContext>);

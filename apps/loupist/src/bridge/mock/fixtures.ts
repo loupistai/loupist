@@ -14,6 +14,10 @@ export const MOCK_LOUPISTS: LoupistSummary[] = [
     accent: "var(--gg-color-accent)",
     enabled_skill_ids: [...MOCK_AGENT_SKILLS],
     availability: { status: "available" },
+    instructions: "",
+    avatar: "initial",
+    tone: "balanced",
+    last_model_profile_id: null,
   },
   {
     id: "loupist-value",
@@ -26,6 +30,10 @@ export const MOCK_LOUPISTS: LoupistSummary[] = [
     accent: "var(--gg-color-accent)",
     enabled_skill_ids: [...MOCK_AGENT_SKILLS],
     availability: { status: "available" },
+    instructions: "",
+    avatar: "initial",
+    tone: "balanced",
+    last_model_profile_id: null,
   },
   {
     id: "loupist-cycle",
@@ -38,6 +46,10 @@ export const MOCK_LOUPISTS: LoupistSummary[] = [
     accent: "var(--gg-color-accent)",
     enabled_skill_ids: [...MOCK_AGENT_SKILLS],
     availability: { status: "available" },
+    instructions: "",
+    avatar: "initial",
+    tone: "balanced",
+    last_model_profile_id: null,
   },
 ];
 

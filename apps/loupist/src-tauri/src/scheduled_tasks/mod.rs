@@ -24,7 +24,6 @@ use crate::{
         types::{chat_dto, ChatSendRequest, ChatStreamEvent, ChatThreadDto},
     },
     runs::maintenance::MaintenanceActivityKind,
-    store::LoupistStore,
 };
 use types::{Run, RunStatus, TaskKind, TaskStatus};
 
@@ -66,6 +65,7 @@ pub(crate) struct ScheduledSupervisor {
 }
 
 #[derive(Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct WatchSnapshot {
     pub run: Run,
     pub thread: ChatThreadDto,

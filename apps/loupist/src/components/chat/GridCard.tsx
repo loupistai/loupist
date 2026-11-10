@@ -141,8 +141,10 @@ function useScrollEdges(columns: number) {
     const observer = new ResizeObserver(update);
     observer.observe(node);
     return () => observer.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `update` reads only refs; re-measure when the columns change.
   }, [columns]);
   // The table's width changes with the columns' width: look again once it has.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `update` reads only refs; re-measure when the fitted width changes.
   useEffect(() => { update(); }, [fit.width]);
   const more = () => {
     const node = ref.current;
@@ -389,6 +391,7 @@ export function ChatGridBlock({ block, onAsk, askDisabled }: {
       .then((next) => { if (live) setView({ status: "ready", view: next }); })
       .catch(() => { if (live) setView({ status: "unavailable" }); });
     return () => { live = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the scope's fields; a new scope object for the same thread must not re-read.
   }, [artifactId, revision, scope?.bridge, scope?.loupistId, scope?.threadId, attempt]);
 
   const title = block.kind === "ready" ? (view.status === "ready" ? view.view.artifact.title : block.artifact.title) : block.title;

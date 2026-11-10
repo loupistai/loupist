@@ -4,28 +4,16 @@
  * what is new; React renders what it returns and submits typed intent.
  */
 import type { EarningsCalc } from "./earnings";
+import type * as Wire from "./generated";
 
-export type AssetClass = "equity" | "crypto" | "fund" | "commodity" | "rates_fx" | "real_asset" | "prediction" | "private";
+export type AssetClass = Wire.AssetClass;
 export const ASSET_CLASSES: readonly AssetClass[] = ["equity", "crypto", "fund", "commodity", "rates_fx", "real_asset", "prediction", "private"];
 export type AssetClassSource = "user" | "market" | "lookup" | "world" | "default";
 /** "Holding up" is stored as `holding`; it never reads as ownership. */
-export type Verdict = "holding" | "weakening" | "challenged" | "broken";
+export type Verdict = Wire.Verdict;
 
 /** Where a row came from: a retained dataset row, an original URL, a Source, a Map claim or a cited turn result. */
-export type AssetEvidence = {
-  tool: string;
-  provider?: string;
-  title: string;
-  url?: string;
-  dataset?: { dataset_id: string; revision: number; digest: string };
-  pointer?: string;
-  recordId?: string;
-  worldId?: string;
-  citationUrl?: string;
-  /** The evidence's own date (filing, publication or observation). */
-  date?: string;
-  retrievedAt?: string;
-};
+export type AssetEvidence = Wire.AssetEvidence;
 
 export type LineCrossing = {
   journalId: string;
@@ -232,10 +220,10 @@ export type AssetRefreshRequest = { loupistId: string; assetId: string; sinceMs?
 export type AssetClassSetRequest = { loupistId: string; assetId: string; class: AssetClass; sinceMs?: number };
 /** `moveId` is the move the user saw as the latest; a newer move makes Undo a conflict (a refresh does not). */
 export type AssetVerdictUndoRequest = { loupistId: string; assetId: string; moveId: string; sinceMs?: number };
-export type AssetPageSeenRequest = { loupistId: string; assetId: string };
-export type UpcomingEventsRequest = { loupistId: string };
+export type AssetPageSeenRequest = Wire.AssetPageSeenRequest;
+export type UpcomingEventsRequest = Wire.UpcomingEventsRequest;
 /** The page an upcoming event belongs to, named in the reader's language by `localAssetName`. */
-export type UpcomingAsset = { assetId: string; symbol: string; market: string; name: string; entityId?: string };
+export type UpcomingAsset = Wire.UpcomingAsset;
 /**
  * One row of the morning message's event strip, from Rust (soonest first, at
  * most five, today through 14 days ahead). Results carry where their date comes

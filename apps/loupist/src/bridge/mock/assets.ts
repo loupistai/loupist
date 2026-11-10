@@ -8,6 +8,7 @@ import type {
 } from "../../contracts/assets";
 import type { JournalRecord } from "../../contracts/knowledge";
 import type { WatchlistEntry } from "../../contracts/userContext";
+import { commandError } from "./commandError";
 
 const clone = <T>(value: T): T => structuredClone(value);
 const KOREAN = new Set(["KRX", "KOSPI", "KOSDAQ", "KONEX", "KS", "KQ"]);
@@ -143,7 +144,7 @@ export class MockAssets implements AssetBridge {
     if (this.undoFails) throw new Error("Couldn't undo.");
     const latest = page.history[0];
     // As in Rust: the move itself is the conflict check, not the page revision.
-    if (!latest || latest.moveId !== request.moveId) throw Object.assign(new Error("A newer change was made; reopen the page."), { code: "conflict" });
+    if (!latest || latest.moveId !== request.moveId) throw commandError("conflict", "A newer change was made; reopen the page.");
     if (latest.actor !== "loupist" || latest.undone) throw new Error("Only the latest change can be undone.");
     latest.undone = true;
     const restored = latest.from ?? "holding";

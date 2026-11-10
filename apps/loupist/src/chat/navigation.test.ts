@@ -15,7 +15,7 @@ const assetRead = evidenceFixture({ id: "ev_asset", kind: "saved_context", tool_
 const assetReadTruncated = evidenceFixture({ id: "ev_asset2", kind: "saved_context", tool_name: "asset_page_read", url: undefined, excerpt: "{\n  \"exists\": " });
 const datasetRead = evidenceFixture({ id: "ev_dataset", kind: "saved_context", tool_name: "journal_read", url: undefined });
 const lensMemory: MemoryRef = { read_ref: "read-lens", kind: "lens", title: "Moats", excerpt: "", access: "exact_read",
-  knowledge: { kind: "lens", recordId: "lens-1", revisionId: "rev-1", objectId: "lens-1" } };
+  knowledge: { kind: "lens", recordId: "lens-1", revisionId: "rev-1", objectId: "lens-1" }, as_of: null, section: null };
 
 describe("evidenceTarget", () => {
   const cases: Array<[string, ChatEvidenceRef, MemoryRef[], ReturnType<typeof evidenceTarget>["kind"]]> = [

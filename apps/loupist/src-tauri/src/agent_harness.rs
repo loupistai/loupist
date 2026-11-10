@@ -379,6 +379,7 @@ fn hash_skill(digest: &mut Sha256, skill: &BundledSkill) {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct AgentSkillSummary {
     pub id: String,
     pub name: String,
@@ -388,7 +389,7 @@ pub struct AgentSkillSummary {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct AgentHarnessSnapshot {
     pub schema: String,
     pub mode: String,
@@ -1686,6 +1687,25 @@ mod tests {
         std::fs::write(temporary.path().join("model-run-controls.mjs"), b"tampered").unwrap();
         assert!(validate_extension_bundle(&chat).is_err());
         assert!(validate_provider_extension_bundle(&support).is_err());
+    }
+
+    #[test]
+    fn the_provider_bundle_ships_every_native_search_adapter() {
+        // Native search is offered per the provider manifest; a new adapter
+        // module must also be installed with the provider extension.
+        let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("../agent/native-search");
+        for entry in std::fs::read_dir(directory).unwrap() {
+            let name = entry.unwrap().file_name().into_string().unwrap();
+            if name.ends_with(".mjs") && !name.ends_with(".test.mjs") {
+                let bundled = format!("native-search/{name}");
+                assert!(
+                    PROVIDER_EXTENSION_FILES
+                        .iter()
+                        .any(|(path, _)| *path == bundled),
+                    "{bundled}"
+                );
+            }
+        }
     }
 
     #[cfg(unix)]

@@ -8,6 +8,7 @@ import type {
 } from "../../contracts/watch";
 import type { WatchlistEntry } from "../../contracts/userContext";
 import { mockAssetId } from "./assets";
+import { commandError } from "./commandError";
 
 const clone = <T>(value: T): T => structuredClone(value);
 const KOREAN = new Set(["KRX", "KOSPI", "KOSDAQ", "KONEX", "KS", "KQ"]);
@@ -81,7 +82,7 @@ export class MockWatch implements WatchBridge {
     const settings = await this.current(request.loupistId);
     const asset = [...settings.watched, ...settings.notWatched].find(item => item.assetId === request.assetId);
     if (!asset) throw new Error("This asset is not followed.");
-    if (asset.revision !== request.expectedRevision) throw Object.assign(new Error("The setting changed. Reload and try again."), { code: "conflict" });
+    if (asset.revision !== request.expectedRevision) throw commandError("conflict", "The setting changed. Reload and try again.");
     const kind = asset.kinds.find(item => item.kind === request.kind);
     if (!kind) throw new Error("This kind does not apply to this asset.");
     if (kind.needsConnection && request.enabled) throw new Error(`Turn on ${kind.needsConnection.name} first.`);

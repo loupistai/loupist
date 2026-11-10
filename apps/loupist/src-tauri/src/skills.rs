@@ -107,6 +107,7 @@ pub(crate) fn plain(path: &Path) -> Result<(), CommandError> {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ManagedSkill {
     pub id: String,
@@ -122,12 +123,14 @@ pub struct ManagedSkill {
     pub error: Option<String>,
 }
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SkillCatalog {
     pub skills: Vec<ManagedSkill>,
     pub configuration: ConfigSnapshot,
 }
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SkillDocument {
     pub skill: ManagedSkill,

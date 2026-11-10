@@ -5,7 +5,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const mode = process.argv[2] ?? "--report";
+const mode = process.argv[2] ?? "--enforce";
 if (!["--report", "--enforce"].includes(mode) || process.argv.length > 3) {
   console.error("Usage: check-i18n.mjs [--report|--enforce]");
   process.exit(2);
@@ -17,6 +17,30 @@ if (!Array.isArray(allowlist) || allowlist.some((entry) => !entry.file || typeof
 }
 const allowed = new Set(allowlist.map(({ file, text }) => JSON.stringify([file, normalize(text)])));
 const attributes = new Set(["aria-label", "title", "placeholder", "alt", "label"]);
+// A .ts module renders through the strings it returns, so its prose literals are checked.
+// Contracts and the bridge carry wire values, the preview and tests carry fixtures.
+const wireOrFixture = /^src\/(?:contracts|bridge|preview|test)\//;
+// Prose: begins with a capital (or a script without case) and has at least two words.
+const prose = (text) => /^[\p{Lu}\p{Lo}]/u.test(text) && /\p{L}\S*\s+\S*\p{L}/u.test(text);
+const comparisons = new Set([ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken, ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken]);
+const matchers = new Set(["startsWith", "endsWith", "includes", "indexOf", "split", "replace", "replaceAll"]);
+/** A literal that cannot reach the screen as written: a key, a comparison with a host value, a diagnostic. */
+function notRendered(node, source) {
+  const parent = node.parent;
+  if (ts.isImportDeclaration(parent) || ts.isExportDeclaration(parent) || ts.isExternalModuleReference(parent) || ts.isLiteralTypeNode(parent)) return true;
+  if ((ts.isPropertyAssignment(parent) || ts.isPropertySignature(parent) || ts.isPropertyDeclaration(parent) || ts.isMethodDeclaration(parent) || ts.isEnumMember(parent)) && parent.name === node) return true;
+  if (ts.isElementAccessExpression(parent) && parent.argumentExpression === node) return true;
+  if (ts.isBinaryExpression(parent) && comparisons.has(parent.operatorToken.kind)) return true;
+  if (ts.isCaseClause(parent)) return true;
+  if (ts.isCallExpression(parent) || ts.isNewExpression(parent)) {
+    const callee = parent.expression.getText(source);
+    if (/(?:^|\.)(?:import|require)$|^console\.|(?:^|\.)t$|Error$/.test(callee) || parent.expression.kind === ts.SyntaxKind.ImportKeyword) return true;
+    if (ts.isPropertyAccessExpression(parent.expression) && matchers.has(parent.expression.name.text)) return true;
+  }
+  // Values Rust writes and the UI recognizes are named HOST_*.
+  if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name) && parent.name.text.startsWith("HOST_")) return true;
+  return false;
+}
 const violations = [];
 async function scan(directory) {
   for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
@@ -24,11 +48,14 @@ async function scan(directory) {
     const file = relative(root, path).replaceAll("\\", "/");
     if (file === "src/i18n" || file === "src/preview/fixtures.ts") continue;
     if (entry.isDirectory()) { await scan(path); continue; }
-    if (!file.endsWith(".tsx") || file.endsWith(".test.tsx")) continue;
-    const source = ts.createSourceFile(file, await readFile(path, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const module = file.endsWith(".ts") && !file.endsWith(".d.ts") && !file.endsWith(".test.ts") && !wireOrFixture.test(file);
+    if (!module && (!file.endsWith(".tsx") || file.endsWith(".test.tsx"))) continue;
+    const source = ts.createSourceFile(file, await readFile(path, "utf8"), ts.ScriptTarget.Latest, true, module ? ts.ScriptKind.TS : ts.ScriptKind.TSX);
+    const reported = new Set();
     function report(node, value) {
       const text = normalize(value);
-      if (!/\p{L}/u.test(text) || allowed.has(JSON.stringify([file, text]))) return;
+      if (!/\p{L}/u.test(text) || allowed.has(JSON.stringify([file, text])) || reported.has(node)) return;
+      reported.add(node);
       const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
       violations.push({ file, line: line + 1, text });
     }
@@ -55,6 +82,10 @@ async function scan(directory) {
       }
     }
     function visit(node) {
+      if (module && (literal(node) || ts.isTemplateExpression(node)) && !notRendered(node, source)) {
+        const text = ts.isTemplateExpression(node) ? [node.head.text, ...node.templateSpans.map((span) => span.literal.text)].join("…") : node.text;
+        if (prose(normalize(text))) report(node, text);
+      }
       if (ts.isJsxText(node)) report(node, node.text);
       if (ts.isJsxAttribute(node) && attributes.has(node.name.getText(source))) {
         const value = node.initializer && ts.isJsxExpression(node.initializer) ? node.initializer.expression : node.initializer;

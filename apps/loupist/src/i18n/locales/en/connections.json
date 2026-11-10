@@ -47,7 +47,7 @@
     "youCanCloseThisWindowWhileTheCheck": "You can close this window while the check finishes.",
     "loupistAccess": "Loupist access",
     "done": "Done",
-    "deleteSavedCredentials2": "Delete saved credentials?",
+    "deleteSavedCredentialsTitle": "Delete saved credentials?",
     "cancel": "Cancel",
     "notVerified": "Not verified",
     "verified": "Verified",

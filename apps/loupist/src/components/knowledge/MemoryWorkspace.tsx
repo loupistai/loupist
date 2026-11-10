@@ -38,6 +38,7 @@ export function MemoryWorkspace({ bridge, loupist, active = true, navigation, on
     let cancelled = false;
     void bridge.knowledgeCatalog({ loupistId: loupist.id }).then(next => { if (!cancelled) { setCatalog(next); setError(null); } }).catch(cause => { if (!cancelled) setError(errorMessage(cause, t("map.catalogError"))); });
     return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` only words the failure; a language change must not reload.
   }, [active, bridge, loupist.id, reload, refreshKey]);
   useEffect(() => { setAdding(false); setError(null); }, [loupist.id]);
   useEffect(() => {
@@ -52,6 +53,7 @@ export function MemoryWorkspace({ bridge, loupist, active = true, navigation, on
     ? { ...mapLocation, recordId: world?.recordId, revisionId: world?.revisionId } : mapLocation;
   useEffect(() => {
     if (active && current && (location.surface === "world" || location.surface === "home") && (location.surface === "home" || location.recordId !== resolvedMap.recordId || location.revisionId !== resolvedMap.revisionId)) onPatch(resolvedMap);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `resolvedMap` is rebuilt each render; its record and revision are what the patch compares.
   }, [active, current, location, resolvedMap.recordId, resolvedMap.revisionId, onPatch]);
   return <section className="memory-workspace map-workspace" aria-label={t("map.title")}>
     {error ? <div role="alert">{error}<Button variant="outline" onClick={changed}>{t("map.retry")}</Button></div> : null}

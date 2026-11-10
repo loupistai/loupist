@@ -1,5 +1,6 @@
+import type * as Wire from "./generated";
 export type LanguagePreference = "system" | "en" | "ko";
-export type ConfigScope = { kind: "global" } | { kind: "project"; loupistId: string };
+export type ConfigScope = Wire.ConfigScope;
 export type ConfigSource = "default" | "global" | "project";
 
 /** TOML keys intentionally retain their spelling at the file/bridge boundary. */
@@ -27,7 +28,7 @@ export type EffectiveConfig = {
   };
 };
 
-export type ConfigDiagnostic = { path: string; message: string; line: number | null; column: number | null };
+export type ConfigDiagnostic = Wire.ConfigDiagnostic;
 export type ConfigSnapshot = {
   scope: ConfigScope;
   path: string;

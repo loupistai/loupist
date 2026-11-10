@@ -15,7 +15,7 @@ use std::{
 
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, MutexGuard};
 
 use super::*;
 use crate::{
@@ -151,6 +151,117 @@ struct McpToolCallRequest {
     server_id: String,
     tool_name: String,
     arguments: Value,
+}
+
+/// A call admitted on this turn's session: what the server receives and what
+/// the host records about it.
+struct McpCallPlan {
+    /// The arguments forwarded, without host-only ones and bounded to any cutoff.
+    arguments: Value,
+    requested_provider: Option<String>,
+    control_tool: bool,
+    /// A retained read this recent is reused instead of calling the server.
+    max_age: Option<u64>,
+    /// The dated route, cutoff and bounds a cutoff read is filtered by.
+    dated: Option<(
+        &'static point_in_time::DatedRoute,
+        chrono::NaiveDate,
+        point_in_time::Bounded,
+    )>,
+    capture_request: Value,
+    request_key: String,
+}
+
+/// How a forwarded call ended.
+enum McpInvocation {
+    /// A checked result, with the inventory refreshed after the call.
+    Answered {
+        payload: Value,
+        tools: Option<Vec<Value>>,
+    },
+    /// The call failed and the session stays.
+    Failed(BrokerError),
+    /// The session can no longer be trusted and is discarded.
+    Stopped(Option<BrokerError>),
+}
+
+/// Invocation: forwards the admitted call and checks what came back. A result
+/// from a provider the call did not admit, or one echoing a credential, stops
+/// the session; a cutoff read keeps only rows on or before the cutoff.
+async fn invoke_mcp_tool(
+    request: &McpToolCallRequest,
+    server: &mut TurnMcpServer,
+    plan: &McpCallPlan,
+) -> Result<McpInvocation, BrokerError> {
+    let call = server
+        .session
+        .call_tool(&request.tool_name, plan.arguments.clone(), MCP_CALL_TIMEOUT)
+        .await;
+    let mut result = match call {
+        Ok(result) => result,
+        Err(error) => {
+            let terminal = matches!(
+                &error,
+                McpError::Io(_) | McpError::Protocol | McpError::Stopped | McpError::FrameTooLarge
+            );
+            let mapped = map_mcp_error(error);
+            if terminal {
+                return Ok(McpInvocation::Stopped(Some(mapped)));
+            }
+            return Ok(McpInvocation::Failed(provider_failure(
+                mapped,
+                plan.requested_provider.as_deref(),
+                &server.enabled_provider_ids,
+            )));
+        }
+    };
+    if result.is_error {
+        return Ok(McpInvocation::Failed(provider_failure(
+            rejected_mcp_result(&result),
+            plan.requested_provider.as_deref(),
+            &server.enabled_provider_ids,
+        )));
+    }
+    if validate_result_provider(
+        &result,
+        &server.provider_receipt_pointer,
+        plan.requested_provider.as_deref(),
+        &server.enabled_provider_ids,
+    )
+    .is_err()
+    {
+        return Ok(McpInvocation::Stopped(None));
+    }
+    let original = serde_json::to_value(&result)
+        .map_err(|_| BrokerError::Execution("MCP result was invalid".into()))?;
+    if contains_protected_value(&original, &server.sensitive_values) {
+        return Ok(McpInvocation::Stopped(None));
+    }
+    let as_of = match plan.dated {
+        Some((route, cutoff, bounded)) => {
+            match point_in_time::filter_result(route, &mut result, cutoff, bounded) {
+                Ok(summary) => Some(summary),
+                Err(error) => return Ok(McpInvocation::Failed(error)),
+            }
+        }
+        None => None,
+    };
+    let mut payload = match as_of {
+        Some(_) => serde_json::to_value(&result)
+            .map_err(|_| BrokerError::Execution("MCP result was invalid".into()))?,
+        None => original,
+    };
+    if let Some(as_of) = as_of {
+        payload["as_of"] = as_of;
+    }
+    let list_changed = server.session.take_tools_changed();
+    let refresh = plan.control_tool || list_changed;
+    Ok(
+        match refresh_inventory(&request.server_id, server, refresh).await {
+            Ok(tools) => McpInvocation::Answered { payload, tools },
+            Err(_) => McpInvocation::Stopped(None),
+        },
+    )
 }
 
 impl ToolCapture {
@@ -471,6 +582,9 @@ impl AppToolExecutor {
         }
     }
 
+    /// One MCP tool call on this turn's session, in order: admission, a fresh
+    /// retained read or the invocation, then provenance and result shaping for
+    /// a data read. A session that can no longer be trusted is discarded.
     pub(super) async fn mcp_call(
         &self,
         policy: &ToolPolicy,
@@ -490,41 +604,132 @@ impl AppToolExecutor {
         let Some(session) = self.capture.mcp_session(&request.server_id).await else {
             return Ok(stopped_mcp_response(None));
         };
-        let mut session_guard = session.lock().await;
-        let Some(server) = session_guard.as_mut() else {
-            drop(session_guard);
-            self.capture
-                .remove_mcp_session(&request.server_id, &session)
-                .await;
-            return Ok(stopped_mcp_response(None));
-        };
-        let preflight = match server.session.is_running().await {
-            Ok(true) => refresh_inventory(&request.server_id, server, false).await,
-            Ok(false) => Err(map_mcp_error(McpError::Stopped)),
-            Err(error) => Err(map_mcp_error(error)),
-        };
-        let preflight_tools = match preflight {
-            Ok(tools) => tools,
-            Err(error) => {
-                let stopped = session_guard.take();
-                drop(session_guard);
-                self.capture
-                    .discard_mcp_session(&request.server_id, &session, stopped)
-                    .await;
-                return Ok(stopped_mcp_response(Some(&error)));
-            }
+        let (mut session_guard, preflight_tools) = match self
+            .lock_running_mcp_session(&request.server_id, &session)
+            .await
+        {
+            Ok(locked) => locked,
+            Err(stopped) => return Ok(stopped),
         };
         let server = session_guard
             .as_mut()
             .expect("loaded MCP session disappeared after refresh");
-        let Some(tool) = server.tools.get(&request.tool_name).cloned() else {
-            return mcp_call_error_with_inventory(preflight_tools, BrokerError::MethodDenied);
+        let plan = match self.admit_mcp_call(&request, server, cutoff) {
+            Ok(plan) => plan,
+            Err(error) => return mcp_call_error_with_inventory(preflight_tools, error),
+        };
+        let reused = match plan.max_age {
+            Some(max_age) if !plan.control_tool => self
+                .state
+                .store
+                .dataset_fresh(&self.loupist_id, &plan.request_key, max_age)
+                .map_err(|error| BrokerError::Execution(error.to_string()))?,
+            _ => None,
+        };
+
+        let (mut payload, tools, retained) = if let Some((reference, stored, metadata)) = reused {
+            let fetched_at = metadata_fetched_at(&metadata);
+            (stored, preflight_tools, Some((reference, fetched_at)))
+        } else {
+            match invoke_mcp_tool(&request, server, &plan).await? {
+                McpInvocation::Answered { payload, tools } => {
+                    (payload, tools.or(preflight_tools), None)
+                }
+                McpInvocation::Failed(error) => {
+                    return mcp_call_error_with_inventory(preflight_tools, error)
+                }
+                McpInvocation::Stopped(error) => {
+                    let stopped = session_guard.take();
+                    drop(session_guard);
+                    self.capture
+                        .discard_mcp_session(&request.server_id, &session, stopped)
+                        .await;
+                    return Ok(stopped_mcp_response(error.as_ref()));
+                }
+            }
+        };
+        let payload = if plan.control_tool {
+            payload
+        } else {
+            let reused = retained.is_some();
+            let compact = payload.to_string().len() > 16 * 1024;
+            let (reference, fetched_at) =
+                self.retain_mcp_read(&plan, &payload, retained, compact)?;
+            let mut model_payload =
+                self.shape_mcp_read(&mut payload, &reference, fetched_at, reused, compact)?;
+            let result_ref = match self
+                .stage_mcp_read(
+                    delivery_id,
+                    &request,
+                    &plan,
+                    &payload,
+                    model_payload.as_ref(),
+                )
+                .await
+            {
+                Ok(result_ref) => result_ref,
+                Err(error) => return mcp_call_error_with_inventory(tools, error),
+            };
+            attach_result_ref(&mut payload, &result_ref);
+            if let Some(delivered) = &mut model_payload {
+                attach_result_ref(delivered, &result_ref);
+            }
+            model_payload.unwrap_or(payload)
+        };
+        Ok(match tools {
+            Some(tools) => json!({ "result": payload, "tools": tools }),
+            None => json!({ "result": payload }),
+        })
+    }
+
+    /// Locks this turn's session for `server_id` and refreshes its inventory.
+    /// A missing, stopped or failing server leaves the turn, answered with the
+    /// stopped response the caller returns as is.
+    async fn lock_running_mcp_session<'s>(
+        &self,
+        server_id: &str,
+        session: &'s SharedMcpServer,
+    ) -> Result<(MutexGuard<'s, Option<TurnMcpServer>>, Option<Vec<Value>>), Value> {
+        let mut session_guard = session.lock().await;
+        let Some(server) = session_guard.as_mut() else {
+            drop(session_guard);
+            self.capture.remove_mcp_session(server_id, session).await;
+            return Err(stopped_mcp_response(None));
+        };
+        let preflight = match server.session.is_running().await {
+            Ok(true) => refresh_inventory(server_id, server, false).await,
+            Ok(false) => Err(map_mcp_error(McpError::Stopped)),
+            Err(error) => Err(map_mcp_error(error)),
+        };
+        match preflight {
+            Ok(tools) => Ok((session_guard, tools)),
+            Err(error) => {
+                let stopped = session_guard.take();
+                drop(session_guard);
+                self.capture
+                    .discard_mcp_session(server_id, session, stopped)
+                    .await;
+                Err(stopped_mcp_response(Some(&error)))
+            }
+        }
+    }
+
+    /// Admission: the tool is in the session's authorized inventory and any
+    /// provider it names is enabled for this Loupist. Under an as-of cutoff a
+    /// data read must take a dated route, bounded to the cutoff.
+    fn admit_mcp_call(
+        &self,
+        request: &McpToolCallRequest,
+        server: &TurnMcpServer,
+        cutoff: Option<chrono::NaiveDate>,
+    ) -> Result<McpCallPlan, BrokerError> {
+        let Some(tool) = server.tools.get(&request.tool_name) else {
+            return Err(BrokerError::MethodDenied);
         };
         if let Err(error) =
-            validate_provider_argument(&tool, &request.arguments, &server.enabled_provider_ids)
+            validate_provider_argument(tool, &request.arguments, &server.enabled_provider_ids)
         {
-            let error = self.explain_provider_denial(&request, &server.enabled_provider_ids, error);
-            return mcp_call_error_with_inventory(preflight_tools, error);
+            return Err(self.explain_provider_denial(request, &server.enabled_provider_ids, error));
         }
         let requested_provider = request
             .arguments
@@ -550,10 +755,7 @@ impl AppToolExecutor {
             && request.server_id == openbb::OPENBB_SERVER_ID
             && tool.input_schema.pointer("/properties/max_age").is_none()
         {
-            match take_max_age(&mut arguments) {
-                Ok(max_age) => max_age,
-                Err(error) => return mcp_call_error_with_inventory(preflight_tools, error),
-            }
+            take_max_age(&mut arguments)?
         } else {
             None
         };
@@ -562,15 +764,10 @@ impl AppToolExecutor {
         let mut dated = None;
         if let (Some(cutoff), true) = (cutoff, data_tool) {
             let Some(route) = point_in_time::dated_route(&request.tool_name) else {
-                return mcp_call_error_with_inventory(
-                    preflight_tools,
-                    point_in_time::refusal(&request.tool_name, cutoff),
-                );
+                return Err(point_in_time::refusal(&request.tool_name, cutoff));
             };
-            match point_in_time::bound_arguments(&tool, &mut arguments, cutoff) {
-                Ok(bounded) => dated = Some((route, cutoff, bounded)),
-                Err(error) => return mcp_call_error_with_inventory(preflight_tools, error),
-            }
+            let bounded = point_in_time::bound_arguments(tool, &mut arguments, cutoff)?;
+            dated = Some((route, cutoff, bounded));
         }
         let mut capture_request = json!({
             "server_id": request.server_id.clone(),
@@ -581,194 +778,103 @@ impl AppToolExecutor {
             capture_request["as_of"] = json!(cutoff.to_string());
         }
         let request_key = sha256(capture_request.to_string().as_bytes());
-        let reused = match max_age {
-            Some(max_age) if !control_tool => self
-                .state
-                .store
-                .dataset_fresh(&self.loupist_id, &request_key, max_age)
-                .map_err(|error| BrokerError::Execution(error.to_string()))?,
-            _ => None,
-        };
-
-        let (mut payload, tools, retained) = if let Some((reference, stored, metadata)) = reused {
-            let fetched_at = metadata_fetched_at(&metadata);
-            (stored, preflight_tools, Some((reference, fetched_at)))
-        } else {
-            let call = server
-                .session
-                .call_tool(&request.tool_name, arguments.clone(), MCP_CALL_TIMEOUT)
-                .await;
-            let mut result = match call {
-                Ok(result) => result,
-                Err(error) => {
-                    let terminal = matches!(
-                        &error,
-                        McpError::Io(_)
-                            | McpError::Protocol
-                            | McpError::Stopped
-                            | McpError::FrameTooLarge
-                    );
-                    let mapped = map_mcp_error(error);
-                    if terminal {
-                        let stopped = session_guard.take();
-                        drop(session_guard);
-                        self.capture
-                            .discard_mcp_session(&request.server_id, &session, stopped)
-                            .await;
-                        return Ok(stopped_mcp_response(Some(&mapped)));
-                    }
-                    return mcp_call_error_with_inventory(
-                        preflight_tools,
-                        provider_failure(
-                            mapped,
-                            requested_provider.as_deref(),
-                            &server.enabled_provider_ids,
-                        ),
-                    );
-                }
-            };
-            if result.is_error {
-                return mcp_call_error_with_inventory(
-                    preflight_tools,
-                    provider_failure(
-                        rejected_mcp_result(&result),
-                        requested_provider.as_deref(),
-                        &server.enabled_provider_ids,
-                    ),
-                );
-            }
-            if validate_result_provider(
-                &result,
-                &server.provider_receipt_pointer,
-                requested_provider.as_deref(),
-                &server.enabled_provider_ids,
-            )
-            .is_err()
-            {
-                let stopped = session_guard.take();
-                drop(session_guard);
-                self.capture
-                    .discard_mcp_session(&request.server_id, &session, stopped)
-                    .await;
-                return Ok(stopped_mcp_response(None));
-            }
-            let original = serde_json::to_value(&result)
-                .map_err(|_| BrokerError::Execution("MCP result was invalid".into()))?;
-            if contains_protected_value(&original, &server.sensitive_values) {
-                let stopped = session_guard.take();
-                drop(session_guard);
-                self.capture
-                    .discard_mcp_session(&request.server_id, &session, stopped)
-                    .await;
-                return Ok(stopped_mcp_response(None));
-            }
-            let as_of = match dated {
-                Some((route, cutoff, bounded)) => {
-                    match point_in_time::filter_result(route, &mut result, cutoff, bounded) {
-                        Ok(summary) => Some(summary),
-                        Err(error) => return mcp_call_error_with_inventory(preflight_tools, error),
-                    }
-                }
-                None => None,
-            };
-            let mut payload = match as_of {
-                Some(_) => serde_json::to_value(&result)
-                    .map_err(|_| BrokerError::Execution("MCP result was invalid".into()))?,
-                None => original,
-            };
-            if let Some(as_of) = as_of {
-                payload["as_of"] = as_of;
-            }
-            let list_changed = server.session.take_tools_changed();
-            let refresh = control_tool || list_changed;
-            let postflight_tools =
-                match refresh_inventory(&request.server_id, server, refresh).await {
-                    Ok(tools) => tools,
-                    Err(_) => {
-                        let stopped = session_guard.take();
-                        drop(session_guard);
-                        self.capture
-                            .discard_mcp_session(&request.server_id, &session, stopped)
-                            .await;
-                        return Ok(stopped_mcp_response(None));
-                    }
-                };
-            (payload, postflight_tools.or(preflight_tools), None)
-        };
-        if !control_tool {
-            let reused = retained.is_some();
-            let compact = payload.to_string().len() > 16 * 1024;
-            let (reference, fetched_at) = match retained {
-                Some(retained) => retained,
-                None => {
-                    let fetched_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
-                    let reference = self.state.store.dataset_put(
-                        &self.loupist_id,
-                        &request_key,
-                        &payload,
-                        json!({"producer":"mcp", "request":capture_request,"fetched_at":fetched_at,"publication_policy":"provider-declared; unknown availability is not point-in-time evidence","model_coverage":if compact {"bounded_sample"} else {"complete"},
-                            "trust": crate::custom_connections::taint::retained_trust(ToolMethod::McpCall, &capture_request, &self.state.artifacts.mcp_runtimes)}),
-                    ).map_err(|error| BrokerError::Execution(error.to_string()))?;
-                    (reference, Some(fetched_at))
-                }
-            };
-            payload["dataset_ref"] = json!(reference);
-            payload["fetched_at"] = json!(fetched_at);
-            if reused {
-                payload["reused"] = json!(true);
-            }
-            payload["model_delivery"] = json!({"coverage":if compact {"bounded_sample"} else {"complete"},"retained":"complete"});
-            let mut model_payload = if compact {
-                let description = self
-                    .state
-                    .store
-                    .dataset_describe(&self.loupist_id, &reference.dataset_id, reference.revision)
-                    .map_err(|error| BrokerError::Execution(error.to_string()))?;
-                let mut delivered = json!({"dataset_ref":reference,"fetched_at":payload["fetched_at"],"data_summary":description,"model_delivery":{"coverage":"bounded_sample","retained":"complete"}});
-                if let Some(as_of) = payload.get("as_of") {
-                    delivered["as_of"] = as_of.clone();
-                }
-                if reused {
-                    delivered["reused"] = json!(true);
-                }
-                Some(delivered)
-            } else {
-                None
-            };
-            let result_ref = match self
-                .capture
-                .stage_run_result_with_delivery(
-                    delivery_id,
-                    RunResultProducer {
-                        origin: if requested_provider.is_some() {
-                            RunResultOrigin::AcquiredOriginal
-                        } else {
-                            RunResultOrigin::Derived
-                        },
-                        runtime_id: request.server_id.clone(),
-                        tool_name: request.tool_name.clone(),
-                        provider: requested_provider,
-                    },
-                    &capture_request,
-                    payload.clone(),
-                    Vec::new(),
-                    model_payload.as_ref(),
-                )
-                .await
-            {
-                Ok(result_ref) => result_ref,
-                Err(error) => return mcp_call_error_with_inventory(tools, error),
-            };
-            attach_result_ref(&mut payload, &result_ref);
-            if let Some(delivered) = &mut model_payload {
-                attach_result_ref(delivered, &result_ref);
-            }
-            payload = model_payload.unwrap_or(payload);
-        }
-        Ok(match tools {
-            Some(tools) => json!({ "result": payload, "tools": tools }),
-            None => json!({ "result": payload }),
+        Ok(McpCallPlan {
+            arguments,
+            requested_provider,
+            control_tool,
+            max_age,
+            dated,
+            capture_request,
+            request_key,
         })
+    }
+
+    /// Provenance: the dataset revision that retains a data read in full, the
+    /// reused one or a new one recorded with its request and trust.
+    fn retain_mcp_read(
+        &self,
+        plan: &McpCallPlan,
+        payload: &Value,
+        retained: Option<(crate::datasets::DatasetRef, Option<String>)>,
+        compact: bool,
+    ) -> Result<(crate::datasets::DatasetRef, Option<String>), BrokerError> {
+        if let Some(retained) = retained {
+            return Ok(retained);
+        }
+        let fetched_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+        let reference = self.state.store.dataset_put(
+            &self.loupist_id,
+            &plan.request_key,
+            payload,
+            json!({"producer":"mcp", "request":plan.capture_request,"fetched_at":fetched_at,"publication_policy":"provider-declared; unknown availability is not point-in-time evidence","model_coverage":if compact {"bounded_sample"} else {"complete"},
+                "trust": crate::custom_connections::taint::retained_trust(ToolMethod::McpCall, &plan.capture_request, &self.state.artifacts.mcp_runtimes)}),
+        ).map_err(|error| BrokerError::Execution(error.to_string()))?;
+        Ok((reference, Some(fetched_at)))
+    }
+
+    /// Result shaping: stamps the retained dataset on the full payload and, for
+    /// a large one, returns the bounded summary the model receives instead.
+    fn shape_mcp_read(
+        &self,
+        payload: &mut Value,
+        reference: &crate::datasets::DatasetRef,
+        fetched_at: Option<String>,
+        reused: bool,
+        compact: bool,
+    ) -> Result<Option<Value>, BrokerError> {
+        payload["dataset_ref"] = json!(reference);
+        payload["fetched_at"] = json!(fetched_at);
+        if reused {
+            payload["reused"] = json!(true);
+        }
+        payload["model_delivery"] = json!({"coverage":if compact {"bounded_sample"} else {"complete"},"retained":"complete"});
+        if !compact {
+            return Ok(None);
+        }
+        let description = self
+            .state
+            .store
+            .dataset_describe(&self.loupist_id, &reference.dataset_id, reference.revision)
+            .map_err(|error| BrokerError::Execution(error.to_string()))?;
+        let mut delivered = json!({"dataset_ref":reference,"fetched_at":payload["fetched_at"],"data_summary":description,"model_delivery":{"coverage":"bounded_sample","retained":"complete"}});
+        if let Some(as_of) = payload.get("as_of") {
+            delivered["as_of"] = as_of.clone();
+        }
+        if reused {
+            delivered["reused"] = json!(true);
+        }
+        Ok(Some(delivered))
+    }
+
+    /// Provenance: stages the read as this run's result. A named provider
+    /// makes it acquired original data; otherwise it is derived.
+    async fn stage_mcp_read(
+        &self,
+        delivery_id: &str,
+        request: &McpToolCallRequest,
+        plan: &McpCallPlan,
+        payload: &Value,
+        model_payload: Option<&Value>,
+    ) -> Result<String, BrokerError> {
+        self.capture
+            .stage_run_result_with_delivery(
+                delivery_id,
+                RunResultProducer {
+                    origin: if plan.requested_provider.is_some() {
+                        RunResultOrigin::AcquiredOriginal
+                    } else {
+                        RunResultOrigin::Derived
+                    },
+                    runtime_id: request.server_id.clone(),
+                    tool_name: request.tool_name.clone(),
+                    provider: plan.requested_provider.clone(),
+                },
+                &plan.capture_request,
+                payload.clone(),
+                Vec::new(),
+                model_payload,
+            )
+            .await
     }
 
     /// The provider a host read uses: the requested one when this Loupist enabled

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SourceSelectionRequest {
     pub source: KnowledgeSourceReadRequest,
@@ -13,6 +14,7 @@ pub struct SourceSelectionRequest {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SourceSelectionPin {
     pub loupist_id: String,

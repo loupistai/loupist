@@ -10,7 +10,7 @@ use chrono::DateTime;
 
 use crate::{
     domain::LoupistProfile,
-    store::{LoupistStore, SqliteStore, StoreError},
+    store::{SqliteStore, StoreError},
 };
 
 use super::{
@@ -1087,4 +1087,276 @@ fn recovered_inbox_retains_tool_refusals_and_is_unread_once() {
         ["read", "browser"]
     );
     assert_eq!(store.inbox_unread_count("loupist-a").unwrap(), 1);
+}
+
+fn edit_row(store: &SqliteStore, table: &str, set: &str, id: &str) {
+    let connection = store.lock_loupist("loupist-a").unwrap();
+    connection
+        .execute(
+            &format!("UPDATE {table} SET data_json={set} WHERE id=?1"),
+            [id],
+        )
+        .unwrap();
+}
+
+#[test]
+fn a_task_another_version_wrote_is_listed_and_kept_but_never_run_or_changed() {
+    let store = fixture();
+    let now = at("2026-10-11T09:00:00Z");
+    let chat = crate::test_fixtures::chat_session("chat-target", "loupist-a");
+    store.create_chat(&chat).unwrap();
+    let newer = store
+        .scheduled_task_create(
+            "loupist-a",
+            TaskDraft {
+                target: TaskTarget::ExistingChat {
+                    thread_id: chat.id.clone(),
+                },
+                ..draft()
+            },
+            now,
+        )
+        .unwrap();
+    let kept = store
+        .scheduled_task_create("loupist-a", draft(), now)
+        .unwrap();
+    // A newer build's kind and field, at the same schema version.
+    edit_row(
+        &store,
+        "scheduled_tasks",
+        r#"json_set(data_json,'$.kind','digest','$.digest_sections',json('["moves"]'))"#,
+        &newer.id,
+    );
+
+    let listed = store.scheduled_tasks_list("loupist-a").unwrap();
+    let read = listed.iter().find(|task| task.id == newer.id).unwrap();
+    assert_eq!(read.kind, TaskKind::Unknown("digest".into()));
+    assert_eq!(
+        serde_json::to_value(read).unwrap()["kind"],
+        serde_json::json!("digest")
+    );
+    let due = store
+        .scheduled_tasks_due_for_loupists(now + 60 * 60_000, 100, &["loupist-a".into()])
+        .unwrap();
+    assert_eq!(
+        due.iter().map(|task| &task.id).collect::<Vec<_>>(),
+        [&kept.id]
+    );
+    let refused = |result: Result<_, StoreError>| matches!(result, Err(StoreError::Conflict(_)));
+    assert!(refused(
+        claim_task(&store, "loupist-a", &newer.id, now + 1, true).map(|_| ())
+    ));
+    assert!(refused(
+        store
+            .scheduled_task_set_status("loupist-a", &newer.id, 1, TaskStatus::Paused, now + 1)
+            .map(|_| ())
+    ));
+    assert!(refused(
+        store
+            .scheduled_task_update("loupist-a", &newer.id, 1, draft(), now + 1)
+            .map(|_| ())
+    ));
+    // Folder admission accepts it, and a rewrite this version makes keeps the kind.
+    {
+        let connection = store.lock_loupist("loupist-a").unwrap();
+        super::store::validate_saved_tasks(&connection).unwrap();
+    }
+    store.delete_chat(&chat).unwrap();
+    let after = store
+        .scheduled_task_get("loupist-a", &newer.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(after.kind, TaskKind::Unknown("digest".into()));
+    assert_eq!(after.status, TaskStatus::Paused);
+    store
+        .scheduled_task_delete("loupist-a", &newer.id, after.revision)
+        .unwrap();
+}
+
+#[test]
+fn one_unreadable_task_or_run_never_fails_a_listing_page_or_the_due_scan() {
+    let store = fixture();
+    let now = at("2026-10-11T09:00:00Z");
+    let broken = store
+        .scheduled_task_create("loupist-a", draft(), now)
+        .unwrap();
+    let kept = store
+        .scheduled_task_create("loupist-a", draft(), now)
+        .unwrap();
+    let mut runs = Vec::new();
+    for offset in [1, 2] {
+        let claim = claim_task(&store, "loupist-a", &kept.id, now + offset, true)
+            .unwrap()
+            .unwrap();
+        store
+            .scheduled_task_finish(
+                "loupist-a",
+                &claim.run.run_id,
+                RunStatus::Succeeded,
+                None,
+                now + offset,
+            )
+            .unwrap();
+        runs.push(claim.run);
+    }
+    edit_row(
+        &store,
+        "scheduled_tasks",
+        r#"json_set(data_json,'$.schedule','hourly')"#,
+        &broken.id,
+    );
+    // The newest run cannot be read; the older one can.
+    edit_row(
+        &store,
+        "scheduled_task_runs",
+        r#"json_set(data_json,'$.skipped_tools','none')"#,
+        &runs[1].id,
+    );
+
+    let listed = store.scheduled_tasks_list("loupist-a").unwrap();
+    assert_eq!(
+        listed.iter().map(|task| &task.id).collect::<Vec<_>>(),
+        [&kept.id]
+    );
+    let with_latest = store.scheduled_tasks_list_with_latest("loupist-a").unwrap();
+    assert_eq!(with_latest.len(), 1);
+    assert!(with_latest[0].latest_run.is_none());
+    let due = store
+        .scheduled_tasks_due_for_loupists(now + 60 * 60_000, 100, &["loupist-a".into()])
+        .unwrap();
+    assert_eq!(
+        due.iter().map(|task| &task.id).collect::<Vec<_>>(),
+        [&kept.id]
+    );
+    assert_eq!(
+        store.scheduled_task_runs("loupist-a", &kept.id).unwrap(),
+        [store
+            .scheduled_task_run_get("loupist-a", &runs[0].run_id)
+            .unwrap()
+            .unwrap()]
+    );
+    // The inbox cursor moves past the unreadable run to the readable one.
+    let (first, cursor) = store.inbox_page("loupist-a", None, 1).unwrap();
+    assert!(first.is_empty());
+    assert_eq!(cursor.as_deref(), Some(runs[1].run_id.as_str()));
+    let (second, _) = store.inbox_page("loupist-a", cursor.as_deref(), 1).unwrap();
+    assert_eq!(
+        second.into_iter().map(|run| run.run_id).collect::<Vec<_>>(),
+        [runs[0].run_id.clone()]
+    );
+    // Reading that one task and admitting the folder stay strict.
+    assert!(store.scheduled_task_get("loupist-a", &broken.id).is_err());
+    let connection = store.lock_loupist("loupist-a").unwrap();
+    assert!(super::store::validate_saved_tasks(&connection).is_err());
+}
+
+/// SQL reads, indexes and edits address task and run JSON by serde name
+/// (`scheduled_tasks/store.rs`): the briefing index on `$.kind`, the due scan's
+/// `$.kind`, inbox reads of `$.read_at_ms` and `$.briefing_context`, and the
+/// `json_set` edits for a deleted Chat and a copied folder. A serde rename must
+/// fail here rather than silently miss.
+#[test]
+fn sql_json_paths_name_fields_tasks_and_runs_serialize() {
+    let sqlite = rusqlite::Connection::open_in_memory().unwrap();
+    let extract = |json: &str, path: &str| -> Option<String> {
+        sqlite
+            .query_row(
+                "SELECT json_type(?1, ?2), json_extract(?1, ?2)",
+                [json, path],
+                |row| {
+                    let kind: Option<String> = row.get(0)?;
+                    let value: rusqlite::types::Value = row.get(1)?;
+                    Ok(kind.map(|_| match value {
+                        rusqlite::types::Value::Text(text) => text,
+                        other => format!("{other:?}"),
+                    }))
+                },
+            )
+            .unwrap()
+    };
+    let store = fixture();
+    let now = at("2026-10-11T09:00:00Z");
+    let task = store
+        .scheduled_task_create("loupist-a", draft(), now)
+        .unwrap();
+    let claim = claim_task(&store, "loupist-a", &task.id, now + 1, true)
+        .unwrap()
+        .unwrap();
+    let run = store
+        .scheduled_task_finish(
+            "loupist-a",
+            &claim.run.run_id,
+            RunStatus::Failed,
+            Some("Provider unavailable."),
+            now + 2,
+        )
+        .unwrap();
+
+    let briefing = serde_json::to_string(&Task {
+        kind: TaskKind::Briefing,
+        ..task.clone()
+    })
+    .unwrap();
+    assert_eq!(extract(&briefing, "$.kind").as_deref(), Some("briefing"));
+    for kind in TaskKind::KNOWN {
+        let json = serde_json::to_string(&Task {
+            kind: kind.clone(),
+            ..task.clone()
+        })
+        .unwrap();
+        assert_eq!(extract(&json, "$.kind").as_deref(), Some(kind.as_str()));
+    }
+    for status in [
+        TaskStatus::Active,
+        TaskStatus::Paused,
+        TaskStatus::Completed,
+    ] {
+        let json = serde_json::to_string(&Task {
+            status,
+            ..task.clone()
+        })
+        .unwrap();
+        assert_eq!(extract(&json, "$.status").as_deref(), Some(status.as_str()));
+    }
+    let json = serde_json::to_string(&task).unwrap();
+    assert!(extract(&json, "$.next_run_at_ms").is_some());
+
+    let run = Run {
+        read_at_ms: None,
+        briefing_context: Some(crate::briefings::BriefingContext {
+            symbols: Vec::new(),
+            principles_checked: 0,
+            new_facts: 0,
+            disputed_entity_ids: vec!["entity-1".into()],
+            changed: Default::default(),
+            ahead: Vec::new(),
+            assets: Vec::new(),
+            earnings: Vec::new(),
+            watch_events: Vec::new(),
+        }),
+        ..run
+    };
+    let json = serde_json::to_string(&run).unwrap();
+    for path in [
+        "$.read_at_ms",
+        "$.briefing_context.disputedEntityIds",
+        "$.thread_id",
+        "$.finished_at_ms",
+        "$.error",
+    ] {
+        assert!(extract(&json, path).is_some(), "{path}");
+    }
+    for status in [
+        RunStatus::Running,
+        RunStatus::Succeeded,
+        RunStatus::Failed,
+        RunStatus::Interrupted,
+    ] {
+        let json = serde_json::to_string(&Run {
+            status,
+            ..run.clone()
+        })
+        .unwrap();
+        assert_eq!(extract(&json, "$.status").as_deref(), Some(status.as_str()));
+    }
 }

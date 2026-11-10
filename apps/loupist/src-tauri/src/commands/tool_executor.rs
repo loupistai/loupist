@@ -8,6 +8,7 @@ mod earnings;
 mod earnings_tests;
 mod question;
 pub(crate) use earnings::commit_turn as commit_earnings;
+mod arguments;
 #[cfg(test)]
 mod assets_tests;
 mod authority;
@@ -33,6 +34,8 @@ mod grid;
 mod grid_tests;
 mod market;
 mod mcp_host;
+mod memory_reads;
+mod memory_saves;
 mod number_checks;
 mod research;
 mod returning;
@@ -64,13 +67,15 @@ use tokio::sync::Mutex;
 
 use crate::{
     app::AppState,
-    broker::{BrokerError, ToolExecutor, ToolMethod, ToolPolicy},
+    broker::{
+        tool_class::{PackText, Retention},
+        BrokerError, ToolExecutor, ToolMethod, ToolPolicy,
+    },
     chat::artifacts::{
         ArtifactCommit, ChatArtifact, ChatArtifactKind, ChatArtifactPayload, ChatArtifactRevision,
     },
     domain::{MemoryAccess, MemoryRefSnapshot},
     mcp::pool::McpProcessPool,
-    store::LoupistStore,
     util::sha256,
 };
 
@@ -233,16 +238,7 @@ struct PendingToolCapture {
     call_id: Option<String>,
 }
 
-/// Host classification of provenance. Model arguments cannot promote derived output to an original.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum RunResultOrigin {
-    AcquiredOriginal,
-    WorkspaceFile,
-    Discovery,
-    Derived,
-    SavedContext,
-}
+pub(crate) use crate::broker::tool_class::RunResultOrigin;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct RunResultProducer {
@@ -1018,27 +1014,14 @@ impl AppToolExecutor {
                 .store(true, std::sync::atomic::Ordering::Relaxed);
         }
         let mut params = params;
-        let max_age = if accepts_max_age(method) {
+        let retention = method.producer().map(|producer| producer.retention);
+        let max_age = if retention == Some(Retention::DatasetMaxAge) {
             take_max_age(&mut params)?
         } else {
             None
         };
         let request = params.clone();
-        let persistent_data = matches!(
-            method,
-            ToolMethod::WorldbankSeries
-                | ToolMethod::DefillamaRead
-                | ToolMethod::KrxDailyQuote
-                | ToolMethod::KisOperationSearch
-                | ToolMethod::KisRead
-                | ToolMethod::DartFinancials
-                | ToolMethod::DartFilingSearch
-                | ToolMethod::DartFilingRead
-                | ToolMethod::DartCompanyLookup
-                | ToolMethod::DartMajorReport
-                | ToolMethod::DartOwnership
-                | ToolMethod::DartDividends
-        );
+        let persistent_data = retention.is_some_and(Retention::keeps_dataset);
         let request_key = if persistent_data {
             Some(self.persistent_request_key(policy, method, &request).await)
         } else {
@@ -1298,13 +1281,7 @@ impl AppToolExecutor {
         if let Some(returning) = &returning {
             crate::custom_connections::taint::delimit_returning(method, returning, &mut delivered);
         }
-        if matches!(
-            method,
-            ToolMethod::LensRead
-                | ToolMethod::LensSearch
-                | ToolMethod::WorldRead
-                | ToolMethod::WorldSearch
-        ) {
+        if method.safety().pack_text == PackText::Delimited {
             // Text from shared packs arrives delimited and pauses commands for this turn.
             crate::sharing::delivery::deliver(
                 &self.state,
@@ -1339,23 +1316,6 @@ impl AppToolExecutor {
     }
 }
 
-/// Network finance reads whose schema declares the host-handled `max_age`.
-fn accepts_max_age(method: ToolMethod) -> bool {
-    matches!(
-        method,
-        ToolMethod::WorldbankSeries
-            | ToolMethod::DefillamaRead
-            | ToolMethod::KrxDailyQuote
-            | ToolMethod::KisRead
-            | ToolMethod::DartFinancials
-            | ToolMethod::DartFilingSearch
-            | ToolMethod::DartFilingRead
-            | ToolMethod::DartMajorReport
-            | ToolMethod::DartOwnership
-            | ToolMethod::DartDividends
-    )
-}
-
 pub(super) const RESOLVED_UPSTREAM_FIELD: &str = "_resolved_upstream_result_refs";
 
 fn take_resolved_upstream(result: &mut Value) -> Option<Vec<String>> {
@@ -1380,38 +1340,7 @@ fn run_result_producer(
     request: &Value,
     result: &Value,
 ) -> Option<RunResultProducer> {
-    let (runtime_id, tool_name) = match method {
-        ToolMethod::WorldSearch => ("knowledge", "world_search"),
-        ToolMethod::WorldRead => ("knowledge", "world_read"),
-        ToolMethod::LensSearch => ("knowledge", "lens_search"),
-        ToolMethod::LensRead => ("knowledge", "lens_read"),
-        ToolMethod::ConversationMemory => ("knowledge", "conversation_memory"),
-        ToolMethod::AssetPageRead => ("knowledge", "asset_page_read"),
-        ToolMethod::WorldbankSeries => ("native-finance", "worldbank_series"),
-        ToolMethod::DefillamaRead => ("native-finance", "defillama_read"),
-        ToolMethod::KrxDailyQuote => ("native-finance", "krx_daily_quote"),
-        ToolMethod::KisOperationSearch => ("native-finance", "kis_operation_search"),
-        ToolMethod::KisRead => ("native-finance", "kis_read"),
-        ToolMethod::DartFinancials => ("native-finance", "dart_financials"),
-        ToolMethod::DartFilingSearch => ("native-finance", "dart_filing_search"),
-        ToolMethod::DartFilingRead => ("native-finance", "dart_filing_read"),
-        ToolMethod::DartCompanyLookup => ("native-finance", "dart_company_lookup"),
-        ToolMethod::DartMajorReport => ("native-finance", "dart_major_report"),
-        ToolMethod::DartOwnership => ("native-finance", "dart_ownership"),
-        ToolMethod::DartDividends => ("native-finance", "dart_dividends"),
-        ToolMethod::WebSearch => ("native-web", "web_search"),
-        ToolMethod::WebFetch => ("native-web", "web_fetch"),
-        ToolMethod::ArtifactList => ("artifact-store", "artifact_list"),
-        ToolMethod::ArtifactRead => ("artifact-store", "artifact_read"),
-        ToolMethod::ChartQuery => ("artifact-store", "chart_query"),
-        ToolMethod::WorkspaceCapture => ("workspace", "workspace_capture"),
-        ToolMethod::PythonRun => ("python-worker", "run_python"),
-        ToolMethod::DatasetDescribe => ("dataset-store", "dataset_describe"),
-        ToolMethod::DatasetQuery => ("dataset-store", "dataset_query"),
-        ToolMethod::DatasetImport => ("workspace", "dataset_import"),
-        ToolMethod::Calculate => ("host-calculation", "calculate"),
-        _ => return None,
-    };
+    let native = method.producer()?;
     let provider = match method {
         ToolMethod::WebSearch => result
             .get("selected_provider")
@@ -1437,34 +1366,10 @@ fn run_result_producer(
             .map(str::to_owned),
     }
     .filter(|value| !value.is_empty() && value.len() <= 256);
-    let origin = match method {
-        ToolMethod::WorkspaceCapture => RunResultOrigin::WorkspaceFile,
-        ToolMethod::WorldbankSeries
-        | ToolMethod::DefillamaRead
-        | ToolMethod::KrxDailyQuote
-        | ToolMethod::KisRead
-        | ToolMethod::DartFinancials
-        | ToolMethod::DartFilingSearch
-        | ToolMethod::DartFilingRead
-        | ToolMethod::DartCompanyLookup
-        | ToolMethod::DartMajorReport
-        | ToolMethod::DartOwnership
-        | ToolMethod::DartDividends
-        | ToolMethod::WebFetch => RunResultOrigin::AcquiredOriginal,
-        ToolMethod::WebSearch | ToolMethod::KisOperationSearch => RunResultOrigin::Discovery,
-        ToolMethod::WorldSearch
-        | ToolMethod::WorldRead
-        | ToolMethod::LensSearch
-        | ToolMethod::LensRead
-        | ToolMethod::ConversationMemory
-        | ToolMethod::AssetPageRead => RunResultOrigin::SavedContext,
-        ToolMethod::DatasetDescribe | ToolMethod::DatasetQuery => RunResultOrigin::SavedContext,
-        _ => RunResultOrigin::Derived,
-    };
     Some(RunResultProducer {
-        origin,
-        runtime_id: runtime_id.into(),
-        tool_name: tool_name.into(),
+        origin: native.origin,
+        runtime_id: native.runtime.into(),
+        tool_name: method.tool_name(),
         provider,
     })
 }
@@ -1550,29 +1455,13 @@ fn refuse_sensitive_memory(
     method: ToolMethod,
     params: &Value,
 ) -> Result<(), BrokerError> {
-    if !matches!(
-        method,
-        ToolMethod::NoteSave
-            | ToolMethod::BotMemory
-            | ToolMethod::PrincipleSave
-            | ToolMethod::LensFile
-            | ToolMethod::WorldSchemaUpdate
-            | ToolMethod::LoupistSetup
-            | ToolMethod::JournalSave
-            | ToolMethod::JournalReview
-            | ToolMethod::ThesisUpdate
-            | ToolMethod::EarningsSnapshotSave
-    ) || !any_credential_text(params)
-    {
+    if !method.safety().memory.screened_for_credentials() || !any_credential_text(params) {
         return Ok(());
     }
     capture.record_tool_refusal(crate::domain::ChatToolRefusal {
         connection_id: "memory".into(),
         connection_name: "Memory".into(),
-        tool_name: serde_json::to_value(method)
-            .ok()
-            .and_then(|value| value.as_str().map(str::to_owned))
-            .unwrap_or_default(),
+        tool_name: method.tool_name(),
         reason: crate::domain::ChatToolRefusalReason::SensitiveMemory,
     });
     Err(BrokerError::Execution(

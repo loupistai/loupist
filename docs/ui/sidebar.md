@@ -38,7 +38,14 @@ used for approvals and runs that finish while the window is hidden. While the ma
 
 Native menu events reach React through the typed bridge's `onMenuAction` subscription.
 Keyboard shortcuts come from one table (`src/app/shortcuts.ts`) that both the global
-handler and Settings › Keyboard read. ⌘K opens the command palette (also from the
+handler and Settings › Keyboard read. Top-level destinations come from
+`APP_DESTINATIONS` in `src/app/navigation.ts`: ⌘1–⌘4 in the header, the palette's
+open rows, the native View menu ids and the test helpers read it. Chat and Scheduled
+tasks are pages (`APP_PAGES`, which also names each page's location heading); Map
+and Lens open their panel beside the Chat. A new page adds one destination row and
+one page entry. `src/app/useAppSurface.ts` holds the page and the layers over it
+(Loupist settings, an asset page, the Gallery, a pack review) and derives what the
+sidebar, the workspace panel and the stage may show. ⌘K opens the command palette (also from the
 sidebar search and the "n more" row of Needs attention). The narrow navigation
 sheet is not a modal, so ⌘K, the tab keys and the panel shortcut still work
 while that sheet is open, and ⌘B still closes it. The search field keeps its 52px height and the result list scrolls. Results are grouped into Needs
@@ -69,5 +76,5 @@ guard in the tokens stops CSS animation and transition except status spinners.
 
 ## Code
 
-- Shell / native menus: `src/components/app/`, `src/components/SettingsView.tsx`, `src/App.tsx`, `src-tauri/src/lib.rs`
+- Shell / native menus: `src/components/app/`, `src/components/SettingsView.tsx`, `src/App.tsx`, `src/app/navigation.ts`, `src/app/useAppSurface.ts`, `src/app/useChatViewModel.ts`, `src-tauri/src/lib.rs`
 - Export (Markdown, CSV, chart PNG, print to PDF): `src/chat/exportChat.ts`, `src/components/charts/chartSnapshot.ts`, `src/components/charts/SaveChartPng.tsx`, `src/components/print/`, `src-tauri/src/commands/export_file.rs`, `src-tauri/capabilities/default.json`

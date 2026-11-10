@@ -9,6 +9,7 @@ use crate::{
 };
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ApprovalDecideRequest {
     loupist_id: String,

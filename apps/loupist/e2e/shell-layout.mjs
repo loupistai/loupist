@@ -10,21 +10,21 @@ export function measureShellLayout() {
     return { x: r.x, y: r.y, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
   };
   const rect = selector => box(document.querySelector(selector));
-  const shell = rect(".app-shell");
+  const shell = rect("[data-testid=app-shell]");
   if (!shell) return null; // Onboarding and print have no research shell.
   const navigation = [...document.querySelectorAll('[data-slot="sidebar-container"], .settings-navigation[data-slot="sidebar"], [data-slot="sidebar"][data-mobile="true"]')]
     .flatMap(element => {
       const bounds = box(element);
       return bounds ? [{ bounds, mobile: element.dataset.mobile === "true",
-        railButtons: element.closest('[data-collapsible="icon"]') ? [...element.querySelectorAll('.navigation-search,.loupist-home-icon,.navigation-new,#main-tab-settings')].map(box).filter(Boolean) : [],
+        railButtons: element.closest('[data-collapsible="icon"]') ? [...element.querySelectorAll('.navigation-search,.loupist-home-icon,[data-testid=navigation-new],#main-tab-settings')].map(box).filter(Boolean) : [],
         footer: box(element.querySelector('[data-slot="sidebar-footer"]')) }] : [];
     });
   const content = document.querySelector(".conversation-content");
   return {
     viewport: { x: 0, y: 0, right: innerWidth, bottom: innerHeight, width: innerWidth, height: innerHeight },
     shell, titlebar: rect(".app-titlebar"), body: rect(".app-body"), frame: rect(".app-frame"), navigation,
-    headerControls: [...document.querySelectorAll(".app-titlebar button:not(.loupist-header-identity), .loupist-header-profiles")].map(box).filter(Boolean),
-    activeProfile: rect('.loupist-header-identity[aria-pressed="true"]'), profiles: rect(".loupist-header-profiles"),
+    headerControls: [...document.querySelectorAll(".app-titlebar button:not([data-testid=loupist-header-identity]), .loupist-header-profiles")].map(box).filter(Boolean),
+    activeProfile: rect('[data-testid=loupist-header-identity][aria-pressed="true"]'), profiles: rect(".loupist-header-profiles"),
     composer: rect(".composer-shell"),
     heading: rect(".workspace-heading"),
     titleColumn: rect(".workspace-chat-title"), readingColumn: box(content),

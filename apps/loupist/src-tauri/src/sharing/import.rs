@@ -245,6 +245,7 @@ pub(crate) struct StoredItem {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ItemView {
     pub key: String,
@@ -255,6 +256,7 @@ pub(crate) struct ItemView {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct OriginView {
     pub id: String,
@@ -264,6 +266,7 @@ pub(crate) struct OriginView {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CreditView {
     pub name: String,
@@ -274,6 +277,7 @@ pub(crate) struct CreditView {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ManifestView {
     pub id: String,
@@ -292,6 +296,7 @@ pub(crate) struct ManifestView {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ProfileView {
     pub name: String,
@@ -301,6 +306,7 @@ pub(crate) struct ProfileView {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct HostCount {
     pub host: String,
@@ -308,6 +314,7 @@ pub(crate) struct HostCount {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ExtensionCounts {
     pub types: u32,
@@ -317,6 +324,7 @@ pub(crate) struct ExtensionCounts {
 /// One map record whose text looks like an instruction, names a tool, asks
 /// for secrets, could send data out or had hidden characters (removed).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MapFinding {
     pub kind: &'static str,
@@ -329,6 +337,7 @@ pub(crate) struct MapFinding {
 const MAX_MAP_FINDINGS: usize = 50;
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct WorldView {
     pub names: u32,
@@ -345,6 +354,7 @@ pub(crate) struct WorldView {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PackPreview {
     pub staging_id: String,
@@ -363,6 +373,7 @@ pub(crate) struct PackPreview {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub(crate) enum OpenResult {
     Preview {

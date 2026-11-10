@@ -270,7 +270,7 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
 
   return <Popover.Root open={open} onOpenChange={(next) => { if (!next) { setOpen(false); setPinned(false); } }}>
     <Popover.Anchor asChild>
-      <button ref={chip} type="button" className="number-chip" data-status={check.status} data-kind={check.kind}
+      <button ref={chip} type="button" className="number-chip" data-testid="number-chip" data-status={check.status} data-kind={check.kind}
         data-number-check={needsChecking(check) ? "check" : undefined}
         aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? popoverId : undefined} aria-label={label} aria-describedby={status}
         onPointerEnter={() => { if (!narrowWindow()) schedule(true, OPEN_DELAY_MS); }}
@@ -363,5 +363,5 @@ export function revealFirstNumberToCheck(messageId: string) {
 
 /** A number link while its answer streams: a subtle underline, no popover, no layout shift. */
 export function PendingNumber({ children }: { children: ReactNode }) {
-  return <span className="number-chip" data-status="pending">{children}</span>;
+  return <span className="number-chip" data-testid="number-chip" data-status="pending">{children}</span>;
 }

@@ -10,6 +10,7 @@ const context = {
   symbols: ["NVDA"], principlesChecked: 2, newFacts: 14, disputedEntityIds: [],
   changed: { names: 3, relations: 2, conflicts: 0, rows: [{ kind: "claim_added", subjectId: "c1", summary: "Hanul Precision supplies Morrow Components" }] },
   ahead: [{ journalId: "j1", title: "Inventory days below 50", byDate: "2026-11-04" }],
+  assets: [],
 };
 
 async function fixture(run: Partial<ScheduledRun> = {}) {
@@ -65,7 +66,7 @@ it("updates the tab and Loupist badge on inbox-changed, and routes inbox-open to
   const { bridge, run } = await fixture(); const listeners: Array<(event: InboxChangedEvent) => void> = []; let open!: (event: InboxOpenEvent) => void;
   vi.spyOn(bridge, "onInboxChanged").mockImplementation(handler => { listeners.push(handler); return () => {}; });
   vi.spyOn(bridge, "onInboxOpen").mockImplementation(handler => { open = handler; return () => {}; });
-  const item: InboxItem = { runId: run.run_id, taskId: run.task_id, kind: "briefing", title: "Briefings", status: "succeeded", summary: run.summary, startedAtMs: run.started_at_ms, finishedAtMs: run.finished_at_ms ?? null, readAtMs: null, threadId: null, messageId: null, skippedTools: [], briefingContext: context };
+  const item: InboxItem = { runId: run.run_id, taskId: run.task_id, kind: "briefing", title: "Briefings", status: "succeeded", summary: run.summary, startedAtMs: run.started_at_ms, finishedAtMs: run.finished_at_ms ?? null, readAtMs: null, threadId: null, messageId: null, skippedTools: [], briefingContext: context, error: null, summaryItems: [] };
   vi.spyOn(bridge, "inboxList").mockResolvedValue({ items: [item], nextCursor: null });
   const counts = vi.spyOn(bridge, "inboxUnreadCounts").mockResolvedValue([{ loupistId: "loupist-quality", count: 2 }]);
   await openApp(bridge);
@@ -133,7 +134,7 @@ it("opens the Map with its conflicting evidence filter from the reader link", as
   const ids = [edge.source, edge.target];
   const settings = await bridge.briefingSettingsSet({ loupistId: "loupist-quality", enabled: true });
   vi.spyOn(bridge, "knowledgeMap").mockResolvedValue(map);
-  vi.spyOn(bridge, "scheduledTaskRuns").mockResolvedValue([scheduledRunFixture({ kind: "briefing", task_id: settings.task!.id, status: "succeeded", thread_id: null, briefing_context: { ...context, disputedEntityIds: ids, changed: { ...context.changed, conflicts: 1 } } })]);
+  vi.spyOn(bridge, "scheduledTaskRuns").mockResolvedValue([scheduledRunFixture({ kind: "briefing", task_id: settings.task!.id, status: "succeeded", thread_id: null, briefing_context: { ...context, disputedEntityIds: ids, changed: { ...context.changed, conflicts: 1 }, assets: [] } })]);
   vi.spyOn(bridge, "inboxMarkRead").mockResolvedValue();
   const user = userEvent.setup();
   await openApp(bridge); await openFirstRun(user);
@@ -174,6 +175,7 @@ it("offers See on the Map from a conflict card in the briefing reader", async ()
     artifact: { id: "conflict", chat_session_id: "briefing-chat", kind: "grid", title: "Solsup revenue", current_revision: 1, created_at_ms: 1, updated_at_ms: 1 },
     revision: { artifact_id: "conflict", revision: 1, payload: { kind: "grid", schema: GRID_SCHEMA, grid: conflict }, digest: "b".repeat(64), source_message_id: "briefing-answer", created_at_ms: 1 },
     evidence_refs: [evidence],
+    chart_dataset: null,
   });
   await openApp(bridge); await openFirstRun(user);
   expect(await screen.findByText("Sources disagree on FY2025 revenue.")).toBeVisible();

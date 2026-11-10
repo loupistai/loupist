@@ -13,7 +13,7 @@ import type { ChatDestination, Open } from "../../chat/navigation";
 import type { Mock } from "vitest";
 
 const source: KnowledgeReference = { kind: "source", recordId: "source-record", revisionId: "source-v1", objectId: "source-original", spanId: "passage-1", receiptId: "selected-receipt" };
-const read = (read_ref: string, knowledge = source): MemoryRef => ({ read_ref, kind: "source", title: "Annual report", excerpt: "Original passage", access: "exact_read", knowledge });
+const read = (read_ref: string, knowledge = source): MemoryRef => ({ read_ref, kind: "source", title: "Annual report", excerpt: "Original passage", access: "exact_read", knowledge, as_of: null, section: null });
 const answer = (extra: Partial<ChatMessage> = {}): ChatMessage => ({ id: "answer", role: "assistant", status: "complete", content: "Answer.", created_at: "2026-10-10T00:00:00Z", ...extra });
 const user = () => userEvent.setup({ skipHover: true });
 
@@ -32,9 +32,9 @@ it("draws a setup card from a completed connection_setup step and asks the quest
   await bridge.loupistCapabilityDisable({ loupist_id: "loupist-a", entry_id: "world-bank.indicators" });
   const onFillComposer = vi.fn();
   renderAnswer(answer({ content: "World Bank data can be added; finish the card below.", progress: { startedAtMs: 0, items: [
-    { id: "setup", kind: "tool", toolName: "connection_setup", category: "capability", operation: "generic", action: "Prepared a connection", target: "world-bank.indicators", source: { kind: "connector", name: "World Bank Indicators" }, status: "succeeded" },
-    { id: "failed", kind: "tool", toolName: "connection_setup", category: "capability", operation: "generic", action: "Prepared a connection", target: "Bloomberg", status: "failed" },
-  ] } }), { bridge, onFillComposer, previousQuestion: "How did Korea's GDP grow last year?" });
+    { id: "setup", kind: "tool", toolName: "connection_setup", category: "capability", operation: "generic", action: "Prepared a connection", target: "world-bank.indicators", source: { kind: "connector", name: "World Bank Indicators" }, status: "succeeded", href: null, startedAtMs: 0, finishedAtMs: null },
+    { id: "failed", kind: "tool", toolName: "connection_setup", category: "capability", operation: "generic", action: "Prepared a connection", target: "Bloomberg", status: "failed", href: null, startedAtMs: 0, finishedAtMs: null },
+  ], finishedAtMs: null } }), { bridge, onFillComposer, previousQuestion: "How did Korea's GDP grow last year?" });
   const card = await screen.findByRole("region", { name: "Set up World Bank Indicators" });
   expect(screen.getAllByRole("region", { name: /^Set up / })).toHaveLength(1);
   await user().click(await within(card).findByRole("button", { name: "Use in this Loupist" }));
@@ -43,11 +43,11 @@ it("draws a setup card from a completed connection_setup step and asks the quest
 });
 
 it.each([false, true])("keeps one stable research summary from first call to settlement (expanded: %s)", async (expanded) => {
-  const first = { id: "a", kind: "tool" as const, category: "files" as const, operation: "read" as const, action: "Read file", running: "Reading file", target: "q1.csv", status: "running" as const, startedAtMs: 2 };
+  const first = { id: "a", kind: "tool" as const, category: "files" as const, operation: "read" as const, action: "Read file", running: "Reading file", target: "q1.csv", status: "running" as const, startedAtMs: 2, href: null, finishedAtMs: null };
   const second = { ...first, id: "b", target: "q2.csv", startedAtMs: 3 };
   const plan = { items: [{ id: "compare", label: "Compare quarters", status: "active" as const, activatedAtMs: 1 }] };
   const message = (status: "streaming" | "complete", items: NonNullable<ChatMessage["progress"]>["items"]) =>
-    answer({ content: status === "complete" ? "Done." : "", status, phase: "tool", progress: { startedAtMs: 1, plan, items } });
+    answer({ content: status === "complete" ? "Done." : "", status, phase: "tool", progress: { startedAtMs: 1, plan, items, finishedAtMs: null } });
   const { view, ...props } = renderAnswer(message("streaming", [first]));
   // One row: the running step while it runs, the plan's stage once the run settles.
   const digest = screen.getByRole("button", { name: /^Reading file/ });
@@ -79,8 +79,8 @@ it("foregrounds the source of a settled multi-stage answer and opens it without 
       { id: "calc", label: "Reconcile the change", status: "done", activatedAtMs: 3 },
     ] },
     items: [
-      { id: "filing", startedAtMs: 2, kind: "tool", operation: "read", category: "web", action: "Read report", status: "succeeded", resultIds: [report.id] },
-      { id: "cmd", startedAtMs: 4, kind: "tool", operation: "execute", category: "compute", action: "Ran command", status: "succeeded", target: "private-analysis.sh", detailId: "raw-output" },
+      { id: "filing", startedAtMs: 2, kind: "tool", operation: "read", category: "web", action: "Read report", status: "succeeded", resultIds: [report.id], target: null, href: null, finishedAtMs: null },
+      { id: "cmd", startedAtMs: 4, kind: "tool", operation: "execute", category: "compute", action: "Ran command", status: "succeeded", target: "private-analysis.sh", detailId: "raw-output", href: null, finishedAtMs: null },
     ],
   } }), { bridge });
   const digest = within(screen.getByLabelText("Work progress"));
@@ -123,7 +123,7 @@ it.each(["error", "aborted"] as const)("keeps Try again beside an inline %s noti
 });
 
 it("says the general failure sentence for a failure kind this build does not know", () => {
-  const failed = answer({ content: "Response could not be completed.", status: "error", failure_kind: "quota_reset" as ChatMessage["failure_kind"] });
+  const failed = answer({ content: "Response could not be completed.", placeholder: true, status: "error", failure_kind: "quota_reset" as ChatMessage["failure_kind"] });
   renderAnswer(failed, { onRetry: vi.fn() });
   expect(screen.getByRole("alert")).toHaveTextContent(i18n.t("chat:chatMessageCard.other"));
 });
@@ -131,14 +131,14 @@ it("says the general failure sentence for a failure kind this build does not kno
 it.each(["en", "ko"])("shows one localized failure notice in %s and preserves a partial answer", async (language) => {
   await i18n.changeLanguage(language);
   try {
-    const failed = answer({ content: "Response could not be completed.", status: "error", failure_kind: "other" });
+    const failed = answer({ content: "Response could not be completed.", placeholder: true, status: "error", failure_kind: "other" });
     const { view, ...props } = renderAnswer(failed, { onRetry: vi.fn() });
     expect(screen.getByRole("alert")).toHaveTextContent(i18n.t("chat:chatMessageCard.other"));
     expect(screen.queryByText(failed.content)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: i18n.t("chat:chatMessageCard.copyAnswer") })).not.toBeInTheDocument();
     await user().click(screen.getByRole("button", { name: i18n.t("chat:chatMessageCard.tryAgain") }));
     expect(props.onRetry).toHaveBeenCalledOnce();
-    const partial = { ...failed, content: "The observed revenue increased." };
+    const partial = { ...failed, content: "The observed revenue increased.", placeholder: undefined };
     view.rerender(<TooltipProvider><ChatMessageCard {...props} message={partial} /></TooltipProvider>);
     expect(screen.getByText(partial.content)).toBeVisible();
     expect(screen.getByRole("button", { name: i18n.t("chat:chatMessageCard.copyAnswer") })).toBeVisible();
@@ -159,7 +159,7 @@ it("keeps stopped text without exposing the runtime's English stop marker", asyn
     expect(screen.queryByText("Response stopped.")).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("답변이 끝나기 전에 중지되었어요.");
     expect(screen.queryByRole("button", { name: "답변 복사" })).not.toBeInTheDocument();
-    view.rerender(<TooltipProvider><ChatMessageCard {...props} message={answer({ status: "aborted", content: "Response stopped.", progress: { startedAtMs: 1, items: [{ id: "draft", kind: "commentary", text: "쓰다 멈춘 문장" }] } })} /></TooltipProvider>);
+    view.rerender(<TooltipProvider><ChatMessageCard {...props} message={answer({ status: "aborted", content: "Response stopped.", progress: { startedAtMs: 1, items: [{ id: "draft", kind: "commentary", text: "쓰다 멈춘 문장" }], finishedAtMs: null } })} /></TooltipProvider>);
     expect(screen.getByRole("status")).toHaveTextContent("중지됨 · 쓰던 글을 남겼어요");
   } finally {
     await i18n.changeLanguage("en");
@@ -210,9 +210,9 @@ describe("response details", () => {
 
 it("shows only explicitly delivered, successfully written files as file chips, which open and show the file in Finder", async () => {
   const progress = { startedAtMs: 1, finishedAtMs: 20, items: [
-    { id: "script", kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", filePath: "analysis.py", status: "succeeded" },
-    { id: "report", kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", filePath: "reports/summary.csv", status: "succeeded" },
-    { id: "failed", kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", filePath: "reports/failed.csv", status: "failed" },
+    { id: "script", kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", filePath: "analysis.py", status: "succeeded", target: null, href: null, startedAtMs: 0, finishedAtMs: null },
+    { id: "report", kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", filePath: "reports/summary.csv", status: "succeeded", target: null, href: null, startedAtMs: 0, finishedAtMs: null },
+    { id: "failed", kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", filePath: "reports/failed.csv", status: "failed", target: null, href: null, startedAtMs: 0, finishedAtMs: null },
   ] } as ChatMessage["progress"];
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const reveal = vi.spyOn(bridge, "workspaceReveal").mockResolvedValueOnce().mockRejectedValueOnce(new Error("File not found."));
@@ -402,7 +402,7 @@ it("shows guidance a finished reply accepted as a Guided row, not a question bub
 it("keeps saved schedule cards current, even after a stopped reply, and opens the exact task", async () => {
   const receipt = { task_id: "task-a", title: "Morning review", revision: 1, action: "created" as const, status: "active" as const,
     schedule: { kind: "daily" as const, hour: 9, minute: 0, timezone: "Asia/Seoul" }, target: { kind: "dedicated_chat" as const },
-    next_run_at_ms: 1799973000000, use_memory: false, update_memory: false };
+    next_run_at_ms: 1799973000000, use_memory: false, update_memory: false, awaiting_confirmation: false };
   const message = answer({ status: "aborted", content: "", schedule_receipts: [receipt, { ...receipt, task_id: "task-b", title: "Evening review", target: { kind: "new_chat" } }] });
   const { view, open, ...props } = renderAnswer(message);
   const paused = { ...message, schedule_receipts: [{ ...receipt, revision: 2, action: "paused" as const, status: "paused" as const }, message.schedule_receipts![1]] };
@@ -414,10 +414,10 @@ it("keeps saved schedule cards current, even after a stopped reply, and opens th
 });
 
 it("says what a stopped reply kept: finished steps and the text so far", () => {
-  const steps = { startedAtMs: 0, items: [
-    { id: "s1", kind: "tool" as const, toolName: "web_search", category: "web" as const, operation: "search" as const, action: "Searched the web", status: "succeeded" as const },
-    { id: "s2", kind: "tool" as const, toolName: "web_fetch", category: "web" as const, operation: "read" as const, action: "Read a web source", status: "succeeded" as const },
-    { id: "s3", kind: "tool" as const, toolName: "web_fetch", category: "web" as const, operation: "read" as const, action: "Read a web source", status: "stopped" as const },
+  const steps = { startedAtMs: 0, finishedAtMs: null, items: [
+    { id: "s1", kind: "tool" as const, toolName: "web_search", category: "web" as const, operation: "search" as const, action: "Searched the web", status: "succeeded" as const, target: null, href: null, startedAtMs: 0, finishedAtMs: null },
+    { id: "s2", kind: "tool" as const, toolName: "web_fetch", category: "web" as const, operation: "read" as const, action: "Read a web source", status: "succeeded" as const, target: null, href: null, startedAtMs: 0, finishedAtMs: null },
+    { id: "s3", kind: "tool" as const, toolName: "web_fetch", category: "web" as const, operation: "read" as const, action: "Read a web source", status: "stopped" as const, target: null, href: null, startedAtMs: 0, finishedAtMs: null },
   ] };
   renderAnswer(answer({ status: "aborted", content: "Margin fell while", progress: steps }));
   expect(screen.getByText("Stopped · kept 2 steps and the text so far")).toBeVisible();
@@ -433,10 +433,10 @@ it("keeps a waiting approval actionable while folded and leaves its settled rece
     toolName: "read_company_filings", target: "Hanul Precision · 2026 Q3", state, requestedAtMs: Date.now() - 12_000,
   });
   const items = (status: "running" | "succeeded") => [
-    { id: "step-notes", kind: "tool" as const, toolName: "world_read", category: "memory" as const, operation: "read" as const, action: "Read saved notes", status: "succeeded" as const, startedAtMs: 1, finishedAtMs: 2 },
-    { id: "step-filings", kind: "tool" as const, toolName: "mcp__custom-morrow__read_company_filings", category: "finance" as const, operation: "read" as const, action: "Read Read company filings", running: "Reading company filings", status, startedAtMs: 3, ...(status === "succeeded" ? { finishedAtMs: 4 } : {}) },
+    { id: "step-notes", kind: "tool" as const, toolName: "world_read", category: "memory" as const, operation: "read" as const, action: "Read saved notes", status: "succeeded" as const, startedAtMs: 1, finishedAtMs: 2, target: null, href: null },
+    { id: "step-filings", kind: "tool" as const, toolName: "mcp__custom-morrow__read_company_filings", category: "finance" as const, operation: "read" as const, action: "Read Read company filings", running: "Reading company filings", status, startedAtMs: 3, finishedAtMs: status === "succeeded" ? 4 : null, target: null, href: null },
   ];
-  const running = answer({ status: "streaming", content: "", progress: { startedAtMs: 0, items: items("running"), approvals: [approval("waiting")] } });
+  const running = answer({ status: "streaming", content: "", progress: { startedAtMs: 0, items: items("running"), approvals: [approval("waiting")], finishedAtMs: null } });
   const { view } = renderAnswer(running, { bridge });
   const card = screen.getByRole("region", { name: "Approval for Read company filings" });
   expect(card.closest(".chat-progress")).toHaveAttribute("data-expanded", "false");
@@ -460,9 +460,9 @@ it("keeps a waiting question actionable while folded and leaves its settled line
     ...(state === "answered" ? { answer: { choice: 1 } } : {}), requestedAtMs: Date.now() - 5_000,
   });
   const items = (status: "running" | "succeeded") => [
-    { id: "step-ask", kind: "tool" as const, toolName: "ask_user", category: "capability" as const, operation: "generic" as const, action: "Asked you a question", running: "Asking you a question", status, startedAtMs: 1, ...(status === "succeeded" ? { finishedAtMs: 4 } : {}) },
+    { id: "step-ask", kind: "tool" as const, toolName: "ask_user", category: "capability" as const, operation: "generic" as const, action: "Asked you a question", running: "Asking you a question", status, startedAtMs: 1, finishedAtMs: status === "succeeded" ? 4 : null, target: null, href: null },
   ];
-  const running = answer({ status: "streaming", content: "", progress: { startedAtMs: 0, items: items("running"), questions: [question("waiting")] } });
+  const running = answer({ status: "streaming", content: "", progress: { startedAtMs: 0, items: items("running"), questions: [question("waiting")], finishedAtMs: null } });
   const { view } = renderAnswer(running, { bridge });
   const card = screen.getByRole("region", { name: "Question: Compare on which period?" });
   expect(card.closest(".chat-progress")).toHaveAttribute("data-expanded", "false");

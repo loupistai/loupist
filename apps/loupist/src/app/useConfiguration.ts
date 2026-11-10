@@ -1,7 +1,7 @@
 import i18n, { useTranslation } from "@/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConfigDocument, ConfigScope, ConfigSnapshot, LoupistBridge } from "../types";
-import { errorMessage } from "../lib/errors";
+import { commandErrorCode, errorMessage } from "../lib/errors";
 
 export const CONFIG_CHANGED_EVENT = "loupist-configuration-changed";
 export const notifyConfigurationChanged = (origin?: object) =>
@@ -61,7 +61,7 @@ export function useConfiguration(bridge: LoupistBridge, scope: ConfigScope) {
       notifyConfigurationChanged();
       return true;
     } catch (cause) {
-      const saved = cause && typeof cause === "object" && "code" in cause && cause.code === "config_apply_pending";
+      const saved = commandErrorCode(cause) === "config_apply_pending";
       if (requestEpoch === epoch.current) {
         if (saved) {
           try {

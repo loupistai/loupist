@@ -5,6 +5,7 @@ use crate::knowledge::{RepresentationRole, SourceClass};
 /// A renderer-only projection of a field in the immutable delivered capture.
 /// This is not a replacement span and never grants citation authority.
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SourcePresentationDto {
     pub text: String,

@@ -1,3 +1,9 @@
+import { APP_DESTINATIONS } from "./navigation";
+
+/** One destination's key from the ⌘1–⌘n binding, for rows that name a single destination. */
+export const tabShortcut = (index: number, mac = isMacPlatform()) => (mac ? `⌘${index}` : `Ctrl+${index}`);
+const destinationKeys = (mac: boolean) => APP_DESTINATIONS.map((_, index) => tabShortcut(index + 1, mac)).join(" · ");
+
 /**
  * The app's keyboard shortcuts, in one place: Settings › Keyboard lists this
  * table, and the global handlers read their keys from it, so the page cannot
@@ -12,7 +18,7 @@ export type Shortcut = { id: ShortcutId; mac: string; other: string };
 export const SHORTCUTS: readonly Shortcut[] = [
   { id: "newChat", mac: "⌘N", other: "Ctrl+N" },
   { id: "palette", mac: "⌘K", other: "Ctrl+K" },
-  { id: "tabs", mac: "⌘1 · ⌘2 · ⌘3 · ⌘4", other: "Ctrl+1 · Ctrl+2 · Ctrl+3 · Ctrl+4" },
+  { id: "tabs", mac: destinationKeys(true), other: destinationKeys(false) },
   { id: "panel", mac: "⌘\\", other: "Ctrl+\\" },
   { id: "settings", mac: "⌘,", other: "Ctrl+," },
   { id: "send", mac: "Enter", other: "Enter" },
@@ -33,5 +39,3 @@ export const modalDialogOpen = () => [...document.querySelectorAll('[role="dialo
   .some((dialog) => dialog.getAttribute("data-sidebar") !== "sidebar");
 export const shortcutKeys = (shortcut: Shortcut, mac = isMacPlatform()) => (mac ? shortcut.mac : shortcut.other);
 export const shortcutFor = (id: ShortcutId) => shortcutKeys(SHORTCUTS.find((item) => item.id === id)!);
-/** One tab's key from the ⌘1–⌘4 binding, for rows that name a single tab. */
-export const tabShortcut = (index: 1 | 2 | 3 | 4, mac = isMacPlatform()) => (mac ? `⌘${index}` : `Ctrl+${index}`);

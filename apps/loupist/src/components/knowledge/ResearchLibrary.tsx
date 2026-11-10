@@ -46,6 +46,7 @@ export function ResearchLibrary({ bridge, location, query, onQueryChange, refres
         .finally(() => { if (active) setLoading(false); });
     }, query ? 180 : 0);
     return () => { active = false; clearTimeout(timer); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` only words the failure; a language change must not reload.
   }, [bridge, location.loupistId, query, refreshKey, reload]);
   useLayoutEffect(() => {
     if (!loading && libraryRef.current) {
@@ -56,6 +57,7 @@ export function ResearchLibrary({ bridge, location, query, onQueryChange, refres
         (row ?? libraryRef.current.querySelector<HTMLInputElement>("input"))?.focus({ preventScroll: true });
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- restores scroll and focus when the list loads or the selection changes, not on every view patch.
   }, [loading, selectedId, location.loupistId]);
   const openJournal = (entry: JournalRecord) => onOpen({ loupistId: location.loupistId, surface: "note", objectId: entry.journalId, selection: { kind: "journal", journalId: entry.journalId }, view: { ...location.view, readerScrollTop: 0, focusResearchId: entry.journalId } });
   const counts = journalCounts(journals);
@@ -69,7 +71,7 @@ export function ResearchLibrary({ bridge, location, query, onQueryChange, refres
         <div className="source-library-heading library-section-label"><h2>{t("journal.yourJournal")}</h2><span>{formatNumber(matches.length)}</span>{journals.length > 0 ? <p className="journal-summary">{t("journal.summary", { cameTrue: formatNumber(counts.cameTrue), didNot: formatNumber(counts.didNot), pending: formatNumber(counts.pending) })}{counts.unclear ? ` · ${t("journal.unclearCount", { count: counts.unclear, value: formatNumber(counts.unclear) })}` : ""}</p> : null}<Button variant="ghost" className="library-add" onClick={() => setCreating(true)}>{t("journal.newEntry")}</Button></div>
         {creating ? <ResearchJournalForm bridge={bridge} loupistId={location.loupistId} checkOpen={location.view?.journalCheckOpen} onCancel={() => setCreating(false)} onSaved={entry => { setCreating(false); changed(); openJournal(entry); }} /> : null}
         {loading ? <p className="memory-loading-inline" role="status"><Spinner />{t("journal.loading")}</p> : !error && !matches.length && !creating ? <p className="journal-caption">{t(query ? "journal.noMatches" : "journal.empty")}</p> : null}
-        <ul className="journal-entry-list">{matches.map(entry => <li key={entry.journalId}><Button variant="ghost" className="research-library-row journal-library-row" data-research-id={entry.journalId} aria-current={entry.journalId === selectedId ? "true" : undefined} onClick={() => openJournal(entry)}><span className="memory-rail-copy"><strong className="journal-judgment-clamp">{entry.judgment}</strong><small><time dateTime={new Date(entry.createdAtMs).toISOString()}>{formatDate(entry.createdAtMs)}</time>{entry.check ? <><span aria-hidden="true"> · </span><ResearchJournalStatus entry={entry} /></> : null}</small></span></Button></li>)}</ul>
+        <ul className="journal-entry-list">{matches.map(entry => <li key={entry.journalId}><Button variant="ghost" className="research-library-row journal-library-row" data-testid="journal-library-row" data-research-id={entry.journalId} aria-current={entry.journalId === selectedId ? "true" : undefined} onClick={() => openJournal(entry)}><span className="memory-rail-copy"><strong className="journal-judgment-clamp">{entry.judgment}</strong><small><time dateTime={new Date(entry.createdAtMs).toISOString()}>{formatDate(entry.createdAtMs)}</time>{entry.check ? <><span aria-hidden="true"> · </span><ResearchJournalStatus entry={entry} /></> : null}</small></span></Button></li>)}</ul>
       </section>
       <section className="research-notes-section" aria-label={t("journal.researchNotes")}><div className="source-library-heading library-section-label"><h2>{t("journal.researchNotes")}</h2><span>{formatNumber(records.length)}</span></div>
         {!loading && !error && !records.length ? <EmptyState title={t(query ? "researchLibrary.noMatchingResearch" : "researchLibrary.noResearchNotesYet")} description={t("journal.researchEmpty")} /> : null}

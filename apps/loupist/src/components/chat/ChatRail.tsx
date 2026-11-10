@@ -76,7 +76,7 @@ function Thumbnail({ file }: { file: RailFile }) {
   const attachment = railAttachment(file);
   useEffect(() => {
     if (messageId && attachment.id) lightbox?.load(messageId, attachment);
-    // Reads once per image; the lightbox keeps what it read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reads once per image; the lightbox keeps what it read.
   }, [lightbox?.load, messageId, attachment.id]);
   const { url, failed } = lightbox?.image(messageId, attachment) ?? { url: file.url, failed: false };
   return <button type="button" className="chat-rail-thumb" title={failed ? t("chatRail.previewUnavailable") : file.filename} aria-label={file.filename}

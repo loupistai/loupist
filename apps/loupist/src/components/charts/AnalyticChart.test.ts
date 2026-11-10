@@ -4,7 +4,7 @@ import { assembleAnalyticSpec } from "./analyticAdapter";
 type AnalyticView = Exclude<ChartDocument["view"], { kind: "candlestick" }>;
 
 const earningsView: AnalyticView = {
-  kind: "line", x: "period", y: ["revenue_krw_trillion", "operating_profit_krw_trillion"], title: "연결 매출과 영업이익",
+  kind: "line", x: "period", y: ["revenue_krw_trillion", "operating_profit_krw_trillion"], color: null, title: "연결 매출과 영업이익", subtitle: null,
   semantic_types: { period: "Category", revenue_krw_trillion: "Currency", operating_profit_krw_trillion: "Currency" },
 };
 const earningsRows = [
@@ -15,7 +15,7 @@ const earningsRows = [
 const values = (spec: ReturnType<typeof assembleAnalyticSpec>) => (spec.data as { values: Array<Record<string, unknown>> }).values;
 
 it.each<AnalyticView["kind"]>(["line", "area", "bar", "scatter"])("fits a single-Y %s chart to the pane and keeps its title in the host header", (kind) => {
-  const spec = assembleAnalyticSpec({ kind, x: "date", y: ["close"], semantic_types: { date: "Date", close: "Price" }, title: "Close over time" },
+  const spec = assembleAnalyticSpec({ kind, x: "date", y: ["close"], color: null, semantic_types: { date: "Date", close: "Price" }, title: "Close over time", subtitle: null },
     [{ date: "2026-08-01", close: 2 }, { date: "2026-08-02", close: 3 }], "light", 400, 320);
   expect(spec).toMatchObject({ width: 400, height: 320, autosize: { type: "fit", contains: "padding" } });
   expect(JSON.stringify(spec)).toContain('"field":"close"');

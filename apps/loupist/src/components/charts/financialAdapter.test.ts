@@ -22,12 +22,12 @@ it("maps persisted agent drawings to locked overlays and labels them once", () =
     points: [{ timestamp: Date.parse("2026-08-01"), value: 100 }, { timestamp: 1_786_492_800_000, value: 110 }],
   });
   expect(label).toEqual({ name: "simpleAnnotation", points: [{ timestamp: 1_786_492_800_000, value: 110 }], lock: true, extendData: "breakout" });
-  expect(drawingOverlays({ kind: "annotation", points: [{ timestamp: "2026-08-01", value: 100 }], label: "earnings" })).toEqual([
+  expect(drawingOverlays({ kind: "annotation", points: [{ timestamp: "2026-08-01", value: 100 }], label: "earnings", color: null, line_width: null, line_style: null })).toEqual([
     expect.objectContaining({ name: "simpleAnnotation", lock: true, extendData: "earnings" }),
   ]);
 });
 
 it("computes measure labels from the two points", () => {
-  const [overlay] = drawingOverlays({ kind: "measure", points: [{ timestamp: "2026-08-01", value: 100 }, { timestamp: "2026-08-02", value: 110 }] });
+  const [overlay] = drawingOverlays({ kind: "measure", points: [{ timestamp: "2026-08-01", value: 100 }, { timestamp: "2026-08-02", value: 110 }], color: null, line_width: null, line_style: null, label: null });
   expect((overlay!.extendData as (points: unknown) => string[])(overlay!.points)).toEqual(["+10.00", "+10.00%", "1d"]);
 });

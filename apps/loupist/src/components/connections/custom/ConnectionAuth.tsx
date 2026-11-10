@@ -37,6 +37,7 @@ export function ConnectionAuth({ bridge, connection, onChanged, autoStart = fals
   useEffect(() => {
     mounted.current = true;
     if (autoStart && !started.current && connection.auth_state === "sign_in_needed") { started.current = true; void signIn(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a request counter, not a DOM node: cleanup invalidates the request that is in flight.
     return () => { mounted.current = false; revision.current++; if (running.current) void bridge.customConnectionSignInCancel({ connection_id: connection.id }).catch(() => {}); };
     // Each connection owns exactly one browser flow; changing display state must not cancel it.
     // eslint-disable-next-line react-hooks/exhaustive-deps

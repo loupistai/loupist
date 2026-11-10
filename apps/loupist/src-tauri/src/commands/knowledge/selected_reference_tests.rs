@@ -10,7 +10,6 @@ use crate::knowledge::{
     KnowledgeWrite, RecordKind, RepresentationRole, RetainMaterial, RetainNewSource, SealWorld,
     Selector, SourceClass,
 };
-use crate::store::LoupistStore;
 use crate::test_fixtures::loupist_profile;
 
 struct OwnedReferences {

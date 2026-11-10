@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 /** Read the current rendered count after routing, ignoring retained hidden maps
  * and auxiliary badges. Never accept a count from a hidden or inert view. */
 export async function readVisibleMapStats(browser) {
-  return browser.execute(() => [...document.querySelectorAll(".map-view .map-stats > span")]
+  return browser.execute(() => [...document.querySelectorAll("[data-testid=map-view] [data-testid=map-stats] > span")]
     .filter(element => !element.closest('[hidden], [inert], [aria-hidden="true"]')
       && element.getClientRects().length > 0 && getComputedStyle(element).visibility === "visible")
     .map(element => element.textContent?.trim() ?? "")
@@ -36,7 +36,7 @@ export async function waitForOnboardingStep(browser, step, timeout = 20_000) {
 export async function selectLoupistTemplate(browser, name, timeout = 15_000) {
   let clicked = false;
   await browser.waitUntil(async () => {
-    for (const card of await browser.$$("button.loupist-template-card:not([inert] *)")) {
+    for (const card of await browser.$$("button[data-testid=loupist-template-card]:not([inert] *)")) {
       try {
         if (!(await card.isDisplayed()) || !(await card.isEnabled())
           || !(await card.getText()).trim().startsWith(name)) continue;
@@ -80,7 +80,7 @@ export async function clickControl(browser, selector) {
   const state = await browser.execute((sel) => {
     const element = document.querySelector(sel);
     if (!(element instanceof HTMLElement)) return "missing";
-    const actions = element.closest(".loupist-chat-menu");
+    const actions = element.closest("[data-testid=loupist-chat-menu]");
     if (actions instanceof HTMLElement) actions.style.opacity = "1";
     return element.matches(":disabled") ? "disabled" : "ready";
   }, selector);
@@ -183,7 +183,7 @@ export async function preferEnglish(browser) {
 
 export async function selectedLoupistTitle(browser) {
   return browser.execute(() =>
-    document.querySelector(".loupist-header-identity[aria-pressed='true'] strong")?.textContent?.trim() ?? "",
+    document.querySelector("[data-testid=loupist-header-identity][aria-pressed='true'] strong")?.textContent?.trim() ?? "",
   );
 }
 
@@ -208,19 +208,19 @@ export async function openMainTab(browser, tab, timeout = 15_000) {
     }
     if (!back) throw new Error("The Settings sidebar has no visible way back");
     await back.click();
-    await browser.$(".loupist-header-selector").waitForDisplayed({ timeout });
+    await browser.$("[data-testid=loupist-header-selector]").waitForDisplayed({ timeout });
   }
   if (tab === "map" || tab === "lens") {
     // Picking the current workspace pane toggles it closed. Opening a
     // destination must be idempotent for successive reader checks.
-    if (await visible(tab === "map" ? ".map-view" : ".memory-page")) return;
-    await clickControl(browser, ".header-panel-toggle");
+    if (await visible(tab === "map" ? "[data-testid=map-view]" : "[data-testid=memory-page]")) return;
+    await clickControl(browser, "[data-testid=header-panel-toggle]");
     const item = await browser.$(`[data-workspace-kind="${tab === "map" ? "world" : "lens"}"]`);
     await item.waitForDisplayed({ timeout });
     await item.click();
-    await browser.$(tab === "map" ? ".map-view" : ".memory-page").waitForDisplayed({ timeout });
+    await browser.$(tab === "map" ? "[data-testid=map-view]" : "[data-testid=memory-page]").waitForDisplayed({ timeout });
   } else if (tab === "chat") {
-    if (!await visible("#main-panel-chat")) await clickControl(browser, ".loupist-chat-row[data-home] .loupist-chat-button");
+    if (!await visible("#main-panel-chat")) await clickControl(browser, "[data-testid=loupist-chat-row][data-home] [data-testid=loupist-chat-button]");
     if (await visible("[data-workspace-close]")) await clickControl(browser, "[data-workspace-close]");
     await browser.$("#main-panel-chat").waitForDisplayed({ timeout });
   } else {
@@ -247,7 +247,7 @@ export async function acknowledgeLaunchNotice(browser, timeout = 30_000) {
 export async function waitForShell(browser, timeout = 30_000) {
   await browser.waitUntil(
     async () => {
-      const tab = await browser.$(".loupist-header-selector");
+      const tab = await browser.$("[data-testid=loupist-header-selector]");
       return (await tab.isExisting()) && (await tab.isDisplayed());
     },
     { timeout, interval: 150, timeoutMsg: "The Chat/Map/Briefings shell did not open" },
@@ -259,7 +259,7 @@ export async function pageTiming(browser) {
     const navigation = performance.getEntriesByType("navigation")[0];
     const paint = performance.getEntriesByName("first-contentful-paint")[0];
     const largest = performance.getEntriesByType("largest-contentful-paint").at(-1);
-    const shell = Boolean(document.querySelector(".loupist-header-selector"));
+    const shell = Boolean(document.querySelector("[data-testid=loupist-header-selector]"));
     const interactive = shell || Boolean(document.querySelector("main[data-onboarding] h1"));
     return {
       domContentLoadedMs: navigation?.domContentLoadedEventEnd ?? null,
@@ -288,7 +288,7 @@ export function coldStartMark(timing) {
 
 export async function measureLoupistSwitch(browser, title) {
   const started = await browser.execute((name) => {
-    const buttons = () => [...document.querySelectorAll("button.loupist-header-identity")];
+    const buttons = () => [...document.querySelectorAll("button[data-testid=loupist-header-identity]")];
     const button = buttons().find((item) => item.querySelector("strong")?.textContent?.trim() === name);
     if (!button) return { error: `Loupist button was not in the header: ${name}` };
     if (button.getAttribute("aria-pressed") === "true") {
@@ -328,7 +328,7 @@ export async function measureLoupistSwitch(browser, title) {
 }
 
 export async function mapNameCount(browser) {
-  const stats = await browser.$(".map-stats");
+  const stats = await browser.$("[data-testid=map-stats]");
   if (!(await stats.isExisting())) return null;
   const text = (await stats.getText()).replace(/\s+/g, " ");
   // "37 on the map · …" on the whole Map; "12 of 37 on the map around …" around one company.
@@ -389,11 +389,11 @@ async function measurePreviewMapProbe(browser, devUrl, scenario, mode, timeout, 
         const status = document.documentElement.dataset;
         if (status.previewReady === "error") return { error: status.previewError || "Preview initialization failed" };
         if (status.previewReady !== "true") return null;
-        const host = document.querySelector('#workspace-panel[data-panel-kind="world"] .map-view .map-canvas');
+        const host = document.querySelector('#workspace-panel[data-panel-kind="world"] [data-testid=map-view] [data-testid=map-canvas]');
         const element = host?.querySelector("canvas");
         const box = element?.getBoundingClientRect();
         return {
-          text: (host?.querySelector(".map-probe")?.textContent ?? "").replace(/\s+/g, " ").trim(),
+          text: (host?.querySelector("[data-testid=map-probe]")?.textContent ?? "").replace(/\s+/g, " ").trim(),
           canvas: Boolean(element && box && box.width > 1 && box.height > 1),
           firstPaintMs: host?.getAttribute("data-first-paint-ms") || null,
         };

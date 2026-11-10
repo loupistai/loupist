@@ -2,7 +2,6 @@
 use crate::{
     app::{AppState, CommandError},
     scheduled_tasks::types::{Run, RunStatus},
-    store::LoupistStore,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -18,7 +17,8 @@ static SETTINGS_LOCK: Mutex<()> = Mutex::new(());
 const TRAY_ID: &str = "briefings-tray";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ResidentSettings {
     pub keep_running: bool,
     pub notification_permission_asked: bool,
@@ -32,11 +32,13 @@ impl Default for ResidentSettings {
     }
 }
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct InboxChanged {
     pub loupist_id: String,
 }
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct InboxOpen {
     pub loupist_id: String,
@@ -78,7 +80,7 @@ impl ResidentEffects for NativeEffects {
         open(&self.0, None);
     }
     fn select(&self, target: InboxOpen) {
-        let _ = self.0.emit("inbox-open", target);
+        let _ = self.0.emit(crate::events::INBOX_OPEN, target);
     }
     fn quit(&self) {
         self.0.exit(0);
@@ -130,7 +132,7 @@ impl DesktopEffects for NativeEffects {
     }
     fn changed(&self, loupist_id: &str) {
         let _ = self.0.emit(
-            "inbox-changed",
+            crate::events::INBOX_CHANGED,
             InboxChanged {
                 loupist_id: loupist_id.into(),
             },
@@ -189,6 +191,7 @@ pub(crate) fn briefing_resident_settings_get(
     read_settings(&state.artifacts.app_data_dir)
 }
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct ResidentRequest {
     keep_running: bool,
@@ -224,7 +227,7 @@ pub(crate) fn completed(state: &AppState, run: &Run) {
     }
 }
 /// Emits a renderer event when the app is running (tests have no app handle).
-pub(crate) fn emit(event: &str, payload: serde_json::Value) {
+pub(crate) fn emit(event: &str, payload: impl Serialize + Clone) {
     if let Some(app) = APP.get() {
         let _ = app.emit(event, payload);
     }
@@ -263,7 +266,7 @@ pub(crate) fn open(app: &tauri::AppHandle, target: Option<InboxOpen>) {
         let _ = window.set_focus();
     }
     if let Some(target) = target {
-        let _ = app.emit("inbox-open", target);
+        let _ = app.emit(crate::events::INBOX_OPEN, target);
     }
 }
 

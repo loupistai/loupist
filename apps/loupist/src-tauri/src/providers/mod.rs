@@ -7,6 +7,7 @@ pub(crate) mod connection;
 pub(crate) mod custom;
 pub(crate) mod inference;
 pub(crate) mod local;
+pub(crate) mod manifest;
 pub(crate) mod status;
 pub(crate) mod support;
 pub(crate) mod unknown;

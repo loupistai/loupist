@@ -1,8 +1,7 @@
 //! Each Loupist owns a database and immutable bytes inside its selected folder.
 //! The host database is only a registration catalog and shared preferences.
 use super::{
-    map_loupist_profile_write, root_identity_columns, to_json, LoupistStore, SqliteStore,
-    StoreError, StoreResult,
+    map_loupist_profile_write, root_identity_columns, to_json, SqliteStore, StoreError, StoreResult,
 };
 use crate::{
     domain::LoupistProfile,
@@ -52,10 +51,12 @@ fn invalid(error: impl std::fmt::Display) -> StoreError {
     StoreError::Invalid(error.to_string())
 }
 
-/// Folder admission keeps "made by an earlier build" typed for the renderer.
+/// Folder admission keeps "made by an earlier or newer build" typed for the
+/// renderer.
 fn validate_folder(directory: &Path) -> StoreResult<()> {
     crate::knowledge::validate_folder(directory).map_err(|error| match error {
         crate::knowledge::KnowledgeError::EarlierVersion => StoreError::EarlierVersion,
+        crate::knowledge::KnowledgeError::NewerVersion => StoreError::NewerVersion,
         other => invalid(other),
     })
 }
@@ -108,7 +109,9 @@ impl SqliteStore {
                 return Err(invalid("Loupist database is missing"));
             }
             let identity = database_identity(&database)?;
-            let local = Self::open(&database)?;
+            // An earlier or newer build's folder is never opened for turns,
+            // briefings or Memory writes: it would half-work against its tables.
+            let local = Self::open_folder(&database)?;
             if identity != database_identity(&database)? {
                 return Err(StoreError::Conflict(
                     "Loupist database changed while opening",
@@ -118,11 +121,6 @@ impl SqliteStore {
                 .connection
                 .into_inner()
                 .map_err(|_| StoreError::LockPoisoned)?;
-            // An earlier build's folder is never opened for turns, briefings or
-            // Memory writes: it would half-work against tables it lacks.
-            if crate::knowledge::made_by_earlier_build(&connection).map_err(invalid)? {
-                return Err(StoreError::EarlierVersion);
-            }
             // Keep every committed change in the copyable database file. A folder
             // copy should be taken while the app is closed, as for other live DBs.
             connection.execute_batch("PRAGMA journal_mode = DELETE; PRAGMA synchronous = FULL;")?;
@@ -159,9 +157,29 @@ impl SqliteStore {
         }
         self.lock()
     }
+    /// Runs `body` on every bound Loupist database and stops at the first error
+    /// it returns. Writes use this, so a caller can retry the whole pass.
     pub(crate) fn for_each_database<T>(
         &self,
+        body: impl FnMut(&str, &mut Connection) -> StoreResult<T>,
+    ) -> StoreResult<Vec<T>> {
+        self.each_database(body, false)
+    }
+
+    /// Runs a read or scan on every bound Loupist database. One database that
+    /// fails is logged and skipped, so the others still return their results
+    /// (due scheduled tasks, queued jobs and other cross-Loupist listings).
+    pub(crate) fn for_each_readable_database<T>(
+        &self,
+        body: impl FnMut(&str, &mut Connection) -> StoreResult<T>,
+    ) -> StoreResult<Vec<T>> {
+        self.each_database(body, true)
+    }
+
+    fn each_database<T>(
+        &self,
         mut body: impl FnMut(&str, &mut Connection) -> StoreResult<T>,
+        skip_failures: bool,
     ) -> StoreResult<Vec<T>> {
         if !self.folder_catalog {
             let mut connection = self.lock()?;
@@ -183,7 +201,16 @@ impl SqliteStore {
                     continue;
                 }
             };
-            result.push(body(&profile.id, &mut connection)?);
+            match body(&profile.id, &mut connection) {
+                Ok(value) => result.push(value),
+                Err(error) if skip_failures => {
+                    eprintln!(
+                        "Loupist skipped storage for {} in a scan: {error}",
+                        profile.id
+                    );
+                }
+                Err(error) => return Err(error),
+            }
         }
         Ok(result)
     }
@@ -322,16 +349,13 @@ impl SqliteStore {
         let dir = root.path().join(".loupist");
         let _lock = crate::app::AppInstanceLock::acquire(&dir).map_err(invalid)?;
         write_project_gitignore(&dir)?;
-        let local = Self::open(dir.join("loupist.sqlite3"))?;
+        let local = Self::open_folder(dir.join("loupist.sqlite3"))?;
         local.save_loupist(profile)?;
         {
             let mut connection = local.lock()?;
             let transaction = connection.transaction()?;
             crate::scheduled_tasks::store::pause_copied_tasks(&transaction)?;
-            transaction.execute(
-                "UPDATE chat_sessions SET data_json=json_remove(data_json,'$.piSessionCache')",
-                [],
-            )?;
+            drop_pi_session_caches(&transaction, None)?;
             let mut settings =
                 crate::knowledge::load_settings(&transaction, &profile.id).map_err(invalid)?;
             settings.paused = true;
@@ -343,6 +367,23 @@ impl SqliteStore {
         }
         self.refresh_folder_registration(profile)
     }
+}
+
+/// Drops every derived Pi cache of a Loupist's Chats (all Chats when `None`),
+/// so the next turn rebuilds from the canonical transcript. The key keeps its
+/// place with a `null` value, as `ChatSession` writes it: a Chat's
+/// compare-and-swap compares the stored text with the re-encoded Chat, so
+/// removing the key would leave every Chat unwritable.
+pub(crate) fn drop_pi_session_caches(
+    connection: &Connection,
+    loupist_id: Option<&str>,
+) -> StoreResult<()> {
+    connection.execute(
+        "UPDATE chat_sessions SET data_json = json_replace(data_json, '$.piSessionCache', NULL)
+         WHERE ?1 IS NULL OR loupist_id = ?1",
+        [loupist_id],
+    )?;
+    Ok(())
 }
 
 /// A checked-in configuration folder may precede the first local Loupist DB.

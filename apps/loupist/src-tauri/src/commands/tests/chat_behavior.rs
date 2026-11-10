@@ -1247,11 +1247,16 @@ async fn chat_launch_failure_persists_a_sanitized_terminal_error() {
     let terminal = events.last().unwrap();
     assert_eq!(terminal["type"], "error");
     assert_eq!(terminal["message"], FAILED_CHAT_CONTENT);
+    // The renderer hides the placeholder by this flag, never by its text.
+    assert_eq!(terminal["placeholder"], true);
     let stored = state.store.get_chat(&chat.id).unwrap().unwrap();
     assert_eq!(stored.messages.len(), 2);
     let error = &stored.messages[1];
     assert_eq!(error.status, ChatMessageStatus::Error);
     assert_eq!(error.content, FAILED_CHAT_CONTENT);
+    // Stored replies keep only the text; the thread view marks it again.
+    let thread = crate::commands::types::chat_dto(&stored).unwrap();
+    assert!(thread.messages[1].placeholder && !thread.messages[0].placeholder);
     // The missing executable fails runtime-integrity validation before spawn.
     assert_eq!(
         error.failure_kind,
@@ -1290,6 +1295,7 @@ fn cold_bootstrap_restores_history_saved_work_and_attachments() {
         url: None,
         provider: None,
         tool_name: "web_fetch".into(),
+        calc_operation: None,
         read_ref: None,
         retrieved_at: "2026-10-11T00:00:00Z".into(),
         published_at: None,

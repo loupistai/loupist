@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "@/i18n";
 import { formatDate, formatNumber, formatTime } from "@/i18n/format";
 import type { GrowthEvent, KnowledgeMap } from "../../contracts/knowledge";
-import type { BriefingContext, BriefingSettings, ChatMessage, LoupistSummary, LoupistBridge, InboxItem, RunSummaryItem, ScheduledRun, ScheduledTask, ModelCatalog } from "@/types";
+import type { BriefingContext, BriefingSettings, ChatMessage, LoupistSummary, LoupistBridge, InboxItem, RunSummaryItem, ScheduledRun, ScheduledTask, ScheduledTaskListItem, ModelCatalog } from "@/types";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { Disclosure } from "../ui/disclosure";
@@ -38,7 +38,7 @@ type Props = { onOpenModelSettings?: () => void; bridge: LoupistBridge; loupist:
 export const inboxItemOf = (run: ScheduledRun): InboxItem => ({
   briefingContext: run.briefing_context ?? null, error: run.error ?? null,
   runId: run.run_id, taskId: run.task_id, kind: run.kind, title: run.task_title,
-  status: run.status, summary: run.summary, summaryItems: run.summary_items, startedAtMs: run.started_at_ms,
+  status: run.status, summary: run.summary, summaryItems: run.summary_items ?? [], startedAtMs: run.started_at_ms,
   finishedAtMs: run.finished_at_ms ?? null, readAtMs: run.read_at_ms, threadId: run.thread_id ?? null,
   messageId: run.message_id, skippedTools: run.skipped_tools,
 });
@@ -46,10 +46,10 @@ export const inboxItemOf = (run: ScheduledRun): InboxItem => ({
 const HISTORY_ROWS = 10;
 
 /** Active shows tasks that are on, waiting for confirmation, or running. */
-function taskListed(task: ScheduledTask, filter: "active" | "all") {
+function taskListed(task: ScheduledTaskListItem, filter: "active" | "all") {
   return filter === "all" || task.status === "active" || Boolean(task.awaiting_confirmation) || task.latest_run?.status === "running";
 }
-function taskRank(task: ScheduledTask) {
+function taskRank(task: ScheduledTaskListItem) {
   if (task.awaiting_confirmation) return 0;
   if (task.latest_run?.status === "running" || task.status === "active") return 1;
   if (task.status === "paused") return 2;
@@ -71,7 +71,7 @@ function RunLinks({ run, open, children }: { run: InboxItem; open: Props["open"]
 export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupist, theme, initialRunId, initialTaskId, onInitialConsumed, onOpenChat, open, onOpenMap }: Props) {
   const { t, i18n } = useTranslation("briefings");
   const [settings, setSettings] = useState<BriefingSettings | null>(null);
-  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
+  const [tasks, setTasks] = useState<ScheduledTaskListItem[]>([]);
   // Nothing is open until the user picks a task or a deep link names one.
   const [focusTaskId, setFocusTaskId] = useState<string | null>(initialTaskId ?? null);
   const [focusExplicit, setFocusExplicit] = useState(Boolean(initialTaskId));
@@ -108,6 +108,7 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
     } catch { if (request === generation.current) setError(true); }
     finally { if (request === generation.current) setLoading(false); }
   }, [bridge, loupist.id]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- a request counter, not a DOM node: cleanup invalidates the request that is in flight.
   useEffect(() => { void load(); const off = bridge.onInboxChanged(event => { if (event.loupistId === loupist.id) void load(); }); return () => { generation.current++; off(); }; }, [load, bridge, loupist.id]);
 
   const loadHistory = useCallback(async (taskId: string) => {
@@ -133,7 +134,7 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
     };
     void open().catch(() => { if (active) setError(true); }).finally(() => { if (active) onInitialConsumed?.(); });
     return () => { active = false; };
-    // Consumed once after loading; later refreshes do not reopen it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- consumed once after loading; later refreshes do not reopen it.
   }, [loading, initialRunId]);
   useEffect(() => {
     if (loading || !initialTaskId || initialRunId) return;
@@ -142,6 +143,7 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
     if (opened && !taskListed(opened, "active")) setFilter("all");
     document.querySelector(`[data-schedule-task="${CSS.escape(initialTaskId)}"]`)?.scrollIntoView({ block: "nearest" });
     onInitialConsumed?.();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- consumed once after loading; a later task list must not refocus it.
   }, [loading, initialTaskId]);
 
   useEffect(() => {
@@ -150,6 +152,7 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
     const begin = () => { clearTimeout(timer); if (document.visibilityState !== "hidden") timer = setTimeout(() => { void bridge.inboxMarkRead({ loupistId: loupist.id, runIds: [selected.runId] }).then(() => setSelected(current => current && current.runId === selected.runId ? { ...current, readAtMs: Date.now() } : current)).catch(() => setError(true)); }, 1000); };
     begin(); document.addEventListener("visibilitychange", begin);
     return () => { clearTimeout(timer); document.removeEventListener("visibilitychange", begin); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the briefing's run and read state, not the object.
   }, [bridge, loupist.id, selected?.runId, selected?.readAtMs, selected?.status]);
   useEffect(() => {
     setMessage(null); setReaderError(null); if (!selected) return;
@@ -162,6 +165,7 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
       if (selected.status === "failed" || selected.status === "interrupted") setReaderError(selected.error || answer?.content || t("failed"));
     }).catch(() => { if (active) setReaderError(t("loadError")); }).finally(() => { if (active) setReaderLoading(false); });
     return () => { active = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the briefing's run, status and answer, not the object.
   }, [bridge, loupist.id, selected?.runId, selected?.status, selected?.messageId, readerRevision, t]);
 
   // The answer's cards (grids, conflicts, charts) read their artifacts in the run's own Chat.
@@ -169,7 +173,7 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
     ? { bridge, loupistId: loupist.id, threadId: selected.threadId, surface: "session" as const, theme, active: true }
     : null, [bridge, loupist.id, selected?.threadId, theme]);
   const displayTitle = (item: { kind: string; title: string }) => scheduledTaskTitle(item.kind, item.title);
-  const listed = (task: ScheduledTask) => taskListed(task, filter);
+  const listed = (task: ScheduledTaskListItem) => taskListed(task, filter);
   // A task on an account that cannot answer right now waits instead of failing (providers spec §3.1).
   const waiting = (task: ScheduledTask) => {
     if (task.status !== "active" || !task.model_profile_id) return null;
@@ -204,7 +208,7 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
     running.length ? t("schedule.runningCount", { count: running.length, formattedCount: formatNumber(running.length) }) : null,
     sharedZone ? friendlyTimeZone(sharedZone, i18n.language) : null,
   ].filter(Boolean).join(" · ");
-  const rowState = (task: ScheduledTask) => task.awaiting_confirmation || task.status !== "active" || waiting(task) ? taskStatus(task) : null;
+  const rowState = (task: ScheduledTaskListItem) => task.awaiting_confirmation || task.status !== "active" || waiting(task) ? taskStatus(task) : null;
   return <section className="briefings-view schedule-view" aria-label={t("schedule.title")}>
     <header className="briefings-bar"><h1>{t("schedule.title")}</h1>
       <p className="briefings-meta">{headerMeta}</p>

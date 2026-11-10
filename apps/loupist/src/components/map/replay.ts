@@ -36,6 +36,7 @@ export function useMapReplay(start: number, scope: string) {
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `state.time` is read once when playback starts; the frame loop advances it.
   }, [state.active, state.playing, state.speed, state.end, start, reduced]);
   return { ...state, start, reduced, setState,
     open: () => setState(s => ({ ...s, active: true, playing: true, time: start, end: Date.now() })),

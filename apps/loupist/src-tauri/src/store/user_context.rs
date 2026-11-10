@@ -13,6 +13,7 @@ pub const MAX_CSV_BYTES: usize = 5 * 1024 * 1024;
 pub const MAX_HOLDINGS_ROWS: usize = 2_000;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct WatchlistEntry {
     pub symbol: String,
@@ -21,6 +22,7 @@ pub struct WatchlistEntry {
     pub added_at_ms: i64,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct HoldingsPosition {
     pub symbol: String,
@@ -34,6 +36,7 @@ pub struct HoldingsPosition {
     pub currency: String,
 }
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum HoldingsSource {
     Csv,
@@ -66,6 +69,7 @@ impl HoldingsSource {
     }
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct HoldingsSnapshot {
     pub snapshot_id: String,
@@ -77,6 +81,7 @@ pub struct HoldingsSnapshot {
     pub positions: Vec<HoldingsPosition>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct CsvValidationError {
     pub row: usize,
@@ -84,6 +89,7 @@ pub struct CsvValidationError {
     pub message: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct HoldingsCsvPreview {
     pub preview_id: String,
@@ -483,6 +489,7 @@ impl SqliteStore {
 pub(crate) const LATEST_SNAPSHOTS: &str = "SELECT s.snapshot_id, s.source, s.wallet_id, s.imported_at_ms FROM user_holdings_snapshots s WHERE NOT EXISTS (SELECT 1 FROM user_holdings_snapshots t WHERE t.source = s.source AND t.wallet_id IS s.wallet_id AND (t.imported_at_ms > s.imported_at_ms OR (t.imported_at_ms = s.imported_at_ms AND t.rowid > s.rowid)))";
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SourceSummary {
     pub source: HoldingsSource,
@@ -490,6 +497,7 @@ pub struct SourceSummary {
     pub count: usize,
 }
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct KindSummary {
     pub imported_at_ms: i64,
@@ -497,6 +505,7 @@ pub struct KindSummary {
 }
 /// Per-source and per-kind counts and dates; never positions or amounts.
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct HoldingsOverview {
     pub sources: Vec<SourceSummary>,
@@ -749,6 +758,7 @@ mod tests;
 
 /// Identity-only projection for the Map; quantities and values never cross this boundary.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct MapContextItem {
     pub symbol: String,

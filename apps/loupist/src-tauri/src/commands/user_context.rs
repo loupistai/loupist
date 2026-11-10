@@ -15,6 +15,7 @@ fn map_context_error(error: crate::store::StoreError) -> CommandError {
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WatchlistAddRequest {
     pub symbol: String,
@@ -26,17 +27,20 @@ pub struct WatchlistAddRequest {
     pub loupist_id: Option<String>,
 }
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WatchlistRemoveRequest {
     pub symbol: String,
     pub market: String,
 }
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CsvImportRequest {
     pub path: String,
 }
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CsvCommitRequest {
     pub preview_id: String,
@@ -225,6 +229,7 @@ pub fn holdings_summary(state: State<'_, AppState>) -> Result<HoldingsOverview, 
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MapColumnsRequest {
     pub preview_id: String,
@@ -232,23 +237,27 @@ pub struct MapColumnsRequest {
     pub balance: String,
 }
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WalletAddRequest {
     pub address: String,
     pub name: Option<String>,
 }
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WalletRenameRequest {
     pub wallet_id: String,
     pub name: Option<String>,
 }
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WalletIdRequest {
     pub wallet_id: String,
 }
 #[derive(Deserialize, Default)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WalletRefreshRequest {
     pub wallet_id: Option<String>,

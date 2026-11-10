@@ -7,7 +7,7 @@ import type {
   GithubAccount, PackLicense, ShareFinding, SharePublishEvent, SharePublishResult, SharePublishTarget, ShareRequest, ShareScope,
   ShareSectionId, ShareSections, ShareSummary,
 } from "../../contracts/sharing";
-import { errorMessage } from "../../lib/errors";
+import { commandErrorCode, errorMessage } from "../../lib/errors";
 import { Button } from "../ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, focusDialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
@@ -15,7 +15,7 @@ import { NativeSelect } from "../ui/native-select";
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
-import { errorCode, licenseName, licenseSummary, repoSlug, shortTitle } from "./sharingText";
+import { licenseName, licenseSummary, repoSlug, shortTitle } from "./sharingText";
 import "@/styles/sharing.css";
 
 const SECTIONS: readonly ShareSectionId[] = ["profile", "perspective", "methods", "principles", "map"];
@@ -178,7 +178,7 @@ export function ShareSheet({ bridge, loupistId, loupistName, scope, open, onOpen
       const result = await bridge.sharePublish({ ...request(), target }, event => setProgress(event));
       setPublished(result); setStep("published");
     } catch (cause) {
-      const code = errorCode(cause);
+      const code = commandErrorCode(cause);
       if (code === "name_taken") { setRepoError(t("nameTaken")); setStep("repo"); return; }
       if (code === "repo_gone" || code === "repo_mismatch") {
         setNewRepo(true); setStep("repo");
@@ -422,7 +422,7 @@ function GalleryListing({ bridge, loupistId, termsUrl }: { bridge: LoupistBridge
     // The acceptance names the exact terms shown here; Rust refuses any other.
     try { setRequest({ state: "requested", url: (await bridge.galleryListingRequest({ loupistId, acceptedTerms: true, termsUrl })).url }); }
     catch (cause) {
-      const code = errorCode(cause);
+      const code = commandErrorCode(cause);
       setRequest({ state: "failed", message: code === "offline" ? t("publishOffline") : code === "rate_limited" ? t("rateLimited") : code === "publish_denied" ? t("publishDenied") : t("listFailed") });
     }
   };

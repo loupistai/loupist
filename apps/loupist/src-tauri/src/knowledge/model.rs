@@ -32,6 +32,7 @@ macro_rules! enum_str {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum RecordKind {
     Source,
@@ -148,6 +149,7 @@ impl DependencyRole {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum BindingRole {
     ExtractedFrom,
@@ -165,6 +167,7 @@ enum_str!(BindingRole {
 });
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ClaimStatus {
     Active,
@@ -174,6 +177,7 @@ pub enum ClaimStatus {
 enum_str!(ClaimStatus { Active => "active", Disputed => "disputed", Withdrawn => "withdrawn" });
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum TimePrecision {
     Unknown,
@@ -191,6 +195,7 @@ enum_str!(TimePrecision {
 });
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum LensUseStatus {
     Considered,
@@ -200,6 +205,7 @@ pub enum LensUseStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum EarlierRelation {
     Review,
@@ -208,12 +214,14 @@ pub enum EarlierRelation {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum GraphCoverage {
     SealedSnapshot,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum IndexingState {
     SnapshotOnly,
@@ -270,12 +278,15 @@ pub enum Selector {
     Multi { documents: Vec<String> },
 }
 
+// Also a request field (retained Sources): its TypeScript is the accepted shape.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TimePoint {
     pub precision: TimePrecision,
     pub value: Option<String>,
     #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub approximate: bool,
 }
 
@@ -420,6 +431,7 @@ impl RetainNewSource {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RetainedSource {
     pub record_id: String,
@@ -546,6 +558,7 @@ pub struct ReadCapture {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Qualifier {
     pub key: String,
@@ -553,6 +566,7 @@ pub struct Qualifier {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GraphNode {
     pub id: String,
@@ -565,6 +579,7 @@ pub struct GraphNode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ClaimEndpoint {
     pub node_id: String,
@@ -572,6 +587,7 @@ pub struct ClaimEndpoint {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EvidenceBinding {
     pub span_id: String,
@@ -580,6 +596,7 @@ pub struct EvidenceBinding {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GraphClaim {
     pub id: String,
@@ -652,6 +669,7 @@ pub struct WorldRevision {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GraphEdge {
     pub id: String,
@@ -662,30 +680,39 @@ pub struct GraphEdge {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+// Received as a request: missing optional fields are accepted.
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WorldGraphQuery {
     pub loupist_id: String,
     pub record_id: String,
     pub revision_id: String,
     #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub search: String,
     #[serde(default)]
     pub center_node_id: Option<String>,
     #[serde(default)]
     pub center_claim_id: Option<String>,
     #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub kinds: Vec<String>,
     #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub relations: Vec<String>,
     #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub binding_roles: Vec<BindingRole>,
     #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub statuses: Vec<ClaimStatus>,
     #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub publication_times: Vec<String>,
     /// An as-of cutoff (`YYYY-MM-DD`): only relationships published by then,
     /// and only the names they connect, reduced to name and kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub published_by: Option<String>,
     #[serde(default)]
     pub cursor: Option<String>,
@@ -716,6 +743,7 @@ impl WorldGraphQuery {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WorldGraphView {
     #[serde(default)]
@@ -733,6 +761,7 @@ pub struct WorldGraphView {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct QueryScan {
     pub strategy: String,
@@ -748,6 +777,7 @@ pub struct LensAcknowledgement {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EarlierResearch {
     pub research_id: String,
@@ -763,6 +793,7 @@ pub struct EarlierResearch {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JournalCheck {
     pub claim: String,
@@ -770,11 +801,14 @@ pub struct JournalCheck {
     pub direction: String,
     pub threshold: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub unit: Option<String>,
     /// Required for a dated check; optional only for an asset page's line.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub by_date: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub confidence: Option<u8>,
 }
 
@@ -793,15 +827,18 @@ pub struct JournalOutcomeDraft {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JournalOutcome {
     pub observed: f64,
     pub observed_at: String,
     pub result: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub note: Option<String>,
     /// Set when the review ran under an as-of date ("Reviewed as of …").
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub reviewed_as_of: Option<String>,
 }
 
@@ -879,6 +916,7 @@ pub(crate) fn validate_working_note(note: &WorkingNoteDraft) -> KnowledgeResult<
 
 /// Discovery pointers to later committed notes, not evidence or read authority.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LaterNote {
     pub note_id: String,
@@ -888,11 +926,13 @@ pub struct LaterNote {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WorkingNote {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub later_notes: Vec<LaterNote>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub inputs: Option<JournalInputs>,
     #[serde(default)]
     pub previous_note_ids: Vec<String>,
@@ -905,6 +945,7 @@ pub struct WorkingNote {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JournalSourceInput {
     pub capture_id: String,
@@ -918,10 +959,12 @@ pub struct JournalSourceInput {
     pub attribution: String,
     pub coverage: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub publication_time: Option<TimePoint>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JournalWorldInput {
     pub delivered_view_json: String,
@@ -935,6 +978,7 @@ pub struct JournalWorldInput {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JournalLensInput {
     pub delivery_id: String,
@@ -947,6 +991,7 @@ pub struct JournalLensInput {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JournalInputs {
     pub sources: Vec<JournalSourceInput>,
@@ -956,14 +1001,18 @@ pub struct JournalInputs {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JournalRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub check: Option<JournalCheck>,
     /// A reason for following an asset, or a line that would change the user's mind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub thesis: Option<super::assets::JournalThesis>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub outcome: Option<JournalOutcome>,
     pub journal_id: String,
     pub research_id: String,

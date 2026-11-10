@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use super::authority::bounded_text;
+use super::arguments::bounded_text;
 use super::*;
 
 /// A web read that never reached its host becomes the typed `offline`

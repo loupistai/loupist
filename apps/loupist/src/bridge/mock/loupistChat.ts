@@ -44,6 +44,14 @@ import {
 
 import { knowledgeCatalog, mockFileSection } from "./knowledge";
 
+/** What every completed mock run reports alongside its answer, as Rust always does. */
+const COMPLETED_RUN: Pick<Extract<ChatStreamEvent, { type: "completed" }>, "lens_receipts" | "tool_refusals" | "host_composed" | "performance"> = {
+  lens_receipts: [],
+  tool_refusals: [],
+  host_composed: false,
+  performance: { setupMs: 40, generationMs: 400, totalMs: 460, sessionCache: "warm", inputTokens: 320, outputTokens: 96, cacheReadTokens: 0, cacheWriteTokens: 0 },
+};
+
 
 export const loupistList = async (
   state: MockBridgeState,
@@ -93,6 +101,7 @@ export const loupistCreate = async (
     accent: "var(--gg-color-accent)",
     enabled_skill_ids: [...DEFAULT_AGENT_SKILL_IDS],
     availability: { status: "available" },
+    last_model_profile_id: null,
   };
   state.loupists.push(loupist);
   state.threads[loupist.id] = [];
@@ -253,7 +262,7 @@ type MockArtifactEntry = MockBridgeState["artifacts"][string][number];
 const retainedVersions = (entry: MockArtifactEntry) => {
   entry.history ??= [];
   if (!entry.history.some((view) => view.revision.revision === entry.content.revision)) {
-    entry.history.unshift(clone({ artifact: entry.artifact, revision: entry.content, chart_dataset: entry.dataset }));
+    entry.history.unshift(clone({ artifact: entry.artifact, revision: entry.content, chart_dataset: entry.dataset ?? null }));
   }
   let bytes = 0;
   entry.history = entry.history.sort((a, b) => b.revision.revision - a.revision.revision).filter((view, index) => {
@@ -310,7 +319,7 @@ export const chatArtifactRestore = async (
   const timestamp = Math.max(Date.now(), entry.artifact.updated_at_ms);
   entry.artifact = { ...previous.artifact, current_revision: revision, updated_at_ms: timestamp };
   entry.content = { ...previous.revision, revision, created_at_ms: timestamp };
-  entry.dataset = previous.chart_dataset;
+  entry.dataset = previous.chart_dataset ?? undefined;
   entry.history!.unshift(clone({ ...previous, artifact: entry.artifact, revision: entry.content, restored_from_revision_id: request.revision_id }));
   retainedVersions(entry);
   return chatArtifactRead(state, request.loupist_id, request.thread_id, request.artifact_id);
@@ -383,10 +392,12 @@ const mockArtifactForPrompt = (
             close: "close",
             volume: "volume",
             price_precision: 2,
+            turnover: null,
           },
           studies: [{ module_id: "VOL", calc_params: [] }],
           drawings: [],
           note: "Daily prices and volume.",
+          custom_series: [],
         },
       }
     : {
@@ -565,6 +576,7 @@ const streamChat = async (
   const progress: ChatProgress = {
     startedAtMs: Date.now(),
     items: [],
+    finishedAtMs: null,
   };
   let progressSequence = 0;
   const emitProgress = () => {
@@ -598,9 +610,11 @@ const streamChat = async (
             ? "read"
             : "generic",
         action,
+        target: null,
+        href: null,
         status,
         startedAtMs: Date.now(),
-        finishedAtMs: status === "succeeded" ? Date.now() : undefined,
+        finishedAtMs: status === "succeeded" ? Date.now() : null,
       });
     }
     emitProgress();
@@ -631,13 +645,13 @@ const streamChat = async (
     if (request.prompt.includes("patch timeline")) {
       emitProgress();
       const steps: Array<Extract<ChatProgress["items"][number], { kind: "tool" | "system" }>> = [
-        { id: "web", kind: "tool", toolName: "web_search", category: "web", operation: "search", action: "Searched the web", running: "Searching the web", source: { kind: "web", name: "Web" }, target: "margin outlook", summary: "8 results", status: "succeeded", startedAtMs: Date.now(), finishedAtMs: Date.now() },
-        { id: "mcp", kind: "tool", toolName: "mcp__openbb__equity_price_quote", category: "finance", operation: "read", action: "Read Equity price quote", running: "Reading Equity price quote", source: { kind: "connector", name: "Market data" }, target: "AAPL", summary: "1 results", status: "succeeded", startedAtMs: Date.now(), finishedAtMs: Date.now() },
-        { id: "dart", kind: "tool", toolName: "dart_filing_search", category: "finance", operation: "read", action: "Read filings", running: "Reading filings", source: { kind: "connector", name: "OpenDART" }, target: "005930", summary: "3 results", status: "succeeded", startedAtMs: Date.now(), finishedAtMs: Date.now() },
-        { id: "python", kind: "tool", toolName: "run_python", category: "compute", operation: "execute", action: "Ran Python", running: "Running Python", summary: "exit 2", status: "failed", startedAtMs: Date.now(), finishedAtMs: Date.now() },
-        { id: "file", kind: "tool", toolName: "edit", category: "files", operation: "edit", action: "Edited a file", source: { kind: "files", name: "Files" }, filePath: "notes/margin.md", status: "succeeded", startedAtMs: Date.now(), finishedAtMs: Date.now() },
-        { id: "memory", kind: "tool", toolName: "world_read", category: "memory", operation: "read", action: "Read saved notes", source: { kind: "memory", name: "Memory" }, status: "succeeded", startedAtMs: Date.now(), finishedAtMs: Date.now() },
-        { id: "chart", kind: "tool", toolName: "chart_publish", category: "artifact", operation: "publish", action: "Made a chart", source: { kind: "artifact", name: "Documents" }, status: "succeeded", startedAtMs: Date.now(), finishedAtMs: Date.now() },
+        { id: "web", kind: "tool", toolName: "web_search", category: "web", operation: "search", action: "Searched the web", running: "Searching the web", source: { kind: "web", name: "Web" }, target: "margin outlook", summary: "8 results", href: null, status: "succeeded", startedAtMs: Date.now(), finishedAtMs: Date.now() },
+        { id: "mcp", kind: "tool", toolName: "mcp__openbb__equity_price_quote", category: "finance", operation: "read", action: "Read Equity price quote", running: "Reading Equity price quote", source: { kind: "connector", name: "Market data" }, target: "AAPL", summary: "1 results", href: null, status: "succeeded", startedAtMs: Date.now(), finishedAtMs: Date.now() },
+        { id: "dart", kind: "tool", toolName: "dart_filing_search", category: "finance", operation: "read", action: "Read filings", running: "Reading filings", source: { kind: "connector", name: "OpenDART" }, target: "005930", summary: "3 results", href: null, status: "succeeded", startedAtMs: Date.now(), finishedAtMs: Date.now() },
+        { id: "python", kind: "tool", toolName: "run_python", category: "compute", operation: "execute", action: "Ran Python", running: "Running Python", summary: "exit 2", target: null, href: null, status: "failed", startedAtMs: Date.now(), finishedAtMs: Date.now() },
+        { id: "file", kind: "tool", toolName: "edit", category: "files", operation: "edit", action: "Edited a file", source: { kind: "files", name: "Files" }, filePath: "notes/margin.md", target: null, href: null, status: "succeeded", startedAtMs: Date.now(), finishedAtMs: Date.now() },
+        { id: "memory", kind: "tool", toolName: "world_read", category: "memory", operation: "read", action: "Read saved notes", source: { kind: "memory", name: "Memory" }, target: null, href: null, status: "succeeded", startedAtMs: Date.now(), finishedAtMs: Date.now() },
+        { id: "chart", kind: "tool", toolName: "chart_publish", category: "artifact", operation: "publish", action: "Made a chart", source: { kind: "artifact", name: "Documents" }, target: null, href: null, status: "succeeded", startedAtMs: Date.now(), finishedAtMs: Date.now() },
       ];
       for (const step of steps) {
         await wait(state.delay_ms, controller.signal);
@@ -649,7 +663,7 @@ const streamChat = async (
       content = "Patched timeline settled.";
       progress.finishedAtMs = Date.now();
       observer({ type: "delta", run_id, text: content });
-      observer({ type: "completed", tool_refusals: [], run_id, message_id, final_text: content, created_at, execution_model: clone(execution_model), agent_harness: clone(agent_harness) });
+      observer({ type: "completed", ...COMPLETED_RUN, run_id, message_id, final_text: content, created_at, execution_model: clone(execution_model), agent_harness: clone(agent_harness) });
       if (thread) {
         thread.messages.push({
           id: message_id,
@@ -677,7 +691,8 @@ const streamChat = async (
         kind: "lens",
         title: lens.title,
         excerpt: lens.title,
-        section: index === 0 ? "Method" : undefined,
+        as_of: null,
+        section: index === 0 ? "Method" : null,
         access: index === 0 ? "exact_read" : "search_discovered",
         knowledge: {
           kind: "lens",
@@ -787,7 +802,7 @@ const streamChat = async (
       ? { as_of: request.as_of, as_of_report: { cutoff: request.as_of, left_out: { facts: 0, sources: 0, notes: 0, methods: 0 } } }
       : {};
     observer({
-      type: "completed", tool_refusals: [], offline_reads, ...asOf,
+      type: "completed", ...COMPLETED_RUN, offline_reads, ...asOf,
       run_id,
       message_id,
       final_text: content,
@@ -860,6 +875,7 @@ const streamChat = async (
           id: message_id,
           role: "assistant",
           content: "Response could not be completed.",
+          placeholder: true,
           created_at,
           status: "error",
           memory_revision: request.use_memory
@@ -873,10 +889,12 @@ const streamChat = async (
       }
       observer({
         type: "error",
+        failure_kind: "other",
         run_id,
         message: "Response could not be completed.",
         message_id,
         final_text: "Response could not be completed.",
+        placeholder: true,
         created_at,
         execution_model: clone(execution_model),
         agent_harness: clone(agent_harness),

@@ -1,19 +1,10 @@
-import { nodeRadius } from "./kinds";
-import { conflictMark, entityLabel, LIVE_GLOW_REACH, matchesMapQuery, nodeRings, placeLabels } from "./labels";
+import { nodeRadius } from "../../knowledge/mapKinds";
+import { conflictMark, LIVE_GLOW_REACH, nodeRings, placeLabels } from "./labels";
 import type { PositionedNode } from "./layout";
 const node = (id: string, x = 0, y = 0, extra: Partial<PositionedNode> = {}): PositionedNode => ({ id, label: id, x, y, fx: x, fy: y, kind: "entity", degree: 1, watched: false, held: false, ...extra });
 const measure = (text: string) => text.length * 6;
 const named = { label: "Hanbit Battery", localNames: ["한빛배터리", "東京"] };
-it("shows and finds a Hangul alias for Korean and the canonical name otherwise", () => {
-  expect(entityLabel(named, "ko")).toBe("한빛배터리");
-  expect(entityLabel(named, "ko-KR")).toBe("한빛배터리");
-  expect(entityLabel({ label: "Hanbit Battery", localNames: ["412340", "Hanbit"] }, "ko")).toBe("Hanbit Battery");
-  expect(entityLabel({ label: "Hanbit Battery" }, "ko")).toBe("Hanbit Battery");
-  expect(entityLabel(named, "en")).toBe("Hanbit Battery");
-  expect(entityLabel(named, "en-US")).toBe("Hanbit Battery");
-  expect(matchesMapQuery(named, "한빛")).toBe(true);
-  expect(matchesMapQuery(named, "HANBIT")).toBe(true);
-  expect(matchesMapQuery({ label: "Hanbit Battery" }, "한빛")).toBe(false);
+it("draws a Hangul alias for Korean", () => {
   const company = node("hanbit", 0, 0, named);
   expect(placeLabels([company], [company], measure, 1, {}, Infinity, () => true, 180, [], "ko")[0].text).toBe("한빛배터리");
 });

@@ -1,8 +1,7 @@
 import i18n, { useTranslation } from "@/i18n";
 import type { GrowthEvent, KnowledgeMap } from "../../contracts/knowledge";
-import { isMetricNode } from "../map/kinds";
-import { entityLabel } from "../map/labels";
-import { claimIdForEdge } from "../map/MapList";
+import { isMetricNode } from "../../knowledge/mapKinds";
+import { entityLabel, claimIdForEdge } from "../../knowledge/mapItems";
 
 const t = i18n.getFixedT(null, "chat");
 const MAX_CHIPS = 3;

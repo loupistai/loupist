@@ -76,7 +76,7 @@ const categoryIcons: Record<ChatProgressCategory, LucideIcon> = {
 const isInternalIdentifier = (value: string) =>
   /private[-_]tool[-_]id/i.test(value) || /^web:[0-9a-f]{6,}$/i.test(value.trim());
 
-const visibleTarget = (target?: string) => {
+const visibleTarget = (target: string | null) => {
   const trimmed = target?.trim();
   if (!trimmed || isInternalIdentifier(trimmed)) return undefined;
   const cleaned = scrubIdentifiers(trimmed);
@@ -87,8 +87,8 @@ const visibleTarget = (target?: string) => {
 /** A step's page: it opens in the panel browser, or the system browser on Cmd-click. */
 function StepLink({ href, target }: { href: string; target: string }) {
   const link = useOpenProps({ kind: "link", url: href });
-  if (!link.available) return <span className="chat-progress-target" title={target}>{target}</span>;
-  return <button type="button" className="chat-progress-target chat-progress-link" title={target} {...link.props}>{target}</button>;
+  if (!link.available) return <span className="chat-progress-target" data-testid="chat-progress-target" title={target}>{target}</span>;
+  return <button type="button" className="chat-progress-target chat-progress-link" data-testid="chat-progress-target" title={target} {...link.props}>{target}</button>;
 }
 
 function WorkSource({ source }: { source: ChatEvidenceRef }) {
@@ -165,7 +165,7 @@ const ActionRow = memo(function ActionRow({
   return (
     <div
       ref={row}
-      className={`chat-progress-entry chat-progress-row ${item.status}${failed ? " failed" : ""}`}
+      className={`chat-progress-entry chat-progress-row ${item.status}${failed ? " failed" : ""}`} data-testid="chat-progress-row"
       data-flash={flash || undefined}
       data-progress-category={item.category}
       data-progress-operation={item.operation}
@@ -179,7 +179,7 @@ const ActionRow = memo(function ActionRow({
         {canOpen ? (
           <button
             type="button"
-            className="chat-progress-action chat-progress-inspect"
+            className="chat-progress-action chat-progress-inspect" data-testid="chat-progress-action"
             aria-label={t("chatProgressTimeline.inspectAction", { action })}
             aria-expanded={open}
             aria-controls={open ? detailsId : undefined}
@@ -188,12 +188,12 @@ const ActionRow = memo(function ActionRow({
             {action}
           </button>
         ) : (
-          <span className="chat-progress-action">{action}</span>
+          <span className="chat-progress-action" data-testid="chat-progress-action">{action}</span>
         )}
         {target && item.href ? (
           <StepLink href={item.href} target={target} />
         ) : target ? (
-          <span className="chat-progress-target" title={target}>{target}</span>
+          <span className="chat-progress-target" data-testid="chat-progress-target" title={target}>{target}</span>
         ) : null}
         <StepNames item={item} />
       </div>
@@ -348,17 +348,17 @@ export function ActivityRow({ segment, revealedResult, focusItemId, asOf, render
   );
 
   return (
-    <section className="chat-progress" aria-label={t("chatProgressTimeline.workProgress")} aria-busy={live && !waiting} data-turn-item="tools" data-tone={tone} data-expanded={expanded}>
+    <section className="chat-progress" data-testid="chat-progress" aria-label={t("chatProgressTimeline.workProgress")} aria-busy={live && !waiting} data-turn-item="tools" data-tone={tone} data-expanded={expanded}>
       <button
         type="button"
         data-research-summary=""
-        className="chat-progress-toggle"
+        className="chat-progress-toggle" data-testid="chat-progress-toggle"
         aria-expanded={expanded}
         aria-controls={expanded ? detailsId : undefined}
         onClick={() => { conversation?.holdScrollPosition(); setUserChoice(!expanded); }}
       >
         {live ? <span className="chat-progress-live" data-heartbeat={row.stalled || undefined} aria-hidden="true" /> : <ListTreeIcon aria-hidden="true" />}
-        <span className="chat-progress-heading">
+        <span className="chat-progress-heading" data-testid="chat-progress-heading">
           {row.kind === "live" ? row.label : <>
             {row.label}
             {row.issues ? <span className="chat-work-count"> · {row.issues}</span> : null}

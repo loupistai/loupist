@@ -2,6 +2,7 @@ import type { ChatThread } from "./chat";
 import type { AssetChangeRow, Verdict } from "./assets";
 import type { EarningsMeasure, EarningsStatus } from "./earnings";
 import type { WatchEvent } from "./watch";
+import type * as Wire from "./generated";
 
 export type ScheduledCadence =
   | { kind: "once"; at_ms: number }
@@ -34,24 +35,28 @@ export type ScheduledTask = Omit<ScheduledTaskDefinition, "status"> & {
   loupist_id: string;
   revision: number;
   status: ScheduledTaskStatus;
-  next_run_at_ms?: number | null;
-  last_run_at_ms?: number | null;
+  next_run_at_ms: number | null;
+  last_run_at_ms: number | null;
   created_at_ms: number;
   updated_at_ms: number;
-  last_error?: string | null;
-  latest_run?: ScheduledRun | null;
-  session_thread_id?: string | null;
-  awaiting_confirmation?: boolean;
+  last_error: string | null;
+  session_thread_id: string | null;
+  /** Created from a conversation; it stays paused until the user confirms it in the Chat card. */
+  awaiting_confirmation: boolean;
+  /** The reply that proposed it; that reply cannot turn it on in the user's place. */
+  proposed_in_message_id?: string;
 };
-export type BriefingChange = { kind: "claim_added" | "claim_disputed" | "source_retained" | string; subjectId: string | null; summary: string };
-export type BriefingChanged = { names: number; relations: number; conflicts: number; rows: BriefingChange[] };
-export type BriefingCheck = { journalId: string; title: string; byDate: string | null };
+/** A task as `scheduledTasksList` returns it, with its latest occurrence. */
+export type ScheduledTaskListItem = ScheduledTask & { latest_run: ScheduledRun | null };
+export type BriefingChange = Wire.BriefingChange;
+export type BriefingChanged = Wire.BriefingChanged;
+export type BriefingCheck = Wire.BriefingCheck;
 /** Host-computed at run start; the reader renders sections from it and never parses the narrative. */
 export type BriefingContext = {
   symbols: string[]; principlesChecked: number; newFacts: number; disputedEntityIds: string[];
-  changed?: BriefingChanged; ahead?: BriefingCheck[];
+  changed: BriefingChanged; ahead: BriefingCheck[];
   /** "What you follow": followed assets with a delta, rows as the asset page renders them. */
-  assets?: BriefingAsset[];
+  assets: BriefingAsset[];
   /** Results events around this briefing (at most 8), computed by Rust at run start. */
   earnings?: BriefingEarnings[];
   /** Watcher alerts since the previous briefing (at most 24); filings, insiders, 5% holders and flows join "What you follow". */
@@ -79,7 +84,7 @@ export type RunSummaryItem =
   | { kind: "earnings_failed"; name: string; period: string }
   | { kind: "earnings_nothing" };
 export type ScheduledRun = {
-  briefing_context?: BriefingContext | null;
+  briefing_context: BriefingContext | null;
   kind: ScheduledTaskKind;
   summary: string;
   summary_items?: RunSummaryItem[];
@@ -95,9 +100,9 @@ export type ScheduledRun = {
   run_id: string;
   scheduled_for_ms: number;
   started_at_ms: number;
-  finished_at_ms?: number | null;
+  finished_at_ms: number | null;
   status: "running" | "succeeded" | "failed" | "interrupted";
-  error?: string | null;
+  error: string | null;
 };
 export type ScheduledTaskIdentity = { loupist_id: string; task_id: string };
 export type ScheduledRunIdentity = ScheduledTaskIdentity & { run_id: string };
@@ -117,23 +122,23 @@ export type TaskScheduleReceipt = {
   use_memory: boolean;
   update_memory: boolean;
   /** Created from a conversation; it stays paused until the user taps Turn on in the card. */
-  awaiting_confirmation?: boolean;
+  awaiting_confirmation: boolean;
 };
 
-export type SkippedTool = { name: string; reason: string };
+export type SkippedTool = Wire.SkippedTool;
 export type BriefingSettings = { enabled: boolean; schedule: ScheduledCadence; task: ScheduledTask | null };
 /** App-wide: keep the process in the menu bar after the window closes so schedules keep running. */
 export type BriefingResidentSettings = { keepRunning: boolean; notificationPermissionAsked: boolean };
-export type BriefingSettingsRequest = { loupistId: string; enabled: boolean; schedule?: ScheduledCadence | null };
+export type BriefingSettingsRequest = Wire.BriefingSettingsRequest;
 export type InboxItem = {
-  briefingContext?: BriefingContext | null; error?: string | null;
+  briefingContext: BriefingContext | null; error: string | null;
   runId: string; taskId: string; kind: ScheduledTaskKind; title: string;
-  status: ScheduledRun["status"]; summary: string; summaryItems?: RunSummaryItem[]; startedAtMs: number;
+  status: ScheduledRun["status"]; summary: string; summaryItems: RunSummaryItem[]; startedAtMs: number;
   finishedAtMs: number | null; readAtMs: number | null; threadId: string | null;
   messageId: string | null; skippedTools: SkippedTool[];
 };
-export type InboxRequest = { loupistId: string; cursor?: string | null; limit: number };
+export type InboxRequest = Wire.InboxRequest;
 export type InboxPage = { items: InboxItem[]; nextCursor: string | null };
 export type InboxUnreadCount = { loupistId: string; count: number };
-export type InboxChangedEvent = { loupistId: string };
-export type InboxOpenEvent = { loupistId: string; runId: string | null };
+export type InboxChangedEvent = Wire.InboxChanged;
+export type InboxOpenEvent = Wire.InboxOpen;

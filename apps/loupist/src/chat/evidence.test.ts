@@ -59,10 +59,10 @@ it("pairs a Memory receipt with the exact read that shares its readRef", () => {
   const again = evidenceFixture({ id: `ev_${"4".repeat(32)}`, kind: "saved_context", tool_name: "world_read", title: "world read", url: undefined, read_ref: "filing-again" });
   const unmatched = evidenceFixture({ id: `ev_${"5".repeat(32)}`, kind: "saved_context", tool_name: "world_read", title: "world read", url: undefined });
   const reads = [
-    { read_ref: "journal-1", kind: "journal" as const, title: "Capacity review", excerpt: "", access: "exact_read" as const, knowledge: { kind: "journal" as const, recordId: "d1", revisionId: "r", objectId: "d1" } },
-    { read_ref: "filing", kind: "source" as const, title: "Filing", excerpt: "", access: "exact_read" as const, knowledge: { kind: "source" as const, recordId: "s1", revisionId: "r", objectId: "o1" } },
-    { read_ref: "filing-again", kind: "source" as const, title: "Filing", excerpt: "", access: "exact_read" as const, knowledge: { kind: "source" as const, recordId: "s1", revisionId: "r", objectId: "o1" } },
-    { read_ref: "map", kind: "world" as const, title: "Map", excerpt: "", access: "exact_read" as const, knowledge: { kind: "world" as const, recordId: "w1", revisionId: "r", objectId: "w1" } },
+    { read_ref: "journal-1", kind: "journal" as const, title: "Capacity review", excerpt: "", as_of: null, section: null, access: "exact_read" as const, knowledge: { kind: "journal" as const, recordId: "d1", revisionId: "r", objectId: "d1" } },
+    { read_ref: "filing", kind: "source" as const, title: "Filing", excerpt: "", as_of: null, section: null, access: "exact_read" as const, knowledge: { kind: "source" as const, recordId: "s1", revisionId: "r", objectId: "o1" } },
+    { read_ref: "filing-again", kind: "source" as const, title: "Filing", excerpt: "", as_of: null, section: null, access: "exact_read" as const, knowledge: { kind: "source" as const, recordId: "s1", revisionId: "r", objectId: "o1" } },
+    { read_ref: "map", kind: "world" as const, title: "Map", excerpt: "", as_of: null, section: null, access: "exact_read" as const, knowledge: { kind: "world" as const, recordId: "w1", revisionId: "r", objectId: "w1" } },
   ];
   expect(memoryReadForEvidence(search, reads)).toBeNull();
   expect(memoryReadForEvidence(journal, reads)?.title).toBe("Capacity review");

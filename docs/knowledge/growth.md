@@ -64,9 +64,10 @@ empty folder cannot replace saved data, and a registered identity cannot be open
 as a second independent Loupist. Removing its registration preserves the folder.
 
 Registration validates database identity/schema, SQLite integrity/foreign keys,
-record ownership and declared blob hashes/sizes. A folder made by an earlier build
-is refused with the typed `earlier_version` state and can only be removed; see
-[Where data lives](../runtime/storage-authority.md#where-data-lives). Data-directory/database symlinks
+record ownership and declared blob hashes/sizes. A folder in an earlier format is
+validated as an upgraded copy and upgraded on registration; a pre-ladder format is
+refused as `earlier_version` and one a newer build saved as `newer_version`; see
+[Schema versions and upgrades](../runtime/storage-authority.md#schema-versions-and-upgrades). Data-directory/database symlinks
 are rejected. Re-registered schedules and World processing are paused: opening
 saved data does not authorize automatic execution. Interrupted graph jobs retain
 the ordinary recovery requirements.

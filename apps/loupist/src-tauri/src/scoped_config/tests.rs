@@ -434,12 +434,124 @@ fn skill_authoring_is_off_by_default_and_an_explicit_enable_wins_until_reset() {
 #[test]
 fn fixed_or_invalid_skill_preferences_cannot_change_the_runtime_surface() {
     let global = directory();
-    for id in ["world", "lens", "journal", "visualize", "invalid_name"] {
-        write(global.path(), &format!("[skills.{id}]\nenabled=false\n"));
-        assert!(resolve(global.path(), None).is_err());
+    let surface = resolve(global.path(), None).unwrap().enabled_skill_ids();
+    for id in ["world", "lens", "journal", "visualize"] {
+        // A Skill that is always on in this version is ignored with a warning.
+        let source = format!("# Older choice\n[skills.{id}]\nenabled=false\n");
+        write(global.path(), &source);
+        let snapshot = read_scope(global.path(), None, ConfigScope::Global).unwrap();
+        assert!(snapshot.diagnostics.is_empty(), "{id}");
+        assert_eq!(snapshot.warnings.len(), 1, "{id}");
+        assert_eq!(snapshot.warnings[0].line, Some(2), "{id}");
+        assert!(!snapshot.explicit.unwrap().skills.unwrap().contains_key(id));
+        assert_eq!(
+            resolve(global.path(), None).unwrap().enabled_skill_ids(),
+            surface
+        );
+        // Saves keep working, keep the ignored text, and can reset it.
+        let saved = update(
+            global.path(),
+            None,
+            ConfigScope::Global,
+            patch("[appearance]\ntheme = 'dark'"),
+            vec![],
+        );
+        assert_eq!(saved.effective.appearance.theme, "dark");
+        let text = std::fs::read_to_string(global.path().join(FILE_NAME)).unwrap();
+        assert!(
+            text.contains(&format!("[skills.{id}]\nenabled=false")),
+            "{text}"
+        );
+        let reset = update(
+            global.path(),
+            None,
+            ConfigScope::Global,
+            ConfigDocument::default(),
+            vec![vec!["skills".into(), id.into()]],
+        );
+        assert!(reset.warnings.is_empty(), "{id}");
     }
-    write(global.path(), "[skills.pdf]\nenabled='false'\n");
-    assert!(resolve(global.path(), None).is_err());
+    for invalid in [
+        "[skills.invalid_name]\nenabled=false\n",
+        "[skills.pdf]\nenabled='false'\n",
+    ] {
+        write(global.path(), invalid);
+        assert!(resolve(global.path(), None).is_err(), "{invalid}");
+    }
+}
+
+#[test]
+fn connectors_the_catalog_no_longer_has_are_ignored_and_never_block_saves() {
+    let global = directory();
+    let source = "[connectors.\"retired.connector\"]\nregion = 'eu'\n\n[connectors.\"sec.edgar\"]\ncontact_email = 'research@example.invalid'\nretired_field = 'kept'\n";
+    write(global.path(), source);
+    let snapshot = read_scope(global.path(), None, ConfigScope::Global).unwrap();
+    assert!(snapshot.diagnostics.is_empty());
+    assert_eq!(
+        snapshot
+            .warnings
+            .iter()
+            .map(|warning| warning.line)
+            .collect::<Vec<_>>(),
+        [Some(1), Some(6)]
+    );
+    assert!(!snapshot.warnings[1].message.contains("kept"));
+    let effective = resolve(global.path(), None).unwrap();
+    assert_eq!(
+        effective.connectors,
+        BTreeMap::from([(
+            "sec.edgar".to_owned(),
+            BTreeMap::from([(
+                "contact_email".to_owned(),
+                "research@example.invalid".to_owned()
+            )])
+        )])
+    );
+
+    // Settings and connector saves keep working and keep the ignored text.
+    update(
+        global.path(),
+        None,
+        ConfigScope::Global,
+        patch("[appearance]\ntheme = 'dark'"),
+        vec![],
+    );
+    write_global_connector_settings(
+        global.path(),
+        "sec.edgar",
+        &BTreeMap::from([("contact_email".into(), "new@example.invalid".into())]),
+    )
+    .unwrap();
+    let text = std::fs::read_to_string(global.path().join(FILE_NAME)).unwrap();
+    assert!(text.contains("[connectors.\"retired.connector\"]\nregion = 'eu'"));
+    assert!(text.contains("retired_field = 'kept'"));
+    assert_eq!(
+        read_global_connector_settings(global.path(), "sec.edgar").unwrap(),
+        BTreeMap::from([("contact_email".into(), "new@example.invalid".into())])
+    );
+
+    // A request names only settings this version has.
+    let prior = read_scope(global.path(), None, ConfigScope::Global).unwrap();
+    assert!(update_scope(
+        global.path(),
+        None,
+        &ConfigUpdateRequest {
+            scope: ConfigScope::Global,
+            expected_revision: prior.revision,
+            set: patch("[connectors.\"retired.connector\"]\nregion = 'us'"),
+            unset: vec![],
+        },
+    )
+    .is_err());
+
+    // Credentials never belong in the file, whether the connector is known or not.
+    for credential in [
+        "[connectors.\"retired.connector\"]\napi_key = 'fixture'\n",
+        "[connectors.\"koreainvestment.market-data\"]\napp_key = 'fixture'\n",
+    ] {
+        write(global.path(), credential);
+        assert!(resolve(global.path(), None).is_err(), "{credential}");
+    }
 }
 
 #[test]

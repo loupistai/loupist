@@ -35,7 +35,6 @@ use crate::{
     },
     runs::maintenance::MaintenanceActivityKind,
     scheduled_tasks::types::{TaskKind, TaskStatus},
-    store::LoupistStore,
 };
 
 const HOUR_MS: i64 = 60 * 60 * 1000;
@@ -75,10 +74,10 @@ const COT_PROVIDERS: &[&str] = &["cftc"];
 /// The weekly petroleum report comes from EIA (its connection needs a free key).
 const EIA_PROVIDERS: &[&str] = &["eia"];
 const OPENBB_CONNECTION: &str = "openbb.platform";
-const OPENDART_CONNECTION: &str = "opendart.disclosures";
+const OPENDART_CONNECTION: &str = crate::finance_data::OPENDART_SOURCE_ID;
 const FMP_CONNECTION: &str = "fmp.market-data";
 const EIA_CONNECTION: &str = "eia.energy";
-const DEFILLAMA_CONNECTION: &str = "defillama.tvl";
+const DEFILLAMA_CONNECTION: &str = crate::finance_data::DEFILLAMA_SOURCE_ID;
 /// Price and value-locked routes are read again after this long.
 const PRICE_EVERY_MS: i64 = 6 * HOUR_MS;
 /// Daily closes a price read asks for: the 90-day high needs 90 days.
@@ -1523,7 +1522,12 @@ pub(in crate::commands) async fn sync_earnings<R: HostReader>(
 
 /// Tells the renderer something changed for this Loupist's watchers.
 pub(crate) fn changed(loupist_id: &str) {
-    crate::briefings::desktop::emit("watch-changed", json!({"loupistId": loupist_id}));
+    crate::briefings::desktop::emit(
+        crate::events::WATCH_CHANGED,
+        crate::events::WatchChanged {
+            loupist_id: loupist_id.to_owned(),
+        },
+    );
 }
 
 // ───────────────────────────── Defaults and consent ─────────────────────────────
@@ -1591,6 +1595,7 @@ pub(crate) fn on_followed(
 // ───────────────────────────── Views and commands ─────────────────────────────
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionRef {
     pub id: String,
@@ -1598,6 +1603,7 @@ pub struct ConnectionRef {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct KindFailure {
     pub connection: String,
@@ -1605,17 +1611,21 @@ pub struct KindFailure {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct KindStateView {
     pub kind: WatchKind,
     pub enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub needs_connection: Option<ConnectionRef>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub failed: Option<KindFailure>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct WatchAssetView {
     pub asset_id: String,
@@ -1625,10 +1635,12 @@ pub struct WatchAssetView {
     pub kinds: Vec<KindStateView>,
     pub revision: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub last_alert: Option<WatchEventView>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct WatchSettingsView {
     pub loupist_id: String,
@@ -1636,6 +1648,7 @@ pub struct WatchSettingsView {
     pub consent_off: bool,
     pub checking: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub last_checked_ms: Option<i64>,
     pub watched: Vec<WatchAssetView>,
     pub not_watched: Vec<WatchAssetView>,
@@ -1756,6 +1769,7 @@ fn admit(state: &AppState, loupist_id: &str) -> Result<(), CommandError> {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WatchSettingsListRequest {
     pub loupist_id: String,
@@ -1775,6 +1789,7 @@ pub fn watch_settings_list(
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WatchSettingSetRequest {
     pub loupist_id: String,
@@ -1842,6 +1857,7 @@ pub(crate) fn update_setting(
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WatchPauseSetRequest {
     pub loupist_id: String,
@@ -1863,12 +1879,14 @@ pub fn watch_pause_set(
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WatchCheckNowRequest {
     pub loupist_id: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct WatchCheckResult {
     pub new_alerts: usize,
@@ -1900,6 +1918,7 @@ pub async fn watch_check_now(
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WatchEventsListRequest {
     pub loupist_id: String,
@@ -1925,6 +1944,7 @@ pub fn watch_events_list(
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WatchEventsSeenRequest {
     pub loupist_id: String,

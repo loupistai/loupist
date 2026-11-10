@@ -17,9 +17,7 @@ use crate::{
     },
 };
 
-pub const UPSTAGE_PRESET: &str = "upstage";
-const UPSTAGE_BASE_URL: &str = "https://api.upstage.ai/v1";
-const UPSTAGE_NAME: &str = "Upstage Solar";
+const UPSTAGE_PRESET: &str = "upstage";
 const PROBE_TIMEOUT: Duration = Duration::from_millis(600);
 const TEST_TIMEOUT: Duration = Duration::from_secs(8);
 const MAX_BODY_BYTES: usize = 1024 * 1024;
@@ -30,6 +28,7 @@ const MAX_MODEL_ID_BYTES: usize = 128;
 const MAX_KEY_BYTES: usize = 8 * 1024;
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum LocalEngineId {
     Ollama,
@@ -58,14 +57,16 @@ impl LocalEngineId {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct LocalModel {
     pub id: String,
     pub name: String,
     pub context_tokens: Option<u64>,
 }
 
-/// Exactly `LocalEngine` in `src/contracts/model.ts`.
+/// A model app found on this Mac by the loopback probes.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct LocalEngine {
     pub engine: LocalEngineId,
     pub label: &'static str,
@@ -75,11 +76,13 @@ pub struct LocalEngine {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct LocalDiscovery {
     pub engines: Vec<LocalEngine>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum TestOutcome {
     Ok,
@@ -92,6 +95,7 @@ pub enum TestOutcome {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ProviderCustomTestResult {
     pub outcome: TestOutcome,
     pub models: Vec<String>,
@@ -107,6 +111,7 @@ impl ProviderCustomTestResult {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(deny_unknown_fields)]
 pub struct ProviderCustomTestRequest {
     pub base_url: String,
@@ -116,6 +121,7 @@ pub struct ProviderCustomTestRequest {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ProviderPresetRequest {
     pub preset: String,
@@ -156,17 +162,19 @@ pub async fn provider_preset_save(
     request: ProviderPresetRequest,
     state: State<'_, AppState>,
 ) -> Result<ModelCatalogView, CommandError> {
-    if request.preset != UPSTAGE_PRESET {
-        return Err(CommandError::invalid("unknown provider preset"));
-    }
+    // Upstage is the one preset; its address, name and API format come from
+    // the provider manifest.
+    let preset = crate::providers::manifest::preset(UPSTAGE_PRESET)
+        .filter(|_| request.preset == UPSTAGE_PRESET)
+        .ok_or_else(|| CommandError::invalid("unknown provider preset"))?;
     let api_key = request.api_key.trim();
     if api_key.is_empty() {
         return Err(key_rejected());
     }
     let tested = test_endpoint(
         &ProviderCustomTestRequest {
-            base_url: UPSTAGE_BASE_URL.into(),
-            api: "openai-completions".into(),
+            base_url: preset.base_url.clone(),
+            api: preset.api.clone(),
             api_key: Some(api_key.to_owned()),
         },
         TEST_TIMEOUT,
@@ -176,15 +184,15 @@ pub async fn provider_preset_save(
     let agent_dir = state.pi_agent_data_dir()?;
     let existing = custom::list(&agent_dir)?
         .into_iter()
-        .find(|provider| provider.base_url == UPSTAGE_BASE_URL)
+        .find(|provider| provider.base_url == preset.base_url)
         .map(|provider| provider.id);
     crate::providers::connection::save_custom_provider(
         &state,
         CustomProviderRequest {
             provider: existing,
-            name: UPSTAGE_NAME.into(),
-            base_url: UPSTAGE_BASE_URL.into(),
-            api: "openai-completions".into(),
+            name: preset.name.clone(),
+            base_url: preset.base_url.clone(),
+            api: preset.api.clone(),
             api_key: Some(api_key.to_owned()),
             model_ids,
         },

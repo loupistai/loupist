@@ -1,4 +1,5 @@
 use super::*;
+use crate::store::SqliteStore;
 use std::fs;
 
 #[cfg(unix)]
@@ -28,7 +29,7 @@ pub(in crate::commands) fn profile(id: &str, workspace: &Path, timestamp: i64) -
     }
 }
 
-pub(in crate::commands) fn seed_profile(store: &dyn LoupistStore, profile: &LoupistProfile) {
+pub(in crate::commands) fn seed_profile(store: &SqliteStore, profile: &LoupistProfile) {
     store.create_loupist(profile).unwrap();
 }
 

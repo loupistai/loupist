@@ -79,6 +79,7 @@ describe("Loupist · Chat memory", () => {
         read_ref: "lens-compare-accounts", kind: "lens", title: "INTERNAL_MEMORY_TITLE", excerpt: "INTERNAL_MEMORY_EXCERPT",
         as_of: "2026-08-06T00:00:00Z", access: "exact_read",
         knowledge: { kind: "lens", recordId: "lens-compare-accounts", revisionId: "rev-lens-1", objectId: "lens-compare-accounts" },
+        section: null,
       }];
     });
     await openApp(bridge);
@@ -133,7 +134,7 @@ describe("Loupist · Chat memory", () => {
     const user = userEvent.setup();
     const bridge = await withFirstMessage((message) => {
       message.memory_refs = [{ read_ref: "world-read-1", kind: "world", title: "Protocol world", excerpt: "", access: "exact_read",
-        knowledge: { kind: "world_claim", recordId: "world-protocols", revisionId: "saved-revision", objectId: "claim-1" } }];
+        knowledge: { kind: "world_claim", recordId: "world-protocols", revisionId: "saved-revision", objectId: "claim-1" }, as_of: null, section: null }];
       savedRecordLink(message, "world_read", "world-read-1");
     });
     const endpoints = [{ nodeId: "node-1", role: "subject" }];
@@ -143,7 +144,18 @@ describe("Loupist · Chat memory", () => {
       edges: [{ id: "edge-1", relation: "DESCRIBES", endpoints, status: "active", claim: {
         id: "claim-1", proposition: "The protocol preserves the sender's original statement.", attribution: "Retained protocol notes",
         relation: "DESCRIBES", endpoints, qualifiers: [], evidence: [], status: "active",
-      } }], coverage: "sealed_snapshot", indexingState: "ready", truncated: false,
+        recordedAtMs: null,
+        publicationTime: null,
+        effectiveTime: null,
+        validAt: null,
+        invalidAt: null,
+        expiredAt: null,
+      } }], coverage: "sealed_snapshot", indexingState: "snapshot_only", truncated: false,
+      nextCursor: null,
+      appliedCursor: null,
+      originLabel: "",
+      sourceTargets: {},
+      scan: { strategy: "scan", nodesScanned: 0, claimsScanned: 0 },
     });
     await openApp(bridge);
     await user.click(await screen.findByRole("button", { name: "Saved record · Memory: Protocol world" }));
@@ -155,14 +167,15 @@ describe("Loupist · Chat memory", () => {
   it("reads private Journal content only after an explicit reference click", async () => {
     const bridge = await withFirstMessage((message) => {
       message.memory_refs = [{ read_ref: "journal-private", kind: "journal", title: "Private capacity review", excerpt: "", access: "exact_read",
-        knowledge: { kind: "journal", recordId: "", revisionId: "", objectId: "journal-private", receiptId: "readref-unrelated" } }];
+        knowledge: { kind: "journal", recordId: "", revisionId: "", objectId: "journal-private", receiptId: "readref-unrelated" }, as_of: null, section: null }];
       savedRecordLink(message, "conversation_memory", "journal-private");
     });
     const read = vi.spyOn(bridge, "knowledgeJournalRead").mockResolvedValue({
       loupistId: "loupist-quality", researchId: "research", entities: [], createdAtMs: 1, updatedAtMs: 1, archived: false, inputDigest: "mock",
       journalId: "journal-private", judgment: "Original private thesis", reasoning: "Original basis",
       check: { claim: "Capacity will exceed the baseline.", metric: "Capacity", direction: "above", threshold: 1, byDate: "2027-01-01", confidence: 70 },
-      inputs: { sources: [], worlds: [], lenses: [] },
+      inputs: { sources: [], worlds: [], lenses: [], earlier: [] },
+      originChatId: null,
     });
     await openApp(bridge);
     const reference = await screen.findByRole("button", { name: "Saved record · Memory: Private capacity review" });
@@ -186,6 +199,10 @@ describe("Loupist · Chat memory", () => {
       sourceClass: "user_statement", originLabel: "Original source", coverage: "included_full", material: "original",
       verification: "verified_bytes", selectedSpanId: "retained-span", relatedClaims: [],
       spans: [{ spanId: "retained-span", selector: "utf8_line_range:1-1", contextNote: "Exact original", mediaType: "text/plain", text: "Exact retained statement" }],
+      processing: null,
+      derivation: null,
+      publicationTime: null,
+      acquiredAt: null,
     });
     await openApp(bridge);
     expect(screen.getByText("Saved to your journal: “Hold the quality call”")).toBeVisible();

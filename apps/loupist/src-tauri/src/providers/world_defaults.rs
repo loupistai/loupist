@@ -10,6 +10,7 @@ use crate::{
         catalog_view, ConfiguredModel, CredentialSource, ModelCatalog, ModelCatalogView,
     },
     providers::inference::supports_isolated_inference,
+    providers::manifest::development_alias,
 };
 
 #[derive(Deserialize)]
@@ -119,12 +120,6 @@ pub fn recommended_model(state: &AppState) -> Result<Option<ResolvedWorldModel>,
         .transpose()
 }
 
-/// Debug builds keep the legacy Codex client for harnesses; it serves the same
-/// reviewed OpenAI models, used only when no `openai` sign-in or key matches.
-fn debug_alias(provider: &str) -> Option<&'static str> {
-    (cfg!(debug_assertions) && provider == "openai").then_some("openai-codex")
-}
-
 fn options_from_catalog(mut catalog: ModelCatalogView) -> LoupistCreationOptions {
     catalog.models.retain(|model| {
         supports_isolated_inference(&model.provider)
@@ -144,8 +139,11 @@ fn options_from_catalog(mut catalog: ModelCatalogView) -> LoupistCreationOptions
                         && model.thinking_levels.contains(&candidate.thinking_level)
                 })
             };
+            // Debug builds keep the legacy Codex client for harnesses; it serves
+            // the same reviewed OpenAI models, used only when no `openai`
+            // sign-in or key matches.
             matching(&preferred.provider)
-                .or_else(|| debug_alias(&preferred.provider).and_then(matching))
+                .or_else(|| development_alias(&preferred.provider).and_then(matching))
                 .map(|model| WorldModelSelection {
                     model_profile_id: model.id.clone(),
                     thinking_level: candidate.thinking_level.clone(),

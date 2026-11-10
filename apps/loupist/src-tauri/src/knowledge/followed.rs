@@ -329,6 +329,7 @@ impl KnowledgeWrite<'_> {
 
 /// Ordered so that the most pressing state of several Sources wins.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum FollowedState {
     /// Nothing followed was written.
@@ -359,6 +360,7 @@ impl FollowedState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct FollowedStatus {
     pub state: FollowedState,
@@ -366,6 +368,7 @@ pub struct FollowedStatus {
     pub assets: usize,
     /// When the oldest unfinished read was queued.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub queued_at_ms: Option<i64>,
 }
 

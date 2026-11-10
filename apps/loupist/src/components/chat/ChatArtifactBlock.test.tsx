@@ -34,7 +34,7 @@ const view: ChatArtifactView = {
   revision: {
     artifact_id: "chart-1", revision: 2, digest: "b".repeat(64), source_message_id: "answer", created_at_ms: 0,
     payload: { kind: "chart", schema: "loupist-chart/1", chart: { dataset_id: dataset.id, dataset_digest: dataset.digest, studies: [], drawings: [],
-      view: { kind: "bar", x: "quarter", y: ["margin"], semantic_types: { quarter: "Period", margin: "Percent" } } } },
+      view: { kind: "bar", x: "quarter", y: ["margin"], semantic_types: { quarter: "Period", margin: "Percent" }, color: null, title: null, subtitle: null }, custom_series: [], note: null } },
   },
   chart_dataset: dataset,
 };

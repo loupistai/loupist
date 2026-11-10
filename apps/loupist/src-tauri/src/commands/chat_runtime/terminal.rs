@@ -1,6 +1,7 @@
 //! Terminal Chat outcomes: the durable Memory trace, completed-reply events,
 //! and the aborted/failed assistant messages every early exit persists.
 use super::*;
+use crate::store::SqliteStore;
 
 #[derive(Clone)]
 pub(in crate::commands) struct DurableMemoryTrace {
@@ -116,7 +117,7 @@ pub(in crate::commands) struct CanonicalCompletionExpectation<'a> {
 }
 
 pub(in crate::commands) fn recovered_canonical_completion(
-    store: &dyn LoupistStore,
+    store: &SqliteStore,
     thread_id: &str,
     message_id: &str,
     expected: CanonicalCompletionExpectation<'_>,
@@ -152,7 +153,7 @@ pub(super) enum ChatTerminalStatus {
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn persist_and_emit_terminal_chat(
-    store: &dyn LoupistStore,
+    store: &SqliteStore,
     on_event: &ChatEventSink,
     run_id: &str,
     thread_id: &str,
@@ -228,6 +229,7 @@ pub(super) fn persist_and_emit_terminal_chat(
             run_id: run_id.to_owned(),
             message: FAILED_CHAT_CONTENT.into(),
             message_id: message_id.to_owned(),
+            placeholder: content == FAILED_CHAT_CONTENT,
             final_text: content,
             created_at: iso_time(created_at_ms).unwrap_or_default(),
             execution_model: Box::new(execution_model),
@@ -242,7 +244,7 @@ pub(super) fn persist_and_emit_terminal_chat(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn persist_and_emit_aborted_chat(
-    store: &dyn LoupistStore,
+    store: &SqliteStore,
     on_event: &ChatEventSink,
     run_id: &str,
     thread_id: &str,
@@ -272,7 +274,7 @@ pub(super) fn persist_and_emit_aborted_chat(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn persist_and_emit_failed_chat(
-    store: &dyn LoupistStore,
+    store: &SqliteStore,
     on_event: &ChatEventSink,
     run_id: &str,
     thread_id: &str,
@@ -300,7 +302,7 @@ pub(super) fn persist_and_emit_failed_chat(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn persist_or_emit_failed_chat(
-    store: &dyn LoupistStore,
+    store: &SqliteStore,
     on_event: &ChatEventSink,
     run_id: &str,
     thread_id: &str,
@@ -334,6 +336,7 @@ pub(super) fn persist_or_emit_failed_chat(
                 message: FAILED_CHAT_CONTENT.into(),
                 message_id: message_id.to_owned(),
                 final_text: FAILED_CHAT_CONTENT.into(),
+                placeholder: true,
                 created_at: iso_time(now_ms()).unwrap_or_default(),
                 execution_model: Box::new(execution_model),
                 agent_harness: Box::new(agent_harness),

@@ -4,7 +4,7 @@ mod checkpoint;
 mod lens_seed;
 pub mod scale;
 use super::{append_atomic, artifacts, batch, new_chat, run_turn, Result, Session, Turn};
-use crate::{app::AppState, domain::ChatSession, knowledge::*, store::LoupistStore};
+use crate::{app::AppState, domain::ChatSession, knowledge::*};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -1008,7 +1008,6 @@ pub async fn run(options: Options) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::LoupistStore;
 
     fn source() -> Source {
         Source {

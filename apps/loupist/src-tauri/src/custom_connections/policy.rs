@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use crate::{mcp::McpTool, util::sha256};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ToolEligibility {
     ReadOnly,
@@ -100,6 +101,7 @@ pub fn definition_hash(tool: &McpTool) -> String {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ApprovalChoice {
     AllowOnce,

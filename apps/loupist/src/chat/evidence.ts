@@ -89,7 +89,7 @@ export function evidenceTitle(evidence: ChatEvidenceRef): string {
   if (evidence.title === evidence.tool_name.replaceAll("_", " ") && memoryTitles[evidence.tool_name]) return memoryTitles[evidence.tool_name];
   // A calculation's reader title is the host's operation name; show it in plain words ("Reverse DCF grid" is jargon).
   if (evidence.tool_name === "calculate") {
-    const name = operationName(evidence.title);
+    const name = operationName(evidence.calc_operation);
     if (name) return name;
   }
   const url = parseCredentialFreeHttpUrl(evidence.title);

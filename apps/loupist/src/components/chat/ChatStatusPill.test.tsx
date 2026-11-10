@@ -6,7 +6,7 @@ import { ChatStatusPill, type ChatRunStatus } from "./ChatStatusPill";
 const start = Date.UTC(2026, 9, 31, 9, 0, 0);
 const streaming: ChatMessage = {
   id: "answer", role: "assistant", content: "Hanul's revenue grew", created_at: new Date(start).toISOString(), status: "streaming", phase: "tool",
-  progress: { startedAtMs: start, items: [{ id: "compare", kind: "tool", category: "compute", operation: "calculate", action: "Compared utilization", running: "Comparing utilization", status: "running" }] },
+  progress: { startedAtMs: start, items: [{ id: "compare", kind: "tool", category: "compute", operation: "calculate", action: "Compared utilization", running: "Comparing utilization", status: "running", target: null, href: null, startedAtMs: 0, finishedAtMs: null }], finishedAtMs: null },
 };
 
 function ScrollAway() {

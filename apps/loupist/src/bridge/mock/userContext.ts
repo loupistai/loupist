@@ -3,8 +3,9 @@ import type {
   CryptoFilePreview, WalletView, HoldingsPosition,
 } from "../../contracts/userContext";
 import { detectNetwork, looksLikeSecret, maskAddress } from "../../components/holdings/walletAddress";
+import { rejectCommand } from "./commandError";
 
-const fail = (code: string, message: string): never => { throw Object.assign(new Error(message), { code }); };
+const fail = rejectCommand;
 const identity = (value: string) => {
   const normalized = value.trim().toUpperCase();
   if (!normalized) fail("invalid_request", "Invalid symbol or market.");

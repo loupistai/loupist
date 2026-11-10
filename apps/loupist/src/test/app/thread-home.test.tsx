@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { App } from "../../App";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { ChatMessage, ChatThread, InboxChangedEvent } from "../../types";
+import { completedRun } from "../streamFixtures";
 
 const delivered: ChatMessage = {
   id: "delivery-1", role: "assistant", status: "complete", host_composed: true, created_at: new Date().toISOString(),
@@ -84,7 +85,7 @@ it("shows a hand-off the host finished in the open Bot and its session without r
     observer({ type: "started", run_id: sent.run_id });
     stored.home = [ask, reply];
     setTimeout(() => observer({
-      type: "completed", run_id: sent.run_id, message_id: reply.id, final_text: reply.content, created_at: reply.created_at,
+      type: "completed", ...completedRun, run_id: sent.run_id, message_id: reply.id, final_text: reply.content, created_at: reply.created_at,
       execution_model: { profile_id: "model-test", name: "GPT-6.1 Sol", provider: "openai-codex", model: "gpt-6.1-sol", thinking_level: "medium", run_options: {} },
       agent_harness: { schema: "loupist-agent-harness/1", mode: "chat", skill_ids: [], capability_ids: [], digest: "b".repeat(64) },
     }), 0);

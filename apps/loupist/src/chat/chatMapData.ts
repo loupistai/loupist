@@ -1,6 +1,6 @@
-import type { ChatMessage, KnowledgeReference } from "../../types";
-import type { GrowthEvent, KnowledgeMap } from "../../contracts/knowledge";
-import { claimIdForEdge } from "../map/MapList";
+import type { ChatMessage, KnowledgeReference } from "../types";
+import type { GrowthEvent, KnowledgeMap } from "../contracts/knowledge";
+import { claimIdForEdge } from "../knowledge/mapItems";
 
 /** Receipts identify this chat's jobs. Older receipts can only be followed through growth events. */
 export function chatSourceWork(messages: readonly ChatMessage[]) {

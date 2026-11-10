@@ -6,7 +6,7 @@ const luna: ModelCatalog["models"][number] = {
   context_window: 272_000, max_tokens: 128_000, thinking_levels: ["deliberate", "max"], thinking_level_map: { deliberate: "d", max: "m" },
   run_controls: [], credential_source: "saved",
 };
-const catalog: ModelCatalog = { hidden_model_profile_ids: [], models: [luna, { ...luna, id: "pi/sol", name: "Sol" }], providers: [] };
+const catalog: ModelCatalog = { hidden_model_profile_ids: [], models: [luna, { ...luna, id: "pi/sol", name: "Sol" }], providers: [], custom_providers: [], model_notice: null };
 const empty = { model_profile_id: "", thinking_level: "", run_options: {} };
 
 it("applies configured defaults before the last used model while keeping explicit composer choices", () => {

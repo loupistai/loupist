@@ -1,6 +1,6 @@
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY } from "d3-force";
 import type { KnowledgeMapEdge, KnowledgeMapNode } from "../../contracts/knowledge";
-import { nodeRadius } from "./kinds";
+import { nodeRadius } from "../../knowledge/mapKinds";
 export type MapPoint = { x: number; y: number };
 export type PositionedNode = KnowledgeMapNode & MapPoint & { fx: number; fy: number };
 // Coordinates only, never canonical data. The bounded cache survives route changes.

@@ -8,7 +8,6 @@ use crate::{
     },
     runs::coordinator::{RunKind, RunTarget},
     scheduled_tasks::types::{Schedule, TaskDraft, TaskStatus, TaskTarget},
-    store::LoupistStore,
 };
 use std::{collections::BTreeMap, fs, path::Path};
 
@@ -702,4 +701,229 @@ async fn a_folder_made_by_an_earlier_build_is_refused_with_a_typed_state() {
     let reopened = create_folder_loupist(&state, &old).await.unwrap_err();
     assert_eq!(reopened.code, "loupist_earlier_version");
     assert!(reopened.message.contains("earlier version"));
+}
+
+fn folder_database(folder: &Path) -> std::path::PathBuf {
+    folder.join(".loupist/loupist.sqlite3")
+}
+
+fn upgrade_backups(folder: &Path) -> Vec<std::path::PathBuf> {
+    fs::read_dir(folder.join(".loupist"))
+        .unwrap()
+        .filter_map(|entry| {
+            let path = entry.ok()?.path();
+            path.file_name()?
+                .to_str()?
+                .starts_with("loupist.sqlite3.upgrade-backup-")
+                .then_some(path.clone())
+        })
+        .collect()
+}
+
+fn folder_versions(folder: &Path) -> (i64, i64) {
+    let connection = rusqlite::Connection::open(folder_database(folder)).unwrap();
+    (
+        connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap(),
+        connection
+            .query_row("SELECT version FROM knowledge_schema", [], |row| row.get(0))
+            .unwrap(),
+    )
+}
+
+const CURRENT_VERSIONS: (i64, i64) = (
+    crate::store::STORE_SCHEMA_VERSION,
+    crate::knowledge::KNOWLEDGE_SCHEMA_VERSION,
+);
+
+/// A folder an installed 0.0.1 build left (store 4, Knowledge 6) opens after
+/// a private backup and keeps its chats.
+#[tokio::test]
+async fn a_baseline_folder_is_upgraded_in_place_after_a_backup() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("research");
+    fs::create_dir(&root).unwrap();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let loupist = create_folder_loupist(&state, &root).await.unwrap();
+    let chat = super::tests::chat("chat-baseline", &loupist.id, 10);
+    state.store.create_chat(&chat).unwrap();
+    state.close_for_restart_test();
+    crate::store::restore_baseline_for_test(
+        &mut rusqlite::Connection::open(folder_database(&root)).unwrap(),
+    );
+    assert_eq!(folder_versions(&root), (4, 6));
+
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let listed = list_available_loupists(&state).await.unwrap();
+    assert_eq!(
+        listed[0].availability,
+        crate::app::LoupistAvailability::Available
+    );
+    assert_eq!(state.store.get_chat(&chat.id).unwrap(), Some(chat));
+    assert_eq!(folder_versions(&root), CURRENT_VERSIONS);
+    let [backup] = upgrade_backups(&root).try_into().unwrap();
+    let backup = rusqlite::Connection::open(backup).unwrap();
+    assert_eq!(
+        backup
+            .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+            .unwrap(),
+        4
+    );
+}
+
+/// Admission validates an upgraded copy without writing to the folder; only
+/// registration upgrades it, after a backup.
+#[tokio::test]
+async fn a_baseline_folder_is_validated_read_only_and_upgraded_when_imported() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("research");
+    fs::create_dir(&root).unwrap();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let loupist = create_folder_loupist(&state, &root).await.unwrap();
+    let chat = super::tests::chat("chat-imported", &loupist.id, 10);
+    state.store.create_chat(&chat).unwrap();
+    delete_loupist_inner(&state, &loupist.id).await.unwrap();
+    crate::store::restore_baseline_for_test(
+        &mut rusqlite::Connection::open(folder_database(&root)).unwrap(),
+    );
+    let bytes = fs::read(folder_database(&root)).unwrap();
+
+    // The picker hands admission a canonical folder path.
+    let workspace =
+        crate::fs::loupist_root::BoundLoupistRoot::open_unbound(root.canonicalize().unwrap())
+            .unwrap();
+    let admitted = state.store.folder_profile(&workspace).unwrap().unwrap();
+    assert_eq!(admitted.id, loupist.id);
+    assert_eq!(fs::read(folder_database(&root)).unwrap(), bytes);
+    assert!(upgrade_backups(&root).is_empty());
+
+    let reopened = create_folder_loupist(&state, &root).await.unwrap();
+    assert_eq!(reopened.id, loupist.id);
+    assert_eq!(folder_versions(&root), CURRENT_VERSIONS);
+    assert_eq!(upgrade_backups(&root).len(), 1);
+    assert!(state.store.get_chat(&chat.id).unwrap().is_some());
+}
+
+/// A folder a newer build saved is its own state, not a moved folder, and it
+/// is never written: listing, binding storage and reopening all refuse it.
+#[tokio::test]
+async fn a_folder_saved_by_a_newer_build_is_refused_untouched() {
+    use crate::app::LoupistAvailability;
+    let temp = tempfile::tempdir().unwrap();
+    let current_root = temp.path().join("current");
+    let newer_root = temp.path().join("newer");
+    fs::create_dir(&current_root).unwrap();
+    fs::create_dir(&newer_root).unwrap();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let current = create_folder_loupist(&state, &current_root).await.unwrap();
+    let newer = create_folder_loupist(&state, &newer_root).await.unwrap();
+    state.close_for_restart_test();
+    rusqlite::Connection::open(folder_database(&newer_root))
+        .unwrap()
+        .execute(
+            "UPDATE knowledge_schema SET version = ?1",
+            [crate::knowledge::KNOWLEDGE_SCHEMA_VERSION + 1],
+        )
+        .unwrap();
+    let bytes = fs::read(folder_database(&newer_root)).unwrap();
+
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let listed = list_available_loupists(&state).await.unwrap();
+    let availability = |id: &str| {
+        listed
+            .iter()
+            .find(|summary| summary.id == id)
+            .unwrap()
+            .availability
+    };
+    assert_eq!(availability(&current.id), LoupistAvailability::Available);
+    assert_eq!(availability(&newer.id), LoupistAvailability::NewerVersion);
+    assert_eq!(
+        serde_json::to_value(availability(&newer.id)).unwrap(),
+        serde_json::json!({"status": "newer_version"})
+    );
+    assert!(matches!(
+        state.store.lock_loupist(&newer.id),
+        Err(crate::store::StoreError::NewerVersion)
+    ));
+    let refused =
+        crate::commands::assets::with_assets(&state, &newer.id, true, |_| Ok(())).unwrap_err();
+    assert_eq!(refused.code, "loupist_newer_version");
+    delete_loupist_inner(&state, &newer.id).await.unwrap();
+    let reopened = create_folder_loupist(&state, &newer_root)
+        .await
+        .unwrap_err();
+    assert_eq!(reopened.code, "loupist_newer_version");
+    assert_eq!(fs::read(folder_database(&newer_root)).unwrap(), bytes);
+    assert!(upgrade_backups(&newer_root).is_empty());
+}
+
+/// A pre-ladder store schema is typed on import and reconnect, as on listing.
+#[tokio::test]
+async fn an_earlier_store_schema_is_refused_as_an_earlier_version_on_reconnect_and_import() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("research");
+    fs::create_dir(&root).unwrap();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let loupist = create_folder_loupist(&state, &root).await.unwrap();
+    state.close_for_restart_test();
+    let moved = temp.path().join("moved");
+    fs::rename(&root, &moved).unwrap();
+    rusqlite::Connection::open(folder_database(&moved))
+        .unwrap()
+        .execute_batch(&format!(
+            "PRAGMA user_version = {};",
+            crate::store::STORE_BASELINE_VERSION - 1
+        ))
+        .unwrap();
+
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let reconnected = reconnect_loupist_inner(
+        &state,
+        &LoupistReconnectRequest {
+            loupist_id: loupist.id.clone(),
+            workspace_path: moved.to_string_lossy().into(),
+        },
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(reconnected.code, "loupist_earlier_version");
+    delete_loupist_inner(&state, &loupist.id).await.unwrap();
+    let imported = create_folder_loupist(&state, &moved).await.unwrap_err();
+    assert_eq!(imported.code, "loupist_earlier_version");
+}
+
+/// Cross-Loupist reads skip one broken database and return the others;
+/// writes still stop at the first failure.
+#[tokio::test]
+async fn a_scan_skips_one_broken_folder_and_returns_the_healthy_ones() {
+    let temp = tempfile::tempdir().unwrap();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let mut roots = Vec::new();
+    for name in ["first", "broken", "third"] {
+        let root = temp.path().join(name);
+        fs::create_dir(&root).unwrap();
+        create_folder_loupist(&state, &root).await.unwrap();
+        roots.push(root);
+    }
+    state.close_for_restart_test();
+    rusqlite::Connection::open(folder_database(&roots[1]))
+        .unwrap()
+        .execute_batch("DROP TABLE knowledge_watch_state;")
+        .unwrap();
+
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let scan = |_: &str, connection: &mut rusqlite::Connection| {
+        Ok(
+            connection.query_row("SELECT COUNT(*) FROM knowledge_watch_state", [], |row| {
+                row.get::<_, i64>(0)
+            })?,
+        )
+    };
+    assert_eq!(
+        state.store.for_each_readable_database(scan).unwrap(),
+        vec![0, 0]
+    );
+    assert!(state.store.for_each_database(scan).is_err());
 }

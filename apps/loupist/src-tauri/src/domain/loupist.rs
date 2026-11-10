@@ -6,7 +6,7 @@ use super::{require_bounded_text, require_identifier, required_option, DomainErr
 use crate::providers::catalog::valid_model_profile_id;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct RootFilesystemIdentity {
     pub device: u64,
     pub inode: u64,
@@ -14,6 +14,7 @@ pub struct RootFilesystemIdentity {
 
 /// How a Loupist talks. Presentation only: it never changes evidence requirements.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum LoupistTone {
     /// States uncertainty first, adds caveats and explains unfamiliar terms.
@@ -29,6 +30,7 @@ pub enum LoupistTone {
 /// Kept so a class Loupist's watchers start on for its class and its first
 /// morning message can name the connections it works best with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub enum LoupistTemplate {
     Portfolio,
@@ -214,7 +216,7 @@ pub fn workspace_folder_name(path: &str) -> &str {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct LoupistCapabilityBinding {
     pub loupist_id: String,
     pub entry_id: String,
@@ -312,7 +314,7 @@ pub enum DeletionPhase {
 /// retains this row after the target row is deleted so startup can distinguish
 /// rollback (target exists) from cleanup (target is committed absent).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct DeletionJournal {
     pub id: String,
     pub kind: DeletionKind,

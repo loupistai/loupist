@@ -186,6 +186,7 @@ export function useComposerInlineReferences({ prompt, onPromptChange, items, dra
       if (pending.focus) textarea.current.focus();
       textarea.current.setSelectionRange(pending.cursor, pending.cursor);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the draft's text or items change; `insert` and the textarea ref read the latest refs.
   }, [itemKey, prompt, draft?.prompt, draft?.inlineReferences]);
   useLayoutEffect(() => {
     const element = textarea.current;
@@ -197,6 +198,7 @@ export function useComposerInlineReferences({ prompt, onPromptChange, items, dra
     };
     element.addEventListener("beforeinput", beforeInput);
     return () => element.removeEventListener("beforeinput", beforeInput);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- one listener for the textarea's lifetime; `undo` reads refs.
   }, []);
   return { references, insert, edit, remove, keyDown, rememberSelection };
 }

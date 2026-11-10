@@ -2,7 +2,8 @@ import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { mainTab } from "../renderApp";
 import { App } from "../../App";
-import { PreviewBridge, prepareLearningFixture } from "../../preview/fixtures";
+import { PreviewBridge } from "../../preview/fixtures";
+import { prepareLearningFixture } from "../../preview/fixtures/learning";
 import { useLearningState } from "../../components/map/learningState";
 vi.mock("../../components/map/MapCanvas", () => ({ default: ({ selectedId, learningGlowIds }: { selectedId?: string; learningGlowIds?: Set<string> }) => <div data-testid="learning-canvas" data-selected={selectedId} data-glow={[...(learningGlowIds ?? [])].join(",")} /> }));
 async function fixture() {

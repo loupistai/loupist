@@ -2,9 +2,8 @@ import { useEffect, useState } from "react";
 import type { GrowthEvent, KnowledgeMap, KnowledgeMapEdge, KnowledgeMapNode } from "../../contracts/knowledge";
 import type { LoupistBridge } from "../../types";
 import { relevantEvents } from "../../chat/morningMessage";
-import { claimIdForEdge } from "./MapList";
-import { nodeCategory } from "./kinds";
-import { entityLabel } from "./labels";
+import { claimIdForEdge, entityLabel } from "../../knowledge/mapItems";
+import { nodeCategory } from "../../knowledge/mapKinds";
 
 const DAY_MS = 86_400_000;
 const MAX_EVENT_PAGES = 4;

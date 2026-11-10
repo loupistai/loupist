@@ -2,12 +2,14 @@ use super::*;
 use crate::knowledge::{journal as storage, JournalRecord};
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JournalListRequest {
     pub loupist_id: String,
     pub include_archived: Option<bool>,
 }
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JournalCreateRequest {
     pub loupist_id: String,
@@ -30,6 +32,7 @@ impl JournalCreateRequest {
     }
 }
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JournalUpdateRequest {
     pub loupist_id: String,
@@ -42,6 +45,7 @@ pub struct JournalUpdateRequest {
     pub thesis: Option<crate::knowledge::assets::JournalThesis>,
 }
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JournalArchiveRequest {
     pub loupist_id: String,

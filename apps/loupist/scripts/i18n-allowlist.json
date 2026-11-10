@@ -33,5 +33,75 @@
     "file": "src/components/settings/CustomProviderForm.tsx",
     "text": "qwen2.5:7b llama3.1:8b",
     "reason": "Example model IDs must match what a server reports; they are not translated."
+  },
+  {
+    "file": "src/chat/answerFeedbackCore.ts",
+    "text": "User-corrected answer",
+    "reason": "Developer eval export (`evals/agent/export-feedback.mjs`) runs under plain Node without the renderer's i18n; scenario titles stay English for the eval suite."
+  },
+  {
+    "file": "src/chat/answerFeedbackCore.ts",
+    "text": "An original request and saved correction are required.",
+    "reason": "Developer eval export error under plain Node; the app never calls the exporter."
+  },
+  {
+    "file": "src/chat/answerFeedbackCore.ts",
+    "text": "The answer must address the original request accurately and satisfy this user correction: …",
+    "reason": "English rubric criterion read by the eval judge, not interface copy."
+  },
+  {
+    "file": "src/chat/providerNames.ts",
+    "text": "Google Gemini",
+    "reason": "Provider product name, the same in every locale."
+  },
+  {
+    "file": "src/chat/providerNames.ts",
+    "text": "Upstage Solar",
+    "reason": "Provider product name, the same in every locale."
+  },
+  {
+    "file": "src/components/charts/analyticAdapter.ts",
+    "text": "Line Chart",
+    "reason": "flint-chart's chart type identifier; the library selects its renderer by this exact name."
+  },
+  {
+    "file": "src/components/charts/analyticAdapter.ts",
+    "text": "Area Chart",
+    "reason": "flint-chart's chart type identifier; the library selects its renderer by this exact name."
+  },
+  {
+    "file": "src/components/charts/analyticAdapter.ts",
+    "text": "Bar Chart",
+    "reason": "flint-chart's chart type identifier; the library selects its renderer by this exact name."
+  },
+  {
+    "file": "src/components/charts/analyticAdapter.ts",
+    "text": "Scatter Plot",
+    "reason": "flint-chart's chart type identifier; the library selects its renderer by this exact name."
+  },
+  {
+    "file": "src/components/sharing/sharingText.ts",
+    "text": "CC BY 4.0",
+    "reason": "Creative Commons license identifier, the same in every locale."
+  },
+  {
+    "file": "src/components/sharing/sharingText.ts",
+    "text": "CC BY-SA 4.0",
+    "reason": "Creative Commons license identifier, the same in every locale."
+  },
+  {
+    "file": "src/components/sharing/sharingText.ts",
+    "text": "CC BY-NC 4.0",
+    "reason": "Creative Commons license identifier, the same in every locale."
+  },
+  {
+    "file": "src/components/sharing/sharingText.ts",
+    "text": "CC BY-NC-SA 4.0",
+    "reason": "Creative Commons license identifier, the same in every locale."
+  },
+  {
+    "file": "src/lib/credentialFreeUrl.ts",
+    "text": "Only http and https addresses without a password can be opened.",
+    "reason": "Only the mock bridge throws it, standing in for the host's own English refusal; the app shows the host's message."
   }
 ]

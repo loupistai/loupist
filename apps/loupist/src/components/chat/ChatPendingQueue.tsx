@@ -136,6 +136,7 @@ function QueuedCard({
       returnFocus.current = false;
       actionsRef.current?.focus();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- places the caret when editing starts, not while typing.
   }, [editing]);
 
   const finishEdit = () => {

@@ -47,7 +47,7 @@ export function MapWhatsNew({ bridge, loupistId, map, lastSeenAtMs, nowMs, refre
     counts.conflicts ? t("map.newConflicts", { count: counts.conflicts, formattedCount: formatNumber(counts.conflicts) }) : "",
   ].filter(Boolean);
   const dayLabel = (group: { dayMs: number; daysAgo: number }) => group.daysAgo === 0 ? t("map.today") : group.daysAgo === 1 ? t("map.yesterday") : formatDate(group.dayMs, { year: undefined, month: "short", day: "numeric", weekday: "short" });
-  return <aside className="map-library map-whats-new" role="dialog" aria-labelledby="map-whats-new-title" onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } }}>
+  return <aside className="map-library map-whats-new" data-testid="map-library" role="dialog" aria-labelledby="map-whats-new-title" onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } }}>
     <header><h2 id="map-whats-new-title" ref={heading} tabIndex={-1}>{t("map.whatsNew")}</h2><Button variant="ghost" size="icon-sm" aria-label={t("map.closeWhatsNew")} onClick={onClose}><XIcon /></Button></header>
     <div className="map-whats-new-controls">
       <div className="map-segmented" role="group" aria-label={t("map.whatsNewSince")}>

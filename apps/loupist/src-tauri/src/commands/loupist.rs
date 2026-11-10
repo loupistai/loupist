@@ -12,7 +12,7 @@ use crate::{
     fs::loupist_root::BoundLoupistRoot,
     runs::maintenance::MaintenanceActivityKind,
     store::deletion,
-    store::{LoupistStore, StoreError},
+    store::StoreError,
 };
 
 use super::{

@@ -10,7 +10,7 @@ pub const MAX_PROMPT_BYTES: usize = 128 * 1024;
 
 /// A saved action snapshot, displayed even if the rest of the Chat stops.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct TaskReceipt {
     pub task_id: String,
     pub title: String,
@@ -28,6 +28,7 @@ pub struct TaskReceipt {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ScheduleAction {
     Created,
@@ -41,6 +42,7 @@ pub enum ScheduleAction {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(untagged)]
 pub enum ScheduleReceipt {
     Task(TaskReceipt),
@@ -48,7 +50,7 @@ pub enum ScheduleReceipt {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct QuestionReceipt {
     pub task_id: String,
     pub title: String,
@@ -104,7 +106,8 @@ impl TaskReceipt {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Schedule {
     Once {
         at_ms: i64,
@@ -126,7 +129,8 @@ pub enum Schedule {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TaskTarget {
     NewChat,
     /// Host creates and binds a Chat owned by this task on its first run.
@@ -138,6 +142,7 @@ pub enum TaskTarget {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
     Active,
@@ -156,6 +161,7 @@ impl TaskStatus {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum RunStatus {
     Running,
@@ -175,17 +181,62 @@ impl RunStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
+/// A kind another Loupist version wrote and this one does not know reads as
+/// `Unknown` with its stored name, so every rewrite of its task or run (a
+/// finish, a pause after a failure, a deleted target Chat) writes the name back
+/// unchanged. Such a task is listed but never run, and its definition and
+/// status are not changed here (`TaskKind::is_known`); it can still be deleted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(
+    test,
+    derive(ts_rs::TS),
+    ts(type = "\"custom\" | \"briefing\" | \"earnings\" | string")
+)]
 pub enum TaskKind {
     Custom,
     Briefing,
     /// "Results before and after": automatic, created by Rust, no model call;
     /// Pause/Resume and Run now only.
     Earnings,
+    Unknown(String),
+}
+
+impl TaskKind {
+    /// The kinds this build runs, by their stored names.
+    pub const KNOWN: [Self; 3] = [Self::Custom, Self::Briefing, Self::Earnings];
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Custom => "custom",
+            Self::Briefing => "briefing",
+            Self::Earnings => "earnings",
+            Self::Unknown(name) => name,
+        }
+    }
+
+    pub fn is_known(&self) -> bool {
+        !matches!(self, Self::Unknown(_))
+    }
+}
+
+impl Serialize for TaskKind {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for TaskKind {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(deserializer)?;
+        Ok(Self::KNOWN
+            .into_iter()
+            .find(|kind| kind.as_str() == name)
+            .unwrap_or(Self::Unknown(name)))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct SkippedTool {
     pub name: String,
     pub reason: String,
@@ -244,7 +295,7 @@ impl TaskDraft {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Task {
     pub kind: TaskKind,
     pub id: String,
@@ -273,6 +324,7 @@ pub struct Task {
     pub awaiting_confirmation: bool,
     /// The reply that proposed it; that reply cannot turn it on in the user's place.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub proposed_in_message_id: Option<String>,
 }
 
@@ -295,6 +347,7 @@ impl Task {
     pub fn validate(&self) -> StoreResult<()> {
         identifier(&self.id)?;
         identifier(&self.loupist_id)?;
+        valid_kind(&self.kind)?;
         if let Some(id) = &self.session_thread_id {
             identifier(id)?;
             if self.target != TaskTarget::Dedicated {
@@ -330,7 +383,8 @@ impl Task {
 /// the reader's language; the results task (`commands/earnings.rs`) writes them,
 /// so each kind is named for it.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(tag = "kind", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(tag = "kind")]
 pub enum RunSummaryItem {
     /// Expected values captured before a results date.
     #[serde(rename = "earnings_expected")]
@@ -375,7 +429,7 @@ impl RunSummaryItem {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Run {
     pub briefing_context: Option<crate::briefings::BriefingContext>,
     pub kind: TaskKind,
@@ -401,6 +455,7 @@ pub struct Run {
 
 /// Read-only list projection; the latest occurrence is not stored in Task JSON.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct TaskListItem {
     #[serde(flatten)]
     pub task: Task,
@@ -412,6 +467,7 @@ impl Run {
         for id in [&self.id, &self.task_id, &self.loupist_id, &self.run_id] {
             identifier(id)?;
         }
+        valid_kind(&self.kind)?;
         if let Some(thread_id) = &self.thread_id {
             identifier(thread_id)?;
         }
@@ -457,6 +513,21 @@ impl Run {
 pub struct Claim {
     pub task: Task,
     pub run: Run,
+}
+
+/// An unknown kind is still a short stored name, never free text.
+fn valid_kind(kind: &TaskKind) -> StoreResult<()> {
+    if let TaskKind::Unknown(name) = kind {
+        if name.is_empty()
+            || name.len() > 64
+            || !name
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+        {
+            return Err(invalid("scheduled task kind is invalid"));
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn identifier(value: &str) -> StoreResult<()> {

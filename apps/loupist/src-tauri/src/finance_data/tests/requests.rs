@@ -32,7 +32,7 @@ fn canonical_decimal_preserves_exact_values_and_rejects_non_decimals() {
 #[test]
 fn world_bank_small_observations_reach_pinned_data_and_chart_without_loss() {
     use crate::chat::chart::{dataset_from_dataset_selection, ChartFromDatasetInput};
-    use crate::store::{LoupistStore, SqliteStore};
+    use crate::store::SqliteStore;
 
     let query = ValidatedMacroDataQuery {
         economy: "XQ".into(),

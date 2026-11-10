@@ -21,6 +21,7 @@
     "check:rust": "sh ./scripts/check.sh rust",
     "check:web": "sh ./scripts/check.sh web",
     "check:unused": "knip --config knip.jsonc",
+    "lint:hooks": "eslint --max-warnings=0 src",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "sh ./scripts/verify.sh"
@@ -67,7 +68,10 @@
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@typescript-eslint/parser": "8.72.0",
     "@vitejs/plugin-react": "^5.0.2",
+    "eslint": "10.13.0",
+    "eslint-plugin-react-hooks": "7.1.1",
     "jsdom": "^26.1.0",
     "knip": "6.44.1",
     "typescript": "~5.8.3",

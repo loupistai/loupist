@@ -89,7 +89,7 @@ it('shows the answer chip once World processing delivers the saved Source after 
   expect(await screen.findByRole('button', { name: /Show 1 new on the map/ })).toBeVisible();
  } finally { vi.useRealTimers(); }
 });
-const streamingRead = (entityIds: string[]): ChatMessage => ({ id: 'live', role: 'assistant', content: '', created_at: '2026-10-28', status: 'streaming', progress: { startedAtMs: 1, items: [{ id: 'read', kind: 'tool', category: 'memory', operation: 'read', action: 'Read the map', status: 'running', entityIds }] } });
+const streamingRead = (entityIds: string[]): ChatMessage => ({ id: 'live', role: 'assistant', content: '', created_at: '2026-10-28', status: 'streaming', progress: { startedAtMs: 1, items: [{ id: 'read', kind: 'tool', category: 'memory', operation: 'read', action: 'Read the map', status: 'running', entityIds, target: null, href: null, startedAtMs: 0, finishedAtMs: null }], finishedAtMs: null } });
 function MapOnly() {
  const state = useChatMap();
  return state?.active ? <ChatMiniMap onOpenFull={vi.fn()} /> : <button type="button" onClick={() => state?.select()}>Show map</button>;

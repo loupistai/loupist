@@ -16,49 +16,50 @@ const NATIVE_SEARCH_TIMEOUT: Duration = Duration::from_secs(39);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum SearchProviderId {
-    /// ChatGPT sign-in or an OpenAI API key: the Responses API's hosted search.
-    Openai,
-    /// The development-only Codex client.
-    OpenaiCodex,
-    Anthropic,
-    Xai,
+    /// A Chat provider's own hosted search: a provider with `native_search` in
+    /// the provider manifest (the ChatGPT/OpenAI slot, the development-only
+    /// Codex client, Anthropic and xAI). Its adapter is in `agent/native-search/`.
+    Native(NativeSearchProvider),
     ExaPublic,
+}
+
+/// A manifest provider with native search; only [`SearchProviderId::parse`]
+/// makes one.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub struct NativeSearchProvider {
+    id: &'static str,
+    /// Automatic routing tries it before keyless Exa (`native_search: automatic`).
+    automatic: bool,
 }
 
 impl SearchProviderId {
     pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "openai" => Some(Self::Openai),
-            "openai-codex" => Some(Self::OpenaiCodex),
-            "anthropic" => Some(Self::Anthropic),
-            "xai" => Some(Self::Xai),
-            "exa_public" => Some(Self::ExaPublic),
-            _ => None,
+        if value == "exa_public" {
+            return Some(Self::ExaPublic);
         }
+        let spec = crate::providers::manifest::spec(value)?;
+        Some(Self::Native(NativeSearchProvider {
+            id: spec.id.as_str(),
+            automatic: spec.native_search? == crate::providers::manifest::NativeSearch::Automatic,
+        }))
     }
 
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Openai => "openai",
-            Self::OpenaiCodex => "openai-codex",
-            Self::Anthropic => "anthropic",
-            Self::Xai => "xai",
+            Self::Native(provider) => provider.id,
             Self::ExaPublic => "exa_public",
         }
     }
 
     pub fn kind(self) -> &'static str {
         match self {
-            Self::Openai | Self::OpenaiCodex | Self::Anthropic | Self::Xai => "model_native",
+            Self::Native(_) => "model_native",
             Self::ExaPublic => "keyless",
         }
     }
 
     pub fn is_native(&self) -> bool {
-        matches!(
-            self,
-            Self::Openai | Self::OpenaiCodex | Self::Anthropic | Self::Xai
-        )
+        matches!(self, Self::Native(_))
     }
 
     pub fn timeout(self) -> Duration {
@@ -195,18 +196,9 @@ pub fn resolve_search_candidates(
         WebSearchPolicy::ExaOnly => Ok(vec![SearchProviderId::ExaPublic]),
         WebSearchPolicy::Automatic => {
             let mut candidates = Vec::new();
-            if let Some(provider) =
-                chat_provider
-                    .and_then(SearchProviderId::parse)
-                    .filter(|provider| {
-                        matches!(
-                            provider,
-                            SearchProviderId::Openai
-                                | SearchProviderId::OpenaiCodex
-                                | SearchProviderId::Anthropic
-                        )
-                    })
-            {
+            if let Some(provider) = chat_provider.and_then(SearchProviderId::parse).filter(
+                |provider| matches!(provider, SearchProviderId::Native(native) if native.automatic),
+            ) {
                 candidates.push(provider);
             }
             candidates.push(SearchProviderId::ExaPublic);
@@ -463,6 +455,12 @@ mod tests {
         }
     }
 
+    fn native(provider: &str) -> SearchProviderId {
+        let parsed = SearchProviderId::parse(provider).unwrap();
+        assert!(parsed.is_native());
+        parsed
+    }
+
     fn query() -> WebSearchQuery {
         WebSearchQuery {
             query: "latest public report".into(),
@@ -491,15 +489,15 @@ mod tests {
         // Both ways to connect OpenAI (ChatGPT sign-in and an API key) search natively.
         assert_eq!(
             resolve_search_candidates(WebSearchPolicy::Automatic, Some("openai")).unwrap(),
-            vec![SearchProviderId::Openai, SearchProviderId::ExaPublic]
+            vec![native("openai"), SearchProviderId::ExaPublic]
         );
         assert_eq!(
             resolve_search_candidates(WebSearchPolicy::ModelOnly, Some("openai")).unwrap(),
-            vec![SearchProviderId::Openai]
+            vec![native("openai")]
         );
         assert_eq!(
             resolve_search_candidates(WebSearchPolicy::Automatic, Some("openai-codex")).unwrap(),
-            vec![SearchProviderId::OpenaiCodex, SearchProviderId::ExaPublic]
+            vec![native("openai-codex"), SearchProviderId::ExaPublic]
         );
         assert_eq!(
             resolve_search_candidates(WebSearchPolicy::Automatic, Some("google")).unwrap(),
@@ -508,8 +506,22 @@ mod tests {
         assert!(resolve_search_candidates(WebSearchPolicy::ModelOnly, Some("google")).is_err());
         assert_eq!(
             resolve_search_candidates(WebSearchPolicy::ModelOnly, Some("xai")).unwrap(),
-            vec![SearchProviderId::Xai]
+            vec![native("xai")]
         );
+        // xAI's search runs only when the user chose model-only routing.
+        assert_eq!(
+            resolve_search_candidates(WebSearchPolicy::Automatic, Some("xai")).unwrap(),
+            vec![SearchProviderId::ExaPublic]
+        );
+        assert_eq!(
+            resolve_search_candidates(WebSearchPolicy::Automatic, Some("anthropic")).unwrap(),
+            vec![native("anthropic"), SearchProviderId::ExaPublic]
+        );
+        assert_eq!(
+            SearchProviderId::parse("exa_public"),
+            Some(SearchProviderId::ExaPublic)
+        );
+        assert_eq!(SearchProviderId::parse("custom-local"), None);
         assert_eq!(
             resolve_search_candidates(WebSearchPolicy::ExaOnly, Some("anthropic")).unwrap(),
             vec![SearchProviderId::ExaPublic]
@@ -536,7 +548,7 @@ mod tests {
         assert_eq!(output.returned_count, 0);
         assert_eq!(
             backend.calls.lock().unwrap().as_slice(),
-            &[SearchProviderId::Anthropic]
+            &[native("anthropic")]
         );
     }
 
@@ -578,7 +590,7 @@ mod tests {
                 .any(|warning| warning == "provider_fallback"));
             let calls_made = backend.calls.lock().unwrap();
             assert_eq!(calls_made.len(), calls);
-            assert_eq!(calls_made[0], SearchProviderId::Openai);
+            assert_eq!(calls_made[0], native("openai"));
             assert_eq!(calls_made.last(), Some(&SearchProviderId::ExaPublic));
         }
     }

@@ -16,6 +16,7 @@ pub(crate) const MAX_WORKSPACE_PREVIEW_BYTES: usize = 256 * 1024;
 const MAX_DIRECTORY_ENTRIES: usize = 1_000;
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct WorkspaceEntry {
     pub path: String,
     pub name: String,
@@ -24,6 +25,7 @@ pub struct WorkspaceEntry {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct WorkspaceDirectory {
     pub path: String,
     pub entries: Vec<WorkspaceEntry>,
@@ -31,11 +33,13 @@ pub struct WorkspaceDirectory {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct WorkspaceFile {
     pub path: String,
     pub size_bytes: u64,
     pub content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub image_data_url: Option<String>,
     pub content_sha256: Option<String>,
     pub media_type: String,

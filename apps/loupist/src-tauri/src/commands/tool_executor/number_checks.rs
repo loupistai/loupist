@@ -261,6 +261,10 @@ fn calc_detail(payload: &Value, registry: &RunResultRegistry) -> NumberCheckCalc
         Some([count("row_values")? as u32, count("column_values")? as u32])
     });
     bounded_calc(NumberCheckCalc {
+        operation: payload
+            .get("operation")
+            .cloned()
+            .and_then(|operation| serde_json::from_value(operation).ok()),
         title: payload
             .get("title")
             .and_then(Value::as_str)

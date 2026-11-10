@@ -146,6 +146,7 @@ fn pending() -> &'static Mutex<Option<GithubLocation>> {
 
 /// What the renderer hears about an arriving link.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub(crate) enum DeepLinkEvent {
     Ok {

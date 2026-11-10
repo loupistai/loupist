@@ -1,9 +1,7 @@
-import type { InboxItem, InboxRequest, InboxPage, ScheduledRun, ScheduledTask } from "../contracts/scheduled";
+import type { InboxItem, InboxRequest, InboxPage, ScheduledRun, ScheduledTask, ScheduledTaskListItem } from "../contracts/scheduled";
 import { MockWorldSchema } from "../bridge/mock/worldSchema";
 import { MockLoupistBridge } from "../bridge/mockBridge";
-import { mockAssetId } from "../bridge/mock/assets";
 import { previewLearned, previewPages } from "./pages";
-import { MIN_VISIT_MS, recordVisit } from "../app/loupistVisit";
 import type { ChatMessage, ChatSendRequest, ChatStreamEvent, GraphEdge, GraphNode, KnowledgeCatalog, KnowledgeLensReadRequest, LearnedDigest, LensKind, PageSummary, PageView, StreamObserver, WorldGraphQuery } from "../types";
 
 export const previewKo = () => typeof document !== "undefined" && document.documentElement.lang.startsWith("ko");
@@ -14,8 +12,8 @@ const LONG_TITLE = "Hanul Precision — 2026 third-quarter operating review: cap
 const METHOD_TITLE = "Separate durable margins from temporary capacity costs — a research method for Hanul Precision and its overseas suppliers";
 const TASK_TITLE = "Morning review · Hanul Precision filings";
 const KOREAN_TASK_TITLE = "아침 검토 · 한울정밀 공시";
-const revision = { revisionId: "preview-revision", revisionDigest: "a".repeat(64), readOnly: false, indexingState: "ready" as const };
-const sourceTitles = [LONG_TITLE, "Hanul Precision 2026 third-quarter results presentation", "Morrow Components · supplier capacity survey", "Bluehaven Logistics — freight and inventory update", "Eunbit Materials: new plant utilization and orders", "Cedar Robotics · customer demand outlook"];
+export const revision = { revisionId: "preview-revision", revisionDigest: "a".repeat(64), readOnly: false, indexingState: "snapshot_only" as const };
+export const sourceTitles = [LONG_TITLE, "Hanul Precision 2026 third-quarter results presentation", "Morrow Components · supplier capacity survey", "Bluehaven Logistics — freight and inventory update", "Eunbit Materials: new plant utilization and orders", "Cedar Robotics · customer demand outlook"];
 const previewCatalog: KnowledgeCatalog = {
   loupistId: "loupist-quality",
   worlds: [{ ...revision, recordId: "preview-world", kind: "world", title: "Industrial supply chain", objects: [] }],
@@ -25,18 +23,20 @@ const previewCatalog: KnowledgeCatalog = {
     { ...revision, recordId: "preview-subject", kind: "lens", lensKind: "subject", title: "Hanul Precision", summary: "A precision-parts maker adding capacity while margins thin.", updatedAtMs: FIXTURE_TIME - 3_600_000, learned: true, objects: [] },
     { ...revision, recordId: "preview-idea", kind: "lens", lensKind: "idea", title: "Margins recover once utilization passes 80%", summary: "An unverified link: fixed costs dilute as the new line fills.", updatedAtMs: FIXTURE_TIME - 3_000_000, learned: true, objects: [] },
   ],
-  sources: [{ ...revision, recordId: "preview-sources", kind: "source", title: "Company filings and field notes", objects: sourceTitles.map((title, i) => ({ id: `preview-source-${i}`, title, summary: i === 0 ? "Revenue ₩184.2bn, operating margin 14.8%; new capacity enters qualification." : "Fictional research material for layout review.", originLabel: i % 2 ? "Hanul Research" : "Company investor relations", acquiredAt: { precision: "instant", value: `2026-10-${28 - i}T00:00:00Z` }, publicationTime: { precision: "date", value: `2026-10-${27 - i}` }, processing: { status: i === 1 ? "running" : "succeeded" } })) }],
+  sources: [{ ...revision, recordId: "preview-sources", kind: "source", title: "Company filings and field notes", objects: sourceTitles.map((title, i) => ({ id: `preview-source-${i}`, title, summary: i === 0 ? "Revenue ₩184.2bn, operating margin 14.8%; new capacity enters qualification." : "Fictional research material for layout review.", originLabel: i % 2 ? "Hanul Research" : "Company investor relations", acquiredAt: { precision: "instant", value: `2026-10-${28 - i}T00:00:00Z` }, publicationTime: { precision: "date", value: `2026-10-${27 - i}` }, processing: { jobId: null, status: i === 1 ? "running" : "succeeded", error: null } })) }],
 };
-const companies = ["Hanul Precision", "Morrow Components", "Bluehaven Logistics", "Cedar Robotics", "Eunbit Materials", "Northstar Foundry", "Orchard Sensors", "Dawn Circuits"];
+export const companies = ["Hanul Precision", "Morrow Components", "Bluehaven Logistics", "Cedar Robotics", "Eunbit Materials", "Northstar Foundry", "Orchard Sensors", "Dawn Circuits"];
 const concepts = ["Operating margin", "Capacity utilization", "Customer concentration", "Inventory days", "Cash conversion", "Export demand", "New production line", "Freight costs", "Order backlog", "Pricing power", "Working capital", "Automation", "Supplier qualification", "Energy costs", "Return on capital", "Quality yield"];
-const previewNodes: GraphNode[] = [...companies, ...concepts].map((name, i) => ({ id: `preview-node-${i}`, name, aliases: [], description: `${name} in the fictional industrial supply chain.`, kind: i < companies.length ? "Organization" : "Entity", sourceRole: i < companies.length ? "organization" : "concept", properties: {} }));
-const previewEdges: GraphEdge[] = Array.from({ length: 32 }, (_, i) => {
+export const previewNodes: GraphNode[] = [...companies, ...concepts].map((name, i) => ({ id: `preview-node-${i}`, name, aliases: [], description: `${name} in the fictional industrial supply chain.`, kind: i < companies.length ? "Organization" : "Entity", sourceRole: i < companies.length ? "organization" : "concept", properties: {} }));
+export const previewEdges: GraphEdge[] = Array.from({ length: 32 }, (_, i) => {
   const source = previewNodes[i % 24];
   const target = previewNodes[i < 24 ? (i + 1) % 24 : 8 + i % 16];
   const relation = i % 2 ? "depends_on" : "influences";
   const endpoints = [{ nodeId: source.id, role: "subject" }, { nodeId: target.id, role: "object" }];
-  return { id: `preview-claim-${i}`, relation, endpoints, status: "active", claim: { id: `preview-claim-${i}`, proposition: `${source.name} ${relation.replaceAll("_", " ")} ${target.name.toLowerCase()}.`, attribution: "Fictional Q3 operating review", relation, endpoints, qualifiers: [], evidence: [{ spanId: "preview-span", role: "supports", attribution: "Company report" }], status: "active", publicationTime: { precision: "date", value: "2026-10-27" } } };
+  return { id: `preview-claim-${i}`, relation, endpoints, status: "active", claim: { id: `preview-claim-${i}`, proposition: `${source.name} ${relation.replaceAll("_", " ")} ${target.name.toLowerCase()}.`, attribution: "Fictional Q3 operating review", relation, endpoints, qualifiers: [], evidence: [{ spanId: "preview-span", role: "supports", attribution: "Company report" }], status: "active", recordedAtMs: null, publicationTime: { precision: "date", value: "2026-10-27" }, effectiveTime: null, validAt: null, invalidAt: null, expiredAt: null } };
 });
+/** The paging and scan fields of a one-page World read. */
+export const previewWorldPage = { nextCursor: null, appliedCursor: null, originLabel: "", sourceTargets: {}, scan: { strategy: "preview", nodesScanned: 0, claimsScanned: 0 } };
 const evidenceId = `ev_${"a".repeat(32)}`;
 const answerMessages: ChatMessage[] = [
   { id: "preview-user", role: "user", status: "complete", created_at: "2026-10-28T00:00:00Z", content: `Review ${LONG_TITLE}. What explains the margin decline?` },
@@ -49,11 +49,11 @@ const previewInboxItems: InboxItem[] = [
       { kind: "claim_disputed", subjectId: null, summary: "Capacity timing differs between two reports" },
       { kind: "source_retained", subjectId: null, summary: "Q3 operating review" },
     ] },
-    ahead: [{ journalId: "preview-journal-1", title: "Inventory days below 50", byDate: "2026-11-04" }] }, runId: "preview-briefing-1", taskId: "preview-briefing", kind: "briefing", title: "Briefings", status: "succeeded", summary: "October 28: Hanul Precision reported higher qualification costs and a lower operating margin. The new capacity figures conflict with the saved utilization rule.", startedAtMs: FIXTURE_TIME, finishedAtMs: FIXTURE_TIME + 12000, readAtMs: null, threadId: "preview-chat", messageId: "preview-answer", skippedTools: [] },
-  { runId: "preview-custom-1", taskId: "preview-task-0", kind: "custom", title: TASK_TITLE, status: "succeeded", summary: "October 27: Supplier delivery times fell by two days. The scheduled run used retained Sources; one requested check was unavailable.", startedAtMs: FIXTURE_TIME - 86400000, finishedAtMs: FIXTURE_TIME - 86390000, readAtMs: null, threadId: "preview-chat", messageId: "preview-answer", skippedTools: [] },
-  { runId: "preview-briefing-2", taskId: "preview-briefing", kind: "briefing", title: "Briefings", status: "failed", error: "The model provider could not be reached. Please try again.", summary: "", startedAtMs: FIXTURE_TIME - 2*86400000, finishedAtMs: FIXTURE_TIME - 2*86400000 + 5000, readAtMs: FIXTURE_TIME - 86400000, threadId: "preview-chat", messageId: null, skippedTools: [] },
-  { runId: "preview-briefing-3", taskId: "preview-briefing", kind: "briefing", title: "Briefings", status: "succeeded", summary: "October 25: No material changes appeared in the available company Sources.", startedAtMs: FIXTURE_TIME - 3*86400000, finishedAtMs: FIXTURE_TIME - 3*86400000 + 12000, readAtMs: FIXTURE_TIME - 2*86400000, threadId: "preview-chat", messageId: "preview-answer", skippedTools: [] },
-  { runId: "preview-custom-2", taskId: "preview-task-1", kind: "custom", title: "Weekly supplier capacity comparison", status: "succeeded", summary: "October 24: Morrow Components disclosed an additional production shift; the announcement did not specify the added capacity.", startedAtMs: FIXTURE_TIME - 4*86400000, finishedAtMs: FIXTURE_TIME - 4*86400000 + 12000, readAtMs: FIXTURE_TIME - 3*86400000, threadId: "preview-chat", messageId: "preview-answer", skippedTools: [] },
+    ahead: [{ journalId: "preview-journal-1", title: "Inventory days below 50", byDate: "2026-11-04" }], assets: [] }, runId: "preview-briefing-1", taskId: "preview-briefing", kind: "briefing", title: "Briefings", status: "succeeded", summary: "October 28: Hanul Precision reported higher qualification costs and a lower operating margin. The new capacity figures conflict with the saved utilization rule.", startedAtMs: FIXTURE_TIME, finishedAtMs: FIXTURE_TIME + 12000, readAtMs: null, threadId: "preview-chat", messageId: "preview-answer", skippedTools: [], error: null, summaryItems: [] },
+  { runId: "preview-custom-1", taskId: "preview-task-0", kind: "custom", title: TASK_TITLE, status: "succeeded", summary: "October 27: Supplier delivery times fell by two days. The scheduled run used retained Sources; one requested check was unavailable.", startedAtMs: FIXTURE_TIME - 86400000, finishedAtMs: FIXTURE_TIME - 86390000, readAtMs: null, threadId: "preview-chat", messageId: "preview-answer", skippedTools: [], briefingContext: null, error: null, summaryItems: [] },
+  { runId: "preview-briefing-2", taskId: "preview-briefing", kind: "briefing", title: "Briefings", status: "failed", error: "The model provider could not be reached. Please try again.", summary: "", startedAtMs: FIXTURE_TIME - 2*86400000, finishedAtMs: FIXTURE_TIME - 2*86400000 + 5000, readAtMs: FIXTURE_TIME - 86400000, threadId: "preview-chat", messageId: null, skippedTools: [], briefingContext: null, summaryItems: [] },
+  { runId: "preview-briefing-3", taskId: "preview-briefing", kind: "briefing", title: "Briefings", status: "succeeded", summary: "October 25: No material changes appeared in the available company Sources.", startedAtMs: FIXTURE_TIME - 3*86400000, finishedAtMs: FIXTURE_TIME - 3*86400000 + 12000, readAtMs: FIXTURE_TIME - 2*86400000, threadId: "preview-chat", messageId: "preview-answer", skippedTools: [], briefingContext: null, error: null, summaryItems: [] },
+  { runId: "preview-custom-2", taskId: "preview-task-1", kind: "custom", title: "Weekly supplier capacity comparison", status: "succeeded", summary: "October 24: Morrow Components disclosed an additional production shift; the announcement did not specify the added capacity.", startedAtMs: FIXTURE_TIME - 4*86400000, finishedAtMs: FIXTURE_TIME - 4*86400000 + 12000, readAtMs: FIXTURE_TIME - 3*86400000, threadId: "preview-chat", messageId: "preview-answer", skippedTools: [], briefingContext: null, error: null, summaryItems: [] },
 ];
 
 const previewLearningReviews: import("../contracts/knowledge").LearningReview[] = [
@@ -204,15 +204,18 @@ export class PreviewBridge extends MockLoupistBridge {
       skipped_tools: item.skippedTools,
     }));
   }
-  override async scheduledTasksList({ loupist_id }: { loupist_id: string }): Promise<ScheduledTask[]> {
+  override async scheduledTasksList({ loupist_id }: { loupist_id: string }): Promise<ScheduledTaskListItem[]> {
     if (this.scheduleTasks === "none") return [];
     const runs = this.previewRuns();
     const weekly = { kind: "weekly" as const, days: [1, 2, 3, 4, 5], hour: 8, minute: 0, timezone: "Asia/Seoul" };
-    const task = (id: string, kind: "briefing" | "custom", title: string, schedule: ScheduledTask["schedule"], status: ScheduledTask["status"]): ScheduledTask => ({
+    const task = (id: string, kind: "briefing" | "custom", title: string, schedule: ScheduledTask["schedule"], status: ScheduledTask["status"]): ScheduledTaskListItem => ({
       kind, id, loupist_id, revision: 1, title, prompt: title, schedule, target: kind === "briefing" ? { kind: "dedicated_chat" } : { kind: "new_chat" },
       model_profile_id: "preview", thinking_level: "medium", run_options: {}, use_memory: true, update_memory: kind === "briefing", status,
       next_run_at_ms: status === "active" ? nextSeoulRun(schedule) : null, last_run_at_ms: runs.find(run => run.task_id === id)?.started_at_ms ?? null,
       created_at_ms: FIXTURE_TIME - 30 * 86_400_000, updated_at_ms: FIXTURE_TIME, latest_run: runs.find(run => run.task_id === id) ?? null,
+      last_error: null,
+      session_thread_id: null,
+      awaiting_confirmation: false,
     });
     return [
       task("preview-briefing", "briefing", "Briefings", weekly, "active"),
@@ -250,7 +253,7 @@ export class PreviewBridge extends MockLoupistBridge {
     return localizeCatalog(structuredClone({ ...previewCatalog, loupistId, lenses: [...previewCatalog.lenses, ...principles] }));
   }
   override async knowledgeWorldQuery(request: WorldGraphQuery) {
-    return structuredClone({ recordId: request.recordId, ...revision, nodes: previewNodes, edges: previewEdges, coverage: "sealed_snapshot" as const, truncated: false });
+    return structuredClone({ recordId: request.recordId, ...revision, nodes: previewNodes, edges: previewEdges, coverage: "sealed_snapshot" as const, truncated: false, ...previewWorldPage });
   }
   private pageStore?: Map<string, PageView>;
   private pageLog: Array<{ recordId: string; before?: import("../types").SectionView; entry: import("../types").LensLogEntryView }> = [];
@@ -305,7 +308,7 @@ export class PreviewBridge extends MockLoupistBridge {
     const draft = previewKo()
       ? "한울정밀의 매출은 **11% 증가**했지만 영업이익률은 낮아졌어요.\n\n새 생산라인의 가동률과 재고일수를 함께 보면"
       : "Hanul Precision’s revenue **grew 11%**, while operating margin declined.\n\nThe new line’s utilization and the change in inventory days suggest";
-    observer({ type: "progress", run_id, sequence: 1, progress: { startedAtMs: Date.now() - 2400, items: [{ id: "preview-read", kind: "tool", toolName: "world_read", category: "memory", operation: "read", action: "Read saved notes", status: "succeeded" }] } });
+    observer({ type: "progress", run_id, sequence: 1, progress: { startedAtMs: Date.now() - 2400, items: [{ id: "preview-read", kind: "tool", toolName: "world_read", category: "memory", operation: "read", action: "Read saved notes", status: "succeeded", target: null, href: null, startedAtMs: 0, finishedAtMs: null }], finishedAtMs: null } });
     observer({ type: "phase", run_id, phase: "writing" });
     observer({ type: "progress_patch", run_id, patch: { sequence: 2, upsertItems: [{ id: "preview-draft", kind: "commentary", text: draft }] } });
     this.stopStream = () => { observer({ type: "aborted", run_id }); };
@@ -339,252 +342,4 @@ export function freezePreviewClock() {
     get(target, key, receiver) { return key === "now" ? now : Reflect.get(target, key, receiver); },
   });
   return () => { globalThis.Date = NativeDate; };
-}
-
-function customConnectionFixture(id = "preview-custom-ready"): import("../contracts/customConnections").CustomConnection {
-  return { id, kind: "custom", name: "Hanul investor research", transport: { kind: "http", url: "https://research.example/mcp" }, command_line: null, dont_save_to_memory: true, pending: false, enabled: true, needs_review: false, auth_state: "not_required", env_keys: [], header_names: [], last_error: null,
-    tools: [
-      { name: "read_company_filings", server_description: "Read public company filings and quarterly operating results. Returns dated source links and reporting periods.", input_schema: { type: "object" }, annotations: { readOnlyHint: true }, definition_hash: "a".repeat(64), definition_changed: false, eligibility: "read_only", approval: "always" },
-      { name: "save_research_note", server_description: "Save a research note to the server’s shared workspace.", input_schema: { type: "object" }, annotations: null, definition_hash: "b".repeat(64), definition_changed: false, eligibility: "not_read_only", approval: null },
-      { name: "place_payment", server_description: "Send a payment to the selected account.", input_schema: { type: "object" }, annotations: { readOnlyHint: true }, definition_hash: "c".repeat(64), definition_changed: false, eligibility: "financial_action", approval: null },
-    ] };
-}
-
-export async function prepareCustomConnectionFixture(bridge: PreviewBridge, scenario: string) {
-  await prepareFixture(bridge, scenario === "chat-needs-approval" ? "answer" : undefined);
-  const ready = customConnectionFixture();
-  const changed = { ...customConnectionFixture("preview-custom-changed"), name: "Morrow research tools", needs_review: true };
-  changed.tools[0] = { ...changed.tools[0], approval: null, definition_changed: true, definition_hash: "d".repeat(64) };
-  const signIn = { ...customConnectionFixture("preview-custom-signin"), name: "Private company research", auth_state: "sign_in_needed" as const, tools: [] };
-  const records = scenario === "connections-custom-empty" ? [] : [ready, changed, signIn];
-  const copy = <T,>(value: T) => structuredClone(value);
-  bridge.customConnectionList = async () => copy(records);
-  bridge.customConnectionAddUrl = async request => {
-    const record = { ...customConnectionFixture("preview-custom-new"), name: request.name || "Company research server", transport: { kind: "http" as const, url: request.url }, pending: true, tools: [] };
-    records.push(record); return copy(record);
-  };
-  bridge.customConnectionConfirm = async ({ connection_id }) => {
-    const record = records.find(item => item.id === connection_id)!;
-    Object.assign(record, { pending: scenario === "connection-add-url-signin", needs_review: true, auth_state: scenario === "connection-add-url-signin" ? "sign_in_needed" : "not_required", tools: scenario === "connection-add-url-signin" ? [] : customConnectionFixture().tools.map(tool => ({ ...tool, approval: null })) });
-    return copy(record);
-  };
-  let cancelSignIn: (() => void) | undefined;
-  bridge.customConnectionSignIn = ({ connection_id }) => new Promise(resolve => {
-    const record = records.find(item => item.id === connection_id)!;
-    record.auth_state = "in_progress";
-    cancelSignIn = () => { record.auth_state = "sign_in_needed"; resolve(copy(record)); };
-  });
-  bridge.customConnectionSignInCancel = async () => { cancelSignIn?.(); };
-  bridge.customConnectionAddJson = async () => {
-    const remote = { ...customConnectionFixture("preview-import-remote"), name: "Company investor data", pending: true, tools: [], header_names: ["Authorization"] };
-    const local = { ...customConnectionFixture("preview-import-local"), name: "Local research archive", pending: true, transport: { kind: "stdio" as const, command: "npx", args: ["@example/research-archive@1.2.3", "--read-only"] }, command_line: "npx @example/research-archive@1.2.3 --read-only", env_keys: ["RESEARCH_API_KEY"], tools: [] };
-    records.push(remote, local); return copy([remote, local]);
-  };
-  bridge.customToolApprove = async request => {
-    const record = records.find(item => item.id === request.connection_id)!;
-    record.tools = record.tools.map(tool => tool.name === request.tool_name ? { ...tool, approval: request.choice, definition_changed: false } : tool);
-    record.needs_review = record.tools.some(tool => tool.eligibility === "read_only" && !tool.approval);
-    return copy(record);
-  };
-  bridge.customConnectionSetEnabled = async request => { const record = records.find(item => item.id === request.connection_id)!; record.enabled = request.enabled; return copy(record); };
-  bridge.customConnectionSetMemory = async request => { const record = records.find(item => item.id === request.connection_id)!; record.dont_save_to_memory = request.dont_save_to_memory; return copy(record); };
-  bridge.customConnectionRemove = async request => { const index = records.findIndex(item => item.id === request.connection_id); if (index >= 0) records.splice(index, 1); };
-  if (scenario === "chat-needs-approval") {
-    const select = bridge.loupistSelect.bind(bridge);
-    bridge.loupistSelect = async loupistId => { const workspace = await select(loupistId); const answer = workspace.threads[0].messages.find(item => item.id === "preview-answer"); if (answer) Object.assign(answer, { tool_refusals: [{ connection_id: changed.id, connection_name: changed.name, tool_name: changed.tools[0].name, reason: "needs_approval" }] }); return workspace; };
-  }
-}
-
-/** The answer set up FRED from Chat: its `connection_setup` step leaves a card whose state the card reads live. */
-export async function prepareConnectionSetupFixture(bridge: PreviewBridge, state: "needs_setup" | "ready") {
-  await prepareFixture(bridge, "answer");
-  if (state === "ready") {
-    await bridge.marketplaceCredentialSave({ entry_id: "fred.macro", secrets: { api_key: "preview-fred-key-0123" } });
-    await bridge.marketplaceCredentialVerify({ entry_id: "fred.macro" });
-    await bridge.loupistCapabilityEnable({ loupist_id: "loupist-quality", entry_id: "fred.macro" });
-  }
-  const select = bridge.loupistSelect.bind(bridge);
-  bridge.loupistSelect = async loupistId => {
-    const workspace = await select(loupistId);
-    const answer = workspace.threads[0].messages.find(item => item.id === "preview-answer");
-    if (answer) Object.assign(answer, { progress: { startedAtMs: FIXTURE_TIME - 8000, finishedAtMs: FIXTURE_TIME - 2000, items: [
-      { id: "preview-setup", kind: "tool", toolName: "connection_setup", category: "capability", operation: "generic", action: "Prepared a connection", running: "Preparing a connection", target: "fred.macro", source: { kind: "connector", name: "FRED" }, status: "succeeded", startedAtMs: FIXTURE_TIME - 8000, finishedAtMs: FIXTURE_TIME - 7000 },
-    ] } });
-    return workspace;
-  };
-}
-
-/** One coherent World/Lens history for the learning UI capture matrix. */
-export async function prepareLearningFixture(bridge: PreviewBridge, evidenceCount = 6) {
-  await prepareFixture(bridge);
-  const title = "Test whether capacity costs are temporary";
-  const refinedTitle = "Check cash conversion across a capacity ramp";
-  const at = Date.now() - 3600000;
-  const reviews: import("../contracts/knowledge").LearningReview[] = [
-    { reviewId: "learning-created", status: "created", lensRecordId: "map-lens-2", evidenceCount, createdAtMs: at, rationale: "Across three companies, low utilization and temporary qualification costs preceded margin recovery. Compare cash conversion before calling the pressure temporary." },
-    { reviewId: "learning-refined", status: "refined", lensRecordId: "map-lens-1", evidenceCount: 4, createdAtMs: at - 86400000, rationale: "Inventory rose faster than sales, so the method now checks working capital." },
-    { reviewId: "learning-deferred", status: "deferred", evidenceCount: 0, createdAtMs: at - 2 * 86400000, reason: "insufficient_turns" },
-    { reviewId: "learning-failed", status: "failed", evidenceCount: 0, createdAtMs: at - 3 * 86400000, reason: "not_sent" },
-  ];
-  bridge.learningReviewList = async ({ limit }) => structuredClone(reviews.slice(0, limit ?? 50));
-  const catalog = await bridge.knowledgeCatalog({ loupistId: "loupist-quality" });
-  catalog.lenses.push(...[title, refinedTitle].map((name, index) => ({ ...revision, recordId: `map-lens-${2 - index}`, title: name, lensKind: "method" as const, kind: "lens" as const, learned: true, updatedAtMs: at - index * 86400000, objects: [] })));
-  bridge.knowledgeCatalog = async ({ loupistId }) => structuredClone({ ...catalog, loupistId });
-  const baseMap = await bridge.knowledgeMap({ loupistId: "loupist-quality" });
-  baseMap.nodes = baseMap.nodes.filter(node => node.kind !== "lens_principle");
-  baseMap.counts.lens_principle = { shown: 0, total: 0, truncated: false };
-  const learned = baseMap.nodes.find(node => node.id === "map-lens-2")!;
-  learned.label = title; learned.learnedAtMs = at; learned.learnedRationale = reviews[0].rationale!;
-  const refined = baseMap.nodes.find(node => node.id === "map-lens-1")!;
-  refined.label = refinedTitle; refined.learnedAtMs = at - 86400000; refined.learnedRationale = reviews[1].rationale!;
-  const evidenceNodes = baseMap.nodes.filter(node => node.kind === "entity").slice(0, 6);
-  evidenceNodes.forEach((node, i) => { node.label = companies[i]; });
-  const statements = ["Operating margin fell during a new production line’s qualification.", "Utilization reached 68% as qualification costs began to decline.", "Inventory days fell as utilization recovered in the next quarter.", "Temporary ramp labor accounted for most of the margin decline.", "Cash conversion improved alongside higher utilization.", "Pricing remained stable while ramp costs and scrap declined."];
-  const claims = statements.slice(0, evidenceCount).map((proposition, i) => ({ ...previewEdges[i], id: `learning-claim-${i}`, endpoints: [{ nodeId: evidenceNodes[i].id, role: "subject" }], claim: { ...previewEdges[i].claim, id: `learning-claim-${i}`, proposition, endpoints: [{ nodeId: evidenceNodes[i].id, role: "subject" }], publicationTime: { precision: "date" as const, value: `2026-10-${20 + i}` } } }));
-  bridge.knowledgeWorldQuery = async request => structuredClone({ recordId: request.recordId, ...revision, revisionId: request.revisionId, nodes: evidenceNodes.map(node => ({ id: node.id, name: node.label, aliases: [], description: "", kind: "Organization", sourceRole: "organization", properties: {} })), edges: claims, coverage: "sealed_snapshot" as const, truncated: false });
-  bridge.knowledgeMap = async () => structuredClone(baseMap);
-  const originalRead = bridge.knowledgeLensRead.bind(bridge);
-  bridge.knowledgeLensRead = async request => ({ ...await originalRead(request), title: catalog.lenses.find(lens => lens.recordId === request.recordId)?.title ?? title, kind: request.recordId.startsWith("map-lens-") ? "method" : "perspective" });
-  const growth: import("../contracts/knowledge").GrowthEvent[] = [
-    { eventId: "learning-revision", loupistId: catalog.loupistId, recordId: learned.recordId!, subjectId: learned.recordId!, kind: "lens_revised", atMs: at, actor: "loupist", originChatId: null, originMessageId: null, summary: "Added cash confirmation", beforeSummary: "Compare utilization and margin across the ramp. Separate qualification costs from recurring expenses.", afterSummary: "Compare utilization, margins and inventory days. Confirm recovery with operating cash flow, and test whether pricing or product mix explains the change.", rationale: "Margin recovery alone did not establish that demand had turned into cash.", origin: { kind: "learning_review", reviewId: reviews[0].reviewId } },
-    { eventId: "learning-prior", loupistId: catalog.loupistId, recordId: learned.recordId!, subjectId: learned.recordId!, kind: "lens_revised", atMs: at - 86400000, actor: "loupist", originChatId: null, originMessageId: null, summary: "Separated ramp costs", beforeSummary: "Track reported margins.", afterSummary: "Compare utilization and margin across the ramp.", rationale: "Three companies reported temporary qualification costs." },
-    { eventId: "learning-original", loupistId: catalog.loupistId, recordId: learned.recordId!, subjectId: learned.recordId!, kind: "lens_created", atMs: at - 2 * 86400000, actor: "loupist", originChatId: null, originMessageId: null, summary: title, beforeSummary: null, afterSummary: "Track reported margins." },
-  ];
-  bridge.knowledgeGrowthEvents = async () => ({ events: structuredClone(growth), nextCursor: null });
-  return reviews[0];
-}
-
-
-export async function prepareJournalFixture(bridge: PreviewBridge) {
-  await prepareFixture(bridge);
-  const entries: import("../types").JournalRecord[] = [
-    { judgment: "I think Hanul’s gross margin will stay above 55% through Q1.", reasoning: "Capacity utilization is recovering while qualification costs are easing.", check: { claim: "Gross margin stays above 55%", metric: "Gross margin", direction: "above", threshold: 55, unit: "%", byDate: "2027-03-31", confidence: 70 } },
-    { judgment: "I expect inventory days to fall below 50 days.", reasoning: "The new orders should reduce the finished goods backlog.", check: { claim: "Inventory days fall below 50", metric: "Inventory days", direction: "below", threshold: 50, unit: " days", byDate: "2026-10-01" }, outcome: { observed: 54, observedAt: "2026-10-02", result: "did_not", note: "The quarterly filing reported 54 inventory days." } },
-    { judgment: "I think operating margin will exceed 16%.", reasoning: "Higher shipments could spread fixed costs across more units.", check: { claim: "Operating margin exceeds 16%", metric: "Operating margin", direction: "above", threshold: 16, unit: "%", byDate: "2026-10-01" }, outcome: { observed: 14.8, observedAt: "2026-10-02", result: "did_not", note: "Qualification costs continued during the quarter." } },
-  ].map((entry, index) => ({ ...entry, loupistId: "loupist-quality", journalId: `preview-journal-${index}`, researchId: "", originChatId: "preview-chat", entities: [], createdAtMs: Math.min(FIXTURE_TIME - (index + 1) * 86400000, Date.parse(entry.check.byDate) - 86400000), updatedAtMs: FIXTURE_TIME, archived: false, inputDigest: "preview", inputs: { sources: [], worlds: [], lenses: [], earlier: [] } })) as import("../types").JournalRecord[];
-  if (previewKo()) for (const [index, copy] of [
-    ["Hanul의 매출총이익률이 1분기까지 55% 위로 유지될 것 같아요.", "가동률이 회복되고 인증 비용은 줄고 있어요."],
-    ["재고일수가 50일 아래로 줄어들 것 같아요.", "새 주문이 완제품 재고를 줄일 것 같아요."],
-    ["영업이익률이 16%를 넘을 것 같아요.", "출하가 늘면 고정비가 더 많은 수량에 나뉘어요."],
-  ].entries()) {
-    entries[index].judgment = copy[0];
-    entries[index].reasoning = copy[1];
-    if (entries[index].outcome?.note) entries[index].outcome.note = index === 1 ? "분기 보고서의 재고일수는 54일이에요." : "분기 동안 인증 비용이 이어졌어요.";
-  }
-  bridge.journalList = async () => structuredClone(entries);
-  const read = bridge.knowledgeJournalRead.bind(bridge);
-  bridge.knowledgeJournalRead = async request => structuredClone(entries.find(entry => entry.journalId === request.journalId) ?? await read(request));
-}
-
-/**
- * The empty Chat's morning message. "morning": two days since the last visit with new names,
- * relationships, an unread briefing and two Journal checks; "first-day": a new Loupist's seed anchors;
- * "nothing-changed": a visit yesterday and nothing since.
- */
-export async function prepareMorningFixture(bridge: PreviewBridge, state: "morning" | "first-day" | "nothing-changed") {
-  await prepareFixture(bridge);
-  const ko = previewKo();
-  const hour = 3_600_000;
-  const lastSeenAtMs = state === "morning" ? FIXTURE_TIME - 2 * 86_400_000 : state === "nothing-changed" ? FIXTURE_TIME - 86_400_000 : undefined;
-  if (lastSeenAtMs !== undefined) recordVisit("loupist-quality", lastSeenAtMs - MIN_VISIT_MS, lastSeenAtMs);
-  const localNames: Record<string, string[]> = { "map-entity-00": ["한울정밀"], "map-entity-04": ["은빛소재"], "map-entity-29": ["영업이익률"] };
-  const map = bridge.knowledgeMap.bind(bridge);
-  bridge.knowledgeMap = async request => {
-    const result = await map(request);
-    for (const node of result.nodes) {
-      const index = Number(/^map-entity-(\d+)$/.exec(node.id)?.[1] ?? Number.NaN);
-      if (index < companies.length) { node.label = companies[index]!; node.localNames = localNames[node.id]; }
-      if (localNames[node.id] && index >= companies.length) node.localNames = localNames[node.id];
-    }
-    return result;
-  };
-  const event = (kind: import("../contracts/knowledge").GrowthEvent["kind"], subjectId: string | null, atMs: number, summary = ""): import("../contracts/knowledge").GrowthEvent =>
-    ({ eventId: `morning-${kind}-${subjectId ?? atMs}`, loupistId: "loupist-quality", atMs, kind, subjectId, recordId: "preview-world", originChatId: null, originMessageId: null, actor: "loupist", summary, beforeSummary: null, afterSummary: null });
-  const events = state === "morning" ? [
-    event("entity_added", "map-entity-00", FIXTURE_TIME - hour), event("claim_added", "map-claim-04", FIXTURE_TIME - 2 * hour),
-    event("entity_added", "map-entity-05", FIXTURE_TIME - 3 * hour), event("entity_added", "map-entity-29", FIXTURE_TIME - 4 * hour),
-    event("claim_added", "map-claim-28", FIXTURE_TIME - 5 * hour), ...["03", "04", "06", "07"].map((id, i) => event("entity_added", `map-entity-${id}`, FIXTURE_TIME - (6 + i) * hour)),
-    event("source_retained", null, FIXTURE_TIME - 10 * hour, ko ? "한울정밀 2026년 3분기 실적 설명자료" : sourceTitles[1]), event("schema_extended", null, FIXTURE_TIME - 11 * hour),
-  ] : state === "first-day" ? ["00", "01", "02", "04", "29"].map((id, i) => event("entity_added", `map-entity-${id}`, FIXTURE_TIME - 10 * 60_000 - i)) : [];
-  bridge.knowledgeGrowthEvents = async request => ({ events: events.filter(item => request.sinceMs == null || item.atMs >= request.sinceMs).sort((a, b) => a.atMs - b.atMs), nextCursor: null });
-  const watchlist = [{ symbol: "HNP", market: "KRX", displayName: ko ? "한울정밀" : "Hanul Precision", addedAtMs: FIXTURE_TIME - 30 * 86_400_000 }];
-  bridge.watchlistList = async () => structuredClone(watchlist);
-  if (state !== "morning") {
-    // A briefing already read before the last visit is not news.
-    const inbox = bridge.inboxList.bind(bridge);
-    bridge.inboxList = async request => {
-      const page = await inbox(request);
-      return { ...page, items: state === "first-day" ? [] : page.items.filter(item => item.runId === "preview-briefing-3") };
-    };
-    bridge.journalList = async () => [];
-  } else {
-    const checks: [string, string, string][] = ko
-      ? [["한울정밀의 재고일수가 50일 아래로 내려간다", "재고일수", "2026-10-26"], ["한울정밀의 매출총이익률이 55% 이상을 유지한다", "매출총이익률", "2026-11-14"]]
-      : [["Hanul’s inventory days fall below 50", "inventory days", "2026-10-26"], ["Hanul’s gross margin stays above 55%", "gross margin", "2026-11-14"]];
-    bridge.journalList = async () => checks.map(([claim, metric, byDate], index) => ({
-      journalId: `preview-morning-check-${index}`, researchId: "", loupistId: "loupist-quality", judgment: claim, reasoning: "", entities: [],
-      check: { claim, metric, direction: index ? "above" : "below", threshold: index ? 55 : 50, byDate }, outcome: null, originChatId: "preview-chat",
-      createdAtMs: FIXTURE_TIME - 30 * 86_400_000, updatedAtMs: FIXTURE_TIME - 30 * 86_400_000, archived: false, inputDigest: "preview",
-      inputs: { sources: [], worlds: [], lenses: [], earlier: [] },
-    })) as import("../types").JournalRecord[];
-  }
-  if (state === "first-day") {
-    const philosophy = ko ? "산업 공급망" : "industrial supply chains";
-    const loupists = bridge.loupistList.bind(bridge);
-    bridge.loupistList = async () => (await loupists()).map(loupist => loupist.id === "loupist-quality" ? { ...loupist, philosophy } : loupist);
-    const select = bridge.loupistSelect.bind(bridge);
-    bridge.loupistSelect = async loupistId => { const workspace = await select(loupistId); return loupistId === "loupist-quality" ? { ...workspace, loupist: { ...workspace.loupist, philosophy } } : workspace; };
-  }
-}
-
-/**
- * The morning message's event strip (W15.9e) on the fixture day (Wed Oct 28):
- * five events in the next two weeks, as Rust orders them, or nothing ahead.
- */
-export async function prepareUpcomingFixture(bridge: PreviewBridge, state: "events" | "none") {
-  await prepareMorningFixture(bridge, "morning");
-  if (state === "none") { bridge.assets.installUpcoming("loupist-quality", []); return; }
-  const ko = previewKo();
-  const asset = (symbol: string, market: string, name: string, entityId: string) => ({ assetId: mockAssetId(symbol, market), symbol, market, name, entityId });
-  const hanul = asset("HNP", "KRX", "Hanul Precision", "map-entity-00");
-  const eunbit = asset("EBM", "KRX", "Eunbit Materials", "map-entity-04");
-  const backlog = ko ? "모로우의 수주 잔고가 계속 늘어난다" : "Morrow’s order backlog keeps growing";
-  // The check in the strip is the Journal's own; the message does not repeat it as a bullet.
-  const journal = bridge.journalList.bind(bridge);
-  bridge.journalList = async request => [...await journal(request), {
-    journalId: "preview-upcoming-check", researchId: "", loupistId: "loupist-quality", judgment: backlog, reasoning: "", entities: [],
-    check: { claim: backlog, metric: ko ? "수주 잔고" : "order backlog", direction: "above", threshold: 0, byDate: "2026-11-03" }, outcome: null, originChatId: "preview-chat",
-    createdAtMs: FIXTURE_TIME - 20 * 86_400_000, updatedAtMs: FIXTURE_TIME - 20 * 86_400_000, archived: false, inputDigest: "preview",
-    inputs: { sources: [], worlds: [], lenses: [], earlier: [] },
-  } as import("../types").JournalRecord];
-  bridge.assets.installUpcoming("loupist-quality", [
-    { kind: "results", date: "2026-10-29", asset: asset("MRRW", "NASDAQ", "Morrow Components", "map-entity-01"), dateSource: "calendar", eventId: "ern_0123456789abcdef", period: "Q3 2026" },
-    { kind: "exDividend", date: "2026-10-30", asset: asset("BLHV", "NYSE", "Bluehaven Logistics", "map-entity-02") },
-    { kind: "results", date: "2026-11-02", asset: hanul, dateSource: "ir_notice", eventId: "ern_1123456789abcdef", period: "Q3 2026" },
-    { kind: "check", date: "2026-11-03", journalId: "preview-upcoming-check", claim: backlog },
-    { kind: "recordDate", date: "2026-11-09", asset: eunbit },
-  ]);
-}
-
-/** Paired attributed reports, shared by the inspector and briefing navigation previews. */
-export async function prepareConflictsFixture(bridge: PreviewBridge) {
-  await prepareFixture(bridge, "answer");
-  const map = await bridge.knowledgeMap({ loupistId: "loupist-quality" });
-  const nodes = structuredClone(previewNodes);
-  const endpoints = [{ nodeId: nodes[0].id, role: "subject" }, { nodeId: nodes[1].id, role: "object" }];
-  const edges = ["Hanul Precision expanded supplier capacity by 18% in the third quarter.", "Morrow Components reports unchanged capacity for Hanul Precision in the same quarter."].map((proposition, index): GraphEdge => ({
-    id: `conflict-${index}`, relation: "SUPPLIES", endpoints, status: "disputed",
-    claim: { id: `conflict-${index}`, relation: "SUPPLIES", endpoints, status: "disputed", proposition, attribution: sourceTitles[index], qualifiers: [], evidence: [{ spanId: `conflict-span-${index}`, role: "supports", attribution: sourceTitles[index] }], publicationTime: { precision: "date", value: `2026-10-${27 - index}` } },
-  }));
-  map.nodes = nodes.map(node => ({ id: node.id, label: node.name, kind: "entity", entityKind: node.kind, degree: 3, watched: node.id === nodes[0].id, held: false }));
-  map.edges = [...previewEdges.slice(2), ...edges].map(edge => ({ id: edge.id, kind: "claim", source: edge.endpoints[0].nodeId, target: edge.endpoints[1].nodeId, status: edge.status, relation: edge.relation }));
-  map.worldRevisionId = "preview-conflicts";
-  map.counts.entity = { total: nodes.length, shown: nodes.length, truncated: false };
-  map.counts.claim = { total: map.edges.length, shown: map.edges.length, truncated: false };
-  bridge.knowledgeMap = async () => structuredClone(map);
-  bridge.knowledgeWorldQuery = async request => structuredClone({ recordId: request.recordId, ...revision, revisionId: request.revisionId, nodes, edges, coverage: "sealed_snapshot", truncated: false, sourceTargets: Object.fromEntries(edges.map((_, index) => [`conflict-span-${index}`, { recordId: "preview-sources", revisionId: revision.revisionId, sourceId: `preview-source-${index}`, spanId: `conflict-span-${index}`, worldRecordId: request.recordId, worldRevisionId: request.revisionId }])) });
-  const inbox = bridge.inboxList.bind(bridge);
-  bridge.inboxList = async request => { const page = await inbox(request); return { ...page, items: page.items.map(item => item.briefingContext ? { ...item, briefingContext: { ...item.briefingContext, disputedEntityIds: endpoints.map(endpoint => endpoint.nodeId) } } : item) }; };
-  const runs = bridge.scheduledTaskRuns.bind(bridge);
-  bridge.scheduledTaskRuns = async request => (await runs(request)).map(run => run.briefing_context ? { ...run, briefing_context: { ...run.briefing_context, disputedEntityIds: endpoints.map(endpoint => endpoint.nodeId) } } : run);
 }

@@ -153,16 +153,9 @@ impl Replay {
             return Err("unsupported replay schema".into());
         }
         for entry in &self.requests {
-            if !matches!(
-                entry.provider.as_str(),
-                "opendart.disclosures"
-                    | "krx.market-data"
-                    | "koreainvestment.market-data"
-                    | "world-bank.indicators"
-                    | "defillama.tvl"
-                    | "web"
-                    | "web-search"
-            ) {
+            if crate::finance_data::native_vendor(&entry.provider).is_none()
+                && !matches!(entry.provider.as_str(), "web" | "web-search")
+            {
                 return Err("unknown replay provider".into());
             }
             let body_count = usize::from(entry.response.body.is_some())

@@ -88,3 +88,13 @@ defaults followed Pi's model catalog. Baseten DeepSeek-V4.1-Flash now offers
 off/high/max, so its default moves from low to high. Together no longer lists
 Llama-3.3-70B. Native, package and macOS acceptance runs remain required before
 release.
+
+## Hooks lint (2026-11-11)
+
+The renderer adds three exact-pinned devDependencies for `npm run lint:hooks`:
+ESLint 10.13.0, eslint-plugin-react-hooks 7.1.1 and @typescript-eslint/parser
+8.72.0. ESLint's own parser cannot read TypeScript or TSX, so the parser is the
+smallest addition that lets the two hook rules run; the config enables nothing
+else. The lockfile gains 77 development packages (MIT, Apache-2.0, ISC and BSD
+licenses), none with install scripts, and changes no existing package. Update the
+three together and keep `react-hooks/rules-of-hooks` an error.

@@ -12,7 +12,7 @@ export function LoupistToneField({ value, onChange, legend, name, busy = false }
   const { t } = useTranslation("onboarding");
   return <fieldset className="loupist-tone-field" disabled={busy} data-loupist-tone>
     <legend>{legend}</legend>
-    <div className="loupist-tone-options">
+    <div className="loupist-tone-options" data-testid="loupist-tone-options">
       {LOUPIST_TONES.map(tone => <label key={tone} className="loupist-tone-option" data-selected={value === tone || undefined}>
         <input type="radio" name={name} value={tone} checked={value === tone} onChange={() => onChange(tone)} />
         <span><strong>{t(`tone.${tone}.label`)}</strong><span>{t(`tone.${tone}.description`)}</span></span>

@@ -86,7 +86,7 @@
     "retryAutomaticallyWhenAProviderHasATemporary": "AI 서비스에 일시적인 문제가 생기면 자동으로 다시 시도해요.",
     "retryFailedRequests": "실패한 요청 재시도",
     "maximumRetries": "최대 재시도 횟수",
-    "numberOfAttemptsAfterTheFirstFailure0": "첫 실패 후 다시 시도할 횟수예요 (0~10회).",
+    "numberOfAttemptsAfterTheFirstFailure": "첫 실패 후 다시 시도할 횟수예요 (0~10회).",
     "customTiming": "대기 시간 직접 지정",
     "initialRetryDelayMs": "첫 재시도 대기 시간 (ms)",
     "waitThisLongBeforeTheFirstRetry": "처음 다시 시도하기 전에 이만큼 기다려요.",

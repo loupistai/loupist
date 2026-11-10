@@ -72,19 +72,10 @@ workspace instruction files still follow the [workspace contract](chat-turns.md#
 
 Rust routes canonical operations to the owning Loupist. An exclusive folder lock
 prevents concurrent app instances from writing the same data. Loupist databases use
-full synchronous rollback journaling. The host store schema is version 3 (shared-pack
-update and origin columns), the Knowledge format version 1 and
-the Knowledge schema version 5 (class watcher kinds and routes);
-unsupported data is rejected without migration or replacement. A folder made by an
-earlier build (store schema older than 3 or Knowledge schema older than 5) is never opened: listing marks it
-`earlier_version`, and binding its storage (turns, briefings, Memory and asset work) or
-importing it fails with `loupist_earlier_version`. Remove is its only action. A global
-`catalog.sqlite3` from an earlier build is set aside as
-`catalog.sqlite3.earlier-<UTC stamp>` (with its `-wal` and `-shm` files) and the app
-starts with a new, empty catalog (`open_app_store` in `app.rs`).
-Removing a Loupist unregisters it and preserves its folder. Missing or replaced
-folders require reconnection. Copy/reopen rules are in
-[Folder portability](../knowledge/growth.md#folder-portability).
+full synchronous rollback journaling. Removing a Loupist unregisters it and preserves
+its folder. Missing or replaced folders require reconnection. Copy/reopen rules are in
+[Folder portability](../knowledge/growth.md#folder-portability). Versions, upgrades
+and refusals are in [Schema versions and upgrades](#schema-versions-and-upgrades).
 
 Holdings are app-level. Each import is a snapshot of one source (`csv`, `kis`,
 `crypto_file`, or one per wallet address), and holdings are the union of the latest
@@ -106,6 +97,130 @@ the full address serves only Copy address. Balances come from
 before each briefing, within 30 seconds each time; a failed read keeps the last good
 snapshot.
 
+### Schema versions and upgrades
+
+The global `catalog.sqlite3` and every folder's `loupist.sqlite3` share one schema
+(`initialize_schema` in `store/schema.rs`) and one upgrade ladder
+(`store/upgrade.rs`). The store schema is version 5 (`PRAGMA user_version`), the
+Knowledge schema version 7 (`knowledge_schema`) and the Knowledge format version 1.
+A fresh database is created at the current versions.
+
+A database from store 4 and Knowledge 6 onward (the format 0.0.1 installs use) is
+upgraded one version at a time, each step in its own transaction. Before the first
+step Rust writes `<database>.upgrade-backup-<UTC stamp>` beside it with `VACUUM
+INTO`, created owner-only (`0600`) and synced. A failed step rolls back, so the
+database stays at its last completed version, and the error names the backup.
+The catalog upgrades at startup. A folder upgrades when its storage is first bound
+(listing, a turn, a briefing or a scheduled run) or when it is registered by import
+or reconnection. Admission validates an upgraded in-memory copy and writes nothing
+to the folder before registration. To return to a backup, quit Loupist and copy it
+over the database.
+
+Each database keeps its two newest backups. Once an upgrade commits, Rust deletes
+that database's older backups and keeps the one it just wrote plus the newest
+earlier one, ordered by stamp and then by the `-<n>` suffix a same-second backup
+takes. Only regular files directly beside the database whose names match
+`<database>.upgrade-backup-<YYYYMMDDTHHMMSSZ>[-<n>]` exactly are candidates.
+Symlinks, directories and any other name are never touched. A failed upgrade
+deletes nothing, and a pruning failure is logged without failing the upgrade.
+
+Steps are frozen: each names exactly what it changes from the shape its version
+had. A step that rebuilds a table follows SQLite's twelve-step ALTER procedure and
+keeps rowids, indexes and triggers, including the Memory immutability triggers;
+it may add no foreign-key violation. `store/tests/upgrade.rs` upgrades the frozen
+baseline (`store/tests/fixtures/baseline-store4-knowledge6.sql`) and requires the
+same shape as a fresh database.
+
+Store 5 also restores the `piSessionCache` key that builds before it removed from
+stored Chats on reconnect and import. Chat writes compare the stored text with the
+re-encoded Chat, so those Chats refused every later write; the step puts the key
+back where serialization writes it, and the cache is now cleared in place.
+
+Store 5 and Knowledge 7 moved extensible enumerations (kinds, statuses, origins,
+actors and `app_settings` ids) from SQL `CHECK (x IN (...))` lists to Rust: each
+write binds an exhaustive Rust enum or a value its write site checks, so adding a
+value needs no schema step. Structural checks (booleans, lengths, ranges and row
+invariants) stay in SQL. The immutable provenance tables (`knowledge_records`,
+`knowledge_source_captures`, `knowledge_source_representations` and
+`knowledge_read_receipts`) keep their lists, because those values are part of the
+Knowledge format. Scheduled task statuses and lazily created tables also keep theirs.
+
+Tables a module creates on first use (`CREATE TABLE IF NOT EXISTS`, such as sharing,
+provider status or artifact history) are outside the ladder: a database may lack
+them, and their module creates them at their current shape. Their DDL never changes
+shape in place. A shape change is a ladder step that alters the table only when it
+exists, together with the module's DDL for databases that never created it.
+
+Rust refuses data it cannot read and leaves it unchanged:
+
+| Data | Folder | Catalog |
+| --- | --- | --- |
+| Earlier: store below 4 or Knowledge below 6 (development formats before the ladder) | Listing marks it `earlier_version`; binding storage, import and reconnection fail with `loupist_earlier_version`; Remove is its only action | Set aside as `catalog.sqlite3.earlier-<UTC stamp>` (with its `-wal` and `-shm` files); a new, empty catalog keeps the earlier host environment id, so Keychain secrets stay reachable |
+| Newer: a version above this build's | Listing marks it `newer_version`, distinct from a moved folder (`workspace_unavailable`); binding storage, import and reconnection fail with `loupist_newer_version`; Remove unregisters it | A native dialog says a newer Loupist saved the data, and the app quits without a window |
+
+A failed catalog upgrade also shows a native dialog before the app quits. A set-aside
+catalog's folder registrations are not carried: only an earlier build wrote that
+catalog, so its folders are earlier formats too. Downgrades are not supported: an
+older build refuses data a newer build upgraded, and the backup is the way back.
+
+### Stored JSON
+
+`user_version` versions DDL only. Records kept as JSON carry no version of their
+own: the `data_json` columns (Chats, profiles, capability bindings, deletion
+journals, scheduled tasks and runs, artifacts and their revisions and datasets,
+the model catalog and update schedule in `app_settings`), and app-written files
+(activity details, run logs, `connections.json`, briefing settings, keychain
+envelopes, the KRX cache). Their Rust types accept fields they do not know, so a
+record a newer build wrote at the same schema version still opens in an older
+one. Change them only this way:
+
+- A new field is optional: `#[serde(default)]`, plus `skip_serializing_if` when
+  absence is its default, with a meaning that holds when it is missing. Never
+  rename, retype or remove a field, or make one required.
+- An older build drops fields it does not know when it rewrites a record by id,
+  timestamp or revision (profiles, capability bindings, scheduled tasks and runs,
+  `app_settings`, files), so a new field must be safe to lose. Writes to Chats,
+  artifacts and deletion journals compare the stored text with the re-encoded
+  record, so there an older build's write conflicts and the record stays as the
+  newer build left it.
+- A new enum value needs a fallback older builds already have.
+  `ChatFailureKind::Other` and `ChatToolRefusalReason::Other` show a generic
+  failure or refusal. `TaskKind::Unknown` keeps the stored name: the task is
+  listed and can be deleted, but is never run, edited, paused or resumed. Roles,
+  message, task and run statuses and schedules have no fallback, because no stand-in
+  is safe for what they drive (retry, Memory, admission, the next run).
+- Anything else is a ladder step even when the DDL does not change: a new value
+  of an enum without a fallback, or a removed, renamed or reinterpreted field.
+  The step bumps `user_version`, so an older build reports `newer_version`
+  instead of misreading the record.
+
+Input that crosses a boundary stays strict (`deny_unknown_fields`): renderer
+requests, model tool arguments, Pi and MCP output, bundled catalogs, shared packs
+and `config.toml`. A type in both roles gets an exact input-side twin that converts
+into the stored type: the briefing schedule, a Work tab's artifact reference,
+`ask_user` options, `artifact_publish` Markdown and Pi's run controls. Types the
+model or a server also writes directly stay strict in storage too: chart views,
+studies, drawings and dataset columns, custom connection tools, World schema
+extensions. A record holding one fails alone. The Pi session cache and process
+leases are authority records and decode exactly: an unreadable cache is dropped
+and the Chat rebuilds cold, and an unreadable lease fails closed. Knowledge
+records, their revision payloads and their mutable rows belong to the Knowledge
+format (`KNOWLEDGE_FORMAT_VERSION` enters every revision digest) and change only
+with a format or schema step.
+
+One unreadable record never hides the others. These skip and log it, and leave it
+stored as it is: the Chat list, the scheduled task list, a task's run history, the
+inbox (its cursor still moves past it), the latest-run activity and the due scan.
+Other paths stay strict: reading that one record, every write, recovery of
+interrupted runs, and folder admission. Admission takes a folder whole: it refuses
+one whose profile, tasks or runs fail to decode or validate, as it refuses a digest
+mismatch. Records a newer build wrote under the rules above decode and pass.
+
+SQL addresses stored JSON by serde name (`json_extract`, `json_set`, partial
+indexes such as one briefing per Loupist on `$.kind`). `store/tests/chat.rs` and
+`scheduled_tasks/tests.rs` serialize the real types and check each path and value
+the SQL uses, so a serde rename fails a test instead of a query.
+
 ### Scoped configuration
 
 Rust owns global `config.toml` and `<workspace>/.loupist/config.toml`. Theme, interface
@@ -121,11 +236,22 @@ scoped field. Explicit composer selections override Chat defaults, and new Chats
 inherit Memory defaults while existing Chats retain their saved policy. Scheduled
 runs use their saved model (empty means [Auto](providers.md#shared-providers-and-world-processing))
 and Memory selections. Invalid configuration blocks new dependent runs without
-replacing the file. Saves check revisions and preserve
+replacing the file: malformed TOML, an unknown section or key, an invalid value
+of a known key, and any credential in a connector table are errors
+(`diagnostics`). The bundled catalog can move under a file the user or another
+Loupist version wrote: a connector or connector field it no longer declares, or a
+Skill it now keeps always on. Such a setting is ignored and reported as a warning
+(`warnings`); its text stays in the file and saves and runs continue. A save
+request may name only settings this version has. Saves check revisions and preserve
 comments; admission rereads and freezes the effective settings.
+Rust emits no configuration event: after its own save the renderer tells its other
+views through the `loupist-configuration-changed` window event, and edits made outside
+the app are read at reload, app activation and scope changes.
 
 
 ## Code
 
-- Scoped configuration: `src-tauri/src/scoped_config.rs`, `src-tauri/src/commands/configuration.rs`
+- Schema versions and upgrades: `src-tauri/src/store/schema.rs`, `src-tauri/src/store/upgrade.rs`, `src-tauri/src/knowledge/folder.rs`, `src-tauri/src/app.rs` (`open_app_store`), `src/components/app/LoupistAvailabilityBoundary.tsx`
+- Stored JSON: `src-tauri/src/domain/chat.rs`, `src-tauri/src/scheduled_tasks/types.rs` (`TaskKind`), `src-tauri/src/scheduled_tasks/store.rs` (`readable`), `src-tauri/src/store/folder.rs` (`drop_pi_session_caches`)
+- Scoped configuration: `src-tauri/src/scoped_config.rs`, `src-tauri/src/commands/configuration.rs`, `src-tauri/src/marketplace/connector_config.rs` (`ignored_config_entries`)
 - Holdings, wallets and on-chain reads: `src-tauri/src/store/user_context.rs`, `src-tauri/src/commands/user_context.rs`, `src-tauri/src/finance_data/onchain.rs`, `src-tauri/src/finance_data/defillama.rs`, `src-tauri/src/privacy/holdings.rs`, `scripts/generate-kis-read-api.py`, `src/components/holdings/`

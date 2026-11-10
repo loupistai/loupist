@@ -36,10 +36,10 @@ export function LoupistChatItem({ icon, iconOnly = false, thread, active, runnin
   // A chat that neither reads nor saves Memory is a private chat (composer spec X12).
   const privateChat = thread.use_memory === false && thread.update_memory === false;
   return (
-    <SidebarMenuItem className="loupist-chat-row" data-home={thread.home || undefined}>
+    <SidebarMenuItem className="loupist-chat-row" data-testid="loupist-chat-row" data-home={thread.home || undefined}>
       <SidebarMenuButton
         type="button"
-        className="loupist-chat-button" data-thread-id={thread.id}
+        className="loupist-chat-button" data-testid="loupist-chat-button" data-thread-id={thread.id}
         aria-label={thread.home && !iconOnly ? undefined : title}
         aria-describedby={thread.home && !iconOnly ? homeDescId : undefined}
         title={thread.home ? `${title}. ${homeDescriptor}` : title}
@@ -50,17 +50,17 @@ export function LoupistChatItem({ icon, iconOnly = false, thread, active, runnin
         onClick={() => onSelect(thread)}
       >
         {thread.home ? <InboxIcon className="loupist-home-icon" aria-hidden="true" /> : icon}
-        {iconOnly ? null : thread.home ? <span className="loupist-home-copy"><span className="loupist-chat-title">{title}</span><small id={homeDescId} aria-hidden="true">{homeDescriptor}</small></span>
-          : <span className="loupist-chat-title">{title}</span>}
+        {iconOnly ? null : thread.home ? <span className="loupist-home-copy"><span className="loupist-chat-title" data-testid="loupist-chat-title">{title}</span><small id={homeDescId} aria-hidden="true">{homeDescriptor}</small></span>
+          : <span className="loupist-chat-title" data-testid="loupist-chat-title">{title}</span>}
         {draft ? <span className="loupist-draft-dot" role="img" aria-label={i18n.t("app:loupistChatItem.unsentDraft")} title={i18n.t("app:loupistChatItem.unsentDraft")} /> : null}
         {running ? <Spinner className="thread-running" aria-label={i18n.t("app:loupistChatItem.isRunning", { title: chatTitle(thread) })} />
           : finished ? <span className="loupist-status-dot" data-state="finished" role="img" aria-label={i18n.t("app:attention.finishedHidden")} />
             : privateChat ? <span className="loupist-private-mark" role="img" aria-label={i18n.t("app:loupistChatItem.privateChat")} title={i18n.t("app:loupistChatItem.privateChat")}><EyeOffIcon aria-hidden="true" /></span> : null}
       </SidebarMenuButton>
       {/* The Thread is permanent and an unsent chat has nothing to rename or delete yet. */}
-      {thread.home && onSchedule ? <DropdownMenu><DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" className="loupist-chat-menu" data-bot-menu aria-label={i18n.t("app:loupistChatItem.optionsFor", { title })}><MoreHorizontalIcon /></Button></DropdownMenuTrigger><DropdownMenuContent side="right" align="start"><DropdownMenuItem data-bot-schedule onSelect={onSchedule}>{i18n.t("app:shell.taskHistory")}</DropdownMenuItem></DropdownMenuContent></DropdownMenu> : thread.home || isEmptyChatThreadId(thread.id) ? null : <DropdownMenu>
+      {thread.home && onSchedule ? <DropdownMenu><DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" className="loupist-chat-menu" data-testid="loupist-chat-menu" data-bot-menu aria-label={i18n.t("app:loupistChatItem.optionsFor", { title })}><MoreHorizontalIcon /></Button></DropdownMenuTrigger><DropdownMenuContent side="right" align="start"><DropdownMenuItem data-bot-schedule onSelect={onSchedule}>{i18n.t("app:shell.taskHistory")}</DropdownMenuItem></DropdownMenuContent></DropdownMenu> : thread.home || isEmptyChatThreadId(thread.id) ? null : <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button size="icon-sm" variant="ghost" className="loupist-chat-menu" aria-label={i18n.t("app:loupistChatItem.optionsFor", { title: chatTitle(thread) })}>
+          <Button size="icon-sm" variant="ghost" className="loupist-chat-menu" data-testid="loupist-chat-menu" aria-label={i18n.t("app:loupistChatItem.optionsFor", { title: chatTitle(thread) })}>
             <MoreHorizontalIcon />
           </Button>
         </DropdownMenuTrigger>

@@ -90,6 +90,7 @@ export function WatchingReader({ bridge, loupist, settings, onBack }: {
   useEffect(() => {
     if (!unseen.length) return;
     void bridge.watchEventsSeen({ loupistId, eventIds: unseen }).catch(() => undefined);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the joined ids are the key, so the same unseen events are marked once.
   }, [bridge, loupistId, unseen.join(",")]);
 
   const nameOf = (asset: Pick<WatchAsset, "name" | "assetId" | "symbol" | "market">) => names(asset);

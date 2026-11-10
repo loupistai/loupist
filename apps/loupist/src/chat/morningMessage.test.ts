@@ -1,7 +1,7 @@
 import type { GrowthEvent, JournalRecord, KnowledgeMap, KnowledgeMapEdge, KnowledgeMapNode } from "../contracts/knowledge";
 import type { InboxItem } from "../contracts/scheduled";
 import type { AssetChangeRow, AssetDelta } from "../contracts/assets";
-import { nodeColorKey } from "../components/map/kinds";
+import { nodeColorKey } from "../knowledge/mapKinds";
 import { daysUntil, firstSentence, followedBullet, morningMessage, sinceDayOptions, type MorningInputs } from "./morningMessage";
 import { formatDate } from "../i18n/format";
 
@@ -50,7 +50,7 @@ const event = (kind: GrowthEvent["kind"], subjectId: string | null, atMs = LAST_
 const check = (journalId: string, byDate: string, extra: Partial<JournalRecord> = {}): JournalRecord => ({
   journalId, researchId: journalId, loupistId: "loupist", judgment: `Judgment ${journalId}`, reasoning: "", entities: [],
   check: { claim: `Claim ${journalId}`, metric: `metric ${journalId}`, direction: "below", threshold: 50, byDate },
-  createdAtMs: 0, updatedAtMs: 0, archived: false, inputs: { sources: [], worlds: [] } as unknown as JournalRecord["inputs"], inputDigest: "",
+  originChatId: null, createdAtMs: 0, updatedAtMs: 0, archived: false, inputs: { sources: [], worlds: [] } as unknown as JournalRecord["inputs"], inputDigest: "",
   ...extra,
 });
 const briefing = (extra: Partial<InboxItem> = {}): InboxItem => ({
@@ -159,7 +159,7 @@ describe("morning message", () => {
     const message = morningMessage({ ...base, journal: [
       check("later", "2026-12-01"), check("late", "2026-10-29"), check("today", "2026-10-31"), check("soon", "2026-11-02"),
       check("done", "2026-10-01", { outcome: { observed: 40, observedAt: "2026-10-01", result: "came_true" } }),
-      check("archived", "2026-10-01", { archived: true }), check("none", "2026-10-01", { check: null }),
+      check("archived", "2026-10-01", { archived: true }), check("none", "2026-10-01", { check: undefined }),
     ] });
     expect(message.checks.map((item) => [item.journalId, item.daysLeft])).toEqual([["late", -2], ["today", 0], ["soon", 2]]);
   });

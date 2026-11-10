@@ -17,7 +17,7 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, Dia
 import type { Coverage, LoupistBridge, KnowledgeCatalog, KnowledgeLocation, KnowledgePin, KnowledgeSourceFile, RepresentationRole, SourceClass, SourceDetail } from "../../types";
 import { errorMessage } from "../../lib/errors";
 import { pinForSource } from "../../knowledge/location";
-import { sourceOrigin, sourceTitle } from "./hostSource";
+import { sourceOrigin, sourceTitle } from "../../knowledge/hostSource";
 import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control";
 import { relationName } from "../map/relations";
 
@@ -99,7 +99,9 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
     void readSelectedSource()
       .then((next) => { if (generation.current === ticket) { setDetail(next); setProcessing(next.processing?.status); } })
       .catch((cause: unknown) => { if (generation.current === ticket) setError(errorMessage(cause, t("sourceWorkspace.couldNotOpenThisSource"))); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a request counter, not a DOM node: cleanup invalidates the request that is in flight.
     return () => { generation.current++; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `readSelectedSource` names the record and revision; `t` only words the failure; a language change must not reload.
   }, [readSelectedSource, reload, reading]);
 
   const refreshDetail = useCallback(async () => {
@@ -118,10 +120,12 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
     } finally {
       if (generation.current === ticket && currentScope.current === captured) setDetailRefreshing(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` only words the failure; a language change must not restart the processing poll.
   }, [readSelectedSource, scopeKey]);
 
   useEffect(() => {
     if (detail) { readerRef.current?.focus({ preventScroll: true }); if (scrollReaderRef.current) scrollReaderRef.current.scrollTop = location.view?.readerScrollTop ?? 0; }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- focuses and restores the reader once per opened source span.
   }, [detail?.sourceId, detail?.selectedSpanId]);
 
   useLayoutEffect(() => {
@@ -130,6 +134,7 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
       const row = [...(listRef.current?.querySelectorAll<HTMLButtonElement>("button[data-source-id]") ?? [])].find((button) => button.dataset.sourceId === location.view?.focusSourceId);
       (row ?? libraryRef.current?.querySelector<HTMLInputElement>("input"))?.focus({ preventScroll: true });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- restores the list once per Loupist, mode and filter.
   }, [reading, location.loupistId, filter]);
 
   useEffect(() => {
@@ -185,7 +190,7 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
       {!sources.length ? <EmptyState title={search || filter !== "all" ? t("sourceWorkspace.noMatchingSources") : t("sourceWorkspace.noSourcesYet")} description={search || filter !== "all" ? t("sourceWorkspace.tryAnotherSearchOrChooseAll") : t("sourceWorkspace.addTextAFileOrALinkToUseIn")} /> : null}
       <ul ref={listRef} aria-label={t("sourceWorkspace.sources")}>
         {sources.map(({ record, item }) => <li key={`${record.recordId}:${item.id}`}>
-          <Button variant="ghost" className="source-library-row" data-source-id={item.id} aria-current={item.id === selected?.sourceId} onClick={() => onOpen({ loupistId: location.loupistId, surface: "source", recordId: record.recordId, revisionId: record.revisionId, objectId: item.id, view: { ...location.view, readerScrollTop: 0, focusSourceId: item.id }, selection: { kind: "source", sourceId: item.id } })}>
+          <Button variant="ghost" className="source-library-row" data-testid="source-library-row" data-source-id={item.id} aria-current={item.id === selected?.sourceId} onClick={() => onOpen({ loupistId: location.loupistId, surface: "source", recordId: record.recordId, revisionId: record.revisionId, objectId: item.id, view: { ...location.view, readerScrollTop: 0, focusSourceId: item.id }, selection: { kind: "source", sourceId: item.id } })}>
             <FileTextIcon className="memory-rail-icon" aria-hidden="true" />
             <span className="memory-rail-copy"><strong>{sourceTitle(item)}</strong>{item.summary ? <span className="source-summary">{item.summary}</span> : null}
               <small className="source-row-meta"><ConnectionOrigin origin={item.origin} /><span className="source-row-origin" title={sourceOrigin(item)}>{compactOrigin(sourceOrigin(item))}</span>{item.publicationTime?.value ?? item.acquiredAt?.value ? <time title={item.publicationTime?.value ?? item.acquiredAt?.value}>{sourceDate(item.publicationTime?.value ?? item.acquiredAt?.value)}</time> : null}
@@ -207,7 +212,7 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
         <div className="memory-meta-row"><ConnectionOrigin origin={detail.origin} /><Badge variant="outline">{originLabel()[detail.sourceClass]}</Badge><span className="source-origin">{originalUrl ? <Button variant="link" title={originalUrl} onClick={() => { void Promise.resolve().then(() => (onOpenLink ?? bridge.openExternalUrl.bind(bridge))(originalUrl)).catch((cause: unknown) => setExportError(errorMessage(cause, t("sourceWorkspace.couldNotOpenTheOriginalSource")))); }}><ExternalLinkIcon />{t("sourceWorkspace.openOriginal", { hostname: new URL(originalUrl).hostname })}</Button> : compactOrigin(sourceOrigin(detail))}</span>{detail.publicationTime?.value ? <time title={detail.publicationTime.value}>{sourceDate(detail.publicationTime.value)}</time> : null}</div>
         <div className="source-evidence-summary"><span>{coverageLabel()[detail.coverage]}</span>{detail.revisionId !== sourceRecord?.revisionId ? <span>{t("sourceWorkspace.savedVersion")}</span> : null}</div>
         {exportError && originalUrl ? <p role="alert">{exportError}</p> : null}
-        {span ? <section className="source-passage-section" aria-label={t("sourceWorkspace.savedPassage")}><h3>{t("sourceWorkspace.savedPassage")}</h3>{textMedia(span.mediaType) && readableText ? <blockquote className="knowledge-passage" data-quote-source={readerOnly ? `source:${detail.sourceId}:${span.spanId}` : undefined} data-quote-retained-source={readerOnly ? JSON.stringify({ loupistId: location.loupistId, recordId: detail.recordId, revisionId: detail.revisionId, sourceId: detail.sourceId, spanId: span.spanId, worldRecordId: selected?.worldRecordId, worldRevisionId: selected?.worldRevisionId, purpose: "renderer_inspection" }) : undefined}>{readableText}</blockquote> : <p>{t("sourceWorkspace.theOriginalFileIsSavedATextPreviewIsUnavailable")}</p>}{span.presentation && (span.presentation.contentOffset > 0 || span.presentation.nextOffset !== null) ? <p className="knowledge-hint">{t("sourceWorkspace.thisIsASavedSectionOfALongerDocument")}</p> : null}{span.presentation?.extractionTruncated ? <p className="knowledge-hint">{t("sourceWorkspace.textExtractionStoppedBeforeTheEndOfTheDocument")}</p> : null}</section> : <p>{t("sourceWorkspace.onlyTheSourceDetailsWereSavedNoPassageIsAvailable")}</p>}
+        {span ? <section className="source-passage-section" aria-label={t("sourceWorkspace.savedPassage")}><h3>{t("sourceWorkspace.savedPassage")}</h3>{textMedia(span.mediaType) && readableText ? <blockquote className="knowledge-passage" data-testid="knowledge-passage" data-quote-source={readerOnly ? `source:${detail.sourceId}:${span.spanId}` : undefined} data-quote-retained-source={readerOnly ? JSON.stringify({ loupistId: location.loupistId, recordId: detail.recordId, revisionId: detail.revisionId, sourceId: detail.sourceId, spanId: span.spanId, worldRecordId: selected?.worldRecordId, worldRevisionId: selected?.worldRevisionId, purpose: "renderer_inspection" }) : undefined}>{readableText}</blockquote> : <p>{t("sourceWorkspace.theOriginalFileIsSavedATextPreviewIsUnavailable")}</p>}{span.presentation && (span.presentation.contentOffset > 0 || span.presentation.nextOffset !== null) ? <p className="knowledge-hint">{t("sourceWorkspace.thisIsASavedSectionOfALongerDocument")}</p> : null}{span.presentation?.extractionTruncated ? <p className="knowledge-hint">{t("sourceWorkspace.textExtractionStoppedBeforeTheEndOfTheDocument")}</p> : null}</section> : <p>{t("sourceWorkspace.onlyTheSourceDetailsWereSavedNoPassageIsAvailable")}</p>}
         {span && !textMedia(span.mediaType) ? <div className="knowledge-inspector-actions"><Button variant="outline" disabled={exporting} onClick={() => void exportFile()}>{exporting ? t("sourceWorkspace.exporting") : detail.material === "original" ? t("sourceWorkspace.exportOriginalFile") : t("sourceWorkspace.exportSavedFile")}</Button>{exported ? <span role="status">{t("sourceWorkspace.fileExported")}</span> : null}{exportError ? <p role="alert">{exportError}</p> : null}</div> : null}
         {detail.spans.length > 1 ? <div className="knowledge-inspector-actions" aria-label={t("sourceWorkspace.sourcePassages")}>{detail.spans.map((item, index) => <Button key={item.spanId} variant={item.spanId === span?.spanId ? "secondary" : "ghost"} onClick={() => onOpen({ ...location, selection: { ...selected, kind: "source", sourceId: detail.sourceId, spanId: item.spanId } })}>{t("sourceWorkspace.passage", { index: formatNumber(index + 1) })}</Button>)}</div> : null}
         <div className="source-processing-status" data-attention={needsAttention(processing) || undefined}><div><span className="source-reader-eyebrow">{t("sourceWorkspace.worldProcessing")}</span><p role="status">{isProcessing(processing) ? <Spinner /> : null}{sourceProcessingLabel(processing)}</p>{detail.processing?.error ? <p className="knowledge-hint">{detail.processing.error}</p> : null}</div>{onManageProcessing ? <Button variant="ghost" size="icon-sm" aria-label={t("sourceWorkspace.worldProcessingSettings")} title={t("sourceWorkspace.worldProcessingSettings")} onClick={onManageProcessing}><Settings2Icon /></Button> : null}</div>
@@ -271,7 +276,7 @@ export function AddSourceDialog({ bridge, loupistId, open, onOpenChange, onSaved
       const retained = await bridge.knowledgeSourceRetain({ loupistId, title: title.trim(), originLocator: origin.trim() || (mode === "file" ? file?.fileName : "Pasted text") || "Pasted text", coverage: mode === "link" ? "metadata_only" : "included_full", text: mode === "text" ? text : "", file: mode === "file" ? file ?? undefined : undefined });
       if (ticket !== generation.current) return;
       setTitle(""); setOrigin(""); setText(""); setFile(null);
-      onSaved({ loupistId, surface: "source", recordId: retained.recordId, revisionId: retained.revisionId, objectId: retained.sourceId, selection: { kind: "source", sourceId: retained.sourceId, spanId: retained.spanId } });
+      onSaved({ loupistId, surface: "source", recordId: retained.recordId, revisionId: retained.revisionId, objectId: retained.sourceId, selection: { kind: "source", sourceId: retained.sourceId, spanId: retained.spanId ?? undefined } });
     } catch (cause) { if (ticket === generation.current) setError(errorMessage(cause, t("sourceWorkspace.couldNotSaveThisSource"))); }
     finally { if (ticket === generation.current) { pending.current = false; setSaving(false); } }
   };

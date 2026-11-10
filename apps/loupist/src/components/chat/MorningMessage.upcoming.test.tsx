@@ -16,8 +16,8 @@ const map = { nodes: [
   { id: "hanul", kind: "entity", label: "Hanul Precision", localNames: ["한울정밀"], entityKind: "Organization", degree: 2, watched: true, held: false, recordId: "world-1" },
 ], edges: [] } as unknown as KnowledgeMap;
 const journal = [
-  { journalId: "j1", judgment: "Inventory falls", archived: false, check: { claim: "Inventory days below 50", metric: "inventory days", direction: "below", threshold: 50, byDate: "2026-10-29" } },
-  { journalId: "j2", judgment: "Margin holds", archived: false, check: { claim: "Gross margin stays above 55%", metric: "gross margin", direction: "above", threshold: 55, byDate: "2026-11-03" } },
+  { journalId: "j1", judgment: "Inventory falls", archived: false, check: { claim: "Inventory days below 50", metric: "inventory days", direction: "below", threshold: 50, byDate: "2026-10-29" }, originChatId: null },
+  { journalId: "j2", judgment: "Margin holds", archived: false, check: { claim: "Gross margin stays above 55%", metric: "gross margin", direction: "above", threshold: 55, byDate: "2026-11-03" }, originChatId: null },
 ] as JournalRecord[];
 const asset = (assetId: string, symbol: string, market: string, name: string, entityId?: string) => ({ assetId, symbol, market, name, ...(entityId ? { entityId } : {}) });
 const morrow = asset("ast_00000000000000a1", "MORR", "NASDAQ", "Morrow Components");

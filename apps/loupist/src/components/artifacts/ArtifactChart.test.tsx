@@ -16,9 +16,11 @@ const dataset: ChartDataset = {
 const financial: ChartDocument = {
   dataset_id: dataset.id,
   dataset_digest: dataset.digest,
-  view: { kind: "candlestick", symbol: "TEST", interval: "1d", time: "date", open: "open", high: "high", low: "low", close: "close" },
+  view: { kind: "candlestick", symbol: "TEST", interval: "1d", time: "date", open: "open", high: "high", low: "low", close: "close", volume: null, turnover: null, price_precision: null },
   studies: [{ module_id: "EMA", calc_params: [20] }],
   drawings: [],
+  custom_series: [],
+  note: null,
 };
 
 it("routes financial documents to the KLine engine and analytic documents to the Flint engine", async () => {
@@ -27,7 +29,7 @@ it("routes financial documents to the KLine engine and analytic documents to the
   expect(await screen.findByText("financial-engine")).toBeVisible();
   view.unmount();
   const analytic: ChartDocument = { dataset_id: dataset.id, dataset_digest: dataset.digest, studies: [], drawings: [],
-    view: { kind: "line", x: "date", y: ["close"], semantic_types: { date: "Date", close: "Price" }, title: "Close over time" } };
+    view: { kind: "line", x: "date", y: ["close"], semantic_types: { date: "Date", close: "Price" }, title: "Close over time", color: null, subtitle: null }, custom_series: [], note: null };
   render(<ArtifactChart chart={analytic} dataset={dataset} theme="dark" />);
   expect(screen.getByText("Close over time")).toBeVisible();
   expect(await screen.findByText("analytic-engine")).toBeVisible();

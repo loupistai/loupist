@@ -6,9 +6,9 @@ import type { ChatActivityDetail, LoupistWorkspace } from "../../types";
 import { openApp, openChat } from "../renderApp";
 
 const commandProgress = { startedAtMs: 10, finishedAtMs: 20, items: [
-  { id: "command", kind: "tool" as const, toolName: "run_python", category: "compute" as const, operation: "execute" as const, action: "Ran Python", status: "succeeded" as const, detailId: "durable-command", startedAtMs: 10, finishedAtMs: 20 },
+  { id: "command", kind: "tool" as const, toolName: "run_python", category: "compute" as const, operation: "execute" as const, action: "Ran Python", status: "succeeded" as const, detailId: "durable-command", startedAtMs: 10, finishedAtMs: 20, target: null, href: null },
 ] };
-const commandDetail = (output: string, file_path?: string): ChatActivityDetail => ({ id: "durable-command", tool_name: "run_python", status: "succeeded", input: "print(391)", output, file_path, started_at_ms: 10, finished_at_ms: 20, truncated: false });
+const commandDetail = (output: string, file_path: string | null = null): ChatActivityDetail => ({ id: "durable-command", tool_name: "run_python", status: "succeeded", input: "print(391)", output, file_path, started_at_ms: 10, finished_at_ms: 20, truncated: false });
 const unavailable = (bridge: MockLoupistBridge, edit: (workspace: LoupistWorkspace) => void = () => {}) => {
   const select = bridge.loupistSelect.bind(bridge);
   return vi.spyOn(bridge, "loupistSelect").mockImplementationOnce(async (id) => {
@@ -29,7 +29,7 @@ const reconnectFolder = async (user: ReturnType<typeof userEvent.setup>) => {
 it.each(["empty", "cached without credentials"])("keeps saved research readable with %s models and no connected account", async (modelState) => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const catalog = await bridge.modelCatalogGet();
-  vi.spyOn(bridge, "modelCatalogGet").mockResolvedValue({ hidden_model_profile_ids: [], providers: [],
+  vi.spyOn(bridge, "modelCatalogGet").mockResolvedValue({ hidden_model_profile_ids: [], providers: [], custom_providers: [], model_notice: null,
     models: modelState === "empty" ? [] : catalog.models.map((model) => ({ ...model, credential_source: "missing" })) });
   render(<App bridge={bridge} />);
   await openChat();

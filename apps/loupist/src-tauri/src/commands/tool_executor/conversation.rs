@@ -1,4 +1,4 @@
-use super::authority::{bounded_text, optional_bounded_text};
+use super::arguments::{bounded_text, optional_bounded_text};
 use super::*;
 
 impl AppToolExecutor {

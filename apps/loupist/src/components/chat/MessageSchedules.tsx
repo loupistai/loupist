@@ -84,6 +84,7 @@ function ProposedSchedule({ receipt, onOpen }: { receipt: TaskReceipt; onOpen?: 
       .then((task) => { if (live) setProposal(proposalFrom(task)); })
       .catch(() => { if (live) setProposal({ status: "awaiting" }); });
     return () => { live = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the scope's fields; a new scope object for the same thread must not re-read.
   }, [scope?.bridge, scope?.loupistId, receipt.task_id]);
 
   const act = async (action: "confirm" | "discard") => {

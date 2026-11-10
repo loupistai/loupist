@@ -25,7 +25,7 @@ use super::graph_jobs::{load_settings, store_settings, GraphProcessingSettings};
 use super::world_extract::hints::FollowedInstrument;
 use super::KnowledgeStore;
 use crate::runs::maintenance::{MaintenanceBlocker, MaintenanceCoordinator};
-use crate::store::{LoupistStore, SqliteStore};
+use crate::store::SqliteStore;
 
 pub struct GraphSupervisor {
     // Background work owns Inner, but must not keep the application owner alive.
@@ -55,8 +55,8 @@ struct Inner {
     shutdown: Notify,
     started: AtomicBool,
     startup_recovered: std::sync::Mutex<bool>,
-    learning_events: tokio::sync::broadcast::Sender<serde_json::Value>,
-    schema_events: tokio::sync::broadcast::Sender<serde_json::Value>,
+    learning_events: tokio::sync::broadcast::Sender<crate::events::LearningReviewFinished>,
+    schema_events: tokio::sync::broadcast::Sender<crate::events::WorldSchemaChanged>,
     stopped: AtomicBool,
     task: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// Queue selection and the schema, learning and recovery pumps take turns.
@@ -242,11 +242,15 @@ impl GraphSupervisor {
         Ok(())
     }
 
-    pub fn subscribe_learning(&self) -> tokio::sync::broadcast::Receiver<serde_json::Value> {
+    pub fn subscribe_learning(
+        &self,
+    ) -> tokio::sync::broadcast::Receiver<crate::events::LearningReviewFinished> {
         self.inner.learning_events.subscribe()
     }
 
-    pub fn subscribe_schema(&self) -> tokio::sync::broadcast::Receiver<serde_json::Value> {
+    pub fn subscribe_schema(
+        &self,
+    ) -> tokio::sync::broadcast::Receiver<crate::events::WorldSchemaChanged> {
         self.inner.schema_events.subscribe()
     }
 
@@ -516,7 +520,7 @@ impl Inner {
             }
             let next_learning = self
                 .store
-                .for_each_database(|_, connection| {
+                .for_each_readable_database(|_, connection| {
                     let tx = connection.transaction()?;
                     super::learning::next_wake_at(&tx, checked_at)
                         .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))
@@ -703,7 +707,7 @@ impl Inner {
             .clone();
         let candidates = self
             .store
-            .for_each_database(|_, connection| {
+            .for_each_readable_database(|_, connection| {
                 let tx = connection.transaction()?;
                 super::graph_jobs::queued_loupist_heads(&tx, &hot_chats)
                     .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))
@@ -990,7 +994,7 @@ impl Inner {
         let at = now_ms();
         let candidates = self
             .store
-            .for_each_database(|_, connection| {
+            .for_each_readable_database(|_, connection| {
                 let mut query = connection.prepare(
                     "SELECT DISTINCT owner_loupist_id FROM knowledge_records WHERE kind = 'world' ORDER BY owner_loupist_id",
                 )?;
@@ -1117,7 +1121,7 @@ impl Inner {
     fn recover_quarantined(&self) -> KnowledgeResult<()> {
         let quarantined = self
             .store
-            .for_each_database(|_, connection| {
+            .for_each_readable_database(|_, connection| {
                 let mut query = connection.prepare(
                     "SELECT DISTINCT loupist_id FROM knowledge_graph_outbox WHERE status = 'reconcile_required'",
                 )?;
@@ -1147,7 +1151,7 @@ impl Inner {
     }
 
     async fn pump_learning(&self) -> KnowledgeResult<Option<String>> {
-        let candidates = self.store.for_each_database(|_, connection| {
+        let candidates = self.store.for_each_readable_database(|_, connection| {
             let mut q=connection.prepare("SELECT loupist_id,review_id FROM knowledge_learning_reviews WHERE status IN ('pending','queued') ORDER BY created_at_ms")?;
             let rows=q.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<Result<Vec<_>,_>>()?;
             Ok(rows)
@@ -1211,7 +1215,10 @@ impl Inner {
                     run_log.record(self.store.as_ref());
                     let _ = self
                         .learning_events
-                        .send(serde_json::json!({"loupistId":loupist,"review":review}));
+                        .send(crate::events::LearningReviewFinished {
+                            loupist_id: loupist.clone(),
+                            review: review.clone(),
+                        });
                     return Ok(Some(review_id));
                 }
                 continue;
@@ -1283,7 +1290,10 @@ impl Inner {
                 }
                 let _ = self
                     .learning_events
-                    .send(serde_json::json!({"loupistId":loupist,"review":review}));
+                    .send(crate::events::LearningReviewFinished {
+                        loupist_id: loupist.clone(),
+                        review: review.clone(),
+                    });
             }
             run_log.record(self.store.as_ref());
             return Ok(Some(attempt.review_id));

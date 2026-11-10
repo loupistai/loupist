@@ -80,7 +80,7 @@ export function AnswerFeedback({ message, onSave, onTeach, feedbackBusy = false,
         <button type="button" aria-expanded={editing} aria-describedby={feedbackBusy ? busyReasonId : undefined} title={feedbackBusy ? busyReason() : t("answerFeedback.correct")} {...(editing ? { "aria-controls": editorId } : {})} disabled={unavailable} onClick={() => { if (!editing) setDraft(feedback?.correction ?? ""); setEditing(true); }}>{t("answerFeedback.correct")}</button>
       </div>
     </div>
-    {showCorrection ? <div className="answer-correction" id={editing ? editorId : undefined}>
+    {showCorrection ? <div className="answer-correction" data-testid="answer-correction" id={editing ? editorId : undefined}>
       {editing ? <>
         <label htmlFor={`${editorId}-text`}>{t("answerFeedback.yourCorrection")}</label>
         <textarea id={`${editorId}-text`} value={draft} onChange={(event) => setDraft(event.target.value)} rows={3} disabled={unavailable} autoFocus />

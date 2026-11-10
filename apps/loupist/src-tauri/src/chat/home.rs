@@ -15,7 +15,6 @@ use crate::{
     },
     runs::coordinator::{RunKind, RunTarget},
     scheduled_tasks::types::{Run, RunStatus},
-    store::LoupistStore,
 };
 
 /// Stored title; the renderer shows the localized "Thread" label instead.
@@ -135,7 +134,7 @@ pub(crate) fn delivery_message(state: &AppState, run: &Run) -> Result<ChatMessag
             run_id: run.run_id.clone(),
             task_id: run.task_id.clone(),
             task_title: run.task_title.clone(),
-            task_kind: run.kind,
+            task_kind: run.kind.clone(),
             schedule: task.map(|task| task.schedule),
             run_thread_id: run.thread_id.clone(),
             status: run.status,

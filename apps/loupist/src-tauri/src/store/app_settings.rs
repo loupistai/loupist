@@ -6,6 +6,7 @@ use rusqlite::{Connection, OptionalExtension};
 pub(crate) const CURRENT_NOTICE_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct AppSettings {
     pub notice_acknowledged_version: u32,
 }

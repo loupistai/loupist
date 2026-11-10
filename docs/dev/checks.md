@@ -12,7 +12,21 @@ headless contracts without paid calls.
 
 The web scope's `node-contracts` step includes root `scripts/*.test.mjs` contracts.
 The `boundaries` step enforces renderer import boundaries with
-`check-boundaries.mjs --enforce`.
+`check-boundaries.mjs --enforce`: Tauri APIs stay in `src/bridge/`, components use
+the typed bridge, preview and mock code stays out of production, and `src/chat`,
+`src/knowledge` and `src/lib` do not import `src/components` (their tests may).
+The `i18n-literals` step runs `check-i18n.mjs --enforce`; see
+[Localization foundation](ui-qa.md#localization-foundation).
+The `hooks-lint` step runs `npm run lint:hooks`: ESLint with only
+`react-hooks/rules-of-hooks` (an error) and `react-hooks/exhaustive-deps`, with no
+warnings allowed. A deliberate omission carries
+`// eslint-disable-next-line react-hooks/exhaustive-deps -- <reason>`; a stale
+disable fails the step. Prefer depending on a stable member (destructure it) over
+disabling the rule.
+The `market-calendar` step fails when `market-calendar.json` does not list the
+current (UTC) year for every exchange, because an unpublished year counts every
+weekday as a session. From December it prints a notice for a next year the
+exchange has not published yet; the release workflow runs the same check.
 The `unused-files` step rejects renderer files outside the current app, preview,
 and external script import graph. See [Code cleanup](repository-guidance.md#code-cleanup).
 

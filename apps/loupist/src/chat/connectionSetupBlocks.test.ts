@@ -4,10 +4,10 @@ import { connectionSetupBlocks } from "./connectionSetupBlocks";
 
 const step = (status: "running" | "succeeded" | "failed", overrides: Partial<Extract<ChatProgressItem, { kind: "tool" | "system" }>> = {}): ChatProgressItem => ({
   id: `step-${status}-${overrides.target ?? ""}`, kind: "tool", toolName: "connection_setup", category: "capability", operation: "generic",
-  action: "Prepared a connection", running: "Preparing a connection", target: "fred.macro", status, ...overrides,
+  action: "Prepared a connection", running: "Preparing a connection", target: "fred.macro", href: null, status, startedAtMs: 0, finishedAtMs: null, ...overrides,
 });
 const message = (items: ChatProgressItem[], overrides: Partial<ChatMessage> = {}): ChatMessage => ({
-  id: "answer", role: "assistant", content: "", created_at: "2026-10-28T00:00:00Z", status: "complete", progress: { startedAtMs: 0, items }, ...overrides,
+  id: "answer", role: "assistant", content: "", created_at: "2026-10-28T00:00:00Z", status: "complete", progress: { startedAtMs: 0, items, finishedAtMs: null }, ...overrides,
 });
 
 describe("connectionSetupBlocks", () => {

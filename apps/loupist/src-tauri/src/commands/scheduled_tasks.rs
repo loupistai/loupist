@@ -12,12 +12,14 @@ use crate::{
 };
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "ScheduledTasksLoupistRequest"))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct LoupistRequest {
     loupist_id: String,
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct TaskRequest {
     loupist_id: String,
@@ -25,6 +27,7 @@ pub(crate) struct TaskRequest {
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StatusRequest {
     loupist_id: String,
@@ -34,6 +37,7 @@ pub(crate) struct StatusRequest {
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RevisionRequest {
     loupist_id: String,
@@ -42,6 +46,7 @@ pub(crate) struct RevisionRequest {
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RunRequest {
     loupist_id: String,

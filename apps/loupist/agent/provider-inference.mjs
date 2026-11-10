@@ -10,6 +10,8 @@ const MIN_ANSWER_TOKENS = 1024;
 // These pinned Pi adapters honor the per-request fetch hook and retry budget.
 // Adapters without that contract must not silently escape one-call accounting.
 const GUARDED_APIS = new Set(["openai-responses", "openai-codex-responses", "openai-completions", "anthropic-messages", "azure-openai-responses"]);
+/** Whether isolated inference can dispatch a model on this Pi API. */
+export const isGuardedInferenceApi = (api) => GUARDED_APIS.has(api);
 const reply = (disposition, message) => ({ disposition, body: { status: disposition, message }, usage: null });
 const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const DIAGNOSTIC_STOP_REASONS = new Set(["stop", "length", "toolUse", "error", "aborted"]);
@@ -100,7 +102,7 @@ export async function runProviderInference(ctx, request, { signal, onDispatch = 
   try { validator = validateInferenceRequest(request); } catch { return reply("not_sent", "The model inference request is invalid."); }
   const model = ctx.modelRegistry.getAvailable().find((item) => item.provider === request.provider && item.id === request.model);
   if (!model) return reply("not_sent", "The selected connected model is unavailable.");
-  if (!GUARDED_APIS.has(model.api)) return reply("not_sent", "This model transport does not support isolated, non-retrying inference.");
+  if (!isGuardedInferenceApi(model.api)) return reply("not_sent", "This model transport does not support isolated, non-retrying inference.");
   const controls = runControlsFor(model);
   if (!getSupportedThinkingLevels(model).includes(request.thinkingLevel) || Object.keys(request.runOptions).length !== controls.length || controls.some((control) => !control.choices.some((choice) => choice.id === request.runOptions[control.id]))) return reply("not_sent", "The selected model controls are unavailable.");
   if (request.maxOutputTokens > model.maxTokens) return reply("not_sent", "The output budget exceeds the model limit.");

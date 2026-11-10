@@ -208,7 +208,6 @@ pub(super) fn validate_krx_query(
 
 /// One market's validated daily file, projected to the fields Loupist reads.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 pub(super) struct KrxDailyFile {
     schema: String,
     market: String,
@@ -542,10 +541,15 @@ where
     Ok(result)
 }
 
+/// KRX approves each daily trading service per key, so a read can still use
+/// the other market.
+const APPROVAL_NEXT: &str = "The user requests the missing service approvals in the provider's portal, then verifies the key: if connection_setup is available, call it with {id: \"krx.market-data\"} so they can do it from a card; otherwise point them to Connections. Use an approved market or another source meanwhile.";
+
 fn approval_required(markets: &[KrxMarket]) -> FinanceDataError {
     FinanceDataError::ServiceApprovalRequired {
         provider: KRX_SOURCE_ID,
         services: markets.iter().map(|market| market.service()).collect(),
+        next: APPROVAL_NEXT,
     }
 }
 
@@ -1051,6 +1055,14 @@ mod tests {
         assert!(
             matches!(error, FinanceDataError::ServiceApprovalRequired { services, .. } if services.len() == 2)
         );
+        // KRX's own next step names its connection and the market fallback.
+        assert!(matches!(
+            approval_required(&[KrxMarket::Kosdaq]),
+            FinanceDataError::ServiceApprovalRequired { provider, next, .. }
+                if provider == KRX_SOURCE_ID
+                    && next.contains(r#"{id: "krx.market-data"}"#)
+                    && next.contains("approved market")
+        ));
         let coverage = verify_market_coverage(|market| async move {
             if market == KrxMarket::Kospi {
                 Ok(RawProviderResponse {

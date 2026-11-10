@@ -74,7 +74,7 @@ export function useModelCatalog(bridge: LoupistBridge) {
       if (!current) return current;
       const providers = current.providers.some((item) => item.id === provider)
         ? current.providers.map((item) => (item.id === provider ? { ...item, status } : item)) : current.providers;
-      const custom_providers = current.custom_providers?.some((item) => item.id === provider)
+      const custom_providers = current.custom_providers.some((item) => item.id === provider)
         ? current.custom_providers.map((item) => (item.id === provider ? { ...item, status } : item)) : current.custom_providers;
       return { ...current, providers, custom_providers };
     });

@@ -80,6 +80,7 @@ export function useToolbarOverflow(ref: RefObject<HTMLElement | null>): readonly
     const widths = ref.current ? measureToolbar(ref.current) : undefined;
     return widths ? foldedActions(widths) : [];
   };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- measures after every render; the update bails out when nothing folds differently.
   useLayoutEffect(() => {
     const value = next();
     setFolded((current) => same(current, value) ? current : value);

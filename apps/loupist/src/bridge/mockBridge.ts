@@ -19,10 +19,7 @@ import {
   createMockMarketplaceSnapshot,
   isValidMockSetupValue,
 } from "./mock/marketplace";
-import {
-  httpAddressError,
-  parseCredentialFreeHttpUrl,
-} from "../lib/credentialFreeUrl";
+import { MockBrowserTabs, validBrowserUrl } from "./mock/browser";
 import * as loupistChat from "./mock/loupistChat";
 import * as knowledge from "./mock/knowledge";
 import { curatedSeedView, MockWorldSchema } from "./mock/worldSchema";
@@ -31,75 +28,8 @@ import { MockScheduledTasks } from "./mock/scheduled";
 import { MockConfig } from "./mock/config";
 import worldDefaults from "../../world-model-defaults.json";
 import { defaultRunOptions } from "../lib/modelSelection";
-
-/** Oct 31 2026, 09:00 UTC: a fixed "connected since" date keeps previews stable. */
-export const MOCK_CONNECTED_AT_MS = Date.UTC(2026, 9, 31, 9, 0);
-
-export const mockProviderStatus = (
-  credential_kind: Contract.ProviderCredentialKind,
-  overrides: Partial<Contract.ProviderStatusView> = {},
-): Contract.ProviderStatusView => ({
-  state: credential_kind === "none" ? "disconnected" : "connected",
-  credential_kind,
-  notice: null,
-  last_limit_at_ms: null,
-  connected_at_ms: credential_kind === "none" || credential_kind === "environment" ? null : MOCK_CONNECTED_AT_MS,
-  used_by: { schedules: 0, chat_default: false, world_models: 0 },
-  ...overrides,
-});
-
-const mockProvider = (
-  id: string,
-  label: string,
-  credential_label: string,
-  options: {
-    description: string;
-    api_key?: boolean;
-    oauth?: string | null;
-    credential_source?: Contract.ModelProviderOption["credential_source"];
-    recommended?: boolean;
-    group?: Contract.ProviderGroup;
-    console_url?: string | null;
-    sign_in_flow?: Contract.ModelProviderOption["sign_in_flow"];
-    billing_note?: Contract.ModelProviderOption["billing_note"];
-    credential_kind?: Contract.ProviderCredentialKind;
-  },
-): Contract.ModelProviderOption => {
-  const credential_source = options.credential_source ?? "missing";
-  return {
-    id,
-    label,
-    credential_label,
-    description: options.description,
-    api_key: options.api_key ?? true,
-    oauth: options.oauth ? { label: options.oauth } : null,
-    credential_source,
-    recommended: options.recommended ?? false,
-    group: options.group ?? "more",
-    console_url: options.console_url ?? null,
-    sign_in_flow: options.sign_in_flow ?? null,
-    billing_note: options.billing_note ?? null,
-    status: mockProviderStatus(credential_source === "missing" ? "none" : options.credential_kind ?? "api_key"),
-  };
-};
-
-const MOCK_PERFORMANCE_CONTROL: Contract.ModelRunControl = {
-  id: "performance",
-  label: "Performance",
-  default_choice: "standard",
-  choices: [
-    {
-      id: "standard",
-      label: "Standard",
-      description: "Use the provider's standard service tier.",
-    },
-    {
-      id: "fast",
-      label: "Fast",
-      description: "Request the provider's priority service tier.",
-    },
-  ],
-};
+import { executionModelLock, initialModelCatalog, listProviderModels, mockProviderStatus } from "./mock/models";
+import { commandError } from "./mock/commandError";
 
 export class MockLoupistBridge implements Contract.LoupistBridge {
   private noticeVersion = CURRENT_NOTICE_VERSION;
@@ -269,67 +199,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   scheduledTaskWatch(request: Contract.ScheduledRunIdentity, observer: Contract.StreamObserver<Contract.ChatStreamEvent>) { return this.scheduled.watch(request, observer); }
   private readonly state: MockBridgeState;
   private workspaceUi: Contract.WorkspaceUiState | null = null;
-  private modelCatalog: Contract.ModelCatalog = {
-    hidden_model_profile_ids: [],
-    models: [
-      {
-        id: "model-test",
-        name: "GPT-5.6 Luna",
-        provider: "openai",
-        model: "gpt-5.6-luna",
-        input: ["text"],
-        reasoning: true,
-        context_window: 128_000,
-        max_tokens: 32_000,
-        thinking_levels: ["low", "medium", "high", "max"],
-        thinking_level_map: { max: "max" },
-        run_controls: [MOCK_PERFORMANCE_CONTROL],
-        credential_source: "saved",
-      },
-    ],
-    providers: [
-      mockProvider("openai", "ChatGPT", "OpenAI API key", {
-        description: "Sign in with ChatGPT, or use an OpenAI API key.",
-        oauth: "Continue with ChatGPT",
-        credential_source: "saved",
-        recommended: true,
-        group: "sign_in",
-        console_url: "https://platform.openai.com/api-keys",
-        sign_in_flow: "browser",
-        billing_note: "chatgpt_plan",
-        credential_kind: "plan",
-      }),
-      mockProvider("anthropic", "Anthropic", "Anthropic API key", {
-        description: "Connect with an API key stored by Pi in Loupist's private app data.",
-        group: "api_key",
-        console_url: "https://console.anthropic.com/settings/keys",
-      }),
-      mockProvider("google", "Google Gemini", "Gemini API key", {
-        description: "Connect with an API key stored by Pi in Loupist's private app data.",
-        group: "api_key",
-        console_url: "https://aistudio.google.com/apikey",
-      }),
-      mockProvider("xai", "xAI", "xAI API key", {
-        description: "Sign in with SuperGrok, or use an xAI API key.",
-        oauth: "Continue with SuperGrok",
-        group: "sign_in",
-        console_url: "https://console.x.ai",
-        sign_in_flow: "device",
-      }),
-      mockProvider("openrouter", "OpenRouter", "OpenRouter API key", {
-        description: "Connect with an API key stored by Pi in Loupist's private app data.",
-        group: "api_key",
-        console_url: "https://openrouter.ai/keys",
-      }),
-      mockProvider("vercel-ai-gateway", "Vercel AI Gateway", "AI Gateway API key", {
-        description: "Connect with an API key stored by Pi in Loupist's private app data.",
-      }),
-      mockProvider("groq", "Groq", "Groq API key", {
-        description: "Connect with an API key stored by Pi in Loupist's private app data.",
-      }),
-    ],
-    model_notice: null,
-  };
+  private modelCatalog: Contract.ModelCatalog = initialModelCatalog();
   private readonly disabledCapabilities = new Map<string, Set<string>>();
   private readonly enabledCapabilities = new Map<string, Set<string>>();
   private readonly financeCredentials = new Set<string>();
@@ -343,13 +213,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     string,
     Record<string, string>
   >();
-  private readonly browserTabs = new Map<
-    string,
-    {
-      state: Contract.BrowserTabState;
-      observer: Contract.StreamObserver<Contract.BrowserTabEvent>;
-    }
-  >();
+  private readonly browserTabs = new MockBrowserTabs();
 
   constructor(options: { delay_ms?: number; notice_acknowledged_version?: number } = {}) {
     this.noticeVersion = options.notice_acknowledged_version ?? CURRENT_NOTICE_VERSION;
@@ -393,136 +257,19 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     return structuredClone(this.modelCatalog);
   }
 
-  private executionModelLock(
-    model_profile_id: string,
-    thinking_level: string,
-    run_options: Record<string, string>,
-  ): Contract.ExecutionModelLock {
-    // An empty profile is Auto: like Rust, take the first connected model shown in Chat at its default controls.
-    if (!model_profile_id) {
-      const hidden = new Set(this.modelCatalog.hidden_model_profile_ids);
-      const auto = this.modelCatalog.models.find((item) => !hidden.has(item.id) && item.credential_source !== "missing");
-      if (!auto) throw new Error("Connect an AI account in Settings.");
-      // Configured reasoning and run options apply when the picked model supports them.
-      const thinking = auto.thinking_levels.includes(thinking_level) ? thinking_level : auto.thinking_levels.includes("medium") ? "medium" : auto.thinking_levels[0] ?? "off";
-      const options = { ...defaultRunOptions(auto), ...Object.fromEntries(Object.entries(run_options).filter(([key, value]) => auto.run_controls.some((control) => control.id === key && control.choices.some((choice) => choice.id === value)))) };
-      return this.executionModelLock(auto.id, thinking, options);
-    }
-    const model = this.modelCatalog.models.find(
-      (item) => item.id === model_profile_id,
-    );
-    if (!model) throw new Error("The selected model profile was not found.");
-    if (this.modelCatalog.hidden_model_profile_ids.includes(model.id)) {
-      throw new Error("The selected model is hidden from Chat.");
-    }
-    if (!model.thinking_levels.includes(thinking_level)) {
-      throw new Error(
-        "The selected thinking level is not available for this model.",
-      );
-    }
-    return {
-      profile_id: model.id,
-      name: model.name,
-      provider: model.provider,
-      model: model.model,
-      thinking_level,
-      run_options,
-    };
+  private executionModelLock(model_profile_id: string, thinking_level: string, run_options: Record<string, string>) {
+    return executionModelLock(this.modelCatalog, model_profile_id, thinking_level, run_options);
   }
 
   async providerModels(provider: string): Promise<Contract.ModelCatalog> {
-    const catalog: Record<string, Contract.ProviderModelOption[]> = {
-      openai: [
-        {
-          id: "gpt-5.6-luna",
-          name: "GPT-5.6 Luna",
-          reasoning: true,
-          context_window: 272_000,
-          max_tokens: 128_000,
-          input: ["text"],
-          thinking_levels: ["low", "medium", "high", "max"],
-          thinking_level_map: { max: "max" },
-          run_controls: [MOCK_PERFORMANCE_CONTROL],
-        },
-        {
-          id: "gpt-5.6-sol",
-          name: "GPT-5.6 Sol",
-          reasoning: true,
-          context_window: 272_000,
-          max_tokens: 128_000,
-          input: ["text"],
-          thinking_levels: ["off", "low", "medium", "high", "xhigh"],
-          thinking_level_map: { xhigh: "xhigh" },
-          run_controls: [MOCK_PERFORMANCE_CONTROL],
-        },
-        {
-          id: "gpt-5.6-terra",
-          name: "GPT-5.6 Terra",
-          reasoning: true,
-          context_window: 272_000,
-          max_tokens: 128_000,
-          input: ["text"],
-          thinking_levels: ["off", "low", "medium", "high"],
-          thinking_level_map: {},
-          run_controls: [MOCK_PERFORMANCE_CONTROL],
-        },
-      ],
-      anthropic: [
-        {
-          id: "claude-sonnet-4-5",
-          name: "Claude Sonnet 4.5",
-          reasoning: true,
-          context_window: 200_000,
-          max_tokens: 64_000,
-          input: ["text", "image"],
-          thinking_levels: ["off", "low", "medium", "high"],
-          thinking_level_map: {},
-          run_controls: [],
-        },
-      ],
-    };
-    const options = catalog[provider] ?? [
-      {
-        id: `${provider}-default`,
-        name: `${provider} default`,
-        reasoning: false,
-        context_window: 128_000,
-        max_tokens: 32_000,
-        input: ["text"],
-        thinking_levels: ["off"],
-        thinking_level_map: {},
-        run_controls: [],
-      },
-    ];
-    const credentialSource =
-      this.modelCatalog.providers.find((item) => item.id === provider)
-        ?.credential_source ?? "missing";
-    this.modelCatalog.models = [
-      ...this.modelCatalog.models.filter(
-        (model) => model.provider !== provider,
-      ),
-      ...options.map((option) => ({
-        id: `${provider}/${option.id}`,
-        name: option.name,
-        provider,
-        model: option.id,
-        input: option.input,
-        reasoning: option.reasoning,
-        context_window: option.context_window,
-        max_tokens: option.max_tokens,
-        thinking_levels: option.thinking_levels,
-        thinking_level_map: option.thinking_level_map,
-        run_controls: option.run_controls,
-        credential_source: credentialSource,
-      })),
-    ];
+    listProviderModels(this.modelCatalog, provider);
     return structuredClone(this.modelCatalog);
   }
 
   /** Preview and test helper: replaces one provider's Rust status and notifies `provider-status` listeners. */
   setProviderStatus(provider: string, status: Partial<Contract.ProviderStatusView>) {
     const option = this.modelCatalog.providers.find((item) => item.id === provider);
-    const custom = this.modelCatalog.custom_providers?.find((item) => item.id === provider);
+    const custom = this.modelCatalog.custom_providers.find((item) => item.id === provider);
     const current = option?.status ?? custom?.status ?? mockProviderStatus("none");
     const next = { ...current, ...status };
     if (option) option.status = next;
@@ -590,7 +337,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     const callback = /^http:\/\/127\.0\.0\.1:1455\/auth\/callback\?/u.test(value);
     const redirect = callback && /[?&]code=/u.test(value) && /[?&]state=/u.test(value);
     const code = /^[^\s#]+#[^\s#]+$/u.test(value) && value.length <= 2048;
-    if (!redirect && !code) throw Object.assign(new Error("That isn't the sign-in address."), { code: "paste_invalid" });
+    if (!redirect && !code) throw commandError("paste_invalid", "That isn't the sign-in address.");
   }
 
   /** Preview and test knob for `providerLocalDiscover`. */
@@ -629,9 +376,9 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   }
 
   async providerPresetSave(request: Contract.ProviderPresetRequest) {
-    if (!request.api_key.trim()) throw Object.assign(new Error("Upstage didn't accept this key."), { code: "key_rejected" });
+    if (!request.api_key.trim()) throw commandError("key_rejected", "Upstage didn't accept this key.");
     const next = await this.providerCustomSave({ name: "Upstage Solar", base_url: "https://api.upstage.ai/v1", api: "openai-completions", api_key: request.api_key, model_ids: ["solar-pro2", "solar-mini"] });
-    const custom = next.custom_providers?.find((item) => item.name === "Upstage Solar");
+    const custom = next.custom_providers.find((item) => item.name === "Upstage Solar");
     if (custom) custom.status = mockProviderStatus("custom", { connected_at_ms: Date.now() });
     return structuredClone(this.modelCatalog);
   }
@@ -656,7 +403,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   }
 
   async providerCustomSave(request: Contract.CustomProviderRequest) {
-    const providers = this.modelCatalog.custom_providers ?? [];
+    const providers = this.modelCatalog.custom_providers;
     const id = request.provider ?? `custom-${request.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "provider"}`;
     const base_url = request.base_url.trim().replace(/\/+$/, "");
     const local = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/u.test(base_url);
@@ -670,7 +417,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   }
 
   async providerCustomRemove(provider: string) {
-    this.modelCatalog.custom_providers = (this.modelCatalog.custom_providers ?? []).filter(item => item.id !== provider);
+    this.modelCatalog.custom_providers = this.modelCatalog.custom_providers.filter(item => item.id !== provider);
     this.modelCatalog.models = this.modelCatalog.models.filter(model => model.provider !== provider);
     return structuredClone(this.modelCatalog);
   }
@@ -928,89 +675,16 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   }
 
   async openExternalUrl(url: string) {
-    if (new TextEncoder().encode(url).byteLength > 8 * 1024) {
-      throw new Error("External link is too long.");
-    }
-    const parsed = parseCredentialFreeHttpUrl(url);
-    if (!parsed) {
-      throw new Error(httpAddressError);
-    }
-    window.open(parsed.href, "_blank", "noopener,noreferrer");
+    window.open(validBrowserUrl(url).href, "_blank", "noopener,noreferrer");
   }
 
-  async browserTabOpen(
-    request: Contract.BrowserTabOpenRequest,
-    observer: Contract.StreamObserver<Contract.BrowserTabEvent>,
-  ) {
-    if (this.browserTabs.size >= 12) {
-      throw new Error("Close a browser tab before opening another one.");
-    }
-    const parsed = this.validBrowserUrl(request.url);
-    const tab_id = crypto.randomUUID();
-    const state: Contract.BrowserTabState = {
-      tab_id,
-      url: parsed.href,
-      title: parsed.hostname,
-      loading: false,
-    };
-    this.browserTabs.set(tab_id, { state, observer });
-    queueMicrotask(() => {
-      observer({ type: "load_finished", tab_id, url: parsed.href });
-      observer({ type: "title_changed", tab_id, title: parsed.hostname });
-    });
-    return structuredClone(state);
-  }
-
-  async browserTabNavigate(tab_id: string, url: string) {
-    const tab = this.browserTabs.get(tab_id);
-    if (!tab) throw new Error("Browser tab was not found.");
-    const parsed = this.validBrowserUrl(url);
-    tab.state = { ...tab.state, url: parsed.href, title: parsed.hostname };
-    tab.observer({ type: "load_started", tab_id, url: parsed.href });
-    tab.observer({ type: "load_finished", tab_id, url: parsed.href });
-    tab.observer({ type: "title_changed", tab_id, title: parsed.hostname });
-  }
-
-  async browserTabHistory(
-    tab_id: string,
-    _direction: Contract.BrowserHistoryDirection,
-  ) {
-    if (!this.browserTabs.has(tab_id))
-      throw new Error("Browser tab was not found.");
-  }
-
-  async browserTabReload(tab_id: string) {
-    const tab = this.browserTabs.get(tab_id);
-    if (!tab) throw new Error("Browser tab was not found.");
-    tab.observer({ type: "load_started", tab_id, url: tab.state.url });
-    tab.observer({ type: "load_finished", tab_id, url: tab.state.url });
-  }
-
-  async browserTabSetBounds(request: Contract.BrowserTabBoundsRequest) {
-    if (!this.browserTabs.has(request.tab_id)) {
-      throw new Error("Browser tab was not found.");
-    }
-  }
-
-  async browserTabClose(tab_id: string) {
-    if (!this.browserTabs.delete(tab_id))
-      throw new Error("Browser tab was not found.");
-  }
-
-  async browserTabsReset() {
-    this.browserTabs.clear();
-  }
-
-  private validBrowserUrl(raw: string) {
-    if (new TextEncoder().encode(raw).byteLength > 8 * 1024) {
-      throw new Error("External link is too long.");
-    }
-    const parsed = parseCredentialFreeHttpUrl(raw);
-    if (!parsed) {
-      throw new Error(httpAddressError);
-    }
-    return parsed;
-  }
+  browserTabOpen(request: Contract.BrowserTabOpenRequest, observer: Contract.StreamObserver<Contract.BrowserTabEvent>) { return this.browserTabs.open(request, observer); }
+  browserTabNavigate(tab_id: string, url: string) { return this.browserTabs.navigate(tab_id, url); }
+  browserTabHistory(tab_id: string, direction: Contract.BrowserHistoryDirection) { return this.browserTabs.history(tab_id, direction); }
+  browserTabReload(tab_id: string) { return this.browserTabs.reload(tab_id); }
+  browserTabSetBounds(request: Contract.BrowserTabBoundsRequest) { return this.browserTabs.setBounds(request); }
+  browserTabClose(tab_id: string) { return this.browserTabs.close(tab_id); }
+  browserTabsReset() { return this.browserTabs.reset(); }
 
   async updateStatus(): Promise<Contract.UpdateState> {
     return {

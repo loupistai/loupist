@@ -3,8 +3,8 @@
 use super::*;
 
 pub(crate) const DEFILLAMA_SOURCE_ID: &str = "defillama.tvl";
-const DEFILLAMA_API_ROOT: &str = "https://api.llama.fi";
-const DEFILLAMA_STABLECOINS_ROOT: &str = "https://stablecoins.llama.fi";
+pub(super) const DEFILLAMA_API_ROOT: &str = "https://api.llama.fi";
+pub(super) const DEFILLAMA_STABLECOINS_ROOT: &str = "https://stablecoins.llama.fi";
 const DEFAULT_DAYS: i64 = 365;
 const MAX_DAYS: i64 = 3 * 366;
 

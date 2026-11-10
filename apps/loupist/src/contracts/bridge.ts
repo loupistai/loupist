@@ -11,7 +11,7 @@ import type { CustomConnectionsBridge } from "./customConnections";
 import type { SharingBridge } from "./sharing";
 import type { SkillCatalog, SkillDocument, SkillReadRequest, SkillCreateRequest, SkillSaveRequest, SkillDeleteRequest, SkillImportRequest } from "./skills";
 import type { DraftAttachment, StoredChatDraft, WorkspacePathRequest, WorkspaceDirectory, WorkspaceFile, ChatActivityRequest, ChatActivityDetail, WorkspaceUiState } from "./workspace";
-import type { ScheduledRun, ScheduledTask, ScheduledTaskIdentity, ScheduledRunIdentity, ScheduledTaskWatch } from "./scheduled";
+import type { ScheduledRun, ScheduledTask, ScheduledTaskIdentity, ScheduledTaskListItem, ScheduledRunIdentity, ScheduledTaskWatch } from "./scheduled";
 import type {
   LoupistCapabilityBinding,
   MarketplaceCredentialStatus,
@@ -115,7 +115,7 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   worldSchemaGet(request: { loupistId: string }): Promise<import("./knowledge").WorldSchemaView>;
   worldSchemaUndo(request: { loupistId: string; changeId: string }): Promise<import("./knowledge").WorldSchemaView>;
   worldSchemaRemove(request: { loupistId: string; kind: import("./knowledge").SchemaRemovalKind; name: string }): Promise<import("./knowledge").WorldSchemaView>;
-  onWorldSchemaChanged(handler: (event: { loupistId: string }) => void): () => void;
+  onWorldSchemaChanged(handler: (event: import("./generated").WorldSchemaChangedEvent) => void): () => void;
   principleList(request: PrincipleListRequest): Promise<Principle[]>;
   principleCreate(request: PrincipleCreateRequest): Promise<Principle>;
   principleUpdate(request: PrincipleUpdateRequest): Promise<Principle>;
@@ -152,7 +152,7 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   attentionNotify(request: AttentionNotifyRequest): Promise<boolean>;
   scheduledTaskRunNow(request: ScheduledTaskIdentity): Promise<ScheduledRun>;
   /** Every scheduled task of the Loupist with its latest run, for the Schedule tab. */
-  scheduledTasksList(request: { loupist_id: string }): Promise<ScheduledTask[]>;
+  scheduledTasksList(request: { loupist_id: string }): Promise<ScheduledTaskListItem[]>;
   /** Pause or resume; the revision guards against a concurrent edit. */
   scheduledTaskSetStatus(request: ScheduledTaskIdentity & { expected_revision: number; status: "active" | "paused" }): Promise<ScheduledTask>;
   /** Deletes a custom task; the briefing is turned off from its settings instead. */

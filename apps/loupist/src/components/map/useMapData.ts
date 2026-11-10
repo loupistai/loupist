@@ -42,6 +42,7 @@ export function useMapDetail(bridge: LoupistBridge, location: KnowledgeLocation,
       if (!cancelled && graph.recordId === recordId && graph.revisionId === revisionId) setResult({ key, graph });
     }).catch(() => { if (!cancelled) setErrorKey(key); });
     return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` names the query inputs.
   }, [bridge, key, retryKey]);
   return { graph: result?.key === key ? result.graph : undefined, error: errorKey === key, retry: () => retry((n) => n + 1) };
 }

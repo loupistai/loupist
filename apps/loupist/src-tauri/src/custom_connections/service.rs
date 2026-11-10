@@ -24,6 +24,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum AuthState {
     NotRequired,
@@ -33,7 +34,6 @@ pub enum AuthState {
 }
 
 #[derive(Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ConnectionRecord {
     pub id: String,
     pub name: String,
@@ -50,6 +50,7 @@ pub struct ConnectionRecord {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ToolCard {
     pub definition_changed: bool,
     pub name: String,
@@ -63,6 +64,7 @@ pub struct ToolCard {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "CustomConnection"))]
 pub struct ConnectionView {
     pub id: String,
     pub kind: &'static str,
@@ -81,7 +83,6 @@ pub struct ConnectionView {
 }
 
 #[derive(Clone, Default, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 struct StoredConnections {
     connections: BTreeMap<String, ConnectionRecord>,
     approvals: Approvals,

@@ -12,7 +12,6 @@ use crate::{
     app::{AppState, CommandError},
     providers::catalog::known_provider,
     scoped_config::{ConfigDocument, ConfigScope, ConfigUpdateRequest},
-    store::LoupistStore,
 };
 
 /// The provider part of a `provider/model` profile ID.

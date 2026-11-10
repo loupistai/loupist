@@ -69,14 +69,14 @@ function commentaryBeats(id: string, text: string, start: number, final: boolean
 }
 
 function tool(id: string, toolName: string, category: ProgressItem["category"], operation: ProgressItem["operation"], action: string, running: string, target: string): ProgressItem {
-  return { id, kind: "tool", toolName, category, operation, action, running, target, status: "running" };
+  return { id, kind: "tool", toolName, category, operation, action, running, target, href: null, status: "running", startedAtMs: 0, finishedAtMs: null };
 }
 
 export function liveResearchRun(bridge: PreviewBridge) {
   bridge.chatSend = async (request, observer) => {
     const run_id = request.run_id;
     const started = Date.now();
-    const progress: ChatProgress = { startedAtMs: started, items: [] };
+    const progress: ChatProgress = { startedAtMs: started, items: [], finishedAtMs: null };
     let sequence = 0;
     let content = "";
     const steps = [
@@ -142,7 +142,8 @@ export function liveResearchRun(bridge: PreviewBridge) {
     timers.push(window.setTimeout(() => {
       progress.finishedAtMs = Date.now();
       emit({
-        type: "completed", run_id, tool_refusals: [], message_id: `live-${run_id}`, final_text: content, created_at: new Date().toISOString(),
+        type: "completed", run_id, lens_receipts: [], tool_refusals: [], host_composed: false, message_id: `live-${run_id}`, final_text: content, created_at: new Date().toISOString(),
+        performance: { setupMs: 40, generationMs: Math.max(0, text.end), totalMs: text.end + 250, sessionCache: "warm", inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
         execution_model: { profile_id: "preview-auto", name: "Auto", provider: "openai", model: "preview-model", thinking_level: "medium", run_options: {} },
         agent_harness: { schema: "loupist-harness/1", mode: "chat", skill_ids: [], capability_ids: [], digest: "e".repeat(64) },
       });

@@ -1,3 +1,4 @@
+import type * as Wire from "./generated";
 /**
  * Renderer mirror of `loupist_desktop::knowledge` schema 1.
  * Struct fields are camelCase. Enum values are snake_case, matching serde.
@@ -7,23 +8,13 @@
 
 export type KnowledgeRecordKind = "source" | "world" | "lens";
 
-export type IndexingState =
-  | "snapshot_only"
-  | "ready"
-  | "embeddings_absent"
-  | "reconcile_required"
-  | "unavailable";
+export type IndexingState = Wire.IndexingState;
 
-export type ClaimStatus = "active" | "disputed" | "withdrawn";
+export type ClaimStatus = Wire.ClaimStatus;
 
-export type BindingRole =
-  | "extracted_from"
-  | "supports"
-  | "opposes"
-  | "context"
-  | "analysis";
+export type BindingRole = Wire.BindingRole;
 
-export type TimePrecision = "unknown" | "year" | "month" | "date" | "instant";
+export type TimePrecision = Wire.TimePrecision;
 
 export type TimePoint = {
   precision: TimePrecision;
@@ -31,16 +22,9 @@ export type TimePoint = {
   approximate?: boolean;
 };
 
-export type ClaimEndpoint = {
-  nodeId: string;
-  role: string;
-};
+export type ClaimEndpoint = Wire.ClaimEndpoint;
 
-export type EvidenceBinding = {
-  spanId: string;
-  role: BindingRole;
-  attribution: string;
-};
+export type EvidenceBinding = Wire.EvidenceBinding;
 
 export type SourceClass =
   | "publisher_document"
@@ -69,7 +53,7 @@ export type RepresentationRole =
   | "excerpt"
   | "derived";
 
-export type SourceProcessing = { jobId?: string; status: string; error?: string };
+export type SourceProcessing = Wire.SourceProcessing;
 
 export type CustomConnectionOrigin = { kind: "custom_connection"; connectionId: string; name: string };
 
@@ -108,9 +92,7 @@ export type KnowledgeRecordSummary = {
   archived?: boolean;
 };
 
-export type KnowledgeCatalogRequest = {
-  loupistId: string;
-};
+export type KnowledgeCatalogRequest = Wire.KnowledgeCatalogRequest;
 
 export type KnowledgeCatalog = {
   loupistId: string;
@@ -157,11 +139,12 @@ export type GraphClaim = {
   qualifiers: { key: string; value: string }[];
   evidence: EvidenceBinding[];
   status: ClaimStatus;
-  recordedAtMs?: number;
-  publicationTime?: TimePoint;
-  effectiveTime?: TimePoint;
-  validAt?: TimePoint;
-  invalidAt?: TimePoint;
+  recordedAtMs: number | null;
+  publicationTime: TimePoint | null;
+  effectiveTime: TimePoint | null;
+  validAt: TimePoint | null;
+  invalidAt: TimePoint | null;
+  expiredAt: TimePoint | null;
 };
 
 export type GraphEdge = {
@@ -172,29 +155,23 @@ export type GraphEdge = {
   claim: GraphClaim;
 };
 
-export type WorldSourceTarget = {
-  recordId: string;
-  revisionId: string;
-  sourceId: string;
-  spanId: string;
-  worldRecordId: string;
-  worldRevisionId: string;
-};
+export type WorldSourceTarget = Wire.WorldSourceTarget;
 
-/** Host `WorldGraphView`, plus optional presentation fields. */
+/** Host `WorldGraphView` with the query's presentation fields (`knowledge_world_query`). */
 export type WorldGraphView = {
   recordId: string;
   revisionId: string;
   revisionDigest: string;
   nodes: GraphNode[];
   edges: GraphEdge[];
-  nextCursor?: string;
+  nextCursor: string | null;
   coverage: "sealed_snapshot";
   indexingState: IndexingState;
   truncated: boolean;
-  appliedCursor?: string | null;
-  originLabel?: string;
-  sourceTargets?: Record<string, WorldSourceTarget>;
+  appliedCursor: string | null;
+  originLabel: string;
+  sourceTargets: Record<string, WorldSourceTarget>;
+  scan: Wire.QueryScan;
 };
 
 export type KnowledgeSourceReadRequest = {
@@ -214,14 +191,14 @@ export type KnowledgeSourceSelectionRequest = {
   selection: SourceTextSelection;
 };
 
-export type SourceTextSelection = { startUtf16: number; endUtf16: number; text: string };
+export type SourceTextSelection = Wire.SourceTextSelection;
 
 export type SourceSpanView = {
   spanId: string;
   selector: string;
   contextNote: string;
   mediaType: string;
-  text?: string;
+  text: string | null;
   /** Readable field projection only; text remains the exact retained span. */
   presentation?: {
     text: string;
@@ -233,12 +210,12 @@ export type SourceSpanView = {
   };
 };
 
-export type SourceRelatedClaim = { worldRecordId: string; worldRevisionId: string; claimId: string; proposition: string; relation: string };
+export type SourceRelatedClaim = Wire.SourceWorldClaim;
 
 export type SourceDetail = {
   origin?: CustomConnectionOrigin;
   relatedClaims: SourceRelatedClaim[];
-  processing?: SourceProcessing;
+  processing: SourceProcessing | null;
   sourceId: string;
   recordId: string;
   revisionId: string;
@@ -249,11 +226,11 @@ export type SourceDetail = {
   coverage: Coverage;
   material: RepresentationRole;
   verification: "verified_bytes" | "declared_digest" | "unresolved";
-  derivation?: string;
+  derivation: string | null;
   spans: SourceSpanView[];
-  selectedSpanId?: string;
-  publicationTime?: TimePoint;
-  acquiredAt?: TimePoint;
+  selectedSpanId: string | null;
+  publicationTime: TimePoint | null;
+  acquiredAt: TimePoint | null;
 };
 
 export type KnowledgeLensReadRequest = {
@@ -299,8 +276,10 @@ export type KnowledgeResearchPage = {
 };
 
 export type WorkingNote = {
-  inputs?: JournalInputs | null;
-  previousNoteIds?: string[];
+  /** Later committed notes on the same research: discovery pointers, not evidence. */
+  laterNotes?: Wire.LaterNote[];
+  inputs?: JournalInputs;
+  previousNoteIds: string[];
   researchId: string;
   chatId: string;
   title: string;
@@ -309,33 +288,17 @@ export type WorkingNote = {
   recordedAtMs: number;
 };
 
-export type WorkingNoteReadRequest = { loupistId: string; noteId: string };
+export type WorkingNoteReadRequest = Wire.WorkingNoteReadRequest;
 
-export type WorkingNotesRequest = {
-  loupistId: string;
-  chatId: string;
-};
+export type WorkingNotesRequest = Wire.WorkingNotesRequest;
 
 export type WorkingNotesPage = {
   current: WorkingNote | null;
 };
 
-export type RetainedSource = {
-  processing?: SourceProcessing;
-  recordId: string;
-  sourceId: string;
-  captureId: string;
-  representationId?: string;
-  spanId?: string;
-  revisionId: string;
-  revisionDigest: string;
-};
+export type RetainedSource = Wire.RetainedSource;
 
-export type KnowledgeSourceFile = {
-  mediaType: string;
-  fileName: string;
-  bytesBase64: string;
-};
+export type KnowledgeSourceFile = Wire.KnowledgeSourceFile;
 
 export type KnowledgeSourceRetainRequest = {
   loupistId: string;
@@ -347,16 +310,8 @@ export type KnowledgeSourceRetainRequest = {
   file?: KnowledgeSourceFile;
 };
 
-export type GraphJobView = {
-  jobId: string;
-  loupistId: string;
-  worldRecordId: string;
-  worldRevisionId: string;
-  status: string;
-  payloadDigest: string;
-  createdAtMs: number;
-  hostMayRedrive: boolean;
-};
+/** One World processing job; the renderer never reads the job's stored document. */
+export type GraphJobView = Omit<Wire.GraphJobView, "document">;
 
 export type GraphProcessingSettings = {
   enrichmentEnabled: boolean;
@@ -375,28 +330,10 @@ export type GraphProcessingSettings = {
 /** Display names. `en` is required; `ko` is omitted when unset. */
 export type SchemaLabels = { en: string; ko?: string };
 export type SchemaCategory = "company" | "person" | "product" | "market" | "event" | "other";
-export type ExtensionField = { name: string; description: string };
-export type ExtensionType = {
-  name: string;
-  description: string;
-  category: SchemaCategory;
-  labels: SchemaLabels;
-  /** One short user-facing line. `description` is the English model-facing definition. */
-  blurbs: SchemaLabels;
-  fields: ExtensionField[];
-};
-export type ExtensionRelation = {
-  name: string;
-  description: string;
-  signatures: Array<[string, string]>;
-  labels: SchemaLabels;
-};
-export type WorldExtension = {
-  version: number;
-  types: ExtensionType[];
-  relations: ExtensionRelation[];
-  updatedAtMs: number;
-};
+export type ExtensionField = Wire.ExtensionField;
+export type ExtensionType = Wire.ExtensionType;
+export type ExtensionRelation = Wire.ExtensionRelation;
+export type WorldExtension = Wire.WorldExtension;
 export type SchemaChangeProducer = "preset" | "chat" | "review" | "undo";
 export type SchemaChange = {
   changeId: string;
@@ -421,15 +358,9 @@ export type SchemaRemovalKind = "type" | "relation";
  * `waiting` it cannot read now (no model, an account to reconnect); `failed` a read
  * stopped and will not retry by itself.
  */
-export type FollowedState = "none" | "off" | "done" | "failed" | "waiting" | "queued" | "running";
+export type FollowedState = Wire.FollowedState;
 
-export type FollowedStatus = {
-  state: FollowedState;
-  /** How many assets the "What you follow" Sources list. */
-  assets: number;
-  /** When the oldest unfinished read was queued. */
-  queuedAtMs?: number;
-};
+export type FollowedStatus = Wire.FollowedStatus;
 
 /** Why World processing is not ready, by code; the interface words it. */
 export type GraphReadinessNote =
@@ -463,16 +394,9 @@ export type GraphProcessingView = {
   };
 };
 
-export type KnowledgeJournalReadRequest = {
-  loupistId: string;
-  journalId: string;
-};
+export type KnowledgeJournalReadRequest = Wire.KnowledgeJournalReadRequest;
 
-export type KnowledgeJournalSourceReadRequest = {
-  loupistId: string;
-  journalId: string;
-  receiptId: string;
-};
+export type KnowledgeJournalSourceReadRequest = Wire.KnowledgeJournalSourceReadRequest;
 
 export type JournalSourceRead = {
   mediaType: string;
@@ -504,9 +428,9 @@ export type JournalInputs = {
     markdown: string;
     status: string;
   }[];
-  earlier?: {
+  earlier: {
     researchId: string;
-    journalId?: string | null;
+    journalId: string | null;
     relation: "review" | "supersedes" | "contradicts";
     deliveredText: string;
     deliveredDigest: string;
@@ -525,7 +449,7 @@ export type JournalCheck = {
   confidence?: number;
 };
 /** A reason for following an asset, or a line that would change the user's mind. */
-export type JournalThesis = { assetId: string; role: "reason" | "line" };
+export type JournalThesis = Wire.JournalThesis;
 export type JournalOutcome = {
   observed: number;
   observedAt: string;
@@ -537,15 +461,15 @@ export type JournalOutcome = {
 export type JournalRecord = {
   journalId: string; researchId: string; loupistId: string;
   judgment: string; reasoning: string; entities: string[];
-  check?: JournalCheck | null; outcome?: JournalOutcome | null; thesis?: JournalThesis | null;
-  originChatId?: string | null; createdAtMs: number; updatedAtMs: number; archived: boolean;
+  check?: JournalCheck; outcome?: JournalOutcome; thesis?: JournalThesis;
+  originChatId: string | null; createdAtMs: number; updatedAtMs: number; archived: boolean;
   inputs: JournalInputs; inputDigest: string;
 };
 export type JournalInput = { judgment: string; reasoning?: string; entities?: string[]; check?: JournalCheck | null; thesis?: JournalThesis | null };
 export type JournalListRequest = { loupistId: string; includeArchived?: boolean };
 export type JournalCreateRequest = JournalInput & { loupistId: string };
 export type JournalUpdateRequest = JournalInput & { loupistId: string; journalId: string; expectedUpdatedAtMs: number };
-export type JournalArchiveRequest = { loupistId: string; journalId: string; archived: boolean };
+export type JournalArchiveRequest = Wire.JournalArchiveRequest;
 
 export type GraphCamera = {
   x: number;
@@ -563,18 +487,8 @@ export type KnowledgeSelection =
   | { kind: "snapshot"; pin: KnowledgePin };
 
 export type ConnectionHop = { claimId: string; relation: string; fromRole: string; toRole: string; reversed: boolean; nodeId: string; name: string };
-export type ConnectionStatus = "new" | "shown" | "opened" | "dismissed" | "filed";
-export type ConnectionView = {
-  connectionId: string;
-  seedNodeId: string;
-  farNodeId: string;
-  seedName: string;
-  farName: string;
-  path: ConnectionHop[];
-  score: number;
-  status: ConnectionStatus;
-  createdAtMs: number;
-};
+export type ConnectionStatus = Wire.ConnectionStatus;
+export type ConnectionView = Wire.ConnectionView;
 
 export type KnowledgeViewState = {
   highlightEntityIds?: string[];
@@ -695,7 +609,7 @@ export type KnowledgeMapEdge = {
   firstSeenAtMs?: number;
 };
 export type KnowledgeMapItem = { symbol: string; market: string; displayName: string | null };
-export type KnowledgeMapCount = { total: number; shown: number; truncated: boolean };
+export type KnowledgeMapCount = Wire.KnowledgeMapCount;
 export type KnowledgeMap = {
   nodes: KnowledgeMapNode[];
   edges: KnowledgeMapEdge[];
@@ -720,7 +634,7 @@ export type PrincipleCreateRequest = { loupistId: string; statement: string; why
   origin: "settings" | "feedback"; originChatId?: string; originMessageId?: string };
 export type PrincipleUpdateRequest = { loupistId: string; recordId: string; expectedRevisionId: string;
   statement?: string; why?: string; example?: string };
-export type PrincipleArchiveRequest = { loupistId: string; recordId: string; archived: boolean };
+export type PrincipleArchiveRequest = Wire.PrincipleArchiveRequest;
 
 export type LearningReview = {
   reviewId: string; status: "created" | "refined" | "deferred" | "failed";
@@ -730,8 +644,8 @@ export type LearningReview = {
 export type LearningReviewQuery = { loupistId: string; limit?: number };
 export type MemoryLearningSettings = { learnMethods: boolean };
 /** Turns that read or applied a principle or method, and the chats they were in (newest first, at most five). */
-export type MemoryUsage = { recordId: string; usedCount: number; lastUsedAtMs: number; usedIn: { chatId: string; atMs: number }[] };
+export type MemoryUsage = Wire.MemoryUsage;
 export type LearningReviewFinishedEvent = { loupistId: string; review: LearningReview };
 
-export type MemoryControls = { paused: string[]; removed: string[] };
+export type MemoryControls = Wire.MemoryControls;
 export type MemoryResetCounts = { principles: number; pages: number; sections: number; names: number; relationships: number; sources: number };

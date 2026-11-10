@@ -33,6 +33,7 @@ import type {
 import type { ModelCatalog } from "../../contracts/model";
 import type { LearnedDigest, LensKind, LensLogEntryView, LensSearchHit, PageSummary, PageView, SectionView } from "../../contracts/lens";
 import { clone, makeId, shortPause, type MockBridgeState } from "./state";
+import { commandError } from "./commandError";
 
 const WORLD_GRAPH_BYTE_LIMIT = 262_144;
 const WORLD_GRAPH_SERVER_CAP = 100;
@@ -161,8 +162,12 @@ const claim = (
     qualifiers: extras.qualifiers ?? [],
     evidence,
     status: extras.status ?? "active",
-    publicationTime: extras.publicationTime,
-    effectiveTime: extras.effectiveTime,
+    publicationTime: extras.publicationTime ?? null,
+    effectiveTime: extras.effectiveTime ?? null,
+    recordedAtMs: null,
+    validAt: null,
+    invalidAt: null,
+    expiredAt: null,
   };
 };
 
@@ -220,7 +225,7 @@ const ownedGraph = (): GraphBody => {
   return {
     nodes,
     edges: claims.map((item) => edge(`edge-${item.id}`, item)),
-    indexingState: "ready",
+    indexingState: "snapshot_only",
     originLabel: "Working copy",
     revisionDigest: "digest-owned",
   };
@@ -249,6 +254,10 @@ const sources = (): SourceDetail[] => [
         text: "The status-code element is a three-digit integer code.",
       },
     ],
+    processing: null,
+    derivation: null,
+    selectedSpanId: null,
+    publicationTime: null,
   },
   {
     sourceId: "source-tool-note",
@@ -272,6 +281,9 @@ const sources = (): SourceDetail[] => [
         text: "HTTP/1.1 200",
       },
     ],
+    processing: null,
+    selectedSpanId: null,
+    publicationTime: null,
   },
 ];
 
@@ -379,7 +391,7 @@ const buildStore = (loupistId: string): Store => ({
 const emptyStore = (): Store => ({
   seeded: false,
   principles: [],
-  owned: { nodes: [], edges: [], indexingState: "unavailable", revisionDigest: "none" },
+  owned: { nodes: [], edges: [], indexingState: "snapshot_only", revisionDigest: "none" },
   sources: [],
   acquisitions: {},
   growth: [],
@@ -512,8 +524,11 @@ const blank = (
   coverage: "sealed_snapshot",
   indexingState: graph.indexingState,
   truncated: false,
-  originLabel: graph.originLabel,
+  originLabel: graph.originLabel ?? "",
   appliedCursor: null,
+  nextCursor: null,
+  sourceTargets: {},
+  scan: { strategy: "scan", nodesScanned: 0, claimsScanned: 0 },
 });
 
 export const knowledgeCatalog = async (
@@ -528,11 +543,11 @@ export const knowledgeCatalog = async (
       readOnly: false, indexingState: store.owned.indexingState, objects: [] }],
     lenses: store.lenses.map((lens) => ({ recordId: lens.recordId, kind: "lens" as const, title: lens.title, lensKind: lens.kind, archived: lens.archived,
       updatedAtMs: lens.updatedAtMs, summary: pageSummary(lens), learned: lens.learned || store.log.some((row) => row.recordId === lens.recordId),
-      revisionId: lens.revisionId, revisionDigest: lens.revisionDigest, readOnly: false, indexingState: "ready",
+      revisionId: lens.revisionId, revisionDigest: lens.revisionDigest, readOnly: false, indexingState: "snapshot_only",
       objects: [{ id: lens.recordId, title: lens.title }] })),
     sources: store.sources.map((source) => ({ recordId: source.recordId, kind: "source", title: source.title,
       revisionId: source.revisionId, revisionDigest: `digest-${source.sourceId}`,
-      readOnly: false, indexingState: "ready", objects: [{ id: source.sourceId, title: source.title, summary: source.spans[0]?.text?.slice(0, 180), originLabel: source.originLabel, origin: source.origin, acquiredAt: source.acquiredAt, publicationTime: source.publicationTime, processing: source.processing }] })),
+      readOnly: false, indexingState: "snapshot_only", objects: [{ id: source.sourceId, title: source.title, summary: source.spans[0]?.text?.slice(0, 180), originLabel: source.originLabel, origin: source.origin, acquiredAt: source.acquiredAt ?? undefined, publicationTime: source.publicationTime ?? undefined, processing: source.processing ?? undefined }] })),
   };
 };
 
@@ -587,12 +602,13 @@ export const knowledgeWorldQuery = async (
             queryKey,
             offset: nextOffset,
           })
-        : undefined,
+        : null,
     coverage: "sealed_snapshot",
     indexingState: graph.indexingState,
     truncated: nextOffset < projected.nodes.length || request.byteLimit < WORLD_GRAPH_BYTE_LIMIT,
-    originLabel: graph.originLabel,
+    originLabel: graph.originLabel ?? "",
     appliedCursor: request.cursor ?? null,
+    scan: { strategy: "scan", nodesScanned: projected.nodes.length, claimsScanned: projected.edges.length },
   });
 };
 
@@ -818,7 +834,7 @@ export const knowledgeSourceRetain = async (
     coverage: request.coverage,
     material: request.coverage === "included_excerpt" ? "excerpt" : "original",
     verification: request.coverage === "metadata_only" ? "declared_digest" : "verified_bytes",
-    publicationTime: request.publicationTime,
+    publicationTime: request.publicationTime ?? null,
     relatedClaims: [],
     spans: spanId
       ? [
@@ -827,26 +843,32 @@ export const knowledgeSourceRetain = async (
             selector: request.file ? "byte_range:0" : "utf8_line_range:1-1",
             contextNote: request.file ? "Original file bytes" : "Exact original text",
             mediaType,
-            text: request.file ? fileText : request.text,
+            text: (request.file ? fileText : request.text) ?? null,
           },
         ]
       : [],
+    processing: null,
+    derivation: null,
+    selectedSpanId: null,
+    acquiredAt: null,
   });
   const retained = store.sources.at(-1)!;
   const readable = retained.spans.some((span) => Boolean(span.text));
   if (readable && store.settings.enrichmentEnabled) {
     const job: GraphJobView = { jobId: makeId("job"), loupistId: request.loupistId, worldRecordId: WORLD, worldRevisionId: OWNED, status: store.settings.paused ? "paused_budget" : "queued", payloadDigest: spanId!, createdAtMs: Date.now(), hostMayRedrive: false };
     store.jobs.push(job);
-    retained.processing = { jobId: job.jobId, status: job.status };
-  } else retained.processing = { status: readable ? "disabled" : "no_text" };
+    retained.processing = { jobId: job.jobId, status: job.status, error: null };
+  } else retained.processing = { status: readable ? "disabled" : "no_text", jobId: null, error: null };
   const result: RetainedSource = {
     recordId,
     sourceId,
-    processing: retained.processing,
     captureId: makeId("capture"),
-    spanId,
+    spanId: spanId ?? null,
     revisionId,
     revisionDigest: "digest-retained",
+    representationId: null,
+    selectedDigest: null,
+    materialDigest: null,
   };
   store.growth.push(growthEvent(request.loupistId, recordId, "source_retained", request.title));
   store.acquisitions[acquisition] = result;
@@ -936,7 +958,6 @@ function seedJournal(loupistId: string): JournalRecord {
   return {
     journalId: "journal-http",
     check: { claim: "Hanul’s inventory days fall below 50", metric: "Inventory days", direction: "below", threshold: 50, byDate: "2026-12-31", confidence: 70 },
-    outcome: null,
     judgment: "Treat the dependency as a reported protocol fact, not a valuation.",
     reasoning: "The retained excerpt states the dependency.",
     loupistId, researchId: "research-http", entities: ["node-http"], originChatId: "chat-quality-1", createdAtMs: Date.parse("2026-09-02T00:00:00Z"), updatedAtMs: Date.parse("2026-09-02T00:00:00Z"), archived: false, inputDigest: "mock-input",
@@ -968,6 +989,7 @@ function seedJournal(loupistId: string): JournalRecord {
           status: "considered",
         },
       ],
+      earlier: [],
     },
   };
 };
@@ -1084,16 +1106,16 @@ function principleLens(p: Principle): PageView {
 }
 function checkPrinciple(p: Pick<Principle, "statement" | "why" | "example">) {
   p.statement = p.statement.trim();
-  if (!p.statement || [...p.statement].length > 280 || /[\x00]/u.test(p.statement)) throw Object.assign(new Error("statement must contain 1–280 characters"), { code: "invalid" });
+  if (!p.statement || [...p.statement].length > 280 || /[\x00]/u.test(p.statement)) throw commandError("invalid", "statement must contain 1–280 characters");
   for (const field of ["why", "example"] as const) if (p[field] !== undefined) {
     p[field] = p[field]!.trim();
-    if ([...p[field]!].length > 500) throw Object.assign(new Error(`${field} must contain at most 500 characters`), { code: "invalid" });
+    if ([...p[field]!].length > 500) throw commandError("invalid", `${field} must contain at most 500 characters`);
   }
 }
 function uniquePrinciple(store: Store, statement: string, except?: string) {
   const fold = (value: string) => value.trim().replace(/\s+/gu, " ").toLowerCase();
   if (store.principles.some(p => !p.archived && p.recordId !== except && fold(p.statement) === fold(statement))) {
-    throw Object.assign(new Error("You already have this principle."), {code:"duplicate_principle"});
+    throw commandError("duplicate_principle", "You already have this principle.");
   }
 }
 export async function principleList(state: MockBridgeState, request: PrincipleListRequest): Promise<Principle[]> {
@@ -1104,22 +1126,22 @@ export async function principleCreate(state: MockBridgeState, request: Principle
   const p: Principle = { ...request, recordId: makeId("rec"), revisionId: makeId("rev"), createdAtMs: Date.now(), updatedAtMs: Date.now(), archived: false };
   checkPrinciple(p);
   uniquePrinciple(store,p.statement);
-  if (p.origin === "feedback" && (!p.originChatId || !p.originMessageId)) throw Object.assign(new Error("feedback requires origin Chat and message"), {code:"invalid"});
+  if (p.origin === "feedback" && (!p.originChatId || !p.originMessageId)) throw commandError("invalid", "feedback requires origin Chat and message");
   store.principles.push(p); store.lenses.push(principleLens(p));
   store.growth.push({ ...growthEvent(p.loupistId,p.recordId,"lens_created",p.statement,{actor:"user"}),origin:p.origin,originChatId:p.originChatId ?? null,originMessageId:p.originMessageId ?? null });
   return clone(p);
 }
 export async function principleUpdate(state: MockBridgeState, request: PrincipleUpdateRequest): Promise<Principle> {
   const store=ensure(state,request.loupistId); const p=store.principles.find(p=>p.recordId===request.recordId);
-  if (!p) throw Object.assign(new Error("Principle not found"),{code:"not_found"});
-  if (p.revisionId!==request.expectedRevisionId) throw Object.assign(new Error("revision conflict"),{code:"conflict"});
+  if (!p) throw commandError("not_found", "Principle not found");
+  if (p.revisionId!==request.expectedRevisionId) throw commandError("conflict", "revision conflict");
   const next={...p,statement:request.statement??p.statement,why:request.why??p.why,example:request.example??p.example,origin:"settings" as const,originChatId:undefined,originMessageId:undefined,revisionId:makeId("rev"),updatedAtMs:Date.now()};
   checkPrinciple(next); uniquePrinciple(store,next.statement,p.recordId); Object.assign(p,next); store.lenses[store.lenses.findIndex(l=>l.recordId===p.recordId)]=principleLens(p);
   store.growth.push({...growthEvent(p.loupistId,p.recordId,"lens_revised",p.statement,{actor:"user"}),origin:"settings"}); return clone(p);
 }
 export async function principleArchive(state: MockBridgeState, request: PrincipleArchiveRequest): Promise<Principle> {
   const store=ensure(state,request.loupistId); const p=store.principles.find(p=>p.recordId===request.recordId);
-  if (!p) throw Object.assign(new Error("Principle not found"),{code:"not_found"});
+  if (!p) throw commandError("not_found", "Principle not found");
   if (!request.archived) uniquePrinciple(store,p.statement,p.recordId);
   p.archived=request.archived; p.updatedAtMs=Date.now(); store.lenses[store.lenses.findIndex(l=>l.recordId===p.recordId)]=principleLens(p);
   store.growth.push({...growthEvent(p.loupistId,p.recordId,p.archived?"lens_archived":"lens_restored",p.statement,{actor:"user"}),origin:"settings"}); return clone(p);
@@ -1166,16 +1188,16 @@ export async function journalList(state: MockBridgeState, request: JournalListRe
 }
 export async function journalCreate(state: MockBridgeState, request: JournalCreateRequest): Promise<JournalRecord> {
   validateJournal(request);
-  const record: JournalRecord = { ...request, judgment: request.judgment, reasoning: request.reasoning ?? "", entities: request.entities ?? [], journalId: makeId("jnl"), researchId: "", inputDigest: "mock-input", createdAtMs: Date.now(), updatedAtMs: Date.now(), archived: false, inputs: { sources: [], worlds: [], lenses: [], earlier: [] } };
+  const record: JournalRecord = { ...request, check: request.check ?? undefined, thesis: request.thesis ?? undefined, judgment: request.judgment, reasoning: request.reasoning ?? "", entities: request.entities ?? [], journalId: makeId("jnl"), researchId: "", inputDigest: "mock-input", createdAtMs: Date.now(), updatedAtMs: Date.now(), archived: false, inputs: { sources: [], worlds: [], lenses: [], earlier: [] }, originChatId: null };
   ensure(state, request.loupistId).journals.push(record); return clone(record);
 }
 export async function journalUpdate(state: MockBridgeState, request: JournalUpdateRequest): Promise<JournalRecord> {
   validateJournal(request);
   const record = ensure(state, request.loupistId).journals.find(j => j.journalId === request.journalId);
   if (!record) throw new Error("Journal entry not found.");
-  if (record.updatedAtMs !== request.expectedUpdatedAtMs) throw Object.assign(new Error("The entry changed; reopen it before editing."), { code: "conflict" });
+  if (record.updatedAtMs !== request.expectedUpdatedAtMs) throw commandError("conflict", "The entry changed; reopen it before editing.");
   if (record.outcome && JSON.stringify(record.check ?? null) !== JSON.stringify(request.check ?? null)) throw new Error("A reviewed check cannot change.");
-  Object.assign(record, { judgment: request.judgment, reasoning: request.reasoning ?? "", entities: request.entities ?? [], check: request.check, thesis: request.thesis ?? record.thesis, updatedAtMs: Math.max(Date.now(), record.updatedAtMs + 1) }); return clone(record);
+  Object.assign(record, { judgment: request.judgment, reasoning: request.reasoning ?? "", entities: request.entities ?? [], check: request.check ?? undefined, thesis: request.thesis ?? record.thesis, updatedAtMs: Math.max(Date.now(), record.updatedAtMs + 1) }); return clone(record);
 }
 export async function journalArchive(state: MockBridgeState, request: JournalArchiveRequest): Promise<JournalRecord> {
   const record = ensure(state, request.loupistId).journals.find(j => j.journalId === request.journalId);

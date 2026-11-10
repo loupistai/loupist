@@ -48,7 +48,7 @@
     "youCanCloseThisWindowWhileTheCheck": "확인하는 동안 이 창을 닫아도 돼요.",
     "loupistAccess": "루피스트 접근 권한",
     "done": "완료",
-    "deleteSavedCredentials2": "저장된 인증 정보를 삭제할까요?",
+    "deleteSavedCredentialsTitle": "저장된 인증 정보를 삭제할까요?",
     "cancel": "취소",
     "notVerified": "미확인",
     "verified": "확인됨",

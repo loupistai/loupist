@@ -8,7 +8,7 @@ use crate::{
         RootFilesystemIdentity,
     },
     fs::secure_delete::SecureDeletionRoot,
-    store::{DeletionJournalRecord, LoupistStore, SqliteStore},
+    store::{DeletionJournalRecord, SqliteStore},
 };
 
 #[derive(Debug)]
@@ -25,7 +25,7 @@ pub struct DeletionRecovery {
 }
 
 pub fn delete_chat(
-    store: &dyn LoupistStore,
+    store: &SqliteStore,
     root: &SecureDeletionRoot,
     expected: &ChatSession,
     timestamp_ms: i64,
@@ -55,7 +55,7 @@ fn chat_journal(expected: &ChatSession, timestamp_ms: i64) -> DeletionJournal {
 /// Journal both roots before deleting canonical data so a crash between roots
 /// cannot strand the private transcript cache without a recovery record.
 pub(crate) fn delete_chat_with_runtime(
-    store: &dyn LoupistStore,
+    store: &SqliteStore,
     durable_root: &SecureDeletionRoot,
     runtime_root: &SecureDeletionRoot,
     chat: &ChatSession,
@@ -71,7 +71,7 @@ pub(crate) fn delete_chat_with_runtime(
 }
 
 pub fn delete_loupist(
-    store: &dyn LoupistStore,
+    store: &SqliteStore,
     root: &SecureDeletionRoot,
     expected: &LoupistProfile,
     timestamp_ms: i64,
@@ -101,11 +101,11 @@ pub fn delete_loupist(
 }
 
 fn execute_deletion(
-    store: &dyn LoupistStore,
+    store: &SqliteStore,
     root: &SecureDeletionRoot,
     runtime_root: Option<&SecureDeletionRoot>,
     prepared: DeletionJournal,
-    delete_target: impl FnOnce(&dyn LoupistStore) -> Result<(), crate::store::StoreError>,
+    delete_target: impl FnOnce(&SqliteStore) -> Result<(), crate::store::StoreError>,
 ) -> Result<(), CommandError> {
     prepared.validate().map_err(map_internal)?;
     store
@@ -285,7 +285,7 @@ pub fn recover(
 }
 
 pub fn has_pending_for(
-    store: &dyn LoupistStore,
+    store: &SqliteStore,
     loupist_id: &str,
     target_id: &str,
 ) -> Result<bool, CommandError> {

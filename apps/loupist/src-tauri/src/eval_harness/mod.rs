@@ -32,7 +32,6 @@ use crate::{
     },
     domain::{ChatSession, LoupistCapabilityBinding, MemoryPolicy},
     knowledge::*,
-    store::LoupistStore,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde::{Deserialize, Serialize};
@@ -687,7 +686,7 @@ fn seed(state: &AppState, loupist_id: &str, seed: &Seed) -> Result<()> {
         let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../evals/sharing")
             .join(pack);
-        crate::sharing::commands::seed_shared_pack(state, loupist_id, &folder)
+        crate::sharing::commands::add::seed_shared_pack(state, loupist_id, &folder)
             .map_err(|error| error.message)?;
     }
     for entry in &seed.earnings {
@@ -838,16 +837,10 @@ fn enable_connections(state: &AppState, loupist: &str, connections: &[String]) -
             "web" | "web-research" => "community.web-research",
             other => other,
         };
+        // Native vendors and web research read through the replay boundary.
         if replay::enabled()
-            && !matches!(
-                entry,
-                "opendart.disclosures"
-                    | "krx.market-data"
-                    | "koreainvestment.market-data"
-                    | "world-bank.indicators"
-                    | "defillama.tvl"
-                    | "community.web-research"
-            )
+            && crate::finance_data::native_vendor(entry).is_none()
+            && entry != "community.web-research"
         {
             return Err(format!("connection has no native replay boundary: {id}").into());
         }

@@ -1,6 +1,7 @@
 use super::*;
 use crate::knowledge::learning::{self, LearningSettings, Review, ReviewQuery};
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "MemoryLearningSettingsRequest"))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SettingsRequest {
     pub loupist_id: String,

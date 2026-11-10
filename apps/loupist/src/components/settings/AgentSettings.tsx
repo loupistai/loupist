@@ -42,8 +42,9 @@ function NumberSetting(props: FieldProps & { max: number; onDirtyChange: (path: 
   const number = Number(value);
   const valid = value.trim() !== "" && Number.isSafeInteger(number) && number >= 0 && number <= props.max;
   const dirty = !valid || number !== effective;
-  useEffect(() => { props.onDirtyChange(props.path, dirty); }, [props.onDirtyChange, props.path, dirty]);
-  useEffect(() => () => props.onDirtyChange(props.path, false), [props.onDirtyChange, props.path]);
+  const { onDirtyChange, path } = props;
+  useEffect(() => { onDirtyChange(path, dirty); }, [onDirtyChange, path, dirty]);
+  useEffect(() => () => onDirtyChange(path, false), [onDirtyChange, path]);
   return <SettingField {...props}><div className="agent-config-number"><Input id={`config-${props.path}`} type="number" aria-describedby={props.description ? `config-description-${props.path}` : undefined} min={0} max={props.max} step={1} disabled={props.disabled} value={value} onChange={(event) => setValue(event.target.value)} aria-invalid={!valid} /><Button size="sm" variant="outline" disabled={props.disabled || !valid || number === effective} onClick={() => void props.onSave(props.path, number)} aria-label={i18n.t("settings:agentSettings.saveLabel", { label: props.label })}>{i18n.t("settings:agentSettings.save")}</Button></div></SettingField>;
 }
 
@@ -126,14 +127,14 @@ export function AgentSettings({ bridge, loupists, catalog, scope, onScopeChange 
           return <li key={key}><span>{label}</span> <span>({source === "project" ? i18n.t("settings:agentSettings.thisLoupist") : source === "global" ? i18n.t("settings:agentSettings.global") : i18n.t("settings:agentSettings.appDefault")})</span> {local ? <Button variant="ghost" size="sm" disabled={disabled} onClick={() => void update({}, [["chat", "run_options", key]])} aria-label={i18n.t("settings:agentSettings.resetLabel", { label: label })}>{i18n.t("settings:agentSettings.resetOption")}</Button> : scope.kind === "project" && onScopeChange ? <Button variant="ghost" size="sm" onClick={() => onScopeChange({ kind: "global" })} aria-label={i18n.t("settings:agentSettings.editGlobalLabel", { label: label })}>{i18n.t("settings:agentSettings.editGlobalDefaults")}</Button> : null}</li>;
         })}</ul></div> : null}
       </div></section>
-      <Disclosure className="agent-config-advanced" title={i18n.t("settings:agentSettings.advanced")} description={i18n.t("settings:agentSettings.contextLimitsAndRecoveryFromFailedRequests")}>
+      <Disclosure className="agent-config-advanced" data-testid="agent-config-advanced" title={i18n.t("settings:agentSettings.advanced")} description={i18n.t("settings:agentSettings.contextLimitsAndRecoveryFromFailedRequests")}>
         <div className="agent-config-group"><h4>{i18n.t("settings:agentSettings.conversationContext")}</h4><p>{i18n.t("settings:agentSettings.standardFitsANormalResearchChatKeepMore")}</p><div className="agent-config-presets"><Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => void update({ pi: { compaction: { reserve_tokens: 16384, keep_recent_tokens: 20000 } } })}>{i18n.t("settings:agentSettings.standard")}</Button><Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => void update({ pi: { compaction: { reserve_tokens: 16384, keep_recent_tokens: 40000 } } })}>{i18n.t("settings:agentSettings.keepMore")}</Button></div><details><summary>{i18n.t("settings:agentSettings.customAmounts")}</summary><div className="agent-config-fields">
           <NumberSetting {...field("pi.compaction.reserve_tokens", i18n.t("settings:agentSettings.reservedTokens"), i18n.t("settings:agentSettings.leaveRoomForTheModelSNextResponse"))} max={Number.MAX_SAFE_INTEGER} onSave={save} onDirtyChange={onNumberDirtyChange} />
           <NumberSetting {...field("pi.compaction.keep_recent_tokens", i18n.t("settings:agentSettings.recentTokensToKeep"), i18n.t("settings:agentSettings.keepThisMuchRecentConversationBeforeSummarizingOlder"))} max={Number.MAX_SAFE_INTEGER} onSave={save} onDirtyChange={onNumberDirtyChange} />
         </div></details></div>
         <div className="agent-config-group"><h4>{i18n.t("settings:agentSettings.requestRecovery")}</h4><p>{i18n.t("settings:agentSettings.retryAutomaticallyWhenAProviderHasATemporary")}</p><div className="agent-config-fields">
           <SettingField {...field("pi.retry.enabled", i18n.t("settings:agentSettings.retryFailedRequests"))}><NativeSelect id="config-pi.retry.enabled" disabled={disabled} value={String(snapshot.effective.pi.retry.enabled)} onChange={(event) => void save("pi.retry.enabled", event.target.value === "true")}><option value="true">{i18n.t("settings:agentSettings.enabled")}</option><option value="false">{i18n.t("settings:agentSettings.disabled")}</option></NativeSelect></SettingField>
-          <NumberSetting {...field("pi.retry.max_retries", i18n.t("settings:agentSettings.maximumRetries"), i18n.t("settings:agentSettings.numberOfAttemptsAfterTheFirstFailure0"))} max={10} onSave={save} onDirtyChange={onNumberDirtyChange} />
+          <NumberSetting {...field("pi.retry.max_retries", i18n.t("settings:agentSettings.maximumRetries"), i18n.t("settings:agentSettings.numberOfAttemptsAfterTheFirstFailure"))} max={10} onSave={save} onDirtyChange={onNumberDirtyChange} />
           <details><summary>{i18n.t("settings:agentSettings.customTiming")}</summary>
           <NumberSetting {...field("pi.retry.base_delay_ms", i18n.t("settings:agentSettings.initialRetryDelayMs"), i18n.t("settings:agentSettings.waitThisLongBeforeTheFirstRetry"))} max={300000} onSave={save} onDirtyChange={onNumberDirtyChange} />
           <NumberSetting {...field("pi.retry.max_agent_delay_ms", i18n.t("settings:agentSettings.maximumRetryDelayMs"), i18n.t("settings:agentSettings.limitHowLongAProviderCanAskThe"))} max={300000} onSave={save} onDirtyChange={onNumberDirtyChange} />
@@ -142,8 +143,8 @@ export function AgentSettings({ bridge, loupists, catalog, scope, onScopeChange 
         <RunDiagnostics bridge={bridge} loupistId={scope.kind === "project" ? scope.loupistId : null} />
       </Disclosure>
     </> : !config.error ? <p className="settings-loading" role="status">{i18n.t("settings:agentSettings.loadingChatSettings")}</p> : null}
-    <Disclosure className="agent-config-file-details" title={i18n.t("settings:agentSettings.preferencesFile")} description={i18n.t("settings:agentSettings.openTheFolderOrReloadExternalChanges")}>
-      <div className="agent-config-file"><div><Button variant="outline" size="sm" title={snapshot?.path} onClick={() => void config.reveal()}><FolderOpenIcon /> {i18n.t("settings:agentSettings.openPreferencesFile")}</Button>{!config.error ? <Button variant="ghost" size="sm" onClick={() => notifyConfigurationChanged()} disabled={config.busy}><RefreshCwIcon /> {i18n.t("settings:agentSettings.reload")}</Button> : null}</div></div>
+    <Disclosure className="agent-config-file-details" data-testid="agent-config-file-details" title={i18n.t("settings:agentSettings.preferencesFile")} description={i18n.t("settings:agentSettings.openTheFolderOrReloadExternalChanges")}>
+      <div className="agent-config-file" data-testid="agent-config-file"><div><Button variant="outline" size="sm" title={snapshot?.path} onClick={() => void config.reveal()}><FolderOpenIcon /> {i18n.t("settings:agentSettings.openPreferencesFile")}</Button>{!config.error ? <Button variant="ghost" size="sm" onClick={() => notifyConfigurationChanged()} disabled={config.busy}><RefreshCwIcon /> {i18n.t("settings:agentSettings.reload")}</Button> : null}</div></div>
     </Disclosure>
   </>;
 }

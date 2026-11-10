@@ -13,7 +13,7 @@ const dart = evidenceFixture({ id: "ev_dart", title: "Solsup Foods FY2025 statem
   excerpt: JSON.stringify({ facts: [{ corp_name: "Solsup Foods", canonical_concept: "revenue", value: "452312000000" }, { corp_name: "Solsup Foods", canonical_concept: "operating_income", value: "38104000000" }] }, null, 2), dataset_ref: { dataset_id: "ds", revision: 1, digest: "d".repeat(64) } });
 const passageText = "Management guided to an operating margin of 9.1% for FY2025.";
 const guide = evidenceFixture({ id: "ev_guide", title: "February guidance call", tool_name: "web_fetch", url: "https://solsup.example/guidance", published_at: "2026-02-12", excerpt: passageText });
-const calc: ChatEvidenceRef = evidenceFixture({ id: "ev_calc", title: "Margin", kind: "derived", tool_name: "calculate", url: undefined, excerpt: "" });
+const calc: ChatEvidenceRef = evidenceFixture({ id: "ev_calc", title: "Margin", kind: "derived", tool_name: "calculate", calc_operation: "margin", url: undefined, excerpt: "" });
 const span = (needle: string) => {
   const start = new TextEncoder().encode(passageText.slice(0, passageText.indexOf(needle))).length;
   return { start, end: start + new TextEncoder().encode(needle).length };
@@ -24,7 +24,7 @@ const KRW_BILLIONS = { kind: "amount", currency: "KRW", scale: 9 } as const;
 
 const checks = (marginStatus: NumberCheck["status"] = "matched"): NumberCheck[] => [
   { link_index: 0, text: marginStatus === "differs" ? "8.5%" : "8.4%", evidence_id: calc.id, kind: "calculated", status: marginStatus, ...(marginStatus === "differs" ? { nearest: "8.42%" } : {}),
-    calc: { title: "Margin", formulas: ["Operating income / Revenue = 38.1 / 452.3 = 8.42%"], inputs: [
+    calc: { operation: "margin", title: "Margin", formulas: ["Operating income / Revenue = 38.1 / 452.3 = 8.42%"], inputs: [
       { name: "profit", label: "Operating income", unit: KRW_BILLIONS, display: "38.1", evidence_id: dart.id, status: "rounded" },
       { name: "revenue", label: "Revenue", unit: KRW_BILLIONS, display: "452.3" }] } },
   { link_index: 1, text: "₩452.3bn", evidence_id: dart.id, kind: "data", status: "rounded", exact: "452312000000", pointer: "/facts/0/value",
@@ -36,7 +36,7 @@ const answer = (extra: Partial<ChatMessage> = {}): ChatMessage => ({
   id: "answer", role: "assistant", status: "complete", created_at: "2026-03-18T06:00:00Z",
   content: `The margin was [${extra.number_checks?.[0]?.text ?? "8.4%"}](#evidence-ev_calc) on revenue of [₩452.3bn](#evidence-ev_dart), below the [9.1%](#evidence-ev_guide) guided [1](#evidence-ev_guide).`,
   evidence_refs: [dart, guide, calc], number_checks: checks(),
-  progress: { startedAtMs: 1, finishedAtMs: 2, items: [{ id: "step-calc", kind: "tool", toolName: "calculate", category: "compute", operation: "calculate", action: "Calculated", status: "succeeded", resultIds: [calc.id], startedAtMs: 1, finishedAtMs: 2 }] },
+  progress: { startedAtMs: 1, finishedAtMs: 2, items: [{ id: "step-calc", kind: "tool", toolName: "calculate", category: "compute", operation: "calculate", action: "Calculated", status: "succeeded", resultIds: [calc.id], startedAtMs: 1, finishedAtMs: 2, target: null, href: null }] },
   ...extra,
 });
 

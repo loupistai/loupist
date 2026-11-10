@@ -1,6 +1,6 @@
 import type {
   BriefingSettings, BriefingSettingsRequest, InboxRequest, InboxPage, InboxItem,
-  ChatSendRequest, ChatStreamEvent, ScheduledCadence, ScheduledRun, ScheduledTask,
+  ChatSendRequest, ChatStreamEvent, ScheduledCadence, ScheduledRun, ScheduledTask, ScheduledTaskListItem,
   ScheduledTaskCreateRequest, ScheduledTaskIdentity, ScheduledRunIdentity, ScheduledTaskWatch, StreamObserver,
 } from "../../types";
 import { clone, makeId, type MockBridgeState } from "./state";
@@ -55,7 +55,7 @@ export class MockScheduledTasks {
     const start = cursor ? runs.findIndex(run => run.run_id === cursor) + 1 : 0;
     if (cursor && start === 0) throw new Error("Inbox cursor not found.");
     const page = runs.slice(start, start + limit);
-    const items: InboxItem[] = page.map(run => ({ briefingContext: run.briefing_context, error: run.error, runId: run.run_id, taskId: run.task_id, kind: run.kind, title: run.task_title, status: run.status, summary: run.summary, summaryItems: run.summary_items, startedAtMs: run.started_at_ms, finishedAtMs: run.finished_at_ms ?? null, readAtMs: run.read_at_ms, threadId: run.thread_id, messageId: run.message_id, skippedTools: run.skipped_tools }));
+    const items: InboxItem[] = page.map(run => ({ briefingContext: run.briefing_context, error: run.error, runId: run.run_id, taskId: run.task_id, kind: run.kind, title: run.task_title, status: run.status, summary: run.summary, summaryItems: run.summary_items ?? [], startedAtMs: run.started_at_ms, finishedAtMs: run.finished_at_ms ?? null, readAtMs: run.read_at_ms, threadId: run.thread_id, messageId: run.message_id, skippedTools: run.skipped_tools }));
     return clone({ items, nextCursor: page.length === limit ? page.at(-1)!.run_id : null });
   }
   async inboxMarkRead({ loupistId, runIds }: { loupistId: string; runIds: string[] }) {
@@ -72,7 +72,7 @@ export class MockScheduledTasks {
     if (!task || task.loupist_id !== request.loupist_id) throw new Error("Scheduled task not found.");
     return task;
   }
-  async list({ loupist_id }: { loupist_id: string }): Promise<ScheduledTask[]> {
+  async list({ loupist_id }: { loupist_id: string }): Promise<ScheduledTaskListItem[]> {
     const latest = new Map<string, ScheduledRun>();
     for (const run of this.runs.values()) {
       if (run.loupist_id === loupist_id && (!latest.has(run.task_id) || latest.get(run.task_id)!.started_at_ms <= run.started_at_ms)) latest.set(run.task_id, run);
@@ -81,7 +81,7 @@ export class MockScheduledTasks {
   }
   private async create(request: ScheduledTaskCreateRequest) {
     const now = Date.now();
-    const task: ScheduledTask = { ...request, kind: "custom", id: makeId("schedule"), revision: 1, created_at_ms: now, updated_at_ms: now, next_run_at_ms: request.status === "active" ? preview(request.schedule) : null };
+    const task: ScheduledTask = { ...request, kind: "custom", id: makeId("schedule"), revision: 1, created_at_ms: now, updated_at_ms: now, next_run_at_ms: request.status === "active" ? preview(request.schedule) : null, last_run_at_ms: null, last_error: null, session_thread_id: null, awaiting_confirmation: false };
     this.tasks.set(task.id, task);
     return clone(task);
   }
@@ -157,7 +157,7 @@ export class MockScheduledTasks {
     if (task.kind === "earnings") {
       // The results task needs no model call: a host capture finishes in place.
       const now = Date.now();
-      const run: ScheduledRun = { briefing_context: null, kind: "earnings", summary: "", summary_items: [{ kind: "earnings_nothing" }], read_at_ms: now, message_id: null, skipped_tools: [], id: makeId("scheduled-run"), task_id: task.id, loupist_id: task.loupist_id, task_revision: task.revision, task_title: task.title, thread_id: null, run_id: makeId("earnings-run"), scheduled_for_ms: now, started_at_ms: now, finished_at_ms: now, status: "succeeded" };
+      const run: ScheduledRun = { briefing_context: null, kind: "earnings", summary: "", summary_items: [{ kind: "earnings_nothing" }], read_at_ms: now, message_id: null, skipped_tools: [], id: makeId("scheduled-run"), task_id: task.id, loupist_id: task.loupist_id, task_revision: task.revision, task_title: task.title, thread_id: null, run_id: makeId("earnings-run"), scheduled_for_ms: now, started_at_ms: now, finished_at_ms: now, status: "succeeded", error: null };
       this.runs.set(run.run_id, run);
       task.last_run_at_ms = now;
       this.changed(task.loupist_id);
@@ -169,7 +169,7 @@ export class MockScheduledTasks {
     if (thread && task.target.kind === "dedicated_chat") task.session_thread_id = thread.id;
     if (!thread) throw new Error("The target Chat is unavailable.");
     const now = Date.now();
-    const run: ScheduledRun = { briefing_context: task.kind === "briefing" ? { symbols: [], principlesChecked: 0, newFacts: 0, disputedEntityIds: [] } : null, kind: task.kind, summary: "", read_at_ms: null, message_id: null, skipped_tools: [], id: makeId("scheduled-run"), task_id: task.id, loupist_id: task.loupist_id, task_revision: task.revision, task_title: task.title, thread_id: thread.id, run_id: makeId("chat-scheduled"), scheduled_for_ms: now, started_at_ms: now, status: "running" };
+    const run: ScheduledRun = { briefing_context: task.kind === "briefing" ? { symbols: [], principlesChecked: 0, newFacts: 0, disputedEntityIds: [], changed: { names: 0, relations: 0, conflicts: 0, rows: [] }, ahead: [], assets: [] } : null, kind: task.kind, summary: "", read_at_ms: null, message_id: null, skipped_tools: [], id: makeId("scheduled-run"), task_id: task.id, loupist_id: task.loupist_id, task_revision: task.revision, task_title: task.title, thread_id: thread.id, run_id: makeId("chat-scheduled"), scheduled_for_ms: now, started_at_ms: now, status: "running", finished_at_ms: null, error: null };
     this.runs.set(run.run_id, run);
     this.events.set(run.run_id, []);
     task.last_run_at_ms = now;

@@ -3,9 +3,10 @@ import type { LoupistBridge, Principle, PrincipleCreateRequest } from "../../typ
 import { useTranslation } from "../../i18n";
 import { formatNumber } from "../../i18n/format";
 import { Button } from "../ui/button";
+import { commandErrorCode } from "@/lib/errors";
 
 export function principleErrorCode(error: unknown) {
-  return error && typeof error === "object" && "code" in error ? String(error.code) : "";
+  return commandErrorCode(error) ?? "";
 }
 
 export function PrincipleForm({ bridge, loupistId, principle, initialStatement = "", origin = "settings", originChatId, originMessageId, onSaved, onCancel }: {
@@ -59,7 +60,7 @@ export function PrincipleForm({ bridge, loupistId, principle, initialStatement =
     } catch { setFailure("revision_conflict"); }
     finally { busy.current = false; setPending(false); }
   }
-  return <form ref={formRef} className="principle-form" aria-label={t(current ? "principles.edit" : "principles.add")} onFocus={event => { if (event.target instanceof HTMLElement) event.target.scrollIntoView({ block: "nearest" }); }} onSubmit={event => { event.preventDefault(); void save(); }}>
+  return <form ref={formRef} className="principle-form" data-testid="principle-form" aria-label={t(current ? "principles.edit" : "principles.add")} onFocus={event => { if (event.target instanceof HTMLElement) event.target.scrollIntoView({ block: "nearest" }); }} onSubmit={event => { event.preventDefault(); void save(); }}>
     <label htmlFor={`${id}-statement`}>{t("principles.statement")}</label>
     <textarea id={`${id}-statement`} rows={2} value={statement} onChange={event => setStatement([...event.target.value].slice(0, 280).join(""))} disabled={pending} autoFocus aria-describedby={count >= 240 ? `${id}-count` : undefined} />
     {count >= 240 ? <small id={`${id}-count`}>{t("principles.counter", { current: formatNumber(count), max: formatNumber(280) })}</small> : null}
