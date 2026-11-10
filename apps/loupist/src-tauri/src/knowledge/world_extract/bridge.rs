@@ -4,7 +4,7 @@
 //! nothing is retried.
 
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
@@ -113,10 +113,17 @@ pub(crate) struct StageRecord {
 
 /// The host's inference callback: one request at a time, or several sent
 /// together and answered in request order.
+/// The reply to one of several calls sent together, with that call's own time
+/// from the host receiving it to its reply.
+pub(crate) struct Answered {
+    pub reply: InferenceReply,
+    pub elapsed: Duration,
+}
+
 enum Infer<'a> {
     #[cfg_attr(not(test), allow(dead_code))]
     One(&'a mut dyn FnMut(Value) -> InferenceReply),
-    Many(&'a mut dyn FnMut(Vec<Value>) -> Vec<InferenceReply>),
+    Many(&'a mut dyn FnMut(Vec<Value>) -> Vec<Answered>),
 }
 
 impl Infer<'_> {
@@ -125,6 +132,7 @@ impl Infer<'_> {
             Self::One(infer) => infer(request),
             Self::Many(infer) => infer(vec![request])
                 .pop()
+                .map(|answered| answered.reply)
                 .unwrap_or_else(|| InferenceReply {
                     disposition: InferenceDisposition::NotSent,
                     body: json!({"status": "not_sent"}),
@@ -175,7 +183,7 @@ impl<'a> Bridge<'a> {
     /// Independent calls of one [`Bridge::llm_many`] go out together.
     pub(crate) fn concurrent(
         config: BridgeConfig,
-        infer: &'a mut dyn FnMut(Vec<Value>) -> Vec<InferenceReply>,
+        infer: &'a mut dyn FnMut(Vec<Value>) -> Vec<Answered>,
     ) -> Self {
         Self::with_infer(config, Infer::Many(infer))
     }
@@ -292,7 +300,6 @@ impl<'a> Bridge<'a> {
             pending.push((index, stage, self.llm_request(call)));
         }
         if matches!(self.infer, Infer::Many(_)) && pending.len() > 1 {
-            let started = Instant::now();
             let requests = pending
                 .iter()
                 .map(|(_, _, request)| request.clone())
@@ -302,18 +309,21 @@ impl<'a> Bridge<'a> {
             };
             let mut replies = infer(requests).into_iter();
             for (index, stage, _) in pending {
-                let reply = replies.next().unwrap_or_else(|| InferenceReply {
-                    disposition: InferenceDisposition::NotSent,
-                    body: json!({"status": "not_sent"}),
+                let answered = replies.next().unwrap_or_else(|| Answered {
+                    reply: InferenceReply {
+                        disposition: InferenceDisposition::NotSent,
+                        body: json!({"status": "not_sent"}),
+                    },
+                    elapsed: Duration::ZERO,
                 });
-                let settled = self.settle("llm", reply);
-                results[index] = Some(self.llm_result(stage, started, settled));
+                let settled = self.settle("llm", answered.reply);
+                results[index] = Some(self.llm_result(stage, answered.elapsed, settled));
             }
         } else {
             for (index, stage, request) in pending {
                 let started = Instant::now();
                 let settled = self.infer_one_llm(request);
-                let result = self.llm_result(stage, started, settled);
+                let result = self.llm_result(stage, started.elapsed(), settled);
                 let failed = result.is_err();
                 results[index] = Some(result);
                 if failed {
@@ -355,14 +365,14 @@ impl<'a> Bridge<'a> {
     fn llm_result(
         &mut self,
         stage: &'static str,
-        started: Instant,
+        elapsed: Duration,
         settled: StopResult<Value>,
     ) -> StopResult<Value> {
         let body = settled?;
         self.stages.push(StageRecord {
             kind: "llm",
             stage,
-            ms: started.elapsed().as_millis() as u64,
+            ms: elapsed.as_millis() as u64,
             usage: body.get("usage").cloned().unwrap_or(Value::Null),
             texts: 0,
         });
@@ -592,7 +602,13 @@ mod tests {
                     .map(|request| request["stage"].as_str().unwrap().to_string())
                     .collect(),
             );
-            requests.iter().map(answered).collect::<Vec<_>>()
+            requests
+                .iter()
+                .map(|request| Answered {
+                    reply: answered(request),
+                    elapsed: Duration::ZERO,
+                })
+                .collect::<Vec<_>>()
         };
         let mut bridge = Bridge::concurrent(config(3), &mut infer);
         let results = bridge.llm_many(vec![call("dedupe_nodes"), call("extract_edges")]);
@@ -611,6 +627,30 @@ mod tests {
             batches,
             [vec!["dedupe_nodes", "extract_edges"], vec!["resolve_edges"]]
         );
+    }
+
+    #[test]
+    fn calls_sent_together_each_record_their_own_time() {
+        let mut infer = |requests: Vec<Value>| {
+            requests
+                .iter()
+                .map(|request| Answered {
+                    reply: answered(request),
+                    elapsed: Duration::from_millis(match request["stage"].as_str() {
+                        Some("dedupe_nodes") => 5,
+                        _ => 40,
+                    }),
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut bridge = Bridge::concurrent(config(2), &mut infer);
+        bridge.llm_many(vec![call("dedupe_nodes"), call("extract_edges")]);
+        let recorded: Vec<_> = bridge
+            .stages
+            .iter()
+            .map(|stage| (stage.stage, stage.ms))
+            .collect();
+        assert_eq!(recorded, [("dedupe_nodes", 5), ("extract_edges", 40)]);
     }
 
     #[test]

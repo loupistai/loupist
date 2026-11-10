@@ -42,9 +42,11 @@ cargo build --manifest-path apps/loupist/src-tauri/Cargo.toml \
 `world_scale_eval` runs the scale corpus. World jobs and World search run in-process
 (`knowledge/world_extract/`);
 `LOUPIST_WORLD_STAGE_LOG=<file>` appends one record per in-process model or embedding
-call (stage, duration, usage; no prompt text). Both take `--suite`, a new `--out`, an
-absolute `--pi-agent-dir`, `--resources` for staged embedding resources, and
-`--keep` to preserve the Loupist folders for investigation. Grading uses the
+call (stage, duration, usage; no prompt text) and one `episode` record with the job's
+wall time. A call's duration runs from the host receiving it to its reply; calls of
+one episode sent together overlap, so their sum can exceed the episode time. Both
+take `--suite`, a new `--out`, an absolute `--pi-agent-dir`, `--resources` for staged
+embedding resources, and `--keep` to preserve the Loupist folders for investigation. Grading uses the
 canonical Source bytes and completed-job receipts captured in the trace. Other
 options: `--scenarios ID,ID`; `--condition clean|off|conflict`; `--model`/`--thinking` for Chat and
 `--world-model`/`--world-thinking` for World (defaults `openai-codex/gpt-6-luna`,

@@ -22,7 +22,7 @@ use super::super::graph_jobs::{
 };
 use super::super::model::{GraphNode, TimePoint, TimePrecision, WorldSnapshotBody};
 use super::super::KnowledgeStore;
-use super::bridge::{Bridge, BridgeConfig, StageRecord, Stop};
+use super::bridge::{Answered, Bridge, BridgeConfig, StageRecord, Stop};
 use super::hints::{extraction_hints, observed_relation_names, FollowedInstrument};
 use super::ontology::{extraction_instructions, merged_schema, Hints, Schema};
 use super::pipeline::{self, Edge, Episode, Graph, Node, PreviousEpisode};
@@ -96,7 +96,7 @@ where
     let wall_started = SystemTime::now();
     let deadline = started
         + Duration::from_millis(graph_jobs::attempt_budget_ms(opened.extraction.timeout_ms));
-    let (requests, mut incoming) = mpsc::channel::<(Value, oneshot::Sender<InferenceReply>)>(1);
+    let (requests, mut incoming) = mpsc::channel::<(Value, oneshot::Sender<Answered>)>(1);
     let config = BridgeConfig {
         scope: json!({
             "loupist_id": job.loupist_id,
@@ -124,14 +124,17 @@ where
                 let Some((request, reply)) = request else { continue };
                 if blocked || store.graph_note_inference(job_id, &attempt_id).is_err() {
                     blocked = true;
-                    let _ = reply.send(not_sent());
+                    let _ = reply.send(Answered { reply: not_sent(), elapsed: Duration::ZERO });
                     continue;
                 }
-                let remaining = deadline.saturating_duration_since(Instant::now());
+                let received = Instant::now();
+                let remaining = deadline.saturating_duration_since(received);
                 let call = on_inference(request);
-                in_flight.push(async move { (tokio::time::timeout(remaining, call).await, reply) });
+                in_flight.push(async move {
+                    (tokio::time::timeout(remaining, call).await, reply, received)
+                });
             }
-            Some((outcome, reply)) = in_flight.next(), if !in_flight.is_empty() => {
+            Some((outcome, reply, received)) = in_flight.next(), if !in_flight.is_empty() => {
                 let response = outcome.unwrap_or_else(|_| InferenceReply {
                     // The call was sent; its outcome is unknown.
                     disposition: InferenceDisposition::Uncertain,
@@ -140,7 +143,7 @@ where
                 if response.disposition == InferenceDisposition::Uncertain {
                     uncertain = true;
                 }
-                let _ = reply.send(response);
+                let _ = reply.send(Answered { reply: response, elapsed: received.elapsed() });
             }
         }
     };
@@ -635,9 +638,9 @@ fn wire_time(time: Option<&TimePoint>) -> KnowledgeResult<Option<Value>> {
 fn run_pipeline(
     prepared: Prepared,
     config: BridgeConfig,
-    requests: mpsc::Sender<(Value, oneshot::Sender<InferenceReply>)>,
+    requests: mpsc::Sender<(Value, oneshot::Sender<Answered>)>,
 ) -> Ran {
-    let mut infer = |batch: Vec<Value>| -> Vec<InferenceReply> {
+    let mut infer = |batch: Vec<Value>| -> Vec<Answered> {
         // Send every request before waiting on any reply.
         let waiting: Vec<_> = batch
             .into_iter()
@@ -654,7 +657,10 @@ fn run_pipeline(
             .map(|response| {
                 response
                     .and_then(|response| response.blocking_recv().ok())
-                    .unwrap_or_else(not_sent)
+                    .unwrap_or_else(|| Answered {
+                        reply: not_sent(),
+                        elapsed: Duration::ZERO,
+                    })
             })
             .collect()
     };
