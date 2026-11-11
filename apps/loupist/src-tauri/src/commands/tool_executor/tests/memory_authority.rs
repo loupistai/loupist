@@ -534,6 +534,16 @@ async fn a_saved_source_records_at_save_whether_it_may_ever_be_shared() {
             producer("native-web", "web_fetch", "www.sec.gov"),
             Authorship::Publisher,
         ),
+        // A fetched page's provider is its host: a name that starts like the
+        // broker's is still a publisher, never the user's own words.
+        (
+            producer("native-web", "web_fetch", "kisrating.co.kr"),
+            Authorship::Publisher,
+        ),
+        (
+            producer("native-web", "web_fetch", "koreainvestment.example"),
+            Authorship::Publisher,
+        ),
         (
             producer("native-finance", "dart_filing_read", "opendart.disclosures"),
             Authorship::Publisher,
@@ -552,7 +562,12 @@ async fn a_saved_source_records_at_save_whether_it_may_ever_be_shared() {
             Authorship::Tool,
         ),
     ] {
-        let label = format!("{}:{}", producer.runtime_id, producer.tool_name);
+        let label = format!(
+            "{}:{}:{}",
+            producer.runtime_id,
+            producer.tool_name,
+            producer.provider.as_deref().unwrap_or_default()
+        );
         let result_ref = delivered(
             &executor.capture,
             producer,

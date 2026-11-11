@@ -83,9 +83,7 @@ impl AppToolExecutor {
             .ok_or_else(|| BrokerError::Execution("Loupist does not exist".into()))?;
         let root = crate::fs::loupist_root::profile_workspace(&profile).map_err(map)?;
         let path = crate::fs::workspace_files::relative_path(&request.path).map_err(map)?;
-        if path == ".loupist" || path.starts_with(".loupist/") {
-            return Err(BrokerError::MethodDenied);
-        }
+        self.host_file_gate(&path, super::workspace::HostFile::Import)?;
         let bytes = crate::fs::workspace_files::exact_bytes(&root, &path, MAX_DATASET_BYTES)
             .map_err(map)?;
         let digest = sha256(&bytes);

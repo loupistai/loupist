@@ -131,8 +131,10 @@ function useScrollEdges(columns: number) {
     const first = node.querySelector<HTMLElement>(".grid-card-asset-head")?.offsetWidth ?? 0;
     const next = columnFit(node.clientWidth, first, columns, node.scrollLeft);
     setFit((current) => (current.width === next.width && current.hidden === next.hidden ? current : next));
+    const start = node.scrollLeft > 1;
     const end = node.scrollWidth - node.clientWidth - node.scrollLeft > 1;
-    setEdges({ start: node.scrollLeft > 1, end });
+    // Scroll and resize events arrive in bursts; an unchanged pair keeps the same state object.
+    setEdges((current) => (current.start === start && current.end === end ? current : { start, end }));
   };
   useEffect(() => {
     update();

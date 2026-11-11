@@ -1,15 +1,13 @@
 import { mockAssetId } from "../../bridge/mock/assets";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { previewCommodityWatchEvents, previewCommodityWatchSettings, previewCryptoWatchEvents, previewCryptoWatchSettings, previewWatchEvents, previewWatchSettings } from "../../preview/finance";
 import type { LoupistBridge, LoupistSummary, WatchSettings } from "../../types";
 import { WatchingReader } from "./Watching";
 
 function Reader({ bridge, loupist, initial }: { bridge: LoupistBridge; loupist: LoupistSummary; initial: WatchSettings }) {
-  const [settings, setSettings] = useState(initial);
-  return <WatchingReader bridge={bridge} loupist={loupist} settings={settings} onSettings={setSettings} onBack={vi.fn()} />;
+  return <WatchingReader bridge={bridge} loupist={loupist} settings={initial} onBack={vi.fn()} />;
 }
 
 async function reader(options: { paused?: boolean; events?: boolean } = {}) {

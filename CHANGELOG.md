@@ -6,6 +6,7 @@
 - Limit the first supported release to macOS 13+ on Apple Silicon; retain Windows implementation and manual compatibility checks outside release gates.
 - Upgrade 0.0.1 data in place after a private backup instead of refusing it, keep Keychain secrets reachable when an older development catalog is set aside, and refuse data a newer Loupist saved with a clear message.
 - Fix Chats that could no longer be saved after a Loupist folder was reconnected or imported; the upgrade repairs affected Chats.
+- Keep dataset export, dataset import and workspace capture to ordinary research files: they no longer reach the Loupist's private folder, git metadata or instruction files, and a fetched web page is never saved as the user's own material because of its site name.
 
 - Replace the early Wiki model with Source, World, Lens, working notes, and a private Journal for each Loupist, with canonical writes in Rust.
 - Add user-selected local workspaces for Pi's native file and Bash tools; keep app-owned Memory and Chat session data separate.

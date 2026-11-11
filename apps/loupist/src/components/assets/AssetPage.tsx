@@ -246,7 +246,10 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onA
         setLastVisit(visit);
         setRange(current => current ?? (visit === undefined ? "30" : rememberedRange() ?? "since"));
         // The price "since your last look" needs the visit; reread with it when there is one.
-        setPage(visit === undefined ? loaded : await bridge.assetPageGet({ loupistId, assetId: loaded.assetId, sinceMs: visit }).catch(() => loaded));
+        const page = visit === undefined ? loaded : await bridge.assetPageGet({ loupistId, assetId: loaded.assetId, sinceMs: visit }).catch(() => loaded);
+        // A reload started during the reread owns the page now.
+        if (!live) return;
+        setPage(page);
         void bridge.assetPageSeen({ loupistId, assetId: loaded.assetId }).catch(() => undefined);
       })
       .catch(() => { if (live) setFailed(true); });

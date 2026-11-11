@@ -18,6 +18,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import runpy
 import shutil
 import signal
 import subprocess
@@ -30,6 +31,8 @@ import uuid
 
 APP = Path(__file__).resolve().parent.parent
 SCOPES = ("web", "python", "rust")
+# Dependency-free checks that CI runs for every change, whatever its scope.
+REPOSITORY = "repository"
 RETENTION_SECONDS = 7 * 24 * 3600
 NODE_VERSION = 'const pin=require("node:fs").readFileSync("../../.nvmrc","utf8").trim(); const min=pin.split(".").map(Number), v=process.versions.node.split(".").map(Number); if(v[0]!==min[0]||v[1]<min[1]||(v[1]===min[1]&&v[2]<min[2]))throw Error(`Node ${pin}+ LTS (${min[0]}.x) required`); console.log(process.version)'
 INSTALLED = 'for (const p of process.argv.slice(1)) if (!require("node:fs").existsSync(p)) throw Error(`Locked dependencies missing: ${p}; run setup.sh first`)'
@@ -107,7 +110,7 @@ def web_plan(harness, install):
     if harness:
         tests = contract_tests(harness_only=True)
         return [*commands, step("agent-eval-contracts", ["node", "--test", *tests])]
-    shells = existing("e2e/*.sh", "scripts/*.sh")
+    shells = existing("e2e/*.sh", "scripts/*.sh", "../../scripts/*.sh")
     modules = existing("agent/*.mjs", "agent/*/*.mjs", "e2e/*.mjs", "scripts/*.mjs")
     modules += existing("evals/*.mjs", "evals/*/*.mjs")
     modules = [path for path in modules if not path.endswith(".test.mjs")]
@@ -145,7 +148,16 @@ def python_runtime_step(name, flag):
     return step(name, [sys.executable, APP / "scripts/stage_python_runtime.py", flag])
 
 
+# The Python worker admits one run at a time, so these tests form one serial
+# chain that outlasts every other test. They run beside the headless eval
+# contracts, in the same build, instead of extending the all-target test step.
+# Only this module holds the test-side worker lock: a Python test elsewhere
+# stays in `tests`, where it cannot queue ahead of the timed cold/warm runs.
+PYTHON_SANDBOX_TESTS = ("python_run::tests::",)
+
+
 def rust_plan(install=False):
+    skipped = " ".join(f"--skip {name}" for name in PYTHON_SANDBOX_TESTS)
     steps = [
         step("format", cargo("fmt -- --check")),
         step("clippy", cargo("clippy --locked --all-targets -- -D warnings")),
@@ -156,10 +168,17 @@ def rust_plan(install=False):
                 "clippy --locked --all-targets --no-default-features --features e2e -- -D warnings"
             ),
         ),
-        step("tests", cargo("test --locked --all-targets")),
+        step("tests", cargo(f"test --locked --all-targets -- {skipped}")),
         step(
             "headless-eval-contracts",
             cargo("test --locked --features eval-harness --lib eval_harness::"),
+        ),
+        step(
+            "python-sandbox-tests",
+            cargo(
+                "test --locked --features eval-harness --lib -- "
+                + " ".join(PYTHON_SANDBOX_TESTS)
+            ),
         ),
         python_runtime_step("python-runtime-verify", "--verify"),
     ]
@@ -208,7 +227,70 @@ def python_plan(install):
     ]
 
 
+def repository_plan():
+    root = APP.parent.parent
+    scripts = APP / "scripts"
+    scope_tests = ["-m", "unittest", "discover", "-s", scripts]
+    return [
+        step(
+            "repository-guidance",
+            [sys.executable, root / "scripts/guide.py", "--check"],
+            root,
+        ),
+        step(
+            "change-scope",
+            [sys.executable, *scope_tests, "-p", "test_ci_change_scope.py"],
+            root,
+        ),
+        step("cloud-setup-syntax", ["sh", "-n", root / "scripts/cloud-setup.sh"], root),
+        step("credential-boundaries", ["node", APP / "e2e/verify-security.mjs"], root),
+        step(
+            "node-toolchain",
+            ["node", "--test", scripts / "node-toolchain.test.mjs"],
+            root,
+        ),
+    ]
+
+
+def affected_scopes(base):
+    """Scopes CI's path classifier selects for this checkout's changes since `base`.
+
+    The merge base is compared with the working tree, so committed, staged,
+    unstaged and untracked files all count. As in CI, an unclassified path or a
+    failed comparison selects every scope.
+    """
+    root = APP.parent.parent
+    classify = runpy.run_path(str(Path(__file__).with_name("ci_change_scope.py")))[
+        "classify"
+    ]
+    try:
+        merge_base = git("merge-base", base, "HEAD", cwd=root)
+        listed = git("diff", "--name-only", "-z", "--no-renames", merge_base, cwd=root)
+        listed += "\0" + git("ls-files", "-oz", "--exclude-standard", cwd=root)
+        paths = [path for path in listed.split("\0") if path]
+        selected = classify(paths)
+        print(f"{len(paths)} path(s) changed since {base} ({merge_base[:9]})")
+    except (OSError, subprocess.SubprocessError) as error:
+        print(
+            f"cannot compare with {base} ({str(error) or type(error).__name__}); "
+            "selecting every scope",
+            file=sys.stderr,
+        )
+        selected = classify([], force_full=True)
+    scopes = [scope for scope in SCOPES if selected[scope]]
+    print(f"Affected scopes: {', '.join(scopes) or 'none'}")
+    after_merge = [name for name in ("native", "packaging") if selected[name]]
+    if after_merge:
+        print(
+            f"Also in scope, outside this gate: {', '.join(after_merge)} "
+            "(native suites: apps/loupist/e2e/README.md#which-tool)"
+        )
+    return scopes
+
+
 def plan(scope, install=False):
+    if scope == REPOSITORY:
+        return repository_plan()
     if scope in ("web", "harness"):
         return web_plan(scope == "harness", install)
     return rust_plan(install) if scope == "rust" else python_plan(install)
@@ -560,8 +642,8 @@ def run(
     try:
         save()
         print(f"Check evidence: {directory / 'receipt.json'}", flush=True)
-        ordered = [scope for scope in SCOPES if scope in scopes] + [
-            s for s in scopes if s not in SCOPES
+        ordered = [s for s in scopes if s not in SCOPES] + [
+            scope for scope in SCOPES if scope in scopes
         ]
         for scope in ordered:
             if not cancelled.is_set():
@@ -619,8 +701,19 @@ def main(argv=None):
     parser.add_argument(
         "scope",
         nargs="?",
-        choices=("all", "web", "rust", "python", "harness"),
+        choices=("all", "web", "rust", "python", "harness", REPOSITORY),
         default="all",
+    )
+    parser.add_argument(
+        "--affected",
+        action="store_true",
+        help="with all: run the repository checks and only the scopes this "
+        "checkout's changes select, using CI's path classifier",
+    )
+    parser.add_argument(
+        "--base",
+        default="origin/main",
+        help="revision --affected compares with (default: origin/main)",
     )
     parser.add_argument(
         "--timeout",
@@ -655,9 +748,20 @@ def main(argv=None):
         )
     if not shutil.which("git"):
         parser.error("git is required for source evidence")
-    scopes = list(SCOPES) if args.scope == "all" else [args.scope]
+    if args.affected and args.scope != "all":
+        parser.error("--affected narrows the all scope; drop the named scope")
     install = args.install or args.setup_only
+    if args.affected:
+        scopes = [REPOSITORY, *affected_scopes(args.base)]
+    else:
+        scopes = list(SCOPES) if args.scope == "all" else [args.scope]
     plans = {scope: plan(scope, install) for scope in scopes}
+    if args.affected and install and "rust" in scopes:
+        # Rust host tests run the locked Node and OpenBB installs, as CI's legs do.
+        for needed in ("web", "python"):
+            if needed not in scopes:
+                plans[needed] = setup_steps(needed, plan(needed, True))
+        scopes = [REPOSITORY, *(scope for scope in SCOPES if scope in plans)]
     if args.only is not None:
         wanted = {name for name in args.only.split(",") if name}
         known = {item["name"] for steps in plans.values() for item in steps}

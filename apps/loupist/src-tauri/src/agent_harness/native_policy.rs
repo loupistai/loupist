@@ -338,6 +338,16 @@ fn instruction_file(target: &Path, roots: &NativeRoots) -> bool {
         })
 }
 
+/// Whether a workspace-relative path names an ordinary research file. Host
+/// tools that read or write a workspace file for the model (`workspace_capture`,
+/// `dataset_import`, `dataset_export`) take only these: no dot-folder or
+/// dotfile at any depth (`.loupist`, `.git`, `.agents`, `.pi`, `.env`), and a
+/// write never creates a root instruction file.
+pub fn ordinary_workspace_path(path: &str, write: bool) -> bool {
+    !path.split('/').any(|part| part.starts_with('.'))
+        && !(write && ROOT_INSTRUCTIONS.iter().any(|name| named(path, name)))
+}
+
 /// A path component against a known name, without case.
 fn named(part: &str, name: &str) -> bool {
     part.eq_ignore_ascii_case(name)

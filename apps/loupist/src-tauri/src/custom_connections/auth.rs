@@ -424,43 +424,106 @@ async fn authorize_with_opener(
     open: impl FnOnce(&str) -> Result<(), ConnectionError>,
 ) -> Result<(Registration, Tokens), ConnectionError> {
     timeout(Duration::from_secs(300), async {
-        let listener = TcpListener::bind("127.0.0.1:0").await.map_err(|_| ConnectionError::Authorization)?;
-        let redirect = format!("http://127.0.0.1:{}/callback", listener.local_addr().map_err(|_| ConnectionError::Authorization)?.port());
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|_| ConnectionError::Authorization)?;
+        let redirect = format!(
+            "http://127.0.0.1:{}/callback",
+            listener
+                .local_addr()
+                .map_err(|_| ConnectionError::Authorization)?
+                .port()
+        );
         let registration = register(metadata, &redirect, supplied).await?;
         let attempt = AuthorizationAttempt::new(metadata);
         let mut url = checked_url(&metadata.authorization_endpoint)?;
         {
             let mut query = url.query_pairs_mut();
-            query.append_pair("response_type", "code").append_pair("client_id", &registration.client_id)
-                .append_pair("redirect_uri", &redirect).append_pair("state", &attempt.state)
-                .append_pair("code_challenge", &attempt.challenge()).append_pair("code_challenge_method", "S256")
+            query
+                .append_pair("response_type", "code")
+                .append_pair("client_id", &registration.client_id)
+                .append_pair("redirect_uri", &redirect)
+                .append_pair("state", &attempt.state)
+                .append_pair("code_challenge", &attempt.challenge())
+                .append_pair("code_challenge_method", "S256")
                 .append_pair("resource", resource);
-            if !scopes.is_empty() { query.append_pair("scope", &scopes.iter().cloned().collect::<Vec<_>>().join(" ")); }
+            if !scopes.is_empty() {
+                query.append_pair(
+                    "scope",
+                    &scopes.iter().cloned().collect::<Vec<_>>().join(" "),
+                );
+            }
         }
         open(url.as_str())?;
-        let (mut socket, peer) = listener.accept().await.map_err(|_| ConnectionError::Authorization)?;
-        if !peer.ip().is_loopback() { return Err(ConnectionError::InvalidAuthorization); }
+        let (mut socket, peer) = listener
+            .accept()
+            .await
+            .map_err(|_| ConnectionError::Authorization)?;
+        if !peer.ip().is_loopback() {
+            return Err(ConnectionError::InvalidAuthorization);
+        }
         let mut bytes = Vec::new();
         let mut buf = [0u8; 1024];
         loop {
-            let count = timeout(Duration::from_secs(5), socket.read(&mut buf)).await.map_err(|_| ConnectionError::Authorization)?.map_err(|_| ConnectionError::Authorization)?;
-            if count == 0 || bytes.len() + count > 16 * 1024 { return Err(ConnectionError::InvalidAuthorization); }
+            let count = timeout(Duration::from_secs(5), socket.read(&mut buf))
+                .await
+                .map_err(|_| ConnectionError::Authorization)?
+                .map_err(|_| ConnectionError::Authorization)?;
+            if count == 0 || bytes.len() + count > 16 * 1024 {
+                return Err(ConnectionError::InvalidAuthorization);
+            }
             bytes.extend_from_slice(&buf[..count]);
-            if bytes.windows(4).any(|w| w == b"\r\n\r\n") { break; }
+            if bytes.windows(4).any(|w| w == b"\r\n\r\n") {
+                break;
+            }
         }
-        let request = std::str::from_utf8(&bytes).map_err(|_| ConnectionError::InvalidAuthorization)?;
-        let target = request.lines().next().and_then(|line| line.strip_prefix("GET ")).and_then(|line| line.strip_suffix(" HTTP/1.1")).ok_or(ConnectionError::InvalidAuthorization)?;
-        if !target.starts_with("/callback?") { return Err(ConnectionError::InvalidAuthorization); }
-        let callback = Url::parse(&format!("http://127.0.0.1{target}")).map_err(|_| ConnectionError::InvalidAuthorization)?;
+        let request =
+            std::str::from_utf8(&bytes).map_err(|_| ConnectionError::InvalidAuthorization)?;
+        let target = request
+            .lines()
+            .next()
+            .and_then(|line| line.strip_prefix("GET "))
+            .and_then(|line| line.strip_suffix(" HTTP/1.1"))
+            .ok_or(ConnectionError::InvalidAuthorization)?;
+        if !target.starts_with("/callback?") {
+            return Err(ConnectionError::InvalidAuthorization);
+        }
+        let callback = Url::parse(&format!("http://127.0.0.1{target}"))
+            .map_err(|_| ConnectionError::InvalidAuthorization)?;
         let result = attempt.validate_callback(&callback);
-        let response = if result.is_ok() { "HTTP/1.1 200 OK\r\nContent-Length: 34\r\nConnection: close\r\n\r\nYou can return to Loupist now" }
-            else { "HTTP/1.1 400 Bad Request\r\nContent-Length: 20\r\nConnection: close\r\n\r\nAuthorization failed" };
+        // The length comes from the body: a longer declared length leaves the
+        // browser waiting for bytes that never arrive.
+        let (status, body) = if result.is_ok() {
+            ("200 OK", "You can return to Loupist now")
+        } else {
+            ("400 Bad Request", "Authorization failed")
+        };
+        let response = format!(
+            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
         let _ = socket.write_all(response.as_bytes()).await;
         let code = result?;
-        let form = vec![("grant_type", "authorization_code".into()), ("code", code), ("redirect_uri", redirect), ("code_verifier", attempt.verifier)];
-        let tokens = token_request(&client()?, metadata, &registration, resource, scopes, form, None).await?;
+        let form = vec![
+            ("grant_type", "authorization_code".into()),
+            ("code", code),
+            ("redirect_uri", redirect),
+            ("code_verifier", attempt.verifier),
+        ];
+        let tokens = token_request(
+            &client()?,
+            metadata,
+            &registration,
+            resource,
+            scopes,
+            form,
+            None,
+        )
+        .await?;
         Ok((registration, tokens))
-    }).await.map_err(|_| ConnectionError::Authorization)?
+    })
+    .await
+    .map_err(|_| ConnectionError::Authorization)?
 }
 
 async fn token_request(

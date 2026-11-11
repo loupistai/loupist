@@ -240,13 +240,22 @@ fn loopback_client(timeout: Duration) -> Result<reqwest::Client, CommandError> {
         .map_err(|_| CommandError::internal("local model probe is unavailable"))
 }
 
-async fn json_body(response: reqwest::Response) -> Option<Value> {
-    if !response.status().is_success() {
+/// Reads at most `MAX_BODY_BYTES`: the host is whatever the user typed, so
+/// the cap applies while reading, not after the whole body is in memory.
+async fn json_body(mut response: reqwest::Response) -> Option<Value> {
+    if !response.status().is_success()
+        || response
+            .content_length()
+            .is_some_and(|length| length > MAX_BODY_BYTES as u64)
+    {
         return None;
     }
-    let bytes = response.bytes().await.ok()?;
-    if bytes.len() > MAX_BODY_BYTES {
-        return None;
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.ok()? {
+        if bytes.len() + chunk.len() > MAX_BODY_BYTES {
+            return None;
+        }
+        bytes.extend_from_slice(&chunk);
     }
     serde_json::from_slice(&bytes).ok()
 }

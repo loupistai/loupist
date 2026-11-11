@@ -93,6 +93,7 @@ impl AppToolExecutor {
         if path == "." {
             return Err(export_error("choose a file path inside the workspace"));
         }
+        self.host_file_gate(&path, super::workspace::HostFile::Export)?;
         let (reference, payload, metadata) = self
             .state
             .store

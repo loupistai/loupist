@@ -102,6 +102,10 @@ pub fn crypto_base(symbol: &str) -> String {
     if let Some((base, _)) = symbol.split_once(['-', '/']) {
         return base.to_owned();
     }
+    // A stablecoin's own ticker can end in a quote ("PYUSD", "FDUSD").
+    if STABLECOINS.contains(&symbol.as_str()) {
+        return symbol;
+    }
     for quote in ["USDT", "USDC", "USD", "KRW", "EUR"] {
         if let Some(base) = symbol.strip_suffix(quote) {
             if base.len() >= 2 {
@@ -525,6 +529,13 @@ mod tests {
         assert_eq!(crypto_base("btc-usd"), "BTC");
         assert_eq!(crypto_base("ETHUSDT"), "ETH");
         assert_eq!(crypto_base("USDC"), "USDC");
+        for coin in STABLECOINS {
+            assert_eq!(crypto_base(coin), *coin);
+            assert!(is_stablecoin(coin), "{coin}");
+            assert!(is_stablecoin(&format!("{coin}-USD")), "{coin}");
+        }
+        assert_eq!(crypto_pair("PYUSD"), "PYUSDUSD");
+        assert_eq!(crypto_base("PYUSDUSD"), "PYUSD");
         assert_eq!(crypto_pair("SOL"), "SOLUSD");
         assert_eq!(futures_root("CLZ26"), "CL");
         assert_eq!(futures_root("GC=F"), "GC");

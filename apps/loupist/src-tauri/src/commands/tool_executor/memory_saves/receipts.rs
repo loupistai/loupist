@@ -99,7 +99,7 @@ impl ReceiptLedger {
             "source" => "sourceReads",
             "world" => "worldReads",
             "lens" => "lensReads",
-            "research" => "journal.earlier[].readRef",
+            "research" => "journal_review.readRef",
             _ => "the matching reference field",
         };
         if supplied_field.starts_with("journal.") && field.ends_with("Reads") {

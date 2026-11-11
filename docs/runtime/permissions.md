@@ -118,6 +118,20 @@ files, checks each descriptor and passes it to `rg` as stdin, with no filesystem
 search arguments or ambient configuration. Its output is capped at 50 KiB.
 `run_python` runs in a separate worker process. It does not share the Pi process with file tools.
 
+Three host tools also take a workspace-relative file: `workspace_capture` and
+`dataset_import` read one, `dataset_export` creates one. Each call takes the
+native decision for a `read` or `write` of the same path, so the Loupist's
+private folder, git metadata, credential stores and hard-linked aliases are
+refused as they are for the file tools. A capture reads what a native read may,
+including this Chat's attachments. An import or export also refuses a path with
+a dot-folder or dotfile at any depth (`.loupist`, `.git`, `.agents`, `.pi`,
+`.env`), and an export never creates an instruction file, whatever the
+exposure. `dataset_export` stays available after third-party text; without this
+gate it could write that text where a later reply loads it as instructions
+(`host_file_gate` in `src-tauri/src/commands/tool_executor/workspace.rs`).
+A search skips an entry it cannot read and reports the list as truncated; only
+an unreadable search root fails the call.
+
 ## Python execution
 
 `run_python` is broker method `python.run` with permission always. The model sends `code` and an optional `timeout_seconds`. Code is at most 64 KiB. The timeout defaults to 60 seconds and cannot exceed 120. The worker is `loupist-python-worker` in the staged `python-runtime` resource. It hosts Wasmtime 50.0.1 and the pinned CPython WASI snapshot in `apps/loupist/python-worker/runtime.json` (ClayGendron/wasi-python v0.1.4). The host does not invoke native Python for model code.

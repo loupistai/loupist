@@ -9,7 +9,7 @@ List the checks you ran.
 ## Contribution terms
 
 - [ ] I have read and agree to the
-      [Loupist Contributor License Agreement](../CLA.md).
+      [Loupist Contributor License Agreement](https://github.com/loupistai/loupist/blob/main/CLA.md).
 - [ ] I have the right to submit this work, and every commit carries a
       Developer Certificate of Origin `Signed-off-by` line.
 - [ ] If an employer or another legal entity may own this work, I have obtained

@@ -16,4 +16,4 @@ Windows, Intel Macs, and Linux are not supported in the first release. Windows i
 
 Loupist checks the stable signed update feed at most once per day and also provides **Check for updates** in Settings. Download, installation, and restart always require user confirmation. Prereleases are never offered on the stable channel.
 
-Loupist V1 does not import pre-1.0 state. Existing files are left untouched.
+Data from Loupist 0.0.1 is upgraded in place on first open, after a backup is written beside the database. Earlier development formats are refused and left unchanged.

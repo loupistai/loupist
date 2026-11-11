@@ -1092,14 +1092,26 @@ pub(super) fn contest_pages(
         if changed.is_empty() {
             continue;
         }
-        publish_revision(
+        let payload = next.to_payload()?;
+        let published = publish_revision(
             tx,
             &loaded.record,
             loupist_id,
             loaded.record.head_revision_id.as_deref(),
-            &next.to_payload()?,
+            &payload,
             &[],
             at_ms,
+        )?;
+        // Publishing drops the record's search documents; without this the
+        // page stays out of `lens_search` until its next filing.
+        super::search_index::index_payload(
+            tx,
+            None,
+            &record_id,
+            &published.revision_id,
+            RecordKind::Lens,
+            &loaded.record.title,
+            &payload,
         )?;
         tx.execute(
             "UPDATE knowledge_lens_metadata SET updated_at_ms = ?1 WHERE record_id = ?2",

@@ -95,7 +95,7 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
   const failure =briefingFailure(selected?.error || readerError, message?.failure_kind);
   const briefingTask = tasks.find(task => task.kind === "briefing") ?? settings?.task ?? null;
   // Watching is a pinned item, not a scheduled task: Rust checks on this computer without a model call.
-  const { settings: watch, setSettings: setWatch } = useWatchSettings(bridge, loupist.id);
+  const { settings: watch } = useWatchSettings(bridge, loupist.id);
   const watchingShown = followedCount(watch) > 0;
   const running = tasks.filter(task => task.latest_run?.status === "running");
 
@@ -252,7 +252,7 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
           })}</ul>}
         </section>
       </div>
-      {readerOpen ? <div className="briefings-reader-scroll" onFocus={revealFocused}>{!selected && watchingFocus && watch ? <WatchingReader bridge={bridge} loupist={loupist} settings={watch} onSettings={setWatch} onBack={() => { setFocusExplicit(false); setFocusTaskId(null); }} />
+      {readerOpen ? <div className="briefings-reader-scroll" onFocus={revealFocused}>{!selected && watchingFocus && watch ? <WatchingReader bridge={bridge} loupist={loupist} settings={watch} onBack={() => { setFocusExplicit(false); setFocusTaskId(null); }} />
         : selected ? <article className="briefings-reader" ref={readerRef}><Button variant="ghost" className="briefings-back" data-print="omit" onClick={() => setSelected(null)}>{t("schedule.backTo", { title: focusTask ? displayTitle({ kind: focusTask.kind, title: focusTask.title }) : t("schedule.title") })}</Button><header><h2>{displayTitle(selected)}</h2><p className="briefings-meta">{formatDate(selected.startedAtMs)} · {formatTime(selected.startedAtMs)} · {loupist.name}</p></header>
         {selected.briefingContext?.changed ? <BriefingSections bridge={bridge} loupistId={loupist.id} loupistName={loupist.name} context={selected.briefingContext} nextRun={briefingTask ? nextRun(briefingTask) : null} skipped={selected.skippedTools.map(tool => tool.name)}
           onOpenMap={onOpenMap} onOpenCheck={(journalId, title) => void open(selected, { kind: "memory", location: { loupistId: loupist.id, surface: "note", objectId: journalId, selection: { kind: "journal", journalId } }, title })} /> : null}

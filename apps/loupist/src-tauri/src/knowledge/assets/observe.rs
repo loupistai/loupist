@@ -104,10 +104,12 @@ pub(crate) fn number(row: &Value, fields: &[&str]) -> Option<f64> {
 /// `2026-03-18`, `20260318` or an RFC 3339 instant, as a calendar day.
 pub fn parse_day(value: &str) -> Option<NaiveDate> {
     let value = value.trim();
-    if value.len() >= 10 {
-        if let Ok(day) = NaiveDate::parse_from_str(&value[..10], "%Y-%m-%d") {
-            return Some(day);
-        }
+    // `get` because byte 10 of provider text can fall inside a character.
+    if let Some(day) = value
+        .get(..10)
+        .and_then(|prefix| NaiveDate::parse_from_str(prefix, "%Y-%m-%d").ok())
+    {
+        return Some(day);
     }
     if value.len() == 8 && value.bytes().all(|b| b.is_ascii_digit()) {
         return NaiveDate::parse_from_str(value, "%Y%m%d").ok();

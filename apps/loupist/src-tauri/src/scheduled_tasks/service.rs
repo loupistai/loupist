@@ -179,10 +179,20 @@ pub(crate) fn delete(
         .maintenance
         .admit_kind(MaintenanceActivityKind::ChatMutation)?;
     ensure_visible(state, loupist_id)?;
-    if get(state, loupist_id, id)?.kind == super::types::TaskKind::Earnings {
-        return Err(CommandError::invalid(
-            "The results task is automatic; pause it instead of deleting it",
-        ));
+    // Checked here so that the agent's `schedule_delete` meets the same rule
+    // as the app: only a custom task is deleted.
+    match get(state, loupist_id, id)?.kind {
+        super::types::TaskKind::Earnings => {
+            return Err(CommandError::invalid(
+                "The results task is automatic; pause it instead of deleting it",
+            ))
+        }
+        super::types::TaskKind::Briefing => {
+            return Err(CommandError::invalid(
+                "Turn the briefing off instead of deleting it",
+            ))
+        }
+        _ => {}
     }
     state
         .store

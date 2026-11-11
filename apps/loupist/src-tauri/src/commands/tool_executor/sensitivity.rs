@@ -146,16 +146,15 @@ fn by_evidence<'a>(registry: &'a RunResultRegistry, evidence_id: &str) -> Option
 
 fn calendar_day(text: &str) -> Option<String> {
     let text = text.trim();
-    let day = if text.len() >= 10 {
-        chrono::NaiveDate::parse_from_str(&text[..10], "%Y-%m-%d").ok()
-    } else {
-        None
-    }
-    .or_else(|| {
-        (text.len() == 8)
-            .then(|| chrono::NaiveDate::parse_from_str(text, "%Y%m%d").ok())
-            .flatten()
-    })?;
+    // `get` because byte 10 of provider text can fall inside a character.
+    let day = text
+        .get(..10)
+        .and_then(|prefix| chrono::NaiveDate::parse_from_str(prefix, "%Y-%m-%d").ok())
+        .or_else(|| {
+            (text.len() == 8)
+                .then(|| chrono::NaiveDate::parse_from_str(text, "%Y%m%d").ok())
+                .flatten()
+        })?;
     Some(day.to_string())
 }
 

@@ -82,7 +82,7 @@ impl AppToolExecutor {
         }
         self.capture
             .turn_taint
-            .enforce(ToolMethod::McpConnect, &json!({}))?;
+            .enforce(ToolMethod::McpConnect, &json!({"server_id": id}))?;
         let manager = service::for_state(&self.state).map_err(|e| failure(e, id, ""))?;
         let mut service = manager.lock().await;
         let tools = service
@@ -104,9 +104,12 @@ impl AppToolExecutor {
         if !self.capability_ids.contains(&request.server_id) {
             return Err(BrokerError::MethodDenied);
         }
+        // The custom tier pauses a call only when the request names its
+        // server, so every recheck below passes the same target.
+        let target = json!({"server_id": request.server_id, "tool_name": request.tool_name});
         self.capture
             .turn_taint
-            .enforce(ToolMethod::McpCall, &json!({}))?;
+            .enforce(ToolMethod::McpCall, &target)?;
         let manager = service::for_state(&self.state)
             .map_err(|e| failure(e, &request.server_id, &request.tool_name))?;
         let mut service = manager.lock().await;
@@ -114,7 +117,7 @@ impl AppToolExecutor {
         // must not dispatch after an earlier result has tainted this turn.
         self.capture
             .turn_taint
-            .enforce(ToolMethod::McpCall, &json!({}))?;
+            .enforce(ToolMethod::McpCall, &target)?;
         let connection = service
             .get(&request.server_id, Some(&self.loupist_id))
             .map_err(|e| failure(e, &request.server_id, &request.tool_name))?;
@@ -136,7 +139,7 @@ impl AppToolExecutor {
                 service = manager.lock().await;
                 self.capture
                     .turn_taint
-                    .enforce(ToolMethod::McpCall, &json!({}))?;
+                    .enforce(ToolMethod::McpCall, &target)?;
                 result = match answer {
                     CardAnswer::Allowed(choice) => {
                         let approved = service
@@ -188,10 +191,10 @@ impl AppToolExecutor {
                                 crate::domain::ChatToolRefusalReason::NeedsApproval
                             },
                         });
-                }
-                if let Some(run_id) = self.capture.scheduled_run_id() {
-                    self.state.store.scheduled_run_skip_tool(&self.loupist_id, run_id, &request.tool_name, "Custom MCP tool requires an existing Always approval and an unchanged read-only definition")
-                        .map_err(|_| BrokerError::Execution("Could not record refused unattended tool".into()))?;
+                    if let Some(run_id) = self.capture.scheduled_run_id() {
+                        self.state.store.scheduled_run_skip_tool(&self.loupist_id, run_id, &request.tool_name, "Custom MCP tool requires an existing Always approval and an unchanged read-only definition")
+                            .map_err(|_| BrokerError::Execution("Could not record refused unattended tool".into()))?;
+                    }
                 }
                 return Err(failure(error, &request.server_id, &request.tool_name));
             }

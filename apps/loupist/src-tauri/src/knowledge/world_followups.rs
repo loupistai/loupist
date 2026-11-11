@@ -702,6 +702,18 @@ mod tests {
         let section = &page.body.sections()[0];
         assert!(section.contested);
         assert_eq!(section.contested_claim_ids, ["c1"]);
+        // The contested revision is indexed, so the page stays in Lens search.
+        let indexed: i64 = store
+            .read(|read| {
+                Ok(read.tx.query_row(
+                    "SELECT COUNT(*) FROM knowledge_search_documents
+                     WHERE record_id = ?1 AND revision_id = ?2",
+                    rusqlite::params![page_id, page.revision_id],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap();
+        assert!(indexed > 0, "a contested page left the search index");
         let events = store
             .growth_events(&crate::knowledge::GrowthEventsQuery {
                 loupist_id: LOUPIST.into(),

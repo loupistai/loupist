@@ -47,7 +47,7 @@ user-facing rules.
 
 ## Where data lives
 
-New Loupist uses `loupistCreate { name, focus?, avatar? }`; Rust validates the profile
+New Loupist uses `loupistCreate { name, focus?, avatar?, template?, tone? }`; Rust validates the profile
 and allocates an app-managed local workspace. `loupistImport { workspacePath }` is
 separate and requires an existing Loupist folder; `packAdd` can also create one from a
 [shared pack](../knowledge/sharing.md#sharing). Each Loupist can contain multiple
@@ -81,7 +81,7 @@ Holdings are app-level. Each import is a snapshot of one source (`csv`, `kis`,
 `crypto_file`, or one per wallet address), and holdings are the union of the latest
 snapshot per source (`LATEST_SNAPSHOTS` in `store/user_context.rs`): a crypto import
 never replaces stock holdings, and a symbol held in two sources is one item. Your
-holdings (Update under About you, or the onboarding watchlist step) imports stock CSV
+holdings (Update under About you) imports stock CSV
 files, Korea Investment, exchange balance files and up to 10 read-only wallet addresses.
 For an exchange file Rust detects the format (a Kraken ledger, a balances file, or the
 asset and balance columns the user picks), merges Kraken codes and staking variants into

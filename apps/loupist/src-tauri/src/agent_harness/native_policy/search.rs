@@ -132,18 +132,34 @@ impl Scan<'_> {
         if recursive {
             rules.push(ignore_rules(directory, self.roots, self.exposure));
         }
+        // One unreadable or vanished entry below the search root must not fail
+        // the whole search: leave it out and report the listing as partial.
+        let entries = match fs::read_dir(directory) {
+            Ok(entries) => entries,
+            Err(error) if depth == 0 => return Err(error),
+            Err(_) => {
+                self.truncated = true;
+                return Ok(());
+            }
+        };
         // Stream entries instead of collecting an unbounded directory first.
-        for entry in fs::read_dir(directory)? {
+        for entry in entries {
             if !self.budget(depth) {
                 break;
             }
             self.scanned += 1;
-            let entry = entry?;
+            let Ok(entry) = entry else {
+                self.truncated = true;
+                continue;
+            };
             let path = entry.path();
             if !allowed(&path, self.roots, self.exposure) {
                 continue;
             }
-            let metadata = fs::symlink_metadata(&path)?;
+            let Ok(metadata) = fs::symlink_metadata(&path) else {
+                self.truncated = true;
+                continue;
+            };
             // Do not traverse links or expose devices, FIFOs or sockets. Direct
             // file reads can resolve an admitted link through the normal gate.
             if !(metadata.is_file() || metadata.is_dir()) {

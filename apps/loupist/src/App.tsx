@@ -220,8 +220,9 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
   /** W19.6: the community Gallery and the pack review are surface layers; Use from a card focuses Add. */
   const { packReview } = surface;
   const [indexConfigured, setIndexConfigured] = useState(false);
-  useEffect(() => { void bridge.githubAccount().then(account => setIndexConfigured(account.indexConfigured)).catch(() => undefined); }, [bridge]);
   const sharingVisible = sharingReleaseVisible();
+  // Only the sharing entry points use the answer, and reading it touches the credential store.
+  useEffect(() => { if (sharingVisible) void bridge.githubAccount().then(account => setIndexConfigured(account.indexConfigured)).catch(() => undefined); }, [bridge, sharingVisible]);
   const deepLinks = useDeepLinks(bridge, model.resolved && !loupist.loading && !loupist.error && !onboardingActive && !needsOnboarding, setBriefingToast);
   // The morning message reads "last seen" per Loupist; leaving a Loupist (or Settings) records the visit.
   useLoupistVisit(selectedLoupist?.id ?? null, tab !== "settings" && !onboardingActive);
@@ -252,14 +253,16 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     void openDraftChatForLoupist(loupistId);
   }, [showChat, openDraftChatForLoupist]);
   const startNewChat = useCallback(() => { if (selectedLoupist) startChatFor(selectedLoupist.id); }, [selectedLoupist, startChatFor]);
+  // `dialogs` is a new object every render; depending on it would drop and re-add the native menu listener each time.
+  const openCreateLoupist = dialogs.openCreateLoupist;
   useEffect(() => bridge.onMenuAction(action => {
     if (action === "settings") openSettings();
     else if (action === "new-chat") startNewChat();
-    else if (action === "new-loupist") dialogs.openCreateLoupist();
+    else if (action === "new-loupist") openCreateLoupist();
     else if (isAppDestination(action)) navigate(action);
     else if (action === "check-updates") openSettings("updates");
     else if (action === "toggle-sidebar") document.querySelector<HTMLButtonElement>("[data-sidebar='trigger']")?.click();
-  }), [bridge, dialogs, openSettings, startNewChat, navigate]);
+  }), [bridge, openCreateLoupist, openSettings, startNewChat, navigate]);
   // ⌘K and the sidebar search open the command palette (X7); "{n} more" opens it on what needs attention.
   const [palette, setPalette] = useState<{ open: boolean; focus?: PaletteGroup }>({ open: false });
   const openPalette = useCallback(() => setPalette({ open: true }), []);

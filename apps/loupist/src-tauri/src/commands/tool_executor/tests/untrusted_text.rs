@@ -433,6 +433,85 @@ async fn untrusted_text_exports_raise_the_native_read_tier_and_cannot_be_reimpor
     }
 }
 
+/// `workspace_capture`, `dataset_import` and `dataset_export` name a workspace
+/// file for the model. With a turn's roots they reach what the native file
+/// tools reach and nothing else.
+#[tokio::test]
+async fn host_file_tools_take_the_native_path_decision() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let workspace = temporary.path().join("loupist");
+    let app = temporary.path().join("app");
+    // As in the app: this Chat's attachments live inside the Loupist's data folder.
+    let attachments = workspace.join(".loupist/attachments/chat-a");
+    fs::create_dir_all(&attachments).unwrap();
+    fs::write(attachments.join("note.txt"), "attached note").unwrap();
+    fs::write(attachments.join("rows.json"), "[1,2]").unwrap();
+    fs::write(workspace.join(".loupist/activity.log"), "private").unwrap();
+    fs::create_dir_all(workspace.join(".git")).unwrap();
+    fs::write(workspace.join(".git/config"), "[remote]").unwrap();
+    fs::write(workspace.join("rows.json"), "[1,2]").unwrap();
+    let capture = ToolCapture {
+        bound_chat_id: Some("chat-a".into()),
+        native: NativeGate::for_turn(NativeRoots::new(
+            &workspace,
+            &app,
+            &app,
+            &workspace.join(".loupist"),
+            &app.join("scratch"),
+            &attachments,
+            Some(&temporary.path().join("home")),
+        )),
+        ..ToolCapture::for_chat(new_id("reply"))
+    };
+    let executor = executor_for(&state, Arc::new(capture));
+    let protected = |error: &BrokerError| match error {
+        BrokerError::ProtectedPath => true,
+        BrokerError::WithNext { source, .. } => matches!(**source, BrokerError::ProtectedPath),
+        _ => false,
+    };
+
+    let attached = executor
+        .workspace_capture(json!({"path": ".loupist/attachments/chat-a/note.txt"}))
+        .unwrap();
+    assert_eq!(attached["content"], "attached note");
+    for path in [".loupist/activity.log", ".git/config"] {
+        let error = executor
+            .workspace_capture(json!({"path": path}))
+            .unwrap_err();
+        assert!(protected(&error), "{path}: {error:?}");
+    }
+
+    assert!(executor
+        .dataset_import(json!({"path": "rows.json"}))
+        .is_ok());
+    let error = executor
+        .dataset_import(json!({"path": ".loupist/attachments/chat-a/rows.json"}))
+        .unwrap_err();
+    assert!(protected(&error), "{error:?}");
+
+    let dataset = state
+        .store
+        .dataset_put("loupist-a", "prices", &json!([{"day": 1}]), json!({}))
+        .unwrap();
+    for path in [
+        "AGENTS.md",
+        ".agents/skills/planted.md",
+        ".loupist/config.toml",
+    ] {
+        let error = executor
+            .execute(
+                &policy(true, true),
+                ToolMethod::DatasetExport,
+                json!({"dataset_id": dataset.dataset_id, "revision": dataset.revision, "path": path, "format": "json"}),
+            )
+            .await
+            .unwrap_err();
+        assert!(protected(&error), "{path}: {error:?}");
+        assert!(!workspace.join(path).exists(), "{path}");
+    }
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn python_preserves_exported_text_trust_through_results_and_derived_files() {

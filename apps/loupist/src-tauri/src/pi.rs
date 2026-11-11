@@ -1502,8 +1502,11 @@ impl PiProcess {
 
     pub async fn spawn_support(config: PiSupportLaunchConfig) -> Result<Self, PiError> {
         config.validate()?;
-        std::fs::create_dir_all(&config.agent_data_dir)?;
-        std::fs::create_dir_all(&config.private_working_dir)?;
+        // The agent data folder holds `auth.json`; a first sign-in creates it
+        // here, before any Chat launch, so it is private from the start.
+        for directory in [&config.agent_data_dir, &config.private_working_dir] {
+            ensure_private_directory(directory).map_err(|_| PiError::InvalidLaunchValue)?;
+        }
         Self::spawn_command(
             &config.executable,
             &config.runtime_dir,
