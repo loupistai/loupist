@@ -92,8 +92,12 @@ impl CalcError {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Operation {
+/// A `calculate` operation; its snake_case name is the stable id the
+/// renderer words results by (`NumberCheckCalc.operation`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "CalcOperation"))]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Operation {
     PercentChange,
     Cagr,
     GrowthSeries,

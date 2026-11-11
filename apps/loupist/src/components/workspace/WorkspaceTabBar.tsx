@@ -125,6 +125,8 @@ export function WorkspaceTabBar({
       document.getElementById(workspaceTabButtonId(nextId))?.focus();
     }
   };
+  // A renamed tab can change width, so its title re-runs the scroll as well.
+  const activeTabTitle = activeTab && workspaceTabTitle(activeTab);
   useLayoutEffect(() => {
     const list = tabsRef.current;
     const selected = list?.querySelector<HTMLElement>('[data-active="true"]');
@@ -133,7 +135,7 @@ export function WorkspaceTabBar({
     const right = left + selected.offsetWidth;
     if (left < list.scrollLeft) list.scrollLeft = left;
     else if (right > list.scrollLeft + list.clientWidth) list.scrollLeft = right - list.clientWidth;
-  }, [activeTab?.id, activeTab && workspaceTabTitle(activeTab), mapSelected, evidenceSelected, workSelected]);
+  }, [activeTab?.id, activeTabTitle, mapSelected, evidenceSelected, workSelected]);
   const evidenceTitle = t("workspaceTabBar.evidence");
   const workTitle = t("workspaceTabBar.work");
 

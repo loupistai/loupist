@@ -36,10 +36,13 @@ use crate::{
     },
     runs::maintenance::MaintenanceCoordinator,
     store::deletion,
-    store::{LoupistStore, SqliteStore},
+    store::SqliteStore,
     updater::UpdateCoordinator,
     web::browser::BrowserManager,
 };
+
+mod error_code;
+pub use error_code::CommandErrorCode;
 
 const APP_INSTANCE_CONFLICT_CODE: &str = "app_instance_conflict";
 #[cfg(any(not(feature = "e2e"), test))]
@@ -47,14 +50,16 @@ const PRODUCTION_APP_IDENTIFIER: &str = crate::DEVELOPMENT_APP_IDENTIFIER;
 #[cfg(any(test, feature = "e2e"))]
 pub(crate) const LIVE_PI_AGENT_DATA_DIR_ENV: &str = "LOUPIST_LIVE_PI_AGENT_DATA_DIR";
 
+/// A failed command, as the renderer receives it.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct CommandError {
-    pub code: String,
+    pub code: CommandErrorCode,
     pub message: String,
 }
 
 impl CommandError {
-    pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
+    pub fn new(code: impl Into<CommandErrorCode>, message: impl Into<String>) -> Self {
         Self {
             code: code.into(),
             message: message.into(),
@@ -63,25 +68,25 @@ impl CommandError {
 
     pub fn unavailable(component: &str) -> Self {
         Self::new(
-            format!("{component}_unavailable"),
+            CommandErrorCode::parse(&format!("{component}_unavailable")),
             format!("{component} is not available in this Loupist build"),
         )
     }
 
     pub fn invalid(message: impl Into<String>) -> Self {
-        Self::new("invalid_request", message)
+        Self::new(CommandErrorCode::InvalidRequest, message)
     }
 
     pub fn not_found(kind: &str) -> Self {
-        Self::new("not_found", format!("{kind} was not found"))
+        Self::new(CommandErrorCode::NotFound, format!("{kind} was not found"))
     }
 
     pub fn conflict(message: impl Into<String>) -> Self {
-        Self::new("conflict", message)
+        Self::new(CommandErrorCode::Conflict, message)
     }
 
     pub fn internal(message: impl Into<String>) -> Self {
-        Self::new("internal", message)
+        Self::new(CommandErrorCode::Internal, message)
     }
 }
 
@@ -161,12 +166,15 @@ pub enum QuarantineSource {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum LoupistAvailability {
     Available,
     WorkspaceUnavailable,
-    /// The folder was made by an earlier build; it is refused, never migrated.
+    /// The folder is in a pre-ladder development format; it is refused, never migrated.
     EarlierVersion,
+    /// A newer Loupist saved the folder; it is refused and left untouched.
+    NewerVersion,
     RecoveryRequired {
         reason: LoupistRecoveryReason,
         action: LoupistRecoveryAction,
@@ -174,12 +182,14 @@ pub enum LoupistAvailability {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum LoupistRecoveryAction {
     RecoverMemory,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum LoupistRecoveryReason {
     InterruptedMemoryUpdate,
@@ -279,6 +289,8 @@ pub struct AppState {
     pub graph: crate::knowledge::GraphSupervisor,
     /// Writes what the user follows to every Loupist once a burst of follows settles.
     pub(crate) followed: crate::commands::knowledge::FollowedSync,
+    /// What sharing commands remember between calls: saved copies, sign-in, update checks.
+    pub(crate) sharing: crate::sharing::commands::SharingSession,
 }
 
 impl AppState {
@@ -463,6 +475,7 @@ impl AppState {
                 Some(inference),
             ),
             followed: Default::default(),
+            sharing: Default::default(),
         };
         // Invalid editable configuration must leave Settings available. Every
         // execution admission rechecks reconciliation before using credentials.
@@ -643,11 +656,12 @@ impl AppState {
 
     pub fn ensure_loupist_available(&self, loupist_id: &str) -> Result<(), CommandError> {
         match self.loupist_access(loupist_id) {
-            // Storage binding refuses a missing or earlier-build folder itself.
+            // Storage binding refuses a missing, earlier- or newer-build folder itself.
             LoupistAccess::Visible(
                 LoupistAvailability::Available
                 | LoupistAvailability::WorkspaceUnavailable
-                | LoupistAvailability::EarlierVersion,
+                | LoupistAvailability::EarlierVersion
+                | LoupistAvailability::NewerVersion,
             ) => {}
             LoupistAccess::Visible(LoupistAvailability::RecoveryRequired { .. }) => {
                 return Err(CommandError::new(
@@ -728,7 +742,8 @@ impl AppState {
                 LoupistAccess::Visible(
                     LoupistAvailability::Available
                     | LoupistAvailability::WorkspaceUnavailable
-                    | LoupistAvailability::EarlierVersion,
+                    | LoupistAvailability::EarlierVersion
+                    | LoupistAvailability::NewerVersion,
                 ) => Err(CommandError::conflict(
                     "Loupist does not currently require recovery",
                 )),
@@ -977,6 +992,7 @@ impl AppState {
                 Some(inference),
             ),
             followed: Default::default(),
+            sharing: Default::default(),
         };
         let _ = crate::marketplace::connector_config::reconcile_connector_configs(&state);
         state
@@ -1066,19 +1082,57 @@ fn resolve_directory(candidates: impl IntoIterator<Item = PathBuf>) -> Option<Pa
     candidates.into_iter().find(|path| path.is_dir())
 }
 
+/// The catalog was written by a newer Loupist; it is left untouched.
+pub(crate) const CATALOG_NEWER_VERSION: &str = "catalog_newer_version";
+/// A catalog upgrade step failed and rolled back after the backup was written.
+pub(crate) const CATALOG_UPGRADE_FAILED: &str = "catalog_upgrade_failed";
+
+/// The native dialog (title, body) for a startup failure the user can act
+/// on. Other startup failures only reach the log.
+pub(crate) fn startup_storage_notice(error: &CommandError) -> Option<(&'static str, String)> {
+    match error.code.as_str() {
+        CATALOG_NEWER_VERSION => Some((
+            "Loupist can't open your data",
+            "Your Loupist data was saved by a newer version of Loupist. This version can't read it and has left it unchanged.\n\nInstall the latest Loupist to continue.".into(),
+        )),
+        CATALOG_UPGRADE_FAILED => Some((
+            "Loupist couldn't upgrade your data",
+            format!(
+                "Loupist stopped before finishing the upgrade of its data. The step that failed changed nothing, and a copy was saved before the upgrade began.\n\n{}",
+                error.message
+            ),
+        )),
+        _ => None,
+    }
+}
+
+fn catalog_error(error: crate::store::StoreError) -> CommandError {
+    use crate::store::StoreError;
+    match error {
+        StoreError::NewerVersion => CommandError::new(CATALOG_NEWER_VERSION, error.to_string()),
+        StoreError::Upgrade(_) => CommandError::new(CATALOG_UPGRADE_FAILED, error.to_string()),
+        other => CommandError::internal(other.to_string()),
+    }
+}
+
 fn open_app_store(database_path: &Path) -> Result<(SqliteStore, bool), CommandError> {
     let existed = database_path.exists();
     match SqliteStore::open_catalog(database_path) {
         Ok(store) => Ok((store, !existed)),
-        // Pre-1.0 an earlier build's catalog is set aside, never migrated: the
-        // app starts fresh and the old file stays next to the new one.
+        // A catalog in a pre-ladder development format is set aside, never
+        // migrated: the app starts with a fresh catalog under the same
+        // environment identity (so Keychain items stay reachable), and the old
+        // file stays next to the new one.
         Err(crate::store::StoreError::EarlierVersion) => {
+            let environment = crate::store::recorded_environment_id(database_path);
             set_aside_earlier_catalog(database_path)?;
-            SqliteStore::open_catalog(database_path)
-                .map(|store| (store, true))
-                .map_err(|error| CommandError::internal(error.to_string()))
+            let store = SqliteStore::open_catalog(database_path).map_err(catalog_error)?;
+            if let Some(id) = environment {
+                store.adopt_host_environment(&id).map_err(catalog_error)?;
+            }
+            Ok((store, true))
         }
-        Err(error) => Err(CommandError::internal(error.to_string())),
+        Err(error) => Err(catalog_error(error)),
     }
 }
 

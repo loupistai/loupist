@@ -8,6 +8,7 @@ use crate::knowledge::KnowledgeResult;
 
 /// "Holding up" is stored as `holding`; the label never reads as ownership.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Verdict {
     Holding,

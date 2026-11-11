@@ -1,21 +1,8 @@
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
 import type { PositionedNode } from "./layout";
-import { isMetricNode, nodeRadius } from "./kinds";
+import { isMetricNode, nodeRadius } from "../../knowledge/mapKinds";
+import { entityLabel } from "../../knowledge/mapItems";
 export type LabelBox = { x: number; y: number; w: number; h: number };
-/** Language tag → the script its Map names prefer. Another locale adds a row here. */
-const localScripts: Record<string, RegExp> = {
-  ko: /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7A3]/u,
-};
-/** The name to draw. Korean uses the first Hangul alias the host selected; every other language uses the canonical name. */
-export function entityLabel(node: Pick<KnowledgeMapNode, "label" | "localNames">, language: string) {
-  const script = Object.entries(localScripts).find(([tag]) => language.toLowerCase() === tag || language.toLowerCase().startsWith(`${tag}-`))?.[1];
-  return script ? node.localNames?.find(name => script.test(name)) ?? node.label : node.label;
-}
-/** Map search matches the canonical name and every host-selected local name. */
-export function matchesMapQuery(node: Pick<KnowledgeMapNode, "label" | "localNames">, query: string) {
-  const needle = query.toLocaleLowerCase();
-  return [node.label, ...(node.localNames ?? [])].some(name => name.toLocaleLowerCase().includes(needle));
-}
 const LABEL_MAX = 36;
 /** Non-lens labels stay short. Lens titles use a pixel cap instead. */
 function mapLabelText(label: string) {

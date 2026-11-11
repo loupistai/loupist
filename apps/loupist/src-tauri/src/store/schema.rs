@@ -4,25 +4,21 @@ use std::time::Duration;
 
 use rusqlite::{Connection, OpenFlags};
 
+use super::upgrade::{self, STORE_BASELINE_VERSION};
 use super::{SqliteStore, StoreError, StoreResult};
 use crate::fs::artifact_trust::{
     ensure_private_directory, ensure_private_regular_file, harden_private_regular_file_if_exists,
     ArtifactTrustError,
 };
 
-// Pre-1.0 there is one current schema: a folder from an earlier build is refused
-// with a typed state, never migrated. The SQLite application id distinguishes
-// its files from unrelated databases and discarded development formats.
-pub(crate) const STORE_SCHEMA_VERSION: i64 = 4;
+// Fresh databases are created at the current versions; `upgrade` brings a
+// database from `STORE_BASELINE_VERSION` onward to them. Older development
+// formats are refused with a typed state, and newer ones are left untouched.
+// The SQLite application id distinguishes Loupist files from unrelated
+// databases and discarded development formats.
+pub(crate) const STORE_SCHEMA_VERSION: i64 = 5;
 pub(crate) const STORE_APPLICATION_ID: i64 = 0x4755_5255; // LOUPIST
 const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
-
-fn unsupported_schema(found: i64) -> StoreError {
-    StoreError::UnsupportedSchema {
-        found,
-        expected: STORE_SCHEMA_VERSION,
-    }
-}
 
 pub(super) fn sqlite_side_path(path: &Path, suffix: &str) -> PathBuf {
     let mut value = path.as_os_str().to_os_string();
@@ -39,7 +35,17 @@ fn harden_sqlite_side_files(path: &Path) -> StoreResult<()> {
 
 impl SqliteStore {
     pub fn open(path: impl AsRef<Path>) -> StoreResult<Self> {
-        let path = path.as_ref();
+        Self::open_as(path.as_ref(), false)
+    }
+
+    /// Opens a Loupist folder's database for use. A folder whose Memory schema
+    /// is a pre-ladder format is refused before anything is written, so it is
+    /// never half-upgraded or half-working.
+    pub(super) fn open_folder(path: impl AsRef<Path>) -> StoreResult<Self> {
+        Self::open_as(path.as_ref(), true)
+    }
+
+    fn open_as(path: &Path, folder: bool) -> StoreResult<Self> {
         let parent = path
             .parent()
             .ok_or_else(|| StoreError::Invalid("SQLite path has no parent".into()))?;
@@ -62,7 +68,7 @@ impl SqliteStore {
             &canonical_path,
             OpenFlags::default() | OpenFlags::SQLITE_OPEN_NOFOLLOW,
         )?;
-        let store = Self::from_connection(connection, Some(canonical_path.clone()))?;
+        let store = Self::from_connection(connection, Some(canonical_path.clone()), folder)?;
         ensure_private_regular_file(&canonical_path)?;
         harden_sqlite_side_files(&canonical_path)?;
         Ok(store)
@@ -70,16 +76,19 @@ impl SqliteStore {
 
     #[cfg(test)]
     pub fn open_in_memory() -> StoreResult<Self> {
-        Self::from_connection(Connection::open_in_memory()?, None)
+        Self::from_connection(Connection::open_in_memory()?, None, false)
     }
 
     pub(super) fn from_connection(
-        connection: Connection,
+        mut connection: Connection,
         database_path: Option<PathBuf>,
+        folder: bool,
     ) -> StoreResult<Self> {
         connection.busy_timeout(SQLITE_BUSY_TIMEOUT)?;
         let version =
             connection.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))?;
+        let application_id: i64 =
+            connection.query_row("PRAGMA application_id", [], |row| row.get(0))?;
         match version {
             0 => {
                 let has_schema = connection.query_row(
@@ -91,20 +100,32 @@ impl SqliteStore {
                     return Err(StoreError::UnversionedNonemptySchema);
                 }
             }
-            STORE_SCHEMA_VERSION => {}
-            found if (1..STORE_SCHEMA_VERSION).contains(&found) => {
+            found if (STORE_BASELINE_VERSION..=STORE_SCHEMA_VERSION).contains(&found) => {}
+            // Development formats before the ladder, with or without the id.
+            found if (1..STORE_BASELINE_VERSION).contains(&found) => {
                 return Err(StoreError::EarlierVersion)
             }
-            found => return Err(unsupported_schema(found)),
+            found if found > STORE_SCHEMA_VERSION && application_id == STORE_APPLICATION_ID => {
+                return Err(StoreError::NewerVersion)
+            }
+            _ => {
+                return Err(StoreError::Invalid(
+                    "database schema version is unsupported".into(),
+                ))
+            }
         }
-        let application_id: i64 =
-            connection.query_row("PRAGMA application_id", [], |row| row.get(0))?;
         if (version == 0 && application_id != 0)
             || (version != 0 && application_id != STORE_APPLICATION_ID)
         {
             return Err(StoreError::Invalid(
                 "database application identity is unsupported".into(),
             ));
+        }
+        if version != 0 {
+            if folder && upgrade::standing(&connection)? == upgrade::Standing::Earlier {
+                return Err(StoreError::EarlierVersion);
+            }
+            upgrade::upgrade(&mut connection, database_path.as_deref())?;
         }
         connection.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
         if version == 0 {
@@ -130,19 +151,19 @@ impl SqliteStore {
             -- Read-only public addresses; balances live only in their wallet snapshots.
             CREATE TABLE user_wallet_addresses (
                 id TEXT PRIMARY KEY NOT NULL,
-                family TEXT NOT NULL CHECK(family IN ('bitcoin','evm','solana')),
+                family TEXT NOT NULL,
                 address TEXT NOT NULL,
                 name TEXT,
                 added_at_ms INTEGER NOT NULL,
                 last_read_at_ms INTEGER,
                 last_good_read_at_ms INTEGER,
-                status TEXT NOT NULL CHECK(status IN ('unread','ok','failed')),
+                status TEXT NOT NULL,
                 unlisted_count INTEGER NOT NULL DEFAULT 0 CHECK(unlisted_count >= 0),
                 UNIQUE(family, address)
             ) STRICT;
             CREATE TABLE user_holdings_snapshots (
                 snapshot_id TEXT PRIMARY KEY NOT NULL,
-                source TEXT NOT NULL CHECK(source IN ('csv','kis','crypto_file','wallet')),
+                source TEXT NOT NULL,
                 wallet_id TEXT REFERENCES user_wallet_addresses(id) ON DELETE CASCADE,
                 imported_at_ms INTEGER NOT NULL, currency TEXT NOT NULL, note TEXT,
                 CHECK((source = 'wallet') = (wallet_id IS NOT NULL))
@@ -155,9 +176,7 @@ impl SqliteStore {
             ) STRICT;
             CREATE TABLE app_settings (
                 id TEXT PRIMARY KEY NOT NULL,
-                data_json TEXT NOT NULL,
-                CHECK (id IN ('model', 'model_visibility', 'update')
-                    OR (substr(id, 1, 17) = 'world_processing:' AND length(id) > 17))
+                data_json TEXT NOT NULL
             ) STRICT;
             CREATE TABLE deletion_journals (
                 id TEXT PRIMARY KEY NOT NULL,
@@ -193,7 +212,7 @@ impl SqliteStore {
             CREATE TABLE chat_artifacts (
                 id TEXT PRIMARY KEY NOT NULL,
                 chat_session_id TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE RESTRICT,
-                kind TEXT NOT NULL CHECK (kind IN ('markdown', 'chart', 'grid')),
+                kind TEXT NOT NULL,
                 title TEXT NOT NULL,
                 current_revision INTEGER NOT NULL CHECK (current_revision > 0),
                 created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0),

@@ -83,6 +83,7 @@ pub(crate) fn map_added(refs: &ImportRefs) -> bool {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct NewItem {
     pub key: String,
@@ -93,6 +94,7 @@ pub(crate) struct NewItem {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ChangedItem {
     pub key: String,
@@ -110,6 +112,7 @@ pub(crate) struct ChangedItem {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RemovedItem {
     pub key: String,
@@ -120,6 +123,7 @@ pub(crate) struct RemovedItem {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MapChanges {
     pub names: u32,
@@ -130,6 +134,7 @@ pub(crate) struct MapChanges {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PackUpdate {
     pub staging_id: String,

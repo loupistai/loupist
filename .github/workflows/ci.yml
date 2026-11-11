@@ -105,7 +105,7 @@ jobs:
       matrix:
         include:
           - shard: 1/2
-            only: node-version,install-app,install-workspace-search,install-e2e,installed-dependencies,process-tools,repository-guidance,shell-syntax,tauri-e2e-config,module-syntax,node-contracts,e2e-security,i18n-report,i18n-parity,ui-copy,design-tokens,boundaries,unused-files,renderer-tests
+            only: node-version,install-app,install-workspace-search,install-e2e,installed-dependencies,process-tools,repository-guidance,shell-syntax,tauri-e2e-config,module-syntax,node-contracts,e2e-security,i18n-literals,i18n-parity,ui-copy,design-tokens,boundaries,hooks-lint,market-calendar,unused-files,renderer-tests
           - shard: 2/2
             only: node-version,install-app,install-e2e,installed-dependencies,renderer-tests,chat-layout,renderer-build
     runs-on: ubuntu-latest

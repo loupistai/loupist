@@ -34,6 +34,7 @@ pub(crate) type Files = BTreeMap<String, Vec<u8>>;
 
 /// Why a pack cannot be added. The renderer maps each to its own sentence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum Rejection {
     NotPack,
@@ -45,6 +46,7 @@ pub(crate) enum Rejection {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum PackKind {
     Loupist,
@@ -53,6 +55,7 @@ pub(crate) enum PackKind {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) enum License {
     #[serde(rename = "CC-BY-4.0")]
     CcBy,
@@ -123,6 +126,7 @@ impl License {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LicensedItem {
     pub key: String,
@@ -131,6 +135,7 @@ pub(crate) struct LicensedItem {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LicenseConflict {
     pub code: &'static str,

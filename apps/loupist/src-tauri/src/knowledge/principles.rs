@@ -3,6 +3,7 @@ use rusqlite::{params, Transaction};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Principle {
     pub record_id: String,
@@ -10,13 +11,17 @@ pub struct Principle {
     pub loupist_id: String,
     pub statement: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub why: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub example: Option<String>,
     pub origin: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub origin_chat_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub origin_message_id: Option<String>,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,

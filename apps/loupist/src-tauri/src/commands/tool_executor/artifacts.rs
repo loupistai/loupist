@@ -1,5 +1,23 @@
 use super::*;
 
+/// What the model may publish here, checked exactly: only Markdown. A saved
+/// payload (`ChatArtifactPayload`) is read leniently from storage instead.
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum ModelArtifactPayload {
+    Markdown { schema: String, markdown: String },
+}
+
+impl From<ModelArtifactPayload> for ChatArtifactPayload {
+    fn from(payload: ModelArtifactPayload) -> Self {
+        match payload {
+            ModelArtifactPayload::Markdown { schema, markdown } => {
+                Self::Markdown { schema, markdown }
+            }
+        }
+    }
+}
+
 // Select one view contract before deserializing so a line typo never reports
 // candlestick's required OHLC fields. Rust remains authoritative for direct calls.
 fn validate_view_input(view: &Value) -> Result<(), BrokerError> {
@@ -315,26 +333,26 @@ impl AppToolExecutor {
             .ok_or(BrokerError::Malformed)?
             .trim()
             .to_owned();
-        let payload = serde_json::from_value::<ChatArtifactPayload>(
-            object
-                .get("payload")
-                .cloned()
-                .ok_or(BrokerError::Malformed)?,
-        )
-        .map_err(|_| BrokerError::Malformed)?;
+        let payload = object.get("payload").ok_or(BrokerError::Malformed)?;
+        match payload.get("kind").and_then(Value::as_str) {
+            Some("chart") => {
+                return Err(BrokerError::Execution(
+                    "financial and analytic charts must be published with chart_publish".into(),
+                ))
+            }
+            Some("grid") => {
+                return Err(BrokerError::Execution(
+                    "tables with checked cells must be published with grid_publish".into(),
+                ))
+            }
+            _ => {}
+        }
+        let payload = ChatArtifactPayload::from(
+            ModelArtifactPayload::deserialize(payload).map_err(|_| BrokerError::Malformed)?,
+        );
         payload
             .validate()
             .map_err(|error| BrokerError::Execution(error.to_string()))?;
-        if matches!(payload, ChatArtifactPayload::Chart { .. }) {
-            return Err(BrokerError::Execution(
-                "financial and analytic charts must be published with chart_publish".into(),
-            ));
-        }
-        if matches!(payload, ChatArtifactPayload::Grid { .. }) {
-            return Err(BrokerError::Execution(
-                "tables with checked cells must be published with grid_publish".into(),
-            ));
-        }
         let source_message_id = self
             .capture
             .source_message_id

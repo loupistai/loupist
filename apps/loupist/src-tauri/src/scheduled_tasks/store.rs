@@ -83,6 +83,17 @@ impl SqliteStore {
         cursor: Option<&str>,
         limit: usize,
     ) -> StoreResult<Vec<Run>> {
+        Ok(self.inbox_page(loupist_id, cursor, limit)?.0)
+    }
+
+    /// One inbox page and the cursor after it, `None` on the last page. A run
+    /// that cannot be read is left out, and the cursor still moves past it.
+    pub(crate) fn inbox_page(
+        &self,
+        loupist_id: &str,
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> StoreResult<(Vec<Run>, Option<String>)> {
         let connection = self.lock_loupist(loupist_id)?;
         require_loupist(&connection, loupist_id)?;
         if !(1..=100).contains(&limit) {
@@ -90,7 +101,14 @@ impl SqliteStore {
         }
         let boundary = cursor
             .map(|id| {
-                load_run(&connection, loupist_id, id)?
+                identifier(id)?;
+                connection
+                    .query_row(
+                        "SELECT started_at_ms,run_id FROM scheduled_task_runs WHERE run_id=?1 AND loupist_id=?2",
+                        params![id, loupist_id],
+                        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+                    )
+                    .optional()?
                     .ok_or_else(|| invalid("inbox cursor not found"))
             })
             .transpose()?;
@@ -99,16 +117,21 @@ impl SqliteStore {
             .query_map(
                 params![
                     loupist_id,
-                    boundary.as_ref().map(|r| r.started_at_ms),
-                    boundary.as_ref().map(|r| &r.run_id),
+                    boundary.as_ref().map(|(started, _)| started),
+                    boundary.as_ref().map(|(_, run_id)| run_id),
                     limit as i64
                 ],
                 raw_run,
             )?
             .collect::<Result<Vec<_>, _>>()?;
-        rows.into_iter()
-            .map(|row| decode_run(&connection, row))
-            .collect()
+        let next = (rows.len() == limit)
+            .then(|| rows.last().map(|row| row.5.clone()))
+            .flatten();
+        let runs = rows
+            .into_iter()
+            .filter_map(|row| readable(decode_run(&connection, row)))
+            .collect();
+        Ok((runs, next))
     }
 
     pub(crate) fn inbox_unread_count(&self, loupist_id: &str) -> StoreResult<u64> {
@@ -261,9 +284,10 @@ impl SqliteStore {
         if rows.len() > MAX_TASKS_PER_LOUPIST {
             return Err(invalid("too many saved scheduled tasks"));
         }
-        rows.into_iter()
-            .map(|row| decode_task(&connection, row))
-            .collect()
+        Ok(rows
+            .into_iter()
+            .filter_map(|row| readable(decode_task(&connection, row)))
+            .collect())
     }
 
     pub fn scheduled_tasks_list_with_latest(
@@ -302,21 +326,25 @@ impl SqliteStore {
         if rows.len() > MAX_TASKS_PER_LOUPIST {
             return Err(invalid("too many saved scheduled tasks"));
         }
-        rows.into_iter()
-            .map(|(task, latest_run)| {
-                let task = decode_task(&connection, task)?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(task, latest_run)| {
+                let task = readable(decode_task(&connection, task))?;
+                // An unreadable latest run leaves its task listed without one.
                 let latest_run = latest_run
-                    .map(|row| decode_run(&connection, row))
-                    .transpose()?;
-                if latest_run
-                    .as_ref()
-                    .is_some_and(|run| run.task_id != task.id || run.loupist_id != task.loupist_id)
-                {
-                    return Err(invalid("latest scheduled run belongs to another task"));
-                }
-                Ok(TaskListItem { task, latest_run })
+                    .and_then(|row| readable(decode_run(&connection, row)))
+                    .filter(|run| {
+                        let own = run.task_id == task.id && run.loupist_id == task.loupist_id;
+                        if !own {
+                            eprintln!(
+                                "Loupist skipped a scheduled run that belongs to another task"
+                            );
+                        }
+                        own
+                    });
+                Some(TaskListItem { task, latest_run })
             })
-            .collect()
+            .collect())
     }
 
     pub fn scheduled_task_get(&self, loupist_id: &str, id: &str) -> StoreResult<Option<Task>> {
@@ -327,7 +355,6 @@ impl SqliteStore {
 
     #[cfg(test)]
     pub fn scheduled_tasks_due(&self, now: i64, limit: usize) -> StoreResult<Vec<Task>> {
-        use crate::store::LoupistStore;
         let loupists = self
             .list_loupists()?
             .into_iter()
@@ -344,10 +371,18 @@ impl SqliteStore {
     ) -> StoreResult<Vec<Task>> {
         validate_now(now)?;
         let eligible = serde_json::to_string(loupist_ids)?;
-        let pages = self.for_each_database(|_, connection| {
-            let mut statement = connection.prepare(&format!("SELECT {TASK_COLUMNS} FROM scheduled_tasks WHERE status='active' AND next_run_at_ms<=?1 AND loupist_id IN (SELECT value FROM json_each(?3)) ORDER BY next_run_at_ms,id LIMIT ?2"))?;
-            let rows = statement.query_map(params![now, limit.min(MAX_TASKS_PER_LOUPIST) as i64, eligible], raw_task)?.collect::<Result<Vec<_>, _>>()?;
-            rows.into_iter().map(|row| decode_task(connection, row)).collect::<StoreResult<Vec<_>>>()
+        // A kind another version wrote is never due here, so it cannot take a slot.
+        let runnable = serde_json::to_string(&TaskKind::KNOWN)?;
+        let pages = self.for_each_readable_database(|_, connection| {
+            let mut statement = connection.prepare(&format!("SELECT {TASK_COLUMNS} FROM scheduled_tasks WHERE status='active' AND next_run_at_ms<=?1 AND loupist_id IN (SELECT value FROM json_each(?3)) AND json_extract(data_json,'$.kind') IN (SELECT value FROM json_each(?4)) ORDER BY next_run_at_ms,id LIMIT ?2"))?;
+            let rows = statement.query_map(params![now, limit.min(MAX_TASKS_PER_LOUPIST) as i64, eligible, runnable], raw_task)?.collect::<Result<Vec<_>, _>>()?;
+            // Skipped silently: this scan runs every second, and the task list
+            // logs the same row when it is shown.
+            Ok(rows
+                .into_iter()
+                .filter_map(|row| decode_task(connection, row).ok())
+                .filter(|task| task.kind.is_known())
+                .collect::<Vec<_>>())
         })?;
         let mut tasks = pages.into_iter().flatten().collect::<Vec<_>>();
         tasks.sort_by_key(|t| (t.next_run_at_ms, t.id.clone()));
@@ -364,9 +399,10 @@ impl SqliteStore {
         let rows = statement
             .query_map([loupist_id], raw_run)?
             .collect::<Result<Vec<_>, _>>()?;
-        rows.into_iter()
-            .map(|row| decode_run(&connection, row))
-            .collect()
+        Ok(rows
+            .into_iter()
+            .filter_map(|row| readable(decode_run(&connection, row)))
+            .collect())
     }
 
     /// Unread finished runs for a Loupist: count, whether any briefing found conflicting
@@ -416,6 +452,9 @@ impl SqliteStore {
         validate_now(now)?;
         identifier(id)?;
         draft.validate()?;
+        if !kind.is_known() {
+            return Err(invalid("scheduled task kind is invalid"));
+        }
         let mut connection = self.lock_loupist(loupist_id)?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         require_loupist(&transaction, loupist_id)?;
@@ -492,6 +531,7 @@ impl SqliteStore {
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let mut task = require_task(&transaction, loupist_id, id)?;
         require_revision(&task, expected_revision)?;
+        require_known_kind(&task)?;
         require_target(&transaction, loupist_id, &draft.target, false)?;
         if task.schedule != draft.schedule || task.status != draft.status {
             task.next_run_at_ms = next_for_status(&draft, now)?;
@@ -532,6 +572,7 @@ impl SqliteStore {
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let mut task = require_task(&transaction, loupist_id, id)?;
         require_revision(&task, expected_revision)?;
+        require_known_kind(&task)?;
         if task.status == TaskStatus::Completed {
             return Err(StoreError::Conflict(
                 "edit a completed one-time schedule before reactivating it",
@@ -619,9 +660,10 @@ impl SqliteStore {
         let rows = statement
             .query_map(params![id, loupist_id, MAX_RUN_HISTORY as i64], raw_run)?
             .collect::<Result<Vec<_>, _>>()?;
-        rows.into_iter()
-            .map(|row| decode_run(&connection, row))
-            .collect()
+        Ok(rows
+            .into_iter()
+            .filter_map(|row| readable(decode_run(&connection, row)))
+            .collect())
     }
 
     pub fn scheduled_task_run_get(
@@ -650,6 +692,7 @@ impl SqliteStore {
         let mut connection = self.lock_loupist(loupist_id)?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let snapshot = require_task(&transaction, loupist_id, id)?;
+        require_known_kind(&snapshot)?;
         if !manual
             && (snapshot.status != TaskStatus::Active
                 || snapshot.next_run_at_ms.is_none_or(|at| at > now))
@@ -691,7 +734,7 @@ impl SqliteStore {
         };
         let run = Run {
             briefing_context: None,
-            kind: snapshot.kind,
+            kind: snapshot.kind.clone(),
             read_at_ms: None,
             summary: String::new(),
             summary_items: Vec::new(),
@@ -928,6 +971,31 @@ fn touch(task: &mut Task, now: i64) -> StoreResult<()> {
         .ok_or_else(|| invalid("scheduled task revision limit reached"))?;
     task.updated_at_ms = now.max(task.updated_at_ms);
     Ok(())
+}
+
+/// A task of a kind another version wrote is listed and can be deleted, but
+/// this version neither runs it nor changes its definition or status.
+fn require_known_kind(task: &Task) -> StoreResult<()> {
+    if task.kind.is_known() {
+        Ok(())
+    } else {
+        Err(StoreError::Conflict(
+            "another version of Loupist made this scheduled task; this version cannot run or change it",
+        ))
+    }
+}
+
+/// A listing or scan leaves out a row it cannot read and keeps the others; the
+/// row stays stored as it is. Admission, recovery and writes stay strict.
+fn readable<T>(row: StoreResult<T>) -> Option<T> {
+    match row {
+        Ok(value) => Some(value),
+        // Like the Chat listing: no stored text reaches the log.
+        Err(_) => {
+            eprintln!("Loupist skipped a scheduled task record it could not read");
+            None
+        }
+    }
 }
 
 fn require_revision(task: &Task, revision: u64) -> StoreResult<()> {

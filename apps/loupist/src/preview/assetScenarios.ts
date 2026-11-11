@@ -6,7 +6,8 @@
 import { mockAssetId } from "../bridge/mock/assets";
 import type { InboxItem, ScheduledRun } from "../contracts/scheduled";
 import { cryptoFixture, HANUL, hanulFixture, installAsset, noThesisFixture, partialFixture, PREVIEW_LOUPIST, previewLineAlert, privateFixture, type AssetFixture } from "./assets";
-import { prepareFixture, prepareMorningFixture, type PreviewBridge } from "./fixtures";
+import { prepareFixture, type PreviewBridge } from "./fixtures";
+import { prepareMorningFixture } from "./fixtures/morning";
 import type { PreviewScenario } from "./scenarios";
 
 type Helpers = {

@@ -6,7 +6,8 @@
  */
 import type { ChatEvidenceRef, InboxItem, ScheduledRun } from "../types";
 import { cryptoFixture, hanulFixture, installAsset, noThesisFixture, PREVIEW_LOUPIST } from "./assets";
-import { FIXTURE_TIME, prepareFixture, prepareMorningFixture, type PreviewBridge } from "./fixtures";
+import { FIXTURE_TIME, prepareFixture, type PreviewBridge } from "./fixtures";
+import { prepareMorningFixture } from "./fixtures/morning";
 import {
   installWatch, MORROW, morrowSnapshot, previewBriefingEarnings, previewCommodityWatchEvents, previewCommodityWatchSettings,
   previewCryptoWatchEvents, previewCryptoWatchSettings, previewEarningsMessage, previewEarningsTask, previewWatchEvents,

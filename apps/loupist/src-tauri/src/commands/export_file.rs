@@ -6,6 +6,7 @@ const MAX_BYTES: usize = 200 * 1024 * 1024;
 const MAX_TEXT_BYTES: usize = 20 * 1024 * 1024;
 /// Every file the app saves for the user: Map images and replays, chat transcripts and data tables.
 #[derive(Clone, Copy, Deserialize, Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum ExportKind {
     Png,
@@ -39,6 +40,7 @@ impl ExportKind {
     }
 }
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExportRequest {
     suggested_name: String,

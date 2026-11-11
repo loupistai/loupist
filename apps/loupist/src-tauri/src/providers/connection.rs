@@ -21,7 +21,7 @@ use crate::{
     providers::catalog::{
         catalog_allows_authorization, provider_credential_from_environment,
         provider_credential_generation, provider_options, ConfiguredModel, ModelCatalogView,
-        ModelProviderOption, ModelRunControl,
+        ModelProviderOption, ModelRunControl, ModelRunControlChoice,
     },
     providers::custom::{self, CustomProviderRequest},
     providers::status::{self, CredentialKind, Trigger},
@@ -124,23 +124,27 @@ impl ProviderModelDiscoveryCache {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ProviderModelsRequest {
     pub provider: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ProviderConnectionRequest {
     pub provider: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(deny_unknown_fields)]
 pub struct ProviderConfigureRequest {
     pub provider: String,
     pub api_key: Option<String>,
     #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub clear_saved_key: bool,
 }
 
@@ -155,11 +159,55 @@ pub struct ProviderModelOption {
     pub input: Vec<String>,
     pub thinking_levels: Vec<String>,
     pub thinking_level_map: std::collections::BTreeMap<String, Option<String>>,
+    #[serde(deserialize_with = "exact_run_controls")]
     pub run_controls: Vec<ModelRunControl>,
 }
 
-/// Exactly `ProviderConnectionEvent` in `src/contracts/model.ts`.
+/// Run controls as the Pi extension reports them, checked exactly. The saved
+/// model catalog (`ModelRunControl`) is read leniently, so a newer catalog
+/// never stops an older Loupist from starting.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExactRunControl {
+    id: String,
+    label: String,
+    default_choice: String,
+    choices: Vec<ExactRunControlChoice>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExactRunControlChoice {
+    id: String,
+    label: String,
+    description: String,
+}
+
+fn exact_run_controls<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<ModelRunControl>, D::Error> {
+    Ok(Vec::<ExactRunControl>::deserialize(deserializer)?
+        .into_iter()
+        .map(|control| ModelRunControl {
+            id: control.id,
+            label: control.label,
+            default_choice: control.default_choice,
+            choices: control
+                .choices
+                .into_iter()
+                .map(|choice| ModelRunControlChoice {
+                    id: choice.id,
+                    label: choice.label,
+                    description: choice.description,
+                })
+                .collect(),
+        })
+        .collect())
+}
+
+/// One step of a browser or device sign-in, sent on `provider_connect`'s channel.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ProviderConnectionEvent {
     /// `url` is the validated sign-in link, sent only when the browser could not open.
@@ -188,6 +236,7 @@ pub enum ProviderConnectionEvent {
 
 /// Why a sign-in ended without a credential; the renderer maps each to copy.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ConnectFailure {
     PlanPermissionDeclined,
@@ -430,6 +479,7 @@ pub fn provider_connect_open_browser(state: State<'_, AppState>) -> Result<(), C
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ProviderSubmitCodeRequest {
     pub value: String,
@@ -446,6 +496,7 @@ pub fn provider_connect_submit_code(
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ProviderPageRequest {
     pub provider: String,
@@ -453,21 +504,21 @@ pub struct ProviderPageRequest {
 
 /// The provider's key page; the renderer sends a provider ID, never a URL.
 pub(crate) fn console_url(provider: &str) -> Option<&'static str> {
-    if provider == crate::providers::local::UPSTAGE_PRESET {
-        return Some("https://console.upstage.ai/api-keys");
+    if let Some(preset) = crate::providers::manifest::preset(provider) {
+        return Some(&preset.console_url);
     }
-    provider_options()
-        .into_iter()
-        .find(|option| option.id == provider)
-        .and_then(|option| option.console_url)
+    crate::providers::manifest::offered()
+        .find(|spec| spec.id == provider)
+        .and_then(|spec| spec.console_url.as_deref())
 }
 
-/// Where a plan's usage is managed: the ChatGPT plan.
+/// Where a plan's usage is managed (the manifest's sign-in `usage_url`).
 pub(crate) fn usage_url(provider: &str) -> Option<&'static str> {
-    match provider {
-        "openai" | "openai-codex" => Some("https://chatgpt.com/settings/usage"),
-        _ => None,
-    }
+    crate::providers::manifest::spec(provider)?
+        .sign_in
+        .as_ref()?
+        .usage_url
+        .as_deref()
 }
 
 fn open_fixed_page(url: Option<&'static str>) -> Result<(), CommandError> {
@@ -487,6 +538,7 @@ pub fn provider_open_usage(request: ProviderPageRequest) -> Result<(), CommandEr
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ModelNoticeAckRequest {
     pub id: String,
@@ -736,7 +788,9 @@ async fn discover_provider_models(
     }
     // A ChatGPT sign-in lists what the plan offers (`GET /v1/models`); the
     // extension falls back to Pi's catalog when that call fails.
-    let live = provider == "openai"
+    let live = crate::providers::manifest::spec(provider)
+        .and_then(|spec| spec.sign_in.as_ref())
+        .is_some_and(|sign_in| sign_in.live_models)
         && crate::providers::catalog::provider_credential_kind(&agent_data_dir, provider)?
             .as_deref()
             == Some("oauth");

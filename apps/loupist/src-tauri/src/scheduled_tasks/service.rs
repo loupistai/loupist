@@ -92,7 +92,8 @@ pub(crate) fn update(
                 "The results task is automatic; pause or resume it instead",
             ))
         }
-        super::types::TaskKind::Custom => {}
+        // The store refuses a kind another version wrote.
+        super::types::TaskKind::Custom | super::types::TaskKind::Unknown(_) => {}
     }
     validate_draft(state, &draft)?;
     state

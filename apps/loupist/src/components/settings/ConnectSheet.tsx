@@ -7,7 +7,7 @@ import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle, focusDial
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { errorMessage } from "@/lib/errors";
+import { commandErrorCode, errorMessage } from "@/lib/errors";
 import { providerKeyName, providerShortName, UPSTAGE_COMPANY } from "@/chat/providerNames";
 import type {
   CustomModelProvider, CustomProviderApi, LocalDiscovery, LocalEngine, LoupistBridge, ModelCatalog,
@@ -59,7 +59,6 @@ const DIALECTS = [
   ["openai-responses", "providers.dialectResponses"], ["openai-completions", "providers.dialectCompletions"], ["anthropic-messages", "providers.dialectAnthropic"],
 ] as const satisfies ReadonlyArray<readonly [CustomProviderApi, string]>;
 
-const errorCode = (cause: unknown) => cause && typeof cause === "object" && "code" in cause && typeof cause.code === "string" ? cause.code : null;
 const parseModelIds = (value: string) => [...new Set(value.split(/[\n,]/).map(item => item.trim()).filter(Boolean))];
 const hasApiPath = (address: string) => {
   try { return new URL(address).pathname.replace(/\/+$/, "") !== ""; } catch { return false; }
@@ -69,7 +68,7 @@ const hasApiPath = (address: string) => {
 export function connectedName(catalog: ModelCatalog, provider: string) {
   const option = catalog.providers.find(item => item.id === provider);
   if (option) return providerShortName(provider, option.status.credential_kind) ?? option.label;
-  return catalog.custom_providers?.find(item => item.id === provider)?.name ?? provider;
+  return catalog.custom_providers.find(item => item.id === provider)?.name ?? provider;
 }
 
 /** Settings and onboarding share this dialog; onboarding opens it from its own list of ways. */
@@ -158,11 +157,11 @@ function KeyView({ provider, catalog, bridge, onBusy, onDone }: { provider: stri
     try {
       const next = preset ? await bridge.providerPresetSave({ preset: "upstage", api_key: key.trim() }) : await bridge.providerConfigure({ provider, api_key: key.trim() });
       onBusy(false);
-      const saved = preset ? next.custom_providers?.find(item => item.name === name)?.id ?? provider : provider;
+      const saved = preset ? next.custom_providers.find(item => item.name === name)?.id ?? provider : provider;
       onDone(saved, next);
     } catch (cause) {
       onBusy(false); setSaving(false);
-      setError(errorCode(cause) === "key_rejected" ? t("providers.keyRejected", { provider: preset ? UPSTAGE_COMPANY : name }) : errorMessage(cause, t("modelSettingsPanel.couldNotConfigureThisProvider")));
+      setError(commandErrorCode(cause) === "key_rejected" ? t("providers.keyRejected", { provider: preset ? UPSTAGE_COMPANY : name }) : errorMessage(cause, t("modelSettingsPanel.couldNotConfigureThisProvider")));
     }
   };
   return <form className="connect-sheet-section" data-key-sheet={provider} onSubmit={event => { event.preventDefault(); void submit(); }}>
@@ -218,7 +217,7 @@ function LocalView({ bridge, onBusy, onDone }: { bridge: ConnectSheetBridge; onB
     try {
       const next = await bridge.providerCustomSave({ name: chosen.label, base_url: chosen.base_url, api: "openai-completions", model_ids: [choice.model] });
       onBusy(false);
-      const saved = next.custom_providers?.find(item => item.base_url === chosen.base_url.replace(/\/+$/u, "") && item.name === chosen.label)?.id ?? chosen.engine;
+      const saved = next.custom_providers.find(item => item.base_url === chosen.base_url.replace(/\/+$/u, "") && item.name === chosen.label)?.id ?? chosen.engine;
       onDone(saved, next);
     } catch (cause) {
       onBusy(false); setSaving(false);
@@ -299,7 +298,7 @@ function CustomView({ edit, bridge, onBusy, onDone }: { edit?: CustomModelProvid
     try {
       const next = await bridge.providerCustomSave({ provider: edit?.id, name: name.trim(), base_url: address.trim(), api, api_key: key.trim() || undefined, model_ids: modelIds });
       onBusy(false);
-      const saved = edit?.id ?? next.custom_providers?.find(item => item.name === name.trim())?.id ?? name.trim();
+      const saved = edit?.id ?? next.custom_providers.find(item => item.name === name.trim())?.id ?? name.trim();
       onDone(saved, next);
     } catch (cause) {
       onBusy(false); setSaving(false);

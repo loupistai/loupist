@@ -48,7 +48,7 @@ export function MarketplaceCard({ entry, connector, onSetup, headingLevel = 4 }:
   const action = setupActionLabel(entry, connector);
   const state = CONNECTION_STATES[connectionState(connector)];
   return (
-    <article className="marketplace-card" aria-labelledby={`connection-${entry.id}`}>
+    <article className="marketplace-card" data-testid="marketplace-card" aria-labelledby={`connection-${entry.id}`}>
       <div className="marketplace-entry-copy">
         <div className="marketplace-entry-title">
           <Title id={`connection-${entry.id}`}>{connectionText(entry.name)}</Title>

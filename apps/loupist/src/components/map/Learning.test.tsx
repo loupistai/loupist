@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { PreviewBridge, prepareLearningFixture } from "../../preview/fixtures";
+import { PreviewBridge } from "../../preview/fixtures";
+import { prepareLearningFixture } from "../../preview/fixtures/learning";
 import { MapInspector } from "./MapInspector";
 import { MapView } from "./MapView";
 import { isNewMethod } from "./learningState";

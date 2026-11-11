@@ -37,8 +37,8 @@ session (dedupe key `investor_flows:{date}`) with each row's value, unit, formul
 source and the last date covered; it is never a What changed row. The page shows the
 latest summary in its own section, and `asset_page_read` returns it as `investorFlows`
 (values and dates without formulas) unless an as-of cutoff precedes its last date.
-Knowledge schema version 4 added both kinds (version 5 the class watcher kinds); a folder from an earlier build is refused
-as before ([Where data lives](../runtime/storage-authority.md#where-data-lives)).
+Observation and watcher kinds are validated in Rust since Knowledge schema version 7,
+so a new kind needs no schema step ([Schema versions and upgrades](../runtime/storage-authority.md#schema-versions-and-upgrades)).
 
 Closes are recorded only for completed sessions in the exchange's time zone (crypto
 in UTC; a bar flagged final may be today's), and a later read of the same session

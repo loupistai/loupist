@@ -11,7 +11,7 @@ import { sessionEndpointIsOwned } from "./wait-session-lib.mjs";
 
 const e2eRoot = dirname(fileURLToPath(import.meta.url));
 const artifactRoot = resolve(e2eRoot, "artifacts");
-const chatModelSelector = ".composer-model-menu";
+const chatModelSelector = "[data-testid=composer-model-menu]";
 const cliArgs = process.argv.slice(2);
 const explicitSession = cliArgs[0] === "--session";
 const sessionPath = explicitSession ? cliArgs[1] : resolve(artifactRoot, "current-session.json");
@@ -277,7 +277,7 @@ async function dismissModelMenu(browser, triggerSelector = chatModelSelector, ou
 }
 
 async function openModelAdvanced(browser) {
-  const disclosure = await browser.$(".model-menu-advanced");
+  const disclosure = await browser.$("[data-testid=model-menu-advanced]");
   if ((await disclosure.getAttribute("aria-expanded")) === "true") return;
   await disclosure.click();
   await browser.waitUntil(async () => (await disclosure.getAttribute("aria-expanded")) === "true", {
@@ -288,7 +288,7 @@ async function openModelAdvanced(browser) {
 async function clickThinkingLevel(browser, level) {
   const aliases = new Set(thinkingLabels(level));
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    for (const item of await browser.$$('.model-menu-choices [role="menuitemradio"]')) {
+    for (const item of await browser.$$('[data-testid=model-menu-choices] [role="menuitemradio"]')) {
       const label = (await item.getText()).trim();
       if (aliases.has(label)) {
         await clickVisibleMenuItem(browser, "menuitemradio", label);

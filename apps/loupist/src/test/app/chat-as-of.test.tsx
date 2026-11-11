@@ -81,7 +81,7 @@ describe("as-of answers", () => {
   it("renders a refused step as neutral and the note from the answer's report", () => {
     render(<ChatMessageCard loupistId="loupist-a" loupistName="Quality" onReadAttachment={vi.fn()}
       message={{ id: "answer", role: "assistant", status: "complete", content: "Done.", created_at: "2026-03-03T00:00:00Z", as_of: "2026-03-03", progress: { startedAtMs: 1, finishedAtMs: 50_000, items: [
-        { id: "quote", kind: "tool", toolName: "kis_read", category: "finance", operation: "read", action: "Read market data", target: "990221", status: "skipped", startedAtMs: 1, finishedAtMs: 2 },
+        { id: "quote", kind: "tool", toolName: "kis_read", category: "finance", operation: "read", action: "Read market data", target: "990221", status: "skipped", startedAtMs: 1, finishedAtMs: 2, href: null },
       ] } }} />);
     // A refused lookup is not a failure: the summary says "skipped" and the details stay closed until asked.
     const summary = screen.getByRole("button", { name: /1 lookup skipped for Mar 3, 2026/ });
@@ -107,8 +107,8 @@ describe("as-of answers", () => {
     const user = userEvent.setup();
     const created = new Date(2026, 2, 5, 9).getTime();
     const entry = { journalId: "j1", researchId: "", loupistId: "l1", judgment: "Solsup's FY2025 revenue will beat ₩445bn.", reasoning: "", entities: [],
-      check: { claim: "Revenue above ₩445bn", metric: "revenue", direction: "above", threshold: 445, byDate: "2026-03-31" }, outcome: null,
-      createdAtMs: created, updatedAtMs: created, archived: false, inputDigest: "", inputs: { sources: [], worlds: [], lenses: [], earlier: [] } } as JournalRecord;
+      check: { claim: "Revenue above ₩445bn", metric: "revenue", direction: "above", threshold: 445, byDate: "2026-03-31" },
+      createdAtMs: created, updatedAtMs: created, archived: false, inputDigest: "", inputs: { sources: [], worlds: [], lenses: [], earlier: [] }, originChatId: null } as JournalRecord;
     const lookBack = vi.fn();
     render(<LookBackProvider value={lookBack}><JournalThenNow entry={entry} /></LookBackProvider>);
     expect(screen.getByText("No sources were saved with this entry.")).toBeVisible();
@@ -145,8 +145,8 @@ describe("as-of answers", () => {
     try {
       const created = new Date(2026, 2, 5, 9).getTime();
       const base = { researchId: "", loupistId: "l1", reasoning: "", entities: [], createdAtMs: created, updatedAtMs: created, archived: false, inputDigest: "", inputs: { sources: [], worlds: [], lenses: [], earlier: [] } };
-      const open = { ...base, journalId: "open", judgment: "Margin stays above 9%.", outcome: null,
-        check: { claim: "Operating margin above 9%", metric: "operating margin", direction: "above", threshold: 9, unit: "%", byDate: "2026-10-01" } } as JournalRecord;
+      const open = { ...base, journalId: "open", judgment: "Margin stays above 9%.",
+        check: { claim: "Operating margin above 9%", metric: "operating margin", direction: "above", threshold: 9, unit: "%", byDate: "2026-10-01" }, originChatId: null } as JournalRecord;
       const view = render(<JournalThenNow entry={open} />);
       // An open check was never checked: no "checked" date, and the overdue wording from the rest of the app.
       expect(screen.getByRole("heading", { name: "Now · not checked yet" })).toBeVisible();
@@ -154,7 +154,7 @@ describe("as-of answers", () => {
       view.unmount();
       const reviewed = { ...base, journalId: "done", judgment: "Revenue will beat ₩445bn.", updatedAtMs: new Date(2026, 3, 2, 9).getTime(),
         check: { claim: "Revenue above ₩445bn", metric: "revenue", direction: "above", threshold: 445_000_000_000, unit: "KRW", byDate: "2026-03-31" },
-        outcome: { observed: 452_312_000_000, observedAt: "2026-03-18", result: "came_true" } } as JournalRecord;
+        outcome: { observed: 452_312_000_000, observedAt: "2026-03-18", result: "came_true" }, originChatId: null } as JournalRecord;
       render(<JournalThenNow entry={reviewed} />);
       expect(screen.getByRole("heading", { name: "Now · checked Apr 2, 2026" })).toBeVisible();
       expect(screen.getByText("On Mar 18, 2026: revenue was ₩452.3bn → came true")).toBeVisible();

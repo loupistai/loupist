@@ -14,6 +14,7 @@ pub const MAX_ARTIFACT_REVISIONS: usize = 20;
 pub const MAX_ARTIFACT_HISTORY_BYTES: usize = 32 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatArtifactVersion {
     /// Revision numbers are stable identifiers scoped to one artifact.
     pub revision_id: u32,
@@ -22,6 +23,7 @@ pub struct ChatArtifactVersion {
     pub source_message_id: String,
     pub created_at_ms: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub restored_from_revision_id: Option<u32>,
 }
 
@@ -70,6 +72,7 @@ fn valid_text(value: &str, maximum: usize) -> bool {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ChatArtifactKind {
     Markdown,
@@ -88,7 +91,7 @@ impl ChatArtifactKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatArtifactRef {
     pub artifact_id: String,
     pub revision: u32,
@@ -112,7 +115,7 @@ impl ChatArtifactRef {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatArtifact {
     pub id: String,
     pub chat_session_id: String,
@@ -139,7 +142,8 @@ impl ChatArtifact {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ChatArtifactPayload {
     Markdown {
         schema: String,
@@ -190,7 +194,7 @@ impl ChatArtifactPayload {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatArtifactRevision {
     pub artifact_id: String,
     pub revision: u32,

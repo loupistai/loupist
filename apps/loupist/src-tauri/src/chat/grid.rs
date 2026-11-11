@@ -38,6 +38,7 @@ pub const EXPLANATION_CHARS: usize = 280;
 pub const USED_REASON_CHARS: usize = 160;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum GridUnit {
     Amount,
@@ -49,6 +50,7 @@ pub enum GridUnit {
 
 /// Why a cell is empty; an empty cell is never a zero.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum GridEmptyReason {
     NotReported,
@@ -70,6 +72,7 @@ impl GridEmptyReason {
 
 /// Why sources disagree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ConflictReason {
     Basis,
@@ -83,31 +86,34 @@ pub enum ConflictReason {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct GridRow {
     pub symbol: String,
     pub market: String,
     pub label: String,
     /// Set when Rust resolved the row to an asset page.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub asset_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct GridColumn {
     pub id: String,
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub period: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub basis: Option<String>,
     pub unit: GridUnit,
 }
 
 /// A value with the evidence it links and Rust's check of it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct GridValue {
     pub value: String,
     pub evidence_id: String,
@@ -115,18 +121,21 @@ pub struct GridValue {
     /// The value in base units (an amount times its scale, a percent as
     /// printed), so the renderer sorts without reading numbers itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub sort: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct GridEmpty {
     pub empty: GridEmptyReason,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(untagged)]
 pub enum GridCell {
     Value(Box<GridValue>),
@@ -134,9 +143,10 @@ pub enum GridCell {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct AssetsGrid {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub subtitle: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
@@ -145,35 +155,40 @@ pub struct AssetsGrid {
     pub cells: Vec<Vec<GridCell>>,
     /// The turn's as-of date: every cell is what was known by then.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub as_of: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ConflictMeasure {
     pub label: String,
     pub entity_label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub period: Option<String>,
 }
 
 /// One source's report. `dated` comes from the evidence, never the model.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ConflictReport {
     pub evidence_id: String,
     pub says: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub basis: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub dated: Option<String>,
     /// Present when `says` is a number.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub check: Option<NumberCheck>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ConflictGrid {
     pub measure: ConflictMeasure,
     pub reports: Vec<ConflictReport>,
@@ -181,20 +196,25 @@ pub struct ConflictGrid {
     pub explanation: String,
     /// The report the answer relies on, or none when it cannot tell.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub used: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub used_reason: Option<String>,
     /// A World entity this turn read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub world_entity_id: Option<String>,
     /// Rust found a disputed claim group touching the entity: the card links the Map.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub map_link: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub as_of: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "layout", rename_all = "snake_case")]
 pub enum GridDocument {
     Assets(AssetsGrid),

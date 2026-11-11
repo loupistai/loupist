@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { errorMessage } from "../../lib/errors";
+import { commandErrorCode, errorMessage } from "../../lib/errors";
 import type {
   ConfiguredModel,
   CustomModelProvider,
@@ -12,7 +12,6 @@ import type {
   ModelCatalog,
   ModelProviderOption,
   ModelVisibilityUpdateRequest,
-  ProviderStatusView,
 } from "../../types";
 import { ConnectSheet, type ConnectSheetBridge, type ConnectSheetTarget } from "./ConnectSheet";
 import { ProviderCard, providerCardTitle, stillUsed } from "./ProviderCard";
@@ -40,13 +39,6 @@ type Props = ModelProviderActions & {
   onConnectTargetConsumed?: () => void;
 };
 
-const missingStatus = (source: CustomModelProvider["credential_source"]): ProviderStatusView => ({
-  state: source === "missing" ? "disconnected" : "connected",
-  credential_kind: source === "missing" ? "none" : source === "environment" ? "environment" : "custom",
-  notice: null, last_limit_at_ms: null, connected_at_ms: null,
-  used_by: { schedules: 0, chat_default: false, world_models: 0 },
-});
-
 /** A user-added endpoint shown alongside the built-in providers; its key is entered in the custom sheet. */
 const customOption = (provider: CustomModelProvider): ModelProviderOption => ({
   id: provider.id,
@@ -61,7 +53,7 @@ const customOption = (provider: CustomModelProvider): ModelProviderOption => ({
   console_url: null,
   sign_in_flow: null,
   billing_note: null,
-  status: provider.status ?? missingStatus(provider.credential_source),
+  status: provider.status,
   custom: provider,
 });
 
@@ -152,7 +144,7 @@ export function ModelSettingsPanel({
     } catch (cause) {
       if (generation !== discoveryGenerationRef.current) return;
       // Pi and Rust word these failures in English for logs; the card words its own.
-      const busy = (cause as { code?: unknown } | null)?.code === "conflict";
+      const busy = commandErrorCode(cause) === "conflict";
       setModelLoadErrors((current) => ({ ...current, [nextProviderId]: i18n.t(busy ? "settings:modelSettingsPanel.modelsBusy" : "settings:modelSettingsPanel.couldNotRefreshModels") }));
     } finally {
       if (generation === discoveryGenerationRef.current) {

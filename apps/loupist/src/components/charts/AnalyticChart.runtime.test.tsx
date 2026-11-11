@@ -12,7 +12,7 @@ it("runs Vega in CSP-safe interpreter mode", async () => {
     rows: [["2026-08-01", 10], ["2026-08-02", 11]], lineage: { kind: "agent_authored", upstream_receipts: [] }, digest: "a".repeat(64),
   };
   const chart: ChartDocument = { dataset_id: dataset.id, dataset_digest: dataset.digest, studies: [], drawings: [],
-    view: { kind: "line", x: "date", y: ["close"], semantic_types: { date: "Date", close: "Price" } } };
+    view: { kind: "line", x: "date", y: ["close"], semantic_types: { date: "Date", close: "Price" }, color: null, title: null, subtitle: null }, custom_series: [], note: null };
   render(<AnalyticChart chart={chart} dataset={dataset} theme="light" />);
   await waitFor(() => expect(embed).toHaveBeenCalledOnce());
   expect(embed.mock.calls[0][2]).toMatchObject({ ast: true, renderer: "svg" });

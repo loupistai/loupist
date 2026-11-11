@@ -135,6 +135,16 @@ fn preferences() -> WorkspaceUiState {
     })).unwrap()
 }
 
+#[test]
+fn a_work_tab_reference_is_exact_while_a_chat_reads_the_same_reference_leniently() {
+    let mut extra = serde_json::to_value(preferences()).unwrap();
+    extra["sessions"][0]["tabs"][2]["artifact"]["preview"] = json!("newer field");
+    assert!(serde_json::from_value::<WorkspaceUiState>(extra.clone()).is_err());
+    let stored = extra["sessions"][0]["tabs"][2]["artifact"].clone();
+    let read: ChatArtifactRef = serde_json::from_value(stored).unwrap();
+    assert_eq!(read.artifact_id, "report");
+}
+
 fn file_path(state: &AppState) -> std::path::PathBuf {
     state.artifacts.app_data_dir.join(DIRECTORY).join(FILE_NAME)
 }

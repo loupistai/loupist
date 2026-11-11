@@ -11,6 +11,7 @@ import { EVIDENCE_TAB_ID, WORK_TAB_ID, evidenceEntry, pushEvidenceEntry, workWor
 const view: ChatArtifactView = {
   artifact: { id: "note", chat_session_id: "chat", kind: "markdown", title: "Saved note", current_revision: 1, created_at_ms: 1_700_000_000_000, updated_at_ms: 1_700_000_000_000 },
   revision: { artifact_id: "note", revision: 1, payload: { kind: "markdown", schema: "loupist-markdown/1", markdown: "# Saved note\n\nAvailable after retry." }, digest: "a".repeat(64), source_message_id: "message", created_at_ms: 1_700_000_000_000 },
+  chart_dataset: null,
 };
 
 const panelProps = (bridge: MockLoupistBridge) => ({
@@ -211,6 +212,7 @@ describe("ChatWorkspacePanel versions", () => {
   const revisionView = (revision: number, current: number, text: string, day: number): ChatArtifactView => ({
     artifact: { ...view.artifact, current_revision: current, updated_at_ms: at(day) },
     revision: { ...view.revision, revision, payload: { kind: "markdown", schema: "loupist-markdown/1", markdown: `# Saved note\n\n${text}` }, digest: String(revision).repeat(64), created_at_ms: at(day) },
+    chart_dataset: null,
   });
 
   it("lists the kept versions, shows an earlier one read-only and restores it as the newest only after a confirmation", async () => {

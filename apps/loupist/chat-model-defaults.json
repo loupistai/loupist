@@ -1,45 +1,67 @@
-[
-  {
-    "provider": "openai",
-    "models": [
-      {
-        "id": "gpt-6.1-sol",
-        "thinking_level": "medium"
-      },
-      {
-        "id": "gpt-6-sol",
-        "thinking_level": "medium"
-      },
-      {
-        "id": "gpt-5.6-sol",
-        "thinking_level": "medium"
-      }
-    ]
-  },
-  {
-    "provider": "anthropic",
-    "models": [
-      {
-        "id": "claude-sonnet-5-5",
-        "thinking_level": "medium"
-      },
-      {
-        "id": "claude-sonnet-5",
-        "thinking_level": "medium"
-      },
-      {
-        "id": "claude-sonnet-4-6",
-        "thinking_level": "medium"
-      }
-    ]
-  },
-  {
-    "provider": "xai",
-    "models": [
-      {
-        "id": "grok-4.7",
-        "thinking_level": "medium"
-      }
-    ]
+{
+  "providers": [
+    {
+      "provider": "openai",
+      "models": [
+        {
+          "id": "gpt-6.1-sol",
+          "thinking_level": "medium"
+        },
+        {
+          "id": "gpt-6-sol",
+          "thinking_level": "medium"
+        },
+        {
+          "id": "gpt-5.6-sol",
+          "thinking_level": "medium"
+        }
+      ]
+    },
+    {
+      "provider": "anthropic",
+      "models": [
+        {
+          "id": "claude-sonnet-5-5",
+          "thinking_level": "medium"
+        },
+        {
+          "id": "claude-sonnet-5",
+          "thinking_level": "medium"
+        },
+        {
+          "id": "claude-sonnet-4-6",
+          "thinking_level": "medium"
+        }
+      ]
+    },
+    {
+      "provider": "xai",
+      "models": [
+        {
+          "id": "grok-4.7",
+          "thinking_level": "medium"
+        }
+      ]
+    }
+  ],
+  "family_tiers": {
+    "unknown": 2,
+    "families": {
+      "opus": 3,
+      "fable": 3,
+      "ultra": 3,
+      "pro": 3,
+      "sol": 3,
+      "sonnet": 2,
+      "terra": 2,
+      "flash": 2,
+      "standard": 2,
+      "haiku": 1,
+      "mini": 1,
+      "nano": 1,
+      "luna": 1,
+      "spark": 1,
+      "lite": 1
+    }
   }
-]
+}

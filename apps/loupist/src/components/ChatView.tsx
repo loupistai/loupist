@@ -16,7 +16,7 @@ import { Button } from "./ui/button";
 import { errorMessage } from "../lib/errors";
 import { useLoupistChat } from "../chat/useLoupistChat";
 import { useChatMap } from "./workspace/ChatMapContext";
-import { stepEntityIds } from "./workspace/chatMapData";
+import { stepEntityIds } from "../chat/chatMapData";
 import {
   withVisibleSteers,
   type VisibleSteer,
@@ -77,10 +77,10 @@ const t = i18n.getFixedT(null, "chat");
 const chatPins = (pins: readonly KnowledgePin[]) =>
   pins.map((pin) => ({
     kind: pin.kind,
-    recordId: pin.recordId,
-    revisionId: pin.revisionId,
+    recordId: pin.recordId ?? null,
+    revisionId: pin.revisionId ?? null,
     objectId: pin.objectId,
-    spanId: pin.spanId,
+    spanId: pin.spanId ?? null,
     ...(pin.selection ? { selection: pin.selection } : {}),
     label: pin.label,
   }));
@@ -324,6 +324,7 @@ export function ChatView({
   const rail = useMemo(() => railData({
     messages, pins: draft?.pins ?? [], chatId: railChatId, language: i18n.language, workspacePath: loupist.workspace_path,
     map: railMap?.map, events: railMap?.events, learningPending: railMap?.learningPending, learningWaiting: railMap?.learningWaiting,
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the interface language is the recompute trigger; `i18n` itself is not reactive.
   }), [messages, draft?.pins, railChatId, loupist.workspace_path, railMap?.map, railMap?.events, railMap?.learningPending, railMap?.learningWaiting, i18n.language]);
   const chatRailMode = !railChatId || isEmptyChatThreadId(railChatId) ? "none" : railMode(chatWidth, rail.hasCards);
   // Read through a ref so the opener stays stable while answers stream (earlier answers do not rerender).
@@ -403,8 +404,8 @@ export function ChatView({
   const providerLabel = useCallback((providerId?: string) => {
     if (!providerId) return undefined;
     const option = modelCatalog?.providers.find((provider) => provider.id === providerId);
-    return providerShortName(providerId, option?.status?.credential_kind) ?? option?.label
-      ?? modelCatalog?.custom_providers?.find((provider) => provider.id === providerId)?.name;
+    return providerShortName(providerId, option?.status.credential_kind) ?? option?.label
+      ?? modelCatalog?.custom_providers.find((provider) => provider.id === providerId)?.name;
   }, [modelCatalog]);
   /** A failed answer's account action: Rust opens usage pages; the rest open the connect sheet in Settings. */
   const providerAction = useCallback((action: ProviderErrorAction, providerId?: string) => {
@@ -416,7 +417,7 @@ export function ChatView({
     if (action === "use_another") return onOpenModelSettings({ kind: "picker" });
     if (action === "use_api_key") return onOpenModelSettings({ kind: "provider", provider: "openai", method: "api_key" });
     const option = modelCatalog?.providers.find((provider) => provider.id === providerId);
-    const custom = modelCatalog?.custom_providers?.find((provider) => provider.id === providerId);
+    const custom = modelCatalog?.custom_providers.find((provider) => provider.id === providerId);
     onOpenModelSettings(option ? reconnectTarget(option) : custom ? { kind: "custom", edit: custom } : undefined);
   }, [bridge, modelCatalog, onOpenModelSettings]);
   const completedTurnRef = useRef<string | null>(null);
@@ -465,6 +466,7 @@ export function ChatView({
     const saved = activeThread && !isEmptyChatThreadId(activeThread.id);
     const remembered = saved ? activeThread.use_memory && activeThread.update_memory : (memoryDefaults?.use_memory ?? true) && (memoryDefaults?.update_memory ?? true);
     setPrivateChat(memoryChoices.current.privateChat ?? !remembered);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reads only these thread fields; a refreshed thread object keeps the user's memory choice.
   }, [loupist.id, activeThread?.id, activeThread?.update_memory, activeThread?.use_memory, memoryDefaults?.use_memory, memoryDefaults?.update_memory]);
 
   useEffect(() => {
@@ -748,6 +750,7 @@ export function ChatView({
     setQueueHoldByThread((current) => ({ ...current, [threadId]: null }));
     const [next] = draftSession.getSnapshot().queued[threadId] ?? [];
     if (next) setPendingSubmission({ threadId, item: next });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- coming back online is handled by the effect below; this one runs when a run settles.
   }, [
     activeThread?.id,
     draftSession,
@@ -780,7 +783,7 @@ export function ChatView({
     const remaining = delivered.filter((item) => !present.has(item.id));
     if (remaining.length === delivered.length) return;
     setSteersByThread((current) => ({ ...current, [threadId]: remaining }));
-  }, [activeThread?.id, isRunning, messages, steersByThread]);
+  }, [activeThread?.id, isRunning, messages, steersByThread, setSteersByThread]);
 
   const activeSteers = activeThread
     ? steersByThread[activeThread.id]
@@ -796,6 +799,7 @@ export function ChatView({
   const guidingTexts = useMemo(() => (isRunning ? (activeSteers ?? []).map((item) => item.text) : []), [activeSteers, isRunning]);
   const executionScope = useMemo(() => activeThread ? ({
     bridge, loupistId: loupist.id, threadId: activeThread.id, surface: activeThread.home ? "bot" as const : "session" as const, theme, active,
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the scope reads only the thread's id and kind; a refreshed thread object must not reset execution.
   }) : null, [active, activeThread?.id, activeThread?.home, bridge, loupist.id, theme]);
   /** A question from the morning message goes into the composer; it never sends. */
   const quoteToComposer = useCallback((messageId: string, text: string) => {

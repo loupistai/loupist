@@ -3,12 +3,8 @@ import type { KnowledgeMapEdge, KnowledgeMapNode } from "../../contracts/knowled
 import { useTranslation } from "../../i18n";
 import { formatNumber } from "../../i18n/format";
 import { Button } from "../ui/button";
-import { nodeCategory } from "./kinds";
-import { entityLabel } from "./labels";
-export function claimIdForEdge(edge: KnowledgeMapEdge) {
-  const projectedSuffix = `:${JSON.stringify(edge.target)}`;
-  return edge.id.endsWith(projectedSuffix) ? edge.id.slice(0, -projectedSuffix.length) : edge.id;
-}
+import { nodeCategory } from "../../knowledge/mapKinds";
+import { claimIdForEdge, entityLabel } from "../../knowledge/mapItems";
 export function MapList({ nodes, edges, onSelect, onClaim }: { nodes: KnowledgeMapNode[]; edges: KnowledgeMapEdge[]; onSelect: (node: KnowledgeMapNode) => void; onClaim: (id: string) => void }) {
   const { t, i18n } = useTranslation("knowledge");
   const lookup = new Map(nodes.map((n) => [n.id, n]));

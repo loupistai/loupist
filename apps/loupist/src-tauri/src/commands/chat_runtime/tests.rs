@@ -608,6 +608,7 @@ fn terminal_replies_keep_acknowledged_records_across_reopen_without_a_renderer()
         url: Some("https://issuer.example/filing.pdf".into()),
         provider: Some("issuer.example".into()),
         tool_name: "web_fetch".into(),
+        calc_operation: None,
         read_ref: None,
         retrieved_at: "2026-10-11T00:00:00Z".into(),
         published_at: None,

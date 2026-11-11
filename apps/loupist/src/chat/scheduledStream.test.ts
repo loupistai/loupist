@@ -5,9 +5,10 @@ import { evidenceFixture } from "../test/evidenceFixtures";
 import { scheduledRunFixture } from "../test/scheduledFixtures";
 import { ChatSessionRegistry } from "./sessionRegistry";
 import { fromLoupistUIMessage } from "./ai-sdk";
+import { completedRun } from "../test/streamFixtures";
 
 const baseline = (): ChatThread => ({ id: "scheduled-chat", loupist_id: "loupist-quality", title: "Daily source review", updated_at: "2026-10-11T01:00:00Z", use_memory: true, update_memory: false, messages: [{ id: "scheduled-user", role: "user", content: "Review the latest retained sources.", created_at: "2026-10-11T01:00:00Z", status: "complete" }] });
-const completed = (): Extract<ChatStreamEvent, { type: "completed" }> => ({ type: "completed", run_id: "chat-scheduled-one", message_id: "scheduled-answer", final_text: "The sources agree.", created_at: "2026-10-11T01:00:10Z", execution_model: { profile_id: "model-test", name: "Test model", provider: "test", model: "test-model", thinking_level: "medium", run_options: {} }, agent_harness: { schema: "loupist-harness/1", mode: "chat", skill_ids: [], capability_ids: [], digest: "a".repeat(64) } });
+const completed = (): Extract<ChatStreamEvent, { type: "completed" }> => ({ type: "completed", ...completedRun, run_id: "chat-scheduled-one", message_id: "scheduled-answer", final_text: "The sources agree.", created_at: "2026-10-11T01:00:10Z", execution_model: { profile_id: "model-test", name: "Test model", provider: "test", model: "test-model", thinking_level: "medium", run_options: {} }, agent_harness: { schema: "loupist-harness/1", mode: "chat", skill_ids: [], capability_ids: [], digest: "a".repeat(64) } });
 const handlers = () => ({ onArtifact: vi.fn(), onMessages: vi.fn(), onStatus: vi.fn(), onTitle: vi.fn(), onAttachedThread: vi.fn() });
 
 it("buffers replay before the watch acknowledgement, joins the existing Chat stream, and never sends another prompt", async () => {
@@ -17,7 +18,7 @@ it("buffers replay before the watch acknowledgement, joins the existing Chat str
   const watch = vi.spyOn(bridge, "scheduledTaskWatch").mockImplementation(async (_request, next) => {
     observer = next;
     next({ type: "started", run_id: "chat-scheduled-one" });
-    next({ type: "progress", run_id: "chat-scheduled-one", sequence: 2, progress: { startedAtMs: 1000, items: [{ id: "read", kind: "tool", category: "files", operation: "read", action: "Read sources.md", status: "running", detailId: "read-detail" }] } });
+    next({ type: "progress", run_id: "chat-scheduled-one", sequence: 2, progress: { startedAtMs: 1000, items: [{ id: "read", kind: "tool", category: "files", operation: "read", action: "Read sources.md", status: "running", detailId: "read-detail", target: null, href: null, startedAtMs: 0, finishedAtMs: null }], finishedAtMs: null } });
     next({ type: "evidence", run_id: "chat-scheduled-one", evidence: evidenceFixture() });
     next({ type: "evidence", run_id: "unrelated-run", evidence: evidenceFixture({ id: "ev_other" }) });
     next({ type: "delta", run_id: "chat-scheduled-one", text: "The sources " });

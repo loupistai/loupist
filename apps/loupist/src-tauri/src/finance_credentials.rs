@@ -45,6 +45,7 @@ pub enum FinishVerification {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum KrxServiceAccess {
     Verified,
@@ -53,7 +54,7 @@ pub enum KrxServiceAccess {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct KrxCoverage {
     pub kospi: KrxServiceAccess,
     pub kosdaq: KrxServiceAccess,
@@ -118,14 +119,12 @@ impl ActiveCredentialBundle {
 }
 
 #[derive(Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 struct StoredCredentialBundle {
     revision: String,
     secrets: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 struct ActiveCredential {
     credential: StoredCredentialBundle,
     verified_at: i64,
@@ -134,14 +133,12 @@ struct ActiveCredential {
 }
 
 #[derive(Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 struct CandidateCredential {
     credential: StoredCredentialBundle,
     verification: CandidateVerification,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 struct CredentialEnvelope {
     schema_version: String,
     active: Option<ActiveCredential>,

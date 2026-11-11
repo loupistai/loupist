@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use super::commands::{self, AddSections, Decision};
+use super::commands::{self, add::AddSections, review::Decision};
 use super::export::{self, Choice, Scope, Sections};
 use super::import::{self, Fetched, OpenResult};
 use super::pack::{self, Files, Rejection};
@@ -594,13 +594,13 @@ async fn pack_never_carries_crypto_quantities_or_wallet_addresses() {
         .unwrap();
     let id = loupist(&state, "Crypto desk").await;
     // Text that repeats a wallet address is as private as an account number.
-    let context = commands::private_context(&state);
+    let context = commands::share::private_context(&state);
     let hits = super::scan::scan_private(
         &format!("Watch {} closely", address.to_lowercase()),
         &context,
     );
     assert!(hits.iter().any(|hit| hit.class == PrivateClass::Account));
-    let request: commands::ShareRequest = serde_json::from_value(serde_json::json!({
+    let request: commands::share::ShareRequest = serde_json::from_value(serde_json::json!({
         "loupistId": id,
         "scope": {"kind": "loupist"},
         "sections": {"profile": true, "perspective": true, "methods": true, "principles": true, "map": true},
@@ -610,7 +610,7 @@ async fn pack_never_carries_crypto_quantities_or_wallet_addresses() {
         "byline": "Kim J."
     }))
     .unwrap();
-    let built = commands::build_pack(&state, &request, None).unwrap();
+    let built = commands::share::build_pack(&state, &request, None).unwrap();
     let text = all_text(&built.files);
     for forbidden in ["0.4271", "3.14159265", address, "0xfB69", "CRYPTO"] {
         assert!(!text.contains(forbidden), "{forbidden} leaked");
@@ -624,7 +624,7 @@ async fn export_never_carries_holdings_private_sources_or_ids_and_scans_every_st
     hold_bluehaven(&state);
     let id = loupist(&state, "Quality desk").await;
     let seeded = seed(&state, &id, true);
-    let mut gathered = commands::gather(&state, &id).unwrap();
+    let mut gathered = commands::share::gather(&state, &id).unwrap();
     // A generated identifier may contain a short prefix of a private value.
     // Keep that collision deterministic while checking the actual fixture data.
     gathered.identity.pack_id = "7f1d4111-0000-4000-8000-000000000001".into();
@@ -634,7 +634,7 @@ async fn export_never_carries_holdings_private_sources_or_ids_and_scans_every_st
     })
     .unwrap();
     let prepared = export::prepare(&gathered.input, &gathered.identity.pack_id);
-    let findings = export::findings(&prepared, &commands::private_context(&state));
+    let findings = export::findings(&prepared, &commands::share::private_context(&state));
     let key_of = |record: &str| {
         prepared
             .record_keys
@@ -713,7 +713,7 @@ async fn export_never_carries_holdings_private_sources_or_ids_and_scans_every_st
     let choice = loupist_choice(&blocking, &warnings);
     let selected = export::select(&prepared, &choice);
     assert!(export::unresolved(&findings, &selected, &choice).is_empty());
-    let request: commands::ShareRequest = serde_json::from_value(serde_json::json!({
+    let request: commands::share::ShareRequest = serde_json::from_value(serde_json::json!({
         "loupistId": id,
         "scope": {"kind": "loupist"},
         "sections": {"profile": true, "perspective": true, "methods": true, "principles": true, "map": true},
@@ -723,7 +723,7 @@ async fn export_never_carries_holdings_private_sources_or_ids_and_scans_every_st
         "byline": "Kim J."
     }))
     .unwrap();
-    let built = commands::build_pack(&state, &request, None).unwrap();
+    let built = commands::share::build_pack(&state, &request, None).unwrap();
     let parsed = pack::validate(&built.files).unwrap();
     assert_eq!(parsed.manifest.id, gathered.identity.pack_id);
     assert_eq!(parsed.claims.len(), 2);
@@ -766,7 +766,7 @@ async fn export_never_carries_holdings_private_sources_or_ids_and_scans_every_st
         assert!(text.contains(expected), "{expected} missing");
     }
     // A blocking finding refuses the export itself, not only the sheet.
-    let refused: commands::ShareRequest = serde_json::from_value(serde_json::json!({
+    let refused: commands::share::ShareRequest = serde_json::from_value(serde_json::json!({
         "loupistId": id,
         "scope": {"kind": "loupist"},
         "sections": {"profile": true, "perspective": true, "methods": true, "principles": true, "map": true},
@@ -776,14 +776,14 @@ async fn export_never_carries_holdings_private_sources_or_ids_and_scans_every_st
     }))
     .unwrap();
     assert_eq!(
-        commands::build_pack(&state, &refused, None)
+        commands::share::build_pack(&state, &refused, None)
             .err()
             .unwrap()
             .code,
         "findings_unresolved"
     );
     // Turning the principles section off resolves those findings too.
-    let without_principles: commands::ShareRequest = serde_json::from_value(serde_json::json!({
+    let without_principles: commands::share::ShareRequest = serde_json::from_value(serde_json::json!({
         "loupistId": id,
         "scope": {"kind": "loupist"},
         "sections": {"profile": true, "perspective": true, "methods": true, "principles": false, "map": true},
@@ -792,7 +792,7 @@ async fn export_never_carries_holdings_private_sources_or_ids_and_scans_every_st
         "license": "CC-BY-4.0"
     }))
     .unwrap();
-    assert!(commands::build_pack(&state, &without_principles, None).is_ok());
+    assert!(commands::share::build_pack(&state, &without_principles, None).is_ok());
 }
 
 #[tokio::test]
@@ -828,9 +828,9 @@ async fn the_export_scan_blocks_every_secret_rust_holds() {
         .unwrap();
     let provider = principle(&state, &id, "Rotate fixtureproviderkey7 every year.");
     let custom = principle(&state, &id, "The header fixturedesksecret42 stays private.");
-    let gathered = commands::gather(&state, &id).unwrap();
+    let gathered = commands::share::gather(&state, &id).unwrap();
     let prepared = export::prepare(&gathered.input, &gathered.identity.pack_id);
-    let findings = export::findings(&prepared, &commands::private_context(&state));
+    let findings = export::findings(&prepared, &commands::share::private_context(&state));
     for record in [provider, custom] {
         let key = prepared
             .record_keys
@@ -857,13 +857,13 @@ async fn adding_waits_for_a_running_world_job_without_holding_maintenance() {
     let state = AppState::for_folder_test(temp.path().join("app"));
     let a = loupist(&state, "Quality desk").await;
     seed(&state, &a, false);
-    let request: commands::ShareRequest = serde_json::from_value(serde_json::json!({
+    let request: commands::share::ShareRequest = serde_json::from_value(serde_json::json!({
         "loupistId": a, "scope": {"kind": "loupist"},
         "sections": {"profile": false, "perspective": false, "methods": false, "principles": false, "map": true},
         "excludedItemKeys": [], "acknowledgedFindingIds": [], "license": "CC-BY-4.0"
     }))
     .unwrap();
-    let built = commands::build_pack(&state, &request, None).unwrap();
+    let built = commands::share::build_pack(&state, &request, None).unwrap();
     let OpenResult::Preview { preview } = import::stage(
         Fetched {
             files: built.files,
@@ -905,7 +905,7 @@ async fn adding_waits_for_a_running_world_job_without_holding_maintenance() {
         .graph_mark_running(&settings, &job.job_id, AT)
         .unwrap();
     assert_eq!(running.status, "running");
-    let request: commands::PackAddRequest = serde_json::from_value(serde_json::json!({
+    let request: commands::add::PackAddRequest = serde_json::from_value(serde_json::json!({
         "stagingId": preview.staging_id,
         "mode": {"merge": {"loupistId": b}},
         "sections": {"perspective": false, "methods": false, "principles": false, "map": true}
@@ -913,7 +913,7 @@ async fn adding_waits_for_a_running_world_job_without_holding_maintenance() {
     .unwrap();
     let adding = {
         let state = state.clone();
-        tokio::spawn(async move { commands::add(&state, request, &|_| {}).await })
+        tokio::spawn(async move { commands::add::add(&state, request, &|_| {}).await })
     };
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     assert!(!adding.is_finished(), "Add waits for the running World job");
@@ -947,13 +947,13 @@ async fn with_profile_off_the_loupists_name_stays_home() {
     let id = loupist(&state, "Quality desk").await;
     seed(&state, &id, false);
     let built = |profile: bool| {
-        let request: commands::ShareRequest = serde_json::from_value(serde_json::json!({
+        let request: commands::share::ShareRequest = serde_json::from_value(serde_json::json!({
             "loupistId": id, "scope": {"kind": "loupist"},
             "sections": {"profile": profile, "perspective": false, "methods": false, "principles": false, "map": true},
             "excludedItemKeys": [], "acknowledgedFindingIds": [], "license": "CC-BY-4.0"
         }))
         .unwrap();
-        commands::build_pack(&state, &request, None).unwrap()
+        commands::share::build_pack(&state, &request, None).unwrap()
     };
     let neutral = built(false);
     assert_eq!(neutral.name, "Shared Loupist");
@@ -1481,24 +1481,24 @@ async fn a_folder_round_trip_adds_suggestions_and_the_map_then_removes_them() {
     let state = AppState::for_folder_test(temp.path().join("app"));
     let a = loupist(&state, "Quality desk").await;
     seed(&state, &a, false);
-    let gathered = commands::gather(&state, &a).unwrap();
+    let gathered = commands::share::gather(&state, &a).unwrap();
     let prepared = export::prepare(&gathered.input, &gathered.identity.pack_id);
-    let findings = export::findings(&prepared, &commands::private_context(&state));
+    let findings = export::findings(&prepared, &commands::share::private_context(&state));
     let blocking: Vec<String> = findings
         .iter()
         .filter(|finding| finding.blocking)
         .map(|finding| finding.item_key.clone())
         .collect();
     let warnings: Vec<String> = findings.iter().map(|finding| finding.id.clone()).collect();
-    let request: commands::ShareRequest = serde_json::from_value(serde_json::json!({
+    let request: commands::share::ShareRequest = serde_json::from_value(serde_json::json!({
         "loupistId": a, "scope": {"kind": "loupist"},
         "sections": {"profile": true, "perspective": true, "methods": true, "principles": true, "map": true},
         "excludedItemKeys": blocking, "acknowledgedFindingIds": warnings, "license": "CC-BY-SA-4.0"
     }))
     .unwrap();
-    let first = commands::build_pack(&state, &request, None).unwrap();
-    commands::record_identity(&state, &a, &first).unwrap();
-    let again = commands::build_pack(&state, &request, None).unwrap();
+    let first = commands::share::build_pack(&state, &request, None).unwrap();
+    commands::share::record_identity(&state, &a, &first).unwrap();
+    let again = commands::share::build_pack(&state, &request, None).unwrap();
     assert_eq!(
         first.files, again.files,
         "an unchanged Loupist re-exports byte for byte"
@@ -1511,24 +1511,24 @@ async fn a_folder_round_trip_adds_suggestions_and_the_map_then_removes_them() {
 
     let parent = temp.path().join("shared");
     std::fs::create_dir(&parent).unwrap();
-    let folder = commands::write_folder(&parent, "quality-desk", &first.files).unwrap();
+    let folder = commands::save::write_folder(&parent, "quality-desk", &first.files).unwrap();
     assert!(
-        commands::write_folder(&parent, "quality-desk", &first.files)
+        commands::save::write_folder(&parent, "quality-desk", &first.files)
             .unwrap()
             .ends_with("quality-desk-2")
     );
-    let zip = commands::zip_bytes("quality-desk", &first.files).unwrap();
+    let zip = commands::save::zip_bytes("quality-desk", &first.files).unwrap();
     assert_eq!(import::read_zip(&zip, None).unwrap(), first.files);
     assert_eq!(
         zip,
-        commands::zip_bytes("quality-desk", &first.files).unwrap()
+        commands::save::zip_bytes("quality-desk", &first.files).unwrap()
     );
 
     let staged = stage_folder(&folder);
     let b = loupist(&state, "From a shared desk").await;
-    let row = commands::import_row(&staged, ImportMode::New, AT);
+    let row = commands::add::import_row(&staged, ImportMode::New, AT);
     commands::with_tx(&state, &b, |tx, blobs| {
-        commands::record_import(
+        commands::add::record_import(
             tx,
             blobs,
             &b,
@@ -1545,11 +1545,13 @@ async fn a_folder_round_trip_adds_suggestions_and_the_map_then_removes_them() {
     })
     .unwrap();
     // Nothing reached the Lens before Accept.
-    let before = commands::gather(&state, &b).unwrap();
+    let before = commands::share::gather(&state, &b).unwrap();
     assert!(before.input.snapshot.methods.is_empty());
     assert_eq!(world_counts(&state, &b), (3, 2));
-    let groups =
-        commands::with_tx(&state, &b, |tx, _| commands::suggestion_groups(tx, &b)).unwrap();
+    let groups = commands::with_tx(&state, &b, |tx, _| {
+        commands::review::suggestion_groups(tx, &b)
+    })
+    .unwrap();
     let pending: Vec<String> = serde_json::to_value(&groups).unwrap()[0]["items"]
         .as_array()
         .unwrap()
@@ -1563,10 +1565,10 @@ async fn a_folder_round_trip_adds_suggestions_and_the_map_then_removes_them() {
     );
     assert_eq!(staged.parsed.methods.len(), 2);
     commands::with_tx(&state, &b, |tx, _| {
-        commands::decide(tx, &b, &row.import_id, &pending, Decision::Accept, AT)
+        commands::review::decide(tx, &b, &row.import_id, &pending, Decision::Accept, AT)
     })
     .unwrap();
-    let after = commands::gather(&state, &b).unwrap();
+    let after = commands::share::gather(&state, &b).unwrap();
     let theirs: BTreeMap<String, PackDoc> = after
         .input
         .snapshot
@@ -1603,14 +1605,14 @@ async fn a_folder_round_trip_adds_suggestions_and_the_map_then_removes_them() {
     .unwrap();
     assert_eq!(origin.unwrap().1, "Quality desk");
     // Re-sharing keeps attribution and refuses an incompatible requested license.
-    let mut reshare: commands::ShareRequest = serde_json::from_value(serde_json::json!({
+    let mut reshare: commands::share::ShareRequest = serde_json::from_value(serde_json::json!({
         "loupistId": b, "scope": {"kind": "item", "recordId": accepted},
         "sections": {"profile": true, "perspective": true, "methods": true, "principles": true, "map": true},
         "excludedItemKeys": [], "acknowledgedFindingIds": warnings_for(&state, &b), "license": "CC0-1.0"
     }))
     .unwrap();
     assert_eq!(
-        commands::build_pack(&state, &reshare, None)
+        commands::share::build_pack(&state, &reshare, None)
             .err()
             .unwrap()
             .code,
@@ -1621,7 +1623,7 @@ async fn a_folder_round_trip_adds_suggestions_and_the_map_then_removes_them() {
         "sections": {"profile": true, "perspective": true, "methods": true, "principles": true, "map": true},
         "excludedItemKeys": [], "acknowledgedFindingIds": warnings_for(&state, &b)
     })).unwrap();
-    let item = commands::build_pack(&state, &reshare, None).unwrap();
+    let item = commands::share::build_pack(&state, &reshare, None).unwrap();
     let item_pack = pack::validate(&item.files).unwrap();
     assert_eq!(item_pack.manifest.kind, pack::PackKind::Method);
     assert_eq!(item_pack.manifest.license, pack::License::CcBySa);
@@ -1630,7 +1632,8 @@ async fn a_folder_round_trip_adds_suggestions_and_the_map_then_removes_them() {
         "Quality desk"
     );
 
-    let views = commands::with_tx(&state, &b, |tx, _| commands::list_imports(tx, &b)).unwrap();
+    let views =
+        commands::with_tx(&state, &b, |tx, _| commands::added::list_imports(tx, &b)).unwrap();
     let view = serde_json::to_value(&views).unwrap();
     assert_eq!(view[0]["removable"]["names"], 3);
     assert_eq!(view[0]["removable"]["links"], 2);
@@ -1654,28 +1657,28 @@ async fn a_folder_round_trip_adds_suggestions_and_the_map_then_removes_them() {
     .unwrap();
     assert!(!pack_sources.is_empty() && pack_sources.is_subset(&library(&state)));
     commands::with_tx(&state, &b, |tx, blobs| {
-        commands::remove(tx, blobs, &b, &row.import_id, true, AT + 1)
+        commands::added::remove(tx, blobs, &b, &row.import_id, true, AT + 1)
     })
     .unwrap();
     assert_eq!(world_counts(&state, &b), (0, 0));
     // Source records are immutable: the pack's reference Sources are hidden instead.
     assert!(pack_sources.is_disjoint(&library(&state)));
-    let removed = commands::gather(&state, &b).unwrap();
+    let removed = commands::share::gather(&state, &b).unwrap();
     assert!(
         removed.input.snapshot.methods.is_empty(),
         "accepted methods were archived"
     );
     assert!(
-        commands::with_tx(&state, &b, |tx, _| commands::list_imports(tx, &b))
+        commands::with_tx(&state, &b, |tx, _| commands::added::list_imports(tx, &b))
             .unwrap()
             .is_empty()
     );
 }
 
 fn warnings_for(state: &AppState, loupist_id: &str) -> Vec<String> {
-    let gathered = commands::gather(state, loupist_id).unwrap();
+    let gathered = commands::share::gather(state, loupist_id).unwrap();
     let prepared = export::prepare(&gathered.input, &gathered.identity.pack_id);
-    export::findings(&prepared, &commands::private_context(state))
+    export::findings(&prepared, &commands::share::private_context(state))
         .into_iter()
         .map(|finding| finding.id)
         .collect()
@@ -1760,21 +1763,21 @@ fn snapshot_of(
 async fn map_pack(state: &AppState, temp: &Path, excluded: &[&str]) -> import::Staged {
     let a = loupist(state, "Quality desk").await;
     seed(state, &a, false);
-    let pack_id = commands::gather(state, &a).unwrap().identity.pack_id;
+    let pack_id = commands::share::gather(state, &a).unwrap().identity.pack_id;
     let excluded: Vec<String> = excluded
         .iter()
         .map(|claim| pack::item_key("c", &pack_id, claim))
         .collect();
-    let request: commands::ShareRequest = serde_json::from_value(serde_json::json!({
+    let request: commands::share::ShareRequest = serde_json::from_value(serde_json::json!({
         "loupistId": a, "scope": {"kind": "loupist"},
         "sections": {"profile": false, "perspective": false, "methods": false, "principles": false, "map": true},
         "excludedItemKeys": excluded, "acknowledgedFindingIds": [], "license": "CC-BY-4.0"
     }))
     .unwrap();
-    let built = commands::build_pack(state, &request, None).unwrap();
+    let built = commands::share::build_pack(state, &request, None).unwrap();
     let parent = temp.join(format!("shared-{}", excluded.len()));
     std::fs::create_dir(&parent).unwrap();
-    stage_folder(&commands::write_folder(&parent, "map", &built.files).unwrap())
+    stage_folder(&commands::save::write_folder(&parent, "map", &built.files).unwrap())
 }
 
 const MAP_ONLY: AddSections = AddSections {
@@ -1791,9 +1794,9 @@ async fn a_merge_supports_identical_claims_and_shows_a_differing_value_without_t
     let staged = map_pack(&state, temp.path(), &[]).await;
     let b = loupist(&state, "Second desk").await;
     second_desk(&state, &b);
-    let row = commands::import_row(&staged, ImportMode::Merge, AT);
+    let row = commands::add::import_row(&staged, ImportMode::Merge, AT);
     commands::with_tx(&state, &b, |tx, blobs| {
-        commands::record_import(tx, blobs, &b, &staged, &row, MAP_ONLY, &|_| {})
+        commands::add::record_import(tx, blobs, &b, &staged, &row, MAP_ONLY, &|_| {})
     })
     .unwrap();
     let snapshot = snapshot_of(&state, &b);
@@ -1831,7 +1834,7 @@ async fn a_merge_supports_identical_claims_and_shows_a_differing_value_without_t
         .iter()
         .any(|q| q.key == "shared_note" && q.value == "Differs from a value already on your map"));
     commands::with_tx(&state, &b, |tx, blobs| {
-        commands::remove(tx, blobs, &b, &row.import_id, false, AT + 1)
+        commands::added::remove(tx, blobs, &b, &row.import_id, false, AT + 1)
     })
     .unwrap();
     let after = snapshot_of(&state, &b);
@@ -1908,9 +1911,9 @@ async fn removing_a_support_only_pack_takes_its_support_and_sources_back() {
     let b = loupist(&state, "Second desk").await;
     second_desk(&state, &b);
     let before = snapshot_of(&state, &b);
-    let row = commands::import_row(&staged, ImportMode::Merge, AT);
+    let row = commands::add::import_row(&staged, ImportMode::Merge, AT);
     commands::with_tx(&state, &b, |tx, blobs| {
-        commands::record_import(tx, blobs, &b, &staged, &row, MAP_ONLY, &|_| {})
+        commands::add::record_import(tx, blobs, &b, &staged, &row, MAP_ONLY, &|_| {})
     })
     .unwrap();
     let added = snapshot_of(&state, &b);
@@ -1955,7 +1958,7 @@ async fn removing_a_support_only_pack_takes_its_support_and_sources_back() {
         "the pack Source joined the closure"
     );
     commands::with_tx(&state, &b, |tx, blobs| {
-        commands::remove(tx, blobs, &b, &row.import_id, false, AT + 1)
+        commands::added::remove(tx, blobs, &b, &row.import_id, false, AT + 1)
     })
     .unwrap();
     let after = snapshot_of(&state, &b);
@@ -2064,9 +2067,9 @@ async fn a_world_job_after_adding_keeps_the_shared_map_and_one_after_remove_does
     };
     // Second desk's own Source is already waiting for extraction when the pack arrives.
     let (_span, extraction) = own_source("Harbor notes", AT);
-    let row = commands::import_row(&staged, ImportMode::Merge, AT + 10);
+    let row = commands::add::import_row(&staged, ImportMode::Merge, AT + 10);
     commands::with_tx(&state, &b, |tx, blobs| {
-        commands::record_import(tx, blobs, &b, &staged, &row, MAP_ONLY, &|_| {})
+        commands::add::record_import(tx, blobs, &b, &staged, &row, MAP_ONLY, &|_| {})
     })
     .unwrap();
     let shared_names = world_counts(&state, &b);
@@ -2098,7 +2101,7 @@ async fn a_world_job_after_adding_keeps_the_shared_map_and_one_after_remove_does
     .unwrap();
 
     commands::with_tx(&state, &b, |tx, blobs| {
-        commands::remove(tx, blobs, &b, &row.import_id, false, AT + 40)
+        commands::added::remove(tx, blobs, &b, &row.import_id, false, AT + 40)
     })
     .unwrap();
     let removed = snapshot_of(&state, &b);
@@ -2497,9 +2500,9 @@ async fn shared_pack_cannot_change_authority() {
     let a = loupist(&state, "Quality desk").await;
     let before = authority(&state, &a);
     let staged = stage_folder(&eval_root().join("injected-method"));
-    let row = commands::import_row(&staged, ImportMode::Merge, AT);
+    let row = commands::add::import_row(&staged, ImportMode::Merge, AT);
     commands::with_tx(&state, &a, |tx, blobs| {
-        commands::record_import(
+        commands::add::record_import(
             tx,
             blobs,
             &a,
@@ -2519,7 +2522,7 @@ async fn shared_pack_cannot_change_authority() {
     let key = staged.items[0].0.clone();
     // A flagged item is accepted one at a time, never in a batch.
     let batch = commands::with_tx(&state, &a, |tx, _| {
-        commands::decide(
+        commands::review::decide(
             tx,
             &a,
             &row.import_id,
@@ -2530,10 +2533,10 @@ async fn shared_pack_cannot_change_authority() {
     });
     assert_eq!(batch.unwrap_err().code, "flagged_one_at_a_time");
     for name in ["trade-authority-principle", "zero-width", "schedule-method"] {
-        commands::seed_shared_pack(&state, &a, &eval_root().join(name)).unwrap();
+        commands::add::seed_shared_pack(&state, &a, &eval_root().join(name)).unwrap();
     }
     commands::with_tx(&state, &a, |tx, _| {
-        commands::decide(
+        commands::review::decide(
             tx,
             &a,
             &row.import_id,
@@ -2547,9 +2550,9 @@ async fn shared_pack_cannot_change_authority() {
     // A new Loupist from a pack gets the same defaults as Start fresh.
     let b = loupist(&state, "From a shared Quartz review").await;
     let staged = stage_folder(&eval_root().join("injected-method"));
-    let new_row = commands::import_row(&staged, ImportMode::New, AT);
+    let new_row = commands::add::import_row(&staged, ImportMode::New, AT);
     commands::with_tx(&state, &b, |tx, blobs| {
-        commands::record_import(
+        commands::add::record_import(
             tx,
             blobs,
             &b,
@@ -2604,10 +2607,14 @@ async fn shared_pack_cannot_change_authority() {
 
 /// A's whole Loupist as a share request: blocking items left out, warnings
 /// accepted, and the named World claims left out of the map.
-fn whole(state: &AppState, loupist_id: &str, left_out_claims: &[&str]) -> commands::ShareRequest {
-    let gathered = commands::gather(state, loupist_id).unwrap();
+fn whole(
+    state: &AppState,
+    loupist_id: &str,
+    left_out_claims: &[&str],
+) -> commands::share::ShareRequest {
+    let gathered = commands::share::gather(state, loupist_id).unwrap();
     let prepared = export::prepare(&gathered.input, &gathered.identity.pack_id);
-    let findings = export::findings(&prepared, &commands::private_context(state));
+    let findings = export::findings(&prepared, &commands::share::private_context(state));
     let mut excluded: Vec<String> = findings
         .iter()
         .filter(|finding| finding.blocking)
@@ -2628,7 +2635,7 @@ fn whole(state: &AppState, loupist_id: &str, left_out_claims: &[&str]) -> comman
 }
 
 fn lens_by_title(state: &AppState, loupist_id: &str) -> BTreeMap<String, (String, PackDoc)> {
-    commands::gather(state, loupist_id)
+    commands::share::gather(state, loupist_id)
         .unwrap()
         .input
         .snapshot
@@ -2722,21 +2729,25 @@ async fn a_fork_checks_for_updates_shows_a_diff_and_applies_only_what_is_chosen(
             "Read the order book before revenue.",
         ))
     });
-    let a_pack = commands::gather(&state, &a).unwrap().identity.pack_id;
+    let a_pack = commands::share::gather(&state, &a)
+        .unwrap()
+        .identity
+        .pack_id;
 
     // Version 1 leaves the margin report out of the map.
-    let first = commands::build_pack(&state, &whole(&state, &a, &["c-reports"]), None).unwrap();
-    commands::record_identity(&state, &a, &first).unwrap();
+    let first =
+        commands::share::build_pack(&state, &whole(&state, &a, &["c-reports"]), None).unwrap();
+    commands::share::record_identity(&state, &a, &first).unwrap();
     let shared = temp.path().join("shared");
     std::fs::create_dir(&shared).unwrap();
-    let v1 = commands::write_folder(&shared, "quality-desk", &first.files).unwrap();
+    let v1 = commands::save::write_folder(&shared, "quality-desk", &first.files).unwrap();
 
     // B starts from it, keeps the retained copy and accepts every suggestion one by one.
     let staged = stage_folder(&v1);
     let b = loupist(&state, "From a shared desk").await;
-    let row = commands::import_row(&staged, ImportMode::New, AT);
+    let row = commands::add::import_row(&staged, ImportMode::New, AT);
     commands::with_tx(&state, &b, |tx, blobs| {
-        commands::record_import(
+        commands::add::record_import(
             tx,
             blobs,
             &b,
@@ -2752,7 +2763,7 @@ async fn a_fork_checks_for_updates_shows_a_diff_and_applies_only_what_is_chosen(
         )
     })
     .unwrap();
-    commands::retain_copy(
+    commands::add::retain_copy(
         &state,
         &b,
         &row.import_id,
@@ -2761,7 +2772,7 @@ async fn a_fork_checks_for_updates_shows_a_diff_and_applies_only_what_is_chosen(
     );
     for (key, _, _) in &staged.items {
         commands::with_tx(&state, &b, |tx, _| {
-            commands::decide(
+            commands::review::decide(
                 tx,
                 &b,
                 &row.import_id,
@@ -2845,9 +2856,10 @@ async fn a_fork_checks_for_updates_shows_a_diff_and_applies_only_what_is_chosen(
         .map_err(|error| CommandError::invalid(error.to_string()))
     })
     .unwrap();
-    let second = commands::build_pack(&state, &whole(&state, &a, &["c-supply"]), None).unwrap();
+    let second =
+        commands::share::build_pack(&state, &whole(&state, &a, &["c-supply"]), None).unwrap();
     assert_eq!(second.version, 2);
-    let v2 = commands::write_folder(&shared, "quality-desk", &second.files).unwrap();
+    let v2 = commands::save::write_folder(&shared, "quality-desk", &second.files).unwrap();
 
     // Check: the newer copy is staged and compared; nothing changes yet.
     let current = || {
@@ -2862,8 +2874,8 @@ async fn a_fork_checks_for_updates_shows_a_diff_and_applies_only_what_is_chosen(
     };
     let before = lens_by_title(&state, &b);
     let powers = authority(&state, &b);
-    let commands::UpdateCheck::Available { update } =
-        commands::evaluate(&state, &b, &current(), newer())
+    let commands::updates::UpdateCheck::Available { update } =
+        commands::updates::evaluate(&state, &b, &current(), newer())
             .await
             .unwrap()
     else {
@@ -2919,7 +2931,7 @@ async fn a_fork_checks_for_updates_shows_a_diff_and_applies_only_what_is_chosen(
     // Apply the clean change, the flagged rule and the map; keep B's own
     // "Owner earnings" and decline the new method.
     let keys = vec![dcf.key.clone(), flagged.key.clone()];
-    let applied = commands::apply_update(
+    let applied = commands::updates::apply_update(
         &state,
         serde_json::from_value(serde_json::json!({
             "loupistId": b, "importId": row.import_id, "stagingId": update.staging_id,
@@ -2976,14 +2988,16 @@ async fn a_fork_checks_for_updates_shows_a_diff_and_applies_only_what_is_chosen(
         statement(&state),
         "Check operating cash flow before trusting reported profit."
     );
-    let groups =
-        commands::with_tx(&state, &b, |tx, _| commands::suggestion_groups(tx, &b)).unwrap();
+    let groups = commands::with_tx(&state, &b, |tx, _| {
+        commands::review::suggestion_groups(tx, &b)
+    })
+    .unwrap();
     let waiting = serde_json::to_value(&groups).unwrap();
     assert_eq!(waiting[0]["items"].as_array().unwrap().len(), 1);
     assert_eq!(waiting[0]["items"][0]["update"], true);
     assert_eq!(waiting[0]["items"][0]["flags"][0], "instruction");
     commands::with_tx(&state, &b, |tx, _| {
-        commands::decide(
+        commands::review::decide(
             tx,
             &b,
             &row.import_id,
@@ -3004,24 +3018,24 @@ async fn a_fork_checks_for_updates_shows_a_diff_and_applies_only_what_is_chosen(
 
     // The same copy again is up to date; a different pack is refused.
     assert!(matches!(
-        commands::evaluate(&state, &b, &current(), newer())
+        commands::updates::evaluate(&state, &b, &current(), newer())
             .await
             .unwrap(),
-        commands::UpdateCheck::UpToDate
+        commands::updates::UpdateCheck::UpToDate
     ));
     let other = Fetched {
         files: minimal_pack(),
         ..Fetched::default()
     };
     assert!(matches!(
-        commands::evaluate(&state, &b, &current(), other)
+        commands::updates::evaluate(&state, &b, &current(), other)
             .await
             .unwrap(),
-        commands::UpdateCheck::DifferentPack
+        commands::updates::UpdateCheck::DifferentPack
     ));
 
     // Re-sharing B carries the origin chain: A's pack first.
-    let reshare = commands::build_pack(&state, &whole(&state, &b, &[]), None).unwrap();
+    let reshare = commands::share::build_pack(&state, &whole(&state, &b, &[]), None).unwrap();
     let manifest = pack::validate(&reshare.files).unwrap().manifest;
     assert_ne!(manifest.id, a_pack);
     assert_eq!(manifest.origin.len(), 1);
@@ -3058,7 +3072,7 @@ async fn a_github_origin_compares_the_default_branch_head_and_reads_its_archive(
         panic!("rejected")
     };
     let staged = import::staged(&preview.staging_id).unwrap();
-    let row = commands::import_row(&staged, ImportMode::Merge, AT);
+    let row = commands::add::import_row(&staged, ImportMode::Merge, AT);
     let methods_only = AddSections {
         perspective: false,
         methods: true,
@@ -3066,10 +3080,10 @@ async fn a_github_origin_compares_the_default_branch_head_and_reads_its_archive(
         map: false,
     };
     commands::with_tx(&state, &b, |tx, blobs| {
-        commands::record_import(tx, blobs, &b, &staged, &row, methods_only, &|_| {})
+        commands::add::record_import(tx, blobs, &b, &staged, &row, methods_only, &|_| {})
     })
     .unwrap();
-    commands::retain_copy(
+    commands::add::retain_copy(
         &state,
         &b,
         &row.import_id,
@@ -3091,7 +3105,7 @@ async fn a_github_origin_compares_the_default_branch_head_and_reads_its_archive(
     manifest.version = 2;
     v2.remove(pack::MANIFEST);
     let v2 = pack::seal(manifest, v2).1;
-    let archive = commands::zip_bytes("loupist-desk-2222", &v2).unwrap();
+    let archive = commands::save::zip_bytes("loupist-desk-2222", &v2).unwrap();
     let heads = Arc::new(std::sync::Mutex::new(
         "1111111111111111111111111111111111111111",
     ));
@@ -3125,10 +3139,10 @@ async fn a_github_origin_compares_the_default_branch_head_and_reads_its_archive(
     };
     // The recorded commit is still the head: nothing is downloaded.
     assert!(matches!(
-        commands::fetch_newer(&github, None, &current())
+        commands::updates::fetch_newer(&github, None, &current())
             .await
             .unwrap(),
-        commands::Newer::Settled(commands::UpdateCheck::UpToDate)
+        commands::updates::Newer::Settled(commands::updates::UpdateCheck::UpToDate)
     ));
     assert!(!server
         .requests
@@ -3137,9 +3151,10 @@ async fn a_github_origin_compares_the_default_branch_head_and_reads_its_archive(
         .iter()
         .any(|(_, path, _)| path.starts_with("/codeload")));
     *heads.lock().unwrap() = "2222222222222222222222222222222222222222";
-    let commands::Newer::Fetched(fetched) = commands::fetch_newer(&github, None, &current())
-        .await
-        .unwrap()
+    let commands::updates::Newer::Fetched(fetched) =
+        commands::updates::fetch_newer(&github, None, &current())
+            .await
+            .unwrap()
     else {
         panic!("not fetched");
     };
@@ -3147,8 +3162,8 @@ async fn a_github_origin_compares_the_default_branch_head_and_reads_its_archive(
         fetched.commit.as_deref(),
         Some("2222222222222222222222222222222222222222")
     );
-    let commands::UpdateCheck::Available { update } =
-        commands::evaluate(&state, &b, &current(), fetched)
+    let commands::updates::UpdateCheck::Available { update } =
+        commands::updates::evaluate(&state, &b, &current(), fetched)
             .await
             .unwrap()
     else {
@@ -3165,8 +3180,10 @@ async fn a_github_origin_compares_the_default_branch_head_and_reads_its_archive(
         ..current()
     };
     assert!(matches!(
-        commands::fetch_newer(&github, None, &gone).await.unwrap(),
-        commands::Newer::Settled(commands::UpdateCheck::OriginGone)
+        commands::updates::fetch_newer(&github, None, &gone)
+            .await
+            .unwrap(),
+        commands::updates::Newer::Settled(commands::updates::UpdateCheck::OriginGone)
     ));
 }
 
@@ -3187,7 +3204,7 @@ async fn the_gallery_blocked_list_marks_added_packs_and_their_updates_cannot_be_
         panic!("rejected");
     };
     let staged = import::staged(&preview.staging_id).unwrap();
-    let row = commands::import_row(&staged, ImportMode::Merge, AT);
+    let row = commands::add::import_row(&staged, ImportMode::Merge, AT);
     let methods_only = AddSections {
         perspective: false,
         methods: true,
@@ -3195,12 +3212,12 @@ async fn the_gallery_blocked_list_marks_added_packs_and_their_updates_cannot_be_
         map: false,
     };
     commands::with_tx(&state, &b, |tx, blobs| {
-        commands::record_import(tx, blobs, &b, &staged, &row, methods_only, &|_| {})
+        commands::add::record_import(tx, blobs, &b, &staged, &row, methods_only, &|_| {})
     })
     .unwrap();
     let reason = |state: &AppState| {
         serde_json::to_value(
-            commands::with_tx(state, &b, |tx, _| commands::list_imports(tx, &b)).unwrap(),
+            commands::with_tx(state, &b, |tx, _| commands::added::list_imports(tx, &b)).unwrap(),
         )
         .unwrap()[0]["blockedReason"]
             .clone()
@@ -3212,7 +3229,7 @@ async fn the_gallery_blocked_list_marks_added_packs_and_their_updates_cannot_be_
         at: None,
     };
     commands::with_tx(&state, &b, |tx, _| {
-        commands::mark_blocked(tx, &b, std::slice::from_ref(&removed))
+        commands::added::mark_blocked(tx, &b, std::slice::from_ref(&removed))
     })
     .unwrap();
     assert_eq!(
@@ -3220,7 +3237,10 @@ async fn the_gallery_blocked_list_marks_added_packs_and_their_updates_cannot_be_
         "reported",
         "the row shows the removal banner"
     );
-    commands::with_tx(&state, &b, |tx, _| commands::mark_blocked(tx, &b, &[])).unwrap();
+    commands::with_tx(&state, &b, |tx, _| {
+        commands::added::mark_blocked(tx, &b, &[])
+    })
+    .unwrap();
     assert!(
         reason(&state).is_null(),
         "lifted when the index no longer lists it"
@@ -3241,7 +3261,7 @@ async fn the_gallery_blocked_list_marks_added_packs_and_their_updates_cannot_be_
     ) else {
         panic!("rejected");
     };
-    let refused = commands::apply_update(
+    let refused = commands::updates::apply_update(
         &state,
         serde_json::from_value(serde_json::json!({
             "loupistId": b, "importId": row.import_id, "stagingId": preview.staging_id,

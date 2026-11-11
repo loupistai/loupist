@@ -105,6 +105,7 @@ export function useAppUpdate(bridge: LoupistBridge) {
   useEffect(() => {
     mounted.current = true;
     void refreshStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a request counter, not a DOM node: cleanup invalidates the request that is in flight.
     return () => { mounted.current = false; requestEpoch.current++; };
   }, [refreshStatus]);
 

@@ -2,12 +2,14 @@ use super::*;
 use crate::knowledge::{principles as storage, Principle, PrincipleInput};
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PrincipleListRequest {
     pub loupist_id: String,
     pub include_archived: Option<bool>,
 }
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PrincipleCreateRequest {
     pub loupist_id: String,
@@ -19,6 +21,7 @@ pub struct PrincipleCreateRequest {
     pub origin_message_id: Option<String>,
 }
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PrincipleUpdateRequest {
     pub loupist_id: String,
@@ -29,6 +32,7 @@ pub struct PrincipleUpdateRequest {
     pub example: Option<String>,
 }
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PrincipleArchiveRequest {
     pub loupist_id: String,

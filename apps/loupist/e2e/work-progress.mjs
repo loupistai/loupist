@@ -27,18 +27,18 @@ async function revealAndExpand(button, { reveal = false } = {}) {
 }
 
 async function expandProgress(section, { reveal = false } = {}) {
-  await revealAndExpand(await section.$("button.chat-progress-toggle"), { reveal });
+  await revealAndExpand(await section.$("button[data-testid=chat-progress-toggle]"), { reveal });
 }
 
 async function progressRows(section) {
   const rows = [];
-  for (const row of await section.$$(".chat-progress-row")) {
-    const target = await row.$(".chat-progress-target");
+  for (const row of await section.$$("[data-testid=chat-progress-row]")) {
+    const target = await row.$("[data-testid=chat-progress-target]");
     rows.push({
       category: await row.getAttribute("data-progress-category"),
       operation: await row.getAttribute("data-progress-operation"),
       status: await row.getAttribute("data-progress-status"),
-      action: (await (await row.$(".chat-progress-action")).getText()).trim(),
+      action: (await (await row.$("[data-testid=chat-progress-action]")).getText()).trim(),
       target: (await target.isExisting())
         ? (await target.getText()).trim() || null
         : null,
@@ -51,7 +51,7 @@ export async function collectWorkProgress(
   browser,
   { latestOnly = false, requireVisible = false } = {},
 ) {
-  const selector = '.chat-progress[data-turn-item="tools"]';
+  const selector = '[data-testid=chat-progress][data-turn-item="tools"]';
   const sections = latestOnly
     ? await (async () => {
         const messages = await browser.$$(
@@ -77,7 +77,7 @@ export async function collectWorkProgress(
       }
     }
     await expandProgress(section, { reveal: requireVisible });
-    const heading = await section.$(".chat-progress-heading");
+    const heading = await section.$("[data-testid=chat-progress-heading]");
     progress.push({
       heading: (await heading.isExisting())
         ? (await heading.getText()).trim()

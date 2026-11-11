@@ -23,6 +23,7 @@ pub const MAX_OPS_PER_DELTA: usize = 12;
 pub const MAX_WHY_CHARS: usize = 400;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum LensKind {
     Principle,
@@ -93,6 +94,7 @@ impl PageKind {
 
 /// A section's stable identity inside its page: a slug `[a-z0-9-]{1,48}`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(transparent)]
 pub struct SectionKey(String);
 
@@ -130,6 +132,7 @@ impl std::fmt::Display for SectionKey {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(
     tag = "kind",
     rename_all = "snake_case",
@@ -151,6 +154,7 @@ pub enum BasisRef {
     Page {
         record_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         section_key: Option<SectionKey>,
     },
 }
@@ -165,16 +169,19 @@ impl BasisRef {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Basis {
     #[serde(default)]
     pub refs: Vec<BasisRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub uncertainty: Option<String>,
 }
 
 /// The chip a reader shows for a basis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum BasisChip {
     Source,
@@ -222,6 +229,7 @@ pub fn basis_allowed(kind: LensKind, basis: &Basis) -> bool {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Origin {
     User,
@@ -278,6 +286,7 @@ impl Page {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum IdeaStatus {
     Open,
@@ -300,6 +309,7 @@ impl IdeaStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct IdeaState {
     pub status: IdeaStatus,

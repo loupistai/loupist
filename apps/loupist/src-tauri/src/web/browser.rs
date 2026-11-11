@@ -18,6 +18,7 @@ const MAX_BROWSER_TABS: usize = 12;
 const MAX_URL_BYTES: usize = 8 * 1024;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct BrowserBounds {
     pub x: f64,
@@ -59,6 +60,7 @@ impl BrowserBounds {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct BrowserTabState {
     pub tab_id: String,
     pub url: String,
@@ -67,6 +69,7 @@ pub struct BrowserTabState {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum BrowserTabEvent {
     LoadStarted {
@@ -106,6 +109,7 @@ fn queue_browser_event(channel: Channel<BrowserTabEvent>, event: BrowserTabEvent
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct BrowserTabOpenRequest {
     pub url: String,
@@ -114,12 +118,14 @@ pub struct BrowserTabOpenRequest {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct BrowserTabRequest {
     pub tab_id: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct BrowserTabNavigateRequest {
     pub tab_id: String,
@@ -127,6 +133,7 @@ pub struct BrowserTabNavigateRequest {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum BrowserHistoryDirection {
     Back,
@@ -134,6 +141,7 @@ pub enum BrowserHistoryDirection {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct BrowserTabHistoryRequest {
     pub tab_id: String,
@@ -141,6 +149,7 @@ pub struct BrowserTabHistoryRequest {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct BrowserTabBoundsRequest {
     pub tab_id: String,
@@ -280,6 +289,7 @@ impl BrowserManager {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum BrowserUrlError {
     TooLong,

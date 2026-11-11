@@ -1,5 +1,6 @@
 import type { StreamObserver } from "./runtime";
 import type { LoupistTone } from "./loupist";
+import type * as Wire from "./generated";
 
 /**
  * Sharing (W19): packs, GitHub publishing, import review and suggestions.
@@ -9,10 +10,7 @@ import type { LoupistTone } from "./loupist";
  */
 
 export type PackLicense = "CC-BY-4.0" | "CC-BY-SA-4.0" | "CC0-1.0" | "CC-BY-NC-4.0" | "CC-BY-NC-SA-4.0" | "LicenseRef-Loupist-Personal";
-export interface ShareLicense {
-  id: PackLicense;
-  url: string;
-}
+export type ShareLicense = Wire.ShareLicense;
 export interface LicenseConflict {
   code: "license_conflict";
   items: { key: string; name: string; license: PackLicense }[];
@@ -92,23 +90,6 @@ export interface ShareExportRequest extends ShareRequest {
   destination: "folder" | "zip";
 }
 
-/** Rust-side refusal codes for share commands (CommandError.code). */
-export type ShareErrorCode =
-  | "license_conflict"
-  | "license_not_shareable"
-  | "gallery_terms_required"
-  | "findings_unresolved"
-  | "nothing_to_share"
-  | "not_configured"
-  | "signed_out"
-  | "offline"
-  | "name_taken"
-  | "rate_limited"
-  | "publish_denied"
-  | "repo_gone"
-  /** The recorded repository now holds another pack (or none): Update is refused. */
-  | "repo_mismatch";
-
 export type SharePublishTarget = { repo: { name: string } } | { update: true } | { gist: "public" | "secret" };
 export interface SharePublishRequest extends ShareRequest {
   target: SharePublishTarget;
@@ -123,15 +104,7 @@ export interface SharePublishResult {
   commit: string | null;
 }
 
-export interface GithubAccount {
-  /** A GitHub OAuth client id was compiled into this build. */
-  clientConfigured: boolean;
-  /** A community index URL was compiled into this build (Gallery, report-and-remove). */
-  indexConfigured: boolean;
-  /** Null disables listing; acceptance must name this exact URL. */
-  galleryTermsUrl: string | null;
-  login: string | null;
-}
+export type GithubAccount = Wire.GithubAccount;
 export type GithubSignInFailure = "expired" | "denied" | "not_configured" | "offline";
 export type GithubSignInEvent =
   | { kind: "code"; userCode: string; expiresInSec: number }
@@ -230,11 +203,7 @@ export type PackSource = { url: string } | { zip: true } | { folder: true } | { 
 export type PackLinkErrorCode = "link_invalid" | "link_not_found" | "offline";
 
 export type PackAddMode = { new: { name: string; tone: LoupistTone } } | { merge: { loupistId: string } };
-export interface PackAddRequest {
-  stagingId: string;
-  mode: PackAddMode;
-  sections: { perspective: boolean; methods: boolean; principles: boolean; map: boolean };
-}
+export type PackAddRequest = Wire.PackAddRequest;
 export type PackAddEvent = { done: number; total: number };
 export interface PackAddResult { loupistId: string; importId: string }
 
@@ -324,14 +293,7 @@ export type PackUpdateCheck =
   | { kind: "differentPack" }
   | { kind: "rejected"; reason: PackRejection }
   | { kind: "available"; update: PackUpdate };
-export interface PackApplyUpdateRequest {
-  loupistId: string;
-  importId: string;
-  stagingId: string;
-  /** New and changed items to take; the rest of that version is declined. */
-  itemKeys: string[];
-  applyMap: boolean;
-}
+export type PackApplyUpdateRequest = Wire.PackApplyUpdateRequest;
 
 /** W19.6: one Loupist listed in the community index. */
 export type PackAssetClass = "stocks" | "etfs" | "bonds" | "crypto" | "economy";
@@ -368,7 +330,7 @@ export interface PackOrigin {
   author: string | null;
 }
 
-export type DeepLinkEvent = { status: "ok"; source: string } | { status: "bad" };
+export type DeepLinkEvent = Wire.DeepLinkEvent;
 
 export interface SharingBridge {
   shareSummary(request: { loupistId: string; scope: ShareScope; sections?: ShareSections; excludedItemKeys?: string[] }): Promise<ShareSummary>;

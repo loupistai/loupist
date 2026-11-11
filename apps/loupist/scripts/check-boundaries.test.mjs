@@ -39,6 +39,20 @@ test("preview and mock imports cannot enter production, with exact directory mat
   assert.deepEqual(inspectBoundaries("src/App.tsx", 'import "./previewer"; import "./bridge/mockery";'), []);
 });
 
+test("chat, knowledge and lib code does not import components; their tests may render them", () => {
+  for (const [file, path] of [["src/chat/rail.ts", "../components/map/kinds"], ["src/knowledge/location.ts", "@/components/knowledge/hostSource"], ["src/lib/url.ts", "../components"], ["src/chat/view.tsx", "@/components/ai-elements/message-response.tsx"]]) {
+    for (const source of [`import { x } from "${path}";`, `import type { X } from "${path}";`, `export * from "${path}";`, `void import("${path}");`]) {
+      const hits = inspectBoundaries(file, source);
+      assert.equal(hits.length, 1, `${file}: ${source}`);
+      assert.equal(hits[0].rule, "boundaries/no-components-below-ui");
+    }
+  }
+  assert.deepEqual(inspectBoundaries("src/chat/markdown.test.tsx", 'import { MessageResponse } from "@/components/ai-elements/message-response";'), []);
+  assert.deepEqual(inspectBoundaries("src/components/chat/ChatRail.tsx", 'import { railData } from "../../chat/chatRail";'), []);
+  assert.deepEqual(inspectBoundaries("src/app/useAppSurface.ts", 'import type { LoupistSettingsSection } from "../components/agents/LoupistSettings";'), []);
+  assert.deepEqual(inspectBoundaries("src/chat/rail.ts", 'import { kinds } from "../componentsKit";'), []);
+});
+
 test("comments and ordinary strings are not imports", () => {
   assert.deepEqual(inspectBoundaries("src/App.tsx", '// import "@tauri-apps/api/core";\nconst example = \'import("@tauri-apps/api/event")\';'), []);
 });

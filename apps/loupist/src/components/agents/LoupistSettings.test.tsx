@@ -9,8 +9,8 @@ it("searches the selected Loupist’s capabilities and reveals that Loupist’s 
   const selectedAgent = agents[0];
   const reveal = vi.spyOn(bridge, "workspaceReveal").mockResolvedValue(undefined);
   vi.spyOn(bridge, "agentSkillCatalog").mockResolvedValue([
-    { id: "filing", name: "Filing comparison", description: "Compare financial statements", enabled: true },
-    { id: "valuation", name: "Valuation", description: "Model cash flows", enabled: false },
+    { id: "filing", name: "Filing comparison", description: "Compare financial statements", enabled: true, fixed: false },
+    { id: "valuation", name: "Valuation", description: "Model cash flows", enabled: false, fixed: false },
   ]);
   render(<LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={selectedAgent} mutationBusy={false} mutationError={null} recoveryBusy={false} recoveryError={null} onRecover={vi.fn()} onOpenMarketplace={vi.fn()} onDelete={vi.fn()} onAgentUpdated={vi.fn()} />);
   const user = userEvent.setup();

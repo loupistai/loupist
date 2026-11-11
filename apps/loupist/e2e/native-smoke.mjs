@@ -91,7 +91,7 @@ async function openSettings(sectionId) {
 
 async function visibleLoupistTitles() {
   return browser.execute(() =>
-    [...document.querySelectorAll("button.loupist-header-identity")]
+    [...document.querySelectorAll("button[data-testid=loupist-header-identity]")]
       .filter((button) => button.getClientRects().length > 0)
       .map((button) => button.querySelector("strong")?.textContent?.trim() ?? ""),
   );
@@ -103,7 +103,7 @@ async function removeUntilOnboarding() {
     const [removed] = await visibleLoupistTitles();
     if (!removed) break;
     await (await displayed("[data-header-loupist-settings]")).click();
-    const sheet = await displayed(".loupist-settings-page");
+    const sheet = await displayed("[data-testid=loupist-settings-page]");
     await clickButton("Remove Loupist", sheet);
     const dialog = await dialogByTitle(browser, "Remove Loupist?");
     await clickButton("Remove Loupist", dialog);
@@ -194,25 +194,25 @@ try {
     await (await displayed("[data-onboarding-create]")).click();
     await waitForShell(browser, 30_000);
     assert.equal(await selectedLoupistTitle(browser), "Portfolio Loupist");
-    await displayed(".loupist-chat-row[data-home] [aria-current=page]");
+    await displayed("[data-testid=loupist-chat-row][data-home] [aria-current=page]");
     await capture("onboarding-bot");
   });
 
   await step("shell, Loupist settings, and a new Chat draft", async () => {
     await openMainTab(browser, "lens");
-    await displayed(".memory-page");
+    await displayed("[data-testid=memory-page]");
     await openMainTab(browser, "chat");
     await waitForText(await displayed("#main-panel-chat"), "AI can be wrong. Not a licensed financial adviser.");
-    const before = (await browser.$$(".loupist-chat-button")).length;
-    const newChatLabel = '.navigation-new';
+    const before = (await browser.$$("[data-testid=loupist-chat-button]")).length;
+    const newChatLabel = '[data-testid=navigation-new]';
     await clickControl(browser, newChatLabel);
-    const afterFirst = (await browser.$$(".loupist-chat-button")).length;
+    const afterFirst = (await browser.$$("[data-testid=loupist-chat-button]")).length;
     await clickControl(browser, newChatLabel);
     // An unsent topic Chat shows as one draft row under the Thread; a second New chat reuses it.
     assert.ok(afterFirst <= before + 1, "An unsent Chat shows at most one draft row");
-    assert.equal((await browser.$$(".loupist-chat-button")).length, afterFirst, "A second New chat must reuse the unsent Chat");
+    assert.equal((await browser.$$("[data-testid=loupist-chat-button]")).length, afterFirst, "A second New chat must reuse the unsent Chat");
     await (await displayed("[data-header-loupist-settings]")).click();
-    const sheet = await displayed(".loupist-settings-page");
+    const sheet = await displayed("[data-testid=loupist-settings-page]");
     await waitForText(sheet, "Loupist settings");
     await clickButton("Remove Loupist", sheet);
     const dialog = await dialogByTitle(browser, "Remove Loupist?");
@@ -286,16 +286,16 @@ try {
 
   await step("Map tab", async () => {
     await openMainTab(browser, "map");
-    const panel = await displayed(".map-view");
+    const panel = await displayed("[data-testid=map-view]");
     let count = await mapNameCount(browser);
     let surface = "";
     await browser.waitUntil(async () => {
       count = await mapNameCount(browser);
       surface = await browser.execute(() => {
-        const canvas = document.querySelector(".map-view .map-canvas canvas");
+        const canvas = document.querySelector("[data-testid=map-view] [data-testid=map-canvas] canvas");
         const box = canvas?.getBoundingClientRect();
         if (canvas && box && box.width > 1 && box.height > 1) return "canvas";
-        const empty = document.querySelector(".map-view .map-empty");
+        const empty = document.querySelector("[data-testid=map-view] [data-testid=map-empty]");
         if (empty && empty.getClientRects().length > 0) return "empty";
         return "";
       });
@@ -325,10 +325,10 @@ try {
     const panel = await displayed("#main-panel-settings");
     await displayed('[aria-label="Details Market data platform"]');
     const openbbCard = await browser.execute(() => {
-      const heading = [...document.querySelectorAll(".marketplace-card [id^=\"connection-\"]")].find(
+      const heading = [...document.querySelectorAll("[data-testid=marketplace-card] [id^=\"connection-\"]")].find(
         (element) => element.textContent === "Market data platform",
       );
-      return heading?.closest(".marketplace-card")?.innerText ?? "";
+      return heading?.closest("[data-testid=marketplace-card]")?.innerText ?? "";
     });
     if (process.env.LOUPIST_E2E_REQUIRE_STAGED_RUNTIMES === "1") {
       assert.match(openbbCard, /Ready/);
@@ -381,7 +381,7 @@ try {
       timeout: 5_000,
       timeoutMsg: "Dark theme was not saved",
     });
-    assert.equal(await (await displayed(".app-shell")).getAttribute("data-theme"), "dark");
+    assert.equal(await (await displayed("[data-testid=app-shell]")).getAttribute("data-theme"), "dark");
     const light = await displayed('button[title="Light theme"]');
     await light.click();
     await browser.waitUntil(async () => (await light.getAttribute("aria-pressed")) === "true", {
@@ -496,7 +496,7 @@ try {
     let decoration = null;
     await browser.waitUntil(async () => {
       decoration = await browser.execute(() => {
-        const chip = document.querySelector("article.message.assistant button.number-chip");
+        const chip = document.querySelector("article.message.assistant button[data-testid=number-chip]");
         if (!chip) return null;
         const style = getComputedStyle(chip);
         return { line: style.textDecorationLine, style: style.textDecorationStyle };

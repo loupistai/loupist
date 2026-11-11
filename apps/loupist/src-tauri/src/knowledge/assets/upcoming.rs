@@ -26,6 +26,7 @@ const MAX_CLAIM_CHARS: usize = 280;
 
 /// Ordered as rows of one day are listed: results, then dividends, then checks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub enum UpcomingKind {
     Results,
@@ -36,6 +37,7 @@ pub enum UpcomingKind {
 
 /// The page an event belongs to; the renderer names it in the reader's language.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct UpcomingAsset {
     pub asset_id: String,
@@ -43,29 +45,37 @@ pub struct UpcomingAsset {
     pub market: String,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub entity_id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct UpcomingEvent {
     pub kind: UpcomingKind,
     /// The calendar day, YYYY-MM-DD.
     pub date: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub asset: Option<UpcomingAsset>,
     /// Results: where the date comes from; a legal deadline is a bound, never an expected date.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub date_source: Option<DateSource>,
     /// Results: the event the asset page's results card opens on.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub event_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub period: Option<String>,
     /// Check: the Journal entry it opens.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub journal_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub claim: Option<String>,
 }
 

@@ -84,16 +84,18 @@ pub enum PasteRule {
 }
 
 impl PasteRule {
-    /// The rule for a provider's browser sign-in; none for device flows.
+    /// The rule for a provider's browser sign-in (its manifest `paste`);
+    /// none for device flows.
     pub fn for_provider(provider: &str) -> Option<Self> {
-        match provider {
-            "openai" => Some(Self::ChatgptLoopback),
-            "openai-codex" => Some(Self::BrowserCallback {
-                port: 1455,
-                path: "/auth/callback",
-            }),
-            _ => None,
-        }
+        let sign_in = crate::providers::manifest::spec(provider)?
+            .sign_in
+            .as_ref()?;
+        Some(match sign_in.paste.as_ref()? {
+            crate::providers::manifest::PasteSpec::ChatgptLoopback => Self::ChatgptLoopback,
+            crate::providers::manifest::PasteSpec::BrowserCallback { port, path } => {
+                Self::BrowserCallback { port: *port, path }
+            }
+        })
     }
 }
 

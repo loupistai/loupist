@@ -49,6 +49,7 @@ fn valid_chart_interval(value: &str) -> bool {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ChartColumnKind {
     String,
@@ -59,6 +60,7 @@ pub enum ChartColumnKind {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ChartColumn {
     pub id: String,
@@ -67,7 +69,7 @@ pub struct ChartColumn {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChartResultReceipt {
     pub result_ref: String,
     pub runtime_id: String,
@@ -113,6 +115,7 @@ impl ChartResultReceipt {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ChartResultColumnSelection {
     pub id: String,
@@ -141,7 +144,8 @@ impl ChartResultColumnSelection {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ChartDatasetLineage {
     FromDataset {
         dataset_id: String,
@@ -226,7 +230,7 @@ impl ChartDatasetLineage {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChartDataset {
     pub id: String,
     pub columns: Vec<ChartColumn>,
@@ -365,7 +369,7 @@ pub struct ChartDatasetSummary {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChartDocument {
     #[serde(default)]
     pub custom_series: Vec<ChartCustomSeries>,
@@ -509,6 +513,7 @@ impl ChartDocument {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ChartCustomSeries {
     pub id: String,
@@ -658,6 +663,7 @@ fn chart_timestamp(value: &Value) -> Option<f64> {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ChartView {
     #[serde(rename = "candlestick")]
@@ -676,7 +682,16 @@ pub enum ChartView {
         #[serde(default)]
         price_precision: Option<u8>,
     },
+    // ts-rs keeps the enum tag on an untagged struct variant; this is the
+    // variant's own shape. Keep it in step with the fields below.
     #[serde(untagged)]
+    #[cfg_attr(
+        test,
+        ts(
+            untagged,
+            type = "{ kind: AnalyticChartType, x: string, y: Array<string>, color: string | null, semantic_types: { [key in string]: string }, title: string | null, subtitle: string | null }"
+        )
+    )]
     Analytic {
         #[serde(rename = "kind")]
         chart_type: AnalyticChartType,
@@ -902,6 +917,7 @@ impl ChartView {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum AnalyticChartType {
     Line,
@@ -911,6 +927,7 @@ pub enum AnalyticChartType {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ChartDrawing {
     pub kind: ChartDrawingKind,
@@ -966,13 +983,17 @@ fn valid_chart_color(color: &str) -> bool {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ChartDrawingPoint {
+    /// A date string or a Unix timestamp; validation refuses any other value.
+    #[cfg_attr(test, ts(type = "string | number"))]
     pub timestamp: Value,
     pub value: f64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ChartDrawingKind {
     Segment,
@@ -1012,6 +1033,7 @@ impl ChartDrawingKind {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ChartDrawingLineStyle {
     Solid,
@@ -1019,6 +1041,7 @@ pub enum ChartDrawingLineStyle {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ChartStudy {
     pub module_id: ChartStudyModule,
@@ -1027,6 +1050,7 @@ pub struct ChartStudy {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ChartStudyModule {
     Avp,

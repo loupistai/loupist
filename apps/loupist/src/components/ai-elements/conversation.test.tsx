@@ -144,7 +144,7 @@ it("keeps an explicitly opened tool result in place while its lazy content arriv
 });
 
 it("never moves the viewport when the reader expands the run header, even as the stream continues", () => {
-  const progress = { startedAtMs: 1, finishedAtMs: 2000, items: [{ id: "read", kind: "tool" as const, category: "web" as const, operation: "read" as const, action: "Read the quarterly report", status: "succeeded" as const }] };
+  const progress = { startedAtMs: 1, finishedAtMs: 2000, items: [{ id: "read", kind: "tool" as const, category: "web" as const, operation: "read" as const, action: "Read the quarterly report", target: null, href: null, status: "succeeded" as const, startedAtMs: 1, finishedAtMs: 1500 }] };
   const view = deriveTurnView({ message: { id: "a", role: "assistant", status: "complete", content: "Done.", created_at: "2026-10-10T00:00:00Z", progress }, now: 3000, lastActivityAt: 3000, stopping: false, retry: { attempt: 1, offered: false } });
   const segment = view.segments.find((item) => item.kind === "activity")!;
   const { element, grow, stream } = conversation(<ActivityRow segment={segment} />);

@@ -22,7 +22,7 @@ const growth = (kind: GrowthEvent["kind"], subjectId: string): GrowthEvent => ({
 const briefing = { runId: "run-1", taskId: "task", kind: "briefing", title: "Morning briefing", status: "succeeded",
   summary: "Hanul Precision's qualification costs rose. The margin settled.", startedAtMs: NOW - HOUR, finishedAtMs: NOW - HOUR, readAtMs: null } as InboxItem;
 const journal = [{ journalId: "j1", judgment: "Inventory falls", archived: false,
-  check: { claim: "Inventory days below 50", metric: "inventory days", direction: "below", threshold: 50, byDate: "2026-10-29" } }] as JournalRecord[];
+  check: { claim: "Inventory days below 50", metric: "inventory days", direction: "below", threshold: 50, byDate: "2026-10-29" }, originChatId: null }] as JournalRecord[];
 
 function bridge(overrides: Partial<LoupistBridge> = {}) {
   return {

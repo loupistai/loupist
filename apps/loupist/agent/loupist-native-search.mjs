@@ -29,16 +29,18 @@ import { anthropicSearchAdapter } from "./native-search/anthropic.mjs";
 import { codexSearchAdapter, openaiSearchAdapter } from "./native-search/codex.mjs";
 import { xaiSearchAdapter } from "./native-search/xai.mjs";
 
-const ADAPTERS = Object.freeze({
-  [openaiSearchAdapter.id]: openaiSearchAdapter,
-  [codexSearchAdapter.id]: codexSearchAdapter,
-  [anthropicSearchAdapter.id]: anthropicSearchAdapter,
-  [xaiSearchAdapter.id]: xaiSearchAdapter,
-});
+// Each adapter names the Pi provider it serves. Rust offers native search for
+// a provider only when `provider-manifest.json` gives it `native_search`, and
+// `provider-manifest.test.mjs` keeps that list and these adapters the same.
+const ADAPTERS = Object.freeze(Object.fromEntries(
+  [openaiSearchAdapter, codexSearchAdapter, anthropicSearchAdapter, xaiSearchAdapter].map((adapter) => [adapter.id, adapter]),
+));
 
 export function isNativeSearchProvider(providerId) {
   return Object.hasOwn(ADAPTERS, providerId);
 }
+
+export const nativeSearchProviderIds = () => Object.keys(ADAPTERS);
 
 export function selectSearchModel(providerId, availableIds = []) {
   const allowlist = ADAPTERS[providerId]?.modelIds ?? [];

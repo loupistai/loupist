@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     fs::artifact_trust::{read_private_regular_file_bounded, ArtifactTrustError},
-    store::{STORE_APPLICATION_ID, STORE_SCHEMA_VERSION},
+    store::{Standing, STORE_APPLICATION_ID, STORE_BASELINE_VERSION, STORE_SCHEMA_VERSION},
 };
 use rusqlite::{Connection, OpenFlags};
 use serde_json::Value;
@@ -31,11 +31,29 @@ pub(crate) fn validate_folder(directory: &Path) -> KnowledgeResult<()> {
     let version: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     let application_id: i64 =
         connection.query_row("PRAGMA application_id", [], |row| row.get(0))?;
-    if version != STORE_SCHEMA_VERSION || application_id != STORE_APPLICATION_ID {
+    // The same typed states as opening the store: pre-ladder development formats
+    // (with or without the application id) and newer Loupist data are refused.
+    if (1..STORE_BASELINE_VERSION).contains(&version) {
+        return Err(KnowledgeError::EarlierVersion);
+    }
+    if version > STORE_SCHEMA_VERSION && application_id == STORE_APPLICATION_ID {
+        return Err(KnowledgeError::NewerVersion);
+    }
+    if version < STORE_BASELINE_VERSION || application_id != STORE_APPLICATION_ID {
         return Err(KnowledgeError::Invalid(
             "Loupist folder schema is unsupported",
         ));
     }
+    let unsupported = |_| KnowledgeError::Invalid("Loupist folder schema is unsupported");
+    let connection = match crate::store::schema_standing(&connection).map_err(unsupported)? {
+        Standing::Current => connection,
+        Standing::Earlier => return Err(KnowledgeError::EarlierVersion),
+        Standing::Newer => return Err(KnowledgeError::NewerVersion),
+        // Admission stays read-only: it validates an upgraded in-memory copy;
+        // registration then upgrades the folder itself, after a backup.
+        Standing::Upgradable => crate::store::upgraded_copy(&connection)
+            .map_err(|_| KnowledgeError::Invalid("Loupist folder could not be upgraded"))?,
+    };
     let tables = {
         let mut statement = connection.prepare(
             "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
@@ -47,10 +65,6 @@ pub(crate) fn validate_folder(directory: &Path) -> KnowledgeResult<()> {
     };
     match schema::inspect_knowledge(&connection, &tables)? {
         schema::SchemaState::Current => {}
-        // An earlier build's folder is refused with a typed state, never migrated.
-        schema::SchemaState::Unsupported(found) if found < schema::KNOWLEDGE_SCHEMA_VERSION => {
-            return Err(KnowledgeError::EarlierVersion)
-        }
         _ => {
             return Err(KnowledgeError::Invalid(
                 "Loupist folder schema is unsupported",

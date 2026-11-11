@@ -13,20 +13,23 @@ pub enum MemoryAccess {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct KnowledgeReference {
     pub kind: String,
     pub record_id: String,
     pub revision_id: String,
     pub object_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub span_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub receipt_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct MemoryRefSnapshot {
     pub read_ref: String,
     pub kind: String,
@@ -143,7 +146,8 @@ pub(crate) fn memory_refs_digest(memories: &[MemoryRefSnapshot]) -> Result<Strin
 
 /// Host-observed Lens delivery. Discovery and model-written links never create one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct LensReceipt {
     pub record_id: String,
     pub revision_id: String,

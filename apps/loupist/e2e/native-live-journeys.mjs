@@ -105,7 +105,7 @@ async function clickTemplate(name) {
   // The step transition keeps the previous step on screen briefly; wait for the card.
   let match = null;
   await browser.waitUntil(async () => {
-    for (const card of await browser.$$("button.loupist-template-card")) {
+    for (const card of await browser.$$("button[data-testid=loupist-template-card]")) {
       try {
         if ((await card.isDisplayed()) && (await card.getText()).trim().startsWith(name)) {
           match = card;
@@ -124,16 +124,16 @@ async function removeEveryLoupist() {
   for (let guard = 0; guard < 8; guard += 1) {
     if (await onboardingStep(browser)) return;
     // The selected Loupist has a visible Settings action in the sidebar.
-    const identity = await browser.$(".loupist-header-identity");
+    const identity = await browser.$("[data-testid=loupist-header-identity]");
     if (!(await identity.isExisting()) || !(await identity.isDisplayed())) return;
     const opener = await displayed("[data-header-loupist-settings]");
     await opener.click();
-    const sheet = await displayed(".loupist-settings-page");
+    const sheet = await displayed("[data-testid=loupist-settings-page]");
     await clickButton("Remove Loupist", sheet);
     const dialog = await dialogByTitle(browser, "Remove Loupist?");
     await clickButton("Remove Loupist", dialog);
     await browser.waitUntil(
-      async () => Boolean(await onboardingStep(browser)) || !(await browser.$(".loupist-settings-page").isDisplayed().catch(() => false)),
+      async () => Boolean(await onboardingStep(browser)) || !(await browser.$("[data-testid=loupist-settings-page]").isDisplayed().catch(() => false)),
       { timeout: 20_000, timeoutMsg: "Removing a Loupist did not close Loupist settings" },
     );
   }
@@ -195,7 +195,7 @@ async function choosePreset() {
     timeout: 10_000, interval: 150, timeoutMsg: "The selected Chat model did not apply",
   });
   if ((await modelMenu.getAttribute("aria-expanded")) !== "true") await openModelMenu();
-  const advanced = await displayed(".model-menu-advanced");
+  const advanced = await displayed("[data-testid=model-menu-advanced]");
   if ((await advanced.getAttribute("aria-expanded")) !== "true") {
     await advanced.click();
     await browser.waitUntil(async () => (await advanced.getAttribute("aria-expanded")) === "true", {
@@ -219,7 +219,7 @@ async function openMainTab(tabId) {
 
 async function newChat() {
   await openDestination(browser, "chat");
-  await clickControl(browser, `.navigation-new`);
+  await clickControl(browser, `[data-testid=navigation-new]`);
   await displayed('textarea[aria-label="Message Loupist"]');
   await choosePreset();
 }
@@ -309,7 +309,7 @@ async function answerText() {
 
 /** Open one workspace file from Chat materials. The last segment is refreshed until it appears. */
 async function openMaterialsFile(relativePath) {
-  await clickControl(browser, ".header-panel-toggle");
+  await clickControl(browser, "[data-testid=header-panel-toggle]");
   await (await displayed('[data-workspace-kind="materials"]')).click();
   await browser.waitUntil(async () => {
     const panel = await browser.$("#workspace-panel");
@@ -347,7 +347,7 @@ async function workspaceSourceText() {
 }
 
 async function retainedBotMemory() {
-  const home = await displayed(".loupist-chat-row[data-home] .loupist-chat-button");
+  const home = await displayed("[data-testid=loupist-chat-row][data-home] [data-testid=loupist-chat-button]");
   const id = await home.getAttribute("data-thread-id");
   const profiles = await browser.execute(async () => window.__TAURI_INTERNALS__.invoke("loupist_list"));
   const profile = profiles.find((item) => item.name === loupistName);
@@ -413,7 +413,7 @@ try {
   });
 
   if (journeyEnabled("bot-memory")) await step("Bot remembers, corrects and forgets across a reload", async () => {
-    await clickControl(browser, ".loupist-chat-row[data-home] .loupist-chat-button");
+    await clickControl(browser, "[data-testid=loupist-chat-row][data-home] [data-testid=loupist-chat-button]");
     await choosePreset();
     await sendPrompt("Remember this preference for our continuing Bot conversation: label my short recaps Cobalt Finch. Keep it with bot_memory now, then acknowledge briefly. Do not use outside sources.");
     let memory = await retainedBotMemory();
@@ -422,7 +422,7 @@ try {
     assert.ok(progress.some((row) => row.category === "memory" && row.status === "succeeded"), "No successful memory activity was visible");
     await browser.refresh();
     await waitForShell(browser, 30_000);
-    await clickControl(browser, ".loupist-chat-row[data-home] .loupist-chat-button");
+    await clickControl(browser, "[data-testid=loupist-chat-row][data-home] [data-testid=loupist-chat-button]");
     memory = await retainedBotMemory();
     assert.match(JSON.stringify(memory), /Cobalt Finch/u, "The retained preference disappeared on reload");
     await sendPrompt("Correct my recap-label preference: use Amber Heron instead of Cobalt Finch. Update the existing bot_memory entry now. Do not use outside sources.");
@@ -453,7 +453,7 @@ try {
 
   if (journeyEnabled("research-handoff")) await step("Bot hands off research and returns the completed answer", async () => {
     await openDestination(browser, "chat");
-    await clickControl(browser, ".loupist-chat-row[data-home] .loupist-chat-button");
+    await clickControl(browser, "[data-testid=loupist-chat-row][data-home] [data-testid=loupist-chat-button]");
     await choosePreset();
     await sendPrompt("Use research_open to open a separate research session titled Arithmetic handoff. Its task is to calculate 17 times 19 with calculate and report the result briefly, with no outside sources. Start it now and keep your Bot acknowledgment short.");
     const selector = '.thread-delivery[aria-label="Research: Arithmetic handoff"]';
@@ -501,7 +501,7 @@ try {
     let visibleCitations = 0;
     await browser.waitUntil(async () => {
       visibleCitations = 0;
-      for (const citation of await browser.$$("#main-panel-chat button.loupist-citation, #main-panel-chat button.number-chip")) {
+      for (const citation of await browser.$$("#main-panel-chat button.loupist-citation, #main-panel-chat button[data-testid=number-chip]")) {
         if (await citation.isDisplayed().catch(() => false)) visibleCitations += 1;
       }
       return visibleCitations > 0;
@@ -509,11 +509,11 @@ try {
     const citationDom = await browser.execute(() => {
       const panel = document.querySelector("#main-panel-chat");
       const count = (selector) => panel?.querySelectorAll(selector).length ?? 0;
-      const chip = panel?.querySelector("button.number-chip");
+      const chip = panel?.querySelector("button[data-testid=number-chip]");
       const style = chip ? getComputedStyle(chip) : null;
       return {
         citationButtons: count("button.loupist-citation"),
-        numberChips: count("button.number-chip"),
+        numberChips: count("button[data-testid=number-chip]"),
         unavailable: count(".loupist-unavailable-citation"),
         fallback: count(".message-response-fallback"),
         numberChipDecoration: style ? `${style.textDecorationLine} ${style.textDecorationStyle} ${style.textDecorationColor}` : null,
@@ -543,12 +543,12 @@ try {
     const before = await mapNameCount(browser);
     const beforeNames = before?.names ?? 0;
     const addVisible = await browser.execute(() =>
-      [...document.querySelectorAll(".map-view button")].some((button) =>
+      [...document.querySelectorAll("[data-testid=map-view] button")].some((button) =>
         button.textContent?.trim().replace(/^\+\s*/u, "") === "Add source" && button.getClientRects().length > 0,
       ),
     );
     if (!addVisible) {
-      await clickControl(browser, ".map-view [data-map-more]");
+      await clickControl(browser, "[data-testid=map-view] [data-map-more]");
       await (await displayed('[role="menuitemcheckbox"][data-map-library]')).click();
     }
     await clickButton("Add source");
@@ -632,7 +632,7 @@ try {
 
   if (journeyEnabled("5")) await step("briefing", async () => {
     await openDestination(browser, "chat");
-    await clickControl(browser, ".loupist-chat-row[data-home] .loupist-chat-button");
+    await clickControl(browser, "[data-testid=loupist-chat-row][data-home] [data-testid=loupist-chat-button]");
     await choosePreset();
     await sendPrompt("Turn on the built-in Bot briefing with schedule_briefing for weekdays at 08:00 Asia/Seoul. Use the existing Loupist Memory and followed assets; do not create a custom task.");
     // Task actions live in the Bot; Schedule is a reader for saved definitions
@@ -760,7 +760,7 @@ try {
         timeoutMsg: "Connection detail did not close",
       });
       // Settings replaces the Chat/Map/Briefings header. Back is the same control the renderer tests use.
-      if (!(await browser.$(".loupist-header-selector").isDisplayed().catch(() => false))) await clickButton("Back");
+      if (!(await browser.$("[data-testid=loupist-header-selector]").isDisplayed().catch(() => false))) await clickButton("Back");
       await newChat();
       await choosePreset();
       await sendPrompt(`Use the Microsoft Learn connection's ${allowedTool} tool to find one documentation title. Save that tool result to Memory. Name the tool you called.`);
@@ -776,7 +776,7 @@ try {
       }
       const answer = await answerText();
       const progress = await browser.execute(() =>
-        [...document.querySelectorAll(".chat-progress-action, .chat-progress-target")].map((element) => element.textContent?.trim() ?? "").join("\n"),
+        [...document.querySelectorAll("[data-testid=chat-progress-action], [data-testid=chat-progress-target]")].map((element) => element.textContent?.trim() ?? "").join("\n"),
       );
       const sawTool = `${progress}\n${answer}`.includes(allowedTool) || progress.toLowerCase().includes("microsoft");
       await openMainTab("#main-tab-map");
@@ -978,7 +978,7 @@ try {
         if (!stop) return false;
         const latest = (await browser.$$("article.message.assistant")).at(-1);
         if (!latest) return false;
-        const toggle = await latest.$("button.chat-progress-toggle");
+        const toggle = await latest.$("button[data-testid=chat-progress-toggle]");
         if (await toggle.isExisting() && (await toggle.getAttribute("aria-expanded")) !== "true" && await toggle.isDisplayed().catch(() => false)) {
           await toggle.click();
         }

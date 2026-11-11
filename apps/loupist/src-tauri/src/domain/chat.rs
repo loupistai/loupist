@@ -14,7 +14,7 @@ use super::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct MemoryPolicy {
     pub use_memory: bool,
     pub update_memory: bool,
@@ -39,6 +39,7 @@ pub enum ChatRole {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ChatMessageStatus {
     Complete,
@@ -47,6 +48,7 @@ pub enum ChatMessageStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryUpdateStatus {
     Applied,
@@ -54,6 +56,7 @@ pub enum MemoryUpdateStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase")]
 pub struct MemoryUpdateChange {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -70,15 +73,18 @@ pub struct MemoryUpdateChange {
     pub basis: String,
     pub future_use: String,
     #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub outcomes: Vec<FiledOutcome>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct FiledOutcome {
     pub op_id: String,
     pub outcome: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub key: Option<String>,
 }
 
@@ -113,7 +119,8 @@ impl Serialize for MemoryUpdateChange {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct MemoryUpdateResult {
     pub status: MemoryUpdateStatus,
     #[serde(deserialize_with = "required_option")]
@@ -129,33 +136,38 @@ pub struct MemoryUpdateResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct MapKind {
     pub name: String,
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub label_ko: Option<String>,
 }
 
 /// One applied `loupist_setup` change. A market the user did not give is `None`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(
     tag = "change",
     rename_all = "camelCase",
-    rename_all_fields = "camelCase",
-    deny_unknown_fields
+    rename_all_fields = "camelCase"
 )]
 pub enum SetupChange {
     Followed {
         symbol: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         market: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         name: Option<String>,
     },
     Unfollowed {
         symbol: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         market: Option<String>,
     },
     Focus {
@@ -285,10 +297,12 @@ impl MemoryUpdateResult {
 /// Content-free measurements captured before the completed message is sealed.
 /// These remain attached to that response after Chat reload or app restart.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct ChatPerformance {
     pub setup_ms: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub first_text_ms: Option<u64>,
     pub generation_ms: u64,
     /// Elapsed time through preparation of the canonical completion snapshot.
@@ -301,6 +315,7 @@ pub struct ChatPerformance {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ChatSessionCacheStatus {
     #[default]
@@ -323,34 +338,47 @@ pub const MAX_CHAT_EVIDENCE_TOTAL_EXCERPT_BYTES: usize =
 /// received a compacted sample, `model_delivery` records that distinct payload.
 /// Neither snapshot verifies a claim or source. Works with Memory off.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatEvidenceRef {
     pub id: String,
     pub title: String,
     pub kind: ChatEvidenceKind,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub provider: Option<String>,
     pub tool_name: String,
+    /// For a `calculate` result: its operation, the stable id it is worded by.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub calc_operation: Option<crate::calculations::Operation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub read_ref: Option<String>,
     pub retrieved_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub published_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub as_of: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub coverage: Option<String>,
     pub excerpt: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub excerpt_match: Option<ChatEvidenceMatch>,
     pub excerpt_truncated: bool,
     pub content_sha256: String,
     pub warnings: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub dataset_ref: Option<crate::datasets::DatasetRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub model_delivery: Option<ChatEvidenceDelivery>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub upstream_evidence_ids: Vec<String>,
@@ -359,7 +387,7 @@ pub struct ChatEvidenceRef {
 /// End-exclusive UTF-8 byte offsets into the retained excerpt, supplied only
 /// after the host verifies a literal passage selected from its cached source.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatEvidenceMatch {
     pub start: usize,
     pub end: usize,
@@ -372,7 +400,7 @@ impl ChatEvidenceMatch {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatEvidenceDelivery {
     pub coverage: ChatEvidenceDeliveryCoverage,
     pub excerpt: String,
@@ -381,12 +409,14 @@ pub struct ChatEvidenceDelivery {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ChatEvidenceDeliveryCoverage {
     BoundedSample,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ChatEvidenceKind {
     Original,
@@ -397,7 +427,7 @@ pub enum ChatEvidenceKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct ChatMessage {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tool_refusals: Vec<ChatToolRefusal>,
@@ -490,7 +520,7 @@ pub struct ChatMessage {
 /// only from the page and its move: names, the user's claim and the observed
 /// value, never holdings quantities.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct HomeAlert {
     pub asset_id: String,
     pub move_id: String,
@@ -504,6 +534,7 @@ pub struct HomeAlert {
     pub set_at_ms: i64,
     pub fact_date: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub source_url: Option<String>,
     pub source_title: String,
 }
@@ -512,7 +543,7 @@ pub struct HomeAlert {
 /// Events are the stored `WatchEventView`s (names and dated facts, never
 /// holdings); kept as JSON so the message stays a plain record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct HomeWatch {
     pub event_ids: Vec<String>,
     pub events: Vec<serde_json::Value>,
@@ -520,7 +551,8 @@ pub struct HomeWatch {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct HomeVocabulary {
     pub change_id: String,
     pub producer: String,
@@ -530,7 +562,8 @@ pub struct HomeVocabulary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct HomeLinkHop {
     pub name: String,
     pub relation: String,
@@ -539,7 +572,8 @@ pub struct HomeLinkHop {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct HomeLink {
     pub connection_id: String,
     pub seed_name: String,
@@ -573,7 +607,7 @@ impl From<&crate::knowledge::ConnectionView> for HomeLink {
 /// A results message: "{name} reported {period} results." with the two most
 /// material measures, or a before-capture that failed (Try again).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct HomeEarnings {
     pub asset_id: String,
     pub event_id: String,
@@ -584,26 +618,29 @@ pub struct HomeEarnings {
     /// `reported` or `failed`.
     pub outcome: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub side: Option<String>,
     /// The card's measure rows (`MeasureView`), at most two.
     pub measures: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct HomeHandoff {
     pub handoff_id: String,
     pub chat_id: String,
     pub title: String,
     pub status: crate::chat::handoff::HandoffStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub learned: Option<crate::knowledge::LearnedDigest>,
 }
 
 /// Where a host-posted Thread message came from: one finished scheduled run.
 /// The text is the run's first paragraph; the run's own Chat keeps the answer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct HomeDelivery {
     pub run_id: String,
     pub task_id: String,
@@ -615,11 +652,12 @@ pub struct HomeDelivery {
     pub status: crate::scheduled_tasks::types::RunStatus,
     pub finished_at_ms: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub learned: Option<crate::knowledge::LearnedDigest>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatToolRefusal {
     pub connection_id: String,
     pub connection_name: String,
@@ -628,6 +666,7 @@ pub struct ChatToolRefusal {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ChatToolRefusalReason {
     NeedsApproval,
@@ -637,10 +676,16 @@ pub enum ChatToolRefusalReason {
     SensitiveMemory,
     /// The user chose Not now on an approval card, or the wait ran out.
     Declined,
+    /// A reason this build does not name (another version wrote it): shown as
+    /// a refusal with no settings shortcut. Chat writes compare the stored JSON,
+    /// so this value never replaces the stored reason.
+    #[serde(other)]
+    Other,
 }
 
 /// Stable allowlist: never store provider error bodies or internal error strings.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ChatFailureKind {
     EmptyReply,
@@ -678,7 +723,8 @@ pub enum ChatFailureKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct ChatFeedback {
     pub rating: Option<ChatFeedbackRating>,
     pub correction: Option<String>,
@@ -686,6 +732,7 @@ pub struct ChatFeedback {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ChatFeedbackRating {
     Up,
@@ -744,6 +791,7 @@ pub const THESIS_COMMIT_COMPONENT: &str = "asset-commit";
 /// A thesis update the tool accepted but the reply's commit did not save,
 /// because the page changed first. The receipt says it was not saved.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct UnsavedThesis {
     pub asset_id: String,
@@ -798,7 +846,7 @@ impl ChatToolTrace {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct ChatAttachment {
     pub id: String,
     pub filename: String,
@@ -1344,7 +1392,6 @@ pub const MAX_SET_ASIDE_MEMORY: usize = 64;
 /// differs from the user message after it. Versions stay inside the chat, so
 /// their attachments and artifacts keep resolving under the same chat id.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ChatVersion {
     pub id: String,
     pub after_message_id: Option<String>,
@@ -1355,14 +1402,14 @@ pub struct ChatVersion {
 pub const MAX_CHAT_VERSIONS: usize = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct ChatSession {
     pub id: String,
     pub loupist_id: String,
     /// Stable identity of the derived Pi execution session for this Chat.
     /// SQLite remains canonical; Pi's JSONL is a digest-bound derived cache.
     pub pi_session_id: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cache_or_cold")]
     pub pi_session_cache: Option<PiSessionCache>,
     pub title: String,
     pub memory_policy: MemoryPolicy,
@@ -1382,6 +1429,16 @@ pub struct ChatSession {
     pub messages: Vec<ChatMessage>,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
+}
+
+/// The Pi cache binds resumed tool results to the authority they ran under,
+/// so it is decoded exactly (`deny_unknown_fields`). A cache this build cannot
+/// read exactly is dropped and the Chat rebuilds cold; it never hides the Chat.
+fn cache_or_cold<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<PiSessionCache>, D::Error> {
+    Ok(Option::<serde_json::Value>::deserialize(deserializer)?
+        .and_then(|value| serde_json::from_value(value).ok()))
 }
 
 impl ChatSession {
@@ -1480,6 +1537,7 @@ mod tests {
                 url: None,
                 provider: None,
                 tool_name: "web_fetch".into(),
+                calc_operation: None,
                 read_ref: None,
                 retrieved_at: "2026-10-11T00:00:00Z".into(),
                 published_at: None,

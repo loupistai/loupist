@@ -8,13 +8,13 @@ use crate::{
     app::{AppState, CommandError},
     commands::map_store,
     scheduled_tasks::types::Schedule,
-    store::LoupistStore,
 };
 use pulldown_cmark::{Event, Parser, Tag, TagEnd};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct BriefingContext {
     pub symbols: Vec<String>,
     pub principles_checked: usize,
@@ -45,7 +45,8 @@ impl BriefingContext {
 
 /// One results event in a briefing, computed by Rust at run start.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct BriefingEarnings {
     pub asset_id: String,
     pub event_id: String,
@@ -178,7 +179,8 @@ pub(crate) fn briefing_finance(
 
 /// One followed asset in a briefing, computed by Rust at run start.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct BriefingAsset {
     pub asset_id: String,
     pub symbol: String,
@@ -192,7 +194,8 @@ pub struct BriefingAsset {
 
 /// What changed in World since the previous briefing, counted by the host.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct BriefingChanged {
     pub names: usize,
     pub relations: usize,
@@ -202,7 +205,8 @@ pub struct BriefingChanged {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct BriefingChange {
     /// `claim_added`, `claim_disputed` or `source_retained`.
     pub kind: String,
@@ -212,7 +216,8 @@ pub struct BriefingChange {
 
 /// A Journal check that is due, pointed to rather than quoted in full.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct BriefingCheck {
     pub journal_id: String,
     pub title: String,

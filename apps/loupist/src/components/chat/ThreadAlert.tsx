@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { ChatMessage, LoupistBridge } from "../../types";
 import type { AssetPageTarget } from "../../contracts/assets";
 import { Button } from "../ui/button";
+import { commandErrorCode } from "@/lib/errors";
 import { useGo } from "../navigation/Open";
 import { hostSourceDestination } from "../../chat/navigation";
 import { citationNumbers, shortDay, SourceChips, verdictLabel } from "../assets/assetText";
@@ -39,7 +40,7 @@ export function ThreadAlert({ message, bridge, loupistId, loupistName }: {
       const restored = await bridge.assetVerdictUndo({ loupistId, assetId: alert.asset_id, moveId: alert.move_id });
       setUndone(restored.read ? verdictLabel(restored.read.verdict) : "");
     } catch (cause) {
-      const stale = (cause as { code?: unknown } | null)?.code === "conflict";
+      const stale = commandErrorCode(cause) === "conflict";
       setError(i18n.t(stale ? "assets:error.undoStale" : "assets:error.undo"));
       if (stale) setUndone("");
     } finally {

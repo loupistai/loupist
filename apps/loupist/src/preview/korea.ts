@@ -201,7 +201,7 @@ export function previewSensitivityAnswer(variant: SensitivityVariant = "referenc
   }] : [];
   const at = Date.parse("2026-04-17T06:00:00Z");
   const step = (id: string, category: "finance" | "compute", operation: "read" | "calculate", action: string, resultIds: string[], target?: string) =>
-    ({ id, kind: "tool" as const, category, operation, action, status: "succeeded" as const, resultIds, target, startedAtMs: at, finishedAtMs: at + 900 });
+    ({ id, kind: "tool" as const, category, operation, action, status: "succeeded" as const, resultIds, target: target ?? null, href: null, startedAtMs: at, finishedAtMs: at + 900 });
   return {
     id: "solsup-sensitivity-answer", role: "assistant", status: "complete", created_at: "2026-04-17T06:01:00Z", content,
     evidence_refs: reference ? [statements, close, cagr, grid] : [statements, close, grid], number_checks: checks, sensitivity_cards: [card],

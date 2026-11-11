@@ -11,8 +11,8 @@ const view = (msg: ChatMessage, extra: Partial<Omit<TurnInput, "message">> = {})
   deriveTurnView({ message: msg, now, lastActivityAt: now, stopping: false, retry: { attempt: 1, offered: false }, ...extra });
 const sourceCount = (turn: TurnView) => turn.footer.kind === "settled" ? turn.footer.sources.length : null;
 
-const search: ChatProgressItem = { id: "search", kind: "tool", toolName: "web_search", category: "web", operation: "search", action: "Searched the web", status: "succeeded", startedAtMs: start + 1_000, finishedAtMs: start + 2_000 };
-const reading: ChatProgressItem = { id: "read", kind: "tool", toolName: "web_fetch", category: "web", operation: "read", action: "Read a web source", running: "Reading hanul.example", status: "running", startedAtMs: start + 3_000, resultIds: [`ev_${"a".repeat(32)}`] };
+const search: ChatProgressItem = { id: "search", kind: "tool", toolName: "web_search", category: "web", operation: "search", action: "Searched the web", status: "succeeded", startedAtMs: start + 1_000, finishedAtMs: start + 2_000, target: null, href: null };
+const reading: ChatProgressItem = { id: "read", kind: "tool", toolName: "web_fetch", category: "web", operation: "read", action: "Read a web source", running: "Reading hanul.example", status: "running", startedAtMs: start + 3_000, resultIds: [`ev_${"a".repeat(32)}`], target: null, href: null, finishedAtMs: null };
 const read: ChatProgressItem = { ...reading, status: "succeeded", finishedAtMs: start + 4_000 };
 const draft: ChatProgressItem = { id: "commentary-9", kind: "commentary", text: "Margin fell while" };
 
@@ -22,27 +22,27 @@ const prose = (turn: TurnView) => turn.segments.flatMap((segment) => segment.kin
 describe("state × slot", () => {
   it.each<[string, ChatMessage, Partial<Omit<TurnInput, "message">>, { state: TurnView["state"]["kind"]; footer: string; rows: string[] }]>([
     ["starting", message(), {}, { state: "starting", footer: "status:Waiting for the model", rows: [] }],
-    ["working on a step", message({ phase: "tool", progress: { startedAtMs: start, items: [search, reading] } }), {},
+    ["working on a step", message({ phase: "tool", progress: { startedAtMs: start, items: [search, reading], finishedAtMs: null } }), {},
       { state: "working", footer: "status:Working", rows: ["live:Reading hanul.example"] }],
-    ["working, stalled", message({ phase: "tool", progress: { startedAtMs: start, items: [search, reading] } }), { lastActivityAt: now - 16_000 },
+    ["working, stalled", message({ phase: "tool", progress: { startedAtMs: start, items: [search, reading], finishedAtMs: null } }), { lastActivityAt: now - 16_000 },
       { state: "working", footer: "status:Still working", rows: ["live:Reading hanul.example:stalled"] }],
-    ["working between steps", message({ phase: "thinking", progress: { startedAtMs: start, items: [search, read] } }), {},
+    ["working between steps", message({ phase: "thinking", progress: { startedAtMs: start, items: [search, read], finishedAtMs: null } }), {},
       { state: "working", footer: "status:Thinking it through", rows: ["summary:Read 1 source · hanul.example"] }],
     ["awaiting approval", message({ phase: "tool", progress: { startedAtMs: start, items: [search, reading], approvals: [
       { requestId: "req", itemId: "read", connectionId: "web", connectionName: "Web", toolName: "web_fetch", state: "waiting", requestedAtMs: now - 2_000 },
-    ] } }), {}, { state: "awaiting_approval", footer: "status:Waiting for you", rows: ["live:Reading hanul.example"] }],
+    ], finishedAtMs: null } }), {}, { state: "awaiting_approval", footer: "status:Waiting for you", rows: ["live:Reading hanul.example"] }],
     ["awaiting a question's answer", message({ phase: "tool", progress: { startedAtMs: start, items: [search, reading], questions: [
       { requestId: "ask", itemId: "read", question: "Which period?", options: [{ label: "Quarterly" }, { label: "Annual" }], state: "waiting", requestedAtMs: now - 2_000 },
-    ] } }), {}, { state: "awaiting_approval", footer: "status:Waiting for you", rows: ["live:Reading hanul.example"] }],
-    ["writing", message({ phase: "writing", progress: { startedAtMs: start, items: [search, read, draft] } }), {},
+    ], finishedAtMs: null } }), {}, { state: "awaiting_approval", footer: "status:Waiting for you", rows: ["live:Reading hanul.example"] }],
+    ["writing", message({ phase: "writing", progress: { startedAtMs: start, items: [search, read, draft], finishedAtMs: null } }), {},
       { state: "writing", footer: "status:Writing", rows: ["summary:Read 1 source · hanul.example"] }],
-    ["stopping", message({ phase: "writing", progress: { startedAtMs: start, items: [search, read, draft] } }), { stopping: true },
+    ["stopping", message({ phase: "writing", progress: { startedAtMs: start, items: [search, read, draft], finishedAtMs: null } }), { stopping: true },
       { state: "stopping", footer: "status:Stopping", rows: ["summary:Read 1 source · hanul.example"] }],
     ["complete", message({ status: "complete", content: "Done.", progress: { startedAtMs: start, finishedAtMs: start + 64_000, items: [search, read] } }), {},
       { state: "complete", footer: "settled", rows: ["summary:Read 1 source · hanul.example:1:04"] }],
     ["stopped", message({ status: "aborted", content: "Margin fell while", progress: { startedAtMs: start, finishedAtMs: start + 5_000, items: [search, { ...reading, status: "stopped" }] } }), {},
       { state: "stopped", footer: "settled:stopped", rows: ["summary:Read 1 source · hanul.example · 1 stopped:0:05"] }],
-    ["failed", message({ status: "error", content: "Response could not be completed.", failure_kind: "rate_limited" }), { retry: { attempt: 1, offered: true } },
+    ["failed", message({ status: "error", content: "Response could not be completed.", placeholder: true, failure_kind: "rate_limited" }), { retry: { attempt: 1, offered: true } },
       { state: "failed", footer: "settled:failed", rows: [] }],
   ])("%s", (_name, msg, extra, expected) => {
     const input = { ...msg, evidence_refs: msg.progress?.items.some((item) => item.id === "read") ? [evidenceFixture({ url: "https://hanul.example/q3" })] : [] };
@@ -74,10 +74,10 @@ describe("state × slot", () => {
   it("colors a row by what went wrong: a failed step, or a run that failed after clean steps", () => {
     const clean = { startedAtMs: start, finishedAtMs: start + 100, items: [search] };
     expect(view(message({ status: "complete", content: "Done.", progress: clean })).segments[0]).toMatchObject({ tone: "settled" });
-    expect(view(message({ status: "error", content: "Response could not be completed.", failure_kind: "provider_error", progress: clean })).segments[0]).toMatchObject({ tone: "problem" });
+    expect(view(message({ status: "error", content: "Response could not be completed.", placeholder: true, failure_kind: "provider_error", progress: clean })).segments[0]).toMatchObject({ tone: "problem" });
     expect(view(message({ status: "complete", content: "Done.", progress: { ...clean, items: [{ ...search, status: "failed" }] } })).segments[0]).toMatchObject({ tone: "problem", autoExpand: true });
-    expect(view(message({ phase: "tool", progress: { startedAtMs: start, items: [search, reading] } })).segments[0]).toMatchObject({ tone: "live" });
-    expect(view(message({ status: "aborted", content: "Margin fell while", progress: { startedAtMs: start, items: [search, { ...reading, status: "stopped" }] } })).segments[0]).toMatchObject({ tone: "settled", autoExpand: true });
+    expect(view(message({ phase: "tool", progress: { startedAtMs: start, items: [search, reading], finishedAtMs: null } })).segments[0]).toMatchObject({ tone: "live" });
+    expect(view(message({ status: "aborted", content: "Margin fell while", progress: { startedAtMs: start, items: [search, { ...reading, status: "stopped" }], finishedAtMs: null } })).segments[0]).toMatchObject({ tone: "settled", autoExpand: true });
   });
 
   it("keeps the activity row's citation count out of its own sources until the step linked them", () => {
@@ -89,20 +89,20 @@ describe("state × slot", () => {
 
   it("words what a stopped reply kept and shows a draft as narration", () => {
     const steps = [search, read];
-    expect(view(message({ status: "aborted", content: "Margin fell while", progress: { startedAtMs: start, items: steps } })).state).toEqual({ kind: "stopped", kept: "steps_and_text" });
-    expect(view(message({ status: "aborted", content: "Response stopped.", progress: { startedAtMs: start, items: [...steps, draft] } })).state).toEqual({ kind: "stopped", kept: "steps_and_draft" });
-    expect(view(message({ status: "aborted", content: "Response stopped.", progress: { startedAtMs: start, items: steps } })).state).toEqual({ kind: "stopped", kept: "steps" });
+    expect(view(message({ status: "aborted", content: "Margin fell while", progress: { startedAtMs: start, items: steps, finishedAtMs: null } })).state).toEqual({ kind: "stopped", kept: "steps_and_text" });
+    expect(view(message({ status: "aborted", content: "Response stopped.", progress: { startedAtMs: start, items: [...steps, draft], finishedAtMs: null } })).state).toEqual({ kind: "stopped", kept: "steps_and_draft" });
+    expect(view(message({ status: "aborted", content: "Response stopped.", progress: { startedAtMs: start, items: steps, finishedAtMs: null } })).state).toEqual({ kind: "stopped", kept: "steps" });
     expect(view(message({ status: "aborted", content: "First.\n\nResponse stopped." })).state).toEqual({ kind: "stopped", kept: "text" });
-    const stoppedDraft = view(message({ status: "aborted", content: "Response stopped.", progress: { startedAtMs: start, items: [draft] } }));
+    const stoppedDraft = view(message({ status: "aborted", content: "Response stopped.", progress: { startedAtMs: start, items: [draft], finishedAtMs: null } }));
     expect(stoppedDraft.state).toEqual({ kind: "stopped", kept: "draft" });
     expect(prose(stoppedDraft)).toEqual([{ kind: "prose", key: "commentary-9", text: "Margin fell while", tone: "narration", streaming: false }]);
     expect(stoppedDraft.footer).toMatchObject({ copyText: null, feedback: false, runState: { kind: "stopped", label: "Stopped · kept the draft" } });
-    expect(view(message({ status: "aborted", content: "Margin fell while", progress: { startedAtMs: start, items: steps } })).footer).toMatchObject({ runState: { label: "Stopped · kept 2 steps and the text so far" } });
+    expect(view(message({ status: "aborted", content: "Margin fell while", progress: { startedAtMs: start, items: steps, finishedAtMs: null } })).footer).toMatchObject({ runState: { label: "Stopped · kept 2 steps and the text so far" } });
     expect(view(message({ status: "aborted", content: "" })).state).toEqual({ kind: "stopped", kept: "nothing" });
   });
 
   it("hides the failure placeholder and keeps a partial answer copyable", () => {
-    expect(prose(view(message({ status: "error", content: "Response could not be completed.", failure_kind: "other" })))).toEqual([]);
+    expect(prose(view(message({ status: "error", content: "Response could not be completed.", placeholder: true, failure_kind: "other" })))).toEqual([]);
     const partial = view(message({ status: "error", content: "The observed revenue increased.", failure_kind: "other" }));
     expect(prose(partial)).toMatchObject([{ text: "The observed revenue increased.", tone: "answer", streaming: false }]);
     expect(partial.footer).toMatchObject({ copyText: "The observed revenue increased.", feedback: false, runState: { kind: "failed" } });
@@ -116,7 +116,7 @@ describe("segments", () => {
 
   it("keys the live answer by its draft and keeps that key once it settles, in the store's copy too", () => {
     const preamble: ChatProgressItem = { id: "commentary-0", kind: "commentary", text: "I’ll start with the notes." };
-    const live = view(message({ phase: "writing", draft: writing("commentary-9"), progress: { startedAtMs: start, items: [preamble, search, read, draft] } }));
+    const live = view(message({ phase: "writing", draft: writing("commentary-9"), progress: { startedAtMs: start, items: [preamble, search, read, draft], finishedAtMs: null } }));
     expect(keys(live)).toEqual(["prose:commentary-0", "activity:activity", "prose:commentary-9"]);
     expect(prose(live)).toMatchObject([{ tone: "narration", streaming: false }, { tone: "answer", streaming: true, text: "Margin fell while" }]);
     const settled = message({ status: "complete", content: "Margin fell while revenue grew.", answer_key: "commentary-9", progress: { startedAtMs: start, finishedAtMs: start + 9_000, items: [preamble, search, read] } });
@@ -128,22 +128,22 @@ describe("segments", () => {
 
   it("joins a second answer turn to the settled text under the answer's key", () => {
     const second: ChatProgressItem = { id: "commentary-4", kind: "commentary", text: "Then the inventory." };
-    const turn = view(message({ phase: "writing", content: "First answer.", answer_key: "commentary-1", draft: writing("commentary-4", "First answer.".length), progress: { startedAtMs: start, items: [search, second] } }));
+    const turn = view(message({ phase: "writing", content: "First answer.", answer_key: "commentary-1", draft: writing("commentary-4", "First answer.".length), progress: { startedAtMs: start, items: [search, second], finishedAtMs: null } }));
     expect(prose(turn)).toEqual([{ kind: "prose", key: "commentary-1", text: "First answer.\n\nThen the inventory.", tone: "answer", streaming: true }]);
   });
 
   it("draws a settling draft until its text has grown the answer, then the text alone under the same key", () => {
-    const before = view(message({ phase: "writing", answer_key: "commentary-9", draft: settling("commentary-9"), progress: { startedAtMs: start, items: [search, draft] } }));
+    const before = view(message({ phase: "writing", answer_key: "commentary-9", draft: settling("commentary-9"), progress: { startedAtMs: start, items: [search, draft], finishedAtMs: null } }));
     expect(prose(before)).toEqual([{ kind: "prose", key: "commentary-9", text: "Margin fell while", tone: "answer", streaming: true }]);
-    const after = view(message({ phase: "writing", content: "Margin fell while revenue grew.", answer_key: "commentary-9", draft: settling("commentary-9"), progress: { startedAtMs: start, items: [search, draft] } }));
+    const after = view(message({ phase: "writing", content: "Margin fell while revenue grew.", answer_key: "commentary-9", draft: settling("commentary-9"), progress: { startedAtMs: start, items: [search, draft], finishedAtMs: null } }));
     expect(prose(after)).toEqual([{ kind: "prose", key: "commentary-9", text: "Margin fell while revenue grew.", tone: "answer", streaming: true, checks: undefined }]);
   });
 
   it("keeps a draft that closed unsettled as narration: after a tool call, and under a final text that came another way", () => {
     const preamble: ChatProgressItem = { id: "commentary-1", kind: "commentary", text: "I’ll read the report first." };
-    const closed = view(message({ phase: "tool", draft: writing("commentary-1"), progress: { startedAtMs: start, items: [preamble, reading] } }));
+    const closed = view(message({ phase: "tool", draft: writing("commentary-1"), progress: { startedAtMs: start, items: [preamble, reading], finishedAtMs: null } }));
     expect(prose(closed)).toEqual([{ kind: "prose", key: "commentary-1", text: "I’ll read the report first.", tone: "narration", streaming: false }]);
-    const answered = view(message({ phase: "writing", content: "Revenue rose 8%.", draft: writing("commentary-7"), progress: { startedAtMs: start, items: [preamble, read] } }));
+    const answered = view(message({ phase: "writing", content: "Revenue rose 8%.", draft: writing("commentary-7"), progress: { startedAtMs: start, items: [preamble, read], finishedAtMs: null } }));
     expect(prose(answered).map((segment) => segment.tone)).toEqual(["narration", "answer"]);
     const composed = view(message({ status: "complete", content: "Authoritative final answer.", draft: writing("commentary-1"), progress: { startedAtMs: start, finishedAtMs: start + 100, items: [preamble, search] } }));
     expect(prose(composed)).toMatchObject([{ key: "commentary-1", tone: "narration" }, { key: "answer", tone: "answer", text: "Authoritative final answer." }]);
@@ -151,7 +151,7 @@ describe("segments", () => {
 
   it("keeps older narration above the answer after the draft settled and left", () => {
     const narration: ChatProgressItem = { id: "commentary-2", kind: "commentary", text: "Checking the filing." };
-    const turn = view(message({ phase: "writing", content: "Revenue rose 8%.", answer_key: "commentary-3", draft: settling("commentary-3"), progress: { startedAtMs: start, items: [search, narration] } }));
+    const turn = view(message({ phase: "writing", content: "Revenue rose 8%.", answer_key: "commentary-3", draft: settling("commentary-3"), progress: { startedAtMs: start, items: [search, narration], finishedAtMs: null } }));
     expect(prose(turn)).toMatchObject([{ key: "commentary-2", tone: "narration", text: "Checking the filing." }, { key: "commentary-3", tone: "answer", text: "Revenue rose 8%." }]);
   });
 
@@ -159,7 +159,7 @@ describe("segments", () => {
     const narration: ChatProgressItem = { id: "commentary-2", kind: "commentary", text: "Checking the filing." };
     const live: ChatProgressItem = { id: "commentary-5", kind: "commentary", text: "Revenue rose" };
     const plan = { items: [{ id: "read", label: "Read the report", status: "active" as const, activatedAtMs: start + 1 }] };
-    const running = view(message({ phase: "writing", draft: writing("commentary-5"), progress: { startedAtMs: start, plan, items: [narration, live] } }));
+    const running = view(message({ phase: "writing", draft: writing("commentary-5"), progress: { startedAtMs: start, plan, items: [narration, live], finishedAtMs: null } }));
     expect(keys(running)).toEqual(["prose:commentary-2", "activity:activity", "prose:commentary-5"]);
     const settled = view(message({ status: "complete", content: "Revenue rose 8%.", answer_key: "commentary-5", progress: { startedAtMs: start, finishedAtMs: start + 100, plan: { items: [{ ...plan.items[0]!, status: "done" }] }, items: [narration] } }));
     expect(keys(settled)).toEqual(keys(running));
@@ -174,8 +174,8 @@ describe("segments", () => {
     const file = { kind: "tool" as const, toolName: "read", category: "files" as const, operation: "read" as const, action: "Read file", status: "succeeded" as const };
     const note = { kind: "commentary" as const, id: "note", text: "Next source." };
     const items: ChatProgressItem[] = [
-      { ...file, id: "a" }, { ...file, id: "b" }, { ...file, id: "c", status: "failed" },
-      { ...file, id: "d" }, note, { ...file, id: "e" }, { ...file, id: "f" },
+      { ...file, id: "a", target: null, href: null, startedAtMs: 0, finishedAtMs: null }, { ...file, id: "b", target: null, href: null, startedAtMs: 0, finishedAtMs: null }, { ...file, id: "c", status: "failed", target: null, href: null, startedAtMs: 0, finishedAtMs: null },
+      { ...file, id: "d", target: null, href: null, startedAtMs: 0, finishedAtMs: null }, note, { ...file, id: "e", target: null, href: null, startedAtMs: 0, finishedAtMs: null }, { ...file, id: "f", target: null, href: null, startedAtMs: 0, finishedAtMs: null },
     ];
     const approval: ChatApproval = { requestId: "ask-f", itemId: "f", connectionId: "custom", connectionName: "Reports", toolName: "read", state: "allowed_once", requestedAtMs: 1 };
     const turn = view(message({ status: "complete", content: "Done.", progress: { startedAtMs: start, finishedAtMs: start + 100, items, approvals: [approval] } }));
@@ -188,7 +188,7 @@ describe("segments", () => {
   });
 
   it("places a question under the step that asked and keeps it out of other rows", () => {
-    const ask: ChatProgressItem = { id: "ask-step", kind: "tool", toolName: "ask_user", category: "capability", operation: "generic", action: "Asked you a question", status: "succeeded" };
+    const ask: ChatProgressItem = { id: "ask-step", kind: "tool", toolName: "ask_user", category: "capability", operation: "generic", action: "Asked you a question", status: "succeeded", target: null, href: null, startedAtMs: 0, finishedAtMs: null };
     const note = { kind: "commentary" as const, id: "note", text: "Next." };
     const questionCard = { requestId: "q", itemId: "ask-step", question: "Which period?", options: [{ label: "Quarterly" }, { label: "Annual" }], state: "answered" as const, answer: { choice: 1 }, requestedAtMs: 1 };
     const turn = view(message({ status: "complete", content: "Done.", progress: { startedAtMs: start, finishedAtMs: start + 100, items: [search, note, ask], questions: [questionCard] } }));
@@ -203,20 +203,20 @@ describe("segments", () => {
     const hit = evidenceFixture({ id: "hit", kind: "discovery" });
     const output = evidenceFixture({ id: "result", kind: "derived", tool_name: "calculate" });
     const unrelated = evidenceFixture({ id: "outside", title: "Unrelated filing" });
-    const step: ChatProgressItem = { id: "fetch", kind: "tool", action: "Read report", operation: "read", category: "web", status: "succeeded", resultIds: ["hit", "result", "source", "second-receipt"] };
+    const step: ChatProgressItem = { id: "fetch", kind: "tool", action: "Read report", operation: "read", category: "web", status: "succeeded", resultIds: ["hit", "result", "source", "second-receipt"], target: null, href: null, startedAtMs: 0, finishedAtMs: null };
     const turn = view(message({ status: "complete", content: "Done.", evidence_refs: [unrelated, hit, original, sameSource, output], progress: { startedAtMs: start, finishedAtMs: start + 100, items: [step] } }));
     expect(turn.segments[0]).toMatchObject({ kind: "activity", sources: [original], evidence: [hit, output] });
     expect(sourceCount(turn)).toBe(2);
   });
 
   it("does not open the details for a step paused by the untrusted-text rule", () => {
-    const paused: ChatProgressItem = { id: "instructions", kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", target: "AGENTS.md", status: "failed", refusal: "untrusted_text_paused" };
+    const paused: ChatProgressItem = { id: "instructions", kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", target: "AGENTS.md", status: "failed", refusal: "untrusted_text_paused", href: null, startedAtMs: 0, finishedAtMs: null };
     const turn = view(message({ status: "complete", content: "Done.", progress: { startedAtMs: start, finishedAtMs: start + 100, items: [search, paused] } }));
     expect(turn.segments[0]).toMatchObject({ autoExpand: false, row: { issues: "1 paused" } });
   });
 
   it("announces the footer while live and the summary once settled", () => {
-    expect(view(message({ phase: "tool", progress: { startedAtMs: start, items: [reading] } })).announce).toBe("Working · Reading hanul.example");
+    expect(view(message({ phase: "tool", progress: { startedAtMs: start, items: [reading], finishedAtMs: null } })).announce).toBe("Working · Reading hanul.example");
     expect(view(message({ status: "complete", content: "Done.", progress: { startedAtMs: start, finishedAtMs: start + 100, items: [search] } })).announce).toBe("Source review");
   });
 });

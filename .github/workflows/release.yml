@@ -53,6 +53,7 @@ jobs:
           APP_VERSION="$(node -p "require('./apps/loupist/package.json').version")"
           test "$GITHUB_REPOSITORY" = "loupistai/loupist"
           python3 apps/loupist/scripts/set-version.py --check --version "$APP_VERSION"
+          node apps/loupist/scripts/check-market-calendar.mjs
           test "$GITHUB_REF_NAME" = "v$APP_VERSION"
           [[ "$GITHUB_RUN_NUMBER" =~ ^[1-9][0-9]*$ ]]
           if [[ "$APP_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-rc\.([1-9][0-9]*)$ ]]; then

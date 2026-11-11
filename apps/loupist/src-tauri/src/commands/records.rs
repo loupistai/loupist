@@ -10,7 +10,6 @@ use crate::{
     runs::coordinator::{RunKind, RunTarget},
     runs::maintenance::MaintenanceActivityKind,
     store::deletion,
-    store::LoupistStore,
 };
 
 use super::{

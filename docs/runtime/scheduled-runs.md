@@ -74,8 +74,9 @@ within 90 seconds, and abandoned when the scheduler stops. Assets not reached st
 unchecked for that run. Wallet balances are then read for the held flags, within 30
 seconds.
 
-Unattended runs, both briefing and custom, may call only the fixed allowlist in
-`briefings/policy.rs`: read-only data tools, `calculate`, `run_python`, and selected Memory reads and saves
+Unattended runs, both briefing and custom, may call only the fixed allowlist
+(`briefings/policy.rs`, reading each method's `unattended` column in
+`broker/tool_class.rs`): read-only data tools, `calculate`, `run_python`, and selected Memory reads and saves
 (including `asset_page_read`, `thesis_update` and `earnings_snapshot_save`).
 Journal saves, principle saves, publishing charts, tables or documents through
 the publish tools, native file tools and schedule management are refused

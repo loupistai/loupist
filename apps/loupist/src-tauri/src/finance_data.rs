@@ -7,12 +7,15 @@ pub(crate) mod onchain;
 mod percent_fields;
 mod provider_common;
 mod provider_korea;
+mod vendor;
 mod world_bank;
 
+pub(crate) use defillama::DEFILLAMA_SOURCE_ID;
 pub(crate) use kis::KisAccountProfile;
 use kis::*;
 pub(crate) use percent_fields::is_percent_field;
 use provider_common::*;
+pub(crate) use vendor::{native_vendor, serving_vendor, VendorCredential};
 
 /// The `dart_major_report` kind a 주요사항보고서 title names, if it is one the tool reads.
 pub(crate) fn dart_decision_kind(title: &str) -> Option<&'static str> {
@@ -36,11 +39,11 @@ pub(crate) use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::sync::Mutex;
 
-const WORLD_BANK_SOURCE_ID: &str = "world-bank.indicators";
+pub(crate) const WORLD_BANK_SOURCE_ID: &str = "world-bank.indicators";
 const WORLD_BANK_API_ROOT: &str = "https://api.worldbank.org/v2";
-pub(super) const OPENDART_SOURCE_ID: &str = "opendart.disclosures";
+pub(crate) const OPENDART_SOURCE_ID: &str = "opendart.disclosures";
 pub(super) const OPENDART_API_ROOT: &str = "https://opendart.fss.or.kr";
-const KRX_SOURCE_ID: &str = "krx.market-data";
+pub(crate) const KRX_SOURCE_ID: &str = "krx.market-data";
 const KRX_API_ROOT: &str = "https://data-dbg.krx.co.kr";
 pub(crate) const KIS_SOURCE_ID: &str = "koreainvestment.market-data";
 const KIS_REAL_API_ROOT: &str = "https://openapi.koreainvestment.com:9443";
@@ -108,10 +111,13 @@ pub enum FinanceDataError {
     Offline(&'static str),
     #[error("finance data provider credential was rejected: {0}")]
     CredentialRejected(&'static str),
+    /// The provider approves services separately and this key lacks some.
+    /// `next` is the provider's own instruction for getting them approved.
     #[error("{provider} needs approval for {}", .services.join(", "))]
     ServiceApprovalRequired {
         provider: &'static str,
         services: Vec<&'static str>,
+        next: &'static str,
     },
     #[error("KIS credential was rejected: {0}")]
     KisCredentialRejected(SafeProviderDiagnostic),
@@ -233,8 +239,8 @@ impl FinanceDataService {
         credentials: &BTreeMap<String, String>,
         provider_context: Option<&str>,
     ) -> Result<Option<crate::finance_credentials::KrxCoverage>, FinanceDataError> {
-        match entry_id {
-            OPENDART_SOURCE_ID => {
+        match native_vendor(entry_id).map(|vendor| vendor.credential) {
+            Some(VendorCredential::OpenDartKey) => {
                 let secret = single_api_key(credentials)?;
                 validate_api_key(secret, OPENDART_SOURCE_ID)?;
                 let today = Utc::now().date_naive().format("%Y%m%d").to_string();
@@ -256,12 +262,12 @@ impl FinanceDataService {
                     .await?;
                 validate_dart_status_allow_no_data(&raw.bytes)?;
             }
-            KRX_SOURCE_ID => {
+            Some(VendorCredential::KrxKey) => {
                 let secret = single_api_key(credentials)?;
                 validate_api_key(secret, KRX_SOURCE_ID)?;
                 return self.verify_krx_coverage(secret).await.map(Some);
             }
-            KIS_SOURCE_ID => {
+            Some(VendorCredential::KisAppKey) => {
                 let (app_key, app_secret) = kis_credentials(credentials)?;
                 let environment = KisEnvironment::parse(provider_context.ok_or(
                     FinanceDataError::InvalidQuery("KIS environment is required"),
@@ -277,7 +283,7 @@ impl FinanceDataService {
                 self.remember_kis_access_token(environment, app_key, app_secret, token)
                     .await;
             }
-            _ => {
+            Some(VendorCredential::Keyless) | None => {
                 return Err(FinanceDataError::InvalidQuery(
                     "credential provider is not supported",
                 ))

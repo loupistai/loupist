@@ -5,6 +5,8 @@
 //! nyse.com/markets/hours-calendars, Nasdaq nasdaqtrader.com holiday calendar,
 //! KRX global.krx.co.kr market holidays; URLs and notes live beside the dates).
 //! A year an exchange has not published is a regular year: every weekday trades.
+//! `scripts/check-market-calendar.mjs` (web checks and the release workflow)
+//! fails when the current year is missing, so that default never ships silently.
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 

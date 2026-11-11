@@ -77,7 +77,7 @@ export function LoupistTemplateFields({ draft, onChange, busy = false, idPrefix 
   };
   return <div className="loupist-template-fields">
     <div className="loupist-template-grid" role="group" aria-label={t("wizard.templatesLabel")}>
-      {loupistTemplates.map(({ id }) => <button type="button" key={id} className="loupist-template-card"
+      {loupistTemplates.map(({ id }) => <button type="button" key={id} className="loupist-template-card" data-testid="loupist-template-card"
         aria-pressed={draft.template === id} disabled={busy} onClick={() => onChange(templateDraft(id, draft.tone))}>
         <strong>{t(`wizard.templates.${id}.title`)}</strong><span title={t(`wizard.templates.${id}.focus`)}>{t(`wizard.templates.${id}.focus`)}</span>
       </button>)}

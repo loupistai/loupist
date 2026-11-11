@@ -36,7 +36,7 @@ CREATE TABLE knowledge_watch_assets (
 CREATE TABLE knowledge_watch_settings (
     loupist_id TEXT NOT NULL,
     asset_id TEXT NOT NULL,
-    kind TEXT NOT NULL CHECK (kind IN ('filings','results','insiders','holders','flows','dividends','cryptoMove','drawdown','depeg','tvl','futuresMove','positioning','oilInventory')),
+    kind TEXT NOT NULL,
     enabled INTEGER NOT NULL CHECK (enabled IN (0,1)),
     updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= 0),
     PRIMARY KEY (loupist_id, asset_id, kind)
@@ -51,9 +51,9 @@ CREATE TABLE knowledge_watch_state (
 CREATE TABLE knowledge_watch_routes (
     loupist_id TEXT NOT NULL,
     asset_id TEXT NOT NULL,
-    route TEXT NOT NULL CHECK (route IN ('filings','insiders','calendar','dividends','flows','price','tvl','positioning','inventory')),
+    route TEXT NOT NULL,
     checked_at_ms INTEGER NOT NULL CHECK (checked_at_ms >= 0),
-    status TEXT NOT NULL CHECK (status IN ('ok','failed','needs_connection')),
+    status TEXT NOT NULL,
     connection TEXT NOT NULL,
     baseline_done INTEGER NOT NULL CHECK (baseline_done IN (0,1)),
     PRIMARY KEY (loupist_id, asset_id, route)
@@ -62,14 +62,14 @@ CREATE TABLE knowledge_watch_events (
     event_id TEXT PRIMARY KEY NOT NULL,
     loupist_id TEXT NOT NULL,
     asset_id TEXT NOT NULL,
-    kind TEXT NOT NULL CHECK (kind IN ('filings','results','insiders','holders','flows','dividends','cryptoMove','drawdown','depeg','tvl','futuresMove','positioning','oilInventory')),
+    kind TEXT NOT NULL,
     natural_key TEXT NOT NULL CHECK (length(natural_key) BETWEEN 1 AND 400),
     fact_date TEXT NOT NULL CHECK (length(fact_date) = 10),
     facts_json TEXT NOT NULL CHECK (length(facts_json) <= 2048),
     evidence_json TEXT NOT NULL,
     detected_at_ms INTEGER NOT NULL CHECK (detected_at_ms >= 0),
     seen_at_ms INTEGER,
-    delivered_in TEXT CHECK (delivered_in IS NULL OR delivered_in IN ('message','morning','baseline')),
+    delivered_in TEXT,
     delivered_at_ms INTEGER,
     UNIQUE (loupist_id, asset_id, kind, natural_key)
 ) STRICT;
@@ -79,6 +79,7 @@ CREATE INDEX knowledge_watch_events_by_time ON knowledge_watch_events(loupist_id
 /// What a Loupist can watch per asset: six kinds for equities (v1) and the
 /// class kinds for crypto and commodities (finance-crypto-and-templates.md §3.3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub enum WatchKind {
     Filings,
@@ -609,6 +610,7 @@ pub fn insert_event(
 
 /// A stored event with its asset's names (never holdings).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct WatchEventView {
     pub event_id: String,
@@ -620,8 +622,10 @@ pub struct WatchEventView {
     pub fact_date: String,
     pub detected_at_ms: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub seen_at_ms: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub delivered_in: Option<String>,
     pub facts: Value,
     pub evidence: Vec<AssetEvidence>,

@@ -55,7 +55,7 @@ it("keeps model preferences per Loupist and independent of the Chat picker", asy
 
 it("offers provider management when there are no connected models without enabling processing", async () => {
   const props = setup();
-  vi.spyOn(props.bridge, "modelCatalogGet").mockResolvedValue({ models: [], providers: [], hidden_model_profile_ids: [] });
+  vi.spyOn(props.bridge, "modelCatalogGet").mockResolvedValue({ models: [], providers: [], custom_providers: [], hidden_model_profile_ids: [], model_notice: null });
   const save = vi.spyOn(props.bridge, "knowledgeGraphSettingsSet");
   render(<WorldProcessingSettings {...props} />);
   const user = userEvent.setup();
@@ -139,7 +139,7 @@ it("recovers explicitly without a connected model, enabling processing, or savin
   const props = setup();
   const saved = await props.bridge.knowledgeGraphSettingsGet({ loupistId: props.loupistId });
   vi.spyOn(props.bridge, "knowledgeGraphSettingsGet").mockResolvedValue({ ...saved, readiness: { status: "reconciliation_required" } });
-  vi.spyOn(props.bridge, "modelCatalogGet").mockResolvedValue({ models: [], providers: [], hidden_model_profile_ids: [] });
+  vi.spyOn(props.bridge, "modelCatalogGet").mockResolvedValue({ models: [], providers: [], custom_providers: [], hidden_model_profile_ids: [], model_notice: null });
   const save = vi.spyOn(props.bridge, "knowledgeGraphSettingsSet");
   let resolve!: (view: GraphProcessingView) => void;
   const recover = vi.spyOn(props.bridge, "knowledgeGraphRecover").mockReturnValue(new Promise((done) => { resolve = done; }));

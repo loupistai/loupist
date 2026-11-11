@@ -615,6 +615,7 @@ export function ChatComposer({
   const selectedModel = models.find(
     (model) => model.id === modelSelection.model_profile_id,
   );
+  const canSetAsOf = Boolean(onAsOfChange);
   const assistOptions = useMemo<AssistOption[]>(() => {
     if (!activeTrigger) return [];
     const query = activeTrigger.query;
@@ -650,7 +651,7 @@ export function ChatComposer({
       { id: "command:brief", kind: "command", label: "/brief", name: "/brief", detail: t("chatComposer.briefDetail"), insert: "", group: t("chatComposer.commands"), command: "brief" },
       { id: "command:compare", kind: "command", label: "/compare", name: "/compare", detail: t("chatComposer.compareDetail"), insert: "", group: t("chatComposer.commands"), command: "compare" },
       { id: "command:check", kind: "command", label: "/check", name: "/check", detail: t("chatComposer.checkDetail"), insert: "", group: t("chatComposer.commands"), command: "check" },
-      ...(onAsOfChange ? [{ id: "command:asof", kind: "command", label: "/asof", name: "/asof", detail: t("chatComposer.asofDetail"), insert: "", group: t("chatComposer.commands"), command: "asof" }] as const : []),
+      ...(canSetAsOf ? [{ id: "command:asof", kind: "command", label: "/asof", name: "/asof", detail: t("chatComposer.asofDetail"), insert: "", group: t("chatComposer.commands"), command: "asof" }] as const : []),
     ] as const satisfies readonly AssistOption[]).filter((option) => !query.trim() || rankText(query, [option.name.slice(1), option.detail]) >= 2)
       // A command whose name starts with what was typed comes first: `/as` → /asof before /compare.
       .sort((a, b) => Number(b.name.slice(1).startsWith(commandQuery)) - Number(a.name.slice(1).startsWith(commandQuery)));
@@ -665,7 +666,8 @@ export function ChatComposer({
     });
     const actions = commands.map((option) => ({ ...option, group: t("chatComposer.actions") }));
     return [...finance, ...skillOptions.slice(0, 8), ...actions];
-  }, [activeTrigger, contextOptions, skills, i18n.language]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the interface language is the recompute trigger; `i18n` itself is not reactive.
+  }, [activeTrigger, contextOptions, skills, canSetAsOf, i18n.language]);
 
   useEffect(() => {
     if (activeTrigger?.symbol !== "@" || !onSearchContext) {
@@ -685,6 +687,7 @@ export function ChatComposer({
       cancelled = true;
       window.clearTimeout(handle);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- a language change re-runs the context search so its results are worded in that language.
   }, [activeTrigger?.query, activeTrigger?.symbol, onSearchContext, i18n.language]);
 
   useEffect(() => {

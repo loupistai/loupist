@@ -24,6 +24,14 @@ market data. Static contracts are in `agent/tool-catalog.json`.
 | `opendart` | `dart_company_lookup`, `dart_filing_search`, `dart_filing_read`, `dart_financials`, `dart_major_report`, `dart_ownership`, `dart_dividends` |
 | `web-research` | `web_search`, `web_fetch` |
 
+Each native vendor (OpenDART, KRX, Korea Investment, World Bank, DefiLlama) is one row
+of `apps/loupist/src-tauri/src/finance_data/vendor.rs`: its entry id, the hosts its
+reads reach, what setup stores and verifies, and its read tools. The bundled catalog
+does not load when a native entry's `network_hosts` or credential kinds differ from its
+row, a read's result must name the vendor that serves its tool, and tests hold the API
+roots and catalog components to the rows. It is a table, not a trait, because the
+vendors share no request shape.
+
 Market data bundles its runtime/provider packages: base `openbb` plus only the extensions the runtime manifest reaches, not `openbb[all]` ([OpenBB runtime](../../apps/loupist/openbb/README.md#development) owns the list). `openbb.platform` supplies
 keyless providers and is enabled for new Loupists; SEC additionally requires its
 configured contact email. Without it, runs leave the SEC provider out and the load
@@ -44,7 +52,8 @@ bounded continuation pages. KRX covers KOSPI and KOSDAQ with independent daily
 trading service approvals. Setup verifies both markets and keeps their coverage
 with the verified key; one approved market is enough to enable the connection.
 Automatic lookups continue past a denied market. If the issue cannot be found
-in the accessible markets, `needs_approval` names the missing KRX daily service;
+in the accessible markets, `needs_approval` names the missing KRX daily service, with
+the next step KRX's reader puts on the error (another vendor supplies its own);
 an explicit `market` selects just that service. Every
 OpenDART tool, including the capital-decision, ownership and dividend reads, is on the
 unattended allowlist; `dart_major_report` and `dart_dividends` also serve asset-page
@@ -54,7 +63,8 @@ Web search routing is the Web Research `search_policy` setting
 (`apps/loupist/src-tauri/src/web/search_provider.rs`). Automatic uses the Chat
 provider's own search for OpenAI (ChatGPT sign-in or API key), Anthropic and the
 debug-only Codex client, then keyless Exa; model-only also allows xAI and never
-falls back; Exa-only skips the model. Web results, DART filing text and OpenBB
+falls back; Exa-only skips the model. Each provider's `native_search` in the
+[provider manifest](../runtime/providers.md#provider-manifest) says which. Web results, DART filing text and OpenBB
 results outside a reviewed numeric-only list raise the turn's
 [untrusted-text tier](../architecture.md#trust), which pauses commands and
 instruction-file writes and keeps `web_fetch` to sites the turn already knows for the
@@ -134,8 +144,9 @@ local store, and the agent sees only held symbols.
 `defillama.tvl` (DefiLlama, `finance_data/defillama.rs`) reaches only `api.llama.fi` and
 `stablecoins.llama.fi`. Its agent tool `defillama_read { route: protocol | chain |
 stablecoin, id, start?, end? }` returns dated daily values with `max_age` and the as-of
-cutoff ([rules](../analysis/datasets.md#data-and-provenance)); it is on the unattended allowlist, and
-a saved result is publisher material. Watchers read it on the host for a coin's chain or protocol (value locked).
+cutoff ([rules](../analysis/datasets.md#data-and-provenance)); it is on the unattended allowlist,
+a saved result is publisher material, and like other provider reads it is refused after a
+custom-connection result in the same turn, since its `id` is part of the request path. Watchers read it on the host for a coin's chain or protocol (value locked).
 
 ### Maintaining the Korea Investment read catalog
 

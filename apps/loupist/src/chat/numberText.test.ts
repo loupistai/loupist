@@ -3,7 +3,7 @@ import i18n from "@/i18n";
 import type { ChatEvidenceRef, NumberCheck } from "../types";
 import { evidenceFixture } from "../test/evidenceFixtures";
 import { keepNumberParticles } from "./keepParticles";
-import { calcView, dataRows, exactAmount, humanize, inputValue, plainLabel, printedValue, shownExactly } from "./numberText";
+import { calcView, dataRows, exactAmount, humanize, inputValue, operationName, plainLabel, printedValue, shownExactly } from "./numberText";
 import { readNoun } from "./progressLabels";
 
 const dart: ChatEvidenceRef = evidenceFixture({ id: "ev_dart", title: "Solsup Foods FY2025 statements", tool_name: "dart_financials", provider: "OpenDART", url: undefined,
@@ -14,15 +14,15 @@ const revenue: NumberCheck = { link_index: 1, text: "₩452.3bn", evidence_id: d
 const KRW_BILLIONS = { kind: "amount", currency: "KRW", scale: 9 } as const;
 const KRW = { kind: "amount", currency: "KRW" } as const;
 const margin: NumberCheck = { link_index: 0, text: "8.4%", evidence_id: "ev_calc", kind: "calculated", status: "matched",
-  calc: { title: "Margin", formulas: ["Operating income / Revenue = 38.1 / 452.3 = 8.42%"], inputs: [
+  calc: { operation: "margin", title: "Margin", formulas: ["Operating income / Revenue = 38.1 / 452.3 = 8.42%"], inputs: [
     { name: "profit", label: "Operating income", unit: KRW_BILLIONS, display: "38.1", evidence_id: dart.id, status: "rounded" },
     { name: "revenue", label: "Revenue", unit: KRW_BILLIONS, display: "452.3", evidence_id: dart.id, status: "rounded" }] } };
 const growth: NumberCheck = { link_index: 2, text: "6.2%", evidence_id: "ev_growth", kind: "calculated", status: "matched",
-  calc: { title: "Percent change", formulas: ["revenue FY2025 − revenue FY2024 = 452,312,000,000 − 425,900,000,000 = 26,412,000,000"], inputs: [
+  calc: { operation: "percent_change", title: "Percent change", formulas: ["revenue FY2025 − revenue FY2024 = 452,312,000,000 − 425,900,000,000 = 26,412,000,000"], inputs: [
     { name: "from", label: "revenue FY2024", unit: KRW, display: "425,900,000,000", evidence_id: dart.id, status: "matched" },
     { name: "to", label: "revenue FY2025", unit: KRW, display: "452,312,000,000", evidence_id: dart.id, status: "matched" }] } };
 const grid = (text: string, index: number): NumberCheck => ({ link_index: index, text, evidence_id: "ev_grid", kind: "calculated", status: "matched",
-  calc: { title: "Reverse DCF grid", formulas: [], grid: [3, 3], inputs: [
+  calc: { operation: "reverse_dcf", title: "Reverse DCF grid", formulas: [], grid: [3, 3], inputs: [
     { name: "price", label: "price", unit: { kind: "price", currency: "KRW" }, display: "38,200" },
     { name: "shares", label: "shares", unit: { kind: "number" }, display: "34,560,000" },
     { name: "reference_growth_pct", label: "reference growth", unit: { kind: "percent" }, display: "5" }] } });
@@ -96,6 +96,13 @@ describe("number popover words", () => {
     await i18n.changeLanguage("ko");
     expect(dataRows(revenue, dart, checks, "Solsup Foods · FY2025").map((row) => [row.label, row.value])).toEqual([["항목", "매출"], ["기간", "FY2025"], ["금액", "4,523억 1,200만 원"]]);
     expect(dataRows({ ...revenue, fields: [{ key: "net_change_ratio", value: "0.5" }] }, dart, checks, "x")[0]!.label).toBe("Net change ratio");
+  });
+
+  it("words a calculation by Rust's operation id, and an older answer by the title it saved", () => {
+    expect(operationName("reverse_dcf")).toBe(i18n.t("chat:numberChip.operation.reverseDcf"));
+    expect(operationName(undefined)).toBeUndefined();
+    const saved = { ...margin, calc: { ...margin.calc!, operation: undefined } };
+    expect(calcView(saved, [saved]).title).toBe("Margin");
   });
 
   it("humanizes unknown keys and leaves unknown labels as written", () => {

@@ -21,6 +21,7 @@ pub(crate) enum Scope {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Sections {
     pub profile: bool,
@@ -60,6 +61,7 @@ pub(crate) struct ExportInput {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum ItemKind {
     Profile,
@@ -72,6 +74,7 @@ pub(crate) enum ItemKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Finding {
     pub id: String,
@@ -80,11 +83,13 @@ pub(crate) struct Finding {
     pub item_kind: ItemKind,
     pub item_label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub symbol: Option<String>,
     pub blocking: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SummaryCounts {
     pub perspective: u32,

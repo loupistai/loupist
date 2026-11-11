@@ -4,12 +4,12 @@ import i18n, { useTranslation } from "@/i18n";
 import { formatDate, formatNumber, formatRelative } from "@/i18n/format";
 import type { LoupistBridge } from "../../types";
 import type { GalleryEntry, GalleryIndex, PackAssetClass, PackOpenResult } from "../../contracts/sharing";
-import { errorMessage } from "../../lib/errors";
+import { commandErrorCode, errorMessage } from "../../lib/errors";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { NativeSelect } from "../ui/native-select";
 import { Spinner } from "../ui/spinner";
-import { errorCode, licenseName } from "./sharingText";
+import { licenseName } from "./sharingText";
 import "@/styles/sharing.css";
 
 const CLASSES: PackAssetClass[] = ["stocks", "etfs", "bonds", "crypto", "economy"];
@@ -72,7 +72,7 @@ export function Gallery({ bridge, onBack, onOpened, onUseLinkOrFile }: {
   useEffect(() => { void load(false); }, [load]);
   const update = (next: Partial<Filters>) => setFilters(current => { const merged = { ...current, ...next }; writeFilters(merged); return merged; });
 
-  const entries = index?.entries ?? [];
+  const entries = useMemo(() => index?.entries ?? [], [index]);
   const languages = useMemo(() => [...new Set(entries.map(entry => entry.language))].sort(), [entries]);
   const terms = query.trim().toLocaleLowerCase();
   const shown = useMemo(() => entries
@@ -90,7 +90,7 @@ export function Gallery({ bridge, onBack, onOpened, onUseLinkOrFile }: {
       const result = await bridge.packOpen({ source: { gallery: entry.id } });
       if (result) onOpened(result, use);
     } catch (cause) {
-      const code = errorCode(cause);
+      const code = commandErrorCode(cause);
       setOpenError({ entryId: entry.id, message: code === "offline" ? t("publishOffline") : code === "rate_limited" ? t("rateLimited") : code === "link_not_found" ? t("linkNotFound") : errorMessage(cause, t("linkNotFound")) });
     } finally { setOpening(null); }
   };

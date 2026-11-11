@@ -6,6 +6,7 @@ use serde::Deserialize;
 use crate::app::CommandError;
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct FileFilter {
     name: String,
@@ -13,6 +14,7 @@ pub struct FileFilter {
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct PickFileRequest {
     title: String,

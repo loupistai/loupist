@@ -63,7 +63,6 @@ use crate::{
     pi::{PiError, PiEvent, PiImageContent, PiLaunchConfig, PiProcess},
     providers::catalog::ExecutionModelLock,
     runs::coordinator::{RunKind, RunRegistration, RunTarget},
-    store::LoupistStore,
 };
 use tokio::time::{timeout, Instant};
 
@@ -77,8 +76,8 @@ use super::{
     tool_executor::{AppToolExecutor, ToolCapture},
     types::{
         memory_ref_dto, ChatControlModeDto, ChatControlReceiptDto, ChatControlRequestDto,
-        ChatPerformanceDto, ChatSendRequest, ChatSessionCacheStatusDto, ChatStreamEvent,
-        RunStarted,
+        ChatPerformanceDto, ChatRunPhase, ChatSendRequest, ChatSessionCacheStatusDto,
+        ChatStreamEvent, RunStarted,
     },
     MAX_CHAT_OUTPUT_BYTES, MAX_PROMPT_BYTES,
 };
@@ -524,6 +523,7 @@ async fn send_chat_inner(
 mod tests;
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ChatRetryRequest {
     loupist_id: String,
@@ -531,10 +531,12 @@ pub struct ChatRetryRequest {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatRetryReceipt {
     prompt: String,
     /// The as-of date the request was sent with; Retry repeats it.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     as_of: Option<String>,
 }
 

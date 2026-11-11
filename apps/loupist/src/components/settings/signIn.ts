@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LoupistBridge, ModelCatalog, ProviderConnectFailure } from "@/types";
+import { commandErrorCode } from "@/lib/errors";
 
 /** "Browser didn't come back?" appears this long after the browser opened (spec providers §3.2). */
 export const signInTiming = { pasteRevealMs: 20_000 };
@@ -26,7 +27,6 @@ export type SignInBridge = Pick<LoupistBridge, "providerConnect" | "providerConn
 
 const FAILURES: ReadonlySet<string> = new Set<ProviderConnectFailure>(["plan_permission_declined", "plan_not_eligible", "port_in_use", "timed_out", "browser_failed", "offline", "denied", "other"]);
 
-const errorCode = (cause: unknown) => cause && typeof cause === "object" && "code" in cause && typeof cause.code === "string" ? cause.code : null;
 const errorText = (cause: unknown) => cause instanceof Error ? cause.message
   : cause && typeof cause === "object" && "message" in cause && typeof cause.message === "string" ? cause.message
     : typeof cause === "string" ? cause : null;
@@ -88,8 +88,8 @@ export function useSignIn(bridge: SignInBridge, onConnected: (provider: string, 
       connectedRef.current(provider, catalog);
     } catch (cause) {
       if (id !== operation.current) return;
-      if (cancelled.current || errorCode(cause) === "cancelled") { setState({ phase: "idle" }); return; }
-      const coded = errorCode(cause) === "provider_connect_failed" ? errorText(cause) : null;
+      if (cancelled.current || commandErrorCode(cause) === "cancelled") { setState({ phase: "idle" }); return; }
+      const coded = commandErrorCode(cause) === "provider_connect_failed" ? errorText(cause) : null;
       const reason = failure ?? (coded && FAILURES.has(coded) ? coded as ProviderConnectFailure : null);
       // Opening the browser is never an error of its own: the card offers the link instead.
       setState({ phase: "error", provider, reason: reason === "browser_failed" ? "other" : reason, message: reason ? null : errorText(cause) });
@@ -114,7 +114,7 @@ export function useSignIn(bridge: SignInBridge, onConnected: (provider: string, 
   /** Rust validates the pasted value; it rejects with code `paste_invalid` and forwards nothing. */
   const submitCode = useCallback(async (value: string): Promise<"ok" | "invalid" | "failed"> => {
     try { await bridgeRef.current.providerConnectSubmitCode({ value: value.trim() }); return "ok"; }
-    catch (cause) { return errorCode(cause) === "paste_invalid" ? "invalid" : "failed"; }
+    catch (cause) { return commandErrorCode(cause) === "paste_invalid" ? "invalid" : "failed"; }
   }, []);
 
   return { state, start, cancel, dismiss, openAgain, submitCode, busy: state.phase === "waiting" };

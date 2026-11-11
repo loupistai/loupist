@@ -18,6 +18,7 @@ export function useConflictHighlights(bridge: LoupistBridge, location: Knowledge
       if (current) setResult({ key, graphs: graphs.filter(graph => graph.recordId === location.recordId && graph.revisionId === location.revisionId) });
     }).catch(() => { if (current) setErrorKey(key); });
     return () => { current = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` names the location and the missing centres; the query runs once per key.
   }, [bridge, key, !!base, retryKey]);
   const map = useMemo(() => {
     if (!base || result?.key !== key) return base;
@@ -32,7 +33,7 @@ export function useConflictHighlights(bridge: LoupistBridge, location: Knowledge
         if (!targets.length) targets.push(source);
         for (const target of targets) if (nodes.has(target)) {
           const id = targets.length === 1 ? claim.id : `${claim.id}:${JSON.stringify(target)}`;
-          const edge: KnowledgeMapEdge = { id, kind: "claim", source, target, status: claim.status, relation: claim.relation, firstSeenAtMs: claim.recordedAtMs };
+          const edge: KnowledgeMapEdge = { id, kind: "claim", source, target, status: claim.status, relation: claim.relation, firstSeenAtMs: claim.recordedAtMs ?? undefined };
           edges.set(id, edge);
         }
       }

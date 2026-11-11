@@ -17,7 +17,7 @@ async fn share_summary_exposes_legal_code_urls_for_every_allowed_license() {
         "loupistId": id, "scope": {"kind": "loupist"}
     }))
     .unwrap();
-    let summary = commands::share_summary(request, app.state()).unwrap();
+    let summary = commands::share::share_summary(request, app.state()).unwrap();
     let value = serde_json::to_value(summary).unwrap();
     let expected: Vec<_> = License::OPEN
         .into_iter()
@@ -136,7 +136,7 @@ fn compatibility_intersects_every_license_and_names_conflicting_items() {
     }
 }
 
-fn request(loupist_id: &str) -> commands::ShareRequest {
+fn request(loupist_id: &str) -> commands::share::ShareRequest {
     serde_json::from_value(serde_json::json!({
         "loupistId": loupist_id, "scope": {"kind": "loupist"},
         "sections": {"profile": true, "perspective": true, "methods": true, "principles": true, "map": true},
@@ -157,7 +157,7 @@ async fn rust_defaults_a_new_share_to_nc_sa_and_changes_flat_versions_with_the_l
             "Read the annual filing.",
         ))
     });
-    let built = commands::build_pack(&state, &request(&id), None).unwrap();
+    let built = commands::share::build_pack(&state, &request(&id), None).unwrap();
     assert_eq!(
         pack::validate(&built.files).unwrap().manifest.license,
         License::CcByNcSa
@@ -170,8 +170,8 @@ async fn rust_defaults_a_new_share_to_nc_sa_and_changes_flat_versions_with_the_l
         "excludedItemKeys": [], "acknowledgedFindingIds": [], "license": license
     })).unwrap()
     };
-    let by = commands::build_pack(&state, &item_request("CC-BY-4.0"), None).unwrap();
-    let nc = commands::build_pack(&state, &item_request("CC-BY-NC-SA-4.0"), None).unwrap();
+    let by = commands::share::build_pack(&state, &item_request("CC-BY-4.0"), None).unwrap();
+    let nc = commands::share::build_pack(&state, &item_request("CC-BY-NC-SA-4.0"), None).unwrap();
     assert_ne!(pack::content_hash(&by.files), pack::content_hash(&nc.files));
 }
 
@@ -262,7 +262,7 @@ async fn personal_packs_cannot_reach_github_repositories_or_gists() {
         ApiError::LicenseNotShareable
     );
     assert_eq!(
-        commands::require_shareable(License::Personal)
+        commands::share::require_shareable(License::Personal)
             .unwrap_err()
             .code,
         "license_not_shareable"
@@ -275,16 +275,16 @@ async fn accepted_personal_items_and_sources_stay_excluded_through_updates_and_r
     let state = AppState::for_folder_test(temp.path().join("app"));
     let author = loupist(&state, "Original desk").await;
     seed(&state, &author, false);
-    let original = commands::build_pack(&state, &whole(&state, &author, &[]), None).unwrap();
+    let original = commands::share::build_pack(&state, &whole(&state, &author, &[]), None).unwrap();
     let staged = stage_files(relabeled(
         original.files,
         License::Personal,
         Some("https://example.org/terms"),
     ));
     let receiver = loupist(&state, "Reader desk").await;
-    let row = commands::import_row(&staged, ImportMode::New, AT);
+    let row = commands::add::import_row(&staged, ImportMode::New, AT);
     commands::with_tx(&state, &receiver, |tx, blobs| {
-        commands::record_import(
+        commands::add::record_import(
             tx,
             blobs,
             &receiver,
@@ -305,13 +305,13 @@ async fn accepted_personal_items_and_sources_stay_excluded_through_updates_and_r
             .map(|(key, _, _)| key.clone())
             .collect();
         for key in keys {
-            commands::decide(tx, &receiver, &row.import_id, &[key], Decision::Accept, AT)?;
+            commands::review::decide(tx, &receiver, &row.import_id, &[key], Decision::Accept, AT)?;
         }
         Ok(())
     })
     .unwrap();
     let assert_excluded = || {
-        let gathered = commands::gather(&state, &receiver).unwrap();
+        let gathered = commands::share::gather(&state, &receiver).unwrap();
         assert!(!gathered.input.lens_origins.is_empty());
         assert!(gathered
             .input
@@ -332,7 +332,7 @@ async fn accepted_personal_items_and_sources_stay_excluded_through_updates_and_r
     assert_excluded();
     // New public evidence must not erase the rights in the imported entity text
     // or relationship itself. Exercise each World kind independently.
-    let gathered = commands::gather(&state, &receiver).unwrap();
+    let gathered = commands::share::gather(&state, &receiver).unwrap();
     assert!(gathered
         .input
         .world_origins
@@ -401,7 +401,7 @@ async fn accepted_personal_items_and_sources_stay_excluded_through_updates_and_r
             "Read the annual report.",
         ))
     });
-    let built = commands::build_pack(&state, &request(&receiver), None).unwrap();
+    let built = commands::share::build_pack(&state, &request(&receiver), None).unwrap();
     assert!(
         !built.files.contains_key("LOUPIST.md"),
         "a removed Personal import does not free its profile content"
@@ -435,7 +435,7 @@ async fn credits_follow_included_origin_chains_and_conflicts_can_be_excluded() {
     let second = knowledge(&state, &id, |write| {
         Ok(method(write, &id, "Debt limits", "Read debt notes."))
     });
-    let mut gathered = commands::gather(&state, &id).unwrap();
+    let mut gathered = commands::share::gather(&state, &id).unwrap();
     let mut by = origin("Upstream desk", License::CcBy);
     by.chain.push(OriginEntry {
         id: "7a359642-6fc1-49ad-a0db-3c27969fdd34".into(),
@@ -582,7 +582,7 @@ async fn restricted_sources_drop_relationships_with_counts_but_public_and_user_a
     let state = AppState::for_folder_test(temp.path().join("app"));
     let id = loupist(&state, "Provider desk").await;
     seed(&state, &id, false);
-    let mut gathered = commands::gather(&state, &id).unwrap();
+    let mut gathered = commands::share::gather(&state, &id).unwrap();
     for span in gathered
         .input
         .snapshot
@@ -615,13 +615,13 @@ async fn restricted_sources_drop_relationships_with_counts_but_public_and_user_a
 async fn listing_requires_current_https_terms_and_records_the_acceptance_with_the_share_identity() {
     let terms = "https://example.org/gallery-terms";
     assert_eq!(
-        commands::listing_terms(None, true, Some(terms))
+        commands::gallery::listing_terms(None, true, Some(terms))
             .unwrap_err()
             .code,
         "not_configured"
     );
     assert_eq!(
-        commands::listing_terms(Some("http://example.org/terms"), true, Some(terms))
+        commands::gallery::listing_terms(Some("http://example.org/terms"), true, Some(terms))
             .unwrap_err()
             .code,
         "not_configured"
@@ -632,20 +632,20 @@ async fn listing_requires_current_https_terms_and_records_the_acceptance_with_th
         (true, Some("https://example.org/old")),
     ] {
         assert_eq!(
-            commands::listing_terms(Some(terms), accepted, supplied)
+            commands::gallery::listing_terms(Some(terms), accepted, supplied)
                 .unwrap_err()
                 .code,
             "gallery_terms_required"
         );
     }
-    let accepted = commands::listing_terms(Some(terms), true, Some(terms)).unwrap();
+    let accepted = commands::gallery::listing_terms(Some(terms), true, Some(terms)).unwrap();
     let at = "2026-11-01T10:11:12Z";
-    let body = commands::listing_body(accepted, at);
+    let body = commands::gallery::listing_body(accepted, at);
     assert!(body.contains(terms) && body.contains(at));
     let temp = tempfile::tempdir().unwrap();
     let state = AppState::for_folder_test(temp.path().join("app"));
     let id = loupist(&state, "Gallery desk").await;
-    let gathered = commands::gather(&state, &id).unwrap();
+    let gathered = commands::share::gather(&state, &id).unwrap();
     commands::with_tx(&state, &id, |tx, _| {
         store::record_listing_acceptance(tx, &id, &gathered.identity.pack_id, "commit", accepted, at).unwrap();
         let recorded: (String, String, String, String) = tx.query_row("SELECT pack_id, commit_sha, terms_url, accepted_at FROM share_listing_acceptances WHERE loupist_id = ?1", [&id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))).unwrap();
@@ -681,9 +681,9 @@ async fn exporting_accepted_incompatible_packs_refuses_until_an_item_is_left_out
         manifest.id = uuid::Uuid::new_v4().to_string();
         manifest.name = name.into();
         let staged = stage_files(pack::seal(manifest, files).1);
-        let row = commands::import_row(&staged, ImportMode::Merge, AT);
+        let row = commands::add::import_row(&staged, ImportMode::Merge, AT);
         commands::with_tx(&state, &id, |tx, blobs| {
-            commands::record_import(
+            commands::add::record_import(
                 tx,
                 blobs,
                 &id,
@@ -698,7 +698,7 @@ async fn exporting_accepted_incompatible_packs_refuses_until_an_item_is_left_out
                 &|_| {},
             )?;
             for (key, _, _) in &staged.items {
-                commands::decide(
+                commands::review::decide(
                     tx,
                     &id,
                     &row.import_id,
@@ -711,12 +711,12 @@ async fn exporting_accepted_incompatible_packs_refuses_until_an_item_is_left_out
         })
         .unwrap();
     }
-    let error = commands::build_pack(&state, &request(&id), None)
+    let error = commands::share::build_pack(&state, &request(&id), None)
         .err()
         .unwrap();
     assert_eq!(error.code, "license_conflict");
     assert!(error.message.contains("Cash conversion"));
-    let gathered = commands::gather(&state, &id).unwrap();
+    let gathered = commands::share::gather(&state, &id).unwrap();
     let record = gathered
         .input
         .lens_origins
@@ -725,13 +725,13 @@ async fn exporting_accepted_incompatible_packs_refuses_until_an_item_is_left_out
         .unwrap()
         .0;
     let excluded = pack::item_key("m", &gathered.identity.pack_id, record);
-    let request: commands::ShareRequest = serde_json::from_value(serde_json::json!({
+    let request: commands::share::ShareRequest = serde_json::from_value(serde_json::json!({
         "loupistId": id, "scope": {"kind":"loupist"},
         "sections":{"profile":true,"perspective":true,"methods":true,"principles":true,"map":true},
         "excludedItemKeys":[excluded], "acknowledgedFindingIds":[]
     }))
     .unwrap();
-    let built = commands::build_pack(&state, &request, None).unwrap();
+    let built = commands::share::build_pack(&state, &request, None).unwrap();
     assert_eq!(
         pack::validate(&built.files).unwrap().manifest.license,
         License::CcByNcSa

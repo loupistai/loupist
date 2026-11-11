@@ -1,3 +1,4 @@
+import type * as Wire from "./generated";
 const MEMORY_KINDS = ["World", "Lens", "Source", "Journal", "Research"] as const;
 export type MemoryKind = (typeof MEMORY_KINDS)[number];
 
@@ -22,8 +23,8 @@ export type MemoryRef = {
   kind: ChatMemoryKind;
   title: string;
   excerpt: string;
-  as_of?: string;
-  section?: string;
+  as_of: string | null;
+  section: string | null;
   access: "search_discovered" | "exact_read";
   knowledge?: KnowledgeReference;
 };
@@ -37,20 +38,18 @@ export type MemoryUpdateChange = {
   lesson: string;
   basis: string;
   futureUse: string;
+  /** What each requested operation did, when Rust filed outcomes for this change. */
+  outcomes?: Wire.FiledOutcome[];
 } & (
   | { kind: "Research"; knowledge?: never }
   | { kind: "principle"; statement: string; knowledge: KnowledgeReference }
   | { kind: Exclude<MemoryKind, "Research">; knowledge: KnowledgeReference }
 );
 
-export type MapKind = { name: string; label: string; labelKo?: string };
+export type MapKind = Wire.MapKind;
 
 /** One applied `loupist_setup` change. A market the user did not give is absent. */
-export type SetupChange =
-  | { change: "followed"; symbol: string; market?: string; name?: string }
-  | { change: "unfollowed"; symbol: string; market?: string }
-  | { change: "focus"; focus: string }
-  | { change: "tracks"; kinds: MapKind[] };
+export type SetupChange = Wire.SetupChange;
 
 export type MemoryUpdateResult = {
   status: "applied" | "no_change";
@@ -62,4 +61,4 @@ export type MemoryUpdateResult = {
 };
 
 /** Kind and delivery recorded by Rust when the item reached this turn. */
-export type LensReceipt = { recordId: string; revisionId: string; revisionDigest?: string; kind: import("./lens").LensKind; title: string; delivery: "context" | "exact_read" };
+export type LensReceipt = { recordId: string; revisionId: string; revisionDigest: string; kind: import("./lens").LensKind; title: string; delivery: "context" | "exact_read" };

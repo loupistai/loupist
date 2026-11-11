@@ -14,7 +14,7 @@ it("keeps terminal failure detail in the answer while surfacing a subsequent ope
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const workspace = await bridge.loupistSelect("loupist-quality");
   const thread = workspace.threads[0]!;
-  thread.messages = [{ id: "failed", role: "assistant", content: "Response could not be completed.", status: "error", created_at: "2026-11-01T00:00:00Z" }];
+  thread.messages = [{ id: "failed", role: "assistant", content: "Response could not be completed.", placeholder: true, status: "error", created_at: "2026-11-01T00:00:00Z" }];
   const chat = { id: "failed-chat", messages: thread.messages.map(toLoupistUIMessage) } as unknown as Chat<LoupistUIMessage>;
   vi.mocked(useChat).mockReturnValue({
     messages: chat.messages, sendMessage: vi.fn(), setMessages: vi.fn(), stop: vi.fn(), status: "error", error: new Error("Response could not be completed."),

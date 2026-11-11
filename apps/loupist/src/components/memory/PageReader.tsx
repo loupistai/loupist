@@ -78,8 +78,11 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, chil
       setPage(view);
       onLoaded?.(view);
     }).catch((cause: unknown) => { if (ticket === generation.current) setLoadError(errorMessage(cause, t("pageReader.loadError"))); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a request counter, not a DOM node: cleanup invalidates the request that is in flight.
     return () => { generation.current++; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- loads once per record; `t` only words the failure and `onLoaded` is the parent's inline callback.
   }, [bridge, loupistId, recordId, reload]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- focuses the heading once per page.
   useEffect(() => { if (page && takeFocus) heading.current?.focus({ preventScroll: true }); }, [page?.recordId, takeFocus]);
 
   const act = useCallback(async (run: () => Promise<PageView>, after?: (next: PageView) => void) => {
@@ -98,6 +101,7 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, chil
   const rewritten = useMemo(() => {
     const ids: string[] = [];
     return { texts: sections.map(section => withMapLinks(section.markdown, ids)), ids };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `sections` derive from the page.
   }, [page]);
 
   if (loadError) return <Alert variant="destructive"><AlertDescription>{loadError}</AlertDescription><Button variant="outline" onClick={() => setReload(value => value + 1)}>{t("pageReader.retry")}</Button></Alert>;
@@ -193,7 +197,7 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, chil
       {page.links.length ? <><h3>{t("pageReader.links")}</h3><ul className="page-chips">{page.links.map(link => <li key={link.recordId}><button type="button" className="page-chip" data-chip="page" onClick={() => onOpenPage(link.recordId)}>{link.title}</button></li>)}</ul></> : null}
       {page.backlinks.length ? <><h3>{t("pageReader.backlinks")}</h3><ul className="page-chips">{page.backlinks.map(link => <li key={link.recordId}><button type="button" className="page-chip" data-chip="page" onClick={() => onOpenPage(link.recordId)}>{link.title}</button></li>)}</ul></> : null}
     </section> : null}
-    {changed.length ? <section className="page-history" aria-label={t("pageReader.history.label")}><h3>{t("pageReader.history.label")}</h3>
+    {changed.length ? <section className="page-history" data-testid="page-history" aria-label={t("pageReader.history.label")}><h3>{t("pageReader.history.label")}</h3>
       <ul>{shownHistory.map(entry => <li key={entry.opId}><span>{entryText(entry)}</span><time>{formatDate(entry.createdAtMs, { year: undefined, month: "short", day: "numeric" })}</time></li>)}</ul>
       {changed.length > 5 ? <Button variant="link" size="sm" aria-expanded={allHistory} onClick={() => setAllHistory(value => !value)}>{allHistory ? t("pageReader.history.less") : t("pageReader.history.more", { count: changed.length - 5, formattedCount: formatNumber(changed.length - 5) })}</Button> : null}
     </section> : null}

@@ -2,7 +2,7 @@
 use crate::{
     app::{AppState, CommandError},
     fs::secure_delete::{PrivateDirectoryGuard, SecureDeletionRoot},
-    store::LoupistStore,
+    store::SqliteStore,
 };
 use chrono::{TimeZone, Utc};
 use serde::{Deserialize, Serialize};
@@ -17,7 +17,7 @@ const DAILY_BYTES: usize = 20 * 1024 * 1024;
 const DAY_MS: i64 = 86_400_000;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct RunLog {
     pub kind: String,
     pub loupist_id: Option<String>,
@@ -55,7 +55,7 @@ pub(crate) struct RunLog {
     observed_calls: BTreeSet<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct Usage {
     pub input: u64,
     pub cached_input: u64,
@@ -103,7 +103,6 @@ impl InferenceUsage {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct RefusedTool {
     pub name: String,
     pub reason: String,
@@ -248,7 +247,7 @@ impl RunLog {
             eprintln!("Run diagnostics could not be written");
         }
     }
-    pub fn record(&self, store: &dyn LoupistStore) {
+    pub fn record(&self, store: &SqliteStore) {
         let result = store
             .get_loupist(self.loupist_id.as_deref().unwrap_or(""))
             .ok()
@@ -475,7 +474,7 @@ fn append(
     Ok(())
 }
 
-pub(crate) fn record_scheduled(store: &dyn LoupistStore, run: &crate::scheduled_tasks::types::Run) {
+pub(crate) fn record_scheduled(store: &SqliteStore, run: &crate::scheduled_tasks::types::Run) {
     use crate::scheduled_tasks::types::{RunStatus, TaskKind};
     let mut record = RunLog::new(
         if run.kind == TaskKind::Briefing {
@@ -514,6 +513,7 @@ pub(crate) fn record_scheduled(store: &dyn LoupistStore, run: &crate::scheduled_
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(deny_unknown_fields)]
 pub struct DiagnosticsRequest {
     pub loupist_id: Option<String>,

@@ -68,7 +68,7 @@ it("rejects mismatched exact record and source receipt identities", async () => 
   vi.spyOn(props.bridge, "knowledgeWorkingNoteRead").mockResolvedValue({ ...note, researchId: "another-note" });
   const view = render(<ResearchReader {...props} />);
   expect(await screen.findByRole("alert")).toHaveTextContent("The requested working note was not returned.");
-  vi.spyOn(props.bridge, "knowledgeJournalRead").mockResolvedValue({ loupistId: "loupist-quality", researchId: "research", entities: [], createdAtMs: 1, updatedAtMs: 1, archived: false, inputDigest: "mock", journalId: "journal-http", check, judgment: "Saved conclusion", reasoning: "", inputs: { sources: [source], worlds: [], lenses: [] } });
+  vi.spyOn(props.bridge, "knowledgeJournalRead").mockResolvedValue({ loupistId: "loupist-quality", researchId: "research", entities: [], createdAtMs: 1, updatedAtMs: 1, archived: false, inputDigest: "mock", journalId: "journal-http", check, judgment: "Saved conclusion", reasoning: "", inputs: { sources: [source], worlds: [], lenses: [], earlier: [] }, originChatId: null });
   vi.spyOn(props.bridge, "knowledgeJournalSourceRead").mockResolvedValue({ mediaType: "text/plain", byteLength: 3, text: "wrong receipt", pinned: { ...source, revisionId: "other-revision" } });
   view.rerender(<ResearchReader {...props} location={journalLocation} />);
   fireEvent.click(await screen.findByRole("button", { name: "Read saved source" }));

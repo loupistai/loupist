@@ -19,7 +19,9 @@ const catalog: ModelCatalog = {
     provider("xai", { label: "xAI", oauth: { label: "Continue with SuperGrok" }, group: "sign_in", sign_in_flow: "device", console_url: "https://console.x.ai" }),
   ],
   models: [{ id: "openai/model", provider: "openai", model: "model", name: "OpenAI model", input: ["text"], reasoning: false, context_window: 1000, max_tokens: 100, thinking_levels: ["none"], thinking_level_map: { none: null }, run_controls: [], credential_source: "saved" }],
+  custom_providers: [],
   hidden_model_profile_ids: [],
+  model_notice: null,
 };
 
 function deferred<T>() {

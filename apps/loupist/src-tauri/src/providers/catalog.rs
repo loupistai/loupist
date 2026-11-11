@@ -11,7 +11,11 @@ use std::os::unix::fs::OpenOptionsExt;
 use crate::{
     app::CommandError,
     fs::artifact_trust::ensure_private_regular_file,
-    providers::status::{CredentialKind, ProviderStatusView},
+    providers::{
+        auto::FamilyTiers,
+        manifest::ProviderSpec,
+        status::{CredentialKind, ProviderStatusView},
+    },
     util::sha256,
 };
 
@@ -24,40 +28,8 @@ const MAX_CONFIGURED_MODELS: usize = 4_096;
 const MAX_MODEL_RUN_CONTROLS: usize = 16;
 pub const PI_THINKING_LEVELS: &[&str] =
     &["off", "minimal", "low", "medium", "high", "xhigh", "max"];
-pub const PROVIDER_CREDENTIAL_ENVIRONMENTS: &[&str] = &[
-    "ANTHROPIC_API_KEY",
-    "ANT_LING_API_KEY",
-    "OPENAI_API_KEY",
-    "GEMINI_API_KEY",
-    "DEEPSEEK_API_KEY",
-    "NVIDIA_API_KEY",
-    "MISTRAL_API_KEY",
-    "GROQ_API_KEY",
-    "CEREBRAS_API_KEY",
-    "XAI_API_KEY",
-    "OPENROUTER_API_KEY",
-    "AI_GATEWAY_API_KEY",
-    "HF_TOKEN",
-    "FIREWORKS_API_KEY",
-    "TOGETHER_API_KEY",
-    "BASETEN_API_KEY",
-    "KIMI_API_KEY",
-    "MINIMAX_API_KEY",
-    "MINIMAX_CN_API_KEY",
-    "ZAI_API_KEY",
-    "ZAI_CODING_CN_API_KEY",
-    "OPENCODE_API_KEY",
-    "RADIUS_API_KEY",
-    "QWEN_TOKEN_PLAN_API_KEY",
-    "QWEN_TOKEN_PLAN_CN_API_KEY",
-    "XIAOMI_API_KEY",
-    "XIAOMI_TOKEN_PLAN_CN_API_KEY",
-    "XIAOMI_TOKEN_PLAN_AMS_API_KEY",
-    "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
-];
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
 pub struct ConfiguredModel {
     pub id: String,
     pub name: String,
@@ -73,7 +45,7 @@ pub struct ConfiguredModel {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ModelRunControlChoice {
     pub id: String,
     pub label: String,
@@ -81,7 +53,7 @@ pub struct ModelRunControlChoice {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ModelRunControl {
     pub id: String,
     pub label: String,
@@ -90,7 +62,7 @@ pub struct ModelRunControl {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ExecutionModelLock {
     pub profile_id: String,
     pub name: String,
@@ -316,7 +288,6 @@ fn validate_model_identifier(model: &str) -> Result<(), CommandError> {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
 pub struct ModelCatalog {
     pub models: Vec<ConfiguredModel>,
 }
@@ -372,6 +343,7 @@ impl ModelVisibility {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ModelProviderOption {
     pub id: &'static str,
     pub label: &'static str,
@@ -390,7 +362,8 @@ pub struct ModelProviderOption {
     pub status: ProviderStatusView,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderGroup {
     SignIn,
@@ -398,20 +371,23 @@ pub enum ProviderGroup {
     More,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum SignInFlow {
     Browser,
     Device,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum BillingNote {
     ChatgptPlan,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ProviderOauth {
     pub label: &'static str,
     #[serde(skip)]
@@ -443,6 +419,7 @@ pub fn catalog_allows_authorization(host: &str, path: &str) -> bool {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum CredentialSource {
     Saved,
@@ -451,6 +428,7 @@ pub enum CredentialSource {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ConfiguredModelView {
     pub id: String,
     pub name: String,
@@ -467,6 +445,7 @@ pub struct ConfiguredModelView {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ModelCatalogView {
     pub models: Vec<ConfiguredModelView>,
     pub providers: Vec<ModelProviderOption>,
@@ -477,6 +456,7 @@ pub struct ModelCatalogView {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ModelNoticeView {
     pub id: String,
     pub kind: String,
@@ -486,6 +466,7 @@ pub struct ModelNoticeView {
 
 /// A user-added OpenAI- or Anthropic-compatible endpoint. Its key is never shown.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct CustomProviderView {
     pub id: String,
     pub name: String,
@@ -497,7 +478,7 @@ pub struct CustomProviderView {
 }
 
 /// The shape of any Pi provider ID, offered by this build or not.
-fn valid_provider_id(provider: &str) -> bool {
+pub(crate) fn valid_provider_id(provider: &str) -> bool {
     !provider.is_empty()
         && provider.len() <= 64
         && provider
@@ -513,197 +494,35 @@ pub(crate) fn known_provider(provider: &str) -> bool {
         || crate::providers::custom::is_custom_id(provider)
 }
 
+/// The providers this build offers, in display order, from the bundled
+/// provider manifest (`providers/manifest.rs`).
 pub fn provider_options() -> Vec<ModelProviderOption> {
-    let options = vec![
-        // One `openai` slot holds either a Sign in with ChatGPT grant or an
-        // OpenAI API key (Pi's `openai-chatgpt` flow with the dynamic client).
-        ModelProviderOption {
-            recommended: true,
-            group: ProviderGroup::SignIn,
-            console_url: Some("https://platform.openai.com/api-keys"),
-            sign_in_flow: Some(SignInFlow::Browser),
-            billing_note: Some(BillingNote::ChatgptPlan),
-            ..oauth_provider(
-                "openai",
-                "ChatGPT",
-                "OpenAI API key",
-                "Sign in with ChatGPT, or use an OpenAI API key stored by Pi in Loupist's private app data.",
-                ProviderOauth {
-                    label: "Continue with ChatGPT",
-                    authorization: OauthAuthorizationRule::exact(
-                        "auth.openai.com",
-                        "/api/accounts/authorize",
-                    ),
-                },
-                true,
-            )
-        },
-        ModelProviderOption {
-            group: ProviderGroup::ApiKey,
-            console_url: Some("https://console.anthropic.com/settings/keys"),
-            ..provider("anthropic", "Anthropic", "Anthropic API key")
-        },
-        ModelProviderOption {
-            group: ProviderGroup::ApiKey,
-            console_url: Some("https://aistudio.google.com/apikey"),
-            ..provider("google", "Google Gemini", "Gemini API key")
-        },
-        ModelProviderOption {
-            group: ProviderGroup::SignIn,
-            console_url: Some("https://console.x.ai"),
-            sign_in_flow: Some(SignInFlow::Device),
-            ..oauth_provider(
-                "xai",
-                "xAI",
-                "xAI API key",
-                "Use SuperGrok or X Premium, or an xAI API key stored by Pi in Loupist's private app data.",
-                ProviderOauth {
-                    label: "Continue with SuperGrok",
-                    authorization: OauthAuthorizationRule::exact(
-                        "accounts.x.ai",
-                        "/oauth2/device",
-                    ),
-                },
-                true,
-            )
-        },
-        ModelProviderOption {
-            group: ProviderGroup::ApiKey,
-            console_url: Some("https://openrouter.ai/keys"),
-            ..provider("openrouter", "OpenRouter", "OpenRouter API key")
-        },
-        provider("ant-ling", "Ant Ling", "Ant Ling API key"),
-        provider("deepseek", "DeepSeek", "DeepSeek API key"),
-        provider("nvidia", "NVIDIA NIM", "NVIDIA API key"),
-        provider("mistral", "Mistral", "Mistral API key"),
-        provider("groq", "Groq", "Groq API key"),
-        provider("cerebras", "Cerebras", "Cerebras API key"),
-        provider(
-            "vercel-ai-gateway",
-            "Vercel AI Gateway",
-            "AI Gateway API key",
-        ),
-        provider("huggingface", "Hugging Face", "Hugging Face token"),
-        provider("fireworks", "Fireworks", "Fireworks API key"),
-        provider("together", "Together AI", "Together API key"),
-        provider("baseten", "Baseten", "Baseten API key"),
-        provider("kimi-coding", "Kimi For Coding", "Kimi API key"),
-        provider("minimax", "MiniMax", "MiniMax API key"),
-        provider("minimax-cn", "MiniMax (China)", "MiniMax China API key"),
-        provider("zai", "ZAI Coding Plan", "ZAI API key"),
-        provider(
-            "zai-coding-cn",
-            "ZAI Coding Plan (China)",
-            "ZAI China API key",
-        ),
-        provider("opencode", "OpenCode Zen", "OpenCode API key"),
-        provider("opencode-go", "OpenCode Go", "OpenCode API key"),
-        provider("radius", "Radius", "Radius API key"),
-        provider(
-            "qwen-token-plan",
-            "Qwen Token Plan",
-            "Qwen Token Plan API key",
-        ),
-        provider(
-            "qwen-token-plan-individual",
-            "Qwen Token Plan (Individual)",
-            "Qwen Token Plan API key",
-        ),
-        provider(
-            "qwen-token-plan-cn",
-            "Qwen Token Plan (China)",
-            "Qwen Token Plan China API key",
-        ),
-        provider("xiaomi", "Xiaomi MiMo", "Xiaomi API key"),
-        provider(
-            "xiaomi-token-plan-cn",
-            "Xiaomi MiMo Token Plan (China)",
-            "Xiaomi Token Plan API key",
-        ),
-        provider(
-            "xiaomi-token-plan-ams",
-            "Xiaomi MiMo Token Plan (Amsterdam)",
-            "Xiaomi Token Plan API key",
-        ),
-        provider(
-            "xiaomi-token-plan-sgp",
-            "Xiaomi MiMo Token Plan (Singapore)",
-            "Xiaomi Token Plan API key",
-        ),
-    ];
-    // The legacy Codex client exists only for the development e2e harness and
-    // evaluations that already hold its credential; release builds drop it.
-    #[cfg(debug_assertions)]
-    let options = {
-        let mut options = options;
-        options.insert(
-            1,
-            ModelProviderOption {
-                group: ProviderGroup::More,
-                ..oauth_provider(
-                    "openai-codex",
-                    "ChatGPT (Codex client, development only)",
-                    "ChatGPT account",
-                    "Development builds only: the legacy Codex sign-in.",
-                    ProviderOauth {
-                        label: "Continue with ChatGPT",
-                        authorization: OauthAuthorizationRule::exact(
-                            "auth.openai.com",
-                            "/oauth/authorize",
-                        ),
-                    },
-                    false,
-                )
-            },
-        );
-        options
-    };
-    options
+    crate::providers::manifest::offered()
+        .map(option_from_spec)
+        .collect()
 }
 
-const fn provider(
-    id: &'static str,
-    label: &'static str,
-    credential_label: &'static str,
-) -> ModelProviderOption {
+fn option_from_spec(spec: &'static ProviderSpec) -> ModelProviderOption {
+    let sign_in = spec.sign_in.as_ref();
     ModelProviderOption {
-        id,
-        label,
-        credential_label,
-        description: "Connect with an API key stored by Pi in Loupist's private app data.",
-        api_key: true,
-        oauth: None,
+        id: &spec.id,
+        label: &spec.label,
+        credential_label: &spec.credential_label,
+        description: &spec.description,
+        api_key: spec.api_key.is_some(),
+        oauth: sign_in.map(|sign_in| ProviderOauth {
+            label: &sign_in.label,
+            authorization: OauthAuthorizationRule::exact(
+                &sign_in.authorization.host,
+                &sign_in.authorization.path,
+            ),
+        }),
         credential_source: CredentialSource::Missing,
-        recommended: false,
-        group: ProviderGroup::More,
-        console_url: None,
-        sign_in_flow: None,
-        billing_note: None,
-        status: ProviderStatusView::DISCONNECTED,
-    }
-}
-
-const fn oauth_provider(
-    id: &'static str,
-    label: &'static str,
-    credential_label: &'static str,
-    description: &'static str,
-    oauth: ProviderOauth,
-    api_key: bool,
-) -> ModelProviderOption {
-    ModelProviderOption {
-        id,
-        label,
-        credential_label,
-        description,
-        api_key,
-        oauth: Some(oauth),
-        credential_source: CredentialSource::Missing,
-        recommended: false,
-        group: ProviderGroup::More,
-        console_url: None,
-        sign_in_flow: Some(SignInFlow::Browser),
-        billing_note: None,
+        recommended: spec.recommended,
+        group: spec.group,
+        console_url: spec.console_url.as_deref(),
+        sign_in_flow: sign_in.map(|sign_in| sign_in.flow),
+        billing_note: sign_in.and_then(|sign_in| sign_in.billing_note),
         status: ProviderStatusView::DISCONNECTED,
     }
 }
@@ -734,39 +553,7 @@ pub(crate) fn host_provider_credential(
 }
 
 fn provider_environment_name(provider: &str) -> Option<&'static str> {
-    Some(match provider {
-        "anthropic" => "ANTHROPIC_API_KEY",
-        "ant-ling" => "ANT_LING_API_KEY",
-        "openai" => "OPENAI_API_KEY",
-        "google" => "GEMINI_API_KEY",
-        "deepseek" => "DEEPSEEK_API_KEY",
-        "nvidia" => "NVIDIA_API_KEY",
-        "mistral" => "MISTRAL_API_KEY",
-        "groq" => "GROQ_API_KEY",
-        "cerebras" => "CEREBRAS_API_KEY",
-        "xai" => "XAI_API_KEY",
-        "openrouter" => "OPENROUTER_API_KEY",
-        "vercel-ai-gateway" => "AI_GATEWAY_API_KEY",
-        "huggingface" => "HF_TOKEN",
-        "fireworks" => "FIREWORKS_API_KEY",
-        "together" => "TOGETHER_API_KEY",
-        "baseten" => "BASETEN_API_KEY",
-        "kimi-coding" => "KIMI_API_KEY",
-        "minimax" => "MINIMAX_API_KEY",
-        "minimax-cn" => "MINIMAX_CN_API_KEY",
-        "zai" => "ZAI_API_KEY",
-        "zai-coding-cn" => "ZAI_CODING_CN_API_KEY",
-        "opencode" | "opencode-go" => "OPENCODE_API_KEY",
-        "radius" => "RADIUS_API_KEY",
-        "qwen-token-plan" | "qwen-token-plan-individual" => "QWEN_TOKEN_PLAN_API_KEY",
-        "qwen-token-plan-cn" => "QWEN_TOKEN_PLAN_CN_API_KEY",
-        "xiaomi" => "XIAOMI_API_KEY",
-        "xiaomi-token-plan-cn" => "XIAOMI_TOKEN_PLAN_CN_API_KEY",
-        "xiaomi-token-plan-ams" => "XIAOMI_TOKEN_PLAN_AMS_API_KEY",
-        "xiaomi-token-plan-sgp" => "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
-        "openai-codex" => return None,
-        _ => return None,
-    })
+    crate::providers::manifest::spec(provider)?.environment()
 }
 
 /// Credential-free native smoke cannot pass onboarding step 2, which has no
@@ -844,6 +631,7 @@ pub fn catalog_view(
             }
         })
         .collect::<Vec<_>>();
+    let tiers = crate::providers::auto::family_tiers();
     let mut models = catalog
         .models
         .iter()
@@ -883,7 +671,7 @@ pub fn catalog_view(
                     .get(right.provider.as_str())
                     .unwrap_or(&usize::MAX),
             )
-            .then_with(|| compare_model_recency(left, right))
+            .then_with(|| compare_model_recency(tiers, left, right))
     });
     let providers = provider_options
         .into_iter()
@@ -923,36 +711,24 @@ pub fn catalog_view(
     })
 }
 
-fn compare_model_recency(left: &ConfiguredModelView, right: &ConfiguredModelView) -> Ordering {
+/// Each provider's newest numeric version first; within one version the
+/// higher declared family tier (`chat-model-defaults.json`) first.
+fn compare_model_recency(
+    tiers: &FamilyTiers,
+    left: &ConfiguredModelView,
+    right: &ConfiguredModelView,
+) -> Ordering {
     numeric_runs(&right.model)
         .cmp(&numeric_runs(&left.model))
-        .then_with(|| model_tier_rank(right).cmp(&model_tier_rank(left)))
+        .then_with(|| {
+            tiers
+                .tier(&right.name, &right.model)
+                .cmp(&tiers.tier(&left.name, &left.model))
+        })
         .then_with(|| right.context_window.cmp(&left.context_window))
         .then_with(|| right.max_tokens.cmp(&left.max_tokens))
         .then_with(|| left.name.cmp(&right.name))
         .then_with(|| left.id.cmp(&right.id))
-}
-
-fn model_tier_rank(model: &ConfiguredModelView) -> u8 {
-    let value = format!("{} {}", model.name, model.model).to_ascii_lowercase();
-    if ["opus", "fable", "ultra", " pro", "-pro", " sol"]
-        .iter()
-        .any(|marker| value.contains(marker))
-    {
-        3
-    } else if ["sonnet", "terra", "flash", "standard"]
-        .iter()
-        .any(|marker| value.contains(marker))
-    {
-        2
-    } else if ["haiku", "mini", "nano", "luna", "spark", "lite"]
-        .iter()
-        .any(|marker| value.contains(marker))
-    {
-        1
-    } else {
-        2
-    }
 }
 
 fn numeric_runs(value: &str) -> Vec<u64> {
@@ -1197,21 +973,34 @@ mod tests {
     }
 
     #[test]
-    fn every_exposed_provider_has_a_unique_id_and_environment_route() {
+    fn options_are_the_offered_manifest_entries_with_their_credential_routes() {
         let providers = provider_options();
+        assert_eq!(
+            providers
+                .iter()
+                .map(|provider| provider.id)
+                .collect::<Vec<_>>(),
+            crate::providers::manifest::offered()
+                .map(|spec| spec.id.as_str())
+                .collect::<Vec<_>>()
+        );
         let unique = providers
             .iter()
             .map(|provider| provider.id)
             .collect::<HashSet<_>>();
         assert_eq!(unique.len(), providers.len());
-        assert!(providers
-            .iter()
-            .all(|provider| { provider.api_key || provider.oauth.is_some() }));
-        assert!(providers.iter().all(|provider| {
-            !provider.api_key
-                || provider_environment_name(provider.id)
-                    .is_some_and(|name| PROVIDER_CREDENTIAL_ENVIRONMENTS.contains(&name))
-        }));
+        // An API key and its host variable are one manifest field, so every
+        // key provider has a route and a sign-in-only client has none.
+        for provider in &providers {
+            assert!(
+                provider.api_key || provider.oauth.is_some(),
+                "{}",
+                provider.id
+            );
+            let route = provider_environment_name(provider.id);
+            assert_eq!(route.is_some(), provider.api_key, "{}", provider.id);
+            assert!(route.is_none_or(crate::providers::manifest::is_credential_environment));
+        }
     }
 
     #[test]
@@ -1507,6 +1296,47 @@ mod tests {
                 "gpt-5.6 Luna",
                 "gpt-5.4"
             ]
+        );
+    }
+
+    #[test]
+    fn a_new_model_family_lists_by_the_tier_the_defaults_declare_for_it() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut models = catalog_view(
+            &ModelCatalog {
+                models: ["gpt-7-luna", "gpt-7-nova", "gpt-7-terra", "gpt-7-comet"]
+                    .map(|name| model("openai", name, &["off", "medium"]))
+                    .into(),
+            },
+            temporary.path(),
+            &ModelVisibility::default(),
+        )
+        .unwrap()
+        .models;
+        let order = |tiers: serde_json::Value, models: &mut Vec<ConfiguredModelView>| {
+            let tiers: FamilyTiers = serde_json::from_value(tiers).unwrap();
+            models.sort_by(|left, right| compare_model_recency(&tiers, left, right));
+            models
+                .iter()
+                .map(|model| model.model.clone())
+                .collect::<Vec<_>>()
+        };
+        // Undeclared, Nova and Comet sit in the middle tier beside Terra.
+        let families = serde_json::json!({"terra": 2, "luna": 1});
+        assert_eq!(
+            order(
+                serde_json::json!({"unknown": 2, "families": families}),
+                &mut models
+            ),
+            ["gpt-7-comet", "gpt-7-nova", "gpt-7-terra", "gpt-7-luna"]
+        );
+        let families = serde_json::json!({"nova": 3, "terra": 2, "luna": 1});
+        assert_eq!(
+            order(
+                serde_json::json!({"unknown": 2, "families": families}),
+                &mut models
+            ),
+            ["gpt-7-nova", "gpt-7-comet", "gpt-7-terra", "gpt-7-luna"]
         );
     }
 }

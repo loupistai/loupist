@@ -59,6 +59,7 @@ export function AddConnectionDialog({ bridge, loupistId, onClose, onChanged }: {
       observer.observe(node, { childList: true, subtree: true });
     });
     return () => { cancelAnimationFrame(frame); observer?.disconnect(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `focusDialogAction` reads only the DOM; focus moves once per phase.
   }, [phase]);
   async function run(action: () => Promise<void>) {
     retry.current = action;

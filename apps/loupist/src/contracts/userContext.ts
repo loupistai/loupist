@@ -1,38 +1,9 @@
+import type * as Wire from "./generated";
 /** App-level factual context shared by every Loupist. No suitability profile. */
-export interface WatchlistEntry {
-  symbol: string;
-  market: string;
-  displayName: string | null;
-  addedAtMs: number;
-}
-export interface WatchlistAddRequest {
-  symbol: string;
-  market: string;
-  displayName?: string | null;
-  /** The Loupist open when the user followed it: that Loupist watches the asset with the default kinds (finance-watchers.md §3.2). */
-  loupistId?: string | null;
-}
-export interface HoldingsPosition {
-  symbol: string;
-  /** UNKNOWN when the CSV omits its market. */
-  market: string;
-  displayName: string | null;
-  quantity: string;
-  /** Average acquisition price per unit; exact decimal string. */
-  costBasis: string | null;
-  marketValue: string | null;
-  /** Empty if unspecified. No implicit currency conversion. */
-  currency: string;
-}
-export interface HoldingsSnapshot {
-  snapshotId: string;
-  source: "csv" | "kis" | "crypto_file" | "wallet";
-  importedAtMs: number;
-  /** Empty if positions have mixed or unspecified currencies. */
-  currency: string;
-  note: string | null;
-  positions: HoldingsPosition[];
-}
+export type WatchlistEntry = Wire.WatchlistEntry;
+export type WatchlistAddRequest = Wire.WatchlistAddRequest;
+export type HoldingsPosition = Wire.HoldingsPosition;
+export type HoldingsSnapshot = Wire.HoldingsSnapshot;
 export interface HoldingsCsvPreview {
   previewId: string;
   mapping: Partial<Record<keyof HoldingsPosition, string>>;
@@ -56,35 +27,10 @@ export interface HoldingsSummary {
   crypto: HoldingsCount | null;
 }
 /** An exchange balance file. Quantities show only here so the user can check the file. */
-export interface CryptoFilePreview {
-  previewId: string;
-  format: "kraken_ledger" | "balances" | "mapped" | null;
-  rowCount: number;
-  /** The latest ledger time, when the file has one. */
-  asOfMs: number | null;
-  rows: Array<{ symbol: string; quantity: string; from: string[] }>;
-  skipped: Array<{ symbol: string; reason: "cash" | "zero" }>;
-  errors: Array<{ row: number; field: string; message: string }>;
-  /** Present until the user picks the asset and balance columns. */
-  mappingHeaders: string[] | null;
-  /** A trade history without balances; refused. */
-  tradesOnly: boolean;
-}
-export type WalletFamily = "bitcoin" | "evm" | "solana";
+export type CryptoFilePreview = Wire.CryptoFilePreview;
+export type WalletFamily = Wire.WalletFamily;
 /** A read-only public address. Never balances; `address` is only for Copy address. */
-export interface WalletView {
-  id: string;
-  family: WalletFamily;
-  /** First six and last four characters; the only form shown. */
-  masked: string;
-  address: string;
-  name: string | null;
-  addedAtMs: number;
-  lastReadAtMs: number | null;
-  lastGoodReadAtMs: number | null;
-  status: "unread" | "ok" | "failed";
-  unlistedCount: number;
-}
+export type WalletView = Wire.WalletView;
 export interface UserContextBridge {
   holdingsSummary(): Promise<HoldingsSummary>;
   /** Rust detects the format (Kraken ledger, balance file) or asks for the columns. */

@@ -7,6 +7,7 @@ import {
 
 } from "@testing-library/react";
 import { App } from "../App";
+import { APP_DESTINATIONS, APP_PAGES } from "../app/navigation";
 import { MockLoupistBridge } from "../bridge/mockBridge";
 
 export const openApp = async (
@@ -31,7 +32,7 @@ export const openChat = async (title = "How should we read the margin decline?")
 };
 
 export const mainTab = async (name: RegExp) => {
-  const labels = ["Chat", "Map", "Lens", "Schedule", "Loupist settings", "Connections", "Settings"];
+  const labels = [...APP_DESTINATIONS.map(destination => destination.label), "Loupist settings", "Connections", APP_PAGES.settings.label];
   const label = labels.find(candidate => name.test(candidate));
   const settingsBack = document.querySelector<HTMLButtonElement>("[data-loupist-settings-back]");
   if (settingsBack) fireEvent.click(settingsBack);

@@ -194,6 +194,7 @@ export function ChatConversation({
     if (!home || !active || !bridge || !deliveredRunIds.length) return;
     const timer = window.setTimeout(() => { void bridge.inboxMarkRead({ loupistId, runIds: deliveredRunIds }).catch(() => {}); }, 1000);
     return () => window.clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the joined run ids are the key, so the same deliveries are marked once.
   }, [home, active, bridge, loupistId, deliveredRunIds.join(",")]);
   // The morning message loads after the Thread first scrolls; its arrival is part of the scroll revision.
   const [morningSettled, setMorningSettled] = useState(false);

@@ -70,6 +70,7 @@ export function WorkspaceFiles({ bridge, loupistId, rootPath, path, filePath, on
       const entry = [...contentRef.current.querySelectorAll<HTMLButtonElement>("[data-file-path]")].find((item) => item.dataset.filePath === returnEntries.current.get(selection));
       entry?.focus({ preventScroll: true });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- restores scroll and focus per selection and listing.
   }, [selection, value]);
 
   const reveal = async () => {

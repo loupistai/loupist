@@ -3,7 +3,9 @@
 Third-party text raises a turn tier that pauses outbound tools, pauses commands, wraps the text the model sees, and keeps `web_fetch` to known sites. Holdings quantities stay on this computer.
 
 Third-party text raises a weaker tier of the same `TurnTaint`
-(`apps/loupist/src-tauri/src/custom_connections/taint.rs`). After a `web_search`,
+(`apps/loupist/src-tauri/src/custom_connections/taint.rs`). Which broker methods each
+tier pauses and which results raise a tier are their `ToolMethod::safety` rows
+(`broker/tool_class.rs`). After a `web_search`,
 `web_fetch`, `dart_filing_read` or bundled OpenBB data result outside the reviewed
 numeric-only list (`NUMERIC_ONLY_OPENBB_TOOLS`; profiles, filing documents, transcripts and
 news raise it, prices and statements do not), Rust refuses custom-connection calls

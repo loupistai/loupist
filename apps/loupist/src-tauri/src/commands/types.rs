@@ -20,6 +20,7 @@ pub use crate::domain::{
 };
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct LoupistSummary {
     pub id: String,
     pub name: String,
@@ -30,6 +31,7 @@ pub struct LoupistSummary {
     pub tone: crate::domain::LoupistTone,
     /// The template the Loupist was made from; missing for imported folders and packs.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub template: Option<crate::domain::LoupistTemplate>,
     pub record_count: usize,
     pub updated_at: String,
@@ -40,12 +42,14 @@ pub struct LoupistSummary {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct LoupistWorkspace {
     pub loupist: LoupistSummary,
     pub threads: Vec<ChatThreadDto>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(deny_unknown_fields)]
 pub struct LoupistCreateRequest {
     pub name: String,
@@ -59,12 +63,14 @@ pub struct LoupistCreateRequest {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct LoupistImportRequest {
     pub workspace_path: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LoupistProfileUpdateRequest {
     pub loupist_id: String,
@@ -76,6 +82,7 @@ pub struct LoupistProfileUpdateRequest {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct LoupistReconnectRequest {
     pub loupist_id: String,
@@ -83,12 +90,14 @@ pub struct LoupistReconnectRequest {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct LoupistDeleteRequest {
     pub loupist_id: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct LoupistRecoverRequest {
     pub loupist_id: String,
@@ -96,6 +105,7 @@ pub struct LoupistRecoverRequest {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct KnowledgeRefDto {
     pub kind: String,
@@ -103,12 +113,15 @@ pub struct KnowledgeRefDto {
     pub revision_id: String,
     pub object_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub span_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub receipt_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct MemoryRefDto {
     pub read_ref: String,
     pub kind: String,
@@ -118,92 +131,129 @@ pub struct MemoryRefDto {
     pub section: Option<String>,
     pub access: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub knowledge: Option<KnowledgeRefDto>,
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatMessageDto {
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub tool_refusals: Vec<crate::domain::ChatToolRefusal>,
     /// A data read in this reply never reached its source (the network or the
     /// provider was unreachable).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub offline_reads: bool,
     /// Asset reads this reply's tool accepted but its commit did not save.
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub unsaved_theses: Vec<crate::domain::UnsavedThesis>,
     pub feedback: Option<crate::domain::ChatFeedback>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub failure_kind: Option<crate::domain::ChatFailureKind>,
     pub host_composed: bool,
     /// Accepted live guidance, shown as a "Guided" row.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub steer: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub retry_after_seconds: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub delivery: Option<crate::domain::HomeDelivery>,
     /// The model Rust replaced with Auto for this answer (W17.5).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub replaced_model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub alert: Option<crate::domain::HomeAlert>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub watch: Option<crate::domain::HomeWatch>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub earnings: Option<crate::domain::HomeEarnings>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub vocabulary: Option<crate::domain::HomeVocabulary>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub link: Option<crate::domain::HomeLink>,
     pub handoff: Option<crate::domain::HomeHandoff>,
     /// The as-of date set for this request and its answer (`YYYY-MM-DD`).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub as_of: Option<String>,
     /// Number links Rust checked against their evidence (W16.3).
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub number_checks: Vec<crate::domain::NumberCheck>,
     /// Grid results linked as paragraphs of their own (W16.8).
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub sensitivity_cards: Vec<crate::domain::SensitivityCard>,
     /// What an as-of answer could not use (W16.5).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub as_of_report: Option<crate::domain::AsOfReport>,
     pub id: String,
-    pub role: String,
+    pub role: ChatMessageRoleDto,
     pub content: String,
+    /// `content` is the host's failure placeholder (`FAILED_CHAT_CONTENT`),
+    /// not model text; the renderer explains the failure from its run state.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, ts(optional = nullable))]
+    pub placeholder: bool,
     pub created_at: String,
-    pub status: String,
+    pub status: ChatMessageStatus,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub memory_refs: Vec<MemoryRefDto>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub lens_receipts: Vec<crate::domain::LensReceipt>,
     pub observed_exact_count: u64,
     pub refs_truncated: bool,
     pub refs_digest: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub memory_update: Option<crate::domain::MemoryUpdateResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub memory_revision: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub execution_model: Option<ExecutionModelLock>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub agent_harness: Option<AgentHarnessSnapshot>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub attachments: Vec<ChatAttachmentDto>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub artifact_refs: Vec<ChatArtifactRef>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub evidence_refs: Vec<crate::domain::ChatEvidenceRef>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub schedule_receipts: Vec<crate::scheduled_tasks::types::ScheduleReceipt>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub progress: Option<ChatProgress>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub performance: Option<ChatPerformanceDto>,
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatAttachmentDto {
     pub id: String,
     pub filename: String,
@@ -212,6 +262,7 @@ pub struct ChatAttachmentDto {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatThreadDto {
     pub id: String,
     pub loupist_id: String,
@@ -223,14 +274,17 @@ pub struct ChatThreadDto {
     pub update_memory: bool,
     /// Principle and method ids the user set aside for this chat.
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub set_aside_memory: Vec<String>,
     /// Edit forks (X18): the other versions of this chat's tail, without their messages.
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub versions: Vec<ChatVersionDto>,
     pub messages: Vec<ChatMessageDto>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(deny_unknown_fields)]
 pub struct ChatCreateRequest {
     pub loupist_id: String,
@@ -238,6 +292,7 @@ pub struct ChatCreateRequest {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(deny_unknown_fields)]
 pub struct ChatFeedbackRequest {
     pub loupist_id: String,
@@ -248,6 +303,7 @@ pub struct ChatFeedbackRequest {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ChatRenameRequest {
     pub loupist_id: String,
@@ -257,6 +313,7 @@ pub struct ChatRenameRequest {
 
 /// "Not this time": leave one principle or method out of this chat's context, or bring it back.
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(deny_unknown_fields)]
 pub struct ChatBranchRequest {
     pub loupist_id: String,
@@ -272,6 +329,7 @@ pub struct ChatBranchRequest {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ChatVersionSwitchRequest {
     pub loupist_id: String,
@@ -281,6 +339,7 @@ pub struct ChatVersionSwitchRequest {
 
 /// One other version of a chat's tail, as the renderer lists it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatVersionDto {
     pub id: String,
     pub after_message_id: Option<String>,
@@ -289,6 +348,7 @@ pub struct ChatVersionDto {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ChatMemorySetAsideRequest {
     pub loupist_id: String,
@@ -298,6 +358,7 @@ pub struct ChatMemorySetAsideRequest {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ChatDeleteRequest {
     pub loupist_id: String,
@@ -305,6 +366,7 @@ pub struct ChatDeleteRequest {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(deny_unknown_fields)]
 pub struct ChatSendRequest {
     pub run_id: String,
@@ -320,15 +382,18 @@ pub struct ChatSendRequest {
     pub run_options: std::collections::BTreeMap<String, String>,
     /// Composer `@entry_id` tokens. Host keeps only enabled execute-ready ids.
     #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub mentioned_connection_ids: Vec<String>,
     pub attachments: Vec<ChatAttachmentInput>,
     #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub pins: Vec<ChatKnowledgePin>,
     #[serde(default)]
     pub selected_artifact: Option<ChatArtifactSelection>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ChatArtifactSelection {
     pub artifact_id: String,
@@ -336,6 +401,7 @@ pub struct ChatArtifactSelection {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SourceTextSelection {
     pub start_utf16: u32,
@@ -344,9 +410,11 @@ pub struct SourceTextSelection {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ChatKnowledgePin {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub selection: Option<SourceTextSelection>,
     pub kind: String,
     pub record_id: Option<String>,
@@ -357,6 +425,7 @@ pub struct ChatKnowledgePin {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ChatControlRequestDto {
     pub loupist_id: String,
@@ -365,6 +434,7 @@ pub struct ChatControlRequestDto {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatControlReceiptDto {
     pub message_id: String,
     pub prompt: String,
@@ -373,12 +443,14 @@ pub struct ChatControlReceiptDto {
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ChatControlModeDto {
     Steer,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ChatAttachmentInput {
     pub filename: String,
@@ -387,6 +459,7 @@ pub struct ChatAttachmentInput {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ChatAttachmentReadRequest {
     pub loupist_id: String,
@@ -396,12 +469,14 @@ pub struct ChatAttachmentReadRequest {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatAttachmentReadDto {
     pub data_url: String,
 }
 
 /// The Loupist's Work list: charts and documents across its chats.
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(deny_unknown_fields)]
 pub struct LoupistArtifactListRequest {
     pub loupist_id: String,
@@ -410,12 +485,14 @@ pub struct LoupistArtifactListRequest {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct LoupistArtifactItemDto {
     pub artifact: crate::chat::artifacts::ChatArtifact,
     pub chat_title: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ChatArtifactListRequest {
     pub loupist_id: String,
@@ -423,6 +500,7 @@ pub struct ChatArtifactListRequest {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(deny_unknown_fields)]
 pub struct ChatArtifactReadRequest {
     pub loupist_id: String,
@@ -432,6 +510,7 @@ pub struct ChatArtifactReadRequest {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ChatArtifactRestoreRequest {
     pub loupist_id: String,
@@ -442,6 +521,7 @@ pub struct ChatArtifactRestoreRequest {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatArtifactViewDto {
     pub artifact: ChatArtifact,
     pub revision: ChatArtifactRevision,
@@ -449,6 +529,7 @@ pub struct ChatArtifactViewDto {
     /// A grid's cited evidence, from the reply that published the revision,
     /// so its number popovers open wherever the grid is shown.
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub evidence_refs: Vec<crate::domain::ChatEvidenceRef>,
 }
 
@@ -464,6 +545,7 @@ impl From<crate::chat::artifacts::ChatArtifactSnapshot> for ChatArtifactViewDto 
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChatStreamEvent {
     Started {
@@ -479,6 +561,7 @@ pub enum ChatStreamEvent {
         /// The live commentary this settled text replaces, so the renderer
         /// drops its copy in the same update that adds the text.
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         settles: Option<String>,
     },
     GenerationFinished {
@@ -501,7 +584,7 @@ pub enum ChatStreamEvent {
     /// Transient run phase. Not stored on the Chat message.
     Phase {
         run_id: String,
-        phase: String,
+        phase: ChatRunPhase,
     },
     MemoryUpdate {
         run_id: String,
@@ -523,8 +606,10 @@ pub enum ChatStreamEvent {
         lens_receipts: Vec<crate::domain::LensReceipt>,
         tool_refusals: Vec<crate::domain::ChatToolRefusal>,
         #[serde(skip_serializing_if = "std::ops::Not::not")]
+        #[cfg_attr(test, ts(optional = nullable))]
         offline_reads: bool,
         #[serde(skip_serializing_if = "Vec::is_empty")]
+        #[cfg_attr(test, ts(optional = nullable))]
         unsaved_theses: Vec<crate::domain::UnsavedThesis>,
         host_composed: bool,
         run_id: String,
@@ -535,14 +620,19 @@ pub enum ChatStreamEvent {
         agent_harness: Box<AgentHarnessSnapshot>,
         performance: ChatPerformanceDto,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         replaced_model: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         as_of: Option<String>,
         #[serde(skip_serializing_if = "Vec::is_empty")]
+        #[cfg_attr(test, ts(optional = nullable))]
         number_checks: Vec<crate::domain::NumberCheck>,
         #[serde(skip_serializing_if = "Vec::is_empty")]
+        #[cfg_attr(test, ts(optional = nullable))]
         sensitivity_cards: Vec<crate::domain::SensitivityCard>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         as_of_report: Option<Box<crate::domain::AsOfReport>>,
     },
     Aborted {
@@ -550,21 +640,48 @@ pub enum ChatStreamEvent {
     },
     Error {
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         retry_after_seconds: Option<u32>,
         failure_kind: crate::domain::ChatFailureKind,
         run_id: String,
         message: String,
         message_id: String,
         final_text: String,
+        /// `final_text` is the host's failure placeholder, not model text.
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        #[cfg_attr(test, ts(optional = nullable))]
+        placeholder: bool,
         created_at: String,
         execution_model: Box<ExecutionModelLock>,
         agent_harness: Box<AgentHarnessSnapshot>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         progress: Option<ChatProgress>,
     },
 }
 
+/// The roles a stored Chat message may cross the renderer boundary with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum ChatMessageRoleDto {
+    User,
+    Assistant,
+}
+
+/// What a running reply is doing between progress steps.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum ChatRunPhase {
+    Thinking,
+    Writing,
+    /// Waiting for the model's next step after a tool call.
+    Tool,
+}
+
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct RunStarted {
     pub run_id: String,
 }
@@ -608,8 +725,8 @@ pub(crate) fn chat_dto(chat: &ChatSession) -> Result<ChatThreadDto, CommandError
         .iter()
         .map(|message| {
             let role = match message.role {
-                ChatRole::User => "user",
-                ChatRole::Assistant => "assistant",
+                ChatRole::User => ChatMessageRoleDto::User,
+                ChatRole::Assistant => ChatMessageRoleDto::Assistant,
                 ChatRole::System | ChatRole::Tool => {
                     return Err(CommandError::internal(
                         "stored non-user chat role cannot cross the renderer boundary",
@@ -645,15 +762,14 @@ pub(crate) fn chat_dto(chat: &ChatSession) -> Result<ChatThreadDto, CommandError
                 sensitivity_cards: message.sensitivity_cards.clone(),
                 as_of_report: message.as_of_report.clone(),
                 id: message.id.clone(),
-                role: role.into(),
+                role,
                 content: message.content.clone(),
+                // Stored failed replies carry only the placeholder text.
+                placeholder: role == ChatMessageRoleDto::Assistant
+                    && message.status == ChatMessageStatus::Error
+                    && message.content == super::chat_runtime::FAILED_CHAT_CONTENT,
                 created_at: iso_time(message.created_at_ms)?,
-                status: match message.status {
-                    ChatMessageStatus::Complete => "complete",
-                    ChatMessageStatus::Aborted => "aborted",
-                    ChatMessageStatus::Error => "error",
-                }
-                .into(),
+                status: message.status,
                 lens_receipts: message.lens_receipts.clone(),
                 memory_refs: message.memory_refs.iter().map(memory_ref_dto).collect(),
                 observed_exact_count: message.observed_exact_count,

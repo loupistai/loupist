@@ -19,7 +19,6 @@ use crate::{
     app::{AppState, CommandError},
     domain::LoupistCapabilityBinding,
     runs::maintenance::MaintenanceActivityKind,
-    store::LoupistStore,
 };
 
 fn connector_lifecycle_lock() -> Result<MutexGuard<'static, ()>, CommandError> {

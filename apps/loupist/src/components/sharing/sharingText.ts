@@ -1,11 +1,6 @@
 import i18n from "@/i18n";
 import type { PackLicense } from "../../contracts/sharing";
 
-/** The Rust CommandError code of a rejected bridge call, if any. */
-export function errorCode(cause: unknown): string | null {
-  return cause && typeof cause === "object" && "code" in cause && typeof cause.code === "string" ? cause.code : null;
-}
-
 /** `loupist-<slug>`: the default repository name for a Loupist. */
 export function repoSlug(name: string) {
   const slug = name.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);

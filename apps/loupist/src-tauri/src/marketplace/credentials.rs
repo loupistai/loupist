@@ -14,7 +14,6 @@ use crate::{
     },
     runs::maintenance::MaintenanceActivityKind,
     runs::scratch::RunScratch,
-    store::LoupistStore,
 };
 
 use super::{

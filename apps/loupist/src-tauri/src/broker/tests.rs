@@ -33,6 +33,7 @@ fn missing_provider_service_approval_names_the_service_without_an_in_chat_permis
     let body = error_body(&BrokerError::ProviderApprovalRequired {
         provider: "krx.market-data".into(),
         services: vec!["KOSDAQ daily trading (ksq_bydd_trd)".into()],
+        next: "Approve KOSDAQ daily trading for this key.".into(),
     });
     assert_eq!(body["code"], "needs_approval");
     assert_eq!(body["reason"], "provider_service_approval");
@@ -40,6 +41,24 @@ fn missing_provider_service_approval_names_the_service_without_an_in_chat_permis
     assert!(body["message"].as_str().unwrap().contains("ksq_bydd_trd"));
     assert_eq!(body["retryable"], false);
     assert!(body.get("tool_name").is_none());
+}
+
+#[test]
+fn a_service_approval_shows_the_next_step_its_own_provider_gave() {
+    let body = error_body(&BrokerError::ProviderApprovalRequired {
+        provider: "example.feeds".into(),
+        services: vec!["Bulk history".into()],
+        next: "The user enables Bulk history for this key in Example's console.".into(),
+    });
+    assert_eq!(body["connection_id"], "example.feeds");
+    assert_eq!(
+        body["next"],
+        "The user enables Bulk history for this key in Example's console."
+    );
+    let text = body.to_string();
+    for krx in ["krx.market-data", "approved market"] {
+        assert!(!text.contains(krx), "{text}");
+    }
 }
 
 #[test]

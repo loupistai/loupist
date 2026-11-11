@@ -1,12 +1,18 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { LoupistBridge, StreamObserver } from "../types";
+import type { BridgeCommands } from "../contracts/generated";
+import { BRIDGE_EVENTS, type BridgeEventName } from "./events";
 
 /** Rust names the streaming channel argument of every observed command `on_event`. */
 const STREAM_CHANNEL_ARGUMENT = "on_event";
 
 const call = <T>(command: string, args?: Record<string, unknown>) => invoke<T>(command, args);
-const request = <T>(command: string) => (body: unknown) => call<T>(command, { request: body });
+
+/** Commands whose one argument is `request`, typed from the Rust command (`BridgeCommands`). */
+type RequestCommand = { [C in keyof BridgeCommands]: [BridgeCommands[C]["request"]] extends [never] ? never : C }[keyof BridgeCommands];
+const request = <T, C extends RequestCommand = RequestCommand>(command: C) =>
+  (body: BridgeCommands[C]["request"]) => call<T>(command, { request: body });
 
 const stream = <T, E>(command: string, args: Record<string, unknown>, observer: StreamObserver<E>) => {
   const channel = new Channel<E>();
@@ -14,7 +20,7 @@ const stream = <T, E>(command: string, args: Record<string, unknown>, observer: 
   return call<T>(command, { ...args, [STREAM_CHANNEL_ARGUMENT]: channel });
 };
 
-const subscribe = <T>(event: string, handler: (payload: T) => void) => {
+const subscribe = <T>(event: BridgeEventName, handler: (payload: T) => void) => {
   let disposed = false;
   let stop: (() => void) | undefined;
   void listen<T>(event, (message) => { if (!disposed) handler(message.payload); }).then((unlisten) => {
@@ -27,10 +33,18 @@ const subscribe = <T>(event: string, handler: (payload: T) => void) => {
  * Native bridge. Each method names the registered Rust command
  * (`src-tauri/src/lib.rs`) and passes its request envelope unchanged.
  */
-export const createLoupistBridge = (): LoupistBridge => ({
+/**
+ * Property-typed, so each method's request is checked against the generated
+ * Rust request contravariantly (interface methods compare bivariantly).
+ */
+type StrictBridge = { [K in keyof LoupistBridge]: LoupistBridge[K] };
+
+export const createLoupistBridge = (): LoupistBridge => bridge();
+
+const bridge = (): StrictBridge => ({
   noticeSettingsGet: () => call("notice_settings_get"),
   noticeAcknowledge: () => call("notice_acknowledge"),
-  onMenuAction: (handler) => subscribe("menu-action", handler),
+  onMenuAction: (handler) => subscribe(BRIDGE_EVENTS.menuAction, handler),
   exportSave: request("export_save"),
   pickFile: request("pick_file"),
 
@@ -75,8 +89,8 @@ export const createLoupistBridge = (): LoupistBridge => ({
   inboxList: request("inbox_list"),
   inboxMarkRead: request("inbox_mark_read"),
   inboxUnreadCounts: () => call("inbox_unread_counts"),
-  onInboxChanged: (handler) => subscribe("inbox-changed", handler),
-  onInboxOpen: (handler) => subscribe("inbox-open", handler),
+  onInboxChanged: (handler) => subscribe(BRIDGE_EVENTS.inboxChanged, handler),
+  onInboxOpen: (handler) => subscribe(BRIDGE_EVENTS.inboxOpen, handler),
   attentionList: () => call("attention_list"),
   attentionNotify: request("attention_notify"),
   scheduledTaskRunNow: request("scheduled_task_run_now"),
@@ -107,7 +121,7 @@ export const createLoupistBridge = (): LoupistBridge => ({
   providerCustomSave: request("provider_custom_save"),
   providerCustomRemove: (provider) => call("provider_custom_remove", { request: { provider } }),
   modelNoticeAck: request("model_notice_ack"),
-  onProviderStatus: (handler) => subscribe("provider-status", handler),
+  onProviderStatus: (handler) => subscribe(BRIDGE_EVENTS.providerStatus, handler),
 
   marketplaceSnapshot: () => call("marketplace_snapshot"),
   loupistCapabilityList: (loupist_id) => call("loupist_capability_list", { loupist_id }),
@@ -224,11 +238,11 @@ export const createLoupistBridge = (): LoupistBridge => ({
   learningReviewList: request("learning_review_list"),
   memoryLearningSettingsGet: request("memory_learning_settings_get"),
   memoryLearningSettingsSet: request("memory_learning_settings_set"),
-  onLearningReviewFinished: (handler) => subscribe("learning-review-finished", handler),
+  onLearningReviewFinished: (handler) => subscribe(BRIDGE_EVENTS.learningReviewFinished, handler),
   worldSchemaGet: request("world_schema_get"),
   worldSchemaUndo: request("world_schema_undo"),
   worldSchemaRemove: request("world_schema_remove"),
-  onWorldSchemaChanged: (handler) => subscribe("onWorldSchemaChanged", handler),
+  onWorldSchemaChanged: (handler) => subscribe(BRIDGE_EVENTS.worldSchemaChanged, handler),
   principleList: request("principle_list"),
   principleCreate: request("principle_create"),
   principleUpdate: request("principle_update"),
@@ -275,7 +289,7 @@ export const createLoupistBridge = (): LoupistBridge => ({
   galleryListingRequest: request("gallery_listing_request"),
   deepLinkPending: () => call("deep_link_pending"),
   deepLinkDismiss: () => call("deep_link_dismiss"),
-  onDeepLinkImport: (handler) => subscribe("deep-link-import", handler),
+  onDeepLinkImport: (handler) => subscribe(BRIDGE_EVENTS.deepLinkImport, handler),
 
   earningsSnapshotGet: request("earnings_snapshot_get"),
   earningsEventsList: request("earnings_events_list"),
@@ -287,5 +301,5 @@ export const createLoupistBridge = (): LoupistBridge => ({
   watchCheckNow: request("watch_check_now"),
   watchEventsList: request("watch_events_list"),
   watchEventsSeen: request("watch_events_seen"),
-  onWatchChanged: (handler) => subscribe("watch-changed", handler),
+  onWatchChanged: (handler) => subscribe(BRIDGE_EVENTS.watchChanged, handler),
 });

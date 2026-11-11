@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum PrivateClass {
     Credential,
@@ -427,6 +428,7 @@ pub(crate) fn scan_private(text: &str, context: &PrivateContext) -> Vec<PrivateH
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Flag {
     Instruction,
@@ -437,6 +439,7 @@ pub(crate) enum Flag {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct ItemFinding {
     pub flag: Flag,
     /// 1-based lines of the item's Markdown.

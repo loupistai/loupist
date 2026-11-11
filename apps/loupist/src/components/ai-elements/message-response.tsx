@@ -83,7 +83,7 @@ function ProseLink({ to, className, title, children }: { to: ChatDestination; cl
   return <button type="button" role="link" className={cn(to.kind === "lens" ? "loupist-lens-link" : "loupist-external-link", className)} data-streamdown="link"
     title={link.failed ? t("messageResponse.couldNotOpenThisLink") : title} {...link.props}>
     {children}
-    {link.failed ? <span className="sr-only" role="alert">{t("messageResponse.couldNotOpenThisLink2")}</span> : null}
+    {link.failed ? <span className="sr-only" role="alert">{t("messageResponse.couldNotOpenThisLinkAlert")}</span> : null}
   </button>;
 }
 

@@ -3,9 +3,8 @@ import type { InboxItem } from "../contracts/scheduled";
 import type { WatchlistEntry } from "../contracts/userContext";
 import type { AssetChangeRow, AssetDelta, UpcomingEvent } from "../contracts/assets";
 import type { WatchEvent } from "../contracts/watch";
-import { claimIdForEdge } from "../components/map/MapList";
-import { isMetricNode, nodeColorKey } from "../components/map/kinds";
-import { entityLabel } from "../components/map/labels";
+import { claimIdForEdge, entityLabel } from "../knowledge/mapItems";
+import { isMetricNode, nodeColorKey } from "../knowledge/mapKinds";
 
 const DAY_MS = 24 * 60 * 60_000;
 const MAX_NAME_CHIPS = 5;

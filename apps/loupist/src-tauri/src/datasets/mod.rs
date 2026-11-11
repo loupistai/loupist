@@ -27,6 +27,7 @@ CREATE TABLE datasets (
 "#
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct DatasetRef {
     pub dataset_id: String,
     pub revision: u32,

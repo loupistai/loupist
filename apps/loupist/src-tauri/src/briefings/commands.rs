@@ -9,24 +9,83 @@ use crate::{
             TaskTarget,
         },
     },
-    store::LoupistStore,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "BriefingsLoupistRequest"))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct LoupistRequest {
     pub loupist_id: String,
 }
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable), ts(rename = "BriefingSettingsRequest"))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct SettingsRequest {
     pub loupist_id: String,
     pub enabled: bool,
+    #[serde(default, deserialize_with = "exact_schedule")]
+    #[cfg_attr(test, ts(as = "Option<Schedule>"))]
     pub schedule: Option<Schedule>,
 }
+
+/// A schedule as the renderer sends it, checked exactly. Saved schedules
+/// (`Schedule`, in tasks and Chat receipts) are read leniently instead.
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum ExactSchedule {
+    Once {
+        at_ms: i64,
+    },
+    Interval {
+        every_minutes: u32,
+    },
+    Daily {
+        hour: u8,
+        minute: u8,
+        timezone: String,
+    },
+    Weekly {
+        days: Vec<u8>,
+        hour: u8,
+        minute: u8,
+        timezone: String,
+    },
+}
+
+fn exact_schedule<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Schedule>, D::Error> {
+    Ok(
+        Option::<ExactSchedule>::deserialize(deserializer)?.map(|exact| match exact {
+            ExactSchedule::Once { at_ms } => Schedule::Once { at_ms },
+            ExactSchedule::Interval { every_minutes } => Schedule::Interval { every_minutes },
+            ExactSchedule::Daily {
+                hour,
+                minute,
+                timezone,
+            } => Schedule::Daily {
+                hour,
+                minute,
+                timezone,
+            },
+            ExactSchedule::Weekly {
+                days,
+                hour,
+                minute,
+                timezone,
+            } => Schedule::Weekly {
+                days,
+                hour,
+                minute,
+                timezone,
+            },
+        }),
+    )
+}
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct BriefingSettings {
     pub enabled: bool,
@@ -34,6 +93,7 @@ pub(crate) struct BriefingSettings {
     pub task: Option<Task>,
 }
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct InboxRequest {
     pub loupist_id: String,
@@ -41,12 +101,14 @@ pub(crate) struct InboxRequest {
     pub limit: usize,
 }
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct ReadRequest {
     pub loupist_id: String,
     pub run_ids: Vec<String>,
 }
 #[derive(Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct InboxItem {
     pub briefing_context: Option<super::BriefingContext>,
@@ -87,12 +149,14 @@ impl From<Run> for InboxItem {
     }
 }
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct InboxPage {
     pub items: Vec<InboxItem>,
     pub next_cursor: Option<String>,
 }
 #[derive(Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct UnreadCount {
     pub loupist_id: String,
@@ -291,19 +355,14 @@ pub(crate) fn inbox_list(
     state: State<'_, AppState>,
 ) -> Result<InboxPage, CommandError> {
     service::ensure_visible(&state, &request.loupist_id)?;
-    let runs = state
+    let (runs, next_cursor) = state
         .store
-        .inbox_runs(
+        .inbox_page(
             &request.loupist_id,
             request.cursor.as_deref(),
             request.limit,
         )
         .map_err(map_store)?;
-    let next_cursor = if runs.len() == request.limit {
-        runs.last().map(|r| r.run_id.clone())
-    } else {
-        None
-    };
     Ok(InboxPage {
         items: runs.into_iter().map(Into::into).collect(),
         next_cursor,

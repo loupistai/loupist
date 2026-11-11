@@ -20,7 +20,7 @@ export function MapLibrary({ bridge, catalog, location, onOpen, onAsk, onChanged
   const current = { ...saved, recordId: location.surface === tab ? location.recordId : undefined, revisionId: location.surface === tab ? location.revisionId : undefined, selection: location.surface === tab ? location.selection : undefined };
   const patch = (next: KnowledgeLocation) => setViews(v => ({ ...v, [tab]: next }));
   const shared = { bridge, catalog, location: current, query: current.view?.search ?? "", onQueryChange: (search: string) => patch({ ...current, view: { ...current.view, search } }), onPatch: patch, onOpen, onAsk, onChanged };
-  return <aside className="map-library" aria-label={t("map.library")}>
+  return <aside className="map-library" data-testid="map-library" aria-label={t("map.library")}>
     <header><h2>{t("map.library")}</h2><Button variant="ghost" size="icon-sm" aria-label={t("map.closeLibrary")} onClick={onClose}><XIcon /></Button></header>
     <Tabs value={tab} onValueChange={value => setTab(value as typeof tab)}>
       <div className="map-library-tabbar"><TabsList aria-label={t("map.library")}><TabsTrigger value="source">{t("map.sources")}</TabsTrigger><TabsTrigger value="note">{t("journal.notes")}</TabsTrigger></TabsList></div>

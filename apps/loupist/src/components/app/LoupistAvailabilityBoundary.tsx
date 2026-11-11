@@ -9,7 +9,7 @@ type Props = {
   error: string | null;
   onRecover: () => void;
   onReconnect?: () => void;
-  /** Removes the Loupist from the app (its folder stays); the only way past an earlier-version folder. */
+  /** Removes the Loupist from the app (its folder stays); the only way past an earlier- or newer-version folder. */
   onRemove?: () => void;
   className?: string;
   compact?: boolean;
@@ -30,12 +30,14 @@ export function LoupistAvailabilityBoundary({
   if (availability.status === "available") return null;
 
   const Heading = compact ? "h3" : "h1";
-  if (availability.status === "earlier_version") {
-    // Rust refuses a folder an earlier build made (no migration before 1.0).
+  if (availability.status === "earlier_version" || availability.status === "newer_version") {
+    // Rust refuses a pre-upgrade development format and leaves a folder a newer
+    // Loupist saved untouched; neither is a moved folder, so there is no reconnect.
+    const newer = availability.status === "newer_version";
     return (
       <section className={className} role="alert" aria-labelledby={headingId}>
-        <Heading id={headingId}>{i18n.t("app:loupistAvailabilityBoundary.earlierVersion")}</Heading>
-        <p>{i18n.t("app:loupistAvailabilityBoundary.earlierVersionBody")}</p>
+        <Heading id={headingId}>{newer ? i18n.t("app:loupistAvailabilityBoundary.newerVersion") : i18n.t("app:loupistAvailabilityBoundary.earlierVersion")}</Heading>
+        <p>{newer ? i18n.t("app:loupistAvailabilityBoundary.newerVersionBody") : i18n.t("app:loupistAvailabilityBoundary.earlierVersionBody")}</p>
         {error ? <div className="inline-error">{error}</div> : null}
         {onRemove ? <div className="onboarding-actions">
           <Button type="button" variant="outline" disabled={busy} onClick={onRemove}>

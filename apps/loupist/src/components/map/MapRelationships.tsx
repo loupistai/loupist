@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "../../i18n";
 import { formatNumber } from "../../i18n/format";
 import type { KnowledgeMap, KnowledgeMapNode } from "../../contracts/knowledge";
-import { nodeCategory } from "./kinds";
-import { entityLabel } from "./labels";
+import { nodeCategory } from "../../knowledge/mapKinds";
+import { entityLabel } from "../../knowledge/mapItems";
 import { relationName } from "./relations";
 import { relationshipGroups, strokeWidth, type RelationshipGroup, type RelationshipRow } from "./relationships";
 

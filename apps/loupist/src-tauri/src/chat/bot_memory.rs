@@ -61,7 +61,7 @@ impl BotMemoryKind {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct BotMemoryNote {
     pub kind: BotMemoryKind,
     pub text: String,
@@ -71,7 +71,7 @@ pub struct BotMemoryNote {
 
 /// One accepted change, kept with the reply that published it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct BotMemoryChange {
     pub reply_id: String,
     pub entry_id: String,
@@ -84,7 +84,7 @@ pub struct BotMemoryChange {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct BotMemory {
     /// In commit order. The Bot sees the changes whose reply is on the shown
     /// path, so an edit or a version switch carries memory with the transcript.

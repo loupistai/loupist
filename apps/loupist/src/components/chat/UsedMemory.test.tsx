@@ -9,7 +9,7 @@ import i18n from "@/i18n";
 const answer = (overrides: Partial<ChatMessage> = {}): ChatMessage => ({
   id: "answer-1", role: "assistant", status: "complete", created_at: "2026-10-28T00:00:00Z",
   content: "Margins fell while cash conversion held, so I checked [Check cash flow before profit](lens:principle-cash) first.",
-  lens_receipts: [{ recordId: "principle-cash", revisionId: "rev", kind: "principle", title: "Check cash flow before profit", delivery: "context" }],
+  lens_receipts: [{ recordId: "principle-cash", revisionId: "rev", kind: "principle", title: "Check cash flow before profit", delivery: "context", revisionDigest: "digest" }],
   memory_update: { status: "no_change", commitId: null, changes: [] }, ...overrides,
 });
 
@@ -54,7 +54,7 @@ it("labels a deleted receipt target without offering edit or archive actions", a
   const { MockLoupistBridge } = await import("../../bridge/mockBridge");
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   vi.spyOn(bridge, "knowledgeCatalog").mockResolvedValue({ loupistId: "loupist-quality", lenses: [], sources: [], worlds: [] });
-  render(<MessageMemoryRow bridge={bridge} loupistId="loupist-quality" message={answer({ lens_receipts: [{ recordId: "deleted-method", revisionId: "rev", kind: "method", title: "Deleted method", delivery: "exact_read" }] })} />);
+  render(<MessageMemoryRow bridge={bridge} loupistId="loupist-quality" message={answer({ lens_receipts: [{ recordId: "deleted-method", revisionId: "rev", kind: "method", title: "Deleted method", delivery: "exact_read", revisionDigest: "digest" }] })} />);
   await userEvent.click(screen.getByRole("button", { name: "Used 1 page" }));
   expect(await screen.findByText(/Removed/)).toBeVisible();
   expect(screen.getByText("Deleted method").tagName).toBe("S");
@@ -65,7 +65,7 @@ it("labels a deleted receipt target without offering edit or archive actions", a
 it("shows the default perspective under its interface-language name", async () => {
   await i18n.changeLanguage("ko");
   try {
-    render(<Harness toggle={vi.fn()} messages={[answer({ lens_receipts: [{ recordId: "perspective-default", revisionId: "rev", kind: "perspective", title: "Outlook", delivery: "context" }] })]} />);
+    render(<Harness toggle={vi.fn()} messages={[answer({ lens_receipts: [{ recordId: "perspective-default", revisionId: "rev", kind: "perspective", title: "Outlook", delivery: "context", revisionDigest: "digest" }] })]} />);
     await userEvent.click(screen.getByRole("button", { name: "페이지 1개 사용" }));
     const panel = screen.getByText("사용함 · 관점").closest("li")!;
     expect(within(panel).getByRole("blockquote")).toHaveTextContent(/^관점$/);

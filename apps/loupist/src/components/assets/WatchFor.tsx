@@ -45,6 +45,7 @@ export function WatchFor({ bridge, loupistId, loupistName, assetId, name, onOpen
   const { settings, setSettings, reload } = useWatchSettings(bridge, loupistId);
   const [busy, setBusy] = useState<WatchKind | null>(null);
   const asset = settings ? [...settings.watched, ...settings.notWatched].find(item => item.assetId === assetId) : undefined;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reports the kinds when the settings or the asset change; `onKinds` is the parent's inline callback.
   useEffect(() => { onKinds?.(asset?.kinds ?? []); }, [settings, assetId]);
   if (!settings || !asset || !asset.kinds.length) return null;
   const toggle = async (kind: WatchKind, enabled: boolean) => {

@@ -118,6 +118,15 @@ pub(super) fn index_payload(
          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
     )?;
     for draft in documents(blobs, kind, title, payload)? {
+        // Rust owns these lists (Knowledge schema 7 dropped the SQL whitelists).
+        if !matches!(draft.kind, "source" | "lens" | "world")
+            || !matches!(
+                draft.coverage,
+                "included_full" | "metadata_only" | "snippet"
+            )
+        {
+            return Err(KnowledgeError::Invalid("search document is invalid"));
+        }
         let search_text = fold(&format!(
             "{}\n{}\n{}",
             draft.title, draft.body, draft.aliases

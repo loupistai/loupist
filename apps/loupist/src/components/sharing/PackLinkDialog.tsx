@@ -2,12 +2,11 @@ import { useEffect, useId, useRef, useState } from "react";
 import i18n, { useTranslation } from "@/i18n";
 import type { LoupistBridge } from "../../types";
 import type { PackOpenResult, PackSource } from "../../contracts/sharing";
-import { errorMessage } from "../../lib/errors";
+import { commandErrorCode, errorMessage } from "../../lib/errors";
 import { Button } from "../ui/button";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Spinner } from "../ui/spinner";
-import { errorCode } from "./sharingText";
 import "@/styles/sharing.css";
 
 /**
@@ -35,7 +34,7 @@ export function PackLinkDialog({ bridge, open, onOpenChange, onOpened }: {
       if (result) onOpened(result);
     } catch (cause) {
       if (current !== request.current) return;
-      const code = errorCode(cause);
+      const code = commandErrorCode(cause);
       if (code === "link_invalid") setFieldError(t("linkInvalid"));
       else if (code === "link_not_found") setFieldError(t("linkNotFound"));
       else if (code === "offline") setError(t("publishOffline"));

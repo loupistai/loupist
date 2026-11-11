@@ -1,4 +1,4 @@
-use super::authority::bounded_text;
+use super::arguments::bounded_text;
 use super::*;
 use crate::agent_harness::native_policy::{
     self, NativeDecision, NativeRefusal, NativeRequest, NativeRoots, NativeTool,

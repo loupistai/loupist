@@ -6,7 +6,7 @@ use tauri::{AppHandle, State};
 use crate::{
     app::{AppState, CommandError},
     runs::maintenance::MaintenanceBlocker,
-    store::{LoupistStore, SqliteStore, StoreError},
+    store::{SqliteStore, StoreError},
 };
 
 const UPDATE_SCHEDULE_SCHEMA: u32 = 1;
@@ -37,7 +37,6 @@ const UPDATE_PACKAGE_OPERATION_DEADLINE: std::time::Duration =
     std::time::Duration::from_secs(31 * 60);
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
 pub struct PersistedUpdateSchedule {
     schema_version: u32,
     failure_count: u32,
@@ -81,6 +80,7 @@ impl PersistedUpdateSchedule {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum UpdatePhase {
     #[default]
@@ -93,6 +93,7 @@ pub enum UpdatePhase {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct UpdateOfferDto {
     pub offer_id: String,
     pub version: String,
@@ -101,6 +102,7 @@ pub struct UpdateOfferDto {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct UpdateStateDto {
     pub supported: bool,
     pub current_version: String,
@@ -115,18 +117,21 @@ pub struct UpdateStateDto {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct UpdateInstallRequest {
     pub offer_id: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct UpdateInstallResult {
     pub outcome: UpdateInstallOutcome,
     pub blockers: Vec<MaintenanceBlocker>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum UpdateInstallOutcome {
     Blocked,

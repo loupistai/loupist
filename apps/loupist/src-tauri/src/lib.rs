@@ -4,6 +4,8 @@ pub mod eval_harness;
 compile_error!("eval-harness is forbidden in release builds");
 mod agent_harness;
 mod app;
+#[cfg(test)]
+mod bridge_contract;
 mod briefings;
 mod broker;
 mod calculations;
@@ -12,6 +14,7 @@ mod commands;
 mod custom_connections;
 mod datasets;
 mod domain;
+mod events;
 pub mod finance_credentials;
 mod finance_data;
 mod fs;
@@ -117,7 +120,7 @@ fn install_app_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
     )?;
     app.set_menu(Menu::with_items(app, &[&app_menu, &file, &edit, &view])?)?;
     app.on_menu_event(|app, event| {
-        let _ = app.emit("menu-action", event.id().as_ref());
+        let _ = app.emit(events::MENU_ACTION, event.id().as_ref());
     });
     Ok(())
 }
@@ -196,6 +199,11 @@ pub fn run() {
                 }
                 Err(error) => {
                     eprintln!("Loupist failed to start: {error}");
+                    // No window exists yet: a newer or failed-upgrade catalog
+                    // would otherwise quit without telling the user why.
+                    if let Some((title, body)) = app::startup_storage_notice(&error) {
+                        show_startup_notice(title, &body);
+                    }
                     app.cleanup_before_exit();
                     std::process::exit(1);
                 }
@@ -214,7 +222,7 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     loop {
                         match learning_events.recv().await {
-                            Ok(event) => { let _ = tauri::Emitter::emit(&learning_app, "learning-review-finished", event); }
+                            Ok(event) => { let _ = tauri::Emitter::emit(&learning_app, events::LEARNING_REVIEW_FINISHED, event); }
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                             Err(_) => break,
                         }
@@ -225,7 +233,7 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     loop {
                         match schema_events.recv().await {
-                            Ok(event) => { let _ = tauri::Emitter::emit(&schema_app, "onWorldSchemaChanged", event); }
+                            Ok(event) => { let _ = tauri::Emitter::emit(&schema_app, events::WORLD_SCHEMA_CHANGED, event); }
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                             Err(_) => break,
                         }
@@ -254,14 +262,14 @@ pub fn run() {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 let links = app.handle().clone();
                 app.deep_link().on_open_url(move |event| {
-                    sharing::commands::deliver_links(
+                    sharing::commands::deep_links::deliver_links(
                         &links,
                         event.urls().into_iter().map(|url| url.to_string()),
                     );
                 });
                 // A link that launched the app is held until onboarding asks for it.
                 if let Ok(Some(urls)) = app.deep_link().get_current() {
-                    sharing::commands::deliver_links(
+                    sharing::commands::deep_links::deliver_links(
                         app.handle(),
                         urls.into_iter().map(|url| url.to_string()),
                     );
@@ -478,34 +486,34 @@ pub fn run() {
             updater::update_status,
             updater::update_check,
             updater::update_install,
-            sharing::commands::share_summary,
-            sharing::commands::share_export,
-            sharing::commands::share_copy_text,
-            sharing::commands::share_reveal,
-            sharing::commands::share_publish,
-            sharing::commands::github_account,
-            sharing::commands::github_sign_in,
-            sharing::commands::github_sign_in_open,
-            sharing::commands::github_sign_in_cancel,
-            sharing::commands::github_sign_out,
-            sharing::commands::pack_open,
-            sharing::commands::pack_add,
-            sharing::commands::pack_list,
-            sharing::commands::pack_suggestions,
-            sharing::commands::pack_item_read,
-            sharing::commands::pack_decide,
-            sharing::commands::pack_remove,
-            sharing::commands::pack_report,
-            sharing::commands::pack_origin,
-            sharing::commands::pack_check_update,
-            sharing::commands::pack_choose_newer,
-            sharing::commands::pack_apply_update,
-            sharing::commands::gallery_index,
-            sharing::commands::gallery_image,
-            sharing::commands::gallery_listing_status,
-            sharing::commands::gallery_listing_request,
-            sharing::commands::deep_link_pending,
-            sharing::commands::deep_link_dismiss,
+            sharing::commands::share::share_summary,
+            sharing::commands::save::share_export,
+            sharing::commands::share::share_copy_text,
+            sharing::commands::save::share_reveal,
+            sharing::commands::publish::share_publish,
+            sharing::commands::github_account::github_account,
+            sharing::commands::github_account::github_sign_in,
+            sharing::commands::github_account::github_sign_in_open,
+            sharing::commands::github_account::github_sign_in_cancel,
+            sharing::commands::github_account::github_sign_out,
+            sharing::commands::open::pack_open,
+            sharing::commands::add::pack_add,
+            sharing::commands::added::pack_list,
+            sharing::commands::review::pack_suggestions,
+            sharing::commands::review::pack_item_read,
+            sharing::commands::review::pack_decide,
+            sharing::commands::added::pack_remove,
+            sharing::commands::added::pack_report,
+            sharing::commands::added::pack_origin,
+            sharing::commands::updates::pack_check_update,
+            sharing::commands::updates::pack_choose_newer,
+            sharing::commands::updates::pack_apply_update,
+            sharing::commands::gallery::gallery_index,
+            sharing::commands::gallery::gallery_image,
+            sharing::commands::gallery::gallery_listing_status,
+            sharing::commands::gallery::gallery_listing_request,
+            sharing::commands::deep_links::deep_link_pending,
+            sharing::commands::deep_links::deep_link_dismiss,
         ])
         .build(context)
         .expect("failed to build Loupist")
@@ -535,4 +543,20 @@ pub fn run() {
                 }
             }
         });
+}
+
+/// A blocking native alert shown before the app exits during startup.
+fn show_startup_notice(title: &str, body: &str) {
+    // The E2E harness drives no native dialogs; the message is in the log.
+    #[cfg(not(feature = "e2e"))]
+    {
+        let _ = rfd::MessageDialog::new()
+            .set_level(rfd::MessageLevel::Error)
+            .set_title(title)
+            .set_description(body)
+            .set_buttons(rfd::MessageButtons::Ok)
+            .show();
+    }
+    #[cfg(feature = "e2e")]
+    let _ = (title, body);
 }

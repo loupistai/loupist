@@ -11,6 +11,7 @@ use super::revision::{load_revision, load_revision_by_digest};
 use super::{KnowledgeError, KnowledgeResult};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct WorldSourceTarget {
     pub record_id: String,
@@ -22,6 +23,7 @@ pub struct WorldSourceTarget {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SourceWorldClaim {
     pub world_record_id: String,

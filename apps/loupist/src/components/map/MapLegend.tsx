@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
 import { useTranslation } from "../../i18n";
-import { entityCategories, nodeCategory } from "./kinds";
+import { entityCategories, nodeCategory } from "../../knowledge/mapKinds";
 
 /** Rows the legend card shows at most; the rest fold into "More…". */
 export const LEGEND_MAX_ROWS = 6;

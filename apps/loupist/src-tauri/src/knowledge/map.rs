@@ -11,6 +11,8 @@ use super::{
 use crate::store::user_context::{MapContext, MapContextItem};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+// Received as a request: missing optional fields are accepted.
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeMapQuery {
     pub loupist_id: String,
@@ -18,9 +20,11 @@ pub struct KnowledgeMapQuery {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct KnowledgeMapNode {
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub origin: Option<crate::custom_connections::taint::CustomOrigin>,
     pub id: String,
     pub kind: String,
@@ -30,29 +34,38 @@ pub struct KnowledgeMapNode {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub local_names: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub entity_kind: Option<String>,
     /// Map colour for an extension type. Core kinds keep the shared category map.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub category_override: Option<super::world_schema::ExtensionCategory>,
     /// Display names for an extension type. The inspector uses the UI language, then English.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub kind_labels: Option<super::world_schema::ExtensionLabels>,
     pub degree: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub first_seen_at_ms: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub record_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub archived: Option<bool>,
     pub watched: bool,
     pub held: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub learned_at_ms: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub learned_rationale: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct KnowledgeMapEdge {
     pub id: String,
@@ -60,16 +73,21 @@ pub struct KnowledgeMapEdge {
     pub source: String,
     pub target: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub relation: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub status: Option<ClaimStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub weight: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub first_seen_at_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct KnowledgeMapCount {
     pub total: u32,
@@ -78,6 +96,7 @@ pub struct KnowledgeMapCount {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct KnowledgeMap {
     pub nodes: Vec<KnowledgeMapNode>,
@@ -577,9 +596,7 @@ mod tests {
         db.execute_batch(
             "CREATE TABLE app_settings (
                 id TEXT PRIMARY KEY NOT NULL,
-                data_json TEXT NOT NULL,
-                CHECK (id IN ('model', 'model_visibility', 'update')
-                    OR (substr(id, 1, 17) = 'world_processing:' AND length(id) > 17))
+                data_json TEXT NOT NULL
             ) STRICT;",
         )
         .unwrap();

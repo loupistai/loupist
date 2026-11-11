@@ -11,6 +11,7 @@ const MAX_CANDIDATES: usize = 50;
 const DAY_MS: i64 = 86_400_000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Hop {
     pub claim_id: String,

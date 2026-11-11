@@ -9,7 +9,7 @@ it.each([
   ["3500000000", "4500000000"],
 ])("renders distinct quantitative ticks for decimal values %s and %s", async (first, second) => {
   const spec = assembleAnalyticSpec({
-    kind: "line", x: "period", y: ["amount"],
+    kind: "line", x: "period", y: ["amount"], color: null, title: null, subtitle: null,
     semantic_types: { period: "Category", amount: "Number" },
   }, [{ period: "earlier", amount: first }, { period: "later", amount: second }], "light", 520, 360);
   const view = new View(parse(compile(spec as unknown as TopLevelSpec).spec), { renderer: "none" });

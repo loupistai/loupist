@@ -49,7 +49,7 @@ function useLoad<T>(read: () => Promise<T>, key: string): Load<T> {
     void read().then((value) => { if (current) setState({ key, status: "done", value }); })
       .catch(() => { if (current) setState({ key, status: "failed" }); });
     return () => { current = false; };
-    // `read` closes over the same inputs as `key`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `read` closes over the same inputs as `key`.
   }, [key]);
   return state.key === key ? state : { status: "loading" };
 }
@@ -138,12 +138,11 @@ export function MorningMessage({ bridge, loupistId, loupistName, focus, onAsk, m
     : [];
 
   const sinceLabel = lastSeenAtMs === undefined ? "" : formatDate(lastSeenAtMs, sinceDayOptions(lastSeenAtMs, nowMs));
-  const deliveredKey = deliveredRunIds?.join(",") ?? "";
   const briefing = inbox.value && deliveredRunIds?.includes(inbox.value.runId) ? null : inbox.value;
   const message = useMemo(() => morningMessage({
     language, nowMs, lastSeenAtMs, focus,
     map: map.value, events: events.value, briefing, journal: journal.value, watchlist: watchlist.value, assets: assets.value, watchEvents: alerts.value, upcoming: upcoming.value,
-  }, sinceLabel), [language, nowMs, lastSeenAtMs, focus, map.value, events.value, briefing, deliveredKey, journal.value, watchlist.value, assets.value, alerts.value, upcoming.value, sinceLabel]);
+  }, sinceLabel), [language, nowMs, lastSeenAtMs, focus, map.value, events.value, briefing, journal.value, watchlist.value, assets.value, alerts.value, upcoming.value, sinceLabel]);
 
   const changedLoading = map.status === "loading" || events.status === "loading";
   const allSettled = [map, events, inbox, journal, watchlist, assets, alerts, upcoming, connections].every((load) => load.status !== "loading");
@@ -151,6 +150,7 @@ export function MorningMessage({ bridge, loupistId, loupistName, focus, onAsk, m
   const nameOf = (asset: Pick<AssetDelta, "assetId" | "symbol" | "market" | "name" | "entityId">) => localAssetName(asset, { nodes: map.value?.nodes, pages: assets.value }, language);
   // Alerts shown in the bullet for a second are seen and leave Needs attention.
   useSeenAfter(bridge, loupistId, (message.followed?.alerts ?? []).map((event) => event.eventId), mode !== "questions");
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reports settling once; `onSettled` is the parent's inline callback.
   useEffect(() => { if (allSettled) onSettled?.(); }, [allSettled]);
   const changedSlow = useSlow(changedLoading);
   const briefingSlow = useSlow(inbox.status === "loading");

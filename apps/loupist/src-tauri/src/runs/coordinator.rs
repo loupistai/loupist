@@ -71,6 +71,7 @@ impl RunTarget {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct RunActivity {
     pub run_id: String,
     pub loupist_id: String,

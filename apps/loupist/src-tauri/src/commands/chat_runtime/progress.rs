@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 
-use super::{ChatEventSink, ChatStreamEvent};
+use super::{ChatEventSink, ChatRunPhase, ChatStreamEvent};
 use crate::chat::progress::{ChatProgress, ChatProgressProjection};
 
 pub(super) const COMMENTARY_FLUSH_WINDOW: Duration = Duration::from_millis(32);
@@ -96,8 +96,8 @@ pub(super) fn emit_chat_progress_snapshot(
 pub(super) fn emit_chat_phase(
     on_event: &ChatEventSink,
     run_id: &str,
-    announced: &mut Option<&'static str>,
-    phase: &'static str,
+    announced: &mut Option<ChatRunPhase>,
+    phase: ChatRunPhase,
 ) {
     if *announced == Some(phase) {
         return;
@@ -105,7 +105,7 @@ pub(super) fn emit_chat_phase(
     *announced = Some(phase);
     let _ = on_event.send(ChatStreamEvent::Phase {
         run_id: run_id.to_owned(),
-        phase: phase.to_owned(),
+        phase,
     });
 }
 

@@ -87,6 +87,7 @@ struct RawIndex {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct EntryCounts {
     pub methods: u32,
@@ -98,6 +99,7 @@ pub(crate) struct EntryCounts {
 /// A validated, listed pack. The renderer gets everything but the location,
 /// which Rust resolves from the id when the person presses Preview or Use.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Entry {
     pub id: String,

@@ -11,7 +11,7 @@ const FIXED_SKILL_IDS: ReadonlySet<string> = new Set(["world", "lens", "journal"
 const BUNDLED_SKILLS: BundledSkill[] = (Object.keys(englishSettings.bundledSkills) as BundledSkillId[]).map((id) => ({
   id,
   ...englishSettings.bundledSkills[id],
-  ...(FIXED_SKILL_IDS.has(id) ? { fixed: true } : {}),
+  fixed: FIXED_SKILL_IDS.has(id),
 }));
 
 export const AGENT_SKILLS: ReadonlyArray<BundledSkill> = BUNDLED_SKILLS.filter((skill) => !skill.fixed);

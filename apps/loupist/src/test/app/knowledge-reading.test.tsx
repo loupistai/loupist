@@ -75,10 +75,10 @@ describe("Loupist · Memory reading", () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const pinned = { receiptId: "receipt-a", recordId: "source-pack", revisionId: "rev-source-1", spanId: "span-1", coverage: "included_excerpt", attribution: "Filing" };
-    vi.spyOn(bridge, "knowledgeJournalRead").mockResolvedValue({ loupistId: "loupist-quality", researchId: "research", entities: [], createdAtMs: 1, updatedAtMs: 1, archived: false, inputDigest: "mock", journalId: "journal-a", judgment: "First conclusion", reasoning: "", check: { claim: "Cash flow will stay positive.", metric: "Cash flow", direction: "above", threshold: 0, byDate: "2027-01-01", confidence: 70 }, inputs: { sources: [pinned], worlds: [], lenses: [] } });
+    vi.spyOn(bridge, "knowledgeJournalRead").mockResolvedValue({ loupistId: "loupist-quality", researchId: "research", entities: [], createdAtMs: 1, updatedAtMs: 1, archived: false, inputDigest: "mock", journalId: "journal-a", judgment: "First conclusion", reasoning: "", check: { claim: "Cash flow will stay positive.", metric: "Cash flow", direction: "above", threshold: 0, byDate: "2027-01-01", confidence: 70 }, inputs: { sources: [pinned], worlds: [], lenses: [], earlier: [] }, originChatId: null });
     let release!: (value: { mediaType: string; byteLength: number; text: string; pinned: typeof pinned }) => void;
     vi.spyOn(bridge, "knowledgeJournalSourceRead").mockReturnValue(new Promise((resolve) => { release = resolve; }));
-    vi.spyOn(bridge, "knowledgeWorkingNoteRead").mockResolvedValue({ researchId: "note-b", chatId: "chat-b", title: "New working note", markdown: "Cash flow stayed positive in the annual filing.", changeSummary: "", recordedAtMs: 1 });
+    vi.spyOn(bridge, "knowledgeWorkingNoteRead").mockResolvedValue({ researchId: "note-b", chatId: "chat-b", title: "New working note", markdown: "Cash flow stayed positive in the annual filing.", changeSummary: "", recordedAtMs: 1, previousNoteIds: [] });
     const view = render(<ResearchReader bridge={bridge} location={journal("journal-a")} onOpen={vi.fn()} />);
     await user.click(await screen.findByRole("button", { name: "Read saved source" }));
     view.rerender(<ResearchReader bridge={bridge} location={{ loupistId: "loupist-quality", surface: "note", selection: { kind: "research", recordId: "note-b" } }} onOpen={vi.fn()} />);

@@ -9,8 +9,7 @@ use tauri::State;
 
 use crate::{
     app::{AppState, CommandError},
-    chat::artifacts::ChatArtifactRef,
-    store::LoupistStore,
+    chat::artifacts::{ChatArtifactKind, ChatArtifactRef},
 };
 
 use super::{map_internal, map_store};
@@ -21,7 +20,34 @@ const MAX_BYTES: usize = 512 * 1024;
 const MAX_SESSIONS: usize = 100;
 const MAX_TABS: usize = 20;
 
+/// A Work tab's artifact as the renderer sends it, checked exactly. Chats store
+/// `ChatArtifactRef` and read it leniently, so the request side has its own shape.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExactArtifactRef {
+    artifact_id: String,
+    revision: u32,
+    kind: ChatArtifactKind,
+    title: String,
+    digest: String,
+}
+
+fn exact_artifact_ref<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<ChatArtifactRef>, D::Error> {
+    Ok(
+        Option::<ExactArtifactRef>::deserialize(deserializer)?.map(|exact| ChatArtifactRef {
+            artifact_id: exact.artifact_id,
+            revision: exact.revision,
+            kind: exact.kind,
+            title: exact.title,
+            digest: exact.digest,
+        }),
+    )
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct WorkspaceUiState {
     version: u8,
@@ -29,6 +55,7 @@ pub struct WorkspaceUiState {
     placement: WorkspacePlacement,
     /// The user's dock choice per content kind (side-panel.md P7); unset kinds use defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     dock_by_kind: Option<DockByKind>,
     width: f64,
     height: f64,
@@ -36,6 +63,7 @@ pub struct WorkspaceUiState {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 enum WorkspacePlacement {
     Side,
@@ -43,21 +71,26 @@ enum WorkspacePlacement {
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 struct DockByKind {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     chart: Option<WorkspacePlacement>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     reading: Option<WorkspacePlacement>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 struct WorkspaceUiSession {
     loupist_id: String,
     thread_id: String,
     tabs: Vec<WorkspaceUiTab>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     active_tab_id: Option<String>,
     /// The user closed the panel in this chat; the renderer does not reopen it by itself.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -65,6 +98,7 @@ struct WorkspaceUiSession {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum WorkspaceUiTab {
     Files {
@@ -72,6 +106,7 @@ enum WorkspaceUiTab {
         title: String,
         path: String,
         #[serde(rename = "filePath", skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         file_path: Option<String>,
     },
     Memory {
@@ -84,9 +119,15 @@ enum WorkspaceUiTab {
     /// item may come from another chat of the same Loupist, so its chat travels with it.
     Work {
         id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            deserialize_with = "exact_artifact_ref",
+            skip_serializing_if = "Option::is_none"
+        )]
+        #[cfg_attr(test, ts(optional))]
         artifact: Option<ChatArtifactRef>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         artifact_thread_id: Option<String>,
     },
     Browser {
@@ -100,21 +141,27 @@ enum WorkspaceUiTab {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct WorkspaceMemoryLocation {
     loupist_id: String,
     surface: WorkspaceMemorySurface,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     record_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     revision_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     object_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     selection: Option<WorkspaceMemorySelection>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 enum WorkspaceMemorySurface {
     Home,
@@ -125,6 +172,7 @@ enum WorkspaceMemorySurface {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(
     tag = "kind",
     rename_all = "snake_case",
@@ -140,12 +188,16 @@ enum WorkspaceMemorySelection {
     },
     Source {
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         source_id: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         span_id: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         world_record_id: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         world_revision_id: Option<String>,
     },
     Lens {
@@ -154,6 +206,7 @@ enum WorkspaceMemorySelection {
     Research {
         record_id: String,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         section_id: Option<String>,
     },
     Journal {
@@ -165,21 +218,26 @@ enum WorkspaceMemorySelection {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct WorkspaceMemoryPin {
     kind: WorkspaceMemoryPinKind,
     loupist_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     record_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     revision_id: Option<String>,
     object_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     span_id: Option<String>,
     label: String,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 enum WorkspaceMemoryPinKind {
     Source,
@@ -191,6 +249,7 @@ enum WorkspaceMemoryPinKind {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct WorkspaceUiWriteRequest {
     state: WorkspaceUiState,
@@ -198,6 +257,7 @@ pub struct WorkspaceUiWriteRequest {
 
 /// Unsent text lives in the app profile, outside the agent's workspace.
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct DraftIdentity {
     loupist_id: String,
@@ -246,6 +306,7 @@ fn draft_table(state: &AppState, id: &DraftIdentity) -> Result<(), CommandError>
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DraftAttachment {
     id: String,
@@ -326,10 +387,12 @@ pub fn chat_draft_files_read(
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct StoredChatDraft {
     prompt: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     context: Option<serde_json::Map<String, serde_json::Value>>,
 }
 

@@ -66,41 +66,69 @@ pub(super) fn config_state(
 }
 
 /// TOML can contain only the non-secret setup fields declared by bundled
-/// connectors. Partial setup remains editable, but unsupported values do not.
+/// connectors. Partial setup remains editable, but a credential field or an
+/// invalid value of a declared field does not. A connector or field this
+/// catalog does not declare is not an error here: `ignored_config_entries`
+/// reports it, and it takes no effect.
 pub(crate) fn validate_config_entries(
     configs: &BTreeMap<String, BTreeMap<String, String>>,
 ) -> Result<(), CommandError> {
     let catalog = bundled_catalog()?;
     for (id, config) in configs {
-        let entry = catalog
+        let Some(setup) = catalog
             .entries
             .iter()
             .find(|entry| &entry.id == id)
-            .ok_or_else(|| {
-                CommandError::invalid(format!("unknown connector configuration: {id}"))
-            })?;
-        let fields = entry
-            .setup
-            .as_ref()
-            .map(|setup| setup.config_fields.as_slice())
-            .unwrap_or_default();
+            .and_then(|entry| entry.setup.as_ref())
+        else {
+            continue;
+        };
         for (key, value) in config {
-            let field = fields
-                .iter()
-                .find(|field| field.id == *key)
-                .ok_or_else(|| {
-                    CommandError::invalid(format!(
-                        "unsupported non-secret configuration field: connectors.{id}.{key}"
-                    ))
-                })?;
-            if !valid_setup_value(field, value) {
+            if let Some(field) = setup.config_fields.iter().find(|field| field.id == *key) {
+                if !valid_setup_value(field, value) {
+                    return Err(CommandError::invalid(format!(
+                        "invalid configuration field: connectors.{id}.{key}"
+                    )));
+                }
+            } else if setup.credential_fields.iter().any(|field| field.id == *key) {
                 return Err(CommandError::invalid(format!(
-                    "invalid configuration field: connectors.{id}.{key}"
+                    "unsupported non-secret configuration field: connectors.{id}.{key}"
                 )));
             }
         }
     }
     Ok(())
+}
+
+/// The connector tables and fields in `config.toml` that the bundled catalog
+/// does not declare, because a later or earlier catalog removed or renamed
+/// them: `(id, None)` for a whole connector, `(id, Some(field))` for one field.
+/// They stay in the file, are reported as warnings and take no effect.
+pub(crate) fn ignored_config_entries(
+    configs: &BTreeMap<String, BTreeMap<String, String>>,
+) -> Result<Vec<(String, Option<String>)>, CommandError> {
+    let catalog = bundled_catalog()?;
+    let mut ignored = Vec::new();
+    for (id, config) in configs {
+        let Some(entry) = catalog.entries.iter().find(|entry| &entry.id == id) else {
+            ignored.push((id.clone(), None));
+            continue;
+        };
+        let setup = entry.setup.as_ref();
+        for key in config.keys() {
+            let declared = setup.is_some_and(|setup| {
+                setup
+                    .config_fields
+                    .iter()
+                    .chain(&setup.credential_fields)
+                    .any(|field| field.id == *key)
+            });
+            if !declared {
+                ignored.push((id.clone(), Some(key.clone())));
+            }
+        }
+    }
+    Ok(ignored)
 }
 
 fn digests(

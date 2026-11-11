@@ -43,7 +43,6 @@ use crate::{
     domain::{LoupistCapabilityBinding, LoupistProfile},
     fs::loupist_root::BoundLoupistRoot,
     providers::catalog::ModelCatalogView,
-    store::LoupistStore,
 };
 
 pub(crate) const MAX_PROMPT_BYTES: usize = 128 * 1024;
@@ -57,6 +56,7 @@ pub fn model_catalog_get(state: State<'_, AppState>) -> Result<ModelCatalogView,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ModelVisibilityUpdateRequest {
     pub model_profile_id: String,
@@ -126,8 +126,10 @@ pub(crate) fn map_internal(error: impl std::fmt::Display) -> CommandError {
     CommandError::internal(error.to_string())
 }
 
-/// The typed refusal for a folder made by an earlier build (never migrated).
+/// The typed refusal for a folder in a pre-ladder development format.
 pub(crate) const LOUPIST_EARLIER_VERSION: &str = "loupist_earlier_version";
+/// The typed refusal for a folder a newer Loupist saved (never touched).
+pub(crate) const LOUPIST_NEWER_VERSION: &str = "loupist_newer_version";
 
 /// Preserve not-found and conflict when mapping a store error to a command error.
 pub(crate) fn map_store(error: crate::store::StoreError) -> CommandError {
@@ -137,6 +139,10 @@ pub(crate) fn map_store(error: crate::store::StoreError) -> CommandError {
         StoreError::EarlierVersion => CommandError::new(
             LOUPIST_EARLIER_VERSION,
             "This Loupist was made by an earlier version and can't be opened. Create a new Loupist.",
+        ),
+        StoreError::NewerVersion => CommandError::new(
+            LOUPIST_NEWER_VERSION,
+            "This Loupist was saved by a newer version of Loupist. Update Loupist to open it.",
         ),
         StoreError::Sqlite(rusqlite::Error::QueryReturnedNoRows) => {
             CommandError::not_found("record")
@@ -391,6 +397,9 @@ async fn profile_summary_with_availability(
                     Err(crate::store::StoreError::EarlierVersion) => {
                         LoupistAvailability::EarlierVersion
                     }
+                    Err(crate::store::StoreError::NewerVersion) => {
+                        LoupistAvailability::NewerVersion
+                    }
                     Err(_) => LoupistAvailability::WorkspaceUnavailable,
                 }
             }
@@ -436,7 +445,9 @@ fn profile_summary_from_parts(
         last_model_profile_id: profile.last_model_profile_id.clone(),
         enabled_skill_ids: if matches!(
             availability,
-            LoupistAvailability::WorkspaceUnavailable | LoupistAvailability::EarlierVersion
+            LoupistAvailability::WorkspaceUnavailable
+                | LoupistAvailability::EarlierVersion
+                | LoupistAvailability::NewerVersion
         ) {
             Vec::new()
         } else {

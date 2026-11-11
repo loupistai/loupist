@@ -27,38 +27,46 @@ fn error(error: ConnectionError) -> CommandError {
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(deny_unknown_fields)]
 pub struct AddUrlRequest {
     pub url: String,
     pub name: Option<String>,
     #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub headers: BTreeMap<String, String>,
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct AddJsonRequest {
     pub json: String,
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(deny_unknown_fields)]
 pub struct AddCommandRequest {
     pub command: String,
     #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub args: Vec<String>,
     #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub env: BTreeMap<String, String>,
     pub name: Option<String>,
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct IdentityRequest {
     pub connection_id: String,
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(deny_unknown_fields)]
 pub struct ConfirmRequest {
     pub connection_id: String,
@@ -68,12 +76,14 @@ pub struct ConfirmRequest {
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(deny_unknown_fields)]
 pub struct ListRequest {
     pub loupist_id: Option<String>,
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct MemoryRequest {
     pub connection_id: String,
@@ -81,6 +91,7 @@ pub struct MemoryRequest {
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct EnabledRequest {
     pub loupist_id: String,
@@ -89,6 +100,7 @@ pub struct EnabledRequest {
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ApproveRequest {
     pub loupist_id: String,
@@ -99,6 +111,7 @@ pub struct ApproveRequest {
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(deny_unknown_fields)]
 pub struct AuthorizeRequest {
     pub connection_id: String,
@@ -354,7 +367,7 @@ fn finish_sign_in_log(
             log.finish("failed", Some("custom_connection_failed"))
         }
         Ok(_) => log.finish("ok", None),
-        Err(error) => log.finish("failed", Some(&error.code)),
+        Err(error) => log.finish("failed", Some(error.code.as_str())),
     }
     log.record_app(&state.artifacts.app_data_dir);
 }

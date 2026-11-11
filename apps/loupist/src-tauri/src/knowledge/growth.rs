@@ -8,6 +8,7 @@ use super::error::{KnowledgeError, KnowledgeResult};
 use super::model::{mint_id, validate_loupist_id, validate_time, ClaimStatus, WorldSnapshotBody};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GrowthEvent {
     pub event_id: String,
@@ -20,8 +21,10 @@ pub struct GrowthEvent {
     pub origin_message_id: Option<String>,
     pub actor: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub origin: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub rationale: Option<String>,
     pub summary: String,
     pub before_summary: Option<String>,
@@ -29,10 +32,13 @@ pub struct GrowthEvent {
     /// Set on reads when the event names a Source the host wrote: its summary
     /// is the stored English title, and the interface shows this key instead.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub title_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+// Received as a request: missing optional fields are accepted.
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GrowthEventsQuery {
     pub loupist_id: String,
@@ -43,6 +49,7 @@ pub struct GrowthEventsQuery {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GrowthEventsPage {
     pub events: Vec<GrowthEvent>,
@@ -58,6 +65,32 @@ struct Cursor {
     at_ms: i64,
     event_id: String,
 }
+
+/// Growth event kinds and actors. Rust owns these lists (Knowledge schema 7
+/// dropped the SQL whitelists), so a new kind needs no schema step.
+const GROWTH_KINDS: &[&str] = &[
+    "entity_added",
+    "claim_added",
+    "claim_disputed",
+    "claim_withdrawn",
+    "lens_created",
+    "lens_revised",
+    "lens_renamed",
+    "lens_archived",
+    "lens_restored",
+    "lens_contested",
+    "source_retained",
+    "journal_created",
+    "journal_updated",
+    "journal_archived",
+    "journal_restored",
+    "journal_reviewed",
+    "schema_extended",
+    "schema_reduced",
+    "thesis_moved",
+    "growth_truncated",
+];
+const GROWTH_ACTORS: &[&str] = &["user", "loupist", "import", "processing"];
 
 pub(super) fn one_line(text: &str) -> String {
     text.split_whitespace()
@@ -99,6 +132,12 @@ impl GrowthEvent {
     pub(super) fn insert(&self, tx: &Transaction<'_>) -> KnowledgeResult<()> {
         validate_loupist_id(&self.loupist_id)?;
         validate_time(self.at_ms)?;
+        if !GROWTH_KINDS.contains(&self.kind.as_str()) {
+            return Err(KnowledgeError::Invalid("growth event kind is unknown"));
+        }
+        if !GROWTH_ACTORS.contains(&self.actor.as_str()) {
+            return Err(KnowledgeError::Invalid("growth event actor is unknown"));
+        }
         tx.execute(
             "INSERT INTO knowledge_growth_events (event_id, loupist_id, at_ms, kind, record_id, subject_id,
              origin_chat_id, origin_message_id, actor, summary, before_summary, after_summary, origin, rationale)

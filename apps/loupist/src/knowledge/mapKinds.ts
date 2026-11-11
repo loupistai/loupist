@@ -1,4 +1,4 @@
-import type { KnowledgeMapNode } from "../../contracts/knowledge";
+import type { KnowledgeMapNode } from "../contracts/knowledge";
 
 export const entityCategories = ["company", "person", "product", "technology", "industry", "market", "event", "other"] as const;
 export type EntityCategory = typeof entityCategories[number];

@@ -16,6 +16,7 @@ const MAX_ROW_FIELDS: usize = 4;
 pub const MAX_AS_OF_ITEMS: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum NumberCheckKind {
     /// A `calculate` result.
@@ -29,6 +30,7 @@ pub enum NumberCheckKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum NumberCheckStatus {
     Matched,
@@ -39,7 +41,7 @@ pub enum NumberCheckStatus {
 
 /// One field of a matched data row, as the provider printed it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct NumberCheckField {
     pub key: String,
     pub value: String,
@@ -49,6 +51,7 @@ pub struct NumberCheckField {
 
 /// What a `calculate` input measures, as the host printed it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum CalcInputUnitKind {
     /// A count or a level: years, shares, or a unit kept as `text`.
@@ -68,17 +71,19 @@ pub enum CalcInputUnitKind {
 /// How a `calculate` input is printed: Rust reads its kind from the input's
 /// name and the request's `unit` (finance-show-the-math.md §2.3).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct CalcInputUnit {
     pub kind: CalcInputUnitKind,
     /// ISO 4217 code the request's `unit` names ("KRW").
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub currency: Option<String>,
     /// Power of ten the amount is stated in: 9 for "USD billions", 8 for 억원.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub scale: u8,
     /// A unit the host cannot place ("stores"), printed after the number.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub text: Option<String>,
 }
 
@@ -106,7 +111,7 @@ impl CalcInputUnit {
 
 /// One `calculate` input and where it came from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct NumberCheckInput {
     pub name: String,
     /// The name its formula prints ("Operating income", "from").
@@ -118,27 +123,34 @@ pub struct NumberCheckInput {
     /// The evidence the input was cited from or read out of; absent when the
     /// model provided the value without a source.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub evidence_id: Option<String>,
     /// Rust's check of a cited input against its evidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub status: Option<NumberCheckStatus>,
 }
 
 /// What the calculated popover shows, copied from the host's own result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct NumberCheckCalc {
+    /// The `calculate` operation; missing on answers saved before it was kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub operation: Option<crate::calculations::Operation>,
     pub title: String,
     pub formulas: Vec<String>,
     pub inputs: Vec<NumberCheckInput>,
     /// Rows × columns of a DCF or reverse-DCF grid, which has no single value.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub grid: Option<[u32; 2]>,
 }
 
 /// One number link in an answer, checked against the evidence it links.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct NumberCheck {
     /// Index among the answer's `[text](#evidence-…)` links, in order.
     pub link_index: u32,
@@ -148,44 +160,51 @@ pub struct NumberCheck {
     pub status: NumberCheckStatus,
     /// For `differs`: the calculated value nearest to the printed number.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub nearest: Option<String>,
     /// For `rounded`: the value as the evidence prints it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub exact: Option<String>,
     /// The matched data cell (JSON Pointer into the retained result).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub pointer: Option<String>,
     /// The matched passage text (UTF-8 byte offsets into the evidence excerpt).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub span: Option<ChatEvidenceMatch>,
     /// Up to four fields of the matched data row.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<NumberCheckField>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub calc: Option<NumberCheckCalc>,
 }
 
 /// A read a tool refused because it cannot show what was known on the date.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct AsOfRefusal {
     pub tool: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub connection: Option<String>,
 }
 
 /// A read that had nothing dated on or before the cutoff.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct AsOfEmpty {
     pub tool: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub target: Option<String>,
 }
 
 /// Saved Memory the cutoff left out, by kind.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct AsOfLeftOut {
     pub facts: u32,
     pub sources: u32,
@@ -195,7 +214,7 @@ pub struct AsOfLeftOut {
 
 /// What an as-of answer could not use: refusals, empty reads and later Memory.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct AsOfReport {
     pub cutoff: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -213,54 +232,66 @@ const MAX_SUBJECT_BYTES: usize = 240;
 
 /// The past growth a reverse-DCF grid is read against (usually a CAGR).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct SensitivityReference {
     pub value_pct: f64,
     /// The period it covers, as the calculation was labelled ("FY2020–FY2025").
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub label: Option<String>,
     /// The years it spans, from a cited `cagr` result.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub years: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub evidence_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub status: Option<NumberCheckStatus>,
 }
 
 /// The price a reverse-DCF grid solves for, with its date and source.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct SensitivityPrice {
     pub value: f64,
     pub display: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub currency: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub date: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub evidence_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub status: Option<NumberCheckStatus>,
 }
 
 /// One grid input (cash flow, shares, net debt, growth) and its source.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct SensitivityInput {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub label: Option<String>,
     pub display: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub evidence_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub status: Option<NumberCheckStatus>,
 }
 
 /// A `dcf_grid` or `reverse_dcf` result as the host computed it; never one
 /// point value. Rows are discount rates, columns long-run growth rates.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct SensitivityGrid {
     pub operation: String,
     pub row_values: Vec<f64>,
@@ -269,12 +300,16 @@ pub struct SensitivityGrid {
     pub unit: String,
     pub forecast_years: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub reference: Option<SensitivityReference>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub above_reference: Option<Vec<Vec<bool>>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub price: Option<SensitivityPrice>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub amount_unit: Option<String>,
     #[serde(default)]
     pub inputs: Vec<SensitivityInput>,
@@ -287,6 +322,7 @@ impl Eq for SensitivityGrid {}
 
 /// A paragraph that is only a link to a grid result, shown as a card.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct SensitivityCard {
     #[serde(flatten)]
     pub grid: SensitivityGrid,

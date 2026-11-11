@@ -44,7 +44,7 @@ use crate::{
         VerifiedExecutable,
     },
     process_lease::ProcessLeaseError,
-    providers::catalog::{PI_THINKING_LEVELS, PROVIDER_CREDENTIAL_ENVIRONMENTS},
+    providers::{catalog::PI_THINKING_LEVELS, manifest::is_credential_environment},
 };
 use thiserror::Error;
 use tokio::{
@@ -235,10 +235,7 @@ impl PiLaunchConfig {
             .ok_or(PiError::InvalidLaunchValue)?;
         validate_host_context(host_context)?;
         if let Some((name, secret)) = &self.provider_credential {
-            if !PROVIDER_CREDENTIAL_ENVIRONMENTS.contains(&name.as_str())
-                || secret.is_empty()
-                || secret.contains('\0')
-            {
+            if !is_credential_environment(name) || secret.is_empty() || secret.contains('\0') {
                 return Err(PiError::UnsupportedCredential);
             }
         }
@@ -814,6 +811,20 @@ fn validate_session_config(session: &PiSessionConfig) -> Result<(), PiError> {
     Ok(())
 }
 
+/// The startup model of every provider support launch (sign-in, key change,
+/// model list, isolated inference and native search). Pi's RPC mode needs a
+/// model to start, but the bundled provider extension intercepts each support
+/// command before any model request, so this model is never called. It is the
+/// manifest's `support_bootstrap` (`provider-manifest.json`), checked against
+/// the pinned Pi catalog by `agent/provider-manifest.test.mjs`. Its provider's
+/// API-key variable gets [`SUPPORT_BOOTSTRAP_KEY`], so Pi initializes without
+/// borrowing a user's credential.
+static SUPPORT_BOOTSTRAP: std::sync::LazyLock<crate::providers::manifest::SupportBootstrap> =
+    std::sync::LazyLock::new(crate::providers::manifest::support_bootstrap);
+
+/// A non-secret placeholder for the bootstrap provider's API-key variable.
+const SUPPORT_BOOTSTRAP_KEY: &str = "loupist-provider-bootstrap";
+
 #[derive(Clone)]
 pub struct PiSupportLaunchConfig {
     pub executable: PathBuf,
@@ -842,10 +853,7 @@ impl PiSupportLaunchConfig {
             return Err(PiError::InvalidLaunchValue);
         }
         if let Some((name, secret)) = &self.provider_credential {
-            if !PROVIDER_CREDENTIAL_ENVIRONMENTS.contains(&name.as_str())
-                || secret.is_empty()
-                || secret.contains('\0')
-            {
+            if !is_credential_environment(name) || secret.is_empty() || secret.contains('\0') {
                 return Err(PiError::UnsupportedCredential);
             }
         }
@@ -872,9 +880,9 @@ impl PiSupportLaunchConfig {
             "--no-themes".into(),
             "--no-context-files".into(),
             "--provider".into(),
-            "google".into(),
+            SUPPORT_BOOTSTRAP.provider.into(),
             "--model".into(),
-            "gemini-2.5-flash".into(),
+            SUPPORT_BOOTSTRAP.model.into(),
         ]
     }
 
@@ -889,10 +897,10 @@ impl PiSupportLaunchConfig {
                 self.runtime_dir.to_string_lossy().into_owned(),
             ),
             ("PI_TELEMETRY".into(), "0".into()),
-            // The support command is intercepted by the bundled extension before
-            // any model request. A non-secret bootstrap value lets Pi initialize
-            // the RPC session without borrowing a user's provider credential.
-            ("GEMINI_API_KEY".into(), "loupist-provider-bootstrap".into()),
+            (
+                SUPPORT_BOOTSTRAP.environment.into(),
+                SUPPORT_BOOTSTRAP_KEY.into(),
+            ),
             (
                 "LOUPIST_PROVIDER_RESULT_FILE".into(),
                 self.result_file.to_string_lossy().into_owned(),

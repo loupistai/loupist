@@ -10,12 +10,14 @@ use std::collections::BTreeMap;
 const MAX_USED_IN: usize = 5;
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MemoryUsageRequest {
     pub loupist_id: String,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct MemoryUsedIn {
     pub chat_id: String,
@@ -23,6 +25,7 @@ pub struct MemoryUsedIn {
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct MemoryUsage {
     pub record_id: String,

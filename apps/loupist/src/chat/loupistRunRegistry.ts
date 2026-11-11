@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import i18n from "@/i18n";
 import { errorMessage } from "../lib/errors";
 import type { LoupistBridge, LoupistWorkspace, RunActivity } from "../types";
 
@@ -226,10 +227,7 @@ export class LoupistRunRegistry {
               this.#updateChat(loupistId, threadId, (current) => ({
                 ...current,
                 status: "reconciling",
-                error: errorMessage(
-                  cause,
-                  "The response finished, but the saved Chat could not be refreshed yet.",
-                ),
+                error: errorMessage(cause, i18n.t("chat:runRegistry.savedChatNotRefreshed")),
               }));
           }
         }
@@ -252,7 +250,7 @@ export class LoupistRunRegistry {
         this.#updateChat(loupistId, threadId, (current) => ({
           ...current,
           abort_requested: false,
-          error: errorMessage(cause, "Could not stop the recovered response."),
+          error: errorMessage(cause, i18n.t("chat:runRegistry.couldNotStopTheRecoveredResponse")),
         }));
       } else {
         this.#abortRetries.set(

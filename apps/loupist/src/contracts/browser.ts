@@ -1,41 +1,14 @@
-export type BrowserBounds = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
+import type * as Wire from "./generated";
+export type BrowserBounds = Wire.BrowserBounds;
 
-export type BrowserTabState = {
-  tab_id: string;
-  url: string;
-  title: string;
-  loading: boolean;
-};
+export type BrowserTabState = Wire.BrowserTabState;
 
-export type BrowserUrlError = "too_long" | "invalid" | "unsupported_protocol" | "credentials";
+export type BrowserUrlError = Wire.BrowserUrlError;
 
-export type BrowserTabEvent =
-  | { type: "load_started"; tab_id: string; url: string }
-  | { type: "load_finished"; tab_id: string; url: string }
-  | { type: "title_changed"; tab_id: string; title: string }
-  | { type: "open_requested"; tab_id: string; url: string }
-  | {
-      type: "navigation_blocked";
-      tab_id: string;
-      reason: BrowserUrlError;
-    }
-  | { type: "download_blocked"; tab_id: string; url: string };
+export type BrowserTabEvent = Wire.BrowserTabEvent;
 
-export type BrowserHistoryDirection = "back" | "forward";
+export type BrowserHistoryDirection = Wire.BrowserHistoryDirection;
 
-export type BrowserTabOpenRequest = {
-  url: string;
-  bounds: BrowserBounds;
-  visible: boolean;
-};
+export type BrowserTabOpenRequest = Wire.BrowserTabOpenRequest;
 
-export type BrowserTabBoundsRequest = {
-  tab_id: string;
-  bounds: BrowserBounds;
-  visible: boolean;
-};
+export type BrowserTabBoundsRequest = Wire.BrowserTabBoundsRequest;

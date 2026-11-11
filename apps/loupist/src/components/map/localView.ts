@@ -1,5 +1,5 @@
 import type { KnowledgeMapEdge, KnowledgeMapNode } from "../../contracts/knowledge";
-import { nodeCategory } from "./kinds";
+import { nodeCategory } from "../../knowledge/mapKinds";
 import type { MapPoint } from "./layout";
 
 /** How far around the focal name the Map draws: one or two hops over relationships, or everything. */
