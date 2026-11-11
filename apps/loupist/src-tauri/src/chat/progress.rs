@@ -11,6 +11,7 @@ const MAX_PROGRESS_LABEL_BYTES: usize = 512;
 const MAX_PROGRESS_HREF_BYTES: usize = 8 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ChatProgressStatus {
     Running,
@@ -24,6 +25,7 @@ pub enum ChatProgressStatus {
 /// Why the host refused a failed step, when a security rule or the user's own
 /// card answer did. The renderer explains it in the step and offers no override.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ChatStepRefusal {
     /// The turn read third-party text: a command,
@@ -39,6 +41,7 @@ pub enum ChatStepRefusal {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ChatProgressCategory {
     Web,
@@ -52,6 +55,7 @@ pub enum ChatProgressCategory {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ChatProgressSourceKind {
     Web,
@@ -65,13 +69,14 @@ pub enum ChatProgressSourceKind {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatProgressSource {
     pub kind: ChatProgressSourceKind,
     pub name: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ChatProgressOperation {
     Search,
@@ -92,7 +97,8 @@ pub enum ChatProgressOperation {
 // indirection to every projection update.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ChatProgressItem {
     Commentary {
         id: String,
@@ -104,19 +110,23 @@ pub enum ChatProgressItem {
         /// `mcp__openbb__equity_price_quote`). The renderer recognizes and
         /// localizes steps by it; absent only on steps recorded before it existed.
         #[serde(default, rename = "toolName", skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         tool_name: Option<String>,
         category: ChatProgressCategory,
         operation: ChatProgressOperation,
         action: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         running: Option<String>,
         #[serde(deserialize_with = "crate::domain::required_option")]
         target: Option<String>,
         #[serde(deserialize_with = "crate::domain::required_option")]
         href: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         source: Option<ChatProgressSource>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         summary: Option<String>,
         #[serde(default, rename = "resultIds", skip_serializing_if = "Vec::is_empty")]
         result_ids: Vec<String>,
@@ -128,14 +138,18 @@ pub enum ChatProgressItem {
             rename = "outputRevision",
             skip_serializing_if = "Option::is_none"
         )]
+        #[cfg_attr(test, ts(optional))]
         output_revision: Option<u64>,
         #[serde(default, rename = "detailId", skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         detail_id: Option<String>,
         #[serde(default, rename = "filePath", skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         file_path: Option<String>,
         status: ChatProgressStatus,
         /// Set on a failed step the host refused under a security rule.
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         refusal: Option<ChatStepRefusal>,
         #[serde(default, rename = "startedAtMs")]
         started_at_ms: i64,
@@ -382,7 +396,8 @@ fn validate_progress_href(
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct ChatProgress {
     pub started_at_ms: i64,
     #[serde(deserialize_with = "crate::domain::required_option")]
@@ -390,6 +405,7 @@ pub struct ChatProgress {
     pub items: Vec<ChatProgressItem>,
     /// The agent's short checklist for multi-step work (`plan_update`); absent for ordinary runs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub plan: Option<ChatPlan>,
     /// Approvals this reply asked for (composer spec D3), in request order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -408,6 +424,7 @@ const MAX_PLAN_ID_CHARS: usize = 32;
 const MAX_PLAN_LABEL_CHARS: usize = 120;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ChatPlanStatus {
     Pending,
@@ -417,18 +434,21 @@ pub enum ChatPlanStatus {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct ChatPlanItem {
     pub id: String,
     pub label: String,
     pub status: ChatPlanStatus,
     /// When the item first became active; steps that start after it nest under it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub activated_at_ms: Option<i64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct ChatPlan {
     pub items: Vec<ChatPlanItem>,
 }
@@ -551,32 +571,41 @@ pub fn parse_plan_update(args: &Value) -> Result<Vec<ChatPlanItem>, (String, Str
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ChatProgressPatch {
     pub sequence: u64,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub upsert_items: Vec<ChatProgressItem>,
     /// Text appended to commentary this stream already published, in order. A
     /// commentary id is in `upsert_items` or here, never both: its first
     /// publication carries the whole item.
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub append_text: Vec<CommentaryAppend>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub remove_item_ids: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub finished_at_ms: Option<i64>,
     /// The whole plan whenever it changed since the last patch.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub plan: Option<ChatPlan>,
     /// Every approval whenever one changed since the last patch.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub approvals: Option<Vec<crate::chat::approvals::ChatApproval>>,
     /// Every question whenever one changed since the last patch.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub questions: Option<Vec<crate::chat::questions::ChatQuestion>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct CommentaryAppend {
     pub id: String,

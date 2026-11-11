@@ -6,10 +6,10 @@ use crate::{
     chat::activity::ChatActivityDetail,
     fs::loupist_root::{profile_workspace, BoundLoupistRoot},
     fs::workspace_files::{self, WorkspaceDirectory, WorkspaceFile},
-    store::LoupistStore,
 };
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(deny_unknown_fields)]
 pub struct WorkspacePathRequest {
     pub loupist_id: String,
@@ -17,6 +17,7 @@ pub struct WorkspacePathRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct ChatActivityRequest {
     pub loupist_id: String,

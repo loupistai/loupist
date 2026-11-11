@@ -13,12 +13,11 @@
     "keepCurrentLoupist": "Keep current Loupist",
     "dismiss": "Dismiss",
     "discussThisLensWhatShouldWeRevise": "Discuss this Lens: {{label}}. What should we revise, and on what evidence?",
-    "opening2": "Opening {{value1}}",
     "skillCreatorTurnedOnForThisLoupist": "Skill Creator turned on for this Loupist.",
     "skillCreatorTurnedOnForAllLoupists": "Skill Creator turned on for all Loupists.",
     "correctTheConfigurationFileInSettingsChat": "Correct the configuration file in Loupist settings → Chat preferences to start a new run.",
     "theConfiguredChatDefaultsAreUnavailableFor": "The configured Chat defaults are unavailable for the current model. Review Loupist settings → Chat preferences or choose a model in Chat.",
-    "correctTheConfigurationFileInSettingsChat2": "Correct the configuration file in Loupist settings → Chat preferences before sending.",
+    "correctTheConfigurationFileBeforeSending": "Correct the configuration file in Loupist settings → Chat preferences before sending.",
     "showOrLoadAModelInSettings": "Show or load a model in Settings to send messages. Your saved chats, World and Lens are available.",
     "pleaseLookAtWorkspaceFile": "Please look at workspace file {{path}}. ",
     "source": "Source",
@@ -141,6 +140,8 @@
     "recoverMemory": "Recover memory",
     "earlierVersion": "Made by an earlier version",
     "earlierVersionBody": "This Loupist was made by an earlier version and can't be opened. Create a new Loupist.",
+    "newerVersion": "Saved by a newer version",
+    "newerVersionBody": "This Loupist was saved by a newer version of Loupist and can’t be opened here. Update Loupist to open it; its folder is unchanged.",
     "removeLoupist": "Remove Loupist"
   },
   "shell": {

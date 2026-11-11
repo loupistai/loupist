@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 pub const MAX_WALLETS: usize = 10;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum WalletStatus {
     Unread,
@@ -29,6 +30,7 @@ impl WalletStatus {
 /// What the renderer may know about a wallet. `address` is only for the
 /// "Copy address" action; every visible surface uses `masked`.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct WalletView {
     pub id: String,

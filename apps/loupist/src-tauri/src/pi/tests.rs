@@ -343,6 +343,40 @@ fn launch_is_offline_and_exposes_only_explicit_extension_tools() {
 }
 
 #[test]
+fn support_launch_starts_on_the_manifest_bootstrap_with_only_a_placeholder_key() {
+    let config = PiSupportLaunchConfig {
+        executable: "pi".into(),
+        runtime_dir: "runtime".into(),
+        extension: "provider-extension.mjs".into(),
+        agent_data_dir: "agent-data".into(),
+        private_working_dir: "work".into(),
+        lease_dir: "leases".into(),
+        result_file: "result.json".into(),
+        request_file: None,
+        provider_credential: None,
+        mutation_api_key: None,
+    };
+    let args = config.rpc_arguments();
+    let value = |flag: &str| args[args.iter().position(|arg| arg == flag).unwrap() + 1].clone();
+    // `agent/provider-manifest.test.mjs` checks this model in the pinned Pi catalog.
+    assert_eq!(
+        (value("--provider"), value("--model")),
+        ("google".to_owned(), "gemini-2.5-flash".to_owned())
+    );
+    let env = config.environment();
+    assert_eq!(
+        env.get("GEMINI_API_KEY").map(String::as_str),
+        Some(SUPPORT_BOOTSTRAP_KEY)
+    );
+    assert_eq!(
+        env.keys()
+            .filter(|name| is_credential_environment(name))
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn chat_private_settings_install_each_execution_snapshot_without_touching_shared_auth() {
     let temporary = tempfile::tempdir().unwrap();
     let working_dir = temporary.path().join("pi-runtime");

@@ -48,8 +48,11 @@ status from its content fields only (`content`, `text`, `passage`, `passages`,
 sizes or offsets, and the check has no span to mark. A matched or rounded check
 keeps its data cell's pointer with up to four fields of the row (descriptive fields
 such as company, concept, period and basis, then the matched cell) or its passage
-span; a calculated check keeps the title, up to eight formula lines, up to twelve inputs
-with their label, unit, source and status, and a DCF grid's size; the popover names and
+span; a calculated check keeps the operation id (`percent_change`, `reverse_dcf`, ...), the
+host's English title, up to eight formula lines, up to twelve inputs
+with their label, unit, source and status, and a DCF grid's size. The popover and a
+`calculate` source name the operation by its id in the reader's language; answers saved
+before the id was kept show the English title. The popover names and
 prints each input from these and never reads them from the formula or the evidence (an
 input without a unit prints as its bare number). On a short window the popover stays
 above the composer and scrolls, with its actions pinned. Surfaces are listed in

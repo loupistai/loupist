@@ -10,13 +10,13 @@ use tauri::Emitter;
 use crate::{
     app::{AppState, CommandError},
     domain::ChatFailureKind,
-    store::{provider_status::ProviderStatusRecord, LoupistStore},
+    store::provider_status::ProviderStatusRecord,
 };
 
 static APP: OnceLock<tauri::AppHandle> = OnceLock::new();
-const EVENT: &str = "provider-status";
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderState {
     Connected,
@@ -25,6 +25,7 @@ pub enum ProviderState {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum CredentialKind {
     Plan,
@@ -36,6 +37,7 @@ pub enum CredentialKind {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum NoticeKind {
     PlanLimit,
@@ -44,13 +46,14 @@ pub enum NoticeKind {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ProviderNotice {
     pub kind: NoticeKind,
     pub at_ms: i64,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct UsedBy {
     pub schedules: u32,
     pub chat_default: bool,
@@ -63,8 +66,9 @@ impl UsedBy {
     }
 }
 
-/// Exactly `ProviderStatusView` in `src/contracts/model.ts`.
+/// Rust-owned provider state: in the model catalog and the `provider-status` event.
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ProviderStatusView {
     pub state: ProviderState,
     pub credential_kind: CredentialKind,
@@ -645,15 +649,20 @@ pub fn install(app: &tauri::AppHandle) {
     let _ = APP.set(app.clone());
 }
 
+/// A provider's new state (`crate::events::PROVIDER_STATUS`).
 #[derive(Clone, Serialize)]
-struct StatusEvent<'a> {
-    provider: &'a str,
-    status: ProviderStatusView,
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "ProviderStatusEvent"))]
+pub(crate) struct StatusEvent<'a> {
+    pub provider: &'a str,
+    pub status: ProviderStatusView,
 }
 
 fn emit(provider: &str, status: ProviderStatusView) {
     if let Some(app) = APP.get() {
-        let _ = app.emit(EVENT, StatusEvent { provider, status });
+        let _ = app.emit(
+            crate::events::PROVIDER_STATUS,
+            StatusEvent { provider, status },
+        );
     }
 }
 

@@ -78,6 +78,7 @@ export function ArtifactContent({
     setCopyError(null);
     ++copyRequest.current;
     return () => {
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- a request counter, not a DOM node: cleanup invalidates the request that is in flight.
       ++copyRequest.current;
       if (copyTimer.current !== null) clearTimeout(copyTimer.current);
     };

@@ -5,7 +5,7 @@
 //! taken from the model: Rust computes them when the card is read.
 use chrono::NaiveDate;
 
-use super::authority::bounded_text;
+use super::arguments::bounded_text;
 use super::*;
 use crate::knowledge::{
     assets::{self, AssetEvidence},

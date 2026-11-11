@@ -34,6 +34,7 @@ export function useSeenAfter(bridge: LoupistBridge | undefined, loupistId: strin
     begin();
     document.addEventListener("visibilitychange", begin);
     return () => { if (timer) clearTimeout(timer); document.removeEventListener("visibilitychange", begin); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` names the event ids, so the same events are marked once.
   }, [bridge, loupistId, key, active]);
 }
 

@@ -3,7 +3,7 @@ import type { LoupistBridge } from "../contracts/bridge";
 import type { ChatArtifactRef } from "../contracts/chat";
 import type { ContextOption } from "./composerChips";
 import { rankText } from "./composerChips";
-import { sourceTitle } from "@/components/knowledge/hostSource";
+import { sourceTitle } from "@/knowledge/hostSource";
 
 const t = i18n.getFixedT(null, "chat");
 

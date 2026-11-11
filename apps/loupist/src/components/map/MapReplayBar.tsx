@@ -8,9 +8,10 @@ import { DAY_MS, type MapReplay } from "./replay";
 export function MapReplayBar({ replay, disabled, range }: { replay: MapReplay; disabled?: boolean; range?: string }) {
   const { t } = useTranslation("knowledge");
   const playButton = useRef<HTMLButtonElement>(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- focuses Play once when the bar opens.
   useEffect(() => { if (!disabled) playButton.current?.focus(); }, []);
   const date = formatDate(replay.time);
-  return <div className="map-replay-bar" role="group" aria-label={t("map.replay.label")} onKeyDown={event => {
+  return <div className="map-replay-bar" data-testid="map-replay-bar" role="group" aria-label={t("map.replay.label")} onKeyDown={event => {
     if (disabled) return;
     if (event.key === " ") { event.preventDefault(); replay.toggle(); }
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); replay.seek(replay.time + (event.key === "ArrowLeft" ? -DAY_MS : DAY_MS)); }

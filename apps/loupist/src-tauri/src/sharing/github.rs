@@ -1250,7 +1250,7 @@ mod tests {
                 &format!("kimj:{branch}"),
                 "main",
                 "List",
-                &crate::sharing::commands::listing_body(
+                &crate::sharing::commands::gallery::listing_body(
                     "https://example.org/gallery-terms",
                     "2026-11-01T10:11:12Z",
                 ),

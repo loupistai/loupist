@@ -1,3 +1,4 @@
+pub(crate) mod tool_class;
 pub(crate) mod tools;
 
 use async_trait::async_trait;
@@ -340,10 +341,12 @@ pub enum BrokerError {
         connection_id: String,
         tool_name: String,
     },
+    /// `next` comes from the provider that approves services separately.
     #[error("{provider} needs approval for {}", .services.join(", "))]
     ProviderApprovalRequired {
         provider: String,
         services: Vec<String>,
+        next: std::borrow::Cow<'static, str>,
     },
     #[error("tool broker I/O failed: {0}")]
     Io(#[from] io::Error),
@@ -1384,10 +1387,14 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
 }
 
 fn error_body(error: &BrokerError) -> Value {
-    if let BrokerError::ProviderApprovalRequired { provider, services } = error {
+    if let BrokerError::ProviderApprovalRequired {
+        provider,
+        services,
+        next,
+    } = error
+    {
         return json!({"code":"needs_approval", "message":error.to_string(), "retryable":false,
-            "next":"The user requests the missing service approvals in the provider's portal, then verifies the key: if connection_setup is available, call it with {id: \"krx.market-data\"} so they can do it from a card; otherwise point them to Connections. Use an approved market or another source meanwhile.",
-            "connection_id":provider, "services":services, "reason":"provider_service_approval"});
+            "next":next, "connection_id":provider, "services":services, "reason":"provider_service_approval"});
     }
     if let BrokerError::CustomApprovalRequired {
         connection_id,

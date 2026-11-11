@@ -22,6 +22,8 @@ export function inspectBoundaries(file, text) {
     }
     if (!file.startsWith("src/bridge/") && /^@tauri-apps\/(?:api\/|plugin-)/.test(specifier)) report("boundaries/tauri-only-in-bridge");
     if (file.startsWith("src/components/") && target === "src/bridge/tauriBridge") report("boundaries/components-typed-bridge");
+    // Feature logic and shared helpers sit below the UI; a component may import them, never the reverse.
+    if (!isTest(file) && /^src\/(?:chat|knowledge|lib)\//.test(file) && /^src\/components(?:\/|$)/.test(target)) report("boundaries/no-components-below-ui");
     const mockImplementation = file.startsWith("src/bridge/mock/") || file === "src/bridge/mockBridge.ts";
     if (!isTest(file) && !file.startsWith("src/preview/") && !mockImplementation
       && (/^(?:src\/preview|src\/bridge\/mock)(?:\/|$)/.test(target)

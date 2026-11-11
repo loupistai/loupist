@@ -7,6 +7,7 @@
 import i18n from "@/i18n";
 import { formatAmount, formatNumber } from "@/i18n/format";
 import type { CalcInputUnit, ChatEvidenceRef, NumberCheck } from "../types";
+import type { CalcOperation } from "@/contracts/generated";
 
 const t = i18n.getFixedT(null, "chat");
 /** Keys chosen at runtime from host-provided names, so not typed literals. */
@@ -14,17 +15,19 @@ const tDynamic = t as unknown as (key: string, options?: Record<string, unknown>
 
 type Operation = "percentChange" | "cagr" | "growthSeries" | "returnsSummary" | "movingAverage" | "ratio" | "margin" | "payoutRatio" | "netDebtToEbitda" | "freeCashFlow" | "dcfGrid" | "reverseDcf";
 
-/** The host's operation titles (`calculations.rs`), a stable English contract. */
-const OPERATIONS: Record<string, Operation> = {
-  "Percent change": "percentChange", "Compound annual growth": "cagr", "Period growth": "growthSeries",
-  "Return and risk summary": "returnsSummary", "Moving average": "movingAverage", Ratio: "ratio", Margin: "margin",
-  "Payout ratio": "payoutRatio", "Net debt to EBITDA": "netDebtToEbitda", "Free cash flow": "freeCashFlow",
-  "DCF sensitivity grid": "dcfGrid", "Reverse DCF grid": "reverseDcf",
+/**
+ * Plain-words keys by the host's operation id (`calculations.rs` `Operation`). Answers
+ * saved before the id was kept show the host's English title instead.
+ */
+const OPERATIONS: Partial<Record<CalcOperation, Operation>> = {
+  percent_change: "percentChange", cagr: "cagr", growth_series: "growthSeries", returns_summary: "returnsSummary",
+  moving_average: "movingAverage", ratio: "ratio", margin: "margin", payout_ratio: "payoutRatio",
+  net_debt_to_ebitda: "netDebtToEbitda", free_cash_flow: "freeCashFlow", dcf_grid: "dcfGrid", reverse_dcf: "reverseDcf",
 };
 
-/** A host operation title ("Reverse DCF grid") in plain, localized words; undefined for any other title. */
-export function operationName(title: string) {
-  const operation = OPERATIONS[title];
+/** A host operation ("reverse_dcf") in plain, localized words; undefined for any other operation. */
+export function operationName(id: CalcOperation | undefined) {
+  const operation = id && OPERATIONS[id];
   return operation ? tDynamic(`numberChip.operation.${operation}`) : undefined;
 }
 
@@ -137,7 +140,7 @@ export type CalcView = { title: string; formulas: string[]; inputs: CalcInputVie
  */
 export function calcView(check: NumberCheck, checks: readonly NumberCheck[]): CalcView {
   const calc = check.calc!;
-  const operation = OPERATIONS[calc.title];
+  const operation = calc.operation && OPERATIONS[calc.operation];
   // Answers saved before inputs carried labels name them by their input.
   const labels = Object.fromEntries(calc.inputs.map((input) => [input.name, input.label || humanize(input.name)]));
   const periods: string[] = [];

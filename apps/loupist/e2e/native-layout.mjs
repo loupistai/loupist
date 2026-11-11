@@ -70,7 +70,7 @@ export function measureChatLayout() {
     railMode: document.querySelector(".chat-workspace")?.dataset.rail,
     statusPill: rect(".chat-status-pill"), scroll: scroll && { top: scroll.scrollTop, height: scroll.clientHeight, total: scroll.scrollHeight },
     panel: box(panel), panelPlacement: panel?.dataset.placement, panelOverlay: panel?.getAttribute("aria-modal") === "true",
-    identity: rect(".loupist-header-identity"), sidebarTrigger: rect(".app-header-sidebar-trigger"),
+    identity: rect("[data-testid=loupist-header-identity]"), sidebarTrigger: rect(".app-header-sidebar-trigger"),
     header: rect(".app-header"), cards, receipts, attachmentIcons,
   };
 }

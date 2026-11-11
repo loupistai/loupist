@@ -9,7 +9,8 @@ use serde_json::Value;
 use super::{credentials::Secrets, http::canonical_resource, ConnectionError};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TransportConfig {
     Http { url: String },
     Stdio { command: String, args: Vec<String> },

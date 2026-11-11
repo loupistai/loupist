@@ -10,8 +10,8 @@ export function MapReader({ bridge, catalog, location, onOpen, onPatch, onAsk, o
 }) {
   const { t } = useTranslation("knowledge");
   const shared = { bridge, catalog, location, onOpen, onPatch, onAsk, onChanged, onOpenLink };
-  return <aside className="map-inspector map-reader" aria-label={t("map.reader")}>
-    <div className="map-reader-actions">{onBack ? <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeftIcon />{t("map.back")}</Button> : <span />}<Button variant="ghost" size="icon-sm" aria-label={t("map.close")} onClick={onClose}><XIcon /></Button></div>
+  return <aside className="map-inspector map-reader" data-testid="map-reader" aria-label={t("map.reader")}>
+    <div className="map-reader-actions" data-testid="map-reader-actions">{onBack ? <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeftIcon />{t("map.back")}</Button> : <span />}<Button variant="ghost" size="icon-sm" aria-label={t("map.close")} onClick={onClose}><XIcon /></Button></div>
     {location.surface === "source" ? <SourceWorkspace {...shared} readerOnly onManageProcessing={onManageProcessing} /> : <ResearchReader {...shared} />}
   </aside>;
 }

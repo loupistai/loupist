@@ -111,9 +111,12 @@ export function visibleMessageContent(message: ChatMessage): string {
   return content.replace(/\r?\n(?:\r?\n)*Response stopped\.$/u, "").trimEnd();
 }
 
-/** The host's terminal placeholder, explained by the run state instead of shown as prose. */
+/**
+ * The host's terminal placeholder, explained by the run state instead of shown as prose.
+ * Rust marks it, for stored replies too (`ChatMessageDto.placeholder`).
+ */
 const isFailurePlaceholder = (message: ChatMessage) =>
-  message.role === "assistant" && message.status === "error" && message.content.trim() === "Response could not be completed.";
+  message.role === "assistant" && message.status === "error" && message.placeholder === true;
 
 const startedAt = (message: ChatMessage) => message.progress?.startedAtMs ?? Date.parse(message.created_at);
 
@@ -382,7 +385,7 @@ export function deriveTurnView(input: TurnInput): TurnView {
       key,
       row: { kind: "summary", label: "", issues: null },
       tone: "settled",
-      progress: { startedAtMs, finishedAtMs: progress?.finishedAtMs, items: [] },
+      progress: { startedAtMs, finishedAtMs: progress?.finishedAtMs ?? null, items: [] },
       evidence: [], sources: [], memoryReads: [], autoExpand: false,
     };
     groups.push(next);
@@ -438,7 +441,7 @@ export function deriveTurnView(input: TurnInput): TurnView {
           kind: "summary",
           label: summaryLabel(entry, streaming),
           issues: issueLabel(actions, entry.progress, message.as_of),
-          durationMs: !streaming && progress?.finishedAtMs !== undefined ? progress.finishedAtMs - startedAtMs : undefined,
+          durationMs: !streaming && progress?.finishedAtMs != null ? progress.finishedAtMs - startedAtMs : undefined,
         };
     const failed = actions.some((item) => item.status === "failed" && !pausedByRule(item));
     entry.autoExpand = failed || actions.some((item) => item.status === "stopped");

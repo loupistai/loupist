@@ -5,6 +5,7 @@ use crate::knowledge::{
 };
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PauseRequest {
     pub loupist_id: String,
@@ -12,6 +13,7 @@ pub struct PauseRequest {
     pub paused: bool,
 }
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ResetRequest {
     pub loupist_id: String,

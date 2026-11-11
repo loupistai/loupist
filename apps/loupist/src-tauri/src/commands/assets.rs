@@ -21,7 +21,7 @@ use crate::{
         KnowledgeError, KnowledgeResult,
     },
     runs::maintenance::MaintenanceActivityKind,
-    store::{user_context::MapContext, LoupistStore},
+    store::user_context::MapContext,
 };
 
 const DAY_MS: i64 = 86_400_000;
@@ -132,6 +132,7 @@ fn identity(
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AssetPageGetRequest {
     pub loupist_id: String,
@@ -179,6 +180,7 @@ pub fn asset_page_get(
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AssetDeltaRequest {
     pub loupist_id: String,
@@ -200,6 +202,7 @@ pub fn asset_delta(
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpcomingEventsRequest {
     pub loupist_id: String,
@@ -221,6 +224,7 @@ pub fn upcoming_events(
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AssetRefreshRequest {
     pub loupist_id: String,
@@ -260,6 +264,7 @@ pub async fn asset_refresh(
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AssetClassSetRequest {
     pub loupist_id: String,
@@ -298,6 +303,7 @@ pub fn asset_class_set(
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AssetVerdictUndoRequest {
     pub loupist_id: String,
@@ -332,6 +338,7 @@ pub fn asset_verdict_undo(
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AssetPageSeenRequest {
     pub loupist_id: String,

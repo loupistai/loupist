@@ -116,7 +116,7 @@ const realFile = async (path) => resolve(await realpath(dirname(path)).catch(() 
 // Loupists and Chats ------------------------------------------------------------
 
 async function sidebarLoupists() {
-  return browser.execute(() => [...document.querySelectorAll("button.loupist-header-identity")].map((item) => ({
+  return browser.execute(() => [...document.querySelectorAll("button[data-testid=loupist-header-identity]")].map((item) => ({
     id: item.getAttribute("data-loupist-id"),
     name: item.querySelector("strong")?.textContent?.trim() ?? "",
   })));
@@ -126,25 +126,25 @@ async function selectLoupist(name) {
   if (await browser.$("#main-panel-settings").isDisplayed().catch(() => false)) await openMainTab(browser, "chat");
   const target = (await sidebarLoupists()).find((item) => item.name === name);
   assert.ok(target?.id, `Loupist was not in the sidebar: ${name}`);
-  const selector = `button.loupist-header-identity[data-loupist-id=${JSON.stringify(target.id)}]`;
+  const selector = `button[data-testid=loupist-header-identity][data-loupist-id=${JSON.stringify(target.id)}]`;
   const button = await displayed(selector);
   if ((await button.getAttribute("aria-pressed")) !== "true") await button.click();
   await browser.waitUntil(async () => (await browser.$(selector).getAttribute("aria-pressed")) === "true"
-    && (await browser.$(".loupist-header-identity[aria-pressed='true'] strong").getText().catch(() => "")) === name, {
+    && (await browser.$("[data-testid=loupist-header-identity][aria-pressed='true'] strong").getText().catch(() => "")) === name, {
     timeout: 20_000, timeoutMsg: `Loupist was not selected: ${name}`,
   });
 }
 
-const chatRow = (title) => `.loupist-navigation button.loupist-chat-button[aria-label=${JSON.stringify(title)}]`;
+const chatRow = (title) => `[data-testid=loupist-navigation] button[data-testid=loupist-chat-button][aria-label=${JSON.stringify(title)}]`;
 
 async function chatTitles() {
-  return browser.execute(() => [...document.querySelectorAll(".loupist-navigation button.loupist-chat-button")].map((button) => button.querySelector(".loupist-chat-title")?.textContent?.trim() ?? ""));
+  return browser.execute(() => [...document.querySelectorAll("[data-testid=loupist-navigation] button[data-testid=loupist-chat-button]")].map((button) => button.querySelector("[data-testid=loupist-chat-title]")?.textContent?.trim() ?? ""));
 }
 
 async function createLoupist() {
-  await (await displayed("button.loupist-header-new")).click();
+  await (await displayed("button[data-testid=loupist-header-new]")).click();
   const dialog = await dialogByTitle(browser, "New Loupist");
-  await (await childWithText(dialog, "button.loupist-template-card strong", "Dividend income")).click();
+  await (await childWithText(dialog, "button[data-testid=loupist-template-card] strong", "Dividend income")).click();
   await setField("#new-loupist-name", NEW_LOUPIST);
   await clickButton("Create Loupist", dialog);
   await waitGone(dialog, "The New Loupist dialog did not close");
@@ -168,7 +168,7 @@ async function createChatFromComposer() {
 }
 
 async function renameChat(from, to) {
-  const trigger = `.loupist-navigation button.loupist-chat-menu[aria-label=${JSON.stringify(`Options for ${from}`)}]`;
+  const trigger = `[data-testid=loupist-navigation] button[data-testid=loupist-chat-menu][aria-label=${JSON.stringify(`Options for ${from}`)}]`;
   await clickControl(browser, trigger);
   if ((await browser.$(trigger).getAttribute("aria-expanded")) !== "true") {
     // The pinned driver can click without the pointerdown Radix listens for.
@@ -226,9 +226,9 @@ async function settledMapStats() {
 }
 
 async function closeMapReader() {
-  const selector = ".map-view aside.map-reader";
+  const selector = "[data-testid=map-view] aside[data-testid=map-reader]";
   if (!await browser.$(selector).isDisplayed().catch(() => false)) return;
-  await clickControl(browser, `${selector} .map-reader-actions button[aria-label]`);
+  await clickControl(browser, `${selector} [data-testid=map-reader-actions] button[aria-label]`);
   await browser.waitUntil(async () => !await browser.$(selector).isDisplayed().catch(() => false), {
     timeout: 10_000, timeoutMsg: "The Map reader did not close",
   });
@@ -236,7 +236,7 @@ async function closeMapReader() {
 
 // Below a 720px map width the Library covers the canvas and its status line.
 async function closeLibrary() {
-  const selector = ".map-view aside.map-library";
+  const selector = "[data-testid=map-view] aside[data-testid=map-library]";
   if (!await browser.$(selector).isDisplayed().catch(() => false)) return;
   await clickControl(browser, `${selector} > header button[aria-label="Close Library"]`);
   await browser.waitUntil(async () => !await browser.$(selector).isDisplayed().catch(() => false), {
@@ -247,13 +247,13 @@ async function closeLibrary() {
 async function openLibrary(tabLabel) {
   await openMainTab(browser, "map");
   await mapStats();
-  const direct = await browser.$(".map-view button[data-map-library]");
+  const direct = await browser.$("[data-testid=map-view] button[data-map-library]");
   if (await direct.isDisplayed().catch(() => false)) await direct.click();
   else {
-    await clickControl(browser, ".map-view [data-map-more]");
+    await clickControl(browser, "[data-testid=map-view] [data-map-more]");
     await (await displayed('[role="menuitemcheckbox"][data-map-library]')).click();
   }
-  const library = await displayed(".map-view aside.map-library");
+  const library = await displayed("[data-testid=map-view] aside[data-testid=map-library]");
   const tab = await childWithText(library, '[role="tab"]', tabLabel);
   if ((await tab.getAttribute("aria-selected")) !== "true") {
     await tab.click();
@@ -270,10 +270,10 @@ async function openLibrary(tabLabel) {
 
 async function openMemorySegment(segment) {
   await openMainTab(browser, "lens");
-  const page = await displayed('section.memory-page');
+  const page = await displayed('section[data-testid=memory-page]');
   const tabIndex = { about: 1, pages: 2, history: 3 }[segment];
   assert.ok(tabIndex, `Unknown What it knows segment: ${segment}`);
-  await (await displayed(`section.memory-page [role="tablist"] [role="tab"]:nth-child(${tabIndex})`)).click();
+  await (await displayed(`section[data-testid=memory-page] [role="tablist"] [role="tab"]:nth-child(${tabIndex})`)).click();
   await browser.waitUntil(async () => (await page.getAttribute('data-segment')) === segment, {
     timeout: 5_000, timeoutMsg: `What it knows did not open ${segment}`,
   });
@@ -288,7 +288,7 @@ async function addSource() {
   await setField('form[aria-label="Add source"] textarea[aria-label="Source text"]', SOURCE.text);
   await clickButton("Save source", form);
   await waitGone(form, "The source dialog did not close after saving");
-  const reader = await displayed('.map-view article[aria-label="Source reader"]');
+  const reader = await displayed('[data-testid=map-view] article[aria-label="Source reader"]');
   await waitForText(reader, SOURCE.text);
   const id = await reader.getAttribute("data-source-id");
   assert.match(id ?? "", /^src_[0-9a-f]{32}$/);
@@ -298,10 +298,10 @@ async function addSource() {
 async function verifySource(id) {
   const library = await openLibrary("Sources");
   await waitForText(library, FIXTURE.source);
-  const row = await displayed(`.map-view aside.map-library button.source-library-row[data-source-id="${id}"]`);
+  const row = await displayed(`[data-testid=map-view] aside[data-testid=map-library] button[data-testid=source-library-row][data-source-id="${id}"]`);
   await waitForText(row, SOURCE.title);
   await row.click();
-  const reader = await displayed('.map-view article[aria-label="Source reader"]');
+  const reader = await displayed('[data-testid=map-view] article[aria-label="Source reader"]');
   await waitForText(reader, SOURCE.text);
   assert.equal(await reader.getAttribute("data-source-id"), id, "The saved Source changed identity");
 }
@@ -311,10 +311,10 @@ async function addPrinciple() {
   await (await displayed(chatRow(FIXTURE.chat))).click();
   const answer = await displayed("article.message.assistant[data-latest]");
   await clickButton("Suggest a correction", answer);
-  await setField(".answer-correction textarea", PRINCIPLE.statement);
+  await setField("[data-testid=answer-correction] textarea", PRINCIPLE.statement);
   await clickButton("Save correction", answer);
   await (await displayed("[data-feedback-principle]")).click();
-  const form = await displayed("form.principle-form");
+  const form = await displayed("form[data-testid=principle-form]");
   await (await form.$('button[type="submit"]')).click();
   await waitGone(form, "The principle form did not close after saving");
   await verifyPrinciple();
@@ -323,22 +323,22 @@ async function addPrinciple() {
 async function verifyPrinciple() {
   const page = await openMemorySegment("pages");
   await waitForText(page, FIXTURE.method);
-  const row = await visibleWithText("section.memory-page button.memory-row", PRINCIPLE.statement);
+  const row = await visibleWithText("section[data-testid=memory-page] button[data-testid=memory-row]", PRINCIPLE.statement);
   await row.click();
-  await waitForText(await displayed("section.memory-page aside.memory-reader"), PRINCIPLE.statement);
-  const back = await browser.$(".memory-reader-back");
+  await waitForText(await displayed("section[data-testid=memory-page] aside[data-testid=memory-reader]"), PRINCIPLE.statement);
+  const back = await browser.$("[data-testid=memory-reader-back]");
   if (await back.isDisplayed().catch(() => false)) await back.click();
-  await (await visibleWithText("section.memory-page button.memory-row", FIXTURE.method)).click();
-  const method = await displayed("section.memory-page aside.memory-reader");
+  await (await visibleWithText("section[data-testid=memory-page] button[data-testid=memory-row]", FIXTURE.method)).click();
+  const method = await displayed("section[data-testid=memory-page] aside[data-testid=memory-reader]");
   await waitForText(method, "Separate observations from assumptions.");
-  await displayed(".memory-reader .page-history");
-  const history = await displayed(".memory-reader .lens-then-now");
+  await displayed("[data-testid=memory-reader] [data-testid=page-history]");
+  const history = await displayed("[data-testid=memory-reader] [data-testid=lens-then-now]");
   assert.equal((await history.$$("h4")).length, 2, "The revised method did not show Then and Now");
 }
 
 async function verifyFollowedAndHoldings({ copied }) {
   await openMemorySegment("about");
-  const chips = await browser.$(".memory-about .memory-chips");
+  const chips = await browser.$("[data-testid=memory-about] [data-testid=memory-chips]");
   const names = await chips.getText();
   assert.equal(names.includes("NWHLD"), !copied, "Followed assets belong to app data, not a copied Loupist folder");
   const summary = await (await displayed("[data-holdings-kinds]")).getText();
@@ -349,15 +349,15 @@ async function verifyFollowedAndHoldings({ copied }) {
 async function followAndImportHoldings() {
   await openMemorySegment("about");
   const follow = async symbol => {
-    await setField(".memory-follow-add input", `${symbol}:US`);
-    await (await displayed('.memory-follow-add button[type="submit"]')).click();
-    await waitForText(await displayed(".memory-chips"), symbol);
+    await setField("[data-testid=memory-follow-add] input", `${symbol}:US`);
+    await (await displayed('[data-testid=memory-follow-add] button[type="submit"]')).click();
+    await waitForText(await displayed("[data-testid=memory-chips]"), symbol);
   };
   await follow("LMHLD");
   await (await displayed('button[aria-label="Stop following LMHLD"]')).click();
-  await browser.waitUntil(async () => !(await (await displayed(".memory-chips")).getText()).includes("LMHLD"), { timeout: 10_000 });
+  await browser.waitUntil(async () => !(await (await displayed("[data-testid=memory-chips]")).getText()).includes("LMHLD"), { timeout: 10_000 });
   await follow("NWHLD");
-  await (await displayed("button.memory-holdings-update")).click();
+  await (await displayed("button[data-testid=memory-holdings-update]")).click();
   const sheet = await displayed("[data-holdings-sheet]");
   const stockSource = '.holdings-section[aria-labelledby="holdings-stocks"] .holdings-source';
   await writeFile(resolve(stateRoot, "holdings.csv"), "symbol,market,name,quantity\nBAD,US,Invalid holding,not-a-number\n");
@@ -385,17 +385,17 @@ async function followAndImportHoldings() {
 async function addJournalEntry() {
   const library = await openLibrary("Journal & notes");
   await clickButton("New entry", library);
-  const form = await displayed(".map-view aside.map-library form.journal-form");
+  const form = await displayed("[data-testid=map-view] aside[data-testid=map-library] form[data-testid=journal-form]");
   const [judgment, reasoning] = await form.$$("textarea");
   await judgment.setValue(JOURNAL.judgment);
   await reasoning.setValue(JOURNAL.reasoning);
   await clickButton("Save entry", form);
   await waitGone(form, "The Journal form did not close after saving");
-  const reader = await displayed(".map-view aside.map-reader article.knowledge-journal");
+  const reader = await displayed("[data-testid=map-view] aside[data-testid=map-reader] article[data-testid=knowledge-journal]");
   await waitForText(reader, JOURNAL.judgment);
   await waitForText(reader, JOURNAL.reasoning);
   await openLibrary("Journal & notes");
-  const row = await visibleWithText(".map-view aside.map-library button.journal-library-row", JOURNAL.judgment);
+  const row = await visibleWithText("[data-testid=map-view] aside[data-testid=map-library] button[data-testid=journal-library-row]", JOURNAL.judgment);
   return row.getAttribute("data-research-id");
 }
 
@@ -403,27 +403,27 @@ async function verifyJournal(id) {
   const library = await openLibrary("Journal & notes");
   await waitForText(library, FIXTURE.journal);
   await waitForText(library, FIXTURE.note);
-  const row = await displayed(`.map-view aside.map-library button.journal-library-row[data-research-id="${id}"]`);
+  const row = await displayed(`[data-testid=map-view] aside[data-testid=map-library] button[data-testid=journal-library-row][data-research-id="${id}"]`);
   await waitForText(row, JOURNAL.judgment);
   await row.click();
-  const reader = await displayed('.map-view aside.map-reader article[aria-label]');
+  const reader = await displayed('[data-testid=map-view] aside[data-testid=map-reader] article[aria-label]');
   await waitForText(reader, JOURNAL.judgment);
   await waitForText(reader, JOURNAL.reasoning);
   await openLibrary("Journal & notes");
-  await (await visibleWithText(".map-view button.journal-library-row", FIXTURE.journal)).click();
-  const frozen = await displayed(".knowledge-journal");
+  await (await visibleWithText("[data-testid=map-view] button[data-testid=journal-library-row]", FIXTURE.journal)).click();
+  const frozen = await displayed("[data-testid=knowledge-journal]");
   await waitForText(frozen, "Metric will exceed the threshold");
   await clickButton("Read saved source", frozen);
-  await waitForText(await displayed(".knowledge-journal-source .knowledge-passage"), "sealed-world-anchor sentence");
+  await waitForText(await displayed("[data-testid=knowledge-journal-source] [data-testid=knowledge-passage]"), "sealed-world-anchor sentence");
 }
 
 async function replayMap() {
   await openMainTab(browser, "map");
   await closeLibrary();
   await closeMapReader();
-  await clickControl(browser, ".map-view [data-map-more]");
+  await clickControl(browser, "[data-testid=map-view] [data-map-more]");
   await (await displayed('[role="menuitemcheckbox"][data-map-replay]')).click();
-  const bar = await displayed(".map-replay-bar");
+  const bar = await displayed("[data-testid=map-replay-bar]");
   const play = await displayed("[data-map-play]");
   if (await play.getAttribute("aria-label") === "Play") await play.click();
   await browser.waitUntil(async () => (await play.getAttribute("aria-label")) === "Pause", { timeout: 5_000 });
@@ -436,7 +436,7 @@ async function replayMap() {
   await browser.keys("ArrowRight");
   await browser.waitUntil(async () => (await timeline.getValue()) !== before, { timeout: 5_000, timeoutMsg: "Replay did not move when scrubbed" });
   await (await bar.$('button[aria-label="Exit replay"]')).click();
-  await browser.waitUntil(() => browser.execute(() => document.querySelector(".map-replay-bar") === null), { timeout: 5_000, timeoutMsg: "Replay did not close" });
+  await browser.waitUntil(() => browser.execute(() => document.querySelector("[data-testid=map-replay-bar]") === null), { timeout: 5_000, timeoutMsg: "Replay did not close" });
 }
 
 // Loupist and app settings ---------------------------------------------------------
@@ -446,9 +446,9 @@ async function saveInstructions() {
   await (await displayed("[data-header-loupist-settings]")).click();
   const field = "#loupist-profile-instructions";
   await setField(field, INSTRUCTIONS);
-  await clickButton("Save", await displayed(".loupist-profile-form"));
+  await clickButton("Save", await displayed("[data-testid=loupist-profile-form]"));
   await browser.waitUntil(async () => (await (await browser.$(field)).getValue()) === INSTRUCTIONS
-    && (await browser.$(".loupist-profile-form [role='status']").getText().catch(() => "")) === "Saved", {
+    && (await browser.$("[data-testid=loupist-profile-form] [role='status']").getText().catch(() => "")) === "Saved", {
     timeout: 10_000, timeoutMsg: "Loupist instructions did not save",
   });
 }
@@ -481,16 +481,16 @@ async function chatPreferences(scope) {
     await (await displayed("[data-header-loupist-settings]")).click();
     await expand('[data-loupist-section="chat"]');
   }
-  await expand(".agent-config-file-details");
+  await expand("[data-testid=agent-config-file-details]");
   const expected = scope === "global" ? globalConfig : projectConfig;
   let observed = "";
   await browser.waitUntil(async () => {
-    observed = (await browser.$(".agent-config-file button[title]").getAttribute("title").catch(() => "")) ?? "";
+    observed = (await browser.$("[data-testid=agent-config-file] button[title]").getAttribute("title").catch(() => "")) ?? "";
     return Boolean(observed) && (await realFile(observed)) === expected;
   }, { timeout: 10_000, timeoutMsg: `Chat preferences did not switch to ${scope}` }).catch((error) => {
     throw new Error(`${error.message}; actual=${observed}; expected=${expected}`);
   });
-  await expand(".agent-config-advanced");
+  await expand("[data-testid=agent-config-advanced]");
 }
 
 async function configValue(path, expected) {
@@ -574,7 +574,7 @@ async function startShell({ fresh }) {
   await browser.waitUntil(async () => (await browser.execute(() => document.documentElement.lang)) === "en", {
     timeout: 20_000, timeoutMsg: "The saved interface language was not applied after restart",
   });
-  await browser.waitUntil(async () => (await browser.$(".app-shell").getAttribute("data-theme")) === "dark", {
+  await browser.waitUntil(async () => (await browser.$("[data-testid=app-shell]").getAttribute("data-theme")) === "dark", {
     timeout: 10_000, timeoutMsg: "The saved theme was not applied after restart",
   });
 }

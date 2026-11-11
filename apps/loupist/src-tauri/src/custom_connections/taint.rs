@@ -11,7 +11,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    broker::{BrokerError, ToolMethod},
+    broker::{
+        tool_class::{AfterText, Reach, ResultText},
+        BrokerError, ToolMethod,
+    },
     mcp::BundledMcpRuntime,
 };
 
@@ -30,6 +33,7 @@ pub const INSTRUCTION_WRITE_REFUSAL: &str = "This file becomes instructions on l
 pub const HARD_LINK_WRITE_REFUSAL: &str = "This file has another name on disk (a hard link), which can be a file a later reply loads as instructions, and this reply read third-party text, so it is not written. Write a new file instead. Do not retry this path this reply and do not ask the user to send a new message to unlock it.";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct CustomOrigin {
     pub kind: String,
@@ -267,19 +271,7 @@ impl TurnTaint {
         if untrusted_text && command_or_outbound_write(method, params) {
             return Err(BrokerError::UntrustedTextPaused);
         }
-        if self.memory_blocked()
-            && matches!(
-                method,
-                ToolMethod::SourceSave
-                    | ToolMethod::NoteSave
-                    | ToolMethod::JournalSave
-                    | ToolMethod::JournalReview
-                    | ToolMethod::PrincipleSave
-                    | ToolMethod::LensFile
-                    | ToolMethod::LoupistSetup
-                    | ToolMethod::WorldJob
-            )
-        {
+        if self.memory_blocked() && method.safety().memory.refused_after_dont_save() {
             return Err(BrokerError::ProposalDisabled);
         }
         Ok(())
@@ -421,17 +413,18 @@ const NUMERIC_ONLY_OPENBB_TOOLS: &[&str] = &[
     "index_sp500_multiples",
 ];
 
-/// Tools whose results carry third-party text into the model context.
-/// Custom-connection results raise the stronger custom tier where they run.
+/// Tools whose results carry third-party text into the model context
+/// (`ToolMethod::safety`). Custom-connection results raise the stronger
+/// custom tier where they run.
 pub fn carries_untrusted_text(
     method: ToolMethod,
     params: &Value,
     bundled: &BTreeMap<String, BundledMcpRuntime>,
 ) -> bool {
-    match method {
-        ToolMethod::WebSearch | ToolMethod::WebFetch | ToolMethod::DartFilingRead => true,
-        ToolMethod::McpCall => bundled_text_tool(params, bundled),
-        _ => false,
+    match method.safety().result_text {
+        ResultText::Own => false,
+        ResultText::ThirdParty => true,
+        ResultText::ByRoute => bundled_text_tool(params, bundled),
     }
 }
 
@@ -836,50 +829,20 @@ fn char_windows(text: &str, size: usize) -> impl Iterator<Item = String> + '_ {
         .map(move |index| text[starts[index]..starts[index + size]].to_owned())
 }
 
+/// Every network read, connection call and standing-work change
+/// (`ToolMethod::safety`).
 fn outbound_capable(method: ToolMethod, _params: &Value) -> bool {
-    matches!(
-        method,
-        ToolMethod::McpConnect
-            | ToolMethod::McpCall
-            | ToolMethod::WebSearch
-            | ToolMethod::WebFetch
-            | ToolMethod::WorldbankSeries
-            | ToolMethod::KrxDailyQuote
-            | ToolMethod::KisRead
-            | ToolMethod::DartFinancials
-            | ToolMethod::DartFilingSearch
-            | ToolMethod::DartFilingRead
-            | ToolMethod::DartCompanyLookup
-            | ToolMethod::DartMajorReport
-            | ToolMethod::DartOwnership
-            | ToolMethod::DartDividends
-            | ToolMethod::WorldJob
-            | ToolMethod::ScheduleCreate
-            | ToolMethod::ScheduleHandoff
-            | ToolMethod::ScheduleWatch
-            | ToolMethod::ScheduleBriefing
-            | ToolMethod::ScheduleUpdate
-            | ToolMethod::ScheduleRunNow
-            | ToolMethod::ScheduleSetStatus
-    )
+    method.safety().reach == Reach::Outbound
 }
 
 /// The weaker tier keeps research reads (web, market data, Memory, files,
 /// Python) and pauses what could act on injected instructions beyond this
 /// reply. Native file tools are not judged here: the native policy decides.
 fn command_or_outbound_write(method: ToolMethod, params: &Value) -> bool {
-    match method {
-        // A custom server's tools may write to an outside service.
-        ToolMethod::McpConnect | ToolMethod::McpCall => custom_server(params),
-        // Standing work outlives the turn and would carry injected instructions forward.
-        ToolMethod::ScheduleCreate
-        | ToolMethod::ScheduleHandoff
-        | ToolMethod::ScheduleWatch
-        | ToolMethod::ScheduleBriefing
-        | ToolMethod::ScheduleUpdate
-        | ToolMethod::ScheduleRunNow
-        | ToolMethod::ScheduleSetStatus => true,
-        _ => false,
+    match method.safety().after_text {
+        AfterText::Open => false,
+        AfterText::Paused => true,
+        AfterText::CustomPaused => custom_server(params),
     }
 }
 
@@ -930,6 +893,8 @@ mod tests {
             ToolMethod::McpCall,
             ToolMethod::McpConnect,
             ToolMethod::KisRead,
+            // Its model-chosen id is a path segment on api.llama.fi.
+            ToolMethod::DefillamaRead,
             ToolMethod::ScheduleRunNow,
         ] {
             assert!(matches!(

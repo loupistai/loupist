@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 pub const CRYPTO_MARKET: &str = "CRYPTO";
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum CryptoFileFormat {
     KrakenLedger,
@@ -21,6 +22,7 @@ pub enum CryptoFileFormat {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct CryptoPreviewRow {
     pub symbol: String,
@@ -30,6 +32,7 @@ pub struct CryptoPreviewRow {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum CryptoSkipReason {
     Cash,
@@ -37,6 +40,7 @@ pub enum CryptoSkipReason {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct CryptoSkipped {
     pub symbol: String,
@@ -44,6 +48,7 @@ pub struct CryptoSkipped {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct CryptoFilePreview {
     pub preview_id: String,

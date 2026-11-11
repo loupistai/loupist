@@ -7,12 +7,14 @@ use crate::knowledge::{remove_schema_item, schema_view, undo_change, WorldSchema
 use super::{admit, admit_mutation, with_loupist_knowledge};
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "WorldSchemaLoupistRequest"))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LoupistRequest {
     loupist_id: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UndoRequest {
     loupist_id: String,
@@ -20,6 +22,7 @@ pub struct UndoRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RemoveRequest {
     loupist_id: String,
@@ -29,8 +32,10 @@ pub struct RemoveRequest {
 
 fn changed(app: &tauri::AppHandle, loupist_id: &str) {
     let _ = app.emit(
-        "onWorldSchemaChanged",
-        serde_json::json!({ "loupistId": loupist_id }),
+        crate::events::WORLD_SCHEMA_CHANGED,
+        crate::events::WorldSchemaChanged {
+            loupist_id: loupist_id.to_owned(),
+        },
     );
 }
 

@@ -1,5 +1,5 @@
 use super::*;
-use crate::store::{LoupistStore, SqliteStore};
+use crate::store::SqliteStore;
 
 fn fixture() -> SqliteStore {
     let store = SqliteStore::open_in_memory().unwrap();

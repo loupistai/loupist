@@ -14,12 +14,11 @@
     "keepCurrentLoupist": "현재 루피스트 유지",
     "dismiss": "닫기",
     "discussThisLensWhatShouldWeRevise": "이 Lens에 대해 이야기해 봐요: {{label}}. 어떤 내용을 수정해야 할지, 근거는 무엇인지 살펴봐 주세요.",
-    "opening2": "{{value1}} 여는 중",
     "skillCreatorTurnedOnForThisLoupist": "이 루피스트에서 스킬 만들기를 켰어요.",
     "skillCreatorTurnedOnForAllLoupists": "모든 루피스트에서 스킬 만들기를 켰어요.",
     "correctTheConfigurationFileInSettingsChat": "새로 실행하려면 루피스트 설정 → 대화 설정에서 설정 파일을 수정해 주세요.",
     "theConfiguredChatDefaultsAreUnavailableFor": "현재 모델에서 대화 기본 설정을 사용할 수 없어요. 루피스트 설정 → 대화 설정을 확인하거나 대화에서 모델을 선택해 주세요.",
-    "correctTheConfigurationFileInSettingsChat2": "메시지를 보내기 전에 루피스트 설정 → 대화 설정에서 설정 파일을 수정해 주세요.",
+    "correctTheConfigurationFileBeforeSending": "메시지를 보내기 전에 루피스트 설정 → 대화 설정에서 설정 파일을 수정해 주세요.",
     "showOrLoadAModelInSettings": "메시지를 보내려면 설정에서 모델을 표시하거나 불러와 주세요. 저장된 대화, World, Lens는 사용할 수 있어요.",
     "pleaseLookAtWorkspaceFile": "작업 폴더의 {{path}} 파일을 살펴봐 주세요. ",
     "source": "자료",
@@ -142,6 +141,8 @@
     "recoverMemory": "기억 복구",
     "earlierVersion": "이전 버전에서 만든 루피스트",
     "earlierVersionBody": "이 루피스트는 이전 버전에서 만들어져 열 수 없어요. 새 루피스트를 만들어 주세요.",
+    "newerVersion": "새 버전에서 저장한 루피스트",
+    "newerVersionBody": "이 루피스트는 더 새로운 버전의 루피스트에서 저장되어 여기서 열 수 없어요. 루피스트를 업데이트하면 열 수 있어요. 폴더는 바뀌지 않았어요.",
     "removeLoupist": "루피스트 제거"
   },
   "shell": {

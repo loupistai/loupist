@@ -5,6 +5,7 @@ import type { ChatStreamEvent } from "../../types";
 import { App } from "../../App";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { chooseLoupist, loupistIsRunning, newChatButton, openApp, privateChatToggle, waitForLoupistRunning, openChat } from "../renderApp";
+import { completedRun } from "../streamFixtures";
 
 type User = ReturnType<typeof userEvent.setup>;
 const send = async (user: User, text: string) => {
@@ -38,12 +39,12 @@ describe("Loupist · Chat streaming and concurrency", () => {
     const gate = new Promise<void>((resolve) => { finishRun = resolve; });
     vi.spyOn(bridge, "chatSend").mockImplementation(async (request, observer) => {
       observer({ type: "started", run_id: request.run_id });
-      observer({ type: "progress", run_id: request.run_id, progress: { startedAtMs: 1, items: [
+      observer({ type: "progress", run_id: request.run_id, sequence: 1, progress: { startedAtMs: 1, items: [
         { id: "commentary-1", kind: "commentary", text: "Tool preamble that must not become the final answer." },
-        { id: "system-2", kind: "system", category: "system", operation: "compact", action: "Summarized earlier messages", status: "succeeded" },
-      ] } });
+        { id: "system-2", kind: "system", category: "system", operation: "compact", action: "Summarized earlier messages", status: "succeeded", target: null, href: null, startedAtMs: 0, finishedAtMs: null },
+      ], finishedAtMs: null } });
       await gate;
-      observer({ type: "completed", run_id: request.run_id, message_id: "message-final", final_text: "Authoritative final answer.", ...terminal });
+      observer({ type: "completed", ...completedRun, run_id: request.run_id, message_id: "message-final", final_text: "Authoritative final answer.", ...terminal });
       return { run_id: request.run_id };
     });
     await send(user, "Return only the settled final answer");
@@ -83,11 +84,11 @@ describe("Loupist · Chat streaming and concurrency", () => {
     await waitFor(() => expect(screen.getByLabelText("Response status")).toHaveTextContent("Thinking it through"));
     await emit({ type: "phase", run_id, phase: "writing" });
     const preamble = { id: "note", kind: "commentary" as const, text: "보고서를 확인할게요." };
-    await emit({ type: "progress", run_id, sequence: 1, progress: { startedAtMs: Date.now(), items: [preamble] } });
+    await emit({ type: "progress", run_id, sequence: 1, progress: { startedAtMs: Date.now(), items: [preamble], finishedAtMs: null } });
     await waitFor(() => expect(document.querySelector(".message.streaming .message-content")).toHaveTextContent(preamble.text));
     const originalNote = screen.getByText(preamble.text);
     await emit({ type: "phase", run_id, phase: "tool" });
-    const read = { id: "read", kind: "tool" as const, category: "files" as const, operation: "read" as const, action: "Read filing", status: "succeeded" as const };
+    const read = { id: "read", kind: "tool" as const, category: "files" as const, operation: "read" as const, action: "Read filing", status: "succeeded" as const, target: null, href: null, startedAtMs: 0, finishedAtMs: null };
     await emit({ type: "progress_patch", run_id, patch: { sequence: 2, upsertItems: [read] } });
     const history = await screen.findByLabelText("Work progress");
     expect(screen.getByText(preamble.text)).toBe(originalNote);
@@ -125,7 +126,7 @@ describe("Loupist · Chat streaming and concurrency", () => {
     await waitFor(() => expect(body).toHaveTextContent(more));
     await emit({ type: "delta", run_id, text: `\n\n${more}`, settles: "continued" });
     await emit({ type: "progress_patch", run_id, patch: { sequence: 7, removeItemIds: ["continued"] } });
-    await emit({ type: "completed", run_id, message_id: "final", final_text: `${settled}\n\n${more}`, ...terminal });
+    await emit({ type: "completed", ...completedRun, run_id, message_id: "final", final_text: `${settled}\n\n${more}`, ...terminal });
     expect(await within(body.closest("article")!).findByRole("button", { name: "Copy answer" })).toBeVisible();
     expect(within(body).getByRole("heading", { name: "영업이익" })).toBe(title);
     expect(body.textContent!.split(more)).toHaveLength(2);
@@ -138,7 +139,7 @@ describe("Loupist · Chat streaming and concurrency", () => {
     vi.spyOn(bridge, "chatSend").mockImplementation(async (request, observer) => {
       observer({ type: "started", run_id: request.run_id });
       for (let line = 1; line <= 10; line += 1) observer({ type: "delta", run_id: request.run_id, text: `Partial line ${line}.\n` });
-      observer({ type: "error", run_id: request.run_id, message: "Response could not be completed.", message_id: "assistant-error", final_text: "Response could not be completed.", ...terminal });
+      observer({ type: "error", failure_kind: "other", run_id: request.run_id, message: "Response could not be completed.", message_id: "assistant-error", final_text: "Response could not be completed.", placeholder: true, ...terminal });
       return { run_id: request.run_id };
     });
     await openApp(bridge);

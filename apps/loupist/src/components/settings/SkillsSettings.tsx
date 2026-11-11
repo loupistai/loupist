@@ -44,6 +44,7 @@ export function SkillsSettings({ bridge, loupists, scope, onScopeChange, onDraft
       const next = await bridge.skillsList({ scope });
       if (current.current === key) { setCatalog(next); setError(null); }
     } catch (cause) { if (current.current === key) setError(errorMessage(cause, i18n.t("settings:skillsSettings.couldNotLoadSkills"))); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `scopeKey` names the scope.
   }, [bridge, scopeKey]);
   useEffect(() => {
     setCatalog(null); setDetail(null); setEditor(null); setAdding(false); setDeleting(false); setStatus(""); setQuery("");

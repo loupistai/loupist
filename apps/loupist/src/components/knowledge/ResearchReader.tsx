@@ -75,6 +75,7 @@ function ExactResearchReader({ bridge, location, onOpen, onAsk, refreshKey = 0, 
     void read().catch((cause: unknown) => { if (current) setError(errorMessage(cause, t("researchReader.couldNotOpenTheSavedRecord"))); })
       .finally(() => { if (current) setReady(true); });
     return () => { current = false; receiptGeneration.current += 1; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` only words the failure; a language change must not reload.
   }, [bridge, location.loupistId, noteId, journalId, refreshKey, reload]);
 
   useEffect(() => {
@@ -124,7 +125,7 @@ function ExactResearchReader({ bridge, location, onOpen, onAsk, refreshKey = 0, 
       {note.inputs && <SavedInputs inputs={note.inputs} openReference={openReference} markdown={markdown} />}
       {Boolean(note.previousNoteIds?.length) && <section aria-label={t("researchReader.previousNotes")}><h3>{t("researchReader.earlierNotesUsed")}</h3><ul>{[...new Set(note.previousNoteIds)].map((id, index) => <li key={id}><Button variant="link" onClick={() => openReference({ kind: "research", recordId: "", revisionId: "", objectId: id })}>{t("researchReader.earlierNote", { index: formatNumber(index + 1) })}</Button></li>)}</ul></section>}
     </article>}
-    {journal && <article ref={readerPanel} tabIndex={-1} className="knowledge-reading knowledge-journal" aria-label={t("researchReader.recordedJournal")}>
+    {journal && <article ref={readerPanel} tabIndex={-1} className="knowledge-reading knowledge-journal" data-testid="knowledge-journal" aria-label={t("researchReader.recordedJournal")}>
       <header className="research-document-head"><div className="memory-meta-row"><Badge variant="outline">{t("journal.entry")}</Badge><time dateTime={new Date(journal.createdAtMs).toISOString()}>{formatDateTime(journal.createdAtMs)}</time></div><h2>{journal.judgment}</h2></header>
       {editing ? <ResearchJournalForm bridge={bridge} loupistId={location.loupistId} entry={journal} onCancel={() => setEditing(false)} onSaved={entry => { setJournal(entry); setEditing(false); onChanged?.(); }} /> : <>
         <JournalThenNow entry={journal} onOpenSource={(source) => openReference(sourceReference(source))} />
@@ -137,10 +138,10 @@ function ExactResearchReader({ bridge, location, onOpen, onAsk, refreshKey = 0, 
       <SavedInputs inputs={journal.inputs} openReference={openReference} markdown={markdown} onReadReceipt={(id, trigger) => void readReceipt(id, trigger)} openingReceipt={openingReceipt ? requestedReceipt : null} />
       {openingReceipt && <p role="status">{t("researchReader.openingTheSourceSavedWithThisJournal")}</p>}
       {receiptError && <div role="alert"><p>{receiptError}</p><Button variant="outline" onClick={() => { if (requestedReceipt) void readReceipt(requestedReceipt); }}>{t("researchReader.retrySavedSource")}</Button></div>}
-      {receipt && <article ref={receiptPanel} tabIndex={-1} className="knowledge-journal-source" aria-label={t("researchReader.retainedJournalSource")}>
+      {receipt && <article ref={receiptPanel} tabIndex={-1} className="knowledge-journal-source" data-testid="knowledge-journal-source" aria-label={t("researchReader.retainedJournalSource")}>
         <header className="knowledge-read-head"><h3>{t("researchReader.sourceSavedWithThisJournal")}</h3><Button variant="ghost" onClick={() => { receiptGeneration.current += 1; restoreReceiptFocus.current = true; setReceipt(null); }}>{t("researchReader.closeSavedSource")}</Button></header>
         <p>{receipt.pinned.attribution}</p>
-        {receipt.text !== undefined ? <blockquote className="knowledge-passage">{receipt.text}</blockquote> : <p>{t("researchReader.theOriginalFileWasSavedWithThisJournalAText")}</p>}
+        {receipt.text !== undefined ? <blockquote className="knowledge-passage" data-testid="knowledge-passage">{receipt.text}</blockquote> : <p>{t("researchReader.theOriginalFileWasSavedWithThisJournalAText")}</p>}
         <Button variant="link" onClick={() => openReference(sourceReference(receipt.pinned))}>{t("researchReader.openSourceRecord")}</Button>
         <Disclosure title={<>{t("researchReader.fileDetails")}</>}><p>{coverageLabel()[receipt.pinned.coverage] ?? receipt.pinned.coverage}</p></Disclosure>
       </article>}

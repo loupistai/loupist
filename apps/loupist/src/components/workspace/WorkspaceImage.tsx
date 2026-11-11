@@ -19,6 +19,7 @@ export function WorkspaceImage({ path, alt }: { path: string; alt: string }) {
       .then((file) => { if (active) setPreview({ key, bridge: scope.bridge, src: workspaceRasterPreview(file) }); })
       .catch(() => { if (active) setPreview({ key, bridge: scope.bridge, src: null }); });
     return () => { active = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the scope's fields; a new scope object for the same thread must not re-read.
   }, [scope?.bridge, scope?.loupistId, key, path]);
   const src = preview?.key === key && preview.bridge === scope?.bridge && failed !== key ? preview.src : null;
   const label = alt || path.split("/").at(-1) || path;

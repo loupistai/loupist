@@ -44,7 +44,7 @@ export function readerScenarios({ base, select, navigate, selectPanel, click, cl
         bridge.workspaceRead = async request => ({ path: request.path, content: kind === "csv" ? "period,revenue,margin\n2026 Q1,125000000,0.148\n2026 Q2,142000000,0.153\n2026 Q3,156000000,0.162" : previewKo() ? "# 분기 실적 검토\n\n## 확인할 내용\n\n매출과 이익률을 같은 기간의 보관한 자료와 비교해요.\n\n- 보고 기간을 확인해요.\n- 현금흐름과 가동률을 비교해요." : "# Quarterly research\n\n## What to check\n\nCompare revenue and margins against retained sources for the same period.\n\n- Confirm the reporting period.\n- Compare cash conversion and utilization.", content_sha256: "a".repeat(64), media_type: kind === "csv" ? "text/csv" : "text/markdown", size_bytes: 240, binary: false, truncated: false });
       },
     })),
-    ...(["workspace_unavailable", "earlier_version", "recovery_required"] as const).map((status): PreviewScenario => ({
+    ...(["workspace_unavailable", "earlier_version", "newer_version", "recovery_required"] as const).map((status): PreviewScenario => ({
       ...base(`loupist-${status.replaceAll("_", "-")}`, `Loupist folder: ${status}`, () => select(status === "workspace_unavailable" ? '.app-selection-error[role="status"]' : '.app-stage [role="alert"]')),
       setup: async (bridge: PreviewBridge) => {
         await prepareFixture(bridge);

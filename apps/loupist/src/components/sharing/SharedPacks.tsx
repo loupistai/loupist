@@ -4,13 +4,12 @@ import i18n, { useTranslation } from "@/i18n";
 import { formatDate, formatNumber } from "@/i18n/format";
 import type { LoupistBridge } from "../../types";
 import type { PackImportView, PackUpdate, PackUpdateCheck } from "../../contracts/sharing";
-import { errorMessage } from "../../lib/errors";
+import { commandErrorCode, errorMessage } from "../../lib/errors";
 import { Button } from "../ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { Spinner } from "../ui/spinner";
 import { PackUpdateDiff } from "./PackUpdateDiff";
-import { errorCode } from "./sharingText";
 import "@/styles/sharing.css";
 
 /** The "What {Loupist} knows" marker that opens the shared Loupists section. */
@@ -51,7 +50,7 @@ export const SharedPacks = forwardRef<HTMLElement, { bridge: LoupistBridge; loup
       setChecks(current => ({ ...current, [entry.importId]: { busy: true } }));
       let result: CheckResult | null;
       try { result = await request(); }
-      catch (cause) { result = errorCode(cause) === "rate_limited" ? { kind: "rateLimited" } : { kind: "failed", message: errorMessage(cause, t("publishOffline")) }; }
+      catch (cause) { result = commandErrorCode(cause) === "rate_limited" ? { kind: "rateLimited" } : { kind: "failed", message: errorMessage(cause, t("publishOffline")) }; }
       setChecks(current => {
         const next = { ...current };
         if (result && result.kind !== "notChecked") next[entry.importId] = { busy: false, result };

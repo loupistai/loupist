@@ -14,7 +14,7 @@ use crate::{
         types::{ChatSendRequest, ChatStreamEvent},
     },
     domain::{ChatMessage, ChatSession, HomeHandoff, MemoryPolicy},
-    store::{LoupistStore, StoreError, StoreResult},
+    store::{StoreError, StoreResult},
 };
 
 pub(crate) const DDL: &str = r#"
@@ -23,7 +23,7 @@ CREATE TABLE chat_handoffs (
     loupist_id TEXT NOT NULL REFERENCES loupist_profiles(id) ON DELETE RESTRICT,
     request_key TEXT NOT NULL,
     chat_id TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
-    status TEXT NOT NULL CHECK (status IN ('created','running','done','failed','stopped')),
+    status TEXT NOT NULL,
     run_id TEXT,
     created_at_ms INTEGER NOT NULL,
     data_json TEXT NOT NULL,
@@ -38,6 +38,7 @@ pub(crate) const MAX_BRIEF_CHARS: usize = 8_000;
 pub(crate) const MAX_PINS: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum HandoffStatus {
     Created,

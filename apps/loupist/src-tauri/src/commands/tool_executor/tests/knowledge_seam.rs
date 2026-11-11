@@ -350,7 +350,7 @@ fn graph_retrieval_fuses_shared_claims_once_and_keeps_lexical_hits() {
         json!({"scope":"world", "recordId":"rec_w", "objectId":"clm_lexical", "score":4}),
         json!({"scope":"source", "recordId":"rec_s", "objectId":"spn_1", "score":3}),
     ];
-    super::super::authority::fuse_ranked_world_hits(
+    super::super::memory_reads::fuse_ranked_world_hits(
         &mut hits,
         "rec_w",
         "rev_1",

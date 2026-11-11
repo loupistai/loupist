@@ -128,6 +128,7 @@ export function useLoupistChat({
   // The SDK replaces changed messages with new snapshots. Preserve unchanged
   // projections so token updates do not rebuild every saved answer and its refs.
   // Weak keys release removed/replaced messages; each Chat has its own cache.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- each Chat gets its own projection cache; `chat` is the cache's identity, not a value it reads.
   const projections = useMemo(() => new WeakMap<LoupistUIMessage, ChatMessage>(), [chat]);
   const messages = useMemo(() => uiMessages.map((message) => {
     let projected = projections.get(message);

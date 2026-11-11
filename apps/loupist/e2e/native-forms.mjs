@@ -78,7 +78,7 @@ export async function verifyNativeToneLayoutFix(browser, devUrl, { beforePath, a
   try {
     await browser.execute(() => {
       const field = document.querySelector("[data-loupist-tone]");
-      const options = field.querySelector(".loupist-tone-options");
+      const options = field.querySelector("[data-testid=loupist-tone-options]");
       while (options.firstChild) field.insertBefore(options.firstChild, options);
       options.remove();
       field.style.display = "grid";

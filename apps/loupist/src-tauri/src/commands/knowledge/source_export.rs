@@ -83,7 +83,6 @@ fn ensure_export_location(state: &AppState, path: &std::path::Path) -> Result<()
         ));
     }
     if state.store.is_folder_catalog() {
-        use crate::store::LoupistStore;
         for profile in state
             .store
             .list_loupists()
@@ -161,7 +160,6 @@ pub(super) fn export_bytes(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::LoupistStore;
     #[test]
     fn source_exports_allow_working_files_and_protect_all_registered_loupist_data() {
         let temp = tempfile::tempdir().unwrap();

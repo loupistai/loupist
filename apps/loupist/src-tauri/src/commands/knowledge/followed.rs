@@ -7,7 +7,6 @@ use super::{
 use crate::{
     app::{AppState, CommandError},
     knowledge::{FollowedAsset, FollowedState, FollowedStatus},
-    store::LoupistStore,
 };
 use serde::Deserialize;
 use std::{
@@ -101,6 +100,7 @@ impl FollowedSync {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FollowedStatusRequest {
     pub loupist_id: String,

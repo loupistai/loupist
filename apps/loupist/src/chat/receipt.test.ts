@@ -4,6 +4,8 @@ import { chatReceipt, learnedSummary, savesMemory, showsReceipt } from "./receip
 const lensRead = (recordId: string, readRef = `read-${recordId}`): MemoryRef => ({
   read_ref: readRef, kind: "lens", title: `Method ${recordId}`, excerpt: "", access: "exact_read",
   knowledge: { kind: "lens", recordId, revisionId: "rev", objectId: recordId },
+  as_of: null,
+  section: null,
 });
 const change = (kind: MemoryUpdateChange["kind"], recordId: string, operation: MemoryUpdateChange["operation"] = "create") => ({
   kind, recordId, operation, title: recordId, lesson: "", basis: "", futureUse: "",
@@ -16,9 +18,9 @@ it("uses host-recorded kinds for exact reads and context delivery, regardless of
   const receipt = chatReceipt(answer({
     content: "Checked against your principles\n- [Cash before profit](lens:principle-1): meets\n- [Margin method](lens:method-1)\n- [New rule](lens:saved-rule)",
     lens_receipts: [
-      { recordId: "principle-1", revisionId: "rev", kind: "principle", title: "Cash before profit", delivery: "exact_read" },
-      { recordId: "method-1", revisionId: "rev", kind: "method", title: "Margin method", delivery: "exact_read" },
-      { recordId: "method-1", revisionId: "rev", kind: "method", title: "Margin method", delivery: "context" },
+      { recordId: "principle-1", revisionId: "rev", kind: "principle", title: "Cash before profit", delivery: "exact_read", revisionDigest: "digest" },
+      { recordId: "method-1", revisionId: "rev", kind: "method", title: "Margin method", delivery: "exact_read", revisionDigest: "digest" },
+      { recordId: "method-1", revisionId: "rev", kind: "method", title: "Margin method", delivery: "context", revisionDigest: "digest" },
     ],
     memory_refs: [lensRead("method-1"), lensRead("method-1", "again"), { ...lensRead("discovered"), access: "search_discovered" }],
     memory_update: { status: "applied", commitId: "c", changes: [
@@ -68,10 +70,10 @@ it("does not infer a used kind from an answer link or an untyped old read", () =
 
 it("counts a perspective, a topic and an idea the host delivered as used pages", () => {
   const receipt = chatReceipt(answer({ lens_receipts: [
-    { recordId: "outlook", revisionId: "rev", kind: "perspective", title: "Evidence before conviction", delivery: "context" },
-    { recordId: "topic", revisionId: "rev", kind: "subject", title: "Hanul Precision", delivery: "exact_read" },
-    { recordId: "idea", revisionId: "rev", kind: "idea", title: "Margins recover", delivery: "exact_read" },
-    { recordId: "topic", revisionId: "rev", kind: "subject", title: "Hanul Precision", delivery: "context" },
+    { recordId: "outlook", revisionId: "rev", kind: "perspective", title: "Evidence before conviction", delivery: "context", revisionDigest: "digest" },
+    { recordId: "topic", revisionId: "rev", kind: "subject", title: "Hanul Precision", delivery: "exact_read", revisionDigest: "digest" },
+    { recordId: "idea", revisionId: "rev", kind: "idea", title: "Margins recover", delivery: "exact_read", revisionDigest: "digest" },
+    { recordId: "topic", revisionId: "rev", kind: "subject", title: "Hanul Precision", delivery: "context", revisionDigest: "digest" },
   ] }));
   expect(receipt.usedPages.map(page => [page.recordId, page.kind])).toEqual([["outlook", "perspective"], ["topic", "subject"], ["idea", "idea"]]);
   expect(receipt.empty).toBe(false);

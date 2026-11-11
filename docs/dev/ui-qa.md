@@ -24,8 +24,8 @@ and dark themes, for implemented locales, and at the minimum (700×560) and larg
 | Trust | Sources are one step away. AI-generated content is identifiable and carries the short notice. UI chrome itself never tells the user to buy or sell. |
 
 The capture script uses installed Google Chrome (the macOS app or `google-chrome` on Linux).
-Set `CHROME_PATH` for another executable. Capture screens with `npm --prefix apps/loupist run preview:capture`. It renders every scenario in
-`src/preview/scenarios.ts` in both themes at 700×560, 1280×820 and 1680×1050, and writes the PNGs,
+Set `CHROME_PATH` for another executable. Capture screens with `npm --prefix apps/loupist run preview:capture`. It renders every scenario
+`src/preview/scenarios.ts` registers in both themes at 700×560, 1280×820 and 1680×1050, and writes the PNGs,
 `manifest.json` and a contact sheet under `apps/loupist/output/design/preview/<timestamp>/`.
 The default capture locale is English; add `-- --locales en,ko,en-XA` to cover the language matrix.
 Narrow a run with `-- --scenarios chat-answer,map-overview --themes light --sizes 1280x820`. Add
@@ -123,8 +123,16 @@ persists global `appearance.language` as `system`, `en` or `ko`; system follows
 exercises text expansion in previews.
 
 Use these helpers for newly localized surfaces and preserve Source/Lens text.
-`scripts/check-i18n.mjs` checks catalog parity/placeholders and tracks existing
-visible literals through `scripts/i18n-allowlist.json`; it is part of the web gate.
+`scripts/check-i18n-parity.mjs` checks catalog parity and placeholders.
+`scripts/check-i18n.mjs` rejects untranslated literals in the web gate: in `.tsx`, JSX
+text, labelling attributes and error setters; in `.ts` modules, prose (a capitalized
+string of two or more words) unless it is a comparison with a host value, a `HOST_*`
+constant, an `Error` message, a translation key or a console line. `src/contracts`,
+`src/bridge`, `src/preview`, `src/test` and tests are not scanned. A literal that must
+stay as written (a product, provider or license name, a library identifier, a
+developer eval string) goes in `scripts/i18n-allowlist.json` with its reason. Name
+catalog keys after their meaning; a second wording of the same sentence gets its own
+semantic key, never a numeric suffix.
 Preview capture accepts `--locales en,ko,en-XA`.
 
 ## Code

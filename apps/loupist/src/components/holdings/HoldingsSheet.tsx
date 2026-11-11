@@ -4,7 +4,7 @@ import { useTranslation } from "@/i18n";
 import { formatDate, formatDateTime, formatNumber } from "@/i18n/format";
 import type { LoupistBridge } from "@/types";
 import type { CryptoFilePreview, HoldingsCsvPreview, HoldingsSummary, WalletView } from "@/contracts/userContext";
-import { errorMessage } from "@/lib/errors";
+import { commandErrorCode, errorMessage } from "@/lib/errors";
 import { Button } from "../ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
@@ -19,7 +19,6 @@ const MAX_WALLETS = 10;
 const SEPARATOR = "\u00a0· ";
 const day = (ms: number) => formatDate(ms, { year: undefined, month: "short", day: "numeric" });
 const moment = (ms: number) => formatDateTime(ms, { year: undefined, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-const code = (cause: unknown) => cause && typeof cause === "object" && "code" in cause && typeof cause.code === "string" ? cause.code : null;
 
 type Body =
   | { kind: "sources" }
@@ -244,8 +243,8 @@ function AddWallet({ bridge, count, online, open, onOpenChange: setOpen, onAdded
       onAdded(await bridge.walletAdd({ address: address.trim(), name: name.trim() || null }));
       setOpen(false); setAddress(""); setName("");
     } catch (cause) {
-      if (code(cause) === "secret_refused") { setAddress(""); setSecret(true); }
-      else setError(code(cause) === "unsupported_address" ? t("holdings.unsupported") : errorMessage(cause, t("holdings.error")));
+      if (commandErrorCode(cause) === "secret_refused") { setAddress(""); setSecret(true); }
+      else setError(commandErrorCode(cause) === "unsupported_address" ? t("holdings.unsupported") : errorMessage(cause, t("holdings.error")));
     } finally { setAdding(false); }
   };
   return <form ref={form} className="holdings-add-form" data-wallet-form onSubmit={event => { event.preventDefault(); void add(); }}>

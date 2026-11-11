@@ -4,6 +4,7 @@
  * detection, defaults and delivery. React renders and submits typed intent.
  */
 import type { AssetEvidence } from "./assets";
+import type * as Wire from "./generated";
 
 /** Equity kinds (finance-watchers.md §2.1). */
 export const EQUITY_WATCH_KINDS = ["filings", "results", "insiders", "holders", "flows", "dividends"] as const;
@@ -11,7 +12,7 @@ export const EQUITY_WATCH_KINDS = ["filings", "results", "insiders", "holders", 
 export const CRYPTO_WATCH_KINDS = ["cryptoMove", "drawdown", "depeg", "tvl"] as const;
 /** Commodity kinds: the front contract's weekly move, CFTC positioning, EIA's weekly petroleum report. */
 export const COMMODITY_WATCH_KINDS = ["futuresMove", "positioning", "oilInventory"] as const;
-export type WatchKind = typeof EQUITY_WATCH_KINDS[number] | typeof CRYPTO_WATCH_KINDS[number] | typeof COMMODITY_WATCH_KINDS[number];
+export type WatchKind = Wire.WatchKind;
 /** Kinds by asset class, in column order; an asset's kinds all come from one group. */
 export const WATCH_KIND_GROUPS = [
   { id: "equity", kinds: EQUITY_WATCH_KINDS },
@@ -84,7 +85,7 @@ export type WatchEvent = {
   evidence: AssetEvidence[];
 };
 
-export type WatchSettingSetRequest = { loupistId: string; assetId: string; kind: WatchKind; enabled: boolean; expectedRevision: number };
+export type WatchSettingSetRequest = Wire.WatchSettingSetRequest;
 export type WatchEventsListRequest = { loupistId: string; sinceMs?: number; limit: number };
 
 export interface WatchBridge {
@@ -99,5 +100,5 @@ export interface WatchBridge {
   /** The alerts were on screen (Thread message for 1 s, or Schedule › Watching opened). */
   watchEventsSeen(request: { loupistId: string; eventIds: string[] }): Promise<void>;
   /** Rust emits `watch-changed` after a check, a setting change or a delivery. */
-  onWatchChanged(handler: (event: { loupistId: string }) => void): () => void;
+  onWatchChanged(handler: (event: import("./generated").WatchChangedEvent) => void): () => void;
 }

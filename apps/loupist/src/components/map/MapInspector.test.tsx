@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { PreviewBridge, prepareConflictsFixture } from "../../preview/fixtures";
+import { PreviewBridge } from "../../preview/fixtures";
+import { prepareConflictsFixture } from "../../preview/fixtures/conflicts";
 import { MapInspector } from "./MapInspector";
 it("shows both attributed conflicting reports and opens each exact source", async () => {
   const bridge = new PreviewBridge({delay_ms:0}); await prepareConflictsFixture(bridge);

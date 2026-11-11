@@ -18,12 +18,14 @@ const MAX_INPUT: usize = 12_000;
 const METHODS_UNTIL: usize = 8_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReviewQuery {
     pub loupist_id: String,
     pub limit: Option<u32>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Review {
     pub review_id: String,
@@ -35,6 +37,7 @@ pub struct Review {
     pub created_at_ms: i64,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct LearningSettings {
     pub learn_methods: bool,
@@ -1146,6 +1149,10 @@ fn settle(
     count: usize,
     now: i64,
 ) -> KnowledgeResult<()> {
+    // A settled review's outcome; Rust owns the status list (Knowledge schema 7).
+    if !matches!(status, "created" | "refined" | "deferred" | "failed") {
+        return Err(KnowledgeError::Invalid("learning review status is unknown"));
+    }
     let (loupist, claimed): (String, Option<String>) = tx.query_row("UPDATE knowledge_learning_reviews SET status=?2,reason=?3,lens_record_id=?4,rationale=?5,evidence_count=?6,finished_at_ms=?7 WHERE review_id=?1 RETURNING loupist_id,input_json",params![id,status,reason,lens,rationale,count as i64,now],|r|Ok((r.get(0)?,r.get(1)?)))?;
     requeue(tx, &loupist, claimed.as_deref(), now)
 }

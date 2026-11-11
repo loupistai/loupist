@@ -35,7 +35,6 @@ use crate::{
     scheduled_tasks::types::{
         Run, RunStatus, Schedule, TaskDraft, TaskKind, TaskStatus, TaskTarget,
     },
-    store::LoupistStore,
 };
 
 pub(crate) const TASK_TITLE: &str = "Results before and after";
@@ -173,6 +172,7 @@ fn admit(state: &AppState, loupist_id: &str) -> Result<(), CommandError> {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EarningsSnapshotGetRequest {
     pub loupist_id: String,
@@ -203,6 +203,7 @@ pub fn earnings_snapshot_get(
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EarningsEventsListRequest {
     pub loupist_id: String,
@@ -228,6 +229,7 @@ pub fn earnings_events_list(
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EarningsPrepareRequest {
     pub loupist_id: String,

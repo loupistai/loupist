@@ -1,11 +1,12 @@
 //! Live steering for an active Chat: queued instructions are persisted in the
 //! order Pi accepted them, and rejected once the response has ended.
 use super::*;
+use crate::store::SqliteStore;
 
 const CHAT_CONTROL_SETTLE_TIMEOUT: Duration = Duration::from_secs(3);
 
 pub(in crate::commands) fn persist_chat_control_message(
-    store: &dyn LoupistStore,
+    store: &SqliteStore,
     loupist_id: &str,
     thread_id: &str,
     prompt: &str,
@@ -74,7 +75,7 @@ pub(in crate::commands) fn persist_chat_control_message(
 }
 
 pub(in crate::commands) fn settle_chat_control_response(
-    store: &dyn LoupistStore,
+    store: &SqliteStore,
     loupist_id: &str,
     thread_id: &str,
     control: ChatControlRequest,
@@ -141,7 +142,7 @@ pub(super) fn record_chat_control_response(
 }
 
 pub(super) fn persist_contiguous_chat_controls(
-    store: &dyn LoupistStore,
+    store: &SqliteStore,
     loupist_id: &str,
     thread_id: &str,
     settled_controls: &mut BTreeMap<u64, (ChatControlRequest, bool)>,
@@ -159,7 +160,7 @@ pub(in crate::commands) async fn settle_chat_controls_before_completion(
     pending_controls: &mut HashMap<u64, (u64, ChatControlRequest)>,
     settled_controls: &mut BTreeMap<u64, (ChatControlRequest, bool)>,
     next_control_to_persist: &mut u64,
-    store: &dyn LoupistStore,
+    store: &SqliteStore,
     loupist_id: &str,
     thread_id: &str,
 ) -> Result<(), CommandError> {

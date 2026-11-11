@@ -56,6 +56,223 @@ fn an_old_failure_kind_reads_as_other_and_one_unreadable_chat_never_hides_the_re
     assert_eq!(listed, ["chat-kept", "chat-old"]);
 }
 
+fn stored_chat_json(store: &SqliteStore, id: &str) -> String {
+    let connection = store.lock_loupist("loupist-1").unwrap();
+    connection
+        .query_row(
+            "SELECT data_json FROM chat_sessions WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )
+        .unwrap()
+}
+
+fn refusal(reason: crate::domain::ChatToolRefusalReason) -> crate::domain::ChatToolRefusal {
+    crate::domain::ChatToolRefusal {
+        connection_id: "custom-filings".into(),
+        connection_name: "Filings".into(),
+        tool_name: "read_filing".into(),
+        reason,
+    }
+}
+
+#[test]
+fn a_chat_another_version_wrote_opens_and_this_build_never_overwrites_it() {
+    use crate::domain::ChatToolRefusalReason;
+    let store = SqliteStore::open_in_memory().unwrap();
+    seed_loupist(&store, &loupist());
+    let chat = ChatSession {
+        messages: vec![
+            chat_message("question", ChatRole::User, "Compare margins"),
+            ChatMessage {
+                tool_refusals: vec![refusal(ChatToolRefusalReason::NeedsApproval)],
+                ..chat_message("answer", ChatRole::Assistant, "I need your OK for Filings.")
+            },
+        ],
+        ..chat_session("chat-newer", "loupist-1")
+    };
+    store.create_chat(&chat).unwrap();
+    {
+        // Fields, a refusal reason and a Pi cache shape from a newer build.
+        let connection = store.lock_loupist("loupist-1").unwrap();
+        connection
+            .execute(
+                r#"UPDATE chat_sessions SET data_json = replace(json_set(data_json,
+                    '$.pinnedNote', 'kept',
+                    '$.messages[0].translation', json('{"ko":"마진 비교"}'),
+                    '$.piSessionCache', json('{"newerAuthority":true}')),
+                    '"needs_approval"', '"needs_new_grant"') WHERE id = 'chat-newer'"#,
+                [],
+            )
+            .unwrap();
+    }
+    let stored = stored_chat_json(&store, "chat-newer");
+    let read = store.get_chat("chat-newer").unwrap().unwrap();
+    assert_eq!(read.messages.len(), 2);
+    assert_eq!(read.messages[0].content, "Compare margins");
+    assert_eq!(
+        read.messages[1].tool_refusals,
+        [refusal(ChatToolRefusalReason::Other)]
+    );
+    // A cache it cannot read exactly is dropped; the Chat rebuilds cold.
+    assert!(read.pi_session_cache.is_none());
+    assert_eq!(
+        store
+            .list_chats_for_loupist("loupist-1")
+            .unwrap()
+            .into_iter()
+            .map(|chat| chat.id)
+            .collect::<Vec<_>>(),
+        ["chat-newer"]
+    );
+    // Chat writes compare the stored text, so a write from this build that
+    // could drop what it did not read conflicts instead.
+    let renamed = ChatSession {
+        title: "Renamed".into(),
+        updated_at_ms: read.updated_at_ms + 1,
+        ..read.clone()
+    };
+    assert!(matches!(
+        store.replace_chat(&read, &renamed),
+        Err(StoreError::Conflict(_))
+    ));
+    assert!(matches!(
+        store.delete_chat(&read),
+        Err(StoreError::Conflict(_))
+    ));
+    assert_eq!(stored_chat_json(&store, "chat-newer"), stored);
+}
+
+#[test]
+fn dropping_pi_caches_on_reconnect_or_import_keeps_every_chat_writable() {
+    let store = SqliteStore::open_in_memory().unwrap();
+    seed_loupist(&store, &loupist());
+    for id in ["chat-a", "chat-b"] {
+        store.create_chat(&chat_session(id, "loupist-1")).unwrap();
+    }
+    for scope in [Some("loupist-1"), None] {
+        {
+            let connection = store.lock_loupist("loupist-1").unwrap();
+            crate::store::folder::drop_pi_session_caches(&connection, scope).unwrap();
+        }
+        for id in ["chat-a", "chat-b"] {
+            assert!(stored_chat_json(&store, id).contains(r#""piSessionCache":null"#));
+            let read = store.get_chat(id).unwrap().unwrap();
+            let renamed = ChatSession {
+                title: format!("{} again", read.title),
+                updated_at_ms: read.updated_at_ms + 1,
+                ..read.clone()
+            };
+            store.replace_chat(&read, &renamed).unwrap();
+        }
+    }
+}
+
+/// Chat reads in `store.rs` address the stored JSON by serde name
+/// (`chats_ending_in_refusals`, `chats_ending_in_answer`, the artifact
+/// listing's title) and reconnection clears `$.piSessionCache` in place. A
+/// serde rename must fail here rather than silently empty those queries.
+#[test]
+fn sql_json_paths_name_fields_a_chat_serializes() {
+    use crate::domain::{ChatToolRefusalReason, HomeAlert, HomeDelivery, HomeEarnings, HomeWatch};
+    let answer = ChatMessage {
+        tool_refusals: vec![refusal(ChatToolRefusalReason::NeedsApproval)],
+        host_composed: true,
+        delivery: Some(HomeDelivery {
+            run_id: "run-1".into(),
+            task_id: "task-1".into(),
+            task_title: "Morning notes".into(),
+            task_kind: crate::scheduled_tasks::types::TaskKind::Custom,
+            schedule: None,
+            run_thread_id: None,
+            status: crate::scheduled_tasks::types::RunStatus::Succeeded,
+            finished_at_ms: 1,
+            learned: None,
+        }),
+        alert: Some(HomeAlert {
+            asset_id: "asset-1".into(),
+            move_id: "move-1".into(),
+            name: "Example".into(),
+            symbol: "EXM".into(),
+            market: "US".into(),
+            claim: "Margin above 20%".into(),
+            value: "27%".into(),
+            set_at_ms: 1,
+            fact_date: "2026-10-11".into(),
+            source_url: None,
+            source_title: "Filing".into(),
+        }),
+        watch: Some(HomeWatch {
+            event_ids: vec!["event-1".into()],
+            events: Vec::new(),
+            more: 0,
+        }),
+        earnings: Some(HomeEarnings {
+            asset_id: "asset-1".into(),
+            event_id: "event-1".into(),
+            name: "Example".into(),
+            symbol: "EXM".into(),
+            market: "US".into(),
+            period: "Q3".into(),
+            outcome: "reported".into(),
+            side: None,
+            measures: Vec::new(),
+        }),
+        ..chat_message("answer", ChatRole::Assistant, "Margins rose.")
+    };
+    let chat = ChatSession {
+        messages: vec![chat_message("question", ChatRole::User, "Margins?"), answer],
+        ..chat_session("chat-paths", "loupist-1")
+    };
+    let json = serde_json::to_string(&chat).unwrap();
+    let sqlite = rusqlite::Connection::open_in_memory().unwrap();
+    let extract = |path: &str| -> (Option<String>, rusqlite::types::Value) {
+        sqlite
+            .query_row(
+                "SELECT json_type(?1, ?2), json_extract(?1, ?2)",
+                [json.as_str(), path],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap()
+    };
+    for path in [
+        "$.title",
+        "$.piSessionCache",
+        "$.messages[#-1]",
+        "$.messages[#-1].content",
+        "$.messages[#-1].toolRefusals",
+        "$.messages[#-1].hostComposed",
+        "$.messages[#-1].delivery",
+        "$.messages[#-1].alert",
+        "$.messages[#-1].watch",
+        "$.messages[#-1].earnings",
+    ] {
+        assert!(extract(path).0.is_some(), "{path}");
+    }
+    for (path, value) in [
+        ("$.messages[#-1].role", "assistant"),
+        ("$.messages[#-1].status", "complete"),
+    ] {
+        assert_eq!(
+            extract(path).1,
+            rusqlite::types::Value::Text(value.into()),
+            "{path}"
+        );
+    }
+    // The answer query relies on absent markers for an ordinary answer.
+    let plain = serde_json::to_value(chat_message("plain", ChatRole::Assistant, "Done.")).unwrap();
+    for key in [
+        "toolRefusals",
+        "hostComposed",
+        "delivery",
+        "alert",
+        "watch",
+        "earnings",
+    ] {
+        assert!(plain.get(key).is_none(), "{key}");
+    }
+}
+
 #[test]
 fn chat_messages_round_trip_memory_provenance_status_and_progress_without_loss() {
     let store = SqliteStore::open_in_memory().unwrap();

@@ -1,13 +1,10 @@
-export type MarketplaceEntryKind = "data_source";
-export type MarketplaceFreeState =
-  "keyless" | "free_account" | "paid";
-export type MarketplaceTrust = "first_party" | "reviewed_community";
-export type MarketplaceReleaseStage = "available" | "preview";
-export type MarketplaceInstallationPolicy =
-  | "INSTALLED_BY_DEFAULT"
-  | "AVAILABLE"
-  | "NOT_AVAILABLE";
-export type MarketplaceAuthenticationPolicy = "ON_INSTALL" | "ON_USE";
+import type * as Wire from "@/contracts/generated";
+export type MarketplaceEntryKind = Wire.MarketplaceEntryKind;
+export type MarketplaceFreeState = Wire.MarketplaceFreeState;
+export type MarketplaceTrust = Wire.MarketplaceTrust;
+export type MarketplaceReleaseStage = Wire.MarketplaceReleaseStage;
+export type MarketplaceInstallationPolicy = Wire.MarketplaceInstallationPolicy;
+export type MarketplaceAuthenticationPolicy = Wire.MarketplaceAuthenticationPolicy;
 
 export type MarketplaceRuntime = {
   kind: "native" | "mcp";

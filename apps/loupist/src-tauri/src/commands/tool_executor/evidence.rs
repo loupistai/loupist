@@ -204,6 +204,10 @@ pub(super) fn project(result: &RunResult) -> ChatEvidenceRef {
         url,
         provider: result.producer.provider.clone(),
         tool_name: result.producer.tool_name.clone(),
+        calc_operation: (result.producer.tool_name == "calculate")
+            .then(|| payload.get("operation").cloned())
+            .flatten()
+            .and_then(|operation| serde_json::from_value(operation).ok()),
         read_ref: saved_read_ref(result),
         retrieved_at: if result.producer.runtime_id == "native-web"
             && result.producer.tool_name == "web_fetch"

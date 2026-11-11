@@ -40,18 +40,20 @@ use crate::knowledge::{
     ReadinessNote, RecordKind, SourceRecordPayload, WorldGraphQuery, WorldGraphView,
 };
 use crate::runs::maintenance::{ActivityLease, MaintenanceActivityKind};
-use crate::store::LoupistStore;
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeCatalogRequest {
     pub loupist_id: String,
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct KnowledgeObjectRefDto {
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub origin: Option<crate::custom_connections::taint::CustomOrigin>,
     pub summary: Option<String>,
     pub origin_label: Option<String>,
@@ -62,15 +64,19 @@ pub struct KnowledgeObjectRefDto {
     pub title: String,
     /// A Source the host wrote keeps an English title; the interface shows this key.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub title_key: Option<&'static str>,
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct KnowledgeRecordSummaryDto {
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub title_key: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub summary: Option<String>,
     pub lens_kind: Option<crate::knowledge::lens_page::LensKind>,
     pub record_id: String,
@@ -83,6 +89,7 @@ pub struct KnowledgeRecordSummaryDto {
     pub indexing_state: String,
     pub objects: Vec<KnowledgeObjectRefDto>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub updated_at_ms: Option<i64>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub archived: bool,
@@ -93,6 +100,7 @@ fn is_false(value: &bool) -> bool {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct KnowledgeCatalogDto {
     pub loupist_id: String,
@@ -102,6 +110,7 @@ pub struct KnowledgeCatalogDto {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeSourceReadRequest {
     pub loupist_id: String,
@@ -115,6 +124,7 @@ pub struct KnowledgeSourceReadRequest {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SourceSpanViewDto {
     pub span_id: String,
@@ -123,13 +133,16 @@ pub struct SourceSpanViewDto {
     pub media_type: String,
     pub text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub presentation: Option<source_presentation::SourcePresentationDto>,
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SourceDetailDto {
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub origin: Option<crate::custom_connections::taint::CustomOrigin>,
     pub related_claims: Vec<crate::knowledge::SourceWorldClaim>,
     pub processing: Option<crate::knowledge::SourceProcessing>,
@@ -138,6 +151,7 @@ pub struct SourceDetailDto {
     pub revision_id: String,
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub title_key: Option<&'static str>,
     pub source_class: String,
     pub origin_label: String,
@@ -152,6 +166,7 @@ pub struct SourceDetailDto {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeLensReadRequest {
     pub loupist_id: String,
@@ -161,6 +176,7 @@ pub struct KnowledgeLensReadRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeLensPagesForNodeRequest {
     pub loupist_id: String,
@@ -168,12 +184,14 @@ pub struct KnowledgeLensPagesForNodeRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeConnectionsRequest {
     pub loupist_id: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeConnectionRequest {
     pub loupist_id: String,
@@ -181,6 +199,7 @@ pub struct KnowledgeConnectionRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MemorySectionForgetRequest {
     pub loupist_id: String,
@@ -189,6 +208,7 @@ pub struct MemorySectionForgetRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MemoryOpUndoRequest {
     pub loupist_id: String,
@@ -196,6 +216,7 @@ pub struct MemoryOpUndoRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MemoryLearnedRequest {
     pub loupist_id: String,
@@ -203,6 +224,7 @@ pub struct MemoryLearnedRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeResearchSearchRequest {
     pub loupist_id: String,
@@ -211,6 +233,7 @@ pub struct KnowledgeResearchSearchRequest {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct KnowledgePinDto {
     pub kind: String,
@@ -223,6 +246,7 @@ pub struct KnowledgePinDto {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchRecordDto {
     pub id: String,
@@ -235,6 +259,7 @@ pub struct ResearchRecordDto {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchJournalDto {
     pub section_id: String,
@@ -243,6 +268,7 @@ pub struct ResearchJournalDto {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct KnowledgeResearchPageDto {
     pub loupist_id: String,
@@ -271,6 +297,7 @@ pub(super) struct HostReadRequest {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct WorldQueryDto {
     #[serde(flatten)]
@@ -453,15 +480,18 @@ pub(crate) fn learned_digests(
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeLensSearchRequest {
     pub loupist_id: String,
     pub query: String,
     #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub kinds: Vec<crate::knowledge::lens_page::LensKind>,
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct LensSearchHitDto {
     pub record_id: String,
@@ -481,6 +511,7 @@ pub fn knowledge_lens_search(
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeJournalReadRequest {
     pub loupist_id: String,
@@ -488,6 +519,7 @@ pub struct KnowledgeJournalReadRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeJournalSourceReadRequest {
     pub loupist_id: String,
@@ -496,6 +528,7 @@ pub struct KnowledgeJournalSourceReadRequest {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct JournalSourceReadDto {
     pub media_type: String,
@@ -566,6 +599,7 @@ pub fn knowledge_research_search(
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeSourceRetainRequest {
     pub loupist_id: String,
@@ -579,6 +613,7 @@ pub struct KnowledgeSourceRetainRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeSourceFile {
     pub media_type: String,
@@ -705,6 +740,7 @@ pub fn knowledge_source_retain(
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeGraphJobRequest {
     pub loupist_id: String,
@@ -712,12 +748,14 @@ pub struct KnowledgeGraphJobRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeGraphLoupistRequest {
     pub loupist_id: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeGraphPauseRequest {
     pub loupist_id: String,
@@ -725,6 +763,7 @@ pub struct KnowledgeGraphPauseRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeGraphSettingsRequest {
     pub loupist_id: String,

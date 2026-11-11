@@ -1,10 +1,5 @@
-export type UpdatePhase =
-  | "idle"
-  | "checking"
-  | "confirming"
-  | "downloading"
-  | "installing"
-  | "restarting";
+import type * as Wire from "./generated";
+export type UpdatePhase = Wire.UpdatePhase;
 
 export type UpdateOffer = {
   offer_id: string;
@@ -32,14 +27,9 @@ export type UpdateState = {
   blockers: UpdateBlocker[];
 };
 
-export type UpdateInstallRequest = {
-  offer_id: string;
-};
+export type UpdateInstallRequest = Wire.UpdateInstallRequest;
 
-export type UpdateInstallResult = {
-  outcome: "blocked" | "cancelled";
-  blockers: UpdateBlocker[];
-};
+export type UpdateInstallResult = Wire.UpdateInstallResult;
 
 export type StreamObserver<T> = (event: T) => void;
 

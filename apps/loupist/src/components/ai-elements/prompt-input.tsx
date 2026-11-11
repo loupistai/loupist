@@ -332,6 +332,7 @@ export const PromptInput = ({
         }
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount-only cleanup; a draft-backed tray leaves its object URLs to the draft.
     []
   );
 

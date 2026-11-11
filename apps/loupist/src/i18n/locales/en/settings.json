@@ -85,7 +85,7 @@
     "retryAutomaticallyWhenAProviderHasATemporary": "Retry automatically when a provider has a temporary problem.",
     "retryFailedRequests": "Retry failed requests",
     "maximumRetries": "Maximum retries",
-    "numberOfAttemptsAfterTheFirstFailure0": "Number of attempts after the first failure (0–10).",
+    "numberOfAttemptsAfterTheFirstFailure": "Number of attempts after the first failure (0–10).",
     "customTiming": "Custom timing",
     "initialRetryDelayMs": "Initial retry delay (ms)",
     "waitThisLongBeforeTheFirstRetry": "Wait this long before the first retry.",

@@ -24,7 +24,7 @@ const MAX_RECORD_BYTES: usize = 6 * (MAX_INPUT_BYTES + MAX_OUTPUT_BYTES) + 16 * 
 const UPDATE_INTERVAL_MS: i64 = 500;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatActivityDetail {
     pub id: String,
     pub tool_name: String,
@@ -38,7 +38,6 @@ pub struct ChatActivityDetail {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct StoredActivity {
     loupist_id: String,
     thread_id: String,

@@ -6,6 +6,7 @@
  */
 import type { AssetEvidence } from "./assets";
 import type { SensitivityGrid } from "./chat";
+import type * as Wire from "./generated";
 
 /** One calculation Rust ran for a value on the card (percent change, points, reverse DCF); its chip shows the formula. */
 export type EarningsCalc = {
@@ -155,8 +156,8 @@ export type EarningsEventSummary = {
 };
 
 export type EarningsSnapshotGetRequest = { loupistId: string; assetId: string; eventId?: string };
-export type EarningsEventsListRequest = { loupistId: string; assetId: string };
-export type EarningsPrepareRequest = { loupistId: string; assetId: string; eventId: string };
+export type EarningsEventsListRequest = Wire.EarningsEventsListRequest;
+export type EarningsPrepareRequest = Wire.EarningsPrepareRequest;
 
 export interface EarningsBridge {
   /**

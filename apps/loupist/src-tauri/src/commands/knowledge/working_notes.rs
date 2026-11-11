@@ -2,6 +2,7 @@ use super::*;
 use crate::knowledge::{KnowledgeWrite, WorkingNote};
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WorkingNoteReadRequest {
     pub loupist_id: String,
@@ -17,6 +18,7 @@ pub fn knowledge_working_note_read(
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WorkingNotesRequest {
     pub loupist_id: String,
@@ -24,6 +26,7 @@ pub struct WorkingNotesRequest {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct WorkingNotesPage {
     pub current: Option<WorkingNote>,

@@ -6,6 +6,7 @@ import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { ChatEvidenceRef, ChatMessage, ChatStreamEvent } from "../../types";
 import { evidenceFixture } from "../evidenceFixtures";
 import { openApp, openChat } from "../renderApp";
+import { completedRun } from "../streamFixtures";
 
 const withEvidence = (bridge: MockLoupistBridge, refs: ChatEvidenceRef[], content = refs.map((ref) => `[${ref.title}](#evidence-${ref.id})`).join("\n\n")) => {
   const select = bridge.loupistSelect.bind(bridge);
@@ -18,7 +19,7 @@ const withEvidence = (bridge: MockLoupistBridge, refs: ChatEvidenceRef[], conten
   });
 };
 const completed = (run_id: string, final_text: string): Extract<ChatStreamEvent, { type: "completed" }> => ({
-  type: "completed", run_id, message_id: "assistant-evidence", final_text, created_at: "2026-10-11T03:01:00Z",
+  type: "completed", ...completedRun, run_id, message_id: "assistant-evidence", final_text, created_at: "2026-10-11T03:01:00Z",
   execution_model: { profile_id: "model-test", name: "GPT-5.6 Luna", provider: "openai-codex", model: "gpt-5.6-luna", thinking_level: "medium", run_options: {} },
   agent_harness: { schema: "loupist-agent-harness/1", mode: "chat", skill_ids: [], capability_ids: [], digest: "d".repeat(64) },
 });
@@ -138,11 +139,11 @@ describe("Loupist · Chat evidence", () => {
     const gate = new Promise<void>((resolve) => { finishRun = resolve; });
     vi.spyOn(bridge, "chatSend").mockImplementation(async (request, observer) => {
       observer({ type: "started", run_id: request.run_id });
-      observer({ type: "progress", run_id: request.run_id, progress: { startedAtMs: Date.now(), items: [
-        { id: "web-1", kind: "tool", toolName: "web_fetch", category: "web", operation: "read", action: "Read a web source", target: "Rate outlook · example.com", href: "https://example.com/rates", source: { kind: "web", name: "web_search" }, status: "succeeded" },
-        { id: "tool-1", kind: "tool", category: "capability", operation: "read", action: "Opened a tool", target: "private-tool-id", status: "succeeded" },
-        { id: "hash-1", kind: "tool", category: "web", operation: "read", action: "Checked a page", target: "web:f6495eccf2c0cca04e4c6a03", status: "succeeded" },
-      ] } });
+      observer({ type: "progress", run_id: request.run_id, sequence: 1, progress: { startedAtMs: Date.now(), items: [
+        { id: "web-1", kind: "tool", toolName: "web_fetch", category: "web", operation: "read", action: "Read a web source", target: "Rate outlook · example.com", href: "https://example.com/rates", source: { kind: "web", name: "web_search" }, status: "succeeded", startedAtMs: 0, finishedAtMs: null },
+        { id: "tool-1", kind: "tool", category: "capability", operation: "read", action: "Opened a tool", target: "private-tool-id", status: "succeeded", href: null, startedAtMs: 0, finishedAtMs: null },
+        { id: "hash-1", kind: "tool", category: "web", operation: "read", action: "Checked a page", target: "web:f6495eccf2c0cca04e4c6a03", status: "succeeded", href: null, startedAtMs: 0, finishedAtMs: null },
+      ], finishedAtMs: null } });
       await gate;
       observer(completed(request.run_id, "Source checked."));
       return { run_id: request.run_id };

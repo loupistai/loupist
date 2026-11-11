@@ -44,6 +44,7 @@ export function CustomConnections({ bridge, loupists, initialLoupistId }: { brid
       if (requested === revision.current) { setRecords(next); setError(false); }
     } catch { if (requested === revision.current) setError(true); }
   }, [bridge, loupistId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- a request counter, not a DOM node: cleanup invalidates the request that is in flight.
   useEffect(() => { void refresh(); window.addEventListener("focus", refresh); return () => { revision.current++; window.removeEventListener("focus", refresh); }; }, [refresh]);
   const record = records.find(item => item.id === selected);
   return <section className="custom-connections custom-stack" aria-labelledby="custom-connections-title">

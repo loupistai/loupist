@@ -50,10 +50,10 @@ CREATE TABLE knowledge_asset_pages (
     symbol TEXT NOT NULL,
     market TEXT NOT NULL,
     display_name TEXT NOT NULL,
-    class TEXT NOT NULL CHECK (class IN ('equity','crypto','fund','commodity','rates_fx','real_asset','prediction','private')),
-    class_source TEXT NOT NULL CHECK (class_source IN ('user','market','lookup','world','default')),
+    class TEXT NOT NULL,
+    class_source TEXT NOT NULL,
     entity_id TEXT,
-    verdict TEXT CHECK (verdict IS NULL OR verdict IN ('holding','weakening','challenged','broken')),
+    verdict TEXT,
     verdict_move_id TEXT,
     refresh_json TEXT NOT NULL DEFAULT '{}',
     refreshed_at_ms INTEGER,
@@ -65,13 +65,13 @@ CREATE TABLE knowledge_asset_observations (
     observation_id TEXT PRIMARY KEY NOT NULL,
     loupist_id TEXT NOT NULL,
     asset_id TEXT NOT NULL,
-    kind TEXT NOT NULL CHECK (kind IN ('filing','results','earnings','dividend','close','holdings','fees','positioning','line','insiders','holders','flows','capital','investor_flows')),
+    kind TEXT NOT NULL,
     fact_date TEXT NOT NULL CHECK (length(fact_date) = 10),
     recorded_at_ms INTEGER NOT NULL CHECK (recorded_at_ms >= 0),
     dedupe_key TEXT NOT NULL,
     facts_json TEXT NOT NULL CHECK (length(facts_json) <= 4096),
     evidence_json TEXT NOT NULL,
-    origin TEXT NOT NULL CHECK (origin IN ('refresh','chat','briefing')),
+    origin TEXT NOT NULL,
     baseline INTEGER NOT NULL CHECK (baseline IN (0,1)),
     origin_chat_id TEXT,
     origin_message_id TEXT,
@@ -89,7 +89,7 @@ CREATE TABLE knowledge_asset_moves (
     evidence_json TEXT NOT NULL,
     reason_id TEXT,
     line_json TEXT,
-    actor TEXT NOT NULL CHECK (actor IN ('loupist','user')),
+    actor TEXT NOT NULL,
     origin_chat_id TEXT,
     origin_message_id TEXT,
     at_ms INTEGER NOT NULL CHECK (at_ms >= 0),
@@ -177,28 +177,38 @@ impl ObservationKind {
 /// Where a row came from: a retained dataset row, an original URL, a Source,
 /// a World claim, or a cited result of the turn that recorded it.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct AssetEvidence {
     pub tool: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub provider: Option<String>,
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub dataset: Option<DatasetRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub pointer: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub record_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub world_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub citation_url: Option<String>,
     /// The evidence's own date (filing, publication or observation).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub date: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub retrieved_at: Option<String>,
 }
 
@@ -689,6 +699,7 @@ pub fn observations(
 // ───────────────────────────── Thesis: reasons, lines, read ─────────────────────────────
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ThesisRole {
     Reason,
@@ -697,6 +708,7 @@ pub enum ThesisRole {
 
 /// A Journal entry's place in an asset's thesis.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JournalThesis {
     pub asset_id: String,
@@ -759,6 +771,7 @@ pub fn line_unit(
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct LineCrossing {
     pub journal_id: String,
@@ -767,6 +780,7 @@ pub struct LineCrossing {
     pub direction: String,
     pub threshold: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub unit: Option<String>,
     pub observed: f64,
     pub crossed: bool,
@@ -775,31 +789,39 @@ pub struct LineCrossing {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct MoveView {
     pub move_id: String,
     pub asset_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub from: Option<Verdict>,
     pub to: Verdict,
     pub fact_date: String,
     pub reason: String,
     pub evidence: Vec<AssetEvidence>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub reason_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub line: Option<LineCrossing>,
     /// `loupist` or `user`.
     pub actor: String,
     pub at_ms: i64,
     pub undone: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub undoes_move_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub origin_chat_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub origin_message_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub seen_at_ms: Option<i64>,
 }
 
@@ -1313,6 +1335,7 @@ pub fn line_alerts(
 // ───────────────────────────── Views ─────────────────────────────
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ReasonView {
     pub journal_id: String,
@@ -1320,13 +1343,16 @@ pub struct ReasonView {
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub origin_chat_id: Option<String>,
     /// The last move that named this reason.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub last_move: Option<MoveView>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct LineReadingView {
     pub observed: f64,
@@ -1335,6 +1361,7 @@ pub struct LineReadingView {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct LineView {
     pub journal_id: String,
@@ -1343,20 +1370,25 @@ pub struct LineView {
     pub direction: String,
     pub threshold: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub unit: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub by_date: Option<String>,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub origin_chat_id: Option<String>,
     /// `not_checked`, `not_crossed` or `crossed`.
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub last: Option<LineReadingView>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ReadView {
     pub verdict: Verdict,
@@ -1365,24 +1397,29 @@ pub struct ReadView {
     /// True while the read still stands where it started.
     pub started: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub latest_move: Option<MoveView>,
     /// Set when the latest move is the Loupist's and can be undone.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub undo_move_id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GlanceRow {
     /// lastFiling, lastResults, nextEarnings, dividend, price, drawdown, expenseRatio, level.
     pub key: String,
     pub facts: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub date: Option<String>,
     pub evidence: Vec<AssetEvidence>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct CheckFailure {
     pub kind: String,
@@ -1392,6 +1429,7 @@ pub struct CheckFailure {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ChecksView {
     /// Kinds the last check read (the whole plan before the first check).
@@ -1404,6 +1442,7 @@ pub struct ChecksView {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct MapCounts {
     pub suppliers: usize,
@@ -1411,6 +1450,7 @@ pub struct MapCounts {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct AssetPageView {
     pub asset_id: String,
@@ -1420,29 +1460,35 @@ pub struct AssetPageView {
     pub class: AssetClass,
     pub class_source: ClassSource,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub entity_id: Option<String>,
     /// `watching`, `holding` or `none`; never a quantity.
     pub watch: String,
     pub reasons: Vec<ReasonView>,
     pub lines: Vec<LineView>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub read: Option<ReadView>,
     /// Newest first.
     pub history: Vec<MoveView>,
     pub glance: Vec<GlanceRow>,
     pub checks: ChecksView,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub map: Option<MapCounts>,
     /// Korean equities with Korea Investment on: the latest investor flows.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub flows: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub refreshed_at_ms: Option<i64>,
     pub created_at_ms: i64,
     pub revision: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SectionCountView {
     pub section: sections::Section,
@@ -1452,6 +1498,7 @@ pub struct SectionCountView {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct AssetChangeRow {
     pub id: String,
@@ -1463,6 +1510,7 @@ pub struct AssetChangeRow {
     pub evidence: Vec<AssetEvidence>,
     /// For a 10-K/10-Q/사업보고서/분기보고서 filing: compared sections, or empty when not compared yet.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub sections: Option<Vec<SectionCountView>>,
     /// Recorded after the chosen date (the page's accent dot).
     pub new: bool,
@@ -1471,6 +1519,7 @@ pub struct AssetChangeRow {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct AssetDelta {
     pub asset_id: String,
@@ -1480,13 +1529,17 @@ pub struct AssetDelta {
     pub class: AssetClass,
     /// The World entity the page matched, for the Map inspector.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub entity_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub verdict: Option<Verdict>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub verdict_since: Option<String>,
     /// The move behind the current read; absent while it stands where it started.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub latest_move: Option<MoveView>,
     /// Newest fact first, most material first within a day.
     pub rows: Vec<AssetChangeRow>,

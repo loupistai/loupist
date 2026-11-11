@@ -35,6 +35,7 @@ pub const APIS: [&str; 3] = [
 ];
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(deny_unknown_fields)]
 pub struct CustomProviderRequest {
     /// Present when editing an existing custom provider.

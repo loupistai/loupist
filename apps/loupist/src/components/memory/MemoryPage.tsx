@@ -16,7 +16,7 @@ import { chatTitle } from "../../app/chatTitle";
 import { LensLearningPanel } from "../knowledge/LensLearningPanel";
 import { PageReader } from "./PageReader";
 import { PrincipleSource } from "./PrincipleSource";
-import { entityLabel } from "../map/labels";
+import { entityLabel } from "../../knowledge/mapItems";
 import { useAssetPageOpener } from "../assets/assetOpener";
 import type { PackImportView, PackSuggestionGroup } from "../../contracts/sharing";
 import { sharingReleaseVisible } from "../../sharing/releaseVisibility";
@@ -168,6 +168,7 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
     let live = true;
     void bridge.knowledgeLensSearch({ loupistId, query: query.trim() }).then(found => { if (live) setHits(new Set(found.map(hit => hit.recordId))); }).catch(() => { if (live) setHits(new Set()); });
     return () => { live = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `terms` follows `query`.
   }, [bridge, loupistId, query]);
   const shown = items.filter(item => !terms || (item.kind === "principle" ? `${item.title} ${item.summary}`.toLowerCase().includes(terms) : hits?.has(item.id)));
   const selected = items.find(item => item.id === selectedId);
@@ -192,11 +193,11 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
   };
   const current = segment ?? "pages";
   const title = t("memoryPage.title", { name: loupist.name });
-  if (sourceLocation && data) return <section className="memory-page memory-source-page" aria-label={title}>
+  if (sourceLocation && data) return <section className="memory-page memory-source-page" data-testid="memory-page" aria-label={title}>
     <header className="memory-page-header"><Button variant="ghost" size="sm" onClick={() => setSourceLocation(null)}><ArrowLeftIcon aria-hidden="true" />{t("memoryPage.backToMethod")}</Button><h1>{title}</h1></header>
     <SourceWorkspace bridge={bridge} catalog={data.catalog} location={sourceLocation} readerOnly onOpen={openKnowledge} onPatch={setSourceLocation} onAsk={onAsk} onChanged={changed} onOpenLink={onOpenLink} />
   </section>;
-  return <section className="memory-page" aria-label={title} data-segment={current} data-reader-open={compactReader && (current === "history" || Boolean(selected) && current === "pages") || undefined}>
+  return <section className="memory-page" data-testid="memory-page" aria-label={title} data-segment={current} data-reader-open={compactReader && (current === "history" || Boolean(selected) && current === "pages") || undefined}>
     <header className="memory-page-header">
       <h1>{title}</h1>
       {showSharing ? <Button variant="outline" size="sm" data-share-loupist onClick={() => setShare({})}>{i18n.t("sharing:share")}</Button> : null}
@@ -284,7 +285,7 @@ function ItemList({ label, description, items, selectedId, usage, onOpen, before
       <h3 className="memory-group-label"><span>{t(`memoryPage.groups.${group.kind}`)}</span><span className="memory-group-count" aria-hidden="true">{formatNumber(group.items.length)}</span><span className="sr-only">{t("memoryPage.groupCount", { count: group.items.length, formattedCount: formatNumber(group.items.length) })}</span></h3>
       <ul>
         {group.items.map(item => <li key={item.id}>
-          <button ref={element => { if (element) refs.current.set(item.id, element); else refs.current.delete(item.id); }} type="button" className="memory-row" aria-current={item.id === selectedId || undefined}
+          <button ref={element => { if (element) refs.current.set(item.id, element); else refs.current.delete(item.id); }} type="button" className="memory-row" data-testid="memory-row" aria-current={item.id === selectedId || undefined}
             aria-label={`${item.title}, ${kindLabel(item.kind)}, ${usageLine(item, usage)}`} onClick={() => onOpen(item.id)} onKeyDown={event => move(event, flat.indexOf(item))}>
             <i className={`memory-marker is-${item.kind}`} aria-hidden="true" />
             <span><strong>{item.title}</strong><small>{item.paused ? t("memoryPage.itemPaused") : item.summary && item.kind !== "principle" ? item.summary : usageLine(item, usage)}</small></span>
@@ -317,7 +318,7 @@ function Reader({ item, takeFocus, bridge, loupistId, usage, paused, threads, on
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => { setError(null); }, [item?.id]);
-  if (!item) return <aside className="memory-reader is-empty" aria-hidden="true" />;
+  if (!item) return <aside className="memory-reader is-empty" data-testid="memory-reader" aria-hidden="true" />;
   const act = async (action: () => Promise<unknown>) => {
     setBusy(true); setError(null);
     try { await action(); onChanged(); }
@@ -325,11 +326,11 @@ function Reader({ item, takeFocus, bridge, loupistId, usage, paused, threads, on
     finally { setBusy(false); }
   };
   const pauseAction = <Button size="sm" variant="ghost" disabled={busy} onClick={() => void act(() => bridge.knowledgeLensPause({ loupistId, recordId: item.id, paused: !paused }))}>{t(paused ? "memoryPage.actions.resume" : "memoryPage.actions.pause")}</Button>;
-  const back = <Button variant="ghost" size="sm" className="memory-reader-back" onClick={onClose}><ArrowLeftIcon aria-hidden="true" /><span className="memory-reader-back-label">{backLabel}</span></Button>;
+  const back = <Button variant="ghost" size="sm" className="memory-reader-back" data-testid="memory-reader-back" onClick={onClose}><ArrowLeftIcon aria-hidden="true" /><span className="memory-reader-back-label">{backLabel}</span></Button>;
   const kind = <p className="memory-reader-kind">{kindLabel(item.kind)} · {usageLine(item, usage)}</p>;
   const pausedHint = paused ? <p className="memory-meta" role="status">{t("memoryPage.itemPausedHint")}</p> : null;
   if (item.kind !== "principle" || !item.principle) {
-    return <aside className="memory-reader is-lens" aria-label={item.title}>
+    return <aside className="memory-reader is-lens" data-testid="memory-reader" aria-label={item.title}>
       {pausedHint}
       {error ? <p className="memory-reader-error" role="alert">{error}</p> : null}
       <PageReader bridge={bridge} loupistId={loupistId} recordId={item.id} catalog={catalog} toolbar={<>{back}{kind}</>} takeFocus={takeFocus}
@@ -345,7 +346,7 @@ function Reader({ item, takeFocus, bridge, loupistId, usage, paused, threads, on
   const origin = principle.origin === "shared" ? null : principle.origin === "feedback" ? t("memoryPage.reader.originFeedback", { date: day(principle.createdAtMs) })
     : principle.origin === "chat" ? t("memoryPage.reader.originChat", { date: day(principle.createdAtMs) })
       : t("memoryPage.reader.originSettings", { date: day(principle.createdAtMs) });
-  return <aside className="memory-reader" aria-label={item.title}>
+  return <aside className="memory-reader" data-testid="memory-reader" aria-label={item.title}>
     {back}{kind}{pausedHint}
     <p className="memory-reader-statement">{principle.statement}</p><PrincipleSource key={principle.revisionId} statement={principle.statement} why={principle.why ?? ""} example={principle.example ?? ""} />
     <SharedOrigin bridge={bridge} loupistId={loupistId} subjectId={item.id} onAbout={onAboutShared} />
@@ -387,10 +388,10 @@ function AboutYou({ bridge, loupist, data, onChanged, shared }: {
     if (!symbol) return;
     void run(async () => { await bridge.watchlistAdd({ symbol, market, loupistId: loupist.id }); setAdding(""); });
   };
-  return <div className="memory-about">
+  return <div className="memory-about" data-testid="memory-about">
     <section className="memory-card" aria-labelledby={addId}>
       <h2 id={addId}>{t("memoryPage.about.follow")}</h2>
-      <ul className="memory-chips">
+      <ul className="memory-chips" data-testid="memory-chips">
         {data.watchlist.map(entry => <li key={`${entry.symbol}:${entry.market}`}>
           {(() => {
             const label = followedName(entry, data.followedNodes) ? `${followedName(entry, data.followedNodes)} · ${entry.symbol}` : entry.symbol;
@@ -400,12 +401,12 @@ function AboutYou({ bridge, loupist, data, onChanged, shared }: {
           <Button variant="ghost" size="icon-sm" disabled={busy} aria-label={t("memoryPage.about.remove", { name: followedName(entry, data.followedNodes) ?? entry.symbol })} onClick={() => void run(() => bridge.watchlistRemove({ symbol: entry.symbol, market: entry.market }))}><XIcon /></Button>
         </li>)}
       </ul>
-      <form className="memory-follow-add" onSubmit={event => { event.preventDefault(); add(); }}>
+      <form className="memory-follow-add" data-testid="memory-follow-add" onSubmit={event => { event.preventDefault(); add(); }}>
         <Input aria-label={t("memoryPage.about.addLabel")} placeholder={t("memoryPage.about.addPlaceholder")} value={adding} onChange={event => setAdding(event.target.value)} />
         <Button type="submit" size="sm" variant="outline" disabled={busy || !adding.trim()}>{t("memoryPage.about.add")}</Button>
       </form>
       <p className="memory-meta memory-holdings" data-holdings-kinds>{holdingsLine(data.holdings)}
-        <Button variant="link" size="sm" className="memory-holdings-update" onClick={() => setHoldingsOpen(true)}>{t("memoryPage.about.update")}</Button></p>
+        <Button variant="link" size="sm" className="memory-holdings-update" data-testid="memory-holdings-update" onClick={() => setHoldingsOpen(true)}>{t("memoryPage.about.update")}</Button></p>
       <HoldingsSheet bridge={bridge} open={holdingsOpen} onOpenChange={open => { setHoldingsOpen(open); if (!open) onChanged(); }} />
     </section>
     {shared}
@@ -518,8 +519,8 @@ function History({ rows, selectedKey, onSelect }: { rows: readonly HistoryRow[];
 
 /** The reader for a history row that is not a principle or method: names added, or a review that learned nothing. */
 function HistoryNote({ row, onOpenMap, onClose }: { row: HistoryRow; onOpenMap: () => void; onClose: () => void }) {
-  return <article className="memory-reader memory-history-note" aria-label={row.text}>
-    <Button className="memory-reader-back" variant="ghost" size="sm" onClick={onClose}><ArrowLeftIcon aria-hidden="true" />{t("memoryPage.tabs.history")}</Button>
+  return <article className="memory-reader memory-history-note" data-testid="memory-reader" aria-label={row.text}>
+    <Button className="memory-reader-back" data-testid="memory-reader-back" variant="ghost" size="sm" onClick={onClose}><ArrowLeftIcon aria-hidden="true" />{t("memoryPage.tabs.history")}</Button>
     <p className="memory-history-note-date">{formatDateTime(row.atMs)}</p>
     <p className="memory-history-note-text">{row.text}</p>
     {row.failed ? <p className="memory-section-description">{t("memoryPage.history.failedDetail")}</p> : null}

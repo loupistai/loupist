@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
-use tauri::{Emitter, State};
+use tauri::State;
 
 fn directory(state: &AppState, scope: &ConfigScope) -> Result<PathBuf, CommandError> {
     match scope {
@@ -34,17 +34,15 @@ fn find(state: &AppState, scope: &ConfigScope, key: &str) -> Result<ManagedSkill
         .find(|s| s.path.as_deref().unwrap_or(&s.id) == key)
         .ok_or_else(|| CommandError::not_found("Skill"))
 }
-fn changed(app: &tauri::AppHandle, scope: &ConfigScope) -> Result<(), CommandError> {
-    app.emit("configuration:changed", scope)
-        .map_err(super::map_internal)
-}
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillReadRequest {
     pub scope: ConfigScope,
     pub key: String,
 }
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillCreateRequest {
     pub scope: ConfigScope,
@@ -53,6 +51,7 @@ pub struct SkillCreateRequest {
     pub instructions: String,
 }
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillSaveRequest {
     pub scope: ConfigScope,
@@ -62,6 +61,7 @@ pub struct SkillSaveRequest {
     pub instructions: String,
 }
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillDeleteRequest {
     pub scope: ConfigScope,
@@ -69,6 +69,7 @@ pub struct SkillDeleteRequest {
     pub expected_revision: String,
 }
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillImportRequest {
     pub scope: ConfigScope,
@@ -76,6 +77,7 @@ pub struct SkillImportRequest {
     pub url: Option<String>,
 }
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ImportKind {
     Folder,
@@ -101,7 +103,6 @@ pub fn skills_read(
 pub fn skills_create(
     request: SkillCreateRequest,
     state: State<'_, AppState>,
-    app: tauri::AppHandle,
 ) -> Result<SkillCatalog, CommandError> {
     let _activity = state
         .maintenance
@@ -112,14 +113,12 @@ pub fn skills_create(
         &request.description,
         &request.instructions,
     )?;
-    changed(&app, &request.scope)?;
     list(&state, &request.scope)
 }
 #[tauri::command]
 pub fn skills_save(
     request: SkillSaveRequest,
     state: State<'_, AppState>,
-    app: tauri::AppHandle,
 ) -> Result<SkillCatalog, CommandError> {
     let _activity = state
         .maintenance
@@ -130,14 +129,12 @@ pub fn skills_save(
         &request.description,
         &request.instructions,
     )?;
-    changed(&app, &request.scope)?;
     list(&state, &request.scope)
 }
 #[tauri::command]
 pub fn skills_delete(
     request: SkillDeleteRequest,
     state: State<'_, AppState>,
-    app: tauri::AppHandle,
 ) -> Result<SkillCatalog, CommandError> {
     let _activity = state
         .maintenance
@@ -146,7 +143,6 @@ pub fn skills_delete(
         &find(&state, &request.scope, &request.key)?,
         &request.expected_revision,
     )?;
-    changed(&app, &request.scope)?;
     list(&state, &request.scope)
 }
 #[tauri::command]
@@ -169,7 +165,6 @@ pub fn skills_reveal(
 pub async fn skills_import(
     request: SkillImportRequest,
     state: State<'_, AppState>,
-    app: tauri::AppHandle,
 ) -> Result<Option<SkillCatalog>, CommandError> {
     let _activity = state
         .maintenance
@@ -219,6 +214,5 @@ pub async fn skills_import(
         ));
     }
     skills::install(&root, package)?;
-    changed(&app, &request.scope)?;
     list(&state, &request.scope).map(Some)
 }

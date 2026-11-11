@@ -9,6 +9,7 @@ use tokio::sync::Notify;
 use crate::app::CommandError;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct MaintenanceBlocker {
     pub id: String,
     pub kind: String,

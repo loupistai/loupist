@@ -7,7 +7,7 @@ const DART: ChatEvidenceRef = {
   retrieved_at: "2026-03-20T06:00:00Z", published_at: "2026-03-18", url: "https://opendart.fss.or.kr/dsaf001/main.do?rcpNo=20260318990221",
   excerpt: "", excerpt_truncated: false, content_sha256: "c".repeat(64), warnings: [],
 };
-const MARGIN: ChatEvidenceRef = { ...DART, id: "ev_margin", title: "Margin", kind: "derived", provider: undefined, url: undefined, tool_name: "calculate", published_at: undefined };
+const MARGIN: ChatEvidenceRef = { ...DART, id: "ev_margin", title: "Margin", kind: "derived", provider: undefined, url: undefined, tool_name: "calculate", calc_operation: "margin", published_at: undefined };
 
 const data = (text: string, status: NumberCheck["status"] = "rounded"): NumberCheck => ({ link_index: 0, text, evidence_id: DART.id, kind: "data", status });
 const margin: NumberCheck = {

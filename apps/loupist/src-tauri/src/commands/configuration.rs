@@ -1,7 +1,7 @@
 //! Typed renderer access to the Rust-owned configuration service.
 use std::path::PathBuf;
 
-use tauri::{Emitter, State};
+use tauri::State;
 
 use crate::{
     app::{AppState, CommandError},
@@ -37,7 +37,6 @@ pub fn config_read(
 #[tauri::command(rename_all = "snake_case")]
 pub fn config_update(
     request: ConfigUpdateRequest,
-    app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<ConfigSnapshot, CommandError> {
     let project = project_directory(&state, &request.scope)?;
@@ -58,8 +57,6 @@ pub fn config_update(
             },
         )?;
     }
-    app.emit("configuration:changed", &request.scope)
-        .map_err(super::map_internal)?;
     Ok(snapshot)
 }
 

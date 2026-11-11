@@ -185,11 +185,15 @@ export function previewEarningsTask(): { task: ScheduledTask; runs: ScheduledRun
     schedule: { kind: "interval", every_minutes: 60 }, target: { kind: "existing_chat", thread_id: `home-${PREVIEW_LOUPIST}` },
     model_profile_id: "", thinking_level: "", run_options: {}, use_memory: true, update_memory: true, status: "active",
     next_run_at_ms: evening(-5), last_run_at_ms: MORROW_AFTER(), created_at_ms: now - 40 * DAY, updated_at_ms: MORROW_AFTER(),
+    last_error: null,
+    session_thread_id: null,
+    awaiting_confirmation: false,
   };
   const run = (id: string, atMs: number, item: RunSummaryItem): ScheduledRun => ({
     briefing_context: null, kind: "earnings", summary: "", summary_items: [item], read_at_ms: atMs + 60_000, message_id: null, skipped_tools: [], id: `${id}-row`,
     task_id: task.id, loupist_id: PREVIEW_LOUPIST, task_revision: 3, task_title: task.title, thread_id: null, run_id: id,
     scheduled_for_ms: atMs, started_at_ms: atMs, finished_at_ms: atMs + 4_000, status: "succeeded",
+    error: null,
   });
   return { task, runs: [
     run("preview-earnings-after", MORROW_AFTER(), { kind: "earnings_reported", name: MORROW.name, period: "Q3 2026", count: 3 }),

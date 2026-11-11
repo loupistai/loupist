@@ -15,7 +15,7 @@ function Harness({ bridge }: { bridge: MockLoupistBridge }) {
 it("keeps the research selection while filtering and returns keyboard focus when closing it", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const search = vi.spyOn(bridge, "knowledgeResearchSearch").mockImplementation(async ({ loupistId, query }) => ({ loupistId, records: query === "missing" ? [] : [record] }));
-  vi.spyOn(bridge, "knowledgeWorkingNoteRead").mockResolvedValue({ researchId: record.id, chatId: "chat", title: record.title, markdown: "Saved comparison body", changeSummary: "", recordedAtMs: 1 });
+  vi.spyOn(bridge, "knowledgeWorkingNoteRead").mockResolvedValue({ researchId: record.id, chatId: "chat", title: record.title, markdown: "Saved comparison body", changeSummary: "", recordedAtMs: 1, previousNoteIds: [] });
   render(<Harness bridge={bridge} />);
   fireEvent.click(await screen.findByRole("button", { name: /Scope comparison/ }));
   await screen.findByRole("article", { name: "Saved working note" });
@@ -46,7 +46,7 @@ const journal: ResearchRecord = { id: "journal-exact", title: "Keep the original
 function setup() {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const search = vi.spyOn(bridge, "knowledgeResearchSearch").mockResolvedValue({ loupistId: "loupist-quality", records: [note, journal] });
-  vi.spyOn(bridge, "journalList").mockResolvedValue([{ loupistId: "loupist-quality", journalId: "journal-exact", researchId: "", judgment: "Keep the original thesis", reasoning: "", entities: [], createdAtMs: 1, updatedAtMs: 1, archived: false, inputDigest: "fixture", inputs: { sources: [], worlds: [], lenses: [] } }]);
+  vi.spyOn(bridge, "journalList").mockResolvedValue([{ loupistId: "loupist-quality", journalId: "journal-exact", researchId: "", judgment: "Keep the original thesis", reasoning: "", entities: [], createdAtMs: 1, updatedAtMs: 1, archived: false, inputDigest: "fixture", inputs: { sources: [], worlds: [], lenses: [], earlier: [] }, originChatId: null }]);
   const props = { bridge, location: { loupistId: "loupist-quality", surface: "note" as const }, query: "", onQueryChange: vi.fn(), onOpen: vi.fn(), onPatch: vi.fn(), onAsk: vi.fn() };
   return { props, search };
 }
@@ -64,7 +64,7 @@ it("finds saved notes and opens notes and journals by their exact stored identif
 
 it("reads a selected saved note and keeps its web links inside the supplied reader", async () => {
   const { props } = setup();
-  const read = vi.spyOn(props.bridge, "knowledgeWorkingNoteRead").mockResolvedValue({ researchId: note.id, chatId: "chat-original", title: note.title, markdown: "Read [the filing](https://issuer.example/filing).", changeSummary: "", recordedAtMs: 123 });
+  const read = vi.spyOn(props.bridge, "knowledgeWorkingNoteRead").mockResolvedValue({ researchId: note.id, chatId: "chat-original", title: note.title, markdown: "Read [the filing](https://issuer.example/filing).", changeSummary: "", recordedAtMs: 123, previousNoteIds: [] });
   const { open: onOpenLink } = renderWithOpen(<ResearchLibrary {...props} location={{ ...props.location, selection: { kind: "research", recordId: note.id } }} />);
   await userEvent.setup().click(await screen.findByRole("link", { name: "the filing" }));
   expect(read).toHaveBeenCalledWith({ loupistId: "loupist-quality", noteId: note.id });

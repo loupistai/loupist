@@ -11,6 +11,7 @@ use super::Unit;
 use crate::datasets::DatasetRef;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct CalcInput {
     pub name: String,
@@ -19,6 +20,7 @@ pub struct CalcInput {
 
 /// One calculation behind a number on the card.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct CalcView {
     pub title: String,
@@ -30,6 +32,7 @@ pub struct CalcView {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Position {
     Above,
@@ -38,6 +41,7 @@ pub enum Position {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum GuidanceChange {
     New,
@@ -47,6 +51,7 @@ pub enum GuidanceChange {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum NotComparable {
     Basis,
@@ -55,11 +60,13 @@ pub enum NotComparable {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DifferenceView {
     Range {
         position: Position,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         calc: Option<CalcView>,
     },
     Change {
@@ -68,6 +75,7 @@ pub enum DifferenceView {
     Guidance {
         change: GuidanceChange,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         calc: Option<CalcView>,
     },
     NotComparable {

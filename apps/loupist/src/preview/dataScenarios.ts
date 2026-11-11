@@ -51,7 +51,10 @@ export function dataScenarios({ base, select, click, settings }: Helpers): Previ
             id: "krx-range", kind: "tool", category: "finance", operation: "read",
             action: "Read daily prices", running: "Reading daily prices", status: "succeeded",
             target: "990221 · 2026-03-03 → 2026-03-31", source: { kind: "finance", name: "KRX" },
-          }] };
+            href: null,
+            startedAtMs: 0,
+            finishedAtMs: null,
+          }], finishedAtMs: null };
           return workspace;
         };
       },

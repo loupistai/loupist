@@ -1,12 +1,13 @@
-import type { ChatArtifactRef, ChatProgressStatus } from "./chat";
+import type { ChatArtifactRef } from "./chat";
 import type { KnowledgeLocation } from "./knowledge";
+import type * as Wire from "./generated";
 
 export type WorkspacePathRequest = { loupist_id: string; path?: string };
-export type WorkspaceEntry = { path: string; name: string; kind: "file" | "directory"; size_bytes?: number | null };
+export type WorkspaceEntry = { path: string; name: string; kind: "file" | "directory"; size_bytes: number | null };
 export type WorkspaceDirectory = { path: string; entries: WorkspaceEntry[]; truncated: boolean };
 export type WorkspaceFile = { path: string; size_bytes: number; content: string | null; media_type: string; truncated: boolean; binary: boolean; content_sha256: string | null; image_data_url?: string | null };
-export type ChatActivityRequest = { loupist_id: string; thread_id: string; detail_id: string };
-export type ChatActivityDetail = { id: string; tool_name: string; status: ChatProgressStatus; input: string; output: string; truncated: boolean; file_path?: string; started_at_ms: number; finished_at_ms?: number };
+export type ChatActivityRequest = Wire.ChatActivityRequest;
+export type ChatActivityDetail = Wire.ChatActivityDetail;
 
 /** Small reader references only; runtime handles, selections and loaded bodies stay in memory. */
 export type WorkspaceUiTab =
@@ -36,7 +37,7 @@ export type WorkspaceUiState = {
 };
 
 /** Renderer-owned attachment metadata and bytes for a device-local unsent draft. */
-export type DraftAttachment = { id: string; filename: string; mediaType: string; url: string };
+export type DraftAttachment = Wire.DraftAttachment;
 
 export type ComposerChip = {
   key: string;

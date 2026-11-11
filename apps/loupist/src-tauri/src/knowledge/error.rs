@@ -57,6 +57,8 @@ pub enum KnowledgeError {
     LockPoisoned,
     #[error("this Loupist was made by an earlier version of the app")]
     EarlierVersion,
+    #[error("this Loupist was saved by a newer version of the app")]
+    NewerVersion,
 }
 
 impl KnowledgeError {
@@ -83,6 +85,7 @@ impl KnowledgeError {
             Self::JournalField { code, .. } | Self::AssetField { code, .. } => code,
             Self::LockPoisoned => "lock_poisoned",
             Self::EarlierVersion => "loupist_earlier_version",
+            Self::NewerVersion => "loupist_newer_version",
         }
     }
 }

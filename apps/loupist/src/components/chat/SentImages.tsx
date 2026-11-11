@@ -18,7 +18,7 @@ export function SentImages({ message }: { message: ChatMessage }) {
   const imageIds = images.map((image) => image.id).join(",");
   useEffect(() => {
     for (const image of images) lightbox?.load(message.id, image);
-    // Reads once per image; the lightbox keeps what it read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reads once per image; the lightbox keeps what it read.
   }, [imageIds, message.id, lightbox?.load]);
   if (!images.length) return null;
   return <div className="sent-images" aria-label={t("chatMessageCard.messageAttachments")}>

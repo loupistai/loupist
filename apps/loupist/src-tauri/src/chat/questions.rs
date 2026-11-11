@@ -25,6 +25,7 @@ pub const MAX_TEXT_ANSWER_CHARS: usize = 500;
 pub const MAX_PROGRESS_QUESTIONS: usize = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum QuestionState {
     Waiting,
@@ -35,6 +36,7 @@ pub enum QuestionState {
 
 /// An option's index, or the user's own words.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum QuestionAnswer {
     Choice(u8),
@@ -62,29 +64,33 @@ impl QuestionAnswer {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatQuestionOption {
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub description: Option<String>,
 }
 
 /// One question the reply asked, shown as a card at its step.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatQuestion {
     #[serde(rename = "requestId")]
     pub request_id: String,
     /// The progress step that waits; absent when the call carried no tool call id.
     #[serde(rename = "itemId", default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub item_id: Option<String>,
     pub question: String,
     pub options: Vec<ChatQuestionOption>,
     /// Index into `options` the agent suggests and assumes when nobody answers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub recommended: Option<u8>,
     pub state: QuestionState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub answer: Option<QuestionAnswer>,
     #[serde(rename = "requestedAtMs")]
     pub requested_at_ms: i64,

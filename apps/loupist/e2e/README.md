@@ -18,6 +18,15 @@ visible window; WebDriver and computer use must not both click it.
 | Native file chooser, OS dialog, OS drag or wheel, or proof that pixels are on screen | The owning session's computer-use tool on a visible window; use a [manual](#manual-testing) window when WebDriver cannot attach. |
 | Fixed-state visual design review of the real React app | `npm --prefix apps/loupist run preview:capture` (isolated headless Chrome, no native window). |
 
+Native suites find an element by its role and accessible name first, then by a
+behavior attribute the app already reads (`data-thread-id`, `data-home`,
+`data-workspace-close`), then by a `data-testid` hook named after the element,
+such as `[data-testid=map-view]`. They do not select by CSS class, so a styling
+rename cannot break them only after merge. A hook sits on exactly the elements
+that carry its class today; when a class moves, move its hook with it. Class
+selectors remain only for elements that have no hook yet (layout probes that
+measure a styled box, the paid live journeys, and the holdings sheet).
+
 The mock bridge is the Vitest stand-in for the Tauri bridge contract. Extend it
 only so a renderer test can reach a path a Rust command already owns; a mock
 result proves no persistence, credentials, process isolation, or native window.

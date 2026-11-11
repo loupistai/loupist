@@ -1,59 +1,23 @@
-import type { ScheduleReceipt, ScheduledCadence, ScheduledRun, ScheduledTaskKind } from "./scheduled";
+import type { ScheduleReceipt } from "./scheduled";
 import type { LoupistSummary } from "./loupist";
 import type { MemoryRef, MemoryUpdateResult } from "./memory";
 import type { AgentHarnessSnapshot, ExecutionModelLock } from "./model";
 import type { EarningsMeasure } from "./earnings";
 import type { WatchEvent } from "./watch";
 import type { LearnedDigest } from "./lens";
+import type * as Wire from "./generated";
 
-export type ChatProgressStatus =
-  | "running"
-  | "succeeded"
-  | "failed"
-  | "stopped"
-  /** A source that cannot show what was known on the answer's as-of date; not a failure. */
-  | "skipped";
+export type ChatProgressStatus = Wire.ChatProgressStatus;
 
-export type ChatProgressCategory =
-  | "web"
-  | "memory"
-  | "capability"
-  | "finance"
-  | "files"
-  | "artifact"
-  | "compute"
-  | "system";
+export type ChatProgressCategory = Wire.ChatProgressCategory;
 
-export type ChatProgressSourceKind =
-  | "web"
-  | "memory"
-  | "files"
-  | "finance"
-  | "connector"
-  | "artifact"
-  | "compute"
-  | "capability";
+export type ChatProgressSourceKind = Wire.ChatProgressSourceKind;
 
-export type ChatProgressSource = {
-  kind: ChatProgressSourceKind;
-  name: string;
-};
+export type ChatProgressSource = Wire.ChatProgressSource;
 
-export type ChatRunPhase = "thinking" | "writing" | "tool";
+export type ChatRunPhase = Wire.ChatRunPhase;
 
-export type ChatProgressOperation =
-  | "search"
-  | "read"
-  | "write"
-  | "edit"
-  | "list"
-  | "calculate"
-  | "publish"
-  | "execute"
-  | "submit"
-  | "retry"
-  | "compact"
-  | "generic";
+export type ChatProgressOperation = Wire.ChatProgressOperation;
 
 export type ChatProgressItem =
   | { id: string; kind: "commentary"; text: string }
@@ -70,8 +34,8 @@ export type ChatProgressItem =
       operation: ChatProgressOperation;
       action: string;
       running?: string;
-      target?: string;
-      href?: string;
+      target: string | null;
+      href: string | null;
       source?: ChatProgressSource;
       summary?: string;
       resultIds?: string[];
@@ -83,8 +47,8 @@ export type ChatProgressItem =
       status: ChatProgressStatus;
       /** On a failed step the host refused under a security rule: which rule. */
       refusal?: ChatStepRefusal;
-      startedAtMs?: number;
-      finishedAtMs?: number;
+      startedAtMs: number;
+      finishedAtMs: number | null;
     };
 
 /**
@@ -94,54 +58,26 @@ export type ChatProgressItem =
  * data, a credential store or a git directory's hooks or config. `outside_workspace`: the
  * path is outside the Loupist folder.
  */
-export type ChatStepRefusal = "untrusted_text_paused" | "protected_path" | "outside_workspace";
+export type ChatStepRefusal = Wire.ChatStepRefusal;
 
-export type ChatPlanStatus = "pending" | "active" | "done" | "not_done";
+export type ChatPlanStatus = Wire.ChatPlanStatus;
 
-export type ChatPlanItem = {
-  id: string;
-  label: string;
-  status: ChatPlanStatus;
-  /** When the item first became active; steps that start after it nest under it. */
-  activatedAtMs?: number;
-};
+export type ChatPlanItem = Wire.ChatPlanItem;
 
 /** The agent's checklist for multi-step work, projected by the host from `plan_update`. */
-export type ChatPlan = { items: ChatPlanItem[] };
+export type ChatPlan = Wire.ChatPlan;
 
 /** A read-only connection tool the reply waits to use until the user decides (composer D3). */
-export type ChatApproval = {
-  requestId: string;
-  /** The progress step that waits, when known. */
-  itemId?: string;
-  connectionId: string;
-  connectionName: string;
-  toolName: string;
-  /** Plain values from the call (company, period); never raw arguments. */
-  target?: string;
-  state: "waiting" | "allowed_once" | "always_allowed" | "declined" | "expired";
-  requestedAtMs: number;
-};
+export type ChatApproval = Wire.ChatApproval;
 
 export type ChatApprovalDecision = "once" | "always" | "deny";
 
 /** One question the agent asked mid-reply (`ask_user`): 2 to 4 options and always a free-text answer. */
-export type ChatQuestion = {
-  requestId: string;
-  /** The progress step that waits, when known. */
-  itemId?: string;
-  question: string;
-  options: { label: string; description?: string }[];
-  /** Index into `options` the agent suggests and assumes when nobody answers. */
-  recommended?: number;
-  state: "waiting" | "answered" | "expired";
-  answer?: { choice: number } | { text: string };
-  requestedAtMs: number;
-};
+export type ChatQuestion = Wire.ChatQuestion;
 
 export type ChatProgress = {
   startedAtMs: number;
-  finishedAtMs?: number;
+  finishedAtMs: number | null;
   items: ChatProgressItem[];
   plan?: ChatPlan;
   approvals?: ChatApproval[];
@@ -163,7 +99,7 @@ export type ChatProgressPatch = {
   questions?: ChatQuestion[];
 };
 
-export type ChatArtifactKind = "markdown" | "chart" | "grid";
+export type ChatArtifactKind = Wire.ChatArtifactKind;
 
 export type ChatArtifactRef = {
   /** Renderer selection; included in the user message, never in the authority receipt. */
@@ -175,33 +111,11 @@ export type ChatArtifactRef = {
   digest: string;
 };
 
-export type ChatArtifact = {
-  id: string;
-  chat_session_id: string;
-  kind: ChatArtifactKind;
-  title: string;
-  current_revision: number;
-  created_at_ms: number;
-  updated_at_ms: number;
-};
+export type ChatArtifact = Wire.ChatArtifact;
 
-export type ChartColumn = {
-  id: string;
-  label: string;
-  kind: "string" | "number" | "boolean" | "date" | "datetime";
-};
+export type ChartColumn = Wire.ChartColumn;
 
-export type ChartResultReceipt = {
-  result_ref: string;
-  runtime_id: string;
-  tool_name: string;
-  provider: string | null;
-  request_digest: string;
-  response_digest: string;
-  retrieved_at: string;
-  warnings: string[];
-  upstream_result_refs: string[];
-};
+export type ChartResultReceipt = Wire.ChartResultReceipt;
 
 export type ChartDatasetLineage =
   | { kind: "from_dataset"; dataset_id: string; revision: number; digest: string; rows_pointer: string; columns: Array<ChartColumn & { pointer: string }> }
@@ -224,106 +138,13 @@ export type ChartDataset = {
   digest: string;
 };
 
-export type ChartStudy = {
-  module_id:
-    | "AVP"
-    | "AO"
-    | "BIAS"
-    | "BOLL"
-    | "BRAR"
-    | "BBI"
-    | "CCI"
-    | "CR"
-    | "DMA"
-    | "DMI"
-    | "EMV"
-    | "EMA"
-    | "MTM"
-    | "MA"
-    | "MACD"
-    | "OBV"
-    | "PVT"
-    | "PSY"
-    | "ROC"
-    | "RSI"
-    | "SMA"
-    | "KDJ"
-    | "SAR"
-    | "TRIX"
-    | "VOL"
-    | "VR"
-    | "WR";
-  calc_params: number[];
-};
+export type ChartStudy = Wire.ChartStudy;
 
-export type ChartDrawing = {
-  kind:
-    | "segment"
-    | "ray"
-    | "line"
-    | "horizontal_line"
-    | "vertical_line"
-    | "price_line"
-    | "fibonacci"
-    | "horizontal_segment"
-    | "horizontal_ray"
-    | "vertical_segment"
-    | "vertical_ray"
-    | "parallel_line"
-    | "price_channel"
-    | "annotation"
-    | "rectangle"
-    | "arrow"
-    | "measure"
-    | "fibonacci_extension"
-    | "long_position"
-    | "short_position";
-  points: Array<{ timestamp: string | number; value: number }>;
-  color?: string;
-  line_width?: number;
-  line_style?: "solid" | "dashed";
-  label?: string;
-};
+export type ChartDrawing = Wire.ChartDrawing;
 
-export type ChartCustomSeries = {
-  id: string;
-  label: string;
-  column: string;
-  pane?: string;
-  color?: string;
-};
+export type ChartCustomSeries = Wire.ChartCustomSeries;
 
-export type ChartDocument = {
-  dataset_id: string;
-  dataset_digest: string;
-  view:
-    | {
-        kind: "candlestick";
-        symbol: string;
-        interval: string;
-        time: string;
-        open: string;
-        high: string;
-        low: string;
-        close: string;
-        volume?: string;
-        turnover?: string;
-        price_precision?: number;
-      }
-    | {
-        kind: "line" | "area" | "bar" | "scatter";
-        x: string;
-        y: string[];
-        color?: string;
-        semantic_types: Record<string, string>;
-        title?: string;
-        subtitle?: string;
-      };
-  custom_series?: ChartCustomSeries[];
-  studies: ChartStudy[];
-  drawings: ChartDrawing[];
-  note?: string;
-};
+export type ChartDocument = Wire.ChartDocument;
 
 export type ChatArtifactPayload =
   | {
@@ -343,46 +164,26 @@ export type ChatArtifactPayload =
     };
 
 /** A measure column's unit (finance-grid-answers.md §3.2). */
-export type GridUnit = "amount" | "percent" | "multiple" | "number" | "date";
+export type GridUnit = Wire.GridUnit;
 /** Why a grid cell is empty; never a zero. */
-export type GridEmptyReason = "not_reported" | "not_applicable" | "unavailable" | "not_checked";
+export type GridEmptyReason = Wire.GridEmptyReason;
 /** Why sources disagree (finance-korea-retail-disagreement.md §3.3). */
-export type ConflictReason = "basis" | "period" | "preliminary_vs_final" | "estimate_vs_reported" | "currency_or_unit" | "adjusted_vs_reported" | "timing" | "unclear";
+export type ConflictReason = Wire.ConflictReason;
 
 /** One asset row; `asset_id` is set when Rust resolved the asset page. */
-export type GridRow = { symbol: string; market: string; label: string; asset_id?: string };
-export type GridColumn = { id: string; label: string; period?: string; basis?: string; unit: GridUnit };
+export type GridRow = Wire.GridRow;
+export type GridColumn = Wire.GridColumn;
 /** A value with the evidence it cites and Rust's check of it; `sort` is its base-unit value. */
 export type GridValueCell = { value: string; evidence_id: string; check: NumberCheck; sort?: number };
 export type GridEmptyCell = { empty: GridEmptyReason; note?: string };
-export type GridCell = GridValueCell | GridEmptyCell;
+export type GridCell = Wire.GridCell;
 
-export type AssetsGrid = {
-  layout: "assets";
-  subtitle?: string;
-  notes?: string[];
-  rows: GridRow[];
-  columns: GridColumn[];
-  cells: GridCell[][];
-  as_of?: string;
-};
+export type AssetsGrid = { layout: "assets" } & Wire.AssetsGrid;
 
 /** One source's report; `dated` comes from the evidence, `check` only for a number. */
-export type ConflictReport = { evidence_id: string; says: string; basis?: string; dated?: string; check?: NumberCheck };
+export type ConflictReport = Wire.ConflictReport;
 
-export type ConflictGrid = {
-  layout: "conflict";
-  measure: { label: string; entity_label: string; period?: string };
-  reports: ConflictReport[];
-  reason: ConflictReason;
-  explanation: string;
-  used?: number;
-  used_reason?: string;
-  world_entity_id?: string;
-  /** Rust found a disputed claim about the entity: the card links the Map. */
-  map_link?: boolean;
-  as_of?: string;
-};
+export type ConflictGrid = { layout: "conflict" } & Wire.ConflictGrid;
 
 export type GridDocument = AssetsGrid | ConflictGrid;
 
@@ -399,65 +200,27 @@ export type ChatArtifactRevision = {
 };
 
 /** Stable revision numbers scoped to one artifact, newest first; at most 20 / 32 MiB. */
-export type ChatArtifactVersion = {
-  revision_id: number;
-  title: string;
-  digest: string;
-  source_message_id: string;
-  created_at_ms: number;
-  restored_from_revision_id?: number;
-};
+export type ChatArtifactVersion = Wire.ChatArtifactVersion;
 
-export type ChatArtifactRestoreRequest = {
-  loupist_id: string;
-  thread_id: string;
-  artifact_id: string;
-  revision_id: number;
-  expected_current_revision: number;
-};
+export type ChatArtifactRestoreRequest = Wire.ChatArtifactRestoreRequest;
 
 export type ChatArtifactView = {
   artifact: ChatArtifact;
   revision: ChatArtifactRevision;
-  chart_dataset?: ChartDataset;
+  chart_dataset: ChartDataset | null;
   /** A grid's cited evidence, from the reply that published the revision. */
   evidence_refs?: ChatEvidenceRef[];
 };
 
 /** Immutable, host-issued excerpt from an acknowledged tool result. */
-export type ChatEvidenceRef = {
-  id: string;
-  title: string;
-  kind: "original" | "discovery" | "derived" | "local_file" | "saved_context";
-  url?: string;
-  provider?: string;
-  tool_name: string;
-  read_ref?: string;
-  retrieved_at: string;
-  published_at?: string;
-  as_of?: string;
-  coverage?: string;
-  excerpt: string;
-  excerpt_truncated: boolean;
-  excerpt_match?: { start: number; end: number };
-  content_sha256: string;
-  warnings: string[];
-  dataset_ref?: { dataset_id: string; revision: number; digest: string };
-  model_delivery?: {
-    coverage: "bounded_sample";
-    excerpt: string;
-    excerpt_truncated: boolean;
-    content_sha256: string;
-  };
-  upstream_evidence_ids?: string[];
-};
+export type ChatEvidenceRef = Wire.ChatEvidenceRef;
 
-export type ChatFeedback = { rating: "up" | "down" | null; correction: string | null; updatedAt: number };
+export type ChatFeedback = Wire.ChatFeedback;
 export type ChatFeedbackRequest = { loupist_id: string; thread_id: string; message_id: string; rating: ChatFeedback["rating"]; correction: string | null };
 
-export type ChatFailureKind = "empty_reply" | "provider_error" | "rate_limited" | "needs_reconnect" | "plan_limit" | "plan_not_eligible" | "out_of_credit" | "model_gone" | "offline" | "provider_unavailable" | "context_too_long" | "provider_timeout" | "pi_exited" | "protocol_error" | "output_limit" | "memory_commit_failed" | "store_failed" | "cancelled_by_conflict" | "other";
+export type ChatFailureKind = Wire.ChatFailureKind;
 
-export type ChatToolRefusal = { connection_id: string; connection_name: string; tool_name: string; reason: "needs_approval" | "blocked_unattended" | "taint" | "sensitive_memory" | "declined" };
+export type ChatToolRefusal = Wire.ChatToolRefusal;
 
 /** A research session the Bot handed off (Rust `HomeHandoff`): one card per hand-off, its status changing in place. */
 export type HomeHandoff = {
@@ -469,50 +232,19 @@ export type HomeHandoff = {
 };
 
 /** One hop of a discovered link's path: the name reached and the relation walked, against its claim when `reversed`. */
-export type HomeLinkHop = { name: string; relation: string; reversed?: boolean };
+export type HomeLinkHop = Wire.HomeLinkHop;
 
 /**
  * A link discovery found new to this Loupist (Rust `HomeLink`): seed to far end
  * through the path's names. `nodeIds` (seed first) highlight the path on the Map.
  */
-export type HomeLink = {
-  connectionId: string;
-  seedName: string;
-  farName: string;
-  path: HomeLinkHop[];
-  nodeIds: string[];
-};
+export type HomeLink = Wire.HomeLink;
 
 /** A scheduled result the host posted into the Loupist's home Thread. */
-export type HomeDelivery = {
-  run_id: string;
-  task_id: string;
-  task_title: string;
-  task_kind: ScheduledTaskKind;
-  /** Null once the task was deleted. */
-  schedule: ScheduledCadence | null;
-  run_thread_id: string | null;
-  status: ScheduledRun["status"];
-  finished_at_ms: number;
-  learned?: LearnedDigest;
-};
+export type HomeDelivery = Wire.HomeDelivery;
 
 /** A crossed red line the host announced in the home Thread (Rust `HomeAlert`). Names and the user's claim only. */
-export type HomeAlert = {
-  asset_id: string;
-  move_id: string;
-  name: string;
-  symbol: string;
-  market: string;
-  claim: string;
-  /** The observed value with its unit ("27%"). */
-  value: string;
-  /** When the user wrote the line. */
-  set_at_ms: number;
-  fact_date: string;
-  source_url?: string;
-  source_title: string;
-};
+export type HomeAlert = Wire.HomeAlert;
 
 /**
  * Watcher events the host posted in one Thread message (Rust `HomeWatch`): at
@@ -554,51 +286,17 @@ export type HomeEarnings = {
 };
 
 /** A thesis update Rust did not save at commit; `reason` is its refusal code. */
-export type UnsavedThesis = { assetId: string; name: string; reason: string };
+export type UnsavedThesis = Wire.UnsavedThesis;
 
 /** How Rust found a number link against its evidence (finance-show-the-math.md §7.2). */
-export type NumberCheckStatus = "matched" | "rounded" | "not_found" | "differs";
-export type NumberCheckKind = "calculated" | "passage" | "data" | "step";
+export type NumberCheckStatus = Wire.NumberCheckStatus;
+export type NumberCheckKind = Wire.NumberCheckKind;
 
 /** One number link in a finished answer, checked by Rust. The renderer only reads it. */
 /** How Rust says a `calculate` input is printed (`CalcInputUnit`): an amount carries its ISO currency and power-of-ten scale. */
-export type CalcInputUnit = {
-  kind: "number" | "percent" | "points" | "basis_points" | "multiple" | "amount" | "price";
-  currency?: string;
-  scale?: number;
-  /** A unit Rust could not place ("stores"), printed after the number. */
-  text?: string;
-};
+export type CalcInputUnit = Wire.CalcInputUnit;
 
-/** One `calculate` input as Rust copied it into a check: its formula name (`label`), unit and source. */
-export type CalcInput = { name: string; label: string; unit: CalcInputUnit; display: string; evidence_id?: string; status?: NumberCheckStatus };
-
-export type NumberCheck = {
-  /** Index among the answer's `[text](#evidence-…)` links, in order. */
-  link_index: number;
-  text: string;
-  evidence_id: string;
-  kind: NumberCheckKind;
-  status: NumberCheckStatus;
-  /** `differs`: the calculated value nearest to the printed number. */
-  nearest?: string;
-  /** `rounded`: the value as the evidence prints it. */
-  exact?: string;
-  /** The matched data cell (JSON Pointer into the retained result). */
-  pointer?: string;
-  /** The matched passage text (UTF-8 byte offsets into the evidence excerpt). */
-  span?: { start: number; end: number };
-  /** Up to four fields of the matched data row. */
-  fields?: { key: string; value: string; matched?: boolean }[];
-  /** The host's own calculation: title, formula lines and inputs. */
-  calc?: {
-    title: string;
-    formulas: string[];
-    inputs: CalcInput[];
-    /** Rows × columns of a DCF grid, which has no single value. */
-    grid?: [number, number];
-  };
-};
+export type NumberCheck = Wire.NumberCheck;
 
 /**
  * A `dcf_grid` or `reverse_dcf` result as Rust copied it from the host's own
@@ -638,12 +336,7 @@ export type SensitivityCard = SensitivityGrid & {
 };
 
 /** What an as-of answer could not use (finance-point-in-time.md §7). */
-export type AsOfReport = {
-  cutoff: string;
-  refused?: { tool: string; connection?: string }[];
-  empty?: { tool: string; target?: string }[];
-  left_out: { facts: number; sources: number; notes: number; methods: number };
-};
+export type AsOfReport = Wire.AsOfReport;
 
 /** The record each kind of host-posted Thread message carries. */
 export type HostPostRecords = {
@@ -689,6 +382,8 @@ export type ChatMessage = HostPostRecords & {
   id: string;
   role: "user" | "assistant";
   content: string;
+  /** `content` is the host's failure placeholder, not model text; the run state explains the failure. */
+  placeholder?: boolean;
   created_at: string;
   status?: "streaming" | "complete" | "aborted" | "error";
   memory_refs?: MemoryRef[];
@@ -722,17 +417,7 @@ export type ChatMessage = HostPostRecords & {
   performance?: ChatPerformance;
 };
 
-export type ChatPerformance = {
-  setupMs: number;
-  firstTextMs?: number;
-  generationMs: number;
-  totalMs: number;
-  sessionCache: "cold" | "warm";
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-};
+export type ChatPerformance = Wire.ChatPerformance;
 
 export type ChatAttachment = {
   id: string;
@@ -742,13 +427,9 @@ export type ChatAttachment = {
   url?: string;
 };
 
-export type ChatAttachmentInput = {
-  filename: string;
-  media_type: string;
-  data_base64: string;
-};
+export type ChatAttachmentInput = Wire.ChatAttachmentInput;
 
-export type ChatMemorySetAsideRequest = { loupist_id: string; thread_id: string; record_id: string; set_aside: boolean };
+export type ChatMemorySetAsideRequest = Wire.ChatMemorySetAsideRequest;
 
 export type ResearchHandoffRequest = {
   loupistId: string;
@@ -758,7 +439,7 @@ export type ResearchHandoffRequest = {
   pins?: Array<{ lens: string } | { world: string }>;
   requestKey: string;
 };
-export type ResearchHandoffReceipt = { chatId: string; handoffId: string };
+export type ResearchHandoffReceipt = Wire.ResearchHandoffReceipt;
 
 export type ChatThread = {
   id: string;
@@ -786,7 +467,7 @@ export type ChatVersionSummary = {
 
 /** `position` and `content` find a just-sent message that still carries the renderer's own id. */
 export type ChatBranchRequest = { loupist_id: string; thread_id: string; message_id: string; position?: number; content?: string };
-export type ChatVersionSwitchRequest = { loupist_id: string; thread_id: string; version_id: string };
+export type ChatVersionSwitchRequest = Wire.ChatVersionSwitchRequest;
 
 export type LoupistWorkspace = {
   loupist: LoupistSummary;
@@ -798,30 +479,23 @@ export type ChatCreateRequest = {
   title?: string;
 };
 
-export type ChatRenameRequest = {
-  loupist_id: string;
-  thread_id: string;
-  title: string;
-};
+export type ChatRenameRequest = Wire.ChatRenameRequest;
 
-export type ChatDeleteRequest = {
-  loupist_id: string;
-  thread_id: string;
-};
+export type ChatDeleteRequest = Wire.ChatDeleteRequest;
 
 export type ChatKnowledgePin = {
   selection?: import("./knowledge").SourceTextSelection;
   kind: string;
-  recordId?: string;
-  revisionId?: string;
+  recordId: string | null;
+  revisionId: string | null;
   objectId: string;
-  spanId?: string;
+  spanId: string | null;
   label: string;
 };
 
-export type ChatArtifactSelection = Pick<ChatArtifactRef, "artifact_id" | "revision">;
+export type ChatArtifactSelection = Wire.ChatArtifactSelection;
 
-export type ChatRetryRequest = { loupist_id: string; thread_id: string };
+export type ChatRetryRequest = Wire.ChatRetryRequest;
 
 export type ChatSendRequest = {
   run_id: string;
@@ -854,6 +528,7 @@ export type ChatControlReceipt = {
   mode: "steer";
 };
 
+/** One event on a Chat run's stream, as the renderer reads it (`ChatStreamEvent` in Rust). */
 export type ChatStreamEvent =
   | { type: "started"; run_id: string }
   | { type: "memory"; run_id: string; memories: MemoryRef[] }
@@ -875,7 +550,7 @@ export type ChatStreamEvent =
   | {
       type: "progress";
       run_id: string;
-      sequence?: number;
+      sequence: number;
       progress: ChatProgress;
     }
   | { type: "progress_patch"; run_id: string; patch: ChatProgressPatch }
@@ -892,18 +567,18 @@ export type ChatStreamEvent =
     }
   | {
       type: "completed";
-      lens_receipts?: import("./memory").LensReceipt[];
-      tool_refusals?: ChatToolRefusal[];
+      lens_receipts: import("./memory").LensReceipt[];
+      tool_refusals: ChatToolRefusal[];
       offline_reads?: boolean;
       unsaved_theses?: UnsavedThesis[];
-      host_composed?: boolean;
+      host_composed: boolean;
       run_id: string;
       message_id: string;
       final_text: string;
       created_at: string;
       execution_model: ExecutionModelLock;
       agent_harness: AgentHarnessSnapshot;
-      performance?: ChatPerformance;
+      performance: ChatPerformance;
       replaced_model?: string;
       as_of?: string;
       number_checks?: NumberCheck[];
@@ -914,18 +589,21 @@ export type ChatStreamEvent =
   | { type: "aborted"; run_id: string }
   | {
       type: "error";
-      failure_kind?: ChatFailureKind;
+      failure_kind: ChatFailureKind;
       /** For a busy answer: the provider's bounded retry hint in seconds. */
       retry_after_seconds?: number;
       run_id: string;
       message: string;
       message_id: string;
       final_text: string;
+      /** `final_text` is the host's failure placeholder, not model text. */
+      placeholder?: boolean;
       created_at: string;
       execution_model: ExecutionModelLock;
       agent_harness: AgentHarnessSnapshot;
       progress?: ChatProgress;
     };
+
 
 export const CHART_SCHEMA = "loupist-chart/1";
 export const GRID_SCHEMA = "loupist-grid/1";

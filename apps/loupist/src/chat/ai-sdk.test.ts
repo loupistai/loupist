@@ -4,10 +4,11 @@ import type { LoupistUIMessage } from "./ai-sdk";
 import type { ChatMessage, ChatSendRequest, ChatStreamEvent, LoupistBridge } from "../types";
 import { evidenceFixture } from "../test/evidenceFixtures";
 import { deriveTurnView } from "./turnView";
+import { completedRun } from "../test/streamFixtures";
 
 describe("incremental chat progress", () => {
-  const tool = { id: "tool-1", kind: "tool" as const, toolName: "web_search", category: "web" as const, operation: "search" as const, action: "Searched the web", status: "running" as const };
-  const initial = { sequence: 0, progress: { startedAtMs: 10, items: [tool] } };
+  const tool = { id: "tool-1", kind: "tool" as const, toolName: "web_search", category: "web" as const, operation: "search" as const, action: "Searched the web", target: null, href: null, status: "running" as const, startedAtMs: 10, finishedAtMs: null };
+  const initial = { sequence: 0, progress: { startedAtMs: 10, finishedAtMs: null, items: [tool] } };
 
   it("applies ordered upserts, removals, and the terminal finish", () => {
     const updated = applyChatProgressPatch(initial, { sequence: 1, upsertItems: [{ ...tool, status: "succeeded" }, { id: "commentary-2", kind: "commentary", text: "Checked it." }] });
@@ -48,7 +49,7 @@ describe("Loupist chat UI message conversion", () => {
       parts: [
         { type: "text", text: "", state: "streaming" },
         { type: "reasoning", text: "Writing the answer", state: "streaming" },
-        { type: "data-progress", id: "progress-live", data: { startedAtMs: 1, items: [{ id: "commentary-1", kind: "commentary", text: "Draft answer text" }] } },
+        { type: "data-progress", id: "progress-live", data: { startedAtMs: 1, items: [{ id: "commentary-1", kind: "commentary", text: "Draft answer text" }], finishedAtMs: null } },
       ],
     });
     expect(projected.content).toBe("");
@@ -68,14 +69,14 @@ describe("Loupist chat UI message conversion", () => {
     const message: ChatMessage = {
       id: "assistant-1", role: "assistant", content: "Done", created_at: "2026-08-09T00:00:00.000Z", status: "error",
       failure_kind: "memory_commit_failed", host_composed: true,
-      progress: { startedAtMs: 1, finishedAtMs: 2, items: [{ id: "tool-2", kind: "tool", category: "memory", operation: "read", action: "Read Memory", status: "succeeded" }] },
+      progress: { startedAtMs: 1, finishedAtMs: 2, items: [{ id: "tool-2", kind: "tool", category: "memory", operation: "read", action: "Read Memory", status: "succeeded", target: null, href: null, startedAtMs: 0, finishedAtMs: null }] },
       artifact_refs: [{ artifact_id: "artifact-1", revision: 2, kind: "chart", title: "Price history", digest: "a".repeat(64) }],
       attachments: [{ id: "attachment-1", filename: "chart.png", media_type: "image/png", size_bytes: 42 }],
       agent_harness: { schema: "loupist-harness/1", mode: "chat", skill_ids: ["research"], capability_ids: ["world-bank.indicators"], digest: "e".repeat(64) },
       performance: { setupMs: 120, firstTextMs: 480, generationMs: 900, totalMs: 940, sessionCache: "warm", inputTokens: 320, outputTokens: 96, cacheReadTokens: 256, cacheWriteTokens: 64 },
-      memory_refs: [{ read_ref: "journal-1", kind: "journal", title: "Capacity review", excerpt: "", access: "exact_read", knowledge: { kind: "journal", recordId: "private", revisionId: "sealed-1", objectId: "journal-1" } }],
+      memory_refs: [{ read_ref: "journal-1", kind: "journal", title: "Capacity review", excerpt: "", access: "exact_read", knowledge: { kind: "journal", recordId: "private", revisionId: "sealed-1", objectId: "journal-1" }, as_of: null, section: null }],
       memory_update: { status: "applied", commitId: "commit-1", changes: [{ recordId: "journal-1", kind: "Journal", operation: "create", title: "Capacity review", knowledge: { kind: "journal", recordId: "", revisionId: "", objectId: "journal-1" }, lesson: "Review recorded", basis: "Current sources", futureUse: "Compare subsequent findings" }] },
-      schedule_receipts: [{ task_id: "scheduled-a", title: "Daily review", revision: 1, action: "created", status: "active", schedule: { kind: "interval", every_minutes: 60 }, target: { kind: "dedicated_chat" }, next_run_at_ms: 123456, use_memory: false, update_memory: false }],
+      schedule_receipts: [{ task_id: "scheduled-a", title: "Daily review", revision: 1, action: "created", status: "active", schedule: { kind: "interval", every_minutes: 60 }, target: { kind: "dedicated_chat" }, next_run_at_ms: 123456, use_memory: false, update_memory: false, awaiting_confirmation: false }],
       tool_refusals: [{ connection_id: "custom-one", connection_name: "Company research", tool_name: "read_filings", reason: "needs_approval" }],
     };
     expect(fromLoupistUIMessage(toLoupistUIMessage(message))).toMatchObject(message);
@@ -104,7 +105,7 @@ describe("native stream transport", () => {
       progress: { startedAtMs: 1, finishedAtMs: 3, items: [
         { kind: "commentary", id: "note", text: "Comparing quarterly reports." },
         { kind: "tool", id: "read", category: "files", operation: "read", action: "Read a filing",
-          target: "filing.pdf", detailId: "local-detail", resultIds: [receipt.id], status: "succeeded" },
+          target: "filing.pdf", detailId: "local-detail", resultIds: [receipt.id], status: "succeeded", href: null, startedAtMs: 0, finishedAtMs: null },
       ] },
     };
     const sent: ChatSendRequest[] = [];
@@ -129,7 +130,7 @@ describe("native stream transport", () => {
     const stream = await transport(async ({ run_id }, emit) => {
       emit({ type: "started", run_id });
       emit({ type: "phase", phase: "writing", run_id });
-      emit({ type: "progress", sequence: 1, progress: { startedAtMs: 1, items: [preamble, draft] }, run_id });
+      emit({ type: "progress", sequence: 1, progress: { startedAtMs: 1, items: [preamble, draft], finishedAtMs: null }, run_id });
       emit({ type: "delta", text: draft.text, settles: draft.id, run_id });
       emit({ type: "progress_patch", patch: { sequence: 2, removeItemIds: [draft.id] }, run_id });
       emit({ type: "progress_patch", patch: { sequence: 3, upsertItems: [second] }, run_id });
@@ -160,7 +161,7 @@ describe("native stream transport", () => {
     try {
       const stream = await transport(async (sent, onEvent) => {
         onEvent({ type: "started", run_id: sent.run_id! });
-        onEvent({ type: "progress", run_id: sent.run_id!, progress: { startedAtMs: 1, items: [{ id: "note", kind: "commentary", text: "I will check the filing." }] } });
+        onEvent({ type: "progress", run_id: sent.run_id!, sequence: 1, progress: { startedAtMs: 1, items: [{ id: "note", kind: "commentary", text: "I will check the filing." }], finishedAtMs: null } });
         onEvent({ type: "aborted", run_id: sent.run_id! });
         return { run_id: sent.run_id! };
       }).sendMessages({ ...request, body });
@@ -170,6 +171,27 @@ describe("native stream transport", () => {
       expect(projections.at(-1)!.progress?.items).toEqual([{ id: "note", kind: "commentary", text: "I will check the filing." }]);
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it("ignores a stream event type this build does not know and finishes the reply", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const stream = await transport(async (sent, onEvent) => {
+        const run_id = sent.run_id!;
+        onEvent({ type: "started", run_id });
+        onEvent({ type: "from_a_newer_host", run_id, message: "not an error" } as unknown as ChatStreamEvent);
+        onEvent({ type: "delta", run_id, text: "Still here." });
+        onEvent({ type: "completed", ...completedRun, run_id, message_id: "after-unknown", final_text: "Still here.", created_at: "2026-11-01T00:00:00Z",
+          execution_model: { profile_id: "test", name: "Test", provider: "test", model: "test", thinking_level: "medium", run_options: {} },
+          agent_harness: { schema: "test", mode: "chat", skill_ids: [], capability_ids: [], digest: "test" } });
+        return { run_id };
+      }).sendMessages({ ...request, body });
+      const projections = await project(stream as ReadableStream<never>);
+      expect(projections.at(-1)).toMatchObject({ status: "complete", content: "Still here." });
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("from_a_newer_host"));
+    } finally {
+      warn.mockRestore();
     }
   });
 
@@ -219,7 +241,7 @@ describe("native stream transport", () => {
     const stream = await transport(async (sent, onEvent) => {
       const run_id = sent.run_id!;
       onEvent({ type: "started", run_id });
-      onEvent({ type: "completed", run_id, message_id: "custom-refusal", final_text: "Please review this tool.", created_at: "2026-10-28T00:00:00Z", tool_refusals,
+      onEvent({ type: "completed", ...completedRun, run_id, message_id: "custom-refusal", final_text: "Please review this tool.", created_at: "2026-10-28T00:00:00Z", tool_refusals,
         execution_model: { profile_id: "test", name: "Test", provider: "test", model: "test", thinking_level: "medium", run_options: {} },
         agent_harness: { schema: "test", mode: "chat", skill_ids: [], capability_ids: [], digest: "test" } });
       return { run_id };

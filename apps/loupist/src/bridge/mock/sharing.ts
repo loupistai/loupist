@@ -6,9 +6,10 @@ import type {
 } from "../../contracts/sharing";
 import type { StreamObserver } from "../../contracts/runtime";
 import type { LoupistTone } from "../../contracts/loupist";
+import { commandError } from "./commandError";
 
 /** UI fixtures only. Rust owns packs, scans, GitHub, credentials and every write. */
-const coded = (code: string, message: string) => Object.assign(new Error(message), { code });
+const coded = commandError;
 
 /** A fixture copy of Rust's pack-license intersection (`pack::compatible_licenses`), first choice first. */
 const PUBLIC_LICENSES: Exclude<PackLicense, "LicenseRef-Loupist-Personal">[] = ["CC-BY-NC-SA-4.0", "CC-BY-4.0", "CC-BY-SA-4.0", "CC0-1.0", "CC-BY-NC-4.0"];
@@ -293,7 +294,7 @@ export class MockSharing implements SharingBridge {
 
   async packAdd(request: PackAddRequest, observer: StreamObserver<PackAddEvent>): Promise<PackAddResult> {
     const preview = this.openResult?.kind === "preview" ? this.openResult.preview : MOCK_PACK_PREVIEW;
-    if (preview.blocked) throw coded("pack_blocked", "This shared Loupist was removed from the Gallery.");
+    if (preview.blocked) throw coded("safety_blocked", "This shared Loupist was removed from the Gallery.");
     const items = [
       ...(request.sections.perspective && "new" in request.mode && preview.perspective ? [preview.perspective] : []),
       ...(request.sections.methods ? preview.methods : []),
@@ -347,7 +348,7 @@ export class MockSharing implements SharingBridge {
     const entry = this.imports.find(candidate => candidate.importId === importId && candidate.loupistId === loupistId);
     if (!entry) throw coded("not_found", "That shared Loupist is gone.");
     const chosen = entry.items.filter(item => itemKeys.includes(item.key));
-    if (decision === "accept" && chosen.length > 1 && chosen.some(item => item.flags.length)) throw coded("flagged_batch", "Accept flagged items one at a time.");
+    if (decision === "accept" && chosen.length > 1 && chosen.some(item => item.flags.length)) throw coded("flagged_one_at_a_time", "Accept flagged items one at a time.");
     for (const item of chosen) {
       item.state = decision === "accept" ? "accepted" : "skipped";
       if (decision === "accept") this.origins.set(`lens-${item.key}`, { importId, packName: entry.name, author: entry.author });

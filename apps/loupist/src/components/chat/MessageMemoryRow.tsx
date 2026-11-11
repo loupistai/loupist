@@ -1,5 +1,4 @@
-import { claimIdForEdge } from "../map/MapList";
-import { entityLabel } from "../map/labels";
+import { claimIdForEdge, entityLabel } from "../../knowledge/mapItems";
 import { relationName } from "../map/relations";
 import i18n, { useTranslation } from "@/i18n";
 import { useEffect, useId, useState } from "react";
@@ -14,7 +13,7 @@ import { declinedSensitiveMemory, useChatSetAside } from "../../chat/chatSetAsid
 import { ChatReceipt } from "./ChatReceipt";
 import { revealFirstNumberToCheck } from "./NumberChip";
 import { useChatMap } from "../workspace/ChatMapContext";
-import { addedMapItems } from "../workspace/chatMapData";
+import { addedMapItems } from "../../chat/chatMapData";
 import { SavedPrinciple } from "./SavedPrinciple";
 import { useLearnedDigest } from "../../chat/useLearnedDigest";
 import { LearnedCard } from "./LearnedCard";
@@ -59,6 +58,7 @@ export function MessageMemoryRow({
   const learnedId = useId();
   const [expanded, setExpanded] = useState(() => changes.some(change => change.kind === "principle" || change.kind === "Journal"));
   const principleIds = changes.filter(change => change.kind === "principle").map(change => change.recordId).join("\n");
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- expands once when principles arrive; later changes must not reopen a row the user closed.
   useEffect(() => { if (principleIds || changes.some(change => change.kind === "Journal")) setExpanded(true); }, [principleIds]);
   const chipsId = useId();
   const usedId = useId();
@@ -99,7 +99,7 @@ export function MessageMemoryRow({
     finally { setPendingId(null); }
   };
   return (
-    <div className="memory-row" data-expanded={expanded}>
+    <div className="memory-row" data-testid="memory-row" data-expanded={expanded}>
       {go && edge && source && target && <button className="answer-map-preview" onClick={() => go({ kind: "page", location: {
         loupistId, surface: "world", view: { followCurrent: true }, selection: { kind: "claim", id: claimIdForEdge(edge) },
       } })}>

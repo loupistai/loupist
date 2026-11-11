@@ -22,6 +22,7 @@ const MAX_TARGET_PARTS: usize = 3;
 const MAX_PART_CHARS: usize = 60;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ApprovalDecision {
     Once,
@@ -30,6 +31,7 @@ pub enum ApprovalDecision {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ApprovalState {
     Waiting,
@@ -42,12 +44,13 @@ pub enum ApprovalState {
 
 /// One approval the reply asked for, shown as a card at its step.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatApproval {
     #[serde(rename = "requestId")]
     pub request_id: String,
     /// The progress step that waits; absent when the call carried no tool call id.
     #[serde(rename = "itemId", default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub item_id: Option<String>,
     #[serde(rename = "connectionId")]
     pub connection_id: String,
@@ -57,6 +60,7 @@ pub struct ChatApproval {
     pub tool_name: String,
     /// Plain values from the call's arguments (company, period), never raw JSON.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub target: Option<String>,
     pub state: ApprovalState,
     #[serde(rename = "requestedAtMs")]

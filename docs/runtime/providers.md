@@ -2,11 +2,44 @@
 
 Provider accounts, Auto, and the shared World-processing model are host state. The renderer does not see tokens.
 
+### Provider manifest
+
+[`provider-manifest.json`](../../apps/loupist/provider-manifest.json) is the one
+table of built-in providers, bundled at build time. Each entry, in the order
+Settings lists providers and their models (also Auto's order for providers with
+no connection date), holds the labels, the Settings group, the key page, the API
+key and its host variable (`api_key`), the sign-in (`sign_in`: label, flow, the
+one authorization page Rust opens, the paste rule, billing note, usage page,
+live plan models), isolated-inference support, native search (`automatic`, or
+`model_only` for xAI), the product names and the featured key-row position.
+`development_only` entries (the Codex client) exist only in debug builds.
+Presets (Upstage Solar) carry their fixed address, API format, key page and row.
+Rust (`providers/manifest.rs`) validates the file at first use and derives the
+catalog options, the credential-variable allowlist and every capability check
+from it; capability checks also read a debug-only entry, so a stored record on
+that client keeps its meaning. The renderer (`src/chat/providerManifest.ts`)
+reads the featured sign-ins, key rows and product names from it; whether a row
+can connect still comes from the catalog. `agent/provider-manifest.test.mjs`
+holds the file to the pinned Pi catalog: each provider exists, its host variable
+is the one Pi reads, a sign-in or key matches Pi's auth, isolated inference has
+a guarded API, and the native-search adapters are exactly the `native_search`
+providers. `support_bootstrap` is the startup model of every provider support
+launch (`gemini-2.5-flash` on `google`); the extension answers each support
+command before any model request, so it is never called, and its key variable
+gets a non-secret placeholder.
+
+Adding a featured provider is one manifest entry. The remaining per-provider
+code is a native-search adapter (registered in `agent/loupist-native-search.mjs`
+and listed in `agent_harness.rs`, which a test requires), localized row copy
+(without it a row shows the manifest's label or name) and any provider-specific
+sign-in code in the provider extension.
+
 ### Shared providers and World processing
 
 Settings › Models & providers owns shared sign-ins, keys and the model catalog.
 Its Add a provider sheet and onboarding share one list of ways to connect
-(`components/settings/ProviderWays.tsx`); the sheet adds Pi's other key providers
+(`components/settings/ProviderWays.tsx`, featured rows from the provider
+manifest); the sheet adds Pi's other key providers
 under More providers. Connect and add stay at the bottom of the sheet while the
 fields scroll, so a short window does not leave the action below the sheet. Each Loupist saves its own World model, reasoning controls
 and processing bounds independently of Chat.
@@ -66,7 +99,12 @@ account because one hit its limit. Each provider in turn offers its first visibl
 model from [`chat-model-defaults.json`](../../apps/loupist/chat-model-defaults.json)
 (bundled at build time) at its listed thinking level, otherwise its newest
 reasoning model with at least 20,000 tokens of context; failing all, any visible
-connected model. With nothing connected, admission fails with a pointer to
+connected model. "Newest" is the catalog order: each provider's highest numeric
+version first, then, within one version, the higher family tier that file
+declares in `family_tiers` (3 for Opus, Pro or Sol, 1 for Haiku, Mini or Luna). A
+family matches a whole word of the model's name or ID, the highest declared tier
+wins (`flash-lite` is Flash), and an undeclared family takes the `unknown` tier,
+2. A new family is ranked by adding it there. With nothing connected, admission fails with a pointer to
 Settings. An empty choice keeps the requested reasoning and run options only where
 the resolved model supports them. Rust remembers each provider's last Auto model;
 when Auto changes because that model is gone, or an explicit Chat default leaves
@@ -124,4 +162,4 @@ publication and recovery.
 ## Code
 
 - Pi startup / provider failures: `src-tauri/src/pi.rs`, `src-tauri/src/pi/`, `provider_failure.rs`
-- Model providers / Auto: `src-tauri/src/providers/`, `chat-model-defaults.json`, `src/components/settings/`, `src/components/onboarding/ConnectStep.tsx`
+- Model providers / Auto: `src-tauri/src/providers/`, `provider-manifest.json`, `chat-model-defaults.json`, `src/chat/providerManifest.ts`, `src/components/settings/`, `src/components/onboarding/ConnectStep.tsx`

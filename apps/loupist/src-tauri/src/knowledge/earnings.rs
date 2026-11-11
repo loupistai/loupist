@@ -33,8 +33,8 @@ CREATE TABLE knowledge_earnings_events (
     period TEXT NOT NULL CHECK (length(period) BETWEEN 1 AND 40),
     fiscal_period_end TEXT CHECK (fiscal_period_end IS NULL OR length(fiscal_period_end) = 10),
     report_date TEXT NOT NULL CHECK (length(report_date) = 10),
-    date_source TEXT NOT NULL CHECK (date_source IN ('calendar','ir_notice','legal_deadline')),
-    status TEXT NOT NULL CHECK (status IN ('upcoming','before_captured','reported','final')),
+    date_source TEXT NOT NULL,
+    status TEXT NOT NULL,
     release_json TEXT,
     final_json TEXT,
     before_at_ms INTEGER,
@@ -51,24 +51,24 @@ CREATE TABLE knowledge_earnings_rows (
     row_id TEXT PRIMARY KEY NOT NULL,
     loupist_id TEXT NOT NULL,
     event_id TEXT NOT NULL,
-    side TEXT NOT NULL CHECK (side IN ('expected','reported','guidance_new')),
+    side TEXT NOT NULL,
     measure TEXT NOT NULL CHECK (length(measure) BETWEEN 1 AND 80),
     basis TEXT NOT NULL DEFAULT '' CHECK (length(basis) <= 40),
     period TEXT NOT NULL CHECK (length(period) BETWEEN 1 AND 40),
     low TEXT,
     high TEXT,
     point TEXT,
-    unit TEXT NOT NULL CHECK (unit IN ('currency','percent','per_share','number')),
+    unit TEXT NOT NULL,
     currency TEXT CHECK (currency IS NULL OR length(currency) = 3),
-    kind TEXT NOT NULL CHECK (kind IN ('guidance','consensus','broker_estimate','implied','reported')),
-    stage TEXT CHECK (stage IS NULL OR stage IN ('preliminary','final')),
+    kind TEXT NOT NULL,
+    stage TEXT,
     provider TEXT,
     evidence_json TEXT NOT NULL,
     extra_json TEXT NOT NULL DEFAULT '{}' CHECK (length(extra_json) <= 8192),
     fact_date TEXT NOT NULL CHECK (length(fact_date) = 10),
     captured_at_ms INTEGER NOT NULL CHECK (captured_at_ms >= 0),
     captured_as_of TEXT CHECK (captured_as_of IS NULL OR length(captured_as_of) = 10),
-    origin TEXT NOT NULL CHECK (origin IN ('host','chat','briefing')),
+    origin TEXT NOT NULL,
     origin_message_id TEXT,
     CHECK (point IS NOT NULL OR (low IS NOT NULL AND high IS NOT NULL))
 ) STRICT;
@@ -86,8 +86,8 @@ CREATE TABLE knowledge_earnings_notices (
     loupist_id TEXT NOT NULL,
     notice_id TEXT NOT NULL,
     event_id TEXT NOT NULL,
-    outcome TEXT NOT NULL CHECK (outcome IN ('reported','failed')),
-    side TEXT CHECK (side IS NULL OR side IN ('before','after')),
+    outcome TEXT NOT NULL,
+    side TEXT,
     at_ms INTEGER NOT NULL CHECK (at_ms >= 0),
     posted_at_ms INTEGER,
     PRIMARY KEY (loupist_id, notice_id)
@@ -117,6 +117,7 @@ pub const MEASURE_KEYS: &[&str] = &[
 macro_rules! string_enum {
     ($name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+        #[cfg_attr(test, derive(ts_rs::TS))]
         pub enum $name {
             $(#[serde(rename = $text)] $variant),+
         }
@@ -176,6 +177,7 @@ pub struct FilingRef {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct Failure {
     pub side: String,
@@ -889,6 +891,11 @@ pub fn add_notice(
     side: Option<&str>,
     at_ms: i64,
 ) -> KnowledgeResult<()> {
+    // Rust owns these lists (Knowledge schema 7 dropped the SQL whitelists).
+    if !matches!(outcome, "reported" | "failed") || !matches!(side, None | Some("before" | "after"))
+    {
+        return Err(KnowledgeError::Invalid("results notice is invalid"));
+    }
     tx.execute(
         "INSERT INTO knowledge_earnings_notices(loupist_id,notice_id,event_id,outcome,side,at_ms) VALUES(?1,?2,?3,?4,?5,?6)",
         params![loupist_id, mint_id("ent"), event_id, outcome, side, at_ms],
@@ -947,27 +954,35 @@ pub fn erase(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<()> {
 // ───────────────────────────── Views ─────────────────────────────
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct AmountView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub low: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub high: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub point: Option<f64>,
     pub unit: Unit,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub currency: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ValueView {
     pub row_id: String,
     pub kind: ValueKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub stage: Option<Stage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub provider: Option<String>,
     pub fact_date: String,
     pub evidence: Vec<AssetEvidence>,
@@ -976,14 +991,18 @@ pub struct ValueView {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct MeasureView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub label: Option<String>,
     pub period: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub basis: Option<String>,
     pub expected: Vec<ValueView>,
     pub reported: Vec<ValueView>,
@@ -993,25 +1012,32 @@ pub struct MeasureView {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ChainStepView {
     pub stage: String,
     pub filed: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub date: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub form: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub due_by: Option<String>,
     pub evidence: Vec<AssetEvidence>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct RevisionView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub label: Option<String>,
     pub from: AmountView,
     pub to: AmountView,
@@ -1020,6 +1046,7 @@ pub struct RevisionView {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ImpliedView {
     pub low_pct: f64,
@@ -1027,21 +1054,25 @@ pub struct ImpliedView {
     pub years: u32,
     pub price: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub currency: Option<String>,
     pub close_date: String,
     pub calc: CalcView,
     /// The whole reverse-DCF grid behind the range ("Open the grid").
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub grid: Option<crate::domain::SensitivityGrid>,
     pub evidence: Vec<AssetEvidence>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ReactionView {
     pub from: f64,
     pub to: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub currency: Option<String>,
     pub from_date: String,
     pub to_date: String,
@@ -1050,6 +1081,7 @@ pub struct ReactionView {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ToneView {
     pub text: String,
@@ -1058,14 +1090,17 @@ pub struct ToneView {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct BeforeView {
     pub captured_at_ms: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub late_as_of: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct AfterView {
     pub captured_at_ms: i64,
@@ -1073,6 +1108,7 @@ pub struct AfterView {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SnapshotView {
     pub event_id: String,
@@ -1085,18 +1121,24 @@ pub struct SnapshotView {
     pub date_source: DateSource,
     pub status: Status,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub capture_at_ms: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub before: Option<BeforeView>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub after: Option<AfterView>,
     pub measures: Vec<MeasureView>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub implied: Option<ImpliedView>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub reaction: Option<ReactionView>,
     pub reaction_waiting: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub tone: Option<ToneView>,
     pub chain: Vec<ChainStepView>,
     pub revisions: Vec<RevisionView>,
@@ -1105,11 +1147,13 @@ pub struct SnapshotView {
     pub consensus_needs_key: bool,
     pub no_guidance: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub failed: Option<Failure>,
     pub preparing: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct EventSummary {
     pub event_id: String,

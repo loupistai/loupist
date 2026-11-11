@@ -324,8 +324,10 @@ pub(super) fn note_finish(log: &mut crate::runs::log::RunLog, finish: &Finish) {
     log.finish(status, failure);
 }
 
-pub(super) fn schema_change_event(loupist_id: &str) -> Value {
-    json!({ "loupistId": loupist_id })
+pub(super) fn schema_change_event(loupist_id: &str) -> crate::events::WorldSchemaChanged {
+    crate::events::WorldSchemaChanged {
+        loupist_id: loupist_id.to_owned(),
+    }
 }
 
 fn trim_known(extension: &WorldExtension, draft: &mut ModelDraft) {

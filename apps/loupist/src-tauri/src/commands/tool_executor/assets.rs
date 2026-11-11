@@ -6,7 +6,7 @@ use std::sync::atomic::Ordering;
 
 use chrono::NaiveDate;
 
-use super::authority::{bounded_text, optional_bounded_text};
+use super::arguments::{bounded_text, optional_bounded_text};
 use super::*;
 use crate::knowledge::assets::{
     self, observe, plan::PlannedRead, AssetEvidence, ThesisUpdate, Verdict,
@@ -28,18 +28,13 @@ const PREFERRED_PROVIDERS: &[&str] = &[
     "yfinance",
 ];
 
+/// A planned native read is a retained provider read that `max_age` reuses.
 fn native_method(tool: &str) -> Option<ToolMethod> {
-    match tool {
-        "dart_filing_search" => Some(ToolMethod::DartFilingSearch),
-        "dart_financials" => Some(ToolMethod::DartFinancials),
-        "krx_daily_quote" => Some(ToolMethod::KrxDailyQuote),
-        "dart_filing_read" => Some(ToolMethod::DartFilingRead),
-        "dart_major_report" => Some(ToolMethod::DartMajorReport),
-        "dart_dividends" => Some(ToolMethod::DartDividends),
-        "kis_read" => Some(ToolMethod::KisRead),
-        "defillama_read" => Some(ToolMethod::DefillamaRead),
-        _ => None,
-    }
+    ToolMethod::from_tool_name(tool).filter(|method| {
+        method
+            .producer()
+            .is_some_and(|producer| producer.retention == Retention::DatasetMaxAge)
+    })
 }
 
 /// Why a host read did not return rows.

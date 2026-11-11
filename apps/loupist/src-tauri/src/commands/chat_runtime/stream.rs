@@ -80,7 +80,7 @@ pub(super) async fn stream_chat_turn(turn: &mut LaunchedChatTurn) -> StreamedCha
     );
     tokio::pin!(provider_wait_timer);
     let mut watchdog_expiry_event_deferrals = 0_usize;
-    let mut announced_phase: Option<&'static str> = None;
+    let mut announced_phase: Option<ChatRunPhase> = None;
     let mut commentary = CommentaryCoalescer::new();
     // Polled only after a narration window is armed. The deadline is reset
     // to that window; this initial sleep is not a flush.

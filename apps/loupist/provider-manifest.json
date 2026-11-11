@@ -1,0 +1,130 @@
+{
+  "support_bootstrap": {
+    "provider": "google",
+    "model": "gemini-2.5-flash"
+  },
+  "presets": [
+    {
+      "id": "upstage",
+      "name": "Upstage Solar",
+      "base_url": "https://api.upstage.ai/v1",
+      "api": "openai-completions",
+      "console_url": "https://console.upstage.ai/api-keys",
+      "featured_row": 5
+    }
+  ],
+  "providers": [
+    {
+      "id": "openai",
+      "label": "ChatGPT",
+      "credential_label": "OpenAI API key",
+      "description": "Sign in with ChatGPT, or use an OpenAI API key stored by Pi in Loupist's private app data.",
+      "names": { "key": "OpenAI", "sign_in": "ChatGPT" },
+      "group": "sign_in",
+      "recommended": true,
+      "console_url": "https://platform.openai.com/api-keys",
+      "api_key": { "environment": "OPENAI_API_KEY", "featured_row": 2 },
+      "sign_in": {
+        "label": "Continue with ChatGPT",
+        "flow": "browser",
+        "authorization": { "host": "auth.openai.com", "path": "/api/accounts/authorize" },
+        "paste": "chatgpt_loopback",
+        "billing_note": "chatgpt_plan",
+        "usage_url": "https://chatgpt.com/settings/usage",
+        "live_models": true
+      },
+      "isolated_inference": true,
+      "native_search": "automatic"
+    },
+    {
+      "id": "openai-codex",
+      "label": "ChatGPT (Codex client, development only)",
+      "credential_label": "ChatGPT account",
+      "description": "Development builds only: the legacy Codex sign-in.",
+      "names": { "key": "ChatGPT", "sign_in": "ChatGPT" },
+      "development_only": true,
+      "alias_of": "openai",
+      "sign_in": {
+        "label": "Continue with ChatGPT",
+        "flow": "browser",
+        "authorization": { "host": "auth.openai.com", "path": "/oauth/authorize" },
+        "paste": { "browser_callback": { "port": 1455, "path": "/auth/callback" } },
+        "usage_url": "https://chatgpt.com/settings/usage"
+      },
+      "isolated_inference": true,
+      "native_search": "automatic"
+    },
+    {
+      "id": "anthropic",
+      "label": "Anthropic",
+      "credential_label": "Anthropic API key",
+      "names": { "key": "Anthropic" },
+      "group": "api_key",
+      "console_url": "https://console.anthropic.com/settings/keys",
+      "api_key": { "environment": "ANTHROPIC_API_KEY", "featured_row": 1 },
+      "isolated_inference": true,
+      "native_search": "automatic"
+    },
+    {
+      "id": "google",
+      "label": "Google Gemini",
+      "credential_label": "Gemini API key",
+      "names": { "key": "Google Gemini" },
+      "group": "api_key",
+      "console_url": "https://aistudio.google.com/apikey",
+      "api_key": { "environment": "GEMINI_API_KEY", "featured_row": 3 }
+    },
+    {
+      "id": "xai",
+      "label": "xAI",
+      "credential_label": "xAI API key",
+      "description": "Use SuperGrok or X Premium, or an xAI API key stored by Pi in Loupist's private app data.",
+      "names": { "key": "xAI", "sign_in": "SuperGrok" },
+      "group": "sign_in",
+      "console_url": "https://console.x.ai",
+      "api_key": { "environment": "XAI_API_KEY", "featured_row": 4 },
+      "sign_in": {
+        "label": "Continue with SuperGrok",
+        "flow": "device",
+        "authorization": { "host": "accounts.x.ai", "path": "/oauth2/device" }
+      },
+      "isolated_inference": true,
+      "native_search": "model_only"
+    },
+    {
+      "id": "openrouter",
+      "label": "OpenRouter",
+      "credential_label": "OpenRouter API key",
+      "names": { "key": "OpenRouter" },
+      "group": "api_key",
+      "console_url": "https://openrouter.ai/keys",
+      "api_key": { "environment": "OPENROUTER_API_KEY", "featured_row": 6 }
+    },
+    { "id": "ant-ling", "label": "Ant Ling", "credential_label": "Ant Ling API key", "api_key": { "environment": "ANT_LING_API_KEY" } },
+    { "id": "deepseek", "label": "DeepSeek", "credential_label": "DeepSeek API key", "api_key": { "environment": "DEEPSEEK_API_KEY" }, "isolated_inference": true },
+    { "id": "nvidia", "label": "NVIDIA NIM", "credential_label": "NVIDIA API key", "api_key": { "environment": "NVIDIA_API_KEY" } },
+    { "id": "mistral", "label": "Mistral", "credential_label": "Mistral API key", "api_key": { "environment": "MISTRAL_API_KEY" } },
+    { "id": "groq", "label": "Groq", "credential_label": "Groq API key", "api_key": { "environment": "GROQ_API_KEY" }, "isolated_inference": true },
+    { "id": "cerebras", "label": "Cerebras", "credential_label": "Cerebras API key", "api_key": { "environment": "CEREBRAS_API_KEY" }, "isolated_inference": true },
+    { "id": "vercel-ai-gateway", "label": "Vercel AI Gateway", "credential_label": "AI Gateway API key", "api_key": { "environment": "AI_GATEWAY_API_KEY" } },
+    { "id": "huggingface", "label": "Hugging Face", "credential_label": "Hugging Face token", "api_key": { "environment": "HF_TOKEN" } },
+    { "id": "fireworks", "label": "Fireworks", "credential_label": "Fireworks API key", "api_key": { "environment": "FIREWORKS_API_KEY" } },
+    { "id": "together", "label": "Together AI", "credential_label": "Together API key", "api_key": { "environment": "TOGETHER_API_KEY" }, "isolated_inference": true },
+    { "id": "baseten", "label": "Baseten", "credential_label": "Baseten API key", "api_key": { "environment": "BASETEN_API_KEY" }, "isolated_inference": true },
+    { "id": "kimi-coding", "label": "Kimi For Coding", "credential_label": "Kimi API key", "api_key": { "environment": "KIMI_API_KEY" }, "isolated_inference": true },
+    { "id": "minimax", "label": "MiniMax", "credential_label": "MiniMax API key", "api_key": { "environment": "MINIMAX_API_KEY" }, "isolated_inference": true },
+    { "id": "minimax-cn", "label": "MiniMax (China)", "credential_label": "MiniMax China API key", "api_key": { "environment": "MINIMAX_CN_API_KEY" } },
+    { "id": "zai", "label": "ZAI Coding Plan", "credential_label": "ZAI API key", "api_key": { "environment": "ZAI_API_KEY" } },
+    { "id": "zai-coding-cn", "label": "ZAI Coding Plan (China)", "credential_label": "ZAI China API key", "api_key": { "environment": "ZAI_CODING_CN_API_KEY" } },
+    { "id": "opencode", "label": "OpenCode Zen", "credential_label": "OpenCode API key", "api_key": { "environment": "OPENCODE_API_KEY" } },
+    { "id": "opencode-go", "label": "OpenCode Go", "credential_label": "OpenCode API key", "api_key": { "environment": "OPENCODE_API_KEY" } },
+    { "id": "radius", "label": "Radius", "credential_label": "Radius API key", "api_key": { "environment": "RADIUS_API_KEY" } },
+    { "id": "qwen-token-plan", "label": "Qwen Token Plan", "credential_label": "Qwen Token Plan API key", "api_key": { "environment": "QWEN_TOKEN_PLAN_API_KEY" } },
+    { "id": "qwen-token-plan-individual", "label": "Qwen Token Plan (Individual)", "credential_label": "Qwen Token Plan API key", "api_key": { "environment": "QWEN_TOKEN_PLAN_API_KEY" } },
+    { "id": "qwen-token-plan-cn", "label": "Qwen Token Plan (China)", "credential_label": "Qwen Token Plan China API key", "api_key": { "environment": "QWEN_TOKEN_PLAN_CN_API_KEY" } },
+    { "id": "xiaomi", "label": "Xiaomi MiMo", "credential_label": "Xiaomi API key", "api_key": { "environment": "XIAOMI_API_KEY" } },
+    { "id": "xiaomi-token-plan-cn", "label": "Xiaomi MiMo Token Plan (China)", "credential_label": "Xiaomi Token Plan API key", "api_key": { "environment": "XIAOMI_TOKEN_PLAN_CN_API_KEY" } },
+    { "id": "xiaomi-token-plan-ams", "label": "Xiaomi MiMo Token Plan (Amsterdam)", "credential_label": "Xiaomi Token Plan API key", "api_key": { "environment": "XIAOMI_TOKEN_PLAN_AMS_API_KEY" } },
+    { "id": "xiaomi-token-plan-sgp", "label": "Xiaomi MiMo Token Plan (Singapore)", "credential_label": "Xiaomi Token Plan API key", "api_key": { "environment": "XIAOMI_TOKEN_PLAN_SGP_API_KEY" } }
+  ]
+}

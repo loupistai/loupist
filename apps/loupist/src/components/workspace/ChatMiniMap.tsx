@@ -21,6 +21,7 @@ export function ChatMiniMap({ onOpenFull }: { onOpenFull: (location: KnowledgeLo
   const controls = useRef<MapCanvasControls | null>(null);
   const [list, setList] = useState(false);
   const map = state?.map;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the layout is keyed on the chat's identity, not the state object.
   const positions = useMemo(() => map && state ? frozenLayout(`chat:${state.loupistId}:${state.chatId}`, map.worldRevisionId, map.nodes, map.edges) : [], [map, state?.loupistId, state?.chatId]);
   if (!state) return null;
   const nameCount = map?.nodes.length ?? 0;
@@ -34,8 +35,8 @@ export function ChatMiniMap({ onOpenFull }: { onOpenFull: (location: KnowledgeLo
     </header>
     {state.error ? <div className="map-error" role="alert">{t("map.error")}<Button variant="ghost" onClick={state.retry}>{t("map.retry")}</Button></div> : null}
     <div className="chat-mini-map-body">
-      {state.loading && !map ? <div className="map-skeleton" role="status">{t("map.loading")}</div> : !map?.nodes.length ? <div className="map-empty"><p>{t("map.chatEmpty")}</p></div> : <>
-        <div className="map-stats" role="status">{stats}</div>
+      {state.loading && !map ? <div className="map-skeleton" role="status">{t("map.loading")}</div> : !map?.nodes.length ? <div className="map-empty" data-testid="map-empty"><p>{t("map.chatEmpty")}</p></div> : <>
+        <div className="map-stats" data-testid="map-stats" role="status">{stats}</div>
         {list ? <MapList nodes={map.nodes} edges={map.edges} onSelect={node => full({ kind: "node", id: node.id })} onClaim={id => full({ kind: "claim", id })} /> : <MiniCanvasBoundary onError={() => setList(true)}><Suspense fallback={<div className="map-skeleton" />}><MapCanvas compact={{ highlightIds: state.highlightIds, glowNodeIds: state.glowNodeIds, glowEdgeIds: state.glowEdgeIds, liveNodeIds: state.liveNodeIds }} nodes={positions} edges={map.edges} scopeKey={`chat:${state.loupistId}:${state.chatId}`} controls={controls} onSelect={node => state.select(new Set([node.id]))} onClear={() => state.select()} stats={stats} /></Suspense></MiniCanvasBoundary>}
       </>}
     </div>

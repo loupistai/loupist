@@ -122,7 +122,10 @@ it("suggests /v1 only when the custom endpoint has no path", async () => {
 });
 
 it("says a new address drops the saved key before an edit is saved", async () => {
-  const edit = { id: "custom-office", name: "Office", base_url: "https://gateway.example/v1", api: "openai-completions" as const, model_ids: ["alpha"], credential_source: "saved" as const };
+  const edit = {
+    id: "custom-office", name: "Office", base_url: "https://gateway.example/v1", api: "openai-completions" as const, model_ids: ["alpha"], credential_source: "saved" as const,
+    status: { state: "connected" as const, credential_kind: "custom" as const, notice: null, last_limit_at_ms: null, connected_at_ms: null, used_by: { schedules: 0, chat_default: false, world_models: 0 } },
+  };
   const { user, sheet } = await open({ kind: "custom", edit });
   const address = within(sheet).getByLabelText("Server address");
   const key = within(sheet).getByLabelText("API key (optional)");

@@ -26,6 +26,7 @@ const FILE_NAME: &str = "config.toml";
 static WRITE_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ConfigScope {
     Global,
@@ -38,9 +39,11 @@ pub enum ConfigScope {
 macro_rules! optional_config {
     ($name:ident { $($field:ident: $kind:ty),* $(,)? }) => {
         #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+        #[cfg_attr(test, derive(ts_rs::TS))]
         #[serde(deny_unknown_fields)]
         pub struct $name {
             $(#[serde(default, skip_serializing_if = "Option::is_none")]
+            #[cfg_attr(test, ts(optional))]
             pub $field: Option<$kind>,)*
         }
     };
@@ -68,6 +71,7 @@ optional_config!(ChatConfig {
 });
 optional_config!(SkillConfig { enabled: bool });
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ResolvedSkillConfig {
     /// Missing on a custom Skill only. Included Skills are filled from the catalog first.
     #[serde(default = "custom_skill_enabled_when_unset")]
@@ -93,18 +97,21 @@ optional_config!(PartialPiRetryConfig {
 });
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct PiConfig {
     pub compaction: PiCompactionConfig,
     pub retry: PiRetryConfig,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct PiCompactionConfig {
     pub reserve_tokens: u64,
     pub keep_recent_tokens: u64,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(deny_unknown_fields)]
 pub struct PiRetryConfig {
     pub enabled: bool,
@@ -130,15 +137,18 @@ impl Default for PiConfig {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ResolvedAppearanceConfig {
     pub theme: String,
     pub language: String,
 }
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ResolvedModelsConfig {
     pub hidden_model_profile_ids: Vec<String>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ResolvedChatConfig {
     pub model_profile_id: Option<String>,
     pub thinking_level: Option<String>,
@@ -158,6 +168,7 @@ impl Default for ResolvedChatConfig {
     }
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ResolvedConfig {
     pub appearance: ResolvedAppearanceConfig,
     pub models: ResolvedModelsConfig,
@@ -212,6 +223,7 @@ impl ResolvedConfig {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConfigDiagnostic {
     pub path: String,
@@ -220,6 +232,7 @@ pub struct ConfigDiagnostic {
     pub column: Option<usize>,
 }
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigSnapshot {
     pub scope: ConfigScope,
@@ -228,29 +241,43 @@ pub struct ConfigSnapshot {
     pub explicit: Option<ConfigDocument>,
     pub effective: ResolvedConfig,
     pub sources: BTreeMap<String, String>,
+    /// Errors: the file is malformed or a known key has an invalid value. Any
+    /// error blocks dependent runs and settings saves until the file is fixed.
     pub diagnostics: Vec<ConfigDiagnostic>,
+    /// Settings this version ignores because its bundled catalog no longer
+    /// has that connector or connector field, or keeps that Skill always on.
+    /// The text stays in the file; nothing is blocked.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(optional = nullable))]
+    pub warnings: Vec<ConfigDiagnostic>,
 }
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConfigReadRequest {
     pub scope: ConfigScope,
 }
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConfigUpdateRequest {
     pub scope: ConfigScope,
     pub expected_revision: String,
     #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub set: ConfigDocument,
     #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
     pub unset: Vec<Vec<String>>,
 }
 
 struct LoadedConfig {
     revision: String,
     document: Option<Document>,
+    /// The file's settings without the ignored ones (`ignore_unknown_catalog_keys`).
     explicit: Option<ConfigDocument>,
     diagnostics: Vec<ConfigDiagnostic>,
+    warnings: Vec<ConfigDiagnostic>,
 }
 
 fn digest(bytes: &[u8]) -> String {
@@ -459,6 +486,7 @@ fn load(directory: &Path, scope: &ConfigScope) -> LoadedConfig {
                 document: None,
                 explicit: None,
                 diagnostics: vec![diagnostic(&path, error.message, None, None)],
+                warnings: Vec::new(),
             }
         }
     };
@@ -476,6 +504,7 @@ fn load(directory: &Path, scope: &ConfigScope) -> LoadedConfig {
                     None,
                     None,
                 )],
+                warnings: Vec::new(),
             }
         }
     };
@@ -492,10 +521,11 @@ fn load(directory: &Path, scope: &ConfigScope) -> LoadedConfig {
                     Some(&source),
                     error.span().map(|span| span.start),
                 )],
+                warnings: Vec::new(),
             }
         }
     };
-    let config: ConfigDocument = match toml_edit::de::from_str(&source) {
+    let mut config: ConfigDocument = match toml_edit::de::from_str(&source) {
         Ok(config) => config,
         Err(error) => {
             return LoadedConfig {
@@ -508,23 +538,37 @@ fn load(directory: &Path, scope: &ConfigScope) -> LoadedConfig {
                     Some(&source),
                     error.span().map(|span| span.start),
                 )],
+                warnings: Vec::new(),
             }
         }
     };
-    if let Err(message) = validate(&config, scope) {
-        let offset = validation_offset(&source, &message);
-        return LoadedConfig {
-            revision,
-            document: Some(document),
-            explicit: None,
-            diagnostics: vec![diagnostic(&path, message, Some(&source), offset)],
-        };
-    }
+    let ignored = validate(&config, scope).and_then(|()| ignore_unknown_catalog_keys(&mut config));
+    let ignored = match ignored {
+        Ok(ignored) => ignored,
+        Err(message) => {
+            let offset = validation_offset(&source, &message);
+            return LoadedConfig {
+                revision,
+                document: Some(document),
+                explicit: None,
+                diagnostics: vec![diagnostic(&path, message, Some(&source), offset)],
+                warnings: Vec::new(),
+            };
+        }
+    };
+    let warnings = ignored
+        .into_iter()
+        .map(|message| {
+            let offset = validation_offset(&source, &message);
+            diagnostic(&path, message, Some(&source), offset)
+        })
+        .collect();
     LoadedConfig {
         revision,
         document: Some(document),
         explicit: Some(config),
         diagnostics: Vec::new(),
+        warnings,
     }
 }
 fn validation_offset(source: &str, message: &str) -> Option<usize> {
@@ -550,11 +594,56 @@ fn bounded(value: &str, label: &str, maximum: usize) -> Result<(), String> {
     }
     Ok(())
 }
+/// Removes the settings this version's bundled catalog does not have and
+/// returns one warning per setting: a connector or connector field the catalog
+/// no longer declares, and a Skill that is now always on. These keys are not
+/// typos of this build's own settings but the catalog moving under a file the
+/// user (or another Loupist version) wrote, so they never block a save; the
+/// TOML text keeps them. Malformed TOML, unknown sections and invalid values
+/// of known keys stay errors (`validate`).
+fn ignore_unknown_catalog_keys(config: &mut ConfigDocument) -> Result<Vec<String>, String> {
+    let mut ignored = Vec::new();
+    if let Some(skills) = &mut config.skills {
+        skills.retain(|id, _| {
+            let fixed = crate::skills::is_fixed(id);
+            if fixed {
+                ignored.push(format!(
+                    "skills.{id} is always on in this version; this setting is ignored"
+                ));
+            }
+            !fixed
+        });
+    }
+    if let Some(connectors) = &mut config.connectors {
+        for (id, field) in crate::marketplace::connector_config::ignored_config_entries(connectors)
+            .map_err(|error| error.message)?
+        {
+            match field {
+                None => {
+                    connectors.remove(&id);
+                    ignored.push(format!(
+                        "connectors.{id} is not a connector in this version; it is ignored"
+                    ));
+                }
+                Some(field) => {
+                    if let Some(options) = connectors.get_mut(&id) {
+                        options.remove(&field);
+                    }
+                    ignored.push(format!(
+                        "connectors.{id}.{field} is not a setting of this connector in this version; it is ignored"
+                    ));
+                }
+            }
+        }
+    }
+    Ok(ignored)
+}
+
 fn validate(config: &ConfigDocument, scope: &ConfigScope) -> Result<(), String> {
     if let Some(skills) = &config.skills {
         for id in skills.keys() {
-            if !crate::skills::valid_name(id) || crate::skills::is_fixed(id) {
-                return Err("skills contains an invalid name or fixed app skill".into());
+            if !crate::skills::valid_name(id) {
+                return Err("skills contains an invalid name".into());
             }
         }
     }
@@ -796,8 +885,10 @@ pub fn read_scope(
     };
     let (effective, sources) = assemble(&global, project.as_ref());
     let mut diagnostics = global.diagnostics.clone();
+    let mut warnings = global.warnings.clone();
     if let Some(project) = &project {
         diagnostics.extend(project.diagnostics.clone());
+        warnings.extend(project.warnings.clone());
     }
     let selected = project.as_ref().unwrap_or(&global);
     Ok(ConfigSnapshot {
@@ -808,6 +899,7 @@ pub fn read_scope(
         effective,
         sources,
         diagnostics,
+        warnings,
     })
 }
 pub fn resolve(
@@ -922,10 +1014,10 @@ fn validate_unset(path: &[String], scope: &ConfigScope) -> Result<(), CommandErr
                 || path.len() == 3 && path[1] == "run_options"
         }
         "skills" => {
+            // Resetting an always-on Skill's ignored setting is allowed.
             path.len() == 1
                 || (path.len() == 2 || path.len() == 3 && path[2] == "enabled")
                     && crate::skills::valid_name(&path[1])
-                    && !crate::skills::is_fixed(&path[1])
         }
         "pi" => {
             path.len() == 1
@@ -960,6 +1052,14 @@ pub fn update_scope(
     request: &ConfigUpdateRequest,
 ) -> Result<ConfigSnapshot, CommandError> {
     validate(&request.set, &request.scope).map_err(config_error)?;
+    // A request names only settings this version has; ignoring is for the file.
+    if let Some(ignored) = ignore_unknown_catalog_keys(&mut request.set.clone())
+        .map_err(config_error)?
+        .into_iter()
+        .next()
+    {
+        return Err(config_error(ignored));
+    }
     for path in &request.unset {
         validate_unset(path, &request.scope)?;
     }
@@ -987,6 +1087,7 @@ pub fn update_scope(
     let source = document.to_string();
     let result: ConfigDocument = toml_edit::de::from_str(&source)
         .map_err(|_| config_error("Updated configuration is invalid"))?;
+    // Settings the catalog no longer has stay as they were and do not block the save.
     validate(&result, &request.scope).map_err(config_error)?;
     directory.replace(source.as_bytes(), &request.expected_revision)?;
     read_scope(global_root, project_loupist_dir, request.scope.clone())

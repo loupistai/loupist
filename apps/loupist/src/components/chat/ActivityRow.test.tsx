@@ -30,9 +30,9 @@ function row(progress: ChatProgress, status: ChatMessage["status"], extra: Parti
 it("names the running step, then settles into a collapsed summary with the steps in order inside", async () => {
   const user = userEvent.setup();
   const progress: ChatProgress = { startedAtMs: 1, items: [
-    { id: "web-1", kind: "tool", toolName: "web_search", category: "web", operation: "search", action: "Searched the web", target: "rate outlook", source: { kind: "web", name: "web_search" }, status: "succeeded" },
-    { id: "web-2", kind: "tool", toolName: "web_fetch", category: "web", operation: "read", action: "Read a web source", running: "Reading example.com", target: "Rate outlook · example.com", href: "https://example.com/rates", status: "running" },
-  ] };
+    { id: "web-1", kind: "tool", toolName: "web_search", category: "web", operation: "search", action: "Searched the web", target: "rate outlook", source: { kind: "web", name: "web_search" }, status: "succeeded", href: null, startedAtMs: 0, finishedAtMs: null },
+    { id: "web-2", kind: "tool", toolName: "web_fetch", category: "web", operation: "read", action: "Read a web source", running: "Reading example.com", target: "Rate outlook · example.com", href: "https://example.com/rates", status: "running", startedAtMs: 0, finishedAtMs: null },
+  ], finishedAtMs: null };
   const { open: openLink, ...view } = renderWithOpen(row(progress, "streaming"));
   const live = screen.getByRole("button", { name: "Reading example.com" });
   expect(live).toHaveAttribute("aria-expanded", "false");
@@ -53,10 +53,10 @@ it("names the running step, then settles into a collapsed summary with the steps
 });
 
 it("opens the details for a failed step and offers its exact activity", async () => {
-  const { read, wrapper } = withActivity({ id: "report-attempt", tool_name: "read", status: "failed", input: "annual-report.pdf", output: "File not found", truncated: false, started_at_ms: 1, finished_at_ms: 2000 });
+  const { read, wrapper } = withActivity({ id: "report-attempt", tool_name: "read", status: "failed", input: "annual-report.pdf", output: "File not found", truncated: false, started_at_ms: 1, finished_at_ms: 2000, file_path: null });
   render(row({ startedAtMs: 1, finishedAtMs: 2000, items: [
-    { id: "failed", kind: "tool", category: "web", operation: "read", action: "Read annual report", status: "failed", detailId: "report-attempt" },
-    { id: "ok", kind: "tool", category: "web", operation: "read", action: "Read filing", status: "succeeded" },
+    { id: "failed", kind: "tool", category: "web", operation: "read", action: "Read annual report", status: "failed", detailId: "report-attempt", target: null, href: null, startedAtMs: 0, finishedAtMs: null },
+    { id: "ok", kind: "tool", category: "web", operation: "read", action: "Read filing", status: "succeeded", target: null, href: null, startedAtMs: 0, finishedAtMs: null },
   ] }, "complete"), { wrapper });
   const header = screen.getByRole("button", { name: /1 failed attempt/ });
   expect(header).toHaveAttribute("aria-expanded", "true");
@@ -69,9 +69,9 @@ it("opens the details for a failed step and offers its exact activity", async ()
 
 it("explains a step paused by the untrusted-text rule in the step, calmly and with no override (B92)", async () => {
   render(row({ startedAtMs: 1, finishedAtMs: 2000, items: [
-    { id: "search", kind: "tool", toolName: "web_search", category: "web", operation: "search", action: "Searched the web", status: "succeeded" },
-    { id: "instructions", kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", target: "AGENTS.md", status: "failed", refusal: "untrusted_text_paused" },
-    { id: "fetch", kind: "tool", toolName: "web_fetch", category: "web", operation: "read", action: "Read a web source", target: "example.com/review", status: "failed", refusal: "untrusted_text_paused" },
+    { id: "search", kind: "tool", toolName: "web_search", category: "web", operation: "search", action: "Searched the web", status: "succeeded", target: null, href: null, startedAtMs: 0, finishedAtMs: null },
+    { id: "instructions", kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", target: "AGENTS.md", status: "failed", refusal: "untrusted_text_paused", href: null, startedAtMs: 0, finishedAtMs: null },
+    { id: "fetch", kind: "tool", toolName: "web_fetch", category: "web", operation: "read", action: "Read a web source", target: "example.com/review", status: "failed", refusal: "untrusted_text_paused", href: null, startedAtMs: 0, finishedAtMs: null },
   ] }, "complete"));
   // The header counts a pause, not a failure, and the details stay closed.
   const header = screen.getByRole("button", { name: /2 paused/ });
@@ -95,8 +95,8 @@ it("explains a step paused by the untrusted-text rule in the step, calmly and wi
 
 it("explains a step refused for a private app path or a file outside the Loupist folder", async () => {
   render(row({ startedAtMs: 1, finishedAtMs: 2000, items: [
-    { id: "auth", kind: "tool", toolName: "read", category: "files", operation: "read", action: "Read a file", target: "auth.json", status: "failed", refusal: "protected_path" },
-    { id: "shared", kind: "tool", toolName: "read", category: "files", operation: "read", action: "Read a file", target: "shared.csv", status: "failed", refusal: "outside_workspace" },
+    { id: "auth", kind: "tool", toolName: "read", category: "files", operation: "read", action: "Read a file", target: "auth.json", status: "failed", refusal: "protected_path", href: null, startedAtMs: 0, finishedAtMs: null },
+    { id: "shared", kind: "tool", toolName: "read", category: "files", operation: "read", action: "Read a file", target: "shared.csv", status: "failed", refusal: "outside_workspace", href: null, startedAtMs: 0, finishedAtMs: null },
   ] }, "complete"));
   // Failed steps open on their own; each refusal is explained in its step.
   expect(screen.getByRole("button", { name: /2 failed attempts/ })).toHaveAttribute("aria-expanded", "true");
@@ -110,10 +110,10 @@ it("labels a refused page as paused in Korean while retaining completed and ordi
   await i18n.changeLanguage("ko");
   try {
     render(row({ startedAtMs: 1, finishedAtMs: 2000, items: [
-      { id: "paused", kind: "tool", toolName: "web_fetch", category: "web", operation: "read", action: "Read a web source", target: "example.com/page", status: "failed", refusal: "untrusted_text_paused", detailId: "paused-detail" },
-      { id: "agents", kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", target: "AGENTS.md", status: "failed", refusal: "untrusted_text_paused" },
-      { id: "failed", kind: "tool", toolName: "run_python", category: "compute", operation: "execute", action: "Ran Python", target: "failed.py", status: "failed" },
-      { id: "succeeded", kind: "tool", toolName: "run_python", category: "compute", operation: "execute", action: "Ran Python", target: "done.py", status: "succeeded" },
+      { id: "paused", kind: "tool", toolName: "web_fetch", category: "web", operation: "read", action: "Read a web source", target: "example.com/page", status: "failed", refusal: "untrusted_text_paused", detailId: "paused-detail", href: null, startedAtMs: 0, finishedAtMs: null },
+      { id: "agents", kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", target: "AGENTS.md", status: "failed", refusal: "untrusted_text_paused", href: null, startedAtMs: 0, finishedAtMs: null },
+      { id: "failed", kind: "tool", toolName: "run_python", category: "compute", operation: "execute", action: "Ran Python", target: "failed.py", status: "failed", href: null, startedAtMs: 0, finishedAtMs: null },
+      { id: "succeeded", kind: "tool", toolName: "run_python", category: "compute", operation: "execute", action: "Ran Python", target: "done.py", status: "succeeded", href: null, startedAtMs: 0, finishedAtMs: null },
     ] }, "complete"));
     const paused = screen.getByText("example.com/page").closest(".chat-progress-row")!;
     expect(within(paused as HTMLElement).getByText("일시 중지")).toBeVisible();
@@ -128,10 +128,10 @@ it("labels a refused page as paused in Korean while retaining completed and ordi
 it("loads running command output on demand and stops polling when closed", async () => {
   vi.useFakeTimers();
   try {
-    const { read, wrapper } = withActivity({ id: "durable-detail", tool_name: "run_python", status: "running", input: JSON.stringify({ code: "print(391)", timeout_seconds: 30 }), output: "Partial result: 391", truncated: true, started_at_ms: 10 });
+    const { read, wrapper } = withActivity({ id: "durable-detail", tool_name: "run_python", status: "running", input: JSON.stringify({ code: "print(391)", timeout_seconds: 30 }), output: "Partial result: 391", truncated: true, started_at_ms: 10, file_path: null, finished_at_ms: null });
     render(row({ startedAtMs: 1, items: [
-      { id: "tool", kind: "tool", toolName: "run_python", category: "compute", operation: "execute", action: "Ran Python", running: "Running Python", status: "running", detailId: "durable-detail" },
-    ] }, "streaming"), { wrapper });
+      { id: "tool", kind: "tool", toolName: "run_python", category: "compute", operation: "execute", action: "Ran Python", running: "Running Python", status: "running", detailId: "durable-detail", target: null, href: null, startedAtMs: 0, finishedAtMs: null },
+    ], finishedAtMs: null }, "streaming"), { wrapper });
     expect(read).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Running Python" }));
     const inspect = screen.getByRole("button", { name: "Inspect Running Python" });
@@ -149,18 +149,18 @@ it("loads running command output on demand and stops polling when closed", async
 });
 
 it("reveals a focused command's saved output in the work trace", async () => {
-  const { wrapper } = withActivity({ id: "durable-detail", tool_name: "run_python", status: "succeeded", input: "print(391)", output: "Partial result: 391", truncated: false, started_at_ms: 10, finished_at_ms: 20 });
+  const { wrapper } = withActivity({ id: "durable-detail", tool_name: "run_python", status: "succeeded", input: "print(391)", output: "Partial result: 391", truncated: false, started_at_ms: 10, finished_at_ms: 20, file_path: null });
   render(row({ startedAtMs: 1, finishedAtMs: 20, items: [
-    { id: "tool", kind: "tool", toolName: "run_python", category: "compute", operation: "execute", action: "Ran Python", status: "succeeded", detailId: "durable-detail" },
+    { id: "tool", kind: "tool", toolName: "run_python", category: "compute", operation: "execute", action: "Ran Python", status: "succeeded", detailId: "durable-detail", target: null, href: null, startedAtMs: 0, finishedAtMs: null },
   ] }, "complete", {}, { focusItemId: "tool" }), { wrapper });
   expect(await screen.findByLabelText("Command output")).toHaveTextContent("Partial result: 391");
 });
 
 it("keeps internal targets out of live and saved progress", () => {
   const progress: ChatProgress = { startedAtMs: 1, items: [
-    { id: "page", kind: "tool", category: "web", operation: "read", action: "Read a page", target: "web:f6495eccf2c0cca04e4c6a03", status: "succeeded" },
-    { id: "tool", kind: "tool", category: "capability", operation: "read", action: "Opened a tool", target: "private-tool-id", source: { kind: "capability", name: "private-tool-id" }, status: "running" },
-  ] };
+    { id: "page", kind: "tool", category: "web", operation: "read", action: "Read a page", target: "web:f6495eccf2c0cca04e4c6a03", status: "succeeded", href: null, startedAtMs: 0, finishedAtMs: null },
+    { id: "tool", kind: "tool", category: "capability", operation: "read", action: "Opened a tool", target: "private-tool-id", source: { kind: "capability", name: "private-tool-id" }, status: "running", href: null, startedAtMs: 0, finishedAtMs: null },
+  ], finishedAtMs: null };
   const { container, rerender } = render(row(progress, "streaming"));
   expect(container).toHaveTextContent("Opened a tool");
   expect(container).not.toHaveTextContent(/private-tool-id|web:f649/);
@@ -172,9 +172,9 @@ it("keeps internal targets out of live and saved progress", () => {
 
 describe("names a step read", () => {
   const reading: ChatProgress = { startedAtMs: 1, items: [
-    { id: "map-1", kind: "tool", category: "memory", operation: "read", action: "Read the map", running: "Reading the map", status: "running", entityIds: ["a", "b"] },
-    { id: "web-1", kind: "tool", toolName: "web_search", category: "web", operation: "search", action: "Searched the web", status: "succeeded" },
-  ] };
+    { id: "map-1", kind: "tool", category: "memory", operation: "read", action: "Read the map", running: "Reading the map", status: "running", entityIds: ["a", "b"], target: null, href: null, startedAtMs: 0, finishedAtMs: null },
+    { id: "web-1", kind: "tool", toolName: "web_search", category: "web", operation: "search", action: "Searched the web", status: "succeeded", target: null, href: null, startedAtMs: 0, finishedAtMs: null },
+  ], finishedAtMs: null };
 
   it("labels the step with its name count and leaves steps without names alone", () => {
     render(row(reading, "streaming"));
@@ -204,14 +204,14 @@ describe("plan", () => {
     items: statuses.map((status, index) => ({ id: `item-${index}`, label: ["Read the Q3 operating report", "Compare utilization with inventory days", "Check against your principles"][index]!, status, ...(status === "pending" ? {} : { activatedAtMs: [10, 20, 30][index] }) })),
   });
   const steps: ChatProgress["items"] = [
-    { id: "early", kind: "tool", category: "memory", operation: "read", action: "Read Memory", status: "succeeded", startedAtMs: 5 },
-    { id: "report", kind: "tool", category: "web", operation: "read", action: "Read the operating report", status: "succeeded", startedAtMs: 12 },
-    { id: "search", kind: "tool", toolName: "web_search", category: "web", operation: "search", action: "Searched the web", status: "succeeded", startedAtMs: 21 },
-    { id: "calc", kind: "tool", category: "compute", operation: "calculate", action: "Calculated the ratio", running: "Calculating the ratio", status: "running", startedAtMs: 22 },
+    { id: "early", kind: "tool", category: "memory", operation: "read", action: "Read Memory", status: "succeeded", startedAtMs: 5, target: null, href: null, finishedAtMs: null },
+    { id: "report", kind: "tool", category: "web", operation: "read", action: "Read the operating report", status: "succeeded", startedAtMs: 12, target: null, href: null, finishedAtMs: null },
+    { id: "search", kind: "tool", toolName: "web_search", category: "web", operation: "search", action: "Searched the web", status: "succeeded", startedAtMs: 21, target: null, href: null, finishedAtMs: null },
+    { id: "calc", kind: "tool", category: "compute", operation: "calculate", action: "Calculated the ratio", running: "Calculating the ratio", status: "running", startedAtMs: 22, target: null, href: null, finishedAtMs: null },
   ];
 
   it("pins the checklist and nests each step under the item that was active when it started", () => {
-    render(row({ startedAtMs: 1, items: steps, plan: plan(["done", "active", "pending"]) }, "streaming"));
+    render(row({ startedAtMs: 1, items: steps, plan: plan(["done", "active", "pending"]), finishedAtMs: null }, "streaming"));
     fireEvent.click(screen.getByRole("button", { name: "Calculating the ratio" }));
     const list = screen.getByRole("list", { name: "Plan" });
     const [done, active, pending] = within(list).getAllByRole("listitem").filter((item) => item.parentElement === list);
@@ -242,10 +242,10 @@ describe("plan", () => {
   });
 
   it("names the active stage while the run works and shows a plan-only run before the first step", () => {
-    const { rerender } = render(row({ startedAtMs: 1, items: [], plan: plan(["active", "pending"]) }, "streaming"));
+    const { rerender } = render(row({ startedAtMs: 1, items: [], plan: plan(["active", "pending"]), finishedAtMs: null }, "streaming"));
     fireEvent.click(screen.getByRole("button", { name: "Read the Q3 operating report" }));
     expect(screen.getByRole("list", { name: "Plan" })).toBeVisible();
-    rerender(row({ startedAtMs: 1, items: steps.slice(0, 2), plan: plan(["active", "pending"]) }, "streaming"));
+    rerender(row({ startedAtMs: 1, items: steps.slice(0, 2), plan: plan(["active", "pending"]), finishedAtMs: null }, "streaming"));
     expect(screen.getByRole("button", { name: "Read the Q3 operating report" })).toBeVisible();
   });
 });

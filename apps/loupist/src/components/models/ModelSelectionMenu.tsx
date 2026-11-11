@@ -227,13 +227,13 @@ export function ModelSelectionMenu({
           {selectedModel ? (
             <div className="model-menu-options" role="menu" aria-label={i18n.t("chat:chatModelMenu.advanced")}>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={(event) => { event.preventDefault(); setAdvanced(!advanced); }} aria-expanded={advanced} aria-controls={advanced ? advancedId : undefined} className="model-menu-advanced">
+              <DropdownMenuItem onSelect={(event) => { event.preventDefault(); setAdvanced(!advanced); }} aria-expanded={advanced} aria-controls={advanced ? advancedId : undefined} className="model-menu-advanced" data-testid="model-menu-advanced">
                 {i18n.t("chat:chatModelMenu.advanced")}<ChevronDownIcon aria-hidden="true" />
               </DropdownMenuItem>
               {advanced ? <div id={advancedId}>
                 <DropdownMenuLabel><Trans ns="settings" i18nKey="modelSelectionMenu.thinkingForModel" values={{ model: selectedModel.name }} components={[<span className="model-menu-current" />]} /></DropdownMenuLabel>
                 <DropdownMenuRadioGroup
-                  className="model-menu-choices"
+                  className="model-menu-choices" data-testid="model-menu-choices"
                   value={selection.thinking_level}
                   onValueChange={(thinking_level) =>
                     onSelectionChange({

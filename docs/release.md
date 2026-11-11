@@ -13,6 +13,10 @@ python3 apps/loupist/scripts/set-version.py --check --version X.Y.Z-rc.N
 
 The command rejects an already-diverged tree before writing any file, updates every authored version and lockfile copy together, and keeps `Info.plist` at the SemVer base version for RCs. Use `--dry-run` to review a transition first.
 
+The release workflow also runs `apps/loupist/scripts/check-market-calendar.mjs`: a
+tag is refused while `market-calendar.json` lacks the current year for an exchange.
+Add each exchange's holidays only from its own published calendar.
+
 Release, qualification, and promotion each use a non-cancelling serialized queue.
 `GITHUB_RUN_NUMBER` is a lower bound for the macOS `CFBundleVersion`, and the
 release workflow allocates the larger of that number and one more than every
@@ -63,8 +67,11 @@ developer's daily-use machine or on a production network.
    valid only for the first stable release; afterward the predecessor must be
    the current Latest release and the candidate version must be strictly newer.
    Use the app's explicit update flow to install the candidate, restart it, and
-   verify both the installed version and retained local data. An unsupported
-   older database must still be present and unchanged. Capture durable,
+   verify both the installed version and retained local data. When the
+   candidate raises a schema version, the predecessor's catalog and Loupist
+   folders must open upgraded, each with its `upgrade-backup` beside it (see
+   [Storage and downgrades](#storage-and-downgrades)). An unsupported older
+   database must still be present and unchanged. Capture durable,
    credential-free HTTPS evidence for the macOS candidate.
 5. On the clean signed macOS candidate, complete the `LOUPIST.md` Connections,
    Chat, and Knowledge flow, including a later turn that uses a retained Source
@@ -80,3 +87,25 @@ developer's daily-use machine or on a production network.
 The public download link is `releases/latest/download/Loupist-macOS-arm64.dmg`; do not advertise a Windows installer. The app feed is `https://github.com/loupistai/loupist/releases/latest/download/latest.json`. Install and restart need explicit user confirmation.
 
 Replace a bad stable release with a higher patch; do not downgrade storage or silently roll back.
+
+## Storage and downgrades
+
+Installed data is upgraded, never reset. A release that changes the store or
+Knowledge schema adds the next step to the ladder in `store/upgrade.rs`; it never
+edits an earlier step or the frozen baseline fixture, because installs at every
+earlier version still run them. Before the first step on each database, Loupist
+writes `<database>.upgrade-backup-<UTC stamp>` beside it (the catalog in the app
+data folder and `loupist.sqlite3` in each Loupist folder's `.loupist/`). After the
+upgrade succeeds it keeps that backup and the newest earlier one, and deletes
+older backups of the same database.
+[Schema versions and upgrades](runtime/storage-authority.md#schema-versions-and-upgrades)
+owns the rules.
+
+Downgrades are not supported. A build refuses data a newer build saved: the
+catalog shows a native dialog and the app quits, and a folder lists as
+`newer_version`. Neither is changed. A value added to an extensible enumeration
+needs no schema step, so an older build of the same schema could meet a value it
+does not know; this is another reason a bad release is replaced by a higher patch.
+To return a machine to an older build, quit Loupist and copy each backup over its
+database first; changes made after the upgrade are lost. Only the two newest
+backups remain, so this reaches back at most two schema-changing releases.

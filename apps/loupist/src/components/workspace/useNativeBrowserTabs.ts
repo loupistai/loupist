@@ -18,7 +18,7 @@ import type {
   ChatWorkspaceSession,
   ChatWorkspaceTab,
 } from "../../chat/workspace";
-import { errorMessage } from "../../lib/errors";
+import { commandErrorCode, errorMessage } from "../../lib/errors";
 import { parseCredentialFreeHttpUrl } from "../../lib/credentialFreeUrl";
 
 const t = i18n.getFixedT(null, "chat");
@@ -33,8 +33,7 @@ const browserUrlMessage = (reason: BrowserUrlError) => {
 };
 
 const browserFailureMessage = (cause: unknown, fallback: string) => {
-  const code = cause && typeof cause === "object" && "code" in cause ? cause.code : undefined;
-  switch (code) {
+  switch (commandErrorCode(cause)) {
     case "browser_url_too_long": return browserUrlMessage("too_long");
     case "browser_url_invalid": return browserUrlMessage("invalid");
     case "browser_url_credentials": return browserUrlMessage("credentials");

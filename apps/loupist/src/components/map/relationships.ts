@@ -1,5 +1,5 @@
 import type { KnowledgeMap, KnowledgeMapEdge, KnowledgeMapNode } from "../../contracts/knowledge";
-import { nodeCategory } from "./kinds";
+import { nodeCategory } from "../../knowledge/mapKinds";
 
 /** Groups of the inspector's Relationships view (map spec §2.3), in display order. */
 export type RelationshipGroupId = "peers" | "suppliers" | "customers" | "ownership" | "other";

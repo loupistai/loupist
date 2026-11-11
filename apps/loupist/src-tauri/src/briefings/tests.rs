@@ -48,7 +48,6 @@ fn journal_hook_is_empty_and_unattended_native_tools_are_denied() {
 }
 
 fn state_fixture() -> (tempfile::TempDir, AppState, String) {
-    use crate::store::LoupistStore;
     let root = tempfile::tempdir().unwrap();
     let workspace = root.path().join("workspace");
     std::fs::create_dir_all(workspace.join(".loupist")).unwrap();
@@ -573,7 +572,7 @@ fn shared_pack_principles_reach_the_briefing_inside_shared_markers() {
     let (_root, state, loupist_id) = state_fixture();
     let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../evals/sharing/trade-authority-principle");
-    crate::sharing::commands::seed_shared_pack(&state, &loupist_id, &folder).unwrap();
+    crate::sharing::commands::add::seed_shared_pack(&state, &loupist_id, &folder).unwrap();
     let (prompt, _) = super::build_prompt(
         &state,
         &loupist_id,
@@ -585,4 +584,46 @@ fn shared_pack_principles_reach_the_briefing_inside_shared_markers() {
         prompt.contains("<<shared"),
         "a shared principle reached the briefing unwrapped"
     );
+}
+
+#[test]
+fn briefing_settings_take_an_exact_schedule_while_saved_schedules_read_leniently() {
+    use crate::scheduled_tasks::types::Schedule;
+    use serde_json::json;
+    let samples = [
+        Schedule::Once { at_ms: 1 },
+        Schedule::Interval { every_minutes: 5 },
+        Schedule::Daily {
+            hour: 9,
+            minute: 0,
+            timezone: "UTC".into(),
+        },
+        Schedule::Weekly {
+            days: vec![1],
+            hour: 9,
+            minute: 0,
+            timezone: "UTC".into(),
+        },
+    ];
+    for schedule in samples {
+        // A new kind needs an exact twin in `commands::ExactSchedule`, then a sample here.
+        match &schedule {
+            Schedule::Once { .. }
+            | Schedule::Interval { .. }
+            | Schedule::Daily { .. }
+            | Schedule::Weekly { .. } => {}
+        }
+        let request = json!({ "loupistId": "loupist-a", "enabled": true, "schedule": schedule });
+        let parsed: commands::SettingsRequest = serde_json::from_value(request.clone()).unwrap();
+        assert_eq!(parsed.schedule.as_ref(), Some(&schedule));
+        let mut extra = request;
+        extra["schedule"]["jitter_minutes"] = json!(5);
+        assert!(serde_json::from_value::<commands::SettingsRequest>(extra).is_err());
+        let mut saved = serde_json::to_value(&schedule).unwrap();
+        saved["jitter_minutes"] = json!(5);
+        assert_eq!(serde_json::from_value::<Schedule>(saved).unwrap(), schedule);
+    }
+    let off: commands::SettingsRequest =
+        serde_json::from_value(json!({ "loupistId": "loupist-a", "enabled": false })).unwrap();
+    assert!(off.schedule.is_none());
 }

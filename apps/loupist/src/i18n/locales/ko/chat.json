@@ -500,6 +500,7 @@
       "source": "자료",
       "savedSource": "저장한 자료",
       "lens": "Lens",
+      "world": "World",
       "journal": "저널",
       "note": "리서치 노트",
       "file": "파일"
@@ -825,6 +826,10 @@
     "chatThreadIsUnavailable": "대화를 사용할 수 없어요.",
     "theReplyDidNotStartCheckTheConversationBeforeTryingAgain": "답변이 시작되지 않았어요. 다시 시도하기 전에 대화를 확인해 주세요."
   },
+  "runRegistry": {
+    "savedChatNotRefreshed": "응답은 끝났지만 저장된 대화를 아직 새로 고치지 못했어요.",
+    "couldNotStopTheRecoveredResponse": "복구한 응답을 중지하지 못했어요. 다시 시도해 주세요."
+  },
   "workspace": {
     "files": "파일",
     "newTab": "새 탭",
@@ -835,7 +840,7 @@
     "thisLinkTypeCannotBeOpened": "이 유형의 링크는 열 수 없어요",
     "unsupportedLink": "지원하지 않는 링크예요.",
     "couldNotOpenThisLink": "링크를 열지 못했어요",
-    "couldNotOpenThisLink2": "링크를 열지 못했어요. 주소를 확인해 주세요.",
+    "couldNotOpenThisLinkAlert": "링크를 열지 못했어요. 주소를 확인해 주세요.",
     "openLinkedLens": "연결된 Lens 열기",
     "openFile": "{{localPath}} 열기",
     "openExternalLink": "{{externalUrl}} 열기",

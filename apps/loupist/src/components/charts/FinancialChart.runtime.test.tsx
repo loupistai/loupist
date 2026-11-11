@@ -27,9 +27,11 @@ const dataset: ChartDataset = {
 const chart: ChartDocument = {
   dataset_id: dataset.id,
   dataset_digest: dataset.digest,
-  view: { kind: "candlestick", symbol: "TEST", interval: "1d", time: "date", open: "open", high: "high", low: "low", close: "close" },
+  view: { kind: "candlestick", symbol: "TEST", interval: "1d", time: "date", open: "open", high: "high", low: "low", close: "close", volume: null, turnover: null, price_precision: null },
   studies: [{ module_id: "SAR", calc_params: [] }],
-  drawings: [{ kind: "horizontal_line", points: [{ timestamp: "2026-08-01", value: 101 }], label: "support" }],
+  drawings: [{ kind: "horizontal_line", points: [{ timestamp: "2026-08-01", value: 101 }], label: "support", color: null, line_width: null, line_style: null }],
+  custom_series: [],
+  note: null,
 };
 
 it("keeps original drawings locked until the user enables editing", async () => {

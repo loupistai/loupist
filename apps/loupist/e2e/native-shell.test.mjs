@@ -15,7 +15,7 @@ test("map counts come from the visible map after routing, never a retained hidde
     span(" · 1 new this week"), span("34 on the map · 34 relationships")];
   const browser = { execute: async script => runInNewContext(`(${script})()`, {
     document: { querySelectorAll: selector => {
-      assert.equal(selector, ".map-view .map-stats > span");
+      assert.equal(selector, "[data-testid=map-view] [data-testid=map-stats] > span");
       return spans;
     } },
     getComputedStyle: element => ({ visibility: element.visibility }),
@@ -32,7 +32,7 @@ function mapHost({ text = frameSummary, width = 800, firstPaintMs = "12.00" } = 
   return {
     querySelector: (selector) => selector === "canvas"
       ? { getBoundingClientRect: () => ({ width, height: 600 }) }
-      : selector === ".map-probe" ? { textContent: text } : null,
+      : selector === "[data-testid=map-probe]" ? { textContent: text } : null,
     getAttribute: () => firstPaintMs,
   };
 }
@@ -54,7 +54,7 @@ function browserFixture(frames) {
         location: { href: frame.url ?? requestedUrl },
         document: {
           documentElement: { dataset: { previewReady: frame.ready ?? "true", previewError: frame.error } },
-          querySelector: (selector) => selector === '#workspace-panel[data-panel-kind="world"] .map-view .map-canvas' ? host : hidden,
+          querySelector: (selector) => selector === '#workspace-panel[data-panel-kind="world"] [data-testid=map-view] [data-testid=map-canvas]' ? host : hidden,
         },
       });
     },

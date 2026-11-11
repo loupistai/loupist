@@ -7,10 +7,10 @@ use std::{
 };
 use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
 
-const OPENDART: &str = "opendart.disclosures";
-const KRX: &str = "krx.market-data";
-const WORLD_BANK: &str = "world-bank.indicators";
-const DEFILLAMA: &str = "defillama.tvl";
+use crate::finance_data::{
+    DEFILLAMA_SOURCE_ID as DEFILLAMA, KRX_SOURCE_ID as KRX, OPENDART_SOURCE_ID as OPENDART,
+    WORLD_BANK_SOURCE_ID as WORLD_BANK,
+};
 
 /// Shared cap for parallel connection reads. Pi already issues tool calls
 /// concurrently; this keeps one provider from being stampeded.
@@ -78,12 +78,15 @@ fn finance_error(error: crate::finance_data::FinanceDataError) -> BrokerError {
         crate::finance_data::FinanceDataError::Offline(provider) => {
             BrokerError::Offline(provider.to_owned())
         }
-        crate::finance_data::FinanceDataError::ServiceApprovalRequired { provider, services } => {
-            BrokerError::ProviderApprovalRequired {
-                provider: provider.to_owned(),
-                services: services.into_iter().map(str::to_owned).collect(),
-            }
-        }
+        crate::finance_data::FinanceDataError::ServiceApprovalRequired {
+            provider,
+            services,
+            next,
+        } => BrokerError::ProviderApprovalRequired {
+            provider: provider.to_owned(),
+            services: services.into_iter().map(str::to_owned).collect(),
+            next: next.into(),
+        },
         error => BrokerError::Execution(error.to_string()),
     }
 }
@@ -371,7 +374,7 @@ impl AppToolExecutor {
         if let Some(cutoff) = cutoff {
             apply_as_of_cutoff(&mut output, cutoff)?;
         }
-        self.validate_provider_tool_output(output, "worldbank_series", WORLD_BANK)
+        self.validate_provider_tool_output(output, ToolMethod::WorldbankSeries)
     }
 
     /// Dated daily DefiLlama rows; a day's value is known at its end, so `as_of`
@@ -395,7 +398,7 @@ impl AppToolExecutor {
         if let Some(cutoff) = cutoff {
             apply_observation_cutoff(&mut output, cutoff)?;
         }
-        self.validate_provider_tool_output(output, "defillama_read", DEFILLAMA)
+        self.validate_provider_tool_output(output, ToolMethod::DefillamaRead)
     }
 
     pub(super) async fn krx_daily_quote(
@@ -430,7 +433,7 @@ impl AppToolExecutor {
             // A daily bar is known at the close of its date.
             apply_observation_cutoff(&mut output, cutoff)?;
         }
-        self.validate_provider_tool_output(output, "krx_daily_quote", KRX)
+        self.validate_provider_tool_output(output, ToolMethod::KrxDailyQuote)
     }
 
     pub(super) async fn kis_operation_search(&self, params: Value) -> Result<Value, BrokerError> {
@@ -588,7 +591,7 @@ impl AppToolExecutor {
         if let Some(cutoff) = cutoff {
             apply_as_of_cutoff(&mut output, cutoff)?;
         }
-        self.validate_provider_tool_output(output, "dart_financials", OPENDART)
+        self.validate_provider_tool_output(output, ToolMethod::DartFinancials)
     }
 
     pub(super) async fn dart_filing_search(
@@ -632,7 +635,7 @@ impl AppToolExecutor {
         if let Some(cutoff) = cutoff {
             apply_as_of_cutoff(&mut output, cutoff)?;
         }
-        self.validate_provider_tool_output(output, "dart_filing_search", OPENDART)
+        self.validate_provider_tool_output(output, ToolMethod::DartFilingSearch)
     }
 
     pub(super) async fn dart_filing_read(
@@ -659,7 +662,7 @@ impl AppToolExecutor {
         if let Some(cutoff) = cutoff {
             apply_as_of_cutoff(&mut output, cutoff)?;
         }
-        self.validate_provider_tool_output(output, "dart_filing_read", OPENDART)
+        self.validate_provider_tool_output(output, ToolMethod::DartFilingRead)
     }
 
     /// One kind of capital decision (주요사항보고) filed in a date range.
@@ -694,7 +697,7 @@ impl AppToolExecutor {
         if let Some(cutoff) = cutoff {
             apply_as_of_cutoff(&mut output, cutoff)?;
         }
-        self.validate_provider_tool_output(output, "dart_major_report", OPENDART)
+        self.validate_provider_tool_output(output, ToolMethod::DartMajorReport)
     }
 
     /// 5% holders' or insiders' ownership reports, newest first.
@@ -728,7 +731,7 @@ impl AppToolExecutor {
         if let Some(cutoff) = cutoff {
             apply_as_of_cutoff(&mut output, cutoff)?;
         }
-        self.validate_provider_tool_output(output, "dart_ownership", OPENDART)
+        self.validate_provider_tool_output(output, ToolMethod::DartOwnership)
     }
 
     /// A year's dividends from the annual report and the record date from
@@ -763,7 +766,7 @@ impl AppToolExecutor {
             apply_as_of_cutoff(&mut output, cutoff)?;
             leave_out_later_notice(&mut output, cutoff);
         }
-        self.validate_provider_tool_output(output, "dart_dividends", OPENDART)
+        self.validate_provider_tool_output(output, ToolMethod::DartDividends)
     }
 }
 

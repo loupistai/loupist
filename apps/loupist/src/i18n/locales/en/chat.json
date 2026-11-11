@@ -529,6 +529,7 @@
       "source": "Source",
       "savedSource": "Saved source",
       "lens": "Lens",
+      "world": "World",
       "journal": "Journal",
       "note": "Research note",
       "file": "File"
@@ -864,6 +865,10 @@
     "chatThreadIsUnavailable": "Chat thread is unavailable.",
     "theReplyDidNotStartCheckTheConversationBeforeTryingAgain": "The reply did not start. Check the conversation before trying again."
   },
+  "runRegistry": {
+    "savedChatNotRefreshed": "The response finished, but the saved Chat could not be refreshed yet.",
+    "couldNotStopTheRecoveredResponse": "Could not stop the recovered response."
+  },
   "workspace": {
     "files": "Files",
     "newTab": "New tab",
@@ -874,7 +879,7 @@
     "thisLinkTypeCannotBeOpened": "This link type cannot be opened",
     "unsupportedLink": "Unsupported link.",
     "couldNotOpenThisLink": "Could not open this link",
-    "couldNotOpenThisLink2": "Could not open this link.",
+    "couldNotOpenThisLinkAlert": "Could not open this link.",
     "openLinkedLens": "Open linked Lens",
     "openFile": "Open {{localPath}}",
     "openExternalLink": "Open {{externalUrl}}",

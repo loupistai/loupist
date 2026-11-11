@@ -27,6 +27,13 @@ See [Which tool](../../apps/loupist/e2e/README.md#which-tool).
 
 ## Whole-app UI review
 
+`src/preview/scenarios.ts` is the registry: it assembles each feature's scenarios from
+`src/preview/scenarios/<feature>.ts` (helpers in `scenarios/kit.ts`) and the older
+`src/preview/*Scenarios.ts` modules, in capture order. Captures, the manifest and
+baselines key on scenario ids, so keep an id and its place when moving a scenario.
+Scenario fixtures start from `src/preview/fixtures.ts` (`PreviewBridge`,
+`prepareFixture`); a feature's own fixture is in `src/preview/fixtures/<feature>.ts`.
+
 The complete scenario registry includes onboarding, every Settings destination,
 per-Loupist preferences, Skill management dialogs, update states, research readers,
 sharing, connections, financial cards and their empty/error/loading states.

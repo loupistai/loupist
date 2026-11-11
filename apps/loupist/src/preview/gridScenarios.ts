@@ -6,7 +6,8 @@
  */
 import type { AssetsGrid, CalcInputUnit, ChatArtifactView, ChatEvidenceRef, ChatMessage, ConflictGrid, GridCell, GridDocument, LoupistArtifactItem, NumberCheck } from "../types";
 import { GRID_SCHEMA } from "../contracts/chat";
-import { prepareConflictsFixture, prepareFixture, previewKo, type PreviewBridge } from "./fixtures";
+import { prepareFixture, previewKo, type PreviewBridge } from "./fixtures";
+import { prepareConflictsFixture } from "./fixtures/conflicts";
 import type { PreviewScenario } from "./scenarios";
 
 type Helpers = {
@@ -195,6 +196,7 @@ const view = (id: string, title: string, grid: GridDocument, evidence: ChatEvide
   artifact: { id, chat_session_id: "preview-chat", kind: "grid", title, current_revision: 1, created_at_ms: Date.parse(RETRIEVED), updated_at_ms: Date.parse(RETRIEVED) },
   revision: { artifact_id: id, revision: 1, payload: { kind: "grid", schema: GRID_SCHEMA, grid }, digest: "b".repeat(64), source_message_id: "grid-answer", created_at_ms: Date.parse(RETRIEVED) },
   evidence_refs: evidence,
+  chart_dataset: null,
 });
 
 function answer(id: string, title: string, content: string, asOf?: string): ChatMessage {
@@ -203,8 +205,8 @@ function answer(id: string, title: string, content: string, asOf?: string): Chat
     id: "grid-answer", role: "assistant", status: "complete", created_at: "2026-03-20T06:01:00Z", content, ...(asOf ? { as_of: asOf } : {}),
     artifact_refs: [{ artifact_id: id, revision: 1, kind: "grid", title, digest: "b".repeat(64) }],
     progress: { startedAtMs: at, finishedAtMs: at + 38_000, items: [
-      { id: "step-statements", kind: "tool", toolName: "dart_financials", category: "finance", operation: "read", action: "Read financial statements", target: COMPANIES.map((company) => company.name()).join(" · "), status: "succeeded", startedAtMs: at, finishedAtMs: at + 900 },
-      { id: "step-grid", kind: "tool", toolName: "grid_publish", category: "artifact", operation: "publish", action: "Built a table", running: "Building a table", target: title, status: "succeeded", startedAtMs: at + 30_000, finishedAtMs: at + 31_000 },
+      { id: "step-statements", kind: "tool", toolName: "dart_financials", category: "finance", operation: "read", action: "Read financial statements", target: COMPANIES.map((company) => company.name()).join(" · "), status: "succeeded", startedAtMs: at, finishedAtMs: at + 900, href: null },
+      { id: "step-grid", kind: "tool", toolName: "grid_publish", category: "artifact", operation: "publish", action: "Built a table", running: "Building a table", target: title, status: "succeeded", startedAtMs: at + 30_000, finishedAtMs: at + 31_000, href: null },
     ] },
     execution_model: { profile_id: "openai/gpt-6.1-sol", name: "GPT-6.1 Sol", provider: "openai", model: "gpt-6.1-sol", thinking_level: "medium", run_options: {} },
   };
@@ -287,9 +289,9 @@ export function gridScenarios({ base, select, until, click, selectPanel, hasLayo
         observer({ type: "started", run_id });
         const title = gridFixture("card").title;
         observer({ type: "progress", run_id, sequence: 1, progress: { startedAtMs: Date.now() - 20_000, items: [
-          { id: "step-statements", kind: "tool", toolName: "dart_financials", category: "finance", operation: "read", action: "Read financial statements", target: COMPANIES.map((company) => company.name()).join(" · "), status: "succeeded" },
-          { id: "step-grid", kind: "tool", toolName: "grid_publish", category: "artifact", operation: "publish", action: "Built a table", running: "Building a table", target: title, status: "running" },
-        ] } });
+          { id: "step-statements", kind: "tool", toolName: "dart_financials", category: "finance", operation: "read", action: "Read financial statements", target: COMPANIES.map((company) => company.name()).join(" · "), status: "succeeded", href: null, startedAtMs: 0, finishedAtMs: null },
+          { id: "step-grid", kind: "tool", toolName: "grid_publish", category: "artifact", operation: "publish", action: "Built a table", running: "Building a table", target: title, status: "running", href: null, startedAtMs: 0, finishedAtMs: null },
+        ], finishedAtMs: null } });
         return { run_id };
       };
     } },

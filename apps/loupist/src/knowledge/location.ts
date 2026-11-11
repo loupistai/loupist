@@ -1,6 +1,6 @@
 import i18n from "@/i18n";
 import type { KnowledgeReference, MemoryRef, MemoryUpdateChange } from "../contracts/memory";
-import { sourceTitle } from "../components/knowledge/hostSource";
+import { sourceTitle } from "./hostSource";
 import type {
   GraphCamera,
   GraphClaim,

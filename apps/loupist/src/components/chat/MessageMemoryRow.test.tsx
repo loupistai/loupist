@@ -83,7 +83,7 @@ describe("what the answer learned", () => {
   it("counts a perspective the host delivered as a used page", async () => {
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const loupistId = (await bridge.loupistList())[0].id;
-    const message: ChatMessage = { ...filed, id: "answer-2", lens_receipts: [{ recordId: "lens-perspective", revisionId: "rev", kind: "perspective", title: "Evidence-led perspective", delivery: "context" }] };
+    const message: ChatMessage = { ...filed, id: "answer-2", lens_receipts: [{ recordId: "lens-perspective", revisionId: "rev", kind: "perspective", title: "Evidence-led perspective", delivery: "context", revisionDigest: "digest" }] };
     render(<MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={message} />);
     const receipt = await screen.findByRole("navigation", { name: "What this answer used and saved" });
     expect(receipt).toHaveTextContent("Used 1 page");

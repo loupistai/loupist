@@ -1,12 +1,13 @@
 import { createLabelFrame } from "./labelFrame";
-import { conflictMark, entityLabel, LIVE_GLOW_REACH, nodeRings, placeLabels, showMetricLabel } from "./labels";
+import { conflictMark, LIVE_GLOW_REACH, nodeRings, placeLabels, showMetricLabel } from "./labels";
+import { entityLabel } from "../../knowledge/mapItems";
 import { relationName } from "./relations";
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import ForceGraph, { type ForceGraphMethods } from "react-force-graph-2d";
 import type { KnowledgeMapEdge, KnowledgeMapNode } from "../../contracts/knowledge";
 import { useTranslation } from "../../i18n";
 import { dateValue } from "../../knowledge/presentation";
-import { isMetricNode, nodeCategory, nodeColorKey, nodeRadius } from "./kinds";
+import { isMetricNode, nodeCategory, nodeColorKey, nodeRadius } from "../../knowledge/mapKinds";
 import { presentAt, useReducedMapMotion } from "./replay";
 import type { PositionedNode } from "./layout";
 export type MapCanvasControls = { fit: () => void; focus: (id: string) => void; canvas: () => HTMLCanvasElement | null; exportLabels?: (enabled: boolean) => void };
@@ -114,9 +115,11 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
   const host = useRef<HTMLDivElement>(null);
   const reduced = useReducedMapMotion();
   const compactGlowStart = useRef(performance.now());
-  useEffect(() => { compactGlowStart.current = performance.now(); }, [(learningGlowIds ?? compact?.glowNodeIds), compact?.glowEdgeIds]);
-  const compactOrder = useMemo(() => new Map([...((learningGlowIds ?? compact?.glowNodeIds) ?? [])].map((id, index) => [id, index])), [(learningGlowIds ?? compact?.glowNodeIds)]);
-  const compactGlowing = !reduced && Boolean((learningGlowIds ?? compact?.glowNodeIds)?.size || compact?.glowEdgeIds?.size);
+  const glowNodeIds = learningGlowIds ?? compact?.glowNodeIds;
+  const glowEdgeIds = compact?.glowEdgeIds;
+  useEffect(() => { compactGlowStart.current = performance.now(); }, [glowNodeIds, glowEdgeIds]);
+  const compactOrder = useMemo(() => new Map([...(glowNodeIds ?? [])].map((id, index) => [id, index])), [glowNodeIds]);
+  const compactGlowing = !reduced && Boolean(glowNodeIds?.size || glowEdgeIds?.size);
   // A steady ring is not motion, so it stays under reduced motion; only the fade after the run is skipped.
   const liveIds = compact?.liveNodeIds;
   const liveFade = useRef<{ ids: ReadonlySet<string>; start: number }>({ ids: new Set(), start: 0 });
@@ -191,6 +194,7 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
     setReplayAnimating(until > performance.now());
     const timer = setTimeout(() => setReplayAnimating(false), Math.max(0, until - performance.now()));
     return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- replay staging re-runs only when the replay, data or motion setting changes; it reads the palette and visibility then.
   }, [replayAt, nodes, edges, reduced]);
   const api = useRef<ForceGraphMethods<PositionedNode, Link> | undefined>(undefined);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -208,6 +212,7 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
     pulseStart.current = performance.now(); setPulsing(true);
     const timer = setTimeout(() => setPulsing(false), palette.pulseMs);
     return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- pulses once per overlay change.
   }, [overlayId]);
   const [probe, setProbe] = useState("");
   const frameTimes = useRef<number[]>([]);
@@ -218,6 +223,7 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
   const probeEnabled = import.meta.env.DEV && new URLSearchParams(location.search).get("probe") === "1";
   const drawProbe = import.meta.env.DEV && new URLSearchParams(location.search).get("probe") === "draw";
   // Leaving names stay in the drawing only while they fade.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the leaving names live in a ref; these values are its recompute triggers.
   const ghosts = useMemo(() => fadeLive() ? { nodes: scopeFade.current.leaving, edges: scopeFade.current.leavingEdges } : { nodes: [], edges: [] }, [nodes, edges, scopeFading]);
   const ghostIds = useMemo(() => new Set(ghosts.nodes.map((n) => n.id)), [ghosts]);
   const ghostEdgeIds = useMemo(() => new Set(ghosts.edges.map((e) => e.id)), [ghosts]);
@@ -403,6 +409,7 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
       if (graph.zoom() > cap) graph.zoom(cap, 0);
       else if (graph.zoom() < floor) graph.zoom(floor, 0);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- refits when the scope changes or the canvas first gets a size, not on every resize.
   }, [scopeKey, size.width > 0, size.height > 0]);
   useEffect(() => {
     controls.current = {
@@ -412,6 +419,7 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
       focus,
     };
     return () => { controls.current = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `fit` and `focus` close over the listed values.
   }, [controls, data, size, insets, visibleIds, replayAt, reduced]);
   const priorViewport = useRef({ width: 0, height: 0, left: 0, right: 0, top: 0, bottom: 0, card: "" });
   useEffect(() => {
@@ -431,6 +439,7 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
     else if (!compact && ((!prior.width && covered) || moved)) fit();
     else if (compact && ((prior.top !== insets.top && insets.top) || (!prior.width && (insets.bottom || card)) || (prior.width && (prior.bottom !== insets.bottom || prior.card !== card)))) fit();
     priorViewport.current = { ...size, left: insets.left, right: insets.right, top: insets.top, bottom: insets.bottom, card };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- re-places the view on selection, size and inset changes; `fit` and `focus` read the current data.
   }, [selectedId, size.width, size.height, insets]);
   const activeLink = (link: Link) => endpoint(link.source) === (hovered?.id ?? selectedId) || endpoint(link.target) === (hovered?.id ?? selectedId);
   useEffect(() => {
@@ -515,7 +524,7 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
     return () => { cancelled = true; };
   }, [drawProbe, size.width, size.height, nodes.length, data, palette, hubs, disputedIds, i18n.language]);
   const labelFrame = createLabelFrame();
-  return <div ref={host} className="map-canvas" role="img" aria-label={stats}>
+  return <div ref={host} className="map-canvas" data-testid="map-canvas" role="img" aria-label={stats}>
     {size.width > 0 && size.height > 0 && nodes.length ? <ForceGraph<PositionedNode, Link> ref={api} width={size.width} height={size.height} graphData={data}
       nodeVisibility={node => visibleIds.has(node.id) || ghostIds.has(node.id)} linkVisibility={link => edgeVisible(link) || ghostEdgeIds.has(link.id)}
       autoPauseRedraw={!probeEnabled && !pulsing && !compactGlowing && !liveFading && !replayAnimating && !scopeFading} backgroundColor={palette.colors.bg} minZoom={.3} maxZoom={4} cooldownTicks={0} warmupTicks={0} enableNodeDrag={false} nodeLabel={() => ""}
@@ -679,6 +688,6 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
     /> : null}
     {tooltip ? <div className="map-tooltip" role="tooltip"><strong>{entityLabel(tooltip, i18n.language)}</strong><small>{t(`map.kind.${nodeCategory(tooltip)}`)} · {t("map.relationships", { count: tooltip.degree })}{tooltip.firstSeenAtMs ? ` · ${t("map.firstSeen", { date: dateValue(new Date(tooltip.firstSeenAtMs).toISOString()) })}` : ""}</small></div> : null}
     {hoveredEdge?.relation && !tooltip ? <div className="map-tooltip" role="tooltip">{relationName(hoveredEdge.relation, t)}</div> : null}
-    {probeEnabled || drawProbe ? <output className="map-probe">{probe || t("map.measuring")}</output> : null}
+    {probeEnabled || drawProbe ? <output className="map-probe" data-testid="map-probe">{probe || t("map.measuring")}</output> : null}
   </div>;
 }

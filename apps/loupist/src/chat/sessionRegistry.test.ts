@@ -2,6 +2,7 @@ import { MockLoupistBridge } from "../bridge/mockBridge";
 import type { ChatThread } from "../types";
 import { fromLoupistUIMessage, toLoupistUIMessage } from "./ai-sdk";
 import { ChatSessionRegistry } from "./sessionRegistry";
+import { completedRun } from "../test/streamFixtures";
 
 const thread = (id: string): ChatThread => ({ id, loupist_id: "loupist-quality", title: id, use_memory: false, update_memory: false, messages: [], updated_at: "2026-08-12T00:00:00.000Z" });
 const handlers = () => ({ onArtifact: vi.fn(), onMessages: vi.fn(), onStatus: vi.fn(), onTitle: vi.fn() });
@@ -34,8 +35,8 @@ it("runs two Chats concurrently and keeps progress out of each answer", async ()
   vi.spyOn(bridge, "chatSend").mockImplementation(async (request, observer) => {
     const label = request.thread_id;
     observer({ type: "started", run_id: request.run_id });
-    observer({ type: "progress", run_id: request.run_id, progress: { startedAtMs: 1, items: [{ id: `commentary-${label}`, kind: "commentary", text: `${label} live commentary` }] } });
-    observer({ type: "completed", run_id: request.run_id, message_id: `assistant-${label}`, final_text: `Answer for ${label}`, ...terminal });
+    observer({ type: "progress", run_id: request.run_id, sequence: 1, progress: { startedAtMs: 1, items: [{ id: `commentary-${label}`, kind: "commentary", text: `${label} live commentary` }], finishedAtMs: null } });
+    observer({ type: "completed", ...completedRun, run_id: request.run_id, message_id: `assistant-${label}`, final_text: `Answer for ${label}`, ...terminal });
     return { run_id: request.run_id };
   });
   const registry = new ChatSessionRegistry(bridge, handlers());
@@ -52,7 +53,7 @@ it("replaces streamed partial text with the canonical native error terminal", as
   vi.spyOn(bridge, "chatSend").mockImplementation(async (request, observer) => {
     observer({ type: "started", run_id: request.run_id });
     observer({ type: "delta", run_id: request.run_id, text: "Partial provider answer." });
-    observer({ type: "error", run_id: request.run_id, message: "Response could not be completed.", message_id: "assistant-canonical-error", final_text: "Response could not be completed.", ...terminal });
+    observer({ type: "error", failure_kind: "other", run_id: request.run_id, message: "Response could not be completed.", message_id: "assistant-canonical-error", final_text: "Response could not be completed.", placeholder: true, ...terminal });
     return { run_id: request.run_id };
   });
   const registry = new ChatSessionRegistry(bridge, handlers());

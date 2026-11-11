@@ -91,7 +91,7 @@ pub use graph_service::GraphSupervisor;
 pub use model::*;
 pub use present::present_world;
 pub use schema::embedded_ddl;
-pub(crate) use schema::made_by_earlier_build;
+pub(crate) use schema::KNOWLEDGE_SCHEMA_VERSION;
 #[cfg(feature = "eval-harness")]
 pub use world_schema::curated_seed;
 pub(crate) use world_schema::WorldExtension;
@@ -1074,6 +1074,7 @@ pub(crate) mod test_support;
 mod tests;
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SourceProcessing {
     pub job_id: Option<String>,

@@ -57,6 +57,7 @@ export function useMemoryPreview(evidence: ChatEvidenceRef, excerpt = evidence.e
       if (active) setResult({ key, text });
     }).catch(() => { if (active) setResult({ key, text: isMemoryTool(evidence) && isEnvelope(excerpt) ? incomplete() : null }); });
     return () => { active = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` names the evidence fields, excerpt and language this preview reads; an equal evidence object must not refetch.
   }, [key, candidate]);
   return !candidate ? null : result?.key === key ? result.text : t("memoryPreview.openingSavedPreview");
 }

@@ -29,7 +29,7 @@ import type {
   MarketplaceEntry,
 } from "../../marketplace/types";
 import { CONNECTION_STATES, connectionState } from "../../marketplace/readiness";
-import { errorMessage } from "../../lib/errors";
+import { commandErrorCode, errorMessage } from "../../lib/errors";
 import type { LoupistBridge } from "../../types";
 import { accessLabel, setupEntryLabel } from "./MarketplaceCard";
 
@@ -261,7 +261,7 @@ export function MarketplaceSetupDialog({
           : i18n.t(refreshed ? "connections:marketplaceSetupDialog.readyEnabled" : "connections:marketplaceSetupDialog.readyEnabledRefresh", { name: connectionText(entry.name) }),
       });
     } catch (cause: unknown) {
-      if (phase === "configure" && cause && typeof cause === "object" && "code" in cause && cause.code === "config_apply_pending") {
+      if (phase === "configure" && commandErrorCode(cause) === "config_apply_pending") {
         notifyConfigurationChanged();
       }
       if (selectedEntryIdRef.current !== operationEntryId || operationRef.current !== operation) return;
@@ -630,7 +630,7 @@ export function MarketplaceSetupDialog({
       >
         <DialogContent className="marketplace-delete-dialog" showCloseButton={setupBusy !== "delete"}>
           <DialogHeader>
-            <DialogTitle>{i18n.t("connections:marketplaceSetupDialog.deleteSavedCredentials2")}</DialogTitle>
+            <DialogTitle>{i18n.t("connections:marketplaceSetupDialog.deleteSavedCredentialsTitle")}</DialogTitle>
             <DialogDescription>
               {i18n.t("connections:marketplaceSetupDialog.deleteDescription", { name: (entry ? connectionText(entry.name) : undefined) ?? i18n.t("connections:marketplaceSetupDialog.thisTool") })}</DialogDescription>
           </DialogHeader>

@@ -84,7 +84,7 @@ it("saves directly to the Loupist once and opens the resulting record", async ()
   await user.dblClick(screen.getByRole("button", { name: "Save source" }));
   expect(save).toHaveBeenCalledTimes(1);
   expect(save.mock.calls[0][0]).toEqual({ loupistId: "loupist-quality", title: "Annual filing", originLocator: "Example issuer", coverage: "included_full", text: "Capacity increased.", file: undefined });
-  await act(async () => resolve({ recordId: "saved-record", sourceId: "saved-source", captureId: "saved-capture", spanId: "saved-span", revisionId: "saved-revision", revisionDigest: "digest" }));
+  await act(async () => resolve({ recordId: "saved-record", sourceId: "saved-source", captureId: "saved-capture", spanId: "saved-span", revisionId: "saved-revision", revisionDigest: "digest", representationId: null, selectedDigest: null, materialDigest: null }));
   expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ recordId: "saved-record", selection: { kind: "source", sourceId: "saved-source", spanId: "saved-span" } }));
 });
 
@@ -106,7 +106,7 @@ it("refreshes exact source relationships and processing errors without losing th
   const originalRead = props.bridge.knowledgeSourceRead.bind(props.bridge);
   const read = vi.spyOn(props.bridge, "knowledgeSourceRead")
     .mockImplementationOnce(async (request) => ({ ...await originalRead(request), relatedClaims: [], processing: { jobId: "pending-world", status: "queued", error: "Earlier processing issue" } }))
-    .mockImplementation(async (request) => ({ ...await originalRead(request), processing: { jobId: "pending-world", status: "completed" } }));
+    .mockImplementation(async (request) => ({ ...await originalRead(request), processing: { jobId: "pending-world", status: "completed", error: null } }));
   vi.spyOn(props.bridge, "knowledgeGraphJob").mockResolvedValue({ jobId: "pending-world", loupistId: props.location.loupistId, worldRecordId: "world-protocols", worldRevisionId: "rev-owned-1", status: "completed", payloadDigest: "digest", createdAtMs: 0, hostMayRedrive: false });
   vi.useFakeTimers();
   try {
@@ -146,7 +146,7 @@ it("reuses the exact Reader in a side panel and passes its exact passage to Chat
 
 it("filters source processing independently of successful source storage", async () => {
   const props = await fixture();
-  const catalog = { ...props.catalog, sources: ["queued", "completed", "no_text", "failed_before_mutation"].map((status, index) => ({ ...props.catalog.sources[0], recordId: `source-${index}`, objects: [{ id: `source-${index}`, title: `Report ${index}`, processing: { status } }] })) };
+  const catalog = { ...props.catalog, sources: ["queued", "completed", "no_text", "failed_before_mutation"].map((status, index) => ({ ...props.catalog.sources[0], recordId: `source-${index}`, objects: [{ id: `source-${index}`, title: `Report ${index}`, processing: { jobId: null, status, error: null } }] })) };
   function Harness() {
     const [location, setLocation] = useState<KnowledgeLocation>({ loupistId: props.location.loupistId, surface: "source" });
     return <SourceWorkspace {...props} catalog={catalog} location={location} onPatch={setLocation} />;
@@ -194,7 +194,7 @@ it("preserves a source list's scroll and focus when its Reader closes", async ()
 it("exports the selected original binary file through the authorized source request", async () => {
   const props = await fixture();
   const originalRead = props.bridge.knowledgeSourceRead.bind(props.bridge);
-  vi.spyOn(props.bridge, "knowledgeSourceRead").mockImplementation(async (request) => ({ ...await originalRead(request), material: "original", spans: [{ spanId: "binary-span", mediaType: "application/pdf", selector: "whole_representation", contextNote: "Original file bytes" }], selectedSpanId: "binary-span" }));
+  vi.spyOn(props.bridge, "knowledgeSourceRead").mockImplementation(async (request) => ({ ...await originalRead(request), material: "original", spans: [{ spanId: "binary-span", mediaType: "application/pdf", selector: "whole_representation", contextNote: "Original file bytes", text: null }], selectedSpanId: "binary-span" }));
   const exportFile = vi.spyOn(props.bridge, "knowledgeSourceExport").mockResolvedValue("/tmp/report.pdf");
   render(<SourceWorkspace {...props} />);
   await userEvent.setup().click(await screen.findByRole("button", { name: "Export original file" }));

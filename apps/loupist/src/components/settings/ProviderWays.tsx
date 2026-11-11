@@ -3,18 +3,21 @@ import { ChevronRightIcon } from "lucide-react";
 import { useTranslation } from "@/i18n";
 import { formatNumber } from "@/i18n/format";
 import { Disclosure } from "@/components/ui/disclosure";
+import { FEATURED_KEY_ROWS, SIGN_IN_PROVIDERS, isUpstageEndpoint } from "@/chat/providerManifest";
 import { providerKeyName } from "@/chat/providerNames";
 import type { ModelCatalog, ModelProviderOption, ProviderStatusView } from "@/types";
 import "@/styles/connect.css";
 
-/** Sign-in rows, in the order the spec lists them (providers §2.1). */
-const SIGN_IN = ["openai", "xai"] as const;
+/*
+ * Which rows are featured, and their order, come from the provider manifest
+ * (sign-ins, then one API-key row each; Upstage Solar is a preset endpoint Rust
+ * saves, not a Pi provider). These maps hold only each row's localized copy; a
+ * sign-in without its own strings shows the catalog's sign-in label.
+ */
 export const SIGN_IN_LABEL = { openai: "wizard.chatgpt", xai: "wizard.xai" } as const;
-const SIGN_IN_NOTE = { openai: "wizard.chatgptNote", xai: null } as const;
-/** One API-key row each; Upstage Solar is a preset endpoint Rust saves, not a Pi provider. */
-export const KEY_ROWS = ["anthropic", "openai", "google", "xai", "upstage", "openrouter"] as const;
-const KEY_NOTE = { anthropic: null, openai: null, google: null, xai: null, upstage: "wizard.upstageNote", openrouter: "wizard.openrouterNote" } as const;
-export const UPSTAGE_BASE_URL = "https://api.upstage.ai/v1";
+const SIGN_IN_LABELS: Partial<Record<string, (typeof SIGN_IN_LABEL)[keyof typeof SIGN_IN_LABEL]>> = SIGN_IN_LABEL;
+const SIGN_IN_NOTE: Partial<Record<string, "wizard.chatgptNote">> = { openai: "wizard.chatgptNote" };
+const KEY_NOTE: Partial<Record<string, "wizard.upstageNote" | "wizard.openrouterNote">> = { upstage: "wizard.upstageNote", openrouter: "wizard.openrouterNote" };
 
 export type ProviderWaysActions = {
   onSignIn: (provider: string) => void;
@@ -69,13 +72,14 @@ export function ProviderWays({ catalog, omitSignIn = [], includeMore, disabled, 
     if (status && (status.credential_kind === "plan") === signInRow) return <ProviderStateLabel status={status} />;
     return !status && signInRow && option?.recommended ? <span className="connect-recommended">{ts("providers.connectedRecommended")}</span> : null;
   };
-  const signIn = SIGN_IN.filter(id => !omitSignIn.includes(id) && find(id)?.sign_in_flow);
-  const keys = KEY_ROWS.filter(id => id === "upstage" || find(id)?.api_key);
-  const upstage = (catalog?.custom_providers ?? []).find(item => item.base_url.startsWith(UPSTAGE_BASE_URL));
-  const more = includeMore ? providers.filter(option => option.group === "more" && option.api_key && !(KEY_ROWS as readonly string[]).includes(option.id)) : [];
+  const signIn = SIGN_IN_PROVIDERS.filter(id => !omitSignIn.includes(id) && find(id)?.sign_in_flow);
+  const keys = FEATURED_KEY_ROWS.filter(id => id === "upstage" || find(id)?.api_key);
+  const upstage = (catalog?.custom_providers ?? []).find(item => isUpstageEndpoint(item.base_url));
+  const more = includeMore ? providers.filter(option => option.group === "more" && option.api_key && !FEATURED_KEY_ROWS.includes(option.id)) : [];
+  const signInLabel = (id: string) => { const key = SIGN_IN_LABELS[id]; return key ? t(key) : find(id)?.oauth?.label ?? id; };
   return <div className="connect-ways">
     {signIn.length ? <><GroupLabel>{t("wizard.groupSignIn")}</GroupLabel>
-      {signIn.map(id => { const note = SIGN_IN_NOTE[id]; return <Row key={id} id={`sign-in-${id}`} label={t(SIGN_IN_LABEL[id])} note={note ? t(note) : undefined}
+      {signIn.map(id => { const note = SIGN_IN_NOTE[id]; return <Row key={id} id={`sign-in-${id}`} label={signInLabel(id)} note={note ? t(note) : undefined}
         trailing={trailing(find(id), true)} disabled={disabled} onClick={() => actions.onSignIn(id)} />; })}</> : null}
     <GroupLabel>{t("wizard.groupKeys")}</GroupLabel>
     {keys.map(id => { const note = KEY_NOTE[id]; return <Row key={id} id={`key-${id}`} label={providerKeyName(id, find(id)?.label ?? id)} note={note ? t(note) : undefined}

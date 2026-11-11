@@ -1,13 +1,50 @@
 import i18n from "@/i18n/index";
-export type AppTab = "chat" | "map" | "lens" | "schedule" | "settings";
+import type { WorkspacePanelKind } from "./useWorkspacePanel";
+
+/** A page the stage shows. World and Lens are panels beside Chat, not pages. */
+export type AppTab = "chat" | "schedule" | "settings";
 export type SettingsSection = "loupists" | "connections" | "model" | "agent" | "skills" | "appearance" | "keyboard" | "updates";
-export const APP_TAB_LABELS: Record<AppTab, string> = {
-  get chat() { return i18n.t("app:shell.tabs.chat"); },
-  get map() { return i18n.t("app:shell.tabs.map"); },
-  get lens() { return i18n.t("app:shell.tabs.lens"); },
-  get schedule() { return i18n.t("app:shell.tabs.schedule"); },
-  get settings() { return i18n.t("app:shell.settings"); },
+
+type AppPage = {
+  /** Names the page in its error boundary and loading status. */
+  readonly label: string;
+  /** The screen-reader location heading. Without one, the page is named by its open conversation. */
+  readonly heading?: string;
 };
+
+export const APP_PAGES: Record<AppTab, AppPage> = {
+  chat: { get label() { return i18n.t("app:shell.tabs.chat"); } },
+  schedule: { get label() { return i18n.t("app:shell.tabs.schedule"); }, get heading() { return i18n.t("app:shell.taskHistory"); } },
+  settings: { get label() { return i18n.t("app:shell.settings"); }, get heading() { return i18n.t("app:shell.settings"); } },
+};
+
+/** The ids the native View menu sends (`src-tauri/src/lib.rs`), in ⌘1–⌘4 order. */
+export type AppDestinationId = "chat" | "map" | "lens" | "schedule";
+
+type AppDestination = {
+  readonly id: AppDestinationId;
+  /** A page, or a panel kind that opens beside Chat. */
+  readonly target: { readonly page: AppTab } | { readonly panel: Exclude<WorkspacePanelKind, "materials"> };
+  readonly label: string;
+  /** The command palette's Actions row. */
+  readonly action: string;
+};
+
+/**
+ * Every top-level destination, in key order: ⌘1–⌘4 in the header, the palette's open
+ * rows, the native menu and Settings › Keyboard read this list. A new page adds its
+ * row here and its page in `APP_PAGES`.
+ */
+export const APP_DESTINATIONS: readonly AppDestination[] = [
+  { id: "chat", target: { page: "chat" }, get label() { return i18n.t("app:shell.tabs.chat"); }, get action() { return i18n.t("app:palette.actions.openChat"); } },
+  { id: "map", target: { panel: "world" }, get label() { return i18n.t("app:shell.tabs.map"); }, get action() { return i18n.t("app:palette.actions.openMap"); } },
+  { id: "lens", target: { panel: "lens" }, get label() { return i18n.t("app:shell.tabs.lens"); }, get action() { return i18n.t("app:shell.tabs.lens"); } },
+  { id: "schedule", target: { page: "schedule" }, get label() { return i18n.t("app:shell.tabs.schedule"); }, get action() { return i18n.t("app:shell.taskHistory"); } },
+];
+
+export const isAppDestination = (value: string): value is AppDestinationId => APP_DESTINATIONS.some((item) => item.id === value);
+/** ⌘1 opens the first destination. Another key names none. */
+export const destinationForKey = (key: string) => (/^[1-9]$/.test(key) ? APP_DESTINATIONS[Number(key) - 1] : undefined);
 
 type SettingsSectionDefinition = {
   id: SettingsSection;

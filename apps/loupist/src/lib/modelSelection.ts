@@ -38,11 +38,11 @@ export const resolveConfiguredModelRunSelection = (
   catalog: ModelCatalog | null,
   explicit: ModelRunSelection | undefined,
   defaults: Pick<EffectiveConfig["chat"], "model_profile_id" | "thinking_level" | "run_options"> | undefined,
-  lastProfileId?: string,
+  lastProfileId?: string | null,
 ): ModelRunSelection => {
   if (explicit) return resolveModelRunSelection(catalog, explicit.model_profile_id, explicit.thinking_level, explicit.run_options);
   if (defaults?.model_profile_id && !visibleCatalogModels(catalog).some((model) => model.id === defaults.model_profile_id)) return emptyModelRunSelection();
-  const initial = resolveModelRunSelection(catalog, defaults?.model_profile_id ?? lastProfileId, defaults?.thinking_level ?? undefined);
+  const initial = resolveModelRunSelection(catalog, defaults?.model_profile_id ?? lastProfileId ?? undefined, defaults?.thinking_level ?? undefined);
   if (!initial.model_profile_id) return initial;
   const selected = catalog!.models.find((model) => model.id === initial.model_profile_id)!;
   if (defaults?.thinking_level != null && !selected.thinking_levels.includes(defaults.thinking_level)) return emptyModelRunSelection();

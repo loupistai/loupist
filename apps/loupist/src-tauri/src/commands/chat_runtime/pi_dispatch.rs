@@ -25,7 +25,7 @@ pub(super) struct PiRpcTurn<'a> {
     pub token_usage: &'a mut AssistantTokenUsage,
     pub progress: &'a mut ChatProgressProjection,
     pub commentary: &'a mut CommentaryCoalescer,
-    pub announced_phase: &'a mut Option<&'static str>,
+    pub announced_phase: &'a mut Option<ChatRunPhase>,
     pub envelope_compacted: &'a mut bool,
     pub on_event: &'a ChatEventSink,
     pub task_run_id: &'a str,
@@ -100,7 +100,7 @@ pub(super) async fn apply_pi_rpc(turn: PiRpcTurn<'_>, payload: &Value) -> PiRpcS
             assistant_capture.observe_retry_headers(payload.get("headers").unwrap_or(&Value::Null));
         }
         Some("tool_execution_start") => {
-            emit_chat_phase(on_event, task_run_id, announced_phase, "tool");
+            emit_chat_phase(on_event, task_run_id, announced_phase, ChatRunPhase::Tool);
             if let (Some(tool_call_id), Some(tool_name)) = (
                 payload.get("toolCallId").and_then(Value::as_str),
                 payload.get("toolName").and_then(Value::as_str),
@@ -272,11 +272,21 @@ pub(super) async fn apply_pi_rpc(turn: PiRpcTurn<'_>, payload: &Value) -> PiRpcS
                 .and_then(Value::as_str)
             {
                 Some("thinking_delta") => {
-                    emit_chat_phase(on_event, task_run_id, announced_phase, "thinking");
+                    emit_chat_phase(
+                        on_event,
+                        task_run_id,
+                        announced_phase,
+                        ChatRunPhase::Thinking,
+                    );
                 }
                 Some("thinking_end") => {}
                 Some("text_delta") => {
-                    emit_chat_phase(on_event, task_run_id, announced_phase, "writing");
+                    emit_chat_phase(
+                        on_event,
+                        task_run_id,
+                        announced_phase,
+                        ChatRunPhase::Writing,
+                    );
                     if let Some(delta) = assistant_event
                         .and_then(|event| event.get("delta"))
                         .and_then(Value::as_str)
@@ -324,7 +334,12 @@ pub(super) async fn apply_pi_rpc(turn: PiRpcTurn<'_>, payload: &Value) -> PiRpcS
                         format!("\n\n{authoritative}")
                     };
                     content.push_str(&streamed);
-                    emit_chat_phase(on_event, task_run_id, announced_phase, "writing");
+                    emit_chat_phase(
+                        on_event,
+                        task_run_id,
+                        announced_phase,
+                        ChatRunPhase::Writing,
+                    );
                     // Show the settled answer before removing its live copy,
                     // so the paragraph does not disappear between events.
                     publish_settled_answer(on_event, task_run_id, progress, commentary, &streamed);

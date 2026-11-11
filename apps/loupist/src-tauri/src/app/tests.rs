@@ -337,3 +337,54 @@ fn an_earlier_build_catalog_is_set_aside_and_the_app_starts_fresh() {
         .collect();
     assert_eq!(set_aside.len(), 1, "{set_aside:?}");
 }
+
+#[test]
+fn an_earlier_catalog_hands_its_environment_identity_to_the_fresh_one() {
+    let temporary = tempfile::tempdir().unwrap();
+    let path = temporary.path().join("catalog.sqlite3");
+    let environment = uuid::Uuid::new_v4().to_string();
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute_batch(&format!(
+            "CREATE TABLE host_environment (id INTEGER PRIMARY KEY CHECK(id=1), environment_id TEXT NOT NULL) STRICT;
+             INSERT INTO host_environment VALUES (1, '{environment}');
+             PRAGMA user_version = {}; PRAGMA application_id = {};",
+            crate::store::STORE_BASELINE_VERSION - 1,
+            crate::store::STORE_APPLICATION_ID
+        ))
+        .unwrap();
+    drop(connection);
+    let (store, fresh) = super::open_app_store(&path).unwrap();
+    assert!(fresh);
+    // Keychain items are keyed by this identity, so they stay reachable.
+    assert_eq!(store.initialize_host_environment().unwrap(), environment);
+}
+
+#[test]
+fn a_newer_catalog_is_refused_with_a_dialog_and_left_untouched() {
+    let temporary = tempfile::tempdir().unwrap();
+    let path = temporary.path().join("catalog.sqlite3");
+    drop(SqliteStore::open_catalog(&path).unwrap());
+    rusqlite::Connection::open(&path)
+        .unwrap()
+        .execute_batch(&format!(
+            "PRAGMA user_version = {};",
+            crate::store::STORE_SCHEMA_VERSION + 1
+        ))
+        .unwrap();
+    let bytes = std::fs::read(&path).unwrap();
+    let error = super::open_app_store(&path).err().unwrap();
+    assert_eq!(error.code, super::CATALOG_NEWER_VERSION);
+    let (title, body) = super::startup_storage_notice(&error).unwrap();
+    assert_eq!(title, "Loupist can't open your data");
+    assert!(body.contains("newer version of Loupist"), "{body}");
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    let siblings = std::fs::read_dir(temporary.path())
+        .unwrap()
+        .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+        .filter(|name| name.contains(".earlier-") || name.contains(".upgrade-backup-"))
+        .count();
+    assert_eq!(siblings, 0);
+    // Other startup failures are logged without a dialog.
+    assert!(super::startup_storage_notice(&CommandError::internal("x")).is_none());
+}

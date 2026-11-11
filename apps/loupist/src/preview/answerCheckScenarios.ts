@@ -97,7 +97,7 @@ const dataCheck = (text: string, concept: string, value: string, row: number): N
 function steps(extra: ChatProgress["items"] = []): ChatProgress {
   const at = Date.parse("2026-03-18T06:00:00Z");
   const step = (id: string, category: "finance" | "web" | "compute", operation: "read" | "calculate", action: string, resultIds: string[], target?: string) =>
-    ({ id, kind: "tool" as const, category, operation, action, status: "succeeded" as const, resultIds, target, startedAtMs: at, finishedAtMs: at + 900 });
+    ({ id, kind: "tool" as const, category, operation, action, status: "succeeded" as const, resultIds, target: target ?? null, href: null, startedAtMs: at, finishedAtMs: at + 900 });
   return { startedAtMs: at, finishedAtMs: at + 41_000, items: [
     // Rust names the asset the Loupist has a page for, not the tool's symbol argument.
     step("step-statements", "finance", "read", "Read financial statements", [DART.id], `${ko() ? "솔숲식품" : "Solsup Foods"} · FY2025`),
@@ -142,7 +142,7 @@ function numberAnswer(variant: Variant): ChatMessage {
     id: "solsup-answer", role: "assistant", status: "complete", created_at: "2026-03-18T06:01:00Z", content,
     evidence_refs: variant === "grid" ? [DART, REVERSE] : [DART, guide, MARGIN, GROWTH],
     number_checks: checks,
-    progress: variant === "grid" ? { ...steps(), items: [steps().items[0]!, { id: "step-reverse", kind: "tool", toolName: "calculate", category: "compute", operation: "calculate", action: "Calculated", status: "succeeded", resultIds: [REVERSE.id], startedAtMs: Date.parse(RETRIEVED), finishedAtMs: Date.parse(RETRIEVED) + 900 }] } : steps(),
+    progress: variant === "grid" ? { ...steps(), items: [steps().items[0]!, { id: "step-reverse", kind: "tool", toolName: "calculate", category: "compute", operation: "calculate", action: "Calculated", status: "succeeded", resultIds: [REVERSE.id], startedAtMs: Date.parse(RETRIEVED), finishedAtMs: Date.parse(RETRIEVED) + 900, target: null, href: null }] } : steps(),
     execution_model: { profile_id: "openai/gpt-6.1-sol", name: "GPT-6.1 Sol", provider: "openai", model: "gpt-6.1-sol", thinking_level: "medium", run_options: {} },
   };
 }
@@ -184,9 +184,9 @@ function asOfAnswer(nothing: boolean): ChatMessage {
     evidence_refs: nothing ? [] : [guide],
     number_checks: nothing ? [] : [{ link_index: 0, text: guideAmount, evidence_id: guide.id, kind: "passage", status: "matched", span: spanOf(guide.excerpt, ko() ? "4,400억 원" : "₩440bn") }],
     progress: { startedAtMs: at, finishedAtMs: at + 41_000, items: [
-      { id: "step-quote", kind: "tool", toolName: "kis_read", category: "finance", operation: "read", action: "Read market data", target: "990221", status: "skipped", startedAtMs: at, finishedAtMs: at + 400 },
-      ...(nothing ? [{ id: "step-company", kind: "tool" as const, toolName: "dart_company_lookup", category: "finance" as const, operation: "read" as const, action: "Looked up a company", target: "990221", status: "skipped" as const, startedAtMs: at, finishedAtMs: at + 400 }] : [
-        { id: "step-guidance", kind: "tool" as const, toolName: "web_fetch", category: "web" as const, operation: "read" as const, action: "Read a web source", target: "solsup.example", status: "succeeded" as const, resultIds: [guide.id], startedAtMs: at, finishedAtMs: at + 900 },
+      { id: "step-quote", kind: "tool", toolName: "kis_read", category: "finance", operation: "read", action: "Read market data", target: "990221", status: "skipped", startedAtMs: at, finishedAtMs: at + 400, href: null },
+      ...(nothing ? [{ id: "step-company", kind: "tool" as const, toolName: "dart_company_lookup", category: "finance" as const, operation: "read" as const, action: "Looked up a company", target: "990221", href: null, status: "skipped" as const, startedAtMs: at, finishedAtMs: at + 400 }] : [
+        { id: "step-guidance", kind: "tool" as const, toolName: "web_fetch", category: "web" as const, operation: "read" as const, action: "Read a web source", target: "solsup.example", href: null, status: "succeeded" as const, resultIds: [guide.id], startedAtMs: at, finishedAtMs: at + 900 },
       ]),
     ] },
     execution_model: { profile_id: "openai/gpt-6.1-sol", name: "GPT-6.1 Sol", provider: "openai", model: "gpt-6.1-sol", thinking_level: "medium", run_options: {} },
@@ -210,7 +210,7 @@ function journalEntries(): JournalRecord[] {
     { ...base, journalId: "journal-solsup-margin", updatedAtMs: created,
       judgment: ko() ? "솔숲식품의 영업이익률은 9%를 넘을 거예요." : "Solsup's operating margin will stay above 9%.",
       check: { claim: ko() ? "영업이익률 9% 초과" : "Operating margin above 9%", metric: ko() ? "영업이익률" : "operating margin", direction: "above", threshold: 9, unit: "%", byDate: "2026-09-30" },
-      outcome: null, inputs: { sources: [], worlds: [], lenses: [], earlier: [] } },
+      inputs: { sources: [], worlds: [], lenses: [], earlier: [] } },
   ] as JournalRecord[];
 }
 
@@ -279,7 +279,7 @@ export function answerCheckScenarios({ base, select, until, click, clickMapActio
         const run_id = request.run_id;
         observer({ type: "started", run_id });
         observer({ type: "evidence", run_id, evidence: DART });
-        observer({ type: "progress", run_id, sequence: 1, progress: { startedAtMs: Date.now() - 6_000, items: [{ id: "step-statements", kind: "tool", toolName: "dart_financials", category: "finance", operation: "read", action: "Read financial statements", target: `${ko() ? "솔숲식품" : "Solsup Foods"} · FY2025`, status: "succeeded", resultIds: [DART.id] }] } });
+        observer({ type: "progress", run_id, sequence: 1, progress: { startedAtMs: Date.now() - 6_000, items: [{ id: "step-statements", kind: "tool", toolName: "dart_financials", category: "finance", operation: "read", action: "Read financial statements", target: `${ko() ? "솔숲식품" : "Solsup Foods"} · FY2025`, status: "succeeded", resultIds: [DART.id], href: null, startedAtMs: 0, finishedAtMs: null }], finishedAtMs: null } });
         observer({ type: "phase", run_id, phase: "writing" });
         observer({ type: "delta", run_id, text: ko()
           ? `솔숲식품의 FY2025 연결 매출은 [${revenueText()}](#evidence-${DART.id})였고, 영업이익은 [${incomeText()}](#evidence-${DART.id})예요. 이익률을 계산하고 있어요…`

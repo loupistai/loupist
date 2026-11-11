@@ -195,13 +195,13 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
       });
     }
     setOpen(true);
-  }, [updateSession]);
+  }, [setOpen, updateSession]);
 
   /** The user closed the panel in this chat: nothing reopens it until they open it again. */
   const dismiss = useCallback((key?: string) => {
     if (key && !sessionsRef.current[key]?.dismissed) updateSession(key, (session) => ({ ...session, dismissed: true }));
     setOpen(false);
-  }, [updateSession]);
+  }, [setOpen, updateSession]);
 
   /** A deep link the user followed: always switch to its tab. */
   const openTab = useCallback(
@@ -256,7 +256,7 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
     if (kindRef.current !== "materials" || (layoutRef.current.open && Date.now() - lastInteraction.current < 10_000)) return "badged";
     if (!layoutRef.current.open) setOpen(true);
     return "opened";
-  }, []);
+  }, [setOpen]);
 
   /** Opens a chart or document in the Work tab; it may come from another chat of the Loupist. */
   const openArtifact = useCallback(
@@ -368,7 +368,7 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
       });
       if (!sessionsRef.current[key]?.tabs.length) setOpen(false);
     },
-    [bridge, updateSessions],
+    [bridge, setOpen, updateSessions],
   );
 
   /** Moves a pending session (e.g. the empty-thread draft) onto a persisted thread. */
@@ -418,7 +418,7 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
         ),
       );
     },
-    [bridge, updateSessions],
+    [bridge, setOpen, updateSessions],
   );
 
   /** Closes native browser tabs and drops every session owned by one loupist. */
@@ -444,7 +444,7 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
         ),
       );
     },
-    [bridge, updateSessions],
+    [bridge, setOpen, updateSessions],
   );
 
   /** Canonical header entry: switching panels never changes the active chat or its draft. */
@@ -463,7 +463,7 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
   }, [dismiss, placement, setPlacement, show, updateLayout]);
 
   /** Programmatic close (overlay hand-offs, Loupist changes); it is not the user's choice for the chat. */
-  const close = useCallback(() => setOpen(false), []);
+  const close = useCallback(() => setOpen(false), [setOpen]);
   /** The Dock control: re-docks the panel and remembers the choice for the content kind on screen. */
   const togglePlacement = useCallback((next: WorkspacePlacement, key?: string, kind?: DockKind) => {
     if (open && placement === next) {
@@ -473,7 +473,7 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
       setPlacement(next);
       show(key);
     }
-  }, [dismiss, open, placement, show, updateLayout]);
+  }, [dismiss, open, placement, setPlacement, show, updateLayout]);
 
   /** Content of another kind came on screen: dock where that kind was last docked, or its default. */
   const applyDockKind = useCallback((kind: DockKind) => {

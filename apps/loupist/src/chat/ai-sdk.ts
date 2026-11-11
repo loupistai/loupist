@@ -20,7 +20,7 @@ import type {
   ScheduledRun,
 } from "../types";
 import { extractMentionedConnectionIds } from "./composerMentions";
-import { errorMessage } from "../lib/errors";
+import { commandErrorCode, errorMessage } from "../lib/errors";
 import type { ChatAdmission } from "./submission";
 
 const t = i18n.getFixedT(null, "chat");
@@ -30,6 +30,22 @@ const HOST_POST_KEYS: Record<keyof HostPostRecords, true> = {
   delivery: true, alert: true, watch: true, earnings: true, vocabulary: true, handoff: true, link: true,
 };
 const HOST_POST_FIELDS = Object.keys(HOST_POST_KEYS) as (keyof HostPostRecords)[];
+
+// Every stream event the renderer handles, typed from the contract so tsc fails when
+// a Rust variant is missing here. An event of any other type is ignored, not fatal.
+const STREAM_EVENT_TYPES: Record<ChatStreamEvent["type"], true> = {
+  started: true, memory: true, schedule: true, evidence: true, delta: true, generation_finished: true, title: true,
+  progress: true, progress_patch: true, phase: true, memory_update: true, artifact: true, completed: true,
+  aborted: true, error: true,
+};
+
+/** Whether this build knows the event; a newer Rust may send types it does not. */
+const isKnownStreamEvent = (event: { type?: unknown }): event is ChatStreamEvent =>
+  typeof event.type === "string" && Object.hasOwn(STREAM_EVENT_TYPES, event.type);
+
+const ignoreUnknownStreamEvent = (event: { type?: unknown }) => {
+  if (import.meta.env.DEV) console.warn(`Ignoring chat stream event of unknown type ${JSON.stringify(event.type)}`);
+};
 
 const hostPostRecords = (source: HostPostRecords | undefined): HostPostRecords =>
   Object.fromEntries(HOST_POST_FIELDS.filter((field) => source?.[field]).map((field) => [field, source![field]]));
@@ -59,6 +75,8 @@ export type LoupistChatMetadata = HostPostRecords & {
   steer?: boolean;
   host_composed?: boolean;
   final_text?: string;
+  /** `final_text` is the host's failure placeholder (`ChatMessage.placeholder`). */
+  placeholder?: boolean;
   progress?: ChatProgress;
   phase?: ChatMessage["phase"];
   draft?: ChatMessage["draft"];
@@ -232,6 +250,7 @@ export const toLoupistUIMessage = (message: ChatMessage): LoupistUIMessage => {
       agent_harness: message.agent_harness,
       failure_kind: message.failure_kind,
       retry_after_seconds: message.retry_after_seconds,
+      ...(message.placeholder ? { placeholder: true } : {}),
       steer: message.steer,
       host_composed: message.host_composed,
       ...hostPostRecords(message),
@@ -325,6 +344,7 @@ export const fromLoupistUIMessage = (message: LoupistUIMessage): ChatMessage => 
       message.role === "assistant" && message.metadata?.final_text !== undefined
         ? message.metadata.final_text
         : text.join(""),
+    ...(message.metadata?.placeholder ? { placeholder: true } : {}),
     created_at: message.metadata?.created_at ?? UNKNOWN_MESSAGE_CREATED_AT,
     status,
     memory_refs: memoryRefs,
@@ -518,6 +538,7 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
                 ? {
                     native_message_id: terminal.message_id,
                     final_text: terminal.final_text,
+                    ...(terminal.placeholder ? { placeholder: true } : {}),
                     created_at: terminal.created_at,
                     execution_model: terminal.execution_model,
                     agent_harness: terminal.agent_harness,
@@ -562,6 +583,7 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
 
         const onEvent = (event: ChatStreamEvent) => {
           if (finished) return;
+          if (!isKnownStreamEvent(event)) { ignoreUnknownStreamEvent(event); return; }
           if (event.run_id !== runId) return;
           admit({ accepted: true, runId });
           if (event.type === "started") {
@@ -707,7 +729,11 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
             close();
             return;
           }
-          fail(event.message, event);
+          if (event.type === "error") {
+            fail(event.message, event);
+            return;
+          }
+          event satisfies never;
         };
 
         const rejectStart = (message: string) => {
@@ -730,7 +756,7 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
           })
           .catch((cause) => {
             // Rust refuses a file over its limit by code; the reader gets the limit in their language.
-            const tooLarge = cause !== null && typeof cause === "object" && "code" in cause && cause.code === "attachment_too_large";
+            const tooLarge = commandErrorCode(cause) === "attachment_too_large";
             const message = tooLarge ? t("chatComposer.attachmentTooLarge") : errorMessage(cause, t("aiSdk.couldNotStartTheResponse"));
             if (finished) return;
             rejectStart(message);

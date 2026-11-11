@@ -485,6 +485,26 @@ fn kis_environment_is_an_exact_select_that_scopes_credentials() {
 }
 
 #[test]
+fn a_native_vendor_entry_must_declare_the_hosts_its_reads_reach() {
+    let mut catalog = bundled_catalog().unwrap();
+    let entry = catalog
+        .entries
+        .iter_mut()
+        .find(|entry| entry.id == crate::finance_data::DEFILLAMA_SOURCE_ID)
+        .unwrap();
+    entry.permissions.network_hosts.pop();
+    assert!(validate_catalog(&catalog).is_err());
+    let mut catalog = bundled_catalog().unwrap();
+    let entry = catalog
+        .entries
+        .iter_mut()
+        .find(|entry| entry.id == crate::finance_data::WORLD_BANK_SOURCE_ID)
+        .unwrap();
+    entry.permissions.credential_kinds.push("api_key".into());
+    assert!(validate_catalog(&catalog).is_err());
+}
+
+#[test]
 fn changing_kis_environment_disables_bindings_and_deletes_credentials() {
     let temporary = tempfile::tempdir().unwrap();
     let state = AppState::for_test(temporary.path().join("app"));

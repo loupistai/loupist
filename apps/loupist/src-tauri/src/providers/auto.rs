@@ -22,6 +22,13 @@ pub const MIN_RESEARCH_CONTEXT: u64 = 20_000;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct ChatModelDefaults {
+    providers: Vec<ProviderDefault>,
+    family_tiers: FamilyTiers,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ProviderDefault {
     provider: String,
     models: Vec<ModelDefault>,
@@ -34,11 +41,37 @@ struct ModelDefault {
     thinking_level: String,
 }
 
-static DEFAULTS: LazyLock<Vec<ProviderDefault>> = LazyLock::new(|| {
-    let defaults: Vec<ProviderDefault> =
+/// Declared tiers for model families (`family_tiers` in
+/// `chat-model-defaults.json`): 3 for a provider's largest family, 1 for its
+/// small, fast one. Among one provider's models of the same version the higher
+/// tier lists first, so it is also what Auto's fallback reaches first.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct FamilyTiers {
+    /// The tier of a model that names no declared family.
+    unknown: u8,
+    families: BTreeMap<String, u8>,
+}
+
+impl FamilyTiers {
+    /// The highest tier declared for a whole word of the model's name or ID
+    /// (`gpt-5.6 Sol` and `gpt-5.6-sol` name `sol`; `gemini` is not `mini`).
+    pub(crate) fn tier(&self, name: &str, model: &str) -> u8 {
+        let (name, model) = (name.to_ascii_lowercase(), model.to_ascii_lowercase());
+        name.split(|character: char| !character.is_ascii_alphanumeric())
+            .chain(model.split(|character: char| !character.is_ascii_alphanumeric()))
+            .filter_map(|word| self.families.get(word))
+            .max()
+            .copied()
+            .unwrap_or(self.unknown)
+    }
+}
+
+static DEFAULTS: LazyLock<ChatModelDefaults> = LazyLock::new(|| {
+    let defaults: ChatModelDefaults =
         serde_json::from_str(include_str!("../../../chat-model-defaults.json"))
             .expect("bundled Chat model defaults");
-    for group in &defaults {
+    for group in &defaults.providers {
         assert!(!group.models.is_empty(), "Chat defaults need a model");
         for model in &group.models {
             assert!(
@@ -48,8 +81,22 @@ static DEFAULTS: LazyLock<Vec<ProviderDefault>> = LazyLock::new(|| {
             );
         }
     }
+    assert!(
+        defaults.family_tiers.families.keys().all(|family| {
+            !family.is_empty()
+                && family
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        }),
+        "a model family is one lowercase word"
+    );
     defaults
 });
+
+/// The bundled family tiers that order each provider's models in the catalog.
+pub(crate) fn family_tiers() -> &'static FamilyTiers {
+    &DEFAULTS.family_tiers
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AutoChoice {
@@ -135,7 +182,11 @@ pub fn resolve(
             .filter(usable)
             .filter(|model| &model.provider == provider)
             .collect::<Vec<_>>();
-        if let Some(policy) = DEFAULTS.iter().find(|group| &group.provider == provider) {
+        if let Some(policy) = DEFAULTS
+            .providers
+            .iter()
+            .find(|group| &group.provider == provider)
+        {
             for entry in &policy.models {
                 if let Some(model) = models.iter().find(|model| model.model == entry.id) {
                     if let Some(choice) = choose(model, Some(&entry.thinking_level)) {
@@ -601,9 +652,44 @@ mod tests {
     }
 
     #[test]
+    fn a_model_family_ranks_by_its_declared_tier_and_an_undeclared_one_sits_in_the_middle() {
+        let tiers: FamilyTiers = serde_json::from_value(serde_json::json!({
+            "unknown": 2,
+            "families": {"nova": 3, "terra": 2, "luna": 1, "flash": 2, "lite": 1}
+        }))
+        .unwrap();
+        // A new family is ranked by what the defaults declare for it.
+        assert_eq!(tiers.tier("GPT-7 Nova", "gpt-7-nova"), 3);
+        assert_eq!(tiers.tier("gpt-7-luna", "gpt-7-luna"), 1);
+        assert_eq!(tiers.tier("gpt-7-comet", "gpt-7-comet"), 2);
+        // Whole words only, and the highest declared tier wins.
+        assert_eq!(tiers.tier("Gemini 3", "gemini-3"), 2);
+        assert_eq!(tiers.tier("Gemini Flash-Lite", "gemini-3-flash-lite"), 2);
+        // The bundled table keeps today's families.
+        let bundled = family_tiers();
+        for (model, tier) in [
+            ("claude-opus-5", 3),
+            ("gpt-6.1-sol", 3),
+            ("gemini-2.5-pro", 3),
+            ("claude-sonnet-5-5", 2),
+            ("gpt-6-terra", 2),
+            ("gemini-2.5-flash-lite", 2),
+            ("claude-haiku-4-5", 1),
+            ("gpt-6-luna", 1),
+            ("gpt-5.4-mini", 1),
+            ("grok-4.7", 2),
+        ] {
+            assert_eq!(bundled.tier(model, model), tier, "{model}");
+        }
+    }
+
+    #[test]
     fn bundled_policy_parses_and_names_known_providers() {
-        assert!(DEFAULTS.iter().any(|group| group.provider == "openai"));
-        for group in DEFAULTS.iter() {
+        assert!(DEFAULTS
+            .providers
+            .iter()
+            .any(|group| group.provider == "openai"));
+        for group in DEFAULTS.providers.iter() {
             assert!(crate::providers::catalog::provider_options()
                 .iter()
                 .any(|option| option.id == group.provider));

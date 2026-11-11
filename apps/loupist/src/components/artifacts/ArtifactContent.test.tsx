@@ -34,9 +34,11 @@ const chartView: ChatArtifactView = {
       chart: {
         dataset_id: chartDataset.id,
         dataset_digest: chartDataset.digest,
-        view: { kind: "candlestick", symbol: "KOSPI", interval: "1d", time: "date", open: "close", high: "close", low: "close", close: "close" },
+        view: { kind: "candlestick", symbol: "KOSPI", interval: "1d", time: "date", open: "close", high: "close", low: "close", close: "close", volume: null, turnover: null, price_precision: null },
         studies: [],
         drawings: [],
+        custom_series: [],
+        note: null,
       },
     },
     digest: "b".repeat(64),
@@ -52,6 +54,7 @@ describe("ArtifactContent", () => {
     const view: ChatArtifactView = {
       artifact: { ...chartView.artifact, kind: "markdown", title: "Research note" },
       revision: { ...chartView.revision, payload: { kind: "markdown", schema: "loupist-markdown/1", markdown: "# Research note\n\nSaved findings." } },
+      chart_dataset: null,
     };
     const writeText = vi.spyOn(navigator.clipboard, "writeText").mockRejectedValueOnce(new Error("Clipboard blocked")).mockResolvedValue();
     render(<ArtifactContent view={view} theme="light" />);
@@ -101,6 +104,7 @@ it("opens generated file links from a document inside its workspace", async () =
   const view: ChatArtifactView = {
     artifact: { ...chartView.artifact, kind: "markdown", title: "Research note" },
     revision: { ...chartView.revision, payload: { kind: "markdown", schema: "loupist-markdown/1", markdown: "[Corrected CSV](outputs/corrected.csv) · [Chart](outputs/chart.png) · [Outside](../private.txt)" } },
+    chart_dataset: null,
   };
   const { open } = renderWithOpen(<ArtifactContent view={view} theme="light" workspacePath="/research" />);
   await user.click(await screen.findByRole("link", { name: "Corrected CSV" }));

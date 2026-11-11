@@ -16,7 +16,6 @@ use crate::{
     app::{AppState, CommandError},
     custom_connections::service,
     domain::{ChatRole, ChatToolRefusal, ChatToolRefusalReason},
-    store::LoupistStore,
 };
 
 /// Refusals and questions older than this stop asking for attention.
@@ -29,6 +28,7 @@ const NOTIFY_INTERVAL: Duration = Duration::from_secs(60);
 const PREVIEW_CHARS: usize = 60;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum AttentionKind {
     Approval,
@@ -44,6 +44,7 @@ pub(crate) enum AttentionKind {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AttentionItem {
     pub kind: AttentionKind,
@@ -51,15 +52,19 @@ pub(crate) struct AttentionItem {
     pub loupist_name: String,
     /// The chat to open for an approval or a question.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub chat_id: Option<String>,
     /// The Journal entry for a check.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub record_id: Option<String>,
     /// What the row names: a tool, the chat's title for a question, a check claim, or empty for briefings.
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub count: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub due_date: Option<String>,
     pub at_ms: i64,
 }
@@ -505,6 +510,7 @@ pub(crate) async fn collect(state: &AppState) -> Result<Vec<AttentionItem>, Comm
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct NotifyRequest {
     loupist_id: String,

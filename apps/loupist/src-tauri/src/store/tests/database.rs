@@ -117,7 +117,7 @@ fn a_folder_store_from_an_earlier_build_is_refused_as_an_earlier_version() {
     connection
         .execute_batch(&format!(
             "CREATE TABLE sentinel (value TEXT NOT NULL) STRICT; PRAGMA user_version = {}; PRAGMA application_id = {};",
-            STORE_SCHEMA_VERSION - 1,
+            crate::store::STORE_BASELINE_VERSION - 1,
             crate::store::schema::STORE_APPLICATION_ID
         ))
         .unwrap();

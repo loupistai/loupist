@@ -6,23 +6,26 @@ use super::{loupist_configuration, map_store};
 use crate::{
     app::{AppState, CommandError},
     chat::handoff::{HandoffRequest, HandoffRun, StagedHandoff},
-    store::LoupistStore,
 };
 
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct ResearchHandoffRequest {
     loupist_id: String,
     title: String,
     question: String,
     #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
     brief: String,
     #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
     pins: Vec<Value>,
     request_key: String,
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ResearchHandoffReceipt {
     chat_id: String,

@@ -3,7 +3,6 @@ use crate::{
     app::{AppState, CommandError},
     knowledge::GraphProcessingSettings,
     providers::world_defaults::{recommended_model, ResolvedWorldModel},
-    store::LoupistStore,
 };
 
 fn awaits_default_model(settings: &GraphProcessingSettings) -> bool {

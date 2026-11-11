@@ -253,6 +253,7 @@ export function LoupistSettings({
       const hideGroup = rows.length === 1 && rows[0]?.item.name === group.label;
       return rows.map((row) => ({ ...row.item, group: hideGroup ? undefined : group.label }));
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the interface language is the recompute trigger; `i18n` itself is not reactive.
   }, [bindingById, connectorById, marketplace, i18n.language]);
 
   const skillItems = useMemo<AgentCapabilityItem[]>(
@@ -263,6 +264,7 @@ export function LoupistSettings({
         enabled: skill.enabled,
         locked: false,
       })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the interface language is the recompute trigger; `i18n` itself is not reactive.
     [skills, i18n.language],
   );
 
@@ -344,9 +346,9 @@ export function LoupistSettings({
 
   const available = selectedAgent?.availability.status === "available";
   // A folder made by an earlier build cannot be opened; removing it is the way forward.
-  const removable = available || selectedAgent?.availability.status === "earlier_version";
+  const removable = available || selectedAgent?.availability.status === "earlier_version" || selectedAgent?.availability.status === "newer_version";
   return (
-    <section className="settings-page loupist-settings-page" aria-label={i18n.t("app:shell.loupistSettings")} onFocus={(event) => { if (event.target instanceof HTMLElement) event.target.scrollIntoView({ block: "nearest", inline: "nearest" }); }}>
+    <section className="settings-page loupist-settings-page" data-testid="loupist-settings-page" aria-label={i18n.t("app:shell.loupistSettings")} onFocus={(event) => { if (event.target instanceof HTMLElement) event.target.scrollIntoView({ block: "nearest", inline: "nearest" }); }}>
       <header className="loupist-settings-heading">
         <Button variant="ghost" size="sm" data-loupist-settings-back onClick={onBack}><ArrowLeftIcon />{i18n.t("knowledge:memoryPage.back")}</Button>
         <h1 ref={titleRef} tabIndex={-1}>{i18n.t("app:shell.loupistSettings")}</h1>
@@ -437,6 +439,7 @@ function LoupistProfileEditor({ bridge, loupist, disabled, onUpdated }: { bridge
   useEffect(() => {
     const next = profileDraft(loupist);
     setDraft(next); setBaseline(next); setError(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- a refreshed profile object with the same fields must not discard the draft.
   }, [loupist.id, loupist.name, loupist.philosophy, loupist.avatar, loupist.tone, loupist.instructions]);
   useEffect(() => { if (!saved) return; const timer = setTimeout(() => setSaved(false), 2000); return () => clearTimeout(timer); }, [saved]);
   const changed = Object.keys(draft).some(key => draft[key as keyof typeof draft] !== baseline[key as keyof typeof baseline]);
@@ -458,7 +461,7 @@ function LoupistProfileEditor({ bridge, loupist, disabled, onUpdated }: { bridge
   };
   return <section className="agent-profile-card" data-loupist-section="profile" aria-label={t("loupistProfile.profile")}>
     <h2>{t("loupistProfile.profile")}</h2>
-    <form className="loupist-profile-form" onSubmit={event => { event.preventDefault(); void save(); }}>
+    <form className="loupist-profile-form" data-testid="loupist-profile-form" onSubmit={event => { event.preventDefault(); void save(); }}>
       <fieldset disabled={disabled || busy}>
         <label htmlFor="loupist-profile-name">{t("loupistProfile.name")}</label>
         <Input id="loupist-profile-name" value={draft.name} onChange={event => edit("name", event.target.value)} aria-invalid={[...draft.name.trim()].length > 60 || !draft.name.trim()} />

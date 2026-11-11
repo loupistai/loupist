@@ -76,6 +76,7 @@ export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf }: Props) {
       .then((next) => { if (live) setView({ status: "ready", view: next }); })
       .catch(() => { if (live) setView({ status: "unavailable" }); });
     return () => { live = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the scope's fields; a new scope object for the same thread must not re-read.
   }, [artifactId, revision, scope?.bridge, scope?.loupistId, scope?.threadId, attempt]);
 
   useEffect(() => () => { if (copyTimer.current !== null) clearTimeout(copyTimer.current); }, []);

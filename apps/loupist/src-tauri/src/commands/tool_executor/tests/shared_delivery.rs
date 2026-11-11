@@ -128,8 +128,12 @@ async fn shared_pack_text_arrives_delimited_and_pauses_for_flags_and_full_text()
     let policy = policy(true, false);
 
     // A clean accepted method: its catalog entry and search hit are wrapped and pause nothing.
-    crate::sharing::commands::seed_shared_pack(&state, "loupist-a", &clean_pack(temporary.path()))
-        .unwrap();
+    crate::sharing::commands::add::seed_shared_pack(
+        &state,
+        "loupist-a",
+        &clean_pack(temporary.path()),
+    )
+    .unwrap();
     let executor = turn(&state);
     let found = executor
         .execute(
@@ -185,7 +189,7 @@ async fn shared_pack_text_arrives_delimited_and_pauses_for_flags_and_full_text()
     );
 
     // A flagged accepted method.
-    crate::sharing::commands::seed_shared_pack(&state, "loupist-a", &pack_folder()).unwrap();
+    crate::sharing::commands::add::seed_shared_pack(&state, "loupist-a", &pack_folder()).unwrap();
 
     // lens_search: the shared method's title and snippet.
     let executor = turn(&state);

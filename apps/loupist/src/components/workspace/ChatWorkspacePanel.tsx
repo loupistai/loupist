@@ -133,7 +133,7 @@ const knowledgeKindLabel = (location: KnowledgeLocation) => {
   if (location.surface === "source") return t("workspaceEvidence.kind.savedSource");
   if (location.surface === "lens") return t("workspaceEvidence.kind.lens");
   if (location.surface === "note") return location.selection?.kind === "journal" ? t("workspaceEvidence.kind.journal") : t("workspaceEvidence.kind.note");
-  return location.surface === "world" ? "World" : t("workspaceEvidence.kind.source");
+  return location.surface === "world" ? t("workspaceEvidence.kind.world") : t("workspaceEvidence.kind.source");
 };
 
 /** "{kind} · {hostname or Loupist} · {retrieved date}" for the Evidence reader. */
@@ -195,6 +195,7 @@ function ScopedChatWorkspacePanel({
 }: Props) {
   useTranslation("chat");
   const chatMap = useChatMap();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- clears the map selection when the panel tab changes.
   useEffect(() => { chatMap?.deselect(); }, [session.active_tab_id]);
   const [view, setView] = useState<ChatArtifactView | null>(null);
   const [loadingArtifact, setLoadingArtifact] = useState(false);
@@ -305,6 +306,7 @@ function ScopedChatWorkspacePanel({
     const previous = dockKindSeen.current;
     dockKindSeen.current = dockKind;
     if (previous !== null && previous !== dockKind) onDockKind?.(dockKind);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `onDockKind` is the parent's inline callback; this runs when the content kind changes.
   }, [dockKind, open, overlay]);
   const evidenceEntryShown = currentEvidenceEntry(activeEvidenceTab);
   const moveEvidence = (delta: -1 | 1) => {
@@ -484,6 +486,7 @@ function ScopedChatWorkspacePanel({
       return;
     }
     void readArtifact(openArtifactThread, openArtifactId, shownRevision);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a request counter, not a DOM node: cleanup invalidates the request that is in flight.
     return () => { ++readRequest.current; };
   }, [openArtifactId, openArtifactThread, openArtifactRevision, shownRevision, readArtifact]);
   const showRevision = (revision: number | null) => { setRestored(null); setShownRevision(revision); };
@@ -656,7 +659,7 @@ function ScopedChatWorkspacePanel({
           onPointerDown={startResize}
           onKeyDown={resizeWithKeyboard}
         />
-        {kind !== "materials" ? <div className="workspace-kind-heading"><strong>{kind === "lens" ? "Lens" : "World"}</strong><div className="workspace-tab-controls">{overlay ? null : <Button ref={expandButtonRef} type="button" variant="ghost" size="icon-sm" aria-label={t("chatWorkspacePanel.expand")} title={t("chatWorkspacePanel.expand")} onClick={expand}><Maximize2Icon /></Button>}<Button ref={activeLayoutButtonRef} type="button" variant="ghost" size="icon-sm" data-workspace-close aria-label={t("chatWorkspacePanel.closeWorkspace")} title={t("chatWorkspacePanel.closeWorkspace")} onClick={onClose}><XIcon /></Button></div></div> : <WorkspaceTabBar
+        {kind !== "materials" ? <div className="workspace-kind-heading"><strong>{t(kind === "lens" ? "workspaceEvidence.kind.lens" : "workspaceEvidence.kind.world")}</strong><div className="workspace-tab-controls">{overlay ? null : <Button ref={expandButtonRef} type="button" variant="ghost" size="icon-sm" aria-label={t("chatWorkspacePanel.expand")} title={t("chatWorkspacePanel.expand")} onClick={expand}><Maximize2Icon /></Button>}<Button ref={activeLayoutButtonRef} type="button" variant="ghost" size="icon-sm" data-workspace-close aria-label={t("chatWorkspacePanel.closeWorkspace")} title={t("chatWorkspacePanel.closeWorkspace")} onClick={onClose}><XIcon /></Button></div></div> : <WorkspaceTabBar
           session={session}
           activeTab={activeTab}
           menuOpen={menuOpen}

@@ -13,7 +13,15 @@ tool's catalog wording in the interface language from `toolProgress` in the Chat
 files. The English entries must equal the catalog, so a tool that gains progress labels
 needs both locales; labels the host composes itself (`Opened {connection}`, `Reading
 {host}`) stay as sent. Rust derives the permitted surface;
-service handlers independently validate arguments, ownership and evidence. The Pi
+service handlers independently validate arguments, ownership and evidence.
+What Rust decides per broker method is one row of
+`apps/loupist/src-tauri/src/broker/tool_class.rs`: `ToolMethod::safety` (whether
+the custom-connection and third-party-text tiers pause it, whether its result is
+third-party text, its Don't-save and credential checks, unattended access, shared-pack
+delimiting) and `ToolMethod::producer` (run-result runtime, provenance, saved-Source
+author, dataset retention and `max_age`). Neither match has a wildcard, so a new
+method does not compile until both rows are chosen, and `tool_class/tests.rs` pins
+the reviewed classification and checks the columns against the catalog. The Pi
 extension registers schemas/routes. Anchor every schema `pattern` at both ends: xAI
 constrains Grok's arguments to a pattern as a whole-value match, so the open-ended
 `^#evidence-` once let it emit only `#evidence-` and every cited calculation was refused.
@@ -35,8 +43,10 @@ in Rust. Model-native search runs as a Pi support command through
 `agent/loupist-native-search.mjs` and the adapters in `agent/native-search/`:
 `openai` (a ChatGPT sign-in or an OpenAI key) and the debug-only `openai-codex`
 client share the Responses hosted-search request in `codex.mjs`; `anthropic.mjs`
-and `xai.mjs` have their own. Every adapter needs a resolvable credential before
-any request.
+and `xai.mjs` have their own. Rust offers a provider's search only when the
+[provider manifest](../runtime/providers.md#provider-manifest) gives it
+`native_search`, and a test keeps that list and the adapters the same. Every
+adapter needs a resolvable credential before any request.
 
 `calculate` (`calculations` pack) is the host arithmetic tool. Its contract is in
 [Calculation](../analysis/calculation.md#calculation). `SYSTEM.md` sends common arithmetic to
