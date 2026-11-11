@@ -154,7 +154,8 @@ fi
 
 if ! node "$SCRIPT_DIR/wait-session.mjs" --pid "$LAUNCHER_PID" --session "$SESSION_INFO" --timeout-ms "$E2E_STARTUP_TIMEOUT_MS"; then
     # detach-launch owns this new process group, including a launcher still building.
-    kill -TERM -- "-$LAUNCHER_PID" 2>/dev/null || true
+    # No `--`: dash's builtin kill rejects it and would leave the launcher running.
+    kill -TERM "-$LAUNCHER_PID" 2>/dev/null || true
     echo "Loupist $MODE window failed to start." >&2
     tail -n 80 "$LAUNCHER_LOG" >&2
     exit 1
