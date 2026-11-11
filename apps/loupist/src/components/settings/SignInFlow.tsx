@@ -67,7 +67,7 @@ function WaitingCard({ flow }: { flow: SignInController }) {
       {!state.opened && state.url ? <Button type="button" variant="outline" data-copy-link onClick={() => void copyLink()}>{t("wizard.copyLink")}</Button> : null}
       <Button type="button" variant="ghost" data-signin-cancel onClick={() => void flow.cancel()}>{t("wizard.cancel")}</Button>
     </div>
-    {copied ? <span className="sr-only">{t("wizard.linkCopied")}</span> : null}
+    <span className="sr-only" aria-live="polite">{copied ? t("wizard.linkCopied") : ""}</span>
     {state.pasteAvailable && state.manual && !pasteOpen ? <button type="button" className="signin-link" data-paste-toggle onClick={() => setPasteOpen(true)}>{t("wizard.pasteToggle")}</button> : null}
     {state.pasteAvailable && state.manual && pasteOpen ? <form className="signin-paste" onSubmit={event => { event.preventDefault(); void submit(); }}>
       <Label htmlFor={`${id}-paste`}>{t("wizard.pasteLabel")}</Label>

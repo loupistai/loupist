@@ -58,4 +58,18 @@ async fn workspace_capture_retains_exact_bytes_with_local_attribution_after_ackn
     assert!(executor
         .workspace_capture(json!({"path":"../outside"}))
         .is_err());
+    // What a native read is refused stays out of reach here too.
+    fs::create_dir_all(directory.join(".loupist")).unwrap();
+    fs::write(directory.join(".loupist/activity.log"), "private").unwrap();
+    fs::create_dir_all(directory.join(".git")).unwrap();
+    fs::write(directory.join(".git/config"), "[remote]").unwrap();
+    for protected in [".loupist/activity.log", ".git/config", "notes/.env"] {
+        let error = executor
+            .workspace_capture(json!({"path": protected}))
+            .unwrap_err();
+        assert!(
+            matches!(&error, BrokerError::WithNext { source, .. } if matches!(**source, BrokerError::ProtectedPath)),
+            "{protected}: {error:?}"
+        );
+    }
 }

@@ -5,6 +5,7 @@ import { CheckIcon, CircleIcon, EllipsisIcon, TriangleAlertIcon } from "lucide-r
 import type { LoupistBridge } from "../../types";
 import type { EarningsDifference, EarningsMeasure, EarningsSnapshot, EarningsValue } from "../../contracts/earnings";
 import { useOnline } from "../../app/useOnline";
+import { localDayOf } from "../../chat/asOf";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
@@ -219,7 +220,7 @@ export function EarningsCard({ bridge, loupistId, loupistName, snapshot, name, n
   const measures = current.measures.length ? current.measures : [{ period: current.period, expected: [], reported: [], differences: [] } satisfies EarningsMeasure];
   const shown = allMeasures ? measures : measures.slice(0, MEASURES);
   const hidden = measures.length - shown.length;
-  const expectedHeader = current.before ? `${t("earnings.col.expected")} · ${shortDay(current.before.lateAsOf ?? new Date(current.before.capturedAtMs).toISOString().slice(0, 10))}` : t("earnings.col.expected");
+  const expectedHeader = current.before ? `${t("earnings.col.expected")} · ${shortDay(current.before.lateAsOf ?? localDayOf(current.before.capturedAtMs))}` : t("earnings.col.expected");
   const reportedHeader = current.after ? `${t("earnings.col.reported")} · ${shortDay(current.after.date)}` : t("earnings.col.reported");
   const isReported = reported(current);
   const showFailure = failed || (current.failed?.side === "before" && !isReported);

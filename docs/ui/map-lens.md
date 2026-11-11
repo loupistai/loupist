@@ -132,4 +132,4 @@ seed, each middle name and the far end; nothing else on the canvas changes.
 
 ## Code
 
-- Map / replay / export: `src/components/map/`, `src-tauri/src/knowledge/map.rs`, `src-tauri/src/commands/map_export.rs`
+- Map / replay / export: `src/components/map/`, `src-tauri/src/knowledge/map.rs`, `src-tauri/src/commands/export_file.rs`

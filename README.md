@@ -37,7 +37,7 @@ Follow companies or import holdings as research context, receive dated briefings
 
 ## How a Loupist remembers
 
-The main destinations are **Chat · Map · Briefings · Settings**. The Map Library holds Sources, methods, principles and Notes, including Journal entries. Briefings and scheduled prompts run while the app is running. Memory is the internal name for the records retained and reused by each Loupist. A quality-compounder Loupist and a deep-value Loupist keep their own sources, knowledge, and perspective.
+The main destinations are **Chat · Map · Lens · Schedule**, with Settings beside them. The Map Library holds Sources, methods, principles and Notes, including Journal entries. Briefings and scheduled prompts run while the app is running. Memory is the internal name for the records retained and reused by each Loupist. A quality-compounder Loupist and a deep-value Loupist keep their own sources, knowledge, and perspective.
 
 | Kind | What it holds |
 | --- | --- |
@@ -46,7 +46,7 @@ The main destinations are **Chat · Map · Briefings · Settings**. The Map Libr
 | Lens | Reusable research methods and your principles, with scope, limits and revision history |
 | Note / Journal | Chat working notes and your judgments, dated checks and later outcomes, with their exact inputs |
 
-The composer defaults to **Remember useful details**, allowing relevant saved-context reads and new memories. **Use saved context only** allows reads; **Memory off** skips both. Chat can retain Sources and revise Lens. New Loupists default to automatic World processing with a recommended connected model, editable during creation or later in Settings. Existing Loupist folders retain their settings. New retained sources enter World processing when a model is configured and processing is enabled. A later relevant turn must use the learned state; storing a record alone does not establish learning.
+The composer defaults to **Remember useful details**, allowing relevant saved-context reads and new memories. **Use saved context only** allows reads; **Memory off** skips both. Chat can retain Sources and revise Lens. New Loupists default to automatic World processing with a recommended connected model, editable in Settings. Existing Loupist folders retain their settings. New retained sources enter World processing when a model is configured and processing is enabled. A later relevant turn must use the learned state; storing a record alone does not establish learning.
 
 > [!NOTE]
 > This is a bounded claim, not a black-box one. A Loupist turns source-grounded experience into reusable knowledge that changes how it handles a later relevant case. It is not model-weight training, a promise of returns, or a single performance score.
@@ -60,7 +60,7 @@ The first release targets macOS 13 or newer on Apple Silicon only. Windows, Inte
 - React submits typed intent and has no raw filesystem, process, credential, or Memory-write authority.
 - Rust owns Loupist isolation, persistence, and Memory writes.
 - Native file tools are restricted to admitted workspace, scratch and attachment paths; private app data and credentials are refused. `run_python` is the only agent code execution tool. It has no shell, network or host environment, and it stays allowed after third-party text. See [Native tool permissions](docs/runtime/permissions.md).
-- Model, market-data and graph workers run behind Rust authority. The host owns their process lifetimes and allowed operations.
+- Model, market-data and Python workers run behind Rust authority; World extraction runs inside the app. The host owns their process lifetimes and allowed operations.
 - Memory is the Loupist's durable learned state. Bundled Skills define product methods; workspace instructions and Skill entrypoints enter through a bounded, hash-checked snapshot.
 
 ## Development

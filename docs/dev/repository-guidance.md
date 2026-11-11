@@ -17,7 +17,7 @@ names use `loupist`. The configured GitHub repository is `loupistai/loupist`.
 Search with `python3 scripts/guide.py <topic>`. It returns up to twelve section
 addresses from Git-visible guides, including new uncommitted pages. When a title
 misses, search the body with `rg`. Run `python3 scripts/guide.py --check` after
-changing routes. The web gate runs it too. Inspect Git-visible new files with
+changing routes. Every gate and CI run checks it too. Inspect Git-visible new files with
 `git ls-files -o --exclude-standard` and review their contents before commit. Keep private notes under `docs/local/`, plans in `plan/` and run artifacts in
 `output/`. Setup in a clean checkout uses the guidance at that revision.
 

@@ -4,6 +4,7 @@ updates:
     directories:
       - /
       - /.github/actions/setup-toolchains
+      - /.github/actions/stage-ci-runtimes
     schedule:
       interval: weekly
       day: monday
@@ -22,6 +23,9 @@ updates:
     open-pull-requests-limit: 4
     ignore:
       - dependency-name: "@earendil-works/*"
+      # Pinned with reviewed transitive overrides; e2e/verify-security.mjs
+      # asserts the exact version, so a proposed bump can only fail CI.
+      - dependency-name: "webdriverio"
     groups:
       npm-minor-and-patch:
         patterns: ["*"]

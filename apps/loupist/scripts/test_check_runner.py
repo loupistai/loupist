@@ -116,6 +116,89 @@ class CheckRunnerTests(unittest.TestCase):
                     checks.main([scope, "--list", "--shard", shard])
                 self.assertEqual(refused.exception.code, 2)
 
+    def test_affected_selects_ci_scopes_from_commits_and_the_working_tree(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        from io import StringIO
+
+        def git(*arguments):
+            identity = [
+                "-c",
+                "user.name=check",
+                "-c",
+                "user.email=check@example.invalid",
+            ]
+            subprocess.run(
+                ["git", *identity, *arguments],
+                cwd=self.source,
+                check=True,
+                capture_output=True,
+            )
+
+        def affected(base="base"):
+            with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                return checks.affected_scopes(base)
+
+        (self.source / "README.md").write_text("one\n")
+        git("add", "-A")
+        git("commit", "-qm", "base")
+        git("branch", "base")
+        self.assertEqual(affected(), [])
+        (self.source / "README.md").write_text("two\n")
+        self.assertEqual(affected(), [], "a guide edit selects no scope")
+        (self.app / "src").mkdir()
+        (self.app / "src/App.test.tsx").write_text("")
+        self.assertEqual(affected(), ["web"], "an untracked file counts")
+        git("add", "-A")
+        git("commit", "-qm", "renderer test")
+        (self.app / "src-tauri/tests").mkdir(parents=True)
+        (self.app / "src-tauri/tests/store.rs").write_text("")
+        git("add", "-A")
+        self.assertEqual(affected(), ["web", "rust"], "commits and the index add up")
+        (self.source / "unclassified.txt").write_text("")
+        self.assertEqual(affected(), list(checks.SCOPES))
+        self.assertEqual(affected("no-such-revision"), list(checks.SCOPES))
+
+    def test_affected_always_checks_the_repository_and_installs_what_rust_needs(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        from io import StringIO
+
+        real_app = patch.object(
+            checks, "APP", Path(checks.__file__).resolve().parents[1]
+        )
+        real_app.start()
+        self.addCleanup(real_app.stop)
+
+        def listed(scopes, *arguments):
+            output = StringIO()
+            with (
+                patch.object(checks, "affected_scopes", return_value=scopes),
+                redirect_stdout(output),
+            ):
+                checks.main(["all", "--affected", "--list", *arguments])
+            rows = [
+                line[1:].split(": ", 1)[0] for line in output.getvalue().splitlines()
+            ]
+            return [tuple(row.split("] ", 1)) for row in rows]
+
+        guides_only = listed([], "--install")
+        self.assertEqual({scope for scope, _ in guides_only}, {"repository"})
+        self.assertIn(("repository", "repository-guidance"), guides_only)
+        rust = listed(["rust"], "--install")
+        self.assertEqual(
+            list(dict.fromkeys(scope for scope, _ in rust)),
+            ["repository", "web", "python", "rust"],
+        )
+        self.assertIn(("rust", "tests"), rust)
+        for scope, name in rust:
+            if scope in ("web", "python"):
+                self.assertTrue(name == "node-version" or name.startswith("install-"))
+        self.assertEqual(
+            {scope for scope, _ in listed(["rust"])}, {"repository", "rust"}
+        )
+        with redirect_stderr(StringIO()), self.assertRaises(SystemExit) as refused:
+            checks.main(["web", "--affected", "--list"])
+        self.assertEqual(refused.exception.code, 2)
+
     def test_full_web_includes_root_contracts_from_another_working_directory(self):
         app = Path(checks.__file__).resolve().parents[1]
         contract = app.parents[1] / "scripts/runs.test.mjs"

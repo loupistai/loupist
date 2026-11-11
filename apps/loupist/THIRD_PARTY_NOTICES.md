@@ -54,11 +54,6 @@ License, copyright 2010-2021 Mike Bostock:
 
 ## Pi coding agent
 
-Loupist bundles [fd](https://github.com/sharkdp/fd) 10.5.0 for offline
-workspace file discovery, copyright David Peter and contributors, under the
-MIT or Apache License 2.0. Both upstream license texts are included in
-`pi-runtime/workspace-tools/`.
-
 Loupist bundles [ripgrep](https://github.com/BurntSushi/ripgrep) 15.2.0 for
 offline workspace text search, copyright Andrew Gallant and contributors, under
 the MIT License or the Unlicense. Both upstream license texts are included in
@@ -134,9 +129,9 @@ Version 2 and its historical license notices, and the PyInstaller 6.22.3
 bootloader, copyright (c) 2010-2023 the PyInstaller
 Development Team, 2005-2009 Giovanni Bajo, and 2002 McMillan Enterprises,
 Inc., under GPLv2-or-later with PyInstaller's bootloader exception. Its MCP and
-application stack includes FastMCP 3.4.7 and `fastmcp-slim` 3.4.7 under
+application stack includes FastMCP 3.4.11 and `fastmcp-slim` 3.4.11 under
 Apache 2.0;
-the Model Context Protocol Python SDK 1.29.0, copyright (c) 2024 Anthropic,
+the Model Context Protocol Python SDK 1.30.0, copyright (c) 2024 Anthropic,
 PBC, under MIT; FastAPI 0.136.3, copyright (c) 2018 Sebastián Ramírez, under
 MIT; Starlette 1.6.0, copyright (c) 2018 Encode OSS Ltd, under BSD-3-Clause;
 and Pydantic 2.13.4 and `pydantic-core` 2.46.4, copyright (c) 2017-present
@@ -152,9 +147,9 @@ developers, under BSD-3-Clause; OpenPyXL 3.1.5 under MIT; `arch` 7.2.0 and
 `exchange-calendars` 4.13.2 under Apache 2.0.
 
 Major networking, security, parsing, and provider-client dependencies include
-HTTPX 0.28.1 under BSD-3-Clause; aiohttp 3.14.3 under Apache 2.0 and MIT;
+HTTPX 0.28.1 under BSD-3-Clause; aiohttp 3.14.5 under Apache 2.0 and MIT;
 Requests 2.34.2 under Apache 2.0; cryptography 50.0.0 under Apache 2.0 or
-BSD-3-Clause; certifi 2026.7.22 under MPL 2.0; curl-cffi 0.16.1 under MIT;
+BSD-3-Clause; certifi 2026.10.23 under MPL 2.0; curl-cffi 0.16.1 under MIT;
 lxml 6.1.2 under BSD-3-Clause; Beautiful Soup 4.15.0 under MIT; yfinance 1.6.0
 under Apache 2.0; `pandas-ta-openbb` 0.4.24, finvizfinance 1.3.0, and Nasdaq
 Data Link 1.0.4 under MIT. The complete copyright, license, NOTICE, and
@@ -171,7 +166,7 @@ reproduced above apply. Loupist does not bundle or execute the upstream
 MCP server or Python examples.
 
 
-## Always-on method Skills
+## Bundled method Skills
 
 Short valuation, comparison, historical-rule-test, and filings workflow
 cards in `agent/skills/` are adapted from

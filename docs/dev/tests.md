@@ -1,11 +1,11 @@
 # Tests
 
-Run the narrowest behavior test. `scripts/verify.sh` is the handoff gate, not the edit loop. Search by the observable behavior or registered command.
+Run the narrowest behavior test. Search by the observable behavior or registered command.
 
 ## Tests
 
 Follow the [testing policy](../../AGENTS.md#tests). Select the smallest affected behavior
-case; `scripts/verify.sh` is the handoff gate, not the edit loop. Run broad Rust
+case; `scripts/verify.sh --affected` is the handoff gate, not the edit loop. Run broad Rust
 checks before a watched native session, since test-created files can trigger rebuilds.
 
 ```sh

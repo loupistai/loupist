@@ -82,7 +82,12 @@ struct Budget {
 }
 
 pub(crate) fn prepare(roots: &NativeRoots) -> Result<Prepared, PythonError> {
-    let staging = TempDir::new().map_err(|_| PythonError::failed("workspace snapshot failed"))?;
+    // Private before the first byte is copied in: on a shared temporary
+    // folder the default mode would let other local users read the copy.
+    let staging = tempfile::Builder::new()
+        .permissions(std::os::unix::fs::PermissionsExt::from_mode(0o700))
+        .tempdir()
+        .map_err(|_| PythonError::failed("workspace snapshot failed"))?;
     let workspace_fd = open_dir(&roots.workspace)?;
     let root_stat =
         fstat(&workspace_fd).map_err(|_| PythonError::failed("workspace snapshot failed"))?;

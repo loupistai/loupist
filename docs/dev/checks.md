@@ -4,6 +4,19 @@ The repository gate installs locked dependencies and compares the source tree be
 
 ## Broader checks
 
+`scripts/verify.sh --affected` is the handoff gate. It always runs the `repository`
+scope (guide links, change-scope regressions, cloud setup syntax, credential
+boundaries and toolchain pins: the checks CI's first job runs for every change),
+then only the web, python and rust scopes that
+`apps/loupist/scripts/ci_change_scope.py` selects. The comparison is the merge base
+with `origin/main` (`--base <revision>` changes it) against the working tree, so
+commits, staged and unstaged edits and untracked files all count. An unclassified
+path or a failed comparison selects every scope, as in CI. A guide-only change runs
+the repository scope alone. When Rust is selected, the gate also runs the locked
+Node and OpenBB installs its host tests use. It prints when native interaction or
+packaging is also in scope; those run outside this gate. Plain `scripts/verify.sh`
+runs every scope whatever changed.
+
 From `apps/loupist/`, `npm run check:web`, `check:rust` and `check:python` run
 one scope without reinstalling dependencies; `check:harness` runs the
 credential-free Pi/eval contracts also included in web. `npm run check` runs all
@@ -31,9 +44,11 @@ The `unused-files` step rejects renderer files outside the current app, preview,
 and external script import graph. See [Code cleanup](repository-guidance.md#code-cleanup).
 
 ```sh
+scripts/verify.sh --affected
 scripts/verify.sh
 # Existing dependencies; --list prints the planned steps without running them:
 sh apps/loupist/scripts/check.sh all
+sh apps/loupist/scripts/check.sh all --affected --list
 sh apps/loupist/scripts/check.sh rust --list
 ```
 
@@ -70,7 +85,7 @@ passes. Never change a rubric merely to make a candidate pass.
 
 Record the host and source revision or fingerprint with check results. A later
 source change invalidates affected evidence; rerun those checks before handoff.
-Cloud sessions use the affected scope gates plus native checks when the changed
+Local and cloud sessions use the affected gate plus native checks when the changed
 behavior reaches the bridge, UI or persistence. A renderer-only mock pass cannot
 replace those checks.
 
@@ -83,7 +98,7 @@ and it never edits its own stop condition or its graders.
 | --- | --- | --- | --- | --- |
 | Build | each work item | spec → implement → narrow tests → capture affected states → independent review → itemized fixes | acceptance checks pass and review has no P0/P1 findings | 3 fix rounds on one spec (re-scope it) or 5 rounds without progress |
 | Design review | each screen or flow change, and phase end | capture the state matrix → review every cell against its design spec and the rubric → fix → update baselines | every cell passes | a trade-off would change a fixed product decision |
-| Regression | before handoff and at phase end | `scripts/verify.sh` + credential-free eval tiers + regression suites | green | a failure appears outside the change |
+| Regression | before handoff and at phase end | `scripts/verify.sh --affected` (every scope at phase end) + credential-free eval tiers + regression suites | green | a failure appears outside the change |
 | Capability | phase end, within the eval budget | capability suites → trace analysis → harness change | baseline recorded | the budget would be exceeded |
 | Harness optimization | after regression, capability, and held-out suites exist | propose → train → validate → held-out once → adopt or reject | a candidate is adopted or the cap is reached | a held-out regression or a gaming signal |
 
@@ -163,7 +178,8 @@ ownership tests. In managed clouds, preserve the supplied network proxy and CA
 trust when building and running the container.
 
 The `rust` scope includes formatting, Clippy for normal and E2E builds, all-target
-tests and the applicable `eval-harness` contracts. Narrow a development run with
+tests, the applicable `eval-harness` contracts and the Python sandbox tests, which
+run as their own step in the `eval-harness` build ([why](../ci-cd.md#ci)). Narrow a development run with
 `sh apps/loupist/scripts/check.sh rust`, or a filtered `cargo test` as described in
 [Tests](tests.md#tests). Linux process leases require procfs access to verify the
 boot, process start and executable identities; restricted or unverifiable owners

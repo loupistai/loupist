@@ -29,7 +29,7 @@ and require full commit-SHA pins for third-party Actions. Approve workflows from
 outside contributors before they run. Weekly grouped Dependabot PRs cover Actions,
 npm, Cargo and uv; review them through the ordinary CI and PR process. The Actions
 update entry also lists the shared toolchain action's directory, so one grouped PR
-moves the pins in workflows and in `.github/actions/setup-toolchains/action.yml`. Dependabot
+moves the pins in workflows and in both composite actions under `.github/actions/`. Dependabot
 accepts only ruff patch updates, because `openbb-core` requires ruff below 0.16.
 It skips `@earendil-works/*` version updates: a Pi upgrade moves the package
 family, security pins and signed sidecar digests together by hand
@@ -83,9 +83,12 @@ PR and main push. The `main` push run, manual
 interaction and package smoke for the selected scopes. To run the macOS jobs on a
 branch before merging, use `gh workflow run ci.yml --ref <branch>`; a dispatch runs
 all source and macOS checks. Add `-f linux_native=true` to also exercise Linux
-WebKitGTK interaction and persistence under Xvfb. Every run checks guide links, scope regression tests, credential
-boundaries and Node pins without installing npm, OpenBB or Rust dependencies. The
-Linux Rust checks do not need a display.
+WebKitGTK interaction and persistence under Xvfb. Every run's first job runs
+`check.sh repository`: guide links, scope regression tests, cloud setup syntax,
+credential boundaries and Node pins, without installing npm, OpenBB or Rust
+dependencies. `scripts/verify.sh --affected` runs the same scope and classifier
+locally ([handoff gate](dev/checks.md#broader-checks)). The Linux Rust checks do not
+need a display.
 
 | Changed surface | Selected checks beyond the always-on repository checks |
 | --- | --- |
@@ -141,7 +144,13 @@ Vitest workers does not help on the 4-vCPU runner: with the same 1593 tests, fou
 workers took 482 s and two took 464 s.
 
 Rust runs three parallel legs on each selected host: `lint` (formatting and both
-Clippy builds), `tests` (all-target tests) and `eval` (headless eval contracts).
+Clippy builds), `tests` (all-target tests) and `eval` (headless eval contracts and
+the Python sandbox tests). The Python worker admits one run at a time, so its
+tests form a serial chain of cold module compiles and deliberate timeouts that
+outlasts every other test (about 135 s of a 176 s local run). `check_runner.py`
+skips that chain in `tests` and runs it as `python-sandbox-tests` in the `eval`
+leg's existing build, with one filter list for both sides, so each test runs once
+and the two legs finish in similar time.
 Lint installs only Rust; the other legs install locked Node and OpenBB dependencies
 for host integration tests. The plans still execute every Rust step exactly once
 on each host. `check.sh rust --only <steps>` runs the same parts locally. Rust

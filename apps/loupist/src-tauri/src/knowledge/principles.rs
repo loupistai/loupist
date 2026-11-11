@@ -291,16 +291,16 @@ pub fn principles_context(principles: &[Principle]) -> (String, Vec<Principle>) 
             .split_whitespace()
             .collect::<Vec<_>>()
             .join(" ");
-        let line = format!(
-            "- [lens:{}] {} — {}",
-            principle.record_id,
-            principle
-                .statement
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" "),
-            why
-        );
+        let statement = principle
+            .statement
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        let line = if why.is_empty() {
+            format!("- [lens:{}] {statement}", principle.record_id)
+        } else {
+            format!("- [lens:{}] {statement} — {why}", principle.record_id)
+        };
         let remaining = active.len() - selected.len() - 1;
         let notice = if remaining > 0 {
             format!("\n{remaining} more principles are saved; use lens_search to find them.")

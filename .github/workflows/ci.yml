@@ -78,22 +78,16 @@ jobs:
           echo "macos=${{ github.event_name != 'pull_request' }}" >> "$GITHUB_OUTPUT"
           echo "linux_native=${{ github.event_name == 'workflow_dispatch' && inputs.linux_native }}" >> "$GITHUB_OUTPUT"
 
-      - name: Check repository guidance and scope regressions
-        run: |
-          python3 scripts/guide.py --check
-          python3 -m unittest discover -s apps/loupist/scripts -p test_ci_change_scope.py
-          sh -n scripts/cloud-setup.sh
-
       - name: Install pinned Node for dependency-free security checks
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
 
-      - name: Check credential boundaries and toolchain pins
-        run: |
-          node apps/loupist/e2e/verify-security.mjs
-          node --test apps/loupist/scripts/node-toolchain.test.mjs
+      # Guide links, scope regressions, cloud setup syntax, credential boundaries
+      # and toolchain pins: the same steps `verify.sh --affected` always runs.
+      - name: Check repository guidance, scope regressions and security pins
+        run: sh apps/loupist/scripts/check.sh repository
 
   verify-web:
     needs: changes
@@ -189,7 +183,7 @@ jobs:
             runtime: "true"
             cache: verify
           - leg: eval
-            steps: headless-eval-contracts
+            steps: headless-eval-contracts,python-sandbox-tests
             runtime: "true"
             cache: verify
     runs-on: ubuntu-24.04
@@ -357,7 +351,7 @@ jobs:
             runtime: "true"
             cache: verify
           - leg: eval
-            steps: headless-eval-contracts
+            steps: headless-eval-contracts,python-sandbox-tests
             runtime: "true"
             cache: verify
     runs-on: macos-15

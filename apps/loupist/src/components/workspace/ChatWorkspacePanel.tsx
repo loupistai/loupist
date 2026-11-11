@@ -609,7 +609,7 @@ function ScopedChatWorkspacePanel({
 
   return (
     <WorkspaceFileProvider value={{ bridge, loupistId }}>
-      {open && overlay && <button
+      {overlay && <button
         type="button"
         className="artifact-panel-backdrop"
         aria-label={t("chatWorkspacePanel.closeChatWorkspace")}
@@ -625,14 +625,10 @@ function ScopedChatWorkspacePanel({
         data-panel-kind={kind}
         data-expanded={expanded || undefined}
         data-resizing={resizing || undefined}
-        hidden={!open}
-        inert={!open}
-        aria-hidden={!open || undefined}
         style={
           {
             "--artifact-panel-width": `${renderedWidth}px`,
             "--artifact-panel-height": `${renderedHeight}px`,
-            display: open ? undefined : "none",
           } as CSSProperties
         }
         aria-label={t("chatWorkspacePanel.chatWorkspacePanel")}
@@ -682,9 +678,9 @@ function ScopedChatWorkspacePanel({
         </div> : null}
         <div className="workspace-kind-content" hidden={kind === "materials"} inert={kind === "materials" || undefined}>{children}</div>
         <div className="workspace-materials-content" hidden={kind !== "materials"} inert={kind !== "materials" || undefined}>
-        {open ? showMap ? <div className="workspace-tabpanel" role="tabpanel" id={workspaceTabPanelId(CHAT_MAP_TAB_ID)} aria-labelledby={workspaceTabButtonId(CHAT_MAP_TAB_ID)}><ChatMiniMap onOpenFull={openFullMap} /></div>
+        {showMap ? <div className="workspace-tabpanel" role="tabpanel" id={workspaceTabPanelId(CHAT_MAP_TAB_ID)} aria-labelledby={workspaceTabButtonId(CHAT_MAP_TAB_ID)}><ChatMiniMap onOpenFull={openFullMap} /></div>
           // One wrapper in both modes, so expanding keeps the reader's state and scroll position.
-          : <div className="workspace-reading-column">{tabPanel}</div> : null}
+          : <div className="workspace-reading-column">{tabPanel}</div>}
         </div>
       </aside>
     </WorkspaceFileProvider>

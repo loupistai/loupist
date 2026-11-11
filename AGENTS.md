@@ -12,8 +12,8 @@ Preserve behavior coverage through the current entry point. Use the
 
 React submits typed intent via `apps/loupist/src/bridge/tauriBridge.ts`. Rust owns
 credentials, persistence, Memory transactions, grants and worker lifetime.
-Pi's native file tools stay inside the admitted workspace, scratch and attachment
-paths. `run_python` is the only agent code execution tool. It runs in the pinned
+Pi's native file tools stay inside the admitted workspace, scratch, attachment and
+global-instruction paths ([path classes](docs/runtime/permissions.md#path-classes)). `run_python` is the only agent code execution tool. It runs in the pinned
 WASI worker, with no shell, network, DNS, process spawn or host environment.
 The Loupist app binary does not receive the worker's unsigned-executable-memory
 entitlement. Keep Pi's runtime CWD private, direct file tools to the trusted
@@ -38,10 +38,12 @@ generated schemas/build output untouched. Prefer deleting obsolete pre-1.0 paths
 
 ## Pull requests
 
-Before local handoff, run `scripts/verify.sh` on the final source tree.
-Linux cloud agents (Codex, Claude or Cursor) use the pinned
-[cloud setup](docs/dev/checks.md#setup-across-development-hosts) and run
-`sh apps/loupist/scripts/check.sh <web|python|rust>` for affected scopes. On either
+Before handoff, run `scripts/verify.sh --affected` on the final source tree. It
+runs the repository checks and the web, python and rust scopes that CI's path
+classifier selects for the changes since `origin/main`; an unclassified path
+selects every scope ([gate](docs/dev/checks.md#broader-checks)). Linux cloud agents
+(Codex, Claude or Cursor) start from the pinned
+[cloud setup](docs/dev/checks.md#setup-across-development-hosts). On either
 host, run `npm --prefix apps/loupist/e2e run test:native` when UI flow, bridge or
 persistence changes; add persistence coverage for storage/restart changes.
 PR CI checks shared code on Linux. Native UI is checked on macOS after merge;

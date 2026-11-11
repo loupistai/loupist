@@ -673,13 +673,10 @@ pub(super) fn saved_authorship(
     custom_connection: bool,
 ) -> crate::knowledge::Authorship {
     use crate::knowledge::Authorship;
-    let provider = producer.provider.as_deref().unwrap_or_default();
-    let account = producer.tool_name.starts_with("kis_")
-        || producer.runtime_id.contains("koreainvestment")
-        || provider.starts_with("koreainvestment")
-        || provider.starts_with("kis");
+    // A provider name is no evidence of authorship: for `web_fetch` it is the
+    // page's host, so a site whose name starts like a broker's is still a
+    // publisher. Account reads are the user's through their producer row.
     if custom_connection
-        || account
         || producer.origin == RunResultOrigin::WorkspaceFile
         || producer.runtime_id.starts_with("custom")
     {

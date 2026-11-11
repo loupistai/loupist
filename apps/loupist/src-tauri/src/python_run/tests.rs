@@ -1216,7 +1216,9 @@ import time
 time.sleep(300)
 open("/workspace/outputs/after.txt", "w").write("after")
 "#;
-    let value = run_python(&fixture, code, 60);
+    // A warm start writes the first file in about a second; the limit only has
+    // to outlast that, and the whole wait is spent inside the serial worker.
+    let value = run_python(&fixture, code, 20);
     assert_eq!(value["status"], "timed_out", "{value}");
     assert_eq!(host_text(&fixture, "outputs/before.txt"), "before");
     assert!(absent(&workspace(&fixture).join("outputs/after.txt")));

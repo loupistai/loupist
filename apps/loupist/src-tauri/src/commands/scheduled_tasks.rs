@@ -6,7 +6,7 @@ use crate::{
     app::{AppState, CommandError},
     scheduled_tasks::{
         service,
-        types::{Run, Task, TaskKind, TaskListItem, TaskStatus},
+        types::{Run, Task, TaskListItem, TaskStatus},
         WatchSnapshot,
     },
 };
@@ -152,11 +152,6 @@ pub(crate) fn scheduled_task_delete(
     request: RevisionRequest,
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
-    if service::get(&state, &request.loupist_id, &request.task_id)?.kind == TaskKind::Briefing {
-        return Err(CommandError::invalid(
-            "Turn the briefing off instead of deleting it",
-        ));
-    }
     service::delete(
         &state,
         &request.loupist_id,

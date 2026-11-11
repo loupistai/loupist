@@ -17,7 +17,7 @@ use crate::fs::artifact_trust::{
 // The SQLite application id distinguishes Loupist files from unrelated
 // databases and discarded development formats.
 pub(crate) const STORE_SCHEMA_VERSION: i64 = 5;
-pub(crate) const STORE_APPLICATION_ID: i64 = 0x4755_5255; // LOUPIST
+pub(crate) const STORE_APPLICATION_ID: i64 = 0x4755_5255; // "GURU": the id stored in every existing database, kept as is
 const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub(super) fn sqlite_side_path(path: &Path, suffix: &str) -> PathBuf {

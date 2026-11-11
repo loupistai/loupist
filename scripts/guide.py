@@ -13,6 +13,12 @@ ROOT = Path(__file__).resolve().parents[1]
 EXTERNAL_GUIDES = {
     Path("AGENTS.md"),
     Path("CLAUDE.md"),
+    Path("CONTRIBUTING.md"),
+    Path("LICENSING.md"),
+    Path("LOUPIST.md"),
+    Path("README.md"),
+    Path("installation.md"),
+    Path("apps/loupist/README.md"),
     Path("apps/loupist/e2e/README.md"),
     Path("apps/loupist/evals/README.md"),
 }

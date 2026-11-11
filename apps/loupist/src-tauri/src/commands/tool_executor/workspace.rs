@@ -9,6 +9,7 @@ const SEARCH_COVERS_APP_DATA_NEXT: &str = "This search root contains the app's p
 const UNRESOLVABLE_NEXT: &str = "This path goes through a symbolic link that loops or cannot be read, so it is not touched. Use the real file's path.";
 const CREDENTIALS_NEXT: &str = "Do not retry this path. Credential stores, container runtime folders and shell startup files are never read or written by the Loupist.";
 const GIT_DIR_NEXT: &str = "Do not retry this path. Native file tools do not read or write git metadata, config or hooks. Work with research files outside `.git`.";
+const ORDINARY_FILE_NEXT: &str = "This tool works on ordinary research files. Dot-folders and dotfiles (such as `.loupist` or `.git`) and instruction files are not reached through it; choose a visible path in the workspace.";
 const HARD_LINK_NEXT: &str = "This file has another name on disk and may alias protected data. Ask the user for an ordinary copy; do not retry this alias.";
 
 /// The native policy's state for one turn: the folders it classifies against
@@ -82,6 +83,14 @@ fn read_identity(_path: &std::path::Path) -> Option<Value> {
     None
 }
 
+/// Which host tool names a workspace-relative file (`host_file_gate`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum HostFile {
+    Capture,
+    Import,
+    Export,
+}
+
 impl AppToolExecutor {
     /// Decides one native call without waiting on anyone. The canonical
     /// target comes back so the extension can pin a read, write or edit to
@@ -139,6 +148,49 @@ impl AppToolExecutor {
         Ok(result)
     }
 
+    /// The path gate for host tools that take a workspace-relative file
+    /// (`workspace_capture`, `dataset_import`, `dataset_export`). Each takes
+    /// the native decision for a read or write of the same path, so a model
+    /// cannot use them to reach what a file tool is refused: the Loupist's
+    /// private folder, git metadata, credentials or a hard-linked alias. A
+    /// capture reads what a native read may, this Chat's attachments
+    /// included. An import or export also stays out of every dot-folder, and
+    /// an export never creates a file a later reply loads as instructions.
+    pub(super) fn host_file_gate(&self, path: &str, access: HostFile) -> Result<(), BrokerError> {
+        let write = access == HostFile::Export;
+        let ordinary = native_policy::ordinary_workspace_path(path, write);
+        let refused = || BrokerError::ProtectedPath.with_next(ORDINARY_FILE_NEXT);
+        let Some(roots) = self.capture.native.roots() else {
+            // A run without native roots has no attachment folder to admit.
+            return if ordinary { Ok(()) } else { Err(refused()) };
+        };
+        if access != HostFile::Capture && !ordinary {
+            return Err(refused());
+        }
+        if write
+            && native_policy::classify(std::path::Path::new(path), roots).class
+                == native_policy::PathClass::Instructions
+        {
+            return Err(refused());
+        }
+        let request = NativeRequest {
+            tool: if write {
+                NativeTool::Write
+            } else {
+                NativeTool::Read
+            },
+            target: Some(std::path::PathBuf::from(path)),
+        };
+        match self
+            .capture
+            .native
+            .decide(&request, &self.capture.turn_taint)?
+        {
+            NativeDecision::AllowFile { .. } => Ok(()),
+            NativeDecision::Refuse(refusal) => Err(refusal_error(refusal)),
+        }
+    }
+
     pub(super) async fn python_run(&self, params: Value) -> Result<Value, BrokerError> {
         let (code, timeout) = crate::python_run::parse_params(&params)?;
         let roots = self
@@ -178,6 +230,9 @@ impl AppToolExecutor {
             .ok_or_else(|| BrokerError::Execution("Loupist does not exist".into()))?;
         let root = crate::fs::loupist_root::profile_workspace(&profile)
             .map_err(|error| BrokerError::Execution(error.message))?;
+        let relative = crate::fs::workspace_files::relative_path(&path)
+            .map_err(|error| BrokerError::Execution(error.message))?;
+        self.host_file_gate(&relative, HostFile::Capture)?;
         let file = crate::fs::workspace_files::exact_text(&root, &path, expected.as_deref())
             .map_err(|error| BrokerError::Execution(error.message))?;
         let untrusted = crate::commands::export_trust::contains(

@@ -57,6 +57,30 @@ async fn dataset_export_writes_owned_pinned_full_data_without_overwriting() {
         .execute(&policy(), ToolMethod::DatasetExport, call.clone())
         .await
         .unwrap();
+    // An export is an ordinary research file: never the Loupist's private
+    // folder, git metadata, a Skill folder or a file loaded as instructions.
+    for protected in [
+        ".loupist/config.toml",
+        ".loupist/skills/planted/SKILL.md",
+        ".agents/skills/planted.md",
+        ".git/hooks/post-checkout",
+        "notes/.hidden/prices.csv",
+        "AGENTS.md",
+        "agents.override.md",
+        "CLAUDE.md",
+    ] {
+        let mut refused = call.clone();
+        refused["path"] = json!(protected);
+        let error = executor
+            .execute(&policy(), ToolMethod::DatasetExport, refused)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, BrokerError::WithNext { source, .. } if matches!(**source, BrokerError::ProtectedPath)),
+            "{protected}: {error:?}"
+        );
+        assert!(!temporary.path().join("loupist-a").join(protected).exists());
+    }
     let exported = temporary.path().join("loupist-a/exports/prices.csv");
     let bytes = std::fs::read(&exported).unwrap();
     assert_eq!(String::from_utf8_lossy(&bytes).lines().count(), 6001);

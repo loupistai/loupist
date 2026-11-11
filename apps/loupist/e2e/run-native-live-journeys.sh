@@ -149,5 +149,8 @@ fi
 
 node "$SCRIPT_DIR/native-live-journeys.mjs" "$SESSION_INFO"
 cleanup_app
-wait_for_dev_server_exit "$DEV_PORT"
+# A reused dev server belongs to its owner and stays up.
+if [ "${LOUPIST_E2E_REUSE_DEV_SERVER:-}" != "1" ]; then
+    wait_for_dev_server_exit "$DEV_PORT"
+fi
 echo "Loupist native release journeys passed."

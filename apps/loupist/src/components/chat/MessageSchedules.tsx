@@ -96,8 +96,10 @@ function ProposedSchedule({ receipt, onOpen }: { receipt: TaskReceipt; onOpen?: 
       else { await scope.bridge.scheduledTaskDiscard(identity); setProposal({ status: "discarded" }); }
     } catch {
       setFailed(true);
-      // The task may have changed elsewhere; show what is true now.
-      setProposal(proposalFrom(await scope.bridge.scheduledTaskGet(identity).catch(() => null)));
+      // The task may have changed elsewhere; show what is true now. A failed
+      // re-read says nothing about the task, so the card stays as it was.
+      const current = await scope.bridge.scheduledTaskGet(identity).then(proposalFrom, () => undefined);
+      if (current) setProposal(current);
     } finally {
       setBusy(false);
     }

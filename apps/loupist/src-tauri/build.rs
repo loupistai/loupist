@@ -8,7 +8,7 @@ use std::{
 fn main() {
     if (std::env::var_os("CARGO_FEATURE_WEBDRIVER").is_some()
         || std::env::var_os("CARGO_FEATURE_E2E").is_some())
-        && std::env::var("DEBUG").as_deref() != Ok("true")
+        && release_profile()
     {
         panic!("WebDriver is forbidden in release builds");
     }
@@ -109,12 +109,19 @@ fn json_escape(value: &str) -> String {
     escaped
 }
 
+/// Cargo's `PROFILE` is `release` for a profile that inherits from release.
+/// `DEBUG` only reports the profile's debuginfo setting, which a development
+/// build may turn off and a release build may turn on.
+fn release_profile() -> bool {
+    std::env::var("PROFILE").as_deref() == Ok("release")
+}
+
 fn embed_pi_runtime_tree_digest() {
     let root = PathBuf::from("resources/pi-runtime");
     println!("cargo:rerun-if-changed={}", root.display());
     match runtime_tree_digest(&root) {
         Ok(digest) => println!("cargo:rustc-env=LOUPIST_PI_RUNTIME_TREE_SHA256={digest}"),
-        Err(error) if std::env::var("DEBUG").as_deref() == Ok("true") => {
+        Err(error) if !release_profile() => {
             println!("cargo:warning=Pi runtime tree digest unavailable: {error}");
             println!("cargo:rustc-env=LOUPIST_PI_RUNTIME_TREE_SHA256=unavailable");
         }

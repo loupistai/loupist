@@ -4,6 +4,7 @@ import { useTranslation } from "@/i18n";
 import { formatDate, formatDateTime, formatNumber } from "@/i18n/format";
 import type { LoupistBridge } from "@/types";
 import type { CryptoFilePreview, HoldingsCsvPreview, HoldingsSummary, WalletView } from "@/contracts/userContext";
+import { useOnline } from "@/app/useOnline";
 import { commandErrorCode, errorMessage } from "@/lib/errors";
 import { Button } from "../ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
@@ -27,16 +28,6 @@ type Body =
 
 /** The file's own name, for the steps that talk about it. */
 const fileName = (path: string) => path.split(/[\\/]/u).pop() || path;
-
-function useOnline() {
-  const [online, setOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine !== false);
-  useEffect(() => {
-    const update = () => setOnline(navigator.onLine !== false);
-    window.addEventListener("online", update); window.addEventListener("offline", update);
-    return () => { window.removeEventListener("online", update); window.removeEventListener("offline", update); };
-  }, []);
-  return online;
-}
 
 /**
  * "Your holdings" (finance-crypto-and-templates.md §2.1): stock and exchange

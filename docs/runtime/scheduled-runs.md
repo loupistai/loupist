@@ -41,9 +41,9 @@ asks the Bot to run a task now; Schedule shows its definition and run history.
 Missed recurring occurrences coalesce into one due run. Startup marks unfinished
 runs interrupted; failed/interrupted recurring tasks pause unless a newer edit
 superseded the run's definition. History records status, timing, error and target
-Chat, where the reply and its evidence remain. There is no separate
-main-conversation delivery, meaningful-change filter, saved per-task connection
-allowlist, or per-task native-execution preference.
+Chat, where the reply and its evidence remain. A finished run is also announced in
+the Loupist's [home Thread](../ui/home-thread.md). There is no meaningful-change
+filter, saved per-task connection allowlist, or per-task native-execution preference.
 
 Each scheduled task is `custom`, `briefing` or `earnings` (the automatic
 [results task](#results-before-and-after), which runs on the host without a Chat turn). A

@@ -55,24 +55,6 @@ export async function selectLoupistTemplate(browser, name, timeout = 15_000) {
 }
 
 /**
- * Leaves onboarding step 5 ("Meet your Loupist"). With followed assets it answers the
- * morning-update question (`morningUpdate`); without them the only action is Start chatting.
- * Returns which action it took.
- */
-export async function finishMeetStep(browser, { morningUpdate = true, timeout = 30_000 } = {}) {
-  await waitForOnboardingStep(browser, 5, timeout);
-  const consent = await browser.$(`[data-onboarding-consent="${morningUpdate ? "yes" : "no"}"]`);
-  if (await consent.isDisplayed().catch(() => false)) {
-    await consent.click();
-    return morningUpdate ? "morning-update" : "declined";
-  }
-  const start = await browser.$("[data-onboarding-start-chat]");
-  await start.waitForDisplayed({ timeout: 5_000, timeoutMsg: "Step 5 offered no action" });
-  await start.click();
-  return "start";
-}
-
-/**
  * Sidebar row actions use opacity 0 until :hover or :focus-within.
  * A locked screen matches neither, so reveal the control before clicking.
  */

@@ -69,7 +69,6 @@ export function WatchingReader({ bridge, loupist, settings, onBack }: {
   bridge: LoupistBridge;
   loupist: LoupistSummary;
   settings: WatchSettings;
-  onSettings: (settings: WatchSettings) => void;
   onBack: () => void;
 }) {
   useTranslation(["briefings", "assets", "chat"]);

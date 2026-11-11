@@ -323,12 +323,11 @@ pub(crate) fn unread_counts(state: &AppState) -> Result<Vec<UnreadCount>, Comman
         .list_loupists()
         .map_err(map_store)?
         .into_iter()
+        // A Loupist whose folder is offline has no readable inbox; it must
+        // not hide every other Loupist's count.
         .map(|loupist| {
             Ok(UnreadCount {
-                count: state
-                    .store
-                    .inbox_unread_count(&loupist.id)
-                    .map_err(map_store)?,
+                count: state.store.inbox_unread_count(&loupist.id).unwrap_or(0),
                 loupist_id: loupist.id,
             })
         })

@@ -53,7 +53,7 @@ export function ThreadEarnings({ message, bridge, loupistId, loupistName }: {
       {record.measures.length ? <EarningsMiniTable measures={record.measures} onOpenEvidence={openEvidence} /> : null}
       {go ? <div className="thread-earnings-actions"><Button type="button" variant="outline" size="sm" aria-label={`${t("earnings.seeBeforeAfter")} · ${name}`} onClick={open}>{t("earnings.seeBeforeAfter")}</Button></div> : null}
     </> : <>
-      <p>{state === "captured" ? t("earnings.captured") : t("earnings.failed", { name })}</p>
+      {state === "failed" ? null : <p>{state === "captured" ? t("earnings.captured") : t("earnings.failed", { name })}</p>}
       <div className="thread-earnings-actions">
         {state !== "captured" && bridge ? <Button type="button" variant="outline" size="sm" disabled={retrying} aria-label={`${t("earnings.retry")} · ${name}`} onClick={() => void retry()}>{retrying ? <Spinner /> : null}{t("earnings.retry")}</Button> : null}
         {state === "captured" && go ? <Button type="button" variant="outline" size="sm" onClick={open}>{t("earnings.seeBeforeAfter")}</Button> : null}

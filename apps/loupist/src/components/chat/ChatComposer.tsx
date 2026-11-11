@@ -839,7 +839,8 @@ export function ChatComposer({
 
   const steerCurrent = () => {
     // A second press while the first is still waiting must not drop the draft or start another steer.
-    if (steering.current) return;
+    // The keyboard shortcut reaches here without the Guide button's disabled state.
+    if (steering.current || sendDisabledReason) return;
     const source = prompt;
     const text = composeSubmission(source, ownedChips, inline.references);
     if (!text) return;
