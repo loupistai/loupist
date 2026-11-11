@@ -1,4 +1,4 @@
-//! Saved Memory under an as-of cutoff (finance-point-in-time.md §3.2). A turn
+//! Saved Memory under an as-of cutoff (docs/knowledge/memory.md#memory-under-a-cutoff). A turn
 //! with a cutoff reads only what was known by the end of that day: Sources
 //! published by then (or the user's own statements saved by then), World
 //! relationships published by then, Journal entries, notes and messages

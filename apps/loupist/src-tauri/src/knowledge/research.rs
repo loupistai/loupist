@@ -408,13 +408,12 @@ fn read_working_note_exact(
     decode_working_note(row)
 }
 
-// Rowid range bounds SQLite work even if other Loupists fill the recent window.
-// Use the same 1,000-candidate budget as research search, before JSON decoding.
+// Bound current rows, rather than rowid distance: replacing a Chat's note can
+// leave arbitrarily large gaps between the surviving rows.
 const LATER_NOTE_CANDIDATES_SQL: &str =
     "SELECT research_id, origin_chat_id, body_json, record_digest, created_at_ms, rowid
      FROM knowledge_research_records
-     WHERE rowid > (SELECT COALESCE(MAX(rowid), 0) FROM knowledge_research_records) - ?2
-       AND loupist_id = ?1 ORDER BY rowid DESC";
+     WHERE loupist_id = ?1 ORDER BY rowid DESC LIMIT ?2";
 
 fn later_notes(
     tx: &Transaction<'_>,
@@ -761,9 +760,10 @@ fn collect_journals(
     ranked: &mut Vec<RankedHit>,
 ) -> KnowledgeResult<u32> {
     let mut statement = tx.prepare(
-        "SELECT body_json, created_at_ms, journal_id FROM knowledge_journals NOT INDEXED
-         WHERE rowid > COALESCE((SELECT MAX(rowid) FROM knowledge_journals), 0) - ?3
-           AND loupist_id = ?1
+        "SELECT body_json, created_at_ms, journal_id FROM (
+           SELECT body_json, created_at_ms, journal_id FROM knowledge_journals
+           WHERE loupist_id = ?1 ORDER BY rowid DESC LIMIT ?3
+         )
          ORDER BY created_at_ms DESC, journal_id DESC LIMIT ?2",
     )?;
     let rows = statement.query_map(
@@ -805,14 +805,15 @@ fn collect_research_notes(
 ) -> KnowledgeResult<u32> {
     // Current notes are unique per Chat, so no historical anti-join is needed.
     let mut statement = tx.prepare(
-        "SELECT research_id, body_json, created_at_ms, origin_chat_id FROM knowledge_research_records
-         WHERE rowid > COALESCE((SELECT MAX(rowid) FROM knowledge_research_records), 0) - ?3
-           AND loupist_id = ?1
-           AND (?4 = 0 OR json_type(body_json, '$.workingNote') = 'object')
-         ORDER BY created_at_ms DESC, rowid DESC LIMIT ?2",
+        "SELECT research_id, body_json, created_at_ms, origin_chat_id FROM (
+           SELECT research_id, body_json, created_at_ms, origin_chat_id, rowid AS candidate_rowid
+           FROM knowledge_research_records WHERE loupist_id = ?1
+             AND (?3 = 0 OR json_type(body_json, '$.workingNote') = 'object')
+           ORDER BY rowid DESC LIMIT ?4
+         ) ORDER BY created_at_ms DESC, candidate_rowid DESC LIMIT ?2",
     )?;
     let rows = statement.query_map(
-        params![loupist_id, limit, RESEARCH_SEARCH_CANDIDATES, notes_only],
+        params![loupist_id, limit, notes_only, RESEARCH_SEARCH_CANDIDATES],
         research_row,
     )?;
     let mut scanned = 0_u32;
@@ -1559,6 +1560,116 @@ mod search_tests {
                 "unexpected hits for {query}"
             );
         }
+    }
+
+    #[test]
+    fn replacing_notes_does_not_evict_other_current_notes_or_corrections() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = KnowledgeStore::open(dir.path().join("knowledge.sqlite")).unwrap();
+        let anchor = store
+            .transact(|write| {
+                let anchor = save_note(write, "original", "Original premise", 1);
+                insert_later_note(write.tx, &anchor, "loupist-a", 2);
+                let mut ids = [
+                    save_note(write, "busy-a", "Routine", 3),
+                    save_note(write, "busy-b", "Routine", 4),
+                ];
+                for i in 0..1002 {
+                    let slot = i % 2;
+                    ids[slot] = write
+                        .save_research(SaveResearch {
+                            loupist_id: "loupist-a".into(),
+                            turn_id: if slot == 0 { "busy-a" } else { "busy-b" }.into(),
+                            at_ms: 5 + i as i64,
+                            observations: String::new(),
+                            interpretation: String::new(),
+                            assumptions: String::new(),
+                            evaluation: String::new(),
+                            journal: None,
+                            note_inputs: None,
+                            working_note: Some(WorkingNoteDraft {
+                                title: "Routine".into(),
+                                markdown: "Routine".into(),
+                                change_summary: "Updated".into(),
+                                expected_research_id: Some(ids[slot].clone()),
+                            }),
+                        })?
+                        .research_id;
+                }
+                Ok(anchor)
+            })
+            .unwrap();
+        let result = store
+            .research_history("loupist-a", "Original premise", None, Some(20))
+            .unwrap();
+        let hit = result
+            .hits
+            .iter()
+            .find(|hit| hit.research_id == anchor)
+            .unwrap();
+        assert_eq!(hit.later_notes.len(), 1);
+        let note = store
+            .read(|w| read_working_note(w.tx, "loupist-a", &anchor))
+            .unwrap();
+        assert_eq!(note.later_notes.len(), 1);
+        let listed = store
+            .research_history("loupist-a", "", None, Some(20))
+            .unwrap();
+        assert_eq!(listed.hits.len(), 4);
+    }
+
+    #[test]
+    fn candidate_windows_bound_rows_before_sorting_by_recorded_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = KnowledgeStore::open(dir.path().join("knowledge.sqlite")).unwrap();
+        store
+            .transact(|write| {
+                save_note(write, "outside", "Outside boundary", 10_000);
+                super::super::journal::create(
+                    write.tx,
+                    "loupist-a",
+                    super::super::journal::JournalInput {
+                        judgment: "Outside boundary".into(),
+                        reasoning: String::new(),
+                        entities: vec![],
+                        check: None,
+                        thesis: None,
+                    },
+                    10_000,
+                )?;
+                for i in 1..=1000 {
+                    save_note(write, &format!("bounded-{i}"), "Routine note", i);
+                    super::super::journal::create(
+                        write.tx,
+                        "loupist-a",
+                        super::super::journal::JournalInput {
+                            judgment: "Routine judgment".into(),
+                            reasoning: String::new(),
+                            entities: vec![],
+                            check: None,
+                            thesis: None,
+                        },
+                        i,
+                    )?;
+                }
+                Ok(())
+            })
+            .unwrap();
+        let result = store
+            .research_history("loupist-a", "Outside boundary", None, Some(20))
+            .unwrap();
+        assert!(result.hits.is_empty());
+        assert_eq!(result.records_scanned, 2000);
+        let notes = store
+            .read(|w| search_working_notes(w.tx, "loupist-a", "Outside boundary", Some(20)))
+            .unwrap();
+        assert!(notes.hits.is_empty());
+        assert_eq!(notes.records_scanned, 1000);
+        let recent = store
+            .research_history("loupist-a", "", None, Some(3))
+            .unwrap();
+        assert_eq!(recent.hits.len(), 3);
+        assert_eq!(recent.records_scanned, 6);
     }
 
     #[test]

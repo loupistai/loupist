@@ -2,6 +2,27 @@
 
 Scheduled work reuses ordinary Chat admission. The process has to be running, including while the window is hidden. The Schedule tab is [Schedule](../ui/schedule.md).
 
+## Process lifetime
+
+World jobs and World search run in-process through Rust and the local embedding
+model. Existing folders keep their canonical SQLite snapshot; leftover
+`graph-instance/` data is ignored and never migrated or read.
+App exit stops schedule admission, cancels/drains World work and shuts down MCP
+workers and leased processes. The Tauri exit callback allows 30 seconds; unfinished
+cleanup retains leases for startup recovery. Recovery verifies process identity
+before signaling. Process leases are implemented for macOS, Windows and Linux.
+Linux verifies the boot ID, process start ticks and executable identity through
+procfs and requires the process group to remain verifiable. Other Unix hosts
+fail closed with `UnsupportedPlatform`.
+
+Keep running in the menu bar for briefings defaults on, and turning a briefing on
+sets it again. Closing the main window hides it while that setting is on.
+Menu Quit and Cmd+Q exit. The tray menu opens the app, selects a Loupist's Schedule
+tab, or quits. A finished briefing posts an OS notification when permission is
+granted. That notification does not open the item. Tray selection emits the
+typed `inbox-open` event. Schedules run only while the app process is running,
+including while the window is hidden.
+
 ## Runs
 
 The run coordinator allows at most four model workers and rejects concurrent runs
@@ -39,11 +60,20 @@ starts a paused task without turning on its future weekday schedule. The user
 asks the Bot to run a task now; Schedule shows its definition and run history.
 
 Missed recurring occurrences coalesce into one due run. Startup marks unfinished
-runs interrupted; failed/interrupted recurring tasks pause unless a newer edit
+runs interrupted; a failure in one Loupist's recovery is skipped so other
+Loupists can still run. An undecodable running receipt is skipped individually,
+and its run id is logged once per app process; other orphans in that Loupist still
+recover. Recovery opens a write transaction only when it finds an
+orphaned run. Failed/interrupted recurring tasks pause unless a newer edit
 superseded the run's definition. History records status, timing, error and target
-Chat, where the reply and its evidence remain. A finished run is also announced in
-the Loupist's [home Thread](../ui/home-thread.md). There is no meaningful-change
-filter, saved per-task connection allowlist, or per-task native-execution preference.
+Chat, where the reply and its evidence remain. Renderer discovery polls every two
+seconds while the window is visible and every 30 seconds while hidden, and reads
+immediately when the window becomes visible or regains focus. A finished run is also
+announced in the Loupist's [home Thread](../ui/home-thread.md). Desktop notifications
+identify custom and earnings tasks by title and distinguish stopped runs from
+failures. Only a user-stopped run says "stopped"; crash recovery and other
+interruptions say "couldn't finish". There is no meaningful-change filter, saved
+per-task connection allowlist, or per-task native-execution preference.
 
 Each scheduled task is `custom`, `briefing` or `earnings` (the automatic
 [results task](#results-before-and-after), which runs on the host without a Chat turn). A
@@ -103,14 +133,18 @@ turning it on needs no model, and a failed run does not pause it.
 A run is claimed through scheduler admission (`claim_host_run`, which keeps it out of
 interrupted-run recovery) but makes no model call and no Chat turn. It keeps
 [results events](../analysis/results.md#results-events) in step with the asset pages'
-observations, runs at most eight due captures under a Memory-mutation activity, records
+observations, runs at most eight due captures under a Memory-mutation activity,
+schedules due captures it did not attempt for the next minute, and records
 what each capture did as structured summary items (`RunSummaryItem`: expected or
 reported values with the asset name, period and count, a failed capture, or nothing due)
 that the Schedule tab words in the reader's language, keeps a failure's reason in the
 run's error, and posts what the Thread is owed. A successful before-capture posts
 nothing. Captures read
-through each Loupist's host executor, as the watchers do; what they read and how values
+through each Loupist's host executor, as the watchers do. Statement rows match the
+event's period-end date first; fiscal labels are used only when the payload has no
+dated rows. What they read and how values
 are compared is in [Results before and after](../analysis/results.md#results-before-and-after). The
 results card reads `earnings_snapshot_get` and `earnings_events_list` and shows
 "Capturing what's expected…" while a capture runs; Prepare now and Try again
-(`earnings_prepare`) run the event's pending side at once.
+(`earnings_prepare`) run the event's pending side at once and return a conflict when
+another capture already owns the task.

@@ -140,7 +140,7 @@ async fn loupist_settings_pause_and_frozen_model_controls_are_checked_on_every_c
         .insert("serviceTier".into(), "priority".into());
     save("loupist-a", &changed);
     assert_eq!(dispatch("loupist-a").await.disposition, NotSent);
-    // Quarantine merges into the saved settings without touching other controls or Loupists.
+    // An in-memory quarantine without a committed receipt must not escape a rollback.
     let driven = GraphProcessingSettings {
         quarantined_generations: vec!["gen_new".into()],
         ..original.clone()
@@ -148,7 +148,7 @@ async fn loupist_settings_pause_and_frozen_model_controls_are_checked_on_every_c
     merge_quarantine(&store, "loupist-a", &driven).unwrap();
     let merged = load_settings(&store.lock().unwrap(), "loupist-a").unwrap();
     assert_eq!(merged.run_options, changed.run_options);
-    assert_eq!(merged.quarantined_generations, ["gen_new"]);
+    assert!(merged.quarantined_generations.is_empty());
     assert!(load_settings(&store.lock().unwrap(), "loupist-b")
         .unwrap()
         .quarantined_generations
@@ -382,7 +382,7 @@ async fn rust_engine_drives_queued_jobs_without_a_staged_worker_or_runtime() {
     );
     // Two paid attempts that published nothing quarantine the generation.
     let mut driven = settings.clone();
-    for _ in 0..2 {
+    for index in 0..2 {
         let running = knowledge
             .graph_mark_running(&driven, &job.job_id, now_ms())
             .unwrap();
@@ -390,6 +390,30 @@ async fn rust_engine_drives_queued_jobs_without_a_staged_worker_or_runtime() {
         knowledge
             .graph_note_inference(&job.job_id, &attempt)
             .unwrap();
+        if index == 1 {
+            let rolled_back: KnowledgeResult<()> = knowledge.transact(|write| {
+                super::super::graph_jobs::finish_job(
+                    write.tx,
+                    &mut driven,
+                    &job.job_id,
+                    &attempt,
+                    super::super::graph_jobs::JOB_FAILED_BEFORE,
+                    true,
+                    false,
+                    now_ms(),
+                )?;
+                Err(KnowledgeError::Invalid("roll back the attempt receipt"))
+            });
+            assert!(rolled_back.is_err());
+            assert!(!driven.quarantined_generations.is_empty());
+            merge_quarantine(&supervisor.inner.store, loupist, &driven).unwrap();
+            assert!(
+                load_settings(&supervisor.inner.store.lock().unwrap(), loupist)
+                    .unwrap()
+                    .quarantined_generations
+                    .is_empty()
+            );
+        }
         knowledge
             .graph_finish(
                 &mut driven,

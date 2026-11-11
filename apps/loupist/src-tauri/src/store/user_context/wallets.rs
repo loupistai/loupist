@@ -1,7 +1,7 @@
 //! Read-only wallet addresses and their latest balance snapshot. The renderer
 //! sees masked addresses, network, status and dates; never balances.
 use super::wallet_address::{check_address, masked, AddressCheck, WalletFamily};
-use super::{insert_snapshot, name, HoldingsPosition, HoldingsSource};
+use super::{insert_snapshot, name, read_stored_enum, HoldingsPosition, HoldingsSource};
 use crate::store::{SqliteStore, StoreError, StoreResult};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -15,16 +15,6 @@ pub enum WalletStatus {
     Unread,
     Ok,
     Failed,
-}
-
-impl WalletStatus {
-    fn parse(value: &str) -> Self {
-        match value {
-            "ok" => Self::Ok,
-            "failed" => Self::Failed,
-            _ => Self::Unread,
-        }
-    }
 }
 
 /// What the renderer may know about a wallet. `address` is only for the
@@ -72,17 +62,16 @@ pub enum WalletAddError {
 
 fn view(row: &rusqlite::Row<'_>) -> rusqlite::Result<WalletView> {
     let address: String = row.get(2)?;
-    let family: String = row.get(1)?;
     Ok(WalletView {
         id: row.get(0)?,
-        family: WalletFamily::parse(&family).unwrap_or(WalletFamily::Bitcoin),
+        family: read_stored_enum(row, 1)?,
         masked: masked(&address),
         address,
         name: row.get(3)?,
         added_at_ms: row.get(4)?,
         last_read_at_ms: row.get(5)?,
         last_good_read_at_ms: row.get(6)?,
-        status: WalletStatus::parse(&row.get::<_, String>(7)?),
+        status: read_stored_enum(row, 7)?,
         unlisted_count: row.get::<_, i64>(8)?.max(0) as usize,
     })
 }
@@ -96,8 +85,8 @@ impl SqliteStore {
         let mut statement = connection.prepare(&format!(
             "SELECT {WALLET_COLUMNS} FROM user_wallet_addresses ORDER BY added_at_ms, id"
         ))?;
-        let wallets = statement.query_map([], view)?.collect::<Result<_, _>>()?;
-        Ok(wallets)
+        let rows = statement.query_map([], view)?;
+        Ok(crate::store::collect_readable_rows(rows, "wallets")?)
     }
 
     pub fn wallet_targets(&self, wallet_id: Option<&str>) -> StoreResult<Vec<WalletTarget>> {
@@ -105,17 +94,18 @@ impl SqliteStore {
         let mut statement = connection.prepare(
             "SELECT id,family,address FROM user_wallet_addresses WHERE ?1 IS NULL OR id = ?1 ORDER BY added_at_ms, id",
         )?;
-        let targets = statement
-            .query_map([wallet_id], |row| {
-                let family: String = row.get(1)?;
-                Ok(WalletTarget {
-                    id: row.get(0)?,
-                    family: WalletFamily::parse(&family).unwrap_or(WalletFamily::Bitcoin),
-                    address: row.get(2)?,
-                })
-            })?
-            .collect::<Result<_, _>>()?;
-        Ok(targets)
+        let rows = statement.query_map([wallet_id], |row| {
+            Ok(WalletTarget {
+                id: row.get(0)?,
+                family: read_stored_enum(row, 1)?,
+                address: row.get(2)?,
+            })
+        })?;
+        Ok(if wallet_id.is_some() {
+            rows.collect::<Result<_, _>>()?
+        } else {
+            crate::store::collect_readable_rows(rows, "wallet targets")?
+        })
     }
 
     /// Validates in Rust (secret guard first) and stores the canonical

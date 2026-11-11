@@ -1,9 +1,11 @@
+import { useCopyFeedback } from "../../hooks/useCopyFeedback";
+import { chatArtifactRef } from "../../chat/artifactRef";
 import i18n, { useTranslation } from "@/i18n";
 import { formatDate, formatNumber } from "@/i18n/format";
 import "@/styles/grid.css";
 import { ArrowDownIcon, ArrowRightIcon, ArrowUpIcon, ChevronDownIcon, EllipsisIcon } from "lucide-react";
 import { Popover } from "radix-ui";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
@@ -177,20 +179,17 @@ export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabl
   const go = useGo();
   const scope = useChatExecution();
   const [sort, setSort] = useState<GridSort>(null);
-  const [copied, setCopied] = useState(false);
+  const copyId = useId();
+  const { state: copyState, copy: copyText } = useCopyFeedback(copyId);
+  const copied = copyState === "copied";
   const [saveFailed, setSaveFailed] = useState<"csv" | "md" | null>(null);
   const card = useRef<HTMLElement>(null);
   const scroll = useScrollEdges(grid.columns.length);
   const names = useAssetNames(scope?.bridge, scope?.loupistId ?? "", Boolean(scope));
   const order = useMemo(() => sortedRows(grid, sort), [grid, sort]);
   const counts = useMemo(() => gridCounts(grid), [grid]);
-  useEffect(() => {
-    if (!copied) return undefined;
-    const handle = window.setTimeout(() => setCopied(false), 2000);
-    return () => window.clearTimeout(handle);
-  }, [copied]);
 
-  const copy = () => { void navigator.clipboard?.writeText(gridTsv(grid)).then(() => setCopied(true), () => undefined); };
+  const copy = () => { void copyText(gridTsv(grid)); };
   const save = async (kind: "csv" | "md") => {
     if (!onExport) return;
     setSaveFailed(null);
@@ -359,11 +358,6 @@ export function ConflictCard({ title, conflict, evidenceRefs }: ConflictCardProp
   </section>;
 }
 
-/** The grid's exact revision, for Ask (the chart Ask path). */
-const artifactRef = (view: ChatArtifactView): ChatArtifactRef => ({
-  artifact_id: view.artifact.id, revision: view.revision.revision, kind: view.artifact.kind, title: view.artifact.title, digest: view.revision.digest,
-});
-
 type ViewState = { status: "loading" } | { status: "ready"; view: ChatArtifactView } | { status: "unavailable" };
 
 /** Reserved height while building: min(rows × 40 + 96, 420); rows are unknown until the table arrives. */
@@ -406,7 +400,7 @@ export function ChatGridBlock({ block, onAsk, askDisabled }: {
     }
     return <GridCard title={title} grid={payload.grid} evidenceRefs={evidenceRefs}
       onExport={(request) => scope.bridge.exportSave(request)}
-      onAsk={onAsk ? () => onAsk(artifactRef(loaded)) : undefined} askDisabled={askDisabled} />;
+      onAsk={onAsk ? () => onAsk(chatArtifactRef(loaded)) : undefined} askDisabled={askDisabled} />;
   }
   const building = block.kind === "building" || (block.kind === "ready" && block.updating);
   let state: ReactNode;

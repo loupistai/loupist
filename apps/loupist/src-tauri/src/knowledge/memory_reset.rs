@@ -273,8 +273,8 @@ pub fn reset(
     memory_controls::save(tx, loupist, &controls)?;
     // Pending extraction of a removed Source must not put it back later.
     tx.execute("UPDATE knowledge_graph_outbox SET status='cancelled_before_start' WHERE loupist_id=?1 AND status IN ('queued','paused_budget') AND json_extract(payload_json,'$.sourceBinding.sourceRecordId') IN (SELECT value FROM json_each(?2))", params![loupist,serde_json::to_string(&controls.removed)?])?;
-    // The existing archive event envelope carries this bulk reset audit without
-    // adding a new schema-constrained event kind.
+    // A reset archives the affected Lens records; keep its bulk counts on that
+    // archive event's origin so readers can identify the reset.
     let mut event = super::growth::GrowthEvent::new(
         loupist,
         "",

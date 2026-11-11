@@ -7,6 +7,7 @@ import { chatMarkdown } from "../../chat/exportChat";
 import { chatReceipt } from "../../chat/receipt";
 import { TooltipProvider } from "../ui/tooltip";
 import { ChatMessageCard } from "./ChatMessageCard";
+import { NumberChip } from "./NumberChip";
 import { renderWithOpen, destinations } from "../../test/open";
 
 const dart = evidenceFixture({ id: "ev_dart", title: "Solsup Foods FY2025 statements", tool_name: "dart_financials", provider: "OpenDART", url: undefined, published_at: "2026-03-18",
@@ -51,6 +52,45 @@ const chip = async (text: string) => {
   const found = await screen.findAllByRole("button", { name: new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}`) });
   return found.find(element => element.classList.contains("number-chip"))!;
 };
+
+it("keeps copy feedback across snapshots of the same number check", async () => {
+  const user = userEvent.setup();
+  const check = checks()[0]!;
+  const content = (value: NumberCheck) => <NumberChip check={value} evidence={calc} evidenceRefs={[dart, guide, calc]}>8.4%</NumberChip>;
+  const view = renderWithOpen(content(check));
+  await user.click(await chip("8.4 percent"));
+  await user.click(screen.getByRole("button", { name: "Copy formula" }));
+  expect(screen.getByRole("button", { name: "Copied" })).toBeVisible();
+  view.rerender(content({ ...check }));
+  expect(screen.getByRole("button", { name: "Copied" })).toBeVisible();
+  view.rerender(content({ ...check, link_index: 9 }));
+  expect(screen.getByRole("button", { name: "Copy formula" })).toBeVisible();
+});
+
+it("keeps a single preview open across numbers and citations", async () => {
+  renderAnswer(answer());
+  const margin = await chip("8.4 percent");
+  const citation = await screen.findByRole("button", { name: "1 · Source 2: February guidance call" });
+  fireEvent.click(margin);
+  expect(screen.getByRole("dialog")).toHaveTextContent("Operating income");
+  fireEvent.pointerEnter(citation);
+  expect(await screen.findByRole("tooltip")).toHaveTextContent("February guidance call");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.click(margin);
+  expect(screen.getByRole("dialog")).toBeVisible();
+  expect(screen.queryByRole("tooltip")).toBeNull();
+});
+
+it("measures composer clearance only while a number preview is open", async () => {
+  const content = (label: string) => <div className="chat-workspace"><div className="composer-shell" /><NumberChip check={checks()[0]!} evidence={calc} evidenceRefs={[dart, guide, calc]}>{label}</NumberChip></div>;
+  const view = renderWithOpen(content("8.4%"));
+  const measure = vi.spyOn(view.container.querySelector(".composer-shell")!, "getBoundingClientRect");
+  // Re-rendering a closed chip sees the composer but must not measure it.
+  view.rerender(content("Updated label"));
+  expect(measure).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: /8.4 percent/ }));
+  expect(measure).toHaveBeenCalled();
+});
 
 it("renders a numeric link as a number chip and a non-numeric one as a numbered citation", async () => {
   renderAnswer(answer());

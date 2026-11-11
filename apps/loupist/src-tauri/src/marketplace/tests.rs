@@ -1,4 +1,7 @@
-use std::sync::{Arc, Barrier};
+use std::{
+    collections::BTreeSet,
+    sync::{Arc, Barrier},
+};
 
 use super::{
     connector_config::{configure_connector, valid_setup_value},

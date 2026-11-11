@@ -878,3 +878,112 @@ fn independent_calls_of_one_episode_are_in_flight_together() {
     assert_eq!(body.claims.len(), 2);
     assert_eq!(body.nodes.len(), 3);
 }
+
+#[test]
+fn an_exhausted_frozen_budget_does_not_repeat_paid_calls_or_quarantine_other_sources() {
+    let mut fixture = Fixture::new();
+    fixture.settings.max_llm_calls = 2;
+    let job = fixture.queue("Underfunded note", SUPPLY);
+    let initial = fixture.head();
+    let script = Arc::new(Mutex::new(Script::default()));
+    {
+        let mut script = script.lock().unwrap();
+        script.reply("ExtractedEntities", entities(&["Acme Corp", "Beta Motors"]));
+        script.reply(
+            "ExtractedEdges",
+            json!({"edges": [relation("Acme Corp", "Beta Motors", "SUPPLIES", SUPPLY)]}),
+        );
+    }
+    let stopped = drive(&mut fixture, &job, &script, "fixture");
+    assert_eq!(stopped.status, graph_jobs::JOB_PAUSED);
+    assert_eq!(script.lock().unwrap().calls.len(), 2);
+    assert!(stopped.document.inference_attempted);
+    assert_eq!(stopped.document.interrupted_attempts, 0);
+    assert!(stopped.document.attempt_id.is_none());
+    assert!(fixture.settings.quarantined_generations.is_empty());
+    assert_eq!(fixture.head(), initial);
+    fixture
+        .store
+        .transact(|write| graph_jobs::resume_processing(write.tx, &mut fixture.settings, LOUPIST))
+        .unwrap();
+    assert_eq!(
+        drive(&mut fixture, &job, &script, "fixture").status,
+        graph_jobs::JOB_PAUSED
+    );
+    assert_eq!(script.lock().unwrap().calls.len(), 2);
+
+    fixture.settings.max_llm_calls = 16;
+    {
+        let mut script = script.lock().unwrap();
+        script.reply("ExtractedEntities", entities(&["Acme Corp", "Beta Motors"]));
+        script.reply(
+            "ExtractedEdges",
+            json!({"edges": [relation("Acme Corp", "Beta Motors", "SUPPLIES", SUPPLY)]}),
+        );
+        script.reply("CoreAttributeBatch", json!({"entities": []}));
+    }
+    let next = fixture.queue("Funded note", SUPPLY);
+    assert_eq!(
+        drive(&mut fixture, &next, &script, "fixture").status,
+        graph_jobs::JOB_COMPLETED
+    );
+}
+
+#[test]
+fn publication_uses_the_completion_time_after_inference() {
+    let mut fixture = Fixture::new();
+    let job = fixture.queue("Supply note", SUPPLY);
+    let script = Arc::new(Mutex::new(Script::default()));
+    {
+        let mut script = script.lock().unwrap();
+        script.reply("ExtractedEntities", entities(&["Acme Corp", "Beta Motors"]));
+        script.reply(
+            "ExtractedEdges",
+            json!({"edges": [relation("Acme Corp", "Beta Motors", "SUPPLIES", SUPPLY)]}),
+        );
+        script.reply("CoreAttributeBatch", json!({"entities": []}));
+    }
+    let start_ms = AT + 1_000;
+    let completed = runtime()
+        .block_on(world_extract::drive_job(
+            &fixture.store,
+            &mut fixture.settings,
+            &job.job_id,
+            "fixture",
+            start_ms,
+            &[],
+            &assets(),
+            move |request| {
+                let script = script.clone();
+                async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                    script.lock().unwrap().answer(&request)
+                }
+            },
+        ))
+        .unwrap();
+    assert_eq!(completed.status, graph_jobs::JOB_COMPLETED);
+    let head = fixture.head();
+    let (revision_at, growth_at): (i64, i64) = fixture
+        .store
+        .read(|read| {
+            Ok((
+                read.tx.query_row(
+                    "SELECT created_at_ms FROM knowledge_record_revisions WHERE revision_id = ?1",
+                    [&head],
+                    |row| row.get(0),
+                )?,
+                read.tx.query_row(
+                    "SELECT MAX(at_ms) FROM knowledge_growth_events WHERE record_id = ?1",
+                    [&fixture.world],
+                    |row| row.get(0),
+                )?,
+            ))
+        })
+        .unwrap();
+    assert!(
+        revision_at >= start_ms + 25,
+        "publication must follow the delayed call"
+    );
+    assert_eq!(growth_at, revision_at);
+}

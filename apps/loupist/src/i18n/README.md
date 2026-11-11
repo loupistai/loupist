@@ -1,7 +1,7 @@
 # Interface localization
 
 English JSON is the source of truth. Bundled namespaces are `common`, `app`,
-`chat`, `knowledge`, `settings`, `connections`, `briefings`, and `onboarding`.
+`chat`, `knowledge`, `settings`, `connections`, `briefings`, `onboarding`, `assets`, and `sharing`.
 Use namespace-relative nested keys: `useTranslation("settings")` returns a typed
 `t`, and `t("appearance.title")` reads `locales/en/settings.json` → `appearance.title`.
 Cross-namespace i18next keys use a colon, such as `settings:appearance.title`.

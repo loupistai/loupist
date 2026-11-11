@@ -226,8 +226,8 @@ it into shared documentation. Build output, Python/Vite caches and Tauri's
 the native build. App assets, embedding models and golden fixtures are maintained
 inputs and remain versioned. Eval baseline reports stay local and Git-ignored.
 Delete known output paths
-explicitly; a blanket ignored-file cleanup would also delete private notes in
-`docs/local/` and installed development dependencies.
+explicitly; a blanket ignored-file cleanup would also delete installed development
+dependencies and staged runtimes.
 
 ## Runtime staging and package checks
 

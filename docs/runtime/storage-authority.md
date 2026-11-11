@@ -73,14 +73,25 @@ workspace instruction files still follow the [workspace contract](chat-turns.md#
 Rust routes canonical operations to the owning Loupist. An exclusive folder lock
 prevents concurrent app instances from writing the same data. Loupist databases use
 full synchronous rollback journaling. Removing a Loupist unregisters it and preserves
-its folder. Missing or replaced folders require reconnection. Copy/reopen rules are in
+its folder. Missing or replaced folders require reconnection, which validates the
+profile, preserves its Loupist id and requires a newer update time; absent filesystem
+identities do not establish that two folders are the same. Copy/reopen rules are in
 [Folder portability](../knowledge/growth.md#folder-portability). Versions, upgrades
 and refusals are in [Schema versions and upgrades](#schema-versions-and-upgrades).
+Workspace tabs retain their saved references while a registered folder is unavailable;
+only an available folder can establish that a Chat was deleted. Shared store-error
+mapping and Memory transaction setup keep raw SQLite diagnostics out of renderer messages.
 
 Holdings are app-level. Each import is a snapshot of one source (`csv`, `kis`,
 `crypto_file`, or one per wallet address), and holdings are the union of the latest
-snapshot per source (`LATEST_SNAPSHOTS` in `store/user_context.rs`): a crypto import
-never replaces stock holdings, and a symbol held in two sources is one item. Your
+snapshot per source (`LATEST_SNAPSHOTS` in `store/user_context.rs`); a successful
+file or KIS import prunes older snapshots and their positions for that source;
+a backwards host clock that would discard the new snapshot refuses the import. A
+crypto import never replaces stock holdings, and a symbol held in two sources is one item. Unknown
+stored holdings source kinds, wallet families and wallet statuses fail exact reads
+rather than becoming CSV imports, Bitcoin addresses or unread wallets. Holdings
+summaries, wallet lists and automatic wallet targets skip unreadable rows and
+log once without row contents; selecting one wallet to read stays strict. Your
 holdings (Update under About you) imports stock CSV
 files, Korea Investment, exchange balance files and up to 10 read-only wallet addresses.
 For an exchange file Rust detects the format (a Kraken ledger, a balances file, or the
@@ -204,7 +215,11 @@ model or a server also writes directly stay strict in storage too: chart views,
 studies, drawings and dataset columns, custom connection tools, World schema
 extensions. A record holding one fails alone. The Pi session cache and process
 leases are authority records and decode exactly: an unreadable cache is dropped
-and the Chat rebuilds cold, and an unreadable lease fails closed. Knowledge
+and the Chat rebuilds cold, and an unreadable lease fails closed. A valid lease
+whose leader has a different start identity is removed without inspecting or
+signaling the new process, so a reused PID does not block startup. If the start
+identity still matches but the executable or group cannot be verified, recovery
+keeps the lease without signaling and lets startup continue. Knowledge
 records, their revision payloads and their mutable rows belong to the Knowledge
 format (`KNOWLEDGE_FORMAT_VERSION` enters every revision digest) and change only
 with a format or schema step.

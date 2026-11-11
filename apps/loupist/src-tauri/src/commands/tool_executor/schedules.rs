@@ -128,7 +128,13 @@ fn decode<T: serde::de::DeserializeOwned>(params: Value) -> Result<T, BrokerErro
 }
 fn error(error: crate::app::CommandError) -> BrokerError {
     BrokerError::Execution(format!("{}: {}", error.code, error.message))
-        .with_next("Read the saved task before retrying. Keep its current revision and change only the requested fields; do not create a replacement.")
+}
+fn revision_error(error: crate::app::CommandError) -> BrokerError {
+    if error.code == "conflict" {
+        self::error(error).with_next("Read the saved task before retrying. Keep its current revision and change only the requested fields; do not create a replacement.")
+    } else {
+        self::error(error)
+    }
 }
 
 fn compact(task: &Task) -> Value {
@@ -431,12 +437,19 @@ impl AppToolExecutor {
                         request.expected_revision,
                         draft,
                     )
-                    .map_err(error)?,
+                    .map_err(revision_error)?,
                     ScheduleAction::Updated,
                 )
             }
             ToolMethod::ScheduleSetStatus => {
                 let request: StatusRequest = decode(params)?;
+                let action = match request.status {
+                    TaskStatus::Paused => ScheduleAction::Paused,
+                    TaskStatus::Active => ScheduleAction::Resumed,
+                    TaskStatus::Completed => {
+                        return Err(BrokerError::invalid("status", "active or paused"))
+                    }
+                };
                 if request.status == TaskStatus::Active {
                     let task = service::get(state, loupist, &request.task_id).map_err(error)?;
                     if task.awaiting_confirmation
@@ -446,11 +459,6 @@ impl AppToolExecutor {
                         return Err(BrokerError::Execution("The user turns this task on with Turn on in the card under your reply. Tell them it is waiting for their OK; it can be turned on for them in a later reply if they ask.".into()));
                     }
                 }
-                let action = if request.status == TaskStatus::Paused {
-                    ScheduleAction::Paused
-                } else {
-                    ScheduleAction::Resumed
-                };
                 (
                     service::set_status(
                         state,
@@ -459,7 +467,7 @@ impl AppToolExecutor {
                         request.expected_revision,
                         request.status,
                     )
-                    .map_err(error)?,
+                    .map_err(revision_error)?,
                     action,
                 )
             }
@@ -467,7 +475,7 @@ impl AppToolExecutor {
                 let request: RevisionRequest = decode(params)?;
                 let task = service::get(state, loupist, &request.task_id).map_err(error)?;
                 service::delete(state, loupist, &request.task_id, request.expected_revision)
-                    .map_err(error)?;
+                    .map_err(revision_error)?;
                 (task, ScheduleAction::Deleted)
             }
             ToolMethod::ScheduleRunNow => {
@@ -659,6 +667,65 @@ mod tests {
             .await
             .is_err());
     }
+    #[tokio::test]
+    async fn schedule_errors_only_suggest_saved_revisions_for_conflicting_mutations() {
+        let temp = tempfile::tempdir().unwrap();
+        let (executor, policy) = fixture(&temp, true, "home-loupist-a");
+        let mut invalid = create("bad", "continue");
+        invalid["title"] = json!("");
+        let refused = executor
+            .execute(&policy, ToolMethod::ScheduleCreate, invalid)
+            .await
+            .unwrap_err();
+        assert!(matches!(refused, BrokerError::Execution(_)), "{refused:?}");
+        let task = executor
+            .execute(
+                &policy,
+                ToolMethod::ScheduleCreate,
+                create("first", "continue"),
+            )
+            .await
+            .unwrap();
+        let refused = executor.execute(&policy, ToolMethod::ScheduleSetStatus,
+            json!({"task_id":task["task_id"], "expected_revision":task["revision"], "status":"completed"})).await.unwrap_err();
+        assert!(
+            matches!(refused, BrokerError::InvalidArguments { .. }),
+            "{refused:?}"
+        );
+        let unchanged = service::get(
+            &executor.state,
+            "loupist-a",
+            task["task_id"].as_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(unchanged.status, TaskStatus::Active);
+        assert_eq!(unchanged.revision, task["revision"].as_u64().unwrap());
+        let refused = executor
+            .execute(
+                &policy,
+                ToolMethod::ScheduleDelete,
+                json!({"task_id":task["task_id"], "expected_revision":999}),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(refused, BrokerError::WithNext { .. }),
+            "{refused:?}"
+        );
+        executor
+            .state
+            .store
+            .lock()
+            .unwrap()
+            .execute_batch("DROP TABLE scheduled_tasks")
+            .unwrap();
+        let refused = executor
+            .execute(&policy, ToolMethod::ScheduleList, json!({}))
+            .await
+            .unwrap_err();
+        assert!(matches!(refused, BrokerError::Execution(_)), "{refused:?}");
+    }
+
     #[tokio::test]
     async fn topic_hands_off_and_cannot_change_the_bots_task() {
         let temp = tempfile::tempdir().unwrap();

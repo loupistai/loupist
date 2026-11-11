@@ -29,24 +29,6 @@ export type ChatSessionHandlers = {
   onMemoryChanged?: (loupistId: string) => void;
 };
 
-/** Fill in saved history without reverting edits made while it was loading. */
-function mergeThreadListing(
-  snapshot: ChatThread[],
-  previous: ReadonlyMap<string, ChatThread>,
-  currentThreads: ChatThread[],
-) {
-  const current = new Map(currentThreads.map((thread) => [thread.id, thread]));
-  const snapshotIds = new Set(snapshot.map((thread) => thread.id));
-  const merged = snapshot.flatMap((thread) => {
-    if (previous.has(thread.id) && !current.has(thread.id)) return [];
-    const latest = current.get(thread.id);
-    return [latest && latest !== previous.get(thread.id) ? latest : thread];
-  });
-  return merged.concat(currentThreads.filter((thread) =>
-    !snapshotIds.has(thread.id) && !previous.has(thread.id),
-  ));
-}
-
 /** Per-loupist chat threads, live statuses, and the chat/run registries. */
 export function useChatSessions(bridge: LoupistBridge) {
   const [threadsByLoupist, setThreadsByLoupist] = useState<
@@ -64,9 +46,6 @@ export function useChatSessions(bridge: LoupistBridge) {
   const chatRegistryRef = useRef<ChatSessionRegistry | null>(null);
   const runRegistryRef = useRef<LoupistRunRegistry | null>(null);
   const handlersRef = useRef<ChatSessionHandlers | null>(null);
-  const pendingThreadLoads = useRef(new Map<string, Promise<void>>());
-  const [loadedLoupistIds, setLoadedLoupistIds] = useState<ReadonlySet<string>>(new Set());
-  const loadedLoupistIdsRef = useRef(loadedLoupistIds);
 
   const setThreadsForLoupist = useCallback(
     (loupistId: string, action: SetStateAction<ChatThread[]>) => {
@@ -99,31 +78,7 @@ export function useChatSessions(bridge: LoupistBridge) {
 
   const hydrateThreadsForLoupist = useCallback((loupistId: string, threads: ChatThread[]) => {
     setThreadsForLoupist(loupistId, threads);
-    if (loadedLoupistIdsRef.current.has(loupistId)) return;
-    loadedLoupistIdsRef.current = new Set([...loadedLoupistIdsRef.current, loupistId]);
-    setLoadedLoupistIds(loadedLoupistIdsRef.current);
   }, [setThreadsForLoupist]);
-
-  // loupistSelect is a read-only, host-authorized workspace snapshot. Loading a
-  // sidebar group must not change the selected Loupist or mount its Chat session.
-  const loadThreadsForLoupist = useCallback((loupistId: string): Promise<void> => {
-    if (loadedLoupistIdsRef.current.has(loupistId)) return Promise.resolve();
-    const pending = pendingThreadLoads.current.get(loupistId);
-    if (pending) return pending;
-    const previous = new Map((threadsByLoupistRef.current[loupistId] ?? []).map((thread) => [thread.id, thread]));
-    const request = bridge.loupistSelect(loupistId).then((workspace) => {
-      if (pendingThreadLoads.current.get(loupistId) !== request || loadedLoupistIdsRef.current.has(loupistId)) return;
-      hydrateThreadsForLoupist(loupistId, mergeThreadListing(
-        workspace.threads.filter((thread) => thread.loupist_id === loupistId),
-        previous,
-        threadsByLoupistRef.current[loupistId] ?? [],
-      ));
-    }).finally(() => {
-      if (pendingThreadLoads.current.get(loupistId) === request) pendingThreadLoads.current.delete(loupistId);
-    });
-    pendingThreadLoads.current.set(loupistId, request);
-    return request;
-  }, [bridge, hydrateThreadsForLoupist]);
 
   const updateChatTitle = useCallback(
     (loupistId: string, threadId: string, title: string) => {
@@ -247,9 +202,6 @@ export function useChatSessions(bridge: LoupistBridge) {
   /** Drops every session and registry entry owned by one loupist. */
   const removeLoupist = useCallback(
     (loupistId: string) => {
-      pendingThreadLoads.current.delete(loupistId);
-      loadedLoupistIdsRef.current = new Set([...loadedLoupistIdsRef.current].filter((id) => id !== loupistId));
-      setLoadedLoupistIds(loadedLoupistIdsRef.current);
       chatRegistry.removeLoupist(loupistId);
       runRegistry.removeLoupist(loupistId);
       const nextThreadsByLoupist = { ...threadsByLoupistRef.current };
@@ -272,9 +224,7 @@ export function useChatSessions(bridge: LoupistBridge) {
     activeThreadIdsRef,
     activeThreadEpochsRef,
     setThreadsForLoupist,
-    loadThreadsForLoupist,
     hydrateThreadsForLoupist,
-    loadedLoupistIds,
     setActiveThreadForLoupist,
     chatRegistry,
     runRegistry,

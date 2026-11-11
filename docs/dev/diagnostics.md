@@ -45,7 +45,7 @@ duration of the turn's first OpenBB call including any cold start.
 
 The logger never takes prompts, answer or Source text, file contents, holdings
 quantities, credential/header values, or raw error bodies. It applies the shared
-credential detector and protected-value checks to metadata strings and map keys.
+credential detector to metadata strings and map keys.
 Logging failure does not change a completed run's result; stderr reports only
 that diagnostics could not be written. Abrupt process termination may leave no
 completed Chat entry; scheduled runs recovered at startup record cancellation.

@@ -56,7 +56,7 @@ pub(super) fn validate_llama_query(params: Value) -> Result<ValidatedLlamaQuery,
             (1..=6).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_digit())
         }
     };
-    if !valid {
+    if !valid || matches!(id.as_str(), "." | "..") {
         return Err(FinanceDataError::InvalidQuery(
             "id must be a DefiLlama protocol slug, chain name or numeric stablecoin id",
         ));
@@ -267,6 +267,10 @@ mod tests {
     fn queries_are_bounded_to_known_routes_ids_and_hosts() {
         for bad in [
             json!({"route":"protocol","id":"../etc"}),
+            json!({"route":"protocol","id":"."}),
+            json!({"route":"protocol","id":".."}),
+            json!({"route":"chain","id":"."}),
+            json!({"route":"chain","id":".."}),
             json!({"route":"protocol","id":"Aave"}),
             json!({"route":"stablecoin","id":"usdc"}),
             json!({"route":"yields","id":"x"}),

@@ -14,6 +14,14 @@ files. The English entries must equal the catalog, so a tool that gains progress
 needs both locales; labels the host composes itself (`Opened {connection}`, `Reading
 {host}`) stay as sent. Rust derives the permitted surface;
 service handlers independently validate arguments, ownership and evidence.
+Host-handled `as_of` treats null as absent and rejects other non-string values;
+non-null optional `world_read` revision, span and center-node IDs must be bounded
+strings.
+Journal saves and reviews share one per-turn reservation, released for an
+undelivered call. Acknowledged web pages preserve all issued pagination offsets
+even when deliveries finish out of order.
+`schedule_set_status` accepts active or paused; only a conflicting task mutation
+suggests rereading its saved revision.
 What Rust decides per broker method is one row of
 `apps/loupist/src-tauri/src/broker/tool_class.rs`: `ToolMethod::safety` (whether
 the custom-connection and third-party-text tiers pause it, whether its result is

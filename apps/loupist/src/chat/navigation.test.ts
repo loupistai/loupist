@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ChatEvidenceRef, MemoryRef } from "../types";
 import { evidenceFixture } from "../test/evidenceFixtures";
 import { destinationIcon, evidenceTarget, externalUrl, hostSourceDestination, wantsExternal, type ChatDestination } from "./navigation";
+import { tabShortcut } from "../app/shortcuts";
 
 const web = evidenceFixture({ id: "ev_web", tool_name: "web_fetch", url: "https://example.com/report" });
 const filing = evidenceFixture({ id: "ev_filing", tool_name: "dart_filing", url: "https://dart.fss.or.kr/x" });
@@ -86,6 +87,13 @@ describe("destinationIcon", () => {
 });
 
 describe("wantsExternal", () => {
+  it.each(["MacIntel", "iPad", "Linux x86_64"])("uses the same platform modifier as shortcuts on %s", platform => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+    const mac = platform !== "Linux x86_64";
+    expect(tabShortcut(1)).toBe(mac ? "⌘1" : "Ctrl+1");
+    expect(wantsExternal({ metaKey: true, ctrlKey: false })).toBe(mac);
+    expect(wantsExternal({ metaKey: false, ctrlKey: true })).toBe(!mac);
+  });
   const click = (overrides: Partial<{ button: number; metaKey: boolean; ctrlKey: boolean }>) => ({ button: 0, metaKey: false, ctrlKey: false, ...overrides });
   const cases: Array<[string, ReturnType<typeof click>, boolean, boolean]> = [
     ["a plain click on macOS", click({}), true, false],

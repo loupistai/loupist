@@ -134,6 +134,10 @@ export function ChatConversation({
   // "New since you left" (X5): answers that finished after the user last had this chat in view.
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
+  const editUser = useCallback((message: ChatMessage) => {
+    const index = messagesRef.current.findIndex(item => item.id === message.id);
+    if (index >= 0) onEditUser?.(message, index);
+  }, [onEditUser]);
   // The answers already finished when the window lost focus, until it is focused again.
   const answeredAtBlur = useRef<Set<string> | null>(null);
   const [newSinceId, setNewSinceId] = useState<string | undefined>(() => chatId && active ? firstNewSince(messages, chatSeenAt(chatId)) : undefined);
@@ -219,13 +223,7 @@ export function ChatConversation({
     messages.at(-1)?.status ?? "",
     morningSettled ? "morning" : "",
   ].join(":"), [messageKeys, messages, morningSettled]);
-  const latestPromptIndex = useMemo(() => {
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      if (messages[index]!.role === "user") return index;
-    }
-    return -1;
-  }, [messages]);
-  const latestPromptKey = messageKeys[latestPromptIndex] ?? messages[latestPromptIndex]?.id ?? "";
+  const latestPromptKey = messageKeys[lastUserIndex] ?? messages[lastUserIndex]?.id ?? "";
   const lastAssistantIndex = messages.reduce((last, message, index) => (message.role === "assistant" ? index : last), -1);
   // The user's question each answer replies to, offered again by a setup card once the connection is ready.
   const previousQuestions = useMemo(() => {
@@ -235,6 +233,11 @@ export function ChatConversation({
       return question;
     });
   }, [messages]);
+  const dividerKey = JSON.stringify(messages.map(({ id, created_at }) => [id, created_at]));
+  const dividerDay = new Date().toDateString();
+  const dividers = useMemo(() => messages.map((_, index) => dividersBefore(messages, index, newSinceId)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dividers read only ids/timestamps; streaming text does not change a date boundary.
+    [dividerKey, dividerDay, newSinceId, i18n.language]);
   return (
     <Conversation
       className="message-scroll"
@@ -253,7 +256,7 @@ export function ChatConversation({
           home ? morning("full") : offerQuestions ? morning("questions") : null
         ) : (<>
           {messages.map((message, index) => <Fragment key={messageKeys[index] ?? message.id}>
-            {dividersBefore(messages, index, newSinceId).map((divider) => <ChatDivider key={divider.kind} divider={divider} onPassed={divider.kind === "new" ? clearNewSince : undefined} />)}
+            {dividers[index]?.map((divider) => <ChatDivider key={divider.kind} divider={divider} onPassed={divider.kind === "new" ? clearNewSince : undefined} />)}
             {message.watch ? (
             <ThreadWatch message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} active={active} />
           ) : message.earnings ? (
@@ -293,7 +296,7 @@ export function ChatConversation({
               onReadAttachment={onReadAttachment}
               mentionSkills={mentionSkills}
               mentionPlugins={mentionPlugins}
-              onEditUser={message.role === "user" && onEditUser ? () => onEditUser(message, index) : undefined}
+              onEditUser={message.role === "user" && onEditUser ? editUser : undefined}
               editDisabled={Boolean(run?.running)}
               onEarlierVersion={message.role === "user" && onSwitchVersion ? versionAt(index, "earlier", onSwitchVersion) : undefined}
               onLaterVersion={message.role === "user" && onSwitchVersion ? versionAt(index, "later", onSwitchVersion) : undefined}

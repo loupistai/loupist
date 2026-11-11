@@ -1,3 +1,4 @@
+import { useCopyFeedback } from "../../hooks/useCopyFeedback";
 import "@/styles/answer-checks.css";
 import i18n, { useTranslation } from "@/i18n";
 import { TriangleAlertIcon } from "lucide-react";
@@ -14,16 +15,11 @@ import { narrowWindow } from "../../chat/narrowWindow";
 import { wantsExternal } from "../../chat/navigation";
 import { Button } from "../ui/button";
 import { useOpenProps } from "../navigation/Open";
+import { CLOSE_DELAY_MS, OPEN_DELAY_MS, useEvidencePopover } from "./useEvidencePopover";
 
 const t = i18n.getFixedT(null, "chat");
 
-/** Hover dwell before the popover opens, and the grace period for moving onto it (X2). */
-const OPEN_DELAY_MS = 150;
-const CLOSE_DELAY_MS = 120;
 const FORMULA_LINES = 4;
-
-/** One number popover or citation card at a time: opening one closes the others. */
-const openChips = new Set<() => void>();
 
 /** The status line under a popover's content (finance-show-the-math.md §2.4). */
 function StatusLine({ check, exact, asOf, id }: { check: NumberCheck; exact: string; asOf?: string; id: string }) {
@@ -145,7 +141,8 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
   useTranslation("chat");
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const { state: copyState, copy: copyText } = useCopyFeedback(`${check.evidence_id}:${check.link_index}`);
+  const copied = copyState === "copied";
   const timer = useRef<number | null>(null);
   const chip = useRef<HTMLButtonElement>(null);
   const content = useRef<HTMLDivElement>(null);
@@ -153,7 +150,11 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
   const titleId = useId();
   const statusId = useId();
   const popoverId = useId();
-  const close = useRef(() => { setOpen(false); setPinned(false); });
+  useEvidencePopover(open, () => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    setOpen(false);
+    setPinned(false);
+  });
   const schedule = (next: boolean, delay: number) => {
     if (timer.current !== null) window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
@@ -163,16 +164,9 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
     }, delay);
   };
   const show = (pin: boolean) => {
-    for (const other of openChips) if (other !== close.current) other();
     setOpen(true);
     if (pin) setPinned(true);
   };
-  useEffect(() => {
-    const own = close.current;
-    if (open) openChips.add(own);
-    else openChips.delete(own);
-    return () => { openChips.delete(own); };
-  }, [open]);
   useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current); }, []);
   useEffect(() => {
     if (!pinned || !open) return;
@@ -180,11 +174,6 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
     const frame = window.requestAnimationFrame(() => (content.current?.querySelector<HTMLElement>(".number-chip-actions button") ?? content.current?.querySelector<HTMLElement>("button"))?.focus());
     return () => window.cancelAnimationFrame(frame);
   }, [pinned, open]);
-  useEffect(() => {
-    if (!copied) return;
-    const handle = window.setTimeout(() => setCopied(false), 2000);
-    return () => window.clearTimeout(handle);
-  }, [copied]);
   // In a short window the popover scrolls under its status and actions; a rule then marks where they begin.
   const [overflowing, setOverflowing] = useState(false);
   useEffect(() => {
@@ -292,7 +281,7 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
       </button>
     </Popover.Anchor>
     {status ? <span id={statusId} hidden>{check.status === "not_found" ? t("numberChip.notFound") : check.status === "differs" ? t("numberChip.differs", { nearest: check.nearest ?? "", shown: check.text }) : t("numberChip.rounded", { exact })}</span> : null}
-    <Popover.Portal>
+    {open ? <Popover.Portal>
       {/* A non-modal dialog whether opened by hover, focus or click: it holds buttons, so it is never a tooltip. */}
       <Popover.Content ref={content} id={popoverId} role="dialog" aria-modal={false} aria-labelledby={titleId}
         className="number-chip-popover" data-kind={check.kind} data-overflow={overflowing || undefined} side="top" align="start" sideOffset={6}
@@ -335,12 +324,12 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
               ? stepLink.available ? <Button type="button" variant="ghost" size="sm" onClick={showStep}>{t("numberChip.showStep")}</Button> : null
               : sourceLink.available ? <Button type="button" variant="ghost" size="sm" onClick={closeThen(sourceLink.activate)} onAuxClick={sourceLink.props.onAuxClick}>{t("numberChip.openEvidence")}</Button> : null}
             {check.kind === "calculated" && !check.calc?.grid ? <Button type="button" variant="ghost" size="sm" onClick={() => {
-              void navigator.clipboard?.writeText(copiedFormula(check, evidenceRefs)).then(() => setCopied(true), () => undefined);
+              void copyText(copiedFormula(check, evidenceRefs));
             }}>{copied ? t("numberChip.copied") : t("numberChip.copyFormula")}</Button> : null}
           </div>
         </div>
       </Popover.Content>
-    </Popover.Portal>
+    </Popover.Portal> : null}
   </Popover.Root>;
 }
 

@@ -106,7 +106,7 @@ pub(super) async fn launch_chat_turn(
         host_context,
         harness,
         chat_attachments,
-        chat,
+        mut chat,
         had_prior_messages,
         envelope,
         activity_recorder,
@@ -331,19 +331,10 @@ pub(super) async fn launch_chat_turn(
             ));
         }
     };
-    let gone_retry = Box::new(super::model_gone::GoneRetrySeed {
-        pi_config: pi_config.clone(),
-        turn_envelope: turn_envelope.clone(),
-        current_prompt: current_prompt.clone(),
-        chat_id: chat.id.clone(),
-        history: chat.messages[..chat.messages.len().saturating_sub(1)].to_vec(),
-        chat_attachments: chat_attachments.clone(),
-        current_image_bytes,
-        current_pi_images: current_pi_images.clone(),
-    });
+    let full_turn_envelope = turn_envelope;
     let mut historical_images = Vec::new();
     let (turn_envelope, sent_envelope_digest) = agent_harness::maybe_abbreviate_envelope(
-        &turn_envelope,
+        &full_turn_envelope,
         previous_envelope_digest.as_deref(),
         resumed,
     );
@@ -373,8 +364,9 @@ pub(super) async fn launch_chat_turn(
             ));
         }
     };
+    let historical_image_count = historical_images.len();
     let mut pi_images = historical_images;
-    pi_images.extend(current_pi_images.iter().cloned());
+    pi_images.extend(current_pi_images);
     if *cancel.borrow() {
         let _ = shutdown_failed_chat_setup(pi, turn_resources.pi_session_mut()).await;
         let _ = broker.shutdown().await;
@@ -420,6 +412,21 @@ pub(super) async fn launch_chat_turn(
     let task_use_memory = request.use_memory;
     let task_update_memory = request.update_memory;
     let task_pins = request.pins.clone();
+    // The turn no longer needs its input buffers after prompt submission.
+    // Retain them for the exceptional model-gone retry without copying the
+    // entire transcript or base64 image strings on every turn.
+    let mut history = std::mem::take(&mut chat.messages);
+    history.pop();
+    let gone_retry = Box::new(super::model_gone::GoneRetrySeed {
+        pi_config,
+        turn_envelope: full_turn_envelope,
+        current_prompt,
+        chat_id: chat.id.clone(),
+        history,
+        chat_attachments,
+        current_image_bytes,
+        current_pi_images: pi_images.split_off(historical_image_count),
+    });
     let task_connector_authority_sha256 = connector_authority.sha256;
     let task_connector_authority_cacheable = connector_authority.cacheable;
     let task_derived_session_id = session_state.session_id;

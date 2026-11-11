@@ -2,6 +2,67 @@ use super::support::*;
 use super::*;
 
 #[test]
+fn catalog_reconnection_rejects_invalid_identity_and_nonmonotonic_updates() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = SqliteStore::open_catalog(dir.path().join("catalog.sqlite3")).unwrap();
+    let mut expected = loupist();
+    expected.updated_at_ms = 10;
+    store.refresh_folder_registration(&expected).unwrap();
+    for change in ["same_time", "older_time", "different_id", "invalid_profile"] {
+        let mut updated = expected.clone();
+        updated.updated_at_ms += 1;
+        match change {
+            "same_time" => updated.updated_at_ms = expected.updated_at_ms,
+            "older_time" => updated.updated_at_ms = expected.updated_at_ms - 1,
+            "different_id" => updated.id = "loupist-other".into(),
+            _ => updated.workspace_root = "relative/folder".into(),
+        }
+        let error = store
+            .reconnect_loupist_workspace(&expected, &updated)
+            .unwrap_err();
+        match error {
+            StoreError::Invalid(message) if change == "invalid_profile" => {
+                assert!(message.contains("workspace"))
+            }
+            StoreError::Invalid(message) => {
+                assert_eq!(message, "workspace reconnection is invalid", "{change}")
+            }
+            error => panic!("unexpected {change} error: {error}"),
+        }
+        assert_eq!(
+            store.get_loupist(&expected.id).unwrap().as_ref(),
+            Some(&expected)
+        );
+    }
+}
+
+#[test]
+fn missing_folder_identities_do_not_collide_during_catalog_reconnection() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = SqliteStore::open_catalog(dir.path().join("catalog.sqlite3")).unwrap();
+    let mut expected = loupist();
+    expected.root_filesystem_identity = None;
+    let mut other = loupist_with_root("loupist-other", 33, 44);
+    other.root_filesystem_identity = None;
+    store.refresh_folder_registration(&expected).unwrap();
+    store.refresh_folder_registration(&other).unwrap();
+    let mut updated = expected.clone();
+    updated.workspace_root = dir.path().join("missing-folder").to_str().unwrap().into();
+    updated.updated_at_ms += 1;
+    let error = store
+        .reconnect_loupist_workspace(&expected, &updated)
+        .unwrap_err();
+    assert!(
+        !matches!(error, StoreError::Conflict("Folder is already registered")),
+        "{error}"
+    );
+    assert_eq!(
+        store.get_loupist(&expected.id).unwrap().as_ref(),
+        Some(&expected)
+    );
+}
+
+#[test]
 fn profile_round_trips() {
     let store = SqliteStore::open_in_memory().unwrap();
     let profile = loupist();

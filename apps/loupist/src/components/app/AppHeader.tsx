@@ -25,7 +25,7 @@ export function AppHeader({ runningLoupists, unreadCounts, loupists, onSelect, o
   const openingPanel = useRef(false);
   const keyboardOpening = useRef(false);
   const panelHint = (kind: WorkspacePanelKind) => i18n.t(kind === "lens" ? "app:shell.lensHint" : kind === "world" ? "app:shell.worldHint" : "app:shell.chatMaterialsHint");
-  const panelLabel = (kind: WorkspacePanelKind) => kind === "lens" ? "Lens" : kind === "world" ? "World" : i18n.t("app:shell.chatMaterials");
+  const panelLabel = (kind: WorkspacePanelKind) => kind === "lens" ? i18n.t("chat:workspaceEvidence.kind.lens") : kind === "world" ? i18n.t("chat:workspaceEvidence.kind.world") : i18n.t("app:shell.chatMaterials");
   const profiles = useRef<HTMLDivElement>(null);
   useEffect(() => { profiles.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.scrollIntoView?.({ block: "nearest", inline: "nearest" }); }, [loupist?.id]);
   useEffect(() => {

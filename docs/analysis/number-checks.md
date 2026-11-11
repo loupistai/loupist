@@ -75,7 +75,10 @@ sequence, rank and page fields, revisions, versions, digests, URLs and status. I
 text, dates, identifiers and times (`2026-03-18`, `10-K`, `Q3`), digit codes with a
 leading zero (`005930`) and six-digit tickers in brackets or with an exchange suffix
 (`(990221)`, `990221.KS`) are not numbers; a hyphen after a digit or letter is not a
-sign; `(1,234)` and `△1,234` are negatives; and `1조 2,345억원` is one amount. Reading
+sign; currency-code prefixes, including glued FX pairs (`USDKRW`), must begin at a
+word boundary (`fraud 12` has no AUD amount) and precede the number by at most two
+spaces without a line break; `(1,234)` and `△1,234` are negatives; and
+`1조 2,345억원` is one amount. Reading
 is bounded to 50,000 candidates and 1 MiB of text per result.
 
 A line reading on an [asset page](../knowledge/thesis.md#thesis-and-the-read) is

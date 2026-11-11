@@ -1,7 +1,52 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { LoupistSettings } from "./LoupistSettings";
+
+it("offers global Retry when a focus reload fails after a failed capability toggle", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const agents = await bridge.loupistList();
+  const catalog = vi.spyOn(bridge, "agentSkillCatalog");
+  vi.spyOn(bridge, "loupistCapabilityDisable").mockRejectedValueOnce(new Error("Toggle failed."));
+  render(<LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={agents[0]} mutationBusy={false} mutationError={null} recoveryBusy={false} recoveryError={null} onRecover={vi.fn()} onOpenMarketplace={vi.fn()} onDelete={vi.fn()} onAgentUpdated={vi.fn()} />);
+  const user = userEvent.setup();
+  await user.click(document.querySelector('[data-loupist-section="capabilities"] > summary')!);
+  await user.click(await screen.findByRole("switch", { name: "World Bank Indicators: enabled" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Toggle failed.");
+  catalog.mockRejectedValueOnce(new Error("Configuration reload failed."));
+  await act(async () => { window.dispatchEvent(new Event("focus")); });
+  await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Configuration reload failed."));
+  await user.click(within(screen.getByRole("alert")).getByRole("button", { name: "Retry" }));
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+});
+
+it("preserves capability search, filter and confirmation through configuration and focus reloads", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const agents = await bridge.loupistList();
+  const catalog = vi.spyOn(bridge, "agentSkillCatalog");
+  const props = { catalog: null, onChanged: vi.fn(), onBack: vi.fn(), onManageProviders: vi.fn(), bridge, selectedAgent: agents[0], mutationBusy: false, mutationError: null, recoveryBusy: false, recoveryError: null, onRecover: vi.fn(), onOpenMarketplace: vi.fn(), onDelete: vi.fn(), onAgentUpdated: vi.fn() };
+  const view = render(<LoupistSettings {...props} />);
+  const user = userEvent.setup();
+  await user.click(document.querySelector('[data-loupist-section="capabilities"] > summary')!);
+  const research = await screen.findByRole("switch", { name: "Research: enabled" });
+  const search = screen.getByRole("searchbox", { name: "Search skills and connections" });
+  await user.type(search, "Research");
+  await user.click(research);
+  await screen.findByRole("switch", { name: "Research: disabled" });
+  const confirmation = await screen.findByText(`Research disabled for ${agents[0].name}.`);
+  expect(search).toHaveValue("Research");
+  await user.click(screen.getByRole("radio", { name: "Enabled" }));
+  const calls = catalog.mock.calls.length;
+  await act(async () => { window.dispatchEvent(new Event("focus")); });
+  await waitFor(() => expect(catalog).toHaveBeenCalledTimes(calls + 1));
+  expect(search).toHaveValue("Research");
+  expect(screen.getByRole("radio", { name: "Enabled" })).toBeChecked();
+  expect(confirmation).toBeVisible();
+  view.rerender(<LoupistSettings {...props} selectedAgent={agents[1]} />);
+  await waitFor(() => expect(search).toHaveValue(""));
+  expect(screen.getByRole("radio", { name: "All" })).toBeChecked();
+  expect(screen.queryByText(`Research disabled for ${agents[0].name}.`)).toBeNull();
+});
 
 it("searches the selected Loupist’s capabilities and reveals that Loupist’s own workspace", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });

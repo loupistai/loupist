@@ -504,7 +504,6 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
     selectedArtifacts,
     selectArtifactForChat,
     consumeArtifactForChat,
-    setOpen,
     close,
     togglePlacement,
     applyDockKind,

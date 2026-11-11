@@ -410,7 +410,7 @@ pub(crate) fn items(
     rows.collect()
 }
 
-/// Replaces an item's text with the author's newer one (its state stays).
+/// Writes an item's text, review state and pending-update marker.
 pub(crate) fn set_item_body(
     tx: &Transaction<'_>,
     loupist_id: &str,

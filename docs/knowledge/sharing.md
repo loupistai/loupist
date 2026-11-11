@@ -26,7 +26,7 @@ date) without bytes or quotes. Record IDs never leave: items carry keys derived 
 pack ID, and `lens:` links keep only their label. The export reads nothing else, so
 holdings, the watchlist, Journal, Chats, notes, retained bytes, datasets, artifacts,
 Skills, the Loupist's instructions, connections, schedules and settings never enter a
-pack. A method longer than one 64 KiB pack file is left out.
+pack. An oversized method stays in the selection until explicitly left out. Export validates the finished pack with the importer’s bounds and refuses content that would not import, including Markdown over 64 KiB or a JSONL record over 8 KiB; the error names the oversized items by title and key. Stored Source URLs are normalized before validation, retaining URLs with stray surrounding whitespace.
 
 Source export checks both recorded authorship and the Rust
 [provider data policy](../capabilities/packs.md#provider-data-policy-for-packs).
@@ -39,7 +39,7 @@ capture says `publisher`. A relationship leaves with eligible Sources only; one 
 every Source is private or restricted is left out and counted. A name leaves only with
 a relationship.
 
-Before a save or publish, Rust scans every string that would leave. Credentials
+Before a save or publish, Rust scans every string that would leave. A store, SQL, row-decoding or finance-credential read error blocks sharing; an absent credential stays empty. Credentials
 (including every stored provider key or sign-in token, custom-connection secret,
 connector credential and the GitHub token), account numbers and a holding's exact amount
 next to its name block until that item is left out; an email, phone number, the macOS
@@ -54,7 +54,7 @@ returns `allowedLicenses` as `{id, url}` entries with legal-code URLs, `defaultL
 and typed `licenseConflict` item details.
 Export refuses an empty intersection or an incompatible requested license with
 `license_conflict`; it never silently changes an explicit choice. Credits in the
-manifest and README retain origin pack names, authors, licenses, links and versions.
+manifest and README retain origin pack names, authors, licenses, links and versions. Shared labels from earlier stored rows also drop hidden characters when delivered to the model.
 NC READMEs state the non-commercial term. See [Licensing](../../LICENSING.md).
 
 `LicenseRef-Loupist-Personal` marks non-redistributable content and requires an

@@ -184,6 +184,11 @@ pub(crate) fn decide(
             "Accept items with warnings one at a time.",
         ));
     }
+    let unique: std::collections::BTreeSet<&str> =
+        chosen.iter().map(|item| item.key.as_str()).collect();
+    if unique.len() != chosen.len() {
+        return Err(CommandError::invalid("Choose each suggestion only once."));
+    }
     for item in chosen {
         if let Some(theirs) = pending_update(item) {
             // Skip keeps the accepted text; Accept takes the author's newer one.

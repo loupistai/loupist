@@ -7,7 +7,8 @@ import { ChatMapProvider, useChatMap } from "./ChatMapContext";
 import { ChatMiniMap } from "./ChatMiniMap";
 import { MessageMemoryRow } from "../chat/MessageMemoryRow";
 import { WorkspaceTabBar } from "./WorkspaceTabBar";
-vi.mock('../map/MapCanvas', () => ({ default: ({ compact, stats }: { compact: { highlightIds: Set<string>; glowNodeIds: Set<string>; glowEdgeIds: Set<string>; liveNodeIds: Set<string> }; stats: string }) => <div role="img" aria-label={stats} data-highlight={[...compact.highlightIds].join(',')} data-glow={[...compact.glowNodeIds, ...compact.glowEdgeIds].join(',')} data-live={[...compact.liveNodeIds].join(',')} /> }));
+const canvasFailure = vi.hoisted(() => ({ active: false }));
+vi.mock('../map/MapCanvas', () => ({ default: ({ compact, stats }: { compact: { highlightIds: Set<string>; glowNodeIds: Set<string>; glowEdgeIds: Set<string>; liveNodeIds: Set<string> }; stats: string }) => { if (canvasFailure.active) throw new Error("Canvas unavailable"); return <div role="img" aria-label={stats} data-highlight={[...compact.highlightIds].join(',')} data-glow={[...compact.glowNodeIds, ...compact.glowEdgeIds].join(',')} data-live={[...compact.liveNodeIds].join(',')} />; } }));
 const answer: ChatMessage = { id: 'answer', role: 'assistant', content: 'Answer', created_at: '2026-10-28', status: 'complete' };
 const map = { nodes: ['a', 'b', 'c'].map(id => ({ id, label: id, kind: 'entity', degree: 1, watched: false, held: false })), edges: [{ id: 'ab', kind: 'claim', source: 'a', target: 'b' }], worldRevisionId: 'rev' } as KnowledgeMap;
 const event = (id: string, chatId = 'chat', messageId = 'answer'): GrowthEvent => ({ eventId: `${chatId}:${id}`, kind: 'entity_added', loupistId: 'loupist', subjectId: id, atMs: Date.now(), originChatId: chatId, originMessageId: messageId, recordId: 'world', actor: 'loupist', summary: '', beforeSummary: null, afterSummary: null });
@@ -166,4 +167,15 @@ it('shows a queued source as waiting until its provider is ready, then clears on
   view.rerender(<ChatMapProvider {...props} chatId="other" messages={[]}><Status /></ChatMapProvider>);
   expect(screen.getByRole('status')).toHaveTextContent('idle');
  } finally { vi.useRealTimers(); }
+});
+
+it("keeps the chat map readable as a list when its canvas throws", async () => {
+  canvasFailure.active = true;
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const bridge = setup();
+    render(<ChatMapProvider bridge={bridge} loupistId="loupist" chatId="chat" messages={[answer]} onOpen={vi.fn()}><Surface /></ChatMapProvider>);
+    fireEvent.click(await screen.findByRole("button", { name: /Show 3 new on the map/ }));
+    expect(await screen.findByRole("table", { name: "List view" })).toBeVisible();
+  } finally { canvasFailure.active = false; error.mockRestore(); }
 });

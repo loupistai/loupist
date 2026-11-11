@@ -49,14 +49,16 @@ its exposed inventory contains no order operations, every account operation carr
 reviewed `holding_fields` list whose values Rust hides from every model-facing copy
 ([holdings redaction](../architecture.md#trust)), and `kis_read` follows
 bounded continuation pages. KRX covers KOSPI and KOSDAQ with independent daily
-trading service approvals. Setup verifies both markets and keeps their coverage
+trading service approvals. Daily reads skip provider requests for published KRX holidays while keeping them in `missing_dates`, and report unavailable dividend and split values as null.
+Setup verifies both markets and keeps their coverage
 with the verified key; one approved market is enough to enable the connection.
 Automatic lookups continue past a denied market. If the issue cannot be found
 in the accessible markets, `needs_approval` names the missing KRX daily service, with
 the next step KRX's reader puts on the error (another vendor supplies its own);
 an explicit `market` selects just that service. Every
 OpenDART tool, including the capital-decision, ownership and dividend reads, is on the
-unattended allowlist; `dart_major_report` and `dart_dividends` also serve asset-page
+unattended allowlist; dividend notice searches use the current Seoul date.
+`dart_major_report` and `dart_dividends` also serve asset-page
 refreshes ([Korean asset rows](../analysis/korea.md#korean-asset-rows)).
 [Financial analysis](../analysis/datasets.md#data-and-provenance) owns their result fields.
 Web search routing is the Web Research `search_policy` setting
@@ -66,9 +68,9 @@ debug-only Codex client, then keyless Exa; model-only also allows xAI and never
 falls back; Exa-only skips the model. Each provider's `native_search` in the
 [provider manifest](../runtime/providers.md#provider-manifest) says which. Web results, DART filing text and OpenBB
 results outside a reviewed numeric-only list raise the turn's
-[untrusted-text tier](../architecture.md#trust), which pauses commands and
-instruction-file writes and keeps `web_fetch` to sites the turn already knows for the
-rest of that turn. Saved Sources and retained datasets holding such text raise it again
+[untrusted-text tier](../architecture.md#trust), which pauses custom-connection calls,
+selected schedule operations and instruction-file writes and keeps `web_fetch` to sites
+the turn already knows for the rest of that turn. Saved Sources and retained datasets holding such text raise it again
 when they come back.
 
 Search and reading follow pi-web-access 0.47's behavior where it applies to a
@@ -144,7 +146,8 @@ local store, and the agent sees only held symbols.
 `defillama.tvl` (DefiLlama, `finance_data/defillama.rs`) reaches only `api.llama.fi` and
 `stablecoins.llama.fi`. Its agent tool `defillama_read { route: protocol | chain |
 stablecoin, id, start?, end? }` returns dated daily values with `max_age` and the as-of
-cutoff ([rules](../analysis/datasets.md#data-and-provenance)); it is on the unattended allowlist,
+cutoff ([rules](../analysis/datasets.md#data-and-provenance)); protocol and chain IDs cannot be dot path segments.
+It is on the unattended allowlist,
 a saved result is publisher material, and like other provider reads it is refused after a
 custom-connection result in the same turn, since its `id` is part of the request path. Watchers read it on the host for a coin's chain or protocol (value locked).
 

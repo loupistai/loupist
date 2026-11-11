@@ -121,7 +121,7 @@ pub(crate) fn workspace_snapshot_with_preferences(
         crate::skills::read(&resource.path)
             .and_then(|source| crate::skills::parse(&source))
             .map(|skill| crate::skills::enabled(&skill.name, preferences))
-            .unwrap_or(true)
+            .unwrap_or(false)
     });
     if instructions.len() + skills.len() > MAX_RESOURCE_FILES {
         return Err(AgentHarnessError::Workspace);
@@ -392,12 +392,12 @@ mod tests {
             fs::write(
                 root.path()
                     .join(format!(".loupist/skills/project-{index}.md")),
-                "Skill",
+                "---\nname: project-skill\ndescription: Scoped skill\n---\nSkill",
             )
             .unwrap();
             fs::write(
                 global.path().join(format!("skills/global-{index}.md")),
-                "Skill",
+                "---\nname: global-skill\ndescription: Scoped skill\n---\nSkill",
             )
             .unwrap();
         }

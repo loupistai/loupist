@@ -137,6 +137,18 @@ fn transient_broker_socket_fits_macos_unix_path_limit() {
     assert!(socket.as_os_str().as_bytes().len() < 104);
 }
 
+#[cfg(unix)]
+#[test]
+fn transient_broker_directory_is_scoped_to_the_effective_user() {
+    assert_eq!(
+        transient_broker_directory()
+            .file_name()
+            .unwrap()
+            .to_string_lossy(),
+        format!("loupist-{}", unsafe { libc::geteuid() })
+    );
+}
+
 #[test]
 fn app_data_is_owned_by_only_one_live_instance() {
     let temporary = tempfile::tempdir().unwrap();

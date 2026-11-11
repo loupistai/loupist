@@ -103,13 +103,14 @@ async fn wait_for_result<E>(
 ) -> Result<(), SupportFailure<E>> {
     tokio::pin!(cancel);
     let mut acknowledged = false;
-    let mut poll = interval(Duration::from_millis(10));
+    let mut exited = false;
+    let mut poll = interval(Duration::from_millis(100));
     poll.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
         tokio::select! {
             biased;
             _ = &mut cancel => return Err(SupportFailure::Cancelled),
-            event = receiver.recv() => match event {
+            event = receiver.recv(), if !exited => match event {
                 Ok(PiEvent::Rpc { payload }) => {
                     // Never forward extension errors or provider payloads.
                     if payload.get("type").and_then(Value::as_str) == Some("extension_error") {
@@ -124,13 +125,17 @@ async fn wait_for_result<E>(
                         // Slash-command acknowledgement can precede the async
                         // handler. Wait for its completed result before shutdown.
                         acknowledged = true;
+                        if ready().map_err(SupportFailure::Operation)? {
+                            return Ok(());
+                        }
                     }
                 }
-                Ok(PiEvent::Exited) if acknowledged && ready().map_err(SupportFailure::Operation)? => return Ok(()),
+                Ok(PiEvent::Exited) if acknowledged => exited = true,
                 _ => return Err(SupportFailure::Stopped),
             },
             _ = poll.tick() => {
                 if acknowledged && ready().map_err(SupportFailure::Operation)? { return Ok(()); }
+                if exited { return Err(SupportFailure::Stopped); }
             }
         }
     }
@@ -159,7 +164,7 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     };
 
@@ -167,6 +172,52 @@ mod tests {
         PiEvent::Rpc {
             payload: json!({"type":"response","id":id,"success":success}),
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pending_support_results_are_polled_at_most_every_hundred_milliseconds() {
+        let (tx, mut rx) = broadcast::channel(4);
+        tx.send(ack(7, true)).unwrap();
+        let checks = AtomicUsize::new(0);
+        let ready = AtomicBool::new(false);
+        let mut on_event = |_: &Value| Ok::<_, ()>(());
+        let mut check = || {
+            checks.fetch_add(1, Ordering::SeqCst);
+            Ok(ready.load(Ordering::SeqCst))
+        };
+        let result = wait_for_result(
+            &mut rx,
+            7,
+            std::future::pending(),
+            &mut on_event,
+            &mut check,
+        );
+        tokio::pin!(result);
+        assert!(futures_util::poll!(&mut result).is_pending());
+        let initial = checks.load(Ordering::SeqCst);
+        for event in [
+            PiEvent::Rpc {
+                payload: json!({"type":"extension_ui_request"}),
+            },
+            PiEvent::Rpc {
+                payload: json!({"type":"message_update"}),
+            },
+            ack(99, true),
+        ] {
+            tx.send(event).unwrap();
+            assert!(futures_util::poll!(&mut result).is_pending());
+        }
+        assert_eq!(checks.load(Ordering::SeqCst), initial);
+        tokio::time::advance(Duration::from_millis(90)).await;
+        assert!(futures_util::poll!(&mut result).is_pending());
+        assert_eq!(checks.load(Ordering::SeqCst), initial);
+        ready.store(true, Ordering::SeqCst);
+        tx.send(PiEvent::Exited).unwrap();
+        assert!(futures_util::poll!(&mut result).is_pending());
+        assert_eq!(checks.load(Ordering::SeqCst), initial);
+        tokio::time::advance(Duration::from_millis(10)).await;
+        result.await.unwrap();
+        assert_eq!(checks.load(Ordering::SeqCst), initial + 1);
     }
 
     #[tokio::test]

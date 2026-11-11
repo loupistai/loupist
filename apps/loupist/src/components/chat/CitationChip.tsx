@@ -10,10 +10,8 @@ import { narrowWindow } from "../../chat/narrowWindow";
 import { useOpenEvidenceId } from "./OpenEvidence";
 import { useOpenProps } from "../navigation/Open";
 import type { ChatDestination } from "../../chat/navigation";
+import { CLOSE_DELAY_MS, OPEN_DELAY_MS, useEvidencePopover } from "./useEvidencePopover";
 
-/** Hover dwell before the card opens, and the grace period for moving onto it. */
-const OPEN_DELAY_MS = 150;
-const CLOSE_DELAY_MS = 120;
 /** How long a press is held before it opens the card instead of Evidence (narrow windows). */
 export const LONG_PRESS_MS = 500;
 
@@ -75,7 +73,13 @@ export function CitationChip({ evidence, label, title, source, to, children }: {
     if (holdTimer.current !== null) window.clearTimeout(holdTimer.current);
     holdTimer.current = null;
   };
-  const close = () => { setOpen(false); setPinned(false); };
+  const close = () => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    cancelHold();
+    setOpen(false);
+    setPinned(false);
+  };
+  useEvidencePopover(open, close);
   useEffect(() => () => {
     if (timer.current !== null) window.clearTimeout(timer.current);
     if (holdTimer.current !== null) window.clearTimeout(holdTimer.current);
@@ -121,7 +125,7 @@ export function CitationChip({ evidence, label, title, source, to, children }: {
         {children}
       </button>
     </Popover.Anchor>
-    <Popover.Portal>
+    {open ? <Popover.Portal>
       <Popover.Content id={cardId} role={byKeyboard || pinned ? "dialog" : "tooltip"} aria-label={byKeyboard || pinned ? title : undefined} className="citation-preview"
         data-pinned={pinned || undefined} side="top" align="start" sideOffset={6}
         // The app header and the chat sub-header sit above the thread; flip below the chip rather than cover them.
@@ -141,6 +145,6 @@ export function CitationChip({ evidence, label, title, source, to, children }: {
           return <p>{parts ? <>{parts.before}<mark>{parts.match}</mark>{parts.after}</> : evidence.excerpt}</p>;
         })()}
       </Popover.Content>
-    </Popover.Portal>
+    </Popover.Portal> : null}
   </Popover.Root>;
 }

@@ -811,6 +811,14 @@ export function ChatView({
     setPrompt(question);
     requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>("[data-chat-composer]")?.focus());
   }, [setPrompt]);
+  const editUser = useCallback((message: ChatMessage, index: number) => {
+    const threadId = activeThread?.id;
+    if (!threadId || isEmptyChatThreadId(threadId)) return;
+    setPrompt(message.content);
+    onAsOfChange?.(message.as_of);
+    setEditing({ threadId, messageId: message.id, position: index, content: message.content });
+    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>("[data-chat-composer]")?.focus());
+  }, [activeThread?.id, onAsOfChange, setPrompt]);
   const setAsideIds = useMemo(() => new Set(activeThread?.set_aside_memory ?? []), [activeThread?.set_aside_memory]);
   const firstDeclinedMessageId = useMemo(() => activeThread?.messages.find(declinedSensitiveMemory)?.id, [activeThread?.messages]);
   const saveOff = activeThread ? activeThread.update_memory === false : false;
@@ -854,14 +862,7 @@ export function ChatView({
     mentionSkills={composerSkills}
     mentionPlugins={composerPlugins}
     bridge={bridge}
-    onEditUser={(message, index) => {
-      if (!activeThread?.id || isEmptyChatThreadId(activeThread.id)) return;
-      setPrompt(message.content);
-      // Editing reopens the message with its own as-of date (or none).
-      onAsOfChange?.(message.as_of);
-      setEditing({ threadId: activeThread.id, messageId: message.id, position: index, content: message.content });
-      requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>("[data-chat-composer]")?.focus());
-    }}
+    onEditUser={editUser}
     versions={activeThread?.versions ?? []}
     onSwitchVersion={isRunning || !activeThread?.id ? undefined : (versionId) => {
       const threadId = activeThread.id;
@@ -880,7 +881,7 @@ export function ChatView({
     <OpenProvider open={open}>
     <section className="chat-layout" aria-label={t("chatView.chatWithLoupist")}>
       <div className="chat-workspace" ref={chatWorkspaceRef} data-rail={chatRailMode}>
-        <ChatLightboxProvider messages={visibleConversation.messages} onRead={readAttachment} onAddToQuestion={addToQuestion}>
+        <ChatLightboxProvider key={activeThread?.id ?? "draft"} messages={visibleConversation.messages} onRead={readAttachment} onAddToQuestion={addToQuestion}>
         {activeRecoveredRun ? <header className="workspace-heading is-status">
           <div className="workspace-chat-title">
             <div className="thread-statuses">

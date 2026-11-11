@@ -353,24 +353,15 @@ impl AppToolExecutor {
             as_of: parse_as_of_date(policy.as_of.as_deref())?,
             scope: scope.clone(),
             record_id: record_id.clone(),
-            revision_id: object
-                .get("revisionId")
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            span_id: object
-                .get("spanId")
-                .and_then(Value::as_str)
-                .map(str::to_string),
+            revision_id: optional_bounded_text(object.get("revisionId"), 1, 128)?,
+            span_id: optional_bounded_text(object.get("spanId"), 1, 128)?,
             search: object
                 .get("search")
                 .map(|value| bounded_text(Some(value), 0, 200))
                 .transpose()?
                 .unwrap_or_default(),
             center_claim_id: optional_bounded_text(object.get("centerClaimId"), 1, 128)?,
-            center_node_id: object
-                .get("centerNodeId")
-                .and_then(Value::as_str)
-                .map(str::to_string),
+            center_node_id: optional_bounded_text(object.get("centerNodeId"), 1, 128)?,
             kinds: optional_unique_strings(object.get("kinds"), 16, 64)?,
             relations: optional_unique_strings(object.get("relations"), 16, 64)?,
             binding_roles: optional_unique_strings(object.get("bindingRoles"), 8, 64)?,

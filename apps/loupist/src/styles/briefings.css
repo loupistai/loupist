@@ -4,11 +4,7 @@
 .briefings-meta { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 .briefings-bar > p { flex: 1; min-width: 0; }
 .briefings-actions { display: flex; align-items: center; gap: var(--gg-space-2); flex-wrap: wrap; }
-.briefings-toggle { display: flex; align-items: center; gap: var(--gg-space-2); font-size: var(--gg-text-meta); }
 .briefings-layout { flex: 1; display: grid; grid-template-columns: var(--gg-size-inspector) minmax(0, 1fr); min-height: 0; }
-.briefings-inbox { overflow: auto; border-right: 1px solid var(--gg-color-border-subtle); }
-.briefings-group { margin: 0; padding: var(--gg-space-4) var(--gg-space-4) var(--gg-space-2); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); text-transform: uppercase; }
-.briefings-group:lang(ko) { letter-spacing: 0; text-transform: none; }
 .briefings-item { display: block; width: 100%; min-height: var(--gg-space-10); padding: var(--gg-space-3) var(--gg-space-4); text-align: left; }
 .briefings-item:hover { background: var(--gg-color-bg-hover); }
 .briefings-item[aria-selected="true"] { background: var(--gg-color-bg-selected); }
@@ -41,9 +37,9 @@
   .briefings-bar { padding: var(--gg-space-2) var(--gg-space-4); gap: var(--gg-space-2); }
   .briefings-bar > p { flex-basis: 70%; }
   .briefings-layout { display: flex; }
-  .briefings-inbox, .schedule-list { width: 100%; border: 0; }
+  .schedule-list { width: 100%; border: 0; }
   .briefings-reader-scroll { display: none; }
-  .briefings-layout[data-reader-open="true"] .briefings-inbox, .briefings-layout[data-reader-open="true"] .schedule-list { display: none; }
+  .briefings-layout[data-reader-open="true"] .schedule-list { display: none; }
   .briefings-layout[data-reader-open="true"] .briefings-reader-scroll { display: block; width: 100%; }
   .briefings-back { display: inline-flex; margin-bottom: var(--gg-space-4); }
 }
@@ -72,15 +68,10 @@
 .schedule-task-status { flex: none; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .schedule-task[data-status="active"] .schedule-task-status { color: var(--gg-color-text-primary); }
 .schedule-task[data-status="awaiting"] .schedule-task-status { color: var(--gg-color-warning); }
-.schedule-task-actions { display: flex; flex: none; align-items: center; gap: var(--gg-space-1); }
 .schedule-history { padding-bottom: var(--gg-space-2); }
 .schedule-history > .briefings-meta { padding: 0 var(--gg-space-4) var(--gg-space-2); }
 .schedule-history .briefings-item { padding-left: var(--gg-space-5); }
 .schedule-history .briefings-item[aria-current="true"] { background: var(--gg-color-bg-selected); }
-.schedule-suggestion { margin: var(--gg-space-3) var(--gg-space-4) 0; padding: var(--gg-space-3) var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
-.schedule-suggestion .schedule-section-label { margin: 0 0 var(--gg-space-1); }
-.schedule-suggestion-text { margin: 0 0 var(--gg-space-2); font-weight: var(--gg-weight-medium); }
-.schedule-suggestion-actions { display: flex; gap: var(--gg-space-2); }
 .briefing-sections { display: grid; gap: var(--gg-space-1); margin-bottom: var(--gg-space-5); }
 .briefing-sections .schedule-section-label { margin-left: 0; margin-right: 0; }
 .briefing-sections p { margin: 0; }
@@ -90,12 +81,10 @@
 /* Schedule review fixes (loop 4): one reader per task, aligned briefing rows, a calmer suggestion. */
 .briefings-layout[data-empty="true"] { grid-template-columns: minmax(0, 1fr); }
 .briefings-layout[data-empty="true"] .schedule-list { border-right: 0; }
-.briefings-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--gg-space-2); }
 .schedule-task[data-current="true"] { background: var(--gg-color-bg-hover); }
 .schedule-task-detail .schedule-section-label { margin-left: 0; margin-right: 0; }
 .schedule-task-detail .schedule-history .briefings-item { padding-left: 0; }
 .schedule-task-prompt { margin: var(--gg-space-3) 0 0; color: var(--gg-color-text-secondary); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-.schedule-suggestion { max-width: var(--gg-size-reading-column); }
 .briefing-ahead > li > button, .briefing-changes .briefing-row-link { height: auto; min-height: var(--gg-size-control-sm); padding: 0; text-align: left; white-space: normal; }
 .briefing-changes .briefing-row-link { font-size: var(--gg-text-meta); }
 
@@ -107,21 +96,12 @@
 .schedule-view .briefings-layout[data-reader-open="true"] .schedule-list { display: none; }
 .schedule-view .briefings-layout[data-reader-open="true"] .briefings-reader-scroll { display: block; width: 100%; height: 100%; overflow: auto; }
 .schedule-view .briefings-back { display: inline-flex; margin-bottom: var(--gg-space-4); }
-.schedule-view .schedule-suggestion { width: min(var(--gg-size-reading-column), calc(100% - var(--gg-space-8))); margin-inline: auto; }
-.schedule-view .schedule-detail-actions { display: block; }
 
-/* Schedule a task: one field, examples while composing, and an Active filter. */
+/* Schedule entry and Active filter. */
 .schedule-create { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); margin: var(--gg-space-4) var(--gg-space-4) 0; }
-.schedule-create-field { flex: 1 1 16rem; min-width: 0; }
-.schedule-create-hint { flex-basis: 100%; margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
-.schedule-examples { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); flex-basis: 100%; margin: 0; padding: 0; list-style: none; }
-.schedule-examples button { height: auto; min-height: var(--gg-size-control-sm); max-width: 100%; white-space: normal; text-align: left; }
 .schedule-filter { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-1); margin: var(--gg-space-3) var(--gg-space-4) 0; }
 .schedule-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--gg-space-3); }
-.schedule-detail-actions { display: none; }
 @media (max-width: 899px) {
   .schedule-create { margin-inline: var(--gg-space-4); }
   .schedule-create > button[type="submit"] { flex: 1 1 auto; }
-  .schedule-detail-actions { display: block; }
-  .schedule-task-detail .schedule-detail-actions .schedule-task-actions { margin: 0; }
 }

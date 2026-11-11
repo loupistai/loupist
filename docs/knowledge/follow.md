@@ -2,8 +2,6 @@
 
 Followed assets are an explicit list the host reads onto the Map. Following is not a holding and not a trade.
 
-### What you follow
-
 What the user follows (the watchlist, then holdings; one entry per symbol and market)
 reaches each Loupist's World as Sources the host writes, never as a host-written World
 snapshot (`knowledge/followed.rs`, `commands/knowledge/followed.rs`). Each is a

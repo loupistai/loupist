@@ -17,11 +17,11 @@ scans the whole pack before creating anything on GitHub, then creates a public
 repository with topic `loupist-pack` and one commit "Loupist pack v{n}", or a public or
 secret gist for one item. Update refuses a recorded repository whose default branch
 holds another pack ID or none (`repo_mismatch`). A 401 deletes the token and signs out
-(`publish_denied`). GitHub, archive and index requests run in Rust without redirects.
+(`publish_denied`). GitHub, archive and index requests run in Rust without redirects. GitHub JSON replies stop at 4 MiB while streaming, including replies without a content length.
 
 The community index (`sharing/gallery.rs`) is fetched over https, at most 4 MiB, kept
 in app data (`gallery-cache/`) for offline use and refreshed after six hours or on
-Refresh; an entry that does not validate is left out on its own, and anything else wrong
+Refresh; a failed fetch keeps a fallback marked offline without renewing its freshness, so the next check retries; the fallback remains in memory so its cards and cached images can still open offline. An entry that does not validate is left out on its own, and anything else wrong
 rejects the document. Entries on its `blocked` list never appear, and `pack_list` marks
 added packs it names. Map images come only from `raw.githubusercontent.com` at the
 listed commit: PNG, signature checked, at most 1 MiB each, 64 MiB kept. A Gallery
@@ -48,7 +48,7 @@ nothing is added before the review's Add. This release dismisses the link instea
 
 **Updates** (`sharing/update.rs`). A pack added from a link is checked for a newer version
 when that section opens, at most once a day (Rust keeps the date; nothing checks in the
-background), or on Check for updates; a pack added from a ZIP or folder takes a newer ZIP
+background), or on Check for updates; successful results are reused for ten minutes, while an offline result consumes neither that cache nor the daily check. A rate-limit refusal consumes the daily automatic check, while the manual button can retry. A pack added from a ZIP or folder takes a newer ZIP
 or folder the user chooses. The newer version is staged through the same validation and
 scans as a first import and compared with the retained copy of the version added (or,
 when that copy is gone, with what the import recorded). Nothing changes until the user

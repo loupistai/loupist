@@ -233,3 +233,19 @@ it("shows Listed in the Gallery when the index lists this commit", async () => {
   expect(await screen.findByText("Listed in the Gallery")).toBeVisible();
   expect(screen.queryByRole("checkbox", { name: "List it in the Gallery" })).toBeNull();
 });
+
+
+it("reports clipboard failure and announces Copied only after a successful retry", async () => {
+  const { dialog, user } = await fixture(bridge => { bridge.sharing.account = { ...bridge.sharing.account, login: "kimj" }; });
+  const copy = vi.spyOn(navigator.clipboard, "writeText").mockRejectedValueOnce(new Error("clipboard denied"));
+  await user.click(within(dialog).getByRole("button", { name: "Publish to GitHub" }));
+  await user.click(await screen.findByRole("button", { name: "Publish to GitHub" }));
+  await screen.findByText("Published to github.com/kimj/loupist-quality-compounder");
+  await user.click(screen.getByRole("button", { name: "Copy link" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't copy the link. Try again.");
+  expect(screen.queryByText("Link copied")).toBeNull();
+  copy.mockResolvedValue(undefined);
+  await user.click(screen.getByRole("button", { name: "Copy link" }));
+  expect(await screen.findByText("Link copied")).toBeVisible();
+  expect(screen.queryByRole("alert")).toBeNull();
+});

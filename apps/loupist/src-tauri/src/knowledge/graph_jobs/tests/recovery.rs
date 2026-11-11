@@ -422,3 +422,70 @@ fn startup_reruns_a_cut_paid_attempt_within_its_host_allowance_then_retries_once
         );
     }
 }
+
+#[test]
+fn pausing_source_processing_leaves_recovery_runnable() {
+    let (_dir, store) = open();
+    let (first, _) = queued_pair(&store, "loupist-a");
+    quarantine_by_interruptions(&store, &first);
+    let recovery = recover(&store, "loupist-a", AT + 1);
+    let mut settings = settings_of(&store, "loupist-a");
+    store
+        .transact(|write| pause_processing(write.tx, &mut settings, "loupist-a"))
+        .unwrap();
+    assert_eq!(status(&store, &recovery), JOB_QUEUED);
+    assert_eq!(
+        claim(&store, &settings, &recovery.job_id, AT + 2).status,
+        JOB_RUNNING
+    );
+}
+
+#[test]
+fn world_lookup_keeps_loupist_scope_and_removed_world_visibility() {
+    let (_dir, store) = open();
+    let (record, _) = world(&store, "loupist-a");
+    for _ in 0..20 {
+        source_module(&store, "loupist-a");
+    }
+    assert!(store
+        .read(|read| super::super::super::catalog::world_record(read.tx, "loupist-b"))
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        store
+            .read(|read| super::super::super::catalog::world_record(read.tx, "loupist-a"))
+            .unwrap()
+            .unwrap()
+            .record_id,
+        record
+    );
+    store
+        .transact(|write| {
+            let mut settings = enabled();
+            settings.memory_controls.removed.insert(record.clone());
+            store_settings(write.tx, "loupist-a", &settings)
+        })
+        .unwrap();
+    assert!(store
+        .read(|read| super::super::super::catalog::world_record(read.tx, "loupist-a"))
+        .unwrap()
+        .is_none());
+    assert!(store
+        .transact(|write| reload_world(write.tx, write.blobs, "loupist-a", AT + 1))
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn startup_does_not_decode_terminal_job_receipts() {
+    let (_dir, store) = open();
+    let (running, terminal) = queued_pair(&store, "loupist-a");
+    claim(&store, &enabled(), &running.job_id, AT);
+    store.transact(|write| {
+        // Terminal receipts are unrelated to startup attempt recovery.
+        write.tx.execute("UPDATE knowledge_graph_outbox SET status = ?1, payload_json = '{}' WHERE job_id = ?2", params![JOB_COMPLETED, terminal.job_id])?;
+        assert_eq!(recover_interrupted(write.tx)?, 1);
+        Ok(())
+    }).unwrap();
+    assert_eq!(status(&store, &running), JOB_QUEUED);
+}

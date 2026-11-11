@@ -16,7 +16,9 @@ use tokio::{
 };
 
 use super::{
-    http::{canonical_resource, checked_url, client, json_response, Challenge},
+    http::{
+        canonical_resource, checked_discovered_url, checked_url, client, json_response, Challenge,
+    },
     ConnectionError, CLIENT_METADATA_URL,
 };
 
@@ -110,7 +112,7 @@ pub fn resource_metadata_urls(
     challenge: &BearerChallenge,
 ) -> Result<Vec<Url>, ConnectionError> {
     if let Some(url) = &challenge.resource_metadata {
-        return Ok(vec![checked_url(url)?]);
+        return Ok(vec![checked_discovered_url(url, resource)?]);
     }
     let url = checked_url(resource)?;
     let base = url.origin().ascii_serialization();
@@ -160,6 +162,23 @@ pub struct AuthorizationMetadata {
     pub code_challenge_methods_supported: Vec<String>,
 }
 
+fn validate_metadata_urls(
+    metadata: &AuthorizationMetadata,
+    resource: &str,
+) -> Result<(), ConnectionError> {
+    for endpoint in [
+        &metadata.issuer,
+        &metadata.authorization_endpoint,
+        &metadata.token_endpoint,
+    ]
+    .into_iter()
+    .chain(metadata.registration_endpoint.iter())
+    {
+        checked_discovered_url(endpoint, resource)?;
+    }
+    Ok(())
+}
+
 pub struct Discovery {
     pub metadata: AuthorizationMetadata,
     pub scopes: BTreeSet<String>,
@@ -203,6 +222,7 @@ pub async fn discover(
         .first()
         .and_then(Value::as_str)
         .ok_or(ConnectionError::InvalidAuthorization)?;
+    checked_discovered_url(issuer, resource)?;
     let mut metadata = None;
     for url in authorization_metadata_urls(issuer)? {
         let response = http
@@ -228,11 +248,7 @@ pub async fn discover(
         {
             return Err(ConnectionError::InvalidAuthorization);
         }
-        checked_url(&candidate.authorization_endpoint)?;
-        checked_url(&candidate.token_endpoint)?;
-        if let Some(endpoint) = &candidate.registration_endpoint {
-            checked_url(endpoint)?;
-        }
+        validate_metadata_urls(&candidate, resource)?;
         metadata = Some(candidate);
         break;
     }
@@ -280,6 +296,14 @@ async fn register_with_metadata_url(
     supplied: Option<&Registration>,
     metadata_url: &str,
 ) -> Result<Registration, ConnectionError> {
+    // An explicit or previously registered client remains bound to its issuer.
+    // Discovery support for DCR or CIMD does not override that choice.
+    if let Some(registration) = supplied {
+        if registration.issuer != metadata.issuer {
+            return Err(ConnectionError::InvalidAuthorization);
+        }
+        return Ok(registration.clone());
+    }
     if !metadata_url.is_empty() && metadata.client_id_metadata_document_supported {
         let url = checked_url(metadata_url)?;
         if url.scheme() != "https" || url.path() == "/" {
@@ -293,21 +317,11 @@ async fn register_with_metadata_url(
             dynamically_registered: false,
         });
     }
-    // Reuse only registration bound to this exact issuer. A changed issuer must
-    // never receive the previous client's credentials.
-    if let Some(registration) = supplied {
-        if registration.issuer != metadata.issuer {
-            return Err(ConnectionError::InvalidAuthorization);
-        }
-        if registration.dynamically_registered || metadata.registration_endpoint.is_none() {
-            return Ok(registration.clone());
-        }
-    }
     let endpoint = metadata
         .registration_endpoint
         .as_ref()
         .ok_or(ConnectionError::ClientIdRequired)?;
-    let value = json_response(client()?.post(checked_url(endpoint)?).json(&json!({
+    let value = json_response(client()?.post(checked_discovered_url(endpoint, &metadata.issuer)?).json(&json!({
         "client_name":"Loupist", "redirect_uris":[redirect], "application_type":"native",
         "grant_types":["authorization_code","refresh_token"], "response_types":["code"], "token_endpoint_auth_method":"none"
     })).send().await.map_err(|_| ConnectionError::Network)?).await?;
@@ -423,6 +437,7 @@ async fn authorize_with_opener(
     supplied: Option<&Registration>,
     open: impl FnOnce(&str) -> Result<(), ConnectionError>,
 ) -> Result<(Registration, Tokens), ConnectionError> {
+    validate_metadata_urls(metadata, resource)?;
     timeout(Duration::from_secs(300), async {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
@@ -455,55 +470,7 @@ async fn authorize_with_opener(
             }
         }
         open(url.as_str())?;
-        let (mut socket, peer) = listener
-            .accept()
-            .await
-            .map_err(|_| ConnectionError::Authorization)?;
-        if !peer.ip().is_loopback() {
-            return Err(ConnectionError::InvalidAuthorization);
-        }
-        let mut bytes = Vec::new();
-        let mut buf = [0u8; 1024];
-        loop {
-            let count = timeout(Duration::from_secs(5), socket.read(&mut buf))
-                .await
-                .map_err(|_| ConnectionError::Authorization)?
-                .map_err(|_| ConnectionError::Authorization)?;
-            if count == 0 || bytes.len() + count > 16 * 1024 {
-                return Err(ConnectionError::InvalidAuthorization);
-            }
-            bytes.extend_from_slice(&buf[..count]);
-            if bytes.windows(4).any(|w| w == b"\r\n\r\n") {
-                break;
-            }
-        }
-        let request =
-            std::str::from_utf8(&bytes).map_err(|_| ConnectionError::InvalidAuthorization)?;
-        let target = request
-            .lines()
-            .next()
-            .and_then(|line| line.strip_prefix("GET "))
-            .and_then(|line| line.strip_suffix(" HTTP/1.1"))
-            .ok_or(ConnectionError::InvalidAuthorization)?;
-        if !target.starts_with("/callback?") {
-            return Err(ConnectionError::InvalidAuthorization);
-        }
-        let callback = Url::parse(&format!("http://127.0.0.1{target}"))
-            .map_err(|_| ConnectionError::InvalidAuthorization)?;
-        let result = attempt.validate_callback(&callback);
-        // The length comes from the body: a longer declared length leaves the
-        // browser waiting for bytes that never arrive.
-        let (status, body) = if result.is_ok() {
-            ("200 OK", "You can return to Loupist now")
-        } else {
-            ("400 Bad Request", "Authorization failed")
-        };
-        let response = format!(
-            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        );
-        let _ = socket.write_all(response.as_bytes()).await;
-        let code = result?;
+        let code = receive_callback(&listener, &attempt).await?;
         let form = vec![
             ("grant_type", "authorization_code".into()),
             ("code", code),
@@ -526,6 +493,79 @@ async fn authorize_with_opener(
     .map_err(|_| ConnectionError::Authorization)?
 }
 
+async fn receive_callback(
+    listener: &TcpListener,
+    attempt: &AuthorizationAttempt,
+) -> Result<String, ConnectionError> {
+    loop {
+        let (mut socket, peer) = listener
+            .accept()
+            .await
+            .map_err(|_| ConnectionError::Authorization)?;
+        if !peer.ip().is_loopback() {
+            continue;
+        }
+        let mut callback_received = false;
+        let mut received_bytes = false;
+        let result = timeout(Duration::from_secs(5), async {
+            let mut bytes = Vec::new();
+            let mut buf = [0u8; 1024];
+            loop {
+                let count = socket
+                    .read(&mut buf)
+                    .await
+                    .map_err(|_| ConnectionError::Authorization)?;
+                received_bytes |= count > 0;
+                if count == 0 || bytes.len() + count > 16 * 1024 {
+                    return Err(ConnectionError::InvalidAuthorization);
+                }
+                bytes.extend_from_slice(&buf[..count]);
+                if bytes.windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let request =
+                std::str::from_utf8(&bytes).map_err(|_| ConnectionError::InvalidAuthorization)?;
+            let target = request
+                .lines()
+                .next()
+                .and_then(|line| line.strip_prefix("GET "))
+                .and_then(|line| line.strip_suffix(" HTTP/1.1"))
+                .filter(|target| target.starts_with("/callback?"))
+                .ok_or(ConnectionError::InvalidAuthorization)?;
+            callback_received = true;
+            let callback = Url::parse(&format!("http://127.0.0.1{target}"))
+                .map_err(|_| ConnectionError::InvalidAuthorization)?;
+            attempt.validate_callback(&callback)
+        })
+        .await
+        .unwrap_or(Err(ConnectionError::Authorization));
+        if !received_bytes {
+            // An unused browser preconnect has no HTTP request to answer.
+            continue;
+        }
+        let (status, body) = if result.is_ok() {
+            ("200 OK", "You can return to Loupist now")
+        } else {
+            ("400 Bad Request", "Authorization failed")
+        };
+        let response = format!(
+            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let _ = timeout(
+            Duration::from_secs(5),
+            socket.write_all(response.as_bytes()),
+        )
+        .await;
+        if callback_received {
+            return result;
+        }
+        // Browser preconnects and unrelated requests do not consume the attempt.
+        // The enclosing authorization timeout still bounds the whole listener.
+    }
+}
+
 async fn token_request(
     http: &Client,
     metadata: &AuthorizationMetadata,
@@ -538,6 +578,7 @@ async fn token_request(
     if registration.issuer != metadata.issuer {
         return Err(ConnectionError::InvalidAuthorization);
     }
+    validate_metadata_urls(metadata, resource)?;
     form.push(("resource", resource.into()));
     form.push(("client_id", registration.client_id.clone()));
     let mut request = http.post(checked_url(&metadata.token_endpoint)?);
@@ -645,6 +686,109 @@ mod tests {
             "token_endpoint":format!("{base}/token"),"registration_endpoint":format!("{base}/register"),
             "authorization_response_iss_parameter_supported":true,"client_id_metadata_document_supported":true,
             "code_challenge_methods_supported":["S256"]})).unwrap()
+    }
+
+    #[tokio::test]
+    async fn remote_resource_discovery_refuses_loopback_metadata_before_sending() {
+        let server = Server::start(|_, _| Response::status(400)).await;
+        let challenge = BearerChallenge {
+            resource_metadata: Some(format!("{}/prm", server.url)),
+            ..Default::default()
+        };
+        assert!(matches!(
+            discover("https://source.example/mcp", &challenge).await,
+            Err(ConnectionError::InvalidAuthorization)
+        ));
+        assert!(server.requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn supplied_client_is_used_even_when_dynamic_registration_is_advertised() {
+        let meta = metadata("https://issuer.example");
+        let supplied = Registration {
+            issuer: meta.issuer.clone(),
+            client_id: "user-client".into(),
+            client_secret: None,
+            token_endpoint_auth_method: "none".into(),
+            dynamically_registered: false,
+        };
+        let registered = register(&meta, "http://127.0.0.1:1234/callback", Some(&supplied))
+            .await
+            .unwrap();
+        assert_eq!(registered.client_id, supplied.client_id);
+    }
+
+    #[tokio::test]
+    async fn callback_ignores_preconnects_and_unrelated_requests() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let attempt = AuthorizationAttempt::new(&metadata("https://issuer.example"));
+        let mut callback = Url::parse(&format!("http://{address}/callback")).unwrap();
+        callback
+            .query_pairs_mut()
+            .append_pair("state", &attempt.state)
+            .append_pair("code", "valid-code")
+            .append_pair("iss", &attempt.issuer);
+        let client = tokio::spawn(async move {
+            let mut preconnect = tokio::net::TcpStream::connect(address).await.unwrap();
+            preconnect.shutdown().await.unwrap();
+            let mut response = Vec::new();
+            preconnect.read_to_end(&mut response).await.unwrap();
+            assert!(
+                response.is_empty(),
+                "an unused preconnect must close without an HTTP response"
+            );
+            let response = reqwest::get(format!("http://{address}/favicon.ico"))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+            let response = reqwest::get(callback).await.unwrap();
+            let size = response.content_length().unwrap();
+            assert_eq!(response.text().await.unwrap().len() as u64, size);
+        });
+        assert_eq!(
+            timeout(
+                Duration::from_secs(2),
+                receive_callback(&listener, &attempt)
+            )
+            .await
+            .unwrap()
+            .unwrap(),
+            "valid-code"
+        );
+        client.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn authorization_error_callback_finishes_the_attempt() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let attempt = AuthorizationAttempt::new(&metadata("https://issuer.example"));
+        let mut callback = Url::parse(&format!(
+            "http://{}/callback",
+            listener.local_addr().unwrap()
+        ))
+        .unwrap();
+        callback
+            .query_pairs_mut()
+            .append_pair("state", &attempt.state)
+            .append_pair("error", "access_denied")
+            .append_pair("iss", &attempt.issuer);
+        let client = tokio::spawn(async move {
+            assert_eq!(
+                reqwest::get(callback).await.unwrap().status(),
+                reqwest::StatusCode::BAD_REQUEST
+            );
+        });
+        assert!(matches!(
+            timeout(
+                Duration::from_secs(2),
+                receive_callback(&listener, &attempt)
+            )
+            .await
+            .unwrap(),
+            Err(ConnectionError::InvalidAuthorization)
+        ));
+        client.await.unwrap();
     }
 
     #[test]

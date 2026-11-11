@@ -1,7 +1,7 @@
 # Chat composer
 
 The composer and rail attach context and do not send it. Text and object references appear at the textarea cursor; whole-message settings (Skills, as-of date, privacy and model) sit below the text. Focus on the composer, including the automatic focus of a new chat, turns its 1px edge to the focus color and adds a soft 3px halo of the same color. It draws no 2px outline, which would frame the whole composer. Footer controls keep their own outline. When the tools wrap onto another row, Send stays at the trailing edge of that row. `/asof` is the [date control](../analysis/point-in-time.md#composer-date-control). Width and the browser: [Evidence](evidence-browser.md).
-Answer table, code and diagram controls use the current UI language for their tooltips and accessible names. A stopped reply shows the localized run state without the runtime's English stop marker in the answer or its copy action.
+Answer table, code and diagram controls use the current UI language for their tooltips and accessible names. Copy confirmation clears after a short delay; refreshed snapshots of the same answer, number or grid preserve it. A stopped reply shows the localized run state without the runtime's English stop marker in the answer or its copy action.
 The transcript keeps public progress notes, findings and citations in reading
 order. While work runs, short action labels grow down the conversation between
 public notes. Consecutive successful calls with the same action can share a
@@ -85,7 +85,7 @@ dragging files over the chat column shows one drop overlay with the limits. The 
 
 The composer has `@` for existing context and `/` for commands and Skills.
 `@` searches files, knowledge, work and connections, including existing World
-references. It does not search the watchlist or offer free-form ticker selection.
+references, while a reply streams as well as while idle. It does not search the watchlist or offer free-form ticker selection.
 `/` lists `/brief`, `/compare`, `/check`, `/asof` and then Skills by name.
 `/brief` and `/compare` start editable prose. Dollar amounts and ticker text,
 including old `$SYMBOL:MARKET (Name)` messages, remain ordinary text. They do not

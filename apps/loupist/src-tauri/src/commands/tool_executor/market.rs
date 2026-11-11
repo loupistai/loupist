@@ -71,11 +71,22 @@ pub(super) fn parse_as_of_date(
         .map_err(|_| BrokerError::invalid("as_of", "expected a calendar date in YYYY-MM-DD format"))
 }
 
+fn parse_as_of_value(value: Option<&Value>) -> Result<Option<chrono::NaiveDate>, BrokerError> {
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) => parse_as_of_date(Some(value)),
+        Some(_) => Err(BrokerError::invalid(
+            "as_of",
+            "expected a calendar date in YYYY-MM-DD format",
+        )),
+    }
+}
+
 pub(super) fn effective_as_of(
     policy: &ToolPolicy,
     params: &Value,
 ) -> Result<Option<chrono::NaiveDate>, BrokerError> {
-    let tool = parse_as_of_date(params.get("as_of").and_then(Value::as_str))?;
+    let tool = parse_as_of_value(params.get("as_of"))?;
     let turn = parse_as_of_date(policy.as_of.as_deref())?;
     Ok(match (turn, tool) {
         (Some(left), Some(right)) => Some(left.min(right)),
@@ -108,7 +119,7 @@ pub(super) fn take_max_age(params: &mut Value) -> Result<Option<u64>, BrokerErro
 pub(super) fn take_as_of(params: &mut Value) -> Result<Option<chrono::NaiveDate>, BrokerError> {
     let object = params.as_object_mut().ok_or(BrokerError::Malformed)?;
     let value = object.remove("as_of");
-    parse_as_of_date(value.as_ref().and_then(Value::as_str))
+    parse_as_of_value(value.as_ref())
 }
 
 pub(super) fn observation_date(value: &Value) -> Option<chrono::NaiveDate> {
@@ -299,14 +310,14 @@ fn apply_cutoff(
             )));
         }
     }
-    let empty = output
-        .get("data")
-        .and_then(|data| {
-            DATED_SECTIONS
-                .iter()
-                .find_map(|field| data.get(*field).and_then(Value::as_array))
-        })
-        .is_some_and(|rows| rows.is_empty());
+    let empty = has_rows
+        && output.get("data").is_some_and(|data| {
+            DATED_SECTIONS.iter().all(|field| {
+                data.get(*field)
+                    .and_then(Value::as_array)
+                    .is_none_or(Vec::is_empty)
+            })
+        });
     if empty {
         return Err(BrokerError::Execution(match basis {
             CutoffBasis::Publication => {
@@ -353,6 +364,56 @@ pub(super) fn validate_provider_result(
 #[cfg(test)]
 mod as_of_tests {
     use super::*;
+
+    #[test]
+    fn as_of_arguments_reject_non_strings_instead_of_removing_the_cutoff() {
+        let policy = ToolPolicy {
+            loupist_id: "loupist-a".into(),
+            session_id: "chat-a".into(),
+            use_memory: false,
+            propose_memory_updates: false,
+            memory_proposal_budget: 0,
+            as_of: None,
+        };
+        for value in [json!(20260310), json!(false), json!([]), json!({})] {
+            let mut params = json!({"as_of": value});
+            assert!(effective_as_of(&policy, &params).is_err(), "{params}");
+            assert!(take_as_of(&mut params).is_err());
+        }
+        let cutoff = chrono::NaiveDate::from_ymd_opt(2026, 3, 10).unwrap();
+        let mut params = json!({"as_of": "2026-03-10"});
+        assert_eq!(effective_as_of(&policy, &params).unwrap(), Some(cutoff));
+        assert_eq!(take_as_of(&mut params).unwrap(), Some(cutoff));
+        assert!(params.get("as_of").is_none());
+
+        let mut params = json!({"as_of": null});
+        assert_eq!(effective_as_of(&policy, &params).unwrap(), None);
+        let historical = ToolPolicy {
+            as_of: Some("2026-03-10".into()),
+            ..policy
+        };
+        assert_eq!(effective_as_of(&historical, &params).unwrap(), Some(cutoff));
+        assert_eq!(take_as_of(&mut params).unwrap(), None);
+        assert!(params.get("as_of").is_none());
+    }
+
+    #[test]
+    fn as_of_empty_checks_every_dated_section() {
+        let cutoff = chrono::NaiveDate::from_ymd_opt(2026, 3, 10).unwrap();
+        let mut output = json!({
+            "data": {"observations": [{"available_at":"2026-03-11"}],
+                "rows": [{"available_at":"2026-03-09", "value": 42}]},
+            "quality": {"status":"pass"}
+        });
+        apply_as_of_cutoff(&mut output, cutoff).unwrap();
+        assert_eq!(output["data"]["rows"][0]["value"], 42);
+        assert_eq!(output["data"]["observations"], json!([]));
+        assert!(apply_as_of_cutoff(
+            &mut output,
+            chrono::NaiveDate::from_ymd_opt(2026, 3, 8).unwrap()
+        )
+        .is_err());
+    }
 
     #[test]
     fn as_of_cutoff_excludes_unknown_publication_and_later_revisions() {

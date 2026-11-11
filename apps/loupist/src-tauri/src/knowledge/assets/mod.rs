@@ -256,6 +256,16 @@ pub struct PageRecord {
     pub revision: i64,
 }
 
+fn stored_enum<T: serde::de::DeserializeOwned>(index: usize, value: String) -> rusqlite::Result<T> {
+    serde_json::from_value(Value::String(value)).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            index,
+            rusqlite::types::Type::Text,
+            Box::new(error),
+        )
+    })
+}
+
 fn read_page_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PageRecord> {
     let class: String = row.get(4)?;
     let source: String = row.get(5)?;
@@ -266,12 +276,18 @@ fn read_page_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PageRecord> {
         symbol: row.get(1)?,
         market: row.get(2)?,
         name: row.get(3)?,
-        class: AssetClass::parse(&class).unwrap_or(AssetClass::Equity),
-        class_source: ClassSource::parse(&source).unwrap_or(ClassSource::Default),
+        class: stored_enum(4, class)?,
+        class_source: stored_enum(5, source)?,
         entity_id: row.get(6)?,
-        verdict: verdict.as_deref().and_then(Verdict::parse),
+        verdict: verdict.map(|value| stored_enum(7, value)).transpose()?,
         verdict_move_id: row.get(8)?,
-        refresh: serde_json::from_str(&refresh).unwrap_or_default(),
+        refresh: serde_json::from_str(&refresh).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                9,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?,
         refreshed_at_ms: row.get(10)?,
         created_at_ms: row.get(11)?,
         revision: row.get(12)?,
@@ -300,10 +316,8 @@ pub fn list_pages(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<Vec
     let mut statement = tx.prepare(&format!(
         "SELECT {PAGE_COLUMNS} FROM knowledge_asset_pages WHERE loupist_id=?1 ORDER BY created_at_ms, asset_id"
     ))?;
-    let rows = statement
-        .query_map([loupist_id], read_page_row)?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
+    let rows = statement.query_map([loupist_id], read_page_row)?;
+    Ok(crate::store::collect_readable_rows(rows, "asset pages")?)
 }
 
 /// Whitespace-collapsed text of at most `chars` characters.
@@ -827,39 +841,38 @@ pub struct MoveView {
 
 const MOVE_COLUMNS: &str = "move_id,asset_id,from_verdict,to_verdict,fact_date,reason,evidence_json,reason_id,line_json,actor,at_ms,undone,undoes_move_id,origin_chat_id,origin_message_id,seen_at_ms";
 
-fn read_move(row: &rusqlite::Row<'_>) -> rusqlite::Result<(MoveView, String, Option<String>)> {
+fn read_move(row: &rusqlite::Row<'_>) -> rusqlite::Result<MoveView> {
     let from: Option<String> = row.get(2)?;
     let to: String = row.get(3)?;
-    Ok((
-        MoveView {
-            move_id: row.get(0)?,
-            asset_id: row.get(1)?,
-            from: from.as_deref().and_then(Verdict::parse),
-            to: Verdict::parse(&to).unwrap_or(Verdict::Holding),
-            fact_date: row.get(4)?,
-            reason: row.get(5)?,
-            evidence: Vec::new(),
-            reason_id: row.get(7)?,
-            line: None,
-            actor: row.get(9)?,
-            at_ms: row.get(10)?,
-            undone: row.get(11)?,
-            undoes_move_id: row.get(12)?,
-            origin_chat_id: row.get(13)?,
-            origin_message_id: row.get(14)?,
-            seen_at_ms: row.get(15)?,
-        },
-        row.get::<_, String>(6)?,
-        row.get::<_, Option<String>>(8)?,
-    ))
-}
-
-fn finish_move(
-    (mut view, evidence, line): (MoveView, String, Option<String>),
-) -> KnowledgeResult<MoveView> {
-    view.evidence = serde_json::from_str(&evidence)?;
-    view.line = line.map(|text| serde_json::from_str(&text)).transpose()?;
-    Ok(view)
+    let evidence: String = row.get(6)?;
+    let line: Option<String> = row.get(8)?;
+    let conversion = |index, error: serde_json::Error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            index,
+            rusqlite::types::Type::Text,
+            Box::new(error),
+        )
+    };
+    Ok(MoveView {
+        move_id: row.get(0)?,
+        asset_id: row.get(1)?,
+        from: from.map(|value| stored_enum(2, value)).transpose()?,
+        to: stored_enum(3, to)?,
+        fact_date: row.get(4)?,
+        reason: row.get(5)?,
+        evidence: serde_json::from_str(&evidence).map_err(|e| conversion(6, e))?,
+        reason_id: row.get(7)?,
+        line: line
+            .map(|text| serde_json::from_str(&text).map_err(|e| conversion(8, e)))
+            .transpose()?,
+        actor: row.get(9)?,
+        at_ms: row.get(10)?,
+        undone: row.get(11)?,
+        undoes_move_id: row.get(12)?,
+        origin_chat_id: row.get(13)?,
+        origin_message_id: row.get(14)?,
+        seen_at_ms: row.get(15)?,
+    })
 }
 
 /// Every move for an asset, oldest first.
@@ -868,13 +881,24 @@ pub fn moves(
     loupist_id: &str,
     asset_id: &str,
 ) -> KnowledgeResult<Vec<MoveView>> {
+    read_moves(tx, loupist_id, asset_id, true)
+}
+
+fn read_moves(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    asset_id: &str,
+    skip_unreadable: bool,
+) -> KnowledgeResult<Vec<MoveView>> {
     let mut statement = tx.prepare(&format!(
         "SELECT {MOVE_COLUMNS} FROM knowledge_asset_moves WHERE loupist_id=?1 AND asset_id=?2 ORDER BY at_ms, rowid"
     ))?;
-    let rows = statement
-        .query_map(params![loupist_id, asset_id], read_move)?
-        .collect::<Result<Vec<_>, _>>()?;
-    rows.into_iter().map(finish_move).collect()
+    let rows = statement.query_map(params![loupist_id, asset_id], read_move)?;
+    Ok(if skip_unreadable {
+        crate::store::collect_readable_rows(rows, "asset moves")?
+    } else {
+        rows.collect::<Result<Vec<_>, _>>()?
+    })
 }
 
 /// The read, if a thesis exists: the stored step, or Holding up from the first reason.
@@ -1003,7 +1027,7 @@ fn plan_update(
             ));
         }
     }
-    let history = moves(tx, loupist_id, &update.asset_id)?;
+    let history = read_moves(tx, loupist_id, &update.asset_id, false)?;
     match (&update.to, &update.line) {
         (Some(to), None) => {
             let reason = update.reason.as_deref().map(str::trim).unwrap_or_default();
@@ -1158,7 +1182,7 @@ pub fn apply_update(
             at_ms,
             &planned.reason,
         )?;
-        moved = moves(tx, loupist_id, &update.asset_id)?
+        moved = read_moves(tx, loupist_id, &update.asset_id, false)?
             .into_iter()
             .find(|item| item.move_id == move_id);
     } else if planned.reading.is_some() {
@@ -1213,7 +1237,7 @@ pub fn undo(
     at_ms: i64,
 ) -> KnowledgeResult<PageRecord> {
     let page = get_page(tx, loupist_id, asset_id)?.ok_or(KnowledgeError::NotFound)?;
-    let history = moves(tx, loupist_id, asset_id)?;
+    let history = read_moves(tx, loupist_id, asset_id, false)?;
     let latest = history.last().ok_or(KnowledgeError::NotFound)?;
     if latest.move_id != move_id {
         return Err(KnowledgeError::RevisionConflict {

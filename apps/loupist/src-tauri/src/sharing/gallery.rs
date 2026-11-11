@@ -12,6 +12,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use super::deep_link::segment;
 use super::pack::{self, License, ASSET_CLASSES};
 use super::scan::strip_hidden;
 
@@ -145,16 +146,6 @@ impl Entry {
 pub(crate) struct Index {
     pub entries: Vec<Entry>,
     pub blocked: Vec<Blocked>,
-}
-
-fn segment(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 100
-        && value != "."
-        && value != ".."
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
 }
 
 /// One line of display text: hidden characters removed, whitespace folded, bounded.
@@ -298,7 +289,8 @@ pub(crate) struct Loaded {
 }
 
 /// The index last read from each URL (one in a build; tests use their own).
-type Memory = std::collections::BTreeMap<String, (Instant, std::sync::Arc<Index>, i64)>;
+/// An unrepresentable monotonic start is None and is always treated as stale.
+type Memory = std::collections::BTreeMap<String, (Option<Instant>, std::sync::Arc<Index>, i64)>;
 
 fn memory() -> &'static Mutex<Memory> {
     static MEMORY: Mutex<Memory> = Mutex::new(Memory::new());
@@ -311,13 +303,18 @@ fn now_ms() -> i64 {
         .map_or(0, |elapsed| elapsed.as_millis() as i64)
 }
 
-fn client() -> Option<reqwest::Client> {
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::none())
-        .user_agent("Loupist-Sharing")
-        .build()
-        .ok()
+fn client() -> Option<&'static reqwest::Client> {
+    static CLIENT: std::sync::OnceLock<Option<reqwest::Client>> = std::sync::OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .timeout(Duration::from_secs(15))
+                .redirect(reqwest::redirect::Policy::none())
+                .user_agent("Loupist-Sharing")
+                .build()
+                .ok()
+        })
+        .as_ref()
 }
 
 /// A bounded GET with no redirects; None for anything but a 200 within `max`.
@@ -371,7 +368,13 @@ fn remember(url: &str, index: Index, fetched_at_ms: i64) -> std::sync::Arc<Index
     if let Ok(mut memory) = memory().lock() {
         memory.insert(
             url.to_owned(),
-            (Instant::now(), index.clone(), fetched_at_ms),
+            (
+                Instant::now().checked_sub(Duration::from_millis(
+                    now_ms().saturating_sub(fetched_at_ms).max(0) as u64,
+                )),
+                index.clone(),
+                fetched_at_ms,
+            ),
         );
     }
     index
@@ -391,7 +394,7 @@ pub(crate) async fn load_from(
         .and_then(|memory| memory.get(url).cloned());
     if !refresh {
         if let Some((at, index, fetched_at_ms)) = &held {
-            if at.elapsed() < REFRESH_AFTER {
+            if at.is_some_and(|at| at.elapsed() < REFRESH_AFTER) {
                 return Some(Loaded {
                     index: index.clone(),
                     fetched_at_ms: *fetched_at_ms,
@@ -717,6 +720,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn gallery_requests_reuse_the_http_connection() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/index.json", listener.local_addr().unwrap());
+        let connections = Arc::new(AtomicUsize::new(0));
+        let accepted = connections.clone();
+        let server = tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                accepted.fetch_add(1, Ordering::SeqCst);
+                tokio::spawn(async move {
+                    loop {
+                        let mut header = Vec::new();
+                        let mut byte = [0];
+                        while !header.ends_with(b"\r\n\r\n") {
+                            if socket.read_exact(&mut byte).await.is_err() {
+                                return;
+                            }
+                            header.push(byte[0]);
+                        }
+                        if socket
+                            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}")
+                            .await
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                });
+            }
+        });
+        for _ in 0..2 {
+            assert_eq!(get(&url, 64).await.unwrap(), b"{}");
+        }
+        server.abort();
+        assert_eq!(connections.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
     async fn the_index_is_kept_for_offline_use_and_read_again_only_when_stale_or_refreshed() {
         use super::super::github::fixture;
         use std::sync::{
@@ -731,7 +776,7 @@ mod tests {
             serde_json::json!([]),
         );
         let server = fixture::serve(Arc::new(move |_, path, _| match path {
-            "/index.json" => (answer.load(Ordering::SeqCst), body.clone()),
+            "/index.json" | "/index.json?restart" => (answer.load(Ordering::SeqCst), body.clone()),
             "/moved" => (302, String::new()),
             _ => (404, "{}".into()),
         }))
@@ -753,12 +798,37 @@ mod tests {
         let offline = load_from(&url, Some(cache.path()), true).await.unwrap();
         assert!(offline.offline);
         assert_eq!(offline.fetched_at_ms, fresh.fetched_at_ms);
-        // A later start with nothing in memory still has the copy in app data.
+        // A later start with nothing in memory still has the stale copy on disk.
+        memory().lock().unwrap().remove(&url);
+        let file = std::fs::File::options()
+            .write(true)
+            .open(index_file(cache.path()))
+            .unwrap();
+        file.set_times(
+            std::fs::FileTimes::new()
+                .set_modified(SystemTime::now() - REFRESH_AFTER - Duration::from_secs(1)),
+        )
+        .unwrap();
         let restarted = format!("{}/index.json?restart", server.base);
         let kept = load_from(&restarted, Some(cache.path()), true)
             .await
             .unwrap();
         assert!(kept.offline && kept.index.entries.len() == 1);
+        assert_eq!(cached_entry(ID).unwrap().full_name(), "kimj/loupist-chips");
+        assert!(memory().lock().unwrap().contains_key(&restarted));
+        // A platform whose monotonic clock cannot represent this age also retries.
+        memory().lock().unwrap().get_mut(&restarted).unwrap().0 = None;
+        let still_offline = load_from(&restarted, Some(cache.path()), false)
+            .await
+            .unwrap();
+        assert!(still_offline.offline);
+        let before = server.requests.lock().unwrap().len();
+        status.store(200, Ordering::SeqCst);
+        let retried = load_from(&restarted, Some(cache.path()), false)
+            .await
+            .unwrap();
+        assert!(!retried.offline);
+        assert_eq!(server.requests.lock().unwrap().len(), before + 1);
         // Never read: unavailable. Redirects are not followed.
         let empty = tempfile::tempdir().unwrap();
         assert!(

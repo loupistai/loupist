@@ -1,4 +1,5 @@
-import { Component, lazy, Suspense, useMemo, useRef, useState, type ReactNode } from "react";
+import { CanvasBoundary } from "../map/CanvasBoundary";
+import { lazy, Suspense, useMemo, useRef, useState } from "react";
 import type { KnowledgeLocation } from "../../types";
 import { useTranslation } from "../../i18n";
 import { formatNumber } from "../../i18n/format";
@@ -9,12 +10,7 @@ import { MapList } from "../map/MapList";
 import { useChatMap } from "./ChatMapContext";
 import "../../styles/map.css";
 const MapCanvas = lazy(() => import("../map/MapCanvas"));
-class MiniCanvasBoundary extends Component<{ children: ReactNode; onError: () => void }, { failed: boolean }> {
-  state = { failed: false };
-  static getDerivedStateFromError() { return { failed: true }; }
-  componentDidCatch() { this.props.onError(); }
-  render() { return this.state.failed ? null : this.props.children; }
-}
+
 export function ChatMiniMap({ onOpenFull }: { onOpenFull: (location: KnowledgeLocation) => void }) {
   const { t } = useTranslation("knowledge");
   const state = useChatMap();
@@ -37,7 +33,7 @@ export function ChatMiniMap({ onOpenFull }: { onOpenFull: (location: KnowledgeLo
     <div className="chat-mini-map-body">
       {state.loading && !map ? <div className="map-skeleton" role="status">{t("map.loading")}</div> : !map?.nodes.length ? <div className="map-empty" data-testid="map-empty"><p>{t("map.chatEmpty")}</p></div> : <>
         <div className="map-stats" data-testid="map-stats" role="status">{stats}</div>
-        {list ? <MapList nodes={map.nodes} edges={map.edges} onSelect={node => full({ kind: "node", id: node.id })} onClaim={id => full({ kind: "claim", id })} /> : <MiniCanvasBoundary onError={() => setList(true)}><Suspense fallback={<div className="map-skeleton" />}><MapCanvas compact={{ highlightIds: state.highlightIds, glowNodeIds: state.glowNodeIds, glowEdgeIds: state.glowEdgeIds, liveNodeIds: state.liveNodeIds }} nodes={positions} edges={map.edges} scopeKey={`chat:${state.loupistId}:${state.chatId}`} controls={controls} onSelect={node => state.select(new Set([node.id]))} onClear={() => state.select()} stats={stats} /></Suspense></MiniCanvasBoundary>}
+        {list ? <MapList nodes={map.nodes} edges={map.edges} onSelect={node => full({ kind: "node", id: node.id })} onClaim={id => full({ kind: "claim", id })} /> : <CanvasBoundary onError={() => setList(true)}><Suspense fallback={<div className="map-skeleton" />}><MapCanvas compact={{ highlightIds: state.highlightIds, glowNodeIds: state.glowNodeIds, glowEdgeIds: state.glowEdgeIds, liveNodeIds: state.liveNodeIds }} nodes={positions} edges={map.edges} scopeKey={`chat:${state.loupistId}:${state.chatId}`} controls={controls} onSelect={node => state.select(new Set([node.id]))} onClear={() => state.select()} stats={stats} /></Suspense></CanvasBoundary>}
       </>}
     </div>
   </section>;

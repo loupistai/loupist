@@ -351,7 +351,6 @@ impl AppToolExecutor {
         &self,
         policy: &ToolPolicy,
         mut params: Value,
-        _delivery_id: &str,
     ) -> Result<Value, BrokerError> {
         let cutoff = effective_as_of(policy, &params)?;
         let _ = take_as_of(&mut params)?;
@@ -405,7 +404,6 @@ impl AppToolExecutor {
         &self,
         policy: &ToolPolicy,
         mut params: Value,
-        _delivery_id: &str,
     ) -> Result<Value, BrokerError> {
         let cutoff = effective_as_of(policy, &params)?;
         let _ = take_as_of(&mut params)?;
@@ -466,7 +464,6 @@ impl AppToolExecutor {
         &self,
         policy: &ToolPolicy,
         params: Value,
-        _delivery_id: &str,
     ) -> Result<Value, BrokerError> {
         let cutoff = effective_as_of(policy, &params)?;
         if cutoff.is_some() {
@@ -551,7 +548,6 @@ impl AppToolExecutor {
         &self,
         policy: &ToolPolicy,
         mut params: Value,
-        _delivery_id: &str,
     ) -> Result<Value, BrokerError> {
         let cutoff = effective_as_of(policy, &params)?;
         let _ = take_as_of(&mut params)?;
@@ -598,7 +594,6 @@ impl AppToolExecutor {
         &self,
         policy: &ToolPolicy,
         mut params: Value,
-        _delivery_id: &str,
     ) -> Result<Value, BrokerError> {
         let cutoff = effective_as_of(policy, &params)?;
         let _ = take_as_of(&mut params)?;
@@ -642,7 +637,6 @@ impl AppToolExecutor {
         &self,
         policy: &ToolPolicy,
         mut params: Value,
-        _delivery_id: &str,
     ) -> Result<Value, BrokerError> {
         let cutoff = effective_as_of(policy, &params)?;
         let _ = take_as_of(&mut params)?;

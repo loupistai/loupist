@@ -12,13 +12,10 @@ assert.match(read(resolve(e2eRoot, ".npmrc")), /^ignore-scripts=true$/m);
 
 const packageManifest = JSON.parse(read(resolve(e2eRoot, "package.json")));
 assert.equal(packageManifest.devDependencies.webdriverio, "10.1.0");
-assert.equal(packageManifest.scripts.mcp, undefined);
 
 const appLauncher = read(resolve(e2eRoot, "run-app.sh"));
 assert.match(appLauncher, /\/usr\/bin\/env -i/);
 assert.match(appLauncher, /LOUPIST_E2E_APP_DATA_DIR/);
-assert.doesNotMatch(appLauncher, /LOUPIST_E2E_APPROVE_NATIVE/);
-assert.doesNotMatch(appLauncher, /LOUPIST_AGENT_E2E_KEYCHAIN/);
 
 const windowsSmokeLauncher = read(resolve(e2eRoot, "run-native-smoke.ps1"));
 assert.match(windowsSmokeLauncher, /ProcessStartInfo/);
@@ -26,12 +23,9 @@ assert.match(windowsSmokeLauncher, /\.Environment\.Clear\(\)/);
 assert.match(windowsSmokeLauncher, /LOUPIST_E2E_APP_DATA_DIR/);
 assert.match(windowsSmokeLauncher, /Get-NetTCPConnection/);
 assert.match(windowsSmokeLauncher, /Get-CimInstance/);
-assert.doesNotMatch(windowsSmokeLauncher, /LOUPIST_E2E_APPROVE_NATIVE/);
-assert.doesNotMatch(windowsSmokeLauncher, /LOUPIST_AGENT_E2E_KEYCHAIN/);
 
 const devLauncher = read(resolve(e2eRoot, "run-dev-app.sh"));
 assert.match(devLauncher, /\/usr\/bin\/env -i/);
-assert.doesNotMatch(devLauncher, /LOUPIST_AGENT_E2E_KEYCHAIN/);
 
 // Guard the remaining OS credential store. The ordinary debug integration
 // test in src-tauri/tests/debug_credentials.rs verifies behavior without the
@@ -55,7 +49,6 @@ for (const [path, nativeFactory] of [
     ),
     `${path}: native credentials must be excluded from debug and automated builds`,
   );
-  assert.doesNotMatch(source, /LOUPIST_AGENT_E2E_KEYCHAIN/);
 }
 
 // World requests go through the shared host-owned provider service. The graph
@@ -136,10 +129,6 @@ assert.match(
 assert.match(
   read(resolve(appRoot, "src-tauri/src/lib.rs")),
   /com\.monarchjuno\.loupist\.e2e/,
-);
-assert.doesNotMatch(
-  read(resolve(appRoot, "src-tauri/src/app.rs")),
-  /LOUPIST_E2E_APPROVE_NATIVE/,
 );
 
 const tauriConfig = JSON.parse(

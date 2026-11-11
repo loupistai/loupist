@@ -8,7 +8,6 @@ export const DEV_WEBDRIVER_PORT = 14440;
 export const DEV_VITE_PORT = 1420;
 
 const usage = `Usage:
-  node wait-session.mjs --check <current-session.json>
   node wait-session.mjs --owner-live <current-session.json>
   node wait-session.mjs --native-app <current-session.json>
   node wait-session.mjs --is-manual-session <current-session.json> --manual-profile <name>
@@ -459,11 +458,6 @@ export async function main(argv = process.argv) {
   if (writeManualPath) {
     writeManualSession(writeManualPath, integerFlag("--pid", 0, argv), integerFlag("--app-pid", 0, argv), stringFlag("--manual-profile", argv));
     return;
-  }
-
-  const checkSession = stringFlag("--check", argv);
-  if (checkSession) {
-    process.exit((await sessionIsLive(checkSession)) ? 0 : 1);
   }
 
   const isDevSession = stringFlag("--is-dev-session", argv);

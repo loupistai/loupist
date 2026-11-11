@@ -1,4 +1,5 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
+import i18n from "../../i18n";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { ChatMessage } from "../../types";
@@ -7,6 +8,22 @@ import { renderWithOpen } from "../../test/open";
 import { libraryState } from "../map/libraryState";
 import { FixMemoryProvider } from "../memory/fixMemory";
 import { ChatSetAsideProvider, type ChatSetAside } from "../../chat/chatSetAside";
+
+it("localizes the World name inside the saved-change action", async () => {
+  const change = { title: "Saved relationships", recordId: "world-1", operation: "create" as const, lesson: "", basis: "", futureUse: "" };
+  const message: ChatMessage = { id: "world-answer", role: "assistant", content: "Saved.", status: "complete", created_at: new Date().toISOString(),
+    memory_update: { status: "applied", commitId: "commit", changes: [
+      { ...change, kind: "World", knowledge: { kind: "world", recordId: "world-1", revisionId: "rev", objectId: "world-1" } },
+      { ...change, kind: "Journal", recordId: "journal-1", knowledge: { kind: "journal", recordId: "journal-1", revisionId: "rev", objectId: "journal-1" } },
+    ] } };
+  renderWithOpen(<MessageMemoryRow loupistId="loupist-a" message={message} />);
+  try {
+    await act(async () => { await i18n.changeLanguage("en-XA"); });
+    expect(screen.getByRole("button", { name: i18n.t("chat:messageMemoryRow.openIn", { value: i18n.t("chat:workspaceEvidence.kind.world") }) })).toBeVisible();
+  } finally {
+    await act(async () => { await i18n.changeLanguage("en"); });
+  }
+});
 it("shows the principle statement and supports View and Undo", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const loupistId = (await bridge.loupistList())[0].id;

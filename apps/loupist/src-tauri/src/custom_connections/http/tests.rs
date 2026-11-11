@@ -93,3 +93,29 @@ async fn malformed_ids_and_oversized_responses_fail_closed() {
         Err(ConnectionError::Protocol)
     ));
 }
+
+#[test]
+fn remote_discovery_cannot_target_loopback_services() {
+    for endpoint in [
+        "http://localhost:1234/token",
+        "http://127.0.0.1:1234/token",
+        "https://127.1.2.3/token",
+        "https://[::1]/token",
+        "https://0.0.0.0/token",
+        "https://[::]/token",
+        "https://[::ffff:127.0.0.1]/token",
+        "https://LOCALHOST./authorize",
+        "https://auth.localhost/register",
+    ] {
+        assert!(
+            checked_discovered_url(endpoint, "https://source.example/mcp").is_err(),
+            "{endpoint}"
+        );
+    }
+    assert!(
+        checked_discovered_url("https://auth.example/token", "https://source.example/mcp").is_ok()
+    );
+    assert!(
+        checked_discovered_url("http://localhost:1234/token", "http://127.0.0.1:5678/mcp").is_ok()
+    );
+}

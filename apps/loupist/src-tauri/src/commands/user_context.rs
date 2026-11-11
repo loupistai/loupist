@@ -22,7 +22,7 @@ pub struct WatchlistAddRequest {
     pub market: String,
     pub display_name: Option<String>,
     /// The Loupist open when the user followed it: it watches the asset with
-    /// the default kinds (finance-watchers.md §3.2).
+    /// the default kinds (docs/knowledge/watchers.md#local-watchers).
     #[serde(default)]
     pub loupist_id: Option<String>,
 }

@@ -16,8 +16,8 @@ pub(in crate::finance_data) fn kis_credentials(
         .get("app_secret")
         .map(String::as_str)
         .ok_or(FinanceDataError::InvalidQuery("KIS app secret is required"))?;
-    validate_api_key(app_key, KIS_SOURCE_ID)?;
-    validate_api_key(app_secret, KIS_SOURCE_ID)?;
+    validate_api_key(app_key)?;
+    validate_api_key(app_secret)?;
     Ok((app_key, app_secret))
 }
 
@@ -35,14 +35,6 @@ pub(in crate::finance_data) fn valid_kis_profile_key(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
-}
-
-pub(in crate::finance_data) fn valid_kis_wire_name(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
 }
 
 pub(in crate::finance_data) fn kis_credential_fingerprint(

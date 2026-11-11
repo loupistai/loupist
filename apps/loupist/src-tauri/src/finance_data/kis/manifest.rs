@@ -427,7 +427,7 @@ pub(in crate::finance_data) fn validate_kis_operation(
     }
     let mut wire_names = std::collections::BTreeSet::new();
     for field in &operation.query {
-        if !valid_kis_wire_name(&field.wire_name)
+        if !valid_kis_parameter_name(&field.wire_name)
             || !wire_names.insert(field.wire_name.as_str())
             || field.parameter.is_some() == field.literal.is_some()
             || field
@@ -448,7 +448,7 @@ pub(in crate::finance_data) fn validate_kis_operation(
             if continuation.request_header.as_deref() != Some("tr_cont")
                 || continuation.response_header.as_deref() != Some("tr_cont")
                 || continuation.query_fields.iter().any(|wire_name| {
-                    !valid_kis_wire_name(wire_name)
+                    !valid_kis_parameter_name(wire_name)
                         || !operation
                             .query
                             .iter()
@@ -509,7 +509,7 @@ pub(in crate::finance_data) fn validate_kis_response_contract(
             .windows(2)
             .any(|pair| pair[0] >= pair[1])
         || response.top_level_fields.iter().any(|field| {
-            !valid_kis_wire_name(field)
+            !valid_kis_parameter_name(field)
                 || response
                     .containers
                     .iter()
@@ -523,7 +523,9 @@ pub(in crate::finance_data) fn validate_kis_response_contract(
             .windows(2)
             .any(|pair| pair[0] >= pair[1])
         || response.allowed_fields.iter().any(|field| {
-            !valid_kis_wire_name(field) || field.len() > 128 || field.chars().any(char::is_control)
+            !valid_kis_parameter_name(field)
+                || field.len() > 128
+                || field.chars().any(char::is_control)
         })
         || response.field_scope != "operation_union"
         || response.source != expected_source

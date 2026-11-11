@@ -1,11 +1,17 @@
-import { StrictMode, useState } from "react";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { StrictMode, useState, type ComponentProps } from "react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import i18n from "@/i18n";
 import { TooltipProvider } from "../ui/tooltip";
 import { ChatComposer } from "./ChatComposer";
 
-function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), isRunning = true }) {
+function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), isRunning = true, onSearchContext, chips }: {
+  onFollowUp?: ComponentProps<typeof ChatComposer>["onFollowUp"];
+  onSend?: ComponentProps<typeof ChatComposer>["onSend"];
+  isRunning?: boolean;
+  onSearchContext?: ComponentProps<typeof ChatComposer>["onSearchContext"];
+  chips?: ComponentProps<typeof ChatComposer>["chips"];
+}) {
   const [prompt, setPrompt] = useState("");
   const [privateChat, setPrivateChat] = useState(false);
   return <TooltipProvider><ChatComposer
@@ -16,11 +22,59 @@ function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), isRunning = t
     plugins={[]}
     onPrivateChatChange={setPrivateChat} onModelSelectionChange={vi.fn()}
     onSend={onSend} onFollowUp={onFollowUp} onAbort={vi.fn()}
+    onSearchContext={onSearchContext}
+    chips={chips}
   /></TooltipProvider>;
 }
 
 describe("ChatComposer input", () => {
   afterEach(async () => { await i18n.changeLanguage("en"); });
+
+  it("folds many Skill modes in the production composer and expands them on request", () => {
+    const chips = ["a", "b", "c", "d", "e"].map(id => ({ key: `skill:${id}`, kind: "skill" as const, id, label: `Skill ${id}` }));
+    render(<RunningComposer isRunning={false} chips={chips} />);
+    const tray = screen.getByRole("list", { name: "Message modes" });
+    expect(within(tray).getAllByRole("listitem")).toHaveLength(4);
+    fireEvent.click(within(tray).getByRole("button", { name: "+2 more" }));
+    expect(within(tray).getAllByRole("listitem")).toHaveLength(5);
+  });
+
+  it("focuses the textarea when the noninteractive composer addon is clicked", () => {
+    const view = render(<RunningComposer isRunning={false} />);
+    fireEvent.click(view.container.querySelector('[data-slot="input-group-addon"]')!);
+    expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveFocus();
+  });
+
+  it("keeps focus in the model search when clicking its portaled input", async () => {
+    const user = userEvent.setup();
+    render(<RunningComposer isRunning={false} />);
+    await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
+    const search = screen.getByRole("searchbox", { name: "Search models" });
+    await user.click(search);
+    expect(search).toHaveFocus();
+    await user.type(search, "Mod");
+    await user.click(search);
+    expect(search).toHaveFocus();
+    expect(search).toHaveValue("Mod");
+  });
+
+  it("finishes context search while streaming renders replace the search callback", async () => {
+    vi.useFakeTimers();
+    try {
+      const search = vi.fn().mockResolvedValue([{ id: "file:report", group: "Files", label: "report.md", detail: "Quarterly report", path: "report.md" }]);
+      const view = render(<RunningComposer onSearchContext={(query) => search(query, 0)} />);
+      fireEvent.change(screen.getByRole("textbox", { name: "Message Loupist" }), { target: { value: "@report" } });
+      for (let tick = 1; tick <= 3; tick++) {
+        await act(async () => { await vi.advanceTimersByTimeAsync(32); });
+        view.rerender(<RunningComposer onSearchContext={(query) => search(query, tick)} />);
+      }
+      await act(async () => { await vi.advanceTimersByTimeAsync(32); });
+      expect(search).toHaveBeenCalledExactlyOnceWith("report", 3);
+      expect(screen.getByRole("option", { name: /report.md/ })).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it("sends dollar amounts and ticker-shaped text unchanged without opening shortcuts", async () => {
     const user = userEvent.setup();

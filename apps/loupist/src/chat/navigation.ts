@@ -1,6 +1,7 @@
 import type { AssetPageTarget } from "../contracts/assets";
 import type { ChatArtifactRef, ChatEvidenceRef, KnowledgeLocation, MemoryRef } from "../types";
 import { parseCredentialFreeHttpUrl } from "../lib/credentialFreeUrl";
+import { isMacPlatform } from "../lib/platform";
 import { knowledgeLocationFromMemoryRef } from "../knowledge/location";
 import { citationPageUrl } from "./evidence";
 import { artifactReadTarget } from "./artifactReadTarget";
@@ -54,10 +55,9 @@ export type EvidenceTarget =
 
 type PointerLike = { button?: number; metaKey: boolean; ctrlKey: boolean };
 
-const isMac = () => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
 /** Cmd-click on macOS, Ctrl-click elsewhere, and middle-click ask for the system browser. */
-export function wantsExternal(event: PointerLike, mac = isMac()): boolean {
+export function wantsExternal(event: PointerLike, mac = isMacPlatform()): boolean {
   return event.button === 1 || (mac ? event.metaKey : event.ctrlKey);
 }
 

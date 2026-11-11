@@ -10,7 +10,7 @@ use super::world_extract::ontology::{core_edge_types, core_entity_types};
 use super::world_schema::{
     add_kinds, listed_relation, relation_already_known, type_already_known, validate_extension,
     ExtensionCategory, ExtensionField, ExtensionLabels, ExtensionRelation, ExtensionType, Producer,
-    Provenance, WorldExtension,
+    Provenance, WorldExtension, MAX_EXTENSION_RELATIONS, MAX_EXTENSION_TYPES,
 };
 use super::{KnowledgeError, KnowledgeResult, KnowledgeWrite};
 
@@ -191,7 +191,25 @@ pub(super) fn finish(
     let Some(snapshot) = current_snapshot(tx, loupist_id)? else {
         return Ok(ended("refused", None));
     };
-    let supported = supported(tx, &snapshot, draft)?;
+    let mut supported = supported(tx, &snapshot, draft)?;
+    let type_slots = MAX_EXTENSION_TYPES.saturating_sub(settings.extension.types.len());
+    let dropped_types: BTreeSet<_> = supported
+        .types
+        .iter()
+        .skip(type_slots)
+        .map(|item| item.name.clone())
+        .collect();
+    supported.types.truncate(type_slots);
+    // A full type list must not discard an independently valid relationship.
+    // Relations depending on a type we could not add cannot apply, though.
+    supported.relations.retain(|relation| {
+        relation.signatures.iter().all(|(source, target)| {
+            !dropped_types.contains(source) && !dropped_types.contains(target)
+        })
+    });
+    supported
+        .relations
+        .truncate(MAX_EXTENSION_RELATIONS.saturating_sub(settings.extension.relations.len()));
     if supported.types.is_empty() && supported.relations.is_empty() {
         return Ok(ended("refused", None));
     }
@@ -202,6 +220,33 @@ pub(super) fn finish(
         .extend(supported.relations.iter().cloned());
     if validate_extension(&preview).is_err() {
         return Ok(ended("failed", Some("invalid_output")));
+    }
+    for (kind, kept) in [
+        (
+            "types",
+            supported
+                .types
+                .iter()
+                .map(|item| item.name.as_str())
+                .collect::<BTreeSet<_>>(),
+        ),
+        (
+            "relations",
+            supported
+                .relations
+                .iter()
+                .map(|item| item.name.as_str())
+                .collect::<BTreeSet<_>>(),
+        ),
+    ] {
+        supported.evidence[kind]
+            .as_array_mut()
+            .expect("evidence array")
+            .retain(|item| {
+                item["name"]
+                    .as_str()
+                    .is_some_and(|name| kept.contains(name))
+            });
     }
     add_kinds(
         tx,
@@ -372,7 +417,10 @@ fn model_ready(settings: &GraphProcessingSettings, loupist_id: &str) -> bool {
 }
 
 fn call_allowed(settings: &GraphProcessingSettings, loupist_id: &str) -> bool {
-    model_ready(settings, loupist_id) && !settings.paused
+    model_ready(settings, loupist_id)
+        && !settings.paused
+        && (settings.extension.types.len() < MAX_EXTENSION_TYPES
+            || settings.extension.relations.len() < MAX_EXTENSION_RELATIONS)
 }
 
 fn world_busy(connection: &rusqlite::Connection, loupist_id: &str) -> KnowledgeResult<bool> {

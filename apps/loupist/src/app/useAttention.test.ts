@@ -18,7 +18,6 @@ it("marks a run that ended out of sight, notifies once, and clears when the chat
   // chat-a ends while the user reads chat-b; chat-b ends in view.
   rerender({ running: new Set(), visible: other });
   expect([...result.current.finishedKeys]).toEqual([key]);
-  expect(result.current.finishedLoupistIds.has(loupist.id)).toBe(true);
   expect(bridge.notifications).toEqual([{ loupistId: loupist.id, chatId: "chat-a", title: `${loupist.name} finished` }]);
   act(() => rerender({ running: new Set(), visible: key }));
   expect(result.current.finishedKeys.size).toBe(0);

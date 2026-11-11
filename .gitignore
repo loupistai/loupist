@@ -109,3 +109,6 @@ Thumbs.db
 /apps/loupist/src-tauri/resources/python-runtime/
 # CI-only inventory of unsigned staged runtimes.
 /apps/loupist/src-tauri/resources/.ci-runtime-cache.*
+
+# Local review and evaluation working notes.
+/.audit/

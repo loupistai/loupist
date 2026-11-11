@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runNativeSearch } from "./loupist-native-search.mjs";
+import { runNativeSearch, selectSearchModel } from "./loupist-native-search.mjs";
 import {
   buildAnthropicBody,
   completedAnthropicTransportPrefix,
@@ -188,7 +188,7 @@ test("Codex search runs through Pi with the forced web_search body and stops at 
     },
   );
   assert.equal(captured.options.transport, "sse");
-  assert.equal(captured.body.model, "gpt-5.5");
+  assert.equal(captured.body.model, "gpt-5.6-luna");
   assert.deepEqual(captured.body.tool_choice, { type: "web_search" });
   assert.deepEqual(captured.body.tools, [{ type: "web_search", search_context_size: "high" }]);
   assert.deepEqual(captured.body.include, ["web_search_call.action.sources"]);
@@ -227,6 +227,7 @@ test("OpenAI search runs through Pi's openai provider for a ChatGPT sign-in or a
     { provider: "openai", query: "q", limit: 3 },
     {
       ctx: piContext("openai", {}),
+      availableModelIds: ["gpt-6.1-sol"],
       resolveAuth: async () => ({ apiKey: "plan-access-token" }),
       fetchImpl: async () => new Response('{"error":{"code":"subscription_sharing_usage_limit_exceeded"}}', { status: 429 }),
     },
@@ -244,6 +245,7 @@ test("Pi search HTTP failures are classified without exposing credentials or pro
       { provider: "openai-codex", query: "q", limit: 3 },
       {
         ctx: piContext("openai-codex", {}),
+        availableModelIds: ["gpt-6.1-sol"],
         resolveAuth: async () => ({ apiKey: "codex-secret-token", headers: { Authorization: "Bearer codex-secret-token" } }),
         fetchImpl: async () => new Response(`provider said codex-secret-token ${status}`, { status, headers }),
       },
@@ -396,7 +398,7 @@ test("xAI search uses the Responses API with bounded filters and keeps only cite
   );
   assert.match(captured.url, /api\.x\.ai\/v1\/responses$/);
   assert.equal(captured.headers.authorization, "Bearer xai-redacted-test");
-  assert.equal(captured.body.model, "grok-4.5");
+  assert.equal(captured.body.model, "grok-4.6");
   assert.deepEqual(captured.body.reasoning, { effort: "low" });
   assert.deepEqual(captured.body.tools, [
     { type: "web_search", filters: { allowed_domains: ["a.example", "b.example", "c.example", "d.example", "e.example"] } },
@@ -426,6 +428,7 @@ test("invalid input fails before credentials are resolved, and stalled requests 
         { provider: "xai", query: "bounded request", limit: 3 },
         {
           timeoutMs: 10,
+          availableModelIds: ["grok-4.7"],
           resolveAuth: async () => ({ apiKey: "xai-redacted-timeout" }),
           fetchImpl: async (_url, init) => new Promise((_resolve, reject) => {
             init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
@@ -437,4 +440,27 @@ test("invalid input fails before credentials are resolved, and stalled requests 
   } finally {
     clearTimeout(keepAlive);
   }
+});
+
+test("search never dispatches a model absent from the available inventory", async () => {
+  assert.equal(selectSearchModel("openai", ["unlisted-model"]), undefined);
+  assert.equal(selectSearchModel("openai", []), undefined);
+  assert.equal(selectSearchModel("openai", ["gpt-6.1-sol"]), "gpt-6.1-sol");
+  assert.equal(selectSearchModel("xai", ["grok-4.7"]), "grok-4.7");
+  for (const availableModelIds of [[], ["unlisted-model"]]) {
+    await assert.rejects(() => runNativeSearch({ provider: "openai", query: "q", limit: 3 }, {
+      availableModelIds,
+      resolveAuth: () => assert.fail("An unavailable model must not resolve credentials"),
+      fetchImpl: () => assert.fail("An unavailable model must not reach HTTP"),
+    }), (error) => error.kind === "unavailable");
+  }
+});
+
+test("native search prefers cheaper available models before higher tiers", () => {
+  for (const provider of ["openai", "openai-codex"]) {
+    assert.equal(selectSearchModel(provider, ["gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"]), "gpt-6-luna");
+    assert.equal(selectSearchModel(provider, ["gpt-6.1-sol", "gpt-6.1-terra"]), "gpt-6.1-terra");
+  }
+  assert.equal(selectSearchModel("openai", ["gpt-6.1-sol", "gpt-5.4-mini"]), "gpt-5.4-mini");
+  assert.equal(selectSearchModel("anthropic", ["claude-sonnet-4-6", "claude-haiku-5-5"]), "claude-haiku-5-5");
 });

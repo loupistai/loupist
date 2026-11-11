@@ -178,9 +178,11 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onA
   const [page, setPage] = useState<AssetPageData | null>(null);
   const [failed, setFailed] = useState(false);
   const [reload, setReload] = useState(0);
+  const [readRetry, setReadRetry] = useState(0);
   const [lastVisit, setLastVisit] = useState<number | undefined>(undefined);
   const [range, setRange] = useState<Range | null>(null);
   const [rows, setRows] = useState<AssetChangeRow[] | null>(null);
+  const [rowsFailed, setRowsFailed] = useState(false);
   const [shownRows, setShownRows] = useState(PAGE_ROWS);
   const [allHistory, setAllHistory] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -196,6 +198,7 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onA
   const names = useAssetNames(bridge, loupistId);
   /** The results card the page shows now (Rust decides the window), and every event for "Earlier results". */
   const [snapshot, setSnapshot] = useState<EarningsSnapshot | null>(null);
+  const [resultsFailed, setResultsFailed] = useState(false);
   const [events, setEvents] = useState<EarningsEventSummary[]>([]);
   const [expanded, setExpanded] = useState<Record<string, EarningsSnapshot | null>>({});
   /** This asset's watch switches, as "Watch for" shows them. */
@@ -204,17 +207,26 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onA
   useEffect(() => {
     if (!assetId || !bridge.earningsSnapshotGet) return;
     let live = true;
-    void Promise.all([
-      bridge.earningsSnapshotGet({ loupistId, assetId }).catch(() => null),
-      bridge.earningsEventsList({ loupistId, assetId }).catch(() => []),
-    ]).then(([current, list]) => { if (live) { setSnapshot(current); setEvents(list); } });
+    setResultsFailed(false);
+    void Promise.allSettled([
+      bridge.earningsSnapshotGet({ loupistId, assetId }),
+      bridge.earningsEventsList({ loupistId, assetId }),
+    ]).then(([current, list]) => {
+      if (!live) return;
+      setSnapshot(current.status === "fulfilled" ? current.value : null);
+      setEvents(list.status === "fulfilled" ? list.value : []);
+      setResultsFailed(current.status === "rejected" || list.status === "rejected");
+    });
     return () => { live = false; };
-  }, [bridge, loupistId, assetId, page?.revision]);
+  }, [bridge, loupistId, assetId, page?.revision, readRetry]);
 
   const expand = useCallback(async (eventId: string) => {
     if (expanded[eventId] !== undefined) { setExpanded(current => { const next = { ...current }; delete next[eventId]; return next; }); return; }
-    const loaded = await bridge.earningsSnapshotGet({ loupistId, assetId: assetId!, eventId }).catch(() => null);
-    setExpanded(current => ({ ...current, [eventId]: loaded }));
+    setActionError(null);
+    try {
+      const loaded = await bridge.earningsSnapshotGet({ loupistId, assetId: assetId!, eventId });
+      setExpanded(current => ({ ...current, [eventId]: loaded }));
+    } catch { setActionError(t("error.results")); }
   }, [bridge, loupistId, assetId, expanded]);
 
   // "See before and after": scroll to the card, or open the event's row in Earlier results.
@@ -260,7 +272,7 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onA
 
   const loadRows = useCallback(async (choice: Range) => {
     if (!assetId) return [];
-    const deltas = await bridge.assetDelta({ loupistId, assetId, sinceMs: since(choice, lastVisit) }).catch(() => []);
+    const deltas = await bridge.assetDelta({ loupistId, assetId, sinceMs: since(choice, lastVisit) });
     return deltas.find(delta => delta.assetId === assetId)?.rows ?? [];
   }, [bridge, loupistId, assetId, lastVisit, since]);
 
@@ -268,9 +280,10 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onA
     if (!assetId || !range) return;
     let live = true;
     setRows(null);
-    void loadRows(range).then(next => { if (live) { setRows(next); setShownRows(PAGE_ROWS); } });
+    setRowsFailed(false);
+    void loadRows(range).then(next => { if (live) { setRows(next); setShownRows(PAGE_ROWS); } }).catch(() => { if (live) setRowsFailed(true); });
     return () => { live = false; };
-  }, [assetId, range, loadRows, page?.revision]);
+  }, [assetId, range, loadRows, page?.revision, readRetry]);
 
   useEffect(() => {
     if (target.section !== "history" || !page) return;
@@ -293,6 +306,7 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onA
       const fresh = next.filter(row => !before.has(row.id));
       setArrived(new Set(fresh.map(row => row.id)));
       setRows(next);
+      setRowsFailed(false);
       setAnnouncement(t("page.newChanges", { count: fresh.length, formattedCount: formatNumber(fresh.length) }));
     } catch {
       setAnnouncement("");
@@ -461,6 +475,7 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onA
           onChanged={changed} onUndo={moveId => void undo(moveId)} onOpenEvidence={openEvidence} onOpenChat={onOpenChat}
           onWorkItOut={() => onAsk(t("noThesis.prompt", { name, symbol: page.symbol, market: page.market }))} />
 
+        {resultsFailed ? <div className="asset-page-error" role="alert"><p>{t("error.results")}</p><Button type="button" variant="outline" size="sm" onClick={() => setReadRetry(value => value + 1)}>{t("error.retry")}</Button></div> : null}
         {snapshot ? <div ref={resultsRef} className="asset-results">
           <EarningsCard bridge={bridge} loupistId={loupistId} loupistName={loupist.name} snapshot={snapshot} name={name} numbers={numbers}
             onOpenEvidence={openEvidence} onAsk={onAskInNewChat ?? onAsk} onOpenConnections={onOpenConnections}
@@ -477,7 +492,8 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onA
             </div> : null}
           </div>
           {lastVisit === undefined ? <p className="asset-caption">{t("changed.firstLook")}</p> : null}
-          {rows === null ? <div className="asset-skeleton-rows"><span /><span /><span /><span /></div>
+          {rowsFailed ? <div className="asset-page-error" role="alert"><p>{t("error.changes")}</p><Button type="button" variant="outline" size="sm" onClick={() => setReadRetry(value => value + 1)}>{t("error.retry")}</Button></div>
+            : rows === null ? <div className="asset-skeleton-rows"><span /><span /><span /><span /></div>
             : visibleRows.length ? <ol className="asset-changes">
               {byDay(visibleRows).map(group => group.rows.map((row, index) => <li key={row.id} className="asset-change" data-kind={row.kind} data-arrived={arrived.has(row.id) || undefined}>
                 <span className="asset-change-day gg-num">{index === 0 ? shortDay(group.day) : ""}</span>

@@ -18,6 +18,8 @@ pub enum ConnectionError {
     Protocol,
     #[error("The custom connection could not be reached.")]
     Network,
+    #[error("The custom connection transport stopped or timed out.")]
+    Transport,
     #[error("The custom connection redirected the request; redirects are not allowed.")]
     Redirect,
     #[error("Authorization is required for this connection.")]

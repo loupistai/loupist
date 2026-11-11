@@ -7,10 +7,10 @@ implementation term, use `rg -n '<term>' docs apps/loupist/src apps/loupist/src-
 | Work | Start here |
 | --- | --- |
 | Sidebar, panels, composer, citations, map, schedule | [UI pages](ui/) |
-| Storage, turns, providers, scheduling, untrusted input | [Runtime](runtime/) |
-| Sources, World, Lens, Journal, sharing | [Knowledge](knowledge/) |
-| Datasets, calculations, numbers, charts | [Analysis](analysis/) |
+| Storage, turns, providers, scheduling, untrusted input | [Architecture](architecture.md), [Runtime](runtime/) |
+| Sources, World, Lens, Journal, sharing | [Knowledge and Memory](knowledge-model.md), [Knowledge](knowledge/) |
+| Datasets, calculations, numbers, charts | [Financial analysis](analysis.md), [Analysis](analysis/) |
 | Product agent prompts, tool contracts, Skills, MCP | [Agent](agent/), [Capabilities](capabilities/) |
 | Development decisions, tool entry points, session handoff | [Repository guidance](dev/repository-guidance.md) |
-| Checks, setup, diagnostics, visual review | [Development](dev/), [native tools](../apps/loupist/e2e/README.md#which-tool), [evals](../apps/loupist/evals/README.md) |
-| Distribution, support and product language | [CI and releases](ci-cd.md), [installation](../installation.md), [positioning](positioning.md) |
+| Checks, setup, diagnostics, visual review | [Development map](development.md), [Development](dev/), [native tools](../apps/loupist/e2e/README.md#which-tool), [evals](../apps/loupist/evals/README.md) |
+| Distribution, support and product language | [CI and releases](ci-cd.md), [Release qualification](release.md), [installation](../installation.md), [positioning](positioning.md) |

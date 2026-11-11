@@ -1,4 +1,7 @@
-use std::collections::HashSet;
+use std::{
+    collections::HashSet,
+    sync::{Mutex, OnceLock},
+};
 
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use uuid::Uuid;
@@ -825,13 +828,18 @@ impl SqliteStore {
         live_run_ids: &HashSet<String>,
     ) -> StoreResult<usize> {
         validate_now(now)?;
-        let recovered = self.for_each_database(|_, connection| {
-            let transaction =
-                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            let runs = load_running(&transaction)?
+        // A broken receipt in one folder must not stop the other Loupists.
+        // The store keeps each connection locked throughout this pass.
+        let recovered = self.for_each_readable_database(|_, connection| {
+            let runs = load_running(connection)?
                 .into_iter()
                 .filter(|run| !live_run_ids.contains(&run.run_id))
                 .collect::<Vec<_>>();
+            if runs.is_empty() {
+                return Ok(Vec::new());
+            }
+            let transaction =
+                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let mut finished = Vec::new();
             for run in &runs {
                 finished.push(finish_run(
@@ -1191,14 +1199,49 @@ fn load_run(connection: &Connection, loupist_id: &str, run_id: &str) -> StoreRes
         .map(|row| decode_run(connection, row))
         .transpose()
 }
+#[derive(Default)]
+pub(super) struct RecoveryWarnings(Mutex<HashSet<String>>);
+
+impl RecoveryWarnings {
+    pub(super) fn report_once(&self, run_id: &str, report: impl FnOnce()) {
+        let first = self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(run_id.to_owned());
+        if first {
+            report();
+        }
+    }
+}
+
 fn load_running(connection: &Connection) -> StoreResult<Vec<Run>> {
+    // Recovery retries each second. Keep the warning once per run for this
+    // process, while continuing to retry decoding if its bytes are repaired.
+    static WARNINGS: OnceLock<RecoveryWarnings> = OnceLock::new();
     let mut statement=connection.prepare(&format!("SELECT {RUN_COLUMNS} FROM scheduled_task_runs WHERE status='running' ORDER BY started_at_ms,id"))?;
     let rows = statement
-        .query_map([], raw_run)?
+        .query_map([], |row| Ok((row.get::<_, String>(5)?, raw_run(row))))?
         .collect::<Result<Vec<_>, _>>()?;
-    rows.into_iter()
-        .map(|row| decode_run(connection, row))
-        .collect()
+    Ok(rows
+        .into_iter()
+        .filter_map(|(run_id, row)| {
+            match row
+                .map_err(StoreError::from)
+                .and_then(|row| decode_run(connection, row))
+            {
+                Ok(run) => Some(run),
+                Err(_) => {
+                    WARNINGS
+                        .get_or_init(RecoveryWarnings::default)
+                        .report_once(&run_id, || {
+                            eprintln!("Scheduled recovery skipped unreadable run {run_id}");
+                        });
+                    None
+                }
+            }
+        })
+        .collect())
 }
 fn has_running(connection: &Connection, id: &str) -> StoreResult<bool> {
     Ok(connection.query_row(

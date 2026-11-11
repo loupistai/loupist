@@ -37,7 +37,9 @@ const INLINE_FIELDS: [&str; 7] = [
 
 fn source_label(pack: &str) -> String {
     pack.chars()
-        .filter(|c| !c.is_control() && !matches!(c, '"' | '<' | '>'))
+        .filter(|c| {
+            !c.is_control() && !super::scan::hidden_character(*c) && !matches!(c, '"' | '<' | '>')
+        })
         .take(120)
         .collect()
 }
@@ -351,6 +353,17 @@ mod tests {
             updated_at_ms: 1,
             archived: false,
         }
+    }
+
+    #[test]
+    fn old_stored_pack_labels_drop_hidden_characters_at_delivery() {
+        let wrapped = delimit(
+            "Shared text",
+            "Chip\u{2028}\u{2029}\u{202E}\u{2060} basics",
+            "fixture",
+        );
+        assert!(wrapped.contains("from=\"Chip basics\""));
+        assert!(!wrapped.chars().any(super::super::scan::hidden_character));
     }
 
     #[test]

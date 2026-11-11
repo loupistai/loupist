@@ -33,10 +33,10 @@ pub(super) const DEFAULT_ACTIVE_TOOLS: &[&str] = &[
     "equity_fundamental_filings",
 ];
 
-/// Keyless providers that scrape a website rather than call a published API.
-/// They stay usable, but layouts, consent walls and blocking break them.
 /// The most values a pruned property names as rejected by some provider.
 const MAX_REJECTED_VALUES: usize = 12;
+/// Keyless providers that scrape a website rather than call a published API.
+/// They stay usable, but layouts, consent walls and blocking break them.
 const BEST_EFFORT_PROVIDERS: &[&str] = &[
     "yfinance",
     "finviz",
@@ -99,8 +99,8 @@ fn preference_rank(provider: &str) -> usize {
         .unwrap_or(PROVIDER_PREFERENCE.len())
 }
 
-/// Routes with a host-written summary. The first nine are active on load; the
-/// rest are named in the control tools so the model can activate them directly.
+/// Routes with a host-written summary. `DEFAULT_ACTIVE_TOOLS` selects those
+/// active on load; control tools name the rest for direct activation.
 const CURATED_SUMMARIES: &[(&str, &str)] = &[
     ("equity_search", "Find listed companies by name or ticker; returns symbols, names and identifiers."),
     ("equity_profile", "Company profile: name, sector, industry, exchange, listing details and a business description."),
@@ -929,60 +929,5 @@ mod tests {
         shape_card(&mut card, &source, true, false, &BTreeSet::new());
         assert_ne!(card["description"], "upstream");
         assert_eq!(card["parameters"], json!({"type": "object"}));
-    }
-
-    /// Measures the nine default cards against a runtime dump
-    /// (`LOUPIST_OBB_DUMP`, the JSON a fastmcp client saved from the sidecar)
-    /// for the keyless providers of `openbb.platform` minus `sec`.
-    #[test]
-    #[ignore]
-    fn measure_default_card_bytes_from_a_runtime_dump() {
-        let path = std::env::var("LOUPIST_OBB_DUMP").expect("LOUPIST_OBB_DUMP");
-        let dump: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-        let providers = enabled(&[
-            "cboe",
-            "bls",
-            "cftc",
-            "deribit",
-            "ecb",
-            "famafrench",
-            "federal_reserve",
-            "finra",
-            "finviz",
-            "government_us",
-            "imf",
-            "multpl",
-            "nasdaq",
-            "oecd",
-            "seeking_alpha",
-            "stockgrid",
-            "tmx",
-            "wsj",
-            "yfinance",
-        ]);
-        let (mut raw, mut filtered, mut shaped) = (0, 0, 0);
-        for name in DEFAULT_ACTIVE_TOOLS {
-            let active = &dump["active"][*name];
-            let source = tool(
-                name,
-                active["desc"].as_str().unwrap_or(""),
-                active["params"].clone(),
-            );
-            raw += active["params"].to_string().len();
-            let narrowed = crate::mcp::filter_tool_providers(&source, &providers, false)
-                .unwrap()
-                .unwrap();
-            filtered += narrowed.input_schema.to_string().len();
-            let mut card = json!({"description": "", "parameters": narrowed.input_schema.clone()});
-            shape_card(&mut card, &narrowed, false, false, &providers);
-            let bytes = card["parameters"].to_string().len();
-            println!(
-                "{name}: raw {} filtered {} shaped {bytes}",
-                active["params"].to_string().len(),
-                narrowed.input_schema.to_string().len()
-            );
-            shaped += bytes;
-        }
-        println!("total: raw {raw} filtered {filtered} shaped {shaped}");
     }
 }

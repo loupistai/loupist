@@ -135,7 +135,7 @@ struct WorldIndex {
 }
 
 /// The Loupist's current World snapshot, if one was published.
-fn world_body(
+pub(super) fn world_body(
     tx: &Transaction<'_>,
     loupist_id: &str,
 ) -> KnowledgeResult<Option<WorldSnapshotBody>> {

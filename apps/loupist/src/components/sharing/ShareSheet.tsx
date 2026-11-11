@@ -65,6 +65,7 @@ export function ShareSheet({ bridge, loupistId, loupistName, scope, open, onOpen
   const [progress, setProgress] = useState<SharePublishEvent | null>(null);
   const [published, setPublished] = useState<SharePublishResult | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
   const generation = useRef(0);
   const item = scope.kind === "item";
   const scopeKey = scope.kind === "item" ? `item:${scope.recordId}` : "loupist";
@@ -74,7 +75,7 @@ export function ShareSheet({ bridge, loupistId, loupistName, scope, open, onOpen
     const scope: ShareScope = scopeKey === "loupist" ? { kind: "loupist" } : { kind: "item", recordId: scopeKey.slice(5) };
     const current = ++generation.current;
     setSummary(null); setAccount(null); setLoadError(null); setSlow(false); setExcluded([]); setAcknowledged([]); setAllFindings(false);
-    setSaved(null); setError(null); setStep("options"); setSignIn(null); setNewRepo(false); setRepoError(null); setPublished(null); setProgress(null); setLinkCopied(false); setCopiedText(false);
+    setSaved(null); setError(null); setStep("options"); setSignIn(null); setNewRepo(false); setRepoError(null); setPublished(null); setProgress(null); setLinkCopied(false); setCopyFailed(false); setCopiedText(false);
     const timer = setTimeout(() => { if (current === generation.current) setSlow(true); }, 300);
     void Promise.all([bridge.shareSummary({ loupistId, scope }), bridge.githubAccount()]).then(([loaded, github]) => {
       if (current !== generation.current) return;
@@ -336,9 +337,14 @@ export function ShareSheet({ bridge, loupistId, loupistName, scope, open, onOpen
         </DialogBody>
         <DialogFooter className="share-footer">
           <div className="share-outputs">
-            <Button variant="outline" onClick={() => { void navigator.clipboard?.writeText(published.url).catch(() => undefined); setLinkCopied(true); }}>{t("copyLink")}</Button>
+            <Button variant="outline" onClick={async () => {
+              setLinkCopied(false); setCopyFailed(false);
+              try { await navigator.clipboard.writeText(published.url); setLinkCopied(true); }
+              catch { setCopyFailed(true); }
+            }}>{t("copyLink")}</Button>
             <Button variant="ghost" onClick={() => void bridge.openExternalUrl(published.url)}>{t("openGithub")}<ExternalLinkIcon aria-hidden="true" /></Button>
           </div>
+          {copyFailed ? <p className="share-error" role="alert">{t("copyFailed")}</p> : null}
           {linkCopied ? <p className="share-saved" role="status">{t("copied")}</p> : null}
           <Button className="share-primary" onClick={() => onOpenChange(false)}>{i18n.t("connections:marketplaceSetupDialog.done")}</Button>
         </DialogFooter>

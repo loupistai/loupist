@@ -11,6 +11,11 @@ fixed authority. Cache reuse requires matching transcript, runtime, configuratio
 resource and connector seals; changed valid seals rebuild from SQLite. The runtime
 seal includes the turn's as-of date, so changing the date starts a cold session.
 Confirmed Pi shutdown is required before cache reuse or cleanup.
+Cold sessions retain historical attachment metadata even when an original is missing
+or changed. Restored text prefixes have a separate 1 MiB budget; at most two
+historical images share the turn's 5 MiB image budget with current images.
+Extracted Markdown is labelled separately
+from digest-verified original content.
 
 Brokered reads become usable evidence only after client acknowledgment. The
 turn-local `result_ref` records payload and provenance; it expires with the turn.
@@ -90,7 +95,9 @@ dataset-import and schedule changes have their own persistence boundaries.
 
 A turn's as-of date (`ChatSendRequest.as_of`, `YYYY-MM-DD`) must lie between
 1990-01-01 and today on the device; admission refuses any other value before the
-user turn is appended. Rust stores the date on the request and on its answer, and
+user turn is appended. Rust stores the date on the request and on every terminal
+answer, including failed and stopped replies; those replies also retain any replaced
+model name. The host's
 `chat_retry_last` returns it so Try again repeats it. The turn's tool policy carries
 it, and a tool's own `as_of` argument can only narrow it. With a date, setup filters
 automatic context ([Memory under a cutoff](../knowledge/memory.md#memory-under-a-cutoff)),

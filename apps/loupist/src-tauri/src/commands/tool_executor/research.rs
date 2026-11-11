@@ -280,14 +280,12 @@ impl AppToolExecutor {
         if !taint.untrusted_text() {
             return Ok(());
         }
-        let holdings = self
+        let positions = self
             .state
             .store
-            .holdings_latest()
-            .ok()
-            .flatten()
-            .map(|snapshot| crate::privacy::holdings::canaries(&snapshot.positions))
-            .unwrap_or_default();
+            .holdings_latest_positions()
+            .map_err(|_| BrokerError::UntrustedTextPaused)?;
+        let holdings = crate::privacy::holdings::canaries(&positions);
         match taint.web_fetch_target(url, &holdings) {
             WebFetchTarget::Allowed => Ok(()),
             WebFetchTarget::Refused(next) => Err(BrokerError::UntrustedTextPaused.with_next(next)),
@@ -442,6 +440,131 @@ mod paging_tests {
                 as_of: None,
             },
         )
+    }
+
+    #[tokio::test]
+    async fn web_fetch_after_untrusted_text_refuses_when_holdings_cannot_be_read() {
+        let _network = crate::web::script::install(vec![]);
+        let temporary = tempfile::tempdir().unwrap();
+        let (executor, policy) = passage_executor(&temporary);
+        executor.capture.turn_taint.mark_untrusted_text();
+        let url = "https://www.sec.gov/report";
+        // A successful empty holdings read still permits an official site.
+        assert!(executor.web_fetch_gate(url).await.is_ok());
+        executor
+            .state
+            .store
+            .lock()
+            .unwrap()
+            .execute_batch("DROP TABLE user_holdings_positions")
+            .unwrap();
+        let refused = executor
+            .execute(&policy, ToolMethod::WebFetch, json!({"url":url}))
+            .await;
+        assert!(
+            matches!(refused, Err(BrokerError::UntrustedTextPaused)),
+            "{refused:?}"
+        );
+        assert!(crate::web::script::requests().is_empty());
+    }
+
+    #[tokio::test]
+    async fn holdings_privacy_checks_keep_latest_stock_and_each_wallet_snapshot() {
+        use crate::store::user_context::wallets::WalletRead;
+        let temporary = tempfile::tempdir().unwrap();
+        let (executor, _) = passage_executor(&temporary);
+        let store = &executor.state.store;
+        for csv in [
+            b"symbol,quantity,avg cost\nAAPL,13579,24681".as_slice(),
+            b"symbol,quantity,avg cost\nAAPL,35791,46813".as_slice(),
+        ] {
+            let preview = store.preview_csv_bytes(csv).unwrap();
+            store.holdings_commit_csv(&preview.preview_id).unwrap();
+        }
+        for (address, quantity) in [
+            ("0xfb6916095ca1df60bb79ce92ce3ea74c37c5d359", "57913"),
+            ("0x0000000000000000000000000000000000000001", "68135"),
+        ] {
+            let wallet = store.wallet_add(address, None).unwrap();
+            store
+                .wallet_save_read(
+                    &wallet.id,
+                    WalletRead {
+                        balances: vec![("ETH".into(), quantity.into())],
+                        unlisted: 0,
+                    },
+                )
+                .unwrap();
+        }
+        executor.capture.turn_taint.mark_untrusted_text();
+        // The public filing site would otherwise open; amounts from every
+        // current source must still refuse it, including comma formatting.
+        for canary in ["35791", "35,791", "46813", "57913", "68135"] {
+            let url = format!("https://www.sec.gov/report?value={canary}");
+            assert!(executor.web_fetch_gate(&url).await.is_err(), "{canary}");
+            assert!(
+                crate::privacy::holdings::scan(store, canary).is_some(),
+                "{canary}"
+            );
+        }
+        // A replaced stock snapshot is no longer current.
+        for old in ["13579", "24681"] {
+            assert!(executor
+                .web_fetch_gate(&format!("https://www.sec.gov/{old}"))
+                .await
+                .is_ok());
+            assert_eq!(crate::privacy::holdings::scan(store, old), None);
+        }
+    }
+
+    #[tokio::test]
+    async fn out_of_order_web_page_deliveries_preserve_every_issued_offset() {
+        let text = "Page contents. ".repeat(12000);
+        let _network = crate::web::script::install(vec![(
+            "https://example.com/pages",
+            vec![crate::web::script::ok("text/plain", text.into_bytes())],
+        )]);
+        let temporary = tempfile::tempdir().unwrap();
+        let (executor, policy) = passage_executor(&temporary);
+        let first = executor
+            .execute(
+                &policy,
+                ToolMethod::WebFetch,
+                json!({"url":"https://example.com/pages"}),
+            )
+            .await
+            .unwrap();
+        let source_id = &first["source_id"];
+        executor
+            .execute_for_delivery(
+                &policy,
+                ToolMethod::WebFetch,
+                json!({"source_id":source_id}),
+                "stale",
+            )
+            .await
+            .unwrap();
+        let second = executor
+            .execute_for_delivery(
+                &policy,
+                ToolMethod::WebFetch,
+                json!({"source_id":source_id, "offset":first["next_offset"]}),
+                "advance",
+            )
+            .await
+            .unwrap();
+        executor.commit_delivery(&policy, "advance").await.unwrap();
+        executor.commit_delivery(&policy, "stale").await.unwrap();
+        let third = executor
+            .execute(
+                &policy,
+                ToolMethod::WebFetch,
+                json!({"source_id":source_id, "offset":second["next_offset"]}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(third["content_offset"], second["next_offset"]);
+        assert_eq!(crate::web::script::requests().len(), 1);
     }
 
     #[tokio::test]

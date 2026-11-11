@@ -2,7 +2,7 @@
 
 Provider accounts, Auto, and the shared World-processing model are host state. The renderer does not see tokens.
 
-### Provider manifest
+## Provider manifest
 
 [`provider-manifest.json`](../../apps/loupist/provider-manifest.json) is the one
 table of built-in providers, bundled at build time. Each entry, in the order
@@ -34,7 +34,7 @@ and listed in `agent_harness.rs`, which a test requires), localized row copy
 (without it a row shows the manifest's label or name) and any provider-specific
 sign-in code in the provider extension.
 
-### Shared providers and World processing
+## Shared providers and World processing
 
 Settings › Models & providers owns shared sign-ins, keys and the model catalog.
 Its Add a provider sheet and onboarding share one list of ways to connect

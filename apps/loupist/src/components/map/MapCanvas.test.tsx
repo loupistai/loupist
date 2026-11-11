@@ -228,7 +228,11 @@ it('keeps a dimmed compact node at least 3:1 against the dark map background and
     beginPath() {}, setLineDash() {}, roundRect() {}, arc() {}, translate() {}, scale() {}, stroke() {},
     fill() { fills.push({ color: String(this.fillStyle), alpha: this.globalAlpha }); },
   };
+  const parse = vi.spyOn(Number, 'parseInt');
   renderer.props!.nodeCanvasObject?.(dimmed, ctx as unknown as CanvasRenderingContext2D, 1);
+  renderer.props!.nodeCanvasObject?.(dimmed, ctx as unknown as CanvasRenderingContext2D, 1);
+  expect(parse).not.toHaveBeenCalled();
+  parse.mockRestore();
   expect(fills.find(fill => fill.color.toLowerCase() === '#908e86')?.alpha).toBeCloseTo(coverAlpha('#908e86', '#131312'), 2);
   expect(labelsAt(2).sort()).toEqual(['hanul', 'margin']);
   delete document.documentElement.dataset.theme;

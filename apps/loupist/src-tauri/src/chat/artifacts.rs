@@ -59,7 +59,7 @@ pub enum ChatArtifactError {
     Digest,
 }
 
-fn valid_identifier(value: &str) -> bool {
+pub(super) fn valid_identifier(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 256
         && value
@@ -67,7 +67,7 @@ fn valid_identifier(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || b"-_:/.".contains(&byte))
 }
 
-fn valid_text(value: &str, maximum: usize) -> bool {
+pub(super) fn valid_text(value: &str, maximum: usize) -> bool {
     !value.trim().is_empty() && value.len() <= maximum && !value.contains('\0')
 }
 

@@ -1,4 +1,4 @@
-//! Watchers without a model (finance-watchers.md §8): detectors over scripted
+//! Watchers without a model (docs/knowledge/watchers.md#local-watchers): detectors over scripted
 //! structured rows, baselines, fan-out, pause, failures, delivery and the
 //! briefing's watch rows.
 use super::scripted::Scripted;

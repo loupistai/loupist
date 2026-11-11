@@ -30,7 +30,7 @@ export function useAppUpdate(bridge: LoupistBridge) {
     try {
       const next = await bridge.updateStatus();
       if (!mounted.current || epoch !== requestEpoch.current) return;
-      setStatus(next);
+      setStatus(current => JSON.stringify(current) === JSON.stringify(next) ? current : next);
       setStatusError(null);
     } catch (cause) {
       if (!mounted.current || epoch !== requestEpoch.current) return;

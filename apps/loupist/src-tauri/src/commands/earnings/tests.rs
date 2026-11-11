@@ -1,5 +1,5 @@
 //! The automatic earnings task and its captures, without a model
-//! (finance-earnings-snapshot.md §8): consensus only from FMP or Intrinio, a
+//! (docs/analysis/results.md): consensus only from FMP or Intrinio, a
 //! late capture without consensus, reported rows and one Thread message, a
 //! failed capture's Try again, and a task that can be paused but not edited.
 use super::*;
@@ -132,6 +132,132 @@ fn snapshot(state: &AppState, page: &PageRecord, event: &EventRecord) -> Snapsho
     snapshot_for(state, "loupist-a", &page.asset_id, Some(&event.event_id))
         .unwrap()
         .unwrap()
+}
+
+#[test]
+fn period_rows_prefer_dates_and_only_use_fiscal_labels_for_undated_payloads() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary);
+    let page = morrow(&state);
+    let mut event = event(&state, &page, 1, false);
+    event.fiscal_period_end = Some(NaiveDate::from_ymd_opt(2026, 6, 30).unwrap());
+    let previous =
+        json!({"date": "2026-03-31", "fiscal_period": "Q2", "fiscal_year": 2026, "revenue": 10});
+    let matching =
+        json!({"date": "2026-06-27", "fiscal_period": "Q3", "fiscal_year": 2026, "revenue": 20});
+    let payload = json!({"results": [previous, matching]});
+    let (index, row, _) = period_row(&payload, &event).unwrap();
+    assert_eq!(index, 1);
+    assert_eq!(row["revenue"], 20);
+    assert!(period_row(&json!({"results": [previous]}), &event).is_none());
+    let undated = json!({"fiscal_period": "Q2", "fiscal_year": 2026, "revenue": 30});
+    assert!(period_row(&json!({"results": [previous, undated]}), &event).is_none());
+    assert_eq!(
+        period_row(&json!({"results": [undated]}), &event)
+            .unwrap()
+            .1["revenue"],
+        30
+    );
+}
+
+#[tokio::test]
+async fn prepare_reports_a_busy_capture_instead_of_returning_a_stale_snapshot() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary);
+    let page = morrow(&state);
+    let upcoming = event(&state, &page, 1, false);
+    ensure_task(&state, "loupist-a", false).unwrap();
+    let _claimed = state
+        .scheduled
+        .claim_host_run(&state, "loupist-a", &task_id("loupist-a"), true)
+        .await
+        .unwrap()
+        .unwrap();
+    let error = prepare(
+        &state,
+        EarningsPrepareRequest {
+            loupist_id: "loupist-a".into(),
+            asset_id: page.asset_id,
+            event_id: upcoming.event_id,
+        },
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.code, "conflict");
+}
+
+#[test]
+fn captures_left_after_a_bounded_run_are_scheduled_on_the_next_tick() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary);
+    let page = morrow(&state);
+    ensure_task(&state, "loupist-a", true).unwrap();
+    let now = Utc::now();
+    let mut events = Vec::new();
+    with_assets(&state, "loupist-a", true, |tx| {
+        for quarter in 0..=MAX_CAPTURES {
+            let (event, _) = earnings::upsert_event(
+                tx,
+                "loupist-a",
+                &page.asset_id,
+                &format!("Q{} {}", quarter % 4 + 1, 2024 + quarter / 4),
+                None,
+                day(-1),
+                DateSource::Calendar,
+                1,
+            )?;
+            events.push(event);
+        }
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(
+        earnings::due(&events, &page.market, now).0.len(),
+        MAX_CAPTURES + 1
+    );
+    with_assets(&state, "loupist-a", true, |tx| {
+        for event in events.iter().take(MAX_CAPTURES) {
+            earnings::mark_before(
+                tx,
+                "loupist-a",
+                &event.event_id,
+                now.timestamp_millis(),
+                None,
+            )?;
+        }
+        Ok(())
+    })
+    .unwrap();
+    let attempted: Vec<_> = events
+        .iter()
+        .take(MAX_CAPTURES)
+        .map(|event| (event.event_id.clone(), CaptureSide::Before))
+        .collect();
+    let remaining = events.last().unwrap().event_id.clone();
+    for (attempted, delay) in [
+        (attempted, 60_000),
+        // Attempting another side must not suppress a due before-capture.
+        (vec![(remaining.clone(), CaptureSide::After)], 60_000),
+        // The following run tried this capture, but expected_writable can
+        // leave it due without marking it. Do not create a minute retry loop.
+        (vec![(remaining, CaptureSide::Before)], IDLE_RECHECK_MS),
+    ] {
+        reschedule_pending_captures(
+            &state,
+            "loupist-a",
+            &task_id("loupist-a"),
+            std::slice::from_ref(&page),
+            &attempted,
+            now,
+        )
+        .unwrap();
+        let task = state
+            .store
+            .scheduled_task_get("loupist-a", &task_id("loupist-a"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(task.next_run_at_ms, Some(now.timestamp_millis() + delay));
+    }
 }
 
 #[tokio::test]

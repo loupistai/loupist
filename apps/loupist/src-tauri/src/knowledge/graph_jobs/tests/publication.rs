@@ -191,3 +191,79 @@ fn rolled_back_world_publication_preserves_current_content_and_head() {
         1
     );
 }
+
+#[test]
+fn an_invalid_new_node_does_not_block_the_valid_part_of_a_publication() {
+    let (_directory, store) = open();
+    let mut settings = enabled();
+    let publications = prepare(&store, &settings);
+    let mut artifact: Value = serde_json::from_str(&publications.first_artifact).unwrap();
+    let mut long_name = artifact["nodes"][0].clone();
+    long_name["adapter_id"] = json!("long_name");
+    long_name["name"] = json!("한".repeat(500));
+    artifact["nodes"].as_array_mut().unwrap().push(long_name);
+    let mut invalid = artifact["nodes"][0].clone();
+    invalid["adapter_id"] = json!("bad_node");
+    invalid["properties"] = json!({"invalid key": true});
+    artifact["nodes"].as_array_mut().unwrap().push(invalid);
+    let mut invalid_claim = artifact["claims"][0].clone();
+    invalid_claim["adapter_id"] = json!("bad_claim");
+    invalid_claim["endpoints"][0]["node_id"] = json!("bad_node");
+    artifact["claims"]
+        .as_array_mut()
+        .unwrap()
+        .push(invalid_claim);
+    let completed = publish(
+        &store,
+        &mut settings,
+        &publications.first,
+        &artifact.to_string(),
+        AT,
+    )
+    .unwrap();
+    assert_eq!(completed.status, JOB_COMPLETED);
+    let body: crate::knowledge::WorldSnapshotBody = serde_json::from_value(
+        store
+            .get_revision(
+                LOUPIST,
+                completed.document.sealed_revision_id.as_deref().unwrap(),
+            )
+            .unwrap()
+            .payload,
+    )
+    .unwrap();
+    assert_eq!(body.claims.len(), 1);
+    assert!(body.nodes.iter().all(|node| node.id != "bad_node"));
+    assert!(body
+        .nodes
+        .iter()
+        .any(|node| node.id == "long_name" && node.name.len() <= 200));
+    assert!(settings.quarantined_generations.is_empty());
+}
+
+#[test]
+fn repeated_authorized_spans_do_not_hide_a_later_foreign_span() {
+    let (_directory, store) = open();
+    let publications = prepare(&store, &enabled());
+    let (nodes, mut claims, annotations) =
+        project_worker_artifact(&publications.first_artifact).unwrap();
+    let evidence = claims[0].evidence[0].clone();
+    claims[0].evidence = vec![evidence; 31];
+    let mut body = crate::knowledge::WorldSnapshotBody {
+        nodes,
+        claims,
+        annotations,
+        relation_vocabulary: Vec::new(),
+    };
+    store
+        .read(|read| crate::knowledge::world::authorize_spans(read.tx, LOUPIST, &body))
+        .unwrap();
+    let foreign = source_module(&store, "loupist-other");
+    let (foreign_span, _) = retain(&store, "loupist-other", &foreign, None, b"Foreign evidence");
+    let mut foreign = body.claims[0].evidence[0].clone();
+    foreign.span_id = foreign_span;
+    body.claims[0].evidence.push(foreign);
+    assert!(store
+        .read(|read| crate::knowledge::world::authorize_spans(read.tx, LOUPIST, &body))
+        .is_err());
+}

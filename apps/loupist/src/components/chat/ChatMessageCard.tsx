@@ -1,10 +1,11 @@
+import { useCopyFeedback } from "../../hooks/useCopyFeedback";
 import { Disclosure } from "../ui/disclosure";
 import { ApprovalCards } from "./ApprovalCard";
 import { QuestionCards } from "./QuestionCard";
 import type { LoupistBridge } from "../../types";
 import { formatNumber, formatTime } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
-import { memo, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
+import { memo, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { useConversationScroll } from "../ai-elements/conversation";
 import { AnswerFeedback, type SaveAnswerFeedback } from "./AnswerFeedback";
 import {
@@ -118,28 +119,11 @@ function MessageAttachment({
   onRead: (messageId: string, attachmentId: string) => Promise<string>;
 }) {
   useTranslation("chat");
-  const isImage = attachment.media_type.startsWith("image/");
-  const [url, setUrl] = useState(attachment.url);
   const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    if (!isImage || url || failed) return;
-    let active = true;
-    void onRead(messageId, attachment.id)
-      .then((next) => {
-        if (active) setUrl(next);
-      })
-      .catch(() => {
-        if (active) setFailed(true);
-      });
-    return () => {
-      active = false;
-    };
-  }, [attachment.id, failed, isImage, messageId, onRead, url]);
 
   const download = async () => {
     try {
-      const source = url ?? (await onRead(messageId, attachment.id));
+      const source = attachment.url ?? (await onRead(messageId, attachment.id));
       const link = document.createElement("a");
       link.href = source;
       link.download = attachment.filename;
@@ -151,11 +135,7 @@ function MessageAttachment({
 
   return (
     <div className="message-attachment">
-      {isImage && url ? (
-        <img src={url} alt={attachment.filename} />
-      ) : (
-        <FileIcon aria-hidden="true" />
-      )}
+      <FileIcon aria-hidden="true" />
       <span>
         <strong>{attachment.filename}</strong>
         <small>
@@ -207,7 +187,7 @@ type Props = {
   ) => Promise<string>;
   mentionSkills?: ReadonlyArray<{ id: string; name: string }>;
   mentionPlugins?: ReadonlyArray<{ id: string; name: string }>;
-  onEditUser?: (text: string) => void;
+  onEditUser?: (message: ChatMessage) => void;
   /** Editing waits for the running reply; the control stays in place so the thread does not jump when it ends. */
   editDisabled?: boolean;
   /** Edit forks (X18): show the version of the chat before or after this message's version. */
@@ -304,7 +284,7 @@ function ChatMessageCardComponent({
   feedbackBusy = false,
 }: Props) {
   useTranslation("chat");
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const { state: copyState, copy } = useCopyFeedback(message.id);
   const revealedResult = useTurn()?.revealedResult ?? null;
   const go = useGo();
   const evidenceRefs = message.evidence_refs ?? [];
@@ -476,7 +456,7 @@ function ChatMessageCardComponent({
           />
           {copyText !== null ? <div className="message-actions">
             <button type="button" aria-label={copyState === "copied" ? t("chatMessageCard.answerCopied") : t("chatMessageCard.copyAnswer")} title={copyState === "copied" ? t("chatMessageCard.copied") : t("chatMessageCard.copyAnswer")} onClick={() => {
-              void navigator.clipboard.writeText(copyText).then(() => setCopyState("copied"), () => setCopyState("failed"));
+              void copy(copyText);
             }}>{copyState === "copied" ? <CheckIcon /> : <CopyIcon />}</button>
             {copyState === "failed" ? <span role="alert">{t("chatMessageCard.couldNotCopySelectTheAnswerToCopyIt")}</span> : null}
           </div> : null}
@@ -498,7 +478,7 @@ function ChatMessageCardComponent({
       {message.role === "assistant" && answerText ? <AnswerOutline messageId={message.id} markdown={answerText} defaultOpen={outlineOpen} /> : null}
       {message.role === "assistant" && complete && onNextStep ? <NextSteps loupistId={loupistId} chatId={chatId} messageId={message.id} onAsk={onNextStep} /> : null}
       {message.role === "user" && (onEditUser || onEarlierVersion || onLaterVersion) ? <div className="message-actions message-action-bar">
-        {onEditUser ? <button type="button" aria-label={t("chatMessageCard.editMessage")} title={t("chatMessageCard.edit")} disabled={editDisabled} onClick={() => onEditUser(message.content)}>{t("chatMessageCard.edit")}</button> : null}
+        {onEditUser ? <button type="button" aria-label={t("chatMessageCard.editMessage")} title={t("chatMessageCard.edit")} disabled={editDisabled} onClick={() => onEditUser(message)}>{t("chatMessageCard.edit")}</button> : null}
         {onEarlierVersion ? <button type="button" className="message-version-link" onClick={onEarlierVersion}>{t("chatBranch.earlierVersion")}</button> : null}
         {onLaterVersion ? <button type="button" className="message-version-link" onClick={onLaterVersion}>{t("chatBranch.laterVersion")}</button> : null}
       </div> : null}

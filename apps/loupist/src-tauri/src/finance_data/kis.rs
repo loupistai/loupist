@@ -343,8 +343,8 @@ impl FinanceDataService {
         app_key: &str,
         app_secret: &str,
     ) -> Result<KisAccessToken, FinanceDataError> {
-        validate_api_key(app_key, KIS_SOURCE_ID)?;
-        validate_api_key(app_secret, KIS_SOURCE_ID)?;
+        validate_api_key(app_key)?;
+        validate_api_key(app_secret)?;
         let fingerprint = kis_credential_fingerprint(environment, app_key, app_secret);
         let mut cache = self.kis_token_cache().await;
         if let Some(token) = cache

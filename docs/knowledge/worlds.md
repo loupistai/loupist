@@ -27,6 +27,9 @@ are also removed; these receipts are provenance and deduplication records, not a
 World history or restore feature. Recovery rebuilds the derived index from the
 current canonical World and retained Source evidence. An uncertain publication
 instead keeps its extraction JSON while quarantined for reconciliation.
+Publication bounds extracted node names and descriptions, drops unreadable nodes
+and claims, and drops claims whose endpoints were discarded, so a malformed item
+does not block otherwise valid extraction.
 
 Long Sources become bounded episodes retaining the original span as evidence.
 Each episode runs after the one before it, whose text is its extraction context; once
@@ -69,10 +72,13 @@ extraction does not start early: its instructions name the relations already on
 the Map, which the episode before it can change.
 
 Each request has a time limit, four minutes by default and at most five
-(`DEFAULT_TIMEOUT_MS`, `MAX_TIMEOUT_MS`); a saved 60 seconds, the earlier default,
-reads as four minutes. A queued job runs under the saved limit; its call allowance
+(`DEFAULT_TIMEOUT_MS`, `MAX_TIMEOUT_MS`); saved limits, including 60 seconds, are
+preserved. A queued job runs under the saved limit; its call allowance
 stays as frozen. One attempt may use every model wave at its full limit
 (`attempt_budget_ms`).
+An episode that exhausts its frozen call allowance pauses without repeating paid
+calls or quarantining other Sources; resume does not replay its paid attempt.
+Revision and growth-event timestamps reflect extraction completion.
 
 An attempt that publishes nothing ends one of three ways (`finish_unpublished` in
 `knowledge/graph_jobs.rs`). Publication is one transaction, so the World is unchanged
@@ -80,7 +86,10 @@ in each case.
 
 - **Nothing paid was sent** (the provider went away, its settings changed under
   it): the attempt cost nothing and queues again, up to three times, then fails
-  without quarantining the World; Try again can run it.
+  without quarantining the World; Try again can run it. Enqueuing that Source or
+  backfilling saved Sources requeues its failed or cancelled chunks only when
+  no paid or uncertain attempt remains, preserving their frozen allowances and
+  binding them to the current generation.
 - **The host cut it short**: the app quit, crashed or lost power (the job is found
   running at the next start, `recover_interrupted`), or the Mac slept through it
   (the wall clock moved on more than 30 seconds past the monotonic clock). It runs
@@ -95,6 +104,10 @@ After a quarantine the graph worker queues the recovery itself
 never ran, and enqueues Sources saved during the quarantine. If that rebuild fails,
 the next one waits for World processing recovery in Loupist settings, so a broken
 rebuild cannot loop.
+Only a committed `reconcile_required` receipt may add a generation to quarantine;
+a rolled-back attempt cannot leave a quarantine without a recovery receipt.
+Pausing processing pauses every queued chunk of a Source, including Sources saved
+while paused; recovery rebuilds remain runnable while extraction is paused.
 
 ### Keeping the Mac awake
 
@@ -145,6 +158,10 @@ stored. Every change validates, applies at once and writes a `schema_extended` o
   least three Sources, and a type must cover at least five names that are still
   `Entity`. At most two types and three relations; kinds the Loupist already has are
   dropped. The model-written seed for a custom focus no longer exists.
+  A full extension triggers no paid review. When only one kind has room, supported
+  additions fill that kind's remaining slots; a full type list still permits
+  independent supported relations. The recorded evidence names only the additions
+  that are applied.
 - **Undo.** "Undo" on a change, or Remove on one kind, appends a change. Undoing a
   change removes only the kinds it added (with links that depended on them) and
   restores the kinds it removed, so an older change can be undone after a newer
@@ -172,7 +189,7 @@ the 16-alias cap, so a Lens anchor filed under that spelling resolves exactly. O
 episode fills every typed entity's fields. World stores names, summaries, relation
 names and facts in English whatever the Source language; the original text stays in
 the retained Source and its evidence spans. Research focus, preferred relationship
-names and anchor entities add emphasis on top of the core schema. Publication time,
+names and anchor entities add emphasis on top of the core schema. Editing this guidance retains saved anchor identifiers as identifiers. Publication time,
 observation period and validity remain distinct. Extraction preserves quantitative
 units and basis, directed roles and conflicting attributed reports; source content
 is data, not extraction instructions. Temporal bounds require explicit effective

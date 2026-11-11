@@ -277,8 +277,12 @@ message (`said`); a section the user
 changed since is skipped and the review's reason reads `stale_head_folded`. A
 publication that changes nothing, or a refine left with no section to write,
 defers with `method_unchanged`.
-Deferral and failure write a review record and no growth event. Learned means a
-retained method, not model-weight training or a measured quality gain. A saved
+Invalid model output defers a review; storage and revision-conflict errors roll
+back publication and settle it as failed with `publication_failed`, preserving
+usage and allowing later reviews. Only a failed settlement propagates the error.
+Deferral and failure write a review
+record and no growth event. Learned means a retained method, not model-weight
+training or a measured quality gain. A saved
 method alone does not demonstrate improved later work; use
 [evaluation](../../apps/loupist/evals/README.md) to test transfer. Loupist settings
 shows Learn methods from new information and the ten most recent reviews. A

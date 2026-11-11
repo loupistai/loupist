@@ -206,6 +206,7 @@ try {
     const before = (await browser.$$("[data-testid=loupist-chat-button]")).length;
     const newChatLabel = '[data-testid=navigation-new]';
     await clickControl(browser, newChatLabel);
+    await displayed('[data-testid=loupist-chat-button][data-thread-id="__empty-chat__"][aria-current="page"]');
     const afterFirst = (await browser.$$("[data-testid=loupist-chat-button]")).length;
     await clickControl(browser, newChatLabel);
     // An unsent topic Chat shows as one draft row under the Thread; a second New chat reuses it.

@@ -147,6 +147,10 @@ pub(crate) fn map_store(error: crate::store::StoreError) -> CommandError {
         StoreError::Sqlite(rusqlite::Error::QueryReturnedNoRows) => {
             CommandError::not_found("record")
         }
+        StoreError::Sqlite(error) => {
+            eprintln!("Could not access saved data: {error}");
+            CommandError::internal("Could not access saved data.")
+        }
         other => CommandError::internal(other.to_string()),
     }
 }

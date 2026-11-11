@@ -11,6 +11,7 @@ use super::pack::{Files, MAX_BYTES};
 
 pub(crate) const SCOPES: &str = "public_repo gist";
 pub(crate) const TOPIC: &str = "loupist-pack";
+const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 
 /// The OAuth App client id, compiled in. Missing or empty hides publishing.
 pub(crate) fn client_id() -> Option<&'static str> {
@@ -119,9 +120,21 @@ impl Github {
             .headers()
             .get("x-ratelimit-remaining")
             .is_some_and(|value| value == "0");
-        let bytes = response.bytes().await.map_err(|_| ApiError::Offline)?;
-        if bytes.len() > 4 * 1024 * 1024 {
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
+        {
             return Err(ApiError::TooLarge);
+        }
+        use futures_util::StreamExt;
+        let mut stream = response.bytes_stream();
+        let mut bytes = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|_| ApiError::Offline)?;
+            if chunk.len() > MAX_RESPONSE_BYTES - bytes.len() {
+                return Err(ApiError::TooLarge);
+            }
+            bytes.extend_from_slice(&chunk);
         }
         let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
         match status {
@@ -1013,6 +1026,51 @@ mod tests {
         atomic::{AtomicUsize, Ordering},
         Arc,
     };
+
+    #[tokio::test]
+    async fn github_rejects_oversized_responses_before_the_body_finishes() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        for chunked in [false, true] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let base = format!("http://{}", listener.local_addr().unwrap());
+            let server = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = [0; 4096];
+                assert!(socket.read(&mut request).await.unwrap() > 0);
+                if chunked {
+                    let _ = socket
+                        .write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+                        .await;
+                    let _ = socket
+                        .write_all(format!("{:x}\r\n", MAX_RESPONSE_BYTES + 1).as_bytes())
+                        .await;
+                    let _ = socket.write_all(&vec![b' '; MAX_RESPONSE_BYTES + 1]).await;
+                    let _ = socket.write_all(b"\r\n").await;
+                } else {
+                    let _ = socket
+                        .write_all(
+                            format!(
+                                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
+                                MAX_RESPONSE_BYTES + 1
+                            )
+                            .as_bytes(),
+                        )
+                        .await;
+                }
+                // An unbounded reader would wait for the rest of this response.
+                std::future::pending::<()>().await;
+            });
+            let api = Github::new(&base, &base, &base);
+            let result =
+                tokio::time::timeout(Duration::from_secs(5), api.login("fixture-token")).await;
+            server.abort();
+            assert_eq!(
+                result.unwrap(),
+                Err(ApiError::TooLarge),
+                "chunked={chunked}"
+            );
+        }
+    }
 
     #[tokio::test]
     async fn device_flow_waits_slows_down_and_returns_the_login() {

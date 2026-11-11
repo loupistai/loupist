@@ -73,11 +73,7 @@ pub(super) async fn stream_chat_turn(turn: &mut LaunchedChatTurn) -> StreamedCha
     let mut cards_open = true;
     let mut provider_wait_watchdog =
         ProviderWaitWatchdog::new(provider_wait_started_at, provider_idle_timeout);
-    let provider_wait_timer = tokio::time::sleep_until(
-        provider_wait_watchdog
-            .deadline()
-            .expect("new first-provider-body watchdog has a deadline"),
-    );
+    let provider_wait_timer = tokio::time::sleep_until(provider_wait_watchdog.deadline());
     tokio::pin!(provider_wait_timer);
     let mut watchdog_expiry_event_deferrals = 0_usize;
     let mut announced_phase: Option<ChatRunPhase> = None;
@@ -123,7 +119,7 @@ pub(super) async fn stream_chat_turn(turn: &mut LaunchedChatTurn) -> StreamedCha
                 // a busy Pi event stream must not starve a queued steer.
                 tokio::select! {
                     _ = &mut commentary_flush, if commentary.is_pending() => ChatLoopInput::CommentaryFlush,
-                    _ = &mut provider_wait_timer, if provider_wait_watchdog.deadline().is_some() => ChatLoopInput::WatchdogElapsed,
+                    _ = &mut provider_wait_timer => ChatLoopInput::WatchdogElapsed,
                     changed = cancel.changed() => ChatLoopInput::CancelChanged(changed),
                     control = chat_controls.recv() => ChatLoopInput::Control(control),
                     card = card_rx.recv(), if cards_open => ChatLoopInput::Card(card),
@@ -199,12 +195,9 @@ pub(super) async fn stream_chat_turn(turn: &mut LaunchedChatTurn) -> StreamedCha
             ChatLoopInput::PiEvent(event) => {
                 let now = Instant::now();
                 provider_wait_watchdog.observe(&event, now);
-                if let Some(deadline) = provider_wait_watchdog.deadline() {
-                    provider_wait_timer.as_mut().reset(deadline);
-                    if deadline > now {
-                        watchdog_expiry_event_deferrals = 0;
-                    }
-                } else {
+                let deadline = provider_wait_watchdog.deadline();
+                provider_wait_timer.as_mut().reset(deadline);
+                if deadline > now {
                     watchdog_expiry_event_deferrals = 0;
                 }
                 match event {
@@ -291,10 +284,8 @@ pub(super) async fn stream_chat_turn(turn: &mut LaunchedChatTurn) -> StreamedCha
                         break;
                     }
                     Err(error) => {
-                        if let Some(message) = pi_event_stream_failure(error) {
-                            failure = Some(message.into());
-                            break;
-                        }
+                        failure = Some(pi_event_stream_failure(error).into());
+                        break;
                     }
                 }
             }

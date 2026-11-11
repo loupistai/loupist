@@ -94,6 +94,39 @@ fn replacing_a_dataset_rejects_stale_refs_and_keeps_only_current_bytes() {
 }
 
 #[test]
+fn stale_datasets_are_refetched_without_reading_invalid_payloads() {
+    let store = fixture();
+    let earlier = (chrono::Utc::now() - chrono::Duration::hours(2)).to_rfc3339();
+    let reference = store
+        .dataset_put(
+            "reader-a",
+            "quote",
+            &json!({"close":"10"}),
+            json!({"fetched_at": earlier}),
+        )
+        .unwrap();
+    store
+        .lock_loupist("reader-a")
+        .unwrap()
+        .execute(
+            "UPDATE datasets SET payload=x'ff' WHERE id=?1",
+            [&reference.dataset_id],
+        )
+        .unwrap();
+    assert!(store
+        .dataset_fresh("reader-a", "quote", 60)
+        .unwrap()
+        .is_none());
+    // A reusable revision still has to pass the exact byte-integrity check.
+    assert!(store
+        .dataset_fresh("reader-a", "quote", 3 * 60 * 60)
+        .is_err());
+    assert!(store
+        .dataset("reader-a", &reference.dataset_id, reference.revision)
+        .is_err());
+}
+
+#[test]
 fn identical_refetches_keep_the_revision_and_max_age_selects_only_recent_fetches() {
     let store = fixture();
     let earlier = (chrono::Utc::now() - chrono::Duration::hours(2)).to_rfc3339();

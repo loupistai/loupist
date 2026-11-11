@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import i18n from "@/i18n";
 // Citation links open a delayed HoverCard; skipping hover keeps its timer from firing after teardown.
@@ -26,6 +26,34 @@ function renderAnswer(message: ChatMessage, extra: Partial<ComponentProps<typeof
 /** What the answer handed up to the app, of one kind. */
 const opened = <K extends ChatDestination["kind"]>(open: Mock<Open>, kind: K) =>
   open.mock.calls.map(([to]) => to).filter((to): to is Extract<ChatDestination, { kind: K }> => to.kind === kind);
+
+it("clears successful copy feedback after two seconds", async () => {
+  renderAnswer(answer());
+  const copy = await screen.findByRole("button", { name: "Copy answer" });
+  vi.useFakeTimers();
+  try {
+    vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    await act(async () => { fireEvent.click(copy); });
+    expect(screen.getByRole("button", { name: "Answer copied" })).toBeVisible();
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    expect(screen.getByRole("button", { name: "Copy answer" })).toBeVisible();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("keeps a pending copy across message snapshots with the same id", async () => {
+  let resolve!: () => void;
+  vi.spyOn(navigator.clipboard, "writeText").mockImplementationOnce(() => new Promise<void>(done => { resolve = done; }));
+  const message = answer();
+  const { view, ...props } = renderAnswer(message);
+  fireEvent.click(await screen.findByRole("button", { name: "Copy answer" }));
+  view.rerender(<TooltipProvider><ChatMessageCard {...props} message={{ ...message }} /></TooltipProvider>);
+  await act(async () => { resolve(); });
+  expect(screen.getByRole("button", { name: "Answer copied" })).toBeVisible();
+  view.rerender(<TooltipProvider><ChatMessageCard {...props} message={{ ...message, id: "another-answer" }} /></TooltipProvider>);
+  expect(screen.getByRole("button", { name: "Copy answer" })).toBeVisible();
+});
 
 it("draws a setup card from a completed connection_setup step and asks the question again once ready", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });

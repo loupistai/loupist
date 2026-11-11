@@ -1,6 +1,7 @@
 import { act, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { MapReplayBar } from "./MapReplayBar";
 import { DAY_MS, presentAt, replayTime, replayVisible, useMapReplay } from "./replay";
+import userEvent from "@testing-library/user-event";
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
 import { frozenLayout } from "./layout";
 const node = (id: string, firstSeenAtMs?: number): KnowledgeMapNode => ({ id, label: id, kind: "entity", degree: 1, watched: false, held: false, firstSeenAtMs });
@@ -49,4 +50,25 @@ it("finishes playback in 20 seconds divided by speed", () => {
   expect(result.current.playing).toBe(false);
   expect(result.current.time).toBe(result.current.end);
   unmount(); vi.useRealTimers();
+});
+
+
+it("lets Space activate the focused replay button without also toggling playback", async () => {
+  const user = userEvent.setup();
+  const replay = { active: true, reduced: false, setState: vi.fn(), playing: false, time: 0, start: 0, end: DAY_MS, speed: 1, open: vi.fn(), toggle: vi.fn(), seek: vi.fn(), setSpeed: vi.fn(), close: vi.fn() };
+  render(<MapReplayBar replay={replay} />);
+  expect(screen.getByRole("button", { name: "Play" })).toHaveFocus();
+  await user.keyboard("{ArrowRight}{ArrowLeft}");
+  expect(replay.seek).toHaveBeenNthCalledWith(1, DAY_MS);
+  expect(replay.seek).toHaveBeenNthCalledWith(2, -DAY_MS);
+  await user.keyboard(" ");
+  expect(replay.toggle).toHaveBeenCalledTimes(1);
+  replay.toggle.mockClear();
+  screen.getByRole("button", { name: "4×" }).focus();
+  await user.keyboard(" ");
+  expect(replay.setSpeed).toHaveBeenCalledWith(4);
+  screen.getByRole("button", { name: "Exit replay" }).focus();
+  await user.keyboard(" ");
+  expect(replay.close).toHaveBeenCalledTimes(1);
+  expect(replay.toggle).not.toHaveBeenCalled();
 });

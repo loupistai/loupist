@@ -10,11 +10,14 @@ About you is a centered 720px reading column and shares its edges with the heade
 current tab, with three tabs. **About you**: followed assets, each opening its
 [asset page](asset-pages.md#asset-pages), with remove and add, holdings as a count and
 date per kind (stocks and funds, crypto) from `holdings_summary` with Update opening
-[Your holdings](../runtime/storage-authority.md#where-data-lives), and shared Loupists.
+[Your holdings](../runtime/storage-authority.md#where-data-lives). The shared Loupists
+list is hidden [in this release](sharing.md#this-release).
 **Pages**: every active Lens page in one list grouped as Topics (`subject`), Ideas
 (`idea`), Methods (`method`), Your principles (`principle`) and Outlook (`perspective`);
-the groups are 주제, 아이디어, 분석 방법, 내 원칙 and 관점 in Korean. Search runs
-`knowledge_lens_search` for pages and matches a principle on its own words. Opening a
+the groups are 주제, 아이디어, 분석 방법, 내 원칙 and 관점 in Korean. Search waits for a
+pause in typing, then runs `knowledge_lens_search` for pages and matches a principle
+on its own words. Paused pages remain in this inspection search so the user can
+resume them; agent discovery still excludes them. Opening a
 row reads it in `PageReader`: Markdown sections under their headings, each with its
 basis chip (Claim and Source open the claim on the Map or the retained Source; "You
 said"; "Loupist's view" with its uncertainty line; a page chip opens that page), a
@@ -34,7 +37,7 @@ bounded context or an acknowledged exact read, or recorded an application; repea
 delivery in one turn counts once. This measures delivery, not influence or correctness.
 Pages and principles from an answer's Learned line open here. Back from a Source opened
 inside a page returns to that page. A paused banner appears when both learning
-switches are off, and Resume enables them again. Tone, instructions and learning
+switches are off, and Resume enables them again; a failed update stays visible as an error. Tone, instructions and learning
 preferences live on the [Loupist settings page](../ui/sidebar.md#sidebar).
 
 Loupist settings → Learning offers Reset what it learned. Rust previews counts for principles,

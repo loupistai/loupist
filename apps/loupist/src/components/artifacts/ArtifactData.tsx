@@ -1,6 +1,7 @@
 import { formatNumber } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useCopyFeedback } from "../../hooks/useCopyFeedback";
 import { CheckIcon, ClipboardIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ChartDataset } from "../../types";
@@ -28,29 +29,27 @@ export function ArtifactData({ dataset, title, onExport }: {
 }) {
   useTranslation("chat");
   const [page, setPage] = useState(0);
-  const [copied, setCopied] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const start = page * PAGE_SIZE;
-  const rows = dataset.rows.slice(start, start + PAGE_SIZE);
+  const rows = useMemo(() => dataset.rows.slice(start, start + PAGE_SIZE), [dataset.rows, start]);
+  const { state: copyState, copy: copyRows, reset } = useCopyFeedback(rows);
+  const copied = copyState === "copied";
+  const error = exportError ?? (copyState === "failed" ? t("artifactData.couldNotCopyTheseRowsTryAgain") : null);
   const receipts = dataset.lineage.kind === "from_result"
     ? [dataset.lineage.receipt] : dataset.lineage.kind === "agent_authored" ? dataset.lineage.upstream_receipts : [];
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(datasetTsv(dataset, rows));
-      setCopied(true);
-      setError(null);
-    } catch {
-      setError(t("artifactData.couldNotCopyTheseRowsTryAgain"));
-    }
+    setExportError(null);
+    await copyRows(datasetTsv(dataset, rows));
   };
-  const changePage = (next: number) => { setPage(next); setCopied(false); setError(null); };
+  const changePage = (next: number) => { setPage(next); setExportError(null); };
   const saveCsv = async () => {
     if (!onExport) return;
+    reset();
     try {
       await onExport({ suggestedName: `${exportFileName(title ?? "data")}.csv`, kind: "csv", bytes: utf8Bytes(datasetCsv(dataset.columns, dataset.rows)) });
-      setError(null);
+      setExportError(null);
     } catch {
-      setError(t("artifactData.couldNotSave"));
+      setExportError(t("artifactData.couldNotSave"));
     }
   };
   return (

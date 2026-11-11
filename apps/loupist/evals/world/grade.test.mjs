@@ -39,7 +39,7 @@ function fixture() {
         model: { thinking: 'medium' }, observed_model: 'provider/model', memory_commits: [],
         answer: 'Revenue USD 50 million; operating profit USD 4 million.\n{"metrics":{"revenue":50,"profit":4,"forecast":null}}',
         memory_reads: [{ kind: 'source', access: 'exact_read', record_id: 'source-record' }],
-        tool_calls: [{ name: 'source_read', args: { record_id: 'source-record' }, outcome: 'ok', result: { text } }],
+        tool_calls: [{ name: 'world_read', args: { recordId: 'source-record', scope: 'source' }, outcome: 'ok', result: { text } }],
         usage: { input: 20, output: 10, cache_read: 0, cache_write: 0 } } });
   }
   return { suite, oracle, traces, inputSha256 };

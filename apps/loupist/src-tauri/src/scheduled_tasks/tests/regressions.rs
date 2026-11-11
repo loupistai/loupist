@@ -289,3 +289,141 @@ async fn unavailable_loupist_backlog_does_not_starve_healthy_schedules() {
         1
     );
 }
+
+#[tokio::test]
+async fn undecodable_running_receipt_does_not_block_other_loupists() {
+    let temp = tempfile::tempdir().unwrap();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let mut loupists = Vec::new();
+    for name in ["broken", "healthy"] {
+        let folder = temp.path().join(name);
+        std::fs::create_dir(&folder).unwrap();
+        loupists.push(create_folder_loupist(&state, &folder).await.unwrap());
+    }
+    let mut runs = Vec::new();
+    for loupist in &loupists {
+        let task = state
+            .store
+            .scheduled_task_create(&loupist.id, draft(), 1_000)
+            .unwrap();
+        runs.push(
+            claim_task(&state.store, &loupist.id, &task.id, 2_000, true)
+                .unwrap()
+                .unwrap()
+                .run,
+        );
+    }
+    state
+        .store
+        .lock_loupist(&loupists[0].id)
+        .unwrap()
+        .execute(
+            "UPDATE scheduled_task_runs SET data_json='{}' WHERE id=?1",
+            [&runs[0].id],
+        )
+        .unwrap();
+    let local_task = state
+        .store
+        .scheduled_task_create(&loupists[0].id, draft(), 1_000)
+        .unwrap();
+    let local_orphan = claim_task(&state.store, &loupists[0].id, &local_task.id, 2_000, true)
+        .unwrap()
+        .unwrap()
+        .run;
+    let due = state
+        .store
+        .scheduled_task_create(&loupists[1].id, draft(), 1_000)
+        .unwrap();
+
+    state.scheduled.poll(&state).await.unwrap();
+    assert_eq!(
+        state
+            .store
+            .scheduled_task_run_get(&loupists[0].id, &local_orphan.run_id)
+            .unwrap()
+            .unwrap()
+            .status,
+        RunStatus::Interrupted
+    );
+    assert_eq!(
+        state
+            .store
+            .scheduled_task_run_get(&loupists[1].id, &runs[1].run_id)
+            .unwrap()
+            .unwrap()
+            .status,
+        RunStatus::Interrupted
+    );
+    // Admission reaches the healthy task, whose unconfigured model fails locally.
+    let receipts = state
+        .store
+        .scheduled_task_runs(&loupists[1].id, &due.id)
+        .unwrap();
+    assert_eq!(receipts.len(), 1);
+    assert_eq!(receipts[0].status, RunStatus::Failed);
+    state.scheduled.poll(&state).await.unwrap();
+    let status: String = state
+        .store
+        .lock_loupist(&loupists[0].id)
+        .unwrap()
+        .query_row(
+            "SELECT status FROM scheduled_task_runs WHERE id=?1",
+            [&runs[0].id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(status, "running");
+}
+
+#[test]
+fn recovery_without_orphans_does_not_need_write_access() {
+    let store = fixture();
+    store
+        .lock()
+        .unwrap()
+        .execute_batch("PRAGMA query_only=ON")
+        .unwrap();
+    assert_eq!(store.scheduled_tasks_recover_running(3_000).unwrap(), 0);
+    store
+        .lock()
+        .unwrap()
+        .execute_batch("PRAGMA query_only=OFF")
+        .unwrap();
+    let task = store
+        .scheduled_task_create("loupist-a", draft(), 1_000)
+        .unwrap();
+    let live = claim_task(&store, "loupist-a", &task.id, 2_000, true)
+        .unwrap()
+        .unwrap()
+        .run;
+    store
+        .lock()
+        .unwrap()
+        .execute_batch("PRAGMA query_only=ON")
+        .unwrap();
+    assert_eq!(
+        store
+            .scheduled_tasks_recover_running_except(
+                3_000,
+                &std::collections::HashSet::from([live.run_id])
+            )
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn repeated_recovery_warnings_report_each_skipped_run_only_once() {
+    let warnings = super::super::store::RecoveryWarnings::default();
+    let mut reported = Vec::new();
+    for id in [
+        "bad-run-a",
+        "bad-run-a",
+        "bad-run-b",
+        "bad-run-a",
+        "bad-run-b",
+    ] {
+        warnings.report_once(id, || reported.push(id));
+    }
+    assert_eq!(reported, ["bad-run-a", "bad-run-b"]);
+}

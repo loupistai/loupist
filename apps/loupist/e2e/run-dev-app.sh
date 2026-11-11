@@ -10,6 +10,16 @@ fi
 APP_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 ARTIFACT_DIR="$SCRIPT_DIR/artifacts"
 SESSION_INFO="$ARTIFACT_DIR/current-session.json"
+E2E_STARTUP_TIMEOUT_MS=${LOUPIST_E2E_STARTUP_TIMEOUT_MS:-300000}
+case "$E2E_STARTUP_TIMEOUT_MS" in
+    *[!0-9]*|'')
+        echo "LOUPIST_E2E_STARTUP_TIMEOUT_MS must be a positive integer." >&2
+        exit 2 ;;
+esac
+if [ "$E2E_STARTUP_TIMEOUT_MS" -le 0 ]; then
+    echo "LOUPIST_E2E_STARTUP_TIMEOUT_MS must be a positive integer." >&2
+    exit 2
+fi
 APP_PID=
 MODE=development
 MANUAL_PROFILE=
@@ -118,7 +128,7 @@ if [ "$MODE" = manual ]; then
     APP_PID=$!
     "$NODE_BINARY" "$SCRIPT_DIR/wait-session.mjs" \
         --write-manual "$SESSION_INFO" --pid "$$" --app-pid "$APP_PID" --manual-profile "$MANUAL_PROFILE"
-    if ! "$NODE_BINARY" "$SCRIPT_DIR/wait-session.mjs" --pid "$$" --session "$SESSION_INFO"; then
+    if ! "$NODE_BINARY" "$SCRIPT_DIR/wait-session.mjs" --pid "$$" --session "$SESSION_INFO" --timeout-ms "$E2E_STARTUP_TIMEOUT_MS"; then
         echo "Loupist manual app did not remain running with its owned Vite server." >&2
         exit 1
     fi
@@ -147,7 +157,8 @@ APP_PID=$!
 if ! "$NODE_BINARY" "$SCRIPT_DIR/wait-session.mjs" \
     --wait-owned \
     --pid "$APP_PID" \
-    --port "$WEBDRIVER_PORT"; then
+    --port "$WEBDRIVER_PORT" \
+    --timeout-ms "$E2E_STARTUP_TIMEOUT_MS"; then
     echo "Loupist development WebDriver did not become ready." >&2
     exit 1
 fi

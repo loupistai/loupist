@@ -4,7 +4,7 @@ use tauri::Manager;
 
 const TURN_ENVELOPE: &str = r#"{"live_time":{"current_date_utc":"2026-08-10"}}"#;
 
-pub(super) fn send_request(
+pub(in crate::commands) fn send_request(
     run_id: &str,
     loupist_id: &str,
     thread_id: &str,
@@ -657,7 +657,11 @@ async fn chat_activity_storage_failure_does_not_persist_a_user_turn() {
 }
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
-pub(super) fn install_chat_rpc_fixture(state: &mut AppState, directory: &Path, source: &str) {
+pub(in crate::commands) fn install_chat_rpc_fixture(
+    state: &mut AppState,
+    directory: &Path,
+    source: &str,
+) {
     use crate::pi::{PI_DARWIN_ARM64_ARCHIVE_SHA256, PI_VERSION};
 
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -1556,6 +1560,98 @@ fn cold_chat_historical_images_respect_the_four_image_turn_budget() {
         )
         .unwrap();
         assert_eq!(historical.len(), expected_historical);
+    }
+}
+
+#[test]
+fn cold_chat_keeps_history_when_old_attachments_are_missing_or_changed() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
+    let directory = root.join("chat-a/question");
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(directory.join("changed"), b"changed").unwrap();
+    fs::write(directory.join("good"), b"intact").unwrap();
+    fs::write(directory.join("extracted.md"), b"Extracted document").unwrap();
+    let history = vec![ChatMessage {
+        attachments: vec![
+            stored_attachment("missing", "missing.txt", "text/plain", b"missing"),
+            stored_attachment("changed", "changed.txt", "text/plain", b"initial"),
+            stored_attachment("good", "good.txt", "text/plain", b"intact"),
+            stored_attachment("extracted", "report.pdf", "application/pdf", b"raw"),
+        ],
+        ..chat_message("question", ChatRole::User, "Earlier question")
+    }];
+    let prompt = bootstrap_pi_chat_session_from_sqlite(
+        root,
+        "chat-a",
+        &history,
+        "Continue",
+        TURN_ENVELOPE,
+        0,
+        0,
+        &mut Vec::new(),
+    )
+    .unwrap();
+    let entry = prompt
+        .split("<conversation_history_jsonl>\n")
+        .nth(1)
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap();
+    let entry: serde_json::Value = serde_json::from_str(entry).unwrap();
+    assert_eq!(entry["content"], "Earlier question");
+    let attachments = entry["attachments"].as_array().unwrap();
+    for item in &attachments[..2] {
+        assert!(item["restored_content"].is_null());
+        assert_eq!(item["restoration"], "metadata_and_digest_only");
+    }
+    assert_eq!(attachments[2]["restored_content"]["content"], "intact");
+    assert_eq!(
+        attachments[2]["restoration"],
+        "digest_verified_bounded_content"
+    );
+    assert_eq!(attachments[3]["restoration"], "bounded_extracted_content");
+}
+
+#[test]
+fn cold_chat_restoration_keeps_text_and_image_budgets_separate() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
+    let directory = root.join("chat-a/question");
+    fs::create_dir_all(&directory).unwrap();
+    let text = vec![b'a'; 800 * 1024];
+    fs::write(directory.join("text"), &text).unwrap();
+    let image = vec![1; 1600 * 1024];
+    fs::write(directory.join("image"), &image).unwrap();
+    let history = vec![ChatMessage {
+        attachments: vec![
+            stored_attachment("text", "large.txt", "text/plain", &text),
+            stored_attachment("image", "first.png", "image/png", &image),
+            stored_attachment("image", "second.png", "image/png", &image),
+        ],
+        ..chat_message("question", ChatRole::User, "Earlier question")
+    }];
+    for (current_image_bytes, expected_images) in [
+        (0, 2),
+        (5 * 1024 * 1024 - image.len(), 1),
+        (5 * 1024 * 1024 - image.len() + 1, 0),
+    ] {
+        let mut images = Vec::new();
+        let prompt = bootstrap_pi_chat_session_from_sqlite(
+            root,
+            "chat-a",
+            &history,
+            "Continue",
+            TURN_ENVELOPE,
+            current_image_bytes,
+            1,
+            &mut images,
+        )
+        .unwrap();
+        assert_eq!(images.len(), expected_images);
+        assert!(prompt.contains(&"a".repeat(16 * 1024)));
+        assert!(!prompt.contains(&"a".repeat(16 * 1024 + 1)));
     }
 }
 

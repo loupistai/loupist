@@ -91,7 +91,10 @@ Korean 잠정실적 disclosure, or an 8-K or 6-K with item 2.02 (from three days
 ten after the date) or any 8-K within a day of it; the final report is the Korean quarterly,
 half-year or annual report for the period (with the 감사보고서 as an extra step for a year
 end) or a 10-Q, 10-K, 20-F or 40-F filed after the release within 120 days of the period
-end. At a glance's "Next earnings" falls back to the next event, a legal deadline marked
+end. The first matching release and final report stay attached when a pass sees
+multiple filings; the first matching audit filing also stays attached within and
+across passes, and attaching a release preserves current audit and capture flags.
+At a glance's "Next earnings" falls back to the next event, a legal deadline marked
 `dueBy`; the morning message's "Coming up" strip lists such a deadline as "Results due (filing deadline)".
 
 ## Code

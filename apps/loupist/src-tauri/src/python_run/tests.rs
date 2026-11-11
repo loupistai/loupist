@@ -262,6 +262,133 @@ fn results_replace_host_paths_and_keep_the_guest_text() {
     );
     assert_eq!(text, "wrote [path]/notes and said ok");
     assert!(!text.contains("/Users/secret"));
+    let paths = ["/private/app".into(), "/private/app/scratch".into()];
+    for secrets in [paths.to_vec(), paths.into_iter().rev().collect()] {
+        assert_eq!(
+            super::redact(b"/private/app/scratch/notes /private/app", &secrets),
+            "[path]/notes [path]"
+        );
+    }
+}
+
+#[test]
+fn results_report_both_snapshot_omissions_and_writeback_truncation() {
+    let fixture = sample();
+    let prepared = prepare(&fixture);
+    let mut report = prepared.writeback().unwrap();
+    report.truncated = true;
+    let outcome = super::WorkerOutcome {
+        status: "completed",
+        exit_code: 0,
+        stdout: Vec::new(),
+        stderr: b"guest warning".to_vec(),
+        stdout_truncated: false,
+        stderr_truncated: false,
+    };
+    let result = super::result_value(&outcome, &report, true, &[]);
+    assert_eq!(result["stderr"], "guest warning\nSome workspace changes were not copied back.\nSome files were left out of the snapshot because they are too large.\n");
+}
+
+#[test]
+fn snapshot_reports_an_outputs_file_without_changing_it() {
+    let fixture = sample();
+    fs::write(workspace(&fixture).join("outputs"), "keep").unwrap();
+    let error = super::snapshot::prepare(&fixture.roots).unwrap_err();
+    assert_eq!(
+        error.message,
+        "workspace outputs must be a directory; rename the outputs file before running Python"
+    );
+    assert_eq!(host_text(&fixture, "outputs"), "keep");
+}
+
+#[tokio::test]
+async fn a_symlink_worker_is_rejected_before_it_can_run() {
+    let dir = TempDir::new().unwrap();
+    let worker = dir.path().join("worker");
+    std::os::unix::fs::symlink("/bin/cat", &worker).unwrap();
+    let result = super::supervise_worker(
+        &worker,
+        dir.path(),
+        b"{}",
+        1,
+        SearchCancel::never(),
+        SearchCancel::never(),
+    )
+    .await;
+    assert!(
+        matches!(result, Err(BrokerError::Execution(message)) if message == "Python runtime is untrusted")
+    );
+}
+
+#[test]
+fn writeback_preserves_existing_file_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+    for mode in [0o600, 0o755] {
+        let fixture = sample();
+        let target = workspace(&fixture).join("notes/keep.txt");
+        fs::set_permissions(&target, fs::Permissions::from_mode(mode)).unwrap();
+        let prepared = prepare(&fixture);
+        fs::write(snap_file(&prepared, "notes/keep.txt"), "changed").unwrap();
+        let report = prepared.writeback().unwrap();
+        assert!(report.changed.contains(&"notes/keep.txt".to_owned()));
+        assert_eq!(host_text(&fixture, "notes/keep.txt"), "changed");
+        assert_eq!(mode_bits(&target), mode);
+    }
+}
+
+#[test]
+fn failed_writeback_removes_partial_new_and_replacement_files() {
+    const CHILD: &str = "LOUPIST_TEST_WRITEBACK_FILE_LIMIT";
+    if std::env::var_os(CHILD).is_none() {
+        for kind in ["replacement", "new"] {
+            let output = Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "python_run::tests::failed_writeback_removes_partial_new_and_replacement_files",
+                    "--nocapture",
+                ])
+                .env(CHILD, kind)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        return;
+    }
+    let fixture = sample();
+    let prepared = prepare(&fixture);
+    let target = if std::env::var(CHILD).as_deref() == Ok("new") {
+        "notes/new.txt"
+    } else {
+        "notes/keep.txt"
+    };
+    fs::write(snap_file(&prepared, target), "changed").unwrap();
+    // Limit only this test subprocess, after its fixture is ready. A real
+    // partial file write now fails without filling the shared host's disk.
+    unsafe {
+        libc::signal(libc::SIGXFSZ, libc::SIG_IGN);
+        let limit = libc::rlimit {
+            rlim_cur: 1,
+            rlim_max: 1,
+        };
+        assert_eq!(libc::setrlimit(libc::RLIMIT_FSIZE, &limit), 0);
+    }
+    assert!(prepared.writeback().is_err());
+    assert_eq!(host_text(&fixture, "notes/keep.txt"), "keep");
+    assert!(!workspace(&fixture).join("notes/new.txt").exists());
+    assert!(fs::read_dir(workspace(&fixture).join("notes"))
+        .unwrap()
+        .all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with("pywrite-")
+        }));
 }
 
 #[test]

@@ -800,13 +800,6 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .composer-chip button { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: var(--gg-radius-full); background: transparent; color: var(--gg-color-text-secondary); }
 .composer-chip button svg { width: var(--gg-space-3); height: var(--gg-space-3); }
 .composer-chip button:hover { color: var(--gg-color-text-primary); background: var(--gg-color-bg-selected); }
-/* Kind markers follow the Map: a dot for a name, two joined dots for a relationship, a square for Lens. */
-.composer-chip-marker { flex: none; position: relative; width: 8px; height: 8px; border-radius: var(--gg-radius-full); background: var(--gg-color-map-company); }
-.composer-chip-marker[data-kind="lens"] { border-radius: 2px; background: var(--gg-color-map-perspective); }
-.composer-chip-marker[data-kind="world_claim"] { width: 14px; height: 2px; border-radius: 1px; background: var(--gg-color-map-edge-active); }
-.composer-chip-marker[data-kind="world_claim"]::before, .composer-chip-marker[data-kind="world_claim"]::after { content: ""; position: absolute; top: -2px; width: 6px; height: 6px; border-radius: var(--gg-radius-full); background: var(--gg-color-map-company); }
-.composer-chip-marker[data-kind="world_claim"]::before { left: -1px; }
-.composer-chip-marker[data-kind="world_claim"]::after { right: -1px; }
 .composer-chip[data-kind="quote"] > span { font-style: italic; }
 .composer-chip-more { height: var(--gg-space-6); padding: 0 var(--gg-space-2); border: 1px dashed var(--gg-color-border-default); border-radius: var(--gg-radius-full); background: transparent; color: var(--gg-color-text-secondary); font: inherit; font-size: var(--gg-text-meta); cursor: pointer; }
 .composer-chip-more:hover { color: var(--gg-color-text-primary); background: var(--gg-color-bg-hover); }

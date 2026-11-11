@@ -552,7 +552,7 @@ impl FinanceDataService {
         api_key: &str,
         pacer: &RequestPacer<'_>,
     ) -> Result<Value, FinanceDataError> {
-        validate_api_key(api_key, OPENDART_SOURCE_ID)?;
+        validate_api_key(api_key)?;
         let query: OpenDartFactsQuery =
             strict_query(params, "expected the exact OpenDART company-facts schema")?;
         let corp_code = validate_digits(&query.corp_code, 8, "corp_code must be eight digits")?;
@@ -644,7 +644,7 @@ impl FinanceDataService {
         params: Value,
         api_key: &str,
     ) -> Result<Value, FinanceDataError> {
-        validate_api_key(api_key, OPENDART_SOURCE_ID)?;
+        validate_api_key(api_key)?;
         let query: OpenDartFilingSearchQuery =
             strict_query(params, "expected the exact OpenDART filing-search schema")?;
         let corp_code = validate_digits(&query.corp_code, 8, "corp_code must be eight digits")?;
@@ -691,7 +691,7 @@ impl FinanceDataService {
         params: Value,
         api_key: &str,
     ) -> Result<Value, FinanceDataError> {
-        validate_api_key(api_key, OPENDART_SOURCE_ID)?;
+        validate_api_key(api_key)?;
         let query: OpenDartFilingReadQuery =
             strict_query(params, "expected the exact OpenDART filing-read schema")?;
         let rcept_no = validate_digits(&query.rcept_no, 14, "rcept_no must be fourteen digits")?;

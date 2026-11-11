@@ -436,6 +436,49 @@ async fn world_search_hit_opens_the_matched_claim_beyond_the_first_page() {
 }
 
 #[tokio::test]
+async fn world_read_rejects_invalid_optional_ids_before_selecting_a_record() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let source = retain_publisher_source(&state, b"Ada described the engine.");
+    let executor = executor_for(&state, Arc::new(ToolCapture::default()));
+    let turn = policy(true, false);
+    for field in ["revisionId", "spanId", "centerNodeId"] {
+        for value in [
+            json!(12),
+            json!(true),
+            json!({}),
+            json!([]),
+            json!(""),
+            json!("x".repeat(129)),
+        ] {
+            let mut params = json!({"scope":"source", "recordId": source.record_id});
+            params[field] = value;
+            assert!(
+                matches!(
+                    executor
+                        .execute(&turn, ToolMethod::WorldRead, params.clone())
+                        .await,
+                    Err(BrokerError::Malformed)
+                ),
+                "{params}"
+            );
+        }
+    }
+    let read = executor
+        .execute(
+            &turn,
+            ToolMethod::WorldRead,
+            json!({"scope":"source", "recordId": source.record_id, "spanId":source.span_id}),
+        )
+        .await
+        .unwrap();
+    assert!(read["text"]
+        .as_str()
+        .unwrap()
+        .contains("Ada described the engine."));
+}
+
+#[tokio::test]
 async fn a_journal_saved_in_one_turn_is_reviewed_once_through_acknowledged_evidence() {
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);

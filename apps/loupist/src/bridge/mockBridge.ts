@@ -365,15 +365,9 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     return structuredClone(this.customTestResult);
   }
 
-  readonly openedPages: string[] = [];
+  async providerOpenConsole(_request: { provider: string }) {}
 
-  async providerOpenConsole(request: { provider: string }) {
-    this.openedPages.push(`console:${request.provider}`);
-  }
-
-  async providerOpenUsage(request: { provider: string }) {
-    this.openedPages.push(`usage:${request.provider}`);
-  }
+  async providerOpenUsage(_request: { provider: string }) {}
 
   async providerPresetSave(request: Contract.ProviderPresetRequest) {
     if (!request.api_key.trim()) throw commandError("key_rejected", "Upstage didn't accept this key.");

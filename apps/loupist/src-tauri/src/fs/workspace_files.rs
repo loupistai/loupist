@@ -326,10 +326,18 @@ pub(crate) fn exact_bytes(
     let path = relative_path(input)?;
     let file = open_relative(root, &path, false)?;
     let before = file.metadata().map_err(io_error)?;
+    let limit_error = || {
+        let size = if limit >= 1024 * 1024 && limit.is_multiple_of(1024 * 1024) {
+            format!("{} MiB", limit / (1024 * 1024))
+        } else if limit >= 1024 && limit.is_multiple_of(1024) {
+            format!("{} KiB", limit / 1024)
+        } else {
+            format!("{limit} bytes")
+        };
+        CommandError::invalid(format!("workspace file exceeds {size}; split the input"))
+    };
     if before.len() > limit as u64 {
-        return Err(CommandError::invalid(
-            "dataset exceeds 32 MiB; split the input",
-        ));
+        return Err(limit_error());
     }
     let mut bytes = Vec::new();
     (&file)
@@ -338,9 +346,7 @@ pub(crate) fn exact_bytes(
         .map_err(io_error)?;
     let after = file.metadata().map_err(io_error)?;
     if bytes.len() > limit {
-        return Err(CommandError::invalid(
-            "dataset exceeds 32 MiB; split the input",
-        ));
+        return Err(limit_error());
     }
     if before.len() != after.len()
         || bytes.len() as u64 != after.len()
@@ -414,6 +420,27 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = BoundLoupistRoot::open_unbound(dir.path().canonicalize().unwrap()).unwrap();
         (dir, root)
+    }
+
+    #[test]
+    fn exact_bytes_reports_the_callers_limit_and_accepts_that_many_bytes() {
+        let (dir, root) = fixture();
+        std::fs::write(dir.path().join("data.csv"), "1234").unwrap();
+        assert_eq!(exact_bytes(&root, "data.csv", 4).unwrap(), b"1234");
+        assert_eq!(
+            exact_bytes(&root, "data.csv", 3).unwrap_err().message,
+            "workspace file exceeds 3 bytes; split the input"
+        );
+        for (limit, label) in [(32 * 1024 * 1024, "32 MiB"), (512 * 1024, "512 KiB")] {
+            std::fs::File::create(dir.path().join("large.csv"))
+                .unwrap()
+                .set_len(limit as u64 + 1)
+                .unwrap();
+            assert_eq!(
+                exact_bytes(&root, "large.csv", limit).unwrap_err().message,
+                format!("workspace file exceeds {label}; split the input")
+            );
+        }
     }
 
     #[test]

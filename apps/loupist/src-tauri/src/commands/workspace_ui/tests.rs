@@ -205,6 +205,38 @@ fn every_read_and_write_rechecks_chat_ownership_and_removes_deleted_sessions() {
     assert_eq!(std::fs::read(file_path(&state)).unwrap(), before);
 }
 
+#[tokio::test]
+async fn offline_loupist_tabs_survive_read_and_write_until_the_folder_returns() {
+    let temporary = tempfile::tempdir().unwrap();
+    let workspace = temporary.path().join("workspace");
+    std::fs::create_dir(&workspace).unwrap();
+    let state = AppState::for_folder_test(temporary.path().join("profile"));
+    let loupist = crate::commands::loupist::create_folder_loupist(&state, &workspace)
+        .await
+        .unwrap();
+    state
+        .store
+        .create_chat(&chat("chat-a", &loupist.id, 1))
+        .unwrap();
+    let mut input = preferences();
+    input.sessions[0].loupist_id = loupist.id.clone();
+    // These references carry their own owner checks when opened; this test
+    // exercises the file tab and Chat identity only.
+    input.sessions[0].tabs.truncate(1);
+    input.sessions[0].active_tab_id = Some("files".into());
+    let expected = serde_json::to_value(write_state(&state, input).unwrap()).unwrap();
+    let moved = temporary.path().join("offline");
+    std::fs::rename(&workspace, &moved).unwrap();
+    let restored = read_state(&state).unwrap().unwrap();
+    assert_eq!(serde_json::to_value(&restored).unwrap(), expected);
+    write_state(&state, restored).unwrap();
+    std::fs::rename(&moved, &workspace).unwrap();
+    assert_eq!(
+        serde_json::to_value(read_state(&state).unwrap().unwrap()).unwrap(),
+        expected
+    );
+}
+
 #[test]
 fn invalid_references_and_bounds_leave_the_previous_file_intact() {
     let (_temporary, state) = fixture();

@@ -523,3 +523,121 @@ fn review_input_lists_untyped_names_then_open_relations_under_the_cap() {
             <= 200
     );
 }
+
+#[test]
+fn a_full_extension_never_claims_a_paid_review() {
+    let (_dir, store) = setup(LOUPIST);
+    store
+        .transact(|write| {
+            world_schema::add_kinds(
+                write.tx,
+                LOUPIST,
+                ["CustomOne", "CustomTwo", "CustomThree", "CustomFour"]
+                    .into_iter()
+                    .map(kind)
+                    .collect(),
+                [
+                    "CUSTOM_ONE",
+                    "CUSTOM_TWO",
+                    "CUSTOM_THREE",
+                    "CUSTOM_FOUR",
+                    "CUSTOM_FIVE",
+                    "CUSTOM_SIX",
+                ]
+                .into_iter()
+                .map(|name| relation(name, "Organization", "Organization"))
+                .collect(),
+                world_schema::Provenance::new(world_schema::Producer::Chat, serde_json::json!({})),
+                AT - 1,
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    due_review(&store);
+    assert!(!store.read(|read| due(read.tx, LOUPIST, AT + 100)).unwrap());
+    assert!(matches!(
+        store
+            .transact(|write| claim(write.tx, LOUPIST, "focus", AT + 100))
+            .unwrap(),
+        Claimed::Wait
+    ));
+}
+
+#[test]
+fn a_full_type_list_still_applies_an_independent_supported_relation() {
+    let (_dir, store) = setup(LOUPIST);
+    store
+        .transact(|write| {
+            world_schema::add_kinds(
+                write.tx,
+                LOUPIST,
+                ["CustomOne", "CustomTwo", "CustomThree", "CustomFour"]
+                    .into_iter()
+                    .map(kind)
+                    .collect(),
+                [
+                    "CUSTOM_ONE",
+                    "CUSTOM_TWO",
+                    "CUSTOM_THREE",
+                    "CUSTOM_FOUR",
+                    "CUSTOM_FIVE",
+                ]
+                .into_iter()
+                .map(|name| relation(name, "Organization", "Organization"))
+                .collect(),
+                world_schema::Provenance::new(world_schema::Producer::Chat, serde_json::json!({})),
+                AT - 1,
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let spans = spans(&store, LOUPIST, 3);
+    let mut nodes = untyped_names(5);
+    nodes.extend([
+        node("node-a", "Alpha Fab", "Organization"),
+        node("node-b", "Node N3", "Entity"),
+    ]);
+    let claims = ["TRACKS_NODE", "COVERS_NODE", "USES_NODE"]
+        .into_iter()
+        .enumerate()
+        .flat_map(|(batch, relation)| {
+            supplier_claims(&spans, 7)
+                .into_iter()
+                .enumerate()
+                .map(move |(index, mut claim)| {
+                    claim.id = format!("claim_{batch}_{index}");
+                    claim.relation = relation.into();
+                    claim
+                })
+        })
+        .collect();
+    seal(&store, LOUPIST, nodes, claims);
+    due_review(&store);
+    let mut proposed_type = serde_json::to_value(kind("ProcessNode")).unwrap();
+    proposed_type["covers"] = (0..5).map(|index| format!("Node N{index}")).collect();
+    let done = review_draft(
+        &store,
+        serde_json::json!({
+            "types": [proposed_type],
+            "relations": [
+                relation("TRACKS_NODE", "Organization", "ProcessNode"),
+                relation("COVERS_NODE", "Organization", "Entity"),
+                relation("USES_NODE", "Organization", "Entity"),
+            ],
+        }),
+    );
+    assert_eq!(done.status, "applied");
+    let extension = live(&store, LOUPIST);
+    assert_eq!(extension.types.len(), MAX_EXTENSION_TYPES);
+    assert_eq!(extension.relations.len(), MAX_EXTENSION_RELATIONS);
+    assert_eq!(extension.relations.last().unwrap().name, "COVERS_NODE");
+    let (producer, evidence) = changes(&store, LOUPIST).pop().unwrap();
+    assert_eq!(producer, "review");
+    assert_eq!(
+        evidence,
+        serde_json::json!({
+            "types": [],
+            "relations": [{"name": "COVERS_NODE", "claims": 7, "sources": 3}],
+        })
+    );
+}

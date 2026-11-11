@@ -4,6 +4,13 @@
 //! dated by its receipt (`filed_at`), so an as-of cutoff applies to it.
 use super::*;
 
+fn dividend_notice_dates(year: i32, now: DateTime<Utc>) -> Option<(NaiveDate, NaiveDate)> {
+    let today = now.with_timezone(&chrono_tz::Asia::Seoul).date_naive();
+    let start = NaiveDate::from_ymd_opt(year, 11, 1)?;
+    let end = NaiveDate::from_ymd_opt(year + 1, 4, 30)?.min(today);
+    (start <= end).then_some((start, end))
+}
+
 const MAX_EVENT_ROWS: usize = 100;
 const DART_VIEWER: &str = "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=";
 /// OpenDART serves DS005 decisions from 2015.
@@ -1007,7 +1014,7 @@ impl FinanceDataService {
         params: Value,
         api_key: &str,
     ) -> Result<Value, FinanceDataError> {
-        validate_api_key(api_key, OPENDART_SOURCE_ID)?;
+        validate_api_key(api_key)?;
         let query: OpenDartMajorReportQuery =
             strict_query(params, "expected the exact OpenDART major-report schema")?;
         let corp_code = validate_digits(&query.corp_code, 8, "corp_code must be eight digits")?;
@@ -1039,7 +1046,7 @@ impl FinanceDataService {
         params: Value,
         api_key: &str,
     ) -> Result<Value, FinanceDataError> {
-        validate_api_key(api_key, OPENDART_SOURCE_ID)?;
+        validate_api_key(api_key)?;
         let query: OpenDartOwnershipQuery =
             strict_query(params, "expected the exact OpenDART ownership schema")?;
         let corp_code = validate_digits(&query.corp_code, 8, "corp_code must be eight digits")?;
@@ -1074,11 +1081,11 @@ impl FinanceDataService {
         api_key: &str,
         pacer: &RequestPacer<'_>,
     ) -> Result<Value, FinanceDataError> {
-        validate_api_key(api_key, OPENDART_SOURCE_ID)?;
+        validate_api_key(api_key)?;
         let query: OpenDartDividendsQuery =
             strict_query(params, "expected the exact OpenDART dividends schema")?;
         let corp_code = validate_digits(&query.corp_code, 8, "corp_code must be eight digits")?;
-        if query.year < FIRST_DECISION_YEAR || query.year > Utc::now().year() {
+        if query.year < FIRST_DECISION_YEAR || query.year > krx::seoul_today().year() {
             return Err(FinanceDataError::InvalidQuery(
                 "year must be from 2015 through this year",
             ));
@@ -1108,12 +1115,7 @@ impl FinanceDataService {
         api_key: &str,
         pacer: &RequestPacer<'_>,
     ) -> Option<DividendNotice> {
-        let today = Utc::now().date_naive();
-        let start = NaiveDate::from_ymd_opt(year, 11, 1)?;
-        let end = NaiveDate::from_ymd_opt(year + 1, 4, 30)?.min(today);
-        if start > end {
-            return None;
-        }
+        let (start, end) = dividend_notice_dates(year, Utc::now())?;
         let search = self
             .dart_url(
                 "list.json",
@@ -1410,6 +1412,24 @@ mod tests {
         ]}))
         .unwrap();
         assert!(normalize_dart_ownership(&query, "99030800", &mismatched).is_err());
+    }
+
+    #[test]
+    fn dividend_notice_search_includes_the_current_seoul_date_before_utc_midnight() {
+        let now = DateTime::parse_from_rfc3339("2026-10-31T15:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let (start, end) = dividend_notice_dates(2026, now).unwrap();
+        assert_eq!(start.to_string(), "2026-11-01");
+        assert_eq!(end, start);
+        assert!(dividend_notice_dates(2026, now - ChronoDuration::seconds(1)).is_none());
+        let new_year = DateTime::parse_from_rfc3339("2026-12-31T15:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert_eq!(
+            dividend_notice_dates(2026, new_year).unwrap().1.to_string(),
+            "2027-01-01"
+        );
     }
 
     #[test]

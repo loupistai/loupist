@@ -3,7 +3,7 @@
 Retrieval uses the local embedding model. Fresh folders take Rust's processing defaults, and startup resumes or quarantines unfinished work.
 
 Semantic retrieval uses the bundled **potion-base-4M, 128-dimensional** local
-embedding model from `src/knowledge/embed_assets/`, with profile `local-en-128`.
+embedding model from the repo-root `src/knowledge/embed_assets/`, with profile `local-en-128`.
 Its tokenizer is English-based (`baai/bge-base-en-v1.5`); do not describe it as the
 multilingual 256-dimensional model. Hybrid retrieval combines relationship hits
 and matched-entity neighborhoods. Lexical aliases and identifiers also participate

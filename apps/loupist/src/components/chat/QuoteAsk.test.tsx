@@ -1,7 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { QuoteAsk } from "./QuoteAsk";
 import { composeSubmission, quoteChip } from "../../chat/composerChips";
-import { ComposerChipTray } from "./ComposerChipTray";
 
 function selectText(node: Node, start: number, end: number) {
   const range = document.createRange();
@@ -44,14 +43,6 @@ it("sends a quote as a blockquote before the question, or asks to explain it alo
   expect(chip.label).toBe("“Inventory is 54 days.”");
   expect(composeSubmission("Is that high?", [chip])).toBe("> Inventory is 54 days.\n\nIs that high?");
   expect(composeSubmission("", [chip])).toBe("> Inventory is 54 days.\n\nExplain this.");
-});
-
-it("folds a long chip tray behind a count and expands it", () => {
-  const chips = ["a", "b", "c", "d", "e"].map((id) => quoteChip(id, `Quote ${id} with words`));
-  render(<ComposerChipTray chips={chips} pins={[]} onRemoveChip={vi.fn()} />);
-  expect(screen.getAllByRole("listitem")).toHaveLength(4);
-  fireEvent.click(screen.getByRole("button", { name: "+2 more" }));
-  expect(screen.getAllByRole("listitem")).toHaveLength(5);
 });
 
 it("turns a selection in a panel reader into a question chip, but not text outside readers", async () => {

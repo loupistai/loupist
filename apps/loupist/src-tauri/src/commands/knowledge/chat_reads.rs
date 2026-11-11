@@ -955,6 +955,36 @@ pub(in crate::commands) fn host_search_with_options(
     scope: &str,
     options: &crate::knowledge::SearchOptions,
 ) -> Result<serde_json::Value, CommandError> {
+    search_with_options(state, loupist_id, query, scope, options, false)
+}
+
+pub(super) fn renderer_lens_search(
+    state: &AppState,
+    loupist_id: &str,
+    query: &str,
+) -> Result<serde_json::Value, CommandError> {
+    search_with_options(
+        state,
+        loupist_id,
+        query,
+        "lens",
+        &crate::knowledge::SearchOptions {
+            include_metadata: true,
+            semantic_assets: state.graph.semantic_assets(),
+            ..crate::knowledge::SearchOptions::default()
+        },
+        true,
+    )
+}
+
+fn search_with_options(
+    state: &AppState,
+    loupist_id: &str,
+    query: &str,
+    scope: &str,
+    options: &crate::knowledge::SearchOptions,
+    include_paused: bool,
+) -> Result<serde_json::Value, CommandError> {
     admit(state, loupist_id)?;
     let query = query.trim();
     if query.chars().count() > 200 {
@@ -1110,7 +1140,9 @@ pub(in crate::commands) fn host_search_with_options(
         let mut excluded = crate::sharing::store::removed_sources(tx, loupist_id)?;
         let controls = crate::knowledge::memory_controls::load(tx, loupist_id)?;
         excluded.extend(controls.removed);
-        excluded.extend(controls.paused);
+        if !include_paused {
+            excluded.extend(controls.paused);
+        }
         Ok(excluded)
     })?;
     if !removed.is_empty() {

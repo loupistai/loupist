@@ -1469,6 +1469,7 @@ impl ChatSession {
                     "a chat version starts with a message the user sent",
                 ));
             }
+            validate_messages(&version.messages)?;
         }
         if !self.bot_memory.is_empty() && !crate::chat::home::is_home(self) {
             return Err(DomainError::Invalid("only the Bot keeps Bot memory"));
@@ -1485,15 +1486,19 @@ impl ChatSession {
             return Err(DomainError::Invalid("chat timestamps are invalid"));
         }
 
-        let mut ids = BTreeSet::new();
-        for message in &self.messages {
-            message.validate()?;
-            if !ids.insert(message.id.as_str()) {
-                return Err(DomainError::Invalid("duplicate chat message id"));
-            }
-        }
-        Ok(())
+        validate_messages(&self.messages)
     }
+}
+
+fn validate_messages(messages: &[ChatMessage]) -> Result<(), DomainError> {
+    let mut ids = BTreeSet::new();
+    for message in messages {
+        message.validate()?;
+        if !ids.insert(message.id.as_str()) {
+            return Err(DomainError::Invalid("duplicate chat message id"));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1506,6 +1511,36 @@ mod tests {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     );
+
+    #[test]
+    fn edit_forks_validate_messages_and_reject_duplicate_ids_within_each_tail() {
+        let mut chat = crate::test_fixtures::chat_session("chat-fork", "loupist-fork");
+        let user = crate::test_fixtures::chat_message("user-fork", ChatRole::User, "Question");
+        let assistant =
+            crate::test_fixtures::chat_message("assistant-fork", ChatRole::Assistant, "Answer");
+        chat.messages = vec![user.clone(), assistant.clone()];
+        chat.versions.push(ChatVersion {
+            id: "version-fork".into(),
+            after_message_id: None,
+            messages: vec![user, assistant],
+            archived_at_ms: 3,
+        });
+        // Message IDs may be shared by separate histories, but each tail
+        // must be independently valid when the user switches back to it.
+        chat.validate().unwrap();
+        let mut invalid = chat.clone();
+        invalid.versions[0].messages[1].id.clear();
+        assert!(invalid.validate().is_err());
+        let mut duplicate = chat.clone();
+        duplicate.versions[0].messages[1].id = "user-fork".into();
+        assert!(matches!(
+            duplicate.validate(),
+            Err(DomainError::Invalid("duplicate chat message id"))
+        ));
+        let mut malformed = chat;
+        malformed.versions[0].messages[1].created_at_ms = -1;
+        assert!(malformed.validate().is_err());
+    }
     const DIGEST_B: &str = concat!(
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"

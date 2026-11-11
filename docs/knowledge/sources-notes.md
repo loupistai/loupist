@@ -52,13 +52,18 @@ Substantial work can have one current Working note per Chat; the Bot keeps
 [Bot memory](../ui/home-thread.md#bot-memory) instead. An update replaces its
 body in the completed-turn transaction and checks the expected identity; failed or
 cancelled turns preserve the existing note. Earlier Chats' notes can be referenced
-by a new note, and discovery can expose later corrections. Notes remain available
+by a new note, and discovery can expose later corrections. Discovery reads the
+1,000 most recently stored current candidates per Loupist, then sorts that bounded
+window by recorded time; repeated replacement of other Chats' notes does not
+consume that window. Notes remain available
 within the Loupist after their originating Chat is deleted. They are neither original
 evidence nor standing instructions. Research readers expose the Source excerpts,
 World view and Lens documents captured with the saved work.
 
 A Journal entry records the user's own judgment, with optional reasoning, linked
-World entities and a dated check. The Loupist’s own view belongs in research notes, not in the user’s Journal.
+World entities and a dated check. Entity links are validated against the complete
+current World, including entities outside the Map's display limit. The Loupist’s
+own view belongs in research notes, not in the user’s Journal.
 Map → Library → Notes lists Your journal before Research notes. Focusing a field in that form scrolls it clear of the sticky search. The user can
 create, edit and archive entries there through `journal_create`, `journal_update`,
 `journal_archive` and `journal_list`. Chat uses `journal_save`

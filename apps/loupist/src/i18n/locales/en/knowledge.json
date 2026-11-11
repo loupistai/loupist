@@ -347,7 +347,6 @@
     "library": "Library",
     "closeLibrary": "Close Library",
     "sources": "Sources",
-    "lensWiki": "Lens wiki",
     "lensOverlay": "Highlight Lens applications",
     "worldOnly": "No highlight",
     "lensMenuNote": "Choose a Lens to highlight the companies, assets and other names it was applied to.",
@@ -457,16 +456,13 @@
     "openAssetPage": "Open asset page",
     "newSubject": "Noted a topic: {{title}}",
     "newIdea": "New idea: {{title}}",
-    "notes": "Notes",
-    "notesLoading": "Loading notes…"
+    "notes": "Notes"
   },
   "principles": {
     "yours": "YOUR RULES",
     "intro": "How your Loupist thinks. Your rules come first.",
     "search": "Search rules and methods",
-    "yoursCaption": "Rules you taught. Your Loupist checks facts against them.",
     "perspectiveCaption": "The overall view your Loupist starts from.",
-    "methodsCaption": "Checks your Loupist learned or saved from Chat.",
     "perspective": "PERSPECTIVE",
     "methods": "METHODS",
     "add": "+ Add rule",
@@ -480,10 +476,7 @@
     "edit": "Edit",
     "archive": "Archive",
     "restore": "Restore",
-    "showArchived": "Show archived",
     "empty": "No rules yet. Tell your Loupist a rule in Chat, or add one here.",
-    "fromChat": "From Chat",
-    "fromFeedback": "From feedback",
     "error": "Could not save this change.",
     "duplicate": "You already have this rule.",
     "conflict": "This rule changed elsewhere. Reload it to edit.",
@@ -515,7 +508,6 @@
     "earlier": "Earlier changes ({{count}})",
     "new": "New",
     "inUse": "In use. Keep it to stop seeing 'New', or archive it.",
-    "learnedOrigin": "Learned by your Loupist · {{date}}",
     "chatOrigin": "Saved from Chat · {{date}}",
     "createdToast": "Your Loupist learned a method: {{title}}",
     "refinedToast": "Your Loupist refined a method: {{title}}",
@@ -524,7 +516,6 @@
     "method": "Method",
     "loadError": "Could not load the learning details. Try again.",
     "archiveError": "Could not archive this method. Try again.",
-    "evidenceMissing": "Some saved evidence is unavailable.",
     "unknownDate": "Date unavailable",
     "showMore": "Show more",
     "showLess": "Show less",
@@ -680,7 +671,6 @@
     "perspectiveDescription": "The overall view your Loupist starts from.",
     "principles": {
       "add": "+ Add rule",
-      "newLabel": "New rule",
       "save": "Add rule"
     },
     "reader": {
@@ -689,12 +679,10 @@
       "originFeedback": "You said “Not helpful” on {{date}} and wrote this rule.",
       "originChat": "Saved from Chat on {{date}}.",
       "originSettings": "You added this on {{date}}.",
-      "originLearnedPlain": "Your Loupist learned this from what it read ({{date}}).",
       "untitledChat": "Untitled chat",
       "why": "Why",
       "example": "Example",
       "whenToUse": "When to use it",
-      "whatToQuestion": "What to question",
       "procedure": "Procedure",
       "openChat": "Open the chat",
       "usageDefinition": "Counted once per completed reply when this item was supplied or applied. A count does not prove it influenced the answer."
@@ -706,6 +694,7 @@
       "pause": "Pause"
     },
     "paused": {
+      "resumeError": "Couldn't resume learning. Check the learning settings and try again.",
       "banner": "Learning is paused. Your Loupist still uses what it knows but saves nothing new."
     },
     "about": {
@@ -720,7 +709,6 @@
       "answersPlaceholder": "e.g. Keep it short. Always show the date of a figure.",
       "answersHint": "Your Loupist follows this in every chat.",
       "learning": "Learning",
-      "rememberChats": "Remember new chats",
       "learnMethods": "Learn methods from new information",
       "learnMethodsHint": "Uses your AI account when new information arrives.",
       "holdingsByKind": "Stocks and funds: {{stocks}} · Crypto: {{crypto}}",

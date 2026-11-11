@@ -200,6 +200,8 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [insets, setInsets] = useState<Insets>({ left: 0, right: 0, bottom: 0, top: 0, card: null, obstacles: [] });
   const [palette, setPalette] = useState(readColors);
+  // Contrast depends only on the palette, not on a node or animation frame.
+  const compactDimAlpha = useMemo(() => new Map(Object.values(palette.colors).map(color => [color, Math.max(palette.dim, coverAlpha(color, palette.colors.bg))])), [palette]);
   const [exportLabels, setExportLabels] = useState(false);
   const disputedIds = useMemo(() => new Set(edges.filter(edge => edge.status === "disputed").flatMap(edge => [edge.source, edge.target])), [edges]);
   const [hovered, setHovered] = useState<KnowledgeMapNode | null>(null);
@@ -530,7 +532,7 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
       autoPauseRedraw={!probeEnabled && !pulsing && !compactGlowing && !liveFading && !replayAnimating && !scopeFading} backgroundColor={palette.colors.bg} minZoom={.3} maxZoom={4} cooldownTicks={0} warmupTicks={0} enableNodeDrag={false} nodeLabel={() => ""}
       nodeCanvasObjectMode={() => "replace"} nodeCanvasObject={(node, ctx, scale) => {
         const r = nodeRadius(node); const color = palette.colors[nodeColorKey(node)];
-        const dimAlpha = compact ? Math.max(palette.dim, coverAlpha(color, palette.colors.bg)) : palette.dim;
+        const dimAlpha = compact ? compactDimAlpha.get(color)! : palette.dim;
         ctx.save(); ctx.globalAlpha = (!neighbors || neighbors.has(node.id) ? 1 : dimAlpha) * scopeAlpha(node.id);
         if (pulsing && node.id === overlayId) { const progress = Math.min(1, (performance.now() - pulseStart.current) / palette.pulseMs); const scale = progress < .5 ? 1 + .25 * springProgress(progress * 2, palette.spring) : 1.25 - .25 * springProgress((progress - .5) * 2, palette.spring); ctx.translate(node.x, node.y); ctx.scale(scale, scale); ctx.translate(-node.x, -node.y); }
         const live = liveIds?.has(node.id) ? LIVE_GLOW : liveFading && liveFade.current.ids.has(node.id) ? LIVE_GLOW * Math.max(0, 1 - (performance.now() - liveFade.current.start) / LIVE_FADE_MS) : 0;

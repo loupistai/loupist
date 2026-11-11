@@ -648,14 +648,19 @@ pub(super) fn authorize_spans(
     loupist_id: &str,
     body: &WorldSnapshotBody,
 ) -> KnowledgeResult<()> {
+    let mut authorized = BTreeSet::new();
     for claim in &body.claims {
         for evidence in &claim.evidence {
-            super::source::require_any_visible_span(tx, loupist_id, &evidence.span_id)?;
+            if authorized.insert(evidence.span_id.as_str()) {
+                super::source::require_any_visible_span(tx, loupist_id, &evidence.span_id)?;
+            }
         }
     }
     for annotation in &body.annotations {
         for span_id in &annotation.source_span_ids {
-            super::source::require_any_visible_span(tx, loupist_id, span_id)?;
+            if authorized.insert(span_id.as_str()) {
+                super::source::require_any_visible_span(tx, loupist_id, span_id)?;
+            }
         }
     }
     Ok(())

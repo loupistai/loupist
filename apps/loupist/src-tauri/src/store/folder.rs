@@ -319,13 +319,18 @@ impl SqliteStore {
         expected: &LoupistProfile,
         updated: &LoupistProfile,
     ) -> StoreResult<()> {
+        updated.validate().map_err(invalid)?;
+        if expected.id != updated.id || updated.updated_at_ms <= expected.updated_at_ms {
+            return Err(invalid("workspace reconnection is invalid"));
+        }
         if self.get_loupist(&expected.id)?.as_ref() != Some(expected) {
             return Err(StoreError::Conflict("Loupist changed before reconnection"));
         }
         if self.list_loupists()?.iter().any(|p| {
             p.id != updated.id
                 && (p.workspace_root == updated.workspace_root
-                    || p.root_filesystem_identity == updated.root_filesystem_identity)
+                    || (p.root_filesystem_identity.is_some()
+                        && p.root_filesystem_identity == updated.root_filesystem_identity))
         }) {
             return Err(StoreError::Conflict("Folder is already registered"));
         }

@@ -1,6 +1,6 @@
 # Untrusted text
 
-Third-party text raises a turn tier that pauses outbound tools, pauses commands, wraps the text the model sees, and keeps `web_fetch` to known sites. Holdings quantities stay on this computer.
+Third-party text raises a turn tier that pauses selected outbound tools and instruction-file writes, wraps the text the model sees, and keeps `web_fetch` to known sites. `run_python` stays allowed. Holdings quantities stay on this computer.
 
 Third-party text raises a weaker tier of the same `TurnTaint`
 (`apps/loupist/src-tauri/src/custom_connections/taint.rs`). Which broker methods each
@@ -68,8 +68,8 @@ already-seen sites and `web_search` queries are not checked for exfiltration.
 Once the tier is up, `web_fetch` keeps to sites the turn already knows
 (`TurnTaint::web_fetch_target`). A search result (by `source_id` or its exact URL), a
 page already read and a URL the user typed always open. A URL carrying a held
-quantity, cost or value from the latest holdings snapshot (whole numbers of four
-digits or more, years excepted), or a 24-character run of the turn's principles,
+quantity, cost or value from the latest snapshot of each holdings source, including
+each wallet (whole numbers of four digits or more, years excepted), or a 24-character run of the turn's principles,
 perspective, Lens bodies or notes and Journal text, is refused on any site. Official
 filing and statistics sites (`RESEARCH_SITES`) open. A site seen this turn (a search
 result's or fetched page's host, or a site named in the user's message) opens when its
@@ -79,8 +79,11 @@ else is refused with `untrusted_text_paused` and a `next` that says to find the 
 with `web_search` and fetch the result, whose exact URL then opens. Links and text
 inside a page, its alternates and a saved Source's own site never count as known.
 
-These URL privacy checks run in production builds as well as tests. Debug-only
-prompt and tool-result canary logging is separate from this outbound gate.
+These URL privacy checks run in production builds as well as tests. After
+third-party text, a failed holdings read refuses the fetch with
+`untrusted_text_paused`; a successful read with no holdings still follows the
+site rule. Debug-only prompt and tool-result canary logging is separate from
+this outbound gate.
 
 Text from a [shared Loupist](../knowledge/sharing.md#sharing) is third-party text too
 (`sharing/delivery.rs`). In the turn's Memory context and Memory tool results
@@ -108,6 +111,6 @@ one included), a result reference, a chart or an export
 An account operation without a reviewed list is refused before any request
 (`account_fields_unreviewed`), and `source_save` refuses an account result
 (`account_data_not_saved`). Numbers the user types into a message are left as typed.
-Debug builds also scan each briefing prompt and every delivered tool result for the
-latest holdings snapshot's quantity, cost and value strings (four digits or more) and log
-a hit.
+Debug builds also scan each briefing prompt and every delivered tool result for
+quantity, cost and value strings (four digits or more) from the latest snapshot of
+each holdings source, including each wallet, and log a hit.

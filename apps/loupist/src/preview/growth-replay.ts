@@ -4,8 +4,6 @@ import type { KnowledgeCatalog, LensKind, PageView, SectionView } from "../types
 import { prepareFixture, type PreviewBridge } from "./fixtures";
 import recorded from "./growth-replay.json";
 
-export const growthReplayPending = "fixturePending" in recorded && recorded.fixturePending === true;
-
 type RecordedLens = { recordId: string; revisionId: string; revisionDigest: string; title: string; lensKind: LensKind; document: { applicability: string; assumptions: string; procedure: string; principles: string; limitations: string } };
 const SECTION_FIELDS = [["use-when", "When to use it", "applicability"], ["assumptions", "Assumptions", "assumptions"], ["steps", "Steps", "procedure"], ["checks", "Checks", "principles"], ["limits", "Limits", "limitations"]] as const;
 function recordedPage(lens: RecordedLens): PageView {

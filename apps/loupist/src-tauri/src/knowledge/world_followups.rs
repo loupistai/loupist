@@ -83,13 +83,18 @@ fn fallen_claims(
     let Some(previous) = previous else {
         return BTreeSet::new();
     };
+    let next_status: std::collections::HashMap<_, _> = next
+        .claims
+        .iter()
+        .map(|claim| (claim.id.as_str(), claim.status))
+        .collect();
     let mut fallen = BTreeSet::new();
     for before in &previous.claims {
-        match next.claims.iter().find(|claim| claim.id == before.id) {
+        match next_status.get(before.id.as_str()) {
             None if before.status != ClaimStatus::Withdrawn => {
                 fallen.insert(before.id.clone());
             }
-            Some(after) if after.status != before.status && after.status != ClaimStatus::Active => {
+            Some(after) if *after != before.status && *after != ClaimStatus::Active => {
                 fallen.insert(before.id.clone());
             }
             _ => {}
@@ -458,6 +463,38 @@ mod tests {
             node("a", "Alpha", "Organization", Some(("A", "KRX"))),
             node("b", "Beta", "Organization", None),
         ]
+    }
+
+    #[test]
+    fn fallen_claims_preserves_status_transitions_and_missing_claims_at_world_limit() {
+        let previous = WorldSnapshotBody {
+            nodes: Vec::new(),
+            claims: (0..10_000)
+                .map(|index| {
+                    let mut item = claim(&format!("c{index}"), "a", "b");
+                    if index == 0 {
+                        item.status = ClaimStatus::Withdrawn;
+                    }
+                    if index == 1 {
+                        item.status = ClaimStatus::Disputed;
+                    }
+                    item
+                })
+                .collect(),
+            annotations: Vec::new(),
+            relation_vocabulary: Vec::new(),
+        };
+        let mut next = previous.clone();
+        next.claims
+            .retain(|item| item.id != "c0" && item.id != "c2");
+        next.claims[0].status = ClaimStatus::Active;
+        next.claims[1].status = ClaimStatus::Disputed;
+        next.claims.reverse();
+        assert_eq!(
+            fallen_claims(Some(&previous), &next),
+            BTreeSet::from(["c2".into(), "c3".into()])
+        );
+        assert!(fallen_claims(None, &next).is_empty());
     }
 
     #[test]

@@ -319,6 +319,13 @@ async fn supervise_worker(
     use tokio::{io::AsyncWriteExt, process::Command};
 
     let failed = || BrokerError::Execution("Python execution failed".into());
+    let executable = worker.to_path_buf();
+    let _verified_executable = tokio::task::spawn_blocking(move || {
+        crate::fs::artifact_trust::verify_executable(&executable)
+    })
+    .await
+    .map_err(|_| failed())?
+    .map_err(|_| BrokerError::Execution("Python runtime is untrusted".into()))?;
     let mut child = Command::new(worker)
         .process_group(0)
         .env_clear()
@@ -439,15 +446,19 @@ fn result_value(
     secrets: &[String],
 ) -> Value {
     let mut stderr = redact(&outcome.stderr, secrets);
-    if report.truncated || omitted {
+    for notice in [
+        report
+            .truncated
+            .then_some("Some workspace changes were not copied back.\n"),
+        omitted.then_some("Some files were left out of the snapshot because they are too large.\n"),
+    ]
+    .into_iter()
+    .flatten()
+    {
         if !stderr.is_empty() && !stderr.ends_with('\n') {
             stderr.push('\n');
         }
-        stderr.push_str(if report.truncated {
-            "Some workspace changes were not copied back.\n"
-        } else {
-            "Some files were left out of the snapshot because they are too large.\n"
-        });
+        stderr.push_str(notice);
     }
     json!({
         "status": outcome.status,
@@ -473,6 +484,8 @@ fn result_value(
 #[cfg(unix)]
 fn redact(bytes: &[u8], secrets: &[String]) -> String {
     let mut text = String::from_utf8_lossy(bytes).into_owned();
+    let mut secrets = secrets.iter().collect::<Vec<_>>();
+    secrets.sort_by_key(|secret| std::cmp::Reverse(secret.len()));
     for secret in secrets {
         text = text.replace(secret.as_str(), "[path]");
     }
@@ -490,11 +503,11 @@ fn ensure_cache(root: &Path) -> Result<PathBuf, BrokerError> {
 }
 
 pub(crate) fn runtime_dir() -> Option<PathBuf> {
-    if let Some(path) = env_dir("LOUPIST_PYTHON_RUNTIME") {
-        return Some(path);
-    }
     #[cfg(debug_assertions)]
     {
+        if let Some(path) = env_dir("LOUPIST_PYTHON_RUNTIME") {
+            return Some(path);
+        }
         let staged = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/python-runtime");
         if runtime_ready(&staged) {
             return Some(staged);
@@ -510,6 +523,7 @@ pub(crate) fn runtime_dir() -> Option<PathBuf> {
     .find(|path| runtime_ready(path))
 }
 
+#[cfg(debug_assertions)]
 fn env_dir(name: &str) -> Option<PathBuf> {
     let path = PathBuf::from(std::env::var(name).ok()?);
     runtime_ready(&path).then_some(path)
@@ -522,14 +536,14 @@ fn runtime_ready(path: &Path) -> bool {
 }
 
 pub(crate) fn worker_path() -> Option<PathBuf> {
-    if let Ok(path) = std::env::var("LOUPIST_PYTHON_WORKER") {
-        let path = PathBuf::from(path);
-        if path.is_file() {
-            return Some(path);
-        }
-    }
     #[cfg(debug_assertions)]
     {
+        if let Ok(path) = std::env::var("LOUPIST_PYTHON_WORKER") {
+            let path = PathBuf::from(path);
+            if path.is_file() {
+                return Some(path);
+            }
+        }
         let built = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../python-worker/target/release/loupist-python-worker");
         if built.is_file() {

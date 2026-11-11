@@ -45,7 +45,7 @@ export const nativeSearchProviderIds = () => Object.keys(ADAPTERS);
 export function selectSearchModel(providerId, availableIds = []) {
   const allowlist = ADAPTERS[providerId]?.modelIds ?? [];
   const available = new Set(availableIds);
-  return allowlist.find((id) => available.has(id)) ?? allowlist[0];
+  return allowlist.find((id) => available.has(id));
 }
 
 /** Bounded request fields shared by the host request file and direct callers. */
@@ -93,9 +93,10 @@ export async function runNativeSearch(request, deps) {
   validateSearchRequest(request);
   const timeoutSignal = AbortSignal.timeout(deps.timeoutMs ?? SEARCH_HARD_TIMEOUT_MS);
   const signal = deps.signal ? AbortSignal.any([deps.signal, timeoutSignal]) : timeoutSignal;
+  const model = selectSearchModel(adapter.id, deps.availableModelIds ?? []);
+  if (!model) throw new NativeSearchError("unavailable", "no supported search model is available");
   const auth = await deps.resolveAuth(adapter.id);
   if (!auth) throw new NativeSearchError("unavailable", "provider credentials are unavailable");
-  const model = selectSearchModel(adapter.id, deps.availableModelIds ?? []);
   let parsed;
   try {
     parsed = await adapter.search({ request, model, auth, deps, signal });

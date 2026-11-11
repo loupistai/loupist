@@ -12,13 +12,29 @@ import {
 // for the pinned upstream revision and MIT notice.
 // The Responses API's hosted search, through Pi's `openai` provider (a ChatGPT
 // sign-in or an OpenAI API key) or the development-only Codex client.
+// Search needs source URLs, so prefer the lowest pinned input/output price.
 const CODEX_SEARCH_MODELS = Object.freeze([
-  "gpt-5.5",
-  "gpt-5.4-mini",
-  "gpt-5.4",
+  "gpt-6-luna",
   "gpt-5.6-luna",
+  "gpt-6.1-terra",
+  "gpt-6.1-sol",
+  "gpt-6-sol",
   "gpt-5.6-terra",
   "gpt-5.6-sol",
+  "gpt-6-astra",
+]);
+const OPENAI_SEARCH_MODELS = Object.freeze([
+  "gpt-6-luna",
+  "gpt-5.6-luna",
+  "gpt-5.4-mini",
+  "gpt-6.1-terra",
+  "gpt-6.1-sol",
+  "gpt-6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.4",
+  "gpt-5.6-sol",
+  "gpt-5.5",
+  "gpt-6-astra",
 ]);
 const HOSTED_SEARCH_TOOL = Object.freeze({ type: "web_search", search_context_size: "high" });
 
@@ -300,7 +316,7 @@ function searchThrough(provider) {
 /** A ChatGPT sign-in or an OpenAI API key: Pi's `openai` provider. */
 export const openaiSearchAdapter = Object.freeze({
   id: "openai",
-  modelIds: CODEX_SEARCH_MODELS,
+  modelIds: OPENAI_SEARCH_MODELS,
   search: searchThrough("openai"),
 });
 

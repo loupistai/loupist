@@ -84,6 +84,19 @@ fn paused_principles_and_methods_leave_context_search_and_exact_reads_until_resu
             },
         )
         .unwrap();
+        let inspected = lens_search(
+            &state,
+            KnowledgeLensSearchRequest {
+                loupist_id: "loupist-a".into(),
+                query: "durable cash".into(),
+                kinds: Vec::new(),
+            },
+        )
+        .unwrap();
+        assert!(
+            inspected.iter().any(|hit| &hit.record_id == id),
+            "paused items remain searchable for renderer inspection"
+        );
         with_loupist_knowledge(&state, "loupist-a", |tx, _| {
             crate::knowledge::memory_controls::pause(tx, "loupist-a", id, false)
         })

@@ -42,11 +42,12 @@ function useMapCaption() {
   useEffect(() => {
     const find = () => document.querySelector("[data-map-caption]");
     setSlot(find());
-    const observer = new MutationObserver(() => {
+    const observer = new MutationObserver(records => {
+      if (!records.some(record => record.type === "attributes" || [...record.addedNodes, ...record.removedNodes].some(node => node instanceof Element && (node.matches("[data-map-caption]") || node.querySelector("[data-map-caption]"))))) return;
       const next = find();
       setSlot(current => current === next ? current : next);
     });
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-map-caption"] });
     return () => observer.disconnect();
   }, []);
   return slot;

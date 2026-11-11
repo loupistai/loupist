@@ -480,6 +480,10 @@ where
     let mut missing = Vec::new();
     let mut denied = Vec::new();
     for date in &request.dates {
+        if !crate::market_calendar::is_trading_day("KRX", *date) {
+            missing.push(*date);
+            continue;
+        }
         let mut found = None;
         for market in request.choice.order(resolved) {
             if denied.contains(&market) {
@@ -635,8 +639,8 @@ fn normalize_krx_quotes(
             "market_cap": optional("MKTCAP"),
             "listed_shares": optional("LIST_SHRS"),
             "listing_market": bar.market.label(),
-            "dividend": "0",
-            "split_ratio": "0"
+            "dividend": null,
+            "split_ratio": null
         }));
         if source_urls.insert(bar.file.source_url.clone()) {
             ordered_urls.push(bar.file.source_url.clone());
@@ -754,7 +758,7 @@ impl FinanceDataService {
         api_key: &str,
         pacer: &RequestPacer<'_>,
     ) -> Result<Value, FinanceDataError> {
-        validate_api_key(api_key, KRX_SOURCE_ID)?;
+        validate_api_key(api_key)?;
         let query: KrxMarketQuery = strict_query(params, "expected the exact KRX market schema")?;
         let today = seoul_today();
         let request = validate_krx_query(query, today)?;
@@ -880,23 +884,24 @@ mod tests {
         assert_eq!(bars[0]["change"], "-50");
         assert_eq!(bars[0]["listing_market"], "KOSDAQ");
         assert_eq!(result["data"]["instrument"]["listing_market"], "KOSDAQ");
+        assert!(bars[0]["dividend"].is_null());
+        assert!(bars[0]["split_ratio"].is_null());
         assert_eq!(result["data"]["missing_dates"], json!(["2026-03-02"]));
         assert_eq!(result["quality"]["status"], "warn");
         assert_eq!(result["query"]["market"], "auto");
         assert_eq!(result["query"]["end"], "2026-03-05");
-        // Holiday: one KOSPI read only. 03-03: KOSPI miss, KOSDAQ hit.
+        // The published holiday makes no request. 03-03: KOSPI miss, KOSDAQ hit.
         // 03-04: the resolved KOSDAQ first.
         assert_eq!(
             provider.calls(),
             vec![
-                (KrxMarket::Kospi, date("2026-03-02")),
                 (KrxMarket::Kospi, date("2026-03-03")),
                 (KrxMarket::Kosdaq, date("2026-03-03")),
                 (KrxMarket::Kosdaq, date("2026-03-04")),
             ]
         );
         // Every provider read after the first waits for the shared spacing.
-        assert_eq!(paced.load(Ordering::SeqCst), 3);
+        assert_eq!(paced.load(Ordering::SeqCst), 2);
         assert_eq!(
             result["provenance"]["source_urls"],
             json!([
@@ -904,6 +909,30 @@ mod tests {
                 "https://data-dbg.krx.co.kr/svc/apis/sto/ksq_bydd_trd?basDd=20260304"
             ])
         );
+    }
+
+    #[tokio::test]
+    async fn published_holidays_are_missing_without_provider_requests() {
+        let provider = FixtureKrx::new();
+        let paced = AtomicUsize::new(0);
+        let query =
+            request(json!({"symbol": "111111", "start": "2026-02-27", "end": "2026-03-03"}));
+        let result = run(&query, None, &provider, &paced).await.unwrap();
+        assert_eq!(result["data"]["missing_dates"], json!(["2026-03-02"]));
+        assert_eq!(result["quality"]["status"], "warn");
+        assert_eq!(
+            provider.calls(),
+            vec![
+                (KrxMarket::Kospi, date("2026-02-27")),
+                (KrxMarket::Kospi, date("2026-03-03"))
+            ]
+        );
+        let holiday = request(json!({"symbol": "111111", "date": "2026-03-02"}));
+        assert!(matches!(
+            run(&holiday, None, &provider, &paced).await,
+            Err(FinanceDataError::NoData(KRX_SOURCE_ID))
+        ));
+        assert_eq!(provider.calls().len(), 2);
     }
 
     #[tokio::test]
@@ -1139,19 +1168,19 @@ mod tests {
             .unwrap();
         assert_eq!(
             first["provenance"]["cache"],
-            json!({"hits": 0, "provider_reads": 2})
+            json!({"hits": 0, "provider_reads": 1})
         );
-        // The settled holiday file (empty, older than a week) is cached too.
-        assert_eq!(cache.file_count(), 2);
+        // Published holidays are excluded; only the trading day's file is cached.
+        assert_eq!(cache.file_count(), 1);
 
         let second = run(&request, Some(&cache), &provider, &paced)
             .await
             .unwrap();
         assert_eq!(
             second["provenance"]["cache"],
-            json!({"hits": 2, "provider_reads": 0})
+            json!({"hits": 1, "provider_reads": 0})
         );
-        assert_eq!(provider.calls().len(), 2);
+        assert_eq!(provider.calls().len(), 1);
         assert_eq!(second["data"]["bars"], first["data"]["bars"]);
         assert_eq!(
             second["provenance"]["retrieved_at"],
@@ -1163,7 +1192,7 @@ mod tests {
         run(&request, Some(&cache), &provider, &paced)
             .await
             .unwrap();
-        assert_eq!(provider.calls().len(), 3);
+        assert_eq!(provider.calls().len(), 2);
 
         let file = |records: Vec<Map<String, Value>>| KrxDailyFile {
             schema: KRX_CACHE_SCHEMA.into(),

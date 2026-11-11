@@ -609,11 +609,15 @@ pub(crate) fn bootstrap_pi_chat_session_from_sqlite(
     let mut retained = Vec::new();
     let mut retained_bytes = 0_usize;
     let mut oldest_message_id = None;
-    let mut attachment_bytes = 0_usize;
-    let image_budget = MAX_CHAT_ATTACHMENT_TOTAL_BYTES.saturating_sub(current_image_bytes);
+    let mut text_restore_bytes = 0_usize;
+    let image_budget = MAX_CHAT_IMAGE_ATTACHMENT_TOTAL_BYTES.saturating_sub(current_image_bytes);
+    let mut historical_image_bytes = 0_usize;
     let historical_image_limit =
         MAX_COLD_HISTORICAL_IMAGES.min(MAX_CHAT_ATTACHMENTS.saturating_sub(current_image_count));
     for (role, message, metadata) in selected {
+        let images_before = historical_images.len();
+        let image_bytes_before = historical_image_bytes;
+        let text_restore_bytes_before = text_restore_bytes;
         let mut attachment_manifest = Vec::with_capacity(message.attachments.len());
         for attachment in &message.attachments {
             let relative_path = format!("{thread_id}/{}/{}", message.id, attachment.id);
@@ -621,68 +625,77 @@ pub(crate) fn bootstrap_pi_chat_session_from_sqlite(
             let is_image = attachment.media_type.starts_with("image/");
             let size = usize::try_from(attachment.size_bytes).unwrap_or(usize::MAX);
             let extracted_relative = extracted_restore_relative(attachments_root, &relative_path);
-            let restore_size = extracted_relative
-                .as_ref()
-                .and_then(|path| fs::metadata(attachments_root.join(path)).ok())
-                .map(|metadata| metadata.len() as usize)
-                .unwrap_or(size);
-            let may_restore = (extracted_relative.is_some() || is_text || is_image)
-                && attachment_bytes.saturating_add(restore_size.min(16 * 1024))
+            let may_restore = if extracted_relative.is_some() || is_text {
+                text_restore_bytes.saturating_add(size.min(16 * 1024))
                     <= MAX_COLD_ATTACHMENT_RESTORE_BYTES
-                && (!is_image
-                    || extracted_relative.is_some()
-                    || (historical_images.len() < historical_image_limit
-                        && attachment_bytes.saturating_add(size) <= image_budget));
+            } else {
+                is_image
+                    && historical_images.len() < historical_image_limit
+                    && historical_image_bytes.saturating_add(size) <= image_budget
+            };
+            let mut restoration = "metadata_and_digest_only";
             let restored_content = if may_restore {
                 if let Some(extracted_relative) = extracted_relative {
-                    read_extracted_prefix(&attachments_root.join(&extracted_relative)).map(
+                    read_extracted_prefix(&attachments_root.join(&extracted_relative)).and_then(
                         |prefix| {
-                            attachment_bytes =
-                                attachment_bytes.saturating_add(prefix.content.len());
-                            json!({
+                            if text_restore_bytes.saturating_add(prefix.content.len())
+                                > MAX_COLD_ATTACHMENT_RESTORE_BYTES
+                            {
+                                return None;
+                            }
+                            text_restore_bytes += prefix.content.len();
+                            restoration = "bounded_extracted_content";
+                            Some(json!({
                                 "kind": "text_prefix",
                                 "content": prefix.content,
                                 "truncated": prefix.truncated,
                                 "source": "extracted_markdown",
                                 "extracted_path": attachments_root.join(&extracted_relative),
-                            })
+                            }))
                         },
                     )
                 } else {
-                    let bytes = read_chat_attachment_file(
+                    match read_chat_attachment_file(
                         &attachments_root.join(&relative_path),
                         attachment,
-                    )?;
-                    if is_text {
-                        std::str::from_utf8(&bytes).ok().map(|decoded| {
-                            attachment_bytes = attachment_bytes.saturating_add(bytes.len());
-                            let prefix = decoded
-                                .char_indices()
-                                .take_while(|(offset, _)| *offset < 16 * 1024)
-                                .map(|(_, value)| value)
-                                .collect::<String>();
-                            let truncated = prefix.len() < decoded.len();
+                    ) {
+                        Ok(bytes) if is_text => std::str::from_utf8(&bytes).ok().map(|decoded| {
+                            let mut end = decoded.len().min(16 * 1024);
+                            while !decoded.is_char_boundary(end) {
+                                end -= 1;
+                            }
+                            let prefix = &decoded[..end];
+                            text_restore_bytes += prefix.len();
+                            restoration = "digest_verified_bounded_content";
                             json!({
                                 "kind": "text_prefix",
                                 "content": prefix,
-                                "truncated": truncated,
+                                "truncated": end < decoded.len(),
                             })
-                        })
-                    } else {
-                        attachment_bytes = attachment_bytes.saturating_add(bytes.len());
-                        historical_images.push(PiImageContent {
-                            data: BASE64.encode(bytes),
-                            mime_type: attachment.media_type.clone(),
-                        });
-                        Some(
-                            json!({"kind":"image_content","image_index":historical_images.len()-1}),
-                        )
+                        }),
+                        Ok(bytes) => {
+                            historical_image_bytes += bytes.len();
+                            historical_images.push(PiImageContent {
+                                data: BASE64.encode(bytes),
+                                mime_type: attachment.media_type.clone(),
+                            });
+                            restoration = "digest_verified_bounded_content";
+                            Some(
+                                json!({"kind":"image_content","image_index":historical_images.len()-1}),
+                            )
+                        }
+                        Err(error) => {
+                            eprintln!(
+                                "Chat history could not restore an attachment: {}",
+                                error.code
+                            );
+                            None
+                        }
                     }
                 }
             } else {
                 None
             };
-            let restored = restored_content.is_some();
             attachment_manifest.push(json!({
                 "id": attachment.id,
                 "filename": attachment.filename,
@@ -691,7 +704,7 @@ pub(crate) fn bootstrap_pi_chat_session_from_sqlite(
                 "content_sha256": attachment.content_sha256,
                 "path": attachments_root.join(&relative_path),
                 "restored_content": restored_content,
-                "restoration": if restored { "digest_verified_bounded_content" } else { "metadata_and_digest_only" },
+                "restoration": restoration,
             }));
         }
         let mut record = json!({
@@ -713,6 +726,9 @@ pub(crate) fn bootstrap_pi_chat_session_from_sqlite(
         let encoded = if retained_bytes.saturating_add(enriched.len()) <= MAX_CHAT_CONTEXT_BYTES {
             enriched
         } else {
+            historical_images.truncate(images_before);
+            historical_image_bytes = image_bytes_before;
+            text_restore_bytes = text_restore_bytes_before;
             metadata
         };
         if retained_bytes.saturating_add(encoded.len()) > MAX_CHAT_CONTEXT_BYTES {

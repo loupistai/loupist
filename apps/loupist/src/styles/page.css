@@ -37,9 +37,6 @@
 }
 /* token-exception: breakpoint; vars unsupported in query conditions */
 @media (max-width: 760px) {
-  :root {
-    --gg-page-padding: var(--gg-space-5) var(--gg-space-4) var(--gg-space-7);
-  }
   .page-header {
     flex-wrap: wrap;
     gap: var(--gg-space-3);

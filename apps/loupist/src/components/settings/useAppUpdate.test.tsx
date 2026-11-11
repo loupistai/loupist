@@ -46,3 +46,19 @@ describe("update request lifecycle", () => {
     expect(result.current.phase).toBe("idle");
   });
 });
+
+
+it("retains status identity when background polling returns the same update state", async () => {
+  vi.useFakeTimers();
+  try {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const status = vi.spyOn(bridge, "updateStatus").mockImplementation(async () => structuredClone(idle));
+    const { result, unmount } = renderHook(() => useAppUpdate(bridge));
+    await act(async () => {});
+    const first = result.current.status;
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(status).toHaveBeenCalledTimes(2);
+    expect(result.current.status).toBe(first);
+    unmount();
+  } finally { vi.useRealTimers(); }
+});

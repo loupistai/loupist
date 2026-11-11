@@ -7,6 +7,7 @@ import { useLoupistChat } from "../../chat/useLoupistChat";
 import type { ChatMessage } from "../../types";
 import { ChatConversation } from "./ChatConversation";
 import { SafeMessageResponse } from "./SafeMessageResponse";
+import * as composerMentions from "../../chat/composerMentions";
 
 vi.mock("./SafeMessageResponse", () => ({
   SafeMessageResponse: vi.fn(({ text }: { text: string }) => <p>{text}</p>),
@@ -38,6 +39,7 @@ it("updates the live reply without rendering saved answers again, and can edit a
   }
   render(<Conversation />);
   expect(screen.getByText("Saved answer")).toBeVisible();
+  const mentions = vi.spyOn(composerMentions, "knownComposerMentions");
   vi.mocked(SafeMessageResponse).mockClear();
 
   for (const text of ["Working with sources", "Finished answer"]) {
@@ -48,6 +50,7 @@ it("updates the live reply without rendering saved answers again, and can edit a
     await waitFor(() => expect(screen.getByText(text)).toBeVisible());
   }
   expect(vi.mocked(SafeMessageResponse).mock.calls.filter(([props]) => props.text === "Saved answer")).toHaveLength(0);
+  expect(mentions).not.toHaveBeenCalled();
   const edits = screen.getAllByRole("button", { name: "Edit message" });
   expect(edits).toHaveLength(2);
   await userEvent.setup().click(edits[1]!);

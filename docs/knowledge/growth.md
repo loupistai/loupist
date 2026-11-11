@@ -17,7 +17,8 @@ append an explicit omitted-change summary when needed. The Chat receipt reads
 `thesis_moved`; What's new does not list it.
 
 The typed `knowledge_growth_events` bridge command returns Loupist-scoped, time-filtered
-pages with a cursor. This ledger stores bounded summaries, not prior document
+pages with a cursor after checking that the Loupist is available, including deletion
+quarantine. This ledger stores bounded summaries, not prior document
 bodies or a quality score. Chat, Map and Loupist settings read it. There is no
 separate Growth page. Method-learning events name the Loupist and the
 learning-review or World-job origin, with before/after summaries and a bounded

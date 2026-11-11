@@ -75,6 +75,7 @@ Lens was applied to and names them. It does not draw the Lens, and it does not
 treat a claim line as an application. When every applied name is outside the
 current scope, the Map says so and can show the whole map, instead of dimming
 every visible name.
+Export stays visible in the toolbar; Library, Replay, Fit and List view live in More. Scope collapses to its menu when those fixed controls leave too little room.
 Search, filters, a list fallback and Fit support navigation; camera/selection and
 Library state are retained per Loupist. Use in Chat attaches a draft reference;
 opening a reader does not itself deliver evidence to the model. Sources can be

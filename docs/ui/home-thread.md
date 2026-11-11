@@ -30,7 +30,7 @@ posts nothing, and its runs, which target the Thread itself, get no `delivery` m
 Neither carries holdings or sends an OS notification.
 A research hand-off (`src-tauri/src/chat/handoff.rs`) posts one message with a `handoff`
 record (`handoffId`, `chatId`, `title`, `status`, optional `learned`) when its session
-starts and rewrites that same message in place as the run ends, so the card reads
+starts and rewrites that same message in place as the run ends (a completion that wins a delivery race keeps its stored outcome), so the card reads
 "Researching: {title} · Running", then "Researched: {title} · Done · Learned n · Open"
 with the session answer's first body paragraph as plain text (headings and Markdown
 markers dropped, the same 280-character summary a scheduled result uses), or
@@ -39,7 +39,7 @@ answer receipt's own words ("새로 배운 것 n개" in Korean). The Bot's
 `research_open` tool and the bridge's `research_handoff_start` both commit through the
 same function; the Bot is never selected and its draft never changes. A finished
 `delivery` record may carry the same optional `learned` digest.
-Every delivery pass that writes the Thread, whichever caller runs it, emits
+A pending-news queue read failure aborts delivery without posting; it is reported for retry instead of treated as an empty queue. An individual earnings snapshot failure is logged and left pending while other host news and hand-offs can still post. Every delivery pass that writes the Thread, whichever caller runs it, emits
 `inbox-changed`, and so does the end of every unattended turn (scheduled or handed off),
 since nobody streamed its reply. The renderer answers with one workspace refresh that
 reconciles every idle chat it holds, so the open Bot and a session opened later show the

@@ -127,7 +127,7 @@ pub(super) async fn finalize_chat_turn(turn: LaunchedChatTurn, streamed: Streame
             )
         });
         match persist_result {
-            Ok(_) => {}
+            Ok(_) => return,
             Err(error) => {
                 on_event.set_failure_kind(ChatFailureKind::StoreFailed);
                 failure = Some(error.message);

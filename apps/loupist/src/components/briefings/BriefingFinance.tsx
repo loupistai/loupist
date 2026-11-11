@@ -18,28 +18,28 @@ const DAY_MS = 86_400_000;
 const FOLLOW_KINDS = new Set<WatchEvent["kind"]>(["filings", "insiders", "holders", "flows"]);
 
 const reported = (event: BriefingEarnings) => event.status === "reported" || event.status === "final";
-/** Whole days from today to a calendar day. */
-function daysAhead(day: string) {
+/** Calendar days from the saved run start to an event, independent of when it is read. */
+function daysAhead(day: string, startedAtMs: number) {
   const [year, month, date] = day.slice(0, 10).split("-").map(Number);
   if (!year || !month || !date) return Number.NaN;
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  return Math.round((new Date(year, month - 1, date).getTime() - today.getTime()) / DAY_MS);
+  const started = new Date(startedAtMs);
+  return (Date.UTC(year, month - 1, date) - Date.UTC(started.getFullYear(), started.getMonth(), started.getDate())) / DAY_MS;
 }
 
 /** Dividend record dates within seven days, for "Looking ahead". */
-const aheadRecords = (context: BriefingContext) => (context.watchEvents ?? []).filter(event => event.kind === "dividends" && aheadDay(event) !== undefined && daysAhead(aheadDay(event)!) >= 0 && daysAhead(aheadDay(event)!) <= 7);
+const aheadRecords = (context: BriefingContext, startedAtMs: number) => (context.watchEvents ?? []).filter(event => event.kind === "dividends" && aheadDay(event) !== undefined && daysAhead(aheadDay(event)!, startedAtMs) >= 0 && daysAhead(aheadDay(event)!, startedAtMs) <= 7);
 
 /**
  * One number per source across the briefing's results, alerts and the record
  * dates ahead, so "Looking ahead" continues the numbering of "What you follow".
  */
-function briefingNumbers(context: BriefingContext) {
+function briefingNumbers(context: BriefingContext, startedAtMs: number) {
   const results = (context.earnings ?? []).filter(reported);
   const alerts = newestFirst((context.watchEvents ?? []).filter(event => FOLLOW_KINDS.has(event.kind)));
   return citationNumbers([
     ...results.flatMap(event => event.measures.slice(0, 2).flatMap(measure => [...measure.expected.map(value => value.evidence), ...measure.reported.map(value => value.evidence)])),
     ...alerts.map(event => event.evidence),
-    ...aheadRecords(context).map(event => event.evidence),
+    ...aheadRecords(context, startedAtMs).map(event => event.evidence),
   ]);
 }
 
@@ -52,14 +52,14 @@ export const hasFollowRows = (context: BriefingContext) =>
  * finance-watchers.md §2.4): reported results with the two-measure table, and
  * alerts since the previous briefing. Rust computed both at run start.
  */
-export function BriefingFollowRows({ context, bridge, loupistId, onOpenLink }: { context: BriefingContext; bridge?: LoupistBridge; loupistId: string; onOpenLink: (url: string) => void }) {
+export function BriefingFollowRows({ context, startedAtMs, bridge, loupistId, onOpenLink }: { context: BriefingContext; startedAtMs: number; bridge?: LoupistBridge; loupistId: string; onOpenLink: (url: string) => void }) {
   useTranslation(["briefings", "assets", "chat"]);
   const open = useAssetPageOpener();
   const names = useAssetNames(bridge, loupistId);
   const results = (context.earnings ?? []).filter(reported);
   const alerts = newestFirst((context.watchEvents ?? []).filter(event => FOLLOW_KINDS.has(event.kind)));
   if (!results.length && !alerts.length) return null;
-  const numbers = briefingNumbers(context);
+  const numbers = briefingNumbers(context, startedAtMs);
   const openEvidence = (assetId: string, name: string) => (evidence: AssetEvidence) => {
     if (evidence.url) onOpenLink(evidence.url);
     else open?.({ loupistId, assetId, name });
@@ -81,13 +81,13 @@ export function BriefingFollowRows({ context, bridge, loupistId, onOpenLink }: {
 }
 
 /** "Looking ahead": results dates and dividend record dates within seven days, each record date with its source. */
-export function BriefingAheadRows({ context, bridge, loupistId, onOpenLink }: { context: BriefingContext; bridge?: LoupistBridge; loupistId: string; onOpenLink?: (url: string) => void }) {
+export function BriefingAheadRows({ context, startedAtMs, bridge, loupistId, onOpenLink }: { context: BriefingContext; startedAtMs: number; bridge?: LoupistBridge; loupistId: string; onOpenLink?: (url: string) => void }) {
   useTranslation(["briefings", "chat"]);
   const open = useAssetPageOpener();
   const names = useAssetNames(bridge, loupistId);
-  const results = (context.earnings ?? []).filter(event => !reported(event) && daysAhead(event.reportDate) >= 0 && daysAhead(event.reportDate) <= 7);
-  const records = aheadRecords(context);
-  const numbers = briefingNumbers(context);
+  const results = (context.earnings ?? []).filter(event => !reported(event) && daysAhead(event.reportDate, startedAtMs) >= 0 && daysAhead(event.reportDate, startedAtMs) <= 7);
+  const records = aheadRecords(context, startedAtMs);
+  const numbers = briefingNumbers(context, startedAtMs);
   const openEvidence = (event: WatchEvent) => (evidence: AssetEvidence) => {
     if (evidence.url && onOpenLink) onOpenLink(evidence.url);
     else open?.({ loupistId, assetId: event.assetId, name: names(event) });
@@ -99,6 +99,6 @@ export function BriefingAheadRows({ context, bridge, loupistId, onOpenLink }: { 
 }
 
 /** Whether "Looking ahead" has results or record dates to list. */
-export const hasAheadRows = (context: BriefingContext) =>
-  (context.earnings ?? []).some(event => !reported(event) && daysAhead(event.reportDate) >= 0 && daysAhead(event.reportDate) <= 7)
-  || aheadRecords(context).length > 0;
+export const hasAheadRows = (context: BriefingContext, startedAtMs: number) =>
+  (context.earnings ?? []).some(event => !reported(event) && daysAhead(event.reportDate, startedAtMs) >= 0 && daysAhead(event.reportDate, startedAtMs) <= 7)
+  || aheadRecords(context, startedAtMs).length > 0;

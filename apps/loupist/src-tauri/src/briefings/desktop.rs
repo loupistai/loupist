@@ -1,7 +1,7 @@
 //! Native effects are isolated from schedule persistence and testable with fakes.
 use crate::{
     app::{AppState, CommandError},
-    scheduled_tasks::types::{Run, RunStatus},
+    scheduled_tasks::types::{Run, RunStatus, TaskKind},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -98,13 +98,24 @@ pub(crate) trait DesktopEffects {
 }
 
 pub(crate) fn deliver(effects: &dyn DesktopEffects, loupist_name: &str, run: &Run) {
-    let suffix = if run.status == RunStatus::Succeeded {
-        "briefing ready"
+    let task = if run.kind == TaskKind::Briefing {
+        "briefing"
     } else {
-        "briefing couldn't finish"
+        &run.task_title
+    };
+    let suffix = match run.status {
+        RunStatus::Succeeded => "ready",
+        RunStatus::Failed => "couldn't finish",
+        RunStatus::Interrupted
+            if run.error.as_deref() == Some(crate::scheduled_tasks::USER_STOPPED) =>
+        {
+            "stopped"
+        }
+        RunStatus::Interrupted => "couldn't finish",
+        RunStatus::Running => "running",
     };
     effects.notify(
-        &format!("{loupist_name}: {suffix}"),
+        &format!("{loupist_name}: {task} {suffix}"),
         run.summary.lines().next().unwrap_or(""),
         &InboxOpen {
             loupist_id: run.loupist_id.clone(),

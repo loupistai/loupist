@@ -1,6 +1,6 @@
 import { formatDate, formatDateTime, formatNumber } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { dispose, init, registerLocale, type KLineData, type Chart, type OverlayCreate, type Styles, type DeepPartial, type IndicatorCreate } from "klinecharts";
 import { ChevronDownIcon } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -84,7 +84,7 @@ type Props = {
   compact?: boolean;
 };
 
-export default function FinancialChart({ chart, dataset, theme, onAskRange, compact = false }: Props) {
+export default function FinancialChart({ chart, dataset, onAskRange, compact = false }: Props) {
   useTranslation("chat");
   const colors = useChartTokens();
   const colorsRef = useRef(colors);
@@ -156,7 +156,7 @@ export default function FinancialChart({ chart, dataset, theme, onAskRange, comp
           vertical: { line: { color: colors.secondary }, text: { color: colors.text, backgroundColor: colors.raised, borderColor: colors.border } },
         },
       });
-  const rows = datasetRows(dataset);
+  const rows = useMemo(() => datasetRows(dataset), [dataset]);
   const timeColumn = chart.view.kind === "candlestick" ? chart.view.time : "";
   const saveDrawings = () => {
     const current = instanceRef.current;
@@ -274,8 +274,8 @@ export default function FinancialChart({ chart, dataset, theme, onAskRange, comp
       instanceRef.current = null;
       dispose(instance);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- the chart is rebuilt only for new data, theme or size; the style and edit callbacks are read at build time.
-  }, [chart, dataset, theme, compact]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the chart is rebuilt only for new data or compact layout; the style and edit callbacks are read at build time.
+  }, [chart, dataset, compact]);
 
   useEffect(() => {
     instanceRef.current?.setStyles(chartStyles());

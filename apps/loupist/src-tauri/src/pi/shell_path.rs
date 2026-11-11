@@ -101,7 +101,7 @@ fn resolve_for_current_user() -> Option<Vec<PathBuf>> {
 /// PATH for the Pi process and its native file-search children: bundled tools first, then
 /// the login-shell entries, then inherited entries the login PATH lacks.
 /// Without a login PATH the inherited value is kept exactly.
-pub(crate) fn bash_path(
+pub(crate) fn file_search_path(
     tools: &Path,
     login: Option<&[PathBuf]>,
     inherited: Option<&str>,
@@ -374,10 +374,11 @@ mod tests {
     }
 
     #[test]
-    fn bash_path_puts_tools_first_then_login_then_unseen_inherited_entries() {
+    fn file_search_path_puts_tools_first_then_login_then_unseen_inherited_entries() {
         let tools = Path::new("/app/workspace-tools");
         let login = ["/opt/homebrew/bin", "/usr/bin", "/bin"].map(PathBuf::from);
-        let merged = bash_path(tools, Some(&login), Some("/usr/bin:/bin:/usr/sbin")).unwrap();
+        let merged =
+            file_search_path(tools, Some(&login), Some("/usr/bin:/bin:/usr/sbin")).unwrap();
         assert_eq!(
             merged,
             "/app/workspace-tools:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin"
@@ -385,14 +386,14 @@ mod tests {
     }
 
     #[test]
-    fn bash_path_without_a_login_path_keeps_the_inherited_value() {
+    fn file_search_path_without_a_login_path_keeps_the_inherited_value() {
         let tools = Path::new("/app/workspace-tools");
         assert_eq!(
-            bash_path(tools, None, Some("/usr/bin:/bin:/usr/bin")).unwrap(),
+            file_search_path(tools, None, Some("/usr/bin:/bin:/usr/bin")).unwrap(),
             "/app/workspace-tools:/usr/bin:/bin:/usr/bin"
         );
         assert_eq!(
-            bash_path(tools, None, None).unwrap(),
+            file_search_path(tools, None, None).unwrap(),
             "/app/workspace-tools"
         );
     }
@@ -501,7 +502,7 @@ mod tests {
             entries,
             ["/opt/only-in-zshrc/bin", "/usr/bin", "/bin"].map(PathBuf::from)
         );
-        let merged = bash_path(Path::new("/app/tools"), Some(&entries), Some("/bin"));
+        let merged = file_search_path(Path::new("/app/tools"), Some(&entries), Some("/bin"));
         assert_eq!(
             merged.as_deref(),
             Some("/app/tools:/opt/only-in-zshrc/bin:/usr/bin:/bin")

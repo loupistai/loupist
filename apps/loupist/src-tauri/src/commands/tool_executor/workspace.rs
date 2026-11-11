@@ -12,8 +12,8 @@ const GIT_DIR_NEXT: &str = "Do not retry this path. Native file tools do not rea
 const ORDINARY_FILE_NEXT: &str = "This tool works on ordinary research files. Dot-folders and dotfiles (such as `.loupist` or `.git`) and instruction files are not reached through it; choose a visible path in the workspace.";
 const HARD_LINK_NEXT: &str = "This file has another name on disk and may alias protected data. Ask the user for an ordinary copy; do not retry this alias.";
 
-/// The native policy's state for one turn: the folders it classifies against
-/// and the current third-party exposure.
+/// The native policy's roots for one turn. Each decision reads the current
+/// third-party exposure from the turn's taint.
 #[derive(Default)]
 pub(in crate::commands) struct NativeGate {
     roots: Option<NativeRoots>,
@@ -64,8 +64,7 @@ fn refusal_error(refusal: NativeRefusal) -> BrokerError {
 /// The `(dev, ino)` of the file a read was allowed on, as strings so that no
 /// JSON number loses precision: the extension opens the file, compares the
 /// descriptor's identity and refuses another file. Null when no file is at
-/// the path yet, so nothing that appears later is read. None on a host that
-/// reports no file identity, where the extension reads by path.
+/// the path yet, so nothing that appears later is read.
 #[cfg(unix)]
 fn read_identity(path: &std::path::Path) -> Option<Value> {
     use std::os::unix::fs::MetadataExt;
@@ -92,7 +91,7 @@ pub(super) enum HostFile {
 }
 
 impl AppToolExecutor {
-    /// Decides one native call without waiting on anyone. The canonical
+    /// Applies the native policy to one call. The canonical
     /// target comes back so the extension can pin a read, write or edit to
     /// it, with the file's identity for a read; a search runs on it.
     pub(super) async fn native_authorize(&self, params: &Value) -> Result<Value, BrokerError> {

@@ -48,7 +48,7 @@ mod webdriver_attach;
 compile_error!("WebDriver is forbidden in release builds");
 
 #[cfg(any(not(feature = "e2e"), test))]
-pub(crate) const DEVELOPMENT_APP_IDENTIFIER: &str = "com.monarchjuno.loupist";
+pub(crate) const PRODUCTION_APP_IDENTIFIER: &str = "com.monarchjuno.loupist";
 #[cfg(feature = "e2e")]
 pub(crate) const E2E_APP_IDENTIFIER: &str = "com.monarchjuno.loupist.e2e";
 
@@ -167,7 +167,7 @@ pub fn run() {
         #[cfg(not(feature = "e2e"))]
         assert_eq!(
             context.config().identifier,
-            DEVELOPMENT_APP_IDENTIFIER,
+            PRODUCTION_APP_IDENTIFIER,
             "debug WebDriver attaches only to the development app identifier"
         );
         webdriver_attach::wait_for_bind_port();

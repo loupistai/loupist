@@ -35,6 +35,15 @@ function renderGrid(props: Partial<Parameters<typeof GridCard>[0]> = {}) {
 }
 
 describe("GridCard", () => {
+  it("keeps copy feedback across equivalent grid snapshots", async () => {
+    const user = userEvent.setup();
+    const view = renderGrid();
+    await user.click(screen.getByRole("button", { name: "Copy" }));
+    expect(screen.getByRole("button", { name: "Copied" })).toBeVisible();
+    view.rerender(<GridCard title="Dividend payers" grid={structuredClone(grid)} evidenceRefs={[DART]} />);
+    expect(screen.getByRole("button", { name: "Copied" })).toBeVisible();
+  });
+
   it("is a real table: values are number chips, empty cells speak their reason, the first column names the asset", () => {
     renderGrid();
     const table = screen.getByRole("table", { name: "Dividend payers" });

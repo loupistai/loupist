@@ -1,6 +1,6 @@
 //! App-level factual context. No suitability profile or agent prompt injection.
 use super::{SqliteStore, StoreError, StoreResult};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -55,18 +55,24 @@ impl HoldingsSource {
             Self::Wallet => "wallet",
         }
     }
-    fn parse(value: &str) -> Self {
-        match value {
-            "kis" => Self::Kis,
-            "crypto_file" => Self::CryptoFile,
-            "wallet" => Self::Wallet,
-            _ => Self::Csv,
-        }
-    }
     /// About you groups sources by kind: stocks and funds, or crypto.
     pub fn is_crypto(self) -> bool {
         matches!(self, Self::CryptoFile | Self::Wallet)
     }
+}
+
+fn read_stored_enum<T: serde::de::DeserializeOwned>(
+    row: &rusqlite::Row<'_>,
+    index: usize,
+) -> rusqlite::Result<T> {
+    let value: String = row.get(index)?;
+    serde_json::from_value(serde_json::Value::String(value)).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            index,
+            rusqlite::types::Type::Text,
+            Box::new(error),
+        )
+    })
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -417,15 +423,16 @@ impl SqliteStore {
         let mut per_source: BTreeMap<HoldingsSource, (i64, BTreeSet<(String, String)>)> =
             BTreeMap::new();
         let mut per_kind: [(i64, BTreeSet<(String, String)>); 2] = Default::default();
-        for row in statement.query_map([], |row| {
+        let rows = statement.query_map([], |row| {
             Ok((
-                HoldingsSource::parse(&row.get::<_, String>(0)?),
+                read_stored_enum::<HoldingsSource>(row, 0)?,
                 row.get::<_, i64>(1)?,
                 row.get::<_, Option<String>>(2)?,
                 row.get::<_, Option<String>>(3)?,
             ))
-        })? {
-            let (source, at, symbol, market) = row?;
+        })?;
+        for (source, at, symbol, market) in super::collect_readable_rows(rows, "holdings summary")?
+        {
             let kind = &mut per_kind[usize::from(source.is_crypto())];
             kind.0 = kind.0.max(at);
             let entry = per_source.entry(source).or_insert((at, BTreeSet::new()));
@@ -456,13 +463,37 @@ impl SqliteStore {
             crypto: kind(crypto),
         })
     }
-    /// Host privacy checks and tests read the latest committed snapshot.
+    /// Host privacy checks cover every latest-per-source snapshot, including
+    /// each wallet. No snapshot metadata or amounts are exposed to the model.
+    pub(crate) fn holdings_latest_positions(&self) -> StoreResult<Vec<HoldingsPosition>> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(&format!(
+            "SELECT p.symbol,p.market,p.display_name,p.quantity,p.cost_basis,p.market_value,p.currency FROM ({LATEST_SNAPSHOTS}) s JOIN user_holdings_positions p ON p.snapshot_id=s.snapshot_id ORDER BY s.source,s.wallet_id,p.symbol,p.market"
+        ))?;
+        let positions = statement
+            .query_map([], |r| {
+                Ok(HoldingsPosition {
+                    symbol: r.get(0)?,
+                    market: r.get(1)?,
+                    display_name: r.get(2)?,
+                    quantity: r.get(3)?,
+                    cost_basis: r.get(4)?,
+                    market_value: r.get(5)?,
+                    currency: r.get(6)?,
+                })
+            })?
+            .collect::<Result<_, _>>()?;
+        Ok(positions)
+    }
+
+    /// Test fixtures read the latest committed snapshot and its metadata.
     /// Model-facing holdings still come only from `map_context` identities.
+    #[cfg(test)]
     pub(crate) fn holdings_latest(&self) -> StoreResult<Option<HoldingsSnapshot>> {
+        use rusqlite::OptionalExtension;
         let connection = self.lock()?;
         let snapshot = connection.query_row("SELECT snapshot_id,source,imported_at_ms,currency,note FROM user_holdings_snapshots ORDER BY imported_at_ms DESC,rowid DESC LIMIT 1", [], |r| {
-            let source: String = r.get(1)?;
-            Ok(HoldingsSnapshot { snapshot_id:r.get(0)?,source:HoldingsSource::parse(&source),imported_at_ms:r.get(2)?,currency:r.get(3)?,note:r.get(4)?,positions:vec![] })
+            Ok(HoldingsSnapshot { snapshot_id:r.get(0)?,source:read_stored_enum(r, 1)?,imported_at_ms:r.get(2)?,currency:r.get(3)?,note:r.get(4)?,positions:vec![] })
         }).optional()?;
         let Some(mut snapshot) = snapshot else {
             return Ok(None);
@@ -539,6 +570,19 @@ pub(super) fn insert_snapshot(
         .map(|p| p.currency.clone())
         .filter(|c| positions.iter().all(|p| &p.currency == c))
         .unwrap_or_default();
+    if source != HoldingsSource::Wallet {
+        let newer: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM user_holdings_snapshots
+            WHERE source=?1 AND wallet_id IS NULL AND imported_at_ms>?2)",
+            params![source.as_str(), imported_at_ms],
+            |row| row.get(0),
+        )?;
+        if newer {
+            return Err(StoreError::Conflict(
+                "holdings snapshot is older than the current source snapshot",
+            ));
+        }
+    }
     let snapshot = HoldingsSnapshot {
         snapshot_id: uuid::Uuid::new_v4().to_string(),
         source,
@@ -550,6 +594,14 @@ pub(super) fn insert_snapshot(
     tx.execute("INSERT INTO user_holdings_snapshots(snapshot_id,source,wallet_id,imported_at_ms,currency,note) VALUES (?1,?2,?3,?4,?5,?6)", params![snapshot.snapshot_id,snapshot.source.as_str(),wallet_id,snapshot.imported_at_ms,snapshot.currency,snapshot.note])?;
     for p in &snapshot.positions {
         tx.execute("INSERT INTO user_holdings_positions(snapshot_id,symbol,market,display_name,quantity,cost_basis,market_value,currency) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)", params![snapshot.snapshot_id,p.symbol,p.market,p.display_name,p.quantity,p.cost_basis,p.market_value,p.currency])?;
+    }
+    if source != HoldingsSource::Wallet {
+        // Only the latest successful snapshot per source is read. Match the
+        // readers' timestamp/rowid ordering; a backwards clock was refused above.
+        tx.execute("DELETE FROM user_holdings_snapshots WHERE source=?1 AND wallet_id IS NULL
+            AND snapshot_id != (SELECT snapshot_id FROM user_holdings_snapshots
+                WHERE source=?1 AND wallet_id IS NULL ORDER BY imported_at_ms DESC,rowid DESC LIMIT 1)",
+            [source.as_str()])?;
     }
     Ok(snapshot)
 }

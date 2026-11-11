@@ -742,14 +742,17 @@ pub(crate) fn apply_preset(
     add_kinds(tx, loupist_id, types, relations, provenance, now_ms).map(Some)
 }
 
+pub(super) const MAX_EXTENSION_TYPES: usize = 4;
+pub(super) const MAX_EXTENSION_RELATIONS: usize = 6;
+
 pub fn validate_extension(extension: &WorldExtension) -> KnowledgeResult<()> {
     if extension.updated_at_ms < 0 {
         return Err(KnowledgeError::Invalid("extension version time is invalid"));
     }
-    if extension.types.len() > 4 {
+    if extension.types.len() > MAX_EXTENSION_TYPES {
         return Err(KnowledgeError::Invalid("extension has too many types"));
     }
-    if extension.relations.len() > 6 {
+    if extension.relations.len() > MAX_EXTENSION_RELATIONS {
         return Err(KnowledgeError::Invalid("extension has too many relations"));
     }
     let mut type_names = Vec::with_capacity(extension.types.len());

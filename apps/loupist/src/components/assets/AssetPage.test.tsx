@@ -1,19 +1,21 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import i18n from "@/i18n";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { TooltipProvider } from "../ui/tooltip";
 import type { ChatThread, LoupistSummary } from "../../types";
 import { cryptoFixture, hanulFixture, noThesisFixture, partialFixture, privateFixture, type AssetFixture } from "../../preview/assets";
+import { morrowSnapshot } from "../../preview/finance";
 import { capitalRowsFixture, koreaDepthFixture, koreaNeedsKeyFixture } from "../../preview/korea";
 import { AssetPage } from "./AssetPage";
 
-async function fixture(asset: AssetFixture, visitedDaysAgo?: number) {
+async function fixture(asset: AssetFixture, visitedDaysAgo?: number, configure?: (bridge: MockLoupistBridge) => void) {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const [loupist] = await bridge.loupistList() as LoupistSummary[];
   bridge.assets.install(loupist!.id, asset.page, asset.delta);
   if (visitedDaysAgo !== undefined) localStorage.setItem("loupist.assetVisit.v1", JSON.stringify({ [`${loupist!.id}:${asset.page.assetId}`]: Date.now() - visitedDaysAgo * 86_400_000 }));
   const threads: ChatThread[] = [{ id: "preview-chat", loupist_id: loupist!.id, title: "Hanul margin review", updated_at: "2026-10-28T00:00:00Z", use_memory: true, update_memory: true, messages: [] }];
+  configure?.(bridge);
   const handlers = { onBack: vi.fn(), onAsk: vi.fn(), onOpenChat: vi.fn(), onOpenMap: vi.fn(), onOpenLink: vi.fn(), onOpenSource: vi.fn(), onOpenConnections: vi.fn(), onAddSource: vi.fn() };
   render(<TooltipProvider><AssetPage bridge={bridge} loupist={loupist!} target={{ loupistId: loupist!.id, symbol: asset.page.symbol, market: asset.page.market }} threads={threads} {...handlers} /></TooltipProvider>);
   const page = await screen.findByRole("region", { name: i18n.t("assets:page.label", { name: asset.page.name }) });
@@ -255,4 +257,93 @@ it("keeps the header and offers Try again when the page cannot open", async () =
   bridge.assets.install(loupist!.id, hanulFixture().page, hanulFixture().delta);
   await userEvent.setup().click(screen.getByRole("button", { name: "Try again" }));
   expect(await screen.findByRole("region", { name: "Hanul Precision asset page" })).toBeVisible();
+});
+
+
+it("reports a failed change read and retries instead of claiming nothing changed", async () => {
+  const { bridge, page, user } = await fixture(hanulFixture(), 3, bridge => {
+    vi.spyOn(bridge, "assetDelta").mockRejectedValueOnce(new Error("read failed"));
+  });
+  expect(await within(page).findByRole("alert")).toHaveTextContent("Couldn't load changes. Try again.");
+  expect(within(page).queryByText(/^No changes/)).toBeNull();
+  const pageRead = vi.spyOn(bridge, "assetPageGet");
+  await user.click(within(page).getByRole("button", { name: "Try again" }));
+  await waitFor(() => expect(page.querySelectorAll(".asset-change").length).toBeGreaterThan(0));
+  expect(within(page).queryByRole("alert")).toBeNull();
+  expect(pageRead).not.toHaveBeenCalled();
+});
+
+it("reports a failed delta after Check now instead of announcing zero new changes", async () => {
+  const { page, bridge, user } = await fixture(hanulFixture(), 3);
+  await waitFor(() => expect(page.querySelectorAll(".asset-change").length).toBeGreaterThan(0));
+  vi.spyOn(bridge, "assetDelta").mockRejectedValue(new Error("read failed"));
+  await user.click(within(page).getByRole("button", { name: "Check now" }));
+  expect(await within(page).findByText("Couldn't check Hanul Precision now. Try again in a moment.")).toBeVisible();
+  expect(page).not.toHaveTextContent("0 new changes");
+});
+
+it.each(["earningsSnapshotGet", "earningsEventsList"] as const)("reports a failed %s read", async method => {
+  const { bridge, page, user } = await fixture(hanulFixture(), 3, bridge => {
+    vi.spyOn(bridge, method).mockRejectedValueOnce(new Error("read failed"));
+  });
+  expect(await within(page).findByRole("alert")).toHaveTextContent("Couldn't load results. Try again.");
+  const pageRead = vi.spyOn(bridge, "assetPageGet");
+  await user.click(within(page).getByRole("button", { name: "Try again" }));
+  await waitFor(() => expect(within(page).queryByRole("alert")).toBeNull());
+  expect(pageRead).not.toHaveBeenCalled();
+});
+
+
+it("keeps a thesis entry and reports an archive failure without reloading it", async () => {
+  const { bridge, page, user } = await fixture(hanulFixture(), 3);
+  vi.spyOn(bridge, "journalArchive").mockRejectedValueOnce(new Error("write failed"));
+  const load = vi.spyOn(bridge, "assetPageGet");
+  const reason = page.querySelector(".asset-reason")!;
+  const text = reason.querySelector(".asset-reason-text")!.textContent;
+  await user.click(within(reason as HTMLElement).getByRole("button", { name: "More for this item" }));
+  await user.click(screen.getByRole("menuitem", { name: "Archive" }));
+  expect(await within(page).findByRole("alert")).toHaveTextContent("Couldn't archive this entry. Try again.");
+  expect(page).toHaveTextContent(text!);
+  expect(load).not.toHaveBeenCalled();
+});
+
+
+it("clears an earlier results card when its next read fails", async () => {
+  const { page, user } = await fixture(noThesisFixture(), undefined, bridge => {
+    vi.spyOn(bridge, "earningsSnapshotGet").mockResolvedValueOnce(morrowSnapshot("after")).mockRejectedValue(new Error("read failed"));
+  });
+  await waitFor(() => expect(page.querySelector(".asset-results")).not.toBeNull());
+  await user.click(within(page).getByRole("button", { name: "Check now" }));
+  expect(await within(page).findByText("Couldn't load results. Try again.")).toBeVisible();
+  expect(page.querySelector(".asset-results")).toBeNull();
+});
+
+
+it("waits for an edited page revision before reading its changes and results once", async () => {
+  const asset = noThesisFixture();
+  const { bridge, page, user, loupist } = await fixture(asset, undefined, bridge => {
+    vi.spyOn(bridge, "assetDelta");
+    vi.spyOn(bridge, "earningsSnapshotGet");
+    vi.spyOn(bridge, "earningsEventsList");
+  });
+  await waitFor(() => expect(bridge.assetDelta).toHaveBeenCalledTimes(1));
+  expect(bridge.earningsSnapshotGet).toHaveBeenCalledTimes(1);
+  expect(bridge.earningsEventsList).toHaveBeenCalledTimes(1);
+  const getPage = bridge.assetPageGet.bind(bridge);
+  let finishRead!: (page: Awaited<ReturnType<typeof getPage>>) => void;
+  const pendingPage = new Promise<Awaited<ReturnType<typeof getPage>>>(resolve => { finishRead = resolve; });
+  const read = vi.spyOn(bridge, "assetPageGet").mockReturnValue(pendingPage);
+  await user.click(within(page).getAllByRole("button", { name: "Add a reason" })[0]!);
+  await user.type(within(page).getByRole("textbox", { name: "Your reason" }), "Track cash conversion.");
+  await user.click(within(page).getByRole("button", { name: "Save entry" }));
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+  expect(bridge.assetDelta).toHaveBeenCalledTimes(1);
+  expect(bridge.earningsSnapshotGet).toHaveBeenCalledTimes(1);
+  expect(bridge.earningsEventsList).toHaveBeenCalledTimes(1);
+  const updated = await getPage({ loupistId: loupist.id, assetId: asset.page.assetId });
+  await act(async () => finishRead({ ...updated, revision: asset.page.revision + 1 }));
+  await within(page).findByText("Track cash conversion.");
+  await waitFor(() => expect(bridge.assetDelta).toHaveBeenCalledTimes(2));
+  expect(bridge.earningsSnapshotGet).toHaveBeenCalledTimes(2);
+  expect(bridge.earningsEventsList).toHaveBeenCalledTimes(2);
 });

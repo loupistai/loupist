@@ -21,7 +21,7 @@ export type WatchlistAddRequest = {
   displayName?: string | null,
   /**
    * The Loupist open when the user followed it: it watches the asset with
-   * the default kinds (finance-watchers.md §3.2).
+   * the default kinds (docs/knowledge/watchers.md#local-watchers).
    */
   loupistId?: string | null,
 };

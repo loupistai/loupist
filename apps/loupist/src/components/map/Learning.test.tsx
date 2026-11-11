@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PreviewBridge } from "../../preview/fixtures";
 import { prepareLearningFixture } from "../../preview/fixtures/learning";
+import { LearningToasts } from "./LearningToast";
 import { MapInspector } from "./MapInspector";
 import { MapView } from "./MapView";
 import { isNewMethod } from "./learningState";
@@ -65,4 +66,28 @@ it("keeps recent learning scoped to seven days and acknowledges each refinement 
   expect(isNewMethod(node, new Map(), 1000 + 7 * 86400000)).toBe(false);
   expect(isNewMethod(node, new Map([["method", 1000]]), 1001)).toBe(false);
   expect(isNewMethod({ ...node, learnedAtMs: 1001 }, new Map([["method", 1000]]), 1001)).toBe(true);
+});
+
+
+it("moves learning toasts to a new map caption without scanning the page for streamed text", async () => {
+  const { review } = await fixture();
+  const { container } = render(<LearningToasts notifications={{ toasts: [{ loupistId: "loupist-quality", review, title: "A learned method" }], dismiss: vi.fn() }} onView={vi.fn()} />);
+  expect(container.querySelector(".learning-toasts")).not.toBeNull();
+  const query = vi.spyOn(document, "querySelector");
+  const streaming = document.createElement("p");
+  await act(async () => { streaming.textContent = "More reply text"; container.append(streaming); });
+  expect(query).not.toHaveBeenCalledWith("[data-map-caption]");
+  const caption = document.createElement("div");
+  await act(async () => container.append(caption));
+  expect(caption.querySelector(".learning-toasts")).toBeNull();
+  await act(async () => { caption.dataset.mapCaption = "true"; });
+  expect(caption.querySelector(".learning-toasts")).not.toBeNull();
+  await act(async () => { delete caption.dataset.mapCaption; });
+  expect(caption.querySelector(".learning-toasts")).toBeNull();
+  expect(container.querySelector(".learning-toasts")).not.toBeNull();
+  await act(async () => { caption.dataset.mapCaption = "true"; });
+  expect(caption.querySelector(".learning-toasts")).not.toBeNull();
+  await act(async () => caption.remove());
+  expect(container.querySelector(".learning-toasts")).not.toBeNull();
+  query.mockRestore();
 });

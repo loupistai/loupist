@@ -85,15 +85,24 @@ pub(super) fn match_official(url: &Url) -> Option<OfficialTarget> {
         .or_else(|| match_doi(url))
 }
 
-pub(super) fn verified_record_id(target: &OfficialTarget, bytes: &[u8]) -> Option<String> {
-    let value = serde_json::from_slice::<Value>(bytes).ok()?;
+pub(super) fn verified_record_id(target: &OfficialTarget, value: &Value) -> Option<String> {
     match target.provider {
         OfficialProvider::Wikipedia => {
-            let parsed_title = value
-                .get("parse")
-                .and_then(|parse| parse.get("title"))
-                .and_then(Value::as_str)?;
-            titles_match(&target.record_id, parsed_title).then(|| parsed_title.to_owned())
+            let parsed = value.get("parse")?;
+            let parsed_title = parsed.get("title").and_then(Value::as_str)?;
+            let redirected = parsed
+                .get("redirects")
+                .and_then(Value::as_array)
+                .is_some_and(|redirects| {
+                    redirects.iter().any(|redirect| {
+                        redirect
+                            .get("from")
+                            .and_then(Value::as_str)
+                            .is_some_and(|from| titles_match(&target.record_id, from))
+                    })
+                });
+            (titles_match(&target.record_id, parsed_title) || redirected)
+                .then(|| parsed_title.to_owned())
         }
         OfficialProvider::Wikidata => {
             let qid = target.record_id.to_ascii_uppercase();
@@ -119,12 +128,11 @@ pub(super) fn verified_record_id(target: &OfficialTarget, bytes: &[u8]) -> Optio
     }
 }
 
-pub(super) fn project_markdown(target: &OfficialTarget, bytes: &[u8]) -> Option<String> {
-    let value = serde_json::from_slice::<Value>(bytes).ok()?;
+pub(super) fn project_markdown(target: &OfficialTarget, value: &Value) -> Option<String> {
     match target.provider {
-        OfficialProvider::Wikipedia => project_wikipedia(&value),
-        OfficialProvider::Wikidata => project_wikidata(&value, &target.record_id),
-        OfficialProvider::Crossref => project_crossref(&value),
+        OfficialProvider::Wikipedia => project_wikipedia(value),
+        OfficialProvider::Wikidata => project_wikidata(value, &target.record_id),
+        OfficialProvider::Crossref => project_crossref(value),
     }
 }
 
@@ -141,6 +149,7 @@ fn match_wikipedia(url: &Url) -> Option<OfficialTarget> {
         .append_pair("action", "parse")
         .append_pair("format", "json")
         .append_pair("formatversion", "2")
+        .append_pair("redirects", "1")
         .append_pair("prop", "text|displaytitle")
         .append_pair("page", &title.replace(' ', "_"));
     Some(OfficialTarget {
@@ -653,11 +662,24 @@ mod tests {
             ),
         ] {
             let target = match_official(&Url::parse(url).unwrap()).unwrap();
-            assert!(verified_record_id(&target, mismatched).is_none(), "{url}");
+            assert!(
+                verified_record_id(&target, &serde_json::from_slice(mismatched).unwrap()).is_none(),
+                "{url}"
+            );
             assert_eq!(
-                verified_record_id(&target, matched).as_deref(),
+                verified_record_id(&target, &serde_json::from_slice(matched).unwrap()).as_deref(),
                 Some(expected)
             );
+        }
+        let target =
+            match_official(&Url::parse("https://en.wikipedia.org/wiki/USA").unwrap()).unwrap();
+        for redirects in [
+            serde_json::json!([{"from": "Canada", "to": "United States"}]),
+            serde_json::json!([{"to": "United States"}]),
+        ] {
+            let response =
+                serde_json::json!({"parse": {"title": "United States", "redirects": redirects}});
+            assert!(verified_record_id(&target, &response).is_none());
         }
     }
 }

@@ -128,8 +128,45 @@ fn malformed_owned_skill_can_be_inspected_and_removed() {
     assert!(entry.editable && !entry.enabled && entry.error.is_some());
     let doc = document(entry).unwrap();
     assert!(doc.instructions.contains("Unfinished skill"));
+    let (_w, workspace) = root();
+    assert!(
+        agent_harness::workspace::workspace_snapshot(&workspace, &global)
+            .unwrap()
+            .skills
+            .is_empty()
+    );
     remove(&doc.skill, &doc.skill.revision).unwrap();
     assert!(!path.exists());
+}
+
+#[test]
+fn flat_skills_keep_their_own_identity_and_do_not_share_folder_metadata() {
+    let (_g, global) = root();
+    fs::create_dir_all(global.join("skills/agents")).unwrap();
+    fs::write(
+        global.join("skills/agents/openai.yaml"),
+        "interface:\n  display_name: Shared folder\n",
+    )
+    .unwrap();
+    for name in ["first", "second"] {
+        fs::write(global.join(format!("skills/{name}.md")), "Unfinished skill").unwrap();
+    }
+    fs::write(
+        global.join("skills/valid.md"),
+        &package("valid")["SKILL.md"],
+    )
+    .unwrap();
+    let config =
+        crate::scoped_config::read_scope(&global, None, crate::scoped_config::ConfigScope::Global)
+            .unwrap();
+    let catalog = catalog(&global, None, config).unwrap();
+    for id in ["first", "second", "valid"] {
+        let entry = catalog.skills.iter().find(|skill| skill.id == id).unwrap();
+        assert_eq!(entry.name, id);
+        assert!(!entry.shadowed && !entry.editable);
+        assert_eq!(entry.enabled, id == "valid");
+        assert_eq!(entry.error.is_some(), id != "valid");
+    }
 }
 
 #[test]

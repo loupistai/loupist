@@ -27,6 +27,8 @@ use crate::{
 };
 use types::{Run, RunStatus, TaskKind, TaskStatus};
 
+pub(crate) const USER_STOPPED: &str = "Stopped before completion";
+
 struct Lifetime(watch::Sender<bool>);
 impl Drop for Lifetime {
     fn drop(&mut self) {
@@ -302,13 +304,15 @@ impl ScheduledSupervisor {
         manual: bool,
     ) -> Result<Option<Run>, CommandError> {
         // The earnings task runs on the host: no admission of a Chat turn.
-        let kind = state
+        let task = state
             .store
             .scheduled_task_get(loupist_id, task_id)
             .ok()
-            .flatten()
-            .map(|task| task.kind);
-        if kind == Some(TaskKind::Earnings) {
+            .flatten();
+        if task
+            .as_ref()
+            .is_some_and(|task| task.kind == TaskKind::Earnings)
+        {
             if *self.inner.stop.borrow() {
                 return Err(CommandError::conflict("Scheduled tasks are stopping"));
             }
@@ -322,14 +326,9 @@ impl ScheduledSupervisor {
         // schedules and maintenance never wait behind its reads, and it stops
         // with the scheduler. What is not reached in time stays "not checked".
         if !*self.inner.stop.borrow() {
-            let briefing = state
-                .store
-                .scheduled_task_get(loupist_id, task_id)
-                .ok()
-                .flatten()
-                .is_some_and(|task| {
-                    task.kind == TaskKind::Briefing && (manual || task.status == TaskStatus::Active)
-                });
+            let briefing = task.is_some_and(|task| {
+                task.kind == TaskKind::Briefing && (manual || task.status == TaskStatus::Active)
+            });
             if briefing {
                 // Boxed: a refresh runs tools, and a tool can start a scheduled run.
                 let _ = Box::pin(crate::commands::assets::refresh_followed(
@@ -448,7 +447,14 @@ impl ScheduledSupervisor {
                 ChatStreamEvent::Completed { .. } => Some((RunStatus::Succeeded, None)),
                 ChatStreamEvent::Aborted { .. } => Some((
                     RunStatus::Interrupted,
-                    Some("Stopped before completion".to_owned()),
+                    Some(
+                        if *completion_state.scheduled.inner.stop.borrow() {
+                            "Interrupted before completion."
+                        } else {
+                            USER_STOPPED
+                        }
+                        .to_owned(),
+                    ),
                 )),
                 ChatStreamEvent::Error { message, .. } => {
                     Some((RunStatus::Failed, Some(bounded_error(message))))

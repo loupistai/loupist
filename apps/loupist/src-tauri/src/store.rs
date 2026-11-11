@@ -80,6 +80,34 @@ pub enum StoreError {
 
 pub type StoreResult<T> = Result<T, StoreError>;
 
+/// Listings tolerate individual unreadable values, but still report query/storage
+/// failures. Log at most once per listing, without the row's contents or identity.
+pub(crate) fn collect_readable_rows<T>(
+    rows: impl IntoIterator<Item = rusqlite::Result<T>>,
+    context: &'static str,
+) -> rusqlite::Result<Vec<T>> {
+    let mut values = Vec::new();
+    let mut logged = false;
+    for row in rows {
+        match row {
+            Ok(value) => values.push(value),
+            Err(
+                rusqlite::Error::FromSqlConversionFailure(..)
+                | rusqlite::Error::InvalidColumnType(..)
+                | rusqlite::Error::IntegralValueOutOfRange(..)
+                | rusqlite::Error::Utf8Error(..),
+            ) => {
+                if !logged {
+                    eprintln!("Loupist skipped unreadable rows while listing {context}");
+                    logged = true;
+                }
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(values)
+}
+
 /// Ids the `app_settings` table holds. Rust owns this list (store schema 5
 /// dropped the SQL whitelist), so a new setting needs no schema step.
 pub(crate) fn is_app_setting_id(id: &str) -> bool {

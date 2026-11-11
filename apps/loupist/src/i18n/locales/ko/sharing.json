@@ -75,6 +75,7 @@
   "creating": "저장소를 만드는 중…",
   "uploading": "파일 {{formattedCount}}개를 올리는 중…",
   "published": "{{url}}에 올렸어요",
+  "copyFailed": "링크를 복사하지 못했어요. 다시 시도해 주세요.",
   "copyLink": "링크 복사",
   "copied": "링크를 복사했어요",
   "openGithub": "GitHub에서 열기",

@@ -73,20 +73,18 @@ impl SqliteStore {
         request_key: &str,
         max_age_seconds: u64,
     ) -> Result<Option<(DatasetRef, Value, Value)>, CommandError> {
-        let current: Option<(String, u32)> = {
-            let db = self.lock_loupist(loupist).map_err(error)?;
-            db.query_row(
-                "SELECT id,revision FROM datasets WHERE loupist_id=?1 AND request_key=?2 ORDER BY revision DESC LIMIT 1",
+        let db = self.lock_loupist(loupist).map_err(error)?;
+        let current: Option<(String, u32, String)> = db.query_row(
+                "SELECT id,revision,metadata_json FROM datasets WHERE loupist_id=?1 AND request_key=?2 ORDER BY revision DESC LIMIT 1",
                 params![loupist, request_key],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()
-            .map_err(error)?
-        };
-        let Some((id, revision)) = current else {
+            .map_err(error)?;
+        let Some((id, revision, metadata)) = current else {
             return Ok(None);
         };
-        let (reference, payload, metadata) = self.dataset(loupist, &id, revision)?;
+        let metadata: Value = serde_json::from_str(&metadata).map_err(error)?;
         let fresh = metadata
             .get("fetched_at")
             .and_then(Value::as_str)
@@ -96,7 +94,28 @@ impl SqliteStore {
                 age >= chrono::Duration::zero()
                     && age <= chrono::Duration::seconds(max_age_seconds.min(i64::MAX as u64) as i64)
             });
-        Ok(fresh.then_some((reference, payload, metadata)))
+        if !fresh {
+            return Ok(None);
+        }
+        let (digest, bytes): (String, Vec<u8>) = db
+            .query_row(
+                "SELECT digest,payload FROM datasets WHERE loupist_id=?1 AND id=?2 AND revision=?3",
+                params![loupist, id, revision],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .map_err(error)?;
+        if crate::util::sha256(&bytes) != digest {
+            return Err(CommandError::conflict("dataset integrity check failed"));
+        }
+        Ok(Some((
+            DatasetRef {
+                dataset_id: id,
+                revision,
+                digest,
+            },
+            serde_json::from_slice(&bytes).map_err(error)?,
+            metadata,
+        )))
     }
 
     pub fn dataset(

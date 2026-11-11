@@ -225,7 +225,7 @@ impl FinanceDataService {
         if let Some(entries) = self.cached_directory(|cache| cache.dart.as_ref()).await {
             return Ok(entries);
         }
-        validate_api_key(credential, OPENDART_SOURCE_ID)?;
+        validate_api_key(credential)?;
         let mut public_url = fixed_url(OPENDART_API_ROOT, OPENDART_CORP_CODE_PATH)?;
         public_url
             .query_pairs_mut()

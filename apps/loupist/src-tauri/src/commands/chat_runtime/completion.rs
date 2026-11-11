@@ -120,7 +120,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
             finish_chat_progress(on_event, task_run_id, progress, created_at_ms, false);
         let evidence_refs = capture.evidence_refs.lock().await.clone();
         // Rust checks each number link against the evidence it names; the
-        // answer's text cannot set a status (finance-show-the-math.md §7.2).
+        // answer's text cannot set a status (docs/analysis/number-checks.md#number-checks).
         let number_checks = if host_composed {
             Vec::new()
         } else {
