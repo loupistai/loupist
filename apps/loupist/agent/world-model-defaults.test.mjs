@@ -78,7 +78,14 @@ for (const group of defaults) {
       const effort = candidate.thinking_level;
       if (model.api === "anthropic-messages") {
         if (effort === "off") assert.equal(payload.thinking.type, "disabled");
-        else if (model.compat?.forceAdaptiveThinking) {
+        else if (model.compat?.supportsMidConvoEffort) {
+          // The cached top-level effort stays low; a trailing system message sets this reply's effort.
+          assert.equal(payload.thinking.type, "adaptive");
+          assert.equal(payload.output_config.effort, "low");
+          const last = payload.messages.at(-1);
+          assert.equal(last.role, "system");
+          assert.equal(last.output_config.effort, effort);
+        } else if (model.compat?.forceAdaptiveThinking) {
           assert.equal(payload.thinking.type, "adaptive");
           assert.equal(payload.output_config.effort, effort);
         } else {

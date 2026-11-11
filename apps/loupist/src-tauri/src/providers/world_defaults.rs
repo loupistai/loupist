@@ -259,9 +259,12 @@ mod tests {
         assert_eq!(selection.model_profile_id, "openai/gpt-4.1-mini");
         assert_eq!(selection.thinking_level, "off");
         for (provider, id, effort) in [
+            ("anthropic", "claude-haiku-5-5", "medium"),
             ("anthropic", "claude-haiku-4-5", "low"),
+            ("anthropic", "claude-sonnet-5-5", "low"),
             ("deepseek", "deepseek-flash", "low"),
             ("groq", "openai/gpt-oss-120b", "medium"),
+            ("minimax", "MiniMax-M3.1-Flash", "low"),
             ("minimax", "MiniMax-M3", "off"),
             ("kimi-coding", "kimi-for-coding", "low"),
         ] {
@@ -269,6 +272,34 @@ mod tests {
                 .default_model
                 .unwrap();
             assert_eq!(selection.thinking_level, effort);
+        }
+    }
+
+    #[test]
+    fn a_provider_prefers_its_newest_reviewed_model_and_keeps_older_ones_as_fallbacks() {
+        for (provider, newest, older) in [
+            ("anthropic", "claude-haiku-5-5", "claude-haiku-4-5"),
+            ("anthropic", "claude-sonnet-5-5", "claude-sonnet-4-6"),
+            ("minimax", "MiniMax-M3.1-Flash", "MiniMax-M3"),
+            (
+                "baseten",
+                "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+                "deepseek-ai/DeepSeek-V4.1-Flash",
+            ),
+        ] {
+            let both = options_from_catalog(catalog(vec![
+                model(provider, older),
+                model(provider, newest),
+            ]));
+            assert_eq!(
+                both.default_model.unwrap().model_profile_id,
+                format!("{provider}/{newest}")
+            );
+            let older_only = options_from_catalog(catalog(vec![model(provider, older)]));
+            assert_eq!(
+                older_only.default_model.unwrap().model_profile_id,
+                format!("{provider}/{older}")
+            );
         }
     }
 
