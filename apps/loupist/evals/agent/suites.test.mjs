@@ -546,3 +546,12 @@ test('Korea and everyday-question cases pass an ideal reply and fail a guessed, 
   fails({ ...implied, sensitivity_cards: [] }, 'sensitivity_card');
   fails({ ...implied, sensitivity_cards: [{ ...card, reference: undefined }] }, 'sensitivity_card');
 });
+
+test('connection replay scenarios accept the enabled DefiLlama capability', () => {
+  const file = loaded.find((file) => file.name === 'tool-use-v1.json');
+  const scenario = structuredClone(file.json.scenarios.find((scenario) => scenario.replay));
+  scenario.connections = ['defillama'];
+  assert.doesNotThrow(() => assertScenarioContract(scenario, { suite: file.json.suite, filePath: file.filePath }));
+  scenario.connections = ['unknown-connection'];
+  assert.throws(() => assertScenarioContract(scenario, { suite: file.json.suite, filePath: file.filePath }));
+});

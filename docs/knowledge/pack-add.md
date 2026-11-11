@@ -1,11 +1,11 @@
 # Pack add and remove
 
-Opening a pack reviews it in memory. Add creates a Loupist through the ordinary creation path. Remove takes back only what that pack added.
+Opening a pack reviews it in memory. Add creates a Loupist through the ordinary creation path. Remove takes back only what that pack added. [This release](sharing.md#this-release) hides pack review, suggestions and the added-pack list; the development preview harness can still open them.
 
 Opening a pack (a github.com repository, folder or gist link, a ZIP or a folder)
 validates it and holds it in memory for review for an hour, at most four at once;
-nothing touches a Loupist. A rejected pack names one reason (`notPack`, `newer`,
-`tooLarge`, `unsafe`, `damaged`, `spoof`) and adds nothing. Review before adding shows
+nothing touches a Loupist. The manifest is at most 2 MiB, with at most 300 credits, eight manifest ancestors and 308 attribution entries per item (including earlier applied versions); names and authors are bounded single-line text, and every origin commit is validated. A rejected pack names one reason (`notPack`, `newer`,
+`tooLarge`, `unsafe`, `damaged`, `spoof`) and adds nothing. Folder I/O failures report `notPack`, an untrusted file reports `unsafe`, and only a size-bound failure reports `tooLarge`. Before review, hidden characters are removed from names, authors, credits, origin chains and Lens text, then the cleaned text is validated again. Review before adding shows
 the profile, each perspective, method and principle as read-only Markdown with its scan
 flags and lines. Below 1060px the choice and Add stay under that review, so the warning
 and the first section stay readable at the minimum window. Focusing a control below that review scrolls it into the review. That lock is only the
@@ -28,7 +28,7 @@ model settings or instructions.
 
 Suggestions sit at the top of Your principles and Methods on "What {Loupist} knows"
 until accepted or skipped item by item. Clean items can be accepted together; an item
-with a scan finding only on its own (`flagged_one_at_a_time`). Accept checks the stored
+with a scan finding only on its own (`flagged_one_at_a_time`). A review decision refuses repeated suggestion keys before any Lens write. Accept checks the stored
 body against its hash and creates an ordinary Lens method (its title made unique with
 "· {pack}"), a principle with origin `shared`, or a new Loupist's standing perspective;
 a principle the Loupist already holds is marked skipped.
@@ -57,8 +57,9 @@ archives them (a standing perspective is never archived).
 
 `packOrigin` names the pack behind an accepted Lens item, or a name or relationship a
 pack added, while that pack is not removed; the Lens reader and Map inspector show
-"Shared · {pack} by {author}" with a link to Shared Loupists you added on "What
-{Loupist} knows". That section lists each pack with Remove and, when the community index
+"Shared · {pack} by {author}". When sharing entry points are shown, it links to Shared
+Loupists you added on "What {Loupist} knows"; this release hides that link and list.
+That section lists each pack with Remove and, when the community index
 is configured and the pack came from a link, Report (the index's GitHub issue form with
 only the pack link filled in). Add also copies the pack's files to
 `.loupist/packs/<import>/<version>/`, so they travel with the folder. A pack the index

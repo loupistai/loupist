@@ -1,4 +1,4 @@
-//! Local watchers (finance-watchers.md). While the app runs, Rust checks what
+//! Local watchers (docs/knowledge/watchers.md#local-watchers). While the app runs, Rust checks what
 //! each Loupist follows against data sources only — no model call — records
 //! dated observations on the asset pages, turns new ones into alerts for the
 //! kinds that are on, and posts them in the home Thread or the morning message.

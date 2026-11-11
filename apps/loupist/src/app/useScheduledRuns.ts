@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef } from "react";
 import type { LoupistBridge, ScheduledRun } from "../types";
 import type { ChatSessions } from "./useChatSessions";
 
+const windowVisible = () => document.visibilityState !== "hidden";
+
 /** Discover native work without changing the selected Chat, draft or reader. */
 export function useScheduledRuns(bridge: LoupistBridge, loupistId: string | null, chat: ChatSessions) {
   const tracked = useRef(new Map<string, ScheduledRun>());
@@ -16,19 +18,22 @@ export function useScheduledRuns(bridge: LoupistBridge, loupistId: string | null
     });
   }, [bridge, chatRegistry, setThreadsForLoupist]);
 
-  const onRunStarted = useCallback((run: ScheduledRun) => {
-    void runRegistry.hydrateLoupist(run.loupist_id);
-    if (run.status === "running") chatRegistry.resumeScheduled(run);
-  }, [chatRegistry, runRegistry]);
-
   useEffect(() => {
     if (!loupistId) return;
     let active = true;
+    let polling = false;
     let timer: ReturnType<typeof setTimeout>;
     // A host write the last refresh could not read; the next poll reads it again.
     let unread = false;
     const refreshAfterHostWrite = () => refreshThreads(loupistId).then(() => { unread = false; }, () => { unread = true; });
+    const scheduleNextPoll = () => {
+      clearTimeout(timer);
+      if (active) timer = setTimeout(() => void poll(), windowVisible() ? 2_000 : 30_000);
+    };
     const poll = async () => {
+      if (!active || polling) return;
+      clearTimeout(timer);
+      polling = true;
       try {
         const runs = await bridge.scheduledTasksActivity({ loupist_id: loupistId });
         if (!active) return;
@@ -52,13 +57,22 @@ export function useScheduledRuns(bridge: LoupistBridge, loupistId: string | null
         }
       } catch {
         // Retain run identities and retry; a discovery failure is not completion.
+      } finally {
+        polling = false;
+        scheduleNextPoll();
       }
-      if (active) timer = setTimeout(() => void poll(), 2000);
     };
+    const visibilityChanged = () => {
+      if (windowVisible()) void poll();
+      else scheduleNextPoll();
+    };
+    const focused = () => { void poll(); };
     void poll();
+    document.addEventListener("visibilitychange", visibilityChanged);
+    window.addEventListener("focus", focused);
     const unsubscribe = bridge.onInboxChanged(event => { if (event.loupistId === loupistId) void refreshAfterHostWrite(); });
-    return () => { active = false; clearTimeout(timer); unsubscribe(); };
+    return () => { active = false; clearTimeout(timer); document.removeEventListener("visibilitychange", visibilityChanged); window.removeEventListener("focus", focused); unsubscribe(); };
   }, [bridge, chatRegistry, loupistId, refreshThreads, runRegistry]);
 
-  return { onRunStarted, refreshThreads };
+  return { refreshThreads };
 }

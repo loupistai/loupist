@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { ActivityRow } from "../chat/ActivityRow";
 import { ChatStatusPill } from "../chat/ChatStatusPill";
 import { deriveTurnView } from "../../chat/turnView";
@@ -45,6 +45,23 @@ function conversation(extra?: ReactNode) {
   };
 }
 const jump = () => screen.queryByRole("button", { name: "Jump to latest" });
+
+it("updates the jump control without rerendering consumers of scroll actions", () => {
+  const renders = vi.fn();
+  const Actions = memo(function Actions() {
+    renders();
+    const scroll = useConversationScroll();
+    return <button onClick={() => scroll?.scrollToBottom()}>Follow answer</button>;
+  });
+  conversation(<Actions />);
+  const count = renders.mock.calls.length;
+  fireEvent.click(screen.getByRole("button", { name: "Inspect work" }));
+  expect(jump()).toBeVisible();
+  expect(renders).toHaveBeenCalledTimes(count);
+  fireEvent.click(screen.getByRole("button", { name: "Follow answer" }));
+  expect(jump()).not.toBeInTheDocument();
+  expect(renders).toHaveBeenCalledTimes(count);
+});
 
 it("follows deferred Markdown growth even when a queued scroll event arrives first", () => {
   const { element, grow, resizeViewport } = conversation();

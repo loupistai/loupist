@@ -36,15 +36,12 @@ export type ActiveTrigger = {
   end: number;
 };
 
-type AssistKind = "skill" | "connection";
-
 export type AssistOption = {
   id: string;
-  kind: AssistKind | "context" | "command";
+  kind: "skill" | "context" | "command";
   label: string;
   name: string;
   detail: string;
-  insert: string;
   group?: string;
   context?: ContextOption;
   command?: "new-chat" | "model" | "memory" | "attach" | "brief" | "compare" | "check" | "asof";
@@ -60,9 +57,8 @@ const assistHint = (symbol: TriggerSymbol) => {
   return t("chatComposer.commandsAndSkills");
 };
 
-const assistEmpty = (symbol: TriggerSymbol, skillCount: number) => {
+const assistEmpty = (symbol: TriggerSymbol) => {
   if (symbol === "@") return t("chatComposer.noMatchingContext");
-  if (skillCount === 0 && symbol === "/") return t("chatComposer.noMatchingItem");
   return t("chatComposer.noMatchingItem");
 };
 
@@ -105,14 +101,14 @@ function assistIcon(option: AssistOption) {
     case "Connections":
       return PlugIcon;
     default:
-      return option.kind === "connection" || option.context?.connectionId ? PlugIcon : WorkflowIcon;
+      return option.context?.connectionId ? PlugIcon : WorkflowIcon;
   }
 }
 
 function assistRowKind(option: AssistOption) {
   if (option.command) return "command";
   if (option.kind === "skill") return "skill";
-  if (option.context?.connectionId || option.kind === "connection") return "connection";
+  if (option.context?.connectionId) return "connection";
   return "context";
 }
 
@@ -152,7 +148,6 @@ export function ComposerAssistMenu({
   trigger,
   options,
   activeOption,
-  skillCount,
   onHover,
   onSelect,
 }: {
@@ -161,7 +156,6 @@ export function ComposerAssistMenu({
   trigger: ActiveTrigger;
   options: readonly AssistOption[];
   activeOption: number;
-  skillCount: number;
   onHover: (index: number) => void;
   onSelect: (option: AssistOption) => void;
 }) {
@@ -190,7 +184,7 @@ export function ComposerAssistMenu({
       {/* Rows below the fold fade out at the edge, so the list reads as one that scrolls. */}
       <div ref={moreBelow.ref} className="composer-assist-scroll" data-more-below={moreBelow.below || undefined} onScroll={moreBelow.update}>
         {options.length === 0 ? (
-          <p className="composer-assist-empty">{assistEmpty(trigger.symbol, skillCount)}</p>
+          <p className="composer-assist-empty">{assistEmpty(trigger.symbol)}</p>
         ) : sections.map((section) => (
           <div key={`${section.group}-${section.items[0]?.index ?? 0}`} className="composer-assist-section" role="group" aria-label={section.group}>
             {showHeaders ? <div className="composer-assist-group">{section.group}</div> : null}

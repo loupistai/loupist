@@ -90,6 +90,8 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
   const [refresh, setRefresh] = useState(0);
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState(false);
+  const [resumeFailed, setResumeFailed] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const [segment, setSegment] = useState<MemorySegment | null>(null);
   const [selectedId, setSelectedId] = useState<string | undefined>(initialItem);
   // The first page shows on its own when Lens opens; only a page someone opened takes focus.
@@ -166,8 +168,10 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
   useEffect(() => {
     if (!terms) { setHits(null); return; }
     let live = true;
-    void bridge.knowledgeLensSearch({ loupistId, query: query.trim() }).then(found => { if (live) setHits(new Set(found.map(hit => hit.recordId))); }).catch(() => { if (live) setHits(new Set()); });
-    return () => { live = false; };
+    const timer = setTimeout(() => {
+      void bridge.knowledgeLensSearch({ loupistId, query: query.trim() }).then(found => { if (live) setHits(new Set(found.map(hit => hit.recordId))); }).catch(() => { if (live) setHits(new Set()); });
+    }, 200);
+    return () => { live = false; clearTimeout(timer); };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `terms` follows `query`.
   }, [bridge, loupistId, query]);
   const shown = items.filter(item => !terms || (item.kind === "principle" ? `${item.title} ${item.summary}`.toLowerCase().includes(terms) : hits?.has(item.id)));
@@ -175,11 +179,16 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
   const remember = config.snapshot ? config.snapshot.effective.chat.use_memory && config.snapshot.effective.chat.update_memory : null;
   const paused = remember === false && data?.learnMethods === false;
   const resume = async () => {
-    await Promise.all([
+    if (resuming) return;
+    setResuming(true);
+    setResumeFailed(false);
+    const [configuration, learning] = await Promise.allSettled([
       config.update({ chat: { use_memory: true, update_memory: true } }, []),
       bridge.memoryLearningSettingsSet({ loupistId, learnMethods: true }),
     ]);
+    setResumeFailed(configuration.status === "rejected" || !configuration.value || learning.status === "rejected");
     changed();
+    setResuming(false);
   };
 
   const open = (id: string) => { setSelectedId(id); setChosen(true); setCompactReader(true); };
@@ -211,7 +220,8 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
         {query ? <Button variant="ghost" size="icon-sm" aria-label={t("memoryPage.clearSearch")} onClick={() => setQuery("")}><XIcon /></Button> : null}
       </label> : null}
     </div>
-    {paused ? <div className="memory-page-paused" role="status"><span>{t("memoryPage.paused.banner")}</span><Button size="sm" variant="outline" onClick={() => void resume()}>{t("memoryPage.actions.resume")}</Button></div> : null}
+    {paused ? <div className="memory-page-paused" role="status"><span>{t("memoryPage.paused.banner")}</span><Button size="sm" variant="outline" disabled={resuming} onClick={() => void resume()}>{t("memoryPage.actions.resume")}</Button></div> : null}
+    {resumeFailed ? <p className="memory-page-error" role="alert">{t("memoryPage.paused.resumeError")}</p> : null}
     {error ? <div className="memory-page-error" role="alert"><span>{t("memoryPage.error")}</span><Button size="sm" variant="outline" onClick={() => setRefresh(value => value + 1)}>{t("memoryPage.retry")}</Button></div> : null}
     {!data && !error ? <div className="memory-page-loading" role="status" aria-label={t("memoryPage.loading")}><span /><span /><span /></div> : null}
     {data ? <div className="memory-page-body" data-segment={current} onFocus={revealFocused}>

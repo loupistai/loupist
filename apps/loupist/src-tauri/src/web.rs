@@ -587,12 +587,17 @@ async fn fetch_official(
     let response =
         get_with_429_retry(target.representation_url.clone(), FETCH_OFFICIAL_ACCEPT).await?;
     if !response.status.is_success() {
-        return Err(status_error(response.status));
+        return Err(status_error_with_retry(
+            response.status,
+            response.retry_after,
+        ));
     }
-    let record_id = official::verified_record_id(target, &response.bytes)
-        .ok_or(WebError::InvalidProviderResponse)?;
-    let markdown = official::project_markdown(target, &response.bytes)
-        .ok_or(WebError::InvalidProviderResponse)?;
+    let value: Value =
+        serde_json::from_slice(&response.bytes).map_err(|_| WebError::InvalidProviderResponse)?;
+    let record_id =
+        official::verified_record_id(target, &value).ok_or(WebError::InvalidProviderResponse)?;
+    let markdown =
+        official::project_markdown(target, &value).ok_or(WebError::InvalidProviderResponse)?;
     if markdown.trim().is_empty() {
         return Err(WebError::NoTextLayer);
     }
@@ -629,7 +634,10 @@ async fn fetch_generic(source: &WebSource, requested: &Url) -> Result<WebFetchSn
         return Err(WebError::Challenge);
     }
     if !response.status.is_success() {
-        return Err(status_error(response.status));
+        return Err(status_error_with_retry(
+            response.status,
+            response.retry_after,
+        ));
     }
     let content_type = media_type(&response.content_type);
     let content_sha256 = hex::encode(Sha256::digest(&response.bytes));
@@ -700,7 +708,10 @@ async fn get_with_429_retry(url: Url, accept: &str) -> Result<BoundedResponse, W
         return Ok(response);
     }
     let remaining = FETCH_TIMEOUT.saturating_sub(started.elapsed());
-    let Some(delay) = retry_after_delay(response.retry_after, remaining) else {
+    let Some(delay) = clamp_retry_after(
+        response.retry_after.unwrap_or(Duration::from_secs(1)),
+        remaining,
+    ) else {
         return Err(WebError::RateLimited {
             retry_after: response.retry_after,
         });
@@ -719,17 +730,6 @@ async fn get_with_429_retry(url: Url, accept: &str) -> Result<BoundedResponse, W
         accept,
     )
     .await
-}
-
-fn retry_after_delay(retry_after: Option<Duration>, remaining: Duration) -> Option<Duration> {
-    if remaining.is_zero() {
-        return None;
-    }
-    let parsed = retry_after.unwrap_or(Duration::from_secs(1));
-    if parsed > remaining && remaining < FETCH_RETRY_AFTER_CAP {
-        return None;
-    }
-    Some(parsed.min(FETCH_RETRY_AFTER_CAP).min(remaining))
 }
 
 fn media_type(content_type: &str) -> String {
@@ -1733,9 +1733,8 @@ pub(crate) fn parse_retry_after_header(
 }
 
 pub(crate) fn clamp_retry_after(requested: Duration, remaining: Duration) -> Option<Duration> {
-    const MAX_WAIT: Duration = Duration::from_secs(3);
-    let budget = MAX_WAIT.min(remaining);
-    (requested <= budget).then_some(requested.min(remaining))
+    let budget = FETCH_RETRY_AFTER_CAP.min(remaining);
+    (!remaining.is_zero() && requested <= budget).then_some(requested)
 }
 
 pub(crate) fn web_source(
@@ -2282,6 +2281,80 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn get_429_preserves_the_second_responses_retry_after() {
+        let _guard = script::install(vec![(
+            "https://example.com/limited-again",
+            ["0", "7"]
+                .into_iter()
+                .map(|seconds| script::ScriptedResponse {
+                    challenge: false,
+                    status: 429,
+                    content_type: "text/plain".into(),
+                    body: Vec::new(),
+                    retry_after: Some(seconds.into()),
+                    location: None,
+                })
+                .collect(),
+        )]);
+        let source = web_source(
+            "Limited".into(),
+            "https://example.com/limited-again".into(),
+            String::new(),
+            None,
+        );
+        let error = fetch(&source).await.err().unwrap();
+        assert_eq!(retry_after_from_error(&error), Some(Duration::from_secs(7)));
+        assert_eq!(script::requests().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn get_429_does_not_shorten_the_servers_requested_wait() {
+        let _guard = script::install(vec![(
+            "https://example.com/long-wait",
+            vec![
+                script::ScriptedResponse {
+                    challenge: false,
+                    status: 429,
+                    content_type: "text/plain".into(),
+                    body: Vec::new(),
+                    retry_after: Some("9".into()),
+                    location: None,
+                },
+                script::ok("text/plain", b"too early".to_vec()),
+            ],
+        )]);
+        let source = web_source(
+            "Limited".into(),
+            "https://example.com/long-wait".into(),
+            String::new(),
+            None,
+        );
+        let error = fetch(&source).await.err().unwrap();
+        assert_eq!(retry_after_from_error(&error), Some(Duration::from_secs(9)));
+        assert_eq!(script::requests().len(), 1);
+    }
+
+    #[test]
+    fn retry_after_clamp_rejects_waits_outside_the_remaining_budget() {
+        for (requested, remaining, expected) in [
+            (0, 0, None),
+            (0, 1, Some(0)),
+            (2, 10, Some(2)),
+            (3, 3, Some(3)),
+            (4, 10, None),
+            (2, 1, None),
+        ] {
+            assert_eq!(
+                clamp_retry_after(
+                    Duration::from_secs(requested),
+                    Duration::from_secs(remaining)
+                ),
+                expected.map(Duration::from_secs)
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn web_fetch_preserves_declared_article_publication_without_inventing_dates() {
         for (metadata, expected) in [
             (
@@ -2346,6 +2419,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn wikipedia_redirect_uses_the_official_projection_in_one_request() {
+        let body = br#"{"parse":{"title":"United States","redirects":[{"from":"USA","to":"United States"}],"text":"<p>The United States article body is projected from the official API.</p>"}}"#;
+        let _guard = script::install(vec![
+            (
+                "en.wikipedia.org/w/api.php",
+                vec![script::ok("application/json", body.to_vec())],
+            ),
+            (
+                "https://en.wikipedia.org/wiki/USA",
+                vec![script::ok(
+                    "text/plain",
+                    b"Unexpected generic fallback".to_vec(),
+                )],
+            ),
+        ]);
+        let source = web_source(
+            "USA".into(),
+            "https://en.wikipedia.org/wiki/USA".into(),
+            String::new(),
+            None,
+        );
+        let output = fetch(&source).await.unwrap().page(0).unwrap();
+        assert_eq!(output.extraction_method, "official_api");
+        assert_eq!(output.record_id.as_deref(), Some("United States"));
+        assert_eq!(output.content_sha256, hex::encode(Sha256::digest(body)));
+        assert!(output.content.contains("United States article body"));
+        assert_eq!(script::requests().len(), 1);
+    }
+
+    #[tokio::test]
     async fn official_identity_mismatch_falls_back_once_to_generic_fetch() {
         let html = r#"<html><head><title>USA</title></head><body><article><p>The original article body stays visible after official identity mismatch.</p></article></body></html>"#;
         let _guard = script::install(vec![
@@ -2378,6 +2481,10 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(urls.len(), 2);
         assert!(urls[0].contains("action=parse"));
+        assert!(Url::parse(&urls[0])
+            .unwrap()
+            .query_pairs()
+            .any(|(key, value)| key == "redirects" && value == "1"));
         assert_eq!(urls[1], "https://en.wikipedia.org/wiki/USA");
     }
 

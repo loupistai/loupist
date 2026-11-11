@@ -1,7 +1,7 @@
 //! Worker output: bounds the World snapshot an extraction worker wrote before
 //! the host seals it. Relations become ASCII tokens, and evidence, qualifiers,
-//! names and aliases are capped. A claim the adapter cannot read is dropped,
-//! so one bad claim never blocks the World.
+//! names and aliases are capped. Unreadable nodes and claims, and claims whose
+//! endpoints were dropped, do not block the rest of the World.
 
 use serde_json::{json, Value};
 
@@ -152,12 +152,24 @@ pub(super) fn project_worker_artifact(artifact_utf8: &str) -> KnowledgeResult<Wo
         .and_then(Value::as_array)
         .ok_or(KnowledgeError::Invalid("snapshot nodes are invalid"))?
     {
-        let mut adapted = adapt_worker_node(node)?;
-        adapted.name = clip(&adapted.name, 200);
-        adapted.description = clip(&adapted.description, 4_000);
+        let mut node = node.clone();
+        if let Some(object) = node.as_object_mut() {
+            for (key, limit) in [("name", 200), ("description", 4_000)] {
+                if let Some(value) = object.get(key).and_then(Value::as_str) {
+                    object.insert(key.into(), Value::String(clip(value, limit)));
+                }
+            }
+        }
+        let mut adapted = match adapt_worker_node(&node) {
+            Ok(node) => node,
+            Err(KnowledgeError::Invalid(_)) => continue,
+            Err(error) => return Err(error),
+        };
         bound_aliases(&mut adapted.aliases);
         nodes.push(adapted);
     }
+    let node_ids: std::collections::HashSet<_> =
+        nodes.iter().map(|node| node.id.as_str()).collect();
     let mut claims = Vec::new();
     for claim in snapshot
         .get("claims")
@@ -167,7 +179,15 @@ pub(super) fn project_worker_artifact(artifact_utf8: &str) -> KnowledgeResult<Wo
         let mut claim = claim.clone();
         sanitize_worker_claim(&mut claim);
         match adapt_worker_claim(&claim) {
-            Ok(adapted) => claims.push(adapted),
+            Ok(adapted) => {
+                if adapted
+                    .endpoints
+                    .iter()
+                    .all(|endpoint| node_ids.contains(endpoint.node_id.as_str()))
+                {
+                    claims.push(adapted);
+                }
+            }
             // One unreadable claim must not stop every later export of this World.
             Err(KnowledgeError::Invalid(_)) => {}
             Err(error) => return Err(error),

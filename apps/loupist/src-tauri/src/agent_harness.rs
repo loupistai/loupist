@@ -821,6 +821,10 @@ pub fn always_on_skill_ids() -> Vec<String> {
         .collect()
 }
 
+pub(crate) fn skill_is_fixed(id: &str) -> bool {
+    ALWAYS_ON_SKILLS.iter().any(|skill| skill.id == id)
+}
+
 /// Skills Pi receives for a Chat run: always-on method cards, then the Loupist's
 /// optional workflows. Only optional IDs are stored as Loupist selections.
 pub fn run_skill_ids(selectable: &[String]) -> Result<Vec<String>, AgentHarnessError> {
@@ -871,7 +875,7 @@ pub(crate) fn bundled_skill_content(id: &str) -> Option<&'static [u8]> {
 pub fn skill_catalog(enabled_skill_ids: &[String]) -> Vec<AgentSkillSummary> {
     all_skills()
         .map(|skill| {
-            let fixed = ALWAYS_ON_SKILLS.iter().any(|fixed| fixed.id == skill.id);
+            let fixed = skill_is_fixed(skill.id);
             let (_, description) = bundled_skill_frontmatter(skill);
             AgentSkillSummary {
                 id: skill.id.to_owned(),
@@ -1639,7 +1643,6 @@ mod tests {
             .any(|name| name == "run_python"));
         let scheduled = interactive.with_schedule_management(false);
         assert!(!scheduled.core_tool_names.iter().any(|name| name == "read"));
-        assert!(!scheduled.core_tool_names.iter().any(|name| name == "bash"));
         assert!(scheduled
             .core_tool_names
             .iter()

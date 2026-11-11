@@ -2,8 +2,6 @@
 
 Creating or importing a Loupist finishes on that Loupist's Chat. A save failure is reported and does not block Chat. Onboarding opens when there is no Loupist, or a new profile has no AI account and has not finished onboarding. Once the notice has been acknowledged, losing or removing the last AI account keeps saved Chats and research readable. The composer offers account connection for new answers.
 
-### Onboarding
-
 A new user acknowledges the notice and connects an AI provider. The welcome title uses the display size. The connect step (`onboarding/ConnectStep.tsx`)
 shows Continue with ChatGPT as the primary button and Continue with SuperGrok as a
 secondary button under it. On a short window the other ways scroll inside the step so those buttons stay above the fold, and focusing a way below that list scrolls it into the list. Other ways to connect lists API keys

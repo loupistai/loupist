@@ -4,7 +4,7 @@ import test from 'node:test';
 
 import { acceptance, gradeArm } from './temporal-grade.mjs';
 
-const oracle = JSON.parse(await readFile(new URL('./temporal-oracle-v1.json', import.meta.url), 'utf8'));
+const oracle = JSON.parse(await readFile(new URL('./temporal-oracle-v2.json', import.meta.url), 'utf8'));
 const time = (value) => (value ? { precision: 'instant', value, approximate: false } : null);
 
 function rows(scenario, claims, nodes, titles) {

@@ -1,7 +1,8 @@
+import { useCopyFeedback } from "../../hooks/useCopyFeedback";
 import i18n, { useTranslation } from "@/i18n";
 import { useGo } from "../navigation/Open";
 import { formatAsOf } from "../../chat/asOf";
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { CheckIcon, ClipboardIcon, Maximize2Icon, MessageCircleIcon, Minimize2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -59,13 +60,13 @@ export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [view, setView] = useState<ViewState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
-  const [copied, setCopied] = useState(false);
-  const [copyError, setCopyError] = useState(false);
-  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The drawn chart leaves its snapshot here for "Save as PNG…".
   const [snapshot] = useState<ChartSnapshotSlot>(() => ({ current: null }));
   const artifactId = block.kind === "ready" ? block.artifact.artifact_id : null;
   const revision = block.kind === "ready" ? block.artifact.revision : null;
+  const { state: copyState, copy } = useCopyFeedback(`${artifactId}:${revision}`, 1_500);
+  const copied = copyState === "copied";
+  const copyError = copyState === "failed";
 
   useEffect(() => {
     if (!artifactId) return undefined;
@@ -79,8 +80,6 @@ export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the scope's fields; a new scope object for the same thread must not re-read.
   }, [artifactId, revision, scope?.bridge, scope?.loupistId, scope?.threadId, attempt]);
 
-  useEffect(() => () => { if (copyTimer.current !== null) clearTimeout(copyTimer.current); }, []);
-
   const title = block.kind === "ready" ? (view.status === "ready" ? view.view.artifact.title : block.artifact.title) : block.title;
   const building = block.kind === "building" || (block.kind === "ready" && block.updating);
   const current = view.status === "ready" && block.kind === "ready" ? view.view : null;
@@ -92,15 +91,7 @@ export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf }: Props) {
 
   const copyData = async () => {
     if (!dataset) return;
-    try {
-      await navigator.clipboard.writeText(datasetTsv(dataset));
-      setCopied(true);
-      setCopyError(false);
-      if (copyTimer.current !== null) clearTimeout(copyTimer.current);
-      copyTimer.current = setTimeout(() => setCopied(false), 1_500);
-    } catch {
-      setCopyError(true);
-    }
+    await copy(datasetTsv(dataset));
   };
 
   let body: ReactNode = null;

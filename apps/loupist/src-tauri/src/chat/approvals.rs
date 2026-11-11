@@ -89,7 +89,7 @@ impl ChatApproval {
     }
 }
 
-fn valid_request_id(value: &str) -> bool {
+pub(super) fn valid_request_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 64
         && value

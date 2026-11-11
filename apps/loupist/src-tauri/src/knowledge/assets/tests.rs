@@ -138,6 +138,82 @@ fn update(
 }
 
 #[test]
+fn page_listing_skips_unreadable_rows_and_exact_reads_stay_strict() {
+    for (column, value) in [
+        ("class", "future"),
+        ("class_source", "future"),
+        ("verdict", "future"),
+        ("refresh_json", "{"),
+    ] {
+        let (_root, store) = store();
+        let page = page(&store);
+        let good = store
+            .transact(|w| {
+                w.tx.execute(
+                    &format!("UPDATE knowledge_asset_pages SET {column}=?1 WHERE asset_id=?2"),
+                    params![value, page.asset_id],
+                )?;
+                ensure_page(
+                    w.tx,
+                    LOUPIST,
+                    &AssetIdentity {
+                        symbol: "GOOD".into(),
+                        market: "NASDAQ".into(),
+                        name: "Good page".into(),
+                    },
+                    None,
+                    1,
+                )
+            })
+            .unwrap();
+        assert!(
+            store
+                .read(|w| get_page(w.tx, LOUPIST, &page.asset_id))
+                .is_err(),
+            "{column}"
+        );
+        assert_eq!(store.read(|w| list_pages(w.tx, LOUPIST)).unwrap(), [good]);
+    }
+}
+
+#[test]
+fn move_listing_skips_unreadable_rows_but_undo_stays_strict() {
+    for (column, value) in [
+        ("from_verdict", "future"),
+        ("to_verdict", "future"),
+        ("evidence_json", "{"),
+        ("line_json", "{"),
+    ] {
+        let (_root, store) = store();
+        let page = page(&store);
+        store.transact(|w| {
+            for (id, at) in [("good-before", 1), ("odd", 2), ("good-after", 3)] {
+                w.tx.execute("INSERT INTO knowledge_asset_moves
+                    (move_id,loupist_id,asset_id,to_verdict,fact_date,reason,evidence_json,actor,at_ms)
+                    VALUES (?1,?2,?3,'holding','2026-10-01','Reason','[]','loupist',?4)",
+                    params![id, LOUPIST, page.asset_id, at])?;
+            }
+            w.tx.execute(&format!("UPDATE knowledge_asset_moves SET {column}=?1 WHERE move_id='odd'"), [value])?;
+            Ok(())
+        }).unwrap();
+        let listed = store
+            .read(|w| moves(w.tx, LOUPIST, &page.asset_id))
+            .unwrap();
+        assert_eq!(
+            listed
+                .iter()
+                .map(|m| m.move_id.as_str())
+                .collect::<Vec<_>>(),
+            ["good-before", "good-after"],
+            "{column}"
+        );
+        assert!(store
+            .transact(|w| undo(w.tx, LOUPIST, &page.asset_id, "good-after", 4))
+            .is_err());
+    }
+}
+
+#[test]
 fn class_resolution_follows_user_market_lookup_world_then_equity() {
     assert_eq!(
         class::initial_class("BTC", "UPBIT", None),

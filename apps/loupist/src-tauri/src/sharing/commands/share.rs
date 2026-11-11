@@ -116,70 +116,85 @@ pub struct ShareSummary {
 /// scan: the GitHub token, every saved model-provider key or sign-in token,
 /// every custom-connection secret and every finance connector credential.
 /// The values are compared here and never leave Rust.
-pub(crate) fn private_context(state: &AppState) -> PrivateContext {
+pub(crate) fn private_context(state: &AppState) -> Result<PrivateContext, CommandError> {
+    private_context_with_finance(state, crate::finance_credentials::get)
+}
+
+pub(crate) fn private_context_with_finance(
+    state: &AppState,
+    get: impl Fn(
+        &str,
+        &str,
+    ) -> Result<
+        Option<crate::finance_credentials::ActiveCredentialBundle>,
+        crate::finance_credentials::FinanceCredentialError,
+    >,
+) -> Result<PrivateContext, CommandError> {
     let mut context = PrivateContext::default();
     let environment = state.credential_environment.to_string();
     if let Some(token) = github::load_token(&environment) {
         context.secrets.push(token);
     }
-    if let Ok(directory) = state.pi_agent_data_dir() {
-        context
-            .secrets
-            .extend(crate::providers::catalog::saved_credential_values(
-                &directory,
-            ));
-    }
+    let directory = state.pi_agent_data_dir()?;
+    context
+        .secrets
+        .extend(crate::providers::catalog::saved_credential_values(
+            &directory,
+        ));
     context
         .secrets
         .extend(crate::custom_connections::service::protected_values_for_state(state));
-    if let Ok(catalog) = crate::marketplace::bundled_catalog() {
-        for entry in catalog
-            .entries
-            .iter()
-            .filter(|entry| !entry.runtime.credential_mapping.is_empty())
-        {
-            if let Ok(Some(bundle)) = crate::finance_credentials::get(&environment, &entry.id) {
-                for field in entry.runtime.credential_mapping.keys() {
-                    if let Some(value) = bundle.get(field).filter(|value| value.len() >= 8) {
-                        context.secrets.push(value.to_owned());
-                    }
+    let catalog = crate::marketplace::bundled_catalog().map_err(internal)?;
+    for entry in catalog
+        .entries
+        .iter()
+        .filter(|entry| !entry.runtime.credential_mapping.is_empty())
+    {
+        if let Some(bundle) = get(&environment, &entry.id).map_err(internal)? {
+            for field in entry.runtime.credential_mapping.keys() {
+                if let Some(value) = bundle.get(field).filter(|value| value.len() >= 8) {
+                    context.secrets.push(value.to_owned());
                 }
-                if let Some(account) = bundle.get("account_number") {
-                    context.accounts.push(account.to_owned());
-                }
+            }
+            if let Some(account) = bundle.get("account_number") {
+                context.accounts.push(account.to_owned());
             }
         }
     }
-    if let Ok(connection) = state.store.lock() {
-        let positions = connection.prepare(&format!(
+    let connection = state.store.lock().map_err(internal)?;
+    let mut positions = connection
+        .prepare(&format!(
             "SELECT p.symbol, p.display_name, p.quantity, p.cost_basis, p.market_value
-             FROM user_holdings_positions p JOIN ({}) s ON s.snapshot_id = p.snapshot_id",
+         FROM user_holdings_positions p JOIN ({}) s ON s.snapshot_id = p.snapshot_id",
             crate::store::user_context::LATEST_SNAPSHOTS
-        ));
-        if let Ok(mut statement) = positions {
-            let rows = statement.query_map([], |row| {
-                Ok(HeldPosition {
-                    symbol: row.get(0)?,
-                    names: row.get::<_, Option<String>>(1)?.into_iter().collect(),
-                    amounts: [row.get::<_, Option<String>>(2)?, row.get(3)?, row.get(4)?]
-                        .into_iter()
-                        .flatten()
-                        .collect(),
-                })
-            });
-            if let Ok(rows) = rows {
-                context.holdings.extend(rows.filter_map(Result::ok));
-            }
-        }
-        // Wallet addresses are as private as account numbers.
-        if let Ok(mut statement) = connection.prepare("SELECT address FROM user_wallet_addresses") {
-            if let Ok(rows) = statement.query_map([], |row| row.get::<_, String>(0)) {
-                context.accounts.extend(rows.filter_map(Result::ok));
-            }
-        }
-    }
+        ))
+        .map_err(internal)?;
+    let rows = positions
+        .query_map([], |row| {
+            Ok(HeldPosition {
+                symbol: row.get(0)?,
+                names: row.get::<_, Option<String>>(1)?.into_iter().collect(),
+                amounts: [row.get::<_, Option<String>>(2)?, row.get(3)?, row.get(4)?]
+                    .into_iter()
+                    .flatten()
+                    .collect(),
+            })
+        })
+        .map_err(internal)?;
+    context.holdings = rows.collect::<rusqlite::Result<_>>().map_err(internal)?;
+    // Wallet addresses are as private as account numbers.
+    let mut addresses = connection
+        .prepare("SELECT address FROM user_wallet_addresses")
+        .map_err(internal)?;
+    context.accounts.extend(
+        addresses
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(internal)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(internal)?,
+    );
     context.personal = personal_names();
-    context
+    Ok(context)
 }
 
 /// The OS account's full name and home path. They belong to the process's
@@ -340,7 +355,7 @@ pub(crate) fn build_pack(
     let identity = gathered.identity;
     let origin = gathered.origin;
     let prepared = export::prepare(&gathered.input, &identity.pack_id);
-    let findings = export::findings(&prepared, &private_context(state));
+    let findings = export::findings(&prepared, &private_context(state)?);
     let choice = Choice {
         scope: request.scope.scope(),
         sections: request.sections,
@@ -394,7 +409,8 @@ pub(crate) fn build_pack(
         app: env!("CARGO_PKG_VERSION").to_owned(),
         origin,
     };
-    let hash = export::content_hash_for(&selected, &choice, &meta);
+    let (mut manifest, mut files) = export::build(&selected, &choice, &meta);
+    let hash = pack::content_hash(&files);
     if item_scope {
         meta.version = 1;
     } else if identity.content_hash.as_deref() != Some(hash.as_str()) {
@@ -403,7 +419,20 @@ pub(crate) fn build_pack(
         }
         meta.created_at = now_rfc3339();
     }
-    let (manifest, files) = export::build(&selected, &choice, &meta);
+    manifest.version = meta.version;
+    manifest.created_at = meta.created_at.clone();
+    let mut manifest_bytes = serde_json::to_vec_pretty(&manifest).expect("manifest serializes");
+    manifest_bytes.push(b'\n');
+    files.insert(pack::MANIFEST.into(), manifest_bytes);
+    pack::validate(&files).map_err(|reason| {
+        let items = export::oversized_items(&selected);
+        let detail = if items.is_empty() { manifest.name.clone() } else {
+            let mut detail = items.iter().take(40).cloned().collect::<Vec<_>>().join(", ");
+            if items.len() > 40 { detail.push_str(&format!(" and {} more items", items.len() - 40)); }
+            detail
+        };
+        CommandError::invalid(format!("The selected content cannot form a shared pack ({reason:?}): {detail}. Leave out these items and try again."))
+    })?;
     Ok(Built {
         files,
         name: manifest.name.clone(),
@@ -452,7 +481,7 @@ pub fn share_summary(
     let gathered = gather(state, &request.loupist_id)?;
     let identity = &gathered.identity;
     let prepared = export::prepare(&gathered.input, &identity.pack_id);
-    let findings = export::findings(&prepared, &private_context(state));
+    let findings = export::findings(&prepared, &private_context(state)?);
     let choice = Choice {
         scope: request.scope.scope(),
         sections: request.sections.unwrap_or(Sections::ALL),
@@ -469,9 +498,8 @@ pub fn share_summary(
                 .find(|(_, id)| *id == record_id)
                 .map(|(key, _)| key.as_str());
             let method = prepared
-                .perspective
+                .methods
                 .iter()
-                .chain(&prepared.methods)
                 .find(|doc| Some(doc.key.as_str()) == key);
             let principle = prepared
                 .principles

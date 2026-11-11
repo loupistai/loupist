@@ -24,7 +24,7 @@ const METRICS = new Set([
   'efficiency',
   'boundary',
 ]);
-const CONNECTIONS = new Set(['opendart', 'krx', 'koreainvestment', 'world-bank', 'web-research']);
+const CONNECTIONS = new Set(['opendart', 'krx', 'koreainvestment', 'world-bank', 'web-research', 'defillama']);
 const ROLES = new Set(['train', 'probe']);
 const MEMORY_MODES = new Set(['remember', 'read_only', 'off']);
 const NATIVE_TOOLS = ['read', 'write', 'edit', 'ls', 'find', 'grep'];

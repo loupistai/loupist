@@ -1,5 +1,6 @@
+import { clockLabel, useNow } from "../../chat/runStatus";
 import i18n, { useTranslation } from "@/i18n";
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import type { LoupistBridge } from "../../types";
 import type { ChatQuestion } from "../../contracts/chat";
 import { Button } from "../ui/button";
@@ -9,23 +10,14 @@ const t = i18n.getFixedT(null, "chat");
 
 const MAX_TEXT_CHARS = 500;
 
-const clock = (ms: number) => {
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-};
-
 type Answer = { choice: number } | { text: string };
 
 function WaitingQuestion({ question, onAnswer }: { question: ChatQuestion; onAnswer: (answer: Answer) => Promise<void> }) {
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const nowMs = useNow(true);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const [text, setText] = useState("");
   const otherId = useId();
-  useEffect(() => {
-    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
   const answer = async (value: Answer) => {
     setBusy(true);
     setFailed(false);
@@ -42,7 +34,7 @@ function WaitingQuestion({ question, onAnswer }: { question: ChatQuestion; onAns
     aria-label={t("questionCard.label", { question: question.question })}>
     <header>
       <strong>{t("questionCard.title")}</strong>
-      <span className="question-card-clock">{t("questionCard.waiting", { time: clock(nowMs - question.requestedAtMs) })}</span>
+      <span className="question-card-clock">{t("questionCard.waiting", { time: clockLabel(nowMs - question.requestedAtMs) })}</span>
     </header>
     <p className="question-card-text">{question.question}</p>
     <div className="question-card-options" role="group" aria-label={t("questionCard.options")}>

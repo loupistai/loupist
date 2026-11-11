@@ -27,7 +27,7 @@ pub fn valid_name(name: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 pub fn is_fixed(name: &str) -> bool {
-    matches!(name, "world" | "lens" | "journal" | "visualize")
+    agent_harness::skill_is_fixed(name)
 }
 pub(crate) fn invalid(message: &str) -> CommandError {
     CommandError::invalid(message)
@@ -174,6 +174,7 @@ pub fn catalog(
         .join("skills");
     for resource in resources {
         let path = resource.path;
+        let packaged = path.file_name().is_some_and(|name| name == "SKILL.md");
         let source = match resource.scope {
             agent_harness::workspace::WorkspaceResourceScope::Global => "personal",
             _ => "loupist",
@@ -183,20 +184,23 @@ pub fn catalog(
         let (id, mut name, description, error) = match parsed {
             Ok(skill) => (skill.name.clone(), skill.name, skill.description, None),
             Err(error) => {
-                let name = path
-                    .parent()
-                    .and_then(Path::file_name)
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .into_owned();
+                let name = (if packaged {
+                    path.parent().and_then(Path::file_name)
+                } else {
+                    path.file_stem()
+                })
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
                 (name.clone(), name, String::new(), Some(error.message))
             }
         };
-        let metadata = path
-            .parent()
-            .expect("skill parent")
-            .join("agents/openai.yaml");
-        if let Ok(text) = read(&metadata) {
+        let metadata = packaged.then(|| {
+            path.parent()
+                .expect("skill parent")
+                .join("agents/openai.yaml")
+        });
+        if let Some(text) = metadata.and_then(|path| read(&path).ok()) {
             #[derive(Deserialize)]
             struct Metadata {
                 interface: Option<Interface>,

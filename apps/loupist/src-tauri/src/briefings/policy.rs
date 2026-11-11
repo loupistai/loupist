@@ -5,14 +5,11 @@ use crate::broker::{tool_class::Unattended, ToolMethod};
 
 pub(crate) const REFUSAL: &str = "Unavailable in unattended runs; only pre-approved read-only tools and Memory reads/saves are allowed";
 
-/// A model-facing tool name. Capability and Skill reads have no broker method.
+/// A model-facing tool name. Capability loading has no broker method.
 pub(crate) fn allowed_name(name: &str) -> bool {
     match ToolMethod::from_tool_name(name) {
         Some(method) => method.safety().unattended == Unattended::Allowed,
-        None => matches!(
-            name,
-            "capability_list" | "capability_load" | "skills_list" | "skills_read"
-        ),
+        None => name == "capability_load",
     }
 }
 

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -544,6 +544,15 @@ pub(crate) fn for_delivery(
         .into_iter()
         .map(|activity| activity.run_id)
         .collect::<std::collections::HashSet<_>>();
+    delivery_rows(state, loupist_id, rows, &live)
+}
+
+fn delivery_rows(
+    state: &AppState,
+    loupist_id: &str,
+    rows: Vec<Handoff>,
+    live: &HashSet<String>,
+) -> Result<Vec<Handoff>, CommandError> {
     if rows.iter().any(|row| row.status == HandoffStatus::Created) {
         send_created(state, loupist_id);
     }
@@ -567,7 +576,14 @@ pub(crate) fn for_delivery(
                 Some("The app stopped before the session finished".into()),
                 now_ms(),
             )?;
-            handoff.status = HandoffStatus::Stopped;
+            // `finish` only transitions Running rows: completion may have won
+            // since the initial list. Deliver that stored outcome, not our snapshot.
+            let connection = state.store.lock_loupist(loupist_id).map_err(map_store)?;
+            let Some(current) = load(&connection, loupist_id, &handoff.id).map_err(map_store)?
+            else {
+                continue;
+            };
+            handoff = current;
         }
         shown.push(handoff);
     }
@@ -724,6 +740,7 @@ mod tests {
         assert_eq!(deliver(), 1);
         assert_eq!(told(), 1);
 
+        let stale_running = list(&state, loupist).unwrap();
         finish(
             &state,
             loupist,
@@ -735,6 +752,12 @@ mod tests {
         )
         .unwrap();
         drop(run);
+        let reconciled = delivery_rows(&state, loupist, stale_running, &HashSet::new()).unwrap();
+        assert_eq!(
+            reconciled[0].status,
+            HandoffStatus::Done,
+            "completion won after the initial row read"
+        );
         assert_eq!(deliver(), 1, "the running card turns done in place");
         assert_eq!(told(), 2);
         assert_eq!(deliver(), 0);
@@ -746,6 +769,106 @@ mod tests {
         }
         .after_turn(&state, loupist);
         assert_eq!(told(), 3);
+    }
+
+    #[test]
+    fn home_delivery_reports_pending_news_read_errors_without_posting() {
+        for table in [
+            "knowledge_earnings_notices",
+            "knowledge_watch_events",
+            "knowledge_schema_changes",
+            "knowledge_connections",
+            "knowledge_asset_pages",
+        ] {
+            let id = "loupist-news-read-failure";
+            let (_root, state) = state_with_loupist(id);
+            let before = super::super::home::ensure_home_thread(&state, id).unwrap();
+            state
+                .store
+                .lock_loupist(id)
+                .unwrap()
+                .execute_batch(&format!("DROP TABLE {table}"))
+                .unwrap();
+            assert!(
+                super::super::home::deliver_finished_runs(&state, id).is_err(),
+                "{table}"
+            );
+            let after = state.store.get_chat(&before.id).unwrap().unwrap();
+            assert_eq!(after.messages, before.messages, "{table}");
+        }
+    }
+
+    #[test]
+    fn a_failed_earnings_snapshot_does_not_block_handoff_delivery() {
+        let id = "loupist-snapshot-failure";
+        let (_root, state) = state_with_loupist(id);
+        state
+            .store
+            .watchlist_add("MORR", "NASDAQ", Some("Morrow"))
+            .unwrap();
+        let page = crate::commands::watch::followed_pages(&state, id)
+            .unwrap()
+            .remove(0);
+        crate::commands::assets::with_assets(&state, id, true, |tx| {
+            let (event, _) = crate::knowledge::earnings::upsert_event(
+                tx,
+                id,
+                &page.asset_id,
+                "Q3 2026",
+                None,
+                chrono::NaiveDate::from_ymd_opt(2026, 11, 1).unwrap(),
+                crate::knowledge::earnings::DateSource::Calendar,
+                1,
+            )?;
+            crate::knowledge::earnings::add_notice(
+                tx,
+                id,
+                &event.event_id,
+                "reported",
+                Some("after"),
+                1,
+            )
+        })
+        .unwrap();
+        state
+            .store
+            .lock_loupist(id)
+            .unwrap()
+            .execute_batch("DROP TABLE knowledge_earnings_rows")
+            .unwrap();
+        let handoff = commit_standalone(&state, id, &StagedHandoff {
+            request: HandoffRequest::parse(&json!({"title": "Research", "question": "What changed?", "requestKey": "snapshot-failure"})).unwrap(),
+            run: HandoffRun { model_profile_id: "fixture".into(), thinking_level: "medium".into(), run_options: BTreeMap::new(), use_memory: false, update_memory: false },
+        }).unwrap();
+        mark_running(&state, id, &handoff.id, "finished-fixture").unwrap();
+        finish(
+            &state,
+            id,
+            &handoff.id,
+            HandoffStatus::Done,
+            None,
+            None,
+            now_ms(),
+        )
+        .unwrap();
+        assert!(super::super::home::deliver_finished_runs(&state, id).unwrap() > 0);
+        let home = super::super::home::ensure_home_thread(&state, id).unwrap();
+        assert!(home
+            .messages
+            .iter()
+            .any(
+                |message| message.handoff.as_ref().is_some_and(|card| card.handoff_id
+                    == handoff.id
+                    && card.status == HandoffStatus::Done)
+            ));
+        crate::commands::assets::with_assets(&state, id, false, |tx| {
+            assert_eq!(
+                crate::knowledge::earnings::pending_notices(tx, id)?.len(),
+                1
+            );
+            Ok(())
+        })
+        .unwrap();
     }
 
     #[test]

@@ -40,6 +40,20 @@ function viewProps(messages: ChatMessage[], extra: Partial<ComponentProps<typeof
 }
 const composer = () => screen.getByRole("textbox", { name: "Message Loupist" }) as HTMLTextAreaElement;
 
+it("releases loaded images when leaving a conversation", async () => {
+  const props = viewProps([{ id: "image-question", role: "user", status: "complete", content: "Review this", created_at: "2026-10-03T00:00:00Z", attachments: [
+    { id: "image", filename: "chart.png", media_type: "image/png", size_bytes: 12 },
+  ] }]);
+  const read = vi.spyOn(props.bridge, "chatAttachmentRead").mockResolvedValue({ data_url: "data:image/png;base64,aTE=" });
+  const other = { ...props.threads[0]!, id: "other", messages: [] };
+  props.threads.push(other);
+  const view = render(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
+  await waitFor(() => expect(read).toHaveBeenCalledOnce());
+  view.rerender(<TooltipProvider><ChatView {...props} activeThreadId={other.id} chat={{ id: other.id } as Chat<LoupistUIMessage>} /></TooltipProvider>);
+  view.rerender(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+});
+
 it("keeps historical ticker messages and new dollar text ordinary without fetching assets or the watchlist", async () => {
   const text = "$AAPL:NASDAQ (Apple) What changed? It cost $5.";
   const props = viewProps([

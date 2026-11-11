@@ -95,6 +95,22 @@ export async function clickControl(browser, selector) {
   }
 }
 
+/** The toolbar keeps a folded inert Library button while its action moves to More. */
+export async function openMapLibrary(browser, timeout = 15_000) {
+  const library = await browser.$("[data-testid=map-view] aside[data-testid=map-library]");
+  if (await library.isDisplayed().catch(() => false)) return library;
+  const direct = await browser.$("[data-testid=map-view] button[data-map-library]:not([inert])");
+  if (await direct.isDisplayed().catch(() => false)) await direct.click();
+  else {
+    await clickControl(browser, "[data-testid=map-view] [data-map-more]");
+    const item = await browser.$('[role="menuitemcheckbox"][data-map-library]');
+    await item.waitForDisplayed({ timeout, timeoutMsg: "Map Library action did not appear in More" });
+    await item.click();
+  }
+  await library.waitForDisplayed({ timeout, timeoutMsg: "Map Library did not open" });
+  return library;
+}
+
 /** The settings sheet is also role=dialog, so the first dialog is not the confirmation. */
 export async function dialogByTitle(browser, title, timeout = 20_000) {
   await browser.waitUntil(

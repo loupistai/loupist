@@ -1,7 +1,8 @@
+import { useCopyFeedback } from "../../hooks/useCopyFeedback";
 import { formatDateTime } from "@/i18n/format";
 import { ChartBoundary } from "./ChartBoundary";
 import i18n, { useTranslation } from "@/i18n";
-import { lazy, Suspense, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useId, useState, type KeyboardEvent, type ReactNode } from "react";
 import { CheckIcon, ClipboardIcon, MessageCircleIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -12,6 +13,8 @@ import { ArtifactData } from "./ArtifactData";
 import { ConflictCard, GridCard } from "@/components/chat/GridCard";
 import { ChartSnapshotContext, type ChartSnapshotSlot } from "../charts/chartSnapshot";
 import { SaveChartPng } from "../charts/SaveChartPng";
+import { chatArtifactRef } from "../../chat/artifactRef";
+export { chatArtifactRef } from "../../chat/artifactRef";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -25,14 +28,6 @@ type Props = {
   askDisabled?: boolean;
   onExport?: (request: { suggestedName: string; bytes: number[]; kind: "csv" | "md" | "png" }) => Promise<string | null>;
 };
-
-export const chatArtifactRef = (view: ChatArtifactView): ChatArtifactRef => ({
-  artifact_id: view.artifact.id,
-  revision: view.revision.revision,
-  kind: view.artifact.kind,
-  title: view.artifact.title,
-  digest: view.revision.digest,
-});
 
 /**
  * The Work status row's line for an open item (side-panel.md §2.2, §3.4): its title and kind, the version
@@ -64,39 +59,20 @@ export function ArtifactContent({
 }: Props) {
   useTranslation("chat");
   const [mode, setMode] = useState<"preview" | "source" | "data">("preview");
-  const [copied, setCopied] = useState(false);
-  const [copyError, setCopyError] = useState<string | null>(null);
+  const { state: copyState, copy } = useCopyFeedback(`${view.artifact.id}:${view.revision.revision}`, 1_500);
+  const copied = copyState === "copied";
+  const copyError = copyState === "failed" ? t("artifactContent.couldNotCopyThisDocumentTryAgain") : null;
   const viewId = useId();
-  const copyRequest = useRef(0);
-  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The drawn chart leaves its snapshot here for "Save as PNG…".
   const [snapshot] = useState<ChartSnapshotSlot>(() => ({ current: null }));
 
   useEffect(() => {
     setMode("preview");
-    setCopied(false);
-    setCopyError(null);
-    ++copyRequest.current;
-    return () => {
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- a request counter, not a DOM node: cleanup invalidates the request that is in flight.
-      ++copyRequest.current;
-      if (copyTimer.current !== null) clearTimeout(copyTimer.current);
-    };
   }, [view.artifact.id, view.revision.revision]);
 
   const copySource = async () => {
     if (view.revision.payload.kind !== "markdown") return;
-    const request = ++copyRequest.current;
-    try {
-      await navigator.clipboard.writeText(view.revision.payload.markdown);
-      if (request !== copyRequest.current) return;
-      setCopied(true);
-      setCopyError(null);
-      if (copyTimer.current !== null) clearTimeout(copyTimer.current);
-      copyTimer.current = setTimeout(() => setCopied(false), 1_500);
-    } catch {
-      if (request === copyRequest.current) setCopyError(t("artifactContent.couldNotCopyThisDocumentTryAgain"));
-    }
+    await copy(view.revision.payload.markdown);
   };
 
   if (view.revision.payload.kind === "chart" && view.revision.payload.schema !== CHART_SCHEMA) {

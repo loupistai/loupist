@@ -18,8 +18,8 @@ Search with `python3 scripts/guide.py <topic>`. It returns up to twelve section
 addresses from Git-visible guides, including new uncommitted pages. When a title
 misses, search the body with `rg`. Run `python3 scripts/guide.py --check` after
 changing routes. Every gate and CI run checks it too. Inspect Git-visible new files with
-`git ls-files -o --exclude-standard` and review their contents before commit. Keep private notes under `docs/local/`, plans in `plan/` and run artifacts in
-`output/`. Setup in a clean checkout uses the guidance at that revision.
+`git ls-files -o --exclude-standard` and review their contents before commit. Keep private notes, plans and task state outside the repository, and run artifacts
+in the ignored `output/`. Setup in a clean checkout uses the guidance at that revision.
 
 ## Tool entry points
 

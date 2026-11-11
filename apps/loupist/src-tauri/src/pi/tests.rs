@@ -849,3 +849,16 @@ fn launch_validation_rejects_unpinned_runtime_metadata() {
         Err(PiError::UntrustedRuntime)
     ));
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn runtime_verification_does_not_block_the_async_worker() {
+    let (release, wait) = std::sync::mpsc::channel();
+    let verification = verify_runtime_on_blocking_pool(move || {
+        wait.recv_timeout(Duration::from_secs(1))
+            .map_err(|_| PiError::UntrustedRuntime)
+    });
+    tokio::pin!(verification);
+    assert!(futures_util::poll!(&mut verification).is_pending());
+    release.send(()).unwrap();
+    verification.await.unwrap();
+}

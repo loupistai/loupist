@@ -4,6 +4,9 @@ import { readFileSync } from "node:fs";
 import { findEnvKeys } from "@earendil-works/pi-ai/compat";
 import { builtinProviders, getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
 import { nativeSearchProviderIds } from "./loupist-native-search.mjs";
+import { codexSearchAdapter, openaiSearchAdapter } from "./native-search/codex.mjs";
+import { anthropicSearchAdapter } from "./native-search/anthropic.mjs";
+import { xaiSearchAdapter } from "./native-search/xai.mjs";
 import { isGuardedInferenceApi } from "./provider-inference.mjs";
 
 // Rust reads the same file (`providers/manifest.rs`); these checks hold it to
@@ -43,4 +46,25 @@ test("the support launch bootstrap model is in the pinned Pi catalog", () => {
   const entry = manifest.providers.find((candidate) => candidate.id === provider);
   assert.ok(entry?.api_key && !entry.development_only, "the bootstrap provider takes an API key");
   assert.ok(getBuiltinModel(provider, model), `Pi must supply ${provider}/${model}`);
+});
+
+test("Chat defaults and native-search allowlists exist in the bundled Pi catalog", () => {
+  const defaults = JSON.parse(readFileSync(new URL("../chat-model-defaults.json", import.meta.url)));
+  for (const group of defaults.providers) {
+    for (const { id } of group.models) assert.ok(getBuiltinModel(group.provider, id), `${group.provider}/${id}`);
+  }
+  for (const adapter of [openaiSearchAdapter, codexSearchAdapter, anthropicSearchAdapter, xaiSearchAdapter]) {
+    assert(adapter.modelIds.length > 0);
+    const models = adapter.modelIds.map((id) => {
+      const model = getBuiltinModel(adapter.id, id);
+      assert.ok(model, `${adapter.id}/${id}`);
+      return model;
+    });
+    assert.doesNotMatch(models[0].id, /(?:^|[-.])(?:sol|astra|opus|sonnet)(?:[-.]|$)/u,
+      `${adapter.id}: search must start with a low-cost model`);
+    // Pin ordinary uncached input/output rates; equal-cost entries prefer newer models.
+    const prices = models.map((model) => model.cost.input + model.cost.output);
+    assert.deepEqual(prices, [...prices].sort((left, right) => left - right),
+      `${adapter.id}: native-search models must remain cheapest-first`);
+  }
 });

@@ -5,7 +5,8 @@ import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { KnowledgeLocation } from "../../types";
 import { setPreviewLanguage } from "../../i18n/useLanguage";
 import { MapView } from "./MapView";
-vi.mock('./MapCanvas', () => ({ default: ({ nodes = [], edges = [], overlayIds }: { nodes?: { kind: string; entityKind?: string }[]; edges?: { id: string }[]; overlayIds?: Set<string> }) => <div data-testid="map-canvas" data-kinds={nodes.map(node => node.kind).join(",")} data-nodes={nodes.map(node => `${node.kind}|${node.entityKind ?? ""}`).join(",")} data-edges={edges.map(edge => edge.id).join(",")} data-overlay={[...(overlayIds ?? [])].sort().join(",")} /> }));
+const canvasFailure = vi.hoisted(() => ({ active: false }));
+vi.mock('./MapCanvas', () => ({ default: ({ nodes = [], edges = [], overlayIds }: { nodes?: { kind: string; entityKind?: string }[]; edges?: { id: string }[]; overlayIds?: Set<string> }) => { if (canvasFailure.active) throw new Error("Canvas unavailable"); return <div data-testid="map-canvas" data-kinds={nodes.map(node => node.kind).join(",")} data-nodes={nodes.map(node => `${node.kind}|${node.entityKind ?? ""}`).join(",")} data-edges={edges.map(edge => edge.id).join(",")} data-overlay={[...(overlayIds ?? [])].sort().join(",")} />; } }));
 const hintCopy = "Each dot is something your Loupist knows. Click one to see why it's here.";
 function mockMapBox(width: number, height: number) {
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(width);
@@ -217,4 +218,13 @@ it("finds an entity by a local name and shows that name in Korean", async () => 
   } finally {
     setPreviewLanguage("en");
   }
+});
+
+it("keeps the World readable as a list when its canvas throws", async () => {
+  canvasFailure.active = true;
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    await setup();
+    expect(await screen.findByRole("table", { name: "List view" })).toBeVisible();
+  } finally { canvasFailure.active = false; error.mockRestore(); }
 });

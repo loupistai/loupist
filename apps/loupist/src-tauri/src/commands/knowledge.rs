@@ -319,6 +319,7 @@ pub fn knowledge_growth_events(
     request: crate::knowledge::GrowthEventsQuery,
     state: State<'_, AppState>,
 ) -> Result<crate::knowledge::GrowthEventsPage, CommandError> {
+    admit(state.inner(), &request.loupist_id)?;
     with_loupist_knowledge(state.inner(), &request.loupist_id, |tx, blobs| {
         crate::knowledge::KnowledgeWrite::bind(tx, blobs).growth_events(&request)
     })
@@ -1316,7 +1317,7 @@ pub(crate) fn lens_search(
     state: &AppState,
     request: KnowledgeLensSearchRequest,
 ) -> Result<Vec<LensSearchHitDto>, CommandError> {
-    let hits = host_search(state, &request.loupist_id, &request.query, "lens")?;
+    let hits = chat_reads::renderer_lens_search(state, &request.loupist_id, &request.query)?;
     let rows = hits.as_array().cloned().unwrap_or_default();
     with_loupist_knowledge(state, &request.loupist_id.clone(), |tx, blobs| {
         let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
@@ -1577,14 +1578,14 @@ fn with_loupist_knowledge<T>(
     let mut connection = state
         .store
         .lock_loupist(loupist_id)
-        .map_err(|error| CommandError::internal(error.to_string()))?;
+        .map_err(super::map_store)?;
     let transaction = connection
         .transaction()
-        .map_err(|error| CommandError::internal(error.to_string()))?;
+        .map_err(|error| super::map_store(error.into()))?;
     let value = body(&transaction, &blobs).map_err(map_knowledge)?;
     transaction
         .commit()
-        .map_err(|error| CommandError::internal(error.to_string()))?;
+        .map_err(|error| super::map_store(error.into()))?;
     Ok(value)
 }
 
@@ -1645,7 +1646,64 @@ fn outdated_memory_message(error: &KnowledgeError) -> Option<&'static str> {
 
 #[cfg(test)]
 mod memory_error_tests {
-    use super::{map_knowledge, KnowledgeError};
+    use super::*;
+
+    #[test]
+    fn growth_events_refuse_a_loupist_quarantined_for_deletion() {
+        use tauri::Manager;
+        let temp = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(temp.path().join("app"));
+        crate::commands::tests::seed_profile(
+            state.store.as_ref(),
+            &crate::commands::tests::profile("loupist-a", &temp.path().join("workspace"), 1),
+        );
+        state.quarantine_loupist(
+            "loupist-a",
+            crate::app::QuarantineSource::Deletion,
+            "pending deletion",
+        );
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        app.manage(state);
+        let error = knowledge_growth_events(
+            crate::knowledge::GrowthEventsQuery {
+                loupist_id: "loupist-a".into(),
+                since_ms: None,
+                until_ms: None,
+                limit: None,
+                cursor: None,
+            },
+            app.state(),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "loupist_storage_unavailable");
+    }
+
+    #[test]
+    fn memory_transaction_errors_do_not_expose_sqlite_details() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(temp.path().join("app"));
+        crate::commands::tests::seed_profile(
+            state.store.as_ref(),
+            &crate::commands::tests::profile("loupist-a", &temp.path().join("workspace"), 1),
+        );
+        state
+            .store
+            .lock_loupist("loupist-a")
+            .unwrap()
+            .execute_batch("BEGIN")
+            .unwrap();
+        let error = with_loupist_knowledge(&state, "loupist-a", |_, _| Ok(())).unwrap_err();
+        state
+            .store
+            .lock_loupist("loupist-a")
+            .unwrap()
+            .execute_batch("ROLLBACK")
+            .unwrap();
+        assert_eq!(error.code, "internal");
+        assert_eq!(error.message, "Could not access saved data.");
+    }
 
     #[test]
     fn a_missing_memory_table_does_not_name_the_database_object() {

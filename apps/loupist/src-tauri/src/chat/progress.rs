@@ -415,9 +415,9 @@ pub struct ChatProgress {
     pub questions: Vec<crate::chat::questions::ChatQuestion>,
 }
 
-/// A plan has this many items at least and at most.
 /// A reply asks for at most this many approvals; later requests are refused like before.
 pub const MAX_PROGRESS_APPROVALS: usize = 20;
+/// A plan has this many items at least and at most.
 pub const MIN_PLAN_ITEMS: usize = 2;
 pub const MAX_PLAN_ITEMS: usize = 6;
 const MAX_PLAN_ID_CHARS: usize = 32;

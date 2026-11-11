@@ -40,10 +40,6 @@ impl AssetClass {
         }
     }
 
-    pub fn parse(value: &str) -> Option<Self> {
-        serde_json::from_value(serde_json::Value::String(value.to_owned())).ok()
-    }
-
     /// Classes with no automatic data source in v1: only Sources and World growth.
     pub fn sources_only(self) -> bool {
         matches!(self, Self::RealAsset | Self::Prediction | Self::Private)
@@ -72,10 +68,6 @@ impl ClassSource {
             Self::World => "world",
             Self::Default => "default",
         }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        serde_json::from_value(serde_json::Value::String(value.to_owned())).ok()
     }
 
     /// Whether a source may replace a class set by `self`.

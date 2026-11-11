@@ -35,8 +35,10 @@ folder depth at most eight. Public GitHub archives are also bounded; import does
 not use credentials or execute installation hooks. Use a local checkout for private
 material. Draft with Loupist opens an unsent scoped Skill Creator request in a new Chat.
 
-Changes are read again at Chat admission and apply on the next turn. Skills cannot
-grant connection access or Memory permissions. Their bodies/references load for the
+Changes are read again at Chat admission and apply on the next turn. Unreadable or
+malformed Skills are disabled and excluded from that turn. Flat `skills/<id>.md`
+files use their filename as the fallback identifier and have no package display metadata.
+Skills cannot grant connection access or Memory permissions. Their bodies/references load for the
 requested operation; they do not install upstream plugins or office runtimes.
 [Bundled provenance](../../apps/loupist/agent/skills/NOTICE.md) owns licenses and
 adaptations. [Prompt and judgment](../agent/prompt.md) owns prompt/cache behavior.

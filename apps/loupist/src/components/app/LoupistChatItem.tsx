@@ -12,7 +12,7 @@ import type { ChatThread } from "../../types";
 import { isEmptyChatThreadId } from "../../app/emptyChat";
 
 type Props = {
-  icon?: React.ReactNode; iconOnly?: boolean;
+  iconOnly?: boolean;
   thread: ChatThread;
   active: boolean;
   running: boolean;
@@ -28,7 +28,7 @@ type Props = {
   onExport?: (thread: ChatThread, format: "md" | "pdf") => void;
 };
 
-export function LoupistChatItem({ icon, iconOnly = false, thread, active, running, finished = false, draft = false, onSelect, onSchedule, onRename, onDelete, onExport }: Props) {
+export function LoupistChatItem({ iconOnly = false, thread, active, running, finished = false, draft = false, onSelect, onSchedule, onRename, onDelete, onExport }: Props) {
   useTranslation();
   const homeDescId = useId();
   const title = chatTitle(thread);
@@ -49,7 +49,7 @@ export function LoupistChatItem({ icon, iconOnly = false, thread, active, runnin
         aria-current={active ? "page" : undefined}
         onClick={() => onSelect(thread)}
       >
-        {thread.home ? <InboxIcon className="loupist-home-icon" aria-hidden="true" /> : icon}
+        {thread.home ? <InboxIcon className="loupist-home-icon" aria-hidden="true" /> : null}
         {iconOnly ? null : thread.home ? <span className="loupist-home-copy"><span className="loupist-chat-title" data-testid="loupist-chat-title">{title}</span><small id={homeDescId} aria-hidden="true">{homeDescriptor}</small></span>
           : <span className="loupist-chat-title" data-testid="loupist-chat-title">{title}</span>}
         {draft ? <span className="loupist-draft-dot" role="img" aria-label={i18n.t("app:loupistChatItem.unsentDraft")} title={i18n.t("app:loupistChatItem.unsentDraft")} /> : null}

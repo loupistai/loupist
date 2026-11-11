@@ -21,14 +21,6 @@ impl WalletFamily {
             Self::Solana => "solana",
         }
     }
-    pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "bitcoin" => Some(Self::Bitcoin),
-            "evm" => Some(Self::Evm),
-            "solana" => Some(Self::Solana),
-            _ => None,
-        }
-    }
 }
 
 #[derive(Debug, PartialEq, Eq)]

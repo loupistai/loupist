@@ -1055,11 +1055,11 @@ where
     )
     .await
     .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "broker authentication timed out"))??;
-    if read == 0 || bytes.last() != Some(&b'\n') {
-        return Err(BrokerError::Malformed);
-    }
     if bytes.len() > MAX_FRAME_BYTES {
         return Err(BrokerError::FrameTooLarge);
+    }
+    if read == 0 || bytes.last() != Some(&b'\n') {
+        return Err(BrokerError::Malformed);
     }
     bytes.pop();
     if bytes.last() == Some(&b'\r') {
@@ -1130,19 +1130,16 @@ where
             },
             Some((executed.method, executed.reservation)),
         ),
-        Err((id, error)) => {
-            executor.discard_delivery(policy, &delivery_id).await;
-            (
-                BrokerResponse {
-                    protocol: PROTOCOL,
-                    id,
-                    ok: false,
-                    result: None,
-                    error: Some(error_body(&error)),
-                },
-                None,
-            )
-        }
+        Err((id, error)) => (
+            BrokerResponse {
+                protocol: PROTOCOL,
+                id,
+                ok: false,
+                result: None,
+                error: Some(error_body(&error)),
+            },
+            None,
+        ),
     };
     let response_id = response.id.clone();
     let result_bytes = response.result.as_ref().and_then(trace_result_size);
@@ -1167,11 +1164,15 @@ where
         trace.finish(trace_error.as_ref(), result_bytes);
     }
     if let Err(error) = write_response(&mut writer, &encoded).await {
-        executor.discard_delivery(policy, &delivery_id).await;
+        if delivered_success {
+            executor.discard_delivery(policy, &delivery_id).await;
+        }
         return Err(error);
     }
     if let Err(error) = read_delivery_ack(&mut reader, &response_id).await {
-        executor.discard_delivery(policy, &delivery_id).await;
+        if delivered_success {
+            executor.discard_delivery(policy, &delivery_id).await;
+        }
         return Err(error);
     }
     if let Some((_, reservation)) = transaction {

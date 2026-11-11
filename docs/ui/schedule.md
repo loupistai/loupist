@@ -1,6 +1,6 @@
 # Schedule
 
-Bot’s More menu opens task history. Active and All filters, task details, run readers, linked evidence and notifications use the same saved task and run IDs. Focusing a control below the fold in a run scrolls it into the reader. A run's answer renders as the same card as in Chat, inside the run's own execution scope: its citations, links and workspace files open beside the briefing's own chat, which the Chat tab shows first (`useAppOpen`'s `openIn`), and a conflict card offers See on the Map. The reader lists watched assets and recent alerts. Creation, edits, manual runs and cancellation start in conversation. A clear request registers immediately and returns the cadence and next execution time. A research session hands the request to its own Bot and stays open.
+Bot’s More menu opens task history. Active and All filters, task details, run readers, linked evidence and notifications use the same saved task and run IDs. Focusing a control below the fold in a run scrolls it into the reader. A run's answer renders as the same card as in Chat, inside the run's own execution scope: its citations, links and workspace files open beside the briefing's own chat, which the Chat tab shows first (`useAppOpen`'s `openIn`), and a conflict card offers See on the Map. The reader lists watched assets and recent alerts. Looking ahead retains results and dividend record dates within seven calendar days of the saved run's start, including when that run is opened later. Creation, edits, manual runs and cancellation start in conversation. A clear request registers immediately and returns the cadence and next execution time. A research session hands the request to its own Bot and stays open.
 
 ## Code
 
@@ -8,22 +8,5 @@ Bot’s More menu opens task history. Active and All filters, task details, run 
 
 ## Process lifetime
 
-World jobs and World search run in-process through Rust and the local embedding
-model. Existing folders keep their canonical SQLite snapshot; leftover
-`graph-instance/` data is ignored and never migrated or read.
-App exit stops schedule admission, cancels/drains World work and shuts down MCP
-workers and leased processes. The Tauri exit callback allows 30 seconds; unfinished
-cleanup retains leases for startup recovery. Recovery verifies process identity
-before signaling. Process leases are implemented for macOS, Windows and Linux.
-Linux verifies the boot ID, process start ticks and executable identity through
-procfs and requires the process group to remain verifiable. Other Unix hosts
-fail closed with `UnsupportedPlatform`.
-
-Keep running in the menu bar for briefings defaults on, can be
-turned off in the briefing schedule editor, and turning a briefing on sets it again. Closing the main window hides it while
-that setting is on.
-Menu Quit and Cmd+Q exit. The tray menu opens the app, selects a Loupist's inbox,
-or quits. A finished briefing posts an OS notification when permission is
-granted. That notification does not open the item. Tray selection emits the
-typed `inbox-open` event. Schedules run only while the app process is running,
-including while the window is hidden.
+See [Process lifetime](../runtime/scheduled-runs.md#process-lifetime) for resident
+operation, shutdown and worker recovery.

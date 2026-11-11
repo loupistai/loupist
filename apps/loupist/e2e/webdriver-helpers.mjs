@@ -12,8 +12,18 @@ export function createWebdriverHelpers(browser, options = {}) {
   const bodyText = async () =>
     (await browser.$("body").getText()).slice(0, bodyTextLimit);
 
+  async function waitWithDiagnostics(predicate, settings) {
+    try {
+      return await browser.waitUntil(predicate, settings);
+    } catch (error) {
+      const body = await bodyText().catch(() => null);
+      if (body === null) throw error;
+      throw new Error(`${error.message}\n${body}`, { cause: error });
+    }
+  }
+
   async function displayed(selector, timeout = defaultTimeout) {
-    await browser.waitUntil(
+    await waitWithDiagnostics(
       async () => {
         for (const element of await browser.$$(selector)) {
           if (await element.isDisplayed()) return true;
@@ -23,7 +33,7 @@ export function createWebdriverHelpers(browser, options = {}) {
       {
         timeout,
         interval,
-        timeoutMsg: `Timed out waiting for visible ${selector}\n${await bodyText()}`,
+        timeoutMsg: `Timed out waiting for visible ${selector}`,
       },
     );
     for (const element of await browser.$$(selector)) {
@@ -48,7 +58,7 @@ export function createWebdriverHelpers(browser, options = {}) {
   };
 
   async function childWithText(root, selector, text, timeout = defaultTimeout) {
-    await browser.waitUntil(
+    await waitWithDiagnostics(
       async () => {
         for (const element of await root.$$(selector)) {
           if (await matches(element, text)) return true;
@@ -58,7 +68,7 @@ export function createWebdriverHelpers(browser, options = {}) {
       {
         timeout,
         interval,
-        timeoutMsg: `Timed out waiting for ${selector} with text “${text}”\n${await bodyText()}`,
+        timeoutMsg: `Timed out waiting for ${selector} with text “${text}”`,
       },
     );
     for (const element of await root.$$(selector)) {
@@ -81,15 +91,15 @@ export function createWebdriverHelpers(browser, options = {}) {
   }
 
   async function waitForText(root, text, timeout = defaultTimeout) {
-    await browser.waitUntil(async () => (await root.getText()).includes(text), {
+    await waitWithDiagnostics(async () => (await root.getText()).includes(text), {
       timeout,
       interval,
-      timeoutMsg: `Timed out waiting for text “${text}”\n${await bodyText()}`,
+      timeoutMsg: `Timed out waiting for text “${text}”`,
     });
   }
 
   async function waitForTextGone(root, text, timeout = defaultTimeout) {
-    await browser.waitUntil(
+    await waitWithDiagnostics(
       async () => !(await root.getText()).includes(text),
       {
         timeout,
@@ -100,12 +110,12 @@ export function createWebdriverHelpers(browser, options = {}) {
   }
 
   async function waitForAppReady(timeout = 90_000) {
-    await browser.waitUntil(
+    await waitWithDiagnostics(
       async () => !(await bodyText()).includes("Opening"),
       {
         timeout,
         interval,
-        timeoutMsg: `Timed out waiting for Loupist to finish opening\n${await bodyText()}`,
+        timeoutMsg: `Timed out waiting for Loupist to finish opening`,
       },
     );
   }

@@ -1,16 +1,16 @@
 import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { PlayIcon, BookOpenIcon, ChevronDownIcon, HistoryIcon, ImageIcon, ListIcon, MoreHorizontalIcon, NetworkIcon, ScanIcon, SearchIcon, SlidersHorizontalIcon, VideoIcon, WaypointsIcon } from "lucide-react";
+import { PlayIcon, BookOpenIcon, ChevronDownIcon, HistoryIcon, ListIcon, MoreHorizontalIcon, NetworkIcon, ScanIcon, SearchIcon, SlidersHorizontalIcon, WaypointsIcon } from "lucide-react";
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
 import { useTranslation } from "../../i18n";
 import { Button } from "../ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "../ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { Input } from "../ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { entityCategories, nodeCategory } from "../../knowledge/mapKinds";
 import { entityLabel } from "../../knowledge/mapItems";
 import { mapScopes, type MapScope } from "./localView";
-import { foldProps, useToolbarOverflow, type MapOverflowItem } from "./toolbarOverflow";
+import { foldProps, useScopeOverflow } from "./toolbarOverflow";
 import { formatNumber } from "../../i18n/format";
 export type MapFilters = { kinds: string[]; personal: boolean; disputed: boolean; metrics: boolean };
 export const defaultFilters = (): MapFilters => ({ kinds: [...entityCategories], personal: false, disputed: false, metrics: true });
@@ -29,16 +29,14 @@ export type MapLocalControls = {
   onScope: (scope: MapScope) => void;
 };
 export type MapWhatsNewControl = { count: number; open: boolean; onToggle: () => void };
-/** The Export menu's actions, for when Export folds into "More". */
-export type MapExportActions = { disabled: boolean; save: (video: boolean) => void };
 const scopeKey = { "1": "map.scope1", "2": "map.scope2", all: "map.scopeAll" } as const;
 
-export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect, list, onList, onFit, lenses, overlayId, onOverlay, appliedCounts, lensTitles, baseLensIds, libraryOpen, onLibrary, replayActive, onReplay, exportControl, exportActions, disabled, fitDisabled = false, replayDisabled = false, listDisabled = false, local, whatsNew }: {
+export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect, list, onList, onFit, lenses, overlayId, onOverlay, appliedCounts, lensTitles, baseLensIds, libraryOpen, onLibrary, replayActive, onReplay, exportControl, disabled, fitDisabled = false, replayDisabled = false, listDisabled = false, local, whatsNew }: {
   disabled?: boolean; fitDisabled?: boolean; replayDisabled?: boolean; listDisabled?: boolean;
   local?: MapLocalControls; whatsNew?: MapWhatsNewControl;
   replayActive?: boolean; onReplay?: () => void;
-  /** The Export trigger; `folded` hides it while Export lives in "More", where `exportActions` run it. */
-  exportControl?: (folded: boolean) => ReactNode; exportActions?: MapExportActions;
+  /** Export stays in the row while secondary actions live in More. */
+  exportControl?: ReactNode;
   lenses: KnowledgeMapNode[]; overlayId?: string; onOverlay: (id: string | undefined) => void;
   /** How many World names each Lens is already applied to, and the title to show for a base perspective. */
   appliedCounts?: Record<string, number>; lensTitles?: Record<string, string>; baseLensIds?: ReadonlySet<string>;
@@ -52,10 +50,7 @@ export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect
   const [index, setIndex] = useState(0);
   const resultsId = useId();
   const bar = useRef<HTMLDivElement>(null);
-  // Lower-priority actions fold into "More" whenever the row would overflow; they stay mounted to keep their state and width.
-  const folded = useToolbarOverflow(bar);
-  const isFolded = (name: MapOverflowItem) => name === "export" ? false : name === "scope" ? folded.includes(name) : true;
-  // A folded scope segment becomes its own Scope menu button; everything else goes into "More".
+  const scopeFolded = useScopeOverflow(bar);
 
   useEffect(() => setIndex(0), [nodes]);
   const choose = (node: KnowledgeMapNode) => { onSelect(node); setOpen(false); };
@@ -73,7 +68,7 @@ export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect
         {!nodes.length ? <p role="status">{t("map.noMatch")}</p> : null}
       </div> : null}
     </div>
-    {local ? <LocalControls local={local} disabled={disabled} scopeFolded={isFolded("scope")} /> : null}
+    {local ? <LocalControls local={local} disabled={disabled} scopeFolded={scopeFolded} /> : null}
     {whatsNew ? <Button className="map-toolbar-button" disabled={disabled} variant="ghost" data-map-whats-new aria-expanded={whatsNew.open}
       aria-label={whatsNew.count ? t("map.whatsNewCount", { count: whatsNew.count, formattedCount: formatNumber(whatsNew.count) }) : t("map.whatsNew")} title={t("map.whatsNew")} onClick={whatsNew.onToggle}>
       <HistoryIcon /><span className="map-control-label">{t("map.whatsNew")}</span>
@@ -89,24 +84,19 @@ export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect
       </details> : null}
       {filtersActive(filters) || overlayId ? <Button disabled={disabled} variant="link" onClick={() => { onFilters(defaultFilters()); onOverlay(undefined); }}>{t("map.clearFilters")}</Button> : null}
     </PopoverContent></Popover>
-    <Button className="map-toolbar-button" disabled={disabled} variant="ghost" data-map-library {...foldProps("library", isFolded("library"))} aria-label={t("map.library")} title={t("map.library")} aria-expanded={libraryOpen} onClick={onLibrary}><BookOpenIcon /><span className="map-control-label">{t("map.library")}</span></Button>
-    <Button className="map-toolbar-button" disabled={disabled || replayDisabled} variant="ghost" data-map-replay {...foldProps("replay", isFolded("replay"))} aria-label={t("map.replay.label")} title={t("map.replay.label")} aria-pressed={replayActive} onClick={onReplay}><PlayIcon /><span className="map-control-label">{t("map.replay.label")}</span></Button>
+    <Button className="map-toolbar-button" disabled={disabled} variant="ghost" data-map-library {...foldProps("library", true)} aria-label={t("map.library")} title={t("map.library")} aria-expanded={libraryOpen} onClick={onLibrary}><BookOpenIcon /><span className="map-control-label">{t("map.library")}</span></Button>
+    <Button className="map-toolbar-button" disabled={disabled || replayDisabled} variant="ghost" data-map-replay {...foldProps("replay", true)} aria-label={t("map.replay.label")} title={t("map.replay.label")} aria-pressed={replayActive} onClick={onReplay}><PlayIcon /><span className="map-control-label">{t("map.replay.label")}</span></Button>
     <div className="map-toolbar-spacer" />
-    <Button className="map-toolbar-button" disabled={disabled || fitDisabled} variant="ghost" data-map-fit {...foldProps("fit", isFolded("fit"))} aria-label={t("map.fit")} title={t("map.fit")} onClick={onFit}><ScanIcon /><span className="map-control-label">{t("map.fit")}</span></Button>
-    {exportControl?.(isFolded("export"))}
-    <Button className="map-toolbar-button" disabled={disabled || listDisabled} variant="ghost" data-map-list {...foldProps("list", isFolded("list"))} aria-label={listLabel} title={listLabel} aria-pressed={list} onClick={onList}>{list ? <WaypointsIcon /> : <ListIcon />}<span className="map-control-label">{listLabel}</span></Button>
+    <Button className="map-toolbar-button" disabled={disabled || fitDisabled} variant="ghost" data-map-fit {...foldProps("fit", true)} aria-label={t("map.fit")} title={t("map.fit")} onClick={onFit}><ScanIcon /><span className="map-control-label">{t("map.fit")}</span></Button>
+    {exportControl}
+    <Button className="map-toolbar-button" disabled={disabled || listDisabled} variant="ghost" data-map-list {...foldProps("list", true)} aria-label={listLabel} title={listLabel} aria-pressed={list} onClick={onList}>{list ? <WaypointsIcon /> : <ListIcon />}<span className="map-control-label">{listLabel}</span></Button>
     <DropdownMenu>
       <DropdownMenuTrigger asChild><Button className="map-toolbar-button" variant="ghost" data-map-more disabled={disabled} aria-label={t("map.moreActions")} title={t("map.moreActions")}><MoreHorizontalIcon /></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="map-more-menu">
-        {isFolded("library") ? <DropdownMenuItem role="menuitemcheckbox" aria-checked={libraryOpen} data-map-library disabled={disabled} onSelect={onLibrary}><BookOpenIcon />{t("map.library")}</DropdownMenuItem> : null}
-        {isFolded("replay") ? <DropdownMenuItem role="menuitemcheckbox" aria-checked={!!replayActive} data-map-replay disabled={disabled || replayDisabled} onSelect={onReplay}><PlayIcon />{t("map.replay.label")}</DropdownMenuItem> : null}
-        {isFolded("fit") ? <DropdownMenuItem data-map-fit disabled={disabled || fitDisabled} onSelect={onFit}><ScanIcon />{t("map.fit")}</DropdownMenuItem> : null}
-        {isFolded("export") && exportActions ? <>
-          <DropdownMenuLabel>{t("map.export.label")}</DropdownMenuLabel>
-          <DropdownMenuItem data-map-export-png disabled={disabled || exportActions.disabled} onSelect={() => exportActions.save(false)}><ImageIcon />{t("map.export.image")}</DropdownMenuItem>
-          <DropdownMenuItem disabled={disabled || exportActions.disabled} onSelect={() => exportActions.save(true)}><VideoIcon />{t("map.export.video")}</DropdownMenuItem>
-        </> : null}
-        {isFolded("list") ? <DropdownMenuItem role="menuitemcheckbox" aria-checked={list} data-map-list disabled={disabled || listDisabled} onSelect={onList}>{list ? <WaypointsIcon /> : <ListIcon />}{listLabel}</DropdownMenuItem> : null}
+        <DropdownMenuItem role="menuitemcheckbox" aria-checked={libraryOpen} data-map-library disabled={disabled} onSelect={onLibrary}><BookOpenIcon />{t("map.library")}</DropdownMenuItem>
+        <DropdownMenuItem role="menuitemcheckbox" aria-checked={!!replayActive} data-map-replay disabled={disabled || replayDisabled} onSelect={onReplay}><PlayIcon />{t("map.replay.label")}</DropdownMenuItem>
+        <DropdownMenuItem data-map-fit disabled={disabled || fitDisabled} onSelect={onFit}><ScanIcon />{t("map.fit")}</DropdownMenuItem>
+        <DropdownMenuItem role="menuitemcheckbox" aria-checked={list} data-map-list disabled={disabled || listDisabled} onSelect={onList}>{list ? <WaypointsIcon /> : <ListIcon />}{listLabel}</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   </div>;

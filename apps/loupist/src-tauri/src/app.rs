@@ -24,7 +24,7 @@ use crate::{
     fs::secure_delete::SecureDeletionRoot,
     pi::execution::PiExecutionConfig,
     pi::PiLaunchConfig,
-    process_lease::{prepare_lease_directory, recover_orphaned_processes},
+    process_lease::recover_orphaned_processes,
     providers::catalog::{
         catalog_view, provider_credential_from_environment, ConfiguredModel, ModelCatalog,
         ModelCatalogView, ModelVisibility,
@@ -44,9 +44,12 @@ use crate::{
 mod error_code;
 pub use error_code::CommandErrorCode;
 
+#[cfg(any(test, feature = "eval-harness"))]
+use crate::process_lease::prepare_lease_directory;
+
 const APP_INSTANCE_CONFLICT_CODE: &str = "app_instance_conflict";
 #[cfg(any(not(feature = "e2e"), test))]
-const PRODUCTION_APP_IDENTIFIER: &str = crate::DEVELOPMENT_APP_IDENTIFIER;
+use crate::PRODUCTION_APP_IDENTIFIER;
 #[cfg(any(test, feature = "e2e"))]
 pub(crate) const LIVE_PI_AGENT_DATA_DIR_ENV: &str = "LOUPIST_LIVE_PI_AGENT_DATA_DIR";
 
@@ -296,7 +299,7 @@ pub struct AppState {
 impl AppState {
     #[cfg(feature = "eval-harness")]
     pub(crate) fn for_eval(app_data_dir: PathBuf) -> Self {
-        Self::for_test_with_store(app_data_dir, true, true, None)
+        Self::for_test_with_store(app_data_dir, true, true)
     }
     pub(crate) fn loupist_files_root(
         &self,
@@ -337,8 +340,7 @@ impl AppState {
         let process_lease_dir = app_data_dir.join("process-leases");
         ensure_private_directory(&process_lease_dir)
             .map_err(|error| CommandError::internal(error.to_string()))?;
-        prepare_lease_directory(&process_lease_dir)
-            .and_then(|()| recover_orphaned_processes(&process_lease_dir))
+        recover_orphaned_processes(&process_lease_dir)
             .map_err(|error| CommandError::internal(error.to_string()))?;
 
         for child in ["browser-profile", "loupists", "mcp-pool", "pi", "runs"] {
@@ -840,17 +842,17 @@ impl AppState {
 
     #[cfg(test)]
     pub(crate) fn for_test(app_data_dir: PathBuf) -> Self {
-        Self::for_test_with_store(app_data_dir, false, false, None)
+        Self::for_test_with_store(app_data_dir, false, false)
     }
 
     #[cfg(test)]
     pub(crate) fn for_persistent_test(app_data_dir: PathBuf) -> Self {
-        Self::for_test_with_store(app_data_dir, true, false, None)
+        Self::for_test_with_store(app_data_dir, true, false)
     }
 
     #[cfg(test)]
     pub(crate) fn for_folder_test(app_data_dir: PathBuf) -> Self {
-        Self::for_test_with_store(app_data_dir, true, true, None)
+        Self::for_test_with_store(app_data_dir, true, true)
     }
 
     #[cfg(test)]
@@ -885,12 +887,7 @@ impl AppState {
     }
 
     #[cfg(any(test, feature = "eval-harness"))]
-    fn for_test_with_store(
-        app_data_dir: PathBuf,
-        persistent: bool,
-        folder_catalog: bool,
-        acquisition_stage: Option<&'static str>,
-    ) -> Self {
+    fn for_test_with_store(app_data_dir: PathBuf, persistent: bool, folder_catalog: bool) -> Self {
         let app_data_dir = pin_app_data_dir(&app_data_dir).unwrap();
         for child in ["brokers", "loupists", "mcp-pool", "pi", "runs"] {
             ensure_private_directory(&app_data_dir.join(child)).unwrap();
@@ -900,16 +897,16 @@ impl AppState {
         let instance_lock = Arc::new(AppInstanceLock::acquire(&app_data_dir).unwrap_or_else(
             |error| {
                 panic!(
-                    "{} could not acquire the test app-instance lock: {error:?}",
-                    acquisition_stage.unwrap_or("test AppState initialization")
+                    "test AppState initialization could not acquire the test app-instance lock: {error:?}"
                 )
             },
         ));
         let process_lease_dir = app_data_dir.join("process-leases");
         ensure_private_directory(&process_lease_dir).unwrap();
-        prepare_lease_directory(&process_lease_dir).unwrap();
         if persistent {
             recover_orphaned_processes(&process_lease_dir).unwrap();
+        } else {
+            prepare_lease_directory(&process_lease_dir).unwrap();
         }
         let finance_data = Arc::new(FinanceDataService::new().unwrap());
         let deletion_root =
@@ -1200,7 +1197,11 @@ fn transient_broker_directory() -> PathBuf {
         // broker directory by effective user ID.
         PathBuf::from("/tmp").join(format!("loupist-{}", unsafe { libc::geteuid() }))
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        env::temp_dir().join(format!("loupist-{}", unsafe { libc::geteuid() }))
+    }
+    #[cfg(not(unix))]
     {
         env::temp_dir().join("loupist")
     }

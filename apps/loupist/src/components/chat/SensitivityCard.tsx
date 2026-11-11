@@ -1,9 +1,10 @@
+import { useCopyFeedback } from "../../hooks/useCopyFeedback";
 import i18n, { useTranslation } from "@/i18n";
 import { formatNumber } from "@/i18n/format";
 import "@/styles/sensitivity.css";
 import { TriangleAlertIcon } from "lucide-react";
 import { Popover } from "radix-ui";
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { DialogTitle } from "@/components/ui/dialog";
 import type { ChatEvidenceRef, NumberCheck, SensitivityGrid } from "../../types";
@@ -73,13 +74,9 @@ export function SensitivityCard({ grid, subject, evidence, evidenceRefs = [], as
   const go = useGo();
   const titleId = useId();
   const formulasId = useId();
-  const [copied, setCopied] = useState(false);
+  const { state: copyState, copy: copyText } = useCopyFeedback(evidence?.id ?? titleId);
+  const copied = copyState === "copied";
   const [formulasOpen, setFormulasOpen] = useState(false);
-  useEffect(() => {
-    if (!copied) return undefined;
-    const handle = window.setTimeout(() => setCopied(false), 2000);
-    return () => window.clearTimeout(handle);
-  }, [copied]);
 
   const reverse = grid.operation === "reverse_dcf";
   const reference = reverse ? grid.reference : undefined;
@@ -108,7 +105,7 @@ export function SensitivityCard({ grid, subject, evidence, evidenceRefs = [], as
   const showStep = evidence && variant === "answer" && go ? () => go({ kind: "evidence", evidence }) : undefined;
   const Title = variant === "dialog" ? DialogTitle : "h3";
 
-  const copy = () => { void navigator.clipboard?.writeText(sensitivityTsv(grid)).then(() => setCopied(true), () => undefined); };
+  const copy = () => { void copyText(sensitivityTsv(grid)); };
 
   let legend: ReactNode = null;
   if (reference) {

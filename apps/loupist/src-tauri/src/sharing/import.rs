@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read};
 use std::path::{Component, Path};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -33,6 +33,15 @@ fn safe_relative(path: &str) -> bool {
 
 fn hidden(path: &str) -> bool {
     path.split('/').any(|part| part.starts_with('.'))
+}
+
+fn folder_read_error(error: crate::fs::artifact_trust::ArtifactTrustError) -> Rejection {
+    use crate::fs::artifact_trust::ArtifactTrustError;
+    match error {
+        ArtifactTrustError::Oversized => Rejection::TooLarge,
+        ArtifactTrustError::Untrusted => Rejection::Unsafe,
+        ArtifactTrustError::Io(_) => Rejection::NotPack,
+    }
 }
 
 /// A local folder on the Skill-importer bounds. Hidden files, links and
@@ -91,7 +100,7 @@ pub(crate) fn read_folder(root: &Path) -> Result<Files, Rejection> {
                 &path,
                 pack::MAX_BYTES as u64,
             )
-            .map_err(|_| Rejection::TooLarge)?;
+            .map_err(folder_read_error)?;
             *total += bytes.len();
             if *total > pack::MAX_BYTES {
                 return Err(Rejection::TooLarge);
@@ -399,13 +408,13 @@ pub(crate) struct Staged {
     created: Instant,
 }
 
-fn staging() -> &'static Mutex<BTreeMap<String, Staged>> {
-    static STAGING: std::sync::OnceLock<Mutex<BTreeMap<String, Staged>>> =
+fn staging() -> &'static Mutex<BTreeMap<String, Arc<Staged>>> {
+    static STAGING: std::sync::OnceLock<Mutex<BTreeMap<String, Arc<Staged>>>> =
         std::sync::OnceLock::new();
     STAGING.get_or_init(Default::default)
 }
 
-pub(crate) fn staged(staging_id: &str) -> Option<Staged> {
+pub(crate) fn staged(staging_id: &str) -> Option<Arc<Staged>> {
     let mut staging = staging().lock().ok()?;
     staging.retain(|_, staged| staged.created.elapsed() < STAGING_TTL);
     staging.get(staging_id).cloned()
@@ -460,10 +469,22 @@ fn title_findings(title: &str, findings: &mut Vec<ItemFinding>) {
     findings.sort_by_key(|finding| finding.flag);
 }
 
+fn origin_findings(origin: Option<&ItemOrigin>, findings: &mut Vec<ItemFinding>) {
+    if let Some(origin) = origin {
+        for entry in origin.entries() {
+            title_findings(&entry.name, findings);
+            if let Some(author) = entry.author {
+                title_findings(&author, findings);
+            }
+        }
+    }
+}
+
 fn method_item(method: &pack::MethodDoc) -> StoredItem {
     let raw = method_markdown(&method.document);
     let (markdown, mut findings) = clean_and_scan(&raw);
     title_findings(&method.title, &mut findings);
+    origin_findings(method.origin.as_ref(), &mut findings);
     let document = &method.document;
     StoredItem {
         title: cleaned(&method.title),
@@ -482,7 +503,7 @@ fn method_item(method: &pack::MethodDoc) -> StoredItem {
         statement: None,
         why: None,
         example: None,
-        origin: method.origin.clone(),
+        origin: method.origin.clone().map(cleaned_origin),
         markdown,
         findings,
     }
@@ -494,7 +515,8 @@ fn principle_item(principle: &pack::PrincipleDoc) -> StoredItem {
         principle.why.as_deref(),
         principle.example.as_deref(),
     );
-    let (markdown, findings) = clean_and_scan(&raw);
+    let (markdown, mut findings) = clean_and_scan(&raw);
+    origin_findings(principle.origin.as_ref(), &mut findings);
     let statement = cleaned(&principle.statement);
     StoredItem {
         title: statement.split_whitespace().collect::<Vec<_>>().join(" "),
@@ -502,7 +524,7 @@ fn principle_item(principle: &pack::PrincipleDoc) -> StoredItem {
         statement: Some(statement),
         why: principle.why.as_deref().map(cleaned),
         example: principle.example.as_deref().map(cleaned),
-        origin: principle.origin.clone(),
+        origin: principle.origin.clone().map(cleaned_origin),
         markdown,
         findings,
     }
@@ -526,6 +548,59 @@ pub(crate) fn stored_view(key: &str, kind: &str, body_json: &str) -> Option<Item
         _ => "method",
     };
     Some(view(key, kind, &item))
+}
+
+fn clean_entry(entry: &mut pack::OriginEntry) {
+    clean_in_place(&mut entry.name);
+    if let Some(author) = &mut entry.author {
+        clean_in_place(author);
+    }
+}
+
+fn cleaned_origin(mut origin: ItemOrigin) -> ItemOrigin {
+    clean_in_place(&mut origin.name);
+    if let Some(author) = &mut origin.author {
+        clean_in_place(author);
+    }
+    origin.chain.iter_mut().for_each(clean_entry);
+    origin
+}
+
+fn clean_metadata_and_lens(parsed: &mut ParsedPack) {
+    let manifest = &mut parsed.manifest;
+    clean_in_place(&mut manifest.name);
+    if let Some(author) = &mut manifest.author {
+        clean_in_place(&mut author.display);
+    }
+    manifest
+        .origin
+        .iter_mut()
+        .chain(&mut manifest.credits)
+        .for_each(clean_entry);
+    if let Some(profile) = &mut parsed.profile {
+        clean_in_place(&mut profile.name);
+        clean_in_place(&mut profile.focus);
+        clean_in_place(&mut profile.description);
+    }
+    for method in parsed.perspective.iter_mut().chain(&mut parsed.methods) {
+        clean_in_place(&mut method.title);
+        clean_in_place(&mut method.document.summary);
+        for section in &mut method.document.sections {
+            clean_in_place(&mut section.heading);
+            clean_in_place(&mut section.markdown);
+        }
+        method.origin = method.origin.take().map(cleaned_origin);
+    }
+    for principle in &mut parsed.principles {
+        clean_in_place(&mut principle.statement);
+        if let Some(why) = &mut principle.why {
+            clean_in_place(why);
+        }
+        if let Some(example) = &mut principle.example {
+            clean_in_place(example);
+        }
+        principle.origin = principle.origin.take().map(cleaned_origin);
+    }
 }
 
 fn ranked(counts: BTreeMap<String, u32>) -> Vec<(String, u32)> {
@@ -748,26 +823,6 @@ pub(crate) fn stage(fetched: Fetched, blocked: Option<&'static str>) -> OpenResu
         Ok(parsed) => parsed,
         Err(reason) => return rejected(reason),
     };
-    let (map_findings, map_flagged) = clean_world(&mut parsed);
-    // A record that was only hidden characters cannot load into the map.
-    if !pack::world_records_valid(&parsed.entities, &parsed.claims, &parsed.sources) {
-        return rejected(Rejection::Damaged);
-    }
-    let items = items_of(&parsed);
-    let profile = match &parsed.profile {
-        Some(profile) => ProfileView {
-            name: cleaned(&profile.name),
-            focus: cleaned(&profile.focus),
-            tone: profile.tone.clone(),
-            description: cleaned(&profile.description),
-        },
-        None => ProfileView {
-            name: parsed.manifest.name.clone(),
-            focus: String::new(),
-            tone: "balanced".into(),
-            description: String::new(),
-        },
-    };
     let focus_clean = parsed.profile.as_ref().is_none_or(|profile| {
         clean_and_scan(&profile.focus).1.is_empty()
             && clean_and_scan(&profile.description).1.is_empty()
@@ -782,7 +837,15 @@ pub(crate) fn stage(fetched: Fetched, blocked: Option<&'static str>) -> OpenResu
                     .as_ref()
                     .map(|author| author.display.as_str()),
             )
-            .chain(manifest.origin.iter().map(|origin| origin.name.as_str()))
+            .chain(
+                manifest
+                    .origin
+                    .iter()
+                    .chain(&manifest.credits)
+                    .flat_map(|entry| {
+                        std::iter::once(entry.name.as_str()).chain(entry.author.as_deref())
+                    }),
+            )
             .chain(parsed.profile.iter().flat_map(|profile| {
                 [
                     profile.name.as_str(),
@@ -791,6 +854,30 @@ pub(crate) fn stage(fetched: Fetched, blocked: Option<&'static str>) -> OpenResu
                 ]
             })),
     );
+    // Scan the original strings, then retain only cleaned text for review and Add.
+    let items = items_of(&parsed);
+    clean_metadata_and_lens(&mut parsed);
+    let (map_findings, map_flagged) = clean_world(&mut parsed);
+    if !pack::cleaned_text_valid(&parsed)
+        || !pack::world_records_valid(&parsed.entities, &parsed.claims, &parsed.sources)
+    {
+        return rejected(Rejection::Damaged);
+    }
+    let manifest = &parsed.manifest;
+    let profile = match &parsed.profile {
+        Some(profile) => ProfileView {
+            name: profile.name.clone(),
+            focus: profile.focus.clone(),
+            tone: profile.tone.clone(),
+            description: profile.description.clone(),
+        },
+        None => ProfileView {
+            name: manifest.name.clone(),
+            focus: String::new(),
+            tone: "balanced".into(),
+            description: String::new(),
+        },
+    };
     let staging_id = format!("stg_{}", uuid::Uuid::new_v4().simple());
     let preview = PackPreview {
         staging_id: staging_id.clone(),
@@ -875,7 +962,7 @@ pub(crate) fn stage(fetched: Fetched, blocked: Option<&'static str>) -> OpenResu
         }
         staging.insert(
             staging_id,
-            Staged {
+            Arc::new(Staged {
                 parsed,
                 fetched,
                 items,
@@ -883,7 +970,7 @@ pub(crate) fn stage(fetched: Fetched, blocked: Option<&'static str>) -> OpenResu
                 focus_clean,
                 blocked,
                 created: Instant::now(),
-            },
+            }),
         );
     }
     OpenResult::Preview {
@@ -926,6 +1013,25 @@ mod tests {
             writer.write_all(bytes).unwrap();
         }
         writer.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn folder_read_failures_keep_their_rejection_class() {
+        use crate::fs::artifact_trust::ArtifactTrustError;
+        assert_eq!(
+            folder_read_error(ArtifactTrustError::Oversized),
+            Rejection::TooLarge
+        );
+        assert_eq!(
+            folder_read_error(ArtifactTrustError::Untrusted),
+            Rejection::Unsafe
+        );
+        assert_eq!(
+            folder_read_error(ArtifactTrustError::Io(std::io::Error::from(
+                std::io::ErrorKind::PermissionDenied
+            ))),
+            Rejection::NotPack
+        );
     }
 
     #[test]

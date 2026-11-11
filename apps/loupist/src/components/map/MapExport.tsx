@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useRef, useState, type MutableRefObject, type Ref } from "react";
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { DownloadIcon, ImageIcon, VideoIcon } from "lucide-react";
 import type { LoupistBridge } from "../../types";
 import { useTranslation } from "../../i18n";
@@ -9,11 +9,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import type { MapCanvasControls } from "./MapCanvas";
 import { composeMapExport, pngBytes, recordingFormat, type MapExportFooter } from "./export";
 import { REPLAY_DURATION_MS, replayTime, type MapReplay } from "./replay";
-import { foldProps } from "./toolbarOverflow";
 const nextFrame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-/** Runs an export from outside the trigger, as the toolbar's "More" menu does when Export is folded into it. */
-export type MapExportHandle = { save: (video: boolean) => void };
-export function MapExport({ ref, bridge, loupistId, controls, replay, stats, disabled, folded = false, onRecording }: { ref?: Ref<MapExportHandle>; bridge: LoupistBridge; loupistId: string; controls: MutableRefObject<MapCanvasControls | null>; replay: MapReplay; stats: string; disabled?: boolean; folded?: boolean; onRecording: (recording: boolean) => void }) {
+export function MapExport({ bridge, loupistId, controls, replay, stats, disabled, onRecording }: { bridge: LoupistBridge; loupistId: string; controls: MutableRefObject<MapCanvasControls | null>; replay: MapReplay; stats: string; disabled?: boolean; onRecording: (recording: boolean) => void }) {
   const { t } = useTranslation("knowledge");
   const [open, setOpen] = useState(false), [progress, setProgress] = useState<number | null>(null), [error, setError] = useState(false);
   const cancel = useRef(false), mounted = useRef(true), busy = useRef(false);
@@ -78,9 +75,8 @@ export function MapExport({ ref, bridge, loupistId, controls, replay, stats, dis
       busy.current = false;
     }
   };
-  useImperativeHandle(ref, () => ({ save: (video: boolean) => { if (!disabled && progress === null) void save(video); } }));
   return <>
-    <Popover open={open && !folded} onOpenChange={setOpen}><PopoverTrigger asChild><Button className="map-toolbar-button" variant="ghost" data-map-export {...foldProps("export", folded)} disabled={disabled || progress !== null} aria-label={t("map.export.label")} title={t("map.export.label")}><DownloadIcon /><span className="map-control-label">{t("map.export.label")}</span></Button></PopoverTrigger><PopoverContent align="end" className="map-export-menu"><Button variant="ghost" data-map-export-png onClick={() => void save(false)}><ImageIcon />{t("map.export.image")}</Button><Button variant="ghost" onClick={() => void save(true)}><VideoIcon />{t("map.export.video")}</Button></PopoverContent></Popover>
+    <Popover open={open} onOpenChange={setOpen}><PopoverTrigger asChild><Button className="map-toolbar-button" variant="ghost" data-map-export disabled={disabled || progress !== null} aria-label={t("map.export.label")} title={t("map.export.label")}><DownloadIcon /><span className="map-control-label">{t("map.export.label")}</span></Button></PopoverTrigger><PopoverContent align="end" className="map-export-menu"><Button variant="ghost" data-map-export-png onClick={() => void save(false)}><ImageIcon />{t("map.export.image")}</Button><Button variant="ghost" onClick={() => void save(true)}><VideoIcon />{t("map.export.video")}</Button></PopoverContent></Popover>
     {progress !== null ? <div className="map-recording" role="status"><span>{t("map.export.recording", { pct: formatNumber(progress) })}</span><Button variant="outline" onClick={() => { cancel.current = true; }}>{t("map.export.cancel")}</Button></div> : null}
     {error ? <div className="map-export-error" role="alert">{t("map.export.error")}<Button variant="ghost" onClick={() => setError(false)}>{t("map.export.dismiss")}</Button></div> : null}
   </>;

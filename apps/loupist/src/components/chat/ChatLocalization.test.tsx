@@ -4,9 +4,20 @@ import { ChatConversation } from "./ChatConversation";
 import { WorldProcessingStatus } from "./WorldProcessingStatus";
 import { evidencePresentation } from "../../chat/evidence";
 import type { ChatEvidenceRef, LoupistBridge } from "../../types";
+import { AppHeader } from "../app/AppHeader";
+import { SidebarProvider } from "../ui/sidebar";
+import { MOCK_LOUPISTS } from "../../bridge/mock/fixtures";
 
 afterEach(async () => {
   await act(async () => { await i18n.changeLanguage("en"); });
+});
+
+it.each(["world", "lens"] as const)("localizes the %s panel name in the app header", async kind => {
+  render(<SidebarProvider><AppHeader runningLoupists={new Set()} unreadCounts={{}} loupists={[MOCK_LOUPISTS[0]!]} loupist={MOCK_LOUPISTS[0]!}
+    tab="chat" markets={[]} workspaceOpen={false} workspaceKind={kind} workspacePlacement="side"
+    onSelect={vi.fn()} onCreate={vi.fn()} onNavigate={vi.fn()} onLoupistSettings={vi.fn()} onWorkspaceKind={vi.fn()} onWorkspaceSplit={vi.fn()} onWorkspaceToggle={vi.fn()} /></SidebarProvider>);
+  await act(async () => { await i18n.changeLanguage("en-XA"); });
+  expect(screen.getByTestId("header-panel-toggle")).toHaveTextContent(i18n.t(`chat:workspaceEvidence.kind.${kind}`));
 });
 
 it("switches the morning message language without changing the Loupist name", async () => {

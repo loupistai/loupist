@@ -16,6 +16,7 @@ import {
   coldStartMark,
   dialogByTitle,
   mapNameCount,
+  openMapLibrary,
   measureLoupistSwitch,
   clickControl,
   measureMapDrawProbe,
@@ -780,8 +781,7 @@ try {
       );
       const sawTool = `${progress}\n${answer}`.includes(allowedTool) || progress.toLowerCase().includes("microsoft");
       await openMainTab("#main-tab-map");
-      const library = await browser.$("[data-map-library]");
-      if ((await library.isExisting()) && (await library.getAttribute("aria-expanded")) !== "true") await library.click();
+      await openMapLibrary(browser);
       let libraryText = "";
       await browser.waitUntil(async () => {
         libraryText = await browser.execute(() => document.querySelector(".source-library")?.innerText ?? "");

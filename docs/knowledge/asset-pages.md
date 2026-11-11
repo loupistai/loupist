@@ -36,11 +36,17 @@ matched entity, the read and the move that set it, per-check refresh status,
 revision), `knowledge_asset_observations` (kind, fact date, typed facts of at most
 4 KiB, evidence, origin `refresh`, `chat` or `briefing`, baseline flag; unique per
 dedupe key), `knowledge_asset_moves` and `knowledge_asset_section_deltas`.
+Unknown stored classes, class sources or verdicts and malformed refresh state
+fail exact reads and writes instead of being presented as default values. Page
+and move listings skip unreadable rows and log once without their contents, so
+the remaining assets and history stay available.
 
 "Ask about it" fills the Chat composer with the asset's name, symbol and market
 as ordinary prose. Results questions and requests to change sensitivity rates use
 the same readable identity. These actions never send the question. Chat does not
 infer an asset card or request a quote from ticker text.
+
+Failed change or results reads show an error and a retry instead of an empty result. Check now reports failure if its change list could not be read. A failed reason or line archive keeps the entry visible and shows an error.
 
 The user's reasons and lines are [Thesis and the read](thesis.md).
 

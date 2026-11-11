@@ -1,7 +1,8 @@
+import { CanvasBoundary } from "./CanvasBoundary";
 import { useConflictHighlights } from "./useConflictHighlights";
 import { mapStatsText } from "./stats";
 import { XIcon } from "lucide-react";
-import { Component, Suspense, lazy, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { LoupistBridge, KnowledgeCatalog, KnowledgeLocation, KnowledgePin } from "../../types";
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
 import { useTranslation } from "../../i18n";
@@ -16,7 +17,7 @@ import { libraryState } from "./libraryState";
 import { MapLibrary } from "./MapLibrary";
 import { MapReader } from "./MapReader";
 import { MapReplayBar } from "./MapReplayBar";
-import { MapExport, type MapExportHandle } from "./MapExport";
+import { MapExport } from "./MapExport";
 import { replayStart, replayVisible, useMapReplay } from "./replay";
 import { MapLegend } from "./MapLegend";
 import { dismissMapHint, mapHintDismissed, recentFocal, rememberFocal, rememberLegendOpen, rememberScope, storedFocal, storedLegendOpen, storedScope } from "./mapVisit";
@@ -32,12 +33,7 @@ import { useMapData, useMapDetail, weeklyDrawnCount } from "./useMapData";
 import type { MapCanvasControls } from "./MapCanvas";
 import "../../styles/map.css";
 const MapCanvas = lazy(() => import("./MapCanvas"));
-class CanvasBoundary extends Component<{ children: ReactNode; onError: () => void }, { failed: boolean }> {
-  state = { failed: false };
-  static getDerivedStateFromError() { return { failed: true }; }
-  componentDidCatch() { this.props.onError(); }
-  render() { return this.state.failed ? null : this.props.children; }
-}
+
 export type MapViewProps = {
   bridge: LoupistBridge; catalog: KnowledgeCatalog; location: KnowledgeLocation; active?: boolean; refreshKey?: unknown;
   onPatch: (location: KnowledgeLocation) => void; onOpen: (location: KnowledgeLocation) => void; onAsk: (pin: KnowledgePin, threadId?: string) => void;
@@ -118,7 +114,6 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
   const [canvasFailed, setCanvasFailed] = useState(false);
   const [searchNodes, setSearchNodes] = useState<{ query: string; nodes: KnowledgeMapNode[] }>({ query: "", nodes: [] });
   const controls = useRef<MapCanvasControls | null>(null);
-  const exporter = useRef<MapExportHandle>(null);
   const toolbar = useRef<HTMLDivElement>(null);
   const list = location.view?.listMode || canvasFailed;
   const highlights = useConflictHighlights(bridge, location, data.map);
@@ -314,7 +309,7 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
   const hint = showHint ? <div className="map-first-hint" role="status"><p>{t("map.firstHint")}</p><Button size="icon-sm" variant="ghost" aria-label={t("map.dismissHint")} onClick={() => { dismissMapHint(location.loupistId); setShowMapHint(false); }}><XIcon /></Button></div> : null;
   const lensBanner = emptyLens ? <div className="map-lens-banner" role="status"><p>{t("map.overlayEmpty", { title: overlayTitle })}</p><Button variant="outline" onClick={onAskInChat} disabled={!onAskInChat}>{t("map.askInChat")}</Button><Button size="icon-sm" variant="ghost" aria-label={t("map.exitOverlay")} onClick={() => setOverlayId(undefined)}><XIcon /></Button></div> : null;
   return <div ref={viewRef} className={`map-view${recording ? " is-recording" : ""}`} data-testid="map-view" data-keyboard-focus={keyboardFocus} onPointerDownCapture={() => setKeyboardFocus(false)} onKeyDownCapture={() => setKeyboardFocus(true)} aria-busy={data.loading} onKeyDown={(e) => { if (e.key === "Escape") { if (picking) { e.preventDefault(); setPicking(false); } else if (cursorId) { e.preventDefault(); setCursorId(undefined); } else if (overlayId) { e.preventDefault(); setOverlayId(undefined); } else if (selected || selectedClaimId || reading) { e.preventDefault(); clear(); } else if (whatsNewOpen) { e.preventDefault(); closeWhatsNew(); } else if (libraryOpen) { e.preventDefault(); setLibraryOpen(false); } } }}>
-    <div ref={toolbar}><MapToolbar disabled={recording} replayActive={replay.active} onReplay={replay.active ? closeReplay : replay.open} exportControl={(folded) => <MapExport key={location.loupistId} ref={exporter} folded={folded} bridge={bridge} loupistId={location.loupistId} controls={controls} replay={replay} stats={exportStats} disabled={!!list || !hasWorldNodes} onRecording={setRecording} />} exportActions={{ disabled: !!list || !hasWorldNodes, save: (video) => exporter.current?.save(video) }} lenses={(map?.nodes ?? []).filter(isLensNode)} appliedCounts={appliedCounts} lensTitles={lensTitles} baseLensIds={baseLensIds} overlayId={overlayId} onOverlay={setOverlayId} libraryOpen={libraryOpen} onLibrary={() => { setWhatsNewOpen(false); setLibraryOpen(!libraryOpen); }}
+    <div ref={toolbar}><MapToolbar disabled={recording} replayActive={replay.active} onReplay={replay.active ? closeReplay : replay.open} exportControl={<MapExport key={location.loupistId} bridge={bridge} loupistId={location.loupistId} controls={controls} replay={replay} stats={exportStats} disabled={!!list || !hasWorldNodes} onRecording={setRecording} />} lenses={(map?.nodes ?? []).filter(isLensNode)} appliedCounts={appliedCounts} lensTitles={lensTitles} baseLensIds={baseLensIds} overlayId={overlayId} onOverlay={setOverlayId} libraryOpen={libraryOpen} onLibrary={() => { setWhatsNewOpen(false); setLibraryOpen(!libraryOpen); }}
       local={focal && map ? { focal, followed: followedNames(map.nodes), recent: recent.filter((id) => id !== focal.id).flatMap((id) => map.nodes.filter((node) => node.id === id)), onFocal: (node) => changeFocal(node.id), onPickOnMap: () => setPicking(true), scope, onScope: setScope } : undefined}
       whatsNew={{ count: badgeCount, open: whatsNewOpen, onToggle: () => { if (whatsNewOpen) closeWhatsNew(); else openWhatsNew(); } }} nodes={searchResults} query={query} onQuery={setQuery} filters={filters} onFilters={setFilters} onSelect={select} list={!!list} onList={() => onPatch({ ...location, view: { ...location.view, listMode: !list } })} onFit={() => controls.current?.fit()} fitDisabled={!!map && !hasWorldNodes} replayDisabled={!!map && !hasWorldNodes} listDisabled={!!map && !hasWorldNodes} /></div>
     {compactMap ? <div className="map-hint-row" data-map-caption>{hint}{lensBanner}</div> : lensBanner ? <div className="map-hint-row">{lensBanner}</div> : null}

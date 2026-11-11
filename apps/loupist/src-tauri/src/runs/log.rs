@@ -243,7 +243,7 @@ impl RunLog {
         }
     }
     pub fn record_app(&self, app_data: &Path) {
-        if append(app_data, self, &[], crate::commands::now_ms(), DAILY_BYTES).is_err() {
+        if append(app_data, self, crate::commands::now_ms(), DAILY_BYTES).is_err() {
             eprintln!("Run diagnostics could not be written");
         }
     }
@@ -257,7 +257,6 @@ impl RunLog {
                 append(
                     &Path::new(&loupist.workspace_root).join(".loupist"),
                     self,
-                    &[],
                     crate::commands::now_ms(),
                     DAILY_BYTES,
                 )
@@ -274,29 +273,24 @@ pub(crate) fn enum_name(value: &impl Serialize) -> String {
         .unwrap_or_else(|| "other".into())
 }
 
-// Apply both existing credential-shape detection and exact protected-value checks
-// to every string, including map keys. Only typed metadata reaches this boundary.
-fn scrub(value: &mut serde_json::Value, protected: &[String]) {
+// Apply credential-shape detection to every string, including map keys.
+// Only typed metadata reaches this boundary.
+fn scrub(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::String(text) => {
-            if crate::util::credential_text::contains_credential_text(text)
-                || crate::mcp::contains_protected_value(
-                    &serde_json::Value::String(text.clone()),
-                    protected,
-                )
-            {
+            if crate::util::credential_text::contains_credential_text(text) {
                 *text = "[redacted]".into();
             } else {
                 *text = text.chars().take(256).collect();
             }
         }
-        serde_json::Value::Array(items) => items.iter_mut().for_each(|v| scrub(v, protected)),
+        serde_json::Value::Array(items) => items.iter_mut().for_each(scrub),
         serde_json::Value::Object(map) => {
             let old = std::mem::take(map);
             for (key, mut v) in old {
                 let mut safe_key = serde_json::Value::String(key);
-                scrub(&mut safe_key, protected);
-                scrub(&mut v, protected);
+                scrub(&mut safe_key);
+                scrub(&mut v);
                 map.insert(safe_key.as_str().unwrap().into(), v);
             }
         }
@@ -394,13 +388,7 @@ fn log_date(name: &str) -> Option<chrono::NaiveDate> {
     )
     .ok()
 }
-fn append(
-    root: &Path,
-    record: &RunLog,
-    protected: &[String],
-    now: i64,
-    cap: usize,
-) -> Result<(), CommandError> {
+fn append(root: &Path, record: &RunLog, now: i64, cap: usize) -> Result<(), CommandError> {
     let (path, guard) = directory(root)?;
     let lock = file(&guard, &path, ".lock", true)?;
     fs2::FileExt::lock_exclusive(&lock).map_err(io_error)?;
@@ -424,7 +412,7 @@ fn append(
         }
     }
     let mut value = serde_json::to_value(record).map_err(io_error)?;
-    scrub(&mut value, protected);
+    scrub(&mut value);
     let mut line = serde_json::to_vec(&value).map_err(io_error)?;
     line.push(b'\n');
     if line.len() > cap {
@@ -577,7 +565,7 @@ fn last_error(root: &Path) -> Result<Option<String>, CommandError> {
             if let Ok(record) = serde_json::from_str::<RunLog>(line) {
                 if record.status == "failed" {
                     let mut value = serde_json::to_value(record).map_err(io_error)?;
-                    scrub(&mut value, &[]);
+                    scrub(&mut value);
                     return serde_json::to_string(&value).map(Some).map_err(io_error);
                 }
             }
@@ -598,7 +586,6 @@ mod tests {
             append(
                 dir.as_path(),
                 &RunLog::new("chat", "loupist", "run", start),
-                &[],
                 start + day * DAY_MS,
                 DAILY_BYTES,
             )
@@ -610,7 +597,6 @@ mod tests {
             append(
                 dir.as_path(),
                 &RunLog::new("chat", "loupist", &i.to_string(), start),
-                &[],
                 start + 15 * DAY_MS,
                 1024,
             )
@@ -630,26 +616,25 @@ mod tests {
         );
     }
     #[test]
-    fn seeded_protected_secret_never_appears_even_in_map_keys() {
+    fn credential_shapes_are_redacted_when_recorded_and_read() {
         let temporary = tempfile::tempdir().unwrap();
         let dir = temporary.path().canonicalize().unwrap();
-        let secret = "seeded-private-value".to_string();
-        let mut record = RunLog::new("chat", "loupist", "run", 1_800_000_000_000);
-        record.model = Some(secret.clone());
-        record.tools.insert(secret.clone(), 1);
+        let secret = "api_key=seeded-private-value";
+        let mut record = RunLog::new("chat", "loupist", "run", crate::commands::now_ms());
+        record.model = Some(secret.into());
+        record.tools.insert(secret.into(), 1);
         record.notes.push("api_key=another-private-value".into());
-        append(
-            dir.as_path(),
-            &record,
-            std::slice::from_ref(&secret),
-            record.started_at_ms,
-            DAILY_BYTES,
-        )
-        .unwrap();
-        let text = std::fs::read_to_string(dir.as_path().join("logs/runs-20270115.jsonl")).unwrap();
-        assert!(!text.contains(&secret));
+        record.finish("failed", None);
+        record.record_app(&dir);
+        let (path, guard) = directory(&dir).unwrap();
+        let name = names(&guard, &path).unwrap().into_iter().max().unwrap();
+        let text = std::fs::read_to_string(path.join(&name)).unwrap();
+        assert!(!text.contains("seeded-private-value"));
         assert!(!text.contains("another-private-value"));
         assert!(text.contains("[redacted]"));
+        std::fs::write(path.join(name), serde_json::to_string(&record).unwrap()).unwrap();
+        let read = last_error(&dir).unwrap().unwrap();
+        assert!(!read.contains("private-value"));
     }
     #[test]
     fn inference_usage_distinguishes_zero_unknown_and_cache_reads() {
@@ -681,7 +666,7 @@ mod tests {
         let now = 1_800_000_000_000;
         let mut record = RunLog::new("chat", "loupist", "run", now);
         record.finish("failed", Some("provider_error"));
-        append(&root, &record, &[], now, DAILY_BYTES).unwrap();
+        append(&root, &record, now, DAILY_BYTES).unwrap();
         let target = root.join("logs/runs-20270115.jsonl");
         std::fs::OpenOptions::new()
             .append(true)
@@ -689,7 +674,7 @@ mod tests {
             .unwrap()
             .write_all(b"{partial")
             .unwrap();
-        append(&root, &record, &[], now, DAILY_BYTES).unwrap();
+        append(&root, &record, now, DAILY_BYTES).unwrap();
         let text = std::fs::read_to_string(target).unwrap();
         assert_eq!(text.lines().count(), 2);
         for line in text.lines() {
@@ -709,10 +694,10 @@ mod tests {
         let log = root.join("logs/runs-20270115.jsonl");
         std::os::unix::fs::symlink(&target, &log).unwrap();
         let record = RunLog::new("chat", "loupist", "run", 1_800_000_000_000);
-        assert!(append(&root, &record, &[], record.started_at_ms, DAILY_BYTES).is_err());
+        assert!(append(&root, &record, record.started_at_ms, DAILY_BYTES).is_err());
         std::fs::remove_file(&log).unwrap();
         std::fs::hard_link(&target, &log).unwrap();
-        assert!(append(&root, &record, &[], record.started_at_ms, DAILY_BYTES).is_err());
+        assert!(append(&root, &record, record.started_at_ms, DAILY_BYTES).is_err());
         assert_eq!(std::fs::read_to_string(target).unwrap(), "untouched");
     }
     #[test]

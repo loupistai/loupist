@@ -242,7 +242,7 @@ impl FinanceDataService {
         match native_vendor(entry_id).map(|vendor| vendor.credential) {
             Some(VendorCredential::OpenDartKey) => {
                 let secret = single_api_key(credentials)?;
-                validate_api_key(secret, OPENDART_SOURCE_ID)?;
+                validate_api_key(secret)?;
                 let today = Utc::now().date_naive().format("%Y%m%d").to_string();
                 let mut public = fixed_url(OPENDART_API_ROOT, &["api", "list.json"])?;
                 public
@@ -264,7 +264,7 @@ impl FinanceDataService {
             }
             Some(VendorCredential::KrxKey) => {
                 let secret = single_api_key(credentials)?;
-                validate_api_key(secret, KRX_SOURCE_ID)?;
+                validate_api_key(secret)?;
                 return self.verify_krx_coverage(secret).await.map(Some);
             }
             Some(VendorCredential::KisAppKey) => {
@@ -449,10 +449,7 @@ pub(super) fn fixed_url(root: &str, segments: &[&str]) -> Result<Url, FinanceDat
     Ok(url)
 }
 
-pub(super) fn validate_api_key(
-    secret: &str,
-    _provider: &'static str,
-) -> Result<(), FinanceDataError> {
+pub(super) fn validate_api_key(secret: &str) -> Result<(), FinanceDataError> {
     if secret.len() < 8
         || secret.len() > 512
         || secret

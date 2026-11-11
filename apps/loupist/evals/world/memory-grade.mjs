@@ -144,7 +144,7 @@ export function evaluateMemoryCheck(check, row, scenario, prior = new Map()) {
   if (check.assert === 'no_memory_access') {
     const calls = row.chat_trace.tool_calls; const reads = row.chat_trace.memory_reads;
     if (!Array.isArray(calls) || !Array.isArray(reads) || calls.some((call) => typeof call.name !== 'string')) return unknown('Memory access evidence missing');
-    const names = /^(?:world_read|world_search|lens_read|lens_search|source_read|source_search|conversation_memory)$/u;
+    const names = /^(?:world_read|world_search|lens_read|lens_search|conversation_memory)$/u;
     return result(!reads.length && !calls.some((call) => names.test(call.name)), 'no cross-chat or canonical Memory access');
   }
   if (check.assert === 'conversation_read') {

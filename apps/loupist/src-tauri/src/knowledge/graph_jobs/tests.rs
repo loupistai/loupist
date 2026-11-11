@@ -1140,11 +1140,10 @@ fn a_paused_queue_keeps_an_unsent_attempt_paused() {
 }
 
 #[test]
-fn the_old_default_request_limit_reads_as_the_new_one_and_the_cap_is_five_minutes() {
+fn a_saved_sixty_second_request_limit_is_preserved_and_the_cap_is_five_minutes() {
     let (_directory, store) = open();
     let mut settings = enabled();
     settings.timeout_ms = 60_000;
-    // Stored as the earlier default; validation runs on the value read.
     store
         .transact(|write| {
             write.tx.execute(
@@ -1157,7 +1156,7 @@ fn the_old_default_request_limit_reads_as_the_new_one_and_the_cap_is_five_minute
     let loaded = store
         .read(|read| load_settings(read.tx, "loupist-a"))
         .unwrap();
-    assert_eq!(loaded.timeout_ms, DEFAULT_TIMEOUT_MS);
+    assert_eq!(loaded.timeout_ms, 60_000);
     settings.timeout_ms = MAX_TIMEOUT_MS;
     assert!(settings.validate().is_ok());
     settings.timeout_ms = MAX_TIMEOUT_MS + 1;
@@ -1297,4 +1296,146 @@ fn queued_sources_count_as_awaiting_the_world_until_their_job_settles() {
         "a settled job no longer awaits"
     );
     assert_eq!(store.read(|read| backlog(read.tx)).unwrap(), 0);
+}
+
+#[test]
+fn source_enqueue_and_backfill_redrive_only_safe_terminal_chunks() {
+    for backfill in [false, true] {
+        for terminal in [JOB_FAILED_BEFORE, JOB_CANCELLED] {
+            let (_directory, store) = open();
+            let settings = enabled();
+            let source = source_module(&store, "loupist-a");
+            let retained = store
+                .retain_source(source_request(
+                    "loupist-a",
+                    &source,
+                    "A".repeat(EPISODE_CHUNK_CHARS * 3).as_bytes(),
+                ))
+                .unwrap();
+            let first = store
+                .transact(|write| write.enqueue_source_world("loupist-a", &retained, &settings, T))
+                .unwrap()
+                .unwrap();
+            let original = store.graph_jobs("loupist-a").unwrap();
+            assert_eq!(original.len(), 3);
+            store
+                .transact(|write| {
+                    for (index, job) in original.iter().enumerate() {
+                        let mut document = job.document.clone();
+                        document.unsent_attempts = UNSENT_RETRIES;
+                        // The last chunk has a paid/uncertain outcome; never replay it.
+                        document.usage_uncertain = index == 2;
+                        write_status(write.tx, &job.job_id, JOB_QUEUED, terminal, &document)?;
+                    }
+                    Ok(())
+                })
+                .unwrap();
+            let rebuilt_generation = store
+                .transact(|write| {
+                    let rebuilt = reload_world(write.tx, write.blobs, "loupist-a", T + 50)?
+                        .expect("World reload");
+                    write_status(
+                        write.tx,
+                        &rebuilt.job_id,
+                        JOB_QUEUED,
+                        JOB_COMPLETED,
+                        &rebuilt.document,
+                    )?;
+                    Ok(rebuilt.document.generation_id)
+                })
+                .unwrap();
+            assert_ne!(rebuilt_generation, original[0].document.generation_id);
+            let retried = store
+                .transact(|write| {
+                    if backfill {
+                        write.enqueue_existing_sources("loupist-a", &settings, T + 100)
+                    } else {
+                        Ok(write
+                            .enqueue_source_world("loupist-a", &retained, &settings, T + 100)?
+                            .into_iter()
+                            .collect())
+                    }
+                })
+                .unwrap();
+            assert_eq!(retried.len(), 1);
+            assert_eq!(retried[0].job_id, first.job_id);
+            assert_eq!(retried[0].status, JOB_QUEUED);
+            assert_eq!(retried[0].document.generation_id, rebuilt_generation);
+            let current: Vec<_> = store
+                .graph_jobs("loupist-a")
+                .unwrap()
+                .into_iter()
+                .filter(|job| job.document.episode_kind == EPISODE_SPAN)
+                .collect();
+            assert_eq!(current.len(), 3, "reuse the deduplication receipts");
+            for (index, job) in current.iter().enumerate() {
+                assert_eq!(job.status, if index == 2 { terminal } else { JOB_QUEUED });
+                if index != 2 {
+                    assert_eq!(job.document.unsent_attempts, 0);
+                    assert_eq!(job.document.extraction, original[index].document.extraction);
+                    assert_eq!(job.document.generation_id, rebuilt_generation);
+                } else {
+                    assert_eq!(
+                        job.document.generation_id,
+                        original[index].document.generation_id
+                    );
+                }
+            }
+            assert_eq!(
+                claim(&store, &settings, &first.job_id, T + 200).status,
+                JOB_RUNNING
+            );
+        }
+    }
+}
+
+#[test]
+fn saving_a_long_source_while_paused_pauses_every_chunk() {
+    let (_directory, store) = open();
+    let settings = GraphProcessingSettings {
+        paused: true,
+        ..enabled()
+    };
+    let source = source_module(&store, "loupist-a");
+    let retained = store
+        .retain_source(source_request(
+            "loupist-a",
+            &source,
+            "A".repeat(EPISODE_CHUNK_CHARS * 3).as_bytes(),
+        ))
+        .unwrap();
+    store
+        .transact(|write| write.enqueue_source_world("loupist-a", &retained, &settings, T))
+        .unwrap();
+    let jobs = store.graph_jobs("loupist-a").unwrap();
+    assert_eq!(jobs.len(), 3);
+    assert!(jobs.iter().all(|job| job.status == JOB_PAUSED));
+    let processed = store
+        .read(|read| processed_sources(read.tx, "loupist-a", &BTreeSet::from([source.clone()])))
+        .unwrap();
+    assert_eq!(processed, BTreeSet::from([source]));
+}
+
+#[test]
+fn chunking_preserves_unicode_paragraphs_and_large_unbroken_sources() {
+    for body in [
+        "한".repeat(EPISODE_CHUNK_CHARS * 3 + 19),
+        format!(
+            "{}\n\n{}\n\n{}",
+            "é".repeat(6_998),
+            "한".repeat(7_001),
+            "tail"
+        ),
+        "x".repeat(1_000_000),
+    ] {
+        let chunks = chunk_episode(&body);
+        assert_eq!(chunks.concat(), body);
+        assert!(chunks
+            .iter()
+            .all(|chunk| !chunk.is_empty() && chunk.chars().count() <= EPISODE_CHUNK_CHARS));
+    }
+    assert_eq!(
+        chunk_episode(&format!("{}\n\ntail", "한".repeat(6_998))),
+        vec![format!("{}\n\n", "한".repeat(6_998)), "tail".into()]
+    );
 }

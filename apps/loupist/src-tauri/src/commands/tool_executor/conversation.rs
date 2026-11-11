@@ -106,7 +106,9 @@ impl AppToolExecutor {
                 );
                 self.capture.note_left_out(later);
             }
-            let mut messages: Vec<Value> = ranked(&query, &terms, &entries).into_iter().map(|(score, (chat, message, _))| {
+            let matches = ranked(&query, &terms, &entries);
+            let total_matches = matches.len();
+            let messages: Vec<Value> = matches.into_iter().take(limit).map(|(score, (chat, message, _))| {
                 let lower = message.content.to_lowercase();
                 let at = terms.iter().filter_map(|term| lower.find(term).map(|at| lower[..at].chars().count())).min().unwrap_or(0);
                 let offset = at.saturating_sub(160);
@@ -116,8 +118,6 @@ impl AppToolExecutor {
                     "score":score,"totalChars":message.content.chars().count(),"snippetOffset":offset,"snippet":snippet,
                     "readArgs":{"action":"read","chatId":chat.id,"messageId":message.id,"offset":0}})
             }).collect();
-            let total_matches = messages.len();
-            messages.truncate(limit);
             let mut result = json!({"notes":notes,"messages":messages,"totalMatches":total_matches,
                 "searchMode":if query == "*" { "recent" } else { "lexical" },
                 "searchedConversations":chats.len(),"notEvidence":true,"notice":CONVERSATION_NOTICE});

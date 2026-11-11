@@ -320,6 +320,57 @@ async fn conversation_memory_finds_and_pages_a_long_unicode_message_without_loss
 }
 
 #[tokio::test]
+async fn parallel_journal_saves_reserve_one_slot_and_discard_releases_it() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let executor = executor_for(&state, bound_capture(Some("user-message"), "chat-a"));
+    let turn = policy(true, true);
+    let save_ref = saved_source(&executor, "source.txt", "Margins improved.").await;
+    let params = json!({"judgment":"Margins will improve", "sourceReads":[save_ref]});
+    // Queue both calls before allowing staging. This makes the old
+    // check-then-stage race deterministic under Tokio's FIFO mutex.
+    let pending = executor.capture.pending_deliveries.lock().await;
+    let saves = async {
+        tokio::join!(
+            executor.stage_journal(&turn, params.clone(), "journal-a", false),
+            executor.stage_journal(&turn, params.clone(), "journal-b", false)
+        )
+    };
+    tokio::pin!(saves);
+    tokio::select! {
+        _ = &mut saves => panic!("staging must wait for the pending-delivery lock"),
+        _ = tokio::task::yield_now() => {}
+    }
+    drop(pending);
+    let (a, b) = saves.await;
+    assert_eq!(
+        usize::from(a.is_ok()) + usize::from(b.is_ok()),
+        1,
+        "{a:?} {b:?}"
+    );
+    let accepted = if a.is_ok() { "journal-a" } else { "journal-b" };
+    executor.capture.discard_delivery(accepted).await;
+    executor
+        .stage_journal(&turn, params.clone(), "retry", false)
+        .await
+        .unwrap();
+    executor.capture.commit_delivery("retry").await;
+    assert!(executor
+        .stage_journal(&turn, params.clone(), "after-ack", false)
+        .await
+        .is_err());
+    assert!(executor
+        .capture
+        .staged_research
+        .lock()
+        .await
+        .as_ref()
+        .unwrap()
+        .journal
+        .is_some());
+}
+
+#[tokio::test]
 async fn note_and_journal_saves_refuse_unbound_unacknowledged_or_malformed_input() {
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);

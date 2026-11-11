@@ -163,7 +163,6 @@ struct MapPlan {
     claims: BTreeSet<String>,
     /// World claim ids of this import's own relationships the author withdrew.
     withdraw: BTreeSet<String>,
-    withdrawn_keys: usize,
     full: bool,
 }
 
@@ -327,7 +326,6 @@ fn plan(
                 .map(|key| shared_pack::shared_id(&row.import_id, key))
                 .filter(|id| refs.claims.contains(id))
                 .collect(),
-            withdrawn_keys: withdrawn.len(),
             full: false,
         };
     } else {
@@ -335,7 +333,6 @@ fn plan(
             entities,
             claims,
             withdraw: BTreeSet::new(),
-            withdrawn_keys: 0,
             full: true,
         };
     }
@@ -394,10 +391,10 @@ pub(crate) fn diff(
                 lens_record_id: item.lens_record_id.clone().unwrap_or_default(),
             })
             .collect(),
-        map: (!plan.map.is_empty()).then(|| MapChanges {
+        map: (!plan.map.is_empty()).then_some(MapChanges {
             names: plan.map.entities.len() as u32,
             links: plan.map.claims.len() as u32,
-            withdrawn: plan.map.withdraw.len().min(plan.map.withdrawn_keys) as u32,
+            withdrawn: plan.map.withdraw.len() as u32,
             added: !plan.map.full,
         }),
         blocked: staged.blocked,

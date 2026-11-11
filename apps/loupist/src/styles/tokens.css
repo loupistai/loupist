@@ -19,7 +19,6 @@
   --gg-color-bg-sunken: var(--gg-p-neutral-50);
   --gg-color-bg-hover: var(--gg-p-neutral-100);
   --gg-color-bg-selected: #e7e5df;
-  --gg-color-bg-user-message: var(--gg-p-neutral-100);
   --gg-color-bg-overlay: rgb(17 17 19 / 48%);
   --gg-color-text-primary: var(--gg-p-neutral-900);
   --gg-color-text-secondary: var(--gg-p-neutral-600);
@@ -111,8 +110,6 @@
   --gg-size-field: 40px;
   --gg-size-sidebar: 248px;
   --gg-size-chat-column: 760px;
-  /* The floating "In this chat" rail (context-rail.md R1). */
-  --gg-size-rail: 280px;
   /* A reading page stops at a pixel width; a run of prose inside it stops at a character count. */
   --gg-size-reading-column: 720px;
   --gg-size-prose-measure: 72ch;
@@ -142,7 +139,6 @@
   --gg-ease-out: cubic-bezier(0.2, 0, 0, 1);
   --gg-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
   --gg-ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
-  --gg-z-base: 0;
   --gg-z-sticky: 10;
   --gg-z-sidebar: 20;
   --gg-z-panel: 30;
@@ -179,7 +175,6 @@
   --gg-color-bg-sunken: #171716;
   --gg-color-bg-hover: var(--gg-p-neutral-100);
   --gg-color-bg-selected: #33322e;
-  --gg-color-bg-user-message: #2a2a27;
   --gg-color-bg-overlay: rgb(0 0 0 / 66%);
   --gg-color-text-primary: var(--gg-p-neutral-900);
   --gg-color-text-secondary: var(--gg-p-neutral-600);

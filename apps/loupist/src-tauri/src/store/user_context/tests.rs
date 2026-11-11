@@ -145,6 +145,130 @@ fn canonical_decimal_never_rounds_or_uses_floats() {
     }
 }
 #[test]
+fn superseded_file_snapshots_and_positions_are_pruned_durably_per_source() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("catalog.sqlite3");
+    let store = SqliteStore::open_catalog(&path).unwrap();
+    stock_csv(&store, b"symbol,quantity\nOLD,1");
+    stock_csv(&store, b"symbol,quantity\nNEW,2");
+    // An empty successful snapshot clears its source without clearing others.
+    store
+        .save_holdings_snapshot(HoldingsSource::Kis, vec![])
+        .unwrap();
+    store
+        .save_holdings_snapshot(HoldingsSource::Kis, vec![])
+        .unwrap();
+    drop(store);
+    let store = SqliteStore::open_catalog(&path).unwrap();
+    assert_eq!(
+        store
+            .holdings_latest_positions()
+            .unwrap()
+            .iter()
+            .map(|p| p.symbol.as_str())
+            .collect::<Vec<_>>(),
+        ["NEW"]
+    );
+    let db = store.lock().unwrap();
+    let snapshots: i64 = db
+        .query_row("SELECT count(*) FROM user_holdings_snapshots", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    let positions: i64 = db
+        .query_row("SELECT count(*) FROM user_holdings_positions", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!((snapshots, positions), (2, 1));
+    drop(db);
+    // Refuse a snapshot that the latest ordering would immediately discard.
+    let mut db = store.lock().unwrap();
+    let tx = db.transaction().unwrap();
+    insert_snapshot(&tx, HoldingsSource::CryptoFile, None, vec![], 20).unwrap();
+    assert!(matches!(
+        insert_snapshot(&tx, HoldingsSource::CryptoFile, None, vec![], 10),
+        Err(StoreError::Conflict(_))
+    ));
+    let latest: i64 = tx
+        .query_row(
+            "SELECT imported_at_ms FROM user_holdings_snapshots WHERE source='crypto_file'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let count: i64 = tx
+        .query_row(
+            "SELECT count(*) FROM user_holdings_snapshots WHERE source='crypto_file'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!((latest, count), (20, 1));
+    tx.commit().unwrap();
+}
+
+#[test]
+fn wallet_listing_skips_unknown_families_and_statuses() {
+    for column in ["family", "status"] {
+        let store = store();
+        let wallet = store
+            .wallet_add("1BoatSLRHtKNngkdXEeobR76b53LETtpyT", None)
+            .unwrap();
+        store.lock().unwrap().execute("INSERT INTO user_wallet_addresses
+            (id,family,address,added_at_ms,status) VALUES ('odd','bitcoin','odd-address',1,'unread')", []).unwrap();
+        store
+            .lock()
+            .unwrap()
+            .execute(
+                &format!("UPDATE user_wallet_addresses SET {column}='future' WHERE id=?1"),
+                ["odd"],
+            )
+            .unwrap();
+        assert_eq!(
+            store.wallets_list().unwrap().as_slice(),
+            std::slice::from_ref(&wallet),
+            "{column}"
+        );
+        if column == "family" {
+            assert!(store.wallet_targets(Some("odd")).is_err());
+            assert_eq!(
+                store
+                    .wallet_targets(None)
+                    .unwrap()
+                    .iter()
+                    .map(|w| w.id.as_str())
+                    .collect::<Vec<_>>(),
+                [wallet.id.as_str()]
+            );
+        }
+        assert!(store.wallet_rename("odd", None).is_err());
+        store.wallet_remove("odd").unwrap();
+        assert_eq!(store.wallets_list().unwrap(), [wallet]);
+    }
+}
+
+#[test]
+fn holdings_summary_skips_unknown_sources_and_latest_read_stays_strict() {
+    let store = store();
+    stock_csv(&store, b"symbol,quantity\nA,1");
+    store
+        .lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO user_holdings_snapshots(snapshot_id,source,imported_at_ms,currency)
+            SELECT 'odd','future',imported_at_ms+1,currency FROM user_holdings_snapshots LIMIT 1",
+            [],
+        )
+        .unwrap();
+    assert!(store.holdings_latest().is_err());
+    let summary = store.holdings_summary().unwrap();
+    assert_eq!(summary.sources.len(), 1);
+    assert_eq!(summary.sources[0].source, HoldingsSource::Csv);
+    assert_eq!(summary.sources[0].count, 1);
+}
+
+#[test]
 fn context_is_durable_in_the_app_catalog() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("catalog.sqlite3");

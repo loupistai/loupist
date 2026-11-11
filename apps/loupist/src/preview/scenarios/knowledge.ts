@@ -1,5 +1,5 @@
 /** Preview scenarios, in the capture order `src/preview/scenarios.ts` assembles. */
-import { growthReplayPending, prepareGrowthReplay } from "../growth-replay";
+import { prepareGrowthReplay } from "../growth-replay";
 import { PreviewBridge } from "../fixtures";
 import { prepareConflictsFixture } from "../fixtures/conflicts";
 import { prepareJournalFixture } from "../fixtures/journal";
@@ -12,16 +12,9 @@ const i18nHistory = () => i18n.t("knowledge:memoryPage.tabs.history");
 
 /** The Map's growth replay, conflicts and core kinds, the Journal and a learned method. */
 export const knowledgeScenarios: PreviewScenario[] = [
-  { ...base("growth-replay", "Recorded Semiconductors growth", () => select("[data-growth-fixture-pending]") ?? select(".map-replay-bar"), async root => {
+  { ...base("growth-replay", "Recorded Semiconductors growth", () => select(".map-replay-bar"), async root => {
     await navigate(root, "map");
     const map = await until(() => select(".map-view"), "Growth Map did not load");
-    if (growthReplayPending) {
-      const pending = document.createElement("p");
-      pending.dataset.growthFixturePending = "true";
-      pending.textContent = "Fixture pending";
-      map.prepend(pending);
-      return;
-    }
     if (hasLayout()) await until(mapCanvas, "Growth Map canvas did not mount");
     await clickMapAction("[data-map-replay]", map);
     const scrubber = await until(() => map.querySelector<HTMLInputElement>(".map-replay-scrubber"), "Growth replay did not open");

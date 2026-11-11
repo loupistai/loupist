@@ -145,7 +145,7 @@ export function MessageMemoryRow({
               {change.futureUse ? <small>{t("messageMemoryRow.nextUse", { value: change.futureUse })}</small> : null}
             </> : null}
             <WorldProcessingStatus active={active && expanded} jobId={change.worldJobId} initialStatus={change.worldStatus} readJob={onReadWorldJob} onChanged={onWorldChanged} />
-            {learned && location && go ? <button type="button" onClick={() => go({ kind: "page", location })}>{t("messageMemoryRow.openIn", { value: change.kind })}</button> : null}
+            {learned && location && go ? <button type="button" onClick={() => go({ kind: "page", location })}>{t("messageMemoryRow.openIn", { value: t("workspaceEvidence.kind.world") })}</button> : null}
           </li>;
         })}
       </ul> : null}

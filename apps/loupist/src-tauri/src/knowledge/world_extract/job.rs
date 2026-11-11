@@ -62,6 +62,7 @@ where
     F: FnMut(Value) -> Fut,
     Fut: std::future::Future<Output = InferenceReply>,
 {
+    let opened_at = SystemTime::now();
     let job = match store.graph_claim_running(settings, job_id, now_ms)? {
         graph_jobs::GraphJobClaim::Acquired(job) => job,
         graph_jobs::GraphJobClaim::Existing(job) => return Ok(job),
@@ -147,6 +148,9 @@ where
             }
         }
     };
+    let now_ms = now_ms.saturating_add(
+        i64::try_from(opened_at.elapsed().unwrap_or_default().as_millis()).unwrap_or(i64::MAX),
+    );
     let Ok(ran) = joined else {
         return finish(store, settings, &job, &attempt_id, true, now_ms);
     };
@@ -157,6 +161,11 @@ where
     }
     let extracted = match ran.result {
         Ok(extracted) => extracted,
+        Err(Stop::BudgetExceeded(_)) if !uncertain => {
+            return store.transact(|write| {
+                graph_jobs::pause_exhausted_attempt(write.tx, job_id, &attempt_id, now_ms)
+            });
+        }
         Err(_) => {
             let end = Unpublished {
                 uncertain,

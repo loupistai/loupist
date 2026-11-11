@@ -48,7 +48,6 @@ pub(super) fn revision_digest(
         "kind": kind,
         "payload": payload,
     });
-    require_canonical_round_trip(&preimage)?;
     digest_json(&preimage)
 }
 
@@ -93,10 +92,32 @@ fn json_string(text: &str) -> String {
 }
 
 pub(super) fn require_canonical_round_trip(value: &Value) -> KnowledgeResult<()> {
-    let parsed: Value = serde_json::from_str(&canonical_string(value))
+    let canonical = canonical_string(value);
+    let parsed: Value = serde_json::from_str(&canonical)
         .map_err(|_| KnowledgeError::Invalid("canonical json is invalid"))?;
-    if canonical_string(&parsed) != canonical_string(value) {
+    if canonical_string(&parsed) != canonical {
         return Err(KnowledgeError::Invalid("canonical json is unstable"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn revision_digest_keeps_the_canonical_preimage_and_number_stability_check() {
+        let payload = serde_json::json!({"z": [null, true, "서울"], "a": {"q": 1e2, "b": -0.0}});
+        let expected = canonical_string(&serde_json::json!({
+            "dependencies": [],
+            "formatVersion": KNOWLEDGE_FORMAT_VERSION,
+            "kind": RecordKind::World,
+            "payload": payload,
+        }));
+        assert_eq!(
+            revision_digest(RecordKind::World, &payload, &[]).unwrap(),
+            sha256(expected.as_bytes())
+        );
+        assert_eq!(canonicalize_json_text(&expected).unwrap(), expected);
+    }
 }

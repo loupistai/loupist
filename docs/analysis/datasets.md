@@ -14,8 +14,9 @@ An optional `max_age` (whole seconds, 0–2,592,000) on `worldbank_series`,
 OpenBB data tools reuses this Loupist's saved result for the identical request
 and cutoff (for `kis_read`, also the same credential revision, environment and
 account, by digest) when it was fetched at most that long ago and marks the result
-`reused`. The host removes the argument before the provider sees the request; without it every
-call fetches. A refetch that returns identical bytes keeps the dataset revision
+`reused`. Freshness is checked from metadata before loading the payload; reusable
+bytes still pass their digest check. The host removes the argument before the
+provider sees the request; without it every call fetches. A refetch that returns identical bytes keeps the dataset revision
 and updates its `fetched_at`. Each native dataset records the cutoff it was
 fetched under. In a turn with a cutoff, `calculate`, `dataset_describe`,
 `dataset_query` and `dataset_export` accept only revisions recorded under a

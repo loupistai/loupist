@@ -35,28 +35,96 @@ const ENGLISH_ACTIONS: &[&str] = &[
     "payment",
     "payments",
     "place",
+    "purchase",
+    "purchases",
+    "purchased",
+    "swap",
 ];
-const KOREAN_ACTIONS: &[&str] = &["주문", "매수", "매도", "이체", "출금", "송금", "결제"];
+const KOREAN_ACTIONS: &[&str] = &[
+    "주문",
+    "매수",
+    "매도",
+    "이체",
+    "출금",
+    "송금",
+    "결제",
+    "구매하",
+    "판매하",
+    "입금",
+];
+
+fn action_words(text: &str) -> Vec<&str> {
+    text.split(|ch: char| !ch.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect()
+}
+
+fn action_phrase(words: &[&str]) -> bool {
+    words.iter().any(|word| ENGLISH_ACTIONS.contains(word))
+        || words.windows(2).any(|words| words == ["send", "money"])
+}
+
+fn name_action(word: &str) -> bool {
+    // Order books are research data, not an instruction to order an asset.
+    if word.starts_with("orderbook") {
+        return false;
+    }
+    ENGLISH_ACTIONS.contains(&word)
+        || matches!(word, "purchasing" | "sendmoney")
+        || [
+            "order",
+            "place",
+            "buy",
+            "sell",
+            "trade",
+            "transfer",
+            "withdraw",
+            "deposit",
+            "purchase",
+            "swap",
+            "sendmoney",
+        ]
+        .iter()
+        .any(|verb| {
+            word.strip_prefix(verb)
+                .and_then(|rest| rest.chars().next())
+                .is_some_and(|ch| ch.is_ascii_alphabetic())
+        })
+}
+
+fn name_actions(words: &[&str]) -> bool {
+    words.iter().enumerate().any(|(index, word)| {
+        // camelCase orderBook is the same research noun as orderbook.
+        !(*word == "order"
+            && words
+                .get(index + 1)
+                .is_some_and(|word| matches!(*word, "book" | "books")))
+            && name_action(word)
+    }) || words.windows(2).any(|words| words == ["send", "money"])
+}
 
 pub fn eligibility(tool: &McpTool) -> ToolEligibility {
-    let text = format!(
-        "{} {}",
-        tool.name,
-        tool.description.as_deref().unwrap_or("")
-    );
-    let mut separated = String::new();
+    let name = tool.name.to_lowercase();
+    let description = tool.description.as_deref().unwrap_or("").to_lowercase();
+    let mut separated_name = String::new();
     let mut previous_lower = false;
-    for ch in text.chars() {
+    for ch in tool.name.chars() {
         if ch.is_ascii_uppercase() && previous_lower {
-            separated.push(' ');
+            separated_name.push(' ');
         }
         previous_lower = ch.is_ascii_lowercase();
-        separated.extend(ch.to_lowercase());
+        separated_name.extend(ch.to_lowercase());
     }
-    let words: Vec<_> = separated.split(|ch: char| !ch.is_alphanumeric()).collect();
-    if words.iter().any(|word| ENGLISH_ACTIONS.contains(word))
-        || words.windows(2).any(|words| words == ["send", "money"])
-        || KOREAN_ACTIONS.iter().any(|word| separated.contains(word))
+    // Check original word boundaries as well as camelCase: irregular casing
+    // must not split an action into harmless fragments (bUyStock, sEll_all).
+    let name_words = action_words(&name);
+    let separated_words = action_words(&separated_name);
+    if name_actions(&name_words)
+        || name_actions(&separated_words)
+        || action_phrase(&action_words(&description))
+        || KOREAN_ACTIONS
+            .iter()
+            .any(|verb| name.contains(verb) || description.contains(verb))
     {
         return ToolEligibility::FinancialAction;
     }
@@ -323,6 +391,21 @@ mod tests {
     fn hostile_annotations_cannot_offer_financial_actions() {
         for name in [
             "place_order",
+            "placeorder",
+            "buystock",
+            "sellshares",
+            "bUyStock",
+            "bUy_shares",
+            "sEll_all",
+            "read_buyshares",
+            "sendmoney",
+            "purchase",
+            "purchasing",
+            "purchaseshares",
+            "swap",
+            "구매하기",
+            "판매하기",
+            "입금하기",
             "transfer_funds",
             "buyStock",
             "cancelOrder",
@@ -345,6 +428,69 @@ mod tests {
         assert_eq!(eligibility(&candidate), ToolEligibility::NotReadOnly);
         candidate.annotations = Some(json!({"readOnlyHint":true,"destructiveHint":true}));
         assert_eq!(eligibility(&candidate), ToolEligibility::NotReadOnly);
+    }
+
+    #[test]
+    fn research_names_and_descriptions_keep_read_only_approvals() {
+        let names = [
+            "get_russell_2000_constituents",
+            "get_orderbook",
+            "getOrderBook",
+            "get_order_book",
+        ];
+        let descriptions = [
+            "List exchange-traded funds",
+            "Search publicly traded companies",
+            "Returns filings ordered by date",
+            "ISM Purchasing Managers Index",
+            "purchasing power parity",
+            "Share buyback announcements",
+            "Interest rate swaps curve",
+            "American depositary receipts",
+            "Cross-border fund flows",
+            "Replaces the legacy search endpoint",
+            "소매판매 지수",
+            "구매관리자지수",
+        ];
+        let mut candidates: Vec<_> = names.into_iter().map(tool).collect();
+        candidates.extend(descriptions.into_iter().map(|description| {
+            let mut candidate = tool("research");
+            candidate.description = Some(description.into());
+            candidate
+        }));
+        for candidate in candidates {
+            assert_eq!(
+                eligibility(&candidate),
+                ToolEligibility::ReadOnly,
+                "{} {:?}",
+                candidate.name,
+                candidate.description
+            );
+            let mut approvals = Approvals::default();
+            assert!(approvals.approve("loupist", "source", &candidate, ApprovalChoice::Always));
+            approvals.recheck("source", std::slice::from_ref(&candidate));
+            assert!(approvals.consume("loupist", "source", &candidate));
+        }
+    }
+
+    #[test]
+    fn description_actions_match_complete_words_and_explicit_inflections() {
+        for description in [
+            "Purchase shares",
+            "Purchases shares",
+            "Purchased shares",
+            "Transfer money",
+            "주식을 구매하기",
+            "주식을 판매하기",
+        ] {
+            let mut candidate = tool("research");
+            candidate.description = Some(description.into());
+            assert_eq!(
+                eligibility(&candidate),
+                ToolEligibility::FinancialAction,
+                "{description}"
+            );
+        }
     }
 
     #[test]

@@ -323,6 +323,24 @@ async fn sequential_brokers_do_not_share_policy_executor_or_cardinality() {
 }
 
 #[tokio::test]
+async fn oversized_unterminated_frames_are_reported_as_too_large() {
+    let (server, mut client) = tokio::io::duplex(MAX_FRAME_BYTES + 1);
+    client
+        .write_all(&vec![b'x'; MAX_FRAME_BYTES + 1])
+        .await
+        .unwrap();
+    let result = handle_connection(
+        server,
+        "secret",
+        &policy(),
+        Arc::new(StdMutex::new(TransactionCardinality::default())),
+        Arc::new(UnusedExecutor),
+    )
+    .await;
+    assert!(matches!(result, Err(BrokerError::FrameTooLarge)));
+}
+
+#[tokio::test]
 async fn unauthenticated_connections_never_reach_the_executor() {
     let (server, _stalled_client) = tokio::io::duplex(64);
     let result = tokio::time::timeout(
@@ -451,6 +469,37 @@ fn serve(
         .await
     });
     (client, task)
+}
+
+#[tokio::test]
+async fn failed_requests_discard_delivery_once_with_or_without_an_ack() {
+    struct FailingExecutor(Arc<DeliveryCounters>);
+    #[async_trait]
+    impl ToolExecutor for FailingExecutor {
+        async fn execute(
+            &self,
+            _: &ToolPolicy,
+            _: ToolMethod,
+            _: Value,
+        ) -> Result<Value, BrokerError> {
+            Err(BrokerError::Execution("fixture failed".into()))
+        }
+        async fn discard_delivery(&self, _: &ToolPolicy, _: &str) {
+            self.0.discarded.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    for ack in [
+        None,
+        Some(json!({"protocol": PROTOCOL, "id": "failed", "delivered": true})),
+    ] {
+        let counters = Arc::new(DeliveryCounters::default());
+        let (client, server_task) = serve(Arc::new(FailingExecutor(counters.clone())));
+        let acknowledged = ack.is_some();
+        let (response, _) = exchange(client, "secret", "chat.history", "failed", ack).await;
+        assert_eq!(response["ok"], false);
+        assert_eq!(server_task.await.unwrap().is_ok(), acknowledged);
+        assert_eq!(counters.discarded.load(Ordering::SeqCst), 1);
+    }
 }
 
 #[tokio::test]

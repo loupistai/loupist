@@ -1081,7 +1081,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                   askArtifactDisabled={activeChat?.status === "streaming" || activeChat?.status === "submitted" || Boolean(recoveredChat)}
                   onOpenKnowledge={(location) => {
                     if (location.surface === "world") openKnowledgePage(location);
-                    else workspace.openMemory(selectedLoupist.id, workspaceThreadId, location, location.surface === "note" ? i18n.t("app:app.savedNote") : location.surface === "lens" ? "Lens" : i18n.t("app:app.source"));
+                    else workspace.openMemory(selectedLoupist.id, workspaceThreadId, location, location.surface === "note" ? i18n.t("app:app.savedNote") : location.surface === "lens" ? i18n.t("chat:workspaceEvidence.kind.lens") : i18n.t("app:app.source"));
                   }}
                   onOpenKnowledgePage={openKnowledgePage}
                   onAskKnowledge={addKnowledgeToChat}

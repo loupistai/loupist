@@ -1,5 +1,5 @@
 import i18n, { useTranslation } from "@/i18n";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { GraphJobView } from "../../types";
 
 const t = i18n.getFixedT(null, "chat");
@@ -33,28 +33,31 @@ export function WorldProcessingStatus({ active = true, jobId, initialStatus, rea
   const [status, setStatus] = useState(initialStatus ?? "saved");
   const [failed, setFailed] = useState(false);
   const [retry, setRetry] = useState(0);
+  const callbacks = useRef({ readJob, onChanged });
+  callbacks.current = { readJob, onChanged };
+  const canRead = Boolean(readJob);
   useEffect(() => {
     if (!active) return;
     setStatus(initialStatus ?? "saved");
     setFailed(false);
-    if (!jobId || !readJob || (!pending(initialStatus ?? "") && initialStatus !== "reconcile_required")) return;
+    if (!jobId || !canRead || (!pending(initialStatus ?? "") && initialStatus !== "reconcile_required")) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const refresh = async () => {
       try {
-        const job = await readJob(jobId);
+        const job = await callbacks.current.readJob!(jobId);
         if (cancelled) return;
         setStatus(job.status);
         setFailed(false);
         if (pending(job.status)) timer = setTimeout(() => void refresh(), 2_000);
-        else if (job.status !== initialStatus) onChanged?.();
+        else if (job.status !== initialStatus) callbacks.current.onChanged?.();
       } catch {
         if (!cancelled) setFailed(true);
       }
     };
     void refresh();
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
-  }, [active, jobId, initialStatus, readJob, onChanged, retry]);
+  }, [active, jobId, initialStatus, canRead, retry]);
   if (!initialStatus && !jobId) return null;
   return <small role="status">
     {failed ? t("worldProcessingStatus.sourceSavedCouldNotRefreshWorldStatus") : labels()[status] ?? t("worldProcessingStatus.sourceSavedCheckWorldForProcessingDetails")}

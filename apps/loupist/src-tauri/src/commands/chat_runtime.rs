@@ -319,14 +319,12 @@ impl From<Channel<ChatStreamEvent>> for ChatEventSink {
     }
 }
 
-fn pi_event_stream_failure(
-    error: tokio::sync::broadcast::error::RecvError,
-) -> Option<&'static str> {
+fn pi_event_stream_failure(error: tokio::sync::broadcast::error::RecvError) -> &'static str {
     match error {
         tokio::sync::broadcast::error::RecvError::Lagged(_) => {
-            Some("Pi event stream fell behind and was stopped safely")
+            "Pi event stream fell behind and was stopped safely"
         }
-        tokio::sync::broadcast::error::RecvError::Closed => Some("Pi event stream was interrupted"),
+        tokio::sync::broadcast::error::RecvError::Closed => "Pi event stream was interrupted",
     }
 }
 
@@ -636,8 +634,7 @@ fn classify_turn_failure(error: &CommandError, fallback: ChatFailureKind) -> Cha
         | "Pi session initialization timed out"
         | "Pi RPC write timed out" => ChatFailureKind::ProviderTimeout,
         reason
-            if reason.starts_with("Pi executable is missing")
-                || reason.starts_with("Pi runtime directory is missing")
+            if reason.starts_with("Pi runtime directory is missing")
                 || reason.starts_with("Pi I/O failed")
                 || reason == "Pi stopped during session initialization" =>
         {

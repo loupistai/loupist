@@ -28,7 +28,7 @@ Analytic axes and legends use the dataset's readable column labels. Numeric tick
 precision follows the scale so distinct small values do not all display as zero. Legends
 wrap below the plot as the panel changes width, keeping room for the data;
 display labels do not change series identity or stored values.
-Financial charts can attach a selected date range to a follow-up question.
+Financial charts can attach a selected date range to a follow-up question. Theme changes restyle the open chart while retaining local drawings and zoom.
 Position, entry, stop and target overlays name their source or analytical basis.
 The agent preserves user-supplied values; when asked to choose levels, it labels
 them as an analytical proposal with its evidence and assumptions, never an order

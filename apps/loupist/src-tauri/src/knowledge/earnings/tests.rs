@@ -99,6 +99,174 @@ fn events_of(store: &KnowledgeStore, page: &PageRecord) -> Vec<EventRecord> {
 }
 
 #[test]
+fn one_sync_keeps_the_first_audit_with_or_without_a_period_in_its_title() {
+    for title in ["감사보고서제출 (2025.12)", "감사보고서"] {
+        let (_root, store) = store();
+        let page = page(&store, "005930", "KRX");
+        store
+            .transact(|w| {
+                upsert_event(
+                    w.tx,
+                    LOUPIST,
+                    &page.asset_id,
+                    "Q4 2025",
+                    Some(day("2025-12-31")),
+                    day("2026-03-31"),
+                    DateSource::LegalDeadline,
+                    1,
+                )
+            })
+            .unwrap();
+        observe(
+            &store,
+            &page,
+            vec![
+                filing("first-audit", "2026-03-12", None, title, None),
+                filing("later-audit", "2026-03-13", None, title, None),
+            ],
+        );
+        sync_at(&store, &page, "2026-03-14");
+        let audit = events_of(&store, &page)
+            .into_iter()
+            .find(|event| event.period == "Q4 2025")
+            .unwrap()
+            .flags
+            .audit
+            .unwrap();
+        assert_eq!(audit.filing_id, "first-audit", "{title}");
+        sync_at(&store, &page, "2026-03-14");
+        let audit = events_of(&store, &page)
+            .into_iter()
+            .find(|event| event.period == "Q4 2025")
+            .unwrap()
+            .flags
+            .audit
+            .unwrap();
+        assert_eq!(audit.filing_id, "first-audit", "{title}");
+    }
+}
+
+#[test]
+fn one_sync_keeps_the_first_matching_release_and_final_report() {
+    let (_root, store) = store();
+    let page = page(&store, "MORR", "NASDAQ");
+    store
+        .transact(|w| {
+            upsert_event(
+                w.tx,
+                LOUPIST,
+                &page.asset_id,
+                "Q3 2026",
+                Some(day("2026-09-30")),
+                day("2026-10-30"),
+                DateSource::Calendar,
+                1,
+            )
+        })
+        .unwrap();
+    observe(
+        &store,
+        &page,
+        vec![
+            filing(
+                "first-release",
+                "2026-10-29",
+                Some("8-K"),
+                "Results",
+                Some("2.02"),
+            ),
+            filing(
+                "later-release",
+                "2026-10-30",
+                Some("8-K"),
+                "Results",
+                Some("2.02"),
+            ),
+            filing(
+                "first-final",
+                "2026-10-31",
+                Some("10-Q"),
+                "Quarterly report",
+                None,
+            ),
+            filing(
+                "later-final",
+                "2026-11-01",
+                Some("10-Q"),
+                "Quarterly report",
+                None,
+            ),
+        ],
+    );
+    let outcome = sync_at(&store, &page, "2026-11-02");
+    assert_eq!(outcome.released.len(), 1);
+    let event = events_of(&store, &page).remove(0);
+    assert_eq!(event.release.unwrap().filing_id, "first-release");
+    assert_eq!(event.final_report.unwrap().filing_id, "first-final");
+    assert!(sync_at(&store, &page, "2026-11-02").released.is_empty());
+}
+
+#[test]
+fn stale_filing_snapshots_preserve_the_first_release_final_and_current_flags() {
+    let (_root, store) = store();
+    let page = page(&store, "MORR", "NASDAQ");
+    store
+        .transact(|w| {
+            let (event, _) = upsert_event(
+                w.tx,
+                LOUPIST,
+                &page.asset_id,
+                "Q3 2026",
+                Some(day("2026-09-30")),
+                day("2026-10-30"),
+                DateSource::Calendar,
+                1,
+            )?;
+            let report = |id: &str| FilingRef {
+                filing_id: id.into(),
+                date: "2026-10-30".into(),
+                form: Some("8-K".into()),
+                title: "Results".into(),
+                evidence: evidence("https://example.test/results", "2026-10-30"),
+            };
+            let audit = report("audit");
+            edit_flags(w.tx, LOUPIST, &event.event_id, 2, |flags| {
+                flags.audit = Some(audit.clone())
+            })?;
+            assert!(set_final(w.tx, LOUPIST, &event, &report("first-final"), 3)?);
+            assert!(!set_final(
+                w.tx,
+                LOUPIST,
+                &event,
+                &report("later-final"),
+                4
+            )?);
+            assert!(set_release(
+                w.tx,
+                LOUPIST,
+                &event,
+                &report("first-release"),
+                5
+            )?);
+            assert!(!set_release(
+                w.tx,
+                LOUPIST,
+                &event,
+                &report("later-release"),
+                6
+            )?);
+            let current = get_event(w.tx, LOUPIST, &event.event_id)?.unwrap();
+            assert_eq!(current.status, Status::Final);
+            assert_eq!(current.flags.audit, Some(audit));
+            assert_eq!(current.flags.release_seen_ms, Some(5));
+            assert_eq!(current.release.unwrap().filing_id, "first-release");
+            assert_eq!(current.final_report.unwrap().filing_id, "first-final");
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
 fn us_dates_releases_and_final_reports_follow_the_calendar_and_filings() {
     let (_root, store) = store();
     let morrow = page(&store, "MORR", "NASDAQ");

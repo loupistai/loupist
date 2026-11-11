@@ -25,6 +25,38 @@ pub fn checked_url(value: &str) -> Result<Url, ConnectionError> {
     Ok(url)
 }
 
+/// Remote discovery cannot turn a user-approved remote connection into a
+/// request to a local service. Explicit local connections retain local OAuth.
+pub fn checked_discovered_url(value: &str, resource: &str) -> Result<Url, ConnectionError> {
+    fn loopback(url: &Url) -> bool {
+        let Some(host) = url.host_str() else {
+            return false;
+        };
+        let host = host.trim_end_matches('.');
+        host == "localhost"
+            || host.ends_with(".localhost")
+            || host
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| match ip {
+                    std::net::IpAddr::V4(ip) => ip.is_loopback() || ip.is_unspecified(),
+                    std::net::IpAddr::V6(ip) => {
+                        ip.is_loopback()
+                            || ip.is_unspecified()
+                            || ip
+                                .to_ipv4()
+                                .is_some_and(|ip| ip.is_loopback() || ip.is_unspecified())
+                    }
+                })
+    }
+    let url = checked_url(value)?;
+    if loopback(&url) && !loopback(&checked_url(resource)?) {
+        return Err(ConnectionError::InvalidAuthorization);
+    }
+    Ok(url)
+}
+
 pub fn canonical_resource(value: &str) -> Result<String, ConnectionError> {
     let url = checked_url(value)?;
     // Query parameters can contain credentials and are not resource identifiers.
@@ -161,7 +193,10 @@ impl HttpTransport {
             }
             request = request.bearer_auth(token);
         }
-        let response = request.send().await.map_err(|_| ConnectionError::Network)?;
+        let response = request
+            .send()
+            .await
+            .map_err(|_| ConnectionError::Transport)?;
         if response.status().is_redirection() {
             return Err(ConnectionError::Redirect);
         }
@@ -178,6 +213,10 @@ impl HttpTransport {
                     .filter_map(|v| v.to_str().ok().map(str::to_owned))
                     .collect(),
             }));
+        }
+        if matches!(response.status(), StatusCode::NOT_FOUND | StatusCode::GONE) {
+            // MCP uses 404 for a session that the server no longer recognizes.
+            return Err(ConnectionError::Transport);
         }
         if !response.status().is_success() {
             return Err(ConnectionError::Protocol);
@@ -206,8 +245,11 @@ impl HttpTransport {
         let value = if sse {
             self.read_sse(response, &id).await?
         } else {
-            serde_json::from_slice(&bounded_body(response).await?)
-                .map_err(|_| ConnectionError::Protocol)?
+            let bytes = bounded_body(response).await.map_err(|error| match error {
+                ConnectionError::Network => ConnectionError::Transport,
+                error => error,
+            })?;
+            serde_json::from_slice(&bytes).map_err(|_| ConnectionError::Protocol)?
         };
         if value.get("jsonrpc").and_then(Value::as_str) != Some("2.0")
             || value.get("id").and_then(Value::as_str) != Some(id.as_str())
@@ -250,7 +292,7 @@ impl HttpTransport {
         while let Some(chunk) = response
             .chunk()
             .await
-            .map_err(|_| ConnectionError::Network)?
+            .map_err(|_| ConnectionError::Transport)?
         {
             total = total.saturating_add(chunk.len());
             if total > MAX_RESPONSE_BYTES {
@@ -297,7 +339,7 @@ impl HttpTransport {
                 }
             }
         }
-        Err(ConnectionError::Protocol)
+        Err(ConnectionError::Transport)
     }
 }
 

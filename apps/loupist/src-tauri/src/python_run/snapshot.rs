@@ -17,7 +17,8 @@ use std::{
 };
 
 use rustix::fs::{
-    fstat, mkdirat, openat, renameat, statat, unlinkat, AtFlags, Dir, FileType, Mode, OFlags,
+    fchmod, fstat, mkdirat, openat, renameat, statat, unlinkat, AtFlags, Dir, FileType, Mode,
+    OFlags,
 };
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
@@ -633,48 +634,54 @@ fn replace_same_inode(
         TEMPS.fetch_add(1, Ordering::Relaxed)
     );
     let flags = OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
-    let fd = openat(host_dir, temp.as_str(), flags, Mode::from_raw_mode(0o644))
+    let fd = openat(host_dir, temp.as_str(), flags, Mode::from_raw_mode(0o600))
         .map_err(|_| PythonError::failed("workspace writeback failed"))?;
-    let mut file = File::from(fd);
-    file.write_all(bytes)
-        .map_err(|_| PythonError::failed("workspace writeback failed"))?;
-    file.sync_all().ok();
-    let mut conflict = None;
-    let current = statat(host_dir, name, AtFlags::SYMLINK_NOFOLLOW).ok();
-    let kind = current
-        .as_ref()
-        .map(|meta| FileType::from_raw_mode(meta.st_mode));
-    if current.is_none() {
-        conflict = Some("replaced");
-    } else if kind == Some(FileType::Symlink) {
-        conflict = Some("symlink");
-    } else if kind != Some(FileType::RegularFile) {
-        conflict = Some("type");
-    } else if current.as_ref().is_some_and(|meta| meta.st_nlink != 1) {
-        conflict = Some("hard_link");
-    } else if current
-        .as_ref()
-        .is_some_and(|item| item.st_dev != meta.st_dev || item.st_ino != meta.st_ino)
-    {
-        conflict = Some("replaced");
-    }
-    if conflict.is_none() {
-        let mut readable = host_file;
-        if readable.seek(SeekFrom::Start(0)).is_err() {
-            unlinkat(host_dir, temp.as_str(), AtFlags::empty()).ok();
-            return Err(PythonError::failed("workspace writeback failed"));
+    let result = (|| {
+        let mut file = File::from(fd);
+        file.write_all(bytes)
+            .map_err(|_| PythonError::failed("workspace writeback failed"))?;
+        fchmod(&file, Mode::from_raw_mode(meta.st_mode & 0o777))
+            .map_err(|_| PythonError::failed("workspace writeback failed"))?;
+        file.sync_all().ok();
+        let mut conflict = None;
+        let current = statat(host_dir, name, AtFlags::SYMLINK_NOFOLLOW).ok();
+        let kind = current
+            .as_ref()
+            .map(|meta| FileType::from_raw_mode(meta.st_mode));
+        if current.is_none() {
+            conflict = Some("replaced");
+        } else if kind == Some(FileType::Symlink) {
+            conflict = Some("symlink");
+        } else if kind != Some(FileType::RegularFile) {
+            conflict = Some("type");
+        } else if current.as_ref().is_some_and(|meta| meta.st_nlink != 1) {
+            conflict = Some("hard_link");
+        } else if current
+            .as_ref()
+            .is_some_and(|item| item.st_dev != meta.st_dev || item.st_ino != meta.st_ino)
+        {
+            conflict = Some("replaced");
         }
-        if read_fd_hash(readable).ok() != Some(stamp.sha256) {
-            conflict = Some("host_changed");
+        if conflict.is_none() {
+            let mut readable = host_file;
+            if readable.seek(SeekFrom::Start(0)).is_err() {
+                return Err(PythonError::failed("workspace writeback failed"));
+            }
+            if read_fd_hash(readable).ok() != Some(stamp.sha256) {
+                conflict = Some("host_changed");
+            }
         }
+        if let Some(reason) = conflict {
+            return Ok(ReplaceOutcome::Conflict(reason));
+        }
+        renameat(host_dir, temp.as_str(), host_dir, name)
+            .map_err(|_| PythonError::failed("workspace writeback failed"))?;
+        Ok(ReplaceOutcome::Wrote)
+    })();
+    if !matches!(&result, Ok(ReplaceOutcome::Wrote)) {
+        let _ = unlinkat(host_dir, temp.as_str(), AtFlags::empty());
     }
-    if let Some(reason) = conflict {
-        unlinkat(host_dir, temp.as_str(), AtFlags::empty()).ok();
-        return Ok(ReplaceOutcome::Conflict(reason));
-    }
-    renameat(host_dir, temp.as_str(), host_dir, name)
-        .map_err(|_| PythonError::failed("workspace writeback failed"))?;
-    Ok(ReplaceOutcome::Wrote)
+    result
 }
 
 fn create_exclusive(host_dir: &OwnedFd, name: &str, bytes: &[u8]) -> Result<bool, PythonError> {
@@ -685,8 +692,10 @@ fn create_exclusive(host_dir: &OwnedFd, name: &str, bytes: &[u8]) -> Result<bool
         Err(_) => return Err(PythonError::failed("workspace writeback failed")),
     };
     let mut file = File::from(fd);
-    file.write_all(bytes)
-        .map_err(|_| PythonError::failed("workspace writeback failed"))?;
+    if file.write_all(bytes).is_err() {
+        let _ = unlinkat(host_dir, name, AtFlags::empty());
+        return Err(PythonError::failed("workspace writeback failed"));
+    }
     file.sync_all().ok();
     Ok(true)
 }
@@ -999,6 +1008,13 @@ fn ensure_outputs(prepared: &mut Prepared) -> Result<(), PythonError> {
         return Ok(());
     }
     let snap = open_dir(&prepared.staging.path().join("workspace"))?;
+    if statat(&snap, "outputs", AtFlags::SYMLINK_NOFOLLOW)
+        .is_ok_and(|meta| FileType::from_raw_mode(meta.st_mode) != FileType::Directory)
+    {
+        return Err(PythonError::failed(
+            "workspace outputs must be a directory; rename the outputs file before running Python",
+        ));
+    }
     mkdir_at(&snap, "outputs", Mode::from_raw_mode(0o755))?;
     prepared.writable.push("outputs".into());
     prepared.writable.sort();

@@ -72,7 +72,7 @@ pub fn operation_id(value: &Value) -> Option<&str> {
         .and_then(Value::as_str)
 }
 
-/// The quantity, value and cost strings of the latest holdings snapshot, as a
+/// The quantity, value and cost strings of the current holdings positions, as a
 /// model-facing text would print them (debug and test canary checks).
 pub fn canaries(positions: &[crate::store::user_context::HoldingsPosition]) -> Vec<String> {
     let mut out = Vec::new();
@@ -132,11 +132,11 @@ pub fn leaked<'a>(text: &str, canaries: &'a [String]) -> Option<&'a str> {
 }
 
 /// Debug and test builds: the first quantity, value or cost of the latest
-/// holdings snapshot that a model-facing text contains.
+/// snapshot of each source that a model-facing text contains.
 #[cfg(any(test, debug_assertions))]
 pub(crate) fn scan(store: &crate::store::SqliteStore, text: &str) -> Option<String> {
-    let snapshot = store.holdings_latest().ok().flatten()?;
-    leaked(text, &canaries(&snapshot.positions)).map(str::to_owned)
+    let positions = store.holdings_latest_positions().ok()?;
+    leaked(text, &canaries(&positions)).map(str::to_owned)
 }
 
 /// Debug builds say loudly when a held number reached a prompt or a tool result.

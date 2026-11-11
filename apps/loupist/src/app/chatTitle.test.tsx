@@ -1,7 +1,6 @@
 import { act, render, screen } from "@testing-library/react";
 import i18n from "@/i18n";
 import { LoupistChatItem } from "@/components/app/LoupistChatItem";
-import { getLoupistChatList } from "@/components/app/loupistNavigation";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { MockLoupistBridge } from "../bridge/mockBridge";
 import { chatTitle } from "./chatTitle";
@@ -11,16 +10,14 @@ import { renderHook } from "@testing-library/react";
 
 afterEach(async () => { await i18n.changeLanguage("en"); });
 
-it("localizes untitled saved chats and search when the language changes", async () => {
+it("localizes untitled saved chats when the language changes", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const thread = await bridge.chatCreate({ loupist_id: "loupist-quality" });
   expect(thread.title).toBe("");
-  const { loupist } = await bridge.loupistSelect(thread.loupist_id);
   render(<SidebarProvider><LoupistChatItem thread={thread} active running={false} onSelect={vi.fn()} onRename={vi.fn()} onDelete={vi.fn()} /></SidebarProvider>);
   expect(screen.getByRole("button", { name: i18n.t("app:emptyChat.newChat") })).toBeVisible();
   await act(async () => { await i18n.changeLanguage("ko"); });
   expect(screen.getByRole("button", { name: "새 대화" })).toBeVisible();
-  expect(getLoupistChatList(loupist, [thread], "새 대화").matches).toEqual([thread]);
   expect(thread.title).toBe("");
 });
 

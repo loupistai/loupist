@@ -74,6 +74,7 @@
   "creating": "Creating the repository…",
   "uploading": "Uploading {{formattedCount}} files…",
   "published": "Published to {{url}}",
+  "copyFailed": "Couldn't copy the link. Try again.",
   "copyLink": "Copy link",
   "copied": "Link copied",
   "openGithub": "Open on GitHub",

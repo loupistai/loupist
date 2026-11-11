@@ -170,6 +170,8 @@ pub(super) struct ToolCapture {
     /// Standing Lens body admitted with the turn envelope. This is not a tool ACK.
     pub(super) context_reads: Mutex<Vec<StagedKnowledgeRead>>,
     pub(super) staged_research: Mutex<Option<StagedResearch>>,
+    /// One Journal save or review per turn, reserved until delivery is discarded.
+    journal_delivery: Mutex<Option<String>>,
     pub(super) staged_principles: Mutex<Vec<StagedPrinciple>>,
     /// Checked thesis updates, committed with the reply.
     pub(in crate::commands) staged_theses: Mutex<Vec<crate::knowledge::assets::ThesisUpdate>>,
@@ -582,6 +584,11 @@ impl ToolCapture {
 
     async fn discard_delivery(&self, delivery_id: &str) {
         self.pending_deliveries.lock().await.remove(delivery_id);
+        let mut journal = self.journal_delivery.lock().await;
+        if journal.as_deref() == Some(delivery_id) {
+            *journal = None;
+        }
+        drop(journal);
         // A thesis update that was never delivered frees its asset again.
         self.thesis_assets
             .lock()
@@ -635,10 +642,20 @@ impl ToolCapture {
             self.web_sources.lock().await.extend(pending.web_sources);
         }
         if !pending.web_fetch_snapshots.is_empty() {
-            self.web_fetch_snapshots
-                .lock()
-                .await
-                .extend(pending.web_fetch_snapshots);
+            let mut snapshots = self.web_fetch_snapshots.lock().await;
+            for (source_id, snapshot) in pending.web_fetch_snapshots {
+                if let Some(existing) = snapshots.get_mut(&source_id).filter(|existing| {
+                    snapshot.fetched.page(0).is_ok_and(|page| {
+                        existing
+                            .fetched
+                            .matches_source(&source_id, &page.content_sha256)
+                    })
+                }) {
+                    existing.issued_offsets.extend(snapshot.issued_offsets);
+                } else {
+                    snapshots.insert(source_id, snapshot);
+                }
+            }
         }
         if !pending.staged_sources.is_empty() {
             self.staged_sources
@@ -1066,16 +1083,14 @@ impl AppToolExecutor {
             }
             ToolMethod::DatasetImport => self.dataset_import(params),
             ToolMethod::Calculate => self.calculate(policy, params).await,
-            ToolMethod::WorldbankSeries => self.worldbank_series(policy, params, delivery_id).await,
+            ToolMethod::WorldbankSeries => self.worldbank_series(policy, params).await,
             ToolMethod::DefillamaRead => self.defillama_read(policy, params).await,
-            ToolMethod::KrxDailyQuote => self.krx_daily_quote(policy, params, delivery_id).await,
+            ToolMethod::KrxDailyQuote => self.krx_daily_quote(policy, params).await,
             ToolMethod::KisOperationSearch => self.kis_operation_search(params).await,
-            ToolMethod::KisRead => self.kis_read(policy, params, delivery_id).await,
-            ToolMethod::DartFinancials => self.dart_financials(policy, params, delivery_id).await,
-            ToolMethod::DartFilingSearch => {
-                self.dart_filing_search(policy, params, delivery_id).await
-            }
-            ToolMethod::DartFilingRead => self.dart_filing_read(policy, params, delivery_id).await,
+            ToolMethod::KisRead => self.kis_read(policy, params).await,
+            ToolMethod::DartFinancials => self.dart_financials(policy, params).await,
+            ToolMethod::DartFilingSearch => self.dart_filing_search(policy, params).await,
+            ToolMethod::DartFilingRead => self.dart_filing_read(policy, params).await,
             ToolMethod::DartCompanyLookup => self.dart_company_lookup(params).await,
             ToolMethod::DartMajorReport => self.dart_major_report(policy, params).await,
             ToolMethod::DartOwnership => self.dart_ownership(policy, params).await,

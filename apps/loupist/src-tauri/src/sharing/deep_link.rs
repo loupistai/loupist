@@ -49,7 +49,7 @@ impl GithubLocation {
     }
 }
 
-fn segment(value: &str) -> bool {
+pub(super) fn segment(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 100
         && value != "."
@@ -86,12 +86,15 @@ pub(crate) fn parse_github(value: &str) -> Option<GithubLocation> {
     }
     match url.host_str()? {
         "github.com" => match parts.as_slice() {
-            [owner, repo] => Some(GithubLocation::Repo {
-                owner: (*owner).into(),
-                repo: repo.trim_end_matches(".git").into(),
-                reference: None,
-                path: None,
-            }),
+            [owner, repo] => {
+                let repo = repo.strip_suffix(".git").unwrap_or(repo);
+                segment(repo).then(|| GithubLocation::Repo {
+                    owner: (*owner).into(),
+                    repo: repo.into(),
+                    reference: None,
+                    path: None,
+                })
+            }
             [owner, repo, "tree", reference, rest @ ..] if rest.len() <= 6 => {
                 Some(GithubLocation::Repo {
                     owner: (*owner).into(),
@@ -188,6 +191,19 @@ mod tests {
         )
         .unwrap();
         assert_eq!(repo.label(), "github.com/kimj/loupist-quality-compounder");
+        assert_eq!(
+            parse_github("https://github.com/kimj/desk.git.git")
+                .unwrap()
+                .url(),
+            "https://github.com/kimj/desk.git"
+        );
+        assert_eq!(
+            parse_github("https://github.com/kimj/desk.git")
+                .unwrap()
+                .url(),
+            "https://github.com/kimj/desk"
+        );
+        assert!(parse_github("https://github.com/kimj/.git").is_none());
         let tree = parse_import_link(
             "loupist://import?url=https://github.com/kimj/packs/tree/main/semis/chips",
         )

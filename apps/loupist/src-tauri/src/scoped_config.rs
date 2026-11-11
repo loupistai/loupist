@@ -525,9 +525,15 @@ fn load(directory: &Path, scope: &ConfigScope) -> LoadedConfig {
             }
         }
     };
-    let mut config: ConfigDocument = match toml_edit::de::from_str(&source) {
+    let mut config: ConfigDocument = match toml_edit::de::from_document(document.clone()) {
         Ok(config) => config,
-        Err(error) => {
+        Err(_) => {
+            // This toml_edit version removes spans from an editable Document.
+            // Reparse only rejected values to retain precise diagnostics;
+            // valid configurations reuse the document parsed above.
+            let offset = toml_edit::de::from_str::<ConfigDocument>(&source)
+                .err()
+                .and_then(|error| error.span().map(|span| span.start));
             return LoadedConfig {
                 revision,
                 document: Some(document),
@@ -536,10 +542,10 @@ fn load(directory: &Path, scope: &ConfigScope) -> LoadedConfig {
                     &path,
                     "Unsupported configuration key or invalid value type",
                     Some(&source),
-                    error.span().map(|span| span.start),
+                    offset,
                 )],
                 warnings: Vec::new(),
-            }
+            };
         }
     };
     let ignored = validate(&config, scope).and_then(|()| ignore_unknown_catalog_keys(&mut config));

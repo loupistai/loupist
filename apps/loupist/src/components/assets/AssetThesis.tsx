@@ -116,12 +116,16 @@ export function AssetThesis({ bridge, loupistId, loupistName, page, name, thread
   const lookBack = useLookBack();
   const [editing, setEditing] = useState<Editing>(null);
   const [expanded, setExpanded] = useState(false);
+  const [archiveFailed, setArchiveFailed] = useState(false);
   const titleId = useId();
   const read = page.read;
   const chatTitle = (chatId?: string) => chatId ? threads.find(thread => thread.id === chatId)?.title : undefined;
   const archive = async (journalId: string) => {
-    await bridge.journalArchive({ loupistId, journalId, archived: true }).catch(() => undefined);
-    onChanged();
+    setArchiveFailed(false);
+    try {
+      await bridge.journalArchive({ loupistId, journalId, archived: true });
+      onChanged();
+    } catch { setArchiveFailed(true); }
   };
   const finish = () => { setEditing(null); onChanged(); };
   const form = (kind: "reason" | "line") => editing?.kind === kind && !editing.entry
@@ -152,6 +156,7 @@ export function AssetThesis({ bridge, loupistId, loupistName, page, name, thread
       <h2 id={titleId} className="asset-section-label">{t("thesis.title")}</h2>
       {read ? <span className="asset-read-label"><span>{t("thesis.read", { loupist: loupistName })}</span><VerdictChip verdict={read.verdict} loupist={loupistName} /></span> : null}
     </div>
+    {archiveFailed ? <p role="alert">{t("error.archive")}</p> : null}
     {/* "Thesis" and "line" are explained once, here; without a thesis the invitation below says it. */}
     {read || page.reasons.length ? <p className="asset-thesis-hint">{t("thesis.hint")}</p> : null}
     {read ? <>

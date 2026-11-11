@@ -19,8 +19,8 @@ use crate::{
 
 /// Stored title; the renderer shows the localized "Thread" label instead.
 pub(crate) const HOME_TITLE: &str = "Thread";
-/// Recent runs considered for delivery on each pass.
 pub(crate) const HANDOFF_PREFIX: &str = "bot-handoff";
+/// Recent runs considered for delivery on each pass.
 const DELIVERY_SCAN: usize = 50;
 
 /// One home Thread per Loupist, by construction: the id is derived from the Loupist.
@@ -470,45 +470,44 @@ pub(crate) fn earnings_message(
     Ok(message)
 }
 
-/// Watcher alerts found and not delivered yet, and earnings notices owed.
-fn pending_host_news(
-    state: &AppState,
-    loupist_id: &str,
-) -> (
+type HostNews = (
     Vec<crate::knowledge::watch::WatchEventView>,
     Vec<(
         crate::knowledge::earnings::Notice,
         crate::knowledge::earnings::SnapshotView,
     )>,
-) {
+);
+
+/// Watcher alerts found and not delivered yet, and earnings notices owed.
+fn pending_host_news(state: &AppState, loupist_id: &str) -> Result<HostNews, CommandError> {
     let (events, notices) = crate::commands::assets::with_assets(state, loupist_id, false, |tx| {
-        let notices = crate::knowledge::earnings::pending_notices(tx, loupist_id)?
-            .into_iter()
-            .filter_map(|notice| {
-                crate::knowledge::earnings::get_event(tx, loupist_id, &notice.event_id)
-                    .ok()
-                    .flatten()
-                    .map(|event| (notice, event.asset_id))
-            })
-            .collect::<Vec<_>>();
+        let mut notices = Vec::new();
+        for notice in crate::knowledge::earnings::pending_notices(tx, loupist_id)? {
+            if let Some(event) =
+                crate::knowledge::earnings::get_event(tx, loupist_id, &notice.event_id)?
+            {
+                notices.push((notice, event.asset_id));
+            }
+        }
         Ok((crate::knowledge::watch::pending(tx, loupist_id)?, notices))
-    })
-    .unwrap_or_default();
-    let notices = notices
-        .into_iter()
-        .filter_map(|(notice, asset_id)| {
-            crate::commands::earnings::snapshot_for(
-                state,
-                loupist_id,
-                &asset_id,
-                Some(&notice.event_id),
-            )
-            .ok()
-            .flatten()
-            .map(|snapshot| (notice, snapshot))
-        })
-        .collect();
-    (events, notices)
+    })?;
+    let mut snapshots = Vec::new();
+    for (notice, asset_id) in notices {
+        match crate::commands::earnings::snapshot_for(
+            state,
+            loupist_id,
+            &asset_id,
+            Some(&notice.event_id),
+        ) {
+            Ok(Some(snapshot)) => snapshots.push((notice, snapshot)),
+            Ok(None) => {}
+            Err(error) => eprintln!(
+                "Earnings notice {} snapshot waits ({})",
+                notice.notice_id, error.code
+            ),
+        }
+    }
+    Ok((events, snapshots))
 }
 
 pub(crate) fn vocabulary_message(
@@ -562,19 +561,21 @@ pub(crate) fn link_message(
     Ok(message)
 }
 
-fn pending_links(state: &AppState, loupist_id: &str) -> Vec<crate::knowledge::ConnectionView> {
+fn pending_links(
+    state: &AppState,
+    loupist_id: &str,
+) -> Result<Vec<crate::knowledge::ConnectionView>, CommandError> {
     let at = now_ms();
     crate::commands::assets::with_assets(state, loupist_id, false, |tx| {
         crate::knowledge::connections_to_show(tx, loupist_id, at)
     })
-    .unwrap_or_default()
 }
 
 fn pending_vocabulary(
     state: &AppState,
     loupist_id: &str,
     home: &ChatSession,
-) -> Vec<crate::knowledge::SchemaChange> {
+) -> Result<Vec<crate::knowledge::SchemaChange>, CommandError> {
     let posted: HashSet<&str> = home
         .messages
         .iter()
@@ -583,8 +584,7 @@ fn pending_vocabulary(
         .collect();
     let mut changes = crate::commands::assets::with_assets(state, loupist_id, false, |tx| {
         crate::knowledge::recent_changes(tx, loupist_id, 20)
-    })
-    .unwrap_or_default();
+    })?;
     // A change a chat reply made is already on that reply's receipt.
     changes.retain(|change| {
         matches!(
@@ -595,7 +595,7 @@ fn pending_vocabulary(
             && !crate::knowledge::added_labels(change).is_empty()
     });
     changes.reverse();
-    changes
+    Ok(changes)
 }
 
 /// Crossed lines since the Thread began that it has not announced yet.
@@ -603,19 +603,20 @@ fn pending_alerts(
     state: &AppState,
     loupist_id: &str,
     home: &ChatSession,
-) -> Vec<crate::knowledge::assets::LineAlert> {
+) -> Result<Vec<crate::knowledge::assets::LineAlert>, CommandError> {
     let posted: HashSet<String> = home
         .messages
         .iter()
         .filter_map(|message| message.alert.as_ref().map(|alert| alert.move_id.clone()))
         .collect();
-    crate::commands::assets::with_assets(state, loupist_id, false, |tx| {
-        crate::knowledge::assets::line_alerts(tx, loupist_id, home.created_at_ms)
-    })
-    .unwrap_or_default()
-    .into_iter()
-    .filter(|alert| !posted.contains(&alert.move_id))
-    .collect()
+    Ok(
+        crate::commands::assets::with_assets(state, loupist_id, false, |tx| {
+            crate::knowledge::assets::line_alerts(tx, loupist_id, home.created_at_ms)
+        })?
+        .into_iter()
+        .filter(|alert| !posted.contains(&alert.move_id))
+        .collect(),
+    )
 }
 
 /// Posts every finished, undelivered scheduled run into the home Thread, oldest
@@ -647,7 +648,7 @@ pub(crate) fn deliver_finished_runs(
         .filter(|task| task.id.starts_with(HANDOFF_PREFIX))
         .collect::<Vec<_>>();
     let delivered = delivered_in(&home);
-    let (watch_events, notices) = pending_host_news(state, loupist_id);
+    let (watch_events, notices) = pending_host_news(state, loupist_id)?;
     let research = super::handoff::for_delivery(state, loupist_id)?;
     let research_changes = |chat: &ChatSession| -> Vec<(super::handoff::Handoff, Option<usize>)> {
         research
@@ -682,9 +683,9 @@ pub(crate) fn deliver_finished_runs(
             .iter()
             .all(|q| home.messages.iter().any(|m| m.id == q.receipt.task_id))
         && research_changes(&home).is_empty()
-        && pending_alerts(state, loupist_id, &home).is_empty()
-        && pending_vocabulary(state, loupist_id, &home).is_empty()
-        && pending_links(state, loupist_id).is_empty()
+        && pending_alerts(state, loupist_id, &home)?.is_empty()
+        && pending_vocabulary(state, loupist_id, &home)?.is_empty()
+        && pending_links(state, loupist_id)?.is_empty()
         && watch_events.is_empty()
         && notices.is_empty()
     {
@@ -755,13 +756,13 @@ pub(crate) fn deliver_finished_runs(
             None => posted.push(message),
         }
     }
-    for alert in pending_alerts(state, loupist_id, &expected) {
+    for alert in pending_alerts(state, loupist_id, &expected)? {
         posted.push(alert_message(&alert)?);
     }
-    for change in pending_vocabulary(state, loupist_id, &expected) {
+    for change in pending_vocabulary(state, loupist_id, &expected)? {
         posted.push(vocabulary_message(&change)?);
     }
-    let links = pending_links(state, loupist_id);
+    let links = pending_links(state, loupist_id)?;
     let link_ids: Vec<String> = links
         .iter()
         .map(|link| link.connection_id.clone())
@@ -769,7 +770,7 @@ pub(crate) fn deliver_finished_runs(
     for link in &links {
         posted.push(link_message(link, now_ms())?);
     }
-    let (watch_events, notices) = pending_host_news(state, loupist_id);
+    let (watch_events, notices) = pending_host_news(state, loupist_id)?;
     let watch_ids: Vec<String> = watch_events
         .iter()
         .map(|event| event.event_id.clone())

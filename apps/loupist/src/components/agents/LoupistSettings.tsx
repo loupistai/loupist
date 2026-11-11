@@ -145,7 +145,6 @@ export function LoupistSettings({
   selectedAgentIdRef.current = selectedAgentId;
 
   useEffect(() => {
-    let active = true;
     setCapabilityQuery("");
     setCapabilityFilter("all");
     setSavedMessage(null);
@@ -155,9 +154,17 @@ export function LoupistSettings({
     setMarketplace(null);
     setToolBindings([]);
     setConfigurationError(null);
-    setConfigurationLoading(Boolean(selectedAgentId));
     setBusyCapabilityId(null);
+  }, [selectedAgentId]);
+
+  useEffect(() => {
+    let active = true;
+    setConfigurationError(null);
+    setConfigurationLoading(Boolean(selectedAgentId));
     if (!selectedAgentId || selectedAgent?.availability.status !== "available") {
+      setSkills([]);
+      setMarketplace(null);
+      setToolBindings([]);
       setConfigurationLoading(false);
       return () => undefined;
     }
@@ -175,6 +182,7 @@ export function LoupistSettings({
       })
       .catch((cause: unknown) => {
         if (!active) return;
+        setFailedCapabilityId(null);
         setConfigurationError(
           errorMessage(cause, i18n.t("settings:loupistSettings.couldNotLoadThisLoupistSSkillsAnd")),
         );

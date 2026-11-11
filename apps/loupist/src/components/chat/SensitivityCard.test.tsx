@@ -11,6 +11,16 @@ import { renderWithOpen, destinations } from "../../test/open";
 const evidenceRefs = Object.values(SENSITIVITY_EVIDENCE);
 const user = () => userEvent.setup({ skipHover: true });
 
+it("keeps copy feedback across equivalent sensitivity snapshots", async () => {
+  const grid = previewSensitivityGrid("reference");
+  const props = { grid, subject: "Solsup Foods", evidence: SENSITIVITY_EVIDENCE.grid, evidenceRefs };
+  const view = renderWithOpen(<SensitivityCard {...props} />);
+  await user().click(screen.getByRole("button", { name: /Copy/ }));
+  expect(screen.getByRole("button", { name: "Copied" })).toBeVisible();
+  view.rerender(<SensitivityCard {...props} grid={structuredClone(grid)} />);
+  expect(screen.getByRole("button", { name: "Copied" })).toBeVisible();
+});
+
 function renderCard(grid: SensitivityGrid, extra: Partial<ComponentProps<typeof SensitivityCard>> = {}) {
   const onChangeRates = vi.fn();
   const { open } = renderWithOpen(<SensitivityCard grid={grid} subject="Solsup Foods" evidence={SENSITIVITY_EVIDENCE.grid} evidenceRefs={evidenceRefs} onChangeRates={onChangeRates} {...extra} />);

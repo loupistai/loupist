@@ -64,6 +64,10 @@ impl RecentChecks {
     }
 
     fn remember(&self, import_id: &str, check: &UpdateCheck) {
+        if matches!(check, UpdateCheck::Offline) {
+            self.forget(import_id);
+            return;
+        }
         if let Ok(mut checks) = self.0.lock() {
             checks.insert(import_id.to_owned(), (Instant::now(), check.clone()));
         }
@@ -320,7 +324,14 @@ pub async fn pack_check_update(
     request: PackCheckRequest,
     state: State<'_, AppState>,
 ) -> Result<UpdateCheck, CommandError> {
-    let state = state.inner();
+    check_update(state.inner(), request, &Github::production()).await
+}
+
+pub(crate) async fn check_update(
+    state: &AppState,
+    request: PackCheckRequest,
+    api: &Github,
+) -> Result<UpdateCheck, CommandError> {
     admit(state, &request.loupist_id)?;
     let row = import_of(state, &request.loupist_id, &request.import_id)?;
     if row.source_url.is_none() {
@@ -333,14 +344,25 @@ pub async fn pack_check_update(
     if let Some(check) = state.sharing.checks.recent(&row.import_id) {
         return Ok(check);
     }
-    with_tx(state, &request.loupist_id, |tx, _| {
-        store::set_checked(tx, &request.loupist_id, &row.import_id, now).map_err(internal)
-    })?;
     let token = github::load_token(&state.credential_environment);
-    let check = match fetch_newer(&Github::production(), token.as_deref(), &row).await? {
+    let newer = match fetch_newer(api, token.as_deref(), &row).await {
+        Err(error) if error.code == "rate_limited" => {
+            with_tx(state, &request.loupist_id, |tx, _| {
+                store::set_checked(tx, &request.loupist_id, &row.import_id, now).map_err(internal)
+            })?;
+            return Err(error);
+        }
+        result => result?,
+    };
+    let check = match newer {
         Newer::Fetched(fetched) => evaluate(state, &request.loupist_id, &row, fetched).await?,
         Newer::Settled(check) => check,
     };
+    if !matches!(check, UpdateCheck::Offline) {
+        with_tx(state, &request.loupist_id, |tx, _| {
+            store::set_checked(tx, &request.loupist_id, &row.import_id, now).map_err(internal)
+        })?;
+    }
     state.sharing.checks.remember(&row.import_id, &check);
     Ok(check)
 }

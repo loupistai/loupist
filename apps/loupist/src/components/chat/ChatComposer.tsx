@@ -577,6 +577,9 @@ export function ChatComposer({
   );
   const [activeOption, setActiveOption] = useState(0);
   const [contextOptions, setContextOptions] = useState<ContextOption[]>([]);
+  const searchContextRef = useRef(onSearchContext);
+  searchContextRef.current = onSearchContext;
+  const canSearchContext = Boolean(onSearchContext);
   const [modelMenuSignal, setModelMenuSignal] = useState(0);
   const [localChips, setOwnedChips] = useState<ComposerChip[]>(() => [...(chips ?? [])]);
   // Controlled draft chips are read in the same render as pins/ranges on native restoration.
@@ -629,7 +632,6 @@ export function ChatComposer({
         name: skill.name,
         // Bundled Skills read a short line for people; the agent-facing description stays in the prompt metadata.
         detail: (t as unknown as (key: string, options: { defaultValue: string }) => string)(`skillBlurb.${skill.id}`, { defaultValue: skill.description }),
-        insert: "",
         group: t("chatComposer.skills"),
       }] : [];
     }).sort((left, right) => rankText(query, [right.name]) - rankText(query, [left.name]));
@@ -640,7 +642,6 @@ export function ChatComposer({
         label: option.label,
         name: option.label,
         detail: option.detail,
-        insert: "",
         group: contextGroupLabel(option.group),
         context: option,
       }));
@@ -648,18 +649,18 @@ export function ChatComposer({
     // `/`: the finance commands, then Skills by name, then the composer's own actions.
     // Command names are typed literals, the same in every language.
     const finance = ([
-      { id: "command:brief", kind: "command", label: "/brief", name: "/brief", detail: t("chatComposer.briefDetail"), insert: "", group: t("chatComposer.commands"), command: "brief" },
-      { id: "command:compare", kind: "command", label: "/compare", name: "/compare", detail: t("chatComposer.compareDetail"), insert: "", group: t("chatComposer.commands"), command: "compare" },
-      { id: "command:check", kind: "command", label: "/check", name: "/check", detail: t("chatComposer.checkDetail"), insert: "", group: t("chatComposer.commands"), command: "check" },
-      ...(canSetAsOf ? [{ id: "command:asof", kind: "command", label: "/asof", name: "/asof", detail: t("chatComposer.asofDetail"), insert: "", group: t("chatComposer.commands"), command: "asof" }] as const : []),
+      { id: "command:brief", kind: "command", label: "/brief", name: "/brief", detail: t("chatComposer.briefDetail"), group: t("chatComposer.commands"), command: "brief" },
+      { id: "command:compare", kind: "command", label: "/compare", name: "/compare", detail: t("chatComposer.compareDetail"), group: t("chatComposer.commands"), command: "compare" },
+      { id: "command:check", kind: "command", label: "/check", name: "/check", detail: t("chatComposer.checkDetail"), group: t("chatComposer.commands"), command: "check" },
+      ...(canSetAsOf ? [{ id: "command:asof", kind: "command", label: "/asof", name: "/asof", detail: t("chatComposer.asofDetail"), group: t("chatComposer.commands"), command: "asof" }] as const : []),
     ] as const satisfies readonly AssistOption[]).filter((option) => !query.trim() || rankText(query, [option.name.slice(1), option.detail]) >= 2)
       // A command whose name starts with what was typed comes first: `/as` → /asof before /compare.
       .sort((a, b) => Number(b.name.slice(1).startsWith(commandQuery)) - Number(a.name.slice(1).startsWith(commandQuery)));
     const commands = ([
-      { id: "command:new-chat", kind: "command", label: t("chatComposer.newChat"), name: t("chatComposer.newChat"), detail: t("chatComposer.startAFreshConversation"), insert: "", group: t("chatComposer.commands"), command: "new-chat" },
-      { id: "command:model", kind: "command", label: t("chatComposer.model"), name: t("chatComposer.model"), detail: t("chatComposer.chooseTheModel"), insert: "", group: t("chatComposer.commands"), command: "model" },
-      { id: "command:memory", kind: "command", label: t("chatComposer.memory"), name: t("chatComposer.memory"), detail: t("chatComposer.changeWhatThisMessageRemembers"), insert: "", group: t("chatComposer.commands"), command: "memory" },
-      { id: "command:attach", kind: "command", label: t("chatComposer.attachFiles"), name: t("chatComposer.attachFiles"), detail: t("chatComposer.addFilesOrImages"), insert: "", group: t("chatComposer.commands"), command: "attach" },
+      { id: "command:new-chat", kind: "command", label: t("chatComposer.newChat"), name: t("chatComposer.newChat"), detail: t("chatComposer.startAFreshConversation"), group: t("chatComposer.commands"), command: "new-chat" },
+      { id: "command:model", kind: "command", label: t("chatComposer.model"), name: t("chatComposer.model"), detail: t("chatComposer.chooseTheModel"), group: t("chatComposer.commands"), command: "model" },
+      { id: "command:memory", kind: "command", label: t("chatComposer.memory"), name: t("chatComposer.memory"), detail: t("chatComposer.changeWhatThisMessageRemembers"), group: t("chatComposer.commands"), command: "memory" },
+      { id: "command:attach", kind: "command", label: t("chatComposer.attachFiles"), name: t("chatComposer.attachFiles"), detail: t("chatComposer.addFilesOrImages"), group: t("chatComposer.commands"), command: "attach" },
     ] as const satisfies readonly AssistOption[]).filter((option) => {
       const score = rankText(query, [option.name, option.detail]);
       return query.trim() ? score >= 3 : score > 0;
@@ -670,14 +671,14 @@ export function ChatComposer({
   }, [activeTrigger, contextOptions, skills, canSetAsOf, i18n.language]);
 
   useEffect(() => {
-    if (activeTrigger?.symbol !== "@" || !onSearchContext) {
+    if (activeTrigger?.symbol !== "@" || !canSearchContext) {
       setContextOptions([]);
       return;
     }
     let cancelled = false;
     const query = activeTrigger.query;
     const handle = window.setTimeout(() => {
-      void onSearchContext(query).then((options) => {
+      void searchContextRef.current!(query).then((options) => {
         if (!cancelled) setContextOptions(options);
       }).catch(() => {
         if (!cancelled) setContextOptions([]);
@@ -688,7 +689,7 @@ export function ChatComposer({
       window.clearTimeout(handle);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- a language change re-runs the context search so its results are worded in that language.
-  }, [activeTrigger?.query, activeTrigger?.symbol, onSearchContext, i18n.language]);
+  }, [activeTrigger?.query, activeTrigger?.symbol, canSearchContext, i18n.language]);
 
   useEffect(() => {
     setActiveOption(0);
@@ -772,7 +773,7 @@ export function ChatComposer({
     }
     if (option.context?.pin) { onAddKnowledgePin?.(option.context.pin); insertReference(pinItem(option.context.pin)); return; }
     if (option.context?.artifact) { onSelectArtifact?.(option.context.artifact); insertReference(artifactItem(option.context.artifact)); return; }
-    if (option.context?.path || option.context?.connectionId || option.kind === "connection") {
+    if (option.context?.path || option.context?.connectionId) {
       const chip: ComposerChip = { key: option.id, kind: option.context?.path ? "file" : "connection", id: option.context?.path ?? option.context?.connectionId ?? option.id.replace(/^plugin:/u, ""), label: option.name };
       addChip(chip); insertReference(chipItem(chip)); return;
     }
@@ -955,7 +956,6 @@ export function ChatComposer({
           trigger={activeTrigger}
           options={assistOptions}
           activeOption={activeOption}
-          skillCount={skills.length}
           onHover={setActiveOption}
           onSelect={selectAssist}
         />
@@ -1047,11 +1047,8 @@ export function ChatComposer({
         {privateChat ? <div className="composer-private-status"><span>{t("chatComposer.privateNotSavedToMemory")}</span></div> : null}
         <ComposerChipTray
           chips={ownedChips.filter(chip => chip.kind === "skill")}
-          pins={[]}
           asOf={asOf}
           onRemoveChip={(chip) => updateChips(ownedChips.filter((existing) => existing.key !== chip.key))}
-          onRemovePin={onRemoveKnowledgePin}
-          onClearArtifact={onClearSelectedArtifact}
           onEditAsOf={() => setDatePanel({ trigger: null, initial: asOf })}
           onRemoveAsOf={() => { onAsOfChange?.(undefined); textareaRef.current?.focus(); }}
         />

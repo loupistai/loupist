@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import i18n from "@/i18n";
 import type { AttentionItem } from "../contracts/attention";
 import type { LoupistSummary, LoupistBridge } from "../types";
@@ -86,8 +86,7 @@ export function useFinishedWhileHidden({ bridge, loupists, runningThreadKeys, vi
     return () => { window.removeEventListener("focus", clear); document.removeEventListener("visibilitychange", clear); };
   }, [visibleChatKey]);
 
-  const finishedLoupistIds = useMemo(() => new Set([...finished].map((key) => splitChatKey(key).loupistId)), [finished]);
-  return { finishedKeys: finished, finishedLoupistIds };
+  return { finishedKeys: finished };
 }
 
 /** The inverse of `chatSessionKey`. */

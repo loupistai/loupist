@@ -1,19 +1,9 @@
 .onboarding-window { width: 100%; height: 100dvh; overflow-y: auto; background: var(--gg-color-bg-app); color: var(--gg-color-text-primary); padding: clamp(32px, 10vh, 96px) var(--gg-space-6) var(--gg-space-8); }
 .onboarding-column { width: 100%; max-width: var(--gg-size-dialog-md); margin-inline: auto; }
-.onboarding-navigation { display: flex; align-items: center; justify-content: center; position: relative; min-height: var(--gg-size-control-lg); margin-bottom: var(--gg-space-6); }
-.onboarding-back { position: absolute; left: 0; }
-.onboarding-dots { display: flex; gap: var(--gg-space-2); }
-.onboarding-dot { width: var(--gg-space-2); height: var(--gg-space-2); border-radius: 50%; background: var(--gg-color-border-strong); }
-.onboarding-dot[data-state="current"] { background: var(--gg-color-accent); }
-.onboarding-dot[data-state="done"] { background: var(--gg-color-text-secondary); }
 .onboarding-step { display: grid; gap: var(--gg-space-5); animation: onboarding-enter 180ms var(--gg-ease-out); }
 .onboarding-step h1 { margin: 0; font-size: var(--gg-text-heading); line-height: var(--gg-leading-heading); font-weight: var(--gg-weight-semibold); }
 .onboarding-step[data-step="1"] h1 { font-size: var(--gg-text-display); line-height: var(--gg-leading-display); }
 .onboarding-step p { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
-/* The line under the welcome title says what a Loupist is; it sits with the title, not the list. */
-.onboarding-step .onboarding-welcome-loupist { margin-top: calc(var(--gg-space-2) * -1); color: var(--gg-color-text-primary); font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); font-weight: var(--gg-weight-regular); }
-.onboarding-benefits { display: grid; gap: var(--gg-space-2); padding: var(--gg-space-3) 0; margin: 0; list-style: none; }
-.onboarding-benefits li { display: flex; align-items: flex-start; gap: var(--gg-space-3); color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
 .onboarding-primary { width: 100%; min-height: var(--gg-size-control-lg); height: auto; white-space: normal; }
 .onboarding-other summary { cursor: pointer; font-size: var(--gg-text-control); color: var(--gg-color-text-secondary); padding-block: var(--gg-space-3); }
 .onboarding-other > .ui-disclosure-body > button { width: 100%; justify-content: flex-start; min-height: 44px; }
@@ -57,28 +47,12 @@
 /* Programmatic step announcements are not interactive focus targets. */
 .onboarding-step[tabindex="-1"]:focus { outline: none !important; }
 
-.onboarding-transition { position: relative; }
-.onboarding-step-leaving { position: absolute; inset: 0 0 auto; pointer-events: none; animation: onboarding-leave 180ms var(--gg-ease-out) forwards; }
-@keyframes onboarding-leave { from { opacity: 1; } to { opacity: 0; } }
-
 .onboarding-primary[data-waiting="true"]:disabled { opacity: 1; color: var(--gg-color-action-ink); background: var(--gg-color-action); }
 
 /* Leave room for the required notice at the minimum desktop height. */
 @media (max-height: 700px) {
   .onboarding-window[data-onboarding="1"] { padding-top: var(--gg-space-6); }
 }
-
-.onboarding-step-actions { display: grid; gap: var(--gg-space-2); }
-/* Step 4 is taller than a short window: its action bar sticks to the bottom edge of the scrolling window. */
 @media (max-height: 800px) {
-  /* The window's bottom padding would leave a strip of scrolling content under the bar. */
   .onboarding-window[data-onboarding="4"] { padding-bottom: 0; }
-  .onboarding-step[data-step="4"] .onboarding-step-actions {
-    position: sticky;
-    bottom: 0;
-    z-index: var(--gg-z-sticky);
-    padding: var(--gg-space-3) 0 var(--gg-space-5);
-    border-top: 1px solid var(--gg-color-border-subtle);
-    background: var(--gg-color-bg-app);
-  }
 }

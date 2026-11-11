@@ -28,7 +28,6 @@ export function LoupistTracking({ bridge, loupistId }: { bridge: LoupistBridge; 
   const { t, i18n } = useTranslation("app");
   const language = i18n.resolvedLanguage ?? i18n.language ?? "en";
   const [view, setView] = useState<WorldSchemaView | null>(null);
-  const [trackedLoupist, setTrackedLoupist] = useState(loupistId);
   const [loadError, setLoadError] = useState(false);
   const [actionError, setActionError] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -39,15 +38,6 @@ export function LoupistTracking({ bridge, loupistId }: { bridge: LoupistBridge; 
   const mounted = useRef(true);
   const loupistRef = useRef(loupistId);
   loupistRef.current = loupistId;
-  if (trackedLoupist !== loupistId) {
-    setTrackedLoupist(loupistId);
-    setView(null);
-    setLoadError(false);
-    setActionError(false);
-    setNotice(null);
-    setBusy(false);
-  }
-
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };

@@ -81,6 +81,93 @@ fn durable_memory_trace_is_empty_without_exact_reads() {
     }
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+#[tokio::test]
+async fn a_stopped_reply_with_a_settle_failure_is_persisted_and_emitted_once() {
+    use crate::commands::tests::{
+        chat,
+        chat_behavior::{install_chat_rpc_fixture, send_request},
+        initialized_workspace, profile, seed_profile,
+    };
+    let temporary = tempfile::tempdir().unwrap();
+    let workspace = temporary.path().join("workspace");
+    initialized_workspace(&workspace, "abort-settle-failure");
+    let mut state = AppState::for_test(temporary.path().join("app"));
+    install_chat_rpc_fixture(
+        &mut state,
+        temporary.path(),
+        include_str!("../tests/fixtures/model_gone_pi.py"),
+    );
+    let profile = profile("loupist-a", &workspace, 1);
+    seed_profile(state.store.as_ref(), &profile);
+    state
+        .store
+        .create_chat(&chat("chat-a", &profile.id, 1))
+        .unwrap();
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = events.clone();
+    let sink = ChatEventSink::new(move |event| {
+        seen.lock().unwrap().push(event);
+        Ok(())
+    });
+    let admitted = match setup::admit_chat_turn(
+        send_request("abort-settle", &profile.id, "chat-a", "Question"),
+        sink,
+        &state,
+        None,
+    )
+    .unwrap()
+    {
+        ControlFlow::Continue(turn) => turn,
+        ControlFlow::Break(_) => panic!("turn must be admitted"),
+    };
+    let launched = match launch::launch_chat_turn(admitted, &state).await.unwrap() {
+        ControlFlow::Continue(turn) => turn,
+        ControlFlow::Break(_) => panic!("fixture must launch"),
+    };
+    state
+        .cancel_run("abort-settle", RunKind::Chat)
+        .await
+        .unwrap();
+    finalize::finalize_chat_turn(
+        launched,
+        stream::StreamedChatTurn {
+            content: "Partial answer".into(),
+            completed: false,
+            aborted: true,
+            terminal_completion_claimed: false,
+            failure: Some("settle failed".into()),
+            pending_controls: HashMap::new(),
+            settled_controls: BTreeMap::new(),
+            first_text_ms: None,
+            generation_ms: None,
+            token_usage: AssistantTokenUsage::default(),
+            progress: ChatProgressProjection::new(now_ms()),
+            commentary: CommentaryCoalescer::new(),
+            envelope_compacted: false,
+        },
+    )
+    .await;
+    let chat = state.store.get_chat("chat-a").unwrap().unwrap();
+    assert_eq!(chat.messages.len(), 2);
+    assert_eq!(chat.messages[1].status, ChatMessageStatus::Aborted);
+    assert_eq!(chat.messages[1].content, "Partial answer");
+    let events = events.lock().unwrap();
+    let terminal: Vec<_> = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event,
+                ChatStreamEvent::Aborted { .. } | ChatStreamEvent::Error { .. }
+            )
+        })
+        .collect();
+    assert!(matches!(
+        terminal.as_slice(),
+        [ChatStreamEvent::Aborted { .. }]
+    ));
+}
+
 #[test]
 fn retry_last_returns_the_original_question_and_date_and_persists_steers() {
     let root = tempfile::tempdir().unwrap();
@@ -183,10 +270,10 @@ async fn provider_wait_watchdog_bounds_tool_silence_and_keeps_the_first_body_bud
                 assert_eq!(select(&watchdog, Instant::now()), Fair);
                 assert_eq!(
                     watchdog.deadline(),
-                    Some(Instant::now() + CHAT_TOOL_SILENCE_TIMEOUT)
+                    Instant::now() + CHAT_TOOL_SILENCE_TIMEOUT
                 );
             }
-            tokio::time::sleep_until(watchdog.deadline().expect("tool must stay bounded")).await;
+            tokio::time::sleep_until(watchdog.deadline()).await;
             assert_provider_timeout(&watchdog);
         }
     }
@@ -206,8 +293,8 @@ async fn provider_wait_watchdog_bounds_tool_silence_and_keeps_the_first_body_bud
             json!({"type": "tool_execution_end", "toolCallId": id}),
         );
         let remaining = CHAT_FIRST_PROVIDER_BODY_PROGRESS_TIMEOUT - Duration::from_secs(10);
-        assert_eq!(watchdog.deadline(), Some(Instant::now() + remaining));
-        tokio::time::sleep_until(watchdog.deadline().unwrap()).await;
+        assert_eq!(watchdog.deadline(), Instant::now() + remaining);
+        tokio::time::sleep_until(watchdog.deadline()).await;
         assert_provider_timeout(&watchdog);
     }
 }
@@ -258,7 +345,7 @@ async fn provider_wait_watchdog_bounds_compaction_and_rearms_after_tools() {
         } else {
             CHAT_FIRST_PROVIDER_BODY_PROGRESS_TIMEOUT
         };
-        assert_eq!(watchdog.deadline(), Some(Instant::now() + resumed));
+        assert_eq!(watchdog.deadline(), Instant::now() + resumed);
 
         // An unended compaction stays bounded even while Pi keeps emitting events.
         observe(
@@ -266,7 +353,7 @@ async fn provider_wait_watchdog_bounds_compaction_and_rearms_after_tools() {
             Instant::now(),
             json!({"type": "compaction_start"}),
         );
-        let cap = watchdog.deadline().unwrap();
+        let cap = watchdog.deadline();
         observe(
             &mut watchdog,
             Instant::now(),
@@ -293,37 +380,42 @@ async fn provider_wait_watchdog_bounds_compaction_and_rearms_after_tools() {
         );
     }
     let later = start + crate::pi::PI_HTTP_IDLE_TIMEOUT * 4;
-    assert_eq!(watchdog.deadline(), Some(start + CHAT_TOOL_SILENCE_TIMEOUT));
+    assert_eq!(watchdog.deadline(), start + CHAT_TOOL_SILENCE_TIMEOUT);
     assert_eq!(select(&watchdog, later), Fair);
     observe(
         &mut watchdog,
         later,
         json!({"type": "tool_execution_end", "toolCallId": "python-call"}),
     );
-    assert_eq!(watchdog.deadline(), Some(later + CHAT_TOOL_SILENCE_TIMEOUT));
+    assert_eq!(watchdog.deadline(), later + CHAT_TOOL_SILENCE_TIMEOUT);
     observe(
         &mut watchdog,
         later,
         json!({"type": "tool_execution_end", "toolCallId": "world"}),
     );
-    assert_eq!(watchdog.deadline(), Some(later + bound));
+    assert_eq!(watchdog.deadline(), later + bound);
     observe(&mut watchdog, later, json!({"type": "compaction_start"}));
-    assert_eq!(
-        watchdog.deadline(),
-        Some(later + CHAT_COMPACTION_TOTAL_TIMEOUT)
-    );
+    assert_eq!(watchdog.deadline(), later + CHAT_COMPACTION_TOTAL_TIMEOUT);
     observe(
         &mut watchdog,
         later + bound * 10,
         json!({"type": "compaction_end", "result": {}}),
     );
-    assert_eq!(watchdog.deadline(), Some(later + bound * 11));
+    assert_eq!(watchdog.deadline(), later + bound * 11);
     assert_eq!(select(&watchdog, later + bound * 11), Timeout);
 }
 
 #[test]
 fn pi_progress_and_compaction_failure_follow_pi_event_fields() {
     use tokio::sync::broadcast::error::RecvError;
+    assert_eq!(
+        pi_event_stream_failure(RecvError::Closed),
+        "Pi event stream was interrupted"
+    );
+    assert_eq!(
+        pi_event_stream_failure(RecvError::Lagged(2)),
+        "Pi event stream fell behind and was stopped safely"
+    );
     let update =
         |kind: &str| json!({"type": "message_update", "assistantMessageEvent": {"type": kind}});
     let body =
@@ -657,11 +749,16 @@ fn terminal_replies_keep_acknowledged_records_across_reopen_without_a_renderer()
         ),
     ];
     for (id, terminal, _, _) in cases {
-        store
-            .create_chat(&crate::commands::tests::chat(id, "loupist", 1))
-            .unwrap();
+        let mut chat = crate::commands::tests::chat(id, "loupist", 1);
+        let mut request = crate::test_fixtures::chat_message("request", ChatRole::User, "Question");
+        request.as_of = Some("2026-03-03".into());
+        let mut steer = crate::test_fixtures::chat_message("steer", ChatRole::User, "Keep going");
+        steer.steer = true;
+        chat.messages = vec![request, steer];
+        store.create_chat(&chat).unwrap();
         // A closed renderer must not discard what the model already acknowledged.
         let sink = ChatEventSink::new(|_| Err(()));
+        sink.set_replaced_model("Gone model");
         sink.set_failure_kind(ChatFailureKind::MemoryCommitFailed);
         sink.tool_refusals.lock().unwrap().push(refusal.clone());
         for _ in 0..2 {
@@ -700,12 +797,15 @@ fn terminal_replies_keep_acknowledged_records_across_reopen_without_a_renderer()
     drop(store);
     let store = SqliteStore::open(&database).unwrap();
     for (id, _, status, failure_kind) in cases {
-        let message = &store.get_chat(id).unwrap().unwrap().messages[0];
+        let chat = store.get_chat(id).unwrap().unwrap();
+        let message = chat.messages.last().unwrap();
         assert_eq!(message.status, status);
         assert_eq!(message.failure_kind, failure_kind);
         assert_eq!(message.evidence_refs, vec![evidence.clone()]);
         assert_eq!(message.schedule_receipts, vec![receipt.clone()]);
         assert_eq!(message.tool_refusals, vec![refusal.clone()]);
+        assert_eq!(message.replaced_model.as_deref(), Some("Gone model"));
+        assert_eq!(message.as_of.as_deref(), Some("2026-03-03"));
         assert!(message.memory_update.is_none());
         let trace = message.tool_trace.as_ref().unwrap();
         assert_eq!(trace.entries[0].name, "capability_load");

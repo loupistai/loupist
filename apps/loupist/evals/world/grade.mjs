@@ -380,7 +380,7 @@ function toolPayload(call) {
 function exactCurrentRead(evidence, read, entry, span, fact, quote, currentStage, reviewedWorldItems) {
   if (read.stage_id !== currentStage) return false;
   return evidence.tools.some((call) => {
-    if (call.stage_id !== currentStage || !['world_read', 'source_read'].includes(call.name)
+    if (call.stage_id !== currentStage || call.name !== 'world_read'
       || call.outcome !== 'ok' || !call.result_available) return false;
     const payload = toolPayload(call);
     if (payload?.recordId !== entry?.record?.recordId || payload.revisionId !== entry?.snapshot?.revisionId

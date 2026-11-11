@@ -1,4 +1,6 @@
 import { APP_DESTINATIONS } from "./navigation";
+import { isMacPlatform } from "../lib/platform";
+export { isMacPlatform } from "../lib/platform";
 
 /** One destination's key from the ⌘1–⌘n binding, for rows that name a single destination. */
 export const tabShortcut = (index: number, mac = isMacPlatform()) => (mac ? `⌘${index}` : `Ctrl+${index}`);
@@ -31,8 +33,6 @@ export const SHORTCUTS: readonly Shortcut[] = [
 
 /** The single-key part of the global shortcuts the app handles itself. */
 export const GLOBAL_KEYS = { newChat: "n", palette: "k", settings: ",", panel: "\\", focusComposer: "/" } as const;
-
-export const isMacPlatform = () => /Mac|iPhone|iPad/.test(navigator.platform);
 
 /** A real modal is open. The narrow navigation sheet is a dialog too, and it must not swallow app shortcuts. */
 export const modalDialogOpen = () => [...document.querySelectorAll('[role="dialog"][data-state="open"]')]

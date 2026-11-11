@@ -73,3 +73,31 @@ test("the Tauri client keeps main/child handles and structured denial evidence",
   await browser.switchToWindow("main");
   assert.equal(await browser.getUrl(), "http://localhost:1420/");
 });
+
+// Helper diagnostics must describe the failed state, without a body round trip on success.
+const { createWebdriverHelpers } = await import("./webdriver-helpers.mjs");
+for (const method of ["displayed", "childWithText", "waitForText"]) {
+  test(`${method} reads body diagnostics only after a failed wait`, async () => {
+    let bodyReads = 0;
+    let failed = false;
+    const element = { isDisplayed: async () => true, getText: async () => "Ready" };
+    const browser = {
+      $: () => ({ getText: async () => { bodyReads++; return failed ? "Fresh failure state" : "Old state"; } }),
+      $$: async () => [element],
+      waitUntil: async (condition, options) => {
+        assert.equal(bodyReads, 0);
+        if (failed) throw new Error(options.timeoutMsg);
+        assert.equal(await condition(), true);
+      },
+    };
+    const helpers = createWebdriverHelpers(browser);
+    const run = () => method === "displayed" ? helpers.displayed("button")
+      : method === "childWithText" ? helpers.childWithText(browser, "button", "Ready")
+        : helpers.waitForText(element, "Ready");
+    await run();
+    assert.equal(bodyReads, 0);
+    failed = true;
+    await assert.rejects(run, /Fresh failure state/);
+    assert.equal(bodyReads, 1);
+  });
+}

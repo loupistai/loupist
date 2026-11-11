@@ -8,7 +8,7 @@ import {
 
 // Hosted-search parsing is derived from Oh My Pi. See ../loupist-native-search.mjs
 // for the pinned upstream revision and MIT notice.
-const XAI_SEARCH_MODELS = Object.freeze(["grok-4.5"]);
+const XAI_SEARCH_MODELS = Object.freeze(["grok-4.7", "grok-4.6", "grok-4.5"]);
 
 function collectAnnotationSources(annotations, sources) {
   if (!Array.isArray(annotations)) return;

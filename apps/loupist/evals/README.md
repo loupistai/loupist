@@ -317,9 +317,9 @@ for hill-climbing; **heldout** is for final adoption only (see
 | `suites/personalization-v1.json` | Holdings/watchlist context, unavailable values and sizing assumptions | 4 | 7 | |
 | `suites/judgment-v1.json` | Grounded views, honest uncertainty, no orders, user-owned Journals | | 17 | |
 | `suites/security-v1.json` | Source injection, impersonation, principle poisoning, exfiltration, injected shared packs ([fixtures](sharing/README.md)), held quantities hidden from account reads | | 9 | |
-| `suites/scheduling-v1.json` | Task creation, changes, lifecycle, session ownership | | 6 | |
+| `suites/scheduling-v1.json` | Task creation, changes, lifecycle, session ownership | | 7 | |
 | `suites/smoke-v1.json` | Minimal cross-Chat Lens recall | | 1 | |
-| `suites/lens-lifecycle-v1.json` | [Lens lifecycle](#lens-lifecycle): create, reuse, update, stale premise, alias, detail retention, single-case restraint, read-only, method scope, a method the user asks to keep | 7 | 2 | |
+| `suites/lens-lifecycle-v1.json` | [Lens lifecycle](#lens-lifecycle): create, reuse, update, stale premise, alias, detail retention, single-case restraint, read-only, method scope, a method the user asks to keep | 8 | 2 | |
 | `suites/citations-v1.json` | Inline citations and Source retention for attached and workspace notes | | 2 | |
 | `heldout/learning-heldout-v1.json` | Adoption check for learning and transfer | | | 6 |
 | `heldout/tool-use-heldout-v1.json` | Adoption check for tools and connection honesty | | | 6 |
@@ -675,8 +675,8 @@ each family form the 12-task baseline subset; every condition has three repeats.
 ```sh
 node apps/loupist/evals/evaluate.mjs plan [--baseline] [--phases first_use,revisit] --output <plan.json>
 node apps/loupist/evals/evaluate.mjs run \
-  --adapter apps/loupist/evals/adapters/native-chat.mjs \
-  --config <native-config.json> --conditions memory_off --baseline --traces <app-traces.jsonl>
+  --adapter apps/loupist/evals/adapters/headless.mjs \
+  --config <headless-config.json> --conditions memory_off --baseline --traces <app-traces.jsonl>
 node apps/loupist/evals/evaluate.mjs import --traces <external-traces.jsonl> --output <imported.jsonl>
 node apps/loupist/evals/evaluate.mjs report --traces <combined-traces.jsonl> \
   --judgments <independent-reviews.jsonl> --output <report.json>
@@ -692,10 +692,7 @@ and `training_ids` are required, held-out IDs are rejected). Condition evidence
 records `verified_at`, Source revisions and Lens revision/hash.
 
 **Adapters.** Every config declares `model`, `effort`, `budget` and `data_access`.
-`adapters/native-chat.mjs` drives an isolated native window (also `model_label`,
-`session_path`, `conditions`; follow the E2E guide and verify the model in the
-composer first; it requires `max_output_tokens: null`). `adapters/provider.mjs`
-is the same-model baseline (`--arm same_model --conditions memory_off`, HTTPS
+`adapters/provider.mjs` is the same-model baseline (`--arm same_model --conditions memory_off`, HTTPS
 `endpoint`, `api_key_env` naming the variable). `adapters/headless.mjs` runs the
 prompt through the headless app (`--arm app --conditions memory_off`, `provider/model`,
 absolute `pi_agent_dir`, `data_access.external: "runtime_tools"`; native tools keep

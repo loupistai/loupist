@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ArtifactData } from "./ArtifactData";
 import type { ChartDataset } from "../../types";
@@ -8,6 +8,17 @@ const dataset = {
   rows: [["Hanul", 14.8], ["Morrow, Inc.", 9.1]],
   lineage: { kind: "agent_authored", upstream_receipts: [] },
 } as unknown as ChartDataset;
+
+it("ignores a copy result from a data page the reader has left", async () => {
+  let resolve!: () => void;
+  vi.spyOn(navigator.clipboard, "writeText").mockImplementationOnce(() => new Promise<void>(done => { resolve = done; }));
+  render(<ArtifactData dataset={{ ...dataset, rows: Array.from({ length: 30 }, (_, index) => [String(index), index]) }} />);
+  fireEvent.click(screen.getByRole("button", { name: "Copy rows" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next data rows" }));
+  await act(async () => { resolve(); });
+  expect(screen.getByRole("button", { name: "Copy rows" })).toBeVisible();
+  expect(screen.queryByRole("alert")).toBeNull();
+});
 
 it("saves every row as CSV through the native save dialog", async () => {
   const user = userEvent.setup();

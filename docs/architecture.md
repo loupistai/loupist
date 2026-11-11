@@ -10,7 +10,8 @@ The release target is macOS 13+ on Apple Silicon. Linux is a development and
 native-test host (WebKitGTK), not a release target. Keep bridge contracts and durable
 records independent of the OS; paths, process recovery, credential storage and
 packaging own platform-specific behavior. [CI and releases](ci-cd.md) owns support
-and qualification procedures.
+and qualification procedures. Unix broker sockets use a private directory scoped
+to the effective user ID, including on Linux.
 
 ## Trust
 

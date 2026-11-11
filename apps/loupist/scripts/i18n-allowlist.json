@@ -25,16 +25,6 @@
     "reason": "A literal example web address is a locator and must retain valid URL syntax in every locale."
   },
   {
-    "file": "src/components/settings/CustomProviderForm.tsx",
-    "text": "http://localhost:11434/v1",
-    "reason": "Example local server address is literal URL syntax; URLs are not translated."
-  },
-  {
-    "file": "src/components/settings/CustomProviderForm.tsx",
-    "text": "qwen2.5:7b llama3.1:8b",
-    "reason": "Example model IDs must match what a server reports; they are not translated."
-  },
-  {
     "file": "src/chat/answerFeedbackCore.ts",
     "text": "User-corrected answer",
     "reason": "Developer eval export (`evals/agent/export-feedback.mjs`) runs under plain Node without the renderer's i18n; scenario titles stay English for the eval suite."
@@ -48,11 +38,6 @@
     "file": "src/chat/answerFeedbackCore.ts",
     "text": "The answer must address the original request accurately and satisfy this user correction: …",
     "reason": "English rubric criterion read by the eval judge, not interface copy."
-  },
-  {
-    "file": "src/chat/providerNames.ts",
-    "text": "Google Gemini",
-    "reason": "Provider product name, the same in every locale."
   },
   {
     "file": "src/chat/providerNames.ts",

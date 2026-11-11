@@ -53,7 +53,7 @@ header controls and composer against their rendered boundaries (`shell-layout.mj
 subtracts the default height. It runs in both `preview:layout` and the native
 geometry suite. Chat captures also check the responsive title and reading gutters.
 `chat-header-resuming` checks a recovered run's status above its context card.
-`chat-rail-context`, `chat-rail-compact` and `chat-rail-bottom` check the 300px card,
+`chat-rail-files`, `chat-rail-compact` and `chat-rail-bottom` check the 300px card,
 its body inset, its reserved space beside or above the transcript, and clearance
 from the header and composer. Compact context prioritizes requests and ongoing
 source review before an open Files card. Narrow overlay panels make the covered
@@ -232,7 +232,7 @@ temporary state, so they never rewrite a development or persistent profile.
 | `npm run test:native:full` | The core smoke plus connection filtering, appearance, updates, rejected retired commands and the minimum window |
 | `npm run test:persistence` | Three launches over one state root. **Seed**: fresh app data plus the knowledge fixture; through the UI it creates a Loupist, a Chat (`/new`, then renamed), a Source and Journal entry in the Map Library, a rule in What it knows, followed assets and a validated holdings CSV (invalid preview, cancellation and explicit commit), Loupist instructions, global and per-Loupist Chat preferences, and the theme. **Restart**: the same app data shows all of it, with the notice acknowledgment, language and theme applied without setting them again. **Copy**: a fresh app opens a copy of the Loupist folder; its Chats, Library, World, rule, revised method with Then/Now history, frozen Journal inputs, instructions and Loupist preferences follow the copy, while followed assets, holdings, the other Loupist, global settings and the notice stay with the old app data. |
 
-`test:native` calls `assertFormLegendsFit` (`native-forms.mjs`) on `[data-loupist-tone]` during first-Loupist creation and again on New Loupist. Its later step “native browser preserves the article while blocking unsafe navigation” calls `verifyNativeBrowserNavigation` (`native-browser.mjs`). `verifyNativeToneLayoutFix` is a separate macOS WKWebView probe that reinstalls the old fieldset layout; smoke does not run it. A row above names the command. The WebKit result is that step’s finished run, recorded by the session that ran it. Preview Vitest and `preview:capture` check the React fixtures in Chrome and jsdom.
+`test:native` calls `assertFormLegendsFit` (`native-forms.mjs`) on `[data-loupist-tone]` on New Loupist. Its later step “native browser preserves the article while blocking unsafe navigation” calls `verifyNativeBrowserNavigation` (`native-browser.mjs`). `verifyNativeToneLayoutFix` is a separate macOS WKWebView probe that reinstalls the old fieldset layout; smoke does not run it. A row above names the command. The WebKit result is that step’s finished run, recorded by the session that ran it. Preview Vitest and `preview:capture` check the React fixtures in Chrome and jsdom.
 
 For chat layout changes, run the separate geometry suite against an owned
 WebDriver session. From the repository root:
@@ -261,7 +261,7 @@ the manual Windows workflow.
 | `LOUPIST_E2E_REQUIRE_STAGED_RUNTIMES=1` | CI: Market data must report Ready. |
 | `LOUPIST_E2E_REUSE_DEV_SERVER=1` | Reuse this workspace's Vite server on 1420; app data and WebDriver port stay separate. |
 | `LOUPIST_E2E_DEV_PORT` | Pin the isolated Vite port (otherwise a free port other than 1420); not combinable with reuse. |
-| `LOUPIST_E2E_STARTUP_TIMEOUT_MS` | Startup wait, default five minutes. |
+| `LOUPIST_E2E_STARTUP_TIMEOUT_MS` | Startup wait for isolated suites and `up.sh`/`run-dev-app.sh`, default five minutes. A failed new `up.sh` launch stops its detached process group. |
 | `LOUPIST_E2E_PROVIDER_READY=1` | Set by the credential-free smoke and persistence suites: an `e2e` build marks ChatGPT (the `openai` provider) ready without a secret or network call. No model is listed, so nothing can be sent. |
 | `LOUPIST_E2E_KNOWLEDGE_SEED=1` | Set by persistence for its first launch: on fresh app data an `e2e` build adds a sealed World, a Source, a Lens method and a saved Chat turn with its research note and Journal entry to the first Loupist. |
 | `LOUPIST_E2E_PICK_FILE` | An absolute existing file that `pick_file` returns in an `e2e` build. |

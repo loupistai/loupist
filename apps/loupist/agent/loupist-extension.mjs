@@ -678,7 +678,12 @@ function registerLoupistExtension(originalPi) {
     ensureWorkspaceResourcesUnchanged();
     // Ids were validated against the sealed component map at startup.
     for (const id of hostContext.preloadComponentIds) {
-      await loadCapabilityComponent(hostContext.components.get(id));
+      try {
+        await loadCapabilityComponent(hostContext.components.get(id));
+      } catch {
+        // Mention preloading is best effort, like warm-session restoration.
+        // Keep the trusted prompt and let capability_load report a retry error.
+      }
     }
     ensureWorkspaceResourcesUnchanged();
     applyWorkspacePrompt(event, hostContext.workspace, hostContext.promptText);

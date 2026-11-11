@@ -10,7 +10,7 @@ Outline of up to eight H2/H3 links. Editing any sent message while no reply runs
 calls Rust `chat_branch`: the tail from that message becomes a stored version of the
 same chat (at most 16) before the edited text is sent, and Earlier/Later version
 switches through `chat_version_switch`; the Pi session cache is cleared so the next
-turn starts cold from SQLite. Sent images show as thumbnails that open one lightbox for the chat (`ChatLightboxProvider` in `ChatView`): previous and next step through every image sent in the chat, the rail's thumbnails open it too, and "Add to question" attaches the shown image to the composer tray through the tray's own checks, without sending.
+turn starts cold from SQLite. Sent images show as thumbnails that open one lightbox for the chat (`ChatLightboxProvider` in `ChatView`): previous and next step through every image sent in the chat, its loaded images are released when switching chats, the rail's thumbnails open it too, and "Add to question" attaches the shown image to the composer tray through the tray's own checks, without sending.
 
 ### Chat reading column and in-app browser
 
@@ -64,6 +64,6 @@ and moves focus to its first action; an unpinned popover closes 120 ms after the
 pointer leaves. Tab from the number moves into the popover's controls in reading
 order, Shift+Tab from the first returns to the number, Tab past the last closes it
 and continues in the answer, and Esc closes it and returns focus to the number.
-Opening one closes any other number popover, and it flips below the number rather
+Opening a number popover or citation card closes any other number popover or citation card; their content and placement are prepared only while open. A number popover flips below the number rather
 than cover the chat headers. The newest answer keeps its action row; earlier answers
 show it on hover or focus.

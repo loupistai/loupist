@@ -7,7 +7,7 @@ use super::model::{
 use super::revision::{load_revision, StoredRevision};
 #[cfg(feature = "eval-harness")]
 use super::{model::RecordSnapshot, schema::KNOWLEDGE_FORMAT_VERSION};
-use rusqlite::{params, Transaction};
+use rusqlite::{params, OptionalExtension, Transaction};
 
 pub(super) fn create_record(
     tx: &Transaction<'_>,
@@ -111,6 +111,23 @@ pub(super) fn owned_record(
         revision_id: record.head_revision_id,
     })
 }
+pub(super) fn world_record(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+) -> KnowledgeResult<Option<OwnedRecord>> {
+    validate_loupist_id(loupist_id)?;
+    let id: Option<String> = tx.query_row(
+        "SELECT record_id FROM knowledge_records WHERE owner_loupist_id = ?1 AND kind = 'world'",
+        [loupist_id], |row| row.get(0),
+    ).optional()?;
+    let Some(id) = id else { return Ok(None) };
+    match owned_record(tx, loupist_id, &id) {
+        Ok(record) => Ok(Some(record)),
+        Err(KnowledgeError::NotFound) => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
 pub(super) fn list_records(
     tx: &Transaction<'_>,
     loupist_id: &str,

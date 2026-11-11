@@ -10,7 +10,11 @@ mod unix {
     const HELPER_READY_ENV: &str = "LOUPIST_LEASE_HELPER_READY";
 
     fn spawn_sleep() -> std::process::Child {
-        let mut command = Command::new("/bin/sleep");
+        spawn_sleep_at(Path::new("/bin/sleep"))
+    }
+
+    fn spawn_sleep_at(executable: &Path) -> std::process::Child {
+        let mut command = Command::new(executable);
         command
             .arg("30")
             .stdin(Stdio::null())
@@ -136,10 +140,9 @@ mod unix {
             serde_json::from_slice(&fs::read(&lease_path).unwrap()).unwrap();
         record.start.source = format!("linux_proc_stat_v1:{}", Uuid::new_v4());
         fs::write(&lease_path, serde_json::to_vec(&record).unwrap()).unwrap();
-        assert!(matches!(
-            recover_orphaned_processes(&leases),
-            Err(ProcessLeaseError::IdentityMismatch)
-        ));
+        recover_orphaned_processes(&leases).unwrap();
+        assert!(!lease_path.exists());
+        recover_orphaned_processes(&leases).unwrap();
         assert!(child.try_wait().unwrap().is_none());
         kill_and_reap(&mut child, pid);
         lease.complete().unwrap();
@@ -306,13 +309,77 @@ mod unix {
             .unwrap();
         file.sync_all().unwrap();
 
-        assert!(matches!(
-            recover_orphaned_processes(&lease_directory),
-            Err(ProcessLeaseError::IdentityMismatch)
-        ));
+        recover_orphaned_processes(&lease_directory).unwrap();
+        assert!(!lease_path.exists());
+        recover_orphaned_processes(&lease_directory).unwrap();
         assert!(child.try_wait().unwrap().is_none());
         kill_and_reap(&mut child, pid);
         lease.complete().unwrap();
+    }
+
+    #[test]
+    fn same_start_different_executable_hash_keeps_the_lease() {
+        let temporary = tempfile::tempdir().unwrap();
+        let leases = temporary.path().join("leases");
+        let mut child = spawn_sleep();
+        let pid = child.id() as i32;
+        let lease = ChildProcessLease::register(
+            &leases,
+            ProcessKind::Mcp,
+            pid,
+            pid,
+            Path::new("/bin/sleep"),
+        )
+        .unwrap();
+        let path = leases.join(&lease.file_name);
+        let original = fs::read(&path).unwrap();
+        let mut record: ProcessLeaseRecord = serde_json::from_slice(&original).unwrap();
+        record.executable.path_sha256 = "0".repeat(64);
+        let changed = serde_json::to_vec(&record).unwrap();
+        fs::write(&path, &changed).unwrap();
+
+        for _ in 0..2 {
+            recover_orphaned_processes(&leases).unwrap();
+            assert_eq!(fs::read(&path).unwrap(), changed);
+            assert!(child.try_wait().unwrap().is_none());
+        }
+        // Retaining the lease permits a later fully verified recovery.
+        fs::write(&path, original).unwrap();
+        recover_orphaned_processes(&leases).unwrap();
+        assert!(!path.exists());
+        child.wait().unwrap();
+        lease.complete().unwrap();
+    }
+
+    #[test]
+    fn an_unlinked_executable_does_not_block_startup_or_forget_the_same_process() {
+        for reused in [false, true] {
+            let temporary = tempfile::tempdir().unwrap();
+            let executable = temporary.path().join("sleep");
+            fs::copy("/bin/sleep", &executable).unwrap();
+            let leases = temporary.path().join("leases");
+            let mut child = spawn_sleep_at(&executable);
+            let pid = child.id() as i32;
+            let lease =
+                ChildProcessLease::register(&leases, ProcessKind::Pi, pid, pid, &executable)
+                    .unwrap();
+            let path = leases.join(&lease.file_name);
+            let mut record: ProcessLeaseRecord =
+                serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            if reused {
+                record.start.primary = record.start.primary.saturating_add(1);
+                fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+            }
+            fs::remove_file(&executable).unwrap();
+
+            recover_orphaned_processes(&leases).unwrap();
+            assert_eq!(path.exists(), !reused);
+            assert!(child.try_wait().unwrap().is_none());
+            kill_and_reap(&mut child, pid);
+            recover_orphaned_processes(&leases).unwrap();
+            assert!(!path.exists());
+            lease.complete().unwrap();
+        }
     }
 
     #[tokio::test]

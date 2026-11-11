@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, fireEvent, renderHook } from "@testing-library/react";
 import { MockLoupistBridge } from "../bridge/mockBridge";
 import type { ScheduledRun } from "../types";
 import { scheduledRunFixture } from "../test/scheduledFixtures";
@@ -6,6 +6,41 @@ import { useChatSessions } from "./useChatSessions";
 import { useScheduledRuns } from "./useScheduledRuns";
 
 afterEach(() => vi.useRealTimers());
+
+it("polls slowly while hidden and reads immediately on return and window focus", async () => {
+  vi.useFakeTimers();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  const activity = vi.spyOn(bridge, "scheduledTasksActivity").mockResolvedValue([]);
+  const { unmount } = renderHook(() => {
+    const chat = useChatSessions(bridge);
+    useScheduledRuns(bridge, "loupist-quality", chat);
+  });
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(activity).toHaveBeenCalledOnce();
+  await act(async () => { await vi.advanceTimersByTimeAsync(29_999); });
+  expect(activity).toHaveBeenCalledOnce();
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(activity).toHaveBeenCalledTimes(2);
+  visibility.mockReturnValue("visible");
+  await act(async () => { fireEvent(document, new Event("visibilitychange")); });
+  expect(activity).toHaveBeenCalledTimes(3);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1_000); fireEvent.focus(window); });
+  expect(activity).toHaveBeenCalledTimes(4);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+  expect(activity).toHaveBeenCalledTimes(4);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+  expect(activity).toHaveBeenCalledTimes(5);
+  visibility.mockReturnValue("hidden");
+  await act(async () => { fireEvent(document, new Event("visibilitychange")); await vi.advanceTimersByTimeAsync(29_999); });
+  expect(activity).toHaveBeenCalledTimes(5);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(activity).toHaveBeenCalledTimes(6);
+  visibility.mockReturnValue("visible");
+  await act(async () => { fireEvent(document, new Event("visibilitychange")); });
+  expect(activity).toHaveBeenCalledTimes(7);
+  unmount();
+});
 
 it("discovers a manual run that has already finished when Run now returns", async () => {
   vi.useFakeTimers();
@@ -15,15 +50,14 @@ it("discovers a manual run that has already finished when Run now returns", asyn
   const watch = vi.spyOn(bridge, "scheduledTaskWatch");
   const { result, unmount } = renderHook(() => {
     const chat = useChatSessions(bridge);
-    const scheduled = useScheduledRuns(bridge, "loupist-quality", chat);
-    return { chat, scheduled };
+    useScheduledRuns(bridge, "loupist-quality", chat);
+    return { chat };
   });
   act(() => result.current.chat.hydrateThreadsForLoupist("loupist-quality", initial.threads));
   await act(async () => { await vi.advanceTimersByTimeAsync(0); });
   const thread = await bridge.chatCreate({ loupist_id: "loupist-quality", title: "Immediate manual result" });
   const completed = scheduledRunFixture({ thread_id: thread.id, status: "failed", finished_at_ms: 2000 });
   activity.mockResolvedValue([completed]);
-  act(() => result.current.scheduled.onRunStarted(completed));
   await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
   expect(result.current.chat.threadsByLoupist["loupist-quality"].some((item) => item.id === thread.id)).toBe(true);
   expect(watch).not.toHaveBeenCalled();

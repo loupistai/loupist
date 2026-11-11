@@ -308,7 +308,7 @@ impl PiLaunchConfig {
         let mut env = local_tool_environment();
         // Native Pi find runs in offline mode. Resolve its pinned helper from
         // the app resources before the user's login-shell and inherited PATH.
-        if let Some(path) = shell_path::bash_path(
+        if let Some(path) = shell_path::file_search_path(
             &self.runtime_dir.join("workspace-tools"),
             login_path,
             env.get("PATH").map(String::as_str),
@@ -929,6 +929,14 @@ struct VerifiedPiRuntime {
     _tree_handles: Vec<File>,
 }
 
+async fn verify_runtime_on_blocking_pool<T: Send + 'static>(
+    verify: impl FnOnce() -> Result<T, PiError> + Send + 'static,
+) -> Result<T, PiError> {
+    tokio::task::spawn_blocking(verify)
+        .await
+        .map_err(|_| PiError::UntrustedRuntime)?
+}
+
 fn verify_pi_runtime(executable: &Path, runtime_dir: &Path) -> Result<VerifiedPiRuntime, PiError> {
     let verified_executable =
         verify_executable(executable).map_err(|_| PiError::UntrustedRuntime)?;
@@ -1533,7 +1541,12 @@ impl PiProcess {
     ) -> Result<Self, PiError> {
         #[cfg(not(unix))]
         let _ = lease_dir;
-        let _verified_runtime = verify_pi_runtime(executable, runtime_dir)?;
+        let _verified_runtime = {
+            let executable = executable.to_path_buf();
+            let runtime_dir = runtime_dir.to_path_buf();
+            verify_runtime_on_blocking_pool(move || verify_pi_runtime(&executable, &runtime_dir))
+                .await?
+        };
         let mut command = pi_command(
             executable,
             arguments,

@@ -9,7 +9,7 @@ use connector_config::{config_state, read_connector_config};
 pub(crate) use connector_config::{connector_config_value, web_research_policy};
 use credentials::credential_statuses;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use chrono::Utc;
@@ -95,14 +95,6 @@ fn marketplace_snapshot_for_state(
         .map(|entry| connector_status(entry, state))
         .collect::<Result<Vec<_>, _>>()?;
     let installed = installed_entries(&catalog, &connectors);
-    let installed_ids = installed
-        .iter()
-        .map(|entry| entry.entry_id.as_str())
-        .collect::<BTreeSet<_>>();
-    let connectors = connectors
-        .into_iter()
-        .filter(|connector| installed_ids.contains(connector.entry_id.as_str()))
-        .collect();
     let snapshot = MarketplaceSnapshotDto {
         schema_version: SNAPSHOT_SCHEMA_VERSION.to_owned(),
         plugins: bundled.plugins.clone(),

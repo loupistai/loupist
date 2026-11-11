@@ -5,6 +5,16 @@ umask 077
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ARTIFACT_DIR="$SCRIPT_DIR/artifacts"
 SESSION_INFO="$ARTIFACT_DIR/current-session.json"
+E2E_STARTUP_TIMEOUT_MS=${LOUPIST_E2E_STARTUP_TIMEOUT_MS:-300000}
+case "$E2E_STARTUP_TIMEOUT_MS" in
+    *[!0-9]*|'')
+        echo "LOUPIST_E2E_STARTUP_TIMEOUT_MS must be a positive integer." >&2
+        exit 2 ;;
+esac
+if [ "$E2E_STARTUP_TIMEOUT_MS" -le 0 ]; then
+    echo "LOUPIST_E2E_STARTUP_TIMEOUT_MS must be a positive integer." >&2
+    exit 2
+fi
 LAUNCHER_LOG="$ARTIFACT_DIR/launcher.log"
 DEV_WEBDRIVER_PORT=${LOUPIST_DEV_WEBDRIVER_PORT:-14440}
 MODE=development
@@ -142,7 +152,9 @@ else
     LAUNCHER_PID=$(node "$SCRIPT_DIR/detach-launch.mjs" "$SCRIPT_DIR/run-dev-app.sh" "$LAUNCHER_LOG")
 fi
 
-if ! node "$SCRIPT_DIR/wait-session.mjs" --pid "$LAUNCHER_PID" --session "$SESSION_INFO"; then
+if ! node "$SCRIPT_DIR/wait-session.mjs" --pid "$LAUNCHER_PID" --session "$SESSION_INFO" --timeout-ms "$E2E_STARTUP_TIMEOUT_MS"; then
+    # detach-launch owns this new process group, including a launcher still building.
+    kill -TERM -- "-$LAUNCHER_PID" 2>/dev/null || true
     echo "Loupist $MODE window failed to start." >&2
     tail -n 80 "$LAUNCHER_LOG" >&2
     exit 1

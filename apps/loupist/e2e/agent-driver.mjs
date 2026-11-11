@@ -245,7 +245,7 @@ async function visibleModelMenu(browser) {
   return null;
 }
 
-async function dismissModelMenu(browser, triggerSelector = chatModelSelector, outsideSelector = "#main-tab-chat") {
+export async function dismissModelMenu(browser, triggerSelector = chatModelSelector, outsideSelector = "#main-panel-chat") {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     if (!(await visibleModelMenu(browser))) return;
     const trigger = await browser.$(triggerSelector);
@@ -366,7 +366,7 @@ async function configureLivePreset(browser) {
       timeoutMsg: "Chat did not become active before selecting the live model",
     });
   }
-  const label = await configurePresetModel(browser, chatModelSelector, "Chat", "#main-tab-chat");
+  const label = await configurePresetModel(browser, chatModelSelector, "Chat", "#main-panel-chat");
   console.log(`Verified visible Chat run model: ${label}`);
 }
 

@@ -483,20 +483,19 @@ pub fn recover_orphaned_processes(directory: &Path) -> Result<(), ProcessLeaseEr
         for action in actions {
             match action {
                 RecoveryAction::Remove { file_name } => remove_record(directory, &file_name)?,
+                RecoveryAction::Keep => {}
                 RecoveryAction::Terminate { file_name, record } => {
                     // Narrow the PID-reuse window by validating the leader again
-                    // immediately before signaling its process group.
-                    match query_process(record.leader_pid)? {
-                        Some(observed) if record_matches(&record, &observed.identity) => {}
-                        Some(_) => return Err(ProcessLeaseError::IdentityMismatch),
-                        None => match process_group_state(record.process_group_id)? {
-                            GroupState::Gone | GroupState::ZombiesOnly => {
-                                remove_record(directory, &file_name)?;
-                                continue;
-                            }
-                            GroupState::Live => return Err(ProcessLeaseError::UnknownProcessGroup),
-                        },
-                    }
+                    // immediately before signaling, using the same start-first
+                    // policy as classification.
+                    let record = match classify_recovery(file_name.clone(), record)? {
+                        RecoveryAction::Terminate { record, .. } => record,
+                        RecoveryAction::Remove { .. } => {
+                            remove_record(directory, &file_name)?;
+                            continue;
+                        }
+                        RecoveryAction::Keep => continue,
+                    };
 
                     signal_process_group(record.process_group_id, libc::SIGTERM)?;
                     if !wait_for_group_exit_blocking(record.process_group_id, RECOVERY_TERM_GRACE)?
@@ -633,6 +632,7 @@ pub fn terminate_and_reap_process_group(process_group_id: i32, lease: ChildProce
 #[cfg(unix)]
 #[derive(Debug)]
 enum RecoveryAction {
+    Keep,
     Remove {
         file_name: String,
     },
@@ -647,10 +647,24 @@ fn classify_recovery(
     file_name: String,
     record: ProcessLeaseRecord,
 ) -> Result<RecoveryAction, ProcessLeaseError> {
-    match query_process(record.leader_pid)? {
-        Some(observed) => {
+    let Some(start) = query_start_identity(record.leader_pid)? else {
+        return classify_absent_leader(file_name, record.process_group_id);
+    };
+    if start != record.start {
+        // PID reuse (including a reboot) proves the former leader/group is
+        // gone. Do not inspect the new holder's possibly unreadable image.
+        return Ok(RecoveryAction::Remove { file_name });
+    }
+    match query_process(record.leader_pid) {
+        Ok(Some(observed)) => {
+            if observed.identity.start != record.start {
+                return Ok(RecoveryAction::Remove { file_name });
+            }
             if !record_matches(&record, &observed.identity) {
-                return Err(ProcessLeaseError::IdentityMismatch);
+                // The same process may have re-execed or its bundle may
+                // have moved. Keep tracking it, but do not signal it while
+                // its full identity cannot be proved.
+                return Ok(RecoveryAction::Keep);
             }
             if observed.zombie && process_group_state(record.process_group_id)? != GroupState::Live
             {
@@ -659,10 +673,23 @@ fn classify_recovery(
                 Ok(RecoveryAction::Terminate { file_name, record })
             }
         }
-        None => match process_group_state(record.process_group_id)? {
-            GroupState::Gone | GroupState::ZombiesOnly => Ok(RecoveryAction::Remove { file_name }),
-            GroupState::Live => Err(ProcessLeaseError::UnknownProcessGroup),
+        Ok(None) => classify_absent_leader(file_name, record.process_group_id),
+        Err(_) => match query_start_identity(record.leader_pid)? {
+            Some(start) if start != record.start => Ok(RecoveryAction::Remove { file_name }),
+            Some(_) => Ok(RecoveryAction::Keep),
+            None => classify_absent_leader(file_name, record.process_group_id),
         },
+    }
+}
+
+#[cfg(unix)]
+fn classify_absent_leader(
+    file_name: String,
+    process_group_id: i32,
+) -> Result<RecoveryAction, ProcessLeaseError> {
+    match process_group_state(process_group_id)? {
+        GroupState::Gone | GroupState::ZombiesOnly => Ok(RecoveryAction::Remove { file_name }),
+        GroupState::Live => Err(ProcessLeaseError::UnknownProcessGroup),
     }
 }
 
@@ -1166,6 +1193,20 @@ fn macos_bsd_info(
 }
 
 #[cfg(target_os = "macos")]
+fn macos_start_identity(info: &MacosBasicProcess) -> StartIdentity {
+    StartIdentity {
+        source: "macos_proc_bsdinfo_v1".into(),
+        primary: info.start_seconds,
+        secondary: info.start_microseconds,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn query_start_identity(pid: i32) -> Result<Option<StartIdentity>, ProcessLeaseError> {
+    Ok(macos_basic_process(pid)?.as_ref().map(macos_start_identity))
+}
+
+#[cfg(target_os = "macos")]
 fn query_process(pid: i32) -> Result<Option<ObservedProcess>, ProcessLeaseError> {
     let Some(before) = macos_basic_process(pid)? else {
         return Ok(None);
@@ -1206,11 +1247,7 @@ fn query_process(pid: i32) -> Result<Option<ObservedProcess>, ProcessLeaseError>
     Ok(Some(ObservedProcess {
         identity: ProcessIdentity {
             process_group_id: before.process_group_id,
-            start: StartIdentity {
-                source: "macos_proc_bsdinfo_v1".into(),
-                primary: before.start_seconds,
-                secondary: before.start_microseconds,
-            },
+            start: macos_start_identity(&before),
             executable: ExecutableIdentity {
                 device: metadata.dev(),
                 inode: metadata.ino(),
@@ -1304,6 +1341,27 @@ fn parse_linux_process_stat(
 }
 
 #[cfg(target_os = "linux")]
+fn linux_start_identity(start_ticks: u64) -> Result<StartIdentity, ProcessLeaseError> {
+    let boot_id = fs::read_to_string("/proc/sys/kernel/random/boot_id")?;
+    let boot_id =
+        Uuid::parse_str(boot_id.trim()).map_err(|_| ProcessLeaseError::IdentityMismatch)?;
+    Ok(StartIdentity {
+        // Boot identity prevents a PID/start-tick match after reboot.
+        source: format!("linux_proc_stat_v1:{boot_id}"),
+        primary: start_ticks,
+        secondary: 0,
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn query_start_identity(pid: i32) -> Result<Option<StartIdentity>, ProcessLeaseError> {
+    require_visible_linux_procfs()?;
+    linux_basic_process(pid)?
+        .map(|info| linux_start_identity(info.start_ticks))
+        .transpose()
+}
+
+#[cfg(target_os = "linux")]
 fn query_process(pid: i32) -> Result<Option<ObservedProcess>, ProcessLeaseError> {
     require_visible_linux_procfs()?;
     let Some(before) = linux_basic_process(pid)? else {
@@ -1327,9 +1385,7 @@ fn query_process(pid: i32) -> Result<Option<ObservedProcess>, ProcessLeaseError>
         Err(error) => return Err(error.into()),
     };
     let metadata = fs::metadata(&executable)?;
-    let boot_id = fs::read_to_string("/proc/sys/kernel/random/boot_id")?;
-    let boot_id =
-        Uuid::parse_str(boot_id.trim()).map_err(|_| ProcessLeaseError::IdentityMismatch)?;
+    let start = linux_start_identity(before.start_ticks)?;
     let Some(after) = linux_basic_process(pid)? else {
         return Ok(None);
     };
@@ -1345,12 +1401,7 @@ fn query_process(pid: i32) -> Result<Option<ObservedProcess>, ProcessLeaseError>
     Ok(Some(ObservedProcess {
         identity: ProcessIdentity {
             process_group_id: before.process_group_id,
-            start: StartIdentity {
-                // Boot identity prevents a PID/start-tick match after reboot.
-                source: format!("linux_proc_stat_v1:{boot_id}"),
-                primary: before.start_ticks,
-                secondary: 0,
-            },
+            start,
             executable: ExecutableIdentity {
                 device: metadata.dev(),
                 inode: metadata.ino(),
@@ -1359,6 +1410,11 @@ fn query_process(pid: i32) -> Result<Option<ObservedProcess>, ProcessLeaseError>
         },
         zombie: false,
     }))
+}
+
+#[cfg(all(unix, not(any(target_os = "macos", target_os = "linux"))))]
+fn query_start_identity(_pid: i32) -> Result<Option<StartIdentity>, ProcessLeaseError> {
+    Err(ProcessLeaseError::UnsupportedPlatform)
 }
 
 #[cfg(all(unix, not(any(target_os = "macos", target_os = "linux"))))]

@@ -132,3 +132,24 @@ it("updates candle and change-marker colors from locale tokens without losing th
   root.style.removeProperty("--gg-color-price-down");
   delete root.dataset.priceColors;
 });
+
+
+it("restyles a theme change without replacing local drawings or the zoomed chart", async () => {
+  const view = render(<FinancialChart chart={chart} dataset={dataset} theme="light" />);
+  fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+  const initializations = init.mock.calls.length;
+  const disposals = dispose.mock.calls.length;
+  const drawings = instance.createOverlay.mock.calls.length;
+  await act(async () => {
+    document.documentElement.style.setProperty("--gg-color-border-subtle", "#123456");
+    document.documentElement.dataset.theme = "dark";
+    view.rerender(<FinancialChart chart={chart} dataset={dataset} theme="dark" />);
+  });
+  expect(instance.setStyles).toHaveBeenLastCalledWith(expect.objectContaining({ grid: expect.objectContaining({ horizontal: expect.objectContaining({ color: "#123456" }) }) }));
+  expect(init.mock.calls.length).toBe(initializations);
+  expect(dispose.mock.calls.length).toBe(disposals);
+  expect(instance.createOverlay.mock.calls.length).toBe(drawings);
+  view.unmount();
+  document.documentElement.style.removeProperty("--gg-color-border-subtle");
+  delete document.documentElement.dataset.theme;
+});

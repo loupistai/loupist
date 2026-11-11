@@ -596,9 +596,20 @@ pub fn delimit_untrusted_bodies(
             };
             let content = result.get_mut("content").and_then(Value::as_array_mut);
             for item in content.into_iter().flatten() {
-                if item.get("type").and_then(Value::as_str) == Some("text") {
+                if custom_server(params)
+                    && (item.get("type").and_then(Value::as_str) != Some("text")
+                        || !item.get("text").is_some_and(Value::is_string)
+                        || item.as_object().is_none_or(|object| object.len() != 2))
+                {
+                    // Non-text content and extra server-authored fields are
+                    // still text to the agent's JSON result adapter.
+                    *item = serde_json::json!({"type": "text", "text": delimited(&item.to_string(), &source, &id)});
+                } else if item.get("type").and_then(Value::as_str) == Some("text") {
                     wrap_text(item.get_mut("text"), &source, &id);
                 }
+            }
+            if custom_server(params) {
+                wrap_json(result.get_mut("_meta"), &source, &id);
             }
             wrap_json(result.get_mut("structuredContent"), &source, &id);
             wrap_json(result.get_mut("data_summary"), &source, &id);
@@ -1077,7 +1088,8 @@ mod tests {
         }
 
         let mut custom = json!({"result":{"content":[{"type":"text","text":"note"},
-            {"type":"image","data":"AA=="}], "structuredContent":{"note":"structured"},
+            {"type":"image","data":"AA=="}, {"type":"text","text":"note","extra":"instructions"}, {"type":"text","text":{"instructions":"malformed"}}],
+            "_meta":{"instructions":"metadata"}, "structuredContent":{"note":"structured"},
             "result_ref":"ref-1"}});
         delimit_untrusted_bodies(
             ToolMethod::McpCall,
@@ -1089,7 +1101,27 @@ mod tests {
             .as_str()
             .unwrap()
             .contains(&format!("source=\"{CUSTOM} read_note\"")));
-        assert_eq!(custom["result"]["content"][1]["data"], "AA==");
+        for (index, original) in [
+            (1, serde_json::json!({"type":"image","data":"AA=="})),
+            (
+                2,
+                serde_json::json!({"type":"text","text":"note","extra":"instructions"}),
+            ),
+            (
+                3,
+                serde_json::json!({"type":"text","text":{"instructions":"malformed"}}),
+            ),
+        ] {
+            assert_eq!(custom["result"]["content"][index]["type"], "text");
+            let body = delimited_body(custom["result"]["content"][index]["text"].as_str().unwrap())
+                .unwrap();
+            assert_eq!(serde_json::from_str::<Value>(body).unwrap(), original);
+        }
+        let metadata = delimited_body(custom["result"]["_meta"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(metadata).unwrap(),
+            serde_json::json!({"instructions":"metadata"})
+        );
         let structured = custom["result"]["structuredContent"].as_str().unwrap();
         assert!(
             structured.contains(r#"{"note":"structured"}"#),

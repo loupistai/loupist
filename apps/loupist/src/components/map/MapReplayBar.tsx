@@ -13,7 +13,7 @@ export function MapReplayBar({ replay, disabled, range }: { replay: MapReplay; d
   const date = formatDate(replay.time);
   return <div className="map-replay-bar" data-testid="map-replay-bar" role="group" aria-label={t("map.replay.label")} onKeyDown={event => {
     if (disabled) return;
-    if (event.key === " ") { event.preventDefault(); replay.toggle(); }
+    if (event.key === " " && !(event.target instanceof Element && event.target.closest("button"))) { event.preventDefault(); replay.toggle(); }
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); replay.seek(replay.time + (event.key === "ArrowLeft" ? -DAY_MS : DAY_MS)); }
   }}>
     <Button ref={playButton} variant="ghost" size="icon" disabled={disabled} data-map-play aria-label={t(replay.playing ? "map.replay.pause" : "map.replay.play")} onClick={replay.toggle}>{replay.playing ? <PauseIcon /> : <PlayIcon />}</Button>

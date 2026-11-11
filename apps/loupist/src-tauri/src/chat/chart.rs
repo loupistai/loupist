@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::chat::artifacts::ChatArtifactError;
+use crate::chat::artifacts::{valid_identifier, valid_text, ChatArtifactError};
 
 pub const CHART_SCHEMA: &str = "loupist-chart/1";
 const MAX_COLUMNS: usize = 32;
@@ -22,18 +22,6 @@ const MAX_DRAWING_LABEL_BYTES: usize = 80;
 const MAX_CHART_INTERVAL_SPAN: u16 = 9_999;
 const UNIX_SECONDS_CUTOFF: f64 = 10_000_000_000.0;
 const JAVASCRIPT_TIMESTAMP_LIMIT_MS: f64 = 8_640_000_000_000_000.0;
-
-fn valid_identifier(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 256
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b"-_:/".contains(&byte) || byte == b'.')
-}
-
-fn valid_text(value: &str, maximum: usize) -> bool {
-    !value.trim().is_empty() && value.len() <= maximum && !value.contains('\0')
-}
 
 fn valid_chart_interval(value: &str) -> bool {
     ["wk", "mo", "m", "h", "d"].into_iter().any(|suffix| {
@@ -246,19 +234,19 @@ impl ChartDataset {
         rows: Vec<Vec<Value>>,
         lineage: ChartDatasetLineage,
     ) -> Result<Self, ChatArtifactError> {
-        let digest = dataset_digest(&columns, &rows, &lineage)?;
-        let dataset = Self {
+        let mut dataset = Self {
             id,
             columns,
             rows,
             lineage,
-            digest,
+            digest: String::new(),
         };
-        dataset.validate()?;
+        dataset.validate_shape()?;
+        dataset.digest = dataset_digest(&dataset.columns, &dataset.rows, &dataset.lineage)?;
         Ok(dataset)
     }
 
-    pub fn validate(&self) -> Result<(), ChatArtifactError> {
+    fn validate_shape(&self) -> Result<(), ChatArtifactError> {
         if !valid_identifier(&self.id)
             || self.columns.is_empty()
             || self.columns.len() > MAX_COLUMNS
@@ -284,11 +272,12 @@ impl ChartDataset {
                 return Err(ChatArtifactError::Invalid("chart dataset row"));
             }
         }
-        self.lineage.validate()?;
-        let encoded = serde_json::to_vec(&(&self.columns, &self.rows, &self.lineage))
-            .map_err(|_| ChatArtifactError::Digest)?;
-        if encoded.len() > MAX_DATASET_BYTES || self.digest != hex::encode(Sha256::digest(&encoded))
-        {
+        self.lineage.validate()
+    }
+
+    pub fn validate(&self) -> Result<(), ChatArtifactError> {
+        self.validate_shape()?;
+        if self.digest != dataset_digest(&self.columns, &self.rows, &self.lineage)? {
             return Err(ChatArtifactError::Invalid("chart dataset digest"));
         }
         Ok(())
@@ -345,6 +334,9 @@ fn dataset_digest(
 ) -> Result<String, ChatArtifactError> {
     let bytes =
         serde_json::to_vec(&(columns, rows, lineage)).map_err(|_| ChatArtifactError::Digest)?;
+    if bytes.len() > MAX_DATASET_BYTES {
+        return Err(ChatArtifactError::Invalid("chart dataset digest"));
+    }
     Ok(hex::encode(Sha256::digest(bytes)))
 }
 
@@ -1384,6 +1376,32 @@ pub fn dataset_from_inline(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn dataset_construction_and_validation_use_the_same_bounded_digest() {
+        let dataset = ChartDataset::new(
+            "fixture-data".into(),
+            vec![ChartColumn {
+                id: "value".into(),
+                label: "Value".into(),
+                kind: ChartColumnKind::String,
+            }],
+            vec![vec![serde_json::json!("original")]],
+            ChartDatasetLineage::AgentAuthored {
+                upstream_receipts: Vec::new(),
+            },
+        );
+        let mut dataset = dataset.unwrap();
+        let encoded =
+            serde_json::to_vec(&(&dataset.columns, &dataset.rows, &dataset.lineage)).unwrap();
+        assert_eq!(dataset.digest, hex::encode(Sha256::digest(encoded)));
+        dataset.validate().unwrap();
+        dataset.rows[0][0] = serde_json::json!("changed");
+        assert!(dataset.validate().is_err());
+        let oversized =
+            vec![vec![serde_json::json!("a".repeat(8 * 1024))]; MAX_DATASET_BYTES / (8 * 1024) + 1];
+        assert!(dataset_digest(&dataset.columns, &oversized, &dataset.lineage).is_err());
+    }
 
     #[test]
     fn chart_dataset_shape_errors_do_not_echo_values() {

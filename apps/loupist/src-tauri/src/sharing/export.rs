@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
+use super::pack::valid_token as token;
 use super::pack::{
     self, ClaimRecord, Counts, EndpointRecord, EntityRecord, Files, Filing, FilingSystem,
     ItemOrigin, License, Manifest, MethodDoc, PackKind, PrincipleDoc, Profile, QualifierRecord,
@@ -261,22 +262,9 @@ fn loadable(claim: &GraphClaim, nodes: &BTreeMap<&str, &GraphNode>) -> bool {
         && token(&claim.relation, 64)
 }
 
-fn token(value: &str, max: usize) -> bool {
-    !value.is_empty()
-        && value.len() <= max
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b':' | b'.'))
-}
-
 fn http_url(locator: &str) -> Option<String> {
-    let url = reqwest::Url::parse(locator).ok()?;
-    (matches!(url.scheme(), "https" | "http")
-        && url.username().is_empty()
-        && url.password().is_none()
-        && url.host_str().is_some()
-        && locator.len() <= 2_000)
-        .then(|| url.to_string())
+    let normalized = reqwest::Url::parse(locator.trim()).ok()?.to_string();
+    pack::http_url(&normalized).map(|url| url.to_string())
 }
 
 fn filing(url: &reqwest::Url) -> Option<Filing> {
@@ -451,7 +439,6 @@ pub(crate) fn prepare(input: &ExportInput, pack_id: &str) -> Prepared {
         record_keys.insert("perspective".to_owned(), record.record_id.clone());
         method(record, "perspective".into())
     });
-    // A method longer than one pack file (64 KiB) cannot travel in this format.
     let methods: Vec<MethodDoc> = snapshot
         .methods
         .iter()
@@ -460,7 +447,6 @@ pub(crate) fn prepare(input: &ExportInput, pack_id: &str) -> Prepared {
             record_keys.insert(key.clone(), record.record_id.clone());
             method(record, key)
         })
-        .filter(|doc| pack::render_method(doc).len() <= pack::MAX_MARKDOWN)
         .collect();
     let principles: Vec<PrincipleDoc> = snapshot
         .principles
@@ -787,6 +773,50 @@ pub(crate) fn findings(prepared: &Prepared, context: &PrivateContext) -> Vec<Fin
             &texts,
         );
     }
+    let labels: BTreeMap<&str, (ItemKind, &str)> = prepared
+        .perspective
+        .iter()
+        .map(|item| {
+            (
+                item.key.as_str(),
+                (ItemKind::Perspective, item.title.as_str()),
+            )
+        })
+        .chain(
+            prepared
+                .methods
+                .iter()
+                .map(|item| (item.key.as_str(), (ItemKind::Method, item.title.as_str()))),
+        )
+        .chain(prepared.principles.iter().map(|item| {
+            (
+                item.key.as_str(),
+                (ItemKind::Principle, item.statement.as_str()),
+            )
+        }))
+        .chain(
+            prepared
+                .sources
+                .iter()
+                .map(|item| (item.key.as_str(), (ItemKind::Source, item.title.as_str()))),
+        )
+        .chain(
+            prepared
+                .entities
+                .iter()
+                .map(|item| (item.key.as_str(), (ItemKind::Entity, item.name.as_str()))),
+        )
+        .chain(prepared.claims.iter().map(|item| {
+            (
+                item.key.as_str(),
+                (ItemKind::Claim, item.proposition.as_str()),
+            )
+        }))
+        .chain(std::iter::once((
+            "profile",
+            (ItemKind::Profile, prepared.profile.name.as_str()),
+        )))
+        .collect();
     for (key, origin) in &prepared.shared_origins {
         let entries = origin.entries();
         let texts: Vec<&str> = entries
@@ -797,52 +827,9 @@ pub(crate) fn findings(prepared: &Prepared, context: &PrivateContext) -> Vec<Fin
                     .chain(entry.url.as_deref())
             })
             .collect();
-        let (kind, title) = prepared
-            .perspective
-            .iter()
-            .chain(&prepared.methods)
-            .find(|item| item.key == *key)
-            .map(|item| {
-                (
-                    if key == "perspective" {
-                        ItemKind::Perspective
-                    } else {
-                        ItemKind::Method
-                    },
-                    item.title.as_str(),
-                )
-            })
-            .or_else(|| {
-                prepared
-                    .principles
-                    .iter()
-                    .find(|item| item.key == *key)
-                    .map(|item| (ItemKind::Principle, item.statement.as_str()))
-            })
-            .or_else(|| {
-                prepared
-                    .sources
-                    .iter()
-                    .find(|item| item.key == *key)
-                    .map(|item| (ItemKind::Source, item.title.as_str()))
-            })
-            .or_else(|| {
-                prepared
-                    .entities
-                    .iter()
-                    .find(|item| item.key == *key)
-                    .map(|item| (ItemKind::Entity, item.name.as_str()))
-            })
-            .or_else(|| {
-                prepared
-                    .claims
-                    .iter()
-                    .find(|item| item.key == *key)
-                    .map(|item| (ItemKind::Claim, item.proposition.as_str()))
-            })
-            .or_else(|| {
-                (key == "profile").then_some((ItemKind::Profile, prepared.profile.name.as_str()))
-            })
+        let (kind, title) = labels
+            .get(key.as_str())
+            .copied()
             .unwrap_or((ItemKind::Source, origin.name.as_str()));
         scan_item(&mut findings, context, key, kind, title, &texts);
     }
@@ -900,11 +887,8 @@ pub(crate) fn select(prepared: &Prepared, choice: &Choice) -> Prepared {
             .map(|(key, _)| key.clone());
         let keep =
             |item_key: &str| Some(item_key) == key.as_deref() && !excluded.contains(item_key);
-        let perspective = selected.perspective.take().filter(|doc| keep(&doc.key));
+        selected.perspective = None;
         selected.methods.retain(|doc| keep(&doc.key));
-        if let Some(doc) = perspective {
-            selected.methods.push(doc);
-        }
         selected.principles.retain(|doc| keep(&doc.key));
         selected.left_out = 0;
         selected.left_out_license = u32::from(key.is_some_and(|key| blocked.contains(&key)));
@@ -996,6 +980,49 @@ pub(crate) fn select(prepared: &Prepared, choice: &Choice) -> Prepared {
         .collect();
     selected.claims = claims;
     selected
+}
+
+/// Labels for selected records whose encoded form exceeds a pack item limit.
+pub(crate) fn oversized_items(selected: &Prepared) -> Vec<String> {
+    let mut items = Vec::new();
+    let mut note = |key: &str, title: &str| items.push(format!("{} ({key})", pack::fit(title, 80)));
+    if selected.include_profile
+        && pack::render_profile(&selected.profile).len() > pack::MAX_MARKDOWN
+    {
+        note("profile", &selected.profile.name);
+    }
+    if let Some(item) = &selected.perspective {
+        if pack::render_method(item).len() > pack::MAX_MARKDOWN {
+            note(&item.key, &item.title);
+        }
+    }
+    for (index, item) in selected.methods.iter().enumerate() {
+        if index >= pack::MAX_METHODS || pack::render_method(item).len() > pack::MAX_MARKDOWN {
+            note(&item.key, &item.title);
+        }
+    }
+    for (index, item) in selected.principles.iter().enumerate() {
+        if index >= pack::MAX_PRINCIPLES || pack::render_principle(item).len() > pack::MAX_MARKDOWN
+        {
+            note(&item.key, &item.statement);
+        }
+    }
+    for item in &selected.entities {
+        if serde_json::to_vec(item).expect("entity serializes").len() > pack::MAX_JSONL_LINE {
+            note(&item.key, &item.name);
+        }
+    }
+    for item in &selected.claims {
+        if serde_json::to_vec(item).expect("claim serializes").len() > pack::MAX_JSONL_LINE {
+            note(&item.key, &item.proposition);
+        }
+    }
+    for item in &selected.sources {
+        if serde_json::to_vec(item).expect("source serializes").len() > pack::MAX_JSONL_LINE {
+            note(&item.key, &item.title);
+        }
+    }
+    items
 }
 
 pub(crate) fn counts(prepared: &Prepared) -> SummaryCounts {
@@ -1396,4 +1423,18 @@ pub(crate) fn build(selected: &Prepared, choice: &Choice, meta: &PackMeta) -> (M
 pub(crate) fn content_hash_for(selected: &Prepared, choice: &Choice, meta: &PackMeta) -> String {
     let (_, files) = build(selected, choice, meta);
     pack::content_hash(&files)
+}
+
+#[cfg(test)]
+mod url_tests {
+    use super::*;
+    #[test]
+    fn stored_source_urls_are_normalized_before_strict_validation() {
+        assert_eq!(
+            http_url(" \nhttps://example.org/a b\t"),
+            Some("https://example.org/a%20b".into())
+        );
+        assert!(http_url(" ftp://example.org/file ").is_none());
+        assert!(http_url(" https://user:secret@example.org/file ").is_none());
+    }
 }

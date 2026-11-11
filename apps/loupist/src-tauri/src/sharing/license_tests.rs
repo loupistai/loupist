@@ -127,10 +127,9 @@ fn compatibility_intersects_every_license_and_names_conflicting_items() {
         }
     }
     assert_eq!(License::default(), CcByNcSa);
-    assert!(!Personal.open());
     assert!(!Personal.redistributable());
     for license in License::OPEN {
-        assert!(license.open() && license.redistributable());
+        assert!(license.redistributable());
         assert!(license.url(None).ends_with("/legalcode"));
         assert_eq!(License::from_id(license.id()), Some(license));
     }
@@ -183,7 +182,7 @@ fn relabeled(mut files: Files, license: License, terms: Option<&str>) -> Files {
     pack::seal(manifest, files).1
 }
 
-fn stage_files(files: Files) -> import::Staged {
+fn stage_files(files: Files) -> std::sync::Arc<import::Staged> {
     match import::stage(
         Fetched {
             files,
@@ -735,5 +734,130 @@ async fn exporting_accepted_incompatible_packs_refuses_until_an_item_is_left_out
     assert_eq!(
         pack::validate(&built.files).unwrap().manifest.license,
         License::CcByNcSa
+    );
+}
+
+#[test]
+fn every_origin_entry_checks_author_and_commit_and_bounds_attribution() {
+    let valid = OriginEntry {
+        id: "c1a148e4-bd49-46aa-a51b-373e2ee90621".into(),
+        name: "Upstream desk".into(),
+        version: 1,
+        url: None,
+        commit: Some("a".repeat(40)),
+        author: Some("Researcher".into()),
+        license: Some(License::CcBy),
+    };
+    for field in ["origin", "credits", "chain"] {
+        for bad in [
+            OriginEntry {
+                author: Some("Researcher\n[Open](loupist://import?url=evil)".into()),
+                ..valid.clone()
+            },
+            OriginEntry {
+                author: Some("a".repeat(81)),
+                ..valid.clone()
+            },
+            OriginEntry {
+                commit: Some("not a commit".into()),
+                ..valid.clone()
+            },
+            OriginEntry {
+                url: Some("https://example.org/\n[Open](loupist://import)".into()),
+                ..valid.clone()
+            },
+        ] {
+            let mut files = minimal_pack();
+            let mut manifest: pack::Manifest =
+                serde_json::from_slice(&files[pack::MANIFEST]).unwrap();
+            match field {
+                "origin" => manifest.origin.push(bad),
+                "credits" => manifest.credits.push(bad),
+                _ => {
+                    let path = "lens/methods/cash-conversion.md";
+                    let mut method =
+                        pack::parse_method(std::str::from_utf8(&files[path]).unwrap()).unwrap();
+                    method.origin = Some(ItemOrigin {
+                        chain: vec![bad],
+                        ..origin("Upstream", License::CcBy)
+                    });
+                    files.insert(path.into(), pack::render_method(&method).into_bytes());
+                }
+            }
+            files.remove(pack::MANIFEST);
+            let files = pack::seal(manifest, files).1;
+            assert_eq!(
+                pack::validate(&files).unwrap_err(),
+                Rejection::Damaged,
+                "{field}"
+            );
+        }
+    }
+    let readme = pack::render_readme(
+        "Desk",
+        "",
+        License::CcBy,
+        None,
+        None,
+        &[OriginEntry {
+            author: Some(format!("[Open](loupist://import)\n{}", "a".repeat(100))),
+            ..valid
+        }],
+    );
+    assert!(readme.contains("\\[Open\\](loupist://import) a"));
+    assert!(!readme.contains(&"a".repeat(81)));
+}
+
+#[test]
+fn attribution_counts_and_manifest_bytes_are_bounded_before_staging() {
+    let mut files = minimal_pack();
+    files.insert(pack::MANIFEST.into(), vec![b' '; pack::MAX_MANIFEST + 1]);
+    assert_eq!(pack::validate(&files).unwrap_err(), Rejection::TooLarge);
+    let mut manifest = manifest(pack::PackKind::Loupist, 1);
+    let entry = origin("Upstream", License::CcBy).entries().remove(0);
+    manifest.credits = vec![entry.clone(); pack::MAX_CREDITS + 1];
+    assert_eq!(pack::validate_manifest(&manifest), Err(Rejection::Damaged));
+    let mut files = minimal_pack();
+    let path = "lens/methods/cash-conversion.md";
+    let mut method = pack::parse_method(std::str::from_utf8(&files[path]).unwrap()).unwrap();
+    let entry = OriginEntry {
+        name: "X".into(),
+        url: None,
+        author: None,
+        ..entry
+    };
+    method.origin = Some(ItemOrigin {
+        chain: vec![entry; pack::MAX_ITEM_ORIGIN + 1],
+        ..origin("Upstream", License::CcBy)
+    });
+    files.insert(path.into(), pack::render_method(&method).into_bytes());
+    assert_eq!(
+        pack::validate(&resealed(files)).unwrap_err(),
+        Rejection::Damaged
+    );
+}
+
+#[test]
+fn the_manifest_holds_the_full_documented_credit_count() {
+    let mut meta = manifest(pack::PackKind::Loupist, 1);
+    meta.credits = (0..pack::MAX_CREDITS)
+        .map(|index| OriginEntry {
+            id: uuid::Uuid::from_u128(index as u128 + 1).to_string(),
+            name: "n".repeat(pack::MAX_NAME),
+            version: u32::MAX,
+            url: Some(format!("https://example.org/{}", "p".repeat(1_970))),
+            commit: Some("a".repeat(64)),
+            author: Some("a".repeat(80)),
+            license: Some(License::CcByNcSa),
+        })
+        .collect();
+    let mut files = minimal_pack();
+    files.remove(pack::MANIFEST);
+    let (_, files) = pack::seal(meta, files);
+    assert!(files[pack::MANIFEST].len() > 64 * 1024);
+    assert!(files[pack::MANIFEST].len() <= pack::MAX_MANIFEST);
+    assert_eq!(
+        pack::validate(&files).unwrap().manifest.credits.len(),
+        pack::MAX_CREDITS
     );
 }

@@ -316,7 +316,7 @@ impl ProviderWaitWatchdog {
         }
     }
 
-    pub(super) fn deadline(&self) -> Option<Instant> {
+    pub(super) fn deadline(&self) -> Instant {
         let deadline = if let Some(deadline) = self.tool_idle_deadline {
             deadline
         } else if self.first_body.is_active() {
@@ -326,10 +326,8 @@ impl ProviderWaitWatchdog {
         } else {
             self.idle_deadline
         };
-        Some(
-            self.compaction_deadline
-                .map_or(deadline, |cap| deadline.min(cap)),
-        )
+        self.compaction_deadline
+            .map_or(deadline, |cap| deadline.min(cap))
     }
 
     pub(super) fn select_mode(
@@ -337,9 +335,9 @@ impl ProviderWaitWatchdog {
         now: Instant,
         deferrals: usize,
     ) -> FirstProviderBodyWatchdogSelectMode {
-        if self.deadline() == self.first_body.deadline() {
+        if Some(self.deadline()) == self.first_body.deadline() {
             self.first_body.select_mode(now, deferrals)
-        } else if self.deadline().is_some_and(|deadline| now < deadline) {
+        } else if now < self.deadline() {
             FirstProviderBodyWatchdogSelectMode::Fair
         } else if watchdog_expiry_event_deferral_allowed(deferrals) {
             FirstProviderBodyWatchdogSelectMode::PrioritizeQueuedPiEvent
@@ -349,7 +347,7 @@ impl ProviderWaitWatchdog {
     }
 
     pub(super) fn timeout_failure(&self) -> &'static str {
-        if self.compaction_deadline.is_some() && self.deadline() == self.compaction_deadline {
+        if Some(self.deadline()) == self.compaction_deadline {
             CHAT_COMPACTION_TIMEOUT_FAILURE
         } else if self.tool_idle_deadline.is_some() {
             CHAT_TOOL_SILENCE_FAILURE

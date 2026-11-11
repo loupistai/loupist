@@ -13,6 +13,7 @@ use std::sync::{Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
+use super::approvals::valid_request_id;
 use crate::domain::DomainError;
 
 pub const MAX_QUESTION_CHARS: usize = 300;
@@ -164,14 +165,6 @@ impl ChatQuestion {
             .and_then(|index| self.options.get(usize::from(index)))
             .map(|option| option.label.trim())
     }
-}
-
-fn valid_request_id(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
 }
 
 struct Pending {

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { TooltipProvider } from "../ui/tooltip";
@@ -185,4 +185,39 @@ it("never takes focus for the page it opens by itself, and focuses the page you 
   expect(elsewhere).toHaveFocus();
   await user.click(screen.getByRole("button", { name: /^QUIC could displace TCP for mobile traffic, Idea/ }));
   await waitFor(() => expect(screen.getByRole("heading", { level: 2, name: /QUIC could displace TCP/ })).toHaveFocus());
+});
+
+
+it.each(["memoryLearningSettingsSet", "configUpdate"] as const)("reports a failed %s when resuming learning", async method => {
+  const { bridge, view, user } = await fixture(async (bridge, loupist) => {
+    const scope = { kind: "project" as const, loupistId: loupist.id };
+    const current = await bridge.configRead({ scope });
+    await bridge.configUpdate({ scope, expectedRevision: current.revision, set: { chat: { use_memory: false, update_memory: false } }, unset: [] });
+    await bridge.memoryLearningSettingsSet({ loupistId: loupist.id, learnMethods: false });
+  });
+  vi.spyOn(bridge, method).mockRejectedValueOnce(new Error("write failed"));
+  render(view());
+  await user.click(await screen.findByRole("button", { name: "Resume" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't resume learning. Check the learning settings and try again.");
+});
+
+
+it("debounces Lens search while the user types and cancels a cleared query", async () => {
+  const { bridge, view } = await fixture();
+  const search = vi.spyOn(bridge, "knowledgeLensSearch").mockResolvedValue([]);
+  const rendered = render(view());
+  const input = await screen.findByRole("searchbox");
+  vi.useFakeTimers();
+  try {
+    fireEvent.change(input, { target: { value: "cash" } });
+    fireEvent.change(input, { target: { value: "cash flow" } });
+    expect(search).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    expect(search).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ query: "cash flow" }));
+    fireEvent.change(input, { target: { value: "margin" } });
+    fireEvent.change(input, { target: { value: "" } });
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    expect(search).toHaveBeenCalledTimes(1);
+    rendered.unmount();
+  } finally { vi.useRealTimers(); }
 });

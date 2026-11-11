@@ -1350,6 +1350,19 @@ fn merge_quarantine(
         .map_err(|_| KnowledgeError::LockPoisoned)?;
     let mut current = load_settings(&connection, loupist_id)?;
     for generation in &driven.quarantined_generations {
+        // The attempt can have mutated its in-memory settings before its
+        // transaction rolled back. Only a committed reconciliation receipt
+        // can quarantine the generation in the app settings database.
+        let committed: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM knowledge_graph_outbox
+             WHERE loupist_id = ?1 AND status = 'reconcile_required'
+               AND json_extract(payload_json, '$.generationId') = ?2)",
+            rusqlite::params![loupist_id, generation],
+            |row| row.get(0),
+        )?;
+        if !committed {
+            continue;
+        }
         if !current.quarantined_generations.contains(generation) {
             current.quarantined_generations.push(generation.clone());
         }

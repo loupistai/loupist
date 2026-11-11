@@ -224,8 +224,12 @@ it("saves guidance-only edits, preserves anchor identifiers, and discards all gu
   await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ settings: expect.objectContaining({ relationHints: ["supplies", "owns"], anchors }) })));
   await screen.findByText("World processing settings saved for this Loupist.");
   await user.type(screen.getByLabelText("Key companies and topics"), "; Acme");
+  await user.click(screen.getByRole("button", { name: "Save processing settings" }));
+  await waitFor(() => expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ settings: expect.objectContaining({ anchors: [...anchors, { name: "Acme", aliases: [], identifiers: [] }] }) })));
+  await screen.findByText("World processing settings saved for this Loupist.");
+  await user.type(screen.getByLabelText("Key companies and topics"), " | Another alias");
   await user.click(screen.getByRole("button", { name: "Discard changes" }));
-  expect(screen.getByLabelText("Key companies and topics")).toHaveValue("Samsung | 삼성 | 005930");
+  expect(screen.getByLabelText("Key companies and topics")).toHaveValue("Samsung | 삼성 | 005930; Acme");
 });
 
 const keepAwakeLabel = "Keep this Mac awake while the World is processing";

@@ -121,6 +121,37 @@ fn guidance_row(evidence: &str) -> Value {
 }
 
 #[tokio::test]
+async fn earnings_base_values_do_not_gain_binary_multiplication_digits() {
+    let temporary = tempfile::tempdir().unwrap();
+    let executor = executor(&temporary);
+    let (asset, event) = asset(&executor, 5);
+    let release = result(&executor, "web_fetch", None,
+        json!({"published_at":day(-2).to_string(),
+            "content":"We expect revenue of $1.1 thousand to $1.2 thousand; EPS $0.0011 and operating margin -1.1%."})).await;
+    save(
+        &executor,
+        &policy(true, None),
+        json!({"assetId":asset, "eventId":event,
+        "side":"expected", "rows":[
+            {"measure":"revenue", "low":"1.1", "high":1.2, "scale":1000,
+                "unit":"currency", "kind":"guidance", "evidence":[release]},
+            {"measure":"eps", "point":"0.0011", "unit":"per_share",
+                "kind":"guidance", "evidence":[release]},
+            {"measure":"operatingMargin", "point":"-1.1", "unit":"percent",
+                "kind":"guidance", "evidence":[release]}
+        ]}),
+    )
+    .await
+    .unwrap();
+    let staged = executor.capture.staged_earnings.lock().await;
+    let rows = &staged[0].rows;
+    assert_eq!(rows[0].low.as_deref(), Some("1100"));
+    assert_eq!(rows[0].high.as_deref(), Some("1200"));
+    assert_eq!(rows[1].point.as_deref(), Some("0.0011"));
+    assert_eq!(rows[2].point.as_deref(), Some("-1.1"));
+}
+
+#[tokio::test]
 async fn expectations_need_dated_earlier_evidence_that_prints_each_value() {
     let temporary = tempfile::tempdir().unwrap();
     let executor = executor(&temporary);

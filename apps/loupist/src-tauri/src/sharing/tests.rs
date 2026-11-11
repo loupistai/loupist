@@ -594,7 +594,7 @@ async fn pack_never_carries_crypto_quantities_or_wallet_addresses() {
         .unwrap();
     let id = loupist(&state, "Crypto desk").await;
     // Text that repeats a wallet address is as private as an account number.
-    let context = commands::share::private_context(&state);
+    let context = commands::share::private_context(&state).unwrap();
     let hits = super::scan::scan_private(
         &format!("Watch {} closely", address.to_lowercase()),
         &context,
@@ -634,7 +634,10 @@ async fn export_never_carries_holdings_private_sources_or_ids_and_scans_every_st
     })
     .unwrap();
     let prepared = export::prepare(&gathered.input, &gathered.identity.pack_id);
-    let findings = export::findings(&prepared, &commands::share::private_context(&state));
+    let findings = export::findings(
+        &prepared,
+        &commands::share::private_context(&state).unwrap(),
+    );
     let key_of = |record: &str| {
         prepared
             .record_keys
@@ -830,7 +833,10 @@ async fn the_export_scan_blocks_every_secret_rust_holds() {
     let custom = principle(&state, &id, "The header fixturedesksecret42 stays private.");
     let gathered = commands::share::gather(&state, &id).unwrap();
     let prepared = export::prepare(&gathered.input, &gathered.identity.pack_id);
-    let findings = export::findings(&prepared, &commands::share::private_context(&state));
+    let findings = export::findings(
+        &prepared,
+        &commands::share::private_context(&state).unwrap(),
+    );
     for record in [provider, custom] {
         let key = prepared
             .record_keys
@@ -1326,6 +1332,10 @@ fn map_text_is_cleaned_and_scanned_and_a_profile_focus_fits_creation() {
         panic!("rejected");
     };
     let staged = import::staged(&preview.staging_id).unwrap();
+    assert!(std::sync::Arc::ptr_eq(
+        &staged,
+        &import::staged(&preview.staging_id).unwrap()
+    ));
     assert_eq!(staged.parsed.entities[0].name, "Quartz Ferry");
     let findings: Vec<(&str, Vec<Flag>)> = preview
         .world
@@ -1398,6 +1408,129 @@ fn map_text_is_cleaned_and_scanned_and_a_profile_focus_fits_creation() {
 }
 
 #[test]
+fn pack_metadata_and_lens_are_cleaned_and_revalidated_before_review() {
+    let mut files = minimal_pack();
+    let mut meta: pack::Manifest = serde_json::from_slice(&files[pack::MANIFEST]).unwrap();
+    meta.name = "Fixture\u{2028} desk".into();
+    meta.author = Some(pack::Author {
+        display: "Re\u{202E}searcher".into(),
+    });
+    let entry = pack::OriginEntry {
+        id: meta.id.clone(),
+        name: "Up\u{200B}stream".into(),
+        version: 1,
+        url: None,
+        commit: None,
+        author: Some("Ear\u{2029}lier".into()),
+        license: None,
+    };
+    meta.origin = vec![entry.clone()];
+    meta.credits = vec![entry.clone()];
+    let path = "lens/methods/cash-conversion.md";
+    let mut method = pack::parse_method(std::str::from_utf8(&files[path]).unwrap()).unwrap();
+    method.origin = Some(pack::ItemOrigin {
+        pack_id: meta.id.clone(),
+        name: "Up\u{200B}stream".into(),
+        author: Some("Ear\u{2029}lier".into()),
+        license: pack::License::CcBy,
+        version: 1,
+        url: None,
+        chain: vec![entry],
+    });
+    files.insert(path.into(), pack::render_method(&method).into_bytes());
+    files.remove(pack::MANIFEST);
+    let files = pack::seal(meta, files).1;
+    let OpenResult::Preview { preview } = import::stage(
+        Fetched {
+            files,
+            ..Fetched::default()
+        },
+        None,
+    ) else {
+        panic!("rejected");
+    };
+    assert_eq!(preview.manifest.name, "Fixture desk");
+    assert_eq!(preview.profile.name, "Fixture desk");
+    assert_eq!(preview.manifest.author.as_deref(), Some("Researcher"));
+    assert_eq!(preview.manifest.origin[0].name, "Upstream");
+    assert_eq!(
+        preview.manifest.credits[0].author.as_deref(),
+        Some("Earlier")
+    );
+    assert_eq!(preview.profile_findings, [Flag::Hidden]);
+    let staged = import::staged(&preview.staging_id).unwrap();
+    assert_eq!(
+        staged.parsed.manifest.origin[0].author.as_deref(),
+        Some("Earlier")
+    );
+    let item_origin = staged.items[0].2.origin.as_ref().unwrap();
+    assert_eq!(item_origin.name, "Upstream");
+    assert_eq!(item_origin.author.as_deref(), Some("Earlier"));
+    assert_eq!(item_origin.chain[0].name, "Upstream");
+    assert!(staged.items[0]
+        .2
+        .findings
+        .iter()
+        .any(|finding| finding.flag == Flag::Hidden));
+    import::unstage(&preview.staging_id);
+
+    for field in ["name", "author", "title", "summary", "heading", "principle"] {
+        let mut files = minimal_pack();
+        let mut meta: pack::Manifest = serde_json::from_slice(&files[pack::MANIFEST]).unwrap();
+        let path = "lens/methods/cash-conversion.md";
+        let mut method = pack::parse_method(std::str::from_utf8(&files[path]).unwrap()).unwrap();
+        match field {
+            "name" => meta.name = "\u{200B}".into(),
+            "author" => {
+                meta.author = Some(pack::Author {
+                    display: "\u{202E}".into(),
+                })
+            }
+            "title" => method.title = "\u{200B}".into(),
+            "summary" => {
+                method.document.summary = "\u{200B}".into();
+                method.document.sections.clear();
+            }
+            "heading" => method.document.sections[0].heading = "\u{200B}".into(),
+            _ => {
+                files.insert(
+                    "lens/principles/empty.md".into(),
+                    pack::render_principle(&pack::PrincipleDoc {
+                        key: "p-0123456789abcdef".into(),
+                        statement: "\u{200B}".into(),
+                        why: None,
+                        example: None,
+                        origin: None,
+                    })
+                    .into_bytes(),
+                );
+                meta.counts.principles = 1;
+            }
+        }
+        files.insert(path.into(), pack::render_method(&method).into_bytes());
+        files.remove(pack::MANIFEST);
+        let files = pack::seal(meta, files).1;
+        assert!(pack::validate(&files).is_ok(), "raw {field}");
+        assert!(
+            matches!(
+                import::stage(
+                    Fetched {
+                        files,
+                        ..Fetched::default()
+                    },
+                    None
+                ),
+                OpenResult::Rejected {
+                    reason: Rejection::Damaged,
+                    ..
+                }
+            ),
+            "{field}"
+        );
+    }
+}
+
+#[test]
 fn methods_round_trip_exactly_through_markdown() {
     let document = PackDoc {
         summary: "Line one".into(),
@@ -1452,7 +1585,7 @@ fn methods_round_trip_exactly_through_markdown() {
     );
 }
 
-fn stage_folder(folder: &Path) -> import::Staged {
+fn stage_folder(folder: &Path) -> std::sync::Arc<import::Staged> {
     let files = import::read_folder(folder).unwrap();
     let OpenResult::Preview { preview } = import::stage(
         Fetched {
@@ -1483,7 +1616,10 @@ async fn a_folder_round_trip_adds_suggestions_and_the_map_then_removes_them() {
     seed(&state, &a, false);
     let gathered = commands::share::gather(&state, &a).unwrap();
     let prepared = export::prepare(&gathered.input, &gathered.identity.pack_id);
-    let findings = export::findings(&prepared, &commands::share::private_context(&state));
+    let findings = export::findings(
+        &prepared,
+        &commands::share::private_context(&state).unwrap(),
+    );
     let blocking: Vec<String> = findings
         .iter()
         .filter(|finding| finding.blocking)
@@ -1564,6 +1700,24 @@ async fn a_folder_round_trip_adds_suggestions_and_the_map_then_removes_them() {
         "every shared method and principle waits"
     );
     assert_eq!(staged.parsed.methods.len(), 2);
+    let duplicate = commands::with_tx(&state, &b, |tx, _| {
+        commands::review::decide(
+            tx,
+            &b,
+            &row.import_id,
+            &[pending[0].clone(), pending[0].clone()],
+            Decision::Accept,
+            AT,
+        )
+    })
+    .unwrap_err();
+    assert_eq!(duplicate.code, "invalid_request");
+    assert!(commands::share::gather(&state, &b)
+        .unwrap()
+        .input
+        .snapshot
+        .methods
+        .is_empty());
     commands::with_tx(&state, &b, |tx, _| {
         commands::review::decide(tx, &b, &row.import_id, &pending, Decision::Accept, AT)
     })
@@ -1678,7 +1832,7 @@ async fn a_folder_round_trip_adds_suggestions_and_the_map_then_removes_them() {
 fn warnings_for(state: &AppState, loupist_id: &str) -> Vec<String> {
     let gathered = commands::share::gather(state, loupist_id).unwrap();
     let prepared = export::prepare(&gathered.input, &gathered.identity.pack_id);
-    export::findings(&prepared, &commands::share::private_context(state))
+    export::findings(&prepared, &commands::share::private_context(state).unwrap())
         .into_iter()
         .map(|finding| finding.id)
         .collect()
@@ -1760,7 +1914,11 @@ fn snapshot_of(
 }
 
 /// A's map as a pack folder, minus the relationships named in `excluded`.
-async fn map_pack(state: &AppState, temp: &Path, excluded: &[&str]) -> import::Staged {
+async fn map_pack(
+    state: &AppState,
+    temp: &Path,
+    excluded: &[&str],
+) -> std::sync::Arc<import::Staged> {
     let a = loupist(state, "Quality desk").await;
     seed(state, &a, false);
     let pack_id = commands::share::gather(state, &a).unwrap().identity.pack_id;
@@ -2614,7 +2772,7 @@ fn whole(
 ) -> commands::share::ShareRequest {
     let gathered = commands::share::gather(state, loupist_id).unwrap();
     let prepared = export::prepare(&gathered.input, &gathered.identity.pack_id);
-    let findings = export::findings(&prepared, &commands::share::private_context(state));
+    let findings = export::findings(&prepared, &commands::share::private_context(state).unwrap());
     let mut excluded: Vec<String> = findings
         .iter()
         .filter(|finding| finding.blocking)
@@ -3276,3 +3434,422 @@ async fn the_gallery_blocked_list_marks_added_packs_and_their_updates_cannot_be_
 
 #[path = "license_tests.rs"]
 mod licensing;
+
+#[tokio::test]
+async fn offline_update_checks_retry_manually_and_automatically_after_reconnecting() {
+    use super::github::{fixture, Github};
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+    let temp = tempfile::tempdir().unwrap();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let id = loupist(&state, "Linked desk").await;
+    let OpenResult::Preview { preview } = import::stage(
+        Fetched {
+            files: minimal_pack(),
+            source_url: Some("https://github.com/researcher/desk".into()),
+            commit: Some("1".repeat(40)),
+            ..Fetched::default()
+        },
+        None,
+    ) else {
+        panic!("rejected");
+    };
+    let staged = import::staged(&preview.staging_id).unwrap();
+    let row = commands::add::import_row(&staged, ImportMode::Merge, AT);
+    commands::with_tx(&state, &id, |tx, _| {
+        store::insert_import(tx, &id, &row)
+            .map_err(|error| CommandError::internal(error.to_string()))
+    })
+    .unwrap();
+    let online = Arc::new(AtomicBool::new(false));
+    let answer = online.clone();
+    let server = fixture::serve(Arc::new(move |_, path, _| {
+        if !answer.load(Ordering::SeqCst) {
+            return (503, "{}".into());
+        }
+        match path {
+            "/repos/researcher/desk" => (
+                200,
+                r#"{"full_name":"researcher/desk","default_branch":"main"}"#.into(),
+            ),
+            "/repos/researcher/desk/commits/main" => {
+                (200, format!(r#"{{"sha":"{}"}}"#, "1".repeat(40)))
+            }
+            _ => (404, "{}".into()),
+        }
+    }))
+    .await;
+    let api = Github::new(&server.base, &server.base, &server.base);
+    let request = |automatic| {
+        serde_json::from_value(serde_json::json!({
+            "loupistId": id, "importId": row.import_id, "automatic": automatic
+        }))
+        .unwrap()
+    };
+    for automatic in [false, true] {
+        assert!(matches!(
+            commands::updates::check_update(&state, request(automatic), &api)
+                .await
+                .unwrap(),
+            commands::updates::UpdateCheck::Offline
+        ));
+        let current = commands::with_tx(&state, &id, |tx, _| {
+            store::import(tx, &id, &row.import_id)
+                .map_err(|error| CommandError::internal(error.to_string()))
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            current.checked_at_ms, None,
+            "offline never consumes the daily check"
+        );
+    }
+    let before = server.requests.lock().unwrap().len();
+    online.store(true, Ordering::SeqCst);
+    assert!(matches!(
+        commands::updates::check_update(&state, request(false), &api)
+            .await
+            .unwrap(),
+        commands::updates::UpdateCheck::UpToDate
+    ));
+    assert!(server.requests.lock().unwrap().len() > before);
+    let cached = server.requests.lock().unwrap().len();
+    assert!(matches!(
+        commands::updates::check_update(&state, request(false), &api)
+            .await
+            .unwrap(),
+        commands::updates::UpdateCheck::UpToDate
+    ));
+    assert_eq!(server.requests.lock().unwrap().len(), cached);
+    import::unstage(&preview.staging_id);
+}
+
+#[tokio::test]
+async fn exporter_refuses_jsonl_records_that_the_importer_cannot_read() {
+    let temp = tempfile::tempdir().unwrap();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let id = loupist(&state, "Large desk").await;
+    knowledge(&state, &id, |write| {
+        let source = retain(
+            write,
+            &id,
+            "Public filing",
+            SourceClass::WebPage,
+            "https://example.org/filing",
+            "web-research:web_fetch",
+            None,
+        );
+        let record = write.create_record(CreateRecord {
+            loupist_id: id.clone(),
+            kind: RecordKind::World,
+            title: "World".into(),
+            at_ms: AT,
+        })?;
+        let mut relationship = claim(
+            "c-large",
+            "SUPPLIES",
+            "n-one",
+            "n-two",
+            &"a".repeat(4_000),
+            &[&source],
+        );
+        relationship.qualifiers = (0..16)
+            .map(|i| Qualifier {
+                key: format!("field{i}"),
+                value: "b".repeat(512),
+            })
+            .collect();
+        write.seal_world(SealWorld {
+            loupist_id: id.clone(),
+            record_id: record.record_id,
+            expected_revision_id: None,
+            at_ms: AT,
+            nodes: vec![
+                node("n-one", "One", "Organization", &[]),
+                node("n-two", "Two", "Organization", &[]),
+            ],
+            claims: vec![relationship],
+            annotations: vec![],
+            dependencies: vec![],
+        })?;
+        Ok(())
+    });
+    let error = commands::share::build_pack(&state, &whole(&state, &id, &[]), None)
+        .err()
+        .expect("oversized export must fail");
+    assert!(error.message.contains("TooLarge"));
+    let identity = commands::share::gather(&state, &id).unwrap().identity;
+    assert!(error
+        .message
+        .contains(&pack::item_key("c", &identity.pack_id, "c-large")));
+    // Leaving out the offending relationship produces an importable pack.
+    let built =
+        commands::share::build_pack(&state, &whole(&state, &id, &["c-large"]), None).unwrap();
+    pack::validate(&built.files).unwrap();
+}
+
+#[tokio::test]
+async fn exporter_keeps_oversized_methods_visible_until_explicitly_left_out() {
+    let temp = tempfile::tempdir().unwrap();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let id = loupist(&state, "Methods desk").await;
+    let mut gathered = commands::share::gather(&state, &id).unwrap();
+    gathered
+        .input
+        .snapshot
+        .methods
+        .push(shared_pack_test_method());
+    let prepared = export::prepare(&gathered.input, &gathered.identity.pack_id);
+    assert_eq!(
+        prepared.methods.len(),
+        1,
+        "oversized methods must not silently disappear"
+    );
+    assert!(pack::render_method(&prepared.methods[0]).len() > pack::MAX_MARKDOWN);
+    assert_eq!(
+        export::oversized_items(&prepared),
+        [format!("Large method ({})", prepared.methods[0].key)]
+    );
+}
+
+fn shared_pack_test_method() -> crate::knowledge::shared_pack::LensRecord {
+    crate::knowledge::shared_pack::LensRecord {
+        record_id: "rec_0123456789abcdef".into(),
+        title: "Large method".into(),
+        document: PackDoc {
+            summary: "Check all inputs.".into(),
+            sections: (0..16)
+                .map(|index| section(&format!("section-{index}"), "Section", &"관".repeat(2_000)))
+                .collect(),
+        },
+    }
+}
+
+#[test]
+fn single_item_scope_cannot_turn_a_perspective_into_a_method() {
+    let mut input = export::ExportInput::default();
+    input.snapshot.perspective = Some(crate::knowledge::shared_pack::LensRecord {
+        record_id: "rec_0123456789abcdef".into(),
+        title: "Perspective".into(),
+        document: PackDoc {
+            summary: "A standing perspective.".into(),
+            sections: vec![],
+        },
+    });
+    let prepared = export::prepare(&input, "7f1d1c3e-0000-4000-8000-000000000001");
+    let selected = export::select(
+        &prepared,
+        &Choice {
+            scope: Scope::Item("rec_0123456789abcdef".into()),
+            sections: Sections::ALL,
+            excluded: BTreeSet::new(),
+            acknowledged: BTreeSet::new(),
+        },
+    );
+    assert!(selected.perspective.is_none());
+    assert!(selected.methods.is_empty());
+}
+
+#[tokio::test]
+async fn an_accepted_item_round_trips_after_nine_silent_updates() {
+    let temp = tempfile::tempdir().unwrap();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let id = loupist(&state, "Receiver").await;
+    let mut initial = minimal_pack();
+    let mut meta: pack::Manifest = serde_json::from_slice(&initial[pack::MANIFEST]).unwrap();
+    meta.credits = (0..10)
+        .map(|index| pack::OriginEntry {
+            id: uuid::Uuid::from_u128(index + 1).to_string(),
+            name: format!("Contributor {index}"),
+            version: 1,
+            url: None,
+            commit: None,
+            author: Some("Researcher".into()),
+            license: Some(pack::License::CcBy),
+        })
+        .collect();
+    initial.remove(pack::MANIFEST);
+    initial = pack::seal(meta, initial).1;
+    let OpenResult::Preview { preview } = import::stage(
+        Fetched {
+            files: initial.clone(),
+            ..Fetched::default()
+        },
+        None,
+    ) else {
+        panic!("rejected");
+    };
+    let staged = import::staged(&preview.staging_id).unwrap();
+    let mut row = commands::add::import_row(&staged, ImportMode::Merge, AT);
+    commands::with_tx(&state, &id, |tx, blobs| {
+        commands::add::record_import(
+            tx,
+            blobs,
+            &id,
+            &staged,
+            &row,
+            AddSections {
+                perspective: false,
+                methods: true,
+                principles: false,
+                map: false,
+            },
+            &|_| {},
+        )?;
+        commands::review::decide(
+            tx,
+            &id,
+            &row.import_id,
+            std::slice::from_ref(&staged.items[0].0),
+            Decision::Accept,
+            AT,
+        )
+    })
+    .unwrap();
+    for version in 2..=10 {
+        let mut meta: pack::Manifest = serde_json::from_slice(&initial[pack::MANIFEST]).unwrap();
+        meta.version = version;
+        let mut files = initial.clone();
+        files.remove(pack::MANIFEST);
+        let (_, files) = pack::seal(meta, files);
+        assert!(matches!(
+            commands::updates::evaluate(
+                &state,
+                &id,
+                &row,
+                Fetched {
+                    files,
+                    ..Fetched::default()
+                }
+            )
+            .await
+            .unwrap(),
+            commands::updates::UpdateCheck::UpToDate
+        ));
+        row = commands::with_tx(&state, &id, |tx, _| {
+            store::import(tx, &id, &row.import_id)
+                .map_err(|error| CommandError::internal(error.to_string()))
+        })
+        .unwrap()
+        .unwrap();
+    }
+    assert_eq!(row.version, 10);
+    let built = commands::share::build_pack(&state, &whole(&state, &id, &[]), None).unwrap();
+    let parsed = pack::validate(&built.files).unwrap();
+    assert_eq!(parsed.methods[0].origin.as_ref().unwrap().chain.len(), 19);
+    let OpenResult::Preview { preview } = import::stage(
+        Fetched {
+            files: built.files,
+            ..Fetched::default()
+        },
+        None,
+    ) else {
+        panic!("re-export rejected");
+    };
+    assert_eq!(preview.methods[0].title, "Cash conversion");
+    import::unstage(&preview.staging_id);
+}
+
+#[tokio::test]
+async fn sharing_private_context_blocks_read_failures_but_accepts_empty_credentials() {
+    let temp = tempfile::tempdir().unwrap();
+    let state = AppState::for_folder_test(temp.path().join("empty"));
+    let id = loupist(&state, "Empty credentials").await;
+    assert!(super::github::load_token(&state.credential_environment).is_none());
+    assert!(
+        commands::share::private_context_with_finance(&state, |_, _| Ok(None))
+            .unwrap()
+            .secrets
+            .is_empty()
+    );
+    let request = whole(&state, &id, &[]);
+    commands::share::build_pack(&state, &request, None).unwrap();
+    let failed = commands::share::private_context_with_finance(&state, |_, _| {
+        Err(crate::finance_credentials::FinanceCredentialError::Store)
+    });
+    assert!(
+        failed.is_err(),
+        "a Keychain read error is not an absent credential"
+    );
+    state
+        .store
+        .lock()
+        .unwrap()
+        .execute_batch("DROP TABLE user_wallet_addresses")
+        .unwrap();
+    assert!(
+        commands::share::build_pack(&state, &request, None).is_err(),
+        "a SQL failure blocks export"
+    );
+
+    let state = AppState::for_folder_test(temp.path().join("rows"));
+    state.store.lock().unwrap().execute_batch("DROP TABLE user_wallet_addresses; CREATE TABLE user_wallet_addresses(address); INSERT INTO user_wallet_addresses VALUES (x'01')").unwrap();
+    assert!(
+        commands::share::private_context(&state).is_err(),
+        "a row decoding failure blocks the scan"
+    );
+    let state = AppState::for_folder_test(temp.path().join("poisoned"));
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _guard = state.store.lock().unwrap();
+        panic!("fixture store lock poisoning");
+    }));
+    assert!(commands::share::private_context(&state).is_err());
+}
+
+#[tokio::test]
+async fn rate_limited_update_checks_consume_the_automatic_check_window() {
+    use super::github::{fixture, Github};
+    let temp = tempfile::tempdir().unwrap();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let id = loupist(&state, "Linked desk").await;
+    let OpenResult::Preview { preview } = import::stage(
+        Fetched {
+            files: minimal_pack(),
+            source_url: Some("https://github.com/researcher/desk".into()),
+            ..Fetched::default()
+        },
+        None,
+    ) else {
+        panic!("rejected");
+    };
+    let staged = import::staged(&preview.staging_id).unwrap();
+    let row = commands::add::import_row(&staged, ImportMode::Merge, AT);
+    commands::with_tx(&state, &id, |tx, _| {
+        store::insert_import(tx, &id, &row)
+            .map_err(|error| CommandError::internal(error.to_string()))
+    })
+    .unwrap();
+    let server = fixture::serve(std::sync::Arc::new(|_, _, _| (429, "{}".into()))).await;
+    let api = Github::new(&server.base, &server.base, &server.base);
+    let request = |automatic| {
+        serde_json::from_value(
+            serde_json::json!({"loupistId": id, "importId": row.import_id, "automatic": automatic}),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        commands::updates::check_update(&state, request(true), &api)
+            .await
+            .unwrap_err()
+            .code,
+        "rate_limited"
+    );
+    let before = server.requests.lock().unwrap().len();
+    assert!(matches!(
+        commands::updates::check_update(&state, request(true), &api)
+            .await
+            .unwrap(),
+        commands::updates::UpdateCheck::NotChecked
+    ));
+    assert_eq!(server.requests.lock().unwrap().len(), before);
+    assert_eq!(
+        commands::updates::check_update(&state, request(false), &api)
+            .await
+            .unwrap_err()
+            .code,
+        "rate_limited"
+    );
+    assert!(server.requests.lock().unwrap().len() > before);
+}

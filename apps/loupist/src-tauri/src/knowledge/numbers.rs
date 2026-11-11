@@ -485,10 +485,32 @@ fn text_numbers(text: &str, out: &mut Vec<Candidate>) {
         let symbol = prefix
             .trim_end_matches(['-', '−', ' '])
             .ends_with(|c: char| CURRENCY_SYMBOLS.contains(&c));
+        let prefix_text = &text[..byte(start)];
+        let before_number = prefix_text.trim_end_matches(' ');
+        let gap = prefix_text.len() - before_number.len();
+        let boundary = |text: &str| {
+            text.chars()
+                .next_back()
+                .is_none_or(|c| !c.is_alphanumeric() && c != '_')
+        };
         let prefixed = symbol
-            || CURRENCY_CODES
-                .iter()
-                .any(|code| prefix.trim_end().ends_with(code));
+            || (gap <= 2
+                && CURRENCY_CODES.iter().any(|code| {
+                    let Some(at) = before_number.len().checked_sub(code.len()) else {
+                        return false;
+                    };
+                    before_number
+                        .get(at..)
+                        .is_some_and(|tail| tail.eq_ignore_ascii_case(code))
+                        && (boundary(&before_number[..at])
+                            || at.checked_sub(3).is_some_and(|pair_at| {
+                                before_number.get(pair_at..at).is_some_and(|first| {
+                                    CURRENCY_CODES
+                                        .iter()
+                                        .any(|code| first.eq_ignore_ascii_case(code))
+                                }) && boundary(&before_number[..pair_at])
+                            }))
+                }));
         if prefixed && matches!(unit, Unit::Plain) {
             unit = Unit::Amount(1.0);
         }
@@ -1252,6 +1274,44 @@ mod tests {
         );
         assert_eq!(percent(-2.0, &json!("(−2.0%)")), Some(-2.0));
         assert_eq!(percent(3.1, &json!("shares fell -3.1%")), None);
+    }
+
+    #[test]
+    fn currency_prefixes_require_a_word_boundary() {
+        for text in [
+            "fraud 12",
+            "fraud  12",
+            "entrepreneur 5",
+            "éAUD 12",
+            "_EUR 5",
+            "USDKRW   12",
+            "USD\n12",
+            "USD \n12",
+            "USD\t12",
+        ] {
+            let value = if text.contains("12") { 12.0 } else { 5.0 };
+            assert_eq!(find(value, Unit::Amount(1.0), &json!(text)), None, "{text}");
+            assert_eq!(
+                find(value, Unit::Plain, &json!(text)),
+                Some(value),
+                "{text}"
+            );
+        }
+        for text in ["AUD 12", "aud 12", "Revenue: EUR 12", "(USD 12)", "AUD  12"] {
+            assert_eq!(
+                find(12.0, Unit::Amount(1.0), &json!(text)),
+                Some(12.0),
+                "{text}"
+            );
+        }
+        for (text, value) in [("USDKRW 1,350", 1350.0), ("EURUSD 1.08", 1.08)] {
+            assert_eq!(
+                find(value, Unit::Amount(1.0), &json!(text)),
+                Some(value),
+                "{text}"
+            );
+            assert_eq!(find(value, Unit::Plain, &json!(text)), None, "{text}");
+        }
     }
 
     #[test]

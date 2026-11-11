@@ -436,19 +436,11 @@ pub(crate) fn validate_entities(
     if entities.is_empty() {
         return Ok(());
     }
-    let map = super::map::query(
-        tx,
-        &super::map::KnowledgeMapQuery {
-            loupist_id: loupist_id.into(),
-            max_nodes: Some(1500),
-        },
-        &Default::default(),
-    )?;
+    let world = super::lens::world_body(tx, loupist_id)?;
     for entity in entities {
-        if !map
-            .nodes
-            .iter()
-            .any(|node| node.kind == "entity" && &node.id == entity)
+        if !world
+            .as_ref()
+            .is_some_and(|world| world.nodes.iter().any(|node| &node.id == entity))
         {
             return Err(field(
                 "journal_entity",
@@ -612,6 +604,53 @@ mod tests {
             }),
             thesis: None,
         }
+    }
+    #[test]
+    fn entity_links_use_the_complete_current_world() {
+        use crate::knowledge::{CreateRecord, GraphNode, RecordKind, SealWorld};
+        let (_root, store) = store();
+        let world = store
+            .create_record(CreateRecord {
+                loupist_id: "loupist-a".into(),
+                kind: RecordKind::World,
+                title: "World".into(),
+                at_ms: 1,
+            })
+            .unwrap();
+        store
+            .seal_world(SealWorld {
+                loupist_id: "loupist-a".into(),
+                record_id: world.record_id,
+                expected_revision_id: None,
+                at_ms: 2,
+                nodes: (0..1501)
+                    .map(|i| GraphNode {
+                        id: format!("entity-{i:04}"),
+                        name: format!("Company {i}"),
+                        aliases: vec![],
+                        description: String::new(),
+                        kind: "company".into(),
+                        source_role: "organization".into(),
+                        properties: Default::default(),
+                    })
+                    .collect(),
+                claims: vec![],
+                annotations: vec![],
+                dependencies: vec![],
+            })
+            .unwrap();
+        let mut linked = input();
+        linked.entities = vec!["entity-1500".into()];
+        store
+            .transact(|w| create(w.tx, "loupist-a", linked.clone(), 3))
+            .unwrap();
+        assert!(store
+            .transact(|w| create(w.tx, "loupist-b", linked.clone(), 3))
+            .is_err());
+        linked.entities = vec!["missing-entity".into()];
+        assert!(store
+            .transact(|w| create(w.tx, "loupist-a", linked, 3))
+            .is_err());
     }
     fn review_draft(
         record: &JournalRecord,

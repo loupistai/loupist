@@ -47,7 +47,7 @@ checks the live WebView and does not prove OS focus, native dialogs, or a
 visible window. Scope and limits are owned by
 [Deterministic native suites](../../apps/loupist/e2e/README.md#deterministic-native-suites)
 and [Explicit live suites](../../apps/loupist/e2e/README.md#explicit-live-suites).
-Cold start is the in-page paint mark once `#main-tab-chat` is present: the minimum of the
+Cold start is the in-page paint mark once `[data-testid=loupist-header-selector]` is present: the minimum of the
 positive DOM-content-loaded, first-contentful-paint, and load marks. Time from process
 spawn to that observation is recorded beside it and is not the 3 s budget. A budget miss
 is recorded. A missing shell fails the run.

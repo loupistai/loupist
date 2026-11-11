@@ -207,6 +207,10 @@
     "open": "Open on map"
   },
   "error": {
+    "archive": "Couldn't archive this entry. Try again.",
+    "changes": "Couldn't load changes. Try again.",
+    "results": "Couldn't load results. Try again.",
+
     "load": "Couldn't open this page.",
     "retry": "Try again",
     "checkNow": "Couldn't check {{name}} now. Try again in a moment.",

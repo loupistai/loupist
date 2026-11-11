@@ -19,19 +19,19 @@ fn summary_is_first_prose_paragraph_without_markdown() {
 #[test]
 fn journal_hook_is_empty_and_unattended_native_tools_are_denied() {
     for name in [
-        "bash",
         "read",
         "write",
         "edit",
         "find",
         "grep",
         "ls",
-        "browser",
-        "browser_open",
         "schedule_create",
         "principle_save",
         "loupist_setup",
         "ask_user",
+        "capability_list",
+        "skills_list",
+        "skills_read",
     ] {
         assert!(!policy::allowed_name(name), "{name}");
     }
@@ -42,6 +42,7 @@ fn journal_hook_is_empty_and_unattended_native_tools_are_denied() {
         "plan_update",
         "lens_file",
         "run_python",
+        "capability_load",
     ] {
         assert!(policy::allowed_name(name), "{name}");
     }
@@ -338,13 +339,49 @@ fn notification_effects_include_loupist_status_summary_and_navigation_target() {
         assert!(calls[0].ends_with("|First line|loupist-a|run-a"));
         assert_eq!(calls[1], "changed:loupist-a");
     }
-    let failed = crate::scheduled_tasks::types::Run {
-        status: crate::scheduled_tasks::types::RunStatus::Failed,
-        ..run
-    };
-    desktop::deliver(&fake, "Research", &failed);
-    let calls = fake.calls.borrow();
-    assert_ne!(calls[2].split('|').next(), calls[0].split('|').next());
+    use crate::scheduled_tasks::types::{RunStatus, TaskKind};
+    for (kind, title) in [
+        (TaskKind::Briefing, "briefing"),
+        (TaskKind::Custom, "Weekly research"),
+        (TaskKind::Earnings, "Results before and after"),
+    ] {
+        for (status, error, suffix) in [
+            (RunStatus::Succeeded, None, "ready"),
+            (RunStatus::Failed, None, "couldn't finish"),
+            (RunStatus::Interrupted, None, "couldn't finish"),
+            (
+                RunStatus::Interrupted,
+                Some("Interrupted before completion."),
+                "couldn't finish",
+            ),
+            (
+                RunStatus::Interrupted,
+                Some("Scheduled run was interrupted."),
+                "couldn't finish",
+            ),
+            (
+                RunStatus::Interrupted,
+                Some("Stopped before completion"),
+                "stopped",
+            ),
+        ] {
+            fake.calls.borrow_mut().clear();
+            let finished = crate::scheduled_tasks::types::Run {
+                kind: kind.clone(),
+                task_title: title.into(),
+                status,
+                error: error.map(str::to_owned),
+                ..run.clone()
+            };
+            desktop::deliver(&fake, "Research", &finished);
+            let calls = fake.calls.borrow();
+            assert_eq!(
+                calls[0],
+                format!("Research: {title} {suffix}|First line|loupist-a|run-a")
+            );
+            assert_eq!(calls[1], "changed:loupist-a");
+        }
+    }
 }
 
 #[test]

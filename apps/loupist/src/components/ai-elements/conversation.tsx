@@ -13,7 +13,6 @@ import {
 } from "react";
 
 type ConversationContextValue = {
-  isAtBottom: boolean;
   scrollToBottom: () => void;
   /** Keeps the end in view after content grew, only while the reader follows it. */
   followGrowth: () => void;
@@ -21,7 +20,9 @@ type ConversationContextValue = {
 };
 
 const ConversationContext = createContext<ConversationContextValue | null>(null);
+const ConversationAtBottomContext = createContext<boolean | null>(null);
 export const useConversationScroll = () => useContext(ConversationContext);
+export const useConversationAtBottom = () => useContext(ConversationAtBottomContext);
 const BOTTOM_TOLERANCE_PX = 2;
 
 export type ConversationProps = ComponentProps<"div"> & {
@@ -155,12 +156,13 @@ export const Conversation = ({
   );
 
   const context = useMemo(
-    () => ({ isAtBottom, scrollToBottom, followGrowth, holdScrollPosition }),
-    [isAtBottom, scrollToBottom, followGrowth, holdScrollPosition],
+    () => ({ scrollToBottom, followGrowth, holdScrollPosition }),
+    [scrollToBottom, followGrowth, holdScrollPosition],
   );
 
   return (
     <ConversationContext.Provider value={context}>
+      <ConversationAtBottomContext.Provider value={isAtBottom}>
       <div
         ref={scrollRef}
         className={cn("relative flex-1 overflow-y-auto", className)}
@@ -175,6 +177,7 @@ export const Conversation = ({
         {children}
       </div>
       {footer}
+      </ConversationAtBottomContext.Provider>
     </ConversationContext.Provider>
   );
 };

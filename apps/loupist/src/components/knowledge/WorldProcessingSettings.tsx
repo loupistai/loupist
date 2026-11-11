@@ -37,6 +37,17 @@ const readinessNotes = (): Record<GraphReadinessNote, string> => ({
 const recoveryComplete = () => i18n.t("knowledge:worldProcessingSettings.worldProcessingRecoveredSavedSourcesAreRetainedInterruptedProcessingWas");
 const KEEP_AWAKE_REFRESH_MS = 5_000;
 
+const serializeAnchors = (anchors: GraphProcessingSettings["anchors"]) => (anchors ?? []).map(anchor => [anchor.name, ...(anchor.aliases ?? []), ...(anchor.identifiers ?? [])].join(" | ")).join("; ");
+function parseAnchors(text: string, saved: GraphProcessingSettings["anchors"]) {
+  return text.split(";").map(line => line.split("|").map(item => item.trim()).filter(Boolean)).filter(parts => parts.length).slice(0, 200).map(parts => {
+    // Preserve identifiers the host already distinguished from aliases. New text
+    // keeps the form's existing alias semantics without reclassifying stored codes.
+    const previous = saved?.find(anchor => anchor.name === parts[0] || anchor.identifiers?.some(identifier => parts.slice(1).includes(identifier)));
+    const identifiers = new Set(previous?.identifiers ?? []);
+    return { name: parts[0], aliases: parts.slice(1).filter(item => !identifiers.has(item)), identifiers: parts.slice(1).filter(item => identifiers.has(item)) };
+  });
+}
+
 /** One host choice for every Loupist. It saves at once and never joins the per-Loupist form. */
 function KeepAwakeSetting({ bridge, active }: { bridge: LoupistBridge; active: boolean }) {
   const { t } = useTranslation("knowledge");
@@ -120,7 +131,7 @@ export function WorldProcessingSettings({ bridge, loupistId, active = true, coll
       if (loupistRef.current !== loupistId || serial.current !== ticket) return;
       setLoaded({ loupistId, view, draft: view.settings, catalog });
       setRelationText((view.settings.relationHints ?? []).join(", "));
-      setAnchorText((view.settings.anchors ?? []).map((anchor) => [anchor.name, ...(anchor.aliases ?? []), ...(anchor.identifiers ?? [])].join(" | ")).join("; "));
+      setAnchorText(serializeAnchors(view.settings.anchors));
     }).catch((cause: unknown) => {
       if (loupistRef.current !== loupistId || serial.current !== ticket) return;
       setError(errorMessage(cause, t("worldProcessingSettings.couldNotOpenWorldProcessingSettings")));
@@ -169,7 +180,7 @@ export function WorldProcessingSettings({ bridge, loupistId, active = true, coll
   const readinessMessage = (view.readiness.note ? readinessNotes()[view.readiness.note] : null) || (!models.length ? t("worldProcessingSettings.noConnectedModelsConnectAProviderToStartProcessing") : null);
   const selectedModel = models.find((model) => model.id === draft.helperModelProfileId);
   const savedRelations = (view.settings.relationHints ?? []).join(", ");
-  const savedAnchors = (view.settings.anchors ?? []).map((anchor) => [anchor.name, ...(anchor.aliases ?? []), ...(anchor.identifiers ?? [])].join(" | ")).join("; ");
+  const savedAnchors = serializeAnchors(view.settings.anchors);
   const changed = JSON.stringify(draft) !== JSON.stringify(view.settings) || relationText !== savedRelations || anchorText !== savedAnchors;
   const edit = (patch: Partial<GraphProcessingSettings>) => {
     setLoaded((previous) => previous?.loupistId === loupistId ? { ...previous, draft: { ...previous.draft, ...patch } } : previous);
@@ -185,7 +196,7 @@ export function WorldProcessingSettings({ bridge, loupistId, active = true, coll
     const settings = {
       ...draft,
       relationHints: relationText.split(",").map((item) => item.trim()).filter(Boolean).slice(0, 32),
-      anchors: anchorText === savedAnchors ? view.settings.anchors : anchorText.split(";").map((line) => line.split("|").map((item) => item.trim()).filter(Boolean)).filter((parts) => parts.length).slice(0, 200).map((parts) => ({ name: parts[0], aliases: parts.slice(1), identifiers: [] })),
+      anchors: anchorText === savedAnchors ? view.settings.anchors : parseAnchors(anchorText, view.settings.anchors),
     };
     const request = pause === undefined
       ? bridge.knowledgeGraphSettingsSet({ loupistId: captured, settings })
@@ -195,7 +206,7 @@ export function WorldProcessingSettings({ bridge, loupistId, active = true, coll
       setLoaded((previous) => previous?.loupistId === captured ? { ...previous, view: saved, draft: pause === undefined ? saved.settings : { ...previous.draft, paused: saved.settings.paused } } : previous);
       if (pause === undefined) {
         setRelationText((saved.settings.relationHints ?? []).join(", "));
-        setAnchorText((saved.settings.anchors ?? []).map((anchor) => [anchor.name, ...(anchor.aliases ?? []), ...(anchor.identifiers ?? [])].join(" | ")).join("; "));
+        setAnchorText(serializeAnchors(saved.settings.anchors));
       }
       setNote(pause === undefined ? t("worldProcessingSettings.worldProcessingSettingsSavedForThisLoupist") : saved.settings.paused ? t("worldProcessingSettings.worldProcessingPaused") : t("worldProcessingSettings.worldProcessingResumed"));
       onChanged();

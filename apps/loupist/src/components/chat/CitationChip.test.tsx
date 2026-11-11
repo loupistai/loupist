@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ChatEvidenceRef } from "../../types";
 import { CitationChip, LONG_PRESS_MS } from "./CitationChip";
 import { renderWithOpen, destinations } from "../../test/open";
+import * as evidenceText from "../../chat/evidence";
 
 const evidence = {
   id: "e1", title: "Hanul Precision Q3 operating review", kind: "original", url: "https://hanul.example/q3", provider: "Hanul IR",
@@ -83,6 +84,15 @@ describe("citation card at 700 px (chat-run §2 breakpoints)", () => {
 });
 
 describe("opening a citation", () => {
+  it("prepares the retained excerpt only when the preview opens", async () => {
+    const excerpt = vi.spyOn(evidenceText, "evidenceExcerptParts");
+    const { chip } = renderChip();
+    expect(excerpt).not.toHaveBeenCalled();
+    fireEvent.pointerEnter(chip);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("operating margin 14.8%");
+    expect(excerpt).toHaveBeenCalledWith(evidence);
+  });
+
   it("opens the cited passage on a click and its page in the system browser on Ctrl-click or a middle click", () => {
     const { onOpen, chip } = renderChip();
     fireEvent.click(chip);

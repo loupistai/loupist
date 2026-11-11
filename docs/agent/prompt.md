@@ -57,7 +57,7 @@ a proposed method revision. The exact record rules belong to
 ## Scoped agent settings
 
 Settings → Skills manages shared optional/custom workflows; the Loupist settings
-page manages its local workflows and overrides. Included app procedures stay
+page manages its local workflows and overrides, preserving its search, filter and save confirmation when configuration reloads or the window regains focus. Included app procedures stay
 fixed. Creator/Installer use runtime-provided personal/Loupist paths, not Codex settings.
 Supporting files are packaged and included in admission validation and cache seals;
 a reference edit must invalidate a warm session just like an entrypoint edit.

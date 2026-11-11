@@ -1,4 +1,4 @@
-import type { LearnedDigest, LensLogEntryView, PageView, SectionView } from "../types";
+import type { LearnedDigest, PageView, SectionView } from "../types";
 
 export const LEARNED_MESSAGE = "preview-answer";
 const AT = Date.parse("2026-10-27T09:30:00Z");
@@ -67,5 +67,3 @@ export const previewLearned = (pages: readonly PageView[]): LearnedDigest => ({
     outcomes: item.history.filter(entry => entry.messageId === LEARNED_MESSAGE).map(entry => ({ opId: entry.opId, outcome: entry.outcome, key: entry.key })),
   })),
 });
-
-export type PreviewLog = LensLogEntryView;

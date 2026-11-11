@@ -558,6 +558,24 @@ test("preloads mentioned MCP capabilities before the agent starts", async (t) =>
   assert.deepEqual(active(), orderedToolNames(active()));
 });
 
+test("a failed mentioned connection keeps the workspace prompt and other capabilities available", async (t) => {
+  const context = runtimeContext("chat", ["capability_load"], [OPENBB_COMPONENT, BUNDLED_COMPONENTS[0]], {
+    preload_component_ids: ["openbb", "file-capture"],
+  });
+  useHostContext(t, context);
+  const frames = await startToolBroker(t, () => { throw new Error("Connection unavailable"); });
+  const { handlers, active, registered } = loadExtension();
+  const event = promptEvent();
+  await handlers.get("before_agent_start")(event);
+  assert.deepEqual(frames.map((frame) => frame.method), ["mcp.connect"]);
+  assert(active().includes("workspace_capture"));
+  assert(!active().some((name) => name.startsWith("mcp__openbb__")));
+  assert.equal(event.systemPromptOptions.cwd, context.workspace.root);
+  assert.equal(event.systemPromptOptions.sections.loupist_runtime, formatRuntimeIndex(context.agent_runtime));
+  // Explicit loading still reports the connection error so the model can act on it.
+  await assert.rejects(() => registered.get("capability_load").execute("retry", { id: "openbb" }), /Connection unavailable/);
+});
+
 test("host setup notices for an MCP connection reach the model's load receipt", async (t) => {
   useHostContext(t, runtimeContext("chat", ["capability_load"], [OPENBB_COMPONENT]));
   const notice = "Fixture provider is unavailable until the user finishes its setup in Connections.";

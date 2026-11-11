@@ -35,8 +35,6 @@ pub const LOCAL_OPERATION_BUDGET_MS: u64 = 600_000;
 /// can take minutes; the shared provider path accepts up to five.
 pub const DEFAULT_TIMEOUT_MS: u64 = 240_000;
 pub const MAX_TIMEOUT_MS: u64 = 300_000;
-/// The earlier default. A saved value equal to it reads as [`DEFAULT_TIMEOUT_MS`].
-const LEGACY_DEFAULT_TIMEOUT_MS: u64 = 60_000;
 /// Sequential model waves in one episode (entities, entity resolution with
 /// relations, relation resolution with attributes, summaries) plus one spare.
 const EXTRACTION_WAVES: u64 = 5;
@@ -281,9 +279,6 @@ pub fn load_settings(
         .map(|value| serde_json::from_str(&value))
         .transpose()?
         .unwrap_or_default();
-    if settings.timeout_ms == LEGACY_DEFAULT_TIMEOUT_MS {
-        settings.timeout_ms = DEFAULT_TIMEOUT_MS;
-    }
     settings.extension = super::world_schema::live_extension(connection, loupist_id)?;
     settings.validate()?;
     Ok(settings)
@@ -371,12 +366,18 @@ impl super::KnowledgeWrite<'_> {
                         }) {
                             continue;
                         }
-                        if existing.iter().any(|job| {
-                            job.document
-                                .source_binding
-                                .as_ref()
-                                .is_some_and(|binding| binding.span_id == span.span_id)
-                        }) {
+                        let span_jobs: Vec<_> = existing
+                            .iter()
+                            .filter(|job| {
+                                job.document
+                                    .source_binding
+                                    .as_ref()
+                                    .is_some_and(|binding| binding.span_id == span.span_id)
+                            })
+                            .collect();
+                        if !span_jobs.is_empty()
+                            && !span_jobs.iter().any(|job| host_may_redrive(job))
+                        {
                             continue;
                         }
                         let retained = super::RetainedSource {
@@ -436,12 +437,51 @@ impl super::KnowledgeWrite<'_> {
         let Some(span_id) = &retained.span_id else {
             return Ok(None);
         };
-        let existing_id: Option<String> = self.tx.query_row(
-            "SELECT job_id FROM knowledge_graph_outbox WHERE loupist_id = ?1 AND json_extract(payload_json, '$.sourceBinding.spanId') = ?2 ORDER BY created_at_ms DESC LIMIT 1",
-            params![loupist_id, span_id], |row| row.get(0),
-        ).optional()?;
-        if let Some(id) = existing_id {
-            return get_job(self.tx, loupist_id, &id).map(Some);
+        let existing_ids = {
+            let mut statement = self.tx.prepare(
+                "SELECT job_id FROM knowledge_graph_outbox WHERE loupist_id = ?1 AND json_extract(payload_json, '$.sourceBinding.spanId') = ?2 ORDER BY created_at_ms, job_id",
+            )?;
+            let ids = statement
+                .query_map(params![loupist_id, span_id], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            ids
+        };
+        if let Some(id) = existing_ids.first() {
+            for id in &existing_ids {
+                let job = get_job(self.tx, loupist_id, id)?;
+                if host_may_redrive(&job)
+                    && settings.enrichment_enabled
+                    && settings.save_learning
+                    && !settings.inactive_loupists.iter().any(|id| id == loupist_id)
+                    && settings
+                        .helper_model
+                        .as_deref()
+                        .is_some_and(|model| !model.is_empty())
+                    && !settings
+                        .quarantined_generations
+                        .contains(&job.document.generation_id)
+                    && !generation_needs_reconcile(
+                        self.tx,
+                        loupist_id,
+                        &job.world_record_id,
+                        &job.document.generation_id,
+                    )?
+                {
+                    let mut document = job.document.clone();
+                    document.generation_id =
+                        generation_for(self.tx, loupist_id, &job.world_record_id)?;
+                    document.unsent_attempts = 0;
+                    clear_lease(&mut document);
+                    write_status(
+                        self.tx,
+                        id,
+                        &job.status,
+                        requeued(settings, &document),
+                        &document,
+                    )?;
+                }
+            }
+            return get_job(self.tx, loupist_id, id).map(Some);
         }
         if !settings.enrichment_enabled
             || !settings.save_learning
@@ -525,7 +565,12 @@ impl super::KnowledgeWrite<'_> {
             },
         )?;
         if settings.paused && job.status == JOB_QUEUED {
-            write_status(self.tx, &job.job_id, JOB_QUEUED, JOB_PAUSED, &job.document)?;
+            self.tx.execute(
+                "UPDATE knowledge_graph_outbox SET status = ?1
+                 WHERE loupist_id = ?2 AND status = ?3
+                   AND json_extract(payload_json, '$.sourceBinding.spanId') = ?4",
+                params![JOB_PAUSED, loupist_id, JOB_QUEUED, span_id],
+            )?;
             return get_job(self.tx, loupist_id, &job.job_id).map(Some);
         }
         Ok(Some(job))
@@ -932,10 +977,7 @@ pub fn recover_world(
     validate_time(at_ms)?;
     let settings = load_settings(tx, loupist_id)?;
     ensure_active(&settings, loupist_id)?;
-    let world = super::catalog::list_records(tx, loupist_id)?
-        .into_iter()
-        .find(|record| record.kind == super::RecordKind::World)
-        .ok_or(KnowledgeError::NotFound)?;
+    let world = super::catalog::world_record(tx, loupist_id)?.ok_or(KnowledgeError::NotFound)?;
     let revision = world.revision_id.ok_or(KnowledgeError::NotFound)?;
     require_world_write(tx, loupist_id, &world.record_id, &revision)?;
     let jobs = list_jobs(tx, loupist_id)?;
@@ -1029,10 +1071,7 @@ pub(crate) fn reload_world(
     validate_loupist_id(loupist_id)?;
     validate_time(at_ms)?;
     let settings = load_settings(tx, loupist_id)?;
-    let Some(world) = super::catalog::list_records(tx, loupist_id)?
-        .into_iter()
-        .find(|record| record.kind == super::RecordKind::World)
-    else {
+    let Some(world) = super::catalog::world_record(tx, loupist_id)? else {
         return Ok(None);
     };
     let Some(revision) = world.revision_id else {
@@ -1369,9 +1408,18 @@ pub fn pause_processing(
 ) -> KnowledgeResult<u32> {
     validate_loupist_id(loupist_id)?;
     settings.paused = true;
-    transition_matching(tx, loupist_id, JOB_QUEUED, JOB_PAUSED, |document| {
+    let mut changed = 0;
+    for job in list_jobs_with_status(tx, loupist_id, JOB_QUEUED)? {
+        if job.document.episode_kind == EPISODE_RECOVERY {
+            continue;
+        }
+        let mut document = job.document;
         document.lease_expires_at_ms = None;
-    })
+        if write_status(tx, &job.job_id, JOB_QUEUED, JOB_PAUSED, &document)? {
+            changed += 1;
+        }
+    }
+    Ok(changed)
 }
 
 pub fn resume_processing(
@@ -1415,10 +1463,7 @@ pub fn resume_processing(
 /// or uncertain call is never replayed.
 pub(crate) fn recover_interrupted(tx: &Transaction<'_>) -> KnowledgeResult<u32> {
     let mut changed = 0;
-    for job in list_all(tx)?
-        .into_iter()
-        .filter(|job| job.status == JOB_RUNNING)
-    {
+    for job in list_running(tx)? {
         let mut settings = load_settings(tx, &job.loupist_id)?;
         let mut document = job.document.clone();
         let retried = host_interrupted(&mut document) || retry_once(&mut document);
@@ -1708,6 +1753,23 @@ pub fn finish_unpublished(
         false,
         now_ms,
     )
+}
+
+/// The frozen allowance cannot finish this episode. Repeating the paid calls
+/// cannot increase it, and no publication took place, so leave the episode
+/// paused without quarantining the rest of the World.
+pub(super) fn pause_exhausted_attempt(
+    tx: &Transaction<'_>,
+    job_id: &str,
+    attempt_id: &str,
+    now_ms: i64,
+) -> KnowledgeResult<GraphJobView> {
+    let job = active_attempt(tx, job_id, attempt_id)?;
+    let mut document = job.document.clone();
+    clear_lease(&mut document);
+    write_status(tx, job_id, JOB_RUNNING, JOB_PAUSED, &document)?;
+    source_job_settled(tx, &job, now_ms)?;
+    load_job(tx, job_id)
 }
 
 pub(super) fn ready_to_run(settings: &GraphProcessingSettings, job: &GraphJobView) -> bool {
@@ -2037,27 +2099,33 @@ fn chunk_episode(body: &str) -> Vec<String> {
     }
     let mut chunks = Vec::new();
     let mut current = String::new();
+    let mut current_chars = 0;
     for paragraph in body.split_inclusive("\n\n") {
-        if paragraph.chars().count() > EPISODE_CHUNK_CHARS {
+        let paragraph_chars = paragraph.chars().count();
+        if paragraph_chars > EPISODE_CHUNK_CHARS {
             if !current.is_empty() {
                 chunks.push(std::mem::take(&mut current));
             }
             let mut piece = String::new();
+            let mut piece_chars = 0;
             for ch in paragraph.chars() {
                 piece.push(ch);
-                if piece.chars().count() >= EPISODE_CHUNK_CHARS {
+                piece_chars += 1;
+                if piece_chars >= EPISODE_CHUNK_CHARS {
                     chunks.push(std::mem::take(&mut piece));
+                    piece_chars = 0;
                 }
             }
             current = piece;
+            current_chars = piece_chars;
             continue;
         }
-        if !current.is_empty()
-            && current.chars().count() + paragraph.chars().count() > EPISODE_CHUNK_CHARS
-        {
+        if !current.is_empty() && current_chars + paragraph_chars > EPISODE_CHUNK_CHARS {
             chunks.push(std::mem::take(&mut current));
+            current_chars = 0;
         }
         current.push_str(paragraph);
+        current_chars += paragraph_chars;
     }
     if !current.is_empty() {
         chunks.push(current);
@@ -2255,25 +2323,6 @@ fn write_status(
     Ok(changed == 1)
 }
 
-fn transition_matching(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-    from: &str,
-    to: &str,
-    mut edit: impl FnMut(&mut JobDocument),
-) -> KnowledgeResult<u32> {
-    let jobs = list_jobs_with_status(tx, loupist_id, from)?;
-    let mut changed = 0;
-    for job in jobs {
-        let mut document = job.document.clone();
-        edit(&mut document);
-        if write_status(tx, &job.job_id, from, to, &document)? {
-            changed += 1;
-        }
-    }
-    Ok(changed)
-}
-
 fn list_jobs_with_status(
     tx: &Transaction<'_>,
     loupist_id: &str,
@@ -2290,13 +2339,13 @@ fn list_jobs_with_status(
         .map_err(KnowledgeError::from)
 }
 
-fn list_all(tx: &Transaction<'_>) -> KnowledgeResult<Vec<GraphJobView>> {
+fn list_running(tx: &Transaction<'_>) -> KnowledgeResult<Vec<GraphJobView>> {
     let mut statement = tx.prepare(
         "SELECT job_id, loupist_id, world_record_id, world_revision_id, status, payload_json,
                 payload_digest, created_at_ms
-         FROM knowledge_graph_outbox ORDER BY created_at_ms, job_id",
+         FROM knowledge_graph_outbox WHERE status = ?1 ORDER BY created_at_ms, job_id",
     )?;
-    let rows = statement.query_map([], row_to_job)?;
+    let rows = statement.query_map([JOB_RUNNING], row_to_job)?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(KnowledgeError::from)
 }
@@ -2334,7 +2383,7 @@ fn row_to_job(row: &rusqlite::Row<'_>) -> rusqlite::Result<GraphJobView> {
 }
 
 pub fn host_may_redrive(job: &GraphJobView) -> bool {
-    job.status == JOB_FAILED_BEFORE
+    matches!(job.status.as_str(), JOB_FAILED_BEFORE | JOB_CANCELLED)
         && !job.document.mutation_sent
         && !job.document.inference_attempted
         && !job.document.usage_uncertain

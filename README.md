@@ -18,7 +18,7 @@ A Loupist is a research colleague for what you invest in: it watches the assets 
 
 A Loupist carries research across conversations. It reads primary filings, runs the valuation math itself, challenges its prior views, and turns each piece of research into knowledge it uses again — in later companies, later markets, and later reviews.
 
-Each Loupist works in a local folder you choose. Reports, code and data stay in that folder; `.loupist/` keeps its Chats and Memory with retained source bytes and immutable revisions. Close the app and copy the whole folder, including `.loupist/`, to preserve or move a Loupist. Lens methods remain Markdown. The app runs on your machine with a supported provider API key or account sign-in. There is no Loupist account or sync.
+Each Loupist works in its own local folder, created by the app or opened from one you already have. Reports, code and data stay in that folder; `.loupist/` keeps its Chats and Memory with retained source bytes and immutable revisions. Close the app and copy the whole folder, including `.loupist/`, to preserve or move a Loupist. Lens methods remain Markdown. The app runs on your machine with a supported provider API key or account sign-in. There is no Loupist account or sync.
 
 ## Teach a principle, see it applied
 
@@ -26,18 +26,18 @@ Each Loupist works in a local folder you choose. Reports, code and data stay in 
 
 **Later** — *"Compare these companies’ margin recoveries."* In a new Chat, the Loupist can apply the saved principle and relevant learned method. Inspect a revised method’s dated Then / Now summaries and evidence in the Map.
 
-Follow companies or import holdings as research context, receive dated briefings in the inbox, and keep your own judgments and later checks in a Journal.
+Follow companies or import holdings as research context, receive dated briefings in the Thread, inspect their runs in Schedule, and keep your own judgments and later checks in a Journal.
 
 ## What makes it a Loupist
 
 - **It carries lessons forward.** Ordinary research can retain Sources and refine research methods. A later relevant turn reads those revisions; historical inputs remain available in private research records.
 - **Primary filings, two markets, one conversation.** OpenBB brings SEC EDGAR, FRED, keyless market data, and configured data vendors into the same chat as native OpenDART, World Bank, KRX, and the Korea Investment read catalog. Credentials stay on the device.
-- **Its own math.** Pi's native file tools let the Loupist read and edit files in your chosen folder. `run_python` runs numerical code in a pinned offline Python runtime with no shell and no network. Research scripts and results stay in that folder, and charts can preserve exact data revisions.
-- **Records you own.** A Loupist folder preserves its Chats, retained originals and referenced tool activity. Open a copied folder to restore that Loupist. Each Loupist owns its sources, World, Lens, notes and private judgments. Command results appear in Chat progress; files, charts, documents and saved Memory open beside the conversation. Removing a Loupist unregisters it; its folder, Chats and Memory remain available to reopen.
+- **Its own math.** Pi's native file tools let the Loupist read and edit files in that folder. `run_python` runs numerical code in a pinned offline Python runtime with no shell and no network. Research scripts and results stay in that folder, and charts can preserve exact data revisions.
+- **Records you own.** A Loupist folder preserves its Chats, retained originals and referenced tool activity. Open a copied folder to restore that Loupist. Each Loupist owns its sources, World, Lens, notes and private judgments. Tool results appear in Chat progress; files, charts, documents and saved Memory open beside the conversation. Removing a Loupist unregisters it; its folder, Chats and Memory remain available to reopen.
 
 ## How a Loupist remembers
 
-The main destinations are **Chat · Map · Lens · Schedule**, with Settings beside them. The Map Library holds Sources, methods, principles and Notes, including Journal entries. Briefings and scheduled prompts run while the app is running. Memory is the internal name for the records retained and reused by each Loupist. A quality-compounder Loupist and a deep-value Loupist keep their own sources, knowledge, and perspective.
+The main destinations are **Chat · Map · Lens · Schedule**, with Settings beside them. The Map Library has Sources and Notes tabs, including Journal entries under Notes; Lens holds methods and principles. Briefings and scheduled prompts run while the app is running. Memory is the internal name for the records retained and reused by each Loupist. A quality-compounder Loupist and a deep-value Loupist keep their own sources, knowledge, and perspective.
 
 | Kind | What it holds |
 | --- | --- |
@@ -46,7 +46,7 @@ The main destinations are **Chat · Map · Lens · Schedule**, with Settings bes
 | Lens | Reusable research methods and your principles, with scope, limits and revision history |
 | Note / Journal | Chat working notes and your judgments, dated checks and later outcomes, with their exact inputs |
 
-The composer defaults to **Remember useful details**, allowing relevant saved-context reads and new memories. **Use saved context only** allows reads; **Memory off** skips both. Chat can retain Sources and revise Lens. New Loupists default to automatic World processing with a recommended connected model, editable in Settings. Existing Loupist folders retain their settings. New retained sources enter World processing when a model is configured and processing is enabled. A later relevant turn must use the learned state; storing a record alone does not establish learning.
+The composer has one **Private chat** switch. With it off, Chat can read saved context, retain Sources and revise Lens; turning it on skips Memory reads and saves together. Chat history still persists. New Loupists default to automatic World processing with a recommended connected model, editable in Settings. Existing Loupist folders retain their settings. New retained sources enter World processing when a model is configured and processing is enabled. A later relevant turn must use the learned state; storing a record alone does not establish learning.
 
 > [!NOTE]
 > This is a bounded claim, not a black-box one. A Loupist turns source-grounded experience into reusable knowledge that changes how it handles a later relevant case. It is not model-weight training, a promise of returns, or a single performance score.

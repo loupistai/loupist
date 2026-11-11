@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
-import { measureMapDrawProbe, measureMapProbe, readVisibleMapStats, selectLoupistTemplate } from "./native-shell.mjs";
+import { measureMapDrawProbe, measureMapProbe, openMapLibrary, readVisibleMapStats, selectLoupistTemplate } from "./native-shell.mjs";
 
 test("map counts come from the visible map after routing, never a retained hidden view", async () => {
   const span = (textContent, { hidden = false, width = 200, visibility = "visible" } = {}) => ({
@@ -152,3 +152,61 @@ test("an unselected template after a delivered click still fails", async () => {
   await assert.rejects(selectLoupistTemplate(browser, "Dividend income"), /did not become selected/);
   assert.equal(clicks, 1);
 });
+
+const { dismissModelMenu } = await import("./agent-driver.mjs");
+test("a stuck model menu moves focus to the current Chat before retrying dismissal", async () => {
+  let open = true;
+  const clicked = [];
+  const browser = {
+    $$: async () => [{ isDisplayed: async () => open }],
+    $: (selector) => ({
+      isDisplayed: async () => selector !== "#main-tab-chat",
+      isExisting: async () => selector !== "#main-tab-chat",
+      getAttribute: async () => "true",
+      click: async () => { clicked.push(selector); if (selector === "#main-panel-chat") open = false; },
+    }),
+    keys: async () => {},
+    waitUntil: async (condition) => { if (!await condition()) throw new Error("Menu retained focus"); },
+  };
+  await dismissModelMenu(browser);
+  assert.equal(open, false);
+  assert(clicked.includes("#main-panel-chat"));
+});
+
+for (const mode of ["folded", "direct", "open"]) {
+  test(`Map Library uses the visible ${mode} toolbar state`, async () => {
+    let libraryOpen = mode === "open";
+    let menuOpen = false;
+    const clicks = [];
+    const librarySelector = "[data-testid=map-view] aside[data-testid=map-library]";
+    const directSelector = "[data-testid=map-view] button[data-map-library]:not([inert])";
+    const moreSelector = "[data-testid=map-view] [data-map-more]";
+    const itemSelector = '[role="menuitemcheckbox"][data-map-library]';
+    const displayed = (selector) => selector === librarySelector ? libraryOpen
+      : selector === directSelector ? mode === "direct"
+        : selector === itemSelector ? menuOpen : selector === moreSelector;
+    const elements = new Map([librarySelector, directSelector, moreSelector, itemSelector].map((selector) => [selector, {
+      isDisplayed: async () => displayed(selector),
+      getAttribute: async (name) => name === "aria-haspopup" && selector === moreSelector ? "menu"
+        : name === "aria-expanded" && menuOpen ? "true" : null,
+      waitForDisplayed: async () => assert(displayed(selector), `Still hidden: ${selector}`),
+      click: async () => {
+        assert(displayed(selector), `Clicked a hidden duplicate: ${selector}`);
+        clicks.push(selector);
+        if (selector === moreSelector) menuOpen = true;
+        else libraryOpen = true;
+      },
+    }]));
+    const browser = {
+      $: async (selector) => {
+        assert(elements.has(selector), `Unexpected selector: ${selector}`);
+        return elements.get(selector);
+      },
+      execute: async () => "ready",
+      waitUntil: async (condition) => { assert(await condition()); return true; },
+    };
+    assert.equal(await openMapLibrary(browser), elements.get(librarySelector));
+    assert.equal(libraryOpen, true);
+    assert.deepEqual(clicks, mode === "open" ? [] : mode === "direct" ? [directSelector] : [moreSelector, itemSelector]);
+  });
+}

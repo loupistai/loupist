@@ -20,7 +20,9 @@ use super::{
 use crate::{
     app::AppState,
     fs::artifact_trust::{ensure_private_directory, ensure_private_regular_file},
-    mcp::{contains_protected_value, McpLaunchConfig, McpSession, McpTool},
+    mcp::{
+        contains_protected_value, McpCallResult, McpError, McpLaunchConfig, McpSession, McpTool,
+    },
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -458,7 +460,9 @@ impl Service {
                 }
                 record.pending = true;
                 record.last_error = Some(error.to_string());
-                self.sessions.remove(id);
+                if matches!(error, ConnectionError::Transport) {
+                    self.sessions.remove(id);
+                }
             }
         }
         self.persist()?;
@@ -516,6 +520,11 @@ impl Service {
             let _ = session.shutdown(Duration::from_secs(1)).await;
         }
         credentials::remove(&self.credential_environment, id)?;
+        match std::fs::remove_dir_all(self.root.join(id)) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err(ConnectionError::Configuration),
+        }
         self.stored.connections.remove(id);
         self.persist()
     }
@@ -627,6 +636,9 @@ impl Service {
         if contains_protected_value(&value, &secrets.protected_values()) {
             return Err(ConnectionError::Protocol);
         }
+        if self.record(id)?.tools == tools {
+            return Ok(());
+        }
         self.stored.approvals.recheck(id, &tools);
         let record = self
             .stored
@@ -665,7 +677,16 @@ impl Service {
             id,
             interactive,
         )
-        .await?;
+        .await;
+        let tools = match tools {
+            Ok(tools) => tools,
+            Err(error) => {
+                if matches!(error, ConnectionError::Transport) {
+                    self.sessions.remove(id);
+                }
+                return Err(error);
+            }
+        };
         self.accept_inventory(id, tools, &secrets)
     }
 
@@ -784,39 +805,63 @@ impl Service {
         if unattended && !self.stored.approvals.unattended_allowed(loupist, id, &tool) {
             return Err(ConnectionError::ApprovalRequired);
         }
+        let allow_once =
+            self.stored.approvals.choice(loupist, id, &tool) == Some(ApprovalChoice::AllowOnce);
         if !self.stored.approvals.consume(loupist, id, &tool) {
             return Err(ConnectionError::ApprovalRequired);
         }
         // Consume Allow once durably before any network/process write.
-        self.persist()?;
+        if allow_once {
+            self.persist()?;
+        }
         let mut secrets = credentials::load(&self.credential_environment, id)?;
-        let (result, changed) = match self
-            .sessions
-            .get_mut(id)
-            .ok_or(ConnectionError::Configuration)?
-        {
-            Session::Http(transport) => {
-                let result = authorized_request(
-                    transport,
-                    "tools/call",
-                    json!({"name":name,"arguments":arguments}),
-                    &mut secrets,
-                    &self.credential_environment,
-                    id,
-                    !unattended,
-                )
-                .await?;
-                (result, transport.tools_changed)
-            }
-            Session::Stdio(session) => {
-                let result = serde_json::to_value(
-                    session
+        let exchange = async {
+            match self
+                .sessions
+                .get_mut(id)
+                .ok_or(ConnectionError::Configuration)?
+            {
+                Session::Http(transport) => {
+                    let result = authorized_request(
+                        transport,
+                        "tools/call",
+                        json!({"name":name,"arguments":arguments}),
+                        &mut secrets,
+                        &self.credential_environment,
+                        id,
+                        !unattended,
+                    )
+                    .await?;
+                    // Use the same bounded result shape as stdio. Unknown top-level
+                    // fields must not bypass the model-facing untrusted delimiters.
+                    let result: McpCallResult =
+                        serde_json::from_value(result).map_err(|_| ConnectionError::Protocol)?;
+                    let result =
+                        serde_json::to_value(result).map_err(|_| ConnectionError::Protocol)?;
+                    Ok((result, transport.tools_changed))
+                }
+                Session::Stdio(session) => {
+                    let result = match session
                         .call_tool(name, arguments, Duration::from_secs(45))
                         .await
-                        .map_err(|_| ConnectionError::Protocol)?,
-                )
-                .map_err(|_| ConnectionError::Protocol)?;
-                (result, session.take_tools_changed())
+                    {
+                        Ok(result) => result,
+                        Err(error) => return Err(stdio_error(session, error).await),
+                    };
+                    let result =
+                        serde_json::to_value(result).map_err(|_| ConnectionError::Protocol)?;
+                    Ok((result, session.take_tools_changed()))
+                }
+            }
+        }
+        .await;
+        let (result, changed) = match exchange {
+            Ok(reply) => reply,
+            Err(error) => {
+                if matches!(error, ConnectionError::Transport) {
+                    self.sessions.remove(id);
+                }
+                return Err(error);
             }
         };
         if contains_protected_value(&result, &secrets.protected_values()) {
@@ -832,6 +877,20 @@ impl Service {
 #[cfg(test)]
 mod tests;
 
+async fn stdio_error(session: &McpSession, error: McpError) -> ConnectionError {
+    if matches!(
+        error,
+        McpError::Io(_) | McpError::Timeout | McpError::Stopped
+    ) || !session.is_running().await.unwrap_or(false)
+    {
+        ConnectionError::Transport
+    } else {
+        // A JSON-RPC rejection or invalid result from a live child leaves its
+        // negotiated session usable. Never expose the server's error prose.
+        ConnectionError::Protocol
+    }
+}
+
 async fn list_tools(
     session: &mut Session,
     secrets: &mut Secrets,
@@ -840,10 +899,10 @@ async fn list_tools(
     interactive: bool,
 ) -> Result<Vec<McpTool>, ConnectionError> {
     match session {
-        Session::Stdio(session) => session
-            .list_tools()
-            .await
-            .map_err(|_| ConnectionError::Protocol),
+        Session::Stdio(session) => match session.list_tools().await {
+            Ok(tools) => Ok(tools),
+            Err(error) => Err(stdio_error(session, error).await),
+        },
         Session::Http(transport) => {
             let mut tools = Vec::new();
             let mut cursors = BTreeSet::new();
@@ -911,14 +970,15 @@ async fn authorized_request(
         {
             // Never transfer a token, refresh token or DCR client secret to a new issuer.
             if let Some(tokens) = secrets.tokens.take() {
-                secrets.retired_values.push(tokens.access_token);
-                secrets.retired_values.extend(tokens.refresh_token);
+                secrets.retire_values(
+                    std::iter::once(tokens.access_token).chain(tokens.refresh_token),
+                );
             }
             if let Some(registration) = secrets.registration.take() {
                 if !registration.dynamically_registered {
                     return Err(ConnectionError::InvalidAuthorization);
                 }
-                secrets.retired_values.extend(registration.client_secret);
+                secrets.retire_values(registration.client_secret);
             }
         }
         if challenge.status == reqwest::StatusCode::UNAUTHORIZED && !refresh_attempted {
@@ -926,7 +986,7 @@ async fn authorized_request(
             if let (Some(registration), Some(tokens)) = (&secrets.registration, &secrets.tokens) {
                 if tokens.refresh_token.is_some() {
                     if let Ok(tokens) = auth::refresh(&found.metadata, registration, tokens).await {
-                        secrets.replace_tokens(tokens)?;
+                        secrets.replace_tokens(tokens);
                         secrets.metadata = Some(found.metadata);
                         credentials::save(environment, id, secrets)?;
                         continue;
@@ -962,7 +1022,7 @@ async fn authorized_request(
         .await?;
         secrets.registration = Some(registration);
         secrets.metadata = Some(found.metadata);
-        secrets.replace_tokens(tokens)?;
+        secrets.replace_tokens(tokens);
         credentials::save(environment, id, secrets)?;
     }
 }

@@ -1,5 +1,6 @@
+import { clockLabel, useNow } from "../../chat/runStatus";
 import i18n, { useTranslation } from "@/i18n";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { LoupistBridge } from "../../types";
 import type { ChatApproval, ChatApprovalDecision, ChatToolRefusal } from "../../contracts/chat";
 import type { CustomConnection } from "../../contracts/customConnections";
@@ -8,11 +9,6 @@ import { ConnectionDetail } from "../connections/custom/ConnectionDetail";
 import { humanizeToolName } from "../connections/custom/toolTitle";
 
 const t = i18n.getFixedT(null, "chat");
-
-const clock = (ms: number) => {
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-};
 
 /** Opens a connection's detail sheet, where approvals are reviewed and revoked. */
 function useConnectionDetail(bridge: LoupistBridge, loupistId: string) {
@@ -45,13 +41,9 @@ function cardCopy(approval: ChatApproval, tool: string) {
 }
 
 function WaitingCard({ approval, onDecide }: { approval: ChatApproval; onDecide: (decision: ChatApprovalDecision) => Promise<void> }) {
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const nowMs = useNow(true);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
   const tool = humanizeToolName(approval.toolName);
   const copy = cardCopy(approval, tool);
   const decide = async (decision: ChatApprovalDecision) => {
@@ -68,7 +60,7 @@ function WaitingCard({ approval, onDecide }: { approval: ChatApproval; onDecide:
   return <section className="approval-card" data-request-id={approval.requestId} tabIndex={-1} aria-label={copy.label}>
     <header>
       <strong>{t("approvalCard.title")}</strong>
-      <span className="approval-card-clock">{t("approvalCard.waiting", { time: clock(nowMs - approval.requestedAtMs) })}</span>
+      <span className="approval-card-clock">{t("approvalCard.waiting", { time: clockLabel(nowMs - approval.requestedAtMs) })}</span>
     </header>
     <p>{copy.body}</p>
     <p className="approval-card-note">{copy.note}</p>

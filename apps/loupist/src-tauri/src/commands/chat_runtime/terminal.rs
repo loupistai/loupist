@@ -184,8 +184,13 @@ pub(super) fn persist_and_emit_terminal_chat(
         steer: false,
         retry_after_seconds: on_event.retry_after_seconds(),
         delivery: None,
-        replaced_model: None,
-        as_of: None,
+        replaced_model: on_event.replaced_model(),
+        as_of: expected
+            .messages
+            .iter()
+            .rev()
+            .find(|message| message.role == ChatRole::User && !message.steer)
+            .and_then(|message| message.as_of.clone()),
         number_checks: Vec::new(),
         sensitivity_cards: Vec::new(),
         as_of_report: None,

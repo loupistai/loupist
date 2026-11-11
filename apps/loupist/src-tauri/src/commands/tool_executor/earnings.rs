@@ -57,8 +57,37 @@ fn value_text(value: Option<&Value>, field: &str) -> Result<Option<(f64, String)
 }
 
 fn base(value: f64, scale: f64) -> String {
-    let text = format!("{}", value * scale);
-    text.strip_suffix(".0").map(str::to_owned).unwrap_or(text)
+    // Every admitted scale is a power of ten. Shift the decimal digits of
+    // the validated value instead of introducing a second f64 rounding.
+    let text = value.to_string();
+    let unsigned = text.strip_prefix('-').unwrap_or(&text);
+    let (whole, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+    let mut digits = format!("{whole}{fraction}");
+    let point = whole.len() + scale.log10().round() as usize;
+    if point >= digits.len() {
+        digits.extend(std::iter::repeat_n('0', point - digits.len()));
+    } else {
+        digits.insert(point, '.');
+        while digits.ends_with('0') {
+            digits.pop();
+        }
+        if digits.ends_with('.') {
+            digits.pop();
+        }
+    }
+    let digits = digits.trim_start_matches('0');
+    let digits = if digits.is_empty() {
+        "0".to_owned()
+    } else if digits.starts_with('.') {
+        format!("0{digits}")
+    } else {
+        digits.to_owned()
+    };
+    if value < 0.0 {
+        format!("-{digits}")
+    } else {
+        digits
+    }
 }
 
 impl AppToolExecutor {

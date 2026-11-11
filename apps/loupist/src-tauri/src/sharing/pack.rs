@@ -23,6 +23,9 @@ pub(crate) const MAX_ENTITIES: usize = 10_000;
 pub(crate) const MAX_CLAIMS: usize = 8_000;
 pub(crate) const MAX_SOURCES: usize = 5_000;
 pub(crate) const MAX_ORIGIN: usize = 8;
+pub(crate) const MAX_CREDITS: usize = MAX_METHODS + MAX_PRINCIPLES;
+pub(crate) const MAX_ITEM_ORIGIN: usize = MAX_ORIGIN + MAX_CREDITS;
+pub(crate) const MAX_MANIFEST: usize = 2 * 1024 * 1024;
 pub(crate) const MAX_QUOTE: usize = 300;
 /// Names, in bytes: a 60-character Loupist name in any script fits.
 pub(crate) const MAX_NAME: usize = 240;
@@ -96,12 +99,9 @@ impl License {
             .chain([Self::Personal])
             .find(|license| license.id() == id)
     }
-    /// Openly published pack license; NC is not an OSI/open-definition license.
-    pub(crate) fn open(self) -> bool {
-        self != Self::Personal
-    }
+    /// Publicly redistributable; NC is not an OSI/open-definition license.
     pub(crate) fn redistributable(self) -> bool {
-        self.open()
+        self != Self::Personal
     }
     pub(crate) fn url(self, terms_url: Option<&str>) -> &str {
         match self {
@@ -496,9 +496,7 @@ pub(crate) fn fit(text: &str, max_bytes: usize) -> String {
     out
 }
 
-pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
-}
+pub(crate) use crate::util::sha256 as sha256_hex;
 
 fn hmac_sha256(key: &[u8], message: &[u8]) -> Vec<u8> {
     let mut block = [0u8; 64];
@@ -795,7 +793,7 @@ pub(crate) fn render_readme(
     terms_url: Option<&str>,
     credits: &[OriginEntry],
 ) -> String {
-    let mut readme = format!("# {name}\n\n{notice}\n");
+    let mut readme = format!("# {}\n\n{notice}\n", readme_text(name, MAX_NAME));
     if let Some(url) = open_url {
         let encoded: String = url
             .bytes()
@@ -823,18 +821,34 @@ pub(crate) fn render_readme(
         for credit in credits {
             readme.push_str(&format!(
                 "\n- {} — {}; {}; {}; version {}.\n",
-                fit(&credit.name, MAX_NAME),
-                credit.author.as_deref().unwrap_or("Author not supplied"),
+                readme_text(&credit.name, MAX_NAME),
+                readme_text(
+                    credit.author.as_deref().unwrap_or("Author not supplied"),
+                    80
+                ),
                 credit
                     .license
                     .map(License::id)
                     .unwrap_or("License not supplied"),
-                credit.url.as_deref().unwrap_or("Link not supplied"),
+                readme_text(credit.url.as_deref().unwrap_or("Link not supplied"), 2_000),
                 credit.version
             ));
         }
     }
     readme
+}
+
+/// Attribution is data, including when it came from an older stored import.
+fn readme_text(text: &str, max_bytes: usize) -> String {
+    let text = fit(&super::scan::strip_hidden(text).0, max_bytes);
+    let mut escaped = String::new();
+    for character in text.chars() {
+        if matches!(character, '\\' | '[' | ']' | '<' | '>' | '*' | '_' | '`') {
+            escaped.push('\\');
+        }
+        escaped.push(character);
+    }
+    escaped
 }
 
 pub(crate) fn render_license(
@@ -923,7 +937,7 @@ fn bounded_chars(value: &str, max_chars: usize, empty_ok: bool) -> bool {
     bounded_text(value, max_chars * 4, empty_ok) && value.chars().count() <= max_chars
 }
 
-fn valid_token(value: &str, max: usize) -> bool {
+pub(crate) fn valid_token(value: &str, max: usize) -> bool {
     !value.is_empty()
         && value.len() <= max
         && value
@@ -931,17 +945,32 @@ fn valid_token(value: &str, max: usize) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b':' | b'.'))
 }
 
-fn valid_url(value: &str) -> bool {
-    value.len() <= 2_000
-        && reqwest::Url::parse(value).is_ok_and(|url| {
-            matches!(url.scheme(), "https" | "http")
-                && url.username().is_empty()
-                && url.password().is_none()
-                && url.host_str().is_some()
+pub(crate) fn http_url(value: &str) -> Option<reqwest::Url> {
+    if value.len() > 2_000
+        || value.chars().any(|character| {
+            character.is_whitespace()
+                || character.is_control()
+                || super::scan::hidden_character(character)
         })
+    {
+        return None;
+    }
+    let url = reqwest::Url::parse(value).ok()?;
+    (matches!(url.scheme(), "https" | "http")
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.host_str().is_some())
+    .then_some(url)
+}
+
+fn valid_url(value: &str) -> bool {
+    http_url(value).is_some()
 }
 
 pub(crate) fn manifest_from(bytes: &[u8]) -> Result<Manifest, Rejection> {
+    if bytes.len() > MAX_MANIFEST {
+        return Err(Rejection::TooLarge);
+    }
     let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| Rejection::NotPack)?;
     let object = value.as_object().ok_or(Rejection::NotPack)?;
     let format = object
@@ -991,18 +1020,10 @@ pub(crate) fn validate_manifest(manifest: &Manifest) -> Result<(), Rejection> {
         && (manifest.license != License::Personal
             || manifest.terms_url.as_deref().is_some_and(valid_terms_url))
         && manifest.terms_url.as_deref().is_none_or(valid_terms_url)
-        && manifest.credits.len() <= MAX_SOURCES
+        && manifest.credits.len() <= MAX_CREDITS
         && manifest.credits.iter().all(valid_origin_entry)
         && manifest.origin.len() <= MAX_ORIGIN
-        && manifest.origin.iter().all(|origin| {
-            uuid::Uuid::parse_str(&origin.id).is_ok()
-                && single_line(&origin.name, MAX_NAME, false)
-                && origin.url.as_deref().is_none_or(valid_url)
-                && origin
-                    .commit
-                    .as_deref()
-                    .is_none_or(|commit| valid_token(commit, 64))
-        })
+        && manifest.origin.iter().all(valid_origin_entry)
         && manifest.asset_classes.len() <= ASSET_CLASSES.len()
         && manifest
             .asset_classes
@@ -1067,10 +1088,62 @@ fn validate_lens_doc(document: &PackDoc) -> bool {
         })
 }
 
+fn valid_profile(profile: &Profile) -> bool {
+    single_line(&profile.name, MAX_NAME, false)
+        && bounded_chars(&profile.focus, MAX_FOCUS, true)
+        && matches!(profile.tone.as_str(), "careful" | "balanced" | "direct")
+        && single_line(&profile.language, 16, false)
+        && valid_token(&profile.avatar, 32)
+        && bounded_text(&profile.description, 4_000, true)
+}
+
+fn valid_method(method: &MethodDoc, perspective: bool) -> bool {
+    (if perspective {
+        method.key == "perspective"
+    } else {
+        valid_key(&method.key, 'm')
+    }) && crate::knowledge::lens_page::title_ok(&method.title)
+        && validate_lens_doc(&method.document)
+        && validate_origin(&method.origin)
+}
+
+fn valid_principle(principle: &PrincipleDoc) -> bool {
+    valid_key(&principle.key, 'p')
+        && bounded_chars(&principle.statement, 280, false)
+        && principle
+            .why
+            .as_deref()
+            .is_none_or(|why| bounded_chars(why, 500, true))
+        && principle
+            .example
+            .as_deref()
+            .is_none_or(|example| bounded_chars(example, 500, true))
+        && validate_origin(&principle.origin)
+}
+
+/// The same text rules apply after the importer removes hidden characters.
+pub(crate) fn cleaned_text_valid(parsed: &ParsedPack) -> bool {
+    validate_manifest(&parsed.manifest).is_ok()
+        && parsed.profile.as_ref().is_none_or(valid_profile)
+        && parsed
+            .perspective
+            .as_ref()
+            .is_none_or(|method| valid_method(method, true))
+        && parsed
+            .methods
+            .iter()
+            .all(|method| valid_method(method, false))
+        && parsed.principles.iter().all(valid_principle)
+}
+
 fn valid_origin_entry(origin: &OriginEntry) -> bool {
     uuid::Uuid::parse_str(&origin.id).is_ok()
         && single_line(&origin.name, MAX_NAME, false)
         && origin.url.as_deref().is_none_or(valid_url)
+        && origin
+            .commit
+            .as_deref()
+            .is_none_or(|commit| valid_token(commit, 64))
         && origin
             .author
             .as_deref()
@@ -1079,7 +1152,7 @@ fn valid_origin_entry(origin: &OriginEntry) -> bool {
 
 fn validate_origin(origin: &Option<ItemOrigin>) -> bool {
     origin.as_ref().is_none_or(|origin| {
-        origin.chain.len() <= MAX_SOURCES
+        origin.chain.len() <= MAX_ITEM_ORIGIN
             && origin.chain.iter().all(valid_origin_entry)
             && origin.url.as_deref().is_none_or(valid_url)
             && uuid::Uuid::parse_str(&origin.pack_id).is_ok()
@@ -1307,53 +1380,28 @@ pub(crate) fn validate(files: &Files) -> Result<ParsedPack, Rejection> {
                 match role {
                     PathRole::Profile => {
                         let profile = parse_profile(text)?;
-                        if !single_line(&profile.name, MAX_NAME, false)
-                            || !bounded_chars(&profile.focus, MAX_FOCUS, true)
-                            || !matches!(profile.tone.as_str(), "careful" | "balanced" | "direct")
-                            || !single_line(&profile.language, 16, false)
-                            || !valid_token(&profile.avatar, 32)
-                            || !bounded_text(&profile.description, 4_000, true)
-                        {
+                        if !valid_profile(&profile) {
                             return Err(Rejection::Damaged);
                         }
                         parsed.profile = Some(profile);
                     }
                     PathRole::Perspective => {
                         let method = parse_method(text)?;
-                        if method.key != "perspective"
-                            || !crate::knowledge::lens_page::title_ok(&method.title)
-                            || !validate_lens_doc(&method.document)
-                            || !validate_origin(&method.origin)
-                        {
+                        if !valid_method(&method, true) {
                             return Err(Rejection::Damaged);
                         }
                         parsed.perspective = Some(method);
                     }
                     PathRole::Method | PathRole::FlatMethod => {
                         let method = parse_method(text)?;
-                        if !valid_key(&method.key, 'm')
-                            || !crate::knowledge::lens_page::title_ok(&method.title)
-                            || !validate_lens_doc(&method.document)
-                            || !validate_origin(&method.origin)
-                        {
+                        if !valid_method(&method, false) {
                             return Err(Rejection::Damaged);
                         }
                         parsed.methods.push(method);
                     }
                     _ => {
                         let principle = parse_principle(text)?;
-                        if !valid_key(&principle.key, 'p')
-                            || !bounded_chars(&principle.statement, 280, false)
-                            || !principle
-                                .why
-                                .as_deref()
-                                .is_none_or(|why| bounded_chars(why, 500, true))
-                            || !principle
-                                .example
-                                .as_deref()
-                                .is_none_or(|example| bounded_chars(example, 500, true))
-                            || !validate_origin(&principle.origin)
-                        {
+                        if !valid_principle(&principle) {
                             return Err(Rejection::Damaged);
                         }
                         parsed.principles.push(principle);

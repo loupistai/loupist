@@ -181,7 +181,7 @@ pub(super) struct AdmittedChatTurn {
 }
 
 /// An as-of date is a calendar day from 1990-01-01 to today on this device
-/// (finance-point-in-time.md §3.1).
+/// (docs/runtime/chat-turns.md#turn-authority-and-finalization).
 pub(in crate::commands) fn validate_turn_as_of(as_of: Option<&str>) -> Result<(), CommandError> {
     let Some(value) = as_of else {
         return Ok(());

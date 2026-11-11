@@ -721,6 +721,59 @@ fn create_refine_and_stale_proposal_keeps_the_user_edit() {
 }
 
 #[test]
+fn publication_storage_errors_settle_failed_and_preserve_usage() {
+    let (_dir, store) = setup();
+    two_chats(&store, AT + 2);
+    let a = begin(&store, AT + 3);
+    store
+        .transact(|w| {
+            w.tx.execute_batch(
+                "CREATE TEMP TRIGGER fail_learning_publication
+            BEFORE INSERT ON knowledge_lens_metadata
+            BEGIN SELECT RAISE(ABORT, 'simulated storage failure'); END;",
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let reply = InferenceReply {
+        disposition: InferenceDisposition::Completed,
+        body: json!({"json_object": output(&a), "usage": {"input_tokens": 123, "output_tokens": 45}}),
+    };
+    store.transact(|w| finish(w, &a, &reply, AT + 4)).unwrap();
+    assert_eq!(review_states(&store), ["failed"]);
+    assert_eq!(
+        reviews(&store)[0].reason.as_deref(),
+        Some("publication_failed")
+    );
+    let usage: String = store
+        .read(|w| {
+            Ok(w.tx.query_row(
+                "SELECT usage_json FROM knowledge_learning_reviews WHERE review_id=?1",
+                [&a.review_id],
+                |r| r.get(0),
+            )?)
+        })
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&usage).unwrap(),
+        reply.body["usage"]
+    );
+    assert_eq!(methods(&store), 0);
+    assert!(store.transact(|w| finish(w, &a, &reply, AT + 5)).is_err());
+    store
+        .transact(|w| {
+            w.tx.execute_batch("DROP TRIGGER fail_learning_publication")?;
+            Ok(())
+        })
+        .unwrap();
+    let later = AT + SIX_HOURS + 10;
+    two_chats(&store, later).expect("failed publication must not block a later review");
+    let next = begin(&store, later + 2);
+    complete(&store, &next, output(&next), later + 3);
+    assert_eq!(review_states(&store), ["failed", "created"]);
+}
+
+#[test]
 fn invalid_output_is_deferred_without_any_lens_write_or_retry() {
     for invalid in [
         "unknown_field",

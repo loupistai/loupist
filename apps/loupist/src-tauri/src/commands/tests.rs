@@ -18,7 +18,7 @@ use crate::{
 };
 
 mod bot_memory;
-mod chat_behavior;
+pub(super) mod chat_behavior;
 mod connection_setup;
 mod contracts;
 mod home_links;
@@ -30,6 +30,33 @@ mod research_handoff;
 mod support;
 
 pub(super) use support::{chat, initialized_workspace, profile, seed_profile};
+
+#[test]
+fn sqlite_store_errors_log_details_only_to_host_stderr() {
+    const CHILD_ENV: &str = "LOUPIST_TEST_SQLITE_STORE_ERROR_LOG";
+    const DETAIL: &str = "host_only_sqlite_column";
+    if std::env::var_os(CHILD_ENV).is_some() {
+        let error = map_store(crate::store::StoreError::Sqlite(
+            rusqlite::Error::InvalidColumnName(DETAIL.into()),
+        ));
+        assert_eq!(error.code, "internal");
+        assert_eq!(error.message, "Could not access saved data.");
+        return;
+    }
+    // Capture the host's stderr without changing process-global log or fd state
+    // in the other concurrently running tests.
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "commands::tests::sqlite_store_errors_log_details_only_to_host_stderr",
+            "--nocapture",
+        ])
+        .env(CHILD_ENV, "1")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stderr).contains(DETAIL));
+}
 
 #[test]
 fn chat_connector_authority_seal_is_order_independent_and_tracks_credential_revisions() {

@@ -161,8 +161,8 @@ impl AppToolExecutor {
         }
         let object = exact_object(
             &params,
-            &["result_ref", "title"],
-            &["coverage", "publicationTime"],
+            &["result_ref", "title", "coverage"],
+            &["publicationTime"],
         )?;
         let result_ref = bounded_text(object.get("result_ref"), 1, 128)?;
         let title = bounded_text(object.get("title"), 1, 180)?;
@@ -243,12 +243,7 @@ impl AppToolExecutor {
                 "This web result contains only part of the document. Save the delivered slice as included_excerpt or upstream_truncated; unseen pages cannot be retained".into(),
             ));
         }
-        let truncated = result
-            .payload
-            .pointer("/model_delivery/coverage")
-            .and_then(Value::as_str)
-            == Some("bounded_sample")
-            || result.producer.origin == RunResultOrigin::Discovery
+        let truncated = result.producer.origin == RunResultOrigin::Discovery
             || result.warnings.iter().any(|warning| {
                 warning.to_ascii_lowercase().contains("truncat")
                     || warning.to_ascii_lowercase().contains("snippet")
@@ -511,25 +506,15 @@ impl AppToolExecutor {
             previous_note_ids: Vec::new(),
         };
         self.validate_note_references(policy, &research).await?;
-        if self
-            .capture
-            .staged_research
-            .lock()
-            .await
-            .as_ref()
-            .is_some_and(|r| r.journal.is_some())
-            || self
-                .capture
-                .pending_deliveries
-                .lock()
-                .await
-                .values()
-                .any(|p| p.research.as_ref().is_some_and(|r| r.journal.is_some()))
         {
-            return Err(BrokerError::invalid(
-                "journal",
-                "one journal save or review per turn",
-            ));
+            let mut reservation = self.capture.journal_delivery.lock().await;
+            if reservation.is_some() {
+                return Err(BrokerError::invalid(
+                    "journal",
+                    "one journal save or review per turn",
+                ));
+            }
+            *reservation = Some(delivery_id.to_owned());
         }
         self.capture
             .stage(delivery_id, |pending| pending.research = Some(research))
@@ -647,14 +632,13 @@ impl AppToolExecutor {
                 "a Chat turn may save only one research record".into(),
             ));
         }
-        let included_journal = research.journal.is_some();
         self.capture
             .stage(delivery_id, |pending| pending.research = Some(research))
             .await;
         Ok(json!({
             "status": "staged",
             "durable": false,
-            "journal": included_journal
+            "journal": false
         }))
     }
 }

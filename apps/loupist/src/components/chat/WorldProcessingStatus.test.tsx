@@ -6,6 +6,28 @@ const job = (status: string): GraphJobView => ({ jobId: "job-1", loupistId: "lou
 
 describe("committed World status in research updates", () => {
   afterEach(() => vi.useRealTimers());
+  it("keeps polling across callback changes and does not restart a completed job", async () => {
+    vi.useFakeTimers();
+    const read = vi.fn().mockResolvedValueOnce(job("running")).mockResolvedValue(job("completed"));
+    const previousChanged = vi.fn();
+    const changed = vi.fn();
+    const view = render(<WorldProcessingStatus jobId="job-1" initialStatus="queued" readJob={(id) => read(id)} onChanged={previousChanged} />);
+    await act(async () => {});
+    for (let tick = 0; tick < 4; tick++) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(32); });
+      view.rerender(<WorldProcessingStatus jobId="job-1" initialStatus="queued" readJob={(id) => read(id)} onChanged={() => changed()} />);
+    }
+    expect(read).toHaveBeenCalledOnce();
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    expect(changed).toHaveBeenCalledOnce();
+    expect(previousChanged).not.toHaveBeenCalled();
+    view.rerender(<WorldProcessingStatus jobId="job-1" initialStatus="queued" readJob={(id) => read(id)} onChanged={() => changed()} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(changed).toHaveBeenCalledOnce();
+    expect(screen.getByRole("status")).toHaveTextContent("relationships updated");
+  });
+
   it("polls the committed job and refreshes readers exactly when it finishes", async () => {
     vi.useFakeTimers();
     const read = vi.fn().mockResolvedValueOnce(job("running")).mockResolvedValueOnce(job("completed"));

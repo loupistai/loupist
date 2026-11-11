@@ -468,6 +468,8 @@ pub fn set_release(
     filing: &FilingRef,
     now_ms: i64,
 ) -> KnowledgeResult<bool> {
+    // A sync pass may have already changed this event through another filing.
+    let event = get_event(tx, loupist_id, &event.event_id)?.ok_or(KnowledgeError::NotFound)?;
     if event.release.is_some() {
         return Ok(false);
     }
@@ -483,8 +485,8 @@ pub fn set_release(
     } else {
         event.report_date
     };
-    tx.execute(
-        "UPDATE knowledge_earnings_events SET release_json=?3, status=?4, flags_json=?5, report_date=?6, updated_at_ms=?7 WHERE loupist_id=?1 AND event_id=?2",
+    let changed = tx.execute(
+        "UPDATE knowledge_earnings_events SET release_json=?3, status=?4, flags_json=?5, report_date=?6, updated_at_ms=?7 WHERE loupist_id=?1 AND event_id=?2 AND release_json IS NULL",
         params![
             loupist_id,
             event.event_id,
@@ -495,7 +497,7 @@ pub fn set_release(
             now_ms
         ],
     )?;
-    Ok(true)
+    Ok(changed > 0)
 }
 
 /// The quarterly or annual report arrived.
@@ -509,11 +511,11 @@ pub fn set_final(
     if event.final_report.is_some() {
         return Ok(false);
     }
-    tx.execute(
-        "UPDATE knowledge_earnings_events SET final_json=?3, status='final', updated_at_ms=?4 WHERE loupist_id=?1 AND event_id=?2",
+    let changed = tx.execute(
+        "UPDATE knowledge_earnings_events SET final_json=?3, status='final', updated_at_ms=?4 WHERE loupist_id=?1 AND event_id=?2 AND final_json IS NULL",
         params![loupist_id, event.event_id, serde_json::to_string(filing)?, now_ms],
     )?;
-    Ok(true)
+    Ok(changed > 0)
 }
 
 /// A before-capture finished (the expected rows are written in the same transaction).
@@ -1828,7 +1830,7 @@ pub fn sync(
                             if event.flags.audit.is_none() {
                                 let audit = filing_ref(filing);
                                 edit_flags(tx, loupist_id, &event.event_id, now_ms, |flags| {
-                                    flags.audit = Some(audit)
+                                    flags.audit.get_or_insert(audit);
                                 })?;
                                 outcome.changed = true;
                             }
@@ -1844,7 +1846,7 @@ pub fn sync(
                         }) {
                             let audit = filing_ref(filing);
                             edit_flags(tx, loupist_id, &event.event_id, now_ms, |flags| {
-                                flags.audit = Some(audit)
+                                flags.audit.get_or_insert(audit);
                             })?;
                             outcome.changed = true;
                         }

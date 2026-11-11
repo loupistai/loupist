@@ -693,13 +693,26 @@ fn validate_and_normalize(
             .store
             .get_loupist(&session.loupist_id)
             .map_err(map_store)?
-            .is_some()
-            && state
-                .store
-                .get_chat(&session.thread_id)
-                .map_err(map_store)?
-                .is_some_and(|chat| chat.loupist_id == session.loupist_id)
+            .is_none()
         {
+            continue;
+        }
+        // An unavailable folder cannot establish that its Chat was deleted.
+        // Keep the tabs until canonical storage can answer the ownership check.
+        let live = match state.store.lock_loupist(&session.loupist_id) {
+            Ok(connection) => connection
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM chat_sessions WHERE loupist_id=?1 AND id=?2)",
+                    [&session.loupist_id, &session.thread_id],
+                    |row| row.get::<_, bool>(0),
+                )
+                .unwrap_or_else(|_| {
+                    eprintln!("Could not check workspace tab ownership: saved data unavailable");
+                    true
+                }),
+            Err(_) => true,
+        };
+        if live {
             live_sessions.push(session);
         }
     }

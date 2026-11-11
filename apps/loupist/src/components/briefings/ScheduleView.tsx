@@ -254,7 +254,7 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
       </div>
       {readerOpen ? <div className="briefings-reader-scroll" onFocus={revealFocused}>{!selected && watchingFocus && watch ? <WatchingReader bridge={bridge} loupist={loupist} settings={watch} onBack={() => { setFocusExplicit(false); setFocusTaskId(null); }} />
         : selected ? <article className="briefings-reader" ref={readerRef}><Button variant="ghost" className="briefings-back" data-print="omit" onClick={() => setSelected(null)}>{t("schedule.backTo", { title: focusTask ? displayTitle({ kind: focusTask.kind, title: focusTask.title }) : t("schedule.title") })}</Button><header><h2>{displayTitle(selected)}</h2><p className="briefings-meta">{formatDate(selected.startedAtMs)} · {formatTime(selected.startedAtMs)} · {loupist.name}</p></header>
-        {selected.briefingContext?.changed ? <BriefingSections bridge={bridge} loupistId={loupist.id} loupistName={loupist.name} context={selected.briefingContext} nextRun={briefingTask ? nextRun(briefingTask) : null} skipped={selected.skippedTools.map(tool => tool.name)}
+        {selected.briefingContext?.changed ? <BriefingSections bridge={bridge} loupistId={loupist.id} loupistName={loupist.name} context={selected.briefingContext} startedAtMs={selected.startedAtMs} nextRun={briefingTask ? nextRun(briefingTask) : null} skipped={selected.skippedTools.map(tool => tool.name)}
           onOpenMap={onOpenMap} onOpenCheck={(journalId, title) => void open(selected, { kind: "memory", location: { loupistId: loupist.id, surface: "note", objectId: journalId, selection: { kind: "journal", journalId } }, title })} /> : null}
         {readerLoading ? <p role="status">{t("loading")}</p> : readerError ? <div role="alert" className="briefings-failure"><h3>{t("failure.title")}</h3><p>{t(`failure.${failure}`)}</p>{failure === "auth" && onOpenModelSettings ? <Button variant="link" onClick={onOpenModelSettings}>{t("failure.models")}</Button> : null}<Disclosure className="briefings-failure-details" title={t("failure.details")}><pre>{readerError}</pre></Disclosure><Button onClick={() => setReaderRevision(value => value + 1)}>{t("retry")}</Button></div> : message ? <ChatMapProvider bridge={bridge} loupistId={loupist.id} chatId={selected.threadId ?? ""} messages={[message]} onOpen={() => onOpenMap ? onOpenMap() : void onOpenChat(selected)}><RunLinks run={selected} open={open}><ChatExecutionProvider value={executionScope}><ChatMessageCard outlineOpen message={message} loupistId={loupist.id} chatId={selected.threadId ?? undefined} loupistName={loupist.name} workspacePath={loupist.workspace_path} onReadAttachment={async (messageId, attachmentId) => (await bridge.chatAttachmentRead(loupist.id, selected.threadId!, messageId, attachmentId)).data_url} /></ChatExecutionProvider></RunLinks></ChatMapProvider> : <p>{selected.status === "running" ? t("preparingBody") : summaryText(selected.summaryItems, selected.summary)}</p>}
         {(selected.briefingContext || selected.skippedTools.length > 0) && <Disclosure title={t("checked")}>
@@ -287,9 +287,9 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
 }
 
 /** Sections the host computed when the briefing ran; the narrative follows unparsed. */
-function BriefingSections({ bridge, loupistId, loupistName, context, nextRun, skipped, onOpenMap, onOpenCheck }: {
+function BriefingSections({ bridge, loupistId, loupistName, context, startedAtMs, nextRun, skipped, onOpenMap, onOpenCheck }: {
   loupistName: string;
-  bridge: LoupistBridge; loupistId: string; context: BriefingContext; nextRun: string | null; skipped: string[];
+  bridge: LoupistBridge; loupistId: string; context: BriefingContext; startedAtMs: number; nextRun: string | null; skipped: string[];
   onOpenMap?: (disputedEntityIds?: string[]) => void; onOpenCheck: (journalId: string, title: string) => void;
 }) {
   const { t, i18n } = useTranslation("briefings");
@@ -333,13 +333,13 @@ function BriefingSections({ bridge, loupistId, loupistName, context, nextRun, sk
     </section>
     {context.assets?.length || hasFollowRows(context) ? <section aria-labelledby="briefing-companies"><h3 id="briefing-companies" className="schedule-section-label">{t("sections.companies")}</h3>
       {context.assets?.length ? <BriefingAssets assets={context.assets} bridge={bridge} loupistId={loupistId} loupistName={loupistName} onOpenLink={url => void bridge.openExternalUrl(url)} /> : null}
-      <BriefingFollowRows context={context} bridge={bridge} loupistId={loupistId} onOpenLink={url => void bridge.openExternalUrl(url)} />
+      <BriefingFollowRows context={context} startedAtMs={startedAtMs} bridge={bridge} loupistId={loupistId} onOpenLink={url => void bridge.openExternalUrl(url)} />
     </section> : context.symbols.length ? <section aria-labelledby="briefing-companies"><h3 id="briefing-companies" className="schedule-section-label">{t("sections.companies")}</h3>
       <p>{context.symbols.map(symbol => names[symbol.split(":")[0]!] ?? symbol).join(" · ")}</p>
     </section> : null}
-    {ahead.length || nextRun || skipped.length || hasAheadRows(context) ? <section aria-labelledby="briefing-ahead"><h3 id="briefing-ahead" className="schedule-section-label">{t("sections.ahead")}</h3>
+    {ahead.length || nextRun || skipped.length || hasAheadRows(context, startedAtMs) ? <section aria-labelledby="briefing-ahead"><h3 id="briefing-ahead" className="schedule-section-label">{t("sections.ahead")}</h3>
       <ul className="briefing-ahead">
-        <BriefingAheadRows context={context} bridge={bridge} loupistId={loupistId} onOpenLink={url => void bridge.openExternalUrl(url)} />
+        <BriefingAheadRows context={context} startedAtMs={startedAtMs} bridge={bridge} loupistId={loupistId} onOpenLink={url => void bridge.openExternalUrl(url)} />
         {ahead.map(check => <li key={check.journalId}><Button variant="link" onClick={() => onOpenCheck(check.journalId, check.title)}>{check.byDate ? t("ahead.checkDue", { date: formatDate(Date.parse(`${check.byDate}T00:00:00`), { month: "short", day: "numeric", year: undefined }), title: check.title }) : check.title}</Button></li>)}
         {nextRun ? <li>{nextRun}</li> : null}
         {skipped.length ? <li>{t("ahead.skipped", { names: skipped.join(", ") })}</li> : null}

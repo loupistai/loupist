@@ -3,7 +3,7 @@
 .map-toolbar-button { height:var(--gg-size-control-md); min-height:var(--gg-size-control-md); flex-shrink:0; padding:0 var(--gg-space-3); gap:var(--gg-space-2); font-size:var(--gg-text-control); line-height:var(--gg-leading-control); font-weight:var(--gg-weight-medium); }
 .map-toolbar-button[aria-pressed=true] { background:var(--gg-color-bg-selected); box-shadow:inset 0 0 0 1px var(--gg-color-border-strong); }
 .map-toolbar-spacer { flex:1; }
-/* The search box shrinks only to its minimum; past that, actions fold into "More" (toolbarOverflow.ts reads this min-width). */
+/* The search box shrinks only to its minimum; past that, Scope becomes its menu (toolbarOverflow.ts reads this min-width). */
 .map-search { position:relative; flex:0 1 clamp(200px,32%,420px); min-width:200px; }
 .map-search > svg { position:absolute; width:16px; height:16px; left:10px; top:8px; color:var(--gg-color-text-secondary); pointer-events:none; }
 .map-search > input { height:32px; padding-left:32px; border-radius:var(--gg-radius-sm); text-overflow:ellipsis; }

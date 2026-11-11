@@ -1,4 +1,4 @@
-//! Results before and after (finance-earnings-snapshot.md): the automatic
+//! Results before and after (docs/analysis/results.md): the automatic
 //! `earnings` Schedule task and the card's commands. Captures make no model
 //! call (coordinator 2026-11-01): Rust reads dated, structured sources —
 //! consensus only from FMP or Intrinio, a reverse DCF over statements and a
@@ -243,21 +243,29 @@ pub async fn earnings_prepare(
     state: State<'_, AppState>,
     request: EarningsPrepareRequest,
 ) -> Result<SnapshotView, CommandError> {
-    admit(&state, &request.loupist_id)?;
+    prepare(state.inner(), request).await
+}
+
+async fn prepare(
+    state: &AppState,
+    request: EarningsPrepareRequest,
+) -> Result<SnapshotView, CommandError> {
+    admit(state, &request.loupist_id)?;
     if !assets::valid_asset_id(&request.asset_id) || !earnings::valid_event_id(&request.event_id) {
         return Err(CommandError::invalid("assetId or eventId is not valid"));
     }
-    ensure_task(&state, &request.loupist_id, false)?;
+    ensure_task(state, &request.loupist_id, false)?;
     Box::pin(dispatch(
-        &state,
+        state,
         &request.loupist_id,
         &task_id(&request.loupist_id),
         true,
         Some(&request.event_id),
     ))
-    .await?;
+    .await?
+    .ok_or_else(|| CommandError::conflict("Results capture is already running"))?;
     snapshot_for(
-        &state,
+        state,
         &request.loupist_id,
         &request.asset_id,
         Some(&request.event_id),
@@ -355,7 +363,9 @@ pub(crate) async fn dispatch(
     let mut summaries = Vec::new();
     let mut failures = Vec::new();
     let mut captured = 0;
+    let mut attempted = Vec::with_capacity(MAX_CAPTURES);
     for (page, item) in due.into_iter().take(MAX_CAPTURES) {
+        attempted.push((item.event.event_id.clone(), item.side.clone()));
         let _preparing = runtime.prepare(&item.event.event_id);
         watch_commands::changed(loupist_id);
         let mut reader = HostSessions::new(item.late_as_of);
@@ -402,22 +412,41 @@ pub(crate) async fn dispatch(
             now_ms(),
         )
         .map_err(map_store)?;
-    // Look again when the next capture is due, or in a few hours for new dates.
+    reschedule_pending_captures(state, loupist_id, task_id, &pages, &attempted, Utc::now())?;
+    let _ = crate::chat::home::deliver_finished_runs(state, loupist_id);
+    crate::briefings::desktop::changed(loupist_id);
+    watch_commands::changed(loupist_id);
+    Ok(Some(finished))
+}
+
+fn reschedule_pending_captures(
+    state: &AppState,
+    loupist_id: &str,
+    task_id: &str,
+    pages: &[PageRecord],
+    attempted: &[(String, CaptureSide)],
+    now: DateTime<Utc>,
+) -> Result<(), CommandError> {
+    // Captures left by this run's limit are due on the next scheduler tick.
     let mut later = None;
     for page in pages.iter().filter(|page| page.class == AssetClass::Equity) {
         let loupist = loupist_id.to_owned();
         let events = with_assets(state, &loupist, false, |tx| {
             earnings::events_for(tx, &loupist, &page.asset_id)
         })?;
-        if let (_, Some(at)) = earnings::due(&events, &page.market, Utc::now()) {
+        let (pending, next) = earnings::due(&events, &page.market, now);
+        if pending.iter().any(|item| {
+            !attempted
+                .iter()
+                .any(|(event_id, side)| event_id == &item.event.event_id && side == &item.side)
+        }) {
+            later = Some(now.timestamp_millis());
+        }
+        if let Some(at) = next {
             later = Some(later.map_or(at, |current: i64| current.min(at)));
         }
     }
-    reschedule(state, loupist_id, task_id, later, Utc::now())?;
-    let _ = crate::chat::home::deliver_finished_runs(state, loupist_id);
-    crate::briefings::desktop::changed(loupist_id);
-    watch_commands::changed(loupist_id);
-    Ok(Some(finished))
+    reschedule(state, loupist_id, task_id, later, now)
 }
 
 fn reschedule(
@@ -465,13 +494,14 @@ fn decimal(value: f64) -> String {
 }
 
 /// The row of a statement or estimates read for the event's period: its end
-/// date within 20 days, or its fiscal quarter and year.
+/// date within 20 days. Fiscal labels are a fallback only for undated payloads:
+/// providers' fiscal quarters need not match calendar quarters.
 fn period_row<'a>(payload: &'a Value, event: &EventRecord) -> Option<(usize, &'a Value, String)> {
     let (rows, prefix) = detect::rows(payload, "")?;
     let end = event.period_end()?;
     let quarter = format!("Q{}", (chrono::Datelike::month(&end) - 1) / 3 + 1);
-    rows.iter().enumerate().find_map(|(index, row)| {
-        let dated = [
+    let row_date = |row: &Value| {
+        [
             "period_ending",
             "date",
             "fiscal_period_end",
@@ -484,14 +514,25 @@ fn period_row<'a>(payload: &'a Value, event: &EventRecord) -> Option<(usize, &'a
                 .and_then(Value::as_str)
                 .and_then(observe::parse_day)
         })
-        .is_some_and(|date| (date - end).num_days().abs() <= 20);
+    };
+    let dated = rows
+        .iter()
+        .enumerate()
+        .find(|(_, row)| row_date(row).is_some_and(|date| (date - end).num_days().abs() <= 20));
+    if let Some((index, row)) = dated {
+        return Some((index, row, format!("{prefix}/{index}")));
+    }
+    if rows.iter().any(|row| row_date(row).is_some()) {
+        return None;
+    }
+    rows.iter().enumerate().find_map(|(index, row)| {
         let fiscal = text(row, &["fiscal_period", "period"])
             .is_some_and(|period| period.eq_ignore_ascii_case(&quarter))
             && row
                 .get("fiscal_year")
                 .and_then(|year| year.as_i64().or_else(|| year.as_str()?.parse().ok()))
                 == Some(i64::from(chrono::Datelike::year(&end)));
-        (dated || fiscal).then(|| (index, row, format!("{prefix}/{index}")))
+        fiscal.then(|| (index, row, format!("{prefix}/{index}")))
     })
 }
 

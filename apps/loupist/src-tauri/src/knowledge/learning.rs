@@ -1302,8 +1302,28 @@ pub(super) fn finish(
         .and_then(|o| publish(write, a, o, now));
     match result {
         Ok(()) => tx.execute_batch("RELEASE learning_publication")?,
-        Err(_) => {
+        Err(error) => {
             tx.execute_batch("ROLLBACK TO learning_publication; RELEASE learning_publication")?;
+            if !matches!(
+                error,
+                KnowledgeError::Invalid(_)
+                    | KnowledgeError::LensBodyForbidden
+                    | KnowledgeError::NotFound
+                    | KnowledgeError::Unauthorized(_)
+                    | KnowledgeError::DuplicatePrinciple
+                    | KnowledgeError::ConflictingDependencyRevision
+            ) {
+                return settle(
+                    tx,
+                    &a.review_id,
+                    "failed",
+                    Some("publication_failed"),
+                    None,
+                    None,
+                    0,
+                    now,
+                );
+            }
             settle(
                 tx,
                 &a.review_id,
@@ -1392,7 +1412,8 @@ fn publish(write: &KnowledgeWrite<'_>, a: &Attempt, o: Output, now: i64) -> Know
             .ok_or_else(invalid)?;
         match write.read_page(&a.loupist_id, &method.record_id) {
             Ok(page) if !page.archived && page.kind == super::lens_page::LensKind::Method => {}
-            _ => return Err(invalid()),
+            Ok(_) | Err(KnowledgeError::NotFound) => return Err(invalid()),
+            Err(error) => return Err(error),
         }
         (
             PageTarget::Existing {

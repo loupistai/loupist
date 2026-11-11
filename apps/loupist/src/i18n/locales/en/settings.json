@@ -266,11 +266,6 @@
   },
   "worldSettings": {
     "loupist": "Loupist",
-    "processingPreferencesAreSavedSeparatelyForEachLoupist": "Processing preferences are saved separately for each Loupist.",
-    "noAvailableLoupists": "No available Loupists",
-    "worldProcessingPreferences": "World processing preferences",
-    "reconnectLoupistFolder": "Reconnect a Loupist folder in Loupist settings to configure World processing.",
-    "openALoupistFolderToConfigureWorldProcessing": "Open a Loupist folder to configure World processing.",
     "readiness": {
       "recoveryRequired": "World processing was interrupted. Recover the last confirmed World to continue. The interrupted source will not be processed again automatically.",
       "recovering": "Restoring the last confirmed World. This does not use a model or retry interrupted processing.",

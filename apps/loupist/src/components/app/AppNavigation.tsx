@@ -58,7 +58,7 @@ export function AppNavigation({
   const newChatShortcut = shortcutFor("newChat");
   const canStartChat = selectedLoupist != null && !loading && selectedLoupist.availability.status === "available";
   const [settingsSearch, setSettingsSearch] = useState("");
-  const recent = selectedLoupist ? recentLoupistChats(getLoupistChatList(selectedLoupist, threadsByLoupist[selectedLoupist.id], "").chats, activeThreadId, selectedLoupist.id) : [];
+  const recent = selectedLoupist ? recentLoupistChats(getLoupistChatList(threadsByLoupist[selectedLoupist.id]), activeThreadId, selectedLoupist.id) : [];
   const row = (thread: ChatThread) => {
     const key = chatSessionKey(thread.loupist_id, thread.id);
     return <LoupistChatItem iconOnly={!isMobile && state === "collapsed"} key={key} thread={thread} active={thread.id === activeThreadId} running={runningThreadKeys.has(key)} finished={finishedThreadKeys.has(key)} draft={draftThreadKeys.has(key)}

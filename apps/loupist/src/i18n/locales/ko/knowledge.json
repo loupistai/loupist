@@ -343,7 +343,6 @@
     "library": "자료함",
     "closeLibrary": "자료함 닫기",
     "sources": "자료",
-    "lensWiki": "Lens 위키",
     "lensOverlay": "Lens 적용 대상 강조",
     "worldOnly": "강조 끄기",
     "lensMenuNote": "Lens를 선택하면 이 관점으로 살펴본 기업·자산 등이 지도에서 강조돼요.",
@@ -449,16 +448,13 @@
     "openAssetPage": "자산 페이지 열기",
     "newSubject": "새 주제 메모: {{title}}",
     "newIdea": "새 아이디어: {{title}}",
-    "notes": "메모",
-    "notesLoading": "메모 불러오는 중…"
+    "notes": "메모"
   },
   "principles": {
     "yours": "내 원칙",
     "intro": "루피스트가 생각하는 방식이에요. 내 원칙이 가장 먼저예요.",
     "search": "원칙과 분석 방법 검색",
-    "yoursCaption": "직접 알려 준 원칙이에요. 루피스트가 사실을 이 원칙에 비춰 확인해요.",
     "perspectiveCaption": "루피스트가 출발하는 기본 관점이에요.",
-    "methodsCaption": "루피스트가 배우거나 대화에서 저장한 분석 방법이에요.",
     "perspective": "관점",
     "methods": "분석 방법",
     "add": "+ 원칙 추가",
@@ -472,10 +468,7 @@
     "edit": "편집",
     "archive": "보관",
     "restore": "복원",
-    "showArchived": "보관한 항목 보기",
     "empty": "아직 원칙이 없어요. 대화에서 원칙을 알려 주거나 여기에서 추가해 보세요.",
-    "fromChat": "대화에서",
-    "fromFeedback": "피드백에서",
     "error": "변경 사항을 저장하지 못했어요.",
     "duplicate": "이미 있는 원칙이에요.",
     "conflict": "다른 곳에서 바뀐 원칙이에요. 다시 불러온 뒤 편집해 주세요.",
@@ -507,7 +500,6 @@
     "earlier": "이전 변경 내역 ({{count}})",
     "new": "새로 배움",
     "inUse": "사용 중이에요. 유지하면 ‘새로 배움’ 표시가 사라지고, 보관하면 더 이상 쓰지 않아요.",
-    "learnedOrigin": "루피스트가 배움 · {{date}}",
     "chatOrigin": "대화에서 저장 · {{date}}",
     "createdToast": "루피스트가 분석 방법을 배웠어요: {{title}}",
     "refinedToast": "루피스트가 분석 방법을 다듬었어요: {{title}}",
@@ -516,7 +508,6 @@
     "method": "분석 방법",
     "loadError": "학습 내용을 불러오지 못했어요. 다시 시도해 주세요.",
     "archiveError": "분석 방법을 보관하지 못했어요. 다시 시도해 주세요.",
-    "evidenceMissing": "저장된 근거 중 일부를 불러올 수 없어요.",
     "unknownDate": "날짜 없음",
     "showMore": "더 보기",
     "showLess": "접기",
@@ -670,7 +661,6 @@
     "perspectiveDescription": "루피스트가 출발점으로 삼는 전체적인 관점이에요.",
     "principles": {
       "add": "+ 원칙 추가",
-      "newLabel": "새 원칙",
       "save": "원칙 추가"
     },
     "reader": {
@@ -679,12 +669,10 @@
       "originFeedback": "{{date}}에 “도움이 안 됐어요”를 누르고 이 원칙을 적었어요.",
       "originChat": "{{date}}에 대화에서 저장했어요.",
       "originSettings": "{{date}}에 직접 추가했어요.",
-      "originLearnedPlain": "루피스트가 읽은 내용에서 배웠어요 ({{date}}).",
       "untitledChat": "제목 없는 대화",
       "why": "이유",
       "example": "예시",
       "whenToUse": "언제 쓰나요",
-      "whatToQuestion": "의심해 볼 점",
       "procedure": "절차",
       "openChat": "대화 열기",
       "usageDefinition": "답변을 마칠 때 이 항목을 전달받거나 적용했다면 한 번으로 세어요. 답변에 실제로 영향을 줬다는 뜻은 아니에요."
@@ -696,6 +684,7 @@
       "pause": "일시 중지"
     },
     "paused": {
+      "resumeError": "학습을 재개하지 못했어요. 학습 설정을 확인하고 다시 시도해 주세요.",
       "banner": "학습이 일시 중지됐어요. 루피스트는 아는 내용을 계속 쓰지만 새로 저장하지는 않아요."
     },
     "about": {
@@ -710,7 +699,6 @@
       "answersPlaceholder": "예: 짧게 답해 줘. 수치에는 항상 날짜를 붙여 줘.",
       "answersHint": "모든 대화에서 이 지침을 따라요.",
       "learning": "학습",
-      "rememberChats": "새 대화 기억하기",
       "learnMethods": "새 정보에서 분석 방법 배우기",
       "learnMethodsHint": "새 정보가 들어올 때 AI 계정을 사용해요.",
       "holdingsByKind": "주식·펀드: {{stocks}} · 크립토: {{crypto}}",

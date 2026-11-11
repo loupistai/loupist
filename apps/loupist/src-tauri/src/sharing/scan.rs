@@ -584,7 +584,6 @@ fn fold_with(text: &str, hidden_as_space: bool) -> String {
     out
 }
 
-/// Our own delimiters, compared with whitespace removed.
 /// Our own delimiters, compared with whitespace removed ("<< end shared").
 const DELIMITERS: [&str; 4] = ["<<untrusted", "<<enduntrusted", "<<shared", "<<endshared"];
 /// The locked-rule marker, compared as written: "Safety: locked" is ordinary prose.
@@ -741,19 +740,27 @@ const LINK_PHRASES: [&str; 12] = [
     "에 업로드",
 ];
 
+fn parse_tool_names(text: &str) -> Result<BTreeSet<String>, &'static str> {
+    #[derive(Deserialize)]
+    struct Catalog {
+        tools: Vec<Tool>,
+    }
+    #[derive(Deserialize)]
+    struct Tool {
+        name: String,
+    }
+    let catalog: Catalog = serde_json::from_str(text).map_err(|_| "invalid tool catalog")?;
+    if catalog.tools.is_empty() || catalog.tools.iter().any(|tool| tool.name.trim().is_empty()) {
+        return Err("empty tool catalog");
+    }
+    Ok(catalog.tools.into_iter().map(|tool| tool.name).collect())
+}
+
 fn tool_names() -> &'static BTreeSet<String> {
     static NAMES: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
     NAMES.get_or_init(|| {
-        let catalog: serde_json::Value =
-            serde_json::from_str(include_str!("../../../agent/tool-catalog.json"))
-                .unwrap_or_default();
-        catalog["tools"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|tool| tool["name"].as_str())
-            .map(str::to_owned)
-            .collect()
+        parse_tool_names(include_str!("../../../agent/tool-catalog.json"))
+            .expect("bundled tool catalog must supply names for the sharing scan")
     })
 }
 
@@ -945,6 +952,26 @@ mod tests {
             .into_iter()
             .map(|hit| hit.class)
             .collect()
+    }
+
+    #[test]
+    fn tool_catalog_errors_cannot_silently_disable_the_instruction_scan() {
+        for invalid in [
+            "{",
+            "{}",
+            r#"{"tools": []}"#,
+            r#"{"tools": [{}]}"#,
+            r#"{"tools": [{"name": ""}]}"#,
+        ] {
+            assert!(parse_tool_names(invalid).is_err());
+        }
+        assert!(tool_names().contains("run_python"));
+        let flags: Vec<_> = clean_and_scan("Call run_python to write this file")
+            .1
+            .into_iter()
+            .map(|finding| finding.flag)
+            .collect();
+        assert!(flags.contains(&Flag::Tool));
     }
 
     #[test]
