@@ -46,12 +46,12 @@ describe("Loupist · Shell and Loupist", () => {
     const create = vi.spyOn(bridge, "chatCreate");
     await user.click(await mainTab(/Map/));
     await chooseLoupist(user, "Contrarian Value");
-    expect(await screen.findByRole("button", { name: "Bot", current: "page" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Home", current: "page" })).toBeVisible();
     expect(within(document.querySelector<HTMLElement>(".loupist-navigation")!).getByRole("button", { name: "Downside scenario review" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "How should we read the margin decline?" })).toBeNull();
     await user.click(await mainTab(/Chat/));
     await user.click(newChatButton());
-    expect(await screen.findByRole("heading", { name: "New chat" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Untitled chat" })).toBeVisible();
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -70,7 +70,7 @@ describe("Loupist · Shell and Loupist", () => {
     expect(screen.getByRole("dialog", { name: "Delete Chat?" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     fireEvent.keyDown(window, { key: "n", metaKey: true });
-    expect(await screen.findByRole("heading", { name: "New chat" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Untitled chat" })).toBeVisible();
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -93,7 +93,7 @@ describe("Loupist · Shell and Loupist", () => {
     const remove = vi.spyOn(bridge, "chatDelete");
     await chooseLoupist(user, "Contrarian Value");
     await user.click(newChatButton());
-    await screen.findByRole("heading", { name: "New chat" });
+    await screen.findByRole("heading", { name: "Untitled chat" });
     expect(create).not.toHaveBeenCalled();
     fireEvent.change(screen.getByRole("textbox", { name: "Message Loupist" }), { target: { value: "Downside follow-up" } });
     await user.click(screen.getByRole("button", { name: "Send" }));
@@ -157,13 +157,13 @@ describe("Loupist · Shell and Loupist", () => {
     await user.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(bridge.chatCreate).toHaveBeenCalled());
     await chooseLoupist(user, "Contrarian Value");
-    await screen.findByRole("heading", { name: "Bot" });
+    await screen.findByRole("heading", { name: "Home" });
     await act(async () => resolveCreate({
       id: "thread-from-previous-loupist", loupist_id: "loupist-quality", title: "Late chat from the previous Loupist",
       updated_at: "2026-08-08T00:00:00Z", use_memory: true, update_memory: true, messages: [],
     }));
     expect(screen.queryByRole("button", { name: "Late chat from the previous Loupist" })).toBeNull();
-    expect(screen.getByRole("heading", { name: "Bot" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Home" })).toBeVisible();
   });
 
   it("creates a Loupist from the sidebar and opens its empty Chat list", async () => {
@@ -172,9 +172,9 @@ describe("Loupist · Shell and Loupist", () => {
     const createLoupist = vi.spyOn(bridge, "loupistCreate");
     await user.click(headerAction("New Loupist"));
     await user.click(await screen.findByRole("button", { name: "Create Loupist" }));
-    await waitFor(() => expect(createLoupist).toHaveBeenCalledWith({ name: "Portfolio Loupist", focus: "Companies I hold and watch", avatar: "loupist-01", template: "portfolio", tone: "balanced" }));
+    await waitFor(() => expect(createLoupist).toHaveBeenCalledWith({ name: "Portfolio Loupist", focus: "Companies I hold and follow", avatar: "loupist-01", template: "portfolio", tone: "balanced" }));
     expect(selectedLoupistButton()).toHaveTextContent("Portfolio Loupist");
-    expect(screen.getByRole("button", {name:"Bot",current:"page"})).toBeVisible();
+    expect(screen.getByRole("button", {name:"Home",current:"page"})).toBeVisible();
   });
 
   it("does not offer a duplicate create retry after the Loupist was persisted", async () => {
@@ -218,7 +218,7 @@ describe("Loupist · Shell and Loupist", () => {
     expect(skills).not.toHaveBeenCalledWith(firstLoupist.id);
     await user.click(screen.getByRole("button", { name: "Recover memory" }));
     await waitFor(() => expect(recover).toHaveBeenCalledWith({ loupist_id: firstLoupist.id, action: "recover_memory" }));
-    expect(await screen.findByRole("heading", { name: "Bot" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Home" })).toBeVisible();
   });
 
   it("does not select a recovered Loupist after the user moves to another Loupist", async () => {
@@ -230,7 +230,7 @@ describe("Loupist · Shell and Loupist", () => {
     let finishRecovery: ((loupist: LoupistSummary) => void) | undefined;
     vi.spyOn(bridge, "loupistRecover").mockImplementation(() => new Promise((resolve) => { finishRecovery = resolve; }));
     render(<App bridge={bridge} />);
-    await screen.findByRole("heading", { name: "Bot" });
+    await screen.findByRole("heading", { name: "Home" });
     await chooseLoupist(user, loupist.name);
     await user.click(await screen.findByRole("button", { name: "Recover memory" }));
     await chooseLoupist(user, "Cycle Reader");
@@ -256,7 +256,7 @@ describe("Loupist · Shell and Loupist", () => {
     const theme = async () => (await bridge.configRead({ scope: { kind: "global" } })).explicit?.appearance?.theme;
     const view = render(<App bridge={bridge} />);
     try {
-      await screen.findByRole("heading", { name: "Bot" });
+      await screen.findByRole("heading", { name: "Home" });
       await user.click(await mainTab(/Settings/));
       await user.click(screen.getByRole("button", { name: "Appearance" }));
       await user.click(screen.getByRole("button", { name: "Dark" }));
@@ -286,14 +286,14 @@ describe("Loupist · Model providers", () => {
     for (const provider of (await bridge.modelCatalogGet()).providers) await bridge.providerDisconnect(provider.id);
     const create = vi.spyOn(bridge, "loupistCreate");
     render(<App bridge={bridge} />);
-    expect(await screen.findByRole("heading", { name: "Bot" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Home" })).toBeVisible();
     expect(selectedLoupistButton()).toHaveTextContent("Quality Compounder");
     await user.click(screen.getByRole("button", { name: "Connect an AI account" }));
     await user.click(await screen.findByRole("button", { name: "Add an AI account" }));
     const dialog = await screen.findByRole("dialog", { name: "Add an AI account" });
     await user.click(within(dialog).getByRole("button", { name: /Continue with ChatGPT/u }));
     await user.click(await mainTab(/Chat/));
-    expect(screen.getByRole("heading", { name: "Bot" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Home" })).toBeVisible();
     expect(create).not.toHaveBeenCalled();
   });
 

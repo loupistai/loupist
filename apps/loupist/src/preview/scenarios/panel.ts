@@ -91,7 +91,7 @@ async function citedAnswerFixture(bridge: PreviewBridge, secondSource = false, w
 
 /** A website citation keeps its saved passage behind this explicit control. */
 async function viewSavedPassage() {
-  const label = i18n.t("chat:browserWorkspaceView.viewSavedPassage");
+  const label = i18n.t("chat:browserWorkspaceView.savedPassage");
   const button = await until(() => [...document.querySelectorAll("button")].find(node => visible(node) && node.textContent?.trim() === label) ?? null, "Saved passage control did not appear");
   button.click();
 }

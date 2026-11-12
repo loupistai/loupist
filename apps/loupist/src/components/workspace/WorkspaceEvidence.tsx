@@ -66,7 +66,6 @@ export function WorkspaceEvidence({ evidence, step, onRevealStep }: {
   const view = evidencePresentation(evidence);
   const title = evidenceTitle(evidence);
   const sourceUrl = evidence.url ? parseCredentialFreeHttpUrl(evidence.url) : null;
-  const livePage = useOpenProps({ kind: "link", url: sourceUrl?.href ?? "" });
   const notRetained = !excerptParts && memoryText === null && !evidence.excerpt && (evidence.kind === "original" || evidence.kind === "local_file");
   return <article ref={reader} tabIndex={-1} className="workspace-evidence" aria-label={t("workspaceEvidence.sourceLabel", { title: title })} onScroll={excerptParts ? trackPassage : undefined}>
     <header>
@@ -74,12 +73,10 @@ export function WorkspaceEvidence({ evidence, step, onRevealStep }: {
       <h2 title={evidence.title}>{title}</h2>
       <p>{view.description}</p>
     </header>
-    {/* Sticky, so the live page and the way back to the passage stay one click away while reading. */}
-    <div className="evidence-actions">
-      {excerptParts && awayFromPassage ? <Button type="button" variant="ghost" size="sm" onClick={() => match.current?.scrollIntoView({ block: "center" })}>{t("workspaceEvidence.jumpToCitedPassage")}</Button> : null}
-      {/* The status row above names the host; the button keeps the full address in its tooltip. */}
-      {sourceUrl && livePage.available ? <Button type="button" variant="outline" size="sm" title={sourceUrl.href} {...livePage.props}>{livePage.icon}{t("workspaceEvidence.openLivePage")}</Button> : null}
-    </div>
+    {/* Sticky, so the way back to the passage stays one click away while reading. The live page sits in the panel's status row. */}
+    {excerptParts && awayFromPassage ? <div className="evidence-actions">
+      <Button type="button" variant="ghost" size="sm" onClick={() => match.current?.scrollIntoView({ block: "center" })}>{t("workspaceEvidence.jumpToCitedPassage")}</Button>
+    </div> : null}
     {notRetained ? <div className="evidence-notices" role="alert"><p>{t("chatWorkspacePanel.sourceNotRetained")}</p></div> : null}
     <dl className="evidence-metadata">
       {step?.label ? <><dt>{t("workspaceEvidence.createdIn")}</dt><dd>{step.itemId && onRevealStep ? <Button type="button" variant="ghost" size="sm" onClick={() => onRevealStep(step.itemId!)}>{step.label}</Button> : step.label}</dd></> : null}
@@ -104,4 +101,14 @@ export function WorkspaceEvidence({ evidence, step, onRevealStep }: {
       {evidence.upstream_evidence_ids?.length ? <><dt>{t("workspaceEvidence.inputResults")}</dt><dd>{t("workspaceEvidence.savedResultCount", { count: evidence.upstream_evidence_ids.length, formattedCount: formatNumber(evidence.upstream_evidence_ids.length) })}</dd></> : null}
     </dl></details> : null}
   </article>;
+}
+
+/** "Open live page" at the end of the panel's status row: one bar fewer above the passage (chat design change 21). */
+export function LivePageButton({ evidence }: { evidence: ChatEvidenceRef }) {
+  useTranslation("chat");
+  const sourceUrl = evidence.url ? parseCredentialFreeHttpUrl(evidence.url) : null;
+  const livePage = useOpenProps({ kind: "link", url: sourceUrl?.href ?? "" });
+  if (!sourceUrl || !livePage.available) return null;
+  // The status row names the host; the button keeps the full address in its tooltip.
+  return <Button type="button" variant="ghost" size="sm" className="workspace-status-action" title={sourceUrl.href} {...livePage.props}>{livePage.icon}{t("workspaceEvidence.openLivePage")}</Button>;
 }

@@ -36,7 +36,9 @@ export type ChatDestination =
   | { kind: "schedule"; taskId: string }
   | { kind: "chat"; threadId: string }
   | { kind: "briefing"; runId: string }
-  | { kind: "settings"; section: "connections" };
+  | { kind: "settings"; section: "connections" }
+  /** The Following page (what you follow, shared by every Loupist). */
+  | { kind: "following" };
 
 /** How a click asked to open: in the system browser, and from which control (a popover anchors to it). */
 export type OpenHow = { external?: boolean; anchor?: HTMLElement };

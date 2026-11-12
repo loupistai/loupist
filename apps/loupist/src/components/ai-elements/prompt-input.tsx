@@ -20,7 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { ChatStatus, FileUIPart } from "ai";
 import {
-  CornerDownLeftIcon,
+  ArrowUpIcon,
   FileIcon,
   PlusIcon,
   SquareIcon,
@@ -694,7 +694,7 @@ export const PromptInputSubmit = ({
   useTranslation("chat");
   const isGenerating = status === "submitted" || status === "streaming";
 
-  let Icon = <CornerDownLeftIcon className="size-4" />;
+  let Icon = <ArrowUpIcon className="size-4" />;
 
   if (status === "submitted") {
     Icon = <Spinner />;

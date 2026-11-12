@@ -6,6 +6,7 @@ import {
   within,
 
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { App } from "../App";
 import { APP_DESTINATIONS, APP_PAGES } from "../app/navigation";
 import { MockLoupistBridge } from "../bridge/mockBridge";
@@ -33,7 +34,8 @@ export const openChat = async (title = "How should we read the margin decline?")
 
 export const mainTab = async (name: RegExp) => {
   const labels = [...APP_DESTINATIONS.map(destination => destination.label), "Loupist settings", "Connections", APP_PAGES.settings.label];
-  const label = labels.find(candidate => name.test(candidate));
+  // Tests name the home destination "Chat" (its id) or "Home" (its label).
+  const label = name.test("Chat") ? APP_DESTINATIONS[0]!.label : labels.find(candidate => name.test(candidate));
   const settingsBack = document.querySelector<HTMLButtonElement>("[data-loupist-settings-back]");
   if (settingsBack) fireEvent.click(settingsBack);
   if (label === "Settings") {
@@ -57,23 +59,30 @@ export const mainTab = async (name: RegExp) => {
   if (!document.querySelector(".header-workspace-controls")) fireEvent.click(screen.getByRole("button", { name: "Back" }));
   if (label === "Map" || label === "Lens") {
     fireEvent.keyDown(screen.getByRole("button", { name: /Panel kind/ }), { key: "Enter" });
-    return screen.findByRole("menuitemradio", { name: label === "Map" ? "World" : "Lens" });
+    return screen.findByRole("menuitemradio", { name: label === "Map" ? "Map" : "Lens" });
   }
-  if (label === "Chat") {
+  if (label === APP_DESTINATIONS[0]!.label) {
     const close = document.querySelector<HTMLButtonElement>("[data-workspace-close]");
     if (close) fireEvent.click(close);
     const last = JSON.parse(localStorage.getItem("loupist.lastConversation") ?? "null");
-    return (last && document.querySelector<HTMLButtonElement>(`[data-thread-id="${CSS.escape(last[1])}"]`)) || screen.getByRole("button", { name:"Bot" });
+    return (last && document.querySelector<HTMLButtonElement>(`[data-thread-id="${CSS.escape(last[1])}"]`)) || screen.getByRole("button", { name:"Home" });
   }
   fireEvent.keyDown(document.querySelector<HTMLButtonElement>("[data-bot-menu]")!, { key: "Enter" });
   return screen.findByRole("menuitem", { name: "Scheduled tasks" });
 };
 
-export const newChatButton = () => screen.getByRole("button", { name: "New research" });
+export const newChatButton = () => screen.getByRole("button", { name: "New chat" });
 
 export const savedSurface = (name: string) => screen.getByRole("tab", { name });
 
-export const privateChatToggle = () => screen.getByRole("button", { name: "Private chat: don't remember this chat" });
+/** Private chat is a checkbox in the + menu; while it is on, the composer shows its chip with an off button. */
+export const privateChatOn = () => Boolean(screen.queryByRole("button", { name: "Turn off private chat" }));
+export const togglePrivateChat = async () => {
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Add to this message" }));
+  await user.click(await screen.findByRole("menuitemcheckbox", { name: /Private chat/ }));
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+};
 
 export const chooseLoupist = async (
   user: { click: (element: Element) => Promise<unknown> },
@@ -84,7 +93,7 @@ export const chooseLoupist = async (
 };
 
 export const loupistIsRunning = (name: string) => {
-  return Boolean(screen.queryByRole("status", { name: `${name} has active sessions` }));
+  return Boolean(screen.queryByRole("status", { name: `${name} has chats running` }));
 };
 
 export const waitForLoupistRunning = async (name: string, running = true) => {

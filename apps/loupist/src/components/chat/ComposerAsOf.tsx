@@ -36,15 +36,15 @@ export function AsOfDatePanel({ initial, onSet, onCancel, onBack }: {
   };
   return <div className="composer-assist composer-asof-panel" role="group" aria-labelledby={headingId} onKeyDown={onKeyDown}>
     <p id={headingId} className="composer-asof-title">{t("asOf.panelTitle")}</p>
-    <AppDateField autoFocus grouped={false} className="composer-asof-fields" value={value} min={EARLIEST_AS_OF} max={todayIso()} aria-label={t("asOf.panelTitle")}
+    <AppDateField autoFocus grouped={false} value={value} min={EARLIEST_AS_OF} max={todayIso()} aria-label={t("asOf.panelTitle")}
       aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined}
       onChange={setValue}
       onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); set(); } }} />
     {error ? <p id={errorId} className="composer-asof-error" role="alert">{error}</p> : null}
     <div className="composer-asof-quick">
-      <Button type="button" variant="ghost" size="sm" onClick={() => setValue(quickAsOf("month"))}>{t("asOf.quickMonth")}</Button>
-      <Button type="button" variant="ghost" size="sm" onClick={() => setValue(quickAsOf("yearStart"))}>{t("asOf.quickYearStart")}</Button>
-      <Button type="button" variant="ghost" size="sm" onClick={() => setValue(quickAsOf("year"))}>{t("asOf.quickYear")}</Button>
+      <Button type="button" variant="outline" size="sm" onClick={() => setValue(quickAsOf("month"))}>{t("asOf.quickMonth")}</Button>
+      <Button type="button" variant="outline" size="sm" onClick={() => setValue(quickAsOf("yearStart"))}>{t("asOf.quickYearStart")}</Button>
+      <Button type="button" variant="outline" size="sm" onClick={() => setValue(quickAsOf("year"))}>{t("asOf.quickYear")}</Button>
     </div>
     <p className="composer-asof-explain">{t("asOf.explain")}</p>
     <div className="composer-asof-actions">

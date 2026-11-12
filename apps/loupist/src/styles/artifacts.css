@@ -133,17 +133,6 @@
   min-width: 180px;
 }
 
-.workspace-header-controls {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.workspace-header-controls [data-slot="button"][aria-pressed="true"] {
-  color: var(--gg-color-text-primary);
-  background: var(--gg-color-bg-selected);
-}
-
 .workspace-tabpanel,
 .workspace-artifact-view {
   min-width: 0;
@@ -173,11 +162,6 @@
   margin: 0;
   font-size: var(--gg-text-meta);
 }
-
-
-
-
-
 
 .artifact-empty h2 {
   margin: 0;
@@ -262,7 +246,6 @@
   margin-inline: auto;
 }
 
-
 .artifact-source {
   overflow: auto;
   color: var(--gg-color-text-primary);
@@ -296,7 +279,12 @@
   overflow-x: auto;
   scrollbar-width: thin;
   column-gap: 2px;
+  scroll-padding-inline: var(--gg-space-4);
 }
+
+.workspace-tabs[data-overflow-end] { mask-image: linear-gradient(to right, var(--gg-color-text-primary) calc(100% - 16px), transparent); }
+.workspace-tabs[data-overflow-start] { mask-image: linear-gradient(to right, transparent, var(--gg-color-text-primary) 16px); }
+.workspace-tabs[data-overflow-start][data-overflow-end] { mask-image: linear-gradient(to right, transparent, var(--gg-color-text-primary) 16px, var(--gg-color-text-primary) calc(100% - 16px), transparent); }
 
 .workspace-tab-list, .workspace-tab-actions { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; grid-row: 1; }
 .workspace-tab-actions { pointer-events: none; }
@@ -505,12 +493,6 @@
   font-size: var(--gg-text-caption);
 }
 
-.workspace-add-error {
-  margin: var(--gg-space-1) 9px var(--gg-space-2);
-  color: var(--gg-color-text-secondary);
-  font-size: var(--gg-text-caption);
-}
-
 /* Evidence: a status row (history and source line) above one reader. */
 .workspace-evidence-tab > :not(.workspace-status) {
   height: auto;
@@ -530,6 +512,8 @@
   color: var(--gg-color-text-secondary);
   font-size: var(--gg-text-meta);
 }
+
+.workspace-status-action { margin-left: auto; }
 
 .workspace-status-text {
   min-width: 0;
@@ -696,12 +680,7 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 }
 .browser-error p { margin: 0 0 var(--gg-space-2); }
 .browser-recovery-actions { display: flex; flex-wrap: wrap; gap: 6px; color: var(--gg-color-text-primary); }
-.browser-excerpt-actions {
-  display: flex;
-  flex: 0 0 auto;
-  padding: 6px var(--gg-space-3);
-  border-bottom: 1px solid var(--gg-color-border-subtle);
-}
+.browser-saved-passage { flex: none; }
 
 .browser-start,
 .browser-viewport {
@@ -720,7 +699,6 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
   color: var(--gg-color-text-secondary);
   text-align: center;
 }
-
 
 .browser-start h2,
 .browser-start p {
@@ -923,8 +901,9 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
     position: absolute;
     inset: 0 0 0 auto;
     z-index: var(--gg-z-dialog);
-    /* The narrow overlay leaves a strip of the chat visible (side-panel spec P1). */
-    width: min(480px, calc(100% - 64px));
+    /* Above 840px of stage the overlay leaves a strip of the chat visible (side-panel spec P1); below it
+       the sheet covers the whole stage, since a strip that narrow cannot be read (chat design change 13). */
+    width: max(min(480px, calc(100% - 64px)), min(100%, calc((840px - 100%) * 9999)));
     min-width: 0;
     height: auto;
     padding-left: 0;
@@ -949,7 +928,7 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 
   /* The sheet covers the right side. The chat wraps into the strip that stays visible, so a line is not sliced. */
   .app-stage:has(.artifact-panel:not([data-placement="bottom"])) .app-stage-view {
-    padding-right: min(480px, calc(100% - 64px));
+    padding-right: clamp(0px, calc((100% - 840px) * 9999), min(480px, calc(100% - 64px)));
   }
 }
 
@@ -987,12 +966,6 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 .artifact-data td[data-kind="number"] { text-align: right; font-variant-numeric: tabular-nums; }
 .artifact-data-pagination { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: var(--gg-space-1); padding: var(--gg-space-2); border-top: 1px solid var(--gg-color-border-subtle); }
 .artifact-data-pagination > span { margin-left: auto; font-size: var(--gg-text-caption); color: var(--gg-color-text-secondary); }
-.composer-artifact-context { display: flex; align-items: center; gap: var(--gg-space-2); margin: var(--gg-space-2) var(--gg-space-3) 0; padding: var(--gg-space-2) 10px; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-sm); font-size: var(--gg-text-caption); }
-.composer-artifact-context > svg, .composer-artifact-context button svg { width: var(--gg-space-4); height: var(--gg-space-4); flex-shrink: 0; }
-.composer-artifact-context > span { display: flex; flex: 1; min-width: 0; gap: var(--gg-space-2); align-items: baseline; }
-.composer-artifact-context strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.composer-artifact-context small { color: var(--gg-color-text-secondary); white-space: nowrap; }
-.composer-artifact-context button { padding: var(--gg-space-1); background: transparent; color: var(--gg-color-text-secondary); border: 0; cursor: pointer; }
 .artifact-action-error { margin: 0; padding: var(--gg-space-2) var(--gg-space-3); border-bottom: 1px solid var(--gg-color-border-subtle); color: var(--gg-color-negative); font-size: var(--gg-text-caption); overflow-wrap: anywhere; }
 .artifact-panel-state p { overflow-wrap: anywhere; }
 
@@ -1002,15 +975,14 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 .workspace-trust input { margin-top: var(--gg-space-1); flex: none; }
 .workspace-files { display: flex; flex-direction: column; min-height: 0; height: 100%; }
 .workspace-file-toolbar, .workspace-file-actions { display: flex; align-items: center; gap: 6px; padding: 10px var(--gg-space-3); border-bottom: 1px solid var(--gg-color-border-subtle); }
-.workspace-file-root { padding: 6px 14px; color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-bottom: 1px solid var(--gg-color-border-subtle); }
 .workspace-file-state { padding: 18px; font-size: var(--gg-text-control); color: var(--gg-color-text-secondary); }
 .workspace-file-list { overflow: auto; padding: 6px; }
 .workspace-file-entry { display: flex; align-items: center; width: 100%; gap: 9px; padding: 9px; text-align: left; border-radius: var(--gg-radius-xs); font-size: var(--gg-text-control); }
 .workspace-file-entry:hover { background: var(--gg-color-bg-hover); }
 .workspace-file-entry svg { width: var(--gg-space-4); height: var(--gg-space-4); flex: none; }
 .workspace-file-entry span { flex: 1; overflow-wrap: anywhere; }
-.workspace-file-entry small, .workspace-file-actions > span { color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
-.workspace-file-actions > span { margin-right: auto; }
+.workspace-file-entry small { color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
+.workspace-file-actions { justify-content: flex-end; }
 .workspace-file-content { overflow: auto; padding: 18px; flex: 1; font-size: var(--gg-text-control); }
 .workspace-file-content pre { font-family: var(--gg-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--gg-text-meta); line-height: 1.6; }
 
@@ -1083,3 +1055,12 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 .workspace-lens-content .memory-page[data-reader-open] .memory-reader:not(.is-lens) { flex:1 1 auto; align-self:stretch; width:100%; min-height:0; overflow:auto; scroll-padding-block: var(--gg-space-4); }
 .workspace-world-content > .memory-workspace { flex:1; min-height:0; }
 .artifact-panel[data-expanded] > .workspace-kind-heading { display:none; }
+
+/* The open item's view switch and actions join the Work status row (chat design change 24). */
+.workspace-status-slot { display: contents; }
+.workspace-status .artifact-view-toolbar[data-in-status] { min-height: 0; margin-left: auto; padding: 0; border-bottom: 0; gap: var(--gg-space-2); }
+
+/* The plot keeps the flexible row whether or not a header row is drawn above it. */
+.artifact-chart-shell:not([data-compact]) > .chart-engine-header { grid-row: 1; }
+.artifact-chart-shell:not([data-compact]) > .chart-engine-surface { grid-row: 2; }
+.artifact-chart-shell:not([data-compact]) > .artifact-chart-note { grid-row: 3; }

@@ -44,7 +44,7 @@ describe("Loupist shell navigation", () => {
     const appSidebar = document.querySelector("[data-slot='sidebar']") as HTMLElement;
     await user.click(within(appSidebar).getByRole("button", { name: "Toggle Sidebar", expanded: true }));
     expect(appSidebar).toHaveAttribute("data-collapsible", "icon");
-    expect(within(appSidebar).getByRole("button", { name: "Bot" })).toBeVisible();
+    expect(within(appSidebar).getByRole("button", { name: "Home" })).toBeVisible();
     expect(within(appSidebar).queryByRole("button", {name:"Capital allocation checklist"})).toBeNull();
     expect(within(appSidebar).queryByText("Chat, briefings, and alerts")).toBeNull();
   });
@@ -58,7 +58,7 @@ describe("Loupist shell navigation", () => {
     }
     await openApp(bridge);
     await chooseLoupist(user, "Contrarian Value");
-    expect(await screen.findByRole("button", { name: "Bot", current: "page" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Home", current: "page" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Search" }));
     await user.type(await screen.findByRole("combobox", { name: "Command palette" }), "Older research 0");
     await user.click(await screen.findByRole("option", { name: /Older research 0/ }));
@@ -107,6 +107,15 @@ describe("Loupist shell navigation", () => {
     await waitFor(() => expect(selectedLoupistButton()).toHaveTextContent("Contrarian Value"));
     expect(await screen.findByLabelText("Chat workspace panel")).toHaveAttribute("data-panel-kind", "world");
     expect(await screen.findByRole("heading", { level: 2, name: "Pemberton Rail" })).toBeVisible();
+  });
+
+  it("opens the holdings import from the command palette", async () => {
+    const user = userEvent.setup();
+    await openApp();
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    await user.type(await screen.findByRole("combobox", { name: "Command palette" }), "import holdings");
+    fireEvent.click(await screen.findByRole("option", { name: /Import holdings/ }));
+    expect(await screen.findByRole("dialog", { name: /holdings/i })).toBeVisible();
   });
 
   it("opens a principle found in another Loupist on that Loupist's Memory page", async () => {

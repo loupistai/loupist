@@ -9,9 +9,6 @@
 .reader-breadcrumb-part button { min-width: 0; flex: 0 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .reader-breadcrumb-part svg { width: var(--gg-space-3); height: var(--gg-space-3); color: var(--gg-color-text-secondary); flex: none; }
 .reader-breadcrumb-part [aria-current] { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: var(--gg-weight-medium); }
-.reader-files .workspace-file-root { display: flex; gap: var(--gg-space-3); padding: 7px 14px; font-size: var(--gg-text-caption); }
-.reader-files .workspace-file-root span:first-child { flex: none; }
-.reader-files .workspace-file-root span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .reader-loading.is-refresh { margin: 0; padding: 6px 14px; font-size: var(--gg-text-caption); }
 .reader-file-filter { display: flex; align-items: center; gap: var(--gg-space-2); padding: 10px 14px; border-bottom: 1px solid var(--gg-color-border-subtle); }
 .reader-file-filter svg { width: 14px; height: 14px; color: var(--gg-color-text-secondary); flex: none; }
@@ -22,7 +19,6 @@
 .reader-files .workspace-file-entry > svg { color: var(--gg-color-text-secondary); }
 .reader-files .workspace-file-entry .reader-directory-arrow { width: var(--gg-space-3); }
 .reader-files .workspace-file-actions { min-height: 46px; gap: 9px; flex-wrap: wrap; padding: var(--gg-space-2) 14px; }
-.reader-files .workspace-file-actions > span { font-size: var(--gg-text-caption); }
 .reader-view-switch { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--gg-color-border-subtle); border-radius: 7px; }
 .reader-view-switch button { border-radius: var(--gg-space-1); padding: var(--gg-space-1) var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); line-height: 1.3; }
 .reader-view-switch button[aria-pressed="true"] { background: var(--gg-color-bg-selected); color: var(--gg-color-text-primary); }
@@ -94,3 +90,12 @@
   max-height: 480px;
   object-fit: contain;
 }
+
+/* Files reader (chat design change 23): type and size in the location row; headings on the answer's scale. */
+.workspace-file-meta { flex: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); white-space: nowrap; }
+.workspace-file-content [data-streamdown="heading-1"] { font-size: var(--gg-text-heading); line-height: var(--gg-leading-heading); }
+.workspace-file-content [data-streamdown="heading-2"] { font-size: var(--gg-text-title); line-height: var(--gg-leading-title); }
+.workspace-file-content [data-streamdown="heading-3"] { font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); }
+.workspace-file-content :is([data-streamdown="heading-4"], [data-streamdown="heading-5"], [data-streamdown="heading-6"]) { font-size: var(--gg-text-reading); line-height: var(--gg-leading-reading); }
+.workspace-file-content [data-streamdown^="heading-"] { margin: var(--gg-space-7) 0 var(--gg-space-2); font-weight: var(--gg-weight-semibold); }
+.workspace-file-content [data-streamdown^="heading-"]:first-child { margin-top: 0; }

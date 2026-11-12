@@ -13,7 +13,12 @@ export const onboardingScenarios: PreviewScenario[] = [
     }),
     setup: bridge => prepareFixture(bridge, "provider"),
   })),
-  { ...base("onboarding-bot", "First launch opens Bot after the notice", () => document.getElementById("current-location")?.textContent === i18n.t("app:thread.title") ? select(".chat-layout") : null, async root => {
+  // Step 3 with an account already connected: templates, Name and Create, then the spending line.
+  { ...base("onboarding-create", "Onboarding: create the first Loupist", () => select('[data-onboarding="3"] [data-onboarding-create]') && select('[data-onboarding="3"] [data-background-reading]'), async root => {
+    await click("[data-notice-acknowledgment]", root);
+    await click("[data-onboarding-start]", root);
+  }), setup: bridge => prepareFixture(bridge, "loupist") },
+  { ...base("onboarding-bot", "First launch opens Home after the notice", () => document.getElementById("current-location")?.textContent === i18n.t("app:thread.title") ? select(".chat-layout") : null, async root => {
     await click("[data-notice-acknowledgment]", root);
     await click("[data-onboarding-start]", root);
     await click("[data-onboarding-create]", root);

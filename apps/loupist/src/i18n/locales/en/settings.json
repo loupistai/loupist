@@ -326,7 +326,7 @@
     "couldNotUpdateThisLoupistSConnections": "Could not update this Loupist's connections.",
     "connections": "Connections",
     "settingsForName": "Settings for {{name}}",
-    "chatPreferences": "Chat preferences",
+    "chatPreferences": "Chat defaults",
     "localWorkspace": "Your workspace folder",
     "rememberNewChats": "Remember new chats",
     "workspaceCaption": "Where this Loupist's files live on your Mac.",

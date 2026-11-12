@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import type { ChatStreamEvent } from "../../types";
 import { App } from "../../App";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
-import { chooseLoupist, loupistIsRunning, newChatButton, openApp, privateChatToggle, waitForLoupistRunning, openChat } from "../renderApp";
+import { chooseLoupist, loupistIsRunning, newChatButton, openApp, privateChatOn, waitForLoupistRunning, openChat } from "../renderApp";
 import { completedRun } from "../streamFixtures";
 
 type User = ReturnType<typeof userEvent.setup>;
@@ -286,7 +286,7 @@ describe("Loupist · Chat streaming and concurrency", () => {
     await act(async () => resolveSelection(stale));
     await openChat("Canonical remote thread title");
     expect(await screen.findByText(/I reviewed.*Preserve this response across a stale selection/)).toBeVisible();
-    expect(privateChatToggle()).toHaveAttribute("aria-pressed", "true");
+    expect(privateChatOn()).toBe(true);
   });
 
   it("rehydrates completed Chat messages from the native store after remount", async () => {

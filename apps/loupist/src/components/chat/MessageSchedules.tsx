@@ -112,6 +112,7 @@ function ProposedSchedule({ receipt, onOpen }: { receipt: TaskReceipt; onOpen?: 
     return <ScheduleCard receipt={receipt} onOpen={onOpen} status={statuses()[proposal.status]} detail={next} />;
   }
   return <ScheduleCard receipt={receipt} onOpen={onOpen} status={t("messageSchedules.awaiting")} detail={t("messageSchedules.proposalHint")}>
+    <p className="message-schedule-spending">{t("messageSchedules.spending")}</p>
     {scope ? <div className="message-schedule-actions">
       <Button type="button" size="sm" disabled={busy} onClick={() => void act("confirm")}>{t("messageSchedules.turnOn")}</Button>
       <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => void act("discard")}>{t("messageSchedules.discard")}</Button>

@@ -11,14 +11,15 @@ type Props = {
 };
 
 export function PageHeader({ title, titleId, description, metadata, actions, className }: Props) {
+  // The frame is the size container, so actions wrap under the title wherever the header is narrow (≤ 760 px), not only in a narrow window.
   return (
-    <header className={cn("page-header", className)}>
+    <div className="page-header-frame"><header className={cn("page-header", className)}>
       <div className="page-header-copy">
         <h1 id={titleId}>{title}</h1>
         {description ? <p className="page-description">{description}</p> : null}
         {metadata ? <div className="page-metadata">{metadata}</div> : null}
       </div>
       {actions ? <div className="page-header-actions">{actions}</div> : null}
-    </header>
+    </header></div>
   );
 }

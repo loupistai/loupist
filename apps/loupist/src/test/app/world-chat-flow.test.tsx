@@ -119,7 +119,7 @@ describe("World and Lens in the single Chat flow", () => {
     const user = userEvent.setup();
     const bridge = await openApp();
     const chatSend = vi.spyOn(bridge, "chatSend");
-    await user.click(screen.getByRole("button",{name:"Bot"}));
+    await user.click(screen.getByRole("button",{name:"Home"}));
     await user.type(composer(), "Keep this research question.");
     await discussLens(user);
     const first = (composer() as HTMLTextAreaElement).value;

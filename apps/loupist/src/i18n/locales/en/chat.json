@@ -93,6 +93,7 @@
     "send": "Send",
     "messageLoupist": "Message Loupist",
     "askLoupistToAddContextForCommands": "Ask {{loupistName}}…",
+    "askYourLoupist": "Ask your Loupist…",
     "newChat": "New chat",
     "model": "Model",
     "attachFiles": "Attach files",
@@ -124,9 +125,12 @@
     "attachmentName": "attachment",
     "removeAttachment": "Remove {{value1}}",
     "removeContextChip": "Remove {{label}}",
-    "dontRememberThisChat": "Private chat: don't remember this chat",
-    "privateChatOn": "Private chat is on: this chat won't be remembered",
-    "privateNotSavedToMemory": "Private — not saved to memory",
+    "privateChat": "Private chat",
+    "privateMenuDetail": "Doesn't use or add to what your Loupist remembers",
+    "privateChip": "Private · memory off",
+    "privateOff": "Turn off private chat",
+    "connectToAsk": "Connect an AI account to start asking…",
+    "privateStatus": "Private chat: your Loupist doesn't use or add to what it remembers. The chat is still saved, and still goes to your AI provider.",
     "informationDisclosure": "AI can be wrong. Not a licensed financial adviser.",
     "moreChips": "+{{formattedCount}} more",
     "attachments": {
@@ -341,7 +345,7 @@
     "updatedDate": "Updated {{date}}",
     "attributedSource": "Source: {{attribution}}",
     "numberedSource": "Source {{value1}}",
-    "numberedWorld": "World {{value1}}",
+    "numberedWorld": "Map {{value1}}",
     "numberedLens": "Lens {{value1}} · {{value2}}"
   },
   "messageMemoryRow": {
@@ -364,14 +368,14 @@
     "relationshipsOnMap_other": "{{formattedCount}} relationships updated on the map",
     "savedSources_one": "Saved {{formattedCount}} source",
     "savedSources_other": "Saved {{formattedCount}} sources",
-    "savedPrinciples_one": "Saved {{formattedCount}} new rule",
-    "savedPrinciples_other": "Saved {{formattedCount}} new rules",
+    "savedPrinciples_one": "Saved {{formattedCount}} new principle",
+    "savedPrinciples_other": "Saved {{formattedCount}} new principles",
     "savedJournal_one": "Saved {{formattedCount}} journal entry",
     "savedJournal_other": "Saved {{formattedCount}} journal entries",
     "savedNotes_one": "Saved {{formattedCount}} research note",
     "savedNotes_other": "Saved {{formattedCount}} research notes",
-    "savedWorld_one": "Saved {{formattedCount}} World item",
-    "savedWorld_other": "Saved {{formattedCount}} World items",
+    "savedWorld_one": "{{formattedCount}} added to the map",
+    "savedWorld_other": "{{formattedCount}} added to the map",
     "nothingNew": "Nothing new saved",
     "thesisMoved": "{{name}}: {{verdict}}",
     "thesisMovedFrom": "{{name}}: {{from}} → {{verdict}}",
@@ -388,12 +392,14 @@
     "ideas_one": "{{formattedCount}} idea",
     "ideas_other": "{{formattedCount}} ideas",
     "usedPages_one": "Used {{formattedCount}} page",
-    "usedPages_other": "Used {{formattedCount}} pages"
+    "usedPages_other": "Used {{formattedCount}} pages",
+    "usedPrinciples_one": "Used your principle",
+    "usedPrinciples_other": "Used {{formattedCount}} principles"
   },
   "messageSchedules": {
     "draftFilesFailed": "Could not save draft attachments on this device.",
-    "needsTime": "Answer in Bot",
-    "handedToBot": "Handed to Bot · {{status}}",
+    "needsTime": "Answer in Home",
+    "handedToBot": "Sent to Home · {{status}}",
     "scheduledTasks": "Scheduled tasks",
     "deleted": "Deleted",
     "runStarted": "Run started",
@@ -409,24 +415,25 @@
     "discarded": "Discarded",
     "nextRun": "Next run {{date}}",
     "couldNotChange": "Couldn't change it. Try again.",
-    "proposalHint": "Nothing runs until you turn it on."
+    "proposalHint": "Nothing runs until you turn it on.",
+    "spending": "Scheduled tasks use your AI account each run."
   },
   "worldProcessingStatus": {
-    "sourceSavedCouldNotRefreshWorldStatus": "Source saved · Could not refresh World status",
-    "sourceSavedCheckWorldForProcessingDetails": "Source saved · Check World for processing details",
+    "sourceSavedCouldNotRefreshWorldStatus": "Source saved · Could not refresh the Map status",
+    "sourceSavedCheckWorldForProcessingDetails": "Source saved · Check the Map for details",
     "refreshStatus": "Refresh status",
-    "queued": "World: queued",
-    "running": "World: processing relationships",
-    "completed": "World: relationships updated",
-    "paused": "World: processing paused",
-    "paused_budget": "World: processing paused",
-    "failed_before_mutation": "World: processing failed",
-    "reconcile_required": "World: outcome uncertain — review in World",
-    "reconciled_without_retry": "Source retained · Interrupted World processing was not retried",
-    "cancelled_before_start": "World: processing cancelled",
-    "no_text": "Source saved · No readable text for World processing",
-    "disabled": "Source saved · World processing is off",
-    "not_configured": "Source saved · Set up World processing in Loupist settings",
+    "queued": "Map: queued",
+    "running": "Map: connecting relationships",
+    "completed": "Map: relationships updated",
+    "paused": "Map: building paused",
+    "paused_budget": "Map: building paused",
+    "failed_before_mutation": "Map: building failed",
+    "reconcile_required": "Map: outcome uncertain — review it in the Map",
+    "reconciled_without_retry": "Source retained · Interrupted Map building was not retried",
+    "cancelled_before_start": "Map: building cancelled",
+    "no_text": "Source saved · No readable text for the Map",
+    "disabled": "Source saved · Map building is off",
+    "not_configured": "Source saved · Set up Map building in Loupist settings",
     "saved": "Source saved"
   },
   "chatStatusPill": {
@@ -472,6 +479,7 @@
     "tryAgain": "Try again",
     "openInBrowser": "Open in browser",
     "viewSavedPassage": "View saved passage",
+    "savedPassage": "Saved passage",
     "browseInLoupist": "Browse in Loupist",
     "enterAnHTTPOrHTTPSAddressAboveSearchQueries": "Enter an HTTP or HTTPS address above. Search queries are not sent to a search engine.",
     "browserContent": "Browser content",
@@ -521,7 +529,7 @@
       "source": "Source",
       "savedSource": "Saved source",
       "lens": "Lens",
-      "world": "World",
+      "world": "Map",
       "journal": "Journal",
       "note": "Research note",
       "file": "File"
@@ -614,8 +622,8 @@
   },
   "workspaceKnowledgeReader": {
     "couldNotOpenThisSavedReference": "Could not open this saved reference.",
-    "exploreThisSavedWorldAndItsEvidence": "Explore this saved World and its evidence.",
-    "openWorld": "Open World",
+    "exploreThisSavedWorldAndItsEvidence": "Explore this saved Map and its evidence.",
+    "openWorld": "Open Map",
     "openInLens": "Open in Lens",
     "retryReference": "Retry reference",
     "openingSavedReference": "Opening saved reference…",
@@ -631,7 +639,7 @@
     "chart": "Chart",
     "document": "Document",
     "closeTab": "Close {{title}} tab",
-    "map": "Map",
+    "map": "Chat map",
     "evidence": "Evidence",
     "newContent": "New in {{tab}}",
     "work": "Work",
@@ -724,6 +732,7 @@
   },
   "financialChart": {
     "chartControls": "Chart controls",
+    "moreControls": "More chart controls",
     "draw": "Draw",
     "stopEditingDrawings": "Stop editing drawings",
     "volumeIndicator": "Volume",
@@ -805,7 +814,7 @@
     "datasetResult": "Dataset result",
     "toolResult": "Tool result",
     "aSavedAnalysisResultThisIsNotAnOriginal": "A saved analysis result. This is not an original source or an independently verified fact.",
-    "worldSearch": "World search",
+    "worldSearch": "Map search",
     "lensSearch": "Lens search",
     "numberedSource": "Source {{number}}: {{title}}",
     "memoryLabel": "Memory: {{memoryTitle}}",
@@ -820,7 +829,7 @@
     "createKind": "Created {{kind}}"
   },
   "memoryPreview": {
-    "thisSavedPreviewIsIncompleteOpenTheRelatedRecord": "This saved preview is incomplete. Open the related record in World or Lens to read its content.",
+    "thisSavedPreviewIsIncompleteOpenTheRelatedRecord": "This saved preview is incomplete. Open the related record in the Map or Lens to read its content.",
     "noMatchingSavedRecords": "No matching saved records.",
     "moreMatchesAreAvailableInMemory": "More matches are available in Memory.",
     "noEntitiesOrRelationshipsInThisSavedView": "No entities or relationships in this saved view.",
@@ -830,7 +839,7 @@
   },
   "searchComposerContext": {
     "savedSource": "Saved source",
-    "savedJudgment": "Saved judgment",
+    "savedJudgment": "Journal entry",
     "savedWork": "Saved work",
     "chart": "Chart",
     "document": "Document",
@@ -956,13 +965,14 @@
   },
   "approvalCard": {
     "label": "Approval for {{tool}}",
-    "title": "Needs your approval",
+    "title": "Needs your OK",
     "waiting": "waiting {{time}}",
     "body": "{{connection}} wants to use “{{tool}}” for {{target}}.",
     "bodyNoTarget": "{{connection}} wants to use “{{tool}}”.",
     "readOnly": "This connection receives the request. The tool can only read data.",
     "allowOnce": "Allow once",
     "always": "Always allow for this connection",
+    "alwaysShort": "Always allow",
     "notNow": "Not now",
     "allowedOnce": "Allowed once · {{tool}}",
     "alwaysAllowed": "Always allowed · {{tool}} ({{connection}})",
@@ -994,6 +1004,7 @@
   "chatBlock": {
     "building": "Building…",
     "couldNotBuildChart": "Couldn't build this chart.",
+    "askAgain": "Ask again",
     "updatedSince": "Updated since this answer.",
     "openLatest": "Open latest",
     "unavailable": "This chart is no longer available.",
@@ -1041,7 +1052,7 @@
       "source": "from {{title}}",
       "check": "To check by {{date}}",
       "conflict": "sources disagree",
-      "watching": "watching"
+      "watching": "following"
     },
     "q": {
       "changed": "What changed for {{name}} since {{date}}?",
@@ -1067,6 +1078,42 @@
       "exDividend": "Ex-dividend date",
       "recordDate": "Dividend record date",
       "check": "To check: {{claim}}"
+    },
+    "setup": {
+      "label": "Get set up",
+      "count": "{{done}} of {{total}}",
+      "hide": "Hide",
+      "done": "Done",
+      "needsAccount": "Needs an AI account",
+      "holdings": "Import holdings (CSV)…",
+      "follow": {
+        "label": "Follow a few companies",
+        "insert": "Follow these for me: "
+      },
+      "principle": {
+        "label": "Teach a principle",
+        "insert": "My principle: ",
+        "example": "e.g. check whether capacity costs are temporary before trusting a margin recovery"
+      },
+      "briefing": {
+        "label": "Get a briefing every morning",
+        "insert": "Send me a briefing every weekday at 8:00 AM."
+      }
+    },
+    "focusSubject": {
+      "portfolio": "my portfolio",
+      "semiconductors": "semiconductors",
+      "dividends": "dividend stocks",
+      "technology": "US big tech",
+      "crypto": "crypto",
+      "macro": "macro and rates",
+      "commodities": "commodities",
+      "realAssets": "real assets"
+    },
+    "homeLine": "Briefings, alerts and anything that needs you will arrive in this conversation.",
+    "readTogether": {
+      "label": "Read a filing or article together",
+      "insert": "Read this with me and tell me what matters: "
     }
   },
   "toolProgress": {
@@ -1442,8 +1489,8 @@
     },
     "using": {
       "title": "Using",
-      "principles_one": "{{formattedCount}} rule",
-      "principles_other": "{{formattedCount}} rules",
+      "principles_one": "{{formattedCount}} principle",
+      "principles_other": "{{formattedCount}} principles",
       "methods_one": "{{formattedCount}} method",
       "methods_other": "{{formattedCount}} methods",
       "connections_one": "{{formattedCount}} connection",
@@ -1858,5 +1905,13 @@
     "running": "Reviewing earlier conversation…",
     "done": "Reviewed earlier conversation",
     "incomplete": "Could not finish reviewing earlier conversation"
+  },
+  "watchAll": {
+    "action_one": "Watch it",
+    "action_other": "Watch all {{formattedCount}}",
+    "note": "Checks public filings, results dates and dividends for the names you follow, hourly while Loupist is open. No AI usage. Only names are sent to data sources.",
+    "done_one": "Watching {{formattedCount}} name. Change it in <0>Following</0>.",
+    "done_other": "Watching {{formattedCount}} names. Change it in <0>Following</0>.",
+    "failed": "Couldn’t turn on watching. Try again."
   }
 }

@@ -320,7 +320,7 @@ it("cites external grounding once, opens it, and routes saved reads to Memory", 
   expect(opened(props.open, "evidence")).toEqual([expect.objectContaining({ evidence: expect.objectContaining({ id: connection.id }) })]);
   await user().click(screen.getByRole("button", { name: "world read · Memory: Annual report" }));
   expect(destinations(props.open).at(-1)).toEqual({ kind: "memory", location: expect.objectContaining({ surface: "source", recordId: "source-record" }), title: "Annual report" });
-  await user().click(screen.getByRole("button", { name: "Result: World search" }));
+  await user().click(screen.getByRole("button", { name: "world search · Result: Map search" }));
   expect(opened(props.open, "evidence")).toHaveLength(1);
   expect(within(screen.getByLabelText("Work progress")).getByLabelText("Tool result")).toHaveTextContent(search.excerpt);
 });

@@ -5,7 +5,8 @@ import i18n from "@/i18n";
 import { TooltipProvider } from "../ui/tooltip";
 import { ChatComposer } from "./ChatComposer";
 
-function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), isRunning = true, onSearchContext, chips }: {
+function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), isRunning = true, onSearchContext, chips, modelCount = 1 }: {
+  modelCount?: number;
   onFollowUp?: ComponentProps<typeof ChatComposer>["onFollowUp"];
   onSend?: ComponentProps<typeof ChatComposer>["onSend"];
   isRunning?: boolean;
@@ -17,7 +18,7 @@ function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), isRunning = t
   return <TooltipProvider><ChatComposer
     prompt={prompt} onPromptChange={setPrompt}
     privateChat={privateChat} isRunning={isRunning} error={null} streamAnnouncement=""
-    models={[{ id: "model", provider: "test", model: "model", name: "Model", input: ["text", "image"], reasoning: true, context_window: 10000, max_tokens: 1000, thinking_levels: ["medium"], thinking_level_map: {}, run_controls: [], credential_source: "saved" }]} providers={[]} modelSelection={{ model_profile_id: "model", thinking_level: "medium", run_options: {} }} modelAuto onModelResetToAuto={() => {}}
+    models={Array.from({ length: modelCount }, (_, index) => ({ id: index ? `model-${index}` : "model", provider: "test", model: "model", name: index ? `Model ${index}` : "Model", input: ["text", "image"] as ("text" | "image")[], reasoning: true, context_window: 10000, max_tokens: 1000, thinking_levels: ["medium"], thinking_level_map: {}, run_controls: [], credential_source: "saved" as const }))} providers={[]} modelSelection={{ model_profile_id: "model", thinking_level: "medium", run_options: {} }} modelAuto onModelResetToAuto={() => {}}
     skills={[{ id: "research", name: "Research", description: "Research a topic" }]}
     plugins={[]}
     onPrivateChatChange={setPrivateChat} onModelSelectionChange={vi.fn()}
@@ -47,7 +48,8 @@ describe("ChatComposer input", () => {
 
   it("keeps focus in the model search when clicking its portaled input", async () => {
     const user = userEvent.setup();
-    render(<RunningComposer isRunning={false} />);
+    // The composer shows search from eight models.
+    render(<RunningComposer isRunning={false} modelCount={8} />);
     await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
     const search = screen.getByRole("searchbox", { name: "Search models" });
     await user.click(search);
@@ -135,14 +137,17 @@ describe("ChatComposer input", () => {
     expect(textarea).toHaveAttribute("placeholder", "Loupist에게 질문…");
   });
 
-  it("toggles private chat from the keyboard and keeps the AI notice visible", async () => {
+  it("turns private chat on from the + menu, shows its chip and keeps the AI notice visible", async () => {
     const user = userEvent.setup();
     render(<RunningComposer isRunning={false} />);
-    const toggle = screen.getByRole("button", { name: "Private chat: don't remember this chat" });
-    toggle.focus();
-    await user.keyboard(" ");
-    expect(toggle).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("Private — not saved to memory")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Private chat" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Add to this message" }));
+    await user.click(await screen.findByRole("menuitemcheckbox", { name: /Private chat/ }));
+    const off = await screen.findByRole("button", { name: "Turn off private chat" });
+    expect(screen.getByText("Private · memory off")).toBeVisible();
+    expect(screen.getByText("Private · memory off").parentElement).toHaveAccessibleDescription("Private chat: your Loupist doesn't use or add to what it remembers. The chat is still saved, and still goes to your AI provider.");
+    await user.click(off);
+    expect(screen.queryByText("Private · memory off")).toBeNull();
     expect(screen.getByText("AI can be wrong. Not a licensed financial adviser.")).toBeVisible();
   });
 

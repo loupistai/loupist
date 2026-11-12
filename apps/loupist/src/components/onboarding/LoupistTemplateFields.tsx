@@ -17,7 +17,6 @@ const loupistTemplates = [
   { id: "crypto", avatar: "loupist-05" },
   { id: "macro", avatar: "loupist-06" },
   { id: "commodities", avatar: "loupist-07" },
-  { id: "realAssets", avatar: "loupist-09" },
   { id: "custom", avatar: "loupist-10" },
 ] as const satisfies readonly { id: LoupistTemplateId; avatar: LoupistAvatarId }[];
 export type LoupistDraft = { template: LoupistTemplateId; name: string; focus: string; avatar: LoupistAvatarId; tone: LoupistTone };
@@ -60,19 +59,29 @@ export function templateDraft(id: TemplateId, tone: LoupistTone = "balanced"): L
   };
 }
 
-export function LoupistTemplateFields({ draft, onChange, busy = false, idPrefix = "new-loupist", onFollow, followed = [] }: {
+export function LoupistTemplateFields({ draft, onChange, busy = false, idPrefix = "new-loupist", onFollow, essentials = false }: {
   draft: LoupistDraft; onChange: (draft: LoupistDraft) => void; busy?: boolean; idPrefix?: string;
-  /** Adds a starter to the watchlist; without it no starters are offered. */
+  /**
+   * Onboarding's short form: templates, starters and Name, plus Focus for Custom. The
+   * template sets the avatar and tone; Loupist settings changes them later.
+   */
+  essentials?: boolean;
+  /** Adds a starter to the watchlist, which every Loupist shares; without it no starters are offered. */
   onFollow?: (entry: WatchlistAddRequest) => Promise<void>;
-  followed?: ReadonlyArray<{ symbol: string; market: string }>;
 }) {
   const { t } = useTranslation("onboarding");
   const [adding, setAdding] = useState<string | null>(null);
+  const [followed, setFollowed] = useState<readonly string[]>([]);
+  const [followError, setFollowError] = useState(false);
   const starters = draft.template in TEMPLATE_STARTERS ? TEMPLATE_STARTERS[draft.template as keyof typeof TEMPLATE_STARTERS] : null;
   const follow = async (entry: (typeof TEMPLATE_STARTERS)[keyof typeof TEMPLATE_STARTERS][number]) => {
     if (!onFollow || adding) return;
     setAdding(entry.key);
-    try { await onFollow({ symbol: entry.symbol, market: entry.market, displayName: entry.name }); }
+    setFollowError(false);
+    try {
+      await onFollow({ symbol: entry.symbol, market: entry.market, displayName: entry.name });
+      setFollowed(current => [...current, entry.key]);
+    } catch { setFollowError(true); }
     finally { setAdding(null); }
   };
   return <div className="loupist-template-fields">
@@ -85,21 +94,22 @@ export function LoupistTemplateFields({ draft, onChange, busy = false, idPrefix 
     {onFollow && starters ? <div className="loupist-template-starters" data-template-starters={draft.template}>
       <p>{t("wizard.starters")}</p>
       <div className="onboarding-chips">{starters.map(entry => {
-        const on = followed.some(item => item.symbol === entry.symbol && item.market === entry.market);
+        const on = followed.includes(entry.key);
         const name = t(`wizard.starter.${entry.key}`);
         return <button type="button" key={entry.key} className="loupist-starter" aria-pressed={on} disabled={busy || adding !== null}
           aria-label={t("wizard.followStarter", { name })} onClick={() => { if (!on) void follow(entry); }}>{name}</button>;
       })}</div>
+      {followError ? <p className="inline-error" role="alert">{t("wizard.followFailed")}</p> : null}
     </div> : null}
-    {onFollow && draft.template === "realAssets" ? <p className="loupist-template-starters" data-template-starters="realAssets">{t("wizard.realAssetsSource")}</p> : null}
     <div className="form-field"><Label htmlFor={`${idPrefix}-name`}>{t("wizard.name")}</Label>
       <Input id={`${idPrefix}-name`} value={draft.name} maxLength={60} disabled={busy}
         onChange={event => onChange({ ...draft, name: event.target.value })} /></div>
-    <LoupistAvatarPicker loupist={draft} disabled={busy} onChange={avatar => onChange({ ...draft, avatar })} />
-    <div className="form-field"><Label htmlFor={`${idPrefix}-focus`}>{t("wizard.focus")}</Label>
+    {essentials ? <p className="loupist-template-later">{t("wizard.changeLater")}</p>
+      : <LoupistAvatarPicker loupist={draft} disabled={busy} onChange={avatar => onChange({ ...draft, avatar })} />}
+    {!essentials || draft.template === "custom" ? <div className="form-field"><Label htmlFor={`${idPrefix}-focus`}>{t("wizard.focus")}</Label>
       <Textarea id={`${idPrefix}-focus`} rows={2} value={draft.focus} maxLength={280} disabled={busy}
-        placeholder={t("wizard.focusPlaceholder")} onChange={event => onChange({ ...draft, focus: event.target.value })} /></div>
-    <LoupistToneField name={`${idPrefix}-tone`} value={draft.tone} busy={busy} onChange={tone => onChange({ ...draft, tone })}
-      legend={draft.name.trim() ? t("tone.title", { name: draft.name.trim() }) : t("tone.titleDefault")} />
+        placeholder={t("wizard.focusPlaceholder")} onChange={event => onChange({ ...draft, focus: event.target.value })} /></div> : null}
+    {essentials ? null : <LoupistToneField name={`${idPrefix}-tone`} value={draft.tone} busy={busy} onChange={tone => onChange({ ...draft, tone })}
+      legend={draft.name.trim() ? t("tone.title", { name: draft.name.trim() }) : t("tone.titleDefault")} />}
   </div>;
 }

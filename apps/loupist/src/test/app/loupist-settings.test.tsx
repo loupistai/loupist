@@ -16,7 +16,7 @@ it("keeps profile, chat, learning and skills on one page with changes scoped to 
   const page = await screen.findByRole("region", { name: "Loupist settings" });
   expect(screen.queryByRole("dialog", { name: "Loupist settings" })).toBeNull();
   expect(within(page).getByRole("textbox", { name: "Instructions for this Loupist" })).toBeVisible();
-  await user.click(within(page).getByRole("button", { name: "Chat preferences" }));
+  await user.click(within(page).getByRole("button", { name: "Chat defaults" }));
   expect(within(page).queryByRole("combobox", { name: "Settings apply to" })).toBeNull();
   await user.click(await within(page).findByRole("switch", { name: "Remember new chats" }));
   await waitFor(() => expect(update).toHaveBeenCalledWith(expect.objectContaining({
@@ -44,7 +44,7 @@ it("keeps profile, chat, learning and skills on one page with changes scoped to 
   await screen.findByRole("region", { name: "Loupist settings" });
   act(() => bridge.emitMenuAction("map"));
   expect(screen.queryByRole("region", { name: "Loupist settings" })).toBeNull();
-  expect(screen.getByRole("button", { name: /Panel kind/ })).toHaveTextContent("World");
+  expect(screen.getByRole("button", { name: /Panel kind/ })).toHaveTextContent("Map");
   expect(await screen.findByRole("region", { name: "Map" })).toBeVisible();
 });
 
@@ -63,7 +63,7 @@ it("opens the same page for the chosen Loupist from app settings", async () => {
   await user.click(screen.getByRole("button", { name: "Chat defaults" }));
   expect(await screen.findByRole("heading", { name: "Chat defaults", level: 1 })).toBeVisible();
   expect(screen.queryByRole("combobox", { name: "Settings apply to" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "World processing" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Map building" })).toBeNull();
 });
 
 it("opens the exact unavailable connection's setup from Loupist tools without enabling it", async () => {
@@ -113,14 +113,16 @@ it("distinguishes Loupists with matching folder names and opens the intended one
   expect(selectedLoupistButton()).toHaveTextContent("research");
 });
 
-it("keeps what the map tracks in Map building, not Learning", async () => {
+it("keeps what the map tracks under Map building and Advanced, not Learning", async () => {
   const user = userEvent.setup();
   await openApp();
   await user.click(headerAction("Loupist settings"));
   const page = await screen.findByRole("region", { name: "Loupist settings" });
-  await user.click(within(page).getByRole("button", { name: "World processing" }));
+  await user.click(within(page).getByRole("button", { name: "Map building" }));
   const world = page.querySelector<HTMLElement>('[data-loupist-section="world"]')!;
   const learning = page.querySelector<HTMLElement>('[data-loupist-section="learning"]')!;
+  expect(within(world).queryByText("What the map tracks")).not.toBeVisible();
+  await user.click(within(world).getByText("Advanced"));
   expect(await within(world).findByText("What the map tracks")).toBeVisible();
   expect(within(learning).queryByText("What the map tracks")).toBeNull();
 });

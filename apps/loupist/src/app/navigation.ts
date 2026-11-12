@@ -1,8 +1,12 @@
 import i18n from "@/i18n/index";
 import type { WorkspacePanelKind } from "./useWorkspacePanel";
 
-/** A page the stage shows. World and Lens are panels beside Chat, not pages. */
-export type AppTab = "chat" | "schedule" | "settings";
+/**
+ * A page the stage shows. Map and Lens are panels beside Chat, not pages.
+ * `following` is the Following page (what you follow, shared by every Loupist); it has
+ * no ⌘ key and opens from its sidebar row and the palette.
+ */
+export type AppTab = "chat" | "following" | "schedule" | "settings";
 export type SettingsSection = "model" | "loupists" | "connections" | "agent" | "skills" | "general" | "appearance" | "keyboard" | "updates";
 
 type AppPage = {
@@ -14,6 +18,7 @@ type AppPage = {
 
 export const APP_PAGES: Record<AppTab, AppPage> = {
   chat: { get label() { return i18n.t("app:shell.tabs.chat"); } },
+  following: { get label() { return i18n.t("app:shell.tabs.following"); }, get heading() { return i18n.t("app:shell.tabs.following"); } },
   schedule: { get label() { return i18n.t("app:shell.tabs.schedule"); }, get heading() { return i18n.t("app:shell.taskHistory"); } },
   settings: { get label() { return i18n.t("app:shell.settings"); }, get heading() { return i18n.t("app:shell.settings"); } },
 };

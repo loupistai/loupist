@@ -15,8 +15,8 @@ export type SavePng = (request: { suggestedName: string; kind: "png"; bytes: num
  * the chart with the export footer, saved through the native dialog (Rust
  * `export_save`). Cancelling the dialog is not an error.
  */
-export function SaveChartPng({ slot, title, onSave }: { slot: ChartSnapshotSlot; title: string; onSave: SavePng }) {
-  useTranslation("chat");
+/** The save itself, for a button or a menu item. */
+export function useSaveChartPng(slot: ChartSnapshotSlot, title: string, onSave: SavePng) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const save = async () => {
@@ -34,10 +34,16 @@ export function SaveChartPng({ slot, title, onSave }: { slot: ChartSnapshotSlot;
       setBusy(false);
     }
   };
+  return { save, busy, failed };
+}
+
+export function SaveChartPng({ slot, title, onSave, textOnly = false }: { slot: ChartSnapshotSlot; title: string; onSave: SavePng; textOnly?: boolean }) {
+  useTranslation("chat");
+  const { save, busy, failed } = useSaveChartPng(slot, title, onSave);
   return <>
     {failed ? <span className="chat-artifact-block-error" role="alert">{t("chartExport.couldNotSave")}</span> : null}
     <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => void save()}>
-      <ImageDownIcon aria-hidden="true" />{t("chartExport.savePng")}
+      {textOnly ? null : <ImageDownIcon aria-hidden="true" />}{t("chartExport.savePng")}
     </Button>
   </>;
 }

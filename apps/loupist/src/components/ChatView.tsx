@@ -121,6 +121,8 @@ type Props = {
   /** Nothing chosen and no Chat default: sends name no model, and Rust resolves Auto at admission. */
   hostAuto?: boolean;
   onOpenChatPreferences?: () => void;
+  /** Opens the Following page. */
+  onOpenFollowing?: () => void;
   initialPrompt?: string;
   draft?: ChatDraft;
   sessionDrafts?: ChatSessionDrafts;
@@ -175,6 +177,7 @@ export function ChatView({
   onAcknowledgeModelNotice,
   hostAuto = false,
   onOpenChatPreferences,
+  onOpenFollowing,
   initialPrompt,
   draft,
   sessionDrafts,
@@ -252,6 +255,20 @@ export function ChatView({
   const workspaceAvailable = loupist.availability.status === "available";
   const selectedThinkingLevel = modelSelection.thinking_level;
   const selectedRunOptions = modelSelection.run_options;
+  // The composer's model menu is memoized: keep its inputs stable across streaming ticks.
+  const composerModels = useMemo(() => visibleCatalogModels(modelCatalog), [modelCatalog]);
+  const composerProviders = useMemo(() => modelCatalog?.providers ?? [], [modelCatalog]);
+  const accountConnected = Boolean(modelCatalog?.providers.some((provider) => provider.credential_source !== "missing") || modelCatalog?.models.some((model) => model.credential_source !== "missing"));
+  const runOptionsKey = JSON.stringify(selectedRunOptions);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- run options compare by value
+  const composerSelection = useMemo(() => modelSelection, [selectedModelProfileId, selectedThinkingLevel, runOptionsKey]);
+  const latest = useRef({ onModelResetToAuto, onOpenModelSettings, bridge });
+  latest.current = { onModelResetToAuto, onOpenModelSettings, bridge };
+  const resetModelToAuto = useCallback(() => latest.current.onModelResetToAuto(), []);
+  const openModelSettings = useCallback(() => latest.current.onOpenModelSettings?.(), []);
+  const openUsage = useCallback((provider: string) => {
+    void latest.current.bridge.providerOpenUsage({ provider }).catch((cause) => setConfigurationReadError(errorMessage(cause, t("chatError.manageUsage"))));
+  }, []);
   const activeThread = useMemo<ChatThread | undefined>(() => {
     if (isEmptyChatThreadId(activeThreadId)) {
       return emptyChatThread(loupist.id);
@@ -846,8 +863,10 @@ export function ChatView({
     onWorldChanged={onWorldChanged}
     onSuggestion={askFromMorningMessage}
     onQuote={onChipsChange ? quoteToComposer : undefined}
-    loupistFocus={loupist.philosophy}
     loupistTemplate={loupist.template}
+    accountConnected={accountConnected}
+    onConnectAccount={onOpenModelSettings ? openModelSettings : undefined}
+    onOpenFollowing={onOpenFollowing}
     guiding={guidingTexts}
     home={activeThread?.home}
     // A Look back draft already holds its question; generic starters would compete with it.
@@ -970,7 +989,7 @@ export function ChatView({
         <ChatComposer
           key={activeThread?.id ?? "draft"}
           attachmentDraft={draft}
-          placeholder={t("chatComposer.askLoupistToAddContextForCommands", { loupistName: loupist.name })}
+          placeholder={[...loupist.name].length > 24 ? t("chatComposer.askYourLoupist") : t("chatComposer.askLoupistToAddContextForCommands", { loupistName: loupist.name })}
           prompt={prompt}
           privateChat={privateChat}
           isRunning={isRunning}
@@ -980,9 +999,9 @@ export function ChatView({
           error={error}
           sendDisabledReason={workspaceAvailable ? undefined : t("chatView.reconnectTheWorkspaceFolderToSendMessages")}
           streamAnnouncement={streamAnnouncement}
-          models={visibleCatalogModels(modelCatalog)}
-          providers={modelCatalog?.providers ?? []}
-          modelSelection={modelSelection}
+          models={composerModels}
+          providers={composerProviders}
+          modelSelection={composerSelection}
           skills={composerSkills}
           plugins={composerPlugins}
           selectedArtifact={selectedArtifact}
@@ -1007,12 +1026,12 @@ export function ChatView({
           onPrivateChatChange={(value) => { memoryChoices.current.privateChat = value; setPrivateChat(value); }}
           onModelSelectionChange={onModelSelectionChange}
           modelAuto={modelAuto}
-          onModelResetToAuto={onModelResetToAuto}
+          onModelResetToAuto={resetModelToAuto}
           onSend={(next, files, draftText) => send(next, files, { draftText })}
           onFollowUp={enqueueFollowUp}
           onAbort={abortActiveRun}
-          onOpenModelSettings={onOpenModelSettings ? () => onOpenModelSettings() : undefined}
-          onOpenUsage={(provider) => { void bridge.providerOpenUsage({ provider }).catch((cause) => setConfigurationReadError(errorMessage(cause, t("chatError.manageUsage")))); }}
+          onOpenModelSettings={onOpenModelSettings ? openModelSettings : undefined}
+          onOpenUsage={openUsage}
           openModelMenuSignal={modelMenuRequest}
           asOf={draft?.asOf}
           onAsOfChange={onAsOfChange}

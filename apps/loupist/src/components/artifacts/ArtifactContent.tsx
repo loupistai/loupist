@@ -3,6 +3,7 @@ import { formatDateTime } from "@/i18n/format";
 import { ChartBoundary } from "./ChartBoundary";
 import i18n, { useTranslation } from "@/i18n";
 import { lazy, Suspense, useEffect, useId, useState, type KeyboardEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { CheckIcon, ClipboardIcon, MessageCircleIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -27,6 +28,8 @@ type Props = {
   onAsk?: (artifact: ChatArtifactRef) => void;
   askDisabled?: boolean;
   onExport?: (request: { suggestedName: string; bytes: number[]; kind: "csv" | "md" | "png" }) => Promise<string | null>;
+  /** The panel status row's slot: the view switch and actions join that row instead of adding one (chat design change 24). */
+  toolbarTarget?: HTMLElement | null;
 };
 
 /**
@@ -56,6 +59,7 @@ export function ArtifactContent({
   onAsk,
   askDisabled,
   onExport,
+  toolbarTarget,
 }: Props) {
   useTranslation("chat");
   const [mode, setMode] = useState<"preview" | "source" | "data">("preview");
@@ -102,9 +106,10 @@ export function ArtifactContent({
     document.getElementById(`${viewId}-${next}`)?.focus();
   };
 
+  const withToolbar = (toolbar: ReactNode) => toolbarTarget ? createPortal(toolbar, toolbarTarget) : toolbar;
   return (
     <div className="workspace-artifact-view">
-      <div className="artifact-view-toolbar">
+      {withToolbar(<div className="artifact-view-toolbar" data-in-status={toolbarTarget ? "" : undefined}>
         <div className="artifact-view-leading">
           <div className="artifact-view-tabs" role="tablist" aria-label={t("artifactContent.workView")}>
             <button
@@ -146,7 +151,7 @@ export function ArtifactContent({
           {!isMarkdown && mode === "preview" && view.chart_dataset && onExport ? <SaveChartPng slot={snapshot} title={view.artifact.title} onSave={onExport} /> : null}
           {onAsk ? <Button type="button" size="sm" variant="ghost" onClick={() => onAsk(chatArtifactRef(view))} disabled={askDisabled} title={askDisabled ? t("artifactContent.waitForThisResponseToFinish") : t("artifactContent.askAboutThisOrDescribeAChange")}><MessageCircleIcon />{t("artifactContent.askAboutThis")}</Button> : null}
         </div>
-      </div>
+      </div>)}
       {copyError ? <p className="artifact-action-error" role="alert">{copyError}</p> : null}
       <div className="artifact-view-content" id={`${viewId}-content`} role="tabpanel" aria-labelledby={`${viewId}-${mode}`} tabIndex={0}>
         {mode === "data" && view.chart_dataset ? (

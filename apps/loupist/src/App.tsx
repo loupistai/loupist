@@ -17,6 +17,8 @@ import {
   useState,
 } from "react";
 import { createLoupistBridge } from "./bridge/tauriBridge";
+import { HoldingsSheet } from "./components/holdings/HoldingsSheet";
+import { FollowingPage } from "./components/app/FollowingPage";
 import { ChatView } from "./components/ChatView";
 import { DismissOnOpen, OpenProvider } from "./components/navigation/Open";
 import { useAppOpen } from "./app/useAppOpen";
@@ -626,6 +628,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
       .catch((cause) => threadActions.setMutationError(errorMessage(cause, i18n.t("app:app.couldNotExport"))));
   };
   const activeExportThread = threads.find((thread) => thread.id === activeThreadId && thread.messages.length > 0);
+  const [holdingsOpen, setHoldingsOpen] = useState(false);
   const paletteActions: PaletteAction[] = [
     ...(selectedLoupist ? [{ id: "new-chat", label: i18n.t("app:palette.actions.newChat"), keys: shortcutFor("newChat"), run: startNewChat }] : []),
     ...APP_DESTINATIONS.map((destination, index) => ({ id: destination.id, label: destination.action, keys: tabShortcut(index + 1), run: () => navigate(destination.id) })),
@@ -634,6 +637,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
       { id: "export-chat", label: i18n.t("app:palette.actions.exportChat"), run: () => exportThread(activeExportThread) },
       { id: "print-chat", label: i18n.t("app:palette.actions.printChat"), run: () => exportThread(activeExportThread, "pdf") },
     ] : []),
+    { id: "import-holdings", label: i18n.t("app:palette.actions.importHoldings"), run: () => setHoldingsOpen(true) },
     { id: "settings", label: i18n.t("app:palette.actions.settings"), keys: shortcutFor("settings"), run: () => openSettings() },
     { id: "keyboard", label: i18n.t("app:palette.actions.keyboard"), run: () => openSettings("keyboard") },
   ];
@@ -684,6 +688,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     openScheduledTask,
     showBriefing: (loupistId, runId) => { setInboxFocus({ loupistId, runId }); setTab("schedule"); },
     openSettings,
+    openFollowing: () => setTab("following"),
   });
   // Surfaces outside chat still take a plain link opener.
   const openLink = useCallback((url: string) => { void appOpen({ kind: "link", url }); }, [appOpen]);
@@ -742,10 +747,13 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     chat, model, configuration, loupist, workspace, drafts, threadActions, draftWrites, fileWrites,
     refreshKnowledge, onOpenModelSettings: openModelSettings,
     onOpenChatPreferences: (loupistId) => { void openLoupistSettingsFor(loupistId, false, "chat"); },
+    onOpenFollowing: () => setTab("following"),
   });
 
+  const holdingsSheet = <HoldingsSheet bridge={bridge} open={holdingsOpen} onOpenChange={setHoldingsOpen} />;
   const appDialogs = <AppDialogs
           dialogs={dialogs}
+          onFollowStarter={async (entry) => { await bridge.watchlistAdd(entry); }}
           selectedLoupistName={selectedLoupist?.name}
           currentWorkspacePath={selectedLoupist?.workspace_path}
           loupistMutationBusy={loupist.mutationBusy}
@@ -806,6 +814,9 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
         <div className="app-body">
         <AppNavigation
           tab={tab}
+          scheduleUnread={selectedLoupist ? inboxCounts[selectedLoupist.id] ?? 0 : 0}
+          activePanel={workspace.open && (workspace.kind === "world" || workspace.kind === "lens") ? workspace.kind : null}
+          onDestination={navigate}
           selectedLoupist={selectedLoupist}
           loading={loupist.loading}
           threadsByLoupist={chat.threadsByLoupist}
@@ -984,6 +995,9 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                   >
                     {chatViewProps ? <ChatView key={selectedLoupist.id} {...chatViewProps} /> : null}
                   </div>
+                  {tab === "following" ? <div className="app-panel" id="main-panel-following" aria-labelledby="current-location">
+                    <FollowingPage key={selectedLoupist.id} bridge={bridge} loupist={selectedLoupist} onImportHoldings={() => setHoldingsOpen(true)} />
+                  </div> : null}
                   {tab === "schedule" ? <div className="app-panel" id="main-panel-schedule" aria-labelledby="current-location">
                     <ScheduleView onOpenModelSettings={() => openSettings("model")} modelCatalog={model.catalog} initialRunId={inboxFocus?.loupistId === selectedLoupist.id ? inboxFocus.runId ?? undefined : undefined} initialTaskId={scheduledFocus?.loupistId === selectedLoupist.id ? scheduledFocus.taskId : undefined} onInitialConsumed={() => { setInboxFocus(null); setScheduledFocus(null); }} key={`${selectedLoupist.id}:${selectedLoupist.workspace_path}`} bridge={bridge} loupist={selectedLoupist} theme={resolvedTheme}
                       open={(item, to, how) => appOpenIn(item.threadId, to, how)}
@@ -1140,7 +1154,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
           </DialogContent>
         </Dialog>
 
-        {appDialogs}
+        {appDialogs}{holdingsSheet}
         {sharingVisible ? <PackLinkDialog bridge={bridge} open={packLinkOpen} onOpenChange={setPackLinkOpen} onOpened={result => openPackReview(result)} /> : null}
         {sharingVisible ? <DeepLinkConfirm bridge={bridge} source={packReview ? null : deepLinks.link} onClose={deepLinks.clear} onOpened={result => openPackReview(result)} /> : null}
         <CommandPalette

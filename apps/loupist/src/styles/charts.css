@@ -4,12 +4,18 @@
 .chart-local-toolbar select { max-width: 150px; }
 .chart-local-toolbar button:disabled { opacity: .4; }
 .chart-local-toolbar button[aria-pressed="true"] { background: var(--gg-color-bg-selected); color: var(--gg-color-text-primary); }
-.chart-local-toolbar .chart-draw-trigger { display: inline-flex; align-items: center; gap: var(--gg-space-1); }
-.chart-local-toolbar .chart-draw-trigger svg { width: 12px; height: 12px; }
+.chart-local-toolbar .chart-more-trigger { display: inline-grid; place-items: center; min-width: var(--gg-size-control-sm); min-height: var(--gg-size-control-sm); margin-left: auto; padding: 0; border-color: transparent; background: transparent; }
+.chart-local-toolbar .chart-more-trigger:hover { background: var(--gg-color-bg-hover); }
+.chart-local-toolbar .chart-more-trigger svg { width: 16px; height: 16px; }
+/* The symbol line shares the toolbar row with the range (chat design change 24). */
+.chart-toolbar-identity { display: inline-flex; align-items: baseline; gap: var(--gg-space-2); margin-right: var(--gg-space-2); min-width: 0; }
+.chart-toolbar-identity strong { color: var(--gg-color-text-primary); font-size: var(--gg-text-control); font-weight: var(--gg-weight-semibold); }
+.chart-toolbar-identity small { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); white-space: nowrap; }
+.chart-study-pill { padding: 1px 6px; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-full); color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
+.chart-color-row { display: flex; align-items: center; justify-content: space-between; gap: var(--gg-space-3); padding: var(--gg-space-1) var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); }
+.chart-color-row input[type="color"] { width: var(--gg-space-6); height: var(--gg-space-6); padding: 0; border: 0; background: transparent; }
 .chart-local-toolbar label { display: inline-flex; gap: 5px; align-items: center; color: var(--gg-color-text-secondary); }
 .chart-local-toolbar output { color: var(--gg-color-text-tertiary); white-space: nowrap; }
-.chart-toolbar-gap { width: 1px; height: var(--gg-space-4); margin: 0 var(--gg-space-1); background: var(--gg-color-border-subtle); }
 .chart-financial-stage { display: flex; flex-direction: column; }
 /* The plot never shrinks below a readable height; the panel scrolls instead. */
 .chart-financial-canvas { flex: 1; min-height: 220px; }
-.chart-local-toolbar input[type="color"] { width: var(--gg-space-6); height: var(--gg-space-6); padding: 0; border: 0; }

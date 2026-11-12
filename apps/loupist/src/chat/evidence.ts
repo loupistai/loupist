@@ -85,7 +85,7 @@ export function executionEvidenceType(evidence: ChatEvidenceRef): "dataset" | "a
 
 /** A URL fallback is a locator, not a document title. Keep its filename readable. */
 export function evidenceTitle(evidence: ChatEvidenceRef): string {
-  const memoryTitles: Record<string, string> = { world_read: "World", world_search: t("evidence.worldSearch"), lens_read: "Lens", lens_search: t("evidence.lensSearch") };
+  const memoryTitles: Record<string, string> = { world_read: t("workspaceEvidence.kind.world"), world_search: t("evidence.worldSearch"), lens_read: t("workspaceEvidence.kind.lens"), lens_search: t("evidence.lensSearch") };
   if (evidence.title === evidence.tool_name.replaceAll("_", " ") && memoryTitles[evidence.tool_name]) return memoryTitles[evidence.tool_name];
   // A calculation's reader title is the host's operation name; show it in plain words ("Reverse DCF grid" is jargon).
   if (evidence.tool_name === "calculate") {

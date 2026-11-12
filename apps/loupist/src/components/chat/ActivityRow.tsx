@@ -2,7 +2,7 @@ import { Disclosure } from "../ui/disclosure";
 import { useOpenProps } from "../navigation/Open";
 import { formatNumber } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
-import { createContext, memo, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { BookOpenIcon, CheckIcon, CirclePauseIcon, CircleSlashIcon, TriangleAlertIcon, CalculatorIcon, ChartLineIcon, ChevronDownIcon, CircleStopIcon, ClipboardCheckIcon, DatabaseIcon, FilePlusIcon, FileTextIcon, FolderIcon, GlobeIcon, ListTreeIcon, PencilIcon, PlayIcon, PuzzleIcon, RefreshCwIcon, SearchIcon, TerminalSquareIcon, UploadIcon, WrenchIcon, type LucideIcon } from "lucide-react";
 import type {
   ChatApproval,
@@ -195,9 +195,9 @@ const ActionRow = memo(function ActionRow({
         ) : target ? (
           <span className="chat-progress-target" data-testid="chat-progress-target" title={target}>{target}</span>
         ) : null}
+        {glyph}
         <StepNames item={item} />
       </div>
-      {glyph}
       {/* A security rule, not a failure: said calmly in the step, with no way around it. */}
       {paused ? <div className="chat-step-paused" role="note">
         <p>{t(`chatProgressTimeline.paused.${pausedWhat(item)}`)}</p>
@@ -258,7 +258,7 @@ function PlanList({ plan, nested, renderSteps }: {
 }
 
 const statusGlyph = (status: ChatProgressStatus): ReactNode => {
-  if (status === "succeeded") return <span className="chat-progress-status"><CheckIcon role="img" aria-label={t("chatProgressTimeline.planDone")} /></span>;
+  // Success is the norm and needs no mark; a failed or stopped step says so beside its target.
   if (status === "failed") return <span className="chat-progress-status"><TriangleAlertIcon aria-label={t("chatProgressTimeline.failed")} /></span>;
   if (status === "stopped") return <span className="chat-progress-status"><CircleStopIcon aria-label={t("chatProgressTimeline.stopped")} /></span>;
   return null;
@@ -322,14 +322,16 @@ export function ActivityRow({ segment, revealedResult, focusItemId, asOf, render
   const linkedIds = new Set(actions.flatMap((item) => item.kind === "tool" ? item.resultIds ?? [] : []));
   const unlinked = evidence.filter((item) => !linkedIds.has(item.id));
   const detailScope = useMemo(() => execution ? { ...execution, active: execution.active && expanded } : null, [execution, expanded]);
-  const onToggleResult = (id: string) => {
+  // Stable inputs keep each memoized step row still while a later step streams.
+  const evidenceByStep = useMemo(() => new Map(actions.map((item) => [item.id, evidenceFor(item, evidenceById)])), [actions, evidenceById]);
+  const onToggleResult = useCallback((id: string) => {
     conversation?.holdScrollPosition();
     setExpandedResults((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-  };
+  }, [conversation]);
   // Approvals sit with the step that asked; one whose step is unknown follows the steps.
   const stepIds = new Set(actions.map((item) => item.id));
   const unplaced = approvals.filter((approval) => !approval.itemId || !stepIds.has(approval.itemId));
@@ -343,7 +345,7 @@ export function ActivityRow({ segment, revealedResult, focusItemId, asOf, render
   const approvalsFor = (item: ActionItem) =>
     cards(approvals.filter((approval) => approval.itemId === item.id), questions.filter((question) => question.itemId === item.id));
   const renderEntry = (entry: ChatProgressItem) => entry.kind === "commentary" ? null : (
-    <ActionRow key={entry.id} item={entry} evidence={evidenceFor(entry, evidenceById)} revealedResult={revealedResult} expandedResults={expandedResults}
+    <ActionRow key={entry.id} item={entry} evidence={evidenceByStep.get(entry.id) ?? NO_EVIDENCE} revealedResult={revealedResult} expandedResults={expandedResults}
       onToggleResult={onToggleResult} rowExpanded={expanded} focusItemId={focusItemId} approvals={approvalsFor(entry)} />
   );
 
@@ -357,11 +359,11 @@ export function ActivityRow({ segment, revealedResult, focusItemId, asOf, render
         aria-controls={expanded ? detailsId : undefined}
         onClick={() => { conversation?.holdScrollPosition(); setUserChoice(!expanded); }}
       >
-        {live ? <span className="chat-progress-live" data-heartbeat={row.stalled || undefined} aria-hidden="true" /> : <ListTreeIcon aria-hidden="true" />}
+        <ListTreeIcon aria-hidden="true" data-live={live || undefined} data-heartbeat={live && row.stalled ? "" : undefined} />
         <span className="chat-progress-heading" data-testid="chat-progress-heading">
           {row.kind === "live" ? row.label : <>
             {row.label}
-            {row.issues ? <span className="chat-work-count"> · {row.issues}</span> : null}
+            {row.issues ? <span className="chat-work-count"> · <span className="chat-work-issues">{row.issues}</span></span> : null}
             {/* Under a second a duration would read "0:00"; the summary stands alone. */}
             {row.durationMs !== undefined && row.durationMs >= 1000 ? <span className="chat-work-count"> · <span className="chat-progress-elapsed">{clockLabel(row.durationMs)}</span></span> : null}
           </>}
@@ -389,9 +391,12 @@ export function ActivityRow({ segment, revealedResult, focusItemId, asOf, render
   );
 }
 
+const NO_EVIDENCE: ChatEvidenceRef[] = [];
+
 function evidenceFor(item: ActionItem, evidenceById: Map<string, ChatEvidenceRef>) {
-  return item.kind === "tool" ? (item.resultIds ?? []).flatMap((id) => {
+  if (item.kind !== "tool" || !item.resultIds?.length) return NO_EVIDENCE;
+  return item.resultIds.flatMap((id) => {
     const evidence = evidenceById.get(id);
     return evidence ? [evidence] : [];
-  }) : [];
+  });
 }

@@ -53,7 +53,7 @@ const exceptions = new Map([
   ["settings.custom.commandWarning", { terms: ["name"], reason: "Literal package@version example (name@1.2.3)" }],
   ["app.navigation.agentDefaultsReasoningThinkingRetryTokensContextConfiguration", { terms: ["TOML"], reason: "Search keyword for the configuration file format" }],
   ["onboarding.appDialogs.chooseThisLoupistSOriginalOrCopiedWorkspace", { terms: [".loupist"], reason: "Literal workspace data directory name" }],
-  ["onboarding.wizard.supergrokNote", { terms: ["Premium"], reason: "Official X subscription name" }],
+  ["chat.today.setup.follow", { terms: ["AAPL"], reason: "Ticker symbol in the example the chip types" }],
   ["settings.modelSettingsPanel.customNamePlaceholder", { terms: ["Ollama"], reason: "Product name in an example provider name" }],
   ["settings.skillsSettings.chooseFolderDescription", { terms: ["SKILL.md"], reason: "Required skill filename" }],
   ["settings.skillsSettings.repairSkill", { terms: ["SKILL.md"], reason: "Required skill filename" }],

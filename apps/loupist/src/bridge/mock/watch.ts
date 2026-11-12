@@ -33,6 +33,7 @@ export function mockWatchKinds(market: string, enabled: readonly WatchKind[] = [
   return kinds.map(kind => ({ kind, enabled: enabled.includes(kind) }));
 }
 
+
 export class MockWatch implements WatchBridge {
   private readonly settings = new Map<string, WatchSettings>();
   private readonly events = new Map<string, WatchEvent[]>();

@@ -59,7 +59,7 @@
 .chat-model-setup-notice {
   flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
   width: min(calc(100% - 2 * var(--chat-gutter, var(--gg-space-5))), var(--gg-size-chat-column)); margin: 0 auto 10px; padding: var(--gg-space-3) 14px;
-  border: 1px solid var(--gg-color-border-subtle); border-radius: 10px; background: var(--gg-color-bg-hover);
+  border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-hover);
   color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: 1.5;
 }
 .chat-model-setup-notice > svg { flex: none; width: var(--gg-space-4); height: var(--gg-space-4); }
@@ -72,7 +72,7 @@
 .message { margin: 0; }
 .message.user { width: fit-content; max-width: min(82%, 660px); margin-left: auto; padding: 0; }
 .message.user .message-meta { display: none; }
-.message.user .message-content { border: 1px solid var(--gg-color-border-subtle); border-radius: 14px; background: var(--gg-color-bg-hover); }
+.message.user .message-content { border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-hover); }
 /* The row is as tall as its details trigger from the start, so a finished answer adds nothing above its text. */
 .message-meta { display: flex; align-items: center; gap: var(--gg-space-2); min-height: var(--gg-size-control-xs); margin-bottom: 10px; color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
 .message-meta > span:first-child { color: var(--gg-color-text-secondary); font-weight: var(--gg-weight-semibold); }
@@ -105,16 +105,44 @@
 .morning-name-chip { display: inline-flex; align-items: center; gap: 6px; min-height: var(--gg-size-control-sm); padding: 0 var(--gg-space-3); border: 0; border-radius: var(--gg-radius-full); color: var(--gg-color-text-primary); background: var(--gg-color-bg-hover); font: inherit; font-size: var(--gg-text-control); line-height: 1.2; cursor: pointer; }
 .morning-name-chip:hover { background: var(--gg-color-bg-selected); }
 .morning-name-chip .map-swatch { width: 8px; height: 8px; }
-.morning-link { display: inline; min-height: var(--gg-size-control-sm); padding: 0; border: 0; color: var(--gg-color-accent-ink); background: transparent; font: inherit; cursor: pointer; }
-.morning-link:hover { text-decoration: underline; }
+.morning-link { display: inline; min-height: var(--gg-size-control-sm); padding: 0; border: 0; background: transparent; font: inherit; cursor: pointer; color: var(--gg-color-text-primary); text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); text-underline-offset: 3px; }
+.morning-link:hover { text-decoration-color: currentColor; }
 /* "See all in Map" closes the list of names on a line of its own, wherever the chips wrap. */
 .morning-link[data-line] { display: block; width: fit-content; margin-top: var(--gg-space-1); }
 .morning-skeleton { display: inline-block; width: min(320px, 70%); height: 10px; border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-hover); vertical-align: middle; }
 .morning-ask { margin-top: var(--gg-space-5); }
+.morning-setup { margin-top: var(--gg-space-5); }
+.morning-setup-head { display: flex; align-items: center; gap: var(--gg-space-2); margin-bottom: var(--gg-space-1); }
+.morning-setup-label { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); }
+.morning-setup-count { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-variant-numeric: tabular-nums; }
+.morning-setup-hide { min-height: var(--gg-size-control-sm); margin-left: auto; padding: 0 var(--gg-space-1); border: 0; border-radius: var(--gg-radius-xs); background: transparent; color: var(--gg-color-text-secondary); font: inherit; font-size: var(--gg-text-meta); cursor: pointer; }
+.morning-setup-hide:hover { text-decoration: underline; }
+.morning-setup-rows { display: grid; margin: 0; padding: 0; list-style: none; }
+.morning-setup-rows > li + li { border-top: 1px solid var(--gg-color-border-subtle); }
+.morning-setup-row { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: var(--gg-space-2); width: 100%; min-height: 40px; padding: var(--gg-space-2); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); text-align: left; }
+button.morning-setup-row { cursor: pointer; }
+button.morning-setup-row:not([aria-disabled="true"]):is(:hover, :focus-visible) { background: var(--gg-color-bg-hover); }
+button.morning-setup-row:not([aria-disabled="true"]):is(:hover, :focus-visible) .morning-question-go { opacity: 1; }
+.morning-setup-row[data-setup="connect"] strong { font-weight: var(--gg-weight-medium); }
+.morning-setup-row[data-setup="connect"] .morning-question-go { opacity: 1; }
+.morning-setup-mark { width: 16px; height: 16px; color: var(--gg-color-border-strong); }
+.morning-setup-text { display: grid; min-width: 0; }
+.morning-setup-text small { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.morning-setup-rows > li[data-done] .morning-setup-row { min-height: 32px; color: var(--gg-color-text-secondary); }
+.morning-setup-rows > li[data-done] .morning-setup-mark { color: var(--gg-color-text-secondary); }
+button.morning-setup-row[aria-disabled="true"] { color: var(--gg-color-text-disabled); cursor: default; }
+.morning-setup-hint { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); white-space: nowrap; }
+.morning-setup-holdings { margin: var(--gg-space-2) 0 0 calc(var(--gg-space-2) + 16px + var(--gg-space-2)); font-size: var(--gg-text-control); }
+.morning-message .morning-lead[data-home-first] { font-size: var(--gg-text-title); line-height: var(--gg-leading-title); font-weight: var(--gg-weight-medium); }
+.morning-home-line { margin: 0 0 var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+.morning-setup-chip { min-height: var(--gg-size-control-sm); padding: var(--gg-space-1) var(--gg-space-3); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-full); background: var(--gg-color-bg-raised); color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-control); line-height: var(--gg-leading-control); text-align: left; cursor: pointer; }
+.morning-setup-chip:hover { border-color: var(--gg-color-border-strong); background: var(--gg-color-bg-hover); }
+.morning-setup-chip:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
 .morning-ask-label { margin: 0 0 var(--gg-space-2); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
-.morning-ask ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--gg-space-2); }
-.morning-question { display: flex; width: 100%; align-items: center; gap: var(--gg-space-3); min-height: 44px; padding: var(--gg-space-2) var(--gg-space-3); border: 0; border-radius: var(--gg-radius-md); color: var(--gg-color-text-primary); background: var(--gg-color-bg-hover); font: inherit; text-align: left; cursor: pointer; }
-.morning-question:hover, .morning-question:focus-visible { background: var(--gg-color-bg-selected); }
+.morning-ask ul { list-style: none; margin: 0; padding: 0; display: grid; }
+.morning-ask li + li { border-top: 1px solid var(--gg-color-border-subtle); }
+.morning-question { display: flex; width: 100%; align-items: center; gap: var(--gg-space-3); min-height: 40px; padding: var(--gg-space-2); border: 0; border-radius: var(--gg-radius-sm); color: var(--gg-color-text-primary); background: transparent; font: inherit; font-size: var(--gg-text-body); text-align: left; cursor: pointer; }
+.morning-question:hover, .morning-question:focus-visible { background: var(--gg-color-bg-hover); }
 .morning-question span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .morning-question small { flex: 0 1 auto; min-width: 0; max-width: 45%; overflow: hidden; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); text-overflow: ellipsis; white-space: nowrap; }
 .morning-question:hover small { color: var(--gg-color-text-secondary); }
@@ -203,12 +231,6 @@ svg foreignObject .katex:has(> math) {
   min-height: var(--gg-size-control-sm);
 }
 
-.chat-pending-badge {
-  color: var(--gg-color-text-secondary);
-  font-size: var(--gg-text-caption);
-  font-weight: var(--gg-weight-medium);
-}
-
 .chat-pending-text,
 .chat-pending-editor {
   margin: 0;
@@ -286,33 +308,36 @@ svg foreignObject .katex:has(> math) {
 }
 
 .message.assistant .message-content [data-streamdown^="heading-"] {
-  margin: 1.2em 0 0.45em;
+  margin: var(--gg-space-7) 0 var(--gg-space-2);
   color: var(--gg-color-text-primary);
   font-weight: var(--gg-weight-semibold);
   letter-spacing: -0.01em;
 }
 
+.message.assistant .message-content [data-streamdown^="heading-"]:first-child { margin-top: 0; }
+
+/* A real heading scale, so a long answer has scannable structure (chat design change 9). */
 .message.assistant .message-content [data-streamdown="heading-1"] {
+  font-size: var(--gg-text-heading);
+  line-height: var(--gg-leading-heading);
+}
+
+.message.assistant .message-content [data-streamdown="heading-2"] {
   font-size: var(--gg-text-title);
   line-height: var(--gg-leading-title);
 }
 
-.message.assistant .message-content [data-streamdown="heading-2"] {
+.message.assistant .message-content [data-streamdown="heading-3"] {
   font-size: var(--gg-text-subtitle);
   line-height: var(--gg-leading-subtitle);
-}
-
-.message.assistant .message-content [data-streamdown="heading-3"] {
-  font-size: var(--gg-text-reading);
-  line-height: var(--gg-leading-reading);
 }
 
 .message.assistant .message-content [data-streamdown="heading-4"],
 .message.assistant .message-content [data-streamdown="heading-5"],
 .message.assistant .message-content [data-streamdown="heading-6"] {
-  font-size: var(--gg-text-body);
-  line-height: var(--gg-leading-body);
-  color: var(--gg-color-text-secondary);
+  font-size: var(--gg-text-reading);
+  line-height: var(--gg-leading-reading);
+  color: var(--gg-color-text-primary);
 }
 
 .message.assistant .message-content [data-streamdown="unordered-list"],
@@ -364,10 +389,19 @@ svg foreignObject .katex:has(> math) {
   overflow-x: auto;
 }
 
+/* A table that scrolls sideways fades at its right edge (chat design change 10). */
+.message.assistant .message-content [data-streamdown="table-wrapper"][data-overflows] {
+  mask-image: linear-gradient(to right, var(--gg-color-text-primary) calc(100% - 24px), transparent);
+}
+
 .message.assistant .message-content [data-streamdown="table-wrapper"] {
   max-width: 100%;
   margin: 1em 0;
   overflow-x: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 /* A wide table scrolls inside its frame instead of squeezing columns; figures never split. */
@@ -387,15 +421,18 @@ svg foreignObject .katex:has(> math) {
 .message.assistant .message-content [data-streamdown="table-cell"] {
   max-width: 36ch;
   padding: var(--gg-space-2) var(--gg-space-3);
-  border: 1px solid var(--gg-color-border-subtle);
+  border: 0;
+  border-bottom: 1px solid var(--gg-color-border-subtle);
   text-align: left;
   vertical-align: top;
 }
 
+/* Ruled rows like the grid card: no cell boxes, no filled header (chat design change 10). */
 .message.assistant .message-content [data-streamdown="table-header-cell"] {
-  background: var(--gg-color-bg-hover);
+  background: transparent;
+  border-bottom-color: var(--gg-color-border-default);
   color: var(--gg-color-text-secondary);
-  font-weight: var(--gg-weight-semibold);
+  font-weight: var(--gg-weight-medium);
   white-space: nowrap;
 }
 
@@ -476,9 +513,12 @@ svg foreignObject .katex:has(> math) {
   white-space: nowrap;
 }
 
-.chat-progress[data-tone="problem"] .chat-progress-heading {
+.chat-progress[data-tone="problem"] .chat-work-issues {
   color: var(--gg-color-negative);
 }
+
+/* The live row header is the list icon in primary ink; amber stays on the turn status and the status pill. */
+.chat-progress-toggle > svg[data-live] { color: var(--gg-color-text-primary); }
 
 .chat-progress-chevron {
   width: 14px;
@@ -623,8 +663,8 @@ svg foreignObject .katex:has(> math) {
 }
 
 .chat-plan-item[data-plan-status="active"] .chat-plan-dot {
-  border-color: var(--gg-color-accent);
-  background: var(--gg-color-accent);
+  border-color: var(--gg-color-text-primary);
+  background: var(--gg-color-text-primary);
 }
 
 .chat-plan-item[data-plan-status="done"] .chat-plan-row {
@@ -807,9 +847,21 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .composer-tools { min-width: 0; flex-wrap: wrap; gap: var(--gg-space-1); }
 .composer-private [data-slot="input-group"] { border-color: var(--gg-color-border-strong); }
 .composer-private-status { align-self: flex-start; max-width: 100%; padding: var(--gg-space-2) var(--gg-space-3) 0; }
-.composer-private-status > span { display: inline-block; padding: var(--gg-space-1) var(--gg-space-2); border-radius: var(--gg-radius-full); background: var(--gg-color-bg-hover); color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); }
-.composer-private-toggle { color: var(--gg-color-text-secondary); min-width: var(--gg-size-control-sm); min-height: var(--gg-size-control-sm); }
-.composer-private-toggle[aria-pressed="true"] { background: var(--gg-color-bg-hover); }
+.composer-private-chip { display: inline-flex; align-items: center; gap: var(--gg-space-1); min-height: 24px; padding: 0 var(--gg-space-1) 0 var(--gg-space-2); border-radius: var(--gg-radius-full); background: var(--gg-color-bg-hover); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.composer-private-chip > svg { width: 12px; height: 12px; flex: none; }
+.composer-private-chip button { position: relative; display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: var(--gg-radius-full); background: transparent; color: inherit; cursor: pointer; }
+.composer-private-chip button::after { content: ""; position: absolute; inset: -4px; }
+.composer-private-chip button:hover { background: var(--gg-color-bg-selected); color: var(--gg-color-text-primary); }
+.composer-private-chip button svg { width: 12px; height: 12px; }
+.composer-private-item { align-items: flex-start; }
+.composer-private-item > svg { margin-top: 2px; }
+.composer-private-item-copy { display: grid; min-width: 0; }
+.composer-private-item-copy small { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); white-space: normal; }
+/* Change 5: an empty composer's Send is a quiet tile; typing turns it the action color. */
+.composer-submit:disabled { opacity: 1; background: var(--gg-color-bg-hover); color: var(--gg-color-text-disabled); }
+/* Change 6: without an AI account, Connect takes the send slot as the one filled button. */
+.composer-footer > .composer-model-menu { margin-left: auto; padding-inline: var(--gg-space-3); background: var(--gg-color-action); color: var(--gg-color-action-ink); font-weight: var(--gg-weight-medium); }
+.composer-footer > .composer-model-menu:hover { background: var(--gg-color-action); color: var(--gg-color-action-ink); opacity: .9; }
 .composer-disclosure { display: flex; align-items: center; justify-content: center; min-height: var(--gg-space-5); margin: 0; text-align: center; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); }
 .model-menu-advanced { display: flex; justify-content: space-between; }
 .model-menu-advanced[aria-expanded="true"] > svg { transform: rotate(180deg); }
@@ -1032,7 +1084,9 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .chat-receipt-text { display: inline-flex; align-items: center; width: max-content; max-width: 100%; min-height: var(--gg-size-control-sm); }
 .chat-receipt .chat-receipt-segment { display: inline-flex; align-items: center; width: max-content; max-width: 100%; min-height: var(--gg-size-control-sm); text-align: start; text-decoration: none; }
 .chat-receipt .chat-receipt-segment:hover { color: var(--gg-color-text-primary); text-decoration: underline; text-decoration-color: currentColor; }
-.chat-receipt .chat-receipt-segment[data-learned="true"], .chat-receipt-text[data-learned="true"] { color: var(--gg-color-accent-ink); }
+/* One amber per footer: only the receipt's leading segment takes the accent ink; the rest stay neutral. */
+.chat-receipt .chat-receipt-segment, .chat-receipt-text { color: var(--gg-color-text-secondary); }
+.chat-receipt .chat-receipt-item:first-child :is(.chat-receipt-segment, .chat-receipt-text[data-learned="true"]) { color: var(--gg-color-accent-ink); }
 /* The one segment that asks the user to act reads as an action, not a fact. */
 .chat-receipt [data-receipt="proposals"] .chat-receipt-segment { color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); }
 
@@ -1058,23 +1112,6 @@ button.chat-progress-names:hover { text-decoration: underline; }
   color: var(--gg-color-text-primary);
   text-decoration-color: currentColor;
 }
-
-.memory-proposal {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gg-space-2);
-}
-
-.memory-proposal button {
-  min-height: var(--gg-size-control-sm);
-  padding: 2px var(--gg-space-2);
-  border: 1px solid var(--gg-color-border-subtle);
-  border-radius: var(--gg-radius-xs);
-  text-decoration: none;
-}
-
-.memory-proposal button:disabled { opacity: 0.6; cursor: default; }
 
 .memory-update-changes {
   display: flex;
@@ -1113,7 +1150,6 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .memory-update-change > small {
   color: var(--gg-color-text-secondary);
 }
-
 
 .composer-assist {
   position: absolute;
@@ -1463,9 +1499,6 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .message-details-trigger:hover { background: var(--gg-color-bg-hover); }
 
 .workspace-chat-title { display: flex; align-items: center; gap: var(--gg-space-2); min-width: 0; width: min(100%, calc(var(--gg-size-chat-column) + 2 * var(--chat-gutter, var(--gg-space-5)))); padding-inline: var(--chat-gutter, var(--gg-space-5)); box-sizing: border-box; }
-.workspace-chat-folder { flex: 0 1 auto; min-width: 0; max-width: 300px; color: var(--gg-color-text-secondary); }
-.workspace-chat-folder > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
 
 .chat-progress-row.failed .chat-progress-status { color: var(--gg-color-negative); }
 /* A step paused by a security rule is not a failure: its glyph stays quiet (B92). */
@@ -1669,8 +1702,10 @@ div.message-action-bar > .message-actions { margin-top: 0; }
   .chat-artifact-block-shimmer { display: none; }
   .chat-artifact-block-skeleton > span { animation: none; }
 }
-.message-run-state { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.message-run-state { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 0; padding: var(--gg-space-3) var(--gg-space-4); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .message-run-state p { flex: 1 1 240px; margin: 0; }
+.message-run-state p:first-child { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); font-weight: var(--gg-weight-medium); }
+.message-run-state .message-run-hint { color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); font-weight: var(--gg-weight-regular); }
 .message-run-state button { padding: 5px 10px; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-xs); color: var(--gg-color-text-primary); }
 .message-run-state button:hover { background: var(--gg-color-bg-hover); }
 .message-run-state button[data-primary] { border-color: var(--gg-color-action); background: var(--gg-color-action); color: var(--gg-color-action-ink); }
@@ -1757,6 +1792,8 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 .chat-dialog > .inline-error { margin: 0 var(--gg-space-6) 18px; }
 .message-sources { border: 0; background: transparent; max-width: none; font-size: var(--gg-text-meta); }
 .message-sources > summary { width: 100%; padding: 10px var(--gg-space-3); color: var(--gg-color-text-secondary); cursor: pointer; }
+.message-action-bar > .message-sources > summary { color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); }
+.message-sources-site { color: var(--gg-color-text-secondary); font-weight: var(--gg-weight-regular); }
 .message-sources[open] > summary { border-bottom: 1px solid var(--gg-color-border-subtle); }
 .message-sources > ol { margin: 0; padding: 6px var(--gg-space-3); max-height: var(--gg-size-mini-map); overflow-y: auto; overscroll-behavior: contain; }
 .message-sources[open] { flex: 1 0 100%; }
@@ -1844,7 +1881,6 @@ div.message-action-bar > .answer-correction { order: 1; }
 /* A proposed routine: the one-tap OK sits under the card, outside its open button. */
 .message-schedule-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); margin-top: var(--gg-space-2); }
 .message-schedule-actions [role="alert"] { color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
-
 
 .answer-correction .message-actions { flex-wrap:wrap; }
 .answer-correction .message-actions button { white-space:normal; height:auto; min-height:var(--gg-size-control-sm); text-align:start; }
@@ -1945,8 +1981,8 @@ button.chat-rail-row:not(:disabled):hover .chat-rail-row-label { text-decoration
 .chat-rail-card[data-card="using"] .chat-rail-row-label { white-space: normal; overflow-wrap: anywhere; }
 .chat-rail-row-kind { flex: none; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .chat-rail-row small { flex: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
-.chat-rail-row .chat-rail-from-loupist { color: var(--gg-color-accent-ink); font-size: var(--gg-text-caption); }
-.chat-rail-more { justify-self: start; padding: 0; border: 0; background: transparent; color: var(--gg-color-accent-ink); font: inherit; font-size: var(--gg-text-meta); cursor: pointer; }
+.chat-rail-row .chat-rail-from-loupist { color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
+.chat-rail-more { justify-self: start; padding: 0; border: 0; background: transparent; font: inherit; font-size: var(--gg-text-meta); cursor: pointer; color: var(--gg-color-text-primary); text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); text-underline-offset: 3px; }
 .chat-rail-map-link { display: inline-flex; align-items: center; gap: var(--gg-space-1); justify-self: start; min-height: var(--gg-size-control-sm); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .chat-rail-map-link:hover { color: var(--gg-color-text-primary); text-decoration: underline; }
 .chat-rail-map-link svg { width: var(--gg-space-3); height: var(--gg-space-3); }
@@ -1956,11 +1992,11 @@ button.chat-rail-row:not(:disabled):hover .chat-rail-row-label { text-decoration
 .chat-rail-chip:hover { background: var(--gg-color-bg-hover); border-color: var(--gg-color-border-default); }
 .chat-rail-chip .map-swatch { width: 8px; height: 8px; }
 /* "Needs your OK": one row that leads to the approval card in the answer, where the buttons are. */
-.chat-rail-needs { background: var(--gg-color-warning-soft); }
+.chat-rail-needs { background: var(--gg-color-accent-soft); }
 .chat-rail-needs-row { display: flex; align-items: center; gap: var(--gg-space-2); width: 100%; min-height: 44px; padding: var(--gg-space-2) var(--gg-space-4); border: 0; background: transparent; color: var(--gg-color-text-primary); font: inherit; text-align: left; cursor: pointer; }
 .chat-rail-needs-row:hover .chat-rail-needs-show { text-decoration: underline; }
-.chat-rail-needs-dot { flex: none; width: 8px; height: 8px; border-radius: var(--gg-radius-full); background: var(--gg-color-warning); }
-.chat-rail-needs-title { flex: none; color: var(--gg-color-warning); font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); }
+.chat-rail-needs-dot { flex: none; width: 8px; height: 8px; border-radius: var(--gg-radius-full); background: var(--gg-color-accent); }
+.chat-rail-needs-title { flex: none; color: var(--gg-color-accent-ink); font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); }
 .chat-rail-needs-row .chat-rail-card-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; text-align: left; }
 .chat-rail-needs-show { flex: none; color: var(--gg-color-accent-ink); font-size: var(--gg-text-meta); }
 /* Compact context lives in the header, where it cannot cover an answer or chart. */
@@ -1968,8 +2004,8 @@ button.chat-rail-row:not(:disabled):hover .chat-rail-row-label { text-decoration
 /* The composer tray (context-rail.md R2): square thumbnails and compact file chips, then the count and Clear all. */
 .composer-attachments { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); width: 100%; padding: 10px var(--gg-space-3) 0; }
 .composer-attachments-meta { display: inline-flex; align-items: center; gap: var(--gg-space-2); margin-left: auto; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
-.composer-attachments-meta button { padding: 0; border: 0; background: transparent; color: var(--gg-color-accent-ink); font: inherit; cursor: pointer; }
-.composer-attachments-meta button:hover { text-decoration: underline; }
+.composer-attachments-meta button { padding: 0; border: 0; background: transparent; font: inherit; cursor: pointer; color: var(--gg-color-text-primary); text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); text-underline-offset: 3px; }
+.composer-attachments-meta button:hover { text-decoration-color: currentColor; }
 .composer-thumb { position: relative; flex: none; width: 56px; height: 56px; margin: 0; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-sm); overflow: visible; }
 .composer-thumb img { width: 100%; height: 100%; border-radius: var(--gg-radius-sm); object-fit: cover; }
 .composer-thumb button, .composer-file-chip button { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 4px; border: 0; background: transparent; color: var(--gg-color-text-secondary); cursor: pointer; }
@@ -1995,17 +2031,15 @@ button.chat-rail-row:not(:disabled):hover .chat-rail-row-label { text-decoration
 .chat-divider[data-kind="new"] { color: var(--gg-color-accent-ink); }
 
 /* Outline of a long answer (X16): a quiet disclosure above the text, headings as links. */
-.answer-outline { margin: 0 0 var(--gg-space-3); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); }
-.answer-outline > summary { width: fit-content; min-height: var(--gg-size-control-sm); display: flex; align-items: center; gap: var(--gg-space-1); cursor: pointer; color: var(--gg-color-text-secondary); list-style: none; }
-.answer-outline > summary::-webkit-details-marker { display: none; }
-/* A disclosure chevron: points right when folded, down when open. */
-.answer-outline > summary::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform var(--gg-motion-fast) var(--gg-ease-out); }
-.answer-outline[open] > summary::before { transform: rotate(45deg); }
-.answer-outline > summary:hover { color: var(--gg-color-text-primary); }
-.answer-outline ol { list-style: none; margin: var(--gg-space-1) 0 0; padding: 0 0 0 var(--gg-space-3); border-left: 1px solid var(--gg-color-border-subtle); display: grid; gap: 2px; }
+/* Outline (chat design change 18): a quiet trigger at the end of the meta row and a popover list. */
+.answer-outline-trigger { display: inline-flex; align-items: center; gap: var(--gg-space-1); min-height: var(--gg-size-control-sm); margin-left: auto; padding: 0 var(--gg-space-2); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-secondary); font: inherit; font-size: var(--gg-text-meta); cursor: pointer; }
+.answer-outline-trigger:hover, .answer-outline-trigger[data-state="open"] { background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); }
+.answer-outline-trigger svg { width: 14px; height: 14px; }
+.answer-outline { width: min(320px, calc(100vw - 32px)); padding: var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); }
+.answer-outline ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 .answer-outline li[data-level="3"] { padding-left: var(--gg-space-3); }
-.answer-outline li button { min-height: 28px; padding: 0; border: 0; background: transparent; color: var(--gg-color-text-secondary); font: inherit; text-align: left; cursor: pointer; }
-.answer-outline li button:hover { color: var(--gg-color-text-primary); text-decoration: underline; }
+.answer-outline li button { width: 100%; min-height: 28px; padding: var(--gg-space-1) var(--gg-space-2); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-primary); font: inherit; text-align: left; cursor: pointer; }
+.answer-outline li button:hover, .answer-outline li button:focus-visible { background: var(--gg-color-bg-hover); }
 
 /* Sent images (context-rail §2.3): small thumbnails above the user's text that open the lightbox. */
 .sent-images { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--gg-space-1); margin: 0 0 var(--gg-space-1); }
@@ -2039,7 +2073,7 @@ button.sent-image { cursor: zoom-in; }
 
 /* Approval card (D3): one read-only tool waits for the user's OK; it settles into one line. */
 .approval-cards { display: grid; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 var(--gg-space-3); }
-.approval-card { display: grid; gap: var(--gg-space-2); max-width: 640px; padding: var(--gg-space-4); border: 1px solid var(--gg-color-warning); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
+.approval-card { display: grid; gap: var(--gg-space-2); max-width: none; padding: var(--gg-space-4); border: 1px solid var(--gg-color-accent); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
 .approval-card header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--gg-space-3); }
 .approval-card header strong { font-size: var(--gg-text-subtitle); font-weight: var(--gg-weight-medium); }
 .approval-card-clock { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -2060,7 +2094,6 @@ button.sent-image { cursor: zoom-in; }
 
 /* Approval card (D3): the two everyday answers side by side, the lasting one below. */
 .approval-card-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
-.approval-card-actions > .approval-card-always { flex-basis: 100%; justify-content: flex-start; }
 .approval-card:focus { outline: none; }
 .approval-card:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
 /* Under the step that waits (S8, D3): indented with the step's text; a waiting card lifts the list's height cap. */
@@ -2071,7 +2104,7 @@ button.sent-image { cursor: zoom-in; }
 .chat-progress-approvals .approval-card { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
 /* Question card (ask_user): the agent asks one thing mid-reply; options, the recommended one marked, and free text. It settles into one line. */
 .question-cards { display: grid; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 var(--gg-space-3); }
-.question-card { display: grid; gap: var(--gg-space-3); max-width: 640px; padding: var(--gg-space-4); border: 1px solid var(--gg-color-accent); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
+.question-card { display: grid; gap: var(--gg-space-3); max-width: none; padding: var(--gg-space-4); border: 1px solid var(--gg-color-accent); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
 .question-card header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--gg-space-3); }
 .question-card header strong { font-size: var(--gg-text-subtitle); font-weight: var(--gg-weight-medium); }
 .question-card-clock { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -2143,3 +2176,37 @@ button.sent-image { cursor: zoom-in; }
 .composer-inline-reference-controls li { display:flex; align-items:center; gap:var(--gg-space-2); }
 .composer-inline-reference-controls button { display:inline-flex; flex:none; align-items:center; justify-content:center; width:24px; height:24px; border:0; border-radius:var(--gg-radius-sm); background:transparent; }
 .composer-inline-reference-controls button svg { width:14px; height:14px; }
+
+/* Small glyph buttons keep their look but take a 28 px hit area (design rubric). */
+.composer-chip button, .composer-inline-reference-controls button, .execution-copy-button { position: relative; }
+.composer-chip button::after, .composer-inline-reference-controls button::after, .execution-copy-button::after { content: ""; position: absolute; top: 50%; left: 50%; width: max(100%, var(--gg-size-control-sm)); height: max(100%, var(--gg-size-control-sm)); transform: translate(-50%, -50%); }
+
+/* Watch all n: one press watches what you follow with its class defaults. */
+.watch-all-offer { margin: var(--gg-space-3) 0 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); line-height: var(--gg-leading-control); }
+/* An offer, not "waiting on you": a neutral bordered block with one filled button (chat design change 33). */
+.follow-watch-offer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-3); padding: var(--gg-space-3) var(--gg-space-4); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
+.follow-watch-offer p { flex: 1 1 320px; max-width: 62ch; margin: 0; }
+/* The memory row styles its buttons as links; the offer keeps one filled action button. */
+.memory-row .follow-watch-offer [data-slot="button"] { padding: 0 var(--gg-space-3); border-radius: var(--gg-radius-md); background: var(--gg-color-action); color: var(--gg-color-action-ink); font-weight: var(--gg-weight-medium); text-decoration: none; }
+.memory-row .follow-watch-offer [data-slot="button"]:hover { background: var(--gg-color-action); color: var(--gg-color-action-ink); opacity: .9; text-decoration: none; }
+.follow-watch-offer .inline-error { flex-basis: 100%; color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
+
+/* The recommended answer is an outlined option with a primary edge, not a filled slab (chat design change 12). */
+.question-card .question-card-option[data-recommended] { border-color: var(--gg-color-text-primary); }
+
+/* 28. Edit stays under the newest question; earlier questions reveal it on hover or focus, in reserved space. */
+.message.user:not([data-latest]) .message-action-bar { opacity: 0; }
+.message.user:not([data-latest]):is(:hover, :focus-within) .message-action-bar { opacity: 1; }
+/* 34. Scheduled work says it uses the AI account, before its buttons. */
+.message-schedule-spending { margin: 0; padding: 0 var(--gg-space-4); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+/* 27. A long Loupist name does not take over the answer's meta row. */
+.message-meta > span:first-child { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 19. A thin caret instead of Streamdown's block while an answer streams. */
+.message.assistant .message-content [class*="streamdown-caret"] > *:last-child:not([data-sd-caret-hidden])::after { content: ""; display: inline-block; width: 2px; height: 1.05em; margin-left: 2px; vertical-align: -0.15em; border-radius: 1px; background: var(--gg-color-text-tertiary); }
+
+/* 25. Chart card actions match the table card: text-only, folded into "…" at the same width. */
+.chat-artifact-block-more { display: none; flex: none; margin-left: auto; }
+@media (max-width: 720px) {
+  .chat-artifact-block-actions { display: none; }
+  .chat-artifact-block-more { display: block; }
+}

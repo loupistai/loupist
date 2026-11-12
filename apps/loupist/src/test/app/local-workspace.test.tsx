@@ -35,7 +35,7 @@ it.each(["empty", "cached without credentials"])("keeps saved research readable 
   await openChat();
   expect(await screen.findByText(/Want to determine whether this quarter's margin decline is temporary/)).toBeVisible();
   expect(screen.queryByRole("button", { name: "Get started" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Connect an AI account" })).toBeVisible();
+  expect(screen.getByTestId("composer-model-menu")).toHaveAccessibleName("Connect an AI account");
 });
 
 it("keeps first-run onboarding when the default Loupist has no account yet", async () => {

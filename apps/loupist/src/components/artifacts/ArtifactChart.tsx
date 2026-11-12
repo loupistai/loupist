@@ -52,15 +52,12 @@ export default function ArtifactChart({ chart, dataset, theme, onAskRange, compa
       {financialDescription ? (
         <p id={descriptionId} className="sr-only">{financialDescription}</p>
       ) : null}
-      {compact ? null : <header className="chart-engine-header">
+      {/* A candlestick chart puts its identity in its own toolbar row, so the plot keeps its height. */}
+      {compact || view.kind === "candlestick" ? null : <header className="chart-engine-header">
         <div className="chart-engine-identity">
           <span>
-            <strong>{financial ? view.symbol : view.title ?? t("artifactChart.dataAnalysis")}</strong>
-            <small>
-              {financial
-                ? t("artifactChart.intervalBars", { interval: view.interval, count: dataset.rows.length, formattedCount: formatNumber(dataset.rows.length) })
-                : t("artifactChart.rows", { count: dataset.rows.length, formattedCount: formatNumber(dataset.rows.length) })}
-            </small>
+            <strong>{view.title ?? t("artifactChart.dataAnalysis")}</strong>
+            <small>{t("artifactChart.rows", { count: dataset.rows.length, formattedCount: formatNumber(dataset.rows.length) })}</small>
           </span>
         </div>
         {chart.studies.length > 0 ? (
@@ -72,7 +69,11 @@ export default function ArtifactChart({ chart, dataset, theme, onAskRange, compa
       <div className="chart-engine-surface">
         <Suspense fallback={<div className="artifact-panel-state" role="status"><Spinner /><span>{t("artifactChart.loadingChart")}</span></div>}>
           {view.kind === "candlestick" ? (
-            <FinancialChart chart={chart} dataset={dataset} theme={theme} onAskRange={onAskRange} compact={compact} />
+            <FinancialChart chart={chart} dataset={dataset} theme={theme} onAskRange={onAskRange} compact={compact} lead={<span className="chart-toolbar-identity">
+              <strong>{view.symbol}</strong>
+              <small>{t("artifactChart.intervalBars", { interval: view.interval, count: dataset.rows.length, formattedCount: formatNumber(dataset.rows.length) })}</small>
+              {chart.studies.map((study) => <span key={study.module_id} className="chart-study-pill">{study.module_id}</span>)}
+            </span>} />
           ) : (
             <AnalyticChart chart={chart} dataset={dataset} theme={theme} />
           )}

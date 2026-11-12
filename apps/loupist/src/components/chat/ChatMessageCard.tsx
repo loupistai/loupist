@@ -1,3 +1,4 @@
+import { sourceIdentityLabel } from "../../chat/evidence";
 import { useCopyFeedback } from "../../hooks/useCopyFeedback";
 import { Disclosure } from "../ui/disclosure";
 import { ApprovalCards } from "./ApprovalCard";
@@ -193,10 +194,10 @@ type Props = {
   /** Edit forks (X18): show the version of the chat before or after this message's version. */
   onEarlierVersion?: () => void;
   onLaterVersion?: () => void;
-  /** Briefings open the outline of a long answer (X16). */
+  /** No longer used: the outline is a trigger in the meta row for every long answer. Kept until the Schedule reader stops passing it. */
   outlineOpen?: boolean;
   onRetry?: () => void;
-  /** The newest answer keeps its action row visible; earlier ones show it on hover or focus (X1). */
+  /** The newest answer, or the newest question, keeps its action row visible; earlier ones show it on hover or focus (X1). */
   latest?: boolean;
   /** A stop was requested for this reply and the host has not confirmed it yet. */
   stopping?: boolean;
@@ -271,7 +272,6 @@ function ChatMessageCardComponent({
   editDisabled = false,
   onEarlierVersion,
   onLaterVersion,
-  outlineOpen = false,
   onRetry,
   latest = false,
   stopping = false,
@@ -313,6 +313,8 @@ function ChatMessageCardComponent({
     return [...written].filter((path) => delivered.has(path));
   }, [message.role, message.progress?.items, message.content, workspacePath]);
   // Charts render as cards in the answer; documents stay in the outputs row and open the panel.
+  // A setup card, a failed chart or a failed table offers the question again; it fills the composer and never sends.
+  const askAgain = onFillComposer && previousQuestion ? () => onFillComposer(previousQuestion) : undefined;
   const charts = useMemo(() => chartBlocks(message), [message]);
   // Grid answers and conflict cards render in the answer too, after its charts.
   const grids = useMemo(() => gridBlocks(message), [message]);
@@ -348,7 +350,7 @@ function ChatMessageCardComponent({
         transcript.push(<ActivityRow key={segment.key} segment={segment} focusItemId={progressFocus} asOf={message.as_of}
           revealedResult={segment.evidence.some(e => e.id === revealedResult?.id) ? revealedResult : undefined}
           renderApprovals={bridge ? approvals => <ApprovalCards approvals={approvals} refusals={[]} bridge={bridge} loupistId={loupistId} /> : undefined}
-          renderQuestions={bridge ? questions => <QuestionCards questions={questions} bridge={bridge} loupistId={loupistId} /> : undefined} />);
+          renderQuestions={bridge ? questions => <QuestionCards questions={questions} bridge={bridge} loupistId={loupistId} streaming={message.status === "streaming"} /> : undefined} />);
         continue;
       }
       // The settled answer alone splits around its cards; the first piece keeps the answer's key.
@@ -382,6 +384,7 @@ function ChatMessageCardComponent({
         <span>{message.role === "user" ? t("chatMessageCard.you") : loupistName}</span>
         <time>{formatTime(new Date(message.created_at))}</time>
         {message.role === "assistant" && message.as_of ? <AsOfTag asOf={message.as_of} kind="answer" /> : null}
+        {message.role === "assistant" && answerText ? <AnswerOutline messageId={message.id} markdown={answerText} /> : null}
         {message.execution_model || message.performance || message.host_composed ? <Popover>
           <PopoverTrigger asChild><button type="button" className="message-details-trigger" aria-label={t("chatMessageCard.responseDetails")} aria-description={[executionModelTitle, performanceTitle, ...tokenLines].filter(Boolean).join(" · ")}><InfoIcon /></button></PopoverTrigger>
           <PopoverContent className="message-details-panel" align="start" aria-label={t("chatMessageCard.responseDetails")}>
@@ -404,10 +407,10 @@ function ChatMessageCardComponent({
       {transcript}
       {bridge && settledAnswer ? settledAnswer.cards.map((card) => <EarningsChatCard key={card.evidenceId} bridge={bridge} loupistId={loupistId} loupistName={loupistName} assetId={card.assetId} eventId={card.eventId} />) : null}
 
-      {charts.map((block) => <ChatArtifactBlock key={block.key} block={block} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} asOf={message.as_of} />)}
+      {charts.map((block) => <ChatArtifactBlock key={block.key} block={block} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} asOf={message.as_of} onAskAgain={askAgain} />)}
       {bridge ? connectionSetups.map((block) => <ConnectionSetupCard key={block.key} bridge={bridge} loupistId={loupistId} entryId={block.entryId}
-        onAskAgain={onFillComposer && previousQuestion ? () => onFillComposer(previousQuestion) : undefined} />) : null}
-      {grids.map((block) => <ChatGridBlock key={block.key} block={block} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} />)}
+        onAskAgain={askAgain} />) : null}
+      {grids.map((block) => <ChatGridBlock key={block.key} block={block} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} onAskAgain={askAgain} />)}
 
       {message.role === "assistant" && <MessageSchedules receipts={message.schedule_receipts ?? []} />}
 
@@ -441,7 +444,7 @@ function ChatMessageCardComponent({
       {message.role === "assistant" ? <TurnFooter footer={view.footer} now={now} announce={view.announce} guiding={guiding}>
         {settled ? <>
           {settled.sources.length > 0 ? (
-            <Disclosure className="message-sources" aria-label={t("chatMessageCard.researchSources")} title={<>{t("chatMessageCard.sourceCount", { formattedCount: formatNumber(settled.sources.length) })}</>}>
+            <Disclosure className="message-sources" aria-label={t("chatMessageCard.researchSources")} title={<><span>{t("chatMessageCard.sourceCount", { formattedCount: formatNumber(settled.sources.length) })}</span><span className="message-sources-site"> · {sourceIdentityLabel(settled.sources[0]!)}{settled.sources.length > 1 ? ` +${formatNumber(settled.sources.length - 1)}` : ""}</span></>}>
               <ol>{settled.sources.map((evidence, index) => <SourceRow key={evidence.id} evidence={evidence} number={index + 1} />)}</ol>
             </Disclosure>
           ) : null}
@@ -475,7 +478,6 @@ function ChatMessageCardComponent({
         </> : null}
       </TurnFooter> : null}
       {message.role === "assistant" && complete && message.as_of_report ? <AsOfNote report={message.as_of_report} loupistName={loupistName} /> : null}
-      {message.role === "assistant" && answerText ? <AnswerOutline messageId={message.id} markdown={answerText} defaultOpen={outlineOpen} /> : null}
       {message.role === "assistant" && complete && onNextStep ? <NextSteps loupistId={loupistId} chatId={chatId} messageId={message.id} onAsk={onNextStep} /> : null}
       {message.role === "user" && (onEditUser || onEarlierVersion || onLaterVersion) ? <div className="message-actions message-action-bar">
         {onEditUser ? <button type="button" aria-label={t("chatMessageCard.editMessage")} title={t("chatMessageCard.edit")} disabled={editDisabled} onClick={() => onEditUser(message)}>{t("chatMessageCard.edit")}</button> : null}

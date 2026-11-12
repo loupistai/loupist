@@ -367,7 +367,9 @@ const BUILDING_ROWS = 4;
  * A grid or conflict card in the answer itself. The block keeps its reserved
  * frame from the moment the Loupist starts building the table until it fills.
  */
-export function ChatGridBlock({ block, onAsk, askDisabled }: {
+export function ChatGridBlock({ block, onAsk, askDisabled, onAskAgain }: {
+  /** A failed table puts the question that asked for it back in the composer. */
+  onAskAgain?: () => void;
   block: GridBlock;
   onAsk?: (artifact: ChatArtifactRef) => void;
   askDisabled?: boolean;
@@ -405,7 +407,7 @@ export function ChatGridBlock({ block, onAsk, askDisabled }: {
   const building = block.kind === "building" || (block.kind === "ready" && block.updating);
   let state: ReactNode;
   if (building) state = <p role="status">{t("grid.building")}<span className="chat-artifact-block-shimmer" aria-hidden="true" /></p>;
-  else if (block.kind === "failed") state = <p role="alert">{t("grid.failed")}</p>;
+  else if (block.kind === "failed") state = <div role="alert"><p>{t("grid.failed")}</p>{onAskAgain ? <Button type="button" variant="ghost" size="sm" data-ask-again onClick={onAskAgain}>{t("chatBlock.askAgain")}</Button> : null}</div>;
   else if (view.status === "unavailable" || loaded) {
     state = <div role="alert"><p>{t("grid.unavailable")}</p>{scope ? <Button type="button" variant="outline" size="sm" onClick={() => setAttempt((value) => value + 1)}>{t("grid.retry")}</Button> : null}</div>;
   } else state = <p role="status"><Spinner />{t("grid.loading")}</p>;

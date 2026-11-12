@@ -61,8 +61,8 @@ it("labels a hand-off receipt by the conversation's surface, not its id", () => 
     <MessageSchedules receipts={[receipt]} />
   </ChatExecutionProvider>;
   const { rerender } = render(view("session"));
-  expect(screen.getByText("Handed to Bot · Active")).toBeVisible();
+  expect(screen.getByText("Sent to Home · Active")).toBeVisible();
   rerender(view("bot"));
   expect(screen.getByText("Active")).toBeVisible();
-  expect(screen.queryByText(/Handed to Bot/)).toBeNull();
+  expect(screen.queryByText(/Sent to Home/)).toBeNull();
 });

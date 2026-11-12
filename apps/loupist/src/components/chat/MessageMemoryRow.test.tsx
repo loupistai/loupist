@@ -32,7 +32,7 @@ it("shows the principle statement and supports View and Undo", async () => {
   const archive = vi.spyOn(bridge, "principleArchive");
   const { open } = renderWithOpen(<MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={message} />);
   expect(screen.queryByText("Saved to your principles")).toBeNull();
-  expect(screen.getByRole("button", { name: "Saved 1 new rule" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Saved 1 new principle" })).toBeVisible();
   expect(screen.getByText(principle.statement)).toBeVisible();
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "View" }));

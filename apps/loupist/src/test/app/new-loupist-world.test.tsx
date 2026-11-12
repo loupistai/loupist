@@ -44,5 +44,5 @@ it("resets a cancelled creation draft on the next opening", async () => {
   await waitFor(() => expect(opener).toHaveFocus());
   await user.click(headerAction("New Loupist"));
   expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Portfolio Loupist");
-  expect(screen.getByRole("textbox", { name: "Focus" })).toHaveValue("Companies I hold and watch");
+  expect(screen.getByLabelText("Focus")).toHaveValue("Companies I hold and follow");
 });

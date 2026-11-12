@@ -16,9 +16,9 @@
     "skillCreatorTurnedOnForThisLoupist": "Skill Creator turned on for this Loupist.",
     "skillCreatorTurnedOnForAllLoupists": "Skill Creator turned on for all Loupists.",
     "correctTheConfigurationFileInSettingsChat": "Correct the configuration file in Loupist settings → Chat preferences to start a new run.",
-    "theConfiguredChatDefaultsAreUnavailableFor": "The configured Chat defaults are unavailable for the current model. Review Loupist settings → Chat preferences or choose a model in Chat.",
+    "theConfiguredChatDefaultsAreUnavailableFor": "The configured Chat defaults are unavailable for the current model. Review Loupist settings → Chat defaults or choose a model in Chat.",
     "correctTheConfigurationFileBeforeSending": "Correct the configuration file in Loupist settings → Chat preferences before sending.",
-    "showOrLoadAModelInSettings": "Show or load a model in Settings to send messages. Your saved chats, World and Lens are available.",
+    "showOrLoadAModelInSettings": "Show or load a model in Settings to send messages. Your saved chats, Map and Lens are available.",
     "pleaseLookAtWorkspaceFile": "Please look at workspace file {{path}}. ",
     "source": "Source",
     "openingView": "Opening {{view}}",
@@ -26,7 +26,7 @@
     "skillDraftGlobalEmpty": "{{skill}} Create a reusable skill in my personal skill folder for all Loupists.\n\nThe workflow I want to create: ",
     "skillDraftLoupist": "{{skill}} Create a reusable skill in this Loupist's skill folder.\n\n{{brief}}",
     "skillDraftLoupistEmpty": "{{skill}} Create a reusable skill in this Loupist's skill folder.\n\nThe workflow I want to create: ",
-    "workspaceUnavailableDescription": "<0>Workspace folder unavailable.</0> Reconnect the original or copied Loupist folder to open its saved chats, World and Lens.",
+    "workspaceUnavailableDescription": "<0>Workspace folder unavailable.</0> Reconnect the original or copied Loupist folder to open its saved chats, Map and Lens.",
     "couldNotExport": "Couldn’t export this chat.",
     "couldNotPrint": "Couldn’t open printing. Try again.",
     "correctThis": "Correct this: "
@@ -52,8 +52,8 @@
   },
   "useThreadActions": {
     "couldNotCreateANewChat": "Could not create a new chat.",
-    "couldNotRenameThisSession": "Could not rename this session.",
-    "couldNotDeleteThisSession": "Could not delete this session."
+    "couldNotRenameThisSession": "Could not rename this chat.",
+    "couldNotDeleteThisSession": "Could not delete this chat."
   },
   "appNavigation": {
     "settingsNavigation": "Settings navigation",
@@ -81,7 +81,7 @@
     "homeDescriptor": "Chat, briefings, and alerts"
   },
   "loupistNavigationGroup": {
-    "hasActiveSessions": "{{label}} has active sessions"
+    "hasActiveSessions": "{{label}} has chats running"
   },
   "macTitlebarControls": {
     "showOrHideSidebar": "Show or hide sidebar",
@@ -110,7 +110,7 @@
     "skillsCreatorInstallerInstructionsWorkflowsCreateInstallZip": "skills creator installer instructions workflows create install zip github",
     "addAndManageReusableWorkflowsForYourLoupists": "Manage shared skills and defaults for all Loupists. Customize one Loupist on its settings page.",
     "skillsCaption": "Extra abilities like documents and charts",
-    "worldProcessing": "World processing",
+    "worldProcessing": "Map building",
     "memorySourcesRelationshipsProcessingModelLimits": "memory sources relationships processing model limits",
     "chooseHowEachLoupistConnectsWhatItLearns": "Choose how each Loupist connects what it learns from saved sources.",
     "worldProcessingCaption": "How new sources become map knowledge",
@@ -125,7 +125,7 @@
     "keyboardDescription": "Shortcuts for working without the mouse."
   },
   "emptyChat": {
-    "newChat": "New chat"
+    "newChat": "Untitled chat"
   },
   "workspaceUiState": {
     "untitled": "Untitled"
@@ -133,7 +133,7 @@
   "loupistAvailabilityBoundary": {
     "workspaceFolderUnavailable": "Workspace folder unavailable",
     "memoryNeedsRecovery": "Memory needs recovery",
-    "thisLoupistSFolderWasMovedOrIs": "This Loupist’s folder was moved or is unavailable. Reconnect the original or copied folder to open its chats, World and Lens.",
+    "thisLoupistSFolderWasMovedOrIs": "This Loupist’s folder was moved or is unavailable. Reconnect the original or copied folder to open its chats, Map and Lens.",
     "anInterruptedUpdateWasSavedRecoverMemoryTo": "An interrupted update was saved. Recover Memory to continue.",
     "reconnectFolder": "Reconnect folder",
     "recovering": "Recovering…",
@@ -153,8 +153,10 @@
     "workspaceControls": "Workspace panels",
     "splitTopBottom": "Split top and bottom",
     "splitLeftRight": "Split left and right",
-    "sessions": "Research sessions",
-    "newResearch": "New research",
+    "sessions": "Chats",
+    "sessionsEmpty": "Start a new chat to dig into one question. Briefings and alerts stay in Home.",
+    "newResearch": "New chat",
+    "newResearchHint": "New chat: dig into one question. Briefings and alerts stay in Home.",
     "principles": "Research principles",
     "taskHistory": "Scheduled tasks",
     "moreActions": "More",
@@ -171,16 +173,16 @@
     "close": "Close",
     "tabs": {
       "lens": "Lens",
-      "chat": "Chat",
+      "chat": "Home",
       "map": "Map",
-      "schedule": "Schedule"
+      "schedule": "Schedule",
+      "following": "Following"
     },
     "searchShortcut": "Search {{shortcut}}",
     "unreadBriefings": "{{count}} unread briefings",
     "needsAttention": "Needs attention",
     "panel": "Panel",
-    "togglePanel": "Show or hide the panel ({{shortcut}})",
-    "whatItKnows": "What it knows"
+    "togglePanel": "Show or hide the panel ({{shortcut}})"
   },
   "loupistProfile": {
     "profile": "Profile",
@@ -228,7 +230,7 @@
     "refinedMethod": "Refined a method · {{date}}",
     "deferred": "Nothing worth keeping yet · {{date}}",
     "failed": "Couldn't run · {{date}}",
-    "empty": "Your Loupist reviews new information after your World grows.",
+    "empty": "Your Loupist reviews new information as your Map grows.",
     "fewFacts": "Too few related facts",
     "covered": "Already covered by '{{title}}'",
     "checks": "Output didn't pass checks",
@@ -242,6 +244,7 @@
   },
   "tracking": {
     "heading": "What the map tracks",
+    "advanced": "Advanced",
     "core": "Every map tracks companies, people, products, technologies, industries, markets and assets, places, policies, events and metrics.",
     "intro": "Also tracked for this Loupist:",
     "relations": "Links: {{list}}",
@@ -314,7 +317,7 @@
     "approval": "{{loupist}} needs your approval"
   },
   "thread": {
-    "title": "Bot"
+    "title": "Home"
   },
   "palette": {
     "title": "Command palette",
@@ -332,17 +335,21 @@
     },
     "actions": {
       "newChat": "New chat",
-      "openChat": "Open chat",
-      "openMap": "Open World",
+      "openChat": "Open Home",
+      "openMap": "Open Map",
       "openLens": "Open Lens",
       "openSchedule": "Open schedule",
+      "importHoldings": "Import holdings…",
       "allChats": "All chats",
-      "whatItKnows": "What {{loupistSubject}} knows",
       "togglePanel": "Show or hide the panel",
       "settings": "Settings",
       "keyboard": "Keyboard shortcuts",
       "exportChat": "Export this chat as Markdown",
       "printChat": "Print this chat or save it as PDF"
     }
+  },
+  "following": {
+    "intro": "What you follow is shared by all your Loupists. Each Loupist chooses what to watch for.",
+    "empty": "Add a company, fund or coin to follow. Following is not a holding or a trade."
   }
 }

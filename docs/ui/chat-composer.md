@@ -58,7 +58,7 @@ composer: a count, one short row each, and Edit, reorder, Remove, and Send now i
 row's menu. The list can fold. It keeps queue order and the queued payload. Up to three
 next-step chips after the latest answer come from the conflicts and names it
 found and fill the composer without sending. Leaving a view or switching Loupist does not cancel an admitted
-Chat. The composer has one private-chat switch, described under
+Chat. Private chat is a checkbox in the composer's + menu; while it is on, a "Private · memory off" chip with an off button sits above the composer. Without an AI account, Connect an AI account takes the send slot and the placeholder says so. Private chat is described under
 [Memory permissions](../knowledge/memory.md#memory-permissions-and-retrieval).
 Focusing a control below the fold scrolls it into the conversation. When the reader scrolls away from the bottom, the live status or Jump to latest control
 occupies its own row between the scroll viewport and composer. It shares the
@@ -109,8 +109,9 @@ a new site after third-party text is refused the same way
 
 An [`ask_user`](../agent/turn-tools.md#turn-tools) call waits on a question card the same
 way: Rust records it on `ChatProgress.questions` (at most four per reply), under the step
-that asked, and the card offers one button per option (the recommended one primary, tagged
-Recommended, with its description under each label), an "Or answer in your own words"
+that asked, and the card offers one outlined button per option (the recommended one with a primary edge, tagged
+Recommended, with its description under each label; it takes focus, so Enter chooses it, only when the card
+arrives after the reply stopped streaming and nothing editable has focus; while the reply streams, focus stays put), an "Or answer in your own words"
 field up to 500 characters and the waiting clock. Answers go through
 `chat_question_answer {loupist_id, request_id, choice | text}` (exactly one; Rust checks the
 Loupist, the option index and the length). The settled line reads "You answered: …" or,

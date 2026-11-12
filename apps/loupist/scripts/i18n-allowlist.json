@@ -88,5 +88,10 @@
     "file": "src/lib/credentialFreeUrl.ts",
     "text": "Only http and https addresses without a password can be opened.",
     "reason": "Only the mock bridge throws it, standing in for the host's own English refusal; the app shows the host's message."
+  },
+  {
+    "file": "src/components/onboarding/Onboarding.tsx",
+    "text": "Loupist",
+    "reason": "The welcome wordmark is the product name and stays in Latin letters in every locale."
   }
 ]

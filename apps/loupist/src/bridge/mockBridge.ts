@@ -137,8 +137,8 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   watchSettingsList(request: { loupistId: string }) { return this.watch.watchSettingsList(request); }
   watchSettingSet(request: Parameters<Contract.LoupistBridge["watchSettingSet"]>[0]) { return this.watch.watchSettingSet(request); }
   watchPauseSet(request: { loupistId: string; paused: boolean }) { return this.watch.watchPauseSet(request); }
-  watchCheckNow(request: { loupistId: string }) { return this.watch.watchCheckNow(request); }
   watchDefaultsApply(request: { loupistId: string }) { return this.watch.watchDefaultsApply(request); }
+  watchCheckNow(request: { loupistId: string }) { return this.watch.watchCheckNow(request); }
   watchEventsList(request: Parameters<Contract.LoupistBridge["watchEventsList"]>[0]) { return this.watch.watchEventsList(request); }
   watchEventsSeen(request: { loupistId: string; eventIds: string[] }) { return this.watch.watchEventsSeen(request); }
   onWatchChanged(handler: (event: { loupistId: string }) => void) { return this.watch.onWatchChanged(handler); }

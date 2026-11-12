@@ -10,6 +10,7 @@ import { chatReceipt, savesMemory, showsReceipt, thesisMovesFor, type SavedRecei
 import { useGo } from "../navigation/Open";
 import { useAssetNames } from "../assets/assetName";
 import { declinedSensitiveMemory, useChatSetAside } from "../../chat/chatSetAside";
+import { WatchAllOffer } from "./WatchAllOffer";
 import { ChatReceipt } from "./ChatReceipt";
 import { revealFirstNumberToCheck } from "./NumberChip";
 import { useChatMap } from "../workspace/ChatMapContext";
@@ -121,6 +122,7 @@ export function MessageMemoryRow({
         onOpenThesis={go ? move => go({ kind: "asset", target: { loupistId, assetId: move.assetId, name: move.name, section: "history" } }) : undefined}
         onCheckNumbers={() => revealFirstNumberToCheck(message.id)}
       />
+      {receipt.setup.some(change => change.change === "followed") ? <WatchAllOffer bridge={bridge} loupistId={loupistId} refreshKey={message.id} onOpenFollowing={go ? () => go({ kind: "following" }) : undefined} /> : null}
       {learnedExpanded && digest ? <LearnedCard id={learnedId} bridge={bridge} loupistId={loupistId} digest={digest}
         onChanged={onWorldChanged} /> : null}
       {usedExpanded ? <UsedMemory id={usedId} bridge={bridge} loupistId={loupistId} refreshKey={chatMap?.map} pages={receipt.usedPages}

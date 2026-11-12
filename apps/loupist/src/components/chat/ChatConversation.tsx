@@ -47,6 +47,10 @@ type Props = {
   onReadWorldJob?: (jobId: string) => Promise<GraphJobView>;
   onWorldChanged?: () => void;
   onSuggestion: (suggestion: string) => void;
+  /** False with no AI account: the first-visit checklist asks to connect one. */
+  accountConnected?: boolean;
+  onConnectAccount?: () => void;
+  onOpenFollowing?: () => void;
   /** Puts an inline chart in the next question. */
   onAskArtifact?: (artifact: ChatArtifactRef) => void;
   onReadAttachment: (
@@ -70,8 +74,6 @@ type Props = {
   bridge?: LoupistBridge;
   /** The active run, for the status pill shown while the reader is scrolled up. */
   run?: ChatRunStatus;
-  /** The Loupist's focus, for the morning message's questions. */
-  loupistFocus?: string;
   /** The Loupist's home Thread: results arrive here and the morning message closes it. */
   home?: boolean;
   /** An empty topic Chat offers starter questions unless its composer already holds a question (Look back). */
@@ -96,6 +98,9 @@ export function ChatConversation({
   onReadWorldJob,
   onWorldChanged,
   onSuggestion,
+  accountConnected,
+  onConnectAccount,
+  onOpenFollowing,
   onAskArtifact,
   onReadAttachment,
   mentionSkills,
@@ -112,7 +117,6 @@ export function ChatConversation({
   onTeachFeedback,
   feedbackBusy = false,
   run,
-  loupistFocus,
   home = false,
   offerQuestions = true,
   asOf,
@@ -208,8 +212,10 @@ export function ChatConversation({
     bridge={bridge}
     loupistId={loupistId}
     loupistName={loupistName}
-    focus={loupistFocus}
     onAsk={onSuggestion}
+    accountConnected={accountConnected}
+    onConnectAccount={onConnectAccount}
+    onOpenFollowing={onOpenFollowing}
     deliveredRunIds={home ? deliveredRunIds : undefined}
     onSettled={() => setMorningSettled(true)}
     asOf={asOf}
@@ -301,7 +307,7 @@ export function ChatConversation({
               onEarlierVersion={message.role === "user" && onSwitchVersion ? versionAt(index, "earlier", onSwitchVersion) : undefined}
               onLaterVersion={message.role === "user" && onSwitchVersion ? versionAt(index, "later", onSwitchVersion) : undefined}
               onRetry={message.role === "assistant" && index === messages.length - 1 && (message.status === "error" || message.status === "aborted") ? onRetry : undefined}
-              latest={message.role === "assistant" && index === lastAssistantIndex}
+              latest={message.role === "assistant" ? index === lastAssistantIndex : index === lastUserIndex}
               providerName={message.status === "error" ? providerLabel?.(message.execution_model?.provider) : undefined}
               retryAttempt={index === messages.length - 1 ? retryAttempt : undefined}
               onProviderAction={index === messages.length - 1 ? onProviderAction : undefined}

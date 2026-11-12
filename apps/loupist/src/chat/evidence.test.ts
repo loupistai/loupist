@@ -48,7 +48,7 @@ it("numbers retrieved sources and leaves search, Memory and execution unnumbered
   expect(isInlineWorkEvidence(preview, [])).toBe(true);
   expect(citationLabel(preview, all)).toBe("Result: Search preview");
   expect(citationLabel(read, all, "Margin method")).toBe("Memory: Margin method");
-  expect(citationLabel(search, all)).toBe("Result: World search");
+  expect(citationLabel(search, all)).toBe("Result: Map search");
   expect(citationLabel(calculated, all)).toBe("Result: Margin calculation");
 });
 

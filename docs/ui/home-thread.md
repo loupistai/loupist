@@ -1,6 +1,6 @@
 # Home Thread
 
-The persistent home Thread appears as Bot. Each Loupist has one Bot. Research sessions have separate titles and drafts. The app restores the selected conversation and its unsent draft on restart, including attached files, the exact inline references, the selected work, Skills and the as-of date. Scheduled results, crossed lines, watcher alerts and the morning message are host posts, not model calls.
+The persistent home Thread appears as Home (홈). Each Loupist has one Home. Other chats have separate titles and drafts. The app restores the selected conversation and its unsent draft on restart, including attached files, the exact inline references, the selected work, Skills and the as-of date. Scheduled results, crossed lines, watcher alerts and the morning message are host posts, not model calls.
 
 Each Loupist has one persisted home Thread (`home-{loupist}`), created on workspace load
 with the Loupist's Chat defaults; rename and delete refuse it. Opening a Loupist lands
@@ -75,7 +75,15 @@ Journal checks, on the first visit of a Loupist made from the Crypto, Macro & ra
 Commodities template a "Works best with {connection} · Open Connections" line naming the
 recommended connection it lacks (Tiingo, FRED or EIA; enabled and available for the
 Loupist counts as having it),
-and three locally generated questions that fill the composer without sending. A first
+and three locally generated questions that fill the composer without sending. Until all three
+are done or the user hides it (per Loupist, `loupist.setupHidden.v1` in `localStorage`), the
+first message also shows the "Get set up" checklist: Follow something, Teach a principle and
+Get a morning briefing, each ticking off by itself (something followed, a principle saved, the
+briefing on), each open step with a chip that fills the composer without sending, and an
+"Import holdings (CSV)…" link to the holdings sheet. Without an AI account it leads with
+Connect an AI account, its Follow step opens the Following page, and chips that need a model
+are disabled. The focus question names a preset's subject ("What matters in semiconductors
+this week?"); a Loupist with a free-text focus does not get it. A first
 visit counts what there is to look at instead of naming a day; general questions fill
 the list when the Loupist has little to point at. A Thread with no user-written message yet
 keeps this first-visit message below any host post, such as the preset's vocabulary card. It is

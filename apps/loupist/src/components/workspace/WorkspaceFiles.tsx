@@ -99,10 +99,12 @@ export function WorkspaceFiles({ bridge, loupistId, rootPath, path, filePath, on
           {index === crumbs.length - 1 ? <span aria-current="page" title={part}>{part}</span> : <button type="button" title={part} onClick={() => onNavigate(crumbs.slice(0, index + 1).join("/"))}>{part}</button>}
         </span>)}
       </nav>
+      {/* The file's type and size share the location row (chat design change 23). */}
+      {file ? <span className="workspace-file-meta">{fileType(file)} · {bytes(file.size_bytes)}{file.truncated ? t("workspaceFiles.previewTruncated") : ""}</span> : null}
       <Button type="button" variant="ghost" size="icon-sm" aria-label={t("workspaceFiles.refreshFiles")} disabled={loading} onClick={() => setRevision((current) => current + 1)}><RefreshCwIcon className={loading ? "reader-refreshing" : undefined} /></Button>
-      <Button type="button" variant="ghost" size="icon-sm" aria-label={t("workspaceFiles.showInFileManager")} onClick={() => void reveal()}><FolderOpenIcon /></Button>
+      {/* The workspace folder's path is in the reveal button's tooltip rather than its own row. */}
+      <Button type="button" variant="ghost" size="icon-sm" aria-label={t("workspaceFiles.showInFileManager")} title={rootPath ? `${t("workspaceFiles.localWorkspace")}: ${rootPath}` : undefined} onClick={() => void reveal()}><FolderOpenIcon /></Button>
     </div>
-    {rootPath ? <p className="workspace-file-root" title={rootPath}><span>{t("workspaceFiles.localWorkspace")}</span><span>{rootPath}</span></p> : null}
     {loading ? <p className={`workspace-file-state reader-loading${value ? " is-refresh" : ""}`} role="status">{value ? t("workspaceFiles.refreshing") : t("workspaceFiles.opening")}</p> : null}
     {error ? <div className="workspace-file-state reader-error" role="alert"><p>{error}</p>{value ? <p>{t("workspaceFiles.theLastLoadedPreviewIsStillAvailableBelow")}</p> : null}<Button type="button" variant="outline" size="sm" onClick={() => setRevision((current) => current + 1)}>{t("workspaceFiles.tryAgain")}</Button></div> : null}
     {directory ? <>
@@ -115,7 +117,7 @@ export function WorkspaceFiles({ bridge, loupistId, rootPath, path, filePath, on
       </div>
     </> : null}
     {file ? <>
-      <div className="workspace-file-actions"><span>{fileType(file)} · {bytes(file.size_bytes)}{file.truncated ? t("workspaceFiles.previewTruncated") : ""}</span>
+      <div className="workspace-file-actions">
         {(markdown || tabular) && !file.binary ? <div className="reader-view-switch" role="group" aria-label={t("workspaceFiles.fileView")}>
           <button type="button" aria-pressed={!source} onClick={() => setSourceViews((current) => ({ ...current, [selection]: false }))}>{tabular ? t("workspaceFiles.table") : t("workspaceFiles.preview")}</button>
           <button type="button" aria-pressed={source} onClick={() => setSourceViews((current) => ({ ...current, [selection]: true }))}>{t("workspaceFiles.source")}</button>

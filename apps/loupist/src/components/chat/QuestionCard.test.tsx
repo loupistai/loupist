@@ -24,7 +24,8 @@ it("answers with an option, marks the recommended one and shows the wait", async
   expect(within(card).getByText(/^waiting 0:1\d$/)).toBeVisible();
   const options = within(within(card).getByRole("group", { name: "Options" })).getAllByRole("button");
   expect(options.map((option) => option.textContent)).toEqual(["Last 4 quartersRecommendedTrailing twelve months", "Last 3 years"]);
-  expect(options[0]).toHaveAttribute("data-variant", "default");
+  expect(options[0]).toHaveAttribute("data-recommended");
+  expect(options[0]).toHaveAttribute("data-variant", "outline");
   expect(options[1]).toHaveAttribute("data-variant", "outline");
   await user.click(options[1]);
   expect(answer).toHaveBeenCalledWith({ loupist_id: "loupist-one", request_id: "q-1", choice: 1 });
@@ -64,4 +65,17 @@ it("says when the question is no longer waiting and lets the user try again", as
   await user.click(screen.getByRole("button", { name: /^Last 3 years/ }));
   expect(await screen.findByRole("alert")).toHaveTextContent("This question is no longer waiting.");
   expect(screen.getByRole("button", { name: /^Last 3 years/ })).toBeEnabled();
+});
+
+it("focuses the recommended answer when the card arrives after streaming, and leaves focus alone while streaming", async () => {
+  const user = userEvent.setup();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const answer = vi.spyOn(bridge, "chatQuestionAnswer").mockResolvedValue();
+  const streaming = render(<QuestionCards questions={[waiting()]} bridge={bridge} loupistId="loupist-one" streaming />);
+  expect(document.body).toHaveFocus();
+  streaming.unmount();
+  render(<QuestionCards questions={[waiting()]} bridge={bridge} loupistId="loupist-one" />);
+  expect(screen.getByRole("button", { name: /Last 4 quarters/ })).toHaveFocus();
+  await user.keyboard("{Enter}");
+  expect(answer).toHaveBeenCalledWith(expect.objectContaining({ choice: 0 }));
 });
