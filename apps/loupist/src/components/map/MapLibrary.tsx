@@ -18,10 +18,11 @@ export function MapLibrary({ bridge, catalog, location, onOpen, onAsk, onChanged
 }) {
   const { t } = useTranslation("knowledge");
   const savedState = libraryState(bridge, location.loupistId);
-  const [tab, setTab] = useState<LibraryTab>(() => location.surface === "note" ? noteTab(location, savedState.tab) : savedState.tab);
+  // A pending request ("New Journal entry", even with the Map closed) beats the note the reader still shows.
+  const [tab, setTab] = useState<LibraryTab>(() => location.surface === "note" && !savedState.requested ? noteTab(location, savedState.tab) : savedState.tab);
   const [views, setViews] = useState(savedState.views);
-  useEffect(() => { Object.assign(libraryState(bridge, location.loupistId), { tab, views }); }, [bridge, location.loupistId, tab, views]);
-  useLibraryRequests(bridge, location.loupistId, state => { setTab(state.tab); setViews(state.views); });
+  useEffect(() => { Object.assign(libraryState(bridge, location.loupistId), { tab, views, requested: false }); }, [bridge, location.loupistId, tab, views]);
+  useLibraryRequests(bridge, location.loupistId, state => { state.requested = false; setTab(state.tab); setViews(state.views); });
   const surface = librarySurface(tab);
   const saved = views[tab] ?? { loupistId: location.loupistId, surface };
   const current = { ...saved, recordId: location.surface === surface ? location.recordId : undefined, revisionId: location.surface === surface ? location.revisionId : undefined, selection: location.surface === surface ? location.selection : undefined };

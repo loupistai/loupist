@@ -4,6 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { initialKnowledgeNavigation, openKnowledgeLocation, patchKnowledgeLocation } from "../../knowledge/location";
 import { MemoryWorkspace } from "../knowledge/MemoryWorkspace";
+import { MapLibrary } from "./MapLibrary";
+import { requestLibrary } from "./libraryState";
 vi.mock('./MapCanvas', () => ({ default: ({ selectedId, overlayIds }: { selectedId?: string; overlayIds?: Set<string> }) => <div data-testid="map-canvas" data-selected={selectedId} data-overlay={[...(overlayIds ?? [])].join(',')} /> }));
 async function setup() {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
@@ -60,4 +62,20 @@ it('restores the Library tab and query after the map is remounted', async () => 
   expect(await screen.findByRole('textbox', { name: 'Search sources' })).toHaveValue('RFC');
   await user.click(screen.getByRole('button', { name: 'More actions' }));
   expect(screen.getByRole("button", { name: "Library" })).toHaveAttribute("aria-expanded", "true");
+});
+it('opens the Journal form for a New Journal entry request even while the reader still shows a research note', async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const loupist = (await bridge.loupistList())[0];
+  const catalog = await bridge.knowledgeCatalog({ loupistId: loupist.id });
+  const reader = { loupistId: loupist.id, surface: 'note' as const, recordId: 'research-1', selection: { kind: 'research' as const, recordId: 'research-1' } };
+  const props = { bridge, catalog, location: reader, onOpen: vi.fn(), onAsk: vi.fn(), onChanged: vi.fn(), onClose: vi.fn() };
+  // Without a request the retained note keeps Notes.
+  const first = render(<MapLibrary {...props} />);
+  expect(screen.getByRole('tab', { name: 'Notes' })).toHaveAttribute('aria-selected', 'true');
+  first.unmount();
+  // The palette asks while the Library (or the whole Map) is closed.
+  requestLibrary(bridge, loupist.id, 'journal', { journalNew: true });
+  render(<MapLibrary {...props} />);
+  expect(screen.getByRole('tab', { name: 'Journal' })).toHaveAttribute('aria-selected', 'true');
+  expect(await screen.findByRole('form', { name: 'New entry' })).toBeVisible();
 });

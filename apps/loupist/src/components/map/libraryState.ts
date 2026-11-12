@@ -3,7 +3,8 @@ import type { LoupistBridge, KnowledgeLocation } from "../../types";
 export type LibraryTab = "source" | "journal" | "note";
 /** The knowledge surface a Library tab reads: the Journal and research notes are both notes. */
 export const librarySurface = (tab: LibraryTab) => (tab === "source" ? "source" : "note") as "source" | "note";
-export type LibraryState = { open: boolean; tab: LibraryTab; views: Partial<Record<LibraryTab, KnowledgeLocation>> };
+/** `requested`: a `requestLibrary` tab the Library has not shown yet; it wins over the reader's location on mount. */
+export type LibraryState = { open: boolean; tab: LibraryTab; views: Partial<Record<LibraryTab, KnowledgeLocation>>; requested?: boolean };
 // Transient navigation only: survives Settings and failed Loupist switches without
 // writing knowledge or leaking one bridge/session's state into another.
 const sessions = new WeakMap<LoupistBridge, Map<string, LibraryState>>();
@@ -24,6 +25,7 @@ export function requestLibrary(bridge: LoupistBridge, loupistId: string, tab: Li
   const state = libraryState(bridge, loupistId);
   state.open = true;
   state.tab = tab;
+  state.requested = true;
   if (options.journalNew) {
     const current = state.views.journal ?? { loupistId, surface: "note" as const };
     state.views = { ...state.views, journal: { ...current, view: { ...current.view, journalNew: true } } };
