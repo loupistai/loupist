@@ -392,7 +392,6 @@ pub fn run() {
             commands::knowledge::knowledge_lens_read,
             commands::knowledge::knowledge_lens_search,
             commands::knowledge::knowledge_lens_pages_for_node,
-            commands::knowledge::knowledge_connections,
             commands::knowledge::knowledge_connection_dismiss,
             commands::knowledge::knowledge_connection_open,
             commands::knowledge::memory_section_forget,

@@ -186,13 +186,6 @@ pub struct KnowledgeLensPagesForNodeRequest {
 #[derive(Debug, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct KnowledgeConnectionsRequest {
-    pub loupist_id: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeConnectionRequest {
     pub loupist_id: String,
     pub connection_id: String,
@@ -377,17 +370,6 @@ pub fn knowledge_lens_pages_for_node(
     with_loupist_knowledge(&state, &request.loupist_id.clone(), |tx, blobs| {
         crate::knowledge::KnowledgeWrite::bind(tx, blobs)
             .pages_for_node(&request.loupist_id, &request.node_id)
-    })
-}
-
-#[tauri::command]
-pub fn knowledge_connections(
-    request: KnowledgeConnectionsRequest,
-    state: State<'_, AppState>,
-) -> Result<Vec<crate::knowledge::ConnectionView>, CommandError> {
-    admit(&state, &request.loupist_id)?;
-    with_loupist_knowledge(&state, &request.loupist_id.clone(), |tx, blobs| {
-        crate::knowledge::KnowledgeWrite::bind(tx, blobs).connections(&request.loupist_id)
     })
 }
 

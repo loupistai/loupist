@@ -69,7 +69,6 @@ fn roots(collector: &mut Collector<'_>) {
         crate::commands::knowledge::KnowledgeCatalogDto,
         crate::commands::knowledge::KnowledgeCatalogRequest,
         crate::commands::knowledge::KnowledgeConnectionRequest,
-        crate::commands::knowledge::KnowledgeConnectionsRequest,
         crate::commands::knowledge::KnowledgeGraphJobRequest,
         crate::commands::knowledge::KnowledgeGraphLoupistRequest,
         crate::commands::knowledge::KnowledgeGraphPauseRequest,
@@ -352,7 +351,6 @@ commands! {
         knowledge_catalog: crate::commands::knowledge::KnowledgeCatalogRequest => crate::commands::knowledge::KnowledgeCatalogDto;
         knowledge_connection_dismiss: crate::commands::knowledge::KnowledgeConnectionRequest => crate::knowledge::ConnectionView;
         knowledge_connection_open: crate::commands::knowledge::KnowledgeConnectionRequest => crate::knowledge::ConnectionView;
-        knowledge_connections: crate::commands::knowledge::KnowledgeConnectionsRequest => Vec<crate::knowledge::ConnectionView>;
         knowledge_graph_job: crate::commands::knowledge::KnowledgeGraphJobRequest => crate::knowledge::GraphJobView;
         knowledge_graph_pause: crate::commands::knowledge::KnowledgeGraphPauseRequest => crate::knowledge::GraphProcessingView;
         knowledge_graph_recover: crate::commands::knowledge::KnowledgeGraphLoupistRequest => crate::knowledge::GraphProcessingView;
@@ -719,11 +717,6 @@ async fn command_signatures() {
     let _: Result<crate::knowledge::ConnectionView, CommandError> =
         crate::commands::knowledge::knowledge_connection_open(
             any::<crate::commands::knowledge::KnowledgeConnectionRequest>(),
-            any(),
-        );
-    let _: Result<Vec<crate::knowledge::ConnectionView>, CommandError> =
-        crate::commands::knowledge::knowledge_connections(
-            any::<crate::commands::knowledge::KnowledgeConnectionsRequest>(),
             any(),
         );
     let _: Result<crate::knowledge::GraphJobView, CommandError> =

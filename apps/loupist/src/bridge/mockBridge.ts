@@ -958,9 +958,6 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
 
   researchHandoffStart(request: Contract.ResearchHandoffRequest) { return loupistChat.researchHandoffStart(this.state, request); }
   private connections = new Map<string, import("../contracts/knowledge").ConnectionView>();
-  async knowledgeConnections(request: { loupistId: string }) {
-    return [...this.connections.values()].filter((link) => link.connectionId.startsWith(`${request.loupistId}:`));
-  }
   private async connectionSetStatus(request: { loupistId: string; connectionId: string }, status: import("../contracts/knowledge").ConnectionStatus) {
     const found = this.connections.get(request.connectionId);
     if (!found) throw new Error("No such link.");
