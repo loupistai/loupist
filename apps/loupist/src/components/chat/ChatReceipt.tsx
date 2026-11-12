@@ -12,7 +12,7 @@ type CountKey =
   | "chatReceipt.names" | "chatReceipt.namesOnMap" | "chatReceipt.relationships"
   | "chatReceipt.relationshipsOnMap" | "chatReceipt.usedPages" | "chatReceipt.savedSources" | "chatReceipt.learned" | "chatReceipt.ideas"
   | "chatReceipt.savedPrinciples" | "chatReceipt.savedJournal" | "chatReceipt.savedNotes"
-  | "chatReceipt.savedWorld" | "chatReceipt.numbersToCheck";
+  | "chatReceipt.savedWorld" | "chatReceipt.numbersToCheck" | "chatReceipt.usedPrinciples";
 
 const count = (key: CountKey, value: number): string => t(key, { count: value, formattedCount: formatNumber(value) });
 
@@ -63,6 +63,10 @@ type Segment = { key: string; node: ReactNode };
 export function ChatReceipt({ receipt, showNothingNew, listId, listExpanded, onShowOnMap, usedListId, usedExpanded, onToggleUsed, learnedListId, learnedExpanded, onToggleLearned, onSaved, onOpenThesis, onCheckNumbers }: Props) {
   useTranslation("chat");
   const segments: Segment[] = [];
+  const usedToggle = (key: string, label: string) => <button type="button" className="chat-receipt-segment" data-receipt-used={key}
+    aria-expanded={usedExpanded} aria-controls={usedExpanded ? usedListId : undefined} onClick={onToggleUsed}>{label}</button>;
+  // The first "it remembered" moment: a principle the user taught shaped this answer, so it leads.
+  if (receipt.usedPrinciples.length) segments.push({ key: "used-principles", node: usedToggle("principles", count("chatReceipt.usedPrinciples", receipt.usedPrinciples.length)) });
   const learnedToggle = (key: string, label: string) => <button type="button" className="chat-receipt-segment" data-learned="true" data-receipt-learned={key}
     aria-expanded={learnedExpanded} aria-controls={learnedExpanded ? learnedListId : undefined} onClick={onToggleLearned}>{label}</button>;
   if (receipt.learned) segments.push({ key: "learned", node: learnedToggle("sections", count("chatReceipt.learned", receipt.learned.sections)) });
@@ -99,8 +103,8 @@ export function ChatReceipt({ receipt, showNothingNew, listId, listExpanded, onS
   for (const kind of receipt.skippedKinds) {
     segments.push({ key: `kind-skipped:${kind.name}`, node: <span className="chat-receipt-text" data-unsaved="true">{t("chatReceipt.kindNotAdded", { name: kindLabel(kind) })}</span> });
   }
-  if (receipt.usedPages.length) segments.push({ key: "used", node: <button type="button" className="chat-receipt-segment" data-receipt-used="pages"
-    aria-expanded={usedExpanded} aria-controls={usedExpanded ? usedListId : undefined} onClick={onToggleUsed}>{count("chatReceipt.usedPages", receipt.usedPages.length)}</button> });
+  // Methods still count as pages used; principles alone already lead the line.
+  if (receipt.usedPages.length && (!receipt.usedPrinciples.length || receipt.usedMethods.length)) segments.push({ key: "used", node: usedToggle("pages", count("chatReceipt.usedPages", receipt.usedPages.length)) });
   for (const group of receipt.saved) segments.push({ key: `saved:${group.kind}`, node: <button
     type="button"
     className="chat-receipt-segment"

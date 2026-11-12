@@ -35,19 +35,17 @@
     "couldNotImportThisFolder": "Couldn't import this folder",
     "import": "Import",
     "importing": "Importing…",
-    "workspaceTrust": "<0>I trust this folder.</0> Loupist reads its instructions and Skills and edits files only inside it."
+    "workspaceTrust": "<0>I trust this folder.</0> Loupist follows the instructions and Skills saved in it, and reads and edits files only inside it."
   },
   "wizard": {
     "back": "Back",
-    "welcomeTitle": "A research companion that learns what you care about",
-    "welcomeLoupist": "Each research companion you create is a Loupist.",
-    "watches": "It watches the companies and markets you follow.",
-    "reads": "It reads sources with you and remembers how you think.",
-    "explains": "It explains what changed, with the evidence attached.",
+    "welcomeTitle": "Watch. Remember. Explain.",
+    "welcomeLead": "A Loupist is a research companion for one topic. It watches what you follow, remembers what you read together, and explains what changed, with the sources attached.",
     "start": "Get started",
     "connectTitle": "Connect your AI account",
     "connectBody": "Loupist runs on your own AI account. Your sign-in stays on this Mac, and requests go straight to your provider.",
     "chatgpt": "Continue with ChatGPT",
+    "planNote": "Uses the plan you already pay for. Loupist doesn't charge you.",
     "cancel": "Cancel",
     "other": "Other ways to connect",
     "xai": "Sign in with SuperGrok",
@@ -56,7 +54,7 @@
     "connected": "Connected to {{provider}}",
     "continue": "Continue",
     "skipConnect": "Look around first",
-    "skipConnectNote": "You can connect an account later from the message box or Settings.",
+    "skipConnectNote": "Without an account you can set up what you follow and look around. Answers need an AI account.",
     "createTitle": "Create your first Loupist",
     "loupistDefinition": "A Loupist is a research companion for one topic. It remembers what you read together and learns how you like to research.",
     "newLoupist": "New Loupist",
@@ -65,13 +63,14 @@
     "name": "Name",
     "focus": "Focus",
     "focusPlaceholder": "Describe your own focus",
+    "changeLater": "You can change its avatar, focus and tone later in Loupist settings.",
     "create": "Create Loupist",
     "creating": "Creating…",
-    "backgroundReading": "Your Loupist reads new sources in the background using your AI account. You can change this in Loupist settings › Learning.",
+    "backgroundReading": "After it saves a source, your Loupist reads it in the background to build its Map and learn methods. That uses your AI account. Turn it off any time in Loupist settings.",
     "templates": {
       "portfolio": {
         "title": "My portfolio",
-        "focus": "Companies I hold and watch",
+        "focus": "Companies I hold and follow",
         "suggestedName": "Portfolio Loupist"
       },
       "semiconductors": {
@@ -117,7 +116,6 @@
     "importLoupist": "Already have a Loupist folder? Import it",
     "chatgptNote": "Uses your ChatGPT plan's usage. Loupist doesn't charge you.",
     "supergrok": "Continue with SuperGrok",
-    "supergrokNote": "Uses your SuperGrok or X Premium+ plan. Loupist doesn't charge you.",
     "waitingTitle": "Finish signing in to {{provider}} in your browser",
     "waitingBody": "This page moves on by itself when you're done. ChatGPT shows this connection as Loupist.",
     "openAgain": "Open the sign-in page again",
@@ -148,7 +146,6 @@
     "keyStays": "Your key stays on this device. Requests go straight to the provider.",
     "waitingBodyOther": "This page moves on by itself when you're done.",
     "starters": "Click to follow:",
-    "realAssetsSource": "Add a source about a property or fund",
     "followStarter": "Follow {{name}}",
     "followFailed": "Couldn’t follow that. Try again.",
     "starter": {

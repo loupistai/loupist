@@ -46,6 +46,8 @@ type ChatViewModelInput = {
   refreshKnowledge: () => void;
   onOpenModelSettings: (target?: ConnectSheetTarget) => void;
   onOpenChatPreferences: (loupistId: string) => void;
+  /** Opens the Following page (the first-visit checklist without an AI account). */
+  onOpenFollowing: () => void;
 };
 
 /**
@@ -56,7 +58,7 @@ export function useChatViewModel({
   bridge, active, theme, selectedLoupist, activeChat, recoveredChat, threads, activeThreadId,
   effectiveThreadId, persistedThreadId, effectiveChatKey, activeDraft, progressFocus,
   chat, model, configuration, loupist, workspace, drafts, threadActions, draftWrites, fileWrites,
-  refreshKnowledge, onOpenModelSettings, onOpenChatPreferences,
+  refreshKnowledge, onOpenModelSettings, onOpenChatPreferences, onOpenFollowing,
 }: ChatViewModelInput): ComponentProps<typeof ChatView> | null {
   const selectedLoupistId = selectedLoupist?.id ?? null;
   const modelSelection = resolveConfiguredModelRunSelection(
@@ -180,5 +182,6 @@ export function useChatViewModel({
     onAcknowledgeModelNotice: model.acknowledgeModelNotice,
     hostAuto: !chosen && !snapshot?.effective.chat.model_profile_id,
     onOpenChatPreferences: () => onOpenChatPreferences(loupistId),
+    onOpenFollowing,
   };
 }

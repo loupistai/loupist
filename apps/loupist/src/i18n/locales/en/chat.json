@@ -125,9 +125,9 @@
     "removeAttachment": "Remove {{value1}}",
     "removeContextChip": "Remove {{label}}",
     "privateChat": "Private chat",
-    "privateChatHint": "Private chat: history is kept, but nothing is learned or reused.",
+    "privateChatHint": "Private chat: your Loupist doesn't use or add to what it remembers. The chat is still saved, and still goes to your AI provider.",
     "privateOn": "Private",
-    "privateStatus": "Private: this chat stays in history, but nothing is learned from it or reused.",
+    "privateStatus": "Private chat: your Loupist doesn't use or add to what it remembers. The chat is still saved, and still goes to your AI provider.",
     "informationDisclosure": "AI can be wrong. Not a licensed financial adviser.",
     "moreChips": "+{{formattedCount}} more",
     "attachments": {
@@ -371,8 +371,8 @@
     "savedJournal_other": "Saved {{formattedCount}} journal entries",
     "savedNotes_one": "Saved {{formattedCount}} research note",
     "savedNotes_other": "Saved {{formattedCount}} research notes",
-    "savedWorld_one": "Saved {{formattedCount}} Map item",
-    "savedWorld_other": "Saved {{formattedCount}} Map items",
+    "savedWorld_one": "{{formattedCount}} added to the map",
+    "savedWorld_other": "{{formattedCount}} added to the map",
     "nothingNew": "Nothing new saved",
     "thesisMoved": "{{name}}: {{verdict}}",
     "thesisMovedFrom": "{{name}}: {{from}} → {{verdict}}",
@@ -389,12 +389,14 @@
     "ideas_one": "{{formattedCount}} idea",
     "ideas_other": "{{formattedCount}} ideas",
     "usedPages_one": "Used {{formattedCount}} page",
-    "usedPages_other": "Used {{formattedCount}} pages"
+    "usedPages_other": "Used {{formattedCount}} pages",
+    "usedPrinciples_one": "Used your principle",
+    "usedPrinciples_other": "Used {{formattedCount}} principles"
   },
   "messageSchedules": {
     "draftFilesFailed": "Could not save draft attachments on this device.",
-    "needsTime": "Answer in Bot",
-    "handedToBot": "Handed to Bot · {{status}}",
+    "needsTime": "Answer in Home",
+    "handedToBot": "Sent to Home · {{status}}",
     "scheduledTasks": "Scheduled tasks",
     "deleted": "Deleted",
     "runStarted": "Run started",
@@ -410,7 +412,7 @@
     "discarded": "Discarded",
     "nextRun": "Next run {{date}}",
     "couldNotChange": "Couldn't change it. Try again.",
-    "proposalHint": "Nothing runs until you turn it on."
+    "proposalHint": "Nothing runs until you turn it on. Scheduled tasks use your AI account each run."
   },
   "worldProcessingStatus": {
     "sourceSavedCouldNotRefreshWorldStatus": "Source saved · Could not refresh the Map status",
@@ -1042,7 +1044,7 @@
       "source": "from {{title}}",
       "check": "To check by {{date}}",
       "conflict": "sources disagree",
-      "watching": "watching"
+      "watching": "following"
     },
     "q": {
       "changed": "What changed for {{name}} since {{date}}?",
@@ -1071,10 +1073,24 @@
     },
     "setup": {
       "label": "Get set up",
-      "follow": "Follow AAPL and 005930",
-      "briefing": "Turn on a weekday morning briefing at 8",
-      "principle": "Remember: check whether capacity costs are temporary before trusting margin recovery",
-      "holdings": "Import holdings (CSV)"
+      "count": "{{done}} of {{total}}",
+      "hide": "Hide",
+      "done": "Done",
+      "needsAccount": "Needs an AI account",
+      "holdings": "Import holdings (CSV)…",
+      "follow": {
+        "label": "Follow a few companies",
+        "insert": "Follow these for me: "
+      },
+      "principle": {
+        "label": "Teach a principle",
+        "insert": "My principle: ",
+        "example": "e.g. check whether capacity costs are temporary before trusting a margin recovery"
+      },
+      "briefing": {
+        "label": "Get a briefing every morning",
+        "insert": "Send me a briefing every weekday at 8:00 AM."
+      }
     },
     "focusSubject": {
       "portfolio": "my portfolio",
@@ -1085,6 +1101,11 @@
       "macro": "macro and rates",
       "commodities": "commodities",
       "realAssets": "real assets"
+    },
+    "homeLine": "Briefings, alerts and anything that needs you will arrive in this conversation.",
+    "readTogether": {
+      "label": "Read a filing or article together",
+      "insert": "Read this with me and tell me what matters: "
     }
   },
   "toolProgress": {
@@ -1876,5 +1897,12 @@
     "running": "Reviewing earlier conversation…",
     "done": "Reviewed earlier conversation",
     "incomplete": "Could not finish reviewing earlier conversation"
+  },
+  "watchAll": {
+    "action_one": "Watch it",
+    "action_other": "Watch all {{formattedCount}}",
+    "note": "Checks public filings, results dates and dividends for the names you follow, hourly while Loupist is open. No AI usage. Only names are sent to data sources.",
+    "done": "Watching what you follow",
+    "failed": "Couldn’t turn on watching. Try again."
   }
 }

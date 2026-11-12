@@ -44,7 +44,7 @@ it("switches the morning message language without changing the Loupist name", as
 
 it("resolves status and evidence labels from the current language", async () => {
   render(<WorldProcessingStatus initialStatus="queued" />);
-  expect(screen.getByRole("status")).toHaveTextContent("World: queued");
+  expect(screen.getByRole("status")).toHaveTextContent("Map: queued");
   const evidence = { kind: "original", tool_name: "web_fetch" } as ChatEvidenceRef;
   expect(evidencePresentation(evidence).label).toBe("Retrieved source");
   await act(async () => { await i18n.changeLanguage("en-XA"); });

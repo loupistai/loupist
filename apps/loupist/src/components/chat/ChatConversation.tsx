@@ -47,6 +47,10 @@ type Props = {
   onReadWorldJob?: (jobId: string) => Promise<GraphJobView>;
   onWorldChanged?: () => void;
   onSuggestion: (suggestion: string) => void;
+  /** False with no AI account: the first-visit checklist asks to connect one. */
+  accountConnected?: boolean;
+  onConnectAccount?: () => void;
+  onOpenFollowing?: () => void;
   /** Puts an inline chart in the next question. */
   onAskArtifact?: (artifact: ChatArtifactRef) => void;
   onReadAttachment: (
@@ -94,6 +98,9 @@ export function ChatConversation({
   onReadWorldJob,
   onWorldChanged,
   onSuggestion,
+  accountConnected,
+  onConnectAccount,
+  onOpenFollowing,
   onAskArtifact,
   onReadAttachment,
   mentionSkills,
@@ -206,6 +213,9 @@ export function ChatConversation({
     loupistId={loupistId}
     loupistName={loupistName}
     onAsk={onSuggestion}
+    accountConnected={accountConnected}
+    onConnectAccount={onConnectAccount}
+    onOpenFollowing={onOpenFollowing}
     deliveredRunIds={home ? deliveredRunIds : undefined}
     onSettled={() => setMorningSettled(true)}
     asOf={asOf}

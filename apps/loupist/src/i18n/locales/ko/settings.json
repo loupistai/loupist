@@ -304,7 +304,7 @@
     "couldNotUpdateThisLoupistSConnections": "이 루피스트의 연결을 변경하지 못했어요. 다시 시도해 주세요.",
     "connections": "연결",
     "settingsForName": "{{name}} 설정",
-    "chatPreferences": "대화 설정",
+    "chatPreferences": "대화 기본값",
     "localWorkspace": "내 작업 폴더",
     "rememberNewChats": "새 대화 기억하기",
     "workspaceCaption": "이 루피스트의 파일이 Mac에 저장되는 위치예요.",
@@ -573,7 +573,7 @@
     "actions": {
       "newChat": "새 대화",
       "palette": "명령 팔레트",
-      "tabs": "대화 · World · Lens · 예약 작업",
+      "tabs": "홈 · 지도 · 렌즈 · 예약",
       "panel": "패널 보이기/숨기기",
       "settings": "설정",
       "send": "보내기",

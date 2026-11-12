@@ -121,6 +121,8 @@ type Props = {
   /** Nothing chosen and no Chat default: sends name no model, and Rust resolves Auto at admission. */
   hostAuto?: boolean;
   onOpenChatPreferences?: () => void;
+  /** Opens the Following page. */
+  onOpenFollowing?: () => void;
   initialPrompt?: string;
   draft?: ChatDraft;
   sessionDrafts?: ChatSessionDrafts;
@@ -175,6 +177,7 @@ export function ChatView({
   onAcknowledgeModelNotice,
   hostAuto = false,
   onOpenChatPreferences,
+  onOpenFollowing,
   initialPrompt,
   draft,
   sessionDrafts,
@@ -255,6 +258,7 @@ export function ChatView({
   // The composer's model menu is memoized: keep its inputs stable across streaming ticks.
   const composerModels = useMemo(() => visibleCatalogModels(modelCatalog), [modelCatalog]);
   const composerProviders = useMemo(() => modelCatalog?.providers ?? [], [modelCatalog]);
+  const accountConnected = Boolean(modelCatalog?.providers.some((provider) => provider.credential_source !== "missing") || modelCatalog?.models.some((model) => model.credential_source !== "missing"));
   const runOptionsKey = JSON.stringify(selectedRunOptions);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- run options compare by value
   const composerSelection = useMemo(() => modelSelection, [selectedModelProfileId, selectedThinkingLevel, runOptionsKey]);
@@ -860,6 +864,9 @@ export function ChatView({
     onSuggestion={askFromMorningMessage}
     onQuote={onChipsChange ? quoteToComposer : undefined}
     loupistTemplate={loupist.template}
+    accountConnected={accountConnected}
+    onConnectAccount={onOpenModelSettings ? openModelSettings : undefined}
+    onOpenFollowing={onOpenFollowing}
     guiding={guidingTexts}
     home={activeThread?.home}
     // A Look back draft already holds its question; generic starters would compete with it.

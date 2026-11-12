@@ -217,7 +217,7 @@ export function AppDialogs({
             <DialogHeader><DialogTitle>{i18n.t("onboarding:wizard.newLoupist")}</DialogTitle>
               <DialogDescription>{i18n.t("onboarding:wizard.newLoupistBody")}</DialogDescription></DialogHeader>
             <DialogBody><LoupistTemplateFields draft={dialogs.loupistDraft} onChange={dialogs.setLoupistDraft} busy={loupistMutationBusy} onFollow={onFollowStarter} />
-              <p className="onboarding-background-note" data-background-reading>{i18n.t("onboarding:wizard.backgroundReading")}</p>
+              <p className="onboarding-spending" data-background-reading>{i18n.t("onboarding:wizard.backgroundReading")}</p>
               {loupistMutationError && <div className="inline-error" role="alert">{loupistMutationError}</div>}</DialogBody>
             {onUseLinkOrFile ? <div className="loupist-shared-entry" data-loupist-shared-entry><span>{i18n.t("sharing:fromShared")}</span>
               {onBrowseGallery ? <Button type="button" variant="ghost" size="sm" disabled={loupistMutationBusy} data-browse-gallery onClick={onBrowseGallery}>{i18n.t("sharing:browseGallery")}</Button> : null}

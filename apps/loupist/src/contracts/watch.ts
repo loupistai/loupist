@@ -93,6 +93,12 @@ export interface WatchBridge {
   /** One switch or matrix checkbox. "Watch" on a not-watched row sets each default kind in turn. */
   watchSettingSet(request: WatchSettingSetRequest): Promise<WatchSettings>;
   watchPauseSet(request: { loupistId: string; paused: boolean }): Promise<WatchSettings>;
+  /**
+   * Watch all (product direction F5): records consent and turns on the class defaults
+   * (filings, results and dividends) for followed assets with no decision yet.
+   * Optional until the host command ships; the renderer hides the action without it.
+   */
+  watchDefaultsApply?(request: { loupistId: string }): Promise<WatchSettings>;
   /** Runs every enabled kind once for this Loupist; resolves when the check finished. */
   watchCheckNow(request: { loupistId: string }): Promise<{ newAlerts: number; settings: WatchSettings }>;
   /** Newest first. */

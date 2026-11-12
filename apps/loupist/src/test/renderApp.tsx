@@ -33,7 +33,8 @@ export const openChat = async (title = "How should we read the margin decline?")
 
 export const mainTab = async (name: RegExp) => {
   const labels = [...APP_DESTINATIONS.map(destination => destination.label), "Loupist settings", "Connections", APP_PAGES.settings.label];
-  const label = labels.find(candidate => name.test(candidate));
+  // Tests name the home destination "Chat" (its id) or "Home" (its label).
+  const label = name.test("Chat") ? APP_DESTINATIONS[0]!.label : labels.find(candidate => name.test(candidate));
   const settingsBack = document.querySelector<HTMLButtonElement>("[data-loupist-settings-back]");
   if (settingsBack) fireEvent.click(settingsBack);
   if (label === "Settings") {
@@ -59,17 +60,17 @@ export const mainTab = async (name: RegExp) => {
     fireEvent.keyDown(screen.getByRole("button", { name: /Panel kind/ }), { key: "Enter" });
     return screen.findByRole("menuitemradio", { name: label === "Map" ? "Map" : "Lens" });
   }
-  if (label === "Chat") {
+  if (label === APP_DESTINATIONS[0]!.label) {
     const close = document.querySelector<HTMLButtonElement>("[data-workspace-close]");
     if (close) fireEvent.click(close);
     const last = JSON.parse(localStorage.getItem("loupist.lastConversation") ?? "null");
-    return (last && document.querySelector<HTMLButtonElement>(`[data-thread-id="${CSS.escape(last[1])}"]`)) || screen.getByRole("button", { name:"Bot" });
+    return (last && document.querySelector<HTMLButtonElement>(`[data-thread-id="${CSS.escape(last[1])}"]`)) || screen.getByRole("button", { name:"Home" });
   }
   fireEvent.keyDown(document.querySelector<HTMLButtonElement>("[data-bot-menu]")!, { key: "Enter" });
   return screen.findByRole("menuitem", { name: "Scheduled tasks" });
 };
 
-export const newChatButton = () => screen.getByRole("button", { name: "New research" });
+export const newChatButton = () => screen.getByRole("button", { name: "New chat" });
 
 export const savedSurface = (name: string) => screen.getByRole("tab", { name });
 
@@ -84,7 +85,7 @@ export const chooseLoupist = async (
 };
 
 export const loupistIsRunning = (name: string) => {
-  return Boolean(screen.queryByRole("status", { name: `${name} has active sessions` }));
+  return Boolean(screen.queryByRole("status", { name: `${name} has chats running` }));
 };
 
 export const waitForLoupistRunning = async (name: string, running = true) => {

@@ -129,12 +129,12 @@ it("lets a user without an AI account look around first, and goes back between s
   await user.click(screen.getByRole("button", { name: "Get started" }));
   await user.click(screen.getByRole("button", { name: "Look around first" }));
   expect(screen.getByRole("heading", { name: "Create your first Loupist" })).toBeVisible();
-  expect(screen.getByText(/reads new sources in the background using your AI account/)).toBeVisible();
+  expect(screen.getByText(/reads it in the background to build its Map/)).toBeVisible();
   await user.click(screen.getByRole("button", { name: "Back" }));
   expect(screen.getByRole("heading", { name: "Connect your AI account" })).toBeVisible();
   await user.click(screen.getByRole("button", { name: "Look around first" }));
   await createLoupist(user);
-  expect(await screen.findByRole("button", { name: "Connect an AI account" })).toBeVisible();
+  expect((await screen.findAllByRole("button", { name: "Connect an AI account" }))[0]).toBeVisible();
   await waitFor(() => expect(acknowledge).toHaveBeenCalledTimes(1));
 });
 

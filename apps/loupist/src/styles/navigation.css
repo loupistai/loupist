@@ -76,7 +76,7 @@ button.needs-attention-more:hover { color: var(--gg-color-text-primary); }
 .app-navigation [data-slot="sidebar-container"] { border-right-color: transparent; box-shadow: inset -1px 0 0 color-mix(in srgb, var(--gg-color-border-subtle) 60%, transparent); }
 :root[data-theme="dark"] .app-navigation [data-slot="sidebar-container"] { box-shadow: inset -1px 0 0 color-mix(in srgb, var(--gg-color-border-subtle) 40%, transparent); }
 /* "Needs attention" reads like the Loupists label above the Loupist list. */
-.needs-attention [data-slot="sidebar-group-label"] { height: auto; padding: var(--gg-space-4) var(--gg-space-3) var(--gg-space-2); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); letter-spacing: .06em; text-transform: uppercase; }
+.needs-attention [data-slot="sidebar-group-label"] { height: auto; padding: var(--gg-space-4) var(--gg-space-3) var(--gg-space-2); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); letter-spacing: 0; text-transform: none; }
 .needs-attention [data-slot="sidebar-group-label"]:lang(ko) { letter-spacing: 0; text-transform: none; }
 /* On a short window "Needs attention" gives up height first and scrolls inside its group, so the Loupists,
    "What … knows" and New Loupist stay in view above the Settings footer. The group keeps its label and a row. */

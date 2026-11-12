@@ -111,17 +111,38 @@
 .morning-link[data-line] { display: block; width: fit-content; margin-top: var(--gg-space-1); }
 .morning-skeleton { display: inline-block; width: min(320px, 70%); height: 10px; border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-hover); vertical-align: middle; }
 .morning-ask { margin-top: var(--gg-space-5); }
-.morning-setup { display: grid; justify-items: start; gap: var(--gg-space-2); margin-top: var(--gg-space-4); }
-.morning-setup .morning-ask-label { margin: 0; }
-.morning-setup-body { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
-.morning-setup-chips { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); margin: 0; padding: 0; list-style: none; }
+.morning-setup { margin-top: var(--gg-space-5); }
+.morning-setup-head { display: flex; align-items: center; gap: var(--gg-space-2); margin-bottom: var(--gg-space-1); }
+.morning-setup-label { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); }
+.morning-setup-count { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-variant-numeric: tabular-nums; }
+.morning-setup-hide { min-height: var(--gg-size-control-sm); margin-left: auto; padding: 0 var(--gg-space-1); border: 0; border-radius: var(--gg-radius-xs); background: transparent; color: var(--gg-color-text-secondary); font: inherit; font-size: var(--gg-text-meta); cursor: pointer; }
+.morning-setup-hide:hover { text-decoration: underline; }
+.morning-setup-rows { display: grid; margin: 0; padding: 0; list-style: none; }
+.morning-setup-rows > li + li { border-top: 1px solid var(--gg-color-border-subtle); }
+.morning-setup-row { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: var(--gg-space-2); width: 100%; min-height: 40px; padding: var(--gg-space-2); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); text-align: left; }
+button.morning-setup-row { cursor: pointer; }
+button.morning-setup-row:not([aria-disabled="true"]):is(:hover, :focus-visible) { background: var(--gg-color-bg-hover); }
+button.morning-setup-row:not([aria-disabled="true"]):is(:hover, :focus-visible) .morning-question-go { opacity: 1; }
+.morning-setup-row[data-setup="connect"] strong { font-weight: var(--gg-weight-medium); }
+.morning-setup-row[data-setup="connect"] .morning-question-go { opacity: 1; }
+.morning-setup-mark { width: 16px; height: 16px; color: var(--gg-color-border-strong); }
+.morning-setup-text { display: grid; min-width: 0; }
+.morning-setup-text small { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.morning-setup-rows > li[data-done] .morning-setup-row { min-height: 32px; color: var(--gg-color-text-secondary); }
+.morning-setup-rows > li[data-done] .morning-setup-mark { color: var(--gg-color-text-secondary); }
+button.morning-setup-row[aria-disabled="true"] { color: var(--gg-color-text-disabled); cursor: default; }
+.morning-setup-hint { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); white-space: nowrap; }
+.morning-setup-holdings { margin: var(--gg-space-2) 0 0 calc(var(--gg-space-2) + 16px + var(--gg-space-2)); font-size: var(--gg-text-control); }
+.morning-message .morning-lead[data-home-first] { font-size: var(--gg-text-title); line-height: var(--gg-leading-title); font-weight: var(--gg-weight-medium); }
+.morning-home-line { margin: 0 0 var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
 .morning-setup-chip { min-height: var(--gg-size-control-sm); padding: var(--gg-space-1) var(--gg-space-3); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-full); background: var(--gg-color-bg-raised); color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-control); line-height: var(--gg-leading-control); text-align: left; cursor: pointer; }
 .morning-setup-chip:hover { border-color: var(--gg-color-border-strong); background: var(--gg-color-bg-hover); }
 .morning-setup-chip:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
 .morning-ask-label { margin: 0 0 var(--gg-space-2); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
-.morning-ask ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--gg-space-2); }
-.morning-question { display: flex; width: 100%; align-items: center; gap: var(--gg-space-3); min-height: 44px; padding: var(--gg-space-2) var(--gg-space-3); border: 0; border-radius: var(--gg-radius-md); color: var(--gg-color-text-primary); background: var(--gg-color-bg-hover); font: inherit; text-align: left; cursor: pointer; }
-.morning-question:hover, .morning-question:focus-visible { background: var(--gg-color-bg-selected); }
+.morning-ask ul { list-style: none; margin: 0; padding: 0; display: grid; }
+.morning-ask li + li { border-top: 1px solid var(--gg-color-border-subtle); }
+.morning-question { display: flex; width: 100%; align-items: center; gap: var(--gg-space-3); min-height: 40px; padding: var(--gg-space-2); border: 0; border-radius: var(--gg-radius-sm); color: var(--gg-color-text-primary); background: transparent; font: inherit; font-size: var(--gg-text-body); text-align: left; cursor: pointer; }
+.morning-question:hover, .morning-question:focus-visible { background: var(--gg-color-bg-hover); }
 .morning-question span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .morning-question small { flex: 0 1 auto; min-width: 0; max-width: 45%; overflow: hidden; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); text-overflow: ellipsis; white-space: nowrap; }
 .morning-question:hover small { color: var(--gg-color-text-secondary); }
@@ -2126,3 +2147,7 @@ button.sent-image { cursor: zoom-in; }
 /* Small glyph buttons keep their look but take a 28 px hit area (design rubric). */
 .composer-chip button, .composer-inline-reference-controls button, .execution-copy-button { position: relative; }
 .composer-chip button::after, .composer-inline-reference-controls button::after, .execution-copy-button::after { content: ""; position: absolute; top: 50%; left: 50%; width: max(100%, var(--gg-size-control-sm)); height: max(100%, var(--gg-size-control-sm)); transform: translate(-50%, -50%); }
+
+/* Watch all n: one press watches what you follow with its class defaults. */
+.watch-all-offer { display: grid; justify-items: start; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.watch-all-offer p { margin: 0; }

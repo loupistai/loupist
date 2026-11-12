@@ -15,7 +15,7 @@
     "stopping": "중지 중",
     "updatingTheAnswer": "답변 업데이트 중",
     "stillWorking": "작업 중",
-    "iDLikeToChangeTheWorkingNote": "작업 노트를 이렇게 바꿔 주세요: ",
+    "iDLikeToChangeTheWorkingNote": "리서치 노트를 이렇게 바꿔 주세요: ",
     "modelSetup": "모델 설정",
     "openSettings": "설정 열기",
     "reconnectTheWorkspaceFolderToSendMessages": "메시지를 보내려면 작업 폴더를 다시 연결해 주세요",
@@ -24,7 +24,7 @@
     "chartRange": "선택한 차트 범위: {{start}}~{{end}}.",
     "withChartRange": "{{text}}\n\n선택한 차트 범위: {{start}}~{{end}}.",
     "retainedRequestError": "{{error}} 요청은 보관되어 있어요. 다시 보내기 전에 대화를 확인해 주세요.",
-    "appendWorkingNoteRequest": "{{prompt}}\n\n작업 노트를 이렇게 바꿔 주세요: "
+    "appendWorkingNoteRequest": "{{prompt}}\n\n리서치 노트를 이렇게 바꿔 주세요: "
   },
   "answerFeedback": {
     "availableWhenTheReplyFinishes": "답변이 끝나면 사용할 수 있어요",
@@ -125,9 +125,9 @@
     "removeAttachment": "{{value1}} 제거",
     "removeContextChip": "{{label}} 제거",
     "privateChat": "비공개 대화",
-    "privateChatHint": "비공개 대화: 대화 기록은 남지만, 이 대화에서 배우거나 다시 쓰지 않아요.",
+    "privateChatHint": "비공개 대화: 루피스트가 기억을 쓰지도 남기지도 않아요. 대화 기록은 저장되고, AI 서비스로도 전송돼요.",
     "privateOn": "비공개",
-    "privateStatus": "비공개: 대화 기록은 남지만, 이 대화에서 배우거나 다시 쓰지 않아요.",
+    "privateStatus": "비공개 대화: 루피스트가 기억을 쓰지도 남기지도 않아요. 대화 기록은 저장되고, AI 서비스로도 전송돼요.",
     "informationDisclosure": "AI는 틀릴 수 있어요. 투자자문업자가 아니에요.",
     "moreChips": "{{formattedCount}}개 더",
     "attachments": {
@@ -312,8 +312,8 @@
     "inspectResult": "결과 {{value1}} 살펴보기"
   },
   "chatWorkingContext": {
-    "couldNotLoadTheWorkingNote": "작업 노트를 불러오지 못했어요. 다시 시도해 주세요.",
-    "workingNote": "작업 노트",
+    "couldNotLoadTheWorkingNote": "리서치 노트를 불러오지 못했어요. 다시 시도해 주세요.",
+    "workingNote": "리서치 노트",
     "tryAgain": "다시 시도",
     "theCurrentResearchNoteForThisConversation": "이 대화의 현재 리서치 노트예요.",
     "noteEvidence": "노트 근거",
@@ -331,7 +331,7 @@
     "attributedSource": "출처: {{attribution}}",
     "numberedSource": "자료 {{value1}}",
     "numberedWorld": "지도 {{value1}}",
-    "numberedLens": "Lens {{value1}} · {{value2}}"
+    "numberedLens": "렌즈 {{value1}} · {{value2}}"
   },
   "messageMemoryRow": {
     "savedInThisAnswer": "이 답변에서 저장됨",
@@ -351,7 +351,7 @@
     "savedPrinciples_other": "원칙 {{formattedCount}}개 저장",
     "savedJournal_other": "저널 {{formattedCount}}개 저장",
     "savedNotes_other": "리서치 노트 {{formattedCount}}개 저장",
-    "savedWorld_other": "지도 항목 {{formattedCount}}개 저장",
+    "savedWorld_other": "지도에 {{formattedCount}}개 추가",
     "nothingNew": "새로 저장한 내용 없음",
     "thesisMoved": "{{name}}: {{verdict}}",
     "thesisMovedFrom": "{{name}}: {{from}} → {{verdict}}",
@@ -364,12 +364,13 @@
     "numbersToCheck_other": "확인할 숫자 {{formattedCount}}개",
     "learned_other": "새로 배운 것 {{formattedCount}}개",
     "ideas_other": "아이디어 {{formattedCount}}개",
-    "usedPages_other": "페이지 {{formattedCount}}개 사용"
+    "usedPages_other": "페이지 {{formattedCount}}개 사용",
+    "usedPrinciples_other": "내 원칙 {{formattedCount}}개 사용"
   },
   "messageSchedules": {
     "draftFilesFailed": "첨부파일을 이 기기에 임시 저장하지 못했어요.",
-    "needsTime": "봇에서 시간 확인",
-    "handedToBot": "봇에 전달됨 · {{status}}",
+    "needsTime": "홈에서 답하기",
+    "handedToBot": "홈으로 보냄 · {{status}}",
     "scheduledTasks": "예약 작업",
     "deleted": "삭제됨",
     "runStarted": "실행 시작",
@@ -385,7 +386,7 @@
     "discarded": "취소됨",
     "nextRun": "다음 실행 {{date}}",
     "couldNotChange": "바꾸지 못했어요. 다시 시도해 주세요.",
-    "proposalHint": "켜기 전에는 실행되지 않아요."
+    "proposalHint": "켜기 전에는 실행되지 않아요. 예약 작업은 실행할 때마다 AI 계정을 사용해요."
   },
   "worldProcessingStatus": {
     "sourceSavedCouldNotRefreshWorldStatus": "자료 저장됨 · 지도 상태를 새로고침하지 못했어요",
@@ -492,7 +493,7 @@
     "kind": {
       "source": "자료",
       "savedSource": "저장한 자료",
-      "lens": "Lens",
+      "lens": "렌즈",
       "world": "지도",
       "journal": "저널",
       "note": "리서치 노트",
@@ -584,7 +585,7 @@
     "couldNotOpenThisSavedReference": "저장된 참고 자료를 열지 못했어요. 다시 시도해 주세요.",
     "exploreThisSavedWorldAndItsEvidence": "저장된 지도와 근거를 살펴보세요.",
     "openWorld": "지도 열기",
-    "openInLens": "Lens에서 열기",
+    "openInLens": "렌즈에서 열기",
     "retryReference": "참고 자료 다시 불러오기",
     "openingSavedReference": "저장된 참고 자료 여는 중…",
     "thisReferenceIsUnavailable": "이 참고 자료를 사용할 수 없어요."
@@ -768,7 +769,7 @@
     "toolResult": "도구 결과",
     "aSavedAnalysisResultThisIsNotAnOriginal": "저장된 분석 결과예요. 원본 자료나 별도로 검증된 사실이 아니에요.",
     "worldSearch": "지도 검색",
-    "lensSearch": "Lens 검색",
+    "lensSearch": "렌즈 검색",
     "numberedSource": "출처 {{number}}: {{title}}",
     "memoryLabel": "기억: {{memoryTitle}}",
     "resultLabel": "결과: {{title}}"
@@ -782,7 +783,7 @@
     "createKind": "만든 {{kind}}"
   },
   "memoryPreview": {
-    "thisSavedPreviewIsIncompleteOpenTheRelatedRecord": "저장된 미리보기가 완전하지 않아요. 지도나 Lens에서 관련 기록을 열어 내용을 읽어 주세요.",
+    "thisSavedPreviewIsIncompleteOpenTheRelatedRecord": "저장된 미리보기가 완전하지 않아요. 지도나 렌즈에서 관련 기록을 열어 내용을 읽어 주세요.",
     "noMatchingSavedRecords": "검색한 저장 기록이 없어요.",
     "moreMatchesAreAvailableInMemory": "기억에 더 많은 검색 결과가 있어요.",
     "noEntitiesOrRelationshipsInThisSavedView": "저장된 화면에 이름이나 관계가 없어요.",
@@ -834,7 +835,7 @@
     "unsupportedLink": "지원하지 않는 링크예요.",
     "couldNotOpenThisLink": "링크를 열지 못했어요",
     "couldNotOpenThisLinkAlert": "링크를 열지 못했어요. 주소를 확인해 주세요.",
-    "openLinkedLens": "연결된 Lens 열기",
+    "openLinkedLens": "연결된 렌즈 열기",
     "openFile": "{{localPath}} 열기",
     "openExternalLink": "{{externalUrl}} 열기",
     "streamdown": {
@@ -1029,11 +1030,25 @@
       "check": "확인할 것: {{claim}}"
     },
     "setup": {
-      "label": "시작하기",
-      "follow": "AAPL과 005930을 팔로우해 줘",
-      "briefing": "평일 아침 8시에 브리핑을 켜 줘",
-      "principle": "기억해 줘: 마진 회복을 믿기 전에 증설 비용이 일시적인지 확인하기",
-      "holdings": "보유 자산 가져오기(CSV)"
+      "label": "시작 준비",
+      "count": "{{total}}개 중 {{done}}개",
+      "hide": "숨기기",
+      "done": "완료",
+      "needsAccount": "AI 계정이 필요해요",
+      "holdings": "보유 자산 가져오기 (CSV)…",
+      "follow": {
+        "label": "관심 자산 추가하기",
+        "insert": "다음을 관심 자산에 추가해 줘: "
+      },
+      "principle": {
+        "label": "원칙 가르치기",
+        "insert": "내 원칙: ",
+        "example": "예: 마진 회복을 믿기 전에 증설 비용이 일시적인지 확인하기"
+      },
+      "briefing": {
+        "label": "매일 아침 브리핑 받기",
+        "insert": "평일 오전 8시에 브리핑을 보내 줘."
+      }
     },
     "focusSubject": {
       "portfolio": "내 포트폴리오",
@@ -1044,6 +1059,11 @@
       "macro": "매크로와 금리",
       "commodities": "원자재",
       "realAssets": "실물자산"
+    },
+    "homeLine": "브리핑, 알림, 확인이 필요한 일이 이 대화로 모여요.",
+    "readTogether": {
+      "label": "자료 함께 읽기",
+      "insert": "이 자료를 같이 읽고 중요한 점을 알려 줘: "
     }
   },
   "toolProgress": {
@@ -1112,8 +1132,8 @@
       "done": "이 대화에서 기억함"
     },
     "note_save": {
-      "running": "작업 노트 저장 중",
-      "done": "작업 노트 저장함"
+      "running": "리서치 노트 저장 중",
+      "done": "리서치 노트 저장함"
     },
     "journal_save": {
       "running": "저널 저장 중",
@@ -1136,16 +1156,16 @@
       "done": "이 루피스트 설정함"
     },
     "lens_file": {
-      "running": "알게 된 것 Lens에 기록 중",
-      "done": "알게 된 것 Lens에 기록함"
+      "running": "알게 된 것 렌즈에 기록 중",
+      "done": "알게 된 것 렌즈에 기록함"
     },
     "lens_search": {
-      "running": "Lens 검색 중",
-      "done": "Lens 검색함"
+      "running": "렌즈 검색 중",
+      "done": "렌즈 검색함"
     },
     "lens_read": {
-      "running": "Lens 읽는 중",
-      "done": "Lens 읽음"
+      "running": "렌즈 읽는 중",
+      "done": "렌즈 읽음"
     },
     "world_job": {
       "running": "자료 처리 상태 확인 중",
@@ -1168,8 +1188,8 @@
       "done": "질문함"
     },
     "research_open": {
-      "running": "조사 세션 여는 중",
-      "done": "조사 세션 열었음"
+      "running": "새 대화를 여는 중",
+      "done": "새 대화를 열었음"
     },
     "worldbank_series": {
       "running": "거시 데이터 읽는 중",
@@ -1775,8 +1795,8 @@
       "asset_page_read": "자산 페이지",
       "world_search": "저장한 노트",
       "world_read": "저장한 노트",
-      "lens_search": "Lens",
-      "lens_read": "Lens",
+      "lens_search": "렌즈",
+      "lens_read": "렌즈",
       "conversation_memory": "이전 대화",
       "chat_history": "이전 메시지",
       "dataset_query": "분석 데이터",
@@ -1817,5 +1837,11 @@
     "running": "이전 대화 확인 중…",
     "done": "이전 대화 확인함",
     "incomplete": "이전 대화를 끝까지 확인하지 못했어요"
+  },
+  "watchAll": {
+    "action_other": "관심 자산 {{formattedCount}}개 모두 지켜보기",
+    "note": "관심 자산의 공시, 실적 발표일, 배당을 루피스트가 열려 있는 동안 매시간 확인해요. AI 사용량은 들지 않고, 데이터 제공처에는 이름만 보내요.",
+    "done": "관심 자산을 지켜보고 있어요",
+    "failed": "지켜보기를 켜지 못했어요. 다시 시도해 주세요."
   }
 }

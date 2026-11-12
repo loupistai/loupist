@@ -14,9 +14,9 @@ import type { LoupistBridge, ModelCatalog } from "@/types";
 import "@/styles/connect.css";
 
 /** Each up-front sign-in button's localized copy; the manifest's sign-ins decide which buttons show. */
-const SIGN_IN_BUTTON: Partial<Record<string, { label: "wizard.chatgpt" | "wizard.supergrok"; note: "wizard.chatgptNote" | "wizard.supergrokNote" }>> = {
-  openai: { label: "wizard.chatgpt", note: "wizard.chatgptNote" },
-  xai: { label: "wizard.supergrok", note: "wizard.supergrokNote" },
+const SIGN_IN_BUTTON: Partial<Record<string, { label: "wizard.chatgpt" | "wizard.supergrok" }>> = {
+  openai: { label: "wizard.chatgpt" },
+  xai: { label: "wizard.supergrok" },
 };
 
 /**
@@ -64,9 +64,9 @@ export function ConnectStep({ bridge, catalog, onCatalogChange, connected, onCon
                 <Button className="onboarding-primary" variant={index === 0 ? undefined : "outline"} data-onboarding-connect={provider} onClick={() => signIn(provider)}>
                   {copy ? t(copy.label) : providerShortName(provider) ?? provider}
                 </Button>
-                {copy ? <p className="connect-meta onboarding-connect-note">{t(copy.note)}</p> : null}
               </Fragment>;
             })}
+            <p className="connect-meta onboarding-connect-note">{t("wizard.planNote")}</p>
           </div>}
     {flow.state.phase === "error" ? <SignInFlow flow={flow} onUseApiKey={() => { flow.dismiss(); setSheet({ kind: "provider", provider: "openai", method: "api_key" }); }} /> : null}
     <Disclosure className="onboarding-other" title={t("wizard.other")} open={otherOpen || Boolean(sheet)} onOpenChange={setOtherOpen} onFocus={revealFocused} bodyTabIndex={0}>

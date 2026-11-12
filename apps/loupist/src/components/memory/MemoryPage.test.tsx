@@ -155,11 +155,11 @@ it("shows the home Thread as Bot in Used in and in History, never its stored tit
   const threads = [{ id: "home-chat", loupist_id: loupist.id, home: true, title: "Thread", updated_at: "2026-10-28T00:00:00Z", use_memory: true, update_memory: true, messages: [] }];
   render(<TooltipProvider><MemoryPage bridge={bridge} loupist={loupist} threads={threads} initialItem={recordId} {...handlers} /></TooltipProvider>);
   const reader = await screen.findByRole("complementary", { name: "Check cash before profit." });
-  await user.click(within(reader).getByRole("button", { name: "Bot" }));
+  await user.click(within(reader).getByRole("button", { name: "Home" }));
   expect(handlers.onOpenChat).toHaveBeenCalledWith("home-chat");
   expect(within(reader).queryByText("Thread")).toBeNull();
   await user.click(screen.getByRole("tab", { name: /History/ }));
-  expect(await screen.findByRole("button", { name: /Filed after: Bot/ })).toBeVisible();
+  expect(await screen.findByRole("button", { name: /Filed after: Home/ })).toBeVisible();
   expect(screen.queryByText(/Thread/)).toBeNull();
 });
 

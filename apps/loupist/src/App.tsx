@@ -18,6 +18,7 @@ import {
 } from "react";
 import { createLoupistBridge } from "./bridge/tauriBridge";
 import { HoldingsSheet } from "./components/holdings/HoldingsSheet";
+import { FollowingPage } from "./components/app/FollowingPage";
 import { ChatView } from "./components/ChatView";
 import { DismissOnOpen, OpenProvider } from "./components/navigation/Open";
 import { useAppOpen } from "./app/useAppOpen";
@@ -745,6 +746,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     chat, model, configuration, loupist, workspace, drafts, threadActions, draftWrites, fileWrites,
     refreshKnowledge, onOpenModelSettings: openModelSettings,
     onOpenChatPreferences: (loupistId) => { void openLoupistSettingsFor(loupistId, false, "chat"); },
+    onOpenFollowing: () => setTab("following"),
   });
 
   const holdingsSheet = <HoldingsSheet bridge={bridge} open={holdingsOpen} onOpenChange={setHoldingsOpen} />;
@@ -812,6 +814,8 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
         <AppNavigation
           tab={tab}
           scheduleUnread={selectedLoupist ? inboxCounts[selectedLoupist.id] ?? 0 : 0}
+          activePanel={workspace.open && (workspace.kind === "world" || workspace.kind === "lens") ? workspace.kind : null}
+          onDestination={navigate}
           selectedLoupist={selectedLoupist}
           loading={loupist.loading}
           threadsByLoupist={chat.threadsByLoupist}
@@ -990,6 +994,9 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                   >
                     {chatViewProps ? <ChatView key={selectedLoupist.id} {...chatViewProps} /> : null}
                   </div>
+                  {tab === "following" ? <div className="app-panel" id="main-panel-following" aria-labelledby="current-location">
+                    <FollowingPage key={selectedLoupist.id} bridge={bridge} loupist={selectedLoupist} onImportHoldings={() => setHoldingsOpen(true)} />
+                  </div> : null}
                   {tab === "schedule" ? <div className="app-panel" id="main-panel-schedule" aria-labelledby="current-location">
                     <ScheduleView onOpenModelSettings={() => openSettings("model")} modelCatalog={model.catalog} initialRunId={inboxFocus?.loupistId === selectedLoupist.id ? inboxFocus.runId ?? undefined : undefined} initialTaskId={scheduledFocus?.loupistId === selectedLoupist.id ? scheduledFocus.taskId : undefined} onInitialConsumed={() => { setInboxFocus(null); setScheduledFocus(null); }} key={`${selectedLoupist.id}:${selectedLoupist.workspace_path}`} bridge={bridge} loupist={selectedLoupist} theme={resolvedTheme}
                       open={(item, to, how) => appOpenIn(item.threadId, to, how)}

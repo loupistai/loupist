@@ -41,7 +41,7 @@ it("inserts a selected file at the cursor, preserves trailing prose and sends it
   expect(input).toHaveValue("Compare @report.md with last year");
   await user.click(screen.getByRole("button", { name: "Send" }));
   expect(send).toHaveBeenCalledWith("Compare reports/report.md with last year", []);
-  const status = screen.getByText("Private: this chat stays in history, but nothing is learned from it or reused.");
+  const status = screen.getByText("Private chat: your Loupist doesn't use or add to what it remembers. The chat is still saved, and still goes to your AI provider.");
   expect(input.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 

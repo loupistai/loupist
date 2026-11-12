@@ -33,6 +33,8 @@ export function mockWatchKinds(market: string, enabled: readonly WatchKind[] = [
   return kinds.map(kind => ({ kind, enabled: enabled.includes(kind) }));
 }
 
+const WATCH_DEFAULT_KINDS = new Set<string>(["filings", "results", "dividends"]);
+
 export class MockWatch implements WatchBridge {
   private readonly settings = new Map<string, WatchSettings>();
   private readonly events = new Map<string, WatchEvent[]>();
@@ -100,6 +102,22 @@ export class MockWatch implements WatchBridge {
   async watchPauseSet({ loupistId, paused }: { loupistId: string; paused: boolean }): Promise<WatchSettings> {
     const settings = await this.current(loupistId);
     settings.paused = paused;
+    this.emit(loupistId);
+    return this.watchSettingsList({ loupistId });
+  }
+
+  /** Turns on the default kinds for every followed asset that has no kind on. */
+  async watchDefaultsApply({ loupistId }: { loupistId: string }): Promise<WatchSettings> {
+    const settings = await this.current(loupistId);
+    settings.consentOff = false;
+    for (const asset of [...settings.notWatched]) {
+      const defaults = asset.kinds.filter(kind => WATCH_DEFAULT_KINDS.has(kind.kind) && !kind.needsConnection);
+      if (!defaults.length) continue;
+      for (const kind of defaults) kind.enabled = true;
+      asset.revision += 1;
+      settings.notWatched = settings.notWatched.filter(item => item !== asset);
+      settings.watched.push(asset);
+    }
     this.emit(loupistId);
     return this.watchSettingsList({ loupistId });
   }

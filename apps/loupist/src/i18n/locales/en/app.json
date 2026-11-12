@@ -16,7 +16,7 @@
     "skillCreatorTurnedOnForThisLoupist": "Skill Creator turned on for this Loupist.",
     "skillCreatorTurnedOnForAllLoupists": "Skill Creator turned on for all Loupists.",
     "correctTheConfigurationFileInSettingsChat": "Correct the configuration file in Loupist settings → Chat preferences to start a new run.",
-    "theConfiguredChatDefaultsAreUnavailableFor": "The configured Chat defaults are unavailable for the current model. Review Loupist settings → Chat preferences or choose a model in Chat.",
+    "theConfiguredChatDefaultsAreUnavailableFor": "The configured Chat defaults are unavailable for the current model. Review Loupist settings → Chat defaults or choose a model in Chat.",
     "correctTheConfigurationFileBeforeSending": "Correct the configuration file in Loupist settings → Chat preferences before sending.",
     "showOrLoadAModelInSettings": "Show or load a model in Settings to send messages. Your saved chats, Map and Lens are available.",
     "pleaseLookAtWorkspaceFile": "Please look at workspace file {{path}}. ",
@@ -52,8 +52,8 @@
   },
   "useThreadActions": {
     "couldNotCreateANewChat": "Could not create a new chat.",
-    "couldNotRenameThisSession": "Could not rename this session.",
-    "couldNotDeleteThisSession": "Could not delete this session."
+    "couldNotRenameThisSession": "Could not rename this chat.",
+    "couldNotDeleteThisSession": "Could not delete this chat."
   },
   "appNavigation": {
     "settingsNavigation": "Settings navigation",
@@ -81,7 +81,7 @@
     "homeDescriptor": "Chat, briefings, and alerts"
   },
   "loupistNavigationGroup": {
-    "hasActiveSessions": "{{label}} has active sessions"
+    "hasActiveSessions": "{{label}} has chats running"
   },
   "macTitlebarControls": {
     "showOrHideSidebar": "Show or hide sidebar",
@@ -125,7 +125,7 @@
     "keyboardDescription": "Shortcuts for working without the mouse."
   },
   "emptyChat": {
-    "newChat": "New chat"
+    "newChat": "Untitled chat"
   },
   "workspaceUiState": {
     "untitled": "Untitled"
@@ -153,10 +153,10 @@
     "workspaceControls": "Workspace panels",
     "splitTopBottom": "Split top and bottom",
     "splitLeftRight": "Split left and right",
-    "sessions": "Research sessions",
-    "sessionsEmpty": "Start New research for a focused session on one question. Briefings and alerts stay in Bot.",
-    "newResearch": "New research",
-    "newResearchHint": "New research: a focused session on one question. Briefings and alerts stay in Bot.",
+    "sessions": "Chats",
+    "sessionsEmpty": "Start a new chat to dig into one question. Briefings and alerts stay in Home.",
+    "newResearch": "New chat",
+    "newResearchHint": "New chat: dig into one question. Briefings and alerts stay in Home.",
     "principles": "Research principles",
     "taskHistory": "Scheduled tasks",
     "moreActions": "More",
@@ -173,16 +173,16 @@
     "close": "Close",
     "tabs": {
       "lens": "Lens",
-      "chat": "Chat",
+      "chat": "Home",
       "map": "Map",
-      "schedule": "Schedule"
+      "schedule": "Schedule",
+      "following": "Following"
     },
     "searchShortcut": "Search {{shortcut}}",
     "unreadBriefings": "{{count}} unread briefings",
     "needsAttention": "Needs attention",
     "panel": "Panel",
-    "togglePanel": "Show or hide the panel ({{shortcut}})",
-    "whatItKnows": "What it knows"
+    "togglePanel": "Show or hide the panel ({{shortcut}})"
   },
   "loupistProfile": {
     "profile": "Profile",
@@ -317,7 +317,7 @@
     "approval": "{{loupist}} needs your approval"
   },
   "thread": {
-    "title": "Bot"
+    "title": "Home"
   },
   "palette": {
     "title": "Command palette",
@@ -335,18 +335,21 @@
     },
     "actions": {
       "newChat": "New chat",
-      "openChat": "Open chat",
+      "openChat": "Open Home",
       "openMap": "Open Map",
       "openLens": "Open Lens",
       "openSchedule": "Open schedule",
       "importHoldings": "Import holdings…",
       "allChats": "All chats",
-      "whatItKnows": "What {{loupistSubject}} knows",
       "togglePanel": "Show or hide the panel",
       "settings": "Settings",
       "keyboard": "Keyboard shortcuts",
       "exportChat": "Export this chat as Markdown",
       "printChat": "Print this chat or save it as PDF"
     }
+  },
+  "following": {
+    "intro": "What you follow is shared by all your Loupists. Each Loupist chooses what to watch for.",
+    "empty": "Add a company, fund or coin to follow. Following is not a holding or a trade."
   }
 }

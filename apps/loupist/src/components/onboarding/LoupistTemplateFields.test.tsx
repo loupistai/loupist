@@ -9,11 +9,11 @@ function Harness({ onFollow }: { onFollow?: (entry: WatchlistAddRequest) => Prom
   return <LoupistTemplateFields draft={draft} onChange={setDraft} onFollow={onFollow} />;
 }
 
-it("offers nine templates in order, with no icons on the cards", () => {
+it("offers eight templates in order, with no icons on the cards", () => {
   render(<Harness />);
   const cards = within(screen.getByRole("group", { name: /template/i })).getAllByRole("button");
   expect(cards.map(card => card.querySelector("strong")?.textContent)).toEqual([
-    "My portfolio", "Semiconductors", "Dividend income", "US big tech", "Crypto", "Macro & rates", "Commodities", "Real assets", "Custom",
+    "My portfolio", "Semiconductors", "Dividend income", "US big tech", "Crypto", "Macro & rates", "Commodities", "Custom",
   ]);
   expect(cards.every(card => !card.querySelector("svg"))).toBe(true);
 });
@@ -33,9 +33,8 @@ it("fills a class template's persona and offers starters that are added only whe
   await waitFor(() => expect(screen.getByRole("button", { name: "Follow US 10-year" })).toHaveAttribute("aria-pressed", "true"));
   await user.click(screen.getByRole("button", { name: /^Crypto/ }));
   expect(screen.getAllByRole("button", { name: /^Follow / }).map(chip => chip.textContent)).toEqual(["Bitcoin", "Ethereum", "Solana", "USD Coin"]);
-  await user.click(screen.getByRole("button", { name: /^Real assets/ }));
+  await user.click(screen.getByRole("button", { name: /^Custom/ }));
   expect(screen.queryByRole("button", { name: /^Follow / })).toBeNull();
-  expect(screen.getByText("Add a source about a property or fund")).toBeVisible();
 });
 
 it("leaves a starter unfollowed and says so when following fails", async () => {
@@ -45,4 +44,20 @@ it("leaves a starter unfollowed and says so when following fails", async () => {
   await user.click(screen.getByRole("button", { name: "Follow Bitcoin" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Couldn’t follow that. Try again.");
   expect(screen.getByRole("button", { name: "Follow Bitcoin" })).toHaveAttribute("aria-pressed", "false");
+});
+
+it("keeps onboarding to the essentials: templates and Name, plus Focus for Custom", async () => {
+  const user = userEvent.setup();
+  function Essentials() {
+    const [draft, setDraft] = useState<LoupistDraft>(() => templateDraft("portfolio"));
+    return <LoupistTemplateFields draft={draft} onChange={setDraft} essentials />;
+  }
+  render(<Essentials />);
+  expect(screen.getByLabelText("Name")).toBeVisible();
+  expect(screen.queryByLabelText("Focus")).toBeNull();
+  expect(screen.queryByRole("group", { name: "Avatar" })).toBeNull();
+  expect(screen.queryAllByRole("radio")).toHaveLength(0);
+  expect(screen.getByText("You can change its avatar, focus and tone later in Loupist settings.")).toBeVisible();
+  await user.click(screen.getByRole("button", { name: /^Custom/ }));
+  expect(screen.getByLabelText("Focus")).toBeVisible();
 });

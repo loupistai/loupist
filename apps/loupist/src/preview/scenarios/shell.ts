@@ -20,7 +20,7 @@ export const shellScenarios: PreviewScenario[] = [
   }), setup: async bridge => { await prepareFixture(bridge); bridge.installWorldSchema("loupist-quality", semiconductorTrackingView()); } },
   { ...base("chat-all-chats", "Five recent sessions stay alongside the current chat", () => {
     const sessions = select(".loupist-navigation");
-    return sessions && sessions.querySelectorAll('.loupist-chat-row:not([data-home])').length === 5 ? sessions : null;
+    return sessions && sessions.querySelectorAll('.loupist-chat-row:not([data-home]):not([data-sidebar-place])').length === 5 ? sessions : null;
   }, async () => {
     await until(() => select("textarea[data-chat-composer]"), "Chat did not initialize");
     await openNavigation('[data-thread-id="preview-chat"]');

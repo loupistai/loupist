@@ -2,7 +2,7 @@ import i18n, { useTranslation } from "@/i18n";
 import { chatSessionKey } from "../../chat/sessionRegistry";
 import { useState } from "react";
 import {
-  ArrowLeftIcon, CalendarClockIcon, PlusIcon, SearchIcon, Settings2Icon, XIcon,
+  ArrowLeftIcon, BookmarkIcon, BookOpenIcon, CalendarClockIcon, NetworkIcon, PlusIcon, SearchIcon, Settings2Icon, XIcon, type LucideIcon,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent,
@@ -10,7 +10,7 @@ import {
   SidebarMenuButton, SidebarMenuItem, SidebarRail, SidebarTrigger, useSidebar,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { SETTINGS_SECTIONS, type AppTab, type SettingsSection } from "../../app/navigation";
+import { SETTINGS_SECTIONS, type AppDestinationId, type AppTab, type SettingsSection } from "../../app/navigation";
 import { LoupistChatItem } from "./LoupistChatItem";
 import { NeedsAttention } from "./NeedsAttention";
 import type { AttentionItem } from "../../contracts/attention";
@@ -48,12 +48,16 @@ type Props = {
   onExportThread?: (thread: ChatThread, format: "md" | "pdf") => void;
   /** Unread scheduled results for the selected Loupist, shown on the Schedule row. */
   scheduleUnread?: number;
+  /** The panel open beside the chat, so the Map or Lens row shows as current. */
+  activePanel?: "world" | "lens" | null;
+  /** Opens a ⌘ destination (Map and Lens open their panel beside the chat). */
+  onDestination?: (id: AppDestinationId) => void;
 };
 
 export function AppNavigation({
   attention = [], finishedThreadKeys = new Set(), onOpenAttention, onMoreAttention, tab, selectedLoupist, loading, threadsByLoupist, activeThreadId,
   runningThreadKeys, draftThreadKeys = new Set(), settingsSection, updateAvailable, onTabChange, onSettingsSectionChange, onExitSettings,
-  onCreateThread, onSelectThread, onRenameThread, onDeleteThread, onExportThread, onSearch, scheduleUnread = 0,
+  onCreateThread, onSelectThread, onRenameThread, onDeleteThread, onExportThread, onSearch, scheduleUnread = 0, activePanel = null, onDestination,
 }: Props) {
   useTranslation();
   const { isMobile, setOpenMobile, state } = useSidebar();
@@ -63,7 +67,22 @@ export function AppNavigation({
   const [settingsSearch, setSettingsSearch] = useState("");
   const recent = selectedLoupist ? recentLoupistChats(getLoupistChatList(threadsByLoupist[selectedLoupist.id]), activeThreadId, selectedLoupist.id) : [];
   const iconOnly = !isMobile && state === "collapsed";
-  const scheduleLabel = i18n.t("app:shell.tabs.schedule");
+  const openDestination = (id: AppDestinationId) => { onDestination?.(id); closeMobile(); };
+  /** Home, Following, Map, Lens and Schedule: one row each, with the ⌘ key where the destination has one. */
+  const placeRow = ({ id, icon: Icon, active, onClick, unread = 0 }: { id: "following" | AppDestinationId; icon: LucideIcon; active: boolean; onClick: () => void; unread?: number }) => {
+    const label = i18n.t(`app:shell.tabs.${id}`);
+    const index = APP_DESTINATIONS.findIndex(item => item.id === id);
+    const unreadId = `sidebar-${id}-unread`;
+    return <SidebarMenuItem key={id} className="loupist-chat-row loupist-place-row" data-sidebar-place={id}>
+      <SidebarMenuButton type="button" className="loupist-chat-button" data-sidebar-schedule={id === "schedule" || undefined} isActive={active} aria-current={active ? "page" : undefined}
+        aria-label={iconOnly ? label : undefined} aria-describedby={unread > 0 ? unreadId : undefined}
+        title={index >= 0 ? `${label} ${tabShortcut(index + 1)}` : label} onClick={onClick}>
+        <Icon className="loupist-home-icon" aria-hidden="true" />
+        {iconOnly ? null : <span className="loupist-chat-title">{label}</span>}
+        {unread > 0 ? <><span className="shell-unread" aria-hidden="true">{unread}</span><span className="sr-only" id={unreadId}>{i18n.t("app:shell.unreadBriefings", { count: unread })}</span></> : null}
+      </SidebarMenuButton>
+    </SidebarMenuItem>;
+  };
   const sessions = recent.filter(thread => !thread.home);
   const row = (thread: ChatThread) => {
     const key = chatSessionKey(thread.loupist_id, thread.id);
@@ -129,15 +148,12 @@ export function AppNavigation({
       </SidebarHeader>
       <SidebarContent>{onOpenAttention ? <NeedsAttention items={attention} onOpen={(item) => { onOpenAttention(item); closeMobile(); }} onMore={onMoreAttention ? () => { onMoreAttention(); closeMobile(); } : undefined} /> : null}<SidebarGroup className="loupist-navigation" data-testid="loupist-navigation">
         <SidebarMenu>{recent.filter(thread => thread.home).map(row)}
-          {selectedLoupist ? <SidebarMenuItem className="loupist-chat-row loupist-schedule-row">
-            <SidebarMenuButton type="button" className="loupist-chat-button" data-sidebar-schedule isActive={tab === "schedule"} aria-current={tab === "schedule" ? "page" : undefined}
-              aria-label={iconOnly ? scheduleLabel : undefined} aria-describedby={scheduleUnread > 0 ? "sidebar-schedule-unread" : undefined}
-              title={`${scheduleLabel} ${tabShortcut(APP_DESTINATIONS.findIndex(item => item.id === "schedule") + 1)}`} onClick={() => navigate("schedule")}>
-              <CalendarClockIcon className="loupist-home-icon" aria-hidden="true" />
-              {iconOnly ? null : <span className="loupist-chat-title">{scheduleLabel}</span>}
-              {scheduleUnread > 0 ? <><span className="shell-unread" aria-hidden="true">{scheduleUnread}</span><span className="sr-only" id="sidebar-schedule-unread">{i18n.t("app:shell.unreadBriefings", { count: scheduleUnread })}</span></> : null}
-            </SidebarMenuButton>
-          </SidebarMenuItem> : null}
+          {selectedLoupist ? <>
+            {placeRow({ id: "following", icon: BookmarkIcon, active: tab === "following", onClick: () => navigate("following") })}
+            {placeRow({ id: "map", icon: NetworkIcon, active: tab === "chat" && activePanel === "world", onClick: () => openDestination("map") })}
+            {placeRow({ id: "lens", icon: BookOpenIcon, active: tab === "chat" && activePanel === "lens", onClick: () => openDestination("lens") })}
+            {placeRow({ id: "schedule", icon: CalendarClockIcon, active: tab === "schedule", onClick: () => navigate("schedule"), unread: scheduleUnread })}
+          </> : null}
         </SidebarMenu>
         <div className="loupist-list-heading"><SidebarGroupLabel>{i18n.t("app:shell.sessions")}</SidebarGroupLabel></div>
         {iconOnly ? null : sessions.length ? <SidebarMenu>{sessions.map(row)}</SidebarMenu>

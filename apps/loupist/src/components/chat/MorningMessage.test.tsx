@@ -84,6 +84,7 @@ describe("Morning message", () => {
       "What changed for Hanul Precision since Thursday?new on the map",
       "Why is Morrow Components linked to Hanul Precision?new relationship",
       "Is my check on inventory days still on track?To check by Oct 29",
+      "Read a filing or article together",
     ]);
     expect(questions[0]).toHaveAccessibleName("What changed for Hanul Precision since Thursday?");
     expect(questions[0]).toHaveAccessibleDescription("new on the map");
@@ -120,7 +121,7 @@ describe("Morning message", () => {
       inboxList: vi.fn(async () => ({ items: [], nextCursor: null })), journalList: vi.fn(async () => []) }));
     expect(await screen.findByText("What are you researching?")).toBeVisible();
     expect(within(screen.getByRole("region", { name: "You could ask" })).getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "What should I know this week?", "What happened in the markets this week?", "What risks should I keep an eye on?",
+      "What should I know this week?", "What happened in the markets this week?", "What risks should I keep an eye on?", "Read a filing or article together",
     ]);
   });
 
@@ -167,26 +168,57 @@ describe("Morning message", () => {
     expect(screen.getByRole("button", { name: "한울정밀" })).toBeVisible();
     expect(within(screen.getByRole("region", { name: "이렇게 물어볼 수 있어요" })).getAllByRole("button")[0]).toHaveTextContent(/^목요일 이후 한울정밀에 무슨 변화가 있었어\?/);
   });
-  it("teaches three first moves when nothing is followed and no briefing is on, filling the composer without sending", async () => {
+  it("keeps a three-step checklist whose to-do rows fill the composer without sending and whose done rows are plain", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    const empty = bridge({
+    const followed = bridge({
       inboxList: vi.fn(async () => ({ items: [], nextCursor: null })),
+      watchlistList: vi.fn(async () => [{ symbol: "AAPL", market: "NASDAQ", displayName: "Apple", addedAtMs: 0 }]),
+      principleList: vi.fn(async () => []),
       briefingSettingsGet: vi.fn(async () => ({ enabled: false, schedule: null, task: null })),
     } as unknown as Partial<LoupistBridge>);
-    const { handlers } = renderMessage(empty);
+    const { handlers } = renderMessage(followed);
     const setup = await screen.findByRole("region", { name: "Get set up" });
-    const chips = within(setup).getAllByRole("button");
-    expect(chips.map((chip) => chip.textContent)).toEqual([
-      "Follow AAPL and 005930",
-      "Turn on a weekday morning briefing at 8",
-      "Remember: check whether capacity costs are temporary before trusting margin recovery",
-      "Import holdings (CSV)",
+    expect(setup).toHaveTextContent("1 of 3");
+    const rows = within(setup).getAllByRole("listitem");
+    expect(rows[0]).toHaveTextContent("Done Follow a few companies");
+    expect(within(rows[0]!).queryByRole("button")).toBeNull();
+    expect(within(setup).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Hide",
+      "Teach a principlee.g. check whether capacity costs are temporary before trusting a margin recovery",
+      "Get a briefing every morning",
+      "Import holdings (CSV)…",
     ]);
-    await user.click(chips[1]!);
-    expect(handlers.onAsk).toHaveBeenCalledWith("Turn on a weekday morning briefing at 8");
+    await user.click(within(setup).getByRole("button", { name: "Get a briefing every morning" }));
+    expect(handlers.onAsk).toHaveBeenCalledWith("Send me a briefing every weekday at 8:00 AM.");
+    // Once something is set up, the questions follow the checklist.
+    expect(screen.getByRole("region", { name: "You could ask" })).toBeVisible();
+    await user.click(within(setup).getByRole("button", { name: "Hide" }));
+    expect(screen.queryByRole("region", { name: "Get set up" })).toBeNull();
   });
 
-  it("leaves setup out once a briefing is on, and asks about a preset's subject but not a free-text focus", async () => {
+  it("shows only the checklist on a true first visit, and without an AI account leads with Connect and disables model steps", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const empty = bridge({ briefingSettingsGet: vi.fn(async () => ({ enabled: false, schedule: null, task: null })) } as unknown as Partial<LoupistBridge>);
+    const onConnectAccount = vi.fn();
+    const onOpenFollowing = vi.fn();
+    const onAsk = vi.fn();
+    renderWithOpen(<MorningMessage bridge={empty} loupistId="loupist" loupistName="Quality Compounder" onAsk={onAsk} accountConnected={false} onConnectAccount={onConnectAccount} onOpenFollowing={onOpenFollowing} />);
+    const setup = await screen.findByRole("region", { name: "Get set up" });
+    expect(screen.queryByRole("region", { name: "You could ask" })).toBeNull();
+    const buttons = within(setup).getAllByRole("button");
+    expect(buttons[1]).toHaveTextContent("Connect an AI account");
+    await user.click(buttons[1]!);
+    await user.click(within(setup).getByRole("button", { name: "Follow a few companies" }));
+    expect(onConnectAccount).toHaveBeenCalled();
+    expect(onOpenFollowing).toHaveBeenCalled();
+    const briefing = within(setup).getByRole("button", { name: /Get a briefing every morning/ });
+    expect(briefing).toHaveAttribute("aria-disabled", "true");
+    expect(briefing).toHaveTextContent("Needs an AI account");
+    await user.click(briefing);
+    expect(onAsk).not.toHaveBeenCalled();
+  });
+
+  it("asks about a preset's subject but not a free-text focus", async () => {
     const on = bridge({
       knowledgeGrowthEvents: vi.fn(async () => ({ events: [], nextCursor: null })),
       inboxList: vi.fn(async () => ({ items: [], nextCursor: null })),
@@ -196,7 +228,6 @@ describe("Morning message", () => {
     const handlers = { onAsk: vi.fn() };
     const preset = renderWithOpen(<MorningMessage bridge={on} loupistId="loupist" loupistName="Chip Loupist" template="semiconductors" {...handlers} />);
     await screen.findByRole("region", { name: "You could ask" });
-    expect(screen.queryByRole("region", { name: "Get set up" })).toBeNull();
     expect(screen.getByText("What matters in semiconductors this week?")).toBeVisible();
     preset.unmount();
     renderWithOpen(<MorningMessage bridge={on} loupistId="loupist" loupistName="Desk" template="custom" {...handlers} />);

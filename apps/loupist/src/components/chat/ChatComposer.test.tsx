@@ -144,7 +144,7 @@ describe("ChatComposer input", () => {
     await user.keyboard(" ");
     expect(toggle).toHaveAttribute("aria-pressed", "true");
     expect(toggle).toHaveTextContent("Private");
-    expect(screen.getByText("Private: this chat stays in history, but nothing is learned from it or reused.")).toBeVisible();
+    expect(screen.getByText("Private chat: your Loupist doesn't use or add to what it remembers. The chat is still saved, and still goes to your AI provider.")).toBeVisible();
     expect(screen.getByText("AI can be wrong. Not a licensed financial adviser.")).toBeVisible();
   });
 

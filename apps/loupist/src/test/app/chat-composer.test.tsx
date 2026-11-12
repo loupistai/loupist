@@ -246,7 +246,7 @@ describe("Loupist · Chat composer", () => {
     await openApp();
     await user.type(composer(), "/new");
     await user.click(await screen.findByRole("option", { name: "New chat" }));
-    await screen.findByRole("heading", { name: "New chat" });
+    await screen.findByRole("heading", { name: "Untitled chat" });
     await send(user, "삼성전자 실적 분석해봐");
     expect(await screen.findByRole("heading", { name: "삼성전자 실적 분석해봐" }, { timeout: 15_000 })).toBeVisible();
     expect(screen.getByRole("button", { name: /^삼성전자 실적 분석해봐$/ })).toBeVisible();

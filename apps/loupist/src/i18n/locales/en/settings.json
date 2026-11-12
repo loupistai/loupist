@@ -303,7 +303,7 @@
     "couldNotUpdateThisLoupistSConnections": "Could not update this Loupist's connections.",
     "connections": "Connections",
     "settingsForName": "Settings for {{name}}",
-    "chatPreferences": "Chat preferences",
+    "chatPreferences": "Chat defaults",
     "localWorkspace": "Your workspace folder",
     "rememberNewChats": "Remember new chats",
     "workspaceCaption": "Where this Loupist's files live on your Mac.",
@@ -572,7 +572,7 @@
     "actions": {
       "newChat": "New chat",
       "palette": "Command palette",
-      "tabs": "Chat · World · Lens · Scheduled tasks",
+      "tabs": "Home · Map · Lens · Schedule",
       "panel": "Show or hide the panel",
       "settings": "Settings",
       "send": "Send",

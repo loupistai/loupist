@@ -34,7 +34,7 @@ describe("committed World status in research updates", () => {
     const changed = vi.fn();
     render(<WorldProcessingStatus jobId="job-1" initialStatus="queued" readJob={read} onChanged={changed} />);
     await act(async () => {});
-    expect(screen.getByRole("status")).toHaveTextContent("processing relationships");
+    expect(screen.getByRole("status")).toHaveTextContent("connecting relationships");
     await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
     expect(screen.getByRole("status")).toHaveTextContent("relationships updated");
     expect(changed).toHaveBeenCalledOnce();
@@ -55,7 +55,7 @@ describe("committed World status in research updates", () => {
     read.mockResolvedValue(job("reconciled_without_retry"));
     fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
     await act(async () => {});
-    expect(screen.getByRole("status")).toHaveTextContent("Source retained · Interrupted World processing was not retried");
+    expect(screen.getByRole("status")).toHaveTextContent("Source retained · Interrupted Map building was not retried");
     expect(read).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole("button", { name: "Refresh status" })).toBeNull();
   });

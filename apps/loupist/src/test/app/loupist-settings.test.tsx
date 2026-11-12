@@ -16,7 +16,7 @@ it("keeps profile, chat, learning and skills on one page with changes scoped to 
   const page = await screen.findByRole("region", { name: "Loupist settings" });
   expect(screen.queryByRole("dialog", { name: "Loupist settings" })).toBeNull();
   expect(within(page).getByRole("textbox", { name: "Instructions for this Loupist" })).toBeVisible();
-  await user.click(within(page).getByRole("button", { name: "Chat preferences" }));
+  await user.click(within(page).getByRole("button", { name: "Chat defaults" }));
   expect(within(page).queryByRole("combobox", { name: "Settings apply to" })).toBeNull();
   await user.click(await within(page).findByRole("switch", { name: "Remember new chats" }));
   await waitFor(() => expect(update).toHaveBeenCalledWith(expect.objectContaining({

@@ -99,24 +99,27 @@ export function holdingsScenarios({ base, select, until, click }: Helpers): Prev
       setup: async bridge => { await prepareFixture(bridge); await holdings(bridge); },
     },
     {
-      ...base("onboarding-templates-asset-classes", "New Loupist: nine templates with the asset classes", () => {
+      ...base("onboarding-templates-asset-classes", "New Loupist: eight templates with the asset classes", () => {
         const grid = select('.loupist-template-grid');
-        return grid && grid.querySelectorAll(".loupist-template-card").length === 9 ? grid : null;
+        return grid && grid.querySelectorAll(".loupist-template-card").length === 8 ? grid : null;
       }, templates),
       setup: bridge => prepareFixture(bridge),
     },
     {
-      ...base("onboarding-follow-starters-macro", "New Loupist: Macro & rates fills the research focus", () => {
+      ...base("onboarding-follow-starters-macro", "New Loupist: Macro & rates offers starters to follow, one already followed", () => {
         const fields = select(".loupist-template-fields");
         const focus = fields?.querySelector<HTMLTextAreaElement>("textarea");
-        return focus?.value === i18n.t("onboarding:wizard.templates.macro.focus") ? fields : null;
+        return focus?.value === i18n.t("onboarding:wizard.templates.macro.focus") && fields?.querySelector('[data-template-starters="macro"] .loupist-starter[aria-pressed="true"]') ? fields : null;
       }, async root => {
         await templates(root);
         const macro = await until(() => [...document.querySelectorAll<HTMLButtonElement>('.loupist-template-card')]
           .find(card => card.querySelector("strong")?.textContent === i18n.t("onboarding:wizard.templates.macro.title")), "Macro template missing");
         macro.click();
         await until(() => macro.getAttribute("aria-pressed") === "true", "Macro template did not select");
-        (select(".loupist-template-fields textarea") as HTMLElement | null)?.scrollIntoView?.({ block: "center" });
+        const starter = await until(() => select('[data-template-starters="macro"] .loupist-starter'), "Starters did not appear") as HTMLButtonElement;
+        starter.click();
+        await until(() => starter.getAttribute("aria-pressed") === "true", "Starter was not followed");
+        starter.scrollIntoView?.({ block: "center" });
       }),
       setup: bridge => prepareFixture(bridge),
     },

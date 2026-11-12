@@ -48,7 +48,7 @@
   --gg-color-map-bg: #f4f2ec;
   --gg-color-map-company: #2f6fb3;
   --gg-color-map-product: #7550bd;
-  --gg-color-map-technology: #b8641f;
+  --gg-color-map-technology: #7f7416;
   --gg-color-map-industry: #0f7d9c;
   --gg-color-map-person: #b2477a;
   --gg-color-map-event: #23806f;
@@ -63,7 +63,8 @@
   --gg-color-map-holding-ring: var(--gg-p-neutral-900);
   --gg-color-map-edge: rgb(38 38 36 / 22%);
   --gg-color-map-edge-active: rgb(38 38 36 / 55%);
-  --gg-color-map-edge-disputed: #c2382f;
+  --gg-color-disagree: #c2382f;
+  --gg-color-map-edge-disputed: var(--gg-color-disagree);
   --gg-color-map-label: var(--gg-p-neutral-900);
   --gg-color-map-label-halo: rgb(244 242 236 / 90%);
   --gg-color-map-new-glow: rgb(164 83 12 / 35%);
@@ -203,7 +204,7 @@
   --gg-color-map-bg: #131312;
   --gg-color-map-company: #6ea6ea;
   --gg-color-map-product: #a98ae8;
-  --gg-color-map-technology: #e8a35f;
+  --gg-color-map-technology: #cfc057;
   --gg-color-map-industry: #5cc0dc;
   --gg-color-map-person: #e889b4;
   --gg-color-map-event: #5cc5b0;
@@ -218,7 +219,8 @@
   --gg-color-map-holding-ring: var(--gg-p-neutral-900);
   --gg-color-map-edge: rgb(236 236 231 / 16%);
   --gg-color-map-edge-active: rgb(236 236 231 / 55%);
-  --gg-color-map-edge-disputed: #f0736a;
+  --gg-color-disagree: #f0736a;
+  --gg-color-map-edge-disputed: var(--gg-color-disagree);
   --gg-color-map-label: #d9d8d2;
   --gg-color-map-label-halo: rgb(19 19 18 / 85%);
   --gg-color-map-new-glow: rgb(238 160 98 / 40%);
@@ -279,6 +281,8 @@
 /* Figures line up (X10): tables, receipts, the Map stats, briefing rows, attention counts and palette captions. */
 .gg-num, table, .chat-receipt, .map-stats, .briefing-sections, .needs-attention, .command-palette-row small, .market-status { font-variant-numeric: tabular-nums; }
 :root:lang(ko) { word-break: keep-all; overflow-wrap: anywhere; }
+/* The UI font has no Hangul: Apple SD Gothic Neo rounds 450/520 up to Medium/SemiBold, so Korean reads heavier than Latin. */
+:root:lang(ko) { --gg-weight-regular: 400; --gg-weight-medium: 500; }
 * { box-sizing: border-box; }
 html, body, #root { min-height: 100%; margin: 0; }
 body {

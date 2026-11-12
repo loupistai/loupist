@@ -54,10 +54,10 @@ describe("Loupist · Chat workspace", () => {
     await user.click(kind);
     const kinds = screen.getAllByRole("menuitemradio");
     expect(kinds).toHaveLength(3);
-    expect(kinds[0]).toHaveAccessibleName("Lens");
-    expect(kinds[1]).toHaveAccessibleName("Map");
+    expect(kinds[0]).toHaveAccessibleName("Map");
+    expect(kinds[1]).toHaveAccessibleName("Lens");
     expect(kinds[2]).toHaveAccessibleName("Chat materials");
-    expect(kinds[0]).toHaveAccessibleDescription("Your research principles and methods");
+    expect(kinds[1]).toHaveAccessibleDescription("Your research principles and methods");
     expect(kinds[2]).toHaveAccessibleDescription("This chat's map, evidence and outputs");
     await user.click(screen.getByRole("menuitemradio", { name: "Lens" }));
     const workspace = await screen.findByLabelText("Chat workspace panel");

@@ -1,7 +1,7 @@
 import { formatDate, formatNumber, formatTime } from "@/i18n/format";
 import i18n, { useTranslation, Trans } from "@/i18n";
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
-import { ArrowRightIcon } from "lucide-react";
+import { ArrowRightIcon, CheckIcon, CircleIcon } from "lucide-react";
 import type { ChatEvidenceRef, LoupistBridge, LoupistCapabilityBinding, LoupistTemplateId } from "../../types";
 import type { GrowthEvent, JournalRecord, KnowledgeMap } from "../../contracts/knowledge";
 import type { BriefingSettings, InboxItem } from "../../contracts/scheduled";
@@ -87,6 +87,10 @@ type Props = {
   asOf?: string;
   /** The template the Loupist was made from: a class template's first message names the connections it works best with. */
   template?: LoupistTemplateId;
+  /** False with no AI account: the checklist leads with Connect, and chips that need a model are disabled. */
+  accountConnected?: boolean;
+  onConnectAccount?: () => void;
+  onOpenFollowing?: () => void;
 };
 
 /**
@@ -94,7 +98,7 @@ type Props = {
  * last visit, the latest briefing, Journal checks, and three questions, all
  * from data on this computer. It is not saved; the first message replaces it.
  */
-export function MorningMessage({ bridge, loupistId, loupistName, onAsk, mode = "full", deliveredRunIds, onSettled, asOf, template }: Props) {
+export function MorningMessage({ bridge, loupistId, loupistName, onAsk, mode = "full", deliveredRunIds, onSettled, asOf, template, accountConnected = true, onConnectAccount, onOpenFollowing }: Props) {
   const go = useGo();
   const openAsset: OpenAssetPage | null = go ? (target) => go({ kind: "asset", target }) : null;
   const openMap = () => go?.({ kind: "page", location: { loupistId, surface: "world", view: { followCurrent: true, whatsNew: true } } });
@@ -149,11 +153,15 @@ export function MorningMessage({ bridge, loupistId, loupistName, onAsk, mode = "
   // First run: nothing followed and no briefing yet, so the home message teaches three first moves.
   const offersSetup = mode === "full" && !asOf;
   const briefingSettings = useLoad<BriefingSettings | null>(async () => offersSetup ? await bridge.briefingSettingsGet({ loupistId }).catch(() => null) : null, `briefing:${loupistId}:${offersSetup}`);
-  const [holdingsOpen, setHoldingsOpen] = useState(false);
-  const setup = offersSetup && watchlist.value?.length === 0 && !inbox.value && briefingSettings.value?.enabled === false;
+  const principles = useLoad<number | null>(async () => offersSetup ? (await bridge.principleList?.({ loupistId }).catch(() => null))?.length ?? null : null, `principles:${loupistId}:${offersSetup}`);
+  const [setupHidden, setSetupHidden] = useState(() => setupHiddenFor(loupistId));
+  const hideSetup = () => { rememberSetupHidden(loupistId); setSetupHidden(true); };
+  // Each step ticks off by itself; the checklist stays until all three are done or it is hidden.
+  const setupDone = { follow: (watchlist.value?.length ?? 0) > 0, principle: (principles.value ?? 0) > 0, briefing: briefingSettings.value?.enabled === true };
+  const setup = offersSetup && !setupHidden && briefingSettings.value != null && !(setupDone.follow && setupDone.principle && setupDone.briefing);
 
   const changedLoading = map.status === "loading" || events.status === "loading";
-  const allSettled = [map, events, inbox, journal, watchlist, assets, alerts, upcoming, connections, briefingSettings].every((load) => load.status !== "loading");
+  const allSettled = [map, events, inbox, journal, watchlist, assets, alerts, upcoming, connections, briefingSettings, principles].every((load) => load.status !== "loading");
   // One name per asset in this language, from the Map and pages already read for this message.
   const nameOf = (asset: Pick<AssetDelta, "assetId" | "symbol" | "market" | "name" | "entityId">) => localAssetName(asset, { nodes: map.value?.nodes, pages: assets.value }, language);
   // Alerts shown in the bullet for a second are seen and leave Needs attention.
@@ -216,7 +224,10 @@ export function MorningMessage({ bridge, loupistId, loupistName, onAsk, mode = "
     </span> });
   }
 
-  const ask = allSettled && message.questions.length ? <section className="morning-ask" aria-label={t("today.youCouldAsk")}>
+  // A true first visit (nothing set up yet) shows only the checklist; once a step is done the questions follow it.
+  const firstVisitOnly = setup && !setupDone.follow && !setupDone.principle && !setupDone.briefing;
+  const readTogether = mode === "full" ? t("today.readTogether.insert") : null;
+  const ask = allSettled && !firstVisitOnly && message.questions.length ? <section className="morning-ask" aria-label={t("today.youCouldAsk")}>
     <p className={mode === "questions" ? "sr-only" : "morning-ask-label"}>{t("today.youCouldAsk")}</p>
     <ul>{message.questions.map((question, index) => {
       const text = questionText(question);
@@ -230,7 +241,11 @@ export function MorningMessage({ bridge, loupistId, loupistName, onAsk, mode = "
           <ArrowRightIcon className="morning-question-go" aria-hidden="true" />
         </button>
       </li>;
-    })}</ul>
+    })}
+    {readTogether ? <li><button type="button" className="morning-question" onClick={() => onAsk(readTogether)}>
+      <span>{t("today.readTogether.label")}</span>
+      <ArrowRightIcon className="morning-question-go" aria-hidden="true" />
+    </button></li> : null}</ul>
   </section> : null;
   if (mode === "questions") return ask ? <div className="morning-ask-only"><h2 className="morning-greeting">{t("today.askGreeting")}</h2>{ask}</div> : null;
   // In a Thread with history, the message appears only when there is news.
@@ -243,19 +258,11 @@ export function MorningMessage({ bridge, loupistId, loupistName, onAsk, mode = "
       </div>
       {/* Shown once the names it uses are read, so a Korean name never replaces an English one in place. */}
       {message.upcoming.length && map.status !== "loading" && assets.status !== "loading" ? <UpcomingStrip events={message.upcoming} loupistId={loupistId} nameOf={nameOf} onOpenAsset={openAsset} onOpenJournal={openJournal} /> : null}
-      {allSettled ? <p className="morning-lead">{lead}</p> : leadSlow ? <p className="morning-lead"><span className="morning-skeleton" /></p> : null}
+      {allSettled ? <p className="morning-lead" data-home-first={mode === "full" || undefined}>{lead}</p> : leadSlow ? <p className="morning-lead"><span className="morning-skeleton" /></p> : null}
+      {allSettled && mode === "full" ? <p className="morning-home-line">{t("today.homeLine")}</p> : null}
       {bullets.length ? <ul className="morning-bullets">{bullets.map((bullet) => <li key={bullet.key}>{bullet.node}</li>)}</ul> : null}
-      {allSettled && setup ? <section className="morning-setup" data-morning-setup aria-labelledby={`${reasonIds}-setup`}>
-        <p className="morning-ask-label" id={`${reasonIds}-setup`}>{t("today.setup.label")}</p>
-        <p className="morning-setup-body">{tBriefings("emptyBody")}</p>
-        <ul className="morning-setup-chips">
-          {(["follow", "briefing", "principle"] as const).map((key) => <li key={key}>
-            <button type="button" className="morning-setup-chip" data-setup={key} onClick={() => onAsk(t(`today.setup.${key}`))}>{t(`today.setup.${key}`)}</button>
-          </li>)}
-        </ul>
-        <button type="button" className="morning-link" data-setup="holdings" onClick={() => setHoldingsOpen(true)}>{t("today.setup.holdings")}</button>
-        <HoldingsSheet bridge={bridge} open={holdingsOpen} onOpenChange={setHoldingsOpen} />
-      </section> : null}
+      {allSettled && setup ? <SetupChecklist labelId={`${reasonIds}-setup`} bridge={bridge} done={setupDone} accountConnected={accountConnected}
+        onAsk={onAsk} onConnectAccount={onConnectAccount} onOpenFollowing={onOpenFollowing} onHide={hideSetup} /> : null}
       {ask}
     </article>
   );
@@ -380,4 +387,65 @@ export function wordTrimmed(text: string, limit: number) {
   const cut = [...clean].slice(0, limit).join("");
   const space = cut.lastIndexOf(" ");
   return `${(space > limit / 2 ? cut.slice(0, space) : cut).replace(/[\s,.;:–—-]+$/u, "")}…`;
+}
+
+const SETUP_HIDDEN_KEY = "loupist.setupHidden.v1";
+function setupHiddenFor(loupistId: string) {
+  try { return Boolean((JSON.parse(localStorage.getItem(SETUP_HIDDEN_KEY) ?? "{}") as Record<string, boolean>)[loupistId]); }
+  catch { return false; }
+}
+function rememberSetupHidden(loupistId: string) {
+  try {
+    const hidden = JSON.parse(localStorage.getItem(SETUP_HIDDEN_KEY) ?? "{}") as Record<string, boolean>;
+    localStorage.setItem(SETUP_HIDDEN_KEY, JSON.stringify({ ...hidden, [loupistId]: true }));
+  } catch { /* The checklist stays hidden for this visit only. */ }
+}
+
+type SetupStep = "follow" | "principle" | "briefing";
+
+/**
+ * Home's first-visit checklist (product first run 4; chat design change 4): follow a few
+ * companies, teach a principle, get a morning briefing. A to-do row is a button that
+ * fills the composer and never sends; a done row is plain text with a grey check.
+ * Without an AI account a Connect row leads, Follow opens the Following page and the
+ * steps that need a model are disabled.
+ */
+function SetupChecklist({ labelId, bridge, done, accountConnected, onAsk, onConnectAccount, onOpenFollowing, onHide }: {
+  labelId: string; bridge: LoupistBridge; done: Record<SetupStep, boolean>; accountConnected: boolean;
+  onAsk: (text: string) => void; onConnectAccount?: () => void; onOpenFollowing?: () => void; onHide: () => void;
+}) {
+  const [holdingsOpen, setHoldingsOpen] = useState(false);
+  const steps: { key: SetupStep; example?: string }[] = [{ key: "follow" }, { key: "principle", example: t("today.setup.principle.example") }, { key: "briefing" }];
+  const doneCount = steps.filter(({ key }) => done[key]).length;
+  return <section className="morning-setup" data-morning-setup data-account={accountConnected ? undefined : "missing"} aria-labelledby={labelId}>
+    <div className="morning-setup-head">
+      <p className="morning-setup-label" id={labelId}>{t("today.setup.label")}</p>
+      <span className="morning-setup-count">{t("today.setup.count", { done: formatNumber(doneCount), total: formatNumber(steps.length) })}</span>
+      <button type="button" className="morning-setup-hide" data-setup="hide" onClick={onHide}>{t("today.setup.hide")}</button>
+    </div>
+    <ul className="morning-setup-rows">
+      {!accountConnected && onConnectAccount ? <li><button type="button" className="morning-setup-row" data-setup="connect" onClick={onConnectAccount}>
+        <span aria-hidden="true" />
+        <span className="morning-setup-text"><strong>{i18n.t("chat:chatModelMenu.connectAccount")}</strong></span>
+        <ArrowRightIcon className="morning-question-go" aria-hidden="true" />
+      </button></li> : null}
+      {steps.map(({ key, example }) => {
+        const label = t(`today.setup.${key}.label`);
+        if (done[key]) return <li key={key} data-done="" data-step={key}><div className="morning-setup-row">
+          <CheckIcon className="morning-setup-mark" aria-hidden="true" />
+          <span className="morning-setup-text"><span className="sr-only">{t("today.setup.done")} </span><span>{label}</span></span>
+        </div></li>;
+        const needsModel = !accountConnected && key !== "follow";
+        const opensFollowing = !accountConnected && key === "follow" && onOpenFollowing;
+        return <li key={key} data-step={key}><button type="button" className="morning-setup-row" data-setup={key} aria-disabled={needsModel || undefined}
+          onClick={() => { if (needsModel) return; if (opensFollowing) onOpenFollowing(); else onAsk(t(`today.setup.${key}.insert`)); }}>
+          <CircleIcon className="morning-setup-mark" aria-hidden="true" />
+          <span className="morning-setup-text"><span>{label}</span>{example ? <small>{example}</small> : null}</span>
+          {needsModel ? <small className="morning-setup-hint">{t("today.setup.needsAccount")}</small> : <ArrowRightIcon className="morning-question-go" aria-hidden="true" />}
+        </button></li>;
+      })}
+    </ul>
+    <button type="button" className="morning-link morning-setup-holdings" data-setup="holdings" onClick={() => setHoldingsOpen(true)}>{t("today.setup.holdings")}</button>
+    <HoldingsSheet bridge={bridge} open={holdingsOpen} onOpenChange={setHoldingsOpen} />
+  </section>;
 }

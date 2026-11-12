@@ -43,25 +43,25 @@ export function Onboarding({ bridge, catalog, onCatalogChange, onCreate, onCompl
     }
   };
   return <main className="onboarding-window" data-onboarding={step}><div className="onboarding-column">
-    {step === 1 ? <section className="onboarding-step" data-step={step}><h1>{t("wizard.welcomeTitle")}</h1>
-      <ul className="onboarding-promise" data-onboarding-promise>
-        <li>{t("wizard.watches")}</li><li>{t("wizard.reads")}</li><li>{t("wizard.explains")}</li>
-      </ul>
-      <p>{t("wizard.welcomeLoupist")}</p>
+    {step === 1 ? <section className="onboarding-step" data-step={step}>
+      {/* The product name stays in Latin letters in every language. */}
+      <p className="onboarding-wordmark">Loupist</p>
+      <h1>{t("wizard.welcomeTitle")}</h1>
+      <p className="onboarding-lead">{t("wizard.welcomeLead")}</p>
       <NoticeCard checked={noticeChecked} onChange={setNoticeChecked} />
       <Button data-onboarding-start disabled={!noticeChecked || saving || busy} onClick={() => alreadyConnected ? next() : setStep(2)}>{t("wizard.start")}</Button>
-      {onImport && <Button variant="link" disabled={!noticeChecked || busy} onClick={onImport}>{t("wizard.importLoupist")}</Button>}
+      {onImport && <Button variant="link" className="onboarding-import" disabled={!noticeChecked || busy} onClick={onImport}>{t("wizard.importLoupist")}</Button>}
     </section> : step === 2 ? <section className="onboarding-step" data-step={step}>{back(1)}<ConnectStep bridge={bridge} catalog={catalog} onCatalogChange={onCatalogChange} connected={connected}
       onConnected={name => { setConnected(name); next(); }} onWaitingChange={setWaiting} />
       {/* No plan, key or local model yet: the app still opens, and the composer asks to connect. */}
       {connected ? null : <div className="onboarding-skip">
-        <Button type="button" variant="outline" data-onboarding-skip disabled={waiting || saving || busy} onClick={next}>{t("wizard.skipConnect")}</Button>
+        <Button type="button" variant="ghost" className="onboarding-skip-button" data-onboarding-skip disabled={waiting || saving || busy} onClick={next}>{t("wizard.skipConnect")}</Button>
         <p>{t("wizard.skipConnectNote")}</p>
       </div>}
     </section> : <section className="onboarding-step" data-step={step}>{back(alreadyConnected ? 1 : 2)}<h1>{t("wizard.createTitle")}</h1><p>{t("wizard.loupistDefinition")}</p>
-      <LoupistTemplateFields draft={draft} onChange={setDraft} busy={saving || busy} idPrefix="onboarding" onFollow={follow} />
+      <LoupistTemplateFields draft={draft} onChange={setDraft} busy={saving || busy} idPrefix="onboarding" onFollow={follow} essentials />
       <Button data-onboarding-create disabled={!draft.name.trim() || saving || busy} onClick={() => void finish()}>{t(saving ? "wizard.creating" : "wizard.create")}</Button>
-      <p className="onboarding-background-note" data-background-reading>{t("wizard.backgroundReading")}</p>
+      <p className="onboarding-spending" data-background-reading>{t("wizard.backgroundReading")}</p>
     </section>}
     {error && <p className="onboarding-error" role="alert">{error}</p>}
   </div></main>;

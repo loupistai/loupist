@@ -70,7 +70,7 @@ td .number-chip { display: inline-block; min-height: 28px; line-height: 28px; fo
 .number-chip-formula { display: grid; gap: 2px; padding: var(--gg-space-2) var(--gg-space-3); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-sunken); font-family: var(--gg-font-mono); font-size: var(--gg-text-meta); overflow-wrap: anywhere; }
 .number-chip-formula button { justify-self: start; }
 .number-chip-grid { color: var(--gg-color-text-secondary); }
-.number-chip-caption { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); letter-spacing: .04em; text-transform: uppercase; }
+.number-chip-caption { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); }
 .number-chip-caption:lang(ko) { letter-spacing: 0; text-transform: none; }
 .number-chip-here { letter-spacing: normal; text-transform: none; }
 .number-chip-inputs { display: grid; gap: var(--gg-space-1); margin: 0; }
@@ -136,7 +136,7 @@ td .number-chip { display: inline-block; min-height: 28px; line-height: 28px; fo
 .journal-then-now .journal-outcome-card { display: grid; gap: var(--gg-space-1); padding: 0; border: 0; }
 .journal-then-now > section { display: grid; gap: var(--gg-space-2); padding: var(--gg-space-3) var(--gg-space-4); }
 .journal-then-now > section + section { border-top: 1px solid var(--gg-color-border-subtle); }
-.journal-then-now h3 { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); letter-spacing: .04em; text-transform: uppercase; }
+.journal-then-now h3 { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); }
 .journal-then-now:lang(ko) h3 { letter-spacing: 0; text-transform: none; }
 .journal-then-now p { margin: 0; }
 .journal-then-now-with { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-1); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }

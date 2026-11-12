@@ -381,7 +381,7 @@ html[data-desktop-platform="macos"] .app-shell {
 .command-palette-input { flex: none; width: 100%; height: 52px; padding: 0 var(--gg-space-5); border: 0; border-bottom: 1px solid var(--gg-color-border-subtle); background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-body); outline: none; }
 .command-palette-list { flex: 1; min-height: 0; margin: 0; padding: var(--gg-space-2) 0; list-style: none; overflow: auto; }
 .command-palette-list ul { margin: 0; padding: 0; list-style: none; }
-.command-palette-group { margin: var(--gg-space-2) var(--gg-space-5) var(--gg-space-1); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); letter-spacing: .06em; text-transform: uppercase; }
+.command-palette-group { margin: var(--gg-space-2) var(--gg-space-5) var(--gg-space-1); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); }
 .command-palette-group:lang(ko) { letter-spacing: 0; text-transform: none; }
 .command-palette-row { display: flex; align-items: center; gap: var(--gg-space-2); min-height: 40px; margin: 0 var(--gg-space-2); padding: 0 var(--gg-space-3); border-radius: var(--gg-radius-sm); color: var(--gg-color-text-primary); font-size: var(--gg-text-control); cursor: pointer; }
 .command-palette-row[aria-selected="true"] { background: var(--gg-color-bg-selected); }
@@ -408,3 +408,20 @@ html[data-desktop-platform="macos"] .app-shell {
 .header-workspace-divider { width:1px; height:18px; margin-inline:var(--gg-space-1); background:var(--gg-color-border-subtle); }
 .header-workspace-split[aria-pressed="true"] { color:var(--gg-color-text-primary); background:var(--gg-color-bg-selected); box-shadow:inset 0 0 0 1px var(--gg-color-border-subtle); }
 @media (max-width:600px) { .header-workspace-controls .header-panel-toggle { max-width:110px; padding-inline:var(--gg-space-2); } }
+
+/* Following (route `following`): the shell's minimal page until the full page replaces its body. */
+.following-page { display: grid; align-content: start; gap: var(--gg-space-5); height: 100%; overflow-y: auto; padding: var(--gg-space-7) clamp(var(--gg-space-5), 4vw, var(--gg-space-9)) var(--gg-space-9); background: var(--gg-color-bg-app); }
+.following-page > * { width: min(100%, 800px); margin-inline: auto; }
+.following-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.following-row { display: flex; align-items: baseline; gap: var(--gg-space-3); width: 100%; min-height: 36px; padding: var(--gg-space-2) var(--gg-space-3); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-body); text-align: left; }
+button.following-row { cursor: pointer; }
+button.following-row:hover { background: var(--gg-color-bg-hover); }
+.following-row > span { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+.following-empty { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+
+/* PageHeader (components/ui/page-header.tsx): actions wrap under the title when the header itself is 760 px or narrower. */
+.page-header-frame { container: page-header / inline-size; }
+@container page-header (max-width: 760px) {
+  .page-header { flex-direction: column; align-items: stretch; gap: var(--gg-space-3); }
+  .page-header-actions { justify-content: flex-start; }
+}
