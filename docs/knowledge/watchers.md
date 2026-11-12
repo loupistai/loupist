@@ -95,7 +95,11 @@ not the budget, one check at a time.
 A check records dated observations on the asset pages and turns new ones of the kinds
 that are on into alerts; a route's first check only sets its starting point. That starting point is saved
 with the observations, so skipping the later alert/delivery phase cannot make a
-first read alert on the next pass. The first
+first read alert on the next pass. Pending observations from an earlier watch read,
+an asset-page refresh or a briefing refresh remain eligible when their route is not
+due this pass. Delivery uses that Loupist's saved route status: `needs_connection`
+withholds the route's alerts and keeps the page's scan point behind them until the
+grant is restored. The first
 check after launch, or the day's first check, hands its alerts to the morning message;
 later ones post in [Home](../ui/home-thread.md). No OS notification is sent for a watch
 event. Following, also opened by Schedule's Watching row, offers Pause or Resume
