@@ -9,11 +9,12 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use serde_json::{json, Value};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, Semaphore};
 
 use super::super::error::{KnowledgeError, KnowledgeResult};
 use super::super::graph_inference::{self, InferenceDisposition, InferenceReply};
@@ -45,8 +46,39 @@ fn not_sent() -> InferenceReply {
     }
 }
 
+/// Use the same database and blob directory on a blocking thread. Keep settings
+/// mutations even when a transaction fails, for the caller's quarantine merge.
+async fn blocking<T: Send + 'static>(
+    store: &KnowledgeStore,
+    settings: &mut GraphProcessingSettings,
+    work: impl FnOnce(&KnowledgeStore, &mut GraphProcessingSettings) -> KnowledgeResult<T>
+        + Send
+        + 'static,
+) -> KnowledgeResult<T> {
+    let connection = store.connection.clone();
+    let root = store.blobs.root().to_path_buf();
+    let loupist_id = store.loupist_id.clone();
+    let mut owned_settings = settings.clone();
+    let (result, updated) = tokio::task::spawn_blocking(move || {
+        let result = super::super::blob::BlobStore::open(root).and_then(|blobs| {
+            let store = KnowledgeStore {
+                connection,
+                blobs,
+                loupist_id,
+            };
+            work(&store, &mut owned_settings)
+        });
+        (result, owned_settings)
+    })
+    .await
+    .map_err(|_| KnowledgeError::Invalid("World blocking task failed"))?;
+    *settings = updated;
+    result
+}
+
 /// Run one claimed World job without the graph worker.
 // The job boundary takes explicit store, settings, authority and inference inputs.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn drive_job<F, Fut>(
     store: &KnowledgeStore,
@@ -56,26 +88,126 @@ pub(crate) async fn drive_job<F, Fut>(
     now_ms: i64,
     followed: &[FollowedInstrument],
     assets: &Path,
-    mut on_inference: F,
+    on_inference: F,
+) -> KnowledgeResult<GraphJobView>
+where
+    F: FnMut(Value) -> Fut,
+    Fut: std::future::Future<Output = InferenceReply>,
+{
+    drive_job_with_slots(
+        store,
+        settings,
+        job_id,
+        auth_mode,
+        now_ms,
+        followed,
+        assets,
+        None,
+        on_inference,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn drive_job_with_slots<F, Fut>(
+    store: &KnowledgeStore,
+    settings: &mut GraphProcessingSettings,
+    job_id: &str,
+    auth_mode: &str,
+    now_ms: i64,
+    followed: &[FollowedInstrument],
+    assets: &Path,
+    call_slots: Option<Arc<Semaphore>>,
+    on_inference: F,
 ) -> KnowledgeResult<GraphJobView>
 where
     F: FnMut(Value) -> Fut,
     Fut: std::future::Future<Output = InferenceReply>,
 {
     let opened_at = SystemTime::now();
-    let job = match store.graph_claim_running(settings, job_id, now_ms)? {
+    let owned_id = job_id.to_owned();
+    let job = match blocking(store, settings, move |store, settings| {
+        store.graph_claim_running(settings, &owned_id, now_ms)
+    })
+    .await?
+    {
         graph_jobs::GraphJobClaim::Acquired(job) => job,
         graph_jobs::GraphJobClaim::Existing(job) => return Ok(job),
     };
+    let result = drive_claimed(
+        store,
+        settings,
+        &job,
+        auth_mode,
+        now_ms,
+        followed,
+        assets,
+        call_slots,
+        on_inference,
+        opened_at,
+    )
+    .await;
+    match result {
+        Ok(view) => Ok(view),
+        Err(_) => {
+            let owned_job = job.clone();
+            // Any error after claiming must release ownership. A stale attempt
+            // cannot settle a replacement, because finish checks its identity.
+            blocking(store, settings, move |store, settings| {
+                finish(
+                    store,
+                    settings,
+                    &owned_job,
+                    owned_job.document.attempt_id.as_deref().unwrap_or_default(),
+                    owned_job.document.inference_attempted,
+                    now_ms,
+                )
+            })
+            .await
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn drive_claimed<F, Fut>(
+    store: &KnowledgeStore,
+    settings: &mut GraphProcessingSettings,
+    job: &GraphJobView,
+    auth_mode: &str,
+    now_ms: i64,
+    followed: &[FollowedInstrument],
+    assets: &Path,
+    call_slots: Option<Arc<Semaphore>>,
+    mut on_inference: F,
+    opened_at: SystemTime,
+) -> KnowledgeResult<GraphJobView>
+where
+    F: FnMut(Value) -> Fut,
+    Fut: std::future::Future<Output = InferenceReply>,
+{
+    let job_id = job.job_id.as_str();
     let attempt_id = job.document.attempt_id.clone().unwrap_or_default();
     let opened = job.document.clone();
     if matches!(
         opened.episode_kind.as_str(),
         "sealed_snapshot" | "world_recovery"
     ) {
-        return match reindex_and_complete(store, settings, &job, &attempt_id, assets, now_ms) {
+        let owned_job = job.clone();
+        let assets = assets.to_path_buf();
+        return match blocking(store, settings, move |store, settings| {
+            reindex_and_complete(
+                store,
+                settings,
+                &owned_job,
+                owned_job.document.attempt_id.as_deref().unwrap_or_default(),
+                &assets,
+                now_ms,
+            )
+        })
+        .await
+        {
             Ok(view) => Ok(view),
-            Err(_) => finish(store, settings, &job, &attempt_id, false, now_ms),
+            Err(_) => finish(store, settings, job, &attempt_id, false, now_ms),
         };
     }
     let provider = settings.helper_provider.as_deref().unwrap_or("");
@@ -89,14 +221,20 @@ where
             now_ms,
         );
     }
-    let prepared = match prepare(store, settings, &job, followed, assets) {
+    let owned_job = job.clone();
+    let owned_followed = followed.to_vec();
+    let owned_assets = assets.to_path_buf();
+    let prepared = match blocking(store, settings, move |store, settings| {
+        prepare(store, settings, &owned_job, &owned_followed, &owned_assets)
+    })
+    .await
+    {
         Ok(prepared) => prepared,
-        Err(_) => return finish(store, settings, &job, &attempt_id, false, now_ms),
+        Err(_) => return finish(store, settings, job, &attempt_id, false, now_ms),
     };
     let started = Instant::now();
     let wall_started = SystemTime::now();
-    let deadline = started
-        + Duration::from_millis(graph_jobs::attempt_budget_ms(opened.extraction.timeout_ms));
+    let call_timeout = Duration::from_millis(opened.extraction.timeout_ms);
     let (requests, mut incoming) = mpsc::channel::<(Value, oneshot::Sender<Answered>)>(1);
     let config = BridgeConfig {
         scope: json!({
@@ -123,24 +261,32 @@ where
             joined = &mut task => break joined,
             request = incoming.recv() => {
                 let Some((request, reply)) = request else { continue };
-                if blocked || store.graph_note_inference(job_id, &attempt_id).is_err() {
+                let model = request["kind"] == "llm";
+                let owned_id = job_id.to_owned();
+                let attempt = attempt_id.clone();
+                if blocked || blocking(store, settings, move |store, _| {
+                    if model {
+                        store.transact(|write| graph_jobs::reserve_model_call(write.tx, &owned_id, &attempt))
+                    } else {
+                        store.graph_note_inference(&owned_id, &attempt)
+                    }
+                }).await.is_err() {
                     blocked = true;
                     let _ = reply.send(Answered { reply: not_sent(), elapsed: Duration::ZERO });
                     continue;
                 }
                 let received = Instant::now();
-                let remaining = deadline.saturating_duration_since(received);
                 let call = on_inference(request);
+                let slots = call_slots.clone();
                 in_flight.push(async move {
-                    (tokio::time::timeout(remaining, call).await, reply, received)
+                    let outcome = call_after_permit(slots, model, call_timeout, call).await;
+                    (outcome, reply, received, model)
                 });
             }
-            Some((outcome, reply, received)) = in_flight.next(), if !in_flight.is_empty() => {
-                let response = outcome.unwrap_or_else(|_| InferenceReply {
-                    // The call was sent; its outcome is unknown.
-                    disposition: InferenceDisposition::Uncertain,
-                    body: json!({"status": "uncertain"}),
-                });
+            Some((response, reply, received, model)) = in_flight.next(), if !in_flight.is_empty() => {
+                if model && response.disposition == InferenceDisposition::NotSent {
+                    store.transact(|write| graph_jobs::refund_model_call(write.tx, job_id, &attempt_id))?;
+                }
                 if response.disposition == InferenceDisposition::Uncertain {
                     uncertain = true;
                 }
@@ -152,12 +298,12 @@ where
         i64::try_from(opened_at.elapsed().unwrap_or_default().as_millis()).unwrap_or(i64::MAX),
     );
     let Ok(ran) = joined else {
-        return finish(store, settings, &job, &attempt_id, true, now_ms);
+        return finish(store, settings, job, &attempt_id, true, now_ms);
     };
     write_stage_log(job_id, &ran.stages, started.elapsed(), &ran.result);
     let uncertain = uncertain || ran.uncertain;
     if blocked {
-        return finish(store, settings, &job, &attempt_id, true, now_ms);
+        return finish(store, settings, job, &attempt_id, true, now_ms);
     }
     let extracted = match ran.result {
         Ok(extracted) => extracted,
@@ -197,30 +343,60 @@ where
         );
     }
     let mut vectors = extracted.vectors;
-    let followed = store.followed_items();
-    let committed = store.transact(|write| {
-        let finished = graph_jobs::publish_and_complete(
-            write,
-            settings,
-            job_id,
-            &attempt_id,
-            &extracted.artifact,
-            &extracted.digest,
-            now_ms,
-            uncertain,
-            &followed,
-        )?;
-        if finished.status == graph_jobs::JOB_COMPLETED {
-            if let Some(revision) = finished.document.sealed_revision_id.as_deref() {
-                index_revision(write, &job, revision, assets, &mut vectors)?;
+    let owned_job = job.clone();
+    let attempt = attempt_id.clone();
+    let assets = assets.to_path_buf();
+    let committed = blocking(store, settings, move |store, settings| {
+        let followed = store.followed_items();
+        store.transact(|write| {
+            let finished = graph_jobs::publish_and_complete(
+                write,
+                settings,
+                &owned_job.job_id,
+                &attempt,
+                &extracted.artifact,
+                &extracted.digest,
+                now_ms,
+                uncertain,
+                &followed,
+            )?;
+            if finished.status == graph_jobs::JOB_COMPLETED {
+                if let Some(revision) = finished.document.sealed_revision_id.as_deref() {
+                    index_revision(write, &owned_job, revision, &assets, &mut vectors)?;
+                }
             }
-        }
-        Ok(finished)
-    });
+            Ok(finished)
+        })
+    })
+    .await;
     match committed {
         Ok(view) => Ok(view),
-        Err(_) => finish(store, settings, &job, &attempt_id, uncertain, now_ms),
+        Err(_) => finish(store, settings, job, &attempt_id, uncertain, now_ms),
     }
+}
+
+/// Waiting for a shared paid-call slot consumes no provider timeout. The
+/// provider future is first polled only after the permit has been acquired.
+async fn call_after_permit(
+    slots: Option<Arc<Semaphore>>,
+    paid: bool,
+    timeout: Duration,
+    call: impl std::future::Future<Output = InferenceReply>,
+) -> InferenceReply {
+    let _permit = if let Some(slots) = slots.filter(|_| paid) {
+        match slots.acquire_owned().await {
+            Ok(permit) => Some(permit),
+            Err(_) => return not_sent(),
+        }
+    } else {
+        None
+    };
+    tokio::time::timeout(timeout, call)
+        .await
+        .unwrap_or_else(|_| InferenceReply {
+            disposition: InferenceDisposition::Uncertain,
+            body: json!({"status": "uncertain"}),
+        })
 }
 
 /// Sleep longer than this during an attempt marks it cut short by the host.
@@ -891,5 +1067,48 @@ fn write_stage_log(
     #[cfg(not(any(debug_assertions, feature = "eval-harness")))]
     {
         let _ = (job_id, stages, elapsed, result);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn a_queued_call_gets_its_full_timeout_after_the_permit() {
+        let slots = Arc::new(Semaphore::new(0));
+        let future = call_after_permit(Some(slots.clone()), true, Duration::from_secs(1), async {
+            tokio::time::sleep(Duration::from_millis(900)).await;
+            InferenceReply {
+                disposition: InferenceDisposition::Completed,
+                body: json!({}),
+            }
+        });
+        tokio::pin!(future);
+        tokio::select! {
+            _ = &mut future => panic!("the call cannot start without a slot"),
+            _ = tokio::time::sleep(Duration::from_secs(10)) => {}
+        }
+        slots.add_permits(1);
+        assert_eq!(future.await.disposition, InferenceDisposition::Completed);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_started_call_still_times_out_and_a_closed_queue_sends_nothing() {
+        let reply = call_after_permit(
+            Some(Arc::new(Semaphore::new(1))),
+            true,
+            Duration::from_secs(1),
+            std::future::pending(),
+        )
+        .await;
+        assert_eq!(reply.disposition, InferenceDisposition::Uncertain);
+        let slots = Arc::new(Semaphore::new(0));
+        slots.close();
+        let reply = call_after_permit(Some(slots), true, Duration::from_secs(1), async {
+            panic!("a closed queue cannot poll the provider")
+        })
+        .await;
+        assert_eq!(reply.disposition, InferenceDisposition::NotSent);
     }
 }

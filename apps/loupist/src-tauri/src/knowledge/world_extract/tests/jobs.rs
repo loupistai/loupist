@@ -987,3 +987,42 @@ fn publication_uses_the_completion_time_after_inference() {
     );
     assert_eq!(growth_at, revision_at);
 }
+
+#[test]
+fn a_driver_error_settles_the_claim_instead_of_leaving_the_world_running() {
+    let mut fixture = Fixture::new();
+    fixture.settings.max_llm_calls = 2;
+    let job = fixture.queue("Underfunded note", SUPPLY);
+    fixture
+        .store
+        .transact(|write| {
+            write.tx.execute_batch(
+            "CREATE TRIGGER refuse_budget_pause BEFORE UPDATE OF status ON knowledge_graph_outbox
+             WHEN OLD.status = 'running' AND NEW.status = 'paused_budget'
+             BEGIN SELECT RAISE(FAIL, 'test storage failure'); END;",
+        )?;
+            Ok(())
+        })
+        .unwrap();
+    let script = Arc::new(Mutex::new(Script::default()));
+    {
+        let mut script = script.lock().unwrap();
+        script.reply("ExtractedEntities", entities(&["Acme Corp", "Beta Motors"]));
+        script.reply(
+            "ExtractedEdges",
+            json!({"edges": [
+                relation("Acme Corp", "Beta Motors", "SUPPLIES", SUPPLY)
+            ]}),
+        );
+    }
+    let settled = drive(&mut fixture, &job, &script, "fixture");
+    assert_eq!(settled.status, graph_jobs::JOB_QUEUED);
+    assert!(settled.document.attempt_id.is_none());
+    assert!(settled.document.lease_expires_at_ms.is_none());
+    assert_eq!(settled.document.extraction.max_llm_calls, 0);
+    assert_eq!(settled.document.interrupted_attempts, 1);
+    assert_eq!(
+        fixture.store.graph_job(LOUPIST, &job.job_id).unwrap(),
+        settled
+    );
+}

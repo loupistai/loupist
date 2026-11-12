@@ -74,16 +74,28 @@ the Map, which the episode before it can change.
 
 Each request has a time limit, four minutes by default and at most five
 (`DEFAULT_TIMEOUT_MS`, `MAX_TIMEOUT_MS`); saved limits, including 60 seconds, are
-preserved. A queued job runs under the saved limit; its call allowance
-stays as frozen. One attempt may use every model wave at its full limit
-(`attempt_budget_ms`).
-An episode that exhausts its frozen call allowance pauses without repeating paid
-calls or quarantining other Sources; resume does not replay its paid attempt.
+preserved. The clock starts after a paid call acquires its shared slot, so waiting
+for another job does not consume its provider time. One attempt's lease allows
+every model wave at its full limit (`attempt_budget_ms`); an active host worker
+keeps ownership while waiting. Entity and relation extraction share the provider's
+8192-answer-token ceiling; thinking may use its separate bounded allowance.
+
+A newly queued Source span has one frozen model-call allowance across its episodes.
+Each model dispatch reserves a call durably, a refusal refunds it, and completed
+or uncertain calls stay spent across retries and restarts. The next episode gets
+its predecessor's unused calls; splitting a Source cannot increase its total.
+Previously saved positive per-chunk allowances stay as saved, since an old
+completed receipt does not say how many of its calls were unused.
+An episode that exhausts its allowance pauses its unfunded tail without repeating
+paid calls or quarantining other Sources; resume does not replay its paid attempt.
 Revision and growth-event timestamps reflect extraction completion.
 
 An attempt that publishes nothing ends one of three ways (`finish_unpublished` in
 `knowledge/graph_jobs.rs`). Publication is one transaction, so the World is unchanged
-in each case.
+in each case. Driver errors settle their claimed attempt. Each scheduler pass also
+settles expired leases that have no live host worker, using the same retry and
+quarantine rules, without restarting the app. Replacement attempts have a new
+identity: an old worker cannot record calls or publish after reclamation.
 
 - **Nothing paid was sent** (the provider went away, its settings changed under
   it): the attempt cost nothing and queues again, up to three times, then fails

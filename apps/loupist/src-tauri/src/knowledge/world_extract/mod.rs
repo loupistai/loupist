@@ -26,7 +26,9 @@ use super::error::KnowledgeResult;
 use super::model::WorldSnapshotBody;
 use super::KnowledgeStore;
 
+#[cfg(test)]
 pub(crate) use job::drive_job;
+pub(crate) use job::drive_job_with_slots;
 pub(super) use text::casefold;
 
 const QUERY_LIMIT: usize = 25;
