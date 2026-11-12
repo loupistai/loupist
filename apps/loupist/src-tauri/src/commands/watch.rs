@@ -911,7 +911,6 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
     keys.sort();
     let mut prior_baseline: BTreeMap<(String, String, Route), bool> = BTreeMap::new();
     let mut touched = BTreeSet::new();
-    let mut admitted_routes = BTreeSet::new();
     // Class signals found by this pass's reads, per Loupist, before the switches filter them.
     let mut class_found: BTreeMap<String, Vec<NewWatchEvent>> = BTreeMap::new();
     for (_, key) in keys {
@@ -958,13 +957,6 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
         let mut copies: HashMap<String, Value> = HashMap::new();
         for want in &list {
             let allowed = granted.contains(&want.loupist_id);
-            if allowed {
-                admitted_routes.insert((
-                    want.loupist_id.clone(),
-                    want.page.asset_id.clone(),
-                    key.route,
-                ));
-            }
             let result = match (&outcome, allowed) {
                 (ReadOutcome::Ok { payload, provider }, true) => {
                     let payload = if Some(&want.loupist_id) == reading.as_ref() {
@@ -1058,9 +1050,11 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
         let signals = class_found.remove(loupist_id).unwrap_or_default();
         let found = with_assets(state, loupist_id, true, |tx| {
             let switches = watch::switches(tx, loupist_id)?;
+            let routes = watch::routes(tx, loupist_id)?;
             let mut found = 0;
             for page in pages.iter().filter(|page| page.class == AssetClass::Equity) {
                 let switch = switches.get(&page.asset_id).cloned().unwrap_or_default();
+                let mut withheld = false;
                 let baseline = |route: Route| {
                     !prior_baseline
                         .get(&(loupist_id.clone(), page.asset_id.clone(), route))
@@ -1068,20 +1062,31 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
                         .unwrap_or(true)
                 };
                 for event in detect_events(tx, loupist_id, page, today, now_ms, &baseline)? {
-                    if !switch.enabled(event.kind)
-                        || !admitted_routes.contains(&(
-                            loupist_id.clone(),
-                            page.asset_id.clone(),
-                            kind_route(event.kind, is_korean_market(&page.market)),
-                        ))
-                    {
+                    if !switch.enabled(event.kind) {
+                        continue;
+                    }
+                    // Earlier watch reads and page/briefing refreshes may
+                    // have recorded this event's observation. Its route need
+                    // not be due now, but this Loupist must hold its grant.
+                    let route = kind_route(event.kind, is_korean_market(&page.market));
+                    if !routes.get(&page.asset_id).is_some_and(|states| {
+                        states
+                            .iter()
+                            .any(|state| state.route == route && state.status != "needs_connection")
+                    }) {
+                        withheld = true;
                         continue;
                     }
                     if watch::insert_event(tx, loupist_id, &event, now_ms)?.is_some() {
                         found += 1;
                     }
                 }
-                watch::set_scanned_to(tx, loupist_id, &page.asset_id, now_ms)?;
+                // A page has one scan point for every route. Keep withheld
+                // observations eligible after their grant is restored; the
+                // event's natural key deduplicates already admitted events.
+                if !withheld {
+                    watch::set_scanned_to(tx, loupist_id, &page.asset_id, now_ms)?;
+                }
             }
             for event in &signals {
                 let on = switches

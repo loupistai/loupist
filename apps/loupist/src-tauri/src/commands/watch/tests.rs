@@ -1009,6 +1009,226 @@ async fn class_kinds_start_off_outside_their_template_and_turn_on_one_by_one() {
     assert!(!kind_state(&view, &btc, WatchKind::CryptoMove).enabled);
 }
 
+/// Leave new observations committed between the read and delivery phases, or
+/// commit them through the same observation path as an asset/briefing refresh.
+async fn deferred_filing_events(origin: Option<ObservationOrigin>, missing_grant: bool) {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary, &["loupist-a"]);
+    follow(&state, "990221", "KRX", "Solsup Foods");
+    defaults(&state, "loupist-a");
+    let page = followed_pages(&state, "loupist-a").unwrap().remove(0);
+    for kind in [WatchKind::Holders, WatchKind::Insiders] {
+        enable(&state, "loupist-a", &page.asset_id, kind);
+    }
+    // Use explicit pass times, rather than waiting for a cadence or racing a
+    // maintenance request against the running pass.
+    let start = DateTime::parse_from_rfc3339("2099-06-15T03:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    let today = start.with_timezone(&chrono::Local).date_naive();
+    let old_date = today - Duration::days(200);
+    let mut reader = Scripted::default();
+    reader.script(
+        "dart_filing_search",
+        Some("990221"),
+        dart(&[("20980101000001", old_date, "사업보고서 (2098.12)")]),
+    );
+    let runtime = Runtime::default();
+    let baseline = run_pass_with(&state, &runtime, Scope::Scheduled, start, &mut reader)
+        .await
+        .unwrap();
+    assert_eq!(baseline["loupist-a"], 0);
+    assert!(events(&state, "loupist-a").is_empty());
+    let scanned = with_assets(&state, "loupist-a", false, |tx| {
+        watch::scanned_to(tx, "loupist-a", &page.asset_id)
+    })
+    .unwrap();
+    let captured = start
+        + if origin.is_none() {
+            Duration::hours(2)
+        } else {
+            Duration::minutes(10)
+        };
+    reader.script(
+        "dart_filing_search",
+        Some("990221"),
+        dart(&[
+            ("20990615000001", today, "분기보고서 (2099.03)"),
+            ("20990615000002", today, "주식등의대량보유상황보고서(일반)"),
+            ("20990615000003", today, "현금ㆍ현물배당결정"),
+            (
+                "20990615000004",
+                today - Duration::days(9),
+                "임원ㆍ주요주주특정증권등소유상황보고서",
+            ),
+            (
+                "20990615000005",
+                today - Duration::days(4),
+                "임원ㆍ주요주주특정증권등소유상황보고서",
+            ),
+            (
+                "20990615000006",
+                today - Duration::days(1),
+                "임원ㆍ주요주주특정증권등소유상황보고서",
+            ),
+            ("20980101000001", old_date, "사업보고서 (2098.12)"),
+        ]),
+    );
+    let read = route_read(Route::Filings, &page, today).unwrap();
+    let ReadOutcome::Ok { payload, provider } = reader.read(&state, "loupist-a", &read, None).await
+    else {
+        panic!("scripted read")
+    };
+    with_assets(&state, "loupist-a", true, |tx| {
+        if let Some(origin) = origin {
+            let tool_read = observe::ToolRead {
+                tool: read.tool,
+                provider: provider.as_deref(),
+                payload: &payload,
+                dataset: serde_json::from_value(payload["dataset_ref"].clone()).ok(),
+                retrieved_at: None,
+                citation_url: None,
+                today,
+                session_day: today,
+            };
+            assert_eq!(
+                assets::record_observations(
+                    tx,
+                    "loupist-a",
+                    &page.asset_id,
+                    observe::extract(&tool_read, &page.symbol),
+                    origin,
+                    None,
+                    captured.timestamp_millis(),
+                )?,
+                6,
+            );
+        } else {
+            apply_read(
+                tx,
+                "loupist-a",
+                &page,
+                Route::Filings,
+                &read,
+                &payload,
+                provider.as_deref(),
+                today,
+                captured,
+                true,
+            )?;
+            watch::record_route(
+                tx,
+                "loupist-a",
+                &page.asset_id,
+                Route::Filings,
+                "ok",
+                OPENDART_CONNECTION,
+                captured.timestamp_millis(),
+            )?;
+            // Phase 1 committed; phase 2 never ran.
+        }
+        if missing_grant {
+            watch::record_route(
+                tx,
+                "loupist-a",
+                &page.asset_id,
+                Route::Filings,
+                "needs_connection",
+                OPENDART_CONNECTION,
+                captured.timestamp_millis(),
+            )?;
+        }
+        Ok(())
+    })
+    .unwrap();
+    assert!(events(&state, "loupist-a").is_empty());
+    // Another asset's due (failed) read triggers delivery while Solsup's
+    // filings route is not due. Its retry triggers the following pass too.
+    follow(&state, "990222", "KRX", "Other Foods");
+    defaults(&state, "loupist-a");
+    reader.calls.clear();
+    let next = run_pass_with(
+        &state,
+        &runtime,
+        Scope::Scheduled,
+        captured + Duration::minutes(1),
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    assert_eq!(next["loupist-a"], if missing_grant { 0 } else { 4 });
+    if missing_grant {
+        assert!(events(&state, "loupist-a").is_empty());
+        assert_eq!(
+            with_assets(&state, "loupist-a", false, |tx| {
+                watch::scanned_to(tx, "loupist-a", &page.asset_id)
+            })
+            .unwrap(),
+            scanned,
+            "events withheld for a missing grant must remain eligible",
+        );
+        // Restoring the route's grant makes the held events eligible even
+        // without another read of that route.
+        with_assets(&state, "loupist-a", true, |tx| {
+            watch::record_route(
+                tx,
+                "loupist-a",
+                &page.asset_id,
+                Route::Filings,
+                "ok",
+                OPENDART_CONNECTION,
+                captured.timestamp_millis(),
+            )
+        })
+        .unwrap();
+    }
+    let retry = run_pass_with(
+        &state,
+        &runtime,
+        Scope::Scheduled,
+        captured + Duration::minutes(16),
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    assert_eq!(retry["loupist-a"], if missing_grant { 4 } else { 0 });
+    let kinds: BTreeSet<_> = events(&state, "loupist-a")
+        .iter()
+        .map(|event| event.kind)
+        .collect();
+    assert_eq!(
+        kinds,
+        BTreeSet::from([
+            WatchKind::Filings,
+            WatchKind::Holders,
+            WatchKind::Dividends,
+            WatchKind::Insiders,
+        ]),
+    );
+    assert_eq!(events(&state, "loupist-a").len(), 4);
+    assert_eq!(reader.calls_to("dart_filing_search"), 2);
+    assert!(reader
+        .calls
+        .iter()
+        .all(|(_, _, args)| *args != read.arguments));
+}
+
+#[tokio::test]
+async fn deferred_filing_events_after_a_skipped_delivery_alert_once_without_rereading() {
+    deferred_filing_events(None, false).await;
+}
+
+#[tokio::test]
+async fn deferred_filing_events_from_asset_and_briefing_refreshes_alert_once_without_rereading() {
+    deferred_filing_events(Some(ObservationOrigin::Refresh), false).await;
+    deferred_filing_events(Some(ObservationOrigin::Briefing), false).await;
+}
+
+#[tokio::test]
+async fn deferred_filing_events_wait_for_the_grant_without_advancing_the_scan() {
+    deferred_filing_events(Some(ObservationOrigin::Refresh), true).await;
+}
+
 #[tokio::test]
 async fn first_read_stays_a_baseline_when_delivery_was_skipped() {
     let temporary = tempfile::tempdir().unwrap();
@@ -1080,17 +1300,24 @@ async fn first_read_stays_a_baseline_when_delivery_was_skipped() {
         })
         .unwrap();
     }
+    follow(&state, "OTHR", "NASDAQ", "Other Components");
+    defaults(&state, "loupist-a");
+    reader.calls.clear();
     let result = run_pass_with(
         &state,
         &Runtime::default(),
-        Scope::Loupist("loupist-a".into()),
-        at + Duration::hours(1),
+        Scope::Scheduled,
+        at + Duration::minutes(1),
         &mut reader,
     )
     .await
     .unwrap();
     assert_eq!(result["loupist-a"], 0);
     assert!(events(&state, "loupist-a").is_empty());
+    assert!(reader
+        .calls
+        .iter()
+        .all(|(_, _, args)| *args != read.arguments));
     // A later genuinely new filing still alerts.
     reader.script(
         "equity_fundamental_filings",
