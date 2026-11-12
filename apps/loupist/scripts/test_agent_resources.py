@@ -1,4 +1,5 @@
 """Exercise both exact production resource lists without building an app."""
+
 import json
 import shutil
 import tempfile
@@ -12,7 +13,9 @@ APP = Path(__file__).resolve().parents[1]
 
 class AgentResourcesTest(unittest.TestCase):
     def test_renderer_has_no_unused_notification_or_asset_grant(self):
-        capability = json.loads((APP / "src-tauri/capabilities/default.json").read_text())
+        capability = json.loads(
+            (APP / "src-tauri/capabilities/default.json").read_text()
+        )
         self.assertNotIn("notification:default", capability["permissions"])
         config = json.loads((APP / "src-tauri/tauri.conf.json").read_text())
         self.assertNotIn("asset:", config["app"]["security"]["csp"].split())
@@ -22,7 +25,9 @@ class AgentResourcesTest(unittest.TestCase):
             json.loads((APP / "src-tauri" / name).read_text())
             for name in ("tauri.release.conf.json", "tauri.package-smoke.conf.json")
         ]
-        self.assertEqual(configs[0]["bundle"]["resources"], configs[1]["bundle"]["resources"])
+        self.assertEqual(
+            configs[0]["bundle"]["resources"], configs[1]["bundle"]["resources"]
+        )
         self.assertIs(configs[1]["bundle"]["createUpdaterArtifacts"], False)
 
     def test_packaged_resources_stage_exactly_production_agent_files(self):
@@ -31,7 +36,9 @@ class AgentResourcesTest(unittest.TestCase):
                 self.check_staged_resources(name)
 
     def check_staged_resources(self, config):
-        mappings = json.loads((APP / "src-tauri" / config).read_text())["bundle"]["resources"]
+        mappings = json.loads((APP / "src-tauri" / config).read_text())["bundle"][
+            "resources"
+        ]
         with tempfile.TemporaryDirectory() as temporary:
             resources = Path(temporary)
             for source, destination in mappings.items():
@@ -47,7 +54,9 @@ class AgentResourcesTest(unittest.TestCase):
                 with self.subTest(mutation=mutation):
                     file = packaged / "loupist-extension.mjs"
                     original = file.read_bytes()
-                    extra = packaged / ("fixture.test.mjs" if mutation == "test" else "extra.mjs")
+                    extra = packaged / (
+                        "fixture.test.mjs" if mutation == "test" else "extra.mjs"
+                    )
                     if mutation in ("test", "extra"):
                         extra.write_text("fixture")
                     elif mutation == "changed":

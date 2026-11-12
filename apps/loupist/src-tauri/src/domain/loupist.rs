@@ -82,7 +82,7 @@ impl LoupistTemplate {
     /// onboarding copy); Custom has none.
     pub fn default_focus(self) -> Option<&'static str> {
         match self {
-            Self::Portfolio => Some("Companies I hold and watch"),
+            Self::Portfolio => Some("Companies I hold and follow"),
             Self::Semiconductors => Some("Chips, memory, foundries and equipment"),
             Self::Dividends => Some("Dividend payers and payout safety"),
             Self::Technology => Some("Large US technology companies"),

@@ -32,7 +32,9 @@ class ProviderCredentialSmokeTest(unittest.TestCase):
             ("id", None),
         ]:
             with self.subTest(field=field, value=value):
-                self.assertIsNone(SIDECARS.provider_smoke_key_answer({**prompt, field: value}, key))
+                self.assertIsNone(
+                    SIDECARS.provider_smoke_key_answer({**prompt, field: value}, key)
+                )
         self.assertEqual(
             SIDECARS.provider_smoke_key_answer(prompt, key),
             {"type": "extension_ui_response", "id": "key-prompt", "value": key},
@@ -41,7 +43,9 @@ class ProviderCredentialSmokeTest(unittest.TestCase):
     def test_environment_never_carries_the_key_and_rejects_an_offered_key(self):
         key = "private-smoke-fixture"
         arguments = (Path("runtime"), Path("private"), Path("result.json"), key)
-        with patch.object(SIDECARS, "pi_environment", return_value={"PATH": "/fixture"}):
+        with patch.object(
+            SIDECARS, "pi_environment", return_value={"PATH": "/fixture"}
+        ):
             environment = SIDECARS.provider_smoke_environment(*arguments)
             self.assertNotIn(key, environment.values())
             self.assertNotIn("LOUPIST_PROVIDER_API_KEY", environment)
@@ -52,7 +56,9 @@ class ProviderCredentialSmokeTest(unittest.TestCase):
         ]:
             with self.subTest(environment=list(environment)):
                 with patch.object(SIDECARS, "pi_environment", return_value=environment):
-                    with self.assertRaisesRegex(RuntimeError, "must not enter the environment") as raised:
+                    with self.assertRaisesRegex(
+                        RuntimeError, "must not enter the environment"
+                    ) as raised:
                         SIDECARS.provider_smoke_environment(*arguments)
                     self.assertNotIn(key, str(raised.exception))
 

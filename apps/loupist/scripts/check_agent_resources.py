@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Check the staged agent tree against production sources, excluding test modules."""
+
 from __future__ import annotations
 
 import argparse

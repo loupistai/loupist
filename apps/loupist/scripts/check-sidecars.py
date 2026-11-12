@@ -1308,7 +1308,9 @@ def provider_extension_smoke(
         descriptor = os.open(result_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         os.close(descriptor)
         smoke_key = "loupist-packaged-provider-smoke"
-        environment = provider_smoke_environment(runtime_dir, root, result_path, smoke_key)
+        environment = provider_smoke_environment(
+            runtime_dir, root, result_path, smoke_key
+        )
         process = subprocess.Popen(
             [
                 str(executable),
@@ -1368,7 +1370,9 @@ def provider_extension_smoke(
                         result = None
                     if result is not None:
                         if not answered:
-                            raise RuntimeError("provider smoke completed without a private key prompt")
+                            raise RuntimeError(
+                                "provider smoke completed without a private key prompt"
+                            )
                         break
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
