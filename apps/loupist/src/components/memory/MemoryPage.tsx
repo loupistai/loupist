@@ -330,7 +330,7 @@ function Reader({ item, takeFocus, bridge, loupistId, usage, paused, threads, on
     return <aside className="memory-reader is-lens" data-testid="memory-reader" aria-label={item.title}>
       {pausedHint}
       {error ? <p className="memory-reader-error" role="alert">{error}</p> : null}
-      <PageReader bridge={bridge} loupistId={loupistId} recordId={item.id} catalog={catalog} toolbar={<>{back}{kind}</>} takeFocus={takeFocus}
+      <PageReader bridge={bridge} loupistId={loupistId} recordId={item.id} catalog={catalog} toolbar={back} usage={usageLine(item, usage)} takeFocus={takeFocus}
         chatTitle={chatId => { const thread = threads.find(entry => entry.id === chatId); return thread ? chatTitle(thread) : undefined; }}
         onOpenPage={onOpenPage} onOpen={onOpenKnowledge} onAsk={onAsk} onChanged={onChanged}>
         {item.kind === "method" && item.learned ? <LensLearningPanel bridge={bridge} loupistId={loupistId} node={{ kind: "lens_method", recordId: item.id }} onArchived={onChanged} /> : null}
