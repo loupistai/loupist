@@ -680,12 +680,7 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 }
 .browser-error p { margin: 0 0 var(--gg-space-2); }
 .browser-recovery-actions { display: flex; flex-wrap: wrap; gap: 6px; color: var(--gg-color-text-primary); }
-.browser-excerpt-actions {
-  display: flex;
-  flex: 0 0 auto;
-  padding: 6px var(--gg-space-3);
-  border-bottom: 1px solid var(--gg-color-border-subtle);
-}
+.browser-saved-passage { flex: none; }
 
 .browser-start,
 .browser-viewport {

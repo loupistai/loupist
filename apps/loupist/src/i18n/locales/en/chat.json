@@ -479,6 +479,7 @@
     "tryAgain": "Try again",
     "openInBrowser": "Open in browser",
     "viewSavedPassage": "View saved passage",
+    "savedPassage": "Saved passage",
     "browseInLoupist": "Browse in Loupist",
     "enterAnHTTPOrHTTPSAddressAboveSearchQueries": "Enter an HTTP or HTTPS address above. Search queries are not sent to a search engine.",
     "browserContent": "Browser content",

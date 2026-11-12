@@ -449,6 +449,7 @@
     "tryAgain": "다시 시도",
     "openInBrowser": "브라우저에서 열기",
     "viewSavedPassage": "저장한 본문 보기",
+    "savedPassage": "저장한 본문",
     "browseInLoupist": "루피스트에서 탐색",
     "enterAnHTTPOrHTTPSAddressAboveSearchQueries": "위에 HTTP 또는 HTTPS 주소를 입력해 주세요. 검색어는 검색 엔진으로 전송되지 않아요.",
     "browserContent": "브라우저 내용",

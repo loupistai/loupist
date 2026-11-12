@@ -49,7 +49,7 @@ describe("Loupist · Chat evidence", () => {
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
     const panel = screen.getByLabelText("Chat workspace panel");
     expect(within(panel).queryByRole("button", { name: "View saved excerpt" })).toBeNull();
-    await user.click(within(panel).getByRole("button", { name: "View saved passage" }));
+    await user.click(within(panel).getByRole("button", { name: "Saved passage" }));
     expect(await screen.findByRole("article", { name: `Research source: ${evidence.title}` })).toHaveTextContent(evidence.excerpt);
     await user.click(citation);
     await waitFor(() => expect(open).toHaveBeenCalledTimes(2));
