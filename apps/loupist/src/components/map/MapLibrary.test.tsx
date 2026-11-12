@@ -28,7 +28,7 @@ it('opens a compact Source library and reads an exact source in the map inspecto
   const { user, read } = await setup();
   await user.click(screen.getByRole('button', { name: 'Library' }));
   const library = screen.getByRole('complementary', { name: 'Library' });
-  expect(within(library).getByRole('button', { name: '+ Add source' })).toBeVisible();
+  expect(within(library).getByRole('button', { name: 'Add source' })).toBeVisible();
   await user.click(within(library).getByRole('button', { name: /RFC 9110 HTTP semantics/ }));
   const inspector = await screen.findByRole('complementary', { name: 'Document inspector' });
   expect(await within(inspector).findByRole('article', { name: 'Source reader' })).toBeVisible();

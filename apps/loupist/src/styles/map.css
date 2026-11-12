@@ -283,7 +283,7 @@
 .map-library .source-library-heading.library-section-label:lang(ko) { letter-spacing:0; text-transform:none; }
 .map-library h3.library-section-label { flex-wrap:nowrap; }
 .map-library .library-section-label > :is(h2, h3) { margin:0; font:inherit; color:inherit; text-transform:inherit; }
-.map-library .library-section-label > span { margin-inline-start:auto; flex:none; font:inherit; color:inherit; font-variant-numeric:tabular-nums; }
+.map-library .library-section-label > span { margin-inline-start:0; flex:none; font:inherit; color:inherit; font-variant-numeric:tabular-nums; }
 .map-library .library-section-label > .journal-summary {
   order:3; flex:1 0 100%; margin:0; text-transform:none; letter-spacing:normal;
   font-size:var(--gg-text-meta); font-weight:var(--gg-weight-regular); line-height:var(--gg-leading-meta); color:var(--gg-color-text-secondary);
@@ -292,7 +292,8 @@
   justify-content:flex-start; height:auto; min-height:var(--gg-size-control-md);
   text-transform:none; letter-spacing:normal; font-size:var(--gg-text-control); font-weight:var(--gg-weight-medium); line-height:var(--gg-leading-control);
 }
-.map-library .library-section-label > .library-add { order:4; flex:1 0 100%; padding-inline:0; }
+.map-library .library-section-label > span::before { content:"· "; }
+.map-library .library-section-label > .library-add { margin-inline-start:auto; flex:none; text-transform:none; letter-spacing:normal; }
 
 .map-library .journal-form,
 .map-library .memory-loading-inline { padding-inline:var(--gg-space-4); }

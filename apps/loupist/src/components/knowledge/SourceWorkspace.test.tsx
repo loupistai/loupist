@@ -226,7 +226,7 @@ it("keeps a source locator with an unsupported scheme as plain text", async () =
 });
 
 it("shows a publication day without shifting its calendar date", async () => {
-  const [locale, expected] = ["ko", "2026. 10. 27."];
+  const [locale, expected] = ["ko", "2026년 10월 27일"];
   await i18n.changeLanguage(locale);
   try {
     const props = await fixture();

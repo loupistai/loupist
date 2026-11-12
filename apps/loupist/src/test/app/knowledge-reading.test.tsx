@@ -103,7 +103,7 @@ describe("Loupist · Source catalog", () => {
     await renderSources(bridge);
     expect(await screen.findByText("No sources yet")).toBeVisible();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "+ Add source" }));
+    await user.click(screen.getByRole("button", { name: "Add source" }));
     expect(screen.getByRole("button", { name: "Save source" })).toBeDisabled();
   });
 
@@ -126,7 +126,7 @@ describe("Loupist · Source catalog", () => {
     const original = bridge.knowledgeSourceRetain.bind(bridge);
     const create = vi.spyOn(bridge, "knowledgeSourceRetain").mockRejectedValueOnce(new Error("Storage is unavailable")).mockImplementation(original);
     await renderSources(bridge);
-    await user.click(screen.getByRole("button", { name: "+ Add source" }));
+    await user.click(screen.getByRole("button", { name: "Add source" }));
     const dialog = screen.getByRole("dialog", { name: "Add source" });
     await user.type(within(dialog).getByRole("textbox", { name: "Source title" }), "Annual filing");
     await user.click(within(dialog).getByRole("tab", { name: "Link" }));
