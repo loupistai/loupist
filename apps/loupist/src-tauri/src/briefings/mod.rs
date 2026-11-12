@@ -372,7 +372,7 @@ fn coverage(
                 .and_then(|page| page.refreshed_at_ms)
                 .is_none_or(|at| at < now.saturating_sub(30 * 60_000))
             {
-                missing.push(serde_json::json!({"symbol":asset.symbol,"market":asset.market,"name":asset.name}));
+                missing.push(serde_json::json!({"symbol":asset.symbol,"market":asset.market}));
             }
             for route in routes
                 .get(&id)
