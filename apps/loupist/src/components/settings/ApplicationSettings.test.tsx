@@ -9,13 +9,13 @@ it("keeps Loupist in the menu bar through the host setting and lists what leaves
   render(<ApplicationSettings bridge={bridge} />);
   const toggle = screen.getByRole("switch", { name: "Keep running in the menu bar" });
   await waitFor(() => expect(toggle).toBeEnabled());
-  expect(screen.getByText("Not chosen yet. Loupist turns this on when you start a briefing or Watching.")).toBeVisible();
+  expect(screen.getByText("On because a briefing or Watching is active. You can turn it off here.")).toBeVisible();
   const before = toggle.getAttribute("aria-checked") === "true";
   await userEvent.setup().click(toggle);
   expect(set).toHaveBeenCalledWith({ keepRunning: !before });
   await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", String(!before)));
   // An explicit choice replaces the automatic note.
-  expect(screen.queryByText("Not chosen yet. Loupist turns this on when you start a briefing or Watching.")).toBeNull();
+  expect(screen.queryByText("On because a briefing or Watching is active. You can turn it off here.")).toBeNull();
   expect(screen.getByRole("heading", { name: "About & privacy" })).toBeVisible();
   expect(screen.getByText("Loupist's makers receive nothing")).toBeVisible();
   expect(screen.getByRole("button", { name: "Read again" })).toBeVisible();

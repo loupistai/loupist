@@ -5,7 +5,7 @@
     "keywords": "general menu bar background running privacy notice about telemetry keychain",
     "keepRunning": "Keep running in the menu bar",
     "keepRunningDescription": "Scheduled tasks and Watching run only while Loupist is open or in the menu bar.",
-    "keepRunningAutomatic": "Not chosen yet. Loupist turns this on when you start a briefing or Watching.",
+    "keepRunningAutomatic": "On because a briefing or Watching is active. You can turn it off here.",
     "loadFailed": "Couldn't load this setting.",
     "saveFailed": "Couldn't change this setting. Try again.",
     "aboutTitle": "About & privacy",
