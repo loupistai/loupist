@@ -81,6 +81,8 @@ it("shows one plan-limit notice with Manage usage, then a dated last-limit line 
   const notice = within(card).getByRole("status");
   expect(notice).toHaveTextContent(/^Reached its plan limit .+\. Background work on this account waits until a request goes through\./u);
   expect(within(notice).getByRole("button", { name: "Manage usage" })).toBeInTheDocument();
+  // One Manage usage per card: the plan line above the notice does not repeat it.
+  expect(within(card).getAllByRole("button", { name: "Manage usage" })).toHaveLength(1);
   document.body.innerHTML = "";
 
   const cleared = renderCard({ option: option("openai", { status: status({ last_limit_at_ms: limit }) }) });
