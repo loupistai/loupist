@@ -6,7 +6,7 @@ import { mainTab, openApp } from "../renderApp";
 
 const openWorldProcessing = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(await mainTab(/Loupist settings/));
-  await user.click(screen.getByRole("button", { name: "World processing" }));
+  await user.click(screen.getByRole("button", { name: "Map building" }));
 };
 
 it("saves the World model per Loupist without touching global configuration", async () => {
@@ -52,13 +52,13 @@ it("recovers World processing and refreshes an uncertain Chat update without ret
   const chatSend = vi.spyOn(bridge, "chatSend");
   await openApp(bridge);
   await user.click(await screen.findByRole("button", { name: "Saved 1 source" }));
-  expect(await screen.findByText(/World: outcome uncertain/)).toBeVisible();
+  expect(await screen.findByText(/Map: outcome uncertain/)).toBeVisible();
   await openWorldProcessing(user);
   await user.click(screen.getByRole("button", { name: "Recover World processing" }));
   await screen.findByText(/World processing recovered/);
   await user.click(await mainTab(/Chat/));
   await user.click(await screen.findByRole("button", { name: "Saved 1 source" }));
-  expect(await screen.findByText("Source retained · Interrupted World processing was not retried")).toBeVisible();
+  expect(await screen.findByText("Source retained · Interrupted Map building was not retried")).toBeVisible();
   expect(recover).toHaveBeenCalledExactlyOnceWith({ loupistId: "loupist-quality" });
   expect(chatSend).not.toHaveBeenCalled();
 });

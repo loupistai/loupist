@@ -55,7 +55,7 @@ describe("Loupist · Chat workspace", () => {
     const kinds = screen.getAllByRole("menuitemradio");
     expect(kinds).toHaveLength(3);
     expect(kinds[0]).toHaveAccessibleName("Lens");
-    expect(kinds[1]).toHaveAccessibleName("World");
+    expect(kinds[1]).toHaveAccessibleName("Map");
     expect(kinds[2]).toHaveAccessibleName("Chat materials");
     expect(kinds[0]).toHaveAccessibleDescription("Your research principles and methods");
     expect(kinds[2]).toHaveAccessibleDescription("This chat's map, evidence and outputs");
@@ -67,7 +67,7 @@ describe("Loupist · Chat workspace", () => {
     expect(workspace).toHaveAttribute("data-placement", "bottom");
     expect(screen.getByRole("button", { name: "Split top and bottom" })).toHaveAttribute("aria-pressed", "true");
     await user.click(kind);
-    await user.click(screen.getByRole("menuitemradio", { name: "World" }));
+    await user.click(screen.getByRole("menuitemradio", { name: "Map" }));
     expect(workspace).toHaveAttribute("data-panel-kind", "world");
     expect(workspace).toHaveAttribute("data-placement", "bottom");
     expect(composer).toHaveValue("A question I am still writing");

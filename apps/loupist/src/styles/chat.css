@@ -2122,3 +2122,7 @@ button.sent-image { cursor: zoom-in; }
 .composer-inline-reference-controls li { display:flex; align-items:center; gap:var(--gg-space-2); }
 .composer-inline-reference-controls button { display:inline-flex; flex:none; align-items:center; justify-content:center; width:24px; height:24px; border:0; border-radius:var(--gg-radius-sm); background:transparent; }
 .composer-inline-reference-controls button svg { width:14px; height:14px; }
+
+/* Small glyph buttons keep their look but take a 28 px hit area (design rubric). */
+.composer-chip button, .composer-inline-reference-controls button, .execution-copy-button { position: relative; }
+.composer-chip button::after, .composer-inline-reference-controls button::after, .execution-copy-button::after { content: ""; position: absolute; top: 50%; left: 50%; width: max(100%, var(--gg-size-control-sm)); height: max(100%, var(--gg-size-control-sm)); transform: translate(-50%, -50%); }

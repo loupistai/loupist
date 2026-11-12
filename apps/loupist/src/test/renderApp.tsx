@@ -57,7 +57,7 @@ export const mainTab = async (name: RegExp) => {
   if (!document.querySelector(".header-workspace-controls")) fireEvent.click(screen.getByRole("button", { name: "Back" }));
   if (label === "Map" || label === "Lens") {
     fireEvent.keyDown(screen.getByRole("button", { name: /Panel kind/ }), { key: "Enter" });
-    return screen.findByRole("menuitemradio", { name: label === "Map" ? "World" : "Lens" });
+    return screen.findByRole("menuitemradio", { name: label === "Map" ? "Map" : "Lens" });
   }
   if (label === "Chat") {
     const close = document.querySelector<HTMLButtonElement>("[data-workspace-close]");

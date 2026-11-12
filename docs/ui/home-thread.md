@@ -71,7 +71,13 @@ Journal checks, on the first visit of a Loupist made from the Crypto, Macro & ra
 Commodities template a "Works best with {connection} · Open Connections" line naming the
 recommended connection it lacks (Tiingo, FRED or EIA; enabled and available for the
 Loupist counts as having it),
-and three locally generated questions that fill the composer without sending. A first
+and three locally generated questions that fill the composer without sending. When
+nothing is followed, no briefing is on and none has run, the first message also shows
+"Get set up": the briefing explanation, three chips that fill the composer without
+sending (follow AAPL and 005930, turn on a weekday 8 o'clock briefing, remember a
+principle about capacity costs) and an "Import holdings (CSV)" link to the holdings
+sheet. The focus question names a preset's subject ("What matters in semiconductors
+this week?"); a Loupist with a free-text focus does not get it. A first
 visit counts what there is to look at instead of naming a day; general questions fill
 the list when the Loupist has little to point at. A Thread with no user-written message yet
 keeps this first-visit message below any host post, such as the preset's vocabulary card. It is
