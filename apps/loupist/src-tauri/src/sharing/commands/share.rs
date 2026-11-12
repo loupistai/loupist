@@ -130,9 +130,12 @@ pub(crate) fn private_context_with_finance(
         crate::finance_credentials::FinanceCredentialError,
     >,
 ) -> Result<PrivateContext, CommandError> {
-    private_context_with_credentials(state, get, || {
-        crate::custom_connections::service::protected_values_for_state(state)
-    })
+    private_context_with_credentials(
+        state,
+        get,
+        || crate::custom_connections::service::protected_values_for_state(state),
+        github::try_load_token(&state.credential_environment),
+    )
 }
 
 fn credential_scan_unavailable(_: impl std::fmt::Debug) -> CommandError {
@@ -152,10 +155,11 @@ fn private_context_with_credentials(
         crate::finance_credentials::FinanceCredentialError,
     >,
     connections: impl FnOnce() -> Result<Vec<String>, crate::custom_connections::ConnectionError>,
+    github_token: Result<Option<String>, github::TokenStoreError>,
 ) -> Result<PrivateContext, CommandError> {
     let mut context = PrivateContext::default();
     let environment = state.credential_environment.to_string();
-    if let Some(token) = github::load_token(&environment) {
+    if let Some(token) = github_token.map_err(credential_scan_unavailable)? {
         context.secrets.push(token);
     }
     let directory = state.pi_agent_data_dir()?;
@@ -174,7 +178,7 @@ fn private_context_with_credentials(
     {
         if let Some(bundle) = get(&environment, &entry.id).map_err(credential_scan_unavailable)? {
             for field in entry.runtime.credential_mapping.keys() {
-                if let Some(value) = bundle.get(field).filter(|value| value.len() >= 8) {
+                if let Some(value) = bundle.get(field).filter(|value| !value.is_empty()) {
                     context.secrets.push(value.to_owned());
                 }
             }
@@ -265,6 +269,7 @@ mod credential_scan_tests {
             &state,
             |_, _| Ok(None),
             || Err(ConnectionError::CredentialStore),
+            Ok(None),
         ));
         let directory = state.artifacts.app_data_dir.join("custom-connections");
         std::fs::create_dir_all(&directory).unwrap();
@@ -272,6 +277,74 @@ mod credential_scan_tests {
         ensure_private_regular_file(&path).unwrap();
         std::fs::write(&path, "invalid connection file").unwrap();
         assert_recoverable(private_context_with_finance(&state, |_, _| Ok(None)));
+    }
+
+    #[test]
+    fn github_keychain_failure_blocks_the_scan_but_absent_and_saved_tokens_are_distinct() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_folder_test(root.path().to_path_buf());
+        assert_recoverable(private_context_with_credentials(
+            &state,
+            |_, _| Ok(None),
+            || Ok(Vec::new()),
+            Err(github::TokenStoreError),
+        ));
+        let absent =
+            private_context_with_credentials(&state, |_, _| Ok(None), || Ok(Vec::new()), Ok(None))
+                .unwrap();
+        assert!(absent.secrets.is_empty());
+        let saved = private_context_with_credentials(
+            &state,
+            |_, _| Ok(None),
+            || Ok(Vec::new()),
+            Ok(Some("pine".into())),
+        )
+        .unwrap();
+        assert!(scan_private("pine입니다", &saved)
+            .iter()
+            .any(|hit| hit.class == PrivateClass::Credential));
+    }
+
+    #[test]
+    fn saved_finance_credentials_of_four_to_seven_characters_reach_the_scan() {
+        use crate::finance_credentials::{self, VerificationOutcome};
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_folder_test(root.path().to_path_buf());
+        let catalog = crate::marketplace::bundled_catalog().unwrap();
+        let entry = catalog
+            .entries
+            .iter()
+            .find(|entry| !entry.runtime.credential_mapping.is_empty())
+            .unwrap();
+        let field = entry.runtime.credential_mapping.keys().next().unwrap();
+        let environment = &state.credential_environment;
+        for key in ["pine", "oak12", "cedar12", "abc"] {
+            finance_credentials::stage(
+                environment,
+                &entry.id,
+                &std::collections::BTreeMap::from([(field.clone(), key.into())]),
+            )
+            .unwrap();
+            let candidate = finance_credentials::candidate_for_verification(environment, &entry.id)
+                .unwrap()
+                .unwrap();
+            finance_credentials::finish_verification(
+                environment,
+                &entry.id,
+                candidate.revision(),
+                VerificationOutcome::Verified,
+                1,
+                None,
+            )
+            .unwrap();
+            let context = private_context(&state).unwrap();
+            assert!(context.secrets.contains(&key.to_owned()));
+            let flagged = scan_private(&format!("{key}입니다"), &context)
+                .iter()
+                .any(|hit| hit.class == PrivateClass::Credential);
+            assert_eq!(flagged, key.len() >= 4, "{key}");
+            assert!(scan_private(&format!("x{key}y"), &context).is_empty());
+        }
     }
 
     #[test]
