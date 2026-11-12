@@ -1111,3 +1111,17 @@ fn as_of_refusals_keep_their_own_codes_for_the_answers_note() {
         assert_eq!(error_body(&error)["code"], code, "{error}");
     }
 }
+
+#[test]
+fn a_reply_level_argument_refusal_has_no_parameter_prefix() {
+    let error = BrokerError::invalid("", "The user did not answer, so this change was not made.")
+        .with_next("The user did not answer. Finish the reply and say what needs answering.");
+    let body = error_body(&error);
+    assert_eq!(
+        body["message"],
+        "The user did not answer, so this change was not made."
+    );
+    assert_eq!(body["code"], "malformed_request");
+    assert_eq!(body["retryable"], false);
+    assert!(body["next"].as_str().unwrap().contains("Finish the reply"));
+}

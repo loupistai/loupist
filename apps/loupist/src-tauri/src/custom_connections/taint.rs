@@ -55,6 +55,8 @@ pub struct TurnTaint {
     tainted: AtomicBool,
     untrusted_text: AtomicBool,
     memory_blocked: AtomicBool,
+    /// A missing answer never grants destructive authority later in this reply.
+    unanswered_question: AtomicBool,
     origin: Mutex<Option<CustomOrigin>>,
     /// Sites this turn may read after third-party text.
     web: Mutex<SeenWeb>,
@@ -88,6 +90,10 @@ impl TurnTaint {
             self.memory_blocked.store(true, Ordering::Release);
         }
         self.tainted.store(true, Ordering::Release);
+    }
+
+    pub(crate) fn mark_unanswered_question(&self) {
+        self.unanswered_question.store(true, Ordering::Release);
     }
 
     pub fn mark_untrusted_text(&self) {
@@ -263,6 +269,10 @@ impl TurnTaint {
     }
 
     pub fn enforce(&self, method: ToolMethod, params: &Value) -> Result<(), BrokerError> {
+        if self.unanswered_question.load(Ordering::Acquire) && destructive_change(method, params) {
+            return Err(BrokerError::invalid("", "The user did not answer, so this change was not made.")
+                .with_next("The user did not answer. Finish the reply and say what you need answered; do not retry this change in this reply."));
+        }
         let tainted = self.tainted.load(Ordering::Acquire);
         let untrusted_text = self.untrusted_text.load(Ordering::Acquire);
         if tainted && outbound_capable(method, params) {
@@ -275,6 +285,22 @@ impl TurnTaint {
             return Err(BrokerError::ConnectionDontSave);
         }
         Ok(())
+    }
+}
+
+/// Only explicit removal, pause and cancellation operations. Ordinary research
+/// and saves stay available; the model must still respect the question's repair.
+fn destructive_change(method: ToolMethod, params: &Value) -> bool {
+    match method {
+        ToolMethod::ScheduleDelete | ToolMethod::ScheduleStop => true,
+        ToolMethod::ScheduleSetStatus => params["status"] == "paused",
+        ToolMethod::ScheduleWatch | ToolMethod::ScheduleBriefing => params["enabled"] == false,
+        ToolMethod::BotMemory => params["changes"].as_array().is_some_and(|changes| {
+            changes
+                .iter()
+                .any(|change| matches!(change["action"].as_str(), Some("forget" | "resolve")))
+        }),
+        _ => false,
     }
 }
 
@@ -859,6 +885,83 @@ fn command_or_outbound_write(method: ToolMethod, params: &Value) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unanswered_questions_only_block_explicit_destructive_operations() {
+        use crate::broker::{tools::TOOL_CATALOG, BrokerError, ToolMethod};
+        use serde_json::json;
+        let state = super::TurnTaint::default();
+        let refused = [
+            (ToolMethod::ScheduleDelete, json!({})),
+            (ToolMethod::ScheduleStop, json!({})),
+            (ToolMethod::ScheduleSetStatus, json!({"status":"paused"})),
+            (ToolMethod::ScheduleWatch, json!({"enabled":false})),
+            (ToolMethod::ScheduleBriefing, json!({"enabled":false})),
+            (
+                ToolMethod::BotMemory,
+                json!({"changes":[{"action":"forget","id":"entry"}]}),
+            ),
+            (
+                ToolMethod::BotMemory,
+                json!({"changes":[{"action":"resolve","id":"entry"}]}),
+            ),
+        ];
+        for (method, params) in &refused {
+            state.enforce(*method, params).unwrap();
+        }
+        state.mark_unanswered_question();
+        for (method, params) in &refused {
+            let error = state.enforce(*method, params).unwrap_err();
+            assert!(matches!(error, BrokerError::WithNext { source, next }
+                if matches!(*source, BrokerError::InvalidArguments { ref field, .. } if field.is_empty())
+                    && next.contains("did not answer") && next.contains("Finish the reply")));
+        }
+        // Exhaustive negative corpus: no other catalog method changes policy.
+        for tool in &TOOL_CATALOG.tools {
+            let Some(method) = ToolMethod::from_tool_name(&tool.name) else {
+                continue;
+            };
+            if !matches!(
+                method,
+                ToolMethod::ScheduleDelete | ToolMethod::ScheduleStop
+            ) {
+                state
+                    .enforce(method, &json!({}))
+                    .unwrap_or_else(|error| panic!("{}: {error}", tool.name));
+            }
+        }
+        for (method, params) in [
+            (
+                ToolMethod::ScheduleUpdate,
+                json!({"title":"A clearer title","schedule":null}),
+            ),
+            (ToolMethod::ScheduleSetStatus, json!({"status":"active"})),
+            (ToolMethod::ScheduleWatch, json!({"enabled":true})),
+            (ToolMethod::ScheduleBriefing, json!({"enabled":true})),
+            (
+                ToolMethod::BotMemory,
+                json!({"changes":[{"action":"remember","text":"A preference"}]}),
+            ),
+            (
+                ToolMethod::BotMemory,
+                json!({"changes":[{"action":"update","id":"entry","text":"A preference"}]}),
+            ),
+            (ToolMethod::ArtifactPublish, json!({"mode":"revise"})),
+            (
+                ToolMethod::NativeAuthorize,
+                json!({"name":"read","path":"notes.txt"}),
+            ),
+            (ToolMethod::PythonRun, json!({"code":"print(1)"})),
+            (ToolMethod::Calculate, json!({"operation":"sum"})),
+            (ToolMethod::WebSearch, json!({"query":"research"})),
+        ] {
+            state.enforce(method, &params).unwrap();
+        }
+        assert!(!state.has_untrusted_content());
+        super::TurnTaint::default()
+            .enforce(ToolMethod::ScheduleDelete, &json!({}))
+            .unwrap();
+    }
+
     use super::*;
     use serde_json::json;
 

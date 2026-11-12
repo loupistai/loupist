@@ -1,6 +1,6 @@
 //! `ask_user`: the model asks the user one question mid-reply and the call
 //! waits for the answer, the wait limit or the run stopping. A question nobody
-//! answers is not an error: the result tells the model what to assume.
+//! answers is not an error and never grants permission to change anything.
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -40,17 +40,8 @@ fn invalid(field: &str, expected: String) -> BrokerError {
 }
 
 fn unanswered(question: &ChatQuestion) -> Value {
-    let (assumed, next) = match question.recommended_label() {
-        Some(label) => (
-            json!(label),
-            format!("The user did not answer. Continue with the recommended option \"{label}\" and say in the answer which one you used."),
-        ),
-        None => (
-            Value::Null,
-            "The user did not answer. Continue with your most reasonable assumption and say in the answer which one you used.".into(),
-        ),
-    };
-    json!({"answered": false, "assumed": assumed, "next": next})
+    json!({"answered": false, "assumed": question.recommended_label(), "next":
+        "The user did not answer. If the choice only affects how you research or present this answer, continue with the recommended option and say which one you used. If it decides whether to delete, change, cancel, schedule or save something, do not do it: finish the reply and say what you need answered."})
 }
 
 impl AppToolExecutor {
@@ -62,7 +53,7 @@ impl AppToolExecutor {
             .is_some_and(ChatSurface::interactive)
         {
             return Err(BrokerError::Execution(format!(
-                "ask_user is unavailable in a {} turn: there is no one to answer, so assume and say what you assumed",
+                "ask_user is unavailable in a {} turn: there is no one to answer; do not treat a missing answer as permission to change anything",
                 self.capture.surface.as_ref().map_or("host", ChatSurface::name)
             )));
         }
@@ -104,6 +95,7 @@ impl AppToolExecutor {
         // Nobody to ask: a run without cards.
         let Some(sink) = self.capture.question_sink.as_ref() else {
             question.state = QuestionState::Expired;
+            self.capture.turn_taint.mark_unanswered_question();
             return Ok(unanswered(&question));
         };
         let call_id = current_tool_call_id();
@@ -122,6 +114,9 @@ impl AppToolExecutor {
             QuestionState::Expired
         };
         question.answer = answer.clone();
+        if answer.is_none() {
+            self.capture.turn_taint.mark_unanswered_question();
+        }
         sink(call_id, question.clone());
         Ok(match answer {
             Some(QuestionAnswer::Choice(index)) => {

@@ -198,7 +198,16 @@ settle a real fork without ending the reply. It takes `question` (1-300 characte
 stopping. The result is `{answered: true, choice: "<label>"}` or
 `{answered: true, text}`; with no answer it is `{answered: false, assumed: "<recommended
 label>" | null, next}`, not an error, and `next` tells the model to continue with the
-assumption and say which one it used. A text answer's URLs count as typed by the user for
+research or presentation default and say which one it used. The `assumed` label
+is only the recommendation: silence never authorizes deleting, overwriting,
+cancelling, scheduling, sending or saving. If the choice controls an action,
+finish the reply and say what needs answering. An unanswered card raises a
+reply-local guard against schedule deletion/stopping/pausing, watch or briefing
+disables, and Bot memory forget/resolve;
+ordinary reads, research, calculations and saves keep their existing authority.
+The current schedule-update schema cannot pause or remove a schedule, and null
+means no change. There are no Chat or artifact delete tools. A later answer does not clear the
+guard in the same reply; a new reply starts fresh. A text answer's URLs count as typed by the user for
 the untrusted-text rule, and the answer joins the private text no URL may carry after
 third-party text. The description tells the model to ask only when the answer
 changes the work materially and no sensible default exists, never for credentials or
