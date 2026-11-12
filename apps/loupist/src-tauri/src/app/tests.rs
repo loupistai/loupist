@@ -176,18 +176,10 @@ fn final_instance_owner_releases_lock_with_an_inherited_file_handle() {
 }
 
 #[test]
-fn clearing_memory_write_recovery_does_not_clear_deletion_quarantine() {
+fn deletion_quarantine_blocks_runs_and_writes_until_cleared() {
     let temporary = tempfile::tempdir().unwrap();
     let state = AppState::for_test(temporary.path().to_path_buf());
     state.quarantine_loupist("loupist-a", QuarantineSource::Deletion, "pending deletion");
-    state.quarantine_loupist(
-        "loupist-a",
-        QuarantineSource::MemoryWrite,
-        "interrupted memory write",
-    );
-
-    state.clear_loupist_quarantine("loupist-a", QuarantineSource::MemoryWrite);
-
     assert_eq!(state.loupist_access("loupist-a"), LoupistAccess::Hidden);
     assert_eq!(
         state
@@ -196,53 +188,36 @@ fn clearing_memory_write_recovery_does_not_clear_deletion_quarantine() {
             .code,
         "loupist_storage_unavailable"
     );
-}
-
-#[test]
-fn loupist_recovery_admission_bypasses_only_its_authoritative_recovery_state() {
-    let temporary = tempfile::tempdir().unwrap();
-    let state = AppState::for_test(temporary.path().to_path_buf());
-    let error = state
-        .register_loupist_recovery(
-            "recovery-none".into(),
-            "loupist-a".into(),
-            LoupistRecoveryAction::RecoverMemory,
-        )
-        .err()
-        .unwrap();
-    assert_eq!(error.code, "conflict");
-
-    state.quarantine_loupist(
-        "loupist-a",
-        QuarantineSource::MemoryWrite,
-        "interrupted memory write",
-    );
-
-    let recovery = state
-        .register_loupist_recovery(
-            "recovery-a".into(),
-            "loupist-a".into(),
-            LoupistRecoveryAction::RecoverMemory,
-        )
-        .unwrap();
-    drop(recovery);
     assert_eq!(
         state
-            .ensure_loupist_available("loupist-a")
+            .register_run(
+                "run-a".into(),
+                "loupist-a".into(),
+                RunKind::Chat,
+                RunTarget::ChatThread("chat-a".into())
+            )
             .unwrap_err()
             .code,
-        "loupist_recovery_required"
+        "loupist_storage_unavailable"
     );
-
-    state.quarantine_loupist("loupist-a", QuarantineSource::Deletion, "pending deletion");
-    let error = state
-        .register_loupist_recovery(
-            "recovery-b".into(),
-            "loupist-a".into(),
-            LoupistRecoveryAction::RecoverMemory,
-        )
-        .unwrap_err();
-    assert_eq!(error.code, "loupist_storage_unavailable");
+    assert_eq!(
+        state
+            .reserve_memory_write(
+                "write-a".into(),
+                "loupist-a".into(),
+                RunTarget::MemoryWriteSession("write-a".into())
+            )
+            .err()
+            .unwrap()
+            .code,
+        "loupist_storage_unavailable"
+    );
+    state.clear_loupist_quarantine("loupist-a", QuarantineSource::Deletion);
+    assert_eq!(
+        state.loupist_access("loupist-a"),
+        LoupistAccess::Visible(LoupistAvailability::Available)
+    );
+    state.ensure_loupist_available("loupist-a").unwrap();
 }
 
 #[cfg(windows)]

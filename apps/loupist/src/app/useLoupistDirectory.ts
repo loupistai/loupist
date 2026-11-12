@@ -29,8 +29,6 @@ export function useLoupistDirectory(
   const [failedSelectionId, setFailedSelectionId] = useState<string | null>(null);
   const [mutationBusy, setMutationBusy] = useState(false);
   const [mutationError, setMutationError] = useState<string | null>(null);
-  const [recoveryBusy, setRecoveryBusy] = useState(false);
-  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const loupistSelectionRequestRef = useRef(0);
   const desiredLoupistIdRef = useRef<string | null>(null);
   const desiredThreadIdRef = useRef<string | undefined>(undefined);
@@ -58,7 +56,7 @@ export function useLoupistDirectory(
   }, []);
 
   const selectLoupist = useCallback(
-    async (loupistId: string, knownLoupist?: LoupistSummary, threadId?: string) => {
+    async (loupistId: string, threadId?: string) => {
       const requestId = ++loupistSelectionRequestRef.current;
       const changingLoupist = desiredLoupistIdRef.current !== null;
       desiredLoupistIdRef.current = loupistId;
@@ -67,14 +65,8 @@ export function useLoupistDirectory(
       setError(null);
       setFailedSelectionId(null);
       setMutationError(null);
-      setRecoveryError(null);
       if (changingLoupist) closeWorkspace();
       onSelectionStarted();
-      if (knownLoupist?.availability.status === "recovery_required") {
-        setSelectedLoupist(knownLoupist);
-        setLoading(false);
-        return true;
-      }
       try {
         const workspace = await bridge.loupistSelect(loupistId);
         if (requestId !== loupistSelectionRequestRef.current) return;
@@ -130,7 +122,7 @@ export function useLoupistDirectory(
         const first = restored ??
           next.find((loupist) => loupist.availability.status === "available") ??
           next[0];
-        if (first) await selectLoupist(first.id, first, restored && Array.isArray(last) && typeof last[1] === "string" ? last[1] : undefined);
+        if (first) await selectLoupist(first.id, restored && Array.isArray(last) && typeof last[1] === "string" ? last[1] : undefined);
         else setLoading(false);
       })
       .catch((cause: unknown) => {
@@ -186,7 +178,7 @@ export function useLoupistDirectory(
     try {
       const imported = await bridge.loupistImport(request);
       setLoupists((current) => [...current.filter((loupist) => loupist.id !== imported.id), imported]);
-      await selectLoupist(imported.id, imported);
+      await selectLoupist(imported.id);
       return true;
     } catch (cause) {
       setMutationError(errorMessage(cause, i18n.t("onboarding:appDialogs.couldNotImportThisFolder")));
@@ -209,41 +201,10 @@ export function useLoupistDirectory(
       chat.removeLoupist(loupistId);
       onFolderReconnected?.();
       setLoupists((current) => current.map((item) => item.id === loupistId ? updated : item));
-      if (desiredLoupistIdRef.current === loupistId) await selectLoupist(loupistId, updated, activeThread);
+      if (desiredLoupistIdRef.current === loupistId) await selectLoupist(loupistId, activeThread);
       return true;
     } catch (cause) { setMutationError(errorMessage(cause, i18n.t("app:useLoupistDirectory.couldNotReconnectThisFolder"))); return false; }
     finally { setMutationBusy(false); }
-  };
-
-  const recoverSelectedLoupist = async () => {
-    if (
-      !selectedLoupist ||
-      selectedLoupist.availability.status !== "recovery_required" ||
-      recoveryBusy
-    ) {
-      return;
-    }
-    const loupistId = selectedLoupist.id;
-    const action = selectedLoupist.availability.action;
-    setRecoveryBusy(true);
-    setRecoveryError(null);
-    try {
-      const recovered = await bridge.loupistRecover({ loupist_id: loupistId, action });
-      setLoupists((current) =>
-        current.map((loupist) => (loupist.id === recovered.id ? recovered : loupist)),
-      );
-      if (desiredLoupistIdRef.current === loupistId) {
-        await selectLoupist(loupistId, recovered);
-      }
-    } catch (cause) {
-      if (desiredLoupistIdRef.current === loupistId) {
-        setRecoveryError(
-          errorMessage(cause, i18n.t("app:useLoupistDirectory.memoryRecoveryCouldNotFinishSafely")),
-        );
-      }
-    } finally {
-      setRecoveryBusy(false);
-    }
   };
 
   const deleteLoupist = async () => {
@@ -287,14 +248,14 @@ export function useLoupistDirectory(
   /** A Loupist Rust created outside this hook (a shared Loupist added as new) joins the list and opens. */
   const adoptLoupist = useCallback((adopted: LoupistSummary) => {
     setLoupists((current) => [...current.filter((loupist) => loupist.id !== adopted.id), adopted]);
-    return selectLoupist(adopted.id, adopted);
+    return selectLoupist(adopted.id);
   }, [selectLoupist]);
 
   const retrySelection = useCallback(() => {
     const target = failedSelectionId;
     if (!target) return;
-    return selectLoupist(target, loupists.find(candidate => candidate.id === target), desiredThreadIdRef.current);
-  }, [failedSelectionId, loupists, selectLoupist]);
+    return selectLoupist(target, desiredThreadIdRef.current);
+  }, [failedSelectionId, selectLoupist]);
 
   const keepCurrentLoupist = useCallback(() => {
     desiredLoupistIdRef.current = selectedLoupist?.id ?? null;
@@ -329,15 +290,12 @@ export function useLoupistDirectory(
     mutationBusy,
     mutationError,
     setMutationError,
-    recoveryBusy,
-    recoveryError,
     desiredLoupistIdRef,
     refreshLoupistAvailability,
     applyRecoveredLoupist,
     selectLoupist,
     addLoupist,
     importLoupist,
-    recoverSelectedLoupist,
     reconnectLoupist,
     deleteLoupist,
     updateLoupist,

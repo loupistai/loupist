@@ -71,7 +71,6 @@ export type CommandErrorCode =
   | "lock_poisoned"
   | "loupist_earlier_version"
   | "loupist_newer_version"
-  | "loupist_recovery_required"
   | "loupist_storage_unavailable"
   | "maintenance_active"
   | "metadata_only"

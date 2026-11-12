@@ -3,13 +3,8 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { App } from "../../App";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
-import type { ChatThread, LoupistSummary, ModelCatalog } from "../../types";
+import type { ChatThread, ModelCatalog } from "../../types";
 import { chooseLoupist, mainTab, newChatButton, openApp, selectedLoupistButton } from "../renderApp";
-
-const recovering = (loupist: LoupistSummary): LoupistSummary => ({
-  ...loupist,
-  availability: { status: "recovery_required", reason: "interrupted_memory_update", action: "recover_memory" },
-});
 
 const openModelSettings = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(await mainTab(/Settings/));
@@ -202,40 +197,6 @@ describe("Loupist · Shell and Loupist", () => {
     await user.click(within(screen.getByRole("dialog", { name: "Remove Loupist?" })).getByRole("button", { name: "Remove Loupist" }));
     await waitFor(() => expect(remove).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(selectedLoupistButton()).toHaveTextContent("Contrarian Value"));
-  });
-
-  it("recovers an interrupted Memory update while keeping Loupist creation available", async () => {
-    const user = userEvent.setup();
-    const bridge = new MockLoupistBridge({ delay_ms: 0 });
-    const [firstLoupist] = await bridge.loupistList();
-    vi.spyOn(bridge, "loupistList").mockResolvedValueOnce([recovering(firstLoupist)]);
-    const recover = vi.spyOn(bridge, "loupistRecover");
-    const skills = vi.spyOn(bridge, "agentSkillCatalog");
-    render(<App bridge={bridge} />);
-    expect(await screen.findByRole("heading", { name: "Memory needs recovery" })).toBeVisible();
-    expect(headerAction("New Loupist")).toBeVisible();
-    await user.keyboard("{Escape}");
-    expect(skills).not.toHaveBeenCalledWith(firstLoupist.id);
-    await user.click(screen.getByRole("button", { name: "Recover memory" }));
-    await waitFor(() => expect(recover).toHaveBeenCalledWith({ loupist_id: firstLoupist.id, action: "recover_memory" }));
-    expect(await screen.findByRole("heading", { name: "Home" })).toBeVisible();
-  });
-
-  it("does not select a recovered Loupist after the user moves to another Loupist", async () => {
-    const user = userEvent.setup();
-    const bridge = new MockLoupistBridge({ delay_ms: 0 });
-    const listed = await bridge.loupistList();
-    const loupist = recovering(listed[0]);
-    vi.spyOn(bridge, "loupistList").mockResolvedValueOnce([loupist, ...listed.slice(1)]);
-    let finishRecovery: ((loupist: LoupistSummary) => void) | undefined;
-    vi.spyOn(bridge, "loupistRecover").mockImplementation(() => new Promise((resolve) => { finishRecovery = resolve; }));
-    render(<App bridge={bridge} />);
-    await screen.findByRole("heading", { name: "Home" });
-    await chooseLoupist(user, loupist.name);
-    await user.click(await screen.findByRole("button", { name: "Recover memory" }));
-    await chooseLoupist(user, "Cycle Reader");
-    await act(async () => { finishRecovery?.({ ...loupist, availability: { status: "available" } }); });
-    await waitFor(() => expect(selectedLoupistButton()).toHaveTextContent("Cycle Reader"));
   });
 
   it("persists Light, Dark and System appearance preferences", async () => {

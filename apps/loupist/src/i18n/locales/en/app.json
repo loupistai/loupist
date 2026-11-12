@@ -41,7 +41,6 @@
     "couldNotLoadYourLoupists": "Could not load your Loupists.",
     "couldNotPrepareThisAgent": "Could not prepare this agent.",
     "couldNotReconnectThisFolder": "Could not reconnect this folder.",
-    "memoryRecoveryCouldNotFinishSafely": "Memory recovery could not finish safely.",
     "couldNotDeleteThisAgent": "Could not delete this agent.",
     "theAgentWasCreatedButTheAgentList": "The agent was created, but the agent list could not be refreshed."
   },
@@ -131,12 +130,8 @@
   },
   "loupistAvailabilityBoundary": {
     "workspaceFolderUnavailable": "Workspace folder unavailable",
-    "memoryNeedsRecovery": "Memory needs recovery",
     "thisLoupistSFolderWasMovedOrIs": "This Loupist’s folder was moved or is unavailable. Reconnect the original or copied folder to open its chats, Map and Lens.",
-    "anInterruptedUpdateWasSavedRecoverMemoryTo": "An interrupted update was saved. Recover Memory to continue.",
     "reconnectFolder": "Reconnect folder",
-    "recovering": "Recovering…",
-    "recoverMemory": "Recover memory",
     "earlierVersion": "Made by an earlier version",
     "earlierVersionBody": "This Loupist was made by an earlier version and can't be opened. Create a new Loupist.",
     "newerVersion": "Saved by a newer version",

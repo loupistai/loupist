@@ -30,7 +30,7 @@ import type { WorldKeepAwakeRequest } from "./commands/power";
 import type { QuestionAnswerRequest } from "./commands/questions";
 import type { RevisionRequest, RunRequest, ScheduledTasksLoupistRequest, StatusRequest, TaskRequest } from "./commands/scheduled_tasks";
 import type { SkillCreateRequest, SkillDeleteRequest, SkillImportRequest, SkillReadRequest, SkillSaveRequest } from "./commands/skills";
-import type { ChatArtifactListRequest, ChatArtifactReadRequest, ChatArtifactRestoreRequest, ChatArtifactViewDto, ChatAttachmentReadDto, ChatAttachmentReadRequest, ChatBranchRequest, ChatControlReceiptDto, ChatControlRequestDto, ChatCreateRequest, ChatDeleteRequest, ChatFeedbackRequest, ChatMemorySetAsideRequest, ChatRenameRequest, ChatSendRequest, ChatThreadDto, ChatVersionSwitchRequest, LoupistArtifactItemDto, LoupistArtifactListRequest, LoupistCreateRequest, LoupistDeleteRequest, LoupistImportRequest, LoupistProfileUpdateRequest, LoupistReconnectRequest, LoupistRecoverRequest, LoupistSummary, LoupistWorkspace, RunStarted } from "./commands/types";
+import type { ChatArtifactListRequest, ChatArtifactReadRequest, ChatArtifactRestoreRequest, ChatArtifactViewDto, ChatAttachmentReadDto, ChatAttachmentReadRequest, ChatBranchRequest, ChatControlReceiptDto, ChatControlRequestDto, ChatCreateRequest, ChatDeleteRequest, ChatFeedbackRequest, ChatMemorySetAsideRequest, ChatRenameRequest, ChatSendRequest, ChatThreadDto, ChatVersionSwitchRequest, LoupistArtifactItemDto, LoupistArtifactListRequest, LoupistCreateRequest, LoupistDeleteRequest, LoupistImportRequest, LoupistProfileUpdateRequest, LoupistReconnectRequest, LoupistSummary, LoupistWorkspace, RunStarted } from "./commands/types";
 import type { CsvCommitRequest, CsvImportRequest, MapColumnsRequest, WalletAddRequest, WalletIdRequest, WalletRefreshRequest, WalletRenameRequest, WatchlistAddRequest, WatchlistRemoveRequest } from "./commands/user_context";
 import type { WatchCheckNowRequest, WatchCheckResult, WatchDefaultsApplyRequest, WatchDefaultsApplyResult, WatchEventsListRequest, WatchEventsSeenRequest, WatchPauseSetRequest, WatchSettingSetRequest, WatchSettingsListRequest, WatchSettingsView } from "./commands/watch";
 import type { ChatActivityRequest, WorkspacePathRequest } from "./commands/workspace";
@@ -205,7 +205,6 @@ export type BridgeCommands = {
   loupist_list: { request: never, response: Array<LoupistSummary> },
   loupist_profile_update: { request: LoupistProfileUpdateRequest, response: LoupistSummary },
   loupist_reconnect: { request: LoupistReconnectRequest, response: LoupistSummary },
-  loupist_recover: { request: LoupistRecoverRequest, response: LoupistSummary },
   loupist_select: { request: never, response: LoupistWorkspace },
   chat_question_answer: { request: QuestionAnswerRequest, response: null },
   artifact_restore: { request: ChatArtifactRestoreRequest, response: ChatArtifactViewDto },

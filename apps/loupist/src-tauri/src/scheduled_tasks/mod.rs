@@ -380,7 +380,7 @@ impl ScheduledSupervisor {
             return if !manual
                 && matches!(
                     error.code.as_str(),
-                    "conflict" | "maintenance_active" | "loupist_recovery_required"
+                    "conflict" | "maintenance_active" | "loupist_storage_unavailable"
                 ) {
                 Ok(None)
             } else {

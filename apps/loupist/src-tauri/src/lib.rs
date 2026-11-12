@@ -289,7 +289,6 @@ pub fn run() {
             briefings::desktop::briefing_resident_settings_set,
             commands::loupist::loupist_list,
             commands::loupist::loupist_select,
-            commands::loupist::loupist_recover,
             commands::loupist::loupist_create,
             commands::loupist::loupist_import,
             commands::loupist::loupist_profile_update,

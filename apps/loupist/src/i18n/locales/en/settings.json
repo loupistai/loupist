@@ -354,7 +354,7 @@
     "connectAServiceToGiveThisLoupistMore": "Connect a service to give this Loupist more data sources.",
     "removeFromThisApp": "Remove from this app",
     "yourWorkspaceFolderChatsAndMemoryStayOn": "Your workspace folder, Chats, and Memory stay on disk. You can open the folder as a Loupist again.",
-    "reconnectOrRecoverThisLoupistBeforeRemovingIt": "Reconnect or recover this Loupist before removing it.",
+    "reconnectThisLoupistBeforeRemovingIt": "Reconnect this Loupist before removing it.",
     "removeLoupist": "Remove Loupist",
     "selectALoupistToEditIt": "Select a Loupist to edit it.",
     "removeNameFromThisApp": "Remove “{{name}}” from this app.",

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     agent_harness::AgentHarnessSnapshot,
-    app::{CommandError, LoupistAvailability, LoupistRecoveryAction},
+    app::{CommandError, LoupistAvailability},
     chat::artifacts::{ChatArtifact, ChatArtifactRef, ChatArtifactRevision},
     chat::chart::ChartDataset,
     chat::progress::{ChatProgress, ChatProgressPatch},
@@ -94,14 +94,6 @@ pub struct LoupistReconnectRequest {
 #[serde(deny_unknown_fields)]
 pub struct LoupistDeleteRequest {
     pub loupist_id: String,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[serde(deny_unknown_fields)]
-pub struct LoupistRecoverRequest {
-    pub loupist_id: String,
-    pub action: LoupistRecoveryAction,
 }
 
 #[derive(Clone, Debug, Serialize)]

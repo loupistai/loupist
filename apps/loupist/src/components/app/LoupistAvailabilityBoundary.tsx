@@ -7,7 +7,6 @@ type Props = {
   availability: LoupistAvailability;
   busy: boolean;
   error: string | null;
-  onRecover: () => void;
   onReconnect?: () => void;
   /** Removes the Loupist from the app (its folder stays); the only way past an earlier- or newer-version folder. */
   onRemove?: () => void;
@@ -19,7 +18,6 @@ export function LoupistAvailabilityBoundary({
   availability,
   busy,
   error,
-  onRecover,
   onReconnect,
   onRemove,
   className = "loupist-onboarding",
@@ -48,22 +46,21 @@ export function LoupistAvailabilityBoundary({
       </section>
     );
   }
-  const unavailable = availability.status === "workspace_unavailable";
   return (
     <section
       className={className}
       role="alert"
       aria-labelledby={headingId}
     >
-      <Heading id={headingId}>{unavailable ? i18n.t("app:loupistAvailabilityBoundary.workspaceFolderUnavailable") : i18n.t("app:loupistAvailabilityBoundary.memoryNeedsRecovery")}</Heading>
+      <Heading id={headingId}>{i18n.t("app:loupistAvailabilityBoundary.workspaceFolderUnavailable")}</Heading>
       <p>
-        {unavailable ? i18n.t("app:loupistAvailabilityBoundary.thisLoupistSFolderWasMovedOrIs") : i18n.t("app:loupistAvailabilityBoundary.anInterruptedUpdateWasSavedRecoverMemoryTo")}
+        {i18n.t("app:loupistAvailabilityBoundary.thisLoupistSFolderWasMovedOrIs")}
       </p>
       {error ? <div className="inline-error">{error}</div> : null}
       <div className="onboarding-actions">
-        <Button type="button" disabled={busy} onClick={unavailable ? onReconnect : onRecover}>
+        <Button type="button" disabled={busy} onClick={onReconnect}>
           <RefreshCwIcon aria-hidden="true" />
-          {unavailable ? i18n.t("app:loupistAvailabilityBoundary.reconnectFolder") : busy ? i18n.t("app:loupistAvailabilityBoundary.recovering") : i18n.t("app:loupistAvailabilityBoundary.recoverMemory")}
+          {i18n.t("app:loupistAvailabilityBoundary.reconnectFolder")}
         </Button>
       </div>
     </section>

@@ -17,6 +17,7 @@ import {
   dialogByTitle,
   mapNameCount,
   openMapLibrary,
+  openCustomConnections,
   measureLoupistSwitch,
   clickControl,
   measureMapDrawProbe,
@@ -214,10 +215,6 @@ async function choosePreset() {
   assertPresetSelection(await modelMenu.getAttribute("aria-description"), "Journey model menu");
 }
 
-async function openMainTab(tabId) {
-  await openDestination(browser, tabId.replace("#main-tab-", ""), 90_000);
-}
-
 async function newChat() {
   await openDestination(browser, "chat");
   await clickControl(browser, `[data-testid=navigation-new]`);
@@ -347,7 +344,7 @@ async function workspaceSourceText() {
   return (await source.getText()).replace(/\s+/g, " ").trim();
 }
 
-async function retainedBotMemory() {
+async function retainedLoupistMemory() {
   const home = await displayed("[data-testid=loupist-chat-row][data-home] [data-testid=loupist-chat-button]");
   const id = await home.getAttribute("data-thread-id");
   const profiles = await browser.execute(async () => window.__TAURI_INTERNALS__.invoke("loupist_list"));
@@ -358,7 +355,7 @@ async function retainedBotMemory() {
   const database = new DatabaseSync(resolve(profile.workspace_path, ".loupist", "loupist.sqlite3"), { readOnly: true });
   try {
     const row = database.prepare("SELECT data_json FROM chat_sessions WHERE id = ?").get(id);
-    assert.ok(row, "The Bot reply was not persisted");
+    assert.ok(row, "The Loupist reply was not persisted");
     return JSON.parse(row.data_json).botMemory ?? {};
   } finally { database.close(); }
 }
@@ -413,34 +410,35 @@ try {
     await shot("01-onboarding-shell");
   });
 
-  if (journeyEnabled("bot-memory")) await step("Bot remembers, corrects and forgets across a reload", async () => {
+  if (journeyEnabled("bot-memory")) await step("Loupist remembers, corrects and forgets across a reload", async () => {
     await clickControl(browser, "[data-testid=loupist-chat-row][data-home] [data-testid=loupist-chat-button]");
     await choosePreset();
-    await sendPrompt("Remember this preference for our continuing Bot conversation: label my short recaps Cobalt Finch. Keep it with bot_memory now, then acknowledge briefly. Do not use outside sources.");
-    let memory = await retainedBotMemory();
-    assert.match(JSON.stringify(memory), /Cobalt Finch/u, "The Bot did not retain the preference");
+    await sendPrompt("Remember this preference for our continuing Loupist conversation: label my short recaps Cobalt Finch. Keep it with bot_memory now, then acknowledge briefly. Do not use outside sources.");
+    let memory = await retainedLoupistMemory();
+    assert.match(JSON.stringify(memory), /Cobalt Finch/u, "The Loupist did not retain the preference");
     const progress = (await collectWorkProgress(browser, { latestOnly: true })).flatMap((section) => section.rows);
     assert.ok(progress.some((row) => row.category === "memory" && row.status === "succeeded"), "No successful memory activity was visible");
     await browser.refresh();
     await waitForShell(browser, 30_000);
     await clickControl(browser, "[data-testid=loupist-chat-row][data-home] [data-testid=loupist-chat-button]");
-    memory = await retainedBotMemory();
+    memory = await retainedLoupistMemory();
     assert.match(JSON.stringify(memory), /Cobalt Finch/u, "The retained preference disappeared on reload");
     await sendPrompt("Correct my recap-label preference: use Amber Heron instead of Cobalt Finch. Update the existing bot_memory entry now. Do not use outside sources.");
-    memory = await retainedBotMemory();
+    memory = await retainedLoupistMemory();
     const lastNote = [...(memory.changes ?? [])].reverse().find((change) => change.note)?.note;
     assert.match(lastNote?.text ?? "", /Amber Heron/u, "The correction was not persisted");
     await sendPrompt("Forget the recap-label preference entirely, including its older wording. Use bot_memory forget now; do not merely resolve it. Do not use outside sources.");
-    memory = await retainedBotMemory();
-    assert.doesNotMatch(JSON.stringify(memory), /Cobalt Finch|Amber Heron/u, "Forgotten wording remains in Bot memory");
+    memory = await retainedLoupistMemory();
+    assert.doesNotMatch(JSON.stringify(memory), /Cobalt Finch|Amber Heron/u, "Forgotten wording remains in Loupist memory");
     await shot("bot-memory-forgotten");
     report.journeys.botMemory = { remembered: true, reloaded: true, corrected: true, forgotten: true };
   });
 
   if (journeyEnabled("private-document")) await step("Memory-off Markdown document preview and source", async () => {
     await newChat();
-    await (await displayed(".composer-private-toggle")).click();
-    assert.equal(await (await displayed(".composer-private-toggle")).getAttribute("aria-pressed"), "true");
+    await clickControl(browser, ".composer-add-trigger");
+    await (await displayed("[data-composer-private]")).click();
+    await displayed('button[aria-label="Turn off private chat"]');
     await sendPrompt("Use artifact_publish to create a Markdown document titled Private arithmetic. Include the heading Private arithmetic and the exact sentence Seventeen times nineteen is 323. Do not browse, save memories or create a workspace file. Return the published document.");
     await (await displayed('.message-output-card[aria-label="Open document Private arithmetic"]')).click();
     await waitForText(await displayed(".artifact-markdown"), "Seventeen times nineteen is 323.");
@@ -452,11 +450,11 @@ try {
     await shot("private-document");
   });
 
-  if (journeyEnabled("research-handoff")) await step("Bot hands off research and returns the completed answer", async () => {
+  if (journeyEnabled("research-handoff")) await step("Loupist hands off research and returns the completed answer", async () => {
     await openDestination(browser, "chat");
     await clickControl(browser, "[data-testid=loupist-chat-row][data-home] [data-testid=loupist-chat-button]");
     await choosePreset();
-    await sendPrompt("Use research_open to open a separate research session titled Arithmetic handoff. Its task is to calculate 17 times 19 with calculate and report the result briefly, with no outside sources. Start it now and keep your Bot acknowledgment short.");
+    await sendPrompt("Use research_open to open a separate chat titled Arithmetic handoff. Its task is to calculate 17 times 19 with calculate and report the result briefly, with no outside sources. Start it now and keep your Loupist acknowledgment short.");
     const selector = '.thread-delivery[aria-label="Research: Arithmetic handoff"]';
     await browser.waitUntil(async () => {
       const row = await browser.$(selector);
@@ -540,7 +538,7 @@ try {
   });
 
   if (journeyEnabled("3")) await step("map grows", async () => {
-    await openMainTab("#main-tab-map");
+    await openDestination(browser, "map", 90_000);
     const before = await mapNameCount(browser);
     const beforeNames = before?.names ?? 0;
     const addVisible = await browser.execute(() =>
@@ -549,8 +547,7 @@ try {
       ),
     );
     if (!addVisible) {
-      await clickControl(browser, "[data-testid=map-view] [data-map-more]");
-      await (await displayed('[role="menuitemcheckbox"][data-map-library]')).click();
+      await openMapLibrary(browser);
     }
     await clickButton("Add source");
     const dialog = await displayed('[role="dialog"]');
@@ -601,7 +598,7 @@ try {
   if (journeyEnabled("4")) await step("principle is saved and applied", async () => {
     await choosePreset();
     await newChat();
-    await sendPrompt("Remember this rule: Separate the Northwind Loom note from any market price.");
+    await sendPrompt("Remember this principle: Separate the Northwind Loom note from any market price.");
     await browser.waitUntil(async () => {
       const row = await browser.$('[data-memory-change="create:principle"]');
       // The receipt says "Saved 1 principle" and the list below it shows the principle as its own card.
@@ -635,14 +632,14 @@ try {
     await openDestination(browser, "chat");
     await clickControl(browser, "[data-testid=loupist-chat-row][data-home] [data-testid=loupist-chat-button]");
     await choosePreset();
-    await sendPrompt("Turn on the built-in Bot briefing with schedule_briefing for weekdays at 08:00 Asia/Seoul. Use the existing Loupist Memory and followed assets; do not create a custom task.");
-    // Task actions live in the Bot; Schedule is a reader for saved definitions
+    await sendPrompt("Turn on the built-in Loupist briefing with schedule_briefing for weekdays at 08:00 Asia/Seoul. Use the existing Loupist Memory and followed assets; do not create a custom task.");
+    // Task actions live in the Loupist; Schedule is a reader for saved definitions
     // and actual runs. Admission alone is not successful completion.
-    // Leave the Bot as soon as the request is sent: a delivered result visible
+    // Leave the Loupist as soon as the request is sent: a delivered result visible
     // in its conversation correctly counts as read before Schedule opens.
-    await (await displayed('textarea[aria-label="Message Loupist"]')).setValue("Run the saved built-in Bot briefing once now with schedule_run_now. Keep its weekday schedule active.");
+    await (await displayed('textarea[aria-label="Message Loupist"]')).setValue("Run the saved built-in Loupist briefing once now with schedule_run_now. Keep its weekday schedule active.");
     await (await displayed('button[aria-label="Send"]')).click();
-    await openMainTab("#main-tab-schedule");
+    await openDestination(browser, "schedule", 90_000);
     await displayed("#main-panel-schedule");
     const briefingTask = "#main-panel-schedule .schedule-tasks:not(.schedule-pinned) .schedule-task";
     await (await displayed(`${briefingTask} .schedule-task-summary`)).click();
@@ -693,9 +690,10 @@ try {
       report.blockingError = [report.blockingError, message].filter(Boolean).join("\n");
     };
     try {
-      await openMainTab("#main-tab-settings");
+      await openDestination(browser, "settings", 90_000);
       await (await displayed("#settings-section-connections")).click();
-      await (await displayed("[data-custom-add]")).click();
+      await openCustomConnections(browser);
+      await (await displayed("[data-custom-connections] [data-custom-add]")).click();
       // The optional name Input omits the type attribute, so input[type=text] does not match it.
       const dialog = await displayed(".custom-add");
       await (await dialog.$('input[type="url"]')).setValue(learnMcpUrl);
@@ -717,7 +715,7 @@ try {
       let allowedTool = "";
       for (const toolName of toolNames) {
         const row = await browser.$(`[data-custom-tool="${toolName}"]`);
-        const buttons = await row.$$("button");
+        const buttons = await row.$$('[role="radio"]');
         let choice = null;
         for (const button of buttons) {
           const text = (await button.getText()).trim();
@@ -727,7 +725,7 @@ try {
         if (!choice) continue;
         if (!allowedTool) allowedTool = toolName;
         await choice.click();
-        await browser.waitUntil(async () => (await choice.getAttribute("aria-pressed")) === "true", {
+        await browser.waitUntil(async () => (await choice.getAttribute("aria-checked")) === "true", {
           timeout: 20_000,
           timeoutMsg: `Approval for ${toolName} did not stick`,
         });
@@ -780,7 +778,7 @@ try {
         [...document.querySelectorAll("[data-testid=chat-progress-action], [data-testid=chat-progress-target]")].map((element) => element.textContent?.trim() ?? "").join("\n"),
       );
       const sawTool = `${progress}\n${answer}`.includes(allowedTool) || progress.toLowerCase().includes("microsoft");
-      await openMainTab("#main-tab-map");
+      await openDestination(browser, "map", 90_000);
       await openMapLibrary(browser);
       let libraryText = "";
       await browser.waitUntil(async () => {
@@ -849,7 +847,13 @@ try {
       if (!(await (await displayed("[data-notice-acknowledgment]")).isSelected())) await (await displayed("[data-notice-acknowledgment]")).click();
       await clickButton("Get started");
       await waitForOnboardingStep(browser, 2, 20_000);
-      const connect = await displayed('main[data-onboarding="2"]');
+      let connect = await displayed('main[data-onboarding="2"]');
+      await waitForText(await displayed("[data-onboarding-skip]"), "Look around first");
+      await (await childWithText(connect, "button[data-onboarding-back]", "Back")).click();
+      await waitForOnboardingStep(browser, 1, 20_000);
+      await clickButton("Get started");
+      await waitForOnboardingStep(browser, 2, 20_000);
+      connect = await displayed('main[data-onboarding="2"]');
       await (await childWithText(connect, "summary", "Other ways to connect")).click();
       await (await displayed('[data-connect-row="custom"]')).click();
       await dialogByTitle(browser, "Custom endpoint");
@@ -906,17 +910,18 @@ try {
       assert.match(await answerText(), /Earlier I said: Hello from the custom provider\./u, "The completed answer did not survive reload");
       await shot("07-custom-reloaded");
       // Removing it signs it out and drops its models.
-      await openMainTab("#main-tab-settings");
+      await openDestination(browser, "settings", 90_000);
       await (await displayed("#settings-section-model")).click();
-      await clickControl(browser, 'button[aria-label="Remove Local test server"]');
+      await clickControl(browser, 'button[aria-label="More actions for Local test server"]');
+      await (await displayed('[role="menuitem"][aria-label="Remove Local test server"]')).click();
       const confirm = await dialogByTitle(browser, "Remove Local test server?");
       await clickButton("Remove", confirm);
-      await browser.waitUntil(async () => !(await browser.$('button[aria-label="Remove Local test server"]').isExisting()), {
+      await browser.waitUntil(async () => !(await browser.$('button[aria-label="More actions for Local test server"]').isExisting()), {
         timeout: 30_000, timeoutMsg: "The custom provider was not removed",
       });
       await clickButton("Back");
       await waitForShell(browser, 30_000);
-      await openMainTab("#main-tab-chat");
+      await openDestination(browser, "chat", 90_000);
       assert.match(await answerText(), /Earlier I said: Hello from the custom provider\./u, "Removing the provider hid its saved Chat");
       await shot("07-custom-after-removal");
       report.journeys.customProvider = { answered: true, followUpRetainedContext: true, reloaded: true,

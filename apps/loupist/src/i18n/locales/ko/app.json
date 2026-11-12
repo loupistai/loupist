@@ -42,7 +42,6 @@
     "couldNotLoadYourLoupists": "루피스트 목록을 불러오지 못했어요. 다시 시도해 주세요.",
     "couldNotPrepareThisAgent": "에이전트를 준비하지 못했어요. 다시 시도해 주세요.",
     "couldNotReconnectThisFolder": "폴더를 다시 연결하지 못했어요. 폴더 위치를 확인해 주세요.",
-    "memoryRecoveryCouldNotFinishSafely": "기억을 안전하게 복구하지 못했어요. 다시 시도해 주세요.",
     "couldNotDeleteThisAgent": "에이전트를 삭제하지 못했어요. 다시 시도해 주세요.",
     "theAgentWasCreatedButTheAgentList": "에이전트를 만들었지만 목록을 새로고침하지 못했어요. 다시 불러와 주세요."
   },
@@ -132,12 +131,8 @@
   },
   "loupistAvailabilityBoundary": {
     "workspaceFolderUnavailable": "작업 폴더를 사용할 수 없어요",
-    "memoryNeedsRecovery": "기억 복구가 필요해요",
     "thisLoupistSFolderWasMovedOrIs": "이 루피스트의 폴더가 이동되었거나 사용할 수 없어요. 원래 폴더나 복사본을 다시 연결하면 대화, 지도, 렌즈를 열 수 있어요.",
-    "anInterruptedUpdateWasSavedRecoverMemoryTo": "업데이트가 중단된 상태로 저장되었어요. 계속하려면 기억을 복구해 주세요.",
     "reconnectFolder": "폴더 다시 연결",
-    "recovering": "복구 중…",
-    "recoverMemory": "기억 복구",
     "earlierVersion": "이전 버전에서 만든 루피스트",
     "earlierVersionBody": "이 루피스트는 이전 버전에서 만들어져 열 수 없어요. 새 루피스트를 만들어 주세요.",
     "newerVersion": "새 버전에서 저장한 루피스트",

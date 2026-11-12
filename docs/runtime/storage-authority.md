@@ -90,6 +90,13 @@ Workspace tabs retain their saved references while a registered folder is unavai
 only an available folder can establish that a Chat was deleted. Shared store-error
 mapping and Memory transaction setup keep raw SQLite diagnostics out of renderer messages.
 
+An interrupted Memory transaction rolls back through the current transaction entry
+points; it does not create a folder recovery state or require a renderer recovery
+command. The host still quarantines pending deletions: hidden Loupists admit no
+Chat, scheduled run or Memory write until deletion finishes. Quarantine is private
+in-memory host state, rebuilt from the deletion journal at startup, and is not
+part of the stored folder format.
+
 Holdings are app-level. Each import is a snapshot of one source (`csv`, `kis`,
 `crypto_file`, or one per wallet address), and holdings are the union of the latest
 snapshot per source (`LATEST_SNAPSHOTS` in `store/user_context.rs`); a successful

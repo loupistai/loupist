@@ -2,7 +2,7 @@
 // LOUPIST_WRITE_CONTRACTS=1 cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml --lib bridge_contract
 
 import type { AgentHarnessSnapshot } from "../agent_harness";
-import type { LoupistAvailability, LoupistRecoveryAction } from "../app";
+import type { LoupistAvailability } from "../app";
 import type { ChatArtifact, ChatArtifactRef, ChatArtifactRevision } from "../chat/artifacts";
 import type { ChartDataset } from "../chat/chart";
 import type { ChatProgress, ChatProgressPatch } from "../chat/progress";
@@ -322,8 +322,6 @@ export type LoupistProfileUpdateRequest = {
 };
 
 export type LoupistReconnectRequest = { loupist_id: string, workspace_path: string };
-
-export type LoupistRecoverRequest = { loupist_id: string, action: LoupistRecoveryAction };
 
 export type LoupistSummary = {
   id: string,

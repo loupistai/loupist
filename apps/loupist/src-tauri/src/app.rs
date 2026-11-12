@@ -8,7 +8,7 @@ use std::{
 };
 
 use fs2::FileExt;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 #[cfg(not(windows))]
 use std::fs::OpenOptions;
 #[cfg(unix)]
@@ -165,7 +165,6 @@ pub struct AppArtifacts {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum QuarantineSource {
     Deletion,
-    MemoryWrite,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -178,24 +177,6 @@ pub enum LoupistAvailability {
     EarlierVersion,
     /// A newer Loupist saved the folder; it is refused and left untouched.
     NewerVersion,
-    RecoveryRequired {
-        reason: LoupistRecoveryReason,
-        action: LoupistRecoveryAction,
-    },
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[serde(rename_all = "snake_case")]
-pub enum LoupistRecoveryAction {
-    RecoverMemory,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[serde(rename_all = "snake_case")]
-pub enum LoupistRecoveryReason {
-    InterruptedMemoryUpdate,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -647,12 +628,6 @@ impl AppState {
         if sources.contains_key(&QuarantineSource::Deletion) {
             return LoupistAccess::Hidden;
         }
-        if sources.contains_key(&QuarantineSource::MemoryWrite) {
-            return LoupistAccess::Visible(LoupistAvailability::RecoveryRequired {
-                reason: LoupistRecoveryReason::InterruptedMemoryUpdate,
-                action: LoupistRecoveryAction::RecoverMemory,
-            });
-        }
         LoupistAccess::Hidden
     }
 
@@ -665,12 +640,6 @@ impl AppState {
                 | LoupistAvailability::EarlierVersion
                 | LoupistAvailability::NewerVersion,
             ) => {}
-            LoupistAccess::Visible(LoupistAvailability::RecoveryRequired { .. }) => {
-                return Err(CommandError::new(
-                    "loupist_recovery_required",
-                    "Loupist requires recovery before it can be used",
-                ));
-            }
             LoupistAccess::Hidden => {
                 return Err(CommandError::new(
                     "loupist_storage_unavailable",
@@ -717,43 +686,6 @@ impl AppState {
                 target,
             },
             || self.ensure_loupist_available(&loupist_id),
-        )
-    }
-
-    pub fn register_loupist_recovery(
-        &self,
-        run_id: String,
-        loupist_id: String,
-        action: LoupistRecoveryAction,
-    ) -> Result<RunRegistration, CommandError> {
-        self.run_coordinator.register(
-            RunSpec {
-                run_id,
-                loupist_id: loupist_id.clone(),
-                kind: RunKind::MemoryWrite,
-                target: RunTarget::MemoryWriteSession("pending-recovery".into()),
-            },
-            || match self.loupist_access(&loupist_id) {
-                LoupistAccess::Visible(LoupistAvailability::RecoveryRequired {
-                    action: required_action,
-                    ..
-                }) if action == required_action => Ok(()),
-                LoupistAccess::Visible(LoupistAvailability::RecoveryRequired { .. }) => Err(
-                    CommandError::invalid("requested Loupist recovery action is not available"),
-                ),
-                LoupistAccess::Visible(
-                    LoupistAvailability::Available
-                    | LoupistAvailability::WorkspaceUnavailable
-                    | LoupistAvailability::EarlierVersion
-                    | LoupistAvailability::NewerVersion,
-                ) => Err(CommandError::conflict(
-                    "Loupist does not currently require recovery",
-                )),
-                LoupistAccess::Hidden => Err(CommandError::new(
-                    "loupist_storage_unavailable",
-                    "Loupist storage is unavailable",
-                )),
-            },
         )
     }
 

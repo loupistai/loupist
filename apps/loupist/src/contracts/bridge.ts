@@ -52,7 +52,6 @@ import type {
   LoupistImportRequest,
   LoupistReconnectRequest,
   LoupistDeleteRequest,
-  LoupistRecoverRequest,
   LoupistSummary,
   LoupistProfileUpdateRequest,
   MarketplaceCredentialRequest,
@@ -258,7 +257,6 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   workspaceUiWrite(state: WorkspaceUiState): Promise<WorkspaceUiState>;
   loupistList(): Promise<LoupistSummary[]>;
   loupistSelect(loupist_id: string): Promise<LoupistWorkspace>;
-  loupistRecover(request: LoupistRecoverRequest): Promise<LoupistSummary>;
   loupistProfileUpdate(request: LoupistProfileUpdateRequest): Promise<LoupistSummary>;
   loupistImport(request: LoupistImportRequest): Promise<LoupistSummary>;
   loupistCreate(request: LoupistCreateRequest): Promise<LoupistSummary>;

@@ -1,7 +1,5 @@
 import type * as Wire from "./generated";
 
-export type LoupistRecoveryAction = Wire.LoupistRecoveryAction;
-
 export type LoupistAvailability = Wire.LoupistAvailability;
 
 export type LoupistSummary = {
@@ -32,7 +30,6 @@ export type LoupistCreateRequest = { name: string; focus?: string; avatar?: Loup
 export type LoupistImportRequest = Wire.LoupistImportRequest;
 export type LoupistReconnectRequest = Wire.LoupistReconnectRequest;
 export type LoupistDeleteRequest = Wire.LoupistDeleteRequest;
-export type LoupistRecoverRequest = Wire.LoupistRecoverRequest;
 
 export type AgentSkillSummary = Wire.AgentSkillSummary;
 

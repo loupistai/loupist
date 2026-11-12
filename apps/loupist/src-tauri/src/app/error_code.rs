@@ -106,7 +106,6 @@ command_error_codes! {
     LockPoisoned => "lock_poisoned",
     LoupistEarlierVersion => "loupist_earlier_version",
     LoupistNewerVersion => "loupist_newer_version",
-    LoupistRecoveryRequired => "loupist_recovery_required",
     LoupistStorageUnavailable => "loupist_storage_unavailable",
     MaintenanceActive => "maintenance_active",
     MetadataOnly => "metadata_only",
